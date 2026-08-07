@@ -103,6 +103,7 @@ import {
 } from '../features/intents/workflow.js'
 import { settleSpecContentWatch } from '../features/intents/spec-content-watch.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
+import { resolvePrTarget } from '../features/intents/pr-target.js'
 import { handlePrUpdateEvent } from '../features/intents/pr-update-consumer.js'
 import {
   publishIntentLifecycle,
@@ -208,6 +209,9 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     createForgePr: (cwd, title, body, headBranch, baseBranch, providerOverride) =>
       createForgePr(cwd, title, body, headBranch, baseBranch, providerOverride),
     getIntent,
+    // No explicit delivery: a session-end cleanup has no user choice to carry,
+    // so the intent's association edges alone decide the target.
+    resolvePrTarget: (ws, intent) => resolvePrTarget(ws, intent, undefined),
     setBranchName,
     setLatestCommitHash,
     upsertIntentPr,

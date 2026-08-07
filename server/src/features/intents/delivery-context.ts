@@ -11,7 +11,7 @@
  * Resolution never picks for the user when a real choice exists: zero
  * associations means no context (the pre-delivery behaviour, unchanged), exactly
  * one is a FACT rather than a guess, and two or more is refused so the caller
- * asks. Same shape as `resolvePrTarget` in `write-cores.ts`, on purpose: an
+ * asks. Same shape as `resolvePrTarget` in `pr-target.ts`, on purpose: an
  * intent must not be able to open a PR toward a delivery it could not develop
  * against.
  */

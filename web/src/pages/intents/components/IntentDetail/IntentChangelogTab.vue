@@ -27,6 +27,7 @@ const OP_LABELS: Record<IntentLogOperation, string> = {
   spec_approved: t('intent.changelog.operationType.specApproved'),
   spec_unapproved: t('intent.changelog.operationType.specUnapproved'),
   pr_created: t('intent.changelog.operationType.prCreated'),
+  pr_skipped: t('intent.changelog.operationType.prSkipped'),
   pr_merged: t('intent.changelog.operationType.prMerged'),
   pr_closed: t('intent.changelog.operationType.prClosed'),
   pr_updated: t('intent.changelog.operationType.prUpdated'),

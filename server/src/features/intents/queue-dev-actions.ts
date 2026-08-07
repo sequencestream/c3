@@ -4,14 +4,19 @@
  * Executes `launch`, `resume` and `attach` — the whole per-intent development
  * loop the queue drives: prepare the git working directory, run dev turns,
  * judge completion, commit & push (healing a pre-commit lint failure exactly
- * once), and create the PR when the branch mode calls for one.
+ * once), mark the intent `done`, and only then create the PR toward the
+ * delivery the intent is associated with.
  *
- * Two invariants this file carries:
+ * Three invariants this file carries:
  * - a real human question is never answered by the queue. The checkpoint
  *   consensus may overrule a pending question, otherwise the intent is parked
  *   and a human is asked; the queue itself keeps going.
  * - an intent only reaches `done` through the existing judge → commit → push
  *   path. Nothing here shortcuts it.
+ * - a PR is never filed at a target the user did not decide: the base comes from
+ *   the intent's delivery association (`resolvePrTarget`), never from the
+ *   workspace mainline as a fallback, and an intent with no delivery gets no
+ *   automatic PR at all.
  *
  * Deliberately not here: in-flight registration, cooldown pre-writes and status
  * projection (the controller owns those), and any gate decision (the kernel
@@ -38,6 +43,7 @@ import {
   upsertIntentPr,
 } from './store.js'
 import { parsePrIdentity } from './pr-identity.js'
+import { prTargetFailureText, resolvePrTarget } from './pr-target.js'
 import { registerPendingDevLink } from './dev-link.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
@@ -170,12 +176,16 @@ export async function runDevelopLoop(
       const committed = await commitWithLintHeal(ctx, fresh, sessionId, record, signal)
       if (committed === 'aborted' || ctx.isDisposed()) return
       if (committed === 'failed') return // recordFailure already applied
-      await maybeCreatePr(ctx, fresh)
       updateStatus(fresh.id, 'done')
       publishIntentStatusTransition(ctx.workspacePath, fresh, fresh.status, 'done')
       ctx.markCompleted(fresh.id)
       ctx.hooks.broadcastIntents(ctx.workspacePath)
       recordSuccess(ctx, fresh.id)
+      // The PR comes AFTER `done` is written, and reads the intent back before
+      // acting: no automatic path may produce a PR for an intent that is still
+      // `in_progress`. Its outcome — created, skipped, or target unavailable —
+      // never changes the `done` this intent already reached.
+      await maybeCreatePr(ctx, fresh.id)
       console.log(`[c3:queue]「${fresh.title}」已完成 → done`)
       return
     }
@@ -383,12 +393,51 @@ async function commitWithLintHeal(
 }
 
 /**
- * Best-effort PR creation after a successful commit+push, gated by git mode:
- * `worktree` creates the PR, `current-branch` never does.
+ * Best-effort PR creation after a successful commit+push and the `done` write.
+ *
+ * Three gates before any forge work, in this order:
+ *  - git mode: `worktree` creates PRs, `current-branch` never does;
+ *  - the intent, re-read, is actually `done` — an automatic path never files a
+ *    PR for work that is still in progress;
+ *  - the PR target resolves through the SAME `resolvePrTarget` the human button
+ *    uses, so an automatic PR reaches exactly the targets a human could reach.
+ *
+ * The automatic policy on top of that resolution, and the only place it differs
+ * from the human path: an intent with NO linked delivery gets no PR at all
+ * (recorded as a `pr_skipped` log rather than silently dropped) instead of a
+ * mainline PR nobody decided on, and an unresolvable target raises a todo. There
+ * is no fallback to the mainline in either case.
  */
-async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void> {
+async function maybeCreatePr(ctx: QueueActionContext, intentId: string): Promise<void> {
   if (getGitBranchMode(ctx.workspacePath) !== 'worktree') return
-  const prResult = await createPrForIntent(ctx, req).catch((err) => {
+  const req = getIntent(intentId)
+  if (!req) return
+  if (req.status !== 'done') return
+
+  const target = resolvePrTarget(ctx.workspacePath, req, undefined)
+  if (!target.ok) {
+    const detail = prTargetFailureText(target.code)
+    console.warn(`[c3:queue]「${req.title}」${detail}`)
+    ctx.hooks.createUserTodo({
+      workspacePath: ctx.workspacePath,
+      intentId: req.id,
+      sessionId: req.lastWorkSessionId,
+      title: `「${req.title}」${detail}`,
+      reasonCode: 'pr_target_unavailable',
+    })
+    return
+  }
+  if (target.deliveryId === null) {
+    // No delivery to file against. The code is committed and pushed on the
+    // intent's own branch; the user links a delivery and creates the PR by hand.
+    safeInsertIntentLog(req.id, 'pr_skipped', '未关联交付,未创建 PR', 'automation')
+    ctx.hooks.broadcastIntents(ctx.workspacePath)
+    console.log(`[c3:queue]「${req.title}」未关联交付,未创建 PR`)
+    return
+  }
+
+  const { deliveryId, baseBranch } = target
+  const prResult = await createPrForIntent(ctx, req, baseBranch).catch((err) => {
     console.warn(`[c3:queue]「${req.title}」PR 创建异常: ${errText(err)}`)
     return null
   })
@@ -398,15 +447,17 @@ async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void
     const identity = parsePrIdentity(prResult.prUrl)
     upsertIntentPr({
       intentId: req.id,
+      deliveryId,
       number: prResult.prId,
       status: 'reviewing',
       forge: identity.forge ?? getForgeOverride(ctx.workspacePath) ?? null,
       repo: identity.repo,
       url: prResult.prUrl || null,
       headBranch: req.branchName ?? null,
-      baseBranch: prResult.baseBranch,
+      baseBranch,
     })
     safeInsertIntentLog(req.id, 'pr_created', `创建 PR #${prResult.prId}`, 'automation')
+    ctx.hooks.broadcastIntents(ctx.workspacePath)
     console.log(`[c3:queue]「${req.title}」PR #${prResult.prId} 已创建`)
 
     const headBranch = req.branchName ?? undefined
@@ -416,8 +467,9 @@ async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void
         prId: prResult.prId,
         prUrl: prResult.prUrl,
         headBranch,
-        baseBranch: prResult.baseBranch,
+        baseBranch,
         intentId: req.id,
+        deliveryId,
       },
       ctx.hooks.normalizeEvent,
       (event) =>
@@ -435,13 +487,9 @@ async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void
 async function createPrForIntent(
   ctx: QueueActionContext,
   req: Intent,
-): Promise<
-  | { ok: true; prId: string; prUrl: string; baseBranch: string }
-  | { ok: false; error: string }
-  | null
-> {
+  baseBranch: string,
+): Promise<{ ok: true; prId: string; prUrl: string } | { ok: false; error: string } | null> {
   const headBranch = req.branchName ?? undefined
-  const baseBranch = getDefaultMainBranch(ctx.workspacePath) ?? 'main'
   const bodyParts: string[] = [req.content]
   if (req.dependsOn.length > 0) {
     bodyParts.push('', '## 依赖需求')
@@ -459,7 +507,7 @@ async function createPrForIntent(
     getForgeOverride(ctx.workspacePath),
   )
   if (prResult.ok && prResult.prId) {
-    return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '', baseBranch }
+    return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '' }
   }
   return { ok: false as const, error: prResult.error ?? 'Unknown error' }
 }

@@ -692,6 +692,12 @@ export const INTENT_LOG_OPERATIONS = [
   'spec_approved',
   'spec_unapproved',
   'pr_created',
+  // An automatic path finished the work but deliberately created NO PR (the
+  // intent is not associated with any delivery, so there is no target it may
+  // file against). Its own operation rather than a flavour of `pr_created`:
+  // "created" and "deliberately skipped" are two different audit facts, and only
+  // separate rows make either searchable.
+  'pr_skipped',
   'pr_merged',
   'pr_closed',
   'pr_updated',

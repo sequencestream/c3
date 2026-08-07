@@ -1084,6 +1084,7 @@
         "specApproved": "スペック承認",
         "specUnapproved": "承認取消",
         "prCreated": "PR 作成",
+        "prSkipped": "PR 未作成",
         "prMerged": "PR マージ済み",
         "prClosed": "PR クローズ",
         "prUpdated": "PR 更新",
@@ -2166,6 +2167,7 @@
       "gitCleanupCommitPushFailed": "作業セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",
       "gitCleanupGhUnavailable": "PRを作成できません。gh CLIが利用できないかログインしていません: {detail}。gh をインストール/認証してから手動でPRを作成してください。",
       "gitCleanupPrFailed": "PRの自動作成に失敗しました: {detail}。手動でPRを作成してください。",
+      "gitCleanupPrTargetUnavailable": "PR は作成されませんでした: {detail}。ブランチが準備済みのデリバリーをこの意図に関連付けてから、手動で PR を作成してください。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
       "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。作業を開始する前に手動で同期してください: {message}",
       "worktreeBaseMismatch": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしていません。c3 は自動で再作成もマージもしません — 再作成するか、そのブランチをマージしてください。",
@@ -3543,7 +3545,8 @@
       "commit_failed": "コミット/プッシュ失敗",
       "turn_error": "開発ターンがエラー",
       "judge_stuck": "実際には未完了と判定",
-      "judge_unavailable": "完了判定が利用不可(ツール agent 設定)"
+      "judge_unavailable": "完了判定が利用不可(ツール agent 設定)",
+      "pr_target_unavailable": "PR のターゲットが利用不可 — PR 未作成"
     }
   }
 }

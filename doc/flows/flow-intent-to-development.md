@@ -281,16 +281,20 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
 - **会话结束时的 Git/PR 清理(手动,`RM-R26`)。** 当一个**手动启动**的工作会话落定
   (完成 / 出错 / 终止)时,服务端会在**不**改变状态的情况下闭合 Git/PR 环节。在
   `worktree` 模式(或 `current-branch` 且偏离 `defaultMainBranch`)且存在变更时,
-  它会通过工作区的 forge-aware 分发器提交、推送并创建 PR/MR:显式的
+  它会提交并推送;**只有当意图状态为 `done` 时**才继续建 PR —— 意图仍在开发中时,
+  会话结束只做提交/推送与字段回写,这是一次正常跳过而非失败。建 PR 时目标与手动入口
+  同一份解析:关联交付 ⇒ base 为该交付分支;未关联交付 ⇒ 不建 PR,只记一条 `pr_skipped`
+  日志;目标不可用 ⇒ 不建 PR 并推一条待办,**绝不回退主线**。创建走工作区的 forge-aware
+  分发器:显式的
   工作区 `forge` 设置为 `github` 或 `gitlab` 会覆盖仓库来源检测,而
   `auto`(或缺省值)使用检测。对 GitHub 调用 `gh`,对 GitLab 调用 `glab`,然后回写
   `branchName`、`latestCommitHash`,以及一条 `reviewing` 的 PR 行(连同来源与 head/base
   分支);已经有活跃 PR 的意图会被刷新(提交/推送 +
   `latestCommitHash`)但**不**重新建 PR。`current-branch` 且**在** main 分支上是一次
   普通的成功跳过。项目的 orchestrator 正在主动驱动的会话属于自动化所有(`RM-A5`),
-  **不**在此清理 — 手动与自动化互斥。在其自身成功提交与推送之后,
-  orchestrator 创建同样的 forge-aware PR/MR:显式的工作区 `forge`
-  覆盖会选择 GitHub/`gh` 或 GitLab/`glab`;`auto` 或缺省设置使用仓库来源
+  **不**在此清理 — 手动与自动化互斥。在其自身成功提交、推送并置 `done` 之后,
+  orchestrator 按同一套目标解析与自动策略创建同样的 forge-aware PR/MR:显式的工作区
+  `forge` 覆盖会选择 GitHub/`gh` 或 GitLab/`glab`;`auto` 或缺省设置使用仓库来源
   检测。
 - **手动创建 PR 的分阶段反馈。** 详情头部的「创建 PR」按钮走与上述清理相同的
   一条创建链路,闸门顺序为:`worktree` 模式、非空分支、目标交付可用、目标

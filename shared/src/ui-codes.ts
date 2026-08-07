@@ -173,6 +173,14 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.gitCleanupPrFailed',
     params: ['detail'],
   },
+  // The work was committed and pushed, but the PR target could not be resolved
+  // (delivery branch not ready, several deliveries linked, delivery unknown or
+  // not linked). No PR was created and none was filed against the mainline —
+  // which delivery it belongs to is the user's call.
+  'intent.gitCleanupPrTargetUnavailable': {
+    key: 'error.intent.gitCleanupPrTargetUnavailable',
+    params: ['detail'],
+  },
   'intent.specAgentUnsupported': { key: 'error.intent.specAgentUnsupported' },
   'intent.specWriteFailed': { key: 'error.intent.specWriteFailed', params: ['message'] },
   'intent.specNotWritten': { key: 'error.intent.specNotWritten' },

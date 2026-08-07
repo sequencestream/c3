@@ -148,6 +148,14 @@ vi.mock('../../git.js', () => ({
   gitRecentLog: vi.fn(),
 }))
 
+// The PR target resolution runs for real (it is the whole point of these
+// assertions); only the delivery it reads is stubbed.
+vi.mock('../deliveries/store.js', () => ({
+  getDelivery: vi.fn(),
+  // Read by the delivery gate on every pass; no delivery-gate case here.
+  listDeliveries: vi.fn(() => []),
+}))
+
 // The park funnel is a side channel with its own store and its own tests; stub it
 // here so these suites keep mocking persistence wholesale instead of reaching the
 // real c3.db through the park transitions they exercise.
@@ -193,6 +201,8 @@ import {
   getSddEnabled,
 } from '../../kernel/config/index.js'
 import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
+import { getDelivery } from '../deliveries/store.js'
+import type { Delivery } from '@ccc/shared/protocol'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { JudgeUnavailableError, judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
@@ -242,6 +252,23 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   sessionActive: false,
   actionDescriptor: null,
   ...overrides,
+})
+
+/** A delivery whose branch is ready — the target an automatic PR may reach. */
+const makeDelivery = (over: Partial<Delivery> & { id: string }): Delivery => ({
+  workspaceId: 'test-proj',
+  title: 'Delivery α',
+  description: '',
+  status: 'integrating',
+  startDate: null,
+  endDate: null,
+  branchName: 'delivery/alpha',
+  baseBranch: 'main',
+  branchReady: true,
+  integration: { merged: 0, total: 1 },
+  createdAt: 1,
+  updatedAt: 1,
+  ...over,
 })
 
 describe('queue dev actions — branch-mode git alignment', () => {
@@ -411,11 +438,17 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(input.prompt).not.toContain('Approved spec for this intent')
   })
 
-  it('worktree: 端到端 develop→commit→PR 全针对 worktree 工作目录,upsertIntentPr reviewing', async () => {
+  it('worktree: 端到端 develop→commit→PR 全针对 worktree 工作目录,base 为关联交付分支', async () => {
     const proj = '/test/wt-e2e'
-    const intent = makeIntent({ id: 'Z', status: 'todo', branchName: 'intent/Z' })
+    const intent = makeIntent({
+      id: 'Z',
+      status: 'todo',
+      branchName: 'intent/Z',
+      linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+    })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getDelivery).mockReturnValue(makeDelivery({ id: 'D1' }))
     vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-Z', branchName: 'intent/Z' })
     vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-Z')
     // Mutate status so the post-done pass stops re-picking the same intent.
@@ -440,16 +473,19 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(gitDiffStat).toHaveBeenCalledWith('/tmp/wt-Z')
     expect(gitRecentLog).toHaveBeenCalledWith('/tmp/wt-Z')
     expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-Z', expect.stringContaining('feat:'))
+    // The base is the linked delivery's branch — the workspace mainline is only
+    // the worktree baseline, never the PR target.
     expect(createForgePr).toHaveBeenCalledWith(
       '/tmp/wt-Z',
       expect.any(String),
       expect.any(String),
       'intent/Z',
-      'main',
+      'delivery/alpha',
       undefined,
     )
     expect(upsertIntentPr).toHaveBeenCalledWith({
       intentId: 'Z',
+      deliveryId: 'D1',
       number: '77',
       status: 'reviewing',
       // `http://x/pull/77` names no known host ⇒ GitLab by the same fallback
@@ -459,9 +495,15 @@ describe('queue dev actions — branch-mode git alignment', () => {
       repo: null,
       url: 'http://x/pull/77',
       headBranch: 'intent/Z',
-      baseBranch: 'main',
+      baseBranch: 'delivery/alpha',
     })
     expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
+    // `done` is written BEFORE the PR is created: no automatic path may produce
+    // a PR for an intent that is still in progress.
+    const doneCall = vi.mocked(updateStatus).mock.calls.findIndex(([, status]) => status === 'done')
+    expect(vi.mocked(updateStatus).mock.invocationCallOrder[doneCall]).toBeLessThan(
+      vi.mocked(createForgePr).mock.invocationCallOrder[0],
+    )
     // The changelog records the automated PR creation exactly once, actor `automation`.
     const prLogs = vi.mocked(safeInsertIntentLog).mock.calls.filter(([, op]) => op === 'pr_created')
     expect(prLogs).toEqual([['Z', 'pr_created', '创建 PR #77', 'automation']])
@@ -469,9 +511,15 @@ describe('queue dev actions — branch-mode git alignment', () => {
 
   it('worktree: explicit GitLab override uses the forge dispatcher and writes MR fields', async () => {
     const proj = '/test/wt-gitlab'
-    const intent = makeIntent({ id: 'GL', status: 'todo', branchName: 'intent/GL' })
+    const intent = makeIntent({
+      id: 'GL',
+      status: 'todo',
+      branchName: 'intent/GL',
+      linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+    })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getDelivery).mockReturnValue(makeDelivery({ id: 'D1' }))
     vi.mocked(getForgeOverride).mockReturnValue('gitlab')
     vi.mocked(createWorktree).mockReturnValue({
       worktreePath: '/tmp/wt-GL',
@@ -504,19 +552,148 @@ describe('queue dev actions — branch-mode git alignment', () => {
       expect.any(String),
       expect.any(String),
       'intent/GL',
-      'main',
+      'delivery/alpha',
       'gitlab',
     )
     expect(upsertIntentPr).toHaveBeenCalledWith({
       intentId: 'GL',
+      deliveryId: 'D1',
       number: '19',
       status: 'reviewing',
       forge: 'gitlab',
       repo: 'group/project',
       url: 'https://gitlab.example/group/project/-/merge_requests/19',
       headBranch: 'intent/GL',
-      baseBranch: 'main',
+      baseBranch: 'delivery/alpha',
     })
+  })
+
+  // ── The automatic PR target: association decides, never the mainline ────────
+
+  it('worktree: 未关联交付时置 done、不建 PR,并记一条 pr_skipped 日志', async () => {
+    const proj = '/test/wt-no-delivery'
+    const intent = makeIntent({ id: 'ND', status: 'todo', branchName: 'intent/ND' })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(createWorktree).mockReturnValue({
+      worktreePath: '/tmp/wt-ND',
+      branchName: 'intent/ND',
+    })
+    vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-ND')
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'ND')
+
+    // The work is committed and pushed and the intent completes — only the PR is
+    // withheld, and never re-pointed at the mainline.
+    expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-ND', expect.stringContaining('feat:'))
+    expect(updateStatus).toHaveBeenCalledWith('ND', 'done')
+    expect(createForgePr).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
+    expect(hooks.createUserTodo).not.toHaveBeenCalled()
+    expect(vi.mocked(safeInsertIntentLog).mock.calls).toEqual([
+      ['ND', 'pr_skipped', '未关联交付,未创建 PR', 'automation'],
+    ])
+  })
+
+  it('worktree: 关联交付分支未就绪时不建 PR,推一条说明原因的待办', async () => {
+    const proj = '/test/wt-branch-not-ready'
+    const intent = makeIntent({
+      id: 'NR',
+      status: 'todo',
+      branchName: 'intent/NR',
+      linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+    })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getDelivery).mockReturnValue(makeDelivery({ id: 'D1', branchReady: false }))
+    vi.mocked(createWorktree).mockReturnValue({
+      worktreePath: '/tmp/wt-NR',
+      branchName: 'intent/NR',
+    })
+    vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-NR')
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'NR')
+
+    expect(createForgePr).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
+    expect(hooks.createUserTodo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intentId: 'NR',
+        reasonCode: 'pr_target_unavailable',
+        title: expect.stringContaining('delivery.guard.branchNotReady'),
+      }),
+    )
+    expect(vi.mocked(safeInsertIntentLog).mock.calls.some(([, op]) => op === 'pr_created')).toBe(
+      false,
+    )
+  })
+
+  it('worktree: 状态未真正写入 done 时(重读仍为 in_progress)不产生任何 PR', async () => {
+    const proj = '/test/wt-not-done'
+    const intent = makeIntent({
+      id: 'IP',
+      status: 'todo',
+      branchName: 'intent/IP',
+      linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+    })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getDelivery).mockReturnValue(makeDelivery({ id: 'D1' }))
+    vi.mocked(createWorktree).mockReturnValue({
+      worktreePath: '/tmp/wt-IP',
+      branchName: 'intent/IP',
+    })
+    vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-IP')
+    // The `done` write does not land (a concurrent write, a store rejection): the
+    // re-read still says `in_progress`, so the PR step must not run at all.
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status === 'done' ? 'in_progress' : status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'IP')
+
+    expect(createForgePr).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
+    expect(hooks.createUserTodo).not.toHaveBeenCalled()
+    expect(vi.mocked(safeInsertIntentLog).mock.calls.some(([, op]) => op.startsWith('pr_'))).toBe(
+      false,
+    )
   })
 
   it('current-branch: 端到端 commit 用 workspacePath 且不建 worktree、不建 PR', async () => {
@@ -553,9 +730,15 @@ describe('queue dev actions — branch-mode git alignment', () => {
 
   it('worktree: PR 创建失败不写 PR 字段也不记 pr_created 日志', async () => {
     const proj = '/test/wt-pr-fail'
-    const intent = makeIntent({ id: 'F', status: 'todo', branchName: 'intent/F' })
+    const intent = makeIntent({
+      id: 'F',
+      status: 'todo',
+      branchName: 'intent/F',
+      linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+    })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getDelivery).mockReturnValue(makeDelivery({ id: 'D1' }))
     vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-F', branchName: 'intent/F' })
     vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-F')
     vi.mocked(updateStatus).mockImplementation((_id, status) => {

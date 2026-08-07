@@ -19,14 +19,9 @@ import type {
 } from '@ccc/shared/protocol'
 import { CREATE_PR_STAGES } from '@ccc/shared/protocol'
 import { closeForgePr, commitAndPush, createForgePr, hasDiffAgainstBase } from '../../git.js'
-import {
-  getDefaultMainBranch,
-  getForgeOverride,
-  getGitBranchMode,
-} from '../../kernel/config/index.js'
-import { getDelivery } from '../deliveries/store.js'
-import { pathToId } from '../../state.js'
+import { getForgeOverride, getGitBranchMode } from '../../kernel/config/index.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
+import { resolvePrTarget } from './pr-target.js'
 import type { GenericEvent } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import { normalizeBranchName } from './dependency-gate.js'
@@ -81,68 +76,6 @@ export interface CreatePrDeps {
    * a gate, a Git action or the returned result.
    */
   onStage?: (stage: CreatePrStage) => void
-}
-
-/**
- * Where one create_pr run points: the delivery it belongs to (`null` = no
- * delivery binding, the pre-delivery mainline behaviour) and the branch its PR
- * is opened against. Resolved ONCE per run and threaded through the diff gate,
- * the forge create, the ledger row and the `pr:create` event.
- */
-type PrTargetResolution =
-  { ok: true; deliveryId: string | null; baseBranch: string } | { ok: false; code: string }
-
-/**
- * Resolve which delivery this create targets, and the base branch that follows
- * from it.
- *
- * An explicit `deliveryId` wins. Without one, the intent's association edges
- * decide: none → the mainline (a workspace that never adopted deliveries keeps
- * working exactly as before), exactly one → that delivery, several → refused.
- * "Several" is the one case where a choice exists and only the user can make it;
- * picking the first edge would silently file the PR against a delivery the user
- * never chose. The same resolution serves the human and the advisor entry points,
- * so an agent cannot reach a target a human could not.
- *
- * A named delivery must exist, belong to THIS workspace, and already be linked
- * to the intent — the link check keeps `intent_prs.delivery_id` from pointing at
- * a delivery `intent_deliveries` knows nothing about, which would file the PR row
- * under a group the intent detail never renders. Only then does branch readiness
- * apply, so an unusable id never surfaces as "branch not ready".
- */
-function resolvePrTarget(
-  workspacePath: string,
-  intent: Intent,
-  requestedDeliveryId: string | undefined,
-): PrTargetResolution {
-  const linked = intent.linkedDeliveries
-  let deliveryId: string | null
-  if (requestedDeliveryId) {
-    deliveryId = requestedDeliveryId
-  } else if (linked.length === 0) {
-    deliveryId = null
-  } else if (linked.length === 1) {
-    deliveryId = linked[0].id
-  } else {
-    return { ok: false, code: 'delivery.prCreateAmbiguous' }
-  }
-
-  if (deliveryId === null) {
-    return { ok: true, deliveryId: null, baseBranch: getDefaultMainBranch(workspacePath) ?? 'main' }
-  }
-
-  const delivery = getDelivery(deliveryId)
-  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
-    return { ok: false, code: 'delivery.prCreateDeliveryUnknown' }
-  }
-  if (!linked.some((d) => d.id === deliveryId)) {
-    return { ok: false, code: 'delivery.prCreateNotLinked' }
-  }
-  const branchName = normalizeBranchName(delivery.branchName)
-  if (!delivery.branchReady || branchName === null) {
-    return { ok: false, code: 'delivery.guard.branchNotReady' }
-  }
-  return { ok: true, deliveryId, baseBranch: branchName }
 }
 
 /**

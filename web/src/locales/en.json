@@ -2574,6 +2574,9 @@
       "edit": {
         "label": "Edit"
       },
+      "editTitle": {
+        "label": "Edit delivery"
+      },
       "save": {
         "label": "Save"
       },

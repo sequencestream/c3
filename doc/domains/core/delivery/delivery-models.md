@@ -138,7 +138,7 @@ fork = merge-base(主线, 意图 commit)      # 意图从主线离开的位置
 
 ## DeliveryTransitionPlan
 
-服务端为交付当前状态计算的可达性 + 缺口。`targets` 为合法推进/回退目标(非法目标不出现),每个目标带 `humanAction`(是否人工可写)、`guard`(`satisfied`/`failed`)与 `reasons`。页面据此渲染分段选择器与常驻缺口,不复制状态规则。
+服务端为交付当前状态计算的可达性 + 缺口。`targets` 为合法推进/回退目标(非法目标不出现),每个目标带 `humanAction`(是否人工可写)、`guard`(`satisfied`/`failed`)与 `reasons`。页面据此渲染标题栏的可达目标推进按钮与标题栏下方的缺口异常框,不复制状态规则。
 
 ## 持久化存储(c3.db)
 

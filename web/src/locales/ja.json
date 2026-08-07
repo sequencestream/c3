@@ -2575,6 +2575,9 @@
       "edit": {
         "label": "編集"
       },
+      "editTitle": {
+        "label": "デリバリーを編集"
+      },
       "save": {
         "label": "保存"
       },

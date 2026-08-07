@@ -2,37 +2,30 @@
 /*
  * DeliveryOverviewTab.vue — 概览 tab。
  *
- * 顶部:状态分段选择器 + 常驻缺口(含集成就熟 N/M);`current-branch` 模式下
- * 追加说明文案(交付在此仅为聚合视图,分支/PR/合并动作不可用——本阶段本就无这些
- * 动作,文案先行)。下方:概览元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接/
- * 创建与更新时间/描述)与内联编辑表单。不设 PR、设置或分支独立 Tab。
+ * 概览不含任何状态内容——状态的展示与推进整体收敛在 DeliveryDetail 的常驻标题栏。
+ * 这里只回归「交付分支 / 合并 / 元信息」:`current-branch` 模式下顶部一句说明文案
+ * (交付在此仅为聚合视图,分支/PR/合并动作不可用),下方是分支初始化/同步主线区、
+ * 合并区,以及概览元信息(基线分支/交付分支/起止日期/交付 PR 链接/创建与更新时间/
+ * 描述)与打开编辑弹窗的入口。不设 PR、设置或分支独立 Tab。
  */
 import { computed, ref, watch } from 'vue'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
-import type {
-  Delivery,
-  DeliveryPr,
-  DeliveryStatus,
-  DeliveryTransitionPlan,
-} from '@ccc/shared/protocol'
+import type { Delivery, DeliveryPr } from '@ccc/shared/protocol'
 import { formatDate } from '@/lib/intent-list-view'
 import {
-  DELIVERY_STATUS_LABEL_KEYS,
   defaultDeliveryBranchName,
   epochMsToCalendarDate,
-  calendarDateToEpochMs,
   isDeliveryTerminal,
   type DeliveryBranchInitPhase,
   type DeliveryBranchInitState,
 } from '@/lib/delivery-view'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
-import DeliveryStatusSelector from './DeliveryStatusSelector.vue'
+import DeliveryEditDialog from './DeliveryEditDialog.vue'
 
 const { t, locale } = useTypedI18n()
 
 const props = defineProps<{
   delivery: Delivery
-  plan: DeliveryTransitionPlan
   branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
   /** How far mainline is ahead of the delivery branch; null = unknown / N/A. */
@@ -55,13 +48,11 @@ const emit = defineEmits<{
       endDate?: number | null
     },
   ]
-  transition: [to: DeliveryStatus, confirmVerified: boolean]
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
   'sync-mainline': [deliveryId: string]
   'create-delivery-pr': [deliveryId: string]
   'sync-delivery-pr': [deliveryId: string]
-  jump: [target: 'associated-intents' | 'workspace-settings' | 'branch']
 }>()
 
 // ---- Branch init form ----
@@ -196,39 +187,20 @@ function focusBranchInit(): void {
 
 defineExpose({ focusBranchInit })
 
-// ---- Inline edit form ----
-const editing = ref(false)
-const editTitle = ref('')
-const editDescription = ref('')
-const editStart = ref('')
-const editEnd = ref('')
+// ---- Edit dialog ----
+//
+// 概览只持有 open 状态与「编辑」入口;字段、预填与日期编码整体在弹窗里,
+// 保存后的 update 载荷与内联表单时期一字不差。
+const editOpen = ref(false)
 
-function startEdit(): void {
-  editTitle.value = props.delivery.title
-  editDescription.value = props.delivery.description
-  editStart.value = epochMsToCalendarDate(props.delivery.startDate)
-  editEnd.value = epochMsToCalendarDate(props.delivery.endDate)
-  editing.value = true
-}
-
-function saveEdit(): void {
-  if (!editTitle.value.trim()) return
-  emit('update', {
-    deliveryId: props.delivery.id,
-    title: editTitle.value.trim(),
-    description: editDescription.value,
-    startDate: editStart.value ? calendarDateToEpochMs(editStart.value) : null,
-    endDate: editEnd.value ? calendarDateToEpochMs(editEnd.value) : null,
-  })
-  editing.value = false
-}
-
-function onJump(target: 'associated-intents' | 'workspace-settings' | 'branch'): void {
-  emit('jump', target)
-}
-
-function statusLabel(status: DeliveryStatus): string {
-  return t(DELIVERY_STATUS_LABEL_KEYS[status])
+function saveEdit(payload: {
+  title: string
+  description: string
+  startDate: number | null
+  endDate: number | null
+}): void {
+  editOpen.value = false
+  emit('update', { deliveryId: props.delivery.id, ...payload })
 }
 </script>
 
@@ -242,15 +214,6 @@ function statusLabel(status: DeliveryStatus): string {
     >
       {{ t('delivery.page.currentBranchNote.label') }}
     </p>
-
-    <DeliveryStatusSelector
-      :status="props.delivery.status"
-      :plan="props.plan"
-      :integration="props.delivery.integration"
-      :workspace-git-branch-mode="props.workspaceGitBranchMode"
-      @transition="(to, confirm) => emit('transition', to, confirm)"
-      @jump="onJump"
-    />
 
     <!-- 交付分支区(仅 worktree 模式):未就绪 → 初始化表单;就绪 → 分支名;
          终态 → 仅手动清理入口(需二次确认,只删本地引用,远端分支永不自动删)。 -->
@@ -469,10 +432,6 @@ function statusLabel(status: DeliveryStatus): string {
     </div>
 
     <dl class="delivery-meta" data-testid="delivery-meta">
-      <div class="delivery-meta-row" data-testid="delivery-meta-status">
-        <dt>{{ t('delivery.page.meta.status.label') }}</dt>
-        <dd>{{ statusLabel(props.delivery.status) }}</dd>
-      </div>
       <div class="delivery-meta-row" data-testid="delivery-meta-base-branch">
         <dt>{{ t('delivery.page.meta.baseBranch.label') }}</dt>
         <dd>{{ props.delivery.baseBranch }}</dd>
@@ -524,70 +483,23 @@ function statusLabel(status: DeliveryStatus): string {
       </div>
     </dl>
 
-    <div v-if="!editing" class="delivery-overview-actions">
+    <div class="delivery-overview-actions">
       <button
         type="button"
         class="delivery-edit-btn"
         data-testid="delivery-edit-btn"
-        @click="startEdit"
+        @click="editOpen = true"
       >
         {{ t('delivery.action.edit.label') }}
       </button>
     </div>
 
-    <form
-      v-else
-      class="delivery-edit-form"
-      data-testid="delivery-edit-form"
-      @submit.prevent="saveEdit"
-    >
-      <label class="delivery-form-field">
-        <span>{{ t('delivery.action.form.titleLabel.label') }}</span>
-        <input
-          v-model="editTitle"
-          type="text"
-          data-testid="delivery-edit-title"
-          :placeholder="t('delivery.action.form.titlePlaceholder.label')"
-        />
-      </label>
-      <label class="delivery-form-field">
-        <span>{{ t('delivery.action.form.descriptionLabel.label') }}</span>
-        <textarea
-          v-model="editDescription"
-          rows="3"
-          data-testid="delivery-edit-desc"
-          :placeholder="t('delivery.action.form.descriptionPlaceholder.label')"
-        />
-      </label>
-      <div class="delivery-form-row">
-        <label class="delivery-form-field">
-          <span>{{ t('delivery.action.form.startDateLabel.label') }}</span>
-          <input v-model="editStart" type="date" data-testid="delivery-edit-start" />
-        </label>
-        <label class="delivery-form-field">
-          <span>{{ t('delivery.action.form.endDateLabel.label') }}</span>
-          <input v-model="editEnd" type="date" data-testid="delivery-edit-end" />
-        </label>
-      </div>
-      <div class="delivery-edit-actions">
-        <button
-          type="submit"
-          class="delivery-save-btn"
-          :disabled="!editTitle.trim()"
-          data-testid="delivery-edit-save"
-        >
-          {{ t('delivery.action.save.label') }}
-        </button>
-        <button
-          type="button"
-          class="delivery-cancel-edit-btn"
-          data-testid="delivery-edit-cancel"
-          @click="editing = false"
-        >
-          {{ t('common.action.cancel.label') }}
-        </button>
-      </div>
-    </form>
+    <DeliveryEditDialog
+      :open="editOpen"
+      :delivery="props.delivery"
+      @confirm="saveEdit"
+      @cancel="editOpen = false"
+    />
   </div>
 </template>
 
@@ -840,8 +752,7 @@ function statusLabel(status: DeliveryStatus): string {
 .delivery-overview-actions {
   display: flex;
 }
-.delivery-edit-btn,
-.delivery-save-btn {
+.delivery-edit-btn {
   padding: var(--sp-1) var(--sp-3);
   font: inherit;
   color: #fff;
@@ -849,51 +760,5 @@ function statusLabel(status: DeliveryStatus): string {
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-}
-.delivery-cancel-edit-btn {
-  padding: var(--sp-1) var(--sp-3);
-  font: inherit;
-  color: var(--c-text);
-  background: transparent;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.delivery-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.delivery-form-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-}
-.delivery-form-field input,
-.delivery-form-field textarea {
-  font: inherit;
-  font-size: var(--fs-body);
-  color: var(--c-text);
-  background: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-1) var(--sp-2);
-}
-.delivery-form-row {
-  display: flex;
-  gap: var(--sp-2);
-}
-.delivery-form-row .delivery-form-field {
-  flex: 1;
-}
-.delivery-edit-actions {
-  display: flex;
-  gap: var(--sp-2);
-}
-.delivery-save-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 </style>

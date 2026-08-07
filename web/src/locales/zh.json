@@ -2528,9 +2528,17 @@
         }
       }
     },
+    "list": {
+      "collapse": {
+        "tooltip": "收起交付列表(隐藏次要信息,为详情腾出空间)"
+      },
+      "expand": {
+        "tooltip": "展开交付列表(显示列表标题与集成进度)"
+      }
+    },
     "action": {
       "create": {
-        "label": "新建交付"
+        "tooltip": "新建交付"
       },
       "edit": {
         "label": "编辑"

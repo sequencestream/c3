@@ -2529,9 +2529,17 @@
         }
       }
     },
+    "list": {
+      "collapse": {
+        "tooltip": "납품 목록 접기(보조 정보를 숨겨 상세 영역을 넓힘)"
+      },
+      "expand": {
+        "tooltip": "납품 목록 펼치기(목록 제목과 통합 진행 상황 표시)"
+      }
+    },
     "action": {
       "create": {
-        "label": "새 납품"
+        "tooltip": "새 납품"
       },
       "edit": {
         "label": "편집"

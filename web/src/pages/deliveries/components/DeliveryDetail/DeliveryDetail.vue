@@ -207,7 +207,11 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
 </template>
 
 <style scoped>
+/* 详情吃掉右栏剩余宽度(桌面端 MobileStack 为 display:contents,本容器直接是页面
+   shell 的 flex 子项);min-width:0 让内部长文本可收缩而不撑破布局。 */
 .delivery-detail {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   height: 100%;

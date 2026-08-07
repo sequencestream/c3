@@ -102,9 +102,11 @@ import {
   cancelDeliveryHandler,
   cleanupDeliveryBranchHandler,
   createDeliveryHandler,
+  createDeliveryPrHandler,
   getDeliveryDetailHandler,
   initDeliveryBranchHandler,
   syncDeliveryMainlineHandler,
+  syncDeliveryPrHandler,
   listDeliveriesHandler,
   linkIntentToDeliveryHandler,
   transitionDeliveryHandler,
@@ -228,6 +230,11 @@ export const handlerMap: HandlerMap = {
   transition_delivery: transitionDeliveryHandler,
   init_delivery_branch: initDeliveryBranchHandler,
   sync_delivery_mainline: syncDeliveryMainlineHandler,
+  // 交付 PR (「交付分支 → 主线」). Workspace members, NOT admins: the forge's own
+  // protected branches and approvals are the real gate, and a second one in c3
+  // would only duplicate it.
+  create_delivery_pr: createDeliveryPrHandler,
+  sync_delivery_pr: syncDeliveryPrHandler,
   cleanup_delivery_branch: cleanupDeliveryBranchHandler,
   link_intent_to_delivery: linkIntentToDeliveryHandler,
   unlink_intent_from_delivery: unlinkIntentFromDeliveryHandler,

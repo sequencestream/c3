@@ -142,6 +142,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
     activeDeliverySyncPhase,
+    activeDeliveryPr,
+    activeDeliveryPrBusy,
+    autoSyncedDeliveryPrs,
     activeDeliveryBranchInit,
     discussionMessages,
     discussionMaxSeq,
@@ -919,6 +922,21 @@ export function installMessageHandler(ctx: AppCtx): void {
         activeDeliveryPlan.value = msg.transitionPlan
         activeDeliveryIntents.value = msg.associatedIntents
         activeDeliveryMainlineAhead.value = msg.mainlineAhead
+        activeDeliveryPr.value = msg.deliveryPr
+        activeDeliveryPrBusy.value = false
+        // 「进页自动同步一次」: c3 never polls the forge, so the window between a
+        // human merging on the forge and c3 knowing it is closed by syncing once
+        // when the delivery is opened. Guarded by the once-per-open set — this
+        // very frame is also the sync's own reply, and re-firing on it would loop.
+        if (
+          msg.deliveryPr &&
+          msg.delivery.status !== 'delivered' &&
+          msg.delivery.status !== 'cancelled' &&
+          !autoSyncedDeliveryPrs.value.has(msg.delivery.id)
+        ) {
+          autoSyncedDeliveryPrs.value.add(msg.delivery.id)
+          ctx.syncDeliveryPr(msg.delivery.id)
+        }
         // Only a `link_intent_to_delivery` reply carries this: the link DID go
         // through, so it is a toast, not an error — the user may well have meant
         // to develop on mainline first and rebase later.
@@ -928,6 +946,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.persistViewMode()
         break
       case 'delivery_transition_failed':
+        // A refused status write is also the terminal of a delivery-PR sync that
+        // found `merged` but could not settle it — the button must stop spinning.
+        activeDeliveryPrBusy.value = false
         // Server truth wins: re-fetch the plan so the persistent gap list under
         // the selector shows the CURRENT gaps (the client's may be stale), then
         // surface the `delivery.error.*` copy in a toast.
@@ -1287,6 +1308,22 @@ export function installMessageHandler(ctx: AppCtx): void {
             msg.error.code === 'delivery.initFailed')
         ) {
           activeDeliveryBranchInit.value = null
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
+        // A delivery-PR round trip failed. Every one of these codes means NOTHING
+        // moved server-side, so clearing the busy flag simply re-offers the retry.
+        if (
+          activeDeliveryPrBusy.value &&
+          (msg.error.code === 'delivery.deliveryPrForbidden' ||
+            msg.error.code === 'delivery.deliveryPrModeUnsupported' ||
+            msg.error.code === 'delivery.deliveryPrNoDiff' ||
+            msg.error.code === 'delivery.deliveryPrCreateFailed' ||
+            msg.error.code === 'delivery.deliveryPrNotFound' ||
+            msg.error.code === 'delivery.deliveryPrSyncFailed' ||
+            msg.error.code === 'delivery.guard.branchNotReady')
+        ) {
+          activeDeliveryPrBusy.value = false
           ctx.showToast(translateUiError(msg.error))
           break
         }

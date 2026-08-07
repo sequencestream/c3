@@ -33,6 +33,7 @@ import type {
   DepType,
   AssociatedIntent,
   Delivery,
+  DeliveryPr,
   DeliveryTransitionPlan,
   Discussion,
   GitActionFailureGuidance,
@@ -454,6 +455,22 @@ export function createState(deps: StateDeps) {
   const activeDeliveryMainlineAhead = ref<number | null>(null)
   /** In-flight 「同步主线」 phase for the open delivery; null = idle. */
   const activeDeliverySyncPhase = ref<'fetching' | 'merging' | 'pushing' | null>(null)
+  /**
+   * The open delivery's latest delivery PR (「交付分支 → 主线」), as the server
+   * listed it; `null` when none was opened. Never derived client-side — whether a
+   * delivery is merged, blocked or conflicting is forge truth the server settled.
+   */
+  const activeDeliveryPr = ref<DeliveryPr | null>(null)
+  /** Whether a `create_delivery_pr` / `sync_delivery_pr` round trip is in flight. */
+  const activeDeliveryPrBusy = ref(false)
+  /**
+   * Deliveries whose detail already auto-synced its PR once in this page session
+   * (the 「进页自动同步一次」 rule). Re-entering a delivery clears its entry, so
+   * the sync happens once per open rather than once per process — and never on
+   * every `delivery_detail` frame, which the sync's own reply would turn into a
+   * loop.
+   */
+  const autoSyncedDeliveryPrs = ref<Set<string>>(new Set())
   /**
    * In-flight branch-init state for the open delivery (phase progress). `null`
    * = no init running. Set when the init is sent, advanced by the server's
@@ -1120,6 +1137,9 @@ export function createState(deps: StateDeps) {
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
     activeDeliverySyncPhase,
+    activeDeliveryPr,
+    activeDeliveryPrBusy,
+    autoSyncedDeliveryPrs,
     activeDeliveryBranchInit,
     deliveryLinkIntents,
     currentIntentSessions,

@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+/**
+ * A scriptable stand-in for the `gh` CLI, used by `e2e-delivery-pr-test.mjs`.
+ *
+ * WHY THIS IS NOT "faking the boundary under test". The delivery-PR e2e is about
+ * the SETTLEMENT chain — gates, idempotency ordering, the three failure layers,
+ * and the `delivered` atomic write plus its chained actions. The forge is that
+ * chain's INPUT, not its subject: what a real `gh` would contribute is a
+ * particular JSON answer, and every interesting answer (merged / conflicting /
+ * red CI / missing approval / unreachable) is one a sandboxed repo with no
+ * remote can never produce on demand. Scripting the input is what makes the
+ * settlement observable end-to-end over the real wire protocol.
+ *
+ * Contrast `e2e-delivery-link-test.mjs`, which deliberately does NOT do this:
+ * there the forge round trip IS the subject (「查不到状态就必须阻塞」), so a stub
+ * would assert nothing. That is also why this stub lives on the PATH of a server
+ * this test spawns for ITSELF — dropping it on the shared suite server's PATH
+ * would silently answer the link test's lookups and destroy its premise.
+ *
+ * The answers come from a JSON state file named by `C3_E2E_FORGE_STATE`, which
+ * the test rewrites between phases. Every invocation appends to a call log in the
+ * same directory, so the test can assert "the forge was asked BEFORE creating"
+ * and "no second PR was ever created".
+ *
+ * Recognized state (all optional):
+ *   { "mode": "ok" | "fail",          // "fail" ⇒ exit 1 (an unreachable forge)
+ *     "openPr": null | { "number": "900", "url": "..." },   // `pr list` answer
+ *     "createNumber": "900",                                 // `pr create` answer
+ *     "view": { … } }                // `pr view --json` object, merged over defaults
+ */
+import { appendFileSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
+const STATE_PATH = process.env.C3_E2E_FORGE_STATE
+if (!STATE_PATH) {
+  process.stderr.write('fake gh: C3_E2E_FORGE_STATE not set\n')
+  process.exit(1)
+}
+
+const args = process.argv.slice(2)
+
+/** Record the invocation so the test can assert call ordering and counts. */
+try {
+  appendFileSync(join(dirname(STATE_PATH), 'forge-calls.log'), `${args.join(' ')}\n`)
+} catch {
+  /* the log is an assertion aid, never a reason to fail the command */
+}
+
+let state = {}
+try {
+  state = JSON.parse(readFileSync(STATE_PATH, 'utf-8'))
+} catch {
+  /* absent / malformed ⇒ defaults below */
+}
+
+if (state.mode === 'fail') {
+  process.stderr.write('fake gh: simulated forge failure\n')
+  process.exit(1)
+}
+
+const sub = `${args[0] ?? ''} ${args[1] ?? ''}`.trim()
+
+if (sub === 'pr list') {
+  const pr = state.openPr ?? null
+  process.stdout.write(
+    JSON.stringify(pr ? [{ number: Number(pr.number), url: pr.url ?? null }] : []),
+  )
+  process.exit(0)
+}
+
+if (sub === 'pr create') {
+  const number = state.createNumber ?? '900'
+  // `gh pr create` prints the PR URL; the caller parses the number back out of it.
+  process.stdout.write(`https://github.com/o/r/pull/${number}\n`)
+  process.exit(0)
+}
+
+if (sub === 'pr view') {
+  const view = {
+    state: 'OPEN',
+    mergedAt: null,
+    url: `https://github.com/o/r/pull/${args[2] ?? '900'}`,
+    mergeable: 'MERGEABLE',
+    reviewDecision: 'APPROVED',
+    statusCheckRollup: [],
+    ...(state.view ?? {}),
+  }
+  process.stdout.write(JSON.stringify(view))
+  process.exit(0)
+}
+
+process.stderr.write(`fake gh: unsupported invocation: ${args.join(' ')}\n`)
+process.exit(1)

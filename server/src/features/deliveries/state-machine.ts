@@ -191,34 +191,56 @@ export function computeTransitionPlan(delivery: Delivery): DeliveryTransitionPla
 }
 
 /**
- * Gaps a human action present in the workspace can resolve TODAY. This phase
- * has none (branch init / intent association / PR merge all land in later
- * phases) — the set is empty, so only deliveries with an already-executable
- * human forward/rework action count toward the badge. Add a code here when the
- * matching user-facing action ships, and the badge follows the same rule.
+ * Gaps a human action present in the workspace can resolve TODAY, expressed as
+ * transition-plan reasons. Empty: every gap the plan can report is either
+ * resolved elsewhere on the page (branch init, intent association) or is a pure
+ * system wait. The one human action that hangs off a system-only edge — opening
+ * or unblocking the delivery PR — is not expressible as a plan reason at all
+ * (the plan cannot see whether a PR exists), so it enters the badge through
+ * `mergeActionable` instead. Add a code here when a gap becomes directly
+ * human-resolvable, and the badge follows the same rule.
  */
 const HUMAN_SOLVABLE_GAPS: ReadonlySet<DeliveryGuardReasonCode> = new Set()
 
 /**
  * Whether a delivery needs user attention, per the header-badge rule: an
- * executable human forward/rework action exists, or an unresolved human-solvable
- * gap exists. Pure system waits, terminal states and Git actions hidden under
- * `current-branch` never count; the cancel action itself never puts a delivery
- * into the badge.
+ * executable human forward/rework action exists, an unresolved human-solvable
+ * gap exists, or a delivery-PR action is available. Pure system waits, terminal
+ * states and Git actions hidden under `current-branch` never count; the cancel
+ * action itself never puts a delivery into the badge.
+ *
+ * `mergeActionable` is supplied by the caller because it is a LEDGER fact (does a
+ * delivery PR exist, is it blocked) that this pure module deliberately cannot
+ * read. A `verified` delivery counts when its PR is still to be opened or is
+ * 「合并受阻」 — both are things the user can act on; simply waiting for someone
+ * to press merge is not.
  */
 export function deliveryRequiresAction(
   status: DeliveryStatus,
   targets: DeliveryTargetTransition[],
+  mergeActionable = false,
 ): boolean {
   if (status === 'delivered' || status === 'cancelled') return false
+  if (mergeActionable) return true
   if (targets.some((t) => t.humanAction && t.guard === 'satisfied')) return true
   return targets.some((t) => t.reasons.some((r) => HUMAN_SOLVABLE_GAPS.has(r.code)))
 }
 
-/** Sum {@link deliveryRequiresAction} over a workspace's deliveries (badge count). */
-export function countDeliveriesNeedingAction(items: readonly Delivery[]): number {
+/**
+ * Sum {@link deliveryRequiresAction} over a workspace's deliveries (badge count).
+ * `mergeActionable` is the caller's ledger-backed lookup; omitted, no delivery
+ * contributes through the delivery-PR route.
+ */
+export function countDeliveriesNeedingAction(
+  items: readonly Delivery[],
+  mergeActionable?: (delivery: Delivery) => boolean,
+): number {
   return items.reduce(
-    (n, d) => n + (deliveryRequiresAction(d.status, computeTransitionPlan(d).targets) ? 1 : 0),
+    (n, d) =>
+      n +
+      (deliveryRequiresAction(d.status, computeTransitionPlan(d).targets, mergeActionable?.(d))
+        ? 1
+        : 0),
     0,
   )
 }

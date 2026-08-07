@@ -36,6 +36,7 @@ import {
   listDeliveries,
 } from '../features/deliveries/store.js'
 import { countDeliveriesNeedingAction } from '../features/deliveries/state-machine.js'
+import { deliveryMergeActionable } from '../features/deliveries/merge-attention.js'
 import { discussionRunSnapshot, researchRunSnapshot } from '../features/discussions/run-controls.js'
 import type { ResearchStreamItem } from '../features/discussions/research.js'
 import type { DispatchStatus } from '../features/discussions/orchestrator.js'
@@ -213,7 +214,9 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
       type: 'deliveries',
       workspaceId: pathToId(proj)!,
       items,
-      needsActionCount: countDeliveriesNeedingAction(items),
+      needsActionCount: countDeliveriesNeedingAction(items, (d) =>
+        deliveryMergeActionable(proj, d),
+      ),
     })
   }
 

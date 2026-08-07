@@ -18,24 +18,37 @@
  * the transition plan + gaps the page renders come from `computeTransitionPlan`,
  * recomputed on every read and write.
  */
+import { randomUUID } from 'node:crypto'
 import type { Delivery, DeliveryStatus, IntentPr, ServerToClient } from '@ccc/shared/protocol'
 import {
   closeForgePr,
   countCommitsAhead,
   createDeliveryBranch,
+  createForgePr,
   deleteLocalBranch,
+  deliveryMergeTrial,
   detectDeliveryDiffBloat,
   fetchRemoteBaseAsync,
+  findOpenForgePr,
+  getForgeDeliveryPrFacts,
   getForgePrStatus,
   isMultiRepoWorkspace,
   remoteBranchHead,
   resolveRefHead,
   syncDeliveryMainline,
 } from '../../git.js'
-import { getDefaultMainBranch, getForgeOverride } from '../../kernel/config/index.js'
+import {
+  getDefaultMainBranch,
+  getForgeOverride,
+  getGitBranchMode,
+} from '../../kernel/config/index.js'
+import type { KernelContext } from '../../kernel/types.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import type { Conn, Handler } from '../../transport/handler-registry.js'
+import { parsePrIdentity } from '../intents/pr-identity.js'
 import { getIntent, upsertIntentPr } from '../intents/store.js'
+import { markQueueDirty } from '../intents/workflow.js'
+import { deliveryMergeActionable } from './merge-attention.js'
 import {
   canTransitionDelivery,
   computeTransitionPlan,
@@ -44,10 +57,14 @@ import {
 import {
   activeDeliveryHoldsBranch,
   clearDeliveryBranch,
+  commitDeliveryDelivered,
+  commitDeliveryMergeConflict,
   createDelivery,
   deleteIntentDelivery,
   deleteIntentPr,
   getDelivery,
+  getLatestDeliveryPr,
+  insertDeliveryLog,
   insertIntentDelivery,
   isStoreAvailable,
   listAssociatedIntents,
@@ -55,6 +72,8 @@ import {
   setDeliveryBranch,
   setDeliveryStatus,
   updateDelivery,
+  updateDeliveryPrFacts,
+  upsertDeliveryPr,
   type UpdateDeliveryInput,
 } from './store.js'
 
@@ -77,6 +96,7 @@ function detailFrame(
     transitionPlan: computeTransitionPlan(delivery),
     associatedIntents: listAssociatedIntents(delivery.id),
     mainlineAhead,
+    deliveryPr: getLatestDeliveryPr(delivery.id),
     ...(linkWarning ? { linkWarning } : {}),
   }
 }
@@ -118,7 +138,7 @@ export const listDeliveriesHandler: Handler<'list_deliveries'> = (ctx, conn, msg
     type: 'deliveries',
     workspaceId: msg.workspaceId,
     items,
-    needsActionCount: countDeliveriesNeedingAction(items),
+    needsActionCount: countDeliveriesNeedingAction(items, (d) => deliveryMergeActionable(abs, d)),
   })
 }
 
@@ -802,4 +822,443 @@ export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delive
   conn.send(detailFrame(fresh))
   ctx.broadcastDeliveries(abs)
   ctx.broadcastIntents(abs)
+}
+
+// ---------------------------------------------------------------------------
+// Delivery PR — 「交付分支 → 主线」, the change request a human merges on the forge
+//
+// c3 never merges it. Going through a PR buys CI, review, protected branches and
+// diff review for free, and makes the whole action idempotent on the forge's own
+// terms. What c3 owns is the LEDGER side: opening the PR without ever duplicating
+// it, and settling what the forge says about it — layered, because "cannot merge"
+// has three causes that must not be treated alike.
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve + gate the (workspace, delivery) pair both delivery-PR handlers start
+ * from. Sends the error frame itself and returns `null` so the caller can
+ * `return` immediately.
+ *
+ * `requireVerified` is the one difference between them: creating a delivery PR
+ * proposes a VERIFIED delivery for mainline, while syncing an existing PR must
+ * keep working from any status the PR outlived — including `verifying` after a
+ * conflict rollback and `delivered` after the merge landed.
+ */
+function resolveDeliveryPrContext(
+  conn: Conn,
+  workspaceId: string,
+  deliveryId: string,
+  requireVerified: boolean,
+): { abs: string; delivery: Delivery } | null {
+  const abs = resolveWorkspaceRoot(workspaceId)
+  if (!abs) {
+    conn.send({ type: 'error', error: { code: 'workspace.unknown', params: { id: workspaceId } } })
+    return null
+  }
+  const delivery = getDelivery(deliveryId)
+  if (!delivery || delivery.workspaceId !== workspaceId) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return null
+  }
+  // `current-branch` has no delivery branch, so there is no head to propose.
+  if (getGitBranchMode(abs) !== 'worktree') {
+    conn.send({ type: 'error', error: { code: 'delivery.deliveryPrModeUnsupported' } })
+    return null
+  }
+  if (requireVerified && delivery.status !== 'verified') {
+    conn.send({ type: 'error', error: { code: 'delivery.deliveryPrForbidden' } })
+    return null
+  }
+  if (!delivery.branchName || !delivery.branchReady) {
+    conn.send({ type: 'error', error: { code: 'delivery.guard.branchNotReady' } })
+    return null
+  }
+  return { abs, delivery }
+}
+
+/**
+ * Open the delivery PR (「交付分支 → `base_branch`」), or adopt the one the forge
+ * already holds.
+ *
+ * Gate order is fixed: `worktree` mode → `verified` → branch ready → the delivery
+ * branch actually holds commits mainline does not. The last one is what refuses a
+ * delivery branch someone already merged by hand — an empty PR explains nothing.
+ *
+ * Then, and this is the whole point of the retry contract: the FORGE is asked
+ * first. An open PR for the same `(head, base)` is adopted into the ledger; only
+ * when the forge holds none is one created. That single ordering covers both
+ * "created successfully but the response was lost" and "the ledger row is gone",
+ * and it is why a local return code is never taken as proof. A forge lookup that
+ * FAILS aborts — creating on an unanswered question is how duplicates are born.
+ */
+export const createDeliveryPrHandler: Handler<'create_delivery_pr'> = async (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
+    return
+  }
+  const resolved = resolveDeliveryPrContext(conn, msg.workspaceId, msg.deliveryId, true)
+  if (!resolved) return
+  const { abs, delivery } = resolved
+  const branchName = delivery.branchName!
+
+  const fail = (detail: string): void =>
+    conn.send({
+      type: 'error',
+      error: { code: 'delivery.deliveryPrCreateFailed', params: { detail } },
+    })
+
+  // Both refs are fetched before anything is decided: `base_sha` / `head_sha` are
+  // the idempotency key's own material, so reading them off stale local refs
+  // would key the row to a state that no longer exists on the remote.
+  const baseRef = await fetchRemoteBaseAsync(abs, delivery.baseBranch)
+  if (!baseRef) {
+    fail(`无法 fetch 基线分支 ${delivery.baseBranch}(离线或无远端)`)
+    return
+  }
+  const headRef = await fetchRemoteBaseAsync(abs, branchName)
+  if (!headRef) {
+    fail(`无法 fetch 交付分支 ${branchName}(离线或无远端)`)
+    return
+  }
+  const baseSha = await resolveRefHead(abs, baseRef)
+  const headSha = await resolveRefHead(abs, headRef)
+  if (!baseSha || !headSha) {
+    fail(`远端引用 ${baseRef} / ${headRef} 无法解析`)
+    return
+  }
+
+  const ahead = await countCommitsAhead(abs, baseRef, headRef)
+  if (ahead === null) {
+    fail(`远端引用 ${baseRef} / ${headRef} 无法比较`)
+    return
+  }
+  if (ahead === 0) {
+    conn.send({ type: 'error', error: { code: 'delivery.deliveryPrNoDiff' } })
+    return
+  }
+
+  const forgeOverride = getForgeOverride(abs)
+  const existing = await findOpenForgePr(abs, branchName, delivery.baseBranch, forgeOverride)
+  if (!existing.ok) {
+    fail(existing.error ?? '无法向 forge 查询开放 PR')
+    return
+  }
+
+  let number: string
+  let url: string | null
+  if (existing.pr) {
+    number = existing.pr.number
+    url = existing.pr.url
+  } else {
+    const created = await createForgePr(
+      abs,
+      `交付: ${delivery.title}`,
+      buildDeliveryPrBody(delivery),
+      branchName,
+      delivery.baseBranch,
+      forgeOverride,
+    )
+    if (!created.ok || !created.prId) {
+      fail(created.error ?? '创建交付 PR 失败')
+      return
+    }
+    number = created.prId
+    url = created.prUrl ?? null
+  }
+
+  const identity = parsePrIdentity(url)
+  try {
+    upsertDeliveryPr({
+      deliveryId: delivery.id,
+      forge: identity.forge ?? forgeOverride ?? null,
+      repo: identity.repo,
+      number,
+      url,
+      headBranch: branchName,
+      baseBranch: delivery.baseBranch,
+      baseSha,
+      headSha,
+      status: 'reviewing',
+    })
+  } catch (err) {
+    // A concurrent create won the unique index. The PR itself exists either way —
+    // the next attempt reads the forge, finds it and adopts the winner's row.
+    fail(`交付 PR 已创建但台账写入失败,请重试: ${String(err)}`)
+    return
+  }
+  insertDeliveryLog(
+    delivery.id,
+    'delivery_pr_opened',
+    `交付 PR #${number}: ${branchName} → ${delivery.baseBranch}`,
+    conn.subject ?? 'system',
+  )
+
+  const fresh = getDelivery(delivery.id)
+  if (!fresh) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return
+  }
+  conn.send(detailFrame(fresh, undefined, await readMainlineAhead(abs, fresh)))
+  ctx.broadcastDeliveries(abs)
+}
+
+/** The delivery PR's body — what the delivery is, in the reviewer's own view. */
+function buildDeliveryPrBody(delivery: Delivery): string {
+  const lines = [`交付「${delivery.title}」合入主线。`, '']
+  if (delivery.description.trim()) lines.push(delivery.description.trim(), '')
+  lines.push(
+    `集成就绪: ${delivery.integration.merged}/${delivery.integration.total}`,
+    `交付分支: ${delivery.branchName ?? ''} → ${delivery.baseBranch}`,
+  )
+  return lines.join('\n')
+}
+
+/**
+ * Pull the delivery PR's live facts and settle them, LAYERED.
+ *
+ * | forge 事实      | 交付状态                | 落库                           |
+ * | --------------- | ----------------------- | ------------------------------ |
+ * | merged          | `→ delivered` (原子写)  | 状态 + 交付日志 + PR 行         |
+ * | open + 冲突     | `verified → verifying`  | 冲突文件 + SHA 快照            |
+ * | open + CI/审批  | 不变                    | `blocked_reason`               |
+ * | open 无阻塞     | 不变                    | 清空 `blocked_reason`          |
+ * | closed          | 不变                    | 行状态同步                     |
+ * | 查询失败        | 不变                    | 无                             |
+ *
+ * The conflict rollback and the CI/approval stay-put are the same decision seen
+ * from two sides: a conflict means the integrated code must change, so the
+ * verification it earned is genuinely void; a failing check or a missing approval
+ * says nothing about the code, and rolling back there would make the user redo a
+ * verification for no reason.
+ *
+ * Both status writes go through `canTransitionDelivery` with `role: 'system'`, so
+ * the state machine stays the single gate. This does not contradict 「开发会话不
+ * 改状态」: that rule constrains development sessions, not an asynchronous
+ * terminal callback about a merge that already happened.
+ */
+export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
+    return
+  }
+  const resolved = resolveDeliveryPrContext(conn, msg.workspaceId, msg.deliveryId, false)
+  if (!resolved) return
+  const { abs, delivery } = resolved
+
+  const pr = getLatestDeliveryPr(delivery.id)
+  if (!pr) {
+    conn.send({ type: 'error', error: { code: 'delivery.deliveryPrNotFound' } })
+    return
+  }
+
+  const facts = await getForgeDeliveryPrFacts(abs, pr.number, pr.forge ?? getForgeOverride(abs))
+  if (!facts.ok || !facts.status) {
+    // An unreadable forge is not evidence about the PR: nothing moves, and the
+    // page offers a retry.
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'delivery.deliveryPrSyncFailed',
+        params: { detail: facts.error ?? '无法读取交付 PR 状态' },
+      },
+    })
+    return
+  }
+
+  const finish = (updated: Delivery): void => {
+    conn.send(detailFrame(updated))
+    ctx.broadcastDeliveries(abs)
+  }
+
+  if (facts.status === 'merged') {
+    await settleDeliveryDelivered(ctx, conn, abs, delivery, pr.number, facts.prUrl ?? pr.url)
+    return
+  }
+
+  if (facts.status === 'closed') {
+    updateDeliveryPrFacts(delivery.id, {
+      status: 'closed',
+      url: facts.prUrl ?? undefined,
+      blockedReason: null,
+    })
+    finish(delivery)
+    return
+  }
+
+  // Open. Conflict first — it is the only verdict that moves the delivery.
+  if (facts.conflict) {
+    const trial = await deliveryMergeTrial(abs, delivery.branchName!, delivery.baseBranch)
+    const prFacts = {
+      status: 'reviewing' as const,
+      url: facts.prUrl ?? undefined,
+      blockedReason: null,
+      baseSha: trial.baseSha,
+      headSha: trial.headSha,
+      conflictFiles: trial.conflictFiles,
+    }
+    if (delivery.status !== 'verified') {
+      // Already rolled back by an earlier sync (or never `verified`): refresh the
+      // conflict evidence without asking the state machine for a no-op edge.
+      updateDeliveryPrFacts(delivery.id, prFacts)
+      finish(getDelivery(delivery.id) ?? delivery)
+      return
+    }
+    const verdict = canTransitionDelivery({
+      from: delivery.status,
+      to: 'verifying',
+      role: 'system',
+      branchReady: delivery.branchReady,
+      integration: delivery.integration,
+      confirmVerified: false,
+      reason: 'merge_conflict',
+    })
+    if (!verdict.ok) {
+      conn.send({
+        type: 'delivery_transition_failed',
+        deliveryId: delivery.id,
+        code: verdict.code,
+        reasons: verdict.reasons,
+        currentStatus: delivery.status,
+        to: 'verifying',
+      })
+      return
+    }
+    const updated = commitDeliveryMergeConflict(
+      delivery.id,
+      prFacts,
+      trial.conflictFiles.length > 0
+        ? `交付 PR #${pr.number} 合并冲突,冲突文件 ${trial.conflictFiles.length} 个`
+        : `交付 PR #${pr.number} 合并冲突`,
+      'system',
+    )
+    if (!updated) {
+      conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+      return
+    }
+    finish(updated)
+    return
+  }
+
+  updateDeliveryPrFacts(delivery.id, {
+    status: 'reviewing',
+    url: facts.prUrl ?? undefined,
+    // CI first: a red pipeline is the concrete thing to fix, and a repo that also
+    // requires approvals would otherwise hide it behind 「等人批」.
+    blockedReason: facts.ciFailed ? 'ci_failed' : facts.approvalMissing ? 'approval' : null,
+  })
+  finish(delivery)
+}
+
+/**
+ * Land `delivered` and everything that follows from it.
+ *
+ * The status write and the delivery log are ONE transaction — a delivery whose
+ * code is in mainline but whose ledger says nothing about it is exactly the drift
+ * this action exists to prevent. Everything after the commit is a CONSEQUENCE of
+ * a fact that is already true, so a failure there never un-delivers anything:
+ *
+ *  1. the associated intents are NOT touched — they went `done` when their PRs
+ *     merged into the delivery branch, and rewriting them here would give status
+ *     a second driver;
+ *  2. the cross-delivery dependency gate is recomputed (`markQueueDirty`), because
+ *     its verdict reads `delivered`: skipping it would leave every intent blocked
+ *     on this delivery blocked forever;
+ *  3. `delivery:delivered` goes out on the generic event pipeline;
+ *  4. the delivery log line was already written inside the transaction.
+ */
+async function settleDeliveryDelivered(
+  ctx: KernelContext,
+  conn: Conn,
+  workspacePath: string,
+  delivery: Delivery,
+  prNumber: string,
+  prUrl: string | null,
+): Promise<void> {
+  if (delivery.status === 'delivered') {
+    // A repeat sync of an already-settled delivery: refresh the row and stop.
+    updateDeliveryPrFacts(delivery.id, {
+      status: 'merged',
+      url: prUrl ?? undefined,
+      blockedReason: null,
+    })
+    conn.send(detailFrame(delivery))
+    return
+  }
+  const verdict = canTransitionDelivery({
+    from: delivery.status,
+    to: 'delivered',
+    role: 'system',
+    branchReady: delivery.branchReady,
+    integration: delivery.integration,
+    confirmVerified: false,
+    mergeSucceeded: true,
+  })
+  if (!verdict.ok) {
+    conn.send({
+      type: 'delivery_transition_failed',
+      deliveryId: delivery.id,
+      code: verdict.code,
+      reasons: verdict.reasons,
+      currentStatus: delivery.status,
+      to: 'delivered',
+    })
+    return
+  }
+  const updated = commitDeliveryDelivered(
+    delivery.id,
+    `交付 PR #${prNumber} 已合入 ${delivery.baseBranch}`,
+    'system',
+  )
+  if (!updated) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return
+  }
+  if (prUrl)
+    updateDeliveryPrFacts(delivery.id, { status: 'merged', url: prUrl, blockedReason: null })
+
+  publishDeliveryDelivered(ctx, workspacePath, updated, prNumber, prUrl)
+  // Fire-and-forget: the queue recomputes every tick anyway, and the manual paths
+  // read live facts — the worst case of a failure here is one tick of latency.
+  void markQueueDirty(workspacePath)
+
+  conn.send(detailFrame(updated))
+  ctx.broadcastDeliveries(workspacePath)
+  // The intent side renders the dependency gate off `delivered`, so the unblocked
+  // intents have to reach it too.
+  ctx.broadcastIntents(workspacePath)
+}
+
+/**
+ * Publish `delivery:delivered` on the generic event pipeline so an automation can
+ * subscribe to it. Deliberately NOT `pr:merge`: that type carries an automation's
+ * PR operation, and reusing it for a system-observed terminal fact would drift
+ * what its existing subscribers agreed to react to.
+ */
+function publishDeliveryDelivered(
+  ctx: KernelContext,
+  workspacePath: string,
+  delivery: Delivery,
+  prNumber: string,
+  prUrl: string | null,
+): void {
+  const res = ctx.normalizeEvent({
+    type: 'delivery:delivered',
+    metadata: {
+      deliveryId: delivery.id,
+      title: delivery.title,
+      baseBranch: delivery.baseBranch,
+      branch: delivery.branchName ?? '',
+      prNumber,
+      ...(prUrl ? { prUrl } : {}),
+    },
+  })
+  if (!res.ok) {
+    console.warn(`[delivery] delivery:delivered 事件未发布: ${res.reason}`)
+    return
+  }
+  ctx.eventBus.publish('event', {
+    workspacePath,
+    sessionId: randomUUID(),
+    event: res.event,
+  })
 }

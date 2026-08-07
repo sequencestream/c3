@@ -15,7 +15,9 @@
  * created by the intent store's v19→v20 migration): the real-time integration
  * aggregate is derived here by reading that column directly — never persisted,
  * so removing an association or a PR status change can never leave a stale
- * count behind.
+ * count behind. `delivery_prs` is a SEPARATE table for a separate entity — the
+ * PR that carries the whole delivery into mainline — and never feeds that
+ * aggregate.
  */
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
@@ -23,7 +25,10 @@ import type {
   AssociatedIntent,
   Delivery,
   DeliveryIntegration,
+  DeliveryPr,
+  DeliveryPrBlockedReason,
   DeliveryStatus,
+  IntentPrForge,
   IntentPrStatus,
   IntentStatus,
 } from '@ccc/shared/protocol'
@@ -37,7 +42,7 @@ import { pathToId } from '../../state.js'
  * value is informational only: migrations key off `CREATE TABLE IF NOT EXISTS`
  * / partial-index creation, never off the version number.
  */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS deliveries (
@@ -76,6 +81,48 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_delivery_unique
   ON intent_deliveries(delivery_id, intent_id);
 CREATE INDEX IF NOT EXISTS idx_intent_delivery_delivery ON intent_deliveries(delivery_id);
 CREATE INDEX IF NOT EXISTS idx_intent_delivery_intent ON intent_deliveries(intent_id);
+
+-- 交付 PR:「交付分支 → 主线」的变更请求。与 intent_prs 分表而非共表 —— 两者粒度
+-- (交付→主线 vs 意图→交付分支) 与生命周期 (集成聚合计数、解除关联删行) 都不同,
+-- 同表会让「哪条 PR 表达交付上主线」这个问题失去精确答案:integrationAggregate 按
+-- delivery_id 计数,交付 PR 一旦混进去就会把交付自己算进「关联意图数」。
+CREATE TABLE IF NOT EXISTS delivery_prs (
+  id             TEXT PRIMARY KEY,
+  delivery_id    TEXT NOT NULL,
+  forge          TEXT,
+  repo           TEXT,
+  number         TEXT NOT NULL,
+  url            TEXT,
+  head_branch    TEXT NOT NULL,
+  base_branch    TEXT NOT NULL,
+  base_sha       TEXT NOT NULL,
+  head_sha       TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK(status IN ('reviewing','merged','closed')),
+  blocked_reason TEXT CHECK(blocked_reason IN ('ci_failed','approval')),
+  conflict_files TEXT,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+-- 一条真实 PR 一行 (与 intent_prs 同口径:forge/repo 可空的历史行不参与身份约束)。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_pr_identity ON delivery_prs(forge, repo, number);
+-- 幂等键兜底:同一交付的同一 (base, head) 快照只允许一条 PR 行。应用层先查 forge
+-- 事实再落账,索引是并发重试的最后一道。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_pr_idempotency
+  ON delivery_prs(delivery_id, base_sha, head_sha);
+CREATE INDEX IF NOT EXISTS idx_delivery_pr_delivery ON delivery_prs(delivery_id, created_at DESC);
+
+-- 交付操作审计轨迹,只增不改 (仿 intent_logs)。delivered 的状态写与它的日志行在
+-- 同一事务里落定,所以「代码进了主线但没留痕」不可能出现。
+CREATE TABLE IF NOT EXISTS delivery_logs (
+  id             TEXT PRIMARY KEY,
+  delivery_id    TEXT NOT NULL,
+  operation_type TEXT NOT NULL,
+  summary        TEXT NOT NULL,
+  actor          TEXT NOT NULL,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_log_delivery_created
+  ON delivery_logs(delivery_id, created_at DESC);
 `
 
 /**
@@ -490,6 +537,312 @@ export function listAssociatedIntents(deliveryId: string): AssociatedIntent[] {
     prStatus: (r.pr_status as IntentPrStatus | null) ?? null,
     headBranch: r.head_branch ?? null,
   }))
+}
+
+// ---------------------------------------------------------------------------
+// delivery_prs — the「交付分支 → 主线」PR, and delivery_logs — the audit trail
+// ---------------------------------------------------------------------------
+
+interface DeliveryPrRow {
+  id: string
+  delivery_id: string
+  forge: string | null
+  repo: string | null
+  number: string
+  url: string | null
+  head_branch: string
+  base_branch: string
+  base_sha: string
+  head_sha: string
+  status: string
+  blocked_reason: string | null
+  conflict_files: string | null
+  created_at: number
+  updated_at: number
+}
+
+/** Parse the stored JSON array, degrading to `[]` for null / malformed content. */
+function parseConflictFiles(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((f): f is string => typeof f === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function toDeliveryPr(r: DeliveryPrRow): DeliveryPr {
+  return {
+    deliveryId: r.delivery_id,
+    forge: (r.forge as IntentPrForge | null) ?? null,
+    repo: r.repo,
+    number: r.number,
+    url: r.url,
+    headBranch: r.head_branch,
+    baseBranch: r.base_branch,
+    baseSha: r.base_sha,
+    headSha: r.head_sha,
+    status: r.status as DeliveryPr['status'],
+    blockedReason: (r.blocked_reason as DeliveryPrBlockedReason | null) ?? null,
+    conflictFiles: parseConflictFiles(r.conflict_files),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+/**
+ * The delivery's most recent delivery PR, or `null` when it never opened one.
+ * Older rows stay as history — a superseded PR is a fact about what happened,
+ * not garbage — and only this one is ever rendered.
+ */
+export function getLatestDeliveryPr(deliveryId: string): DeliveryPr | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<DeliveryPrRow>(
+    'SELECT * FROM delivery_prs WHERE delivery_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+    deliveryId,
+  )
+  return row ? toDeliveryPr(row) : null
+}
+
+export interface UpsertDeliveryPrInput {
+  deliveryId: string
+  forge: IntentPrForge | null
+  repo: string | null
+  number: string
+  url: string | null
+  headBranch: string
+  baseBranch: string
+  baseSha: string
+  headSha: string
+  status: DeliveryPr['status']
+}
+
+/**
+ * Land a delivery PR the forge just confirmed, keyed FIRST by the PR's real
+ * identity `(forge, repo, number)` and only then by the idempotency triple
+ * `(delivery_id, base_sha, head_sha)`.
+ *
+ * The identity lookup has to come first because a forge keeps ONE open PR per
+ * `(head, base)` pair: pushing new commits to the delivery branch updates that
+ * same PR rather than allowing a second one. Inserting a fresh row per SHA pair
+ * would collide with `idx_delivery_pr_identity` on the very first re-sync; the
+ * row is therefore refreshed in place, and the idempotency index keeps its role
+ * as the concurrent-retry backstop.
+ *
+ * `blocked_reason` / `conflict_files` are deliberately NOT written here — they
+ * are sync-time verdicts about a PR that already exists, and a create must never
+ * silently clear a conflict list the last sync recorded.
+ */
+export function upsertDeliveryPr(input: UpsertDeliveryPrInput): DeliveryPr {
+  const d = requireDb()
+  const now = Date.now()
+  return tx(d, () => {
+    const byIdentity =
+      input.forge && input.repo
+        ? d.get<DeliveryPrRow>(
+            'SELECT * FROM delivery_prs WHERE forge=? AND repo=? AND number=?',
+            input.forge,
+            input.repo,
+            input.number,
+          )
+        : d.get<DeliveryPrRow>(
+            'SELECT * FROM delivery_prs WHERE delivery_id=? AND number=?',
+            input.deliveryId,
+            input.number,
+          )
+    const existing =
+      byIdentity ??
+      d.get<DeliveryPrRow>(
+        'SELECT * FROM delivery_prs WHERE delivery_id=? AND base_sha=? AND head_sha=?',
+        input.deliveryId,
+        input.baseSha,
+        input.headSha,
+      )
+    if (existing) {
+      d.run(
+        `UPDATE delivery_prs
+            SET delivery_id=?, forge=?, repo=?, number=?, url=?, head_branch=?, base_branch=?,
+                base_sha=?, head_sha=?, status=?, updated_at=?
+          WHERE id=?`,
+        input.deliveryId,
+        input.forge,
+        input.repo,
+        input.number,
+        input.url,
+        input.headBranch,
+        input.baseBranch,
+        input.baseSha,
+        input.headSha,
+        input.status,
+        now,
+        existing.id,
+      )
+      return toDeliveryPr(
+        d.get<DeliveryPrRow>('SELECT * FROM delivery_prs WHERE id=?', existing.id)!,
+      )
+    }
+    const id = randomUUID()
+    d.run(
+      `INSERT INTO delivery_prs
+         (id, delivery_id, forge, repo, number, url, head_branch, base_branch,
+          base_sha, head_sha, status, blocked_reason, conflict_files, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,?,?)`,
+      id,
+      input.deliveryId,
+      input.forge,
+      input.repo,
+      input.number,
+      input.url,
+      input.headBranch,
+      input.baseBranch,
+      input.baseSha,
+      input.headSha,
+      input.status,
+      now,
+      now,
+    )
+    return toDeliveryPr(d.get<DeliveryPrRow>('SELECT * FROM delivery_prs WHERE id=?', id)!)
+  })
+}
+
+export interface DeliveryPrFactsInput {
+  status: DeliveryPr['status']
+  url?: string | null
+  blockedReason: DeliveryPrBlockedReason | null
+  /** Fresh SHA snapshot when the sync could resolve the refs; omit to keep the stored pair. */
+  baseSha?: string | null
+  headSha?: string | null
+  /** Omit to keep whatever the last sync recorded; `[]` explicitly clears it. */
+  conflictFiles?: string[]
+}
+
+/**
+ * Write one sync's verdict onto the delivery's latest PR row. Returns the
+ * refreshed row, or `null` when the delivery has no PR row to write onto.
+ */
+export function updateDeliveryPrFacts(
+  deliveryId: string,
+  facts: DeliveryPrFactsInput,
+): DeliveryPr | null {
+  const d = requireDb()
+  const row = d.get<DeliveryPrRow>(
+    'SELECT * FROM delivery_prs WHERE delivery_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+    deliveryId,
+  )
+  if (!row) return null
+  d.run(
+    `UPDATE delivery_prs
+        SET status=?, url=?, blocked_reason=?, base_sha=?, head_sha=?, conflict_files=?, updated_at=?
+      WHERE id=?`,
+    facts.status,
+    facts.url === undefined ? row.url : facts.url,
+    facts.blockedReason,
+    facts.baseSha ?? row.base_sha,
+    facts.headSha ?? row.head_sha,
+    facts.conflictFiles === undefined ? row.conflict_files : JSON.stringify(facts.conflictFiles),
+    Date.now(),
+    row.id,
+  )
+  return toDeliveryPr(d.get<DeliveryPrRow>('SELECT * FROM delivery_prs WHERE id=?', row.id)!)
+}
+
+/** Append one delivery log line (append-only; never updated, never deleted). */
+export function insertDeliveryLog(
+  deliveryId: string,
+  operationType: string,
+  summary: string,
+  actor: string,
+): void {
+  const d = requireDb()
+  d.run(
+    'INSERT INTO delivery_logs (id, delivery_id, operation_type, summary, actor, created_at) VALUES (?,?,?,?,?,?)',
+    randomUUID(),
+    deliveryId,
+    operationType,
+    summary,
+    actor,
+    Date.now(),
+  )
+}
+
+/** One delivery's log lines, newest first. */
+export function listDeliveryLogs(deliveryId: string): DeliveryLogEntry[] {
+  const d = db()
+  if (!d) return []
+  return d.all<DeliveryLogEntry & { delivery_id: string }>(
+    `SELECT id, operation_type AS operationType, summary, actor, created_at AS createdAt
+       FROM delivery_logs WHERE delivery_id=? ORDER BY created_at DESC, rowid DESC`,
+    deliveryId,
+  )
+}
+
+/** One `delivery_logs` row, as readers consume it. */
+export interface DeliveryLogEntry {
+  id: string
+  operationType: string
+  summary: string
+  actor: string
+  createdAt: number
+}
+
+/**
+ * The delivered write, as ONE unit: the status, the delivery log line and the PR
+ * row's `merged` state land in a single transaction or none of them do. The
+ * caller MUST have already passed `canTransitionDelivery` — this store never
+ * re-derives the state machine.
+ *
+ * Everything that follows (`delivery:delivered`, the queue-gate recompute, the
+ * broadcasts) deliberately sits OUTSIDE the transaction: they are consequences of
+ * a fact that is already true, and failing to publish one must not un-deliver a
+ * delivery whose code is in mainline. A repeat sync re-runs them idempotently.
+ */
+export function commitDeliveryDelivered(
+  deliveryId: string,
+  summary: string,
+  actor: string,
+): Delivery | null {
+  const d = requireDb()
+  return tx(d, () => {
+    const prior = d.get<{ status: string }>('SELECT status FROM deliveries WHERE id=?', deliveryId)
+    if (!prior) return null
+    const now = Date.now()
+    d.run('UPDATE deliveries SET status=?, updated_at=? WHERE id=?', 'delivered', now, deliveryId)
+    // Only the LATEST row — a superseded PR that was genuinely closed must keep
+    // saying so rather than be rewritten into history that never happened.
+    updateDeliveryPrFacts(deliveryId, { status: 'merged', blockedReason: null })
+    insertDeliveryLog(deliveryId, 'delivered', summary, actor)
+    return getDelivery(deliveryId)
+  })
+}
+
+/**
+ * The merge-conflict rollback, as ONE unit: `verified → verifying` plus its log
+ * line plus the conflicting files / SHA snapshot on the PR row. Same contract as
+ * {@link commitDeliveryDelivered} — the caller has already passed
+ * `canTransitionDelivery` with `reason: 'merge_conflict'`.
+ */
+export function commitDeliveryMergeConflict(
+  deliveryId: string,
+  facts: DeliveryPrFactsInput,
+  summary: string,
+  actor: string,
+): Delivery | null {
+  const d = requireDb()
+  return tx(d, () => {
+    const prior = d.get<{ status: string }>('SELECT status FROM deliveries WHERE id=?', deliveryId)
+    if (!prior) return null
+    d.run(
+      'UPDATE deliveries SET status=?, updated_at=? WHERE id=?',
+      'verifying',
+      Date.now(),
+      deliveryId,
+    )
+    updateDeliveryPrFacts(deliveryId, facts)
+    insertDeliveryLog(deliveryId, 'merge_conflict', summary, actor)
+    return getDelivery(deliveryId)
+  })
 }
 
 /** Whether `status` is a delivery status the ledger accepts (wire closed-set). */

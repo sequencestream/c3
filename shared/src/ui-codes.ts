@@ -233,6 +233,33 @@ export const UI_ERROR_CODES = {
   // Branch cleanup was requested on a non-terminal delivery; only `delivered` /
   // `cancelled` may release their local branch reference.
   'delivery.cleanupForbidden': { key: 'error.delivery.cleanupForbidden' },
+  // Delivery PR (「交付分支 → 主线」, the change request a human merges on the forge).
+  // The delivery is not `verified`, so there is nothing to propose for mainline
+  // yet — verification is what a delivery PR asks the team to merge.
+  'delivery.deliveryPrForbidden': { key: 'error.delivery.deliveryPrForbidden' },
+  // `current-branch` mode has no delivery branch, so there is no head to open a
+  // delivery PR from. The page hides the action; this is the server-side backstop.
+  'delivery.deliveryPrModeUnsupported': { key: 'error.delivery.deliveryPrModeUnsupported' },
+  // The delivery branch holds nothing mainline does not — typically because it
+  // was already merged by hand. Opening an empty PR would only confuse.
+  'delivery.deliveryPrNoDiff': { key: 'error.delivery.deliveryPrNoDiff' },
+  // Creating the delivery PR failed (refs unresolvable, forge CLI missing / not
+  // logged in, push rejected, network). Transient by construction: NOTHING moved,
+  // so the same action can simply be retried — the retry asks the forge first and
+  // adopts a PR a lost response had already created.
+  'delivery.deliveryPrCreateFailed': {
+    key: 'error.delivery.deliveryPrCreateFailed',
+    params: ['detail'],
+  },
+  // A sync was requested for a delivery that never opened a delivery PR.
+  'delivery.deliveryPrNotFound': { key: 'error.delivery.deliveryPrNotFound' },
+  // The forge's live facts could not be read. The delivery status is left exactly
+  // as it was — an unreadable forge is not evidence of anything — and the sync is
+  // retryable.
+  'delivery.deliveryPrSyncFailed': {
+    key: 'error.delivery.deliveryPrSyncFailed',
+    params: ['detail'],
+  },
   // create_pr gate: the intent is associated with a delivery whose branch is not
   // ready, so its PR must not be created yet. Renders through the guard leaf
   // (the same copy the persistent gap list shows).

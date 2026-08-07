@@ -81,6 +81,10 @@ const TESTS = [
     file: 'e2e-delivery-link-test.mjs',
   },
   {
+    name: 'delivery PR (create gates / detail contract / transient failure layer)',
+    file: 'e2e-delivery-pr-test.mjs',
+  },
+  {
     name: 'dependency gate (same-delivery / cross-delivery / no-delivery)',
     file: 'e2e-dependency-gate-test.mjs',
   },

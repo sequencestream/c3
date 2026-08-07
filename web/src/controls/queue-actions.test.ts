@@ -72,6 +72,10 @@ function makeCtx(opts: { project?: string | null } = {}) {
     activeDeliveryBranchInit: ref(null),
     activeDeliverySyncPhase: ref(null),
     activeDeliveryMainlineAhead: ref(null),
+    activeDeliveryPr: ref(null),
+    activeDeliveryPrBusy: ref(false),
+    autoSyncedDeliveryPrs: ref(new Set<string>()),
+    syncDeliveryPr: vi.fn(),
     activeDelivery: ref(null),
     activeDeliveryId: ref(null),
   } as unknown as AppCtx

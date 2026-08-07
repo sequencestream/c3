@@ -13,6 +13,9 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryPlan,
     activeDeliveryIntents,
     activeDeliveryBranchInit,
+    activeDeliveryPr,
+    activeDeliveryPrBusy,
+    autoSyncedDeliveryPrs,
     activeTab,
   } = ctx
 
@@ -25,6 +28,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDelivery.value = null
     activeDeliveryPlan.value = null
     activeDeliveryIntents.value = []
+    activeDeliveryPr.value = null
     ctx.persistViewMode()
     send({ type: 'list_deliveries', workspaceId: path })
     // The link picker chooses from this workspace's intents, which the intents
@@ -38,6 +42,11 @@ export function installDeliveryActions(ctx: AppCtx): void {
   ctx.openDelivery = (deliveryId: string): void => {
     if (deliveryId === activeDeliveryId.value) return
     activeDeliveryId.value = deliveryId
+    activeDeliveryPr.value = null
+    // Opening the delivery re-arms the one-shot PR auto-sync: 「进页自动同步一次」
+    // means once per open, so the forge-merged → c3-aware window closes each time
+    // the user actually looks at the delivery.
+    autoSyncedDeliveryPrs.value.delete(deliveryId)
     ctx.persistViewMode()
     send({ type: 'get_delivery_detail', deliveryId })
   }
@@ -82,6 +91,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDelivery.value = null
     activeDeliveryPlan.value = null
     activeDeliveryIntents.value = []
+    activeDeliveryPr.value = null
     ctx.persistViewMode()
   }
 
@@ -127,6 +137,24 @@ export function installDeliveryActions(ctx: AppCtx): void {
   ctx.syncDeliveryMainline = (deliveryId: string): void => {
     if (!deliveriesProject.value) return
     send({ type: 'sync_delivery_mainline', workspaceId: deliveriesProject.value, deliveryId })
+  }
+
+  // Open the delivery PR (「交付分支 → 主线」). The server owns every gate and asks
+  // the forge before creating anything, so a double click can never open two PRs;
+  // the busy flag only keeps the button from looking idle mid-flight.
+  ctx.createDeliveryPr = (deliveryId: string): void => {
+    if (!deliveriesProject.value || activeDeliveryPrBusy.value) return
+    activeDeliveryPrBusy.value = true
+    send({ type: 'create_delivery_pr', workspaceId: deliveriesProject.value, deliveryId })
+  }
+
+  // Pull the delivery PR's live forge facts and let the server settle them. Used
+  // by the manual 「同步」 button and by the once-per-open automatic sync — c3
+  // deliberately never polls the forge in the background.
+  ctx.syncDeliveryPr = (deliveryId: string): void => {
+    if (!deliveriesProject.value || activeDeliveryPrBusy.value) return
+    activeDeliveryPrBusy.value = true
+    send({ type: 'sync_delivery_pr', workspaceId: deliveriesProject.value, deliveryId })
   }
 
   // Manual cleanup of a TERMINAL delivery's local branch reference. The page

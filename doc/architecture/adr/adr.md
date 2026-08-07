@@ -60,3 +60,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0036](0036-delivery-as-integration-unit.md)                                 | 交付作为 Git 集成单元而非业务里程碑:本地账本 + 受控状态机 + `base_branch` 快照 + `pr:merge` 知情告知                           | proposed   |
 | [0037](0037-group-launch-segment-and-session-cursor.md)                      | Group 启动段 + 会话游标:一次 run 只服务一段候选且段首必被使用,跨 system/custom 边界的 failover 发生在 resume                   | accepted   |
 | [0038](0038-dependency-gate-base-reachability.md)                            | 依赖闸门判据改为 base 可达:唯一共享纯函数 + 会话交付上下文 + `origin/<交付分支>` 基线(从不自动重建/暗中 merge)+ 一次性强制放行 | accepted   |
+| [0039](0039-delivery-merge-via-delivery-pr.md)                               | 合并回主线走交付 PR:先查 forge 事实的幂等 + 三类失败分层 + `delivered` 原子写 + 跨交付闸门重算(c3 从不代合)                    | accepted   |

@@ -45,6 +45,15 @@ export const EVENT_CATALOG: Readonly<Record<string, EventCatalogCategory>> = {
       { spec_approve: { statuses: [] as const } },
     ),
   },
+  delivery: {
+    actions: {
+      // The delivery PR was merged on the forge and the delivery reached its
+      // terminal `delivered`. A system-observed FACT, which is why it is not
+      // `pr:merge` — that type carries an automation's PR operation, and reusing
+      // it would drift what a subscriber to it is agreeing to react to.
+      delivered: { statuses: [] },
+    },
+  },
   discussion: {
     actions: {
       start: { statuses: [] },

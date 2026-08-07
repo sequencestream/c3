@@ -123,6 +123,10 @@ function makeCtx() {
   const activeDeliveryIntents = ref<import('@ccc/shared/protocol').AssociatedIntent[]>([])
   const activeDeliveryMainlineAhead = ref<number | null>(null)
   const activeDeliverySyncPhase = ref<'fetching' | 'merging' | 'pushing' | null>(null)
+  const activeDeliveryPr = ref<import('@ccc/shared/protocol').DeliveryPr | null>(null)
+  const activeDeliveryPrBusy = ref(false)
+  const autoSyncedDeliveryPrs = ref<Set<string>>(new Set())
+  const syncDeliveryPr = vi.fn()
   const intentGateEscape = ref<unknown>(null)
   const showIntentGateEscape = vi.fn((escape: unknown, message: string) => {
     intentGateEscape.value = { escape, message }
@@ -147,6 +151,10 @@ function makeCtx() {
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
     activeDeliverySyncPhase,
+    activeDeliveryPr,
+    activeDeliveryPrBusy,
+    autoSyncedDeliveryPrs,
+    syncDeliveryPr,
     intentGateEscape,
     showIntentGateEscape,
     closeIntentGateEscape,
@@ -242,6 +250,10 @@ function makeCtx() {
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
     activeDeliverySyncPhase,
+    activeDeliveryPr,
+    activeDeliveryPrBusy,
+    autoSyncedDeliveryPrs,
+    syncDeliveryPr,
     intentGateEscape,
     showIntentGateEscape,
     closeIntentGateEscape,
@@ -1904,6 +1916,7 @@ describe('delivery branch-init frames', () => {
       },
       transitionPlan: { targets: [] },
       mainlineAhead: null,
+      deliveryPr: null,
       associatedIntents: [
         { id: 'i1', title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/x' },
       ],
@@ -1936,6 +1949,7 @@ describe('delivery branch-init frames', () => {
       },
       transitionPlan: { targets: [] },
       mainlineAhead: null,
+      deliveryPr: null,
       associatedIntents: [],
       linkWarning: 'delivery.diffBloat',
     } as ServerToClient)

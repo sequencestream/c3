@@ -5,8 +5,8 @@
 -- 新建库时由 store.ts 的 SCHEMA 声明, 存量库由迁移补充, 两者 DDL 保持一致。
 --
 -- 交付是「一批意图共同集成并最终进入主线」的 Git 生命周期单元 (ADR-0036)。
--- 本阶段只承载本地台账 CRUD + 受控状态机; 交付分支 / 意图关联 / PR 改投 / 合并
--- 由后续阶段写入, 本阶段不建分支、不关联意图、不创建/关闭/合并任何 PR。
+-- 合入主线走一条「交付分支 → 主线」的交付 PR, 由人在 forge 上合并 (ADR-0039);
+-- 系统感知到该 PR merged 后, 在同一事务内把交付置为 delivered。
 --
 -- 状态闭集 (数据库 CHECK 与共享协议同一闭集, 见 @ccc/shared DeliveryStatus):
 --   planned → integrating → verifying → verified → delivered
@@ -24,10 +24,11 @@ CREATE TABLE IF NOT EXISTS deliveries (
                  CHECK(status IN ('planned','integrating','verifying','verified','delivered','cancelled')),
   start_date     INTEGER,                       -- 用户选择的日历起始日期 (epoch ms); 空 = 未设
   end_date       INTEGER,                       -- 用户选择的日历结束日期 (epoch ms); 空 = 未设
-  branch_name    TEXT,                          -- 交付分支名; 后续分支能力置入, 本阶段恒 NULL
+  branch_name    TEXT,                          -- 交付分支名; init_delivery_branch 成功后置入, 终态手动清理后清空
   base_branch    TEXT NOT NULL,                 -- 建交付时对工作区 defaultMainBranch 的快照 (解析规则所得值, 非空);
                                                 -- 之后修改工作区配置不回写历史交付, 防止交付被合进它从未基于的分支
-  branch_ready   INTEGER NOT NULL DEFAULT 0,    -- 交付分支是否已就绪; 本阶段创建/编辑均不触发分支探测, 恒为 0
+  branch_ready   INTEGER NOT NULL DEFAULT 0,    -- 交付分支是否已就绪; 仅 init_delivery_branch 在 git 侧成功后置 1,
+                                                -- 终态手动清理置回 0; 创建/编辑一律不触发分支探测
   created_at     INTEGER NOT NULL,              -- 创建时间 (epoch ms)
   updated_at     INTEGER NOT NULL               -- 最后更新时间 (epoch ms)
 );

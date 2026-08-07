@@ -9,7 +9,12 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
-import type { Delivery, DeliveryStatus, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import type {
+  Delivery,
+  DeliveryPr,
+  DeliveryStatus,
+  DeliveryTransitionPlan,
+} from '@ccc/shared/protocol'
 import { formatDate } from '@/lib/intent-list-view'
 import {
   DELIVERY_STATUS_LABEL_KEYS,
@@ -34,6 +39,10 @@ const props = defineProps<{
   mainlineAhead: number | null
   /** In-flight 「同步主线」 phase; null = idle. */
   syncPhase: 'fetching' | 'merging' | 'pushing' | null
+  /** The delivery's latest 「交付分支 → 主线」 PR; null = none opened. */
+  deliveryPr: DeliveryPr | null
+  /** Whether a delivery-PR create / sync round trip is in flight. */
+  deliveryPrBusy: boolean
 }>()
 
 const emit = defineEmits<{
@@ -50,6 +59,8 @@ const emit = defineEmits<{
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
   'sync-mainline': [deliveryId: string]
+  'create-delivery-pr': [deliveryId: string]
+  'sync-delivery-pr': [deliveryId: string]
   jump: [target: 'associated-intents' | 'workspace-settings' | 'branch']
 }>()
 
@@ -80,6 +91,56 @@ const mainlineBehind = computed(() => (props.mainlineAhead ?? 0) > 0)
 function doSyncMainline(): void {
   syncOpen.value = false
   emit('sync-mainline', props.delivery.id)
+}
+
+// ---- Merge section (交付 PR) ----
+//
+// Only ever shown in `worktree` mode: `current-branch` has no delivery branch, so
+// there is nothing to propose for mainline. It appears from `verified` on, and
+// stays visible afterwards so the PR that delivered the batch remains linkable.
+const showMergeBlock = computed(
+  () =>
+    props.workspaceGitBranchMode === 'worktree' &&
+    (props.delivery.status === 'verified' ||
+      props.delivery.status === 'delivered' ||
+      props.deliveryPr !== null),
+)
+
+/** No PR yet, or the last one was closed — the delivery PR is there to be opened. */
+const canCreateDeliveryPr = computed(
+  () =>
+    props.delivery.status === 'verified' &&
+    (props.deliveryPr === null || props.deliveryPr.status === 'closed'),
+)
+
+/**
+ * The forge says merged while c3 still says `verified` — the acknowledged
+ * awareness window. Syncing settles it; the banner exists so the state does not
+ * read as "stuck".
+ */
+const awaitingConfirmation = computed(
+  () => props.deliveryPr?.status === 'merged' && props.delivery.status !== 'delivered',
+)
+
+/**
+ * 「合并受阻」 — the code is fine, an external condition is not. Deliberately NOT
+ * a status rollback: making the user re-verify because CI is red would waste the
+ * verification they already did.
+ */
+const blockedReasonLabel = computed(() => {
+  const reason = props.deliveryPr?.blockedReason
+  if (!reason || props.deliveryPr?.status !== 'reviewing') return ''
+  return reason === 'ci_failed'
+    ? t('delivery.deliveryPr.blocked.ciFailed.label')
+    : t('delivery.deliveryPr.blocked.approval.label')
+})
+
+const conflictFiles = computed(() => props.deliveryPr?.conflictFiles ?? [])
+
+const DELIVERY_PR_STATUS_KEYS: Record<DeliveryPr['status'], LocaleKey> = {
+  reviewing: 'delivery.deliveryPr.status.reviewing.label',
+  merged: 'delivery.deliveryPr.status.merged.label',
+  closed: 'delivery.deliveryPr.status.closed.label',
 }
 
 /** Reset the editable branch-name default when opening a different delivery. */
@@ -323,6 +384,90 @@ function statusLabel(status: DeliveryStatus): string {
       </div>
     </div>
 
+    <!-- 合并区(仅 worktree):建交付 PR / PR 链接与状态 / 等待确认 / 合并受阻 /
+         冲突文件 / 手动同步。合并本身在 forge 上由人完成,c3 从不代合。 -->
+    <div v-if="showMergeBlock" class="delivery-merge-block" data-testid="delivery-merge-block">
+      <p class="delivery-branch-title">{{ t('delivery.deliveryPr.title.label') }}</p>
+
+      <p v-if="!props.deliveryPr" class="delivery-merge-hint" data-testid="delivery-merge-intro">
+        {{ t('delivery.deliveryPr.intro.label', { base: props.delivery.baseBranch }) }}
+      </p>
+
+      <div v-else class="delivery-merge-pr" data-testid="delivery-merge-pr">
+        <a
+          v-if="props.deliveryPr.url"
+          class="delivery-merge-pr-link"
+          :href="props.deliveryPr.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="delivery-merge-pr-link"
+        >
+          {{ t('delivery.deliveryPr.link.label', { number: props.deliveryPr.number }) }}
+        </a>
+        <span v-else class="delivery-merge-pr-link" data-testid="delivery-merge-pr-number">
+          {{ t('delivery.deliveryPr.link.label', { number: props.deliveryPr.number }) }}
+        </span>
+        <span class="delivery-merge-pr-status">
+          {{ t(DELIVERY_PR_STATUS_KEYS[props.deliveryPr.status]) }}
+        </span>
+      </div>
+
+      <p
+        v-if="awaitingConfirmation"
+        class="delivery-merge-awaiting"
+        data-testid="delivery-merge-awaiting"
+      >
+        {{ t('delivery.deliveryPr.awaiting.label') }}
+      </p>
+
+      <p
+        v-if="blockedReasonLabel"
+        class="delivery-merge-blocked"
+        data-testid="delivery-merge-blocked"
+      >
+        {{ blockedReasonLabel }}
+      </p>
+
+      <div
+        v-if="conflictFiles.length"
+        class="delivery-merge-conflicts"
+        data-testid="delivery-merge-conflicts"
+      >
+        <p class="delivery-merge-hint">
+          {{ t('delivery.deliveryPr.conflict.label', { count: conflictFiles.length }) }}
+        </p>
+        <ul class="delivery-merge-conflict-list">
+          <li v-for="file in conflictFiles" :key="file">{{ file }}</li>
+        </ul>
+      </div>
+
+      <div class="delivery-merge-actions">
+        <button
+          v-if="canCreateDeliveryPr"
+          type="button"
+          class="delivery-branch-init-btn"
+          :disabled="props.deliveryPrBusy"
+          data-testid="delivery-create-pr-btn"
+          @click="emit('create-delivery-pr', props.delivery.id)"
+        >
+          {{ t('delivery.deliveryPr.create.label') }}
+        </button>
+        <button
+          v-if="props.deliveryPr"
+          type="button"
+          class="delivery-sync-btn"
+          :disabled="props.deliveryPrBusy"
+          data-testid="delivery-sync-pr-btn"
+          @click="emit('sync-delivery-pr', props.delivery.id)"
+        >
+          {{ t('delivery.deliveryPr.sync.label') }}
+        </button>
+        <p v-if="props.deliveryPrBusy" class="delivery-branch-progress">
+          {{ t('delivery.deliveryPr.running.label') }}
+        </p>
+      </div>
+    </div>
+
     <dl class="delivery-meta" data-testid="delivery-meta">
       <div class="delivery-meta-row" data-testid="delivery-meta-status">
         <dt>{{ t('delivery.page.meta.status.label') }}</dt>
@@ -346,7 +491,20 @@ function statusLabel(status: DeliveryStatus): string {
       </div>
       <div class="delivery-meta-row" data-testid="delivery-meta-pr">
         <dt>{{ t('delivery.page.meta.pr.label') }}</dt>
-        <dd>—</dd>
+        <dd>
+          <a
+            v-if="props.deliveryPr?.url"
+            :href="props.deliveryPr.url"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ t('delivery.deliveryPr.link.label', { number: props.deliveryPr.number }) }}
+          </a>
+          <template v-else-if="props.deliveryPr">
+            {{ t('delivery.deliveryPr.link.label', { number: props.deliveryPr.number }) }}
+          </template>
+          <template v-else>—</template>
+        </dd>
       </div>
       <div class="delivery-meta-row" data-testid="delivery-meta-created">
         <dt>{{ t('delivery.page.meta.created.label') }}</dt>
@@ -596,6 +754,64 @@ function statusLabel(status: DeliveryStatus): string {
   border: 1px solid var(--c-danger, #e53e3e);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+.delivery-merge-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.delivery-merge-hint {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-normal);
+  color: var(--c-text-muted);
+}
+.delivery-merge-pr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-body);
+}
+.delivery-merge-pr-link {
+  color: var(--c-primary-text);
+  word-break: break-all;
+}
+.delivery-merge-pr-status {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--sp-1);
+}
+.delivery-merge-awaiting,
+.delivery-merge-blocked {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-normal);
+  color: var(--c-warning-text);
+}
+.delivery-merge-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.delivery-merge-conflict-list {
+  margin: 0;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-caption);
+  color: var(--c-text);
+  word-break: break-all;
+}
+.delivery-merge-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 .delivery-meta {
   margin: 0;

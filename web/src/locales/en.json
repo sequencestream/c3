@@ -1201,6 +1201,35 @@
           "label": "Start with this delivery"
         }
       }
+    },
+    "linkDelivery": {
+      "label": "Link delivery",
+      "title": {
+        "label": "Link a delivery"
+      },
+      "pickerTitle": {
+        "label": "Which delivery does this intent belong to?"
+      },
+      "pickerEmpty": {
+        "label": "This workspace has no open delivery to link."
+      },
+      "confirm": {
+        "label": "Link"
+      },
+      "open": {
+        "tooltip": "Open this delivery"
+      },
+      "standalone": {
+        "label": "Standalone delivery",
+        "tooltip": "Create a delivery for this intent alone (starting and ending today) and link it right away."
+      },
+      "unlink": {
+        "label": "Unlink",
+        "title": {
+          "label": "Unlink delivery?"
+        },
+        "confirm": "Unlink this intent from delivery \"{title}\"? Its open PR toward that delivery is closed as part of this."
+      }
     }
   },
   "session": {

@@ -1201,6 +1201,35 @@
           "label": "以该交付启动"
         }
       }
+    },
+    "linkDelivery": {
+      "label": "关联交付",
+      "title": {
+        "label": "关联交付"
+      },
+      "pickerTitle": {
+        "label": "本意图归属哪次交付?"
+      },
+      "pickerEmpty": {
+        "label": "本工作区没有可关联的交付。"
+      },
+      "confirm": {
+        "label": "关联"
+      },
+      "open": {
+        "tooltip": "打开该交付"
+      },
+      "standalone": {
+        "label": "当前意图独立交付",
+        "tooltip": "以当前意图新建一次专属交付(起止日期均为今天)并立即关联。"
+      },
+      "unlink": {
+        "label": "解除关联",
+        "title": {
+          "label": "解除关联?"
+        },
+        "confirm": "将本意图从交付「{title}」解除关联?它提向该交付的未合并 PR 会被一并关闭。"
+      }
     }
   },
   "session": {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
-import type { Intent } from '@ccc/shared/protocol'
+import type { Delivery, DeliveryStatus, Intent } from '@ccc/shared/protocol'
+import { i18n } from '@/i18n'
 import IntentTitleBarActions from './IntentTitleBarActions.vue'
 import type { MainAction } from './useSpecApprovalGate'
 
@@ -49,12 +50,32 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
   }
 }
 
+function fakeDelivery(id: string, title: string, status: DeliveryStatus): Delivery {
+  return {
+    id,
+    workspaceId: '/proj',
+    title,
+    description: '',
+    status,
+    startDate: null,
+    endDate: null,
+    branchName: null,
+    baseBranch: 'main',
+    branchReady: false,
+    integration: { merged: 0, total: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
 function mountActions(
   current: Intent,
   opts: {
     workspaceMainBranch?: string | null
     workspaceGitBranchMode?: 'worktree' | 'current-branch'
     intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
+    deliveries?: Delivery[]
+    standaloneDeliveryPending?: boolean
     mainAction?: MainAction
     mainActionDisabled?: boolean
   } = {},
@@ -65,6 +86,8 @@ function mountActions(
       workspaceMainBranch: opts.workspaceMainBranch ?? null,
       workspaceGitBranchMode: opts.workspaceGitBranchMode,
       intentPrSync: opts.intentPrSync,
+      deliveries: opts.deliveries,
+      standaloneDeliveryPending: opts.standaloneDeliveryPending,
       mainAction: opts.mainAction ?? 'startDev',
       mainActionLabel: 'Start Work',
       mainActionDisabled: opts.mainActionDisabled ?? false,
@@ -334,15 +357,155 @@ describe('IntentTitleBarActions.vue', () => {
   })
 })
 
-describe('IntentTitleBarActions.vue — delivery association adds nothing here', () => {
-  it('renders the SAME button set whether or not the intent is linked to a delivery', () => {
-    const buttonsOf = (linked: Intent['linkedDeliveries']) =>
-      mountActions(intent({ id: 'i1', status: 'in_progress', linkedDeliveries: linked }))
-        .find('[data-testid="intent-detail-actions"]')
-        .findAll('button')
-        .map((b) => b.attributes('data-testid'))
+describe('IntentTitleBarActions.vue — 交付归属入口(三态)', () => {
+  const SPRINT: Intent['linkedDeliveries'] = [{ id: 'd1', title: 'Sprint 3' }]
 
-    // 关联/解除只在交付详情页操作;意图详情页对此纯只读,标题栏一个按钮都不加。
-    expect(buttonsOf([{ id: 'd1', title: 'Sprint 3' }])).toEqual(buttonsOf([]))
+  it('未关联时给出「关联交付」,点击先请控制层补拉列表再开弹窗', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: [] }))
+    expect(w.find('[data-testid="intent-detail-unlink-delivery"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(false)
+
+    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    // 意图页从不自带交付列表,开框必须同时请控制层补发 list_deliveries。
+    expect(w.emitted('open-link-dialog')).toEqual([['/proj']])
+    expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(true)
+  })
+
+  it('恰好关联一个时展示交付名(可跳转)与「解除关联」,不再给关联入口', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: SPRINT }))
+    expect(w.find('[data-testid="intent-detail-link-delivery"]').exists()).toBe(false)
+
+    const link = w.find('[data-testid="intent-detail-delivery-d1"]')
+    expect(link.text()).toBe('Sprint 3')
+    await link.trigger('click')
+    expect(w.emitted('open-delivery')).toEqual([['d1']])
+    expect(w.find('[data-testid="intent-detail-unlink-delivery"]').exists()).toBe(true)
+  })
+
+  it('多关联只展示,既无关联也无解除入口(与不渲染建 PR 入口同一条裁决)', () => {
+    const w = mountActions(
+      intent({
+        id: 'i1',
+        linkedDeliveries: [
+          { id: 'd1', title: 'Sprint 3' },
+          { id: 'd2', title: 'Sprint 4' },
+        ],
+      }),
+    )
+    expect(w.find('[data-testid="intent-detail-delivery-d1"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-delivery-d2"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-link-delivery"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-unlink-delivery"]').exists()).toBe(false)
+  })
+
+  it('弹窗候选只含未终态交付,选中确认后带全量 id 上抛', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: [] }), {
+      deliveries: [
+        fakeDelivery('d1', 'Planned one', 'planned'),
+        fakeDelivery('d2', 'Integrating one', 'integrating'),
+        fakeDelivery('d3', 'Verifying one', 'verifying'),
+        fakeDelivery('d4', 'Verified one', 'verified'),
+        fakeDelivery('d5', 'Delivered one', 'delivered'),
+        fakeDelivery('d6', 'Cancelled one', 'cancelled'),
+      ],
+    })
+    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+
+    const options = w.findAll('#intent-link-delivery-select option')
+    expect(options.map((o) => o.attributes('value'))).toEqual(['d1', 'd2', 'd3', 'd4'])
+
+    await w.find('#intent-link-delivery-select').setValue('d3')
+    await w.find('[data-testid="intent-link-delivery-confirm"]').trigger('click')
+    expect(w.emitted('link-delivery')).toEqual([['/proj', 'd3', 'i1']])
+    // 关联发出即收框,避免对着已提交的选择再点一次。
+    expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(false)
+  })
+
+  it('没有可关联交付时弹窗给空态而不是一个空下拉', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: [] }), {
+      deliveries: [fakeDelivery('d5', 'Delivered one', 'delivered')],
+    })
+    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    expect(w.find('#intent-link-delivery-select').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-link-delivery-empty"]').exists()).toBe(true)
+  })
+
+  it('「当前意图独立交付」仅 worktree 模式渲染,并带意图标题/正文上抛', async () => {
+    const current = mountActions(intent({ id: 'i1', linkedDeliveries: [] }), {
+      workspaceGitBranchMode: 'current-branch',
+    })
+    await current.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    // current-branch 模式下交付侧本就没有分支初始化/交付 PR 入口,一键创建到不了目的。
+    expect(current.find('[data-testid="intent-link-delivery-standalone"]').exists()).toBe(false)
+
+    const w = mountActions(
+      intent({
+        id: 'i1',
+        title: 'Fix login',
+        content: 'Login breaks on retry',
+        linkedDeliveries: [],
+      }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    await w.find('[data-testid="intent-link-delivery-standalone"]').trigger('click')
+    expect(w.emitted('standalone-delivery')).toEqual([
+      [
+        {
+          workspaceId: '/proj',
+          intentId: 'i1',
+          title: 'Fix login',
+          description: 'Login breaks on retry',
+        },
+      ],
+    ])
+  })
+
+  it('独立交付在飞行中时按钮禁用,点击不再上抛(防双发)', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: [] }), {
+      workspaceGitBranchMode: 'worktree',
+      standaloneDeliveryPending: true,
+    })
+    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    const btn = w.find('[data-testid="intent-link-delivery-standalone"]')
+    expect(btn.attributes('disabled')).toBeDefined()
+    await btn.trigger('click')
+    expect(w.emitted('standalone-delivery')).toBeUndefined()
+  })
+
+  it('解除关联走 danger 二次确认,文案说明会关闭该交付下的 PR', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: SPRINT }))
+    await w.find('[data-testid="intent-detail-unlink-delivery"]').trigger('click')
+    expect(w.emitted('unlink-delivery')).toBeUndefined()
+
+    // 二次确认正文取意图侧自有文案,并把「会关闭 PR」这个副作用讲明白。
+    const message = w.find('.cd-message').text()
+    expect(message).toBe(i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'Sprint 3' }))
+    expect(message).toContain('PR')
+
+    await w.find('.cd-confirm').trigger('click')
+    expect(w.emitted('unlink-delivery')).toEqual([['/proj', 'd1', 'i1']])
+  })
+
+  it('关联在弹框敞开期间被别处改掉时收起对应弹框', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: SPRINT }))
+    await w.find('[data-testid="intent-detail-unlink-delivery"]').trigger('click')
+    expect(w.find('.cd-message').exists()).toBe(true)
+
+    // 别的客户端解除了关联:确认框的前提已不成立,不该留着让用户对空气点确认。
+    await w.setProps({ intent: intent({ id: 'i1', linkedDeliveries: [] }) })
+    expect(w.find('.cd-message').exists()).toBe(false)
+  })
+})
+
+describe('五语言解除文案', () => {
+  // 「会关闭 PR」是解除关联唯一的不可逆副作用,任何一门语言漏讲都等于让用户在
+  // 不知情下确认 —— 因此这条按 key 逐语言守住,不随译文润色而放松。
+  it('每种语言的解除确认都点明 PR 会被关闭', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
+      const copy = i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'X' }, { locale })
+      expect(copy, locale).toContain('PR')
+      expect(copy, locale).toContain('X')
+    }
   })
 })

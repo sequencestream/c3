@@ -330,7 +330,8 @@ describe('IntentOverviewTab — 关联交付 in the meta strip', () => {
     expect(w.find('[data-testid="intent-meta-delivery"]').exists()).toBe(false)
   })
 
-  it('emits open-delivery when a linked delivery is clicked (read-only page, no new title-bar button)', async () => {
+  // 元信息区仍是纯只读:关联/解除的入口在标题栏(IntentTitleBarActions),本 tab 只导航。
+  it('emits open-delivery when a linked delivery is clicked', async () => {
     const w = mountTab(intent({ id: 'r1', linkedDeliveries: [{ id: 'd1', title: 'Sprint 3' }] }))
     await w.find('[data-testid="intent-meta-delivery-d1"]').trigger('click')
     expect(w.emitted('open-delivery')).toEqual([['d1']])

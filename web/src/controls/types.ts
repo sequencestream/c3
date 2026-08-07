@@ -32,6 +32,7 @@ import type { CreatePrEvent } from '@/lib/create-pr-view'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
 import type { SpecLaunchEvent } from '@/lib/spec-launch-view'
 import type { ShareTarget } from '@/lib/share-link'
+import type { StandaloneDeliveryRequest } from '@/lib/delivery-view'
 
 export type WsClient = ReturnType<typeof createWsClient>
 
@@ -246,6 +247,26 @@ export interface AppMethods {
   unlinkIntentFromDelivery(intentId: string): void
   /** Open a delivery's detail from the intent page's "关联交付" link (switches tab). */
   openDeliveryFromIntent(workspacePath: string, deliveryId: string): void
+
+  // Intent-side delivery entries. Same wire messages as the delivery page's, but
+  // every id is explicit: the intent page acts on ITS workspace and a delivery
+  // the user just picked, not on the delivery tab's open delivery.
+  /** Fetch a workspace's deliveries so the intent-side link picker has candidates. */
+  loadDeliveriesForLink(workspaceId: string): void
+  linkIntentDelivery(workspaceId: string, deliveryId: string, intentId: string): void
+  unlinkIntentDelivery(workspaceId: string, deliveryId: string, intentId: string): void
+  /** Branch init for an explicitly named delivery (the standalone-delivery chain's last step). */
+  initDeliveryBranchFor(
+    workspaceId: string,
+    deliveryId: string,
+    branchName: string,
+    mode: 'create' | 'bind',
+  ): void
+  /**
+   * 「当前意图独立交付」: create a delivery for this intent alone. Sends only the
+   * create; the link + branch init are chained off `create_delivery_result`.
+   */
+  createStandaloneDelivery(payload: StandaloneDeliveryRequest): void
   onDeliveryMobileBack(targetKey: string): void
 
   // discussions

@@ -1,4 +1,9 @@
 import type { DeliveryStatus } from '@ccc/shared/protocol'
+import {
+  calendarDateToEpochMs,
+  localCalendarDate,
+  type StandaloneDeliveryRequest,
+} from '@/lib/delivery-view'
 import type { AppCtx } from './types'
 
 // Install delivery-tab actions (read path + create/edit/cancel/status transition)
@@ -16,6 +21,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryPr,
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
+    pendingStandaloneDelivery,
     activeTab,
   } = ctx
 
@@ -190,6 +196,70 @@ export function installDeliveryActions(ctx: AppCtx): void {
       workspaceId: deliveriesProject.value,
       deliveryId: id,
       intentId,
+    })
+  }
+
+  // ── Intent-side delivery entries (explicit parameters) ─────────────────────
+  // Everything above binds the OPEN delivery (activeDeliveryId + deliveriesProject).
+  // The intent page has neither: it acts on an intent's workspace and a delivery
+  // the user just picked, while the delivery tab may sit on another workspace
+  // entirely. These variants therefore take every id explicitly. The wire
+  // messages are the same ones the delivery page sends — the server is still the
+  // only gate, and no new protocol surface exists for the intent side.
+
+  // Load a workspace's deliveries for the intent-side link picker. The intent
+  // page never lists deliveries on its own, so the picker asks for them when it
+  // opens; the reply is keyed by workspace and lands in the shared cache.
+  ctx.loadDeliveriesForLink = (workspaceId: string): void => {
+    send({ type: 'list_deliveries', workspaceId })
+  }
+
+  ctx.linkIntentDelivery = (workspaceId: string, deliveryId: string, intentId: string): void => {
+    send({ type: 'link_intent_to_delivery', workspaceId, deliveryId, intentId })
+  }
+
+  ctx.unlinkIntentDelivery = (workspaceId: string, deliveryId: string, intentId: string): void => {
+    send({ type: 'unlink_intent_from_delivery', workspaceId, deliveryId, intentId })
+  }
+
+  ctx.initDeliveryBranchFor = (
+    workspaceId: string,
+    deliveryId: string,
+    branchName: string,
+    mode: 'create' | 'bind',
+  ): void => {
+    const name = branchName.trim()
+    if (!name) return
+    // Reuse the same in-flight state the delivery page seeds, so the existing
+    // progress / result / error handling applies verbatim to this run too.
+    activeDeliveryBranchInit.value = { deliveryId, phase: 'fetching' }
+    send({ type: 'init_delivery_branch', workspaceId, deliveryId, branchName: name, mode })
+  }
+
+  // 「当前意图独立交付」 — step one of three. Only the create is sent here; the
+  // link and the branch init are chained off `create_delivery_result`, which is
+  // the first moment the new delivery's id exists. The pending slot carries the
+  // intent across that gap and doubles as the double-send guard.
+  ctx.createStandaloneDelivery = (payload: StandaloneDeliveryRequest): void => {
+    if (pendingStandaloneDelivery.value) return
+    const title = payload.title.trim()
+    if (!title) return
+    // Start = end = today. The wire stores a calendar date as ITS UTC midnight,
+    // so the local day must be read as 'YYYY-MM-DD' first and encoded from
+    // there; a local-midnight timestamp would land on the previous day in any
+    // positive offset and render back as 「昨天」.
+    const day = calendarDateToEpochMs(localCalendarDate(new Date()))
+    pendingStandaloneDelivery.value = {
+      workspaceId: payload.workspaceId,
+      intentId: payload.intentId,
+    }
+    send({
+      type: 'create_delivery',
+      workspaceId: payload.workspaceId,
+      title,
+      description: payload.description,
+      startDate: day,
+      endDate: day,
     })
   }
 

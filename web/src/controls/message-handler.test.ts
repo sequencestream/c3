@@ -127,6 +127,11 @@ function makeCtx() {
   const activeDeliveryPrBusy = ref(false)
   const autoSyncedDeliveryPrs = ref<Set<string>>(new Set())
   const syncDeliveryPr = vi.fn()
+  // 「当前意图独立交付」 pending slot + the two actions its chain fires off
+  // `create_delivery_result`.
+  const pendingStandaloneDelivery = ref<{ workspaceId: string; intentId: string } | null>(null)
+  const linkIntentDelivery = vi.fn()
+  const initDeliveryBranchFor = vi.fn()
   const intentGateEscape = ref<unknown>(null)
   const showIntentGateEscape = vi.fn((escape: unknown, message: string) => {
     intentGateEscape.value = { escape, message }
@@ -155,6 +160,9 @@ function makeCtx() {
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
     syncDeliveryPr,
+    pendingStandaloneDelivery,
+    linkIntentDelivery,
+    initDeliveryBranchFor,
     intentGateEscape,
     showIntentGateEscape,
     closeIntentGateEscape,
@@ -254,6 +262,9 @@ function makeCtx() {
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
     syncDeliveryPr,
+    pendingStandaloneDelivery,
+    linkIntentDelivery,
+    initDeliveryBranchFor,
     intentGateEscape,
     showIntentGateEscape,
     closeIntentGateEscape,

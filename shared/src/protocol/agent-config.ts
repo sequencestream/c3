@@ -34,7 +34,10 @@ export const GROUP_AGENT_PREFIX = '_c3_'
  * specifics live in a discriminated `config` sub-object — see {@link AgentConfig}.
  */
 export interface AgentConfigBase {
-  /** Stable id (a uuid; {@link SYSTEM_AGENT_ID} only for the synthesized fallback). */
+  /** Stable id. Minted as `<millisecond timestamp>-<counter>` (web console on add
+   *  or copy, server on normalize for an id-less record) and never rewritten
+   *  afterwards, so older ids may carry other shapes; {@link SYSTEM_AGENT_ID}
+   *  only for the synthesized fallback. */
   id: string
   /** Which vendor this agent drives. The discriminant of {@link AgentConfig}. */
   vendor: VendorId

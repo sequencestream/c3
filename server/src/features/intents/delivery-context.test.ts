@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Intent } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
+import { ensureRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import {
   addWorkspace,
   pathToId,
@@ -20,10 +21,12 @@ import {
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
   getIntent,
+  insertIntentSession,
   insertIntents,
   listIntentLogs,
   resetStoreForTests,
   setBranchName,
+  setLastWorkSession,
   updateIntentDeps,
   updateStatus,
 } from './store.js'
@@ -83,6 +86,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  removeRuntimesForWorkspace(proj)
   resetDbForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
@@ -241,5 +245,39 @@ describe('launchWorkSession —— 交付相关的准入闸门', () => {
     expect(
       listIntentLogs(r.id).some((l) => l.operationType === 'dependency_gate_force_release'),
     ).toBe(false)
+  })
+})
+
+describe('launchWorkSession —— resume 复用启动时定下的交付上下文', () => {
+  /** 一条 `in_progress` 意图,绑定一个空闲会话,并按给定上下文登记会话记录。 */
+  function inProgressWithSession(title: string, sessionId: string, deliveryId: string | null) {
+    const r = seedIntent(title)
+    updateStatus(r.id, 'in_progress', 'test')
+    setLastWorkSession(r.id, sessionId)
+    insertIntentSession(r.id, sessionId, 'claude', undefined, deliveryId)
+    ensureRuntime(sessionId, proj, 'default', [], 'work')
+    return r.id
+  }
+
+  it('记录的 delivery_id 为 NULL 是「本会话无交付上下文」这个答案,不是记录缺失 —— 意图事后多关联也不重新解析', async () => {
+    const id = inProgressWithSession('NullCtx', 'sess-null-ctx', null)
+    // 会话启动之后意图才关联了两个交付:重新解析会得到 deliveryContextRequired。
+    seedDelivery('A', id)
+    seedDelivery('B', id)
+
+    const out = await launchWorkSession(proj, id, deps)
+    expect(out).toMatchObject({ success: true, sessionId: 'sess-null-ctx', mode: 'resume' })
+  })
+
+  it('记录缺失(会话从未登记)才回落到本次启动的解析 —— 多关联仍明确拒绝', async () => {
+    const r = seedIntent('NoRecord')
+    updateStatus(r.id, 'in_progress', 'test')
+    setLastWorkSession(r.id, 'sess-no-record')
+    ensureRuntime('sess-no-record', proj, 'default', [], 'work')
+    seedDelivery('A', r.id)
+    seedDelivery('B', r.id)
+
+    const out = await launchWorkSession(proj, r.id, deps)
+    expect(out).toEqual({ success: false, code: 'intent.deliveryContextRequired' })
   })
 })

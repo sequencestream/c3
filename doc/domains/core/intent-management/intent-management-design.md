@@ -54,14 +54,14 @@
   以及 spec 相关列 `spec_path`/`spec_status`/`spec_approved`/`spec_approve_user`/
   `spec_session_id`/`spec_review_*`/`spec_mode`),按 `(workspace_path, status)` 建索引。
   `module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为 `INTEGER NOT NULL DEFAULT 0`;
-  `spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,RM-R40)。
+  `spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,RM-R43)。
 - `intent_deps` — `(intent_id, depends_on_id)` 边。
 - `intent_fast_turns` — fast 模式每 turn 反向补轨的结算记录(`session_id` 主键、`intent_id`、
   `workspace_path`、`baseline` JSON、`settled_at`/`outcome`/`spec_path`、`created_at` +
   `idx_intent_fast_turn_intent`);`settled_at` 在落定处理前为 NULL,同时充当「启动 → 落定」
   握手,防重复 settled 事件或重启重复生成规格。resume 复用同一 session 重建 baseline 时,
   冲突分支一并清除 `settled_at`/`outcome`/`spec_path`,为同一会话的每个 turn 各自开启新的
-  可结算周期,使第二个及后续 resume turn 同样能 claim 落定(RM-R40)。
+  可结算周期,使第二个及后续 resume turn 同样能 claim 落定(RM-R43)。
 - `intent_chats` — 一张表身兼**按工作区的沟通会话集合**与**隐藏集**两职:`session_id`
   (主键,可能是 `pending:` id)、`workspace_path`、
   `title`(可空,客户端回退为「New Intent」或由首个提示词推导)、

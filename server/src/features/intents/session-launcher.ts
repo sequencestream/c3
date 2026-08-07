@@ -345,7 +345,8 @@ function baselineRejection(
  * The delivery context is NOT re-resolved here: it is read back from the session
  * record written at fresh launch, so a resume develops against the same delivery
  * the session was started for even if the intent's associations changed since.
- * A session that predates the column has none, which is exactly what it ran with.
+ * A session that predates the column reads back NULL, which is exactly what it
+ * ran with — no context — so it too is reused rather than re-derived.
  */
 async function attachOrResumeWorkSession(
   workspacePath: string,
@@ -382,11 +383,14 @@ async function attachOrResumeWorkSession(
     return { success: false, code: 'intent.pendingQuestionUnanswered' }
   }
   // The context this session was STARTED with, not one re-derived from today's
-  // associations. Falls back to the launch's own resolution only for sessions
-  // written before the column existed.
-  const recorded = getIntentSessionBySessionId(sessionId, intent.id)?.deliveryId ?? null
-  let deliveryId = recorded
-  if (deliveryId === null) {
+  // associations. A record whose `deliveryId` is NULL is an ANSWER — the session
+  // ran with no delivery context, which is also what every session predating the
+  // column ran with — so it is reused as-is even if the intent has since gained
+  // associations. Only a MISSING record (session never registered here, or an
+  // unreadable db) has no answer to reuse and falls back to resolution.
+  const record = getIntentSessionBySessionId(sessionId, intent.id)
+  let deliveryId = record?.deliveryId ?? null
+  if (!record) {
     const resolved = resolveSessionDeliveryContext(workspacePath, intent, opts?.deliveryId)
     if (!resolved.ok) return { success: false, code: resolved.code }
     deliveryId = resolved.delivery?.id ?? null

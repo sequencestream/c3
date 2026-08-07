@@ -453,6 +453,13 @@ export function createState(deps: StateDeps) {
    * 「主线领先」 hint and makes 「同步主线」 the obvious next action.
    */
   const activeDeliveryMainlineAhead = ref<number | null>(null)
+  /**
+   * How far the open delivery's branch is ahead of mainline (server-computed,
+   * fetch-free); the mirror of `activeDeliveryMainlineAhead`. `null` = unknown /
+   * not applicable; `> 0` proves the delivery branch carries commits the merge
+   * would actually ship, i.e. 「创建交付 PR」 has a real diff to open.
+   */
+  const activeDeliveryBranchAhead = ref<number | null>(null)
   /** In-flight 「同步主线」 phase for the open delivery; null = idle. */
   const activeDeliverySyncPhase = ref<'fetching' | 'merging' | 'pushing' | null>(null)
   /**
@@ -1153,6 +1160,7 @@ export function createState(deps: StateDeps) {
     activeDeliveryPlan,
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
+    activeDeliveryBranchAhead,
     activeDeliverySyncPhase,
     activeDeliveryPr,
     activeDeliveryPrBusy,

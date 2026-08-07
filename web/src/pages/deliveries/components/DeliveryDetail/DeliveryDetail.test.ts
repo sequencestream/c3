@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Delivery, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import type { Delivery, DeliveryPr, DeliveryTransitionPlan } from '@ccc/shared/protocol'
 import { DELIVERY_STATUSES } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import DeliveryDetail from './DeliveryDetail.vue'
@@ -42,6 +42,9 @@ function mountDetail(
     delivery?: Delivery
     plan?: DeliveryTransitionPlan
     mode?: 'worktree' | 'current-branch'
+    mainlineAhead?: number | null
+    deliveryBranchAhead?: number | null
+    deliveryPr?: DeliveryPr | null
   } = {},
 ) {
   return mount(DeliveryDetail, {
@@ -50,9 +53,10 @@ function mountDetail(
       plan: over.plan ?? PLANNED_PLAN,
       branchInit: null,
       workspaceGitBranchMode: over.mode ?? 'worktree',
-      mainlineAhead: null,
+      mainlineAhead: over.mainlineAhead ?? null,
+      deliveryBranchAhead: over.deliveryBranchAhead ?? null,
       syncPhase: null,
-      deliveryPr: null,
+      deliveryPr: over.deliveryPr ?? null,
       deliveryPrBusy: false,
       associatedIntents: [],
       intents: [],
@@ -183,6 +187,7 @@ describe('DeliveryDetail', () => {
         branchInit: { deliveryId: 'd1', phase: 'pushing' },
         workspaceGitBranchMode: 'worktree',
         mainlineAhead: null,
+        deliveryBranchAhead: null,
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
@@ -470,5 +475,106 @@ describe('DeliveryEditDialog.vue — 弹窗宽度契约', () => {
     expect(modal).toMatch(/max-width:\s*none/)
     expect(modal).toMatch(/min-height:\s*100dvh/)
     expect(ruleBody(mobile, '.de-foot')).toMatch(/margin-top:\s*auto/)
+  })
+})
+
+// ---- 交付 PR 诊断块 -----------------------------------------------------
+
+function pr(over: Partial<DeliveryPr> = {}): DeliveryPr {
+  return {
+    deliveryId: 'd1',
+    forge: null,
+    repo: 'owner/repo',
+    number: '12',
+    url: 'https://example.com/pr/12',
+    headBranch: 'delivery/d1',
+    baseBranch: 'main',
+    baseSha: 'a'.repeat(40),
+    headSha: 'b'.repeat(40),
+    status: 'merged',
+    blockedReason: null,
+    conflictFiles: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  }
+}
+
+describe('DeliveryDetail — 交付 PR 诊断块', () => {
+  it('renders the create button and NO diagnosis when verified + branch ready + no PR', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verified', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryBranchAhead: 3,
+    })
+    expect(w.find('[data-testid="delivery-merge-block"]').exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-create-pr-btn"]').exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-pr-not-shown-diagnosis"]').exists()).toBe(false)
+  })
+
+  it('lists the five facts when the merge block renders without the create button', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'delivered', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryPr: pr(),
+      deliveryBranchAhead: 0,
+    })
+    const diag = w.find('[data-testid="delivery-pr-not-shown-diagnosis"]')
+    expect(diag.exists()).toBe(true)
+    // 五条事实逐行:分支模式 / 状态 / 分支就绪 / 交付 PR / 交付分支领先。
+    expect(
+      w.findAll('[data-testid^="delivery-pr-diagnosis-"]').map((f) => f.attributes('data-testid')),
+    ).toEqual([
+      'delivery-pr-diagnosis-branchMode',
+      'delivery-pr-diagnosis-status',
+      'delivery-pr-diagnosis-branch',
+      'delivery-pr-diagnosis-pr',
+      'delivery-pr-diagnosis-diff',
+    ])
+    expect(w.find('[data-testid="delivery-pr-diagnosis-branchMode"]').text()).toContain('Worktree')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-status"]').text()).toContain('Delivered')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-branch"]').text()).toContain('delivery/d1')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-pr"]').text()).toContain('#12')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-diff"]').text()).toContain('no difference')
+  })
+
+  it('renders the diagnosis alongside the merge block while verifying with a kept PR row', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verifying', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryPr: pr({ status: 'reviewing' }),
+      deliveryBranchAhead: 4,
+    })
+    // verifying + 保留 PR 行:合并区与诊断块都渲染,不加额外状态守卫。
+    expect(w.find('[data-testid="delivery-merge-block"]').exists()).toBe(true)
+    const diag = w.find('[data-testid="delivery-pr-not-shown-diagnosis"]')
+    expect(diag.exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-pr-diagnosis-status"]').text()).toContain('Verifying')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-pr"]').text()).toContain('#12')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-pr"]').text()).toContain('Open')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-diff"]').text()).toContain('4 commit')
+  })
+
+  it('shows branch-not-ready and an undeterminable diff in the diagnostic lines', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verified', branchReady: false, branchName: null }),
+      plan: { targets: [] },
+      deliveryPr: pr({ status: 'reviewing' }),
+      deliveryBranchAhead: null,
+    })
+    const diag = w.find('[data-testid="delivery-pr-not-shown-diagnosis"]')
+    expect(diag.exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-pr-diagnosis-branch"]').text()).toContain('no')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-diff"]').text()).toContain('undeterminable')
+  })
+
+  it('omits the diagnosis block in current-branch mode (no merge block at all)', () => {
+    const w = mountDetail({
+      mode: 'current-branch',
+      delivery: delivery({ status: 'verified', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+    })
+    expect(w.find('[data-testid="delivery-merge-block"]').exists()).toBe(false)
+    expect(w.find('[data-testid="delivery-pr-not-shown-diagnosis"]').exists()).toBe(false)
   })
 })

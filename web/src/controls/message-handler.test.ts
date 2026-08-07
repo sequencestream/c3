@@ -122,6 +122,7 @@ function makeCtx() {
   const activeDeliveryPlan = ref<import('@ccc/shared/protocol').DeliveryTransitionPlan | null>(null)
   const activeDeliveryIntents = ref<import('@ccc/shared/protocol').AssociatedIntent[]>([])
   const activeDeliveryMainlineAhead = ref<number | null>(null)
+  const activeDeliveryBranchAhead = ref<number | null>(null)
   const activeDeliverySyncPhase = ref<'fetching' | 'merging' | 'pushing' | null>(null)
   const activeDeliveryPr = ref<import('@ccc/shared/protocol').DeliveryPr | null>(null)
   const activeDeliveryPrBusy = ref(false)
@@ -155,6 +156,7 @@ function makeCtx() {
     activeDeliveryPlan,
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
+    activeDeliveryBranchAhead,
     activeDeliverySyncPhase,
     activeDeliveryPr,
     activeDeliveryPrBusy,
@@ -257,6 +259,7 @@ function makeCtx() {
     activeDeliveryId,
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
+    activeDeliveryBranchAhead,
     activeDeliverySyncPhase,
     activeDeliveryPr,
     activeDeliveryPrBusy,
@@ -1927,6 +1930,7 @@ describe('delivery branch-init frames', () => {
       },
       transitionPlan: { targets: [] },
       mainlineAhead: null,
+      deliveryBranchAhead: null,
       deliveryPr: null,
       associatedIntents: [
         { id: 'i1', title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/x' },
@@ -1960,6 +1964,7 @@ describe('delivery branch-init frames', () => {
       },
       transitionPlan: { targets: [] },
       mainlineAhead: null,
+      deliveryBranchAhead: null,
       deliveryPr: null,
       associatedIntents: [],
       linkWarning: 'delivery.diffBloat',
@@ -1975,5 +1980,130 @@ describe('delivery branch-init frames', () => {
     result.ctx.handleMessage(error('intent.prCreateFailed'))
 
     expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'fetching' })
+  })
+})
+
+describe('delivery detail ahead facts + cross-delivery residue clearing', () => {
+  it('writes both ahead values from delivery_detail', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'delivery_detail',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'verified',
+        startDate: null,
+        endDate: null,
+        branchName: 'delivery/d1',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 2, total: 2 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      transitionPlan: { targets: [] },
+      mainlineAhead: 2,
+      deliveryBranchAhead: 5,
+      deliveryPr: null,
+      associatedIntents: [],
+    } as ServerToClient)
+
+    expect(result.activeDeliveryMainlineAhead.value).toBe(2)
+    expect(result.activeDeliveryBranchAhead.value).toBe(5)
+  })
+
+  it('clears the previous delivery PR + ahead values when a new delivery is created', () => {
+    const result = makeCtx()
+    result.activeDeliveryPr.value = {
+      deliveryId: 'd0',
+      forge: null,
+      repo: null,
+      number: '7',
+      url: null,
+      headBranch: 'delivery/d0',
+      baseBranch: 'main',
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      status: 'merged',
+      blockedReason: null,
+      conflictFiles: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    result.activeDeliveryMainlineAhead.value = 3
+    result.activeDeliveryBranchAhead.value = 9
+
+    result.ctx.handleMessage({
+      type: 'create_delivery_result',
+      workspaceId: 'w1',
+      delivery: {
+        id: 'd2',
+        workspaceId: 'w1',
+        title: 'Sprint 4',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: null,
+        baseBranch: 'main',
+        branchReady: false,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    } as ServerToClient)
+
+    // The id just moved to a fresh delivery — nothing of d0 may linger.
+    expect(result.activeDeliveryPr.value).toBeNull()
+    expect(result.activeDeliveryMainlineAhead.value).toBeNull()
+    expect(result.activeDeliveryBranchAhead.value).toBeNull()
+  })
+
+  it('clears the stale PR + ahead values on a branch-init result', () => {
+    const result = makeCtx()
+    result.activeDeliveryPr.value = {
+      deliveryId: 'd1',
+      forge: null,
+      repo: null,
+      number: '7',
+      url: null,
+      headBranch: 'delivery/d1',
+      baseBranch: 'main',
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      status: 'merged',
+      blockedReason: null,
+      conflictFiles: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    result.activeDeliveryMainlineAhead.value = 3
+    result.activeDeliveryBranchAhead.value = 9
+
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_result',
+      workspaceId: 'w1',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: 'delivery/d1',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } as ServerToClient)
+
+    expect(result.activeDeliveryPr.value).toBeNull()
+    expect(result.activeDeliveryMainlineAhead.value).toBeNull()
+    expect(result.activeDeliveryBranchAhead.value).toBeNull()
   })
 })

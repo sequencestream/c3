@@ -68,6 +68,7 @@ function makeCtx() {
     activeDeliveryPlan: ref(null),
     activeDeliveryIntents: ref([]),
     activeDeliveryMainlineAhead: ref(null),
+    activeDeliveryBranchAhead: ref(null),
     activeDeliverySyncPhase: ref(null),
     activeDeliveryPr: ref(null),
     activeDeliveryPrBusy: ref(false),
@@ -247,5 +248,75 @@ describe('「当前意图独立交付」三步编排', () => {
     // 释放后可以重来一次,而不是要求用户刷新页面。
     ctx.createStandaloneDelivery(REQUEST)
     expect(sent(send).filter((m) => m.type === 'create_delivery')).toHaveLength(2)
+  })
+})
+
+describe('openDeliveries — git-branch-mode fetch + cross-delivery clearing (根因修复)', () => {
+  it('re-fetches the workspace setting and clears the previous delivery PR + ahead values', () => {
+    const { ctx, send } = makeCtx()
+    // A previous delivery's facts must not survive the switch to a new workspace.
+    ctx.activeDeliveryPr.value = {
+      deliveryId: 'd-old',
+      forge: null,
+      repo: null,
+      number: '7',
+      url: null,
+      headBranch: 'delivery/d-old',
+      baseBranch: 'main',
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      status: 'merged',
+      blockedReason: null,
+      conflictFiles: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    ctx.activeDeliveryMainlineAhead.value = 3
+    ctx.activeDeliveryBranchAhead.value = 5
+
+    ctx.openDeliveries(WS)
+
+    // The merge block gates on git-branch mode, which is a stored setting the
+    // server resolves (worktree default). A stale `current-branch` fallback would
+    // hide the merge block — so the setting is re-fetched on every entry.
+    expect(sent(send).map((m) => m.type)).toEqual([
+      'load_workspace_setting',
+      'list_deliveries',
+      'list_intents',
+    ])
+    expect(sent(send)[0]).toMatchObject({ type: 'load_workspace_setting', workspaceId: WS })
+    expect(ctx.activeDeliveryPr.value).toBeNull()
+    expect(ctx.activeDeliveryMainlineAhead.value).toBeNull()
+    expect(ctx.activeDeliveryBranchAhead.value).toBeNull()
+  })
+
+  it('clears the ahead values when opening a different delivery', () => {
+    const { ctx, send } = makeCtx()
+    ctx.activeDeliveryId.value = 'd-old'
+    ctx.activeDeliveryMainlineAhead.value = 3
+    ctx.activeDeliveryBranchAhead.value = 5
+    ctx.activeDeliveryPr.value = {
+      deliveryId: 'd-old',
+      forge: null,
+      repo: null,
+      number: '7',
+      url: null,
+      headBranch: 'delivery/d-old',
+      baseBranch: 'main',
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      status: 'merged',
+      blockedReason: null,
+      conflictFiles: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+
+    ctx.openDelivery('d2')
+
+    expect(sent(send).filter((m) => m.type === 'get_delivery_detail')).toHaveLength(1)
+    expect(ctx.activeDeliveryPr.value).toBeNull()
+    expect(ctx.activeDeliveryMainlineAhead.value).toBeNull()
+    expect(ctx.activeDeliveryBranchAhead.value).toBeNull()
   })
 })

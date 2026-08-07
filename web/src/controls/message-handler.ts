@@ -142,6 +142,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeDeliveryPlan,
     activeDeliveryIntents,
     activeDeliveryMainlineAhead,
+    activeDeliveryBranchAhead,
     activeDeliverySyncPhase,
     activeDeliveryPr,
     activeDeliveryPrBusy,
@@ -912,6 +913,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Open the newly-created delivery on the creating connection right away.
         activeDeliveryId.value = msg.delivery.id
         activeDelivery.value = msg.delivery
+        // The id just changed to a brand-new delivery: its detail is re-fetched
+        // below, but the previous delivery's PR / ahead values must not linger
+        // across the gap (a failed or dropped detail reply would otherwise leave
+        // a stale PR row on a delivery that has none).
+        activeDeliveryPr.value = null
+        activeDeliveryMainlineAhead.value = null
+        activeDeliveryBranchAhead.value = null
         send({ type: 'get_delivery_detail', deliveryId: msg.delivery.id })
         // One-time `pr:merge` semantic-change notice — the only defense against
         // the drift, shown exactly on the workspace's first delivery creation.
@@ -942,6 +950,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         activeDeliveryPlan.value = msg.transitionPlan
         activeDeliveryIntents.value = msg.associatedIntents
         activeDeliveryMainlineAhead.value = msg.mainlineAhead
+        activeDeliveryBranchAhead.value = msg.deliveryBranchAhead
         activeDeliveryPr.value = msg.deliveryPr
         activeDeliveryPrBusy.value = false
         // 「进页自动同步一次」: c3 never polls the forge, so the window between a
@@ -1011,6 +1020,11 @@ export function installMessageHandler(ctx: AppCtx): void {
         activeDeliveryBranchInit.value = null
         activeDelivery.value = msg.delivery
         activeDeliveryId.value = msg.delivery.id
+        // A branch init changes the branch — the previous delivery's PR row and
+        // ahead counts are stale until the detail re-fetch below replaces them.
+        activeDeliveryPr.value = null
+        activeDeliveryMainlineAhead.value = null
+        activeDeliveryBranchAhead.value = null
         send({ type: 'get_delivery_detail', deliveryId: msg.delivery.id })
         if (msg.warning === 'delivery.branchBehindMain') {
           ctx.showToast(t('delivery.warning.branchBehindMain.label'))

@@ -49,6 +49,8 @@ const props = defineProps<{
   intents: Intent[]
   /** How far mainline is ahead of the delivery branch; null = unknown / N/A. */
   mainlineAhead: number | null
+  /** How far the delivery branch is ahead of mainline; null = unknown / N/A. */
+  deliveryBranchAhead: number | null
   /** In-flight 「同步主线」 phase; null = idle. */
   syncPhase: 'fetching' | 'merging' | 'pushing' | null
   /** The delivery's latest 「交付分支 → 主线」 PR; null = none opened. */
@@ -264,6 +266,7 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
       :branch-init="props.branchInit"
       :workspace-git-branch-mode="props.workspaceGitBranchMode"
       :mainline-ahead="props.mainlineAhead"
+      :delivery-branch-ahead="props.deliveryBranchAhead"
       :sync-phase="props.syncPhase"
       :delivery-pr="props.deliveryPr"
       :delivery-pr-busy="props.deliveryPrBusy"

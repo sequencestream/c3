@@ -178,6 +178,7 @@ const {
   activeDeliveryIntents,
   activeDeliveryBranchInit,
   activeDeliveryMainlineAhead,
+  activeDeliveryBranchAhead,
   activeDeliverySyncPhase,
   activeDeliveryPr,
   activeDeliveryPrBusy,
@@ -706,6 +707,7 @@ function onCodesChatWidth(px: number): void {
           :associated-intents="activeDeliveryIntents"
           :intents="deliveryLinkIntents"
           :mainline-ahead="activeDeliveryMainlineAhead"
+          :delivery-branch-ahead="activeDeliveryBranchAhead"
           :sync-phase="activeDeliverySyncPhase"
           :delivery-pr="activeDeliveryPr"
           :delivery-pr-busy="activeDeliveryPrBusy"

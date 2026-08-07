@@ -14,6 +14,14 @@
  *    workspace's configured main branch; on the main branch this is a NORMAL
  *    success skip (no commit / push / PR, no failure todo).
  *
+ * The PR half is gated twice more. The intent must READ BACK as `done` — a
+ * session that ends mid-development commits and pushes but files no PR, a normal
+ * skip rather than a failure. And the target comes from `resolvePrTarget` (the
+ * same resolution the manual create-PR button runs): the linked delivery's
+ * branch, NEVER the workspace mainline as a fallback. With no delivery linked
+ * there is no PR at all, only a `pr_skipped` lifecycle log; with an unusable
+ * target (branch not ready, ambiguous, unknown, not linked) there is a todo.
+ *
  * Failure is explicit (MSC-R4): no committable changes, a commit/push failure,
  * forge CLI unavailable / not logged in, or a change-request failure all return a `failed`
  * outcome AND push a `source='intent'` wait-user-involve todo carrying a UiError
@@ -37,10 +45,12 @@ import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import { parsePrIdentity } from './pr-identity.js'
+import { prTargetFailureText, type PrTargetResolution } from './pr-target.js'
 import type { UpsertIntentPrInput } from './store.js'
 
 /** Why a cleanup failed — each maps to a workbench todo UiError code. */
-export type CleanupFailureCode = 'noChanges' | 'commitPushFailed' | 'ghUnavailable' | 'prFailed'
+export type CleanupFailureCode =
+  'noChanges' | 'commitPushFailed' | 'ghUnavailable' | 'prFailed' | 'prTargetUnavailable'
 
 export type CleanupOutcome =
   | { kind: 'success'; createdPr: boolean }
@@ -69,6 +79,12 @@ export interface DevCleanupDeps {
     providerOverride?: ForgeProvider,
   ) => Promise<CreatePrResult>
   getIntent: (id: string) => Intent | null
+  /**
+   * Which delivery this cleanup's PR targets, and the base branch that follows.
+   * The SAME resolution the manual create-PR button runs, injected rather than
+   * imported so this module stays testable without a delivery store.
+   */
+  resolvePrTarget: (workspacePath: string, intent: Intent) => PrTargetResolution
   setBranchName: (id: string, branchName: string) => void
   setLatestCommitHash: (id: string, commitHash: string) => void
   /** The store's single PR write entry point (see `upsertIntentPr`). */
@@ -76,7 +92,7 @@ export interface DevCleanupDeps {
   /** Best-effort lifecycle log write (never throws). */
   safeInsertIntentLog: (
     intentId: string,
-    operationType: 'pr_created',
+    operationType: 'pr_created' | 'pr_skipped',
     summary: string,
     actor?: string | null,
   ) => void
@@ -131,6 +147,7 @@ const FAILURE_CODE: Record<CleanupFailureCode, UiErrorCode> = {
   commitPushFailed: 'intent.gitCleanupCommitPushFailed',
   ghUnavailable: 'intent.gitCleanupGhUnavailable',
   prFailed: 'intent.gitCleanupPrFailed',
+  prTargetUnavailable: 'intent.gitCleanupPrTargetUnavailable',
 }
 
 /**
@@ -191,17 +208,43 @@ export async function runManualDevCleanup(
   const head = await deps.getHeadCommit(cwd)
   if (head) deps.setLatestCommitHash(intentId, head)
 
-  // ③ Idempotent: an intent that already has a live PR is not re-PR'd (MSC-R6).
-  // A merged / closed PR does not block — that PR's life is over.
-  if (activeIntentPrs(req.prs).length > 0) {
+  // ③ Only a `done` intent gets a PR. Read the intent back rather than trusting
+  // the snapshot taken before the commit: a session that ends while the work is
+  // still in progress is a NORMAL skip here — commit + push and the Git field
+  // write-back above already happened, and no failure todo is raised. The user
+  // marks the intent `done` (or presses 创建 PR) when the work really is over.
+  const current = deps.getIntent(intentId) ?? req
+  if (current.status !== 'done') {
     deps.broadcastIntents(workspacePath)
     return { kind: 'success', createdPr: false }
   }
 
-  // ④ Create the forge-aware PR/MR against the workspace's effective base.
-  const { title, body } = buildPr(req, deps.getIntent)
-  const headBranch = req.branchName ?? branch ?? undefined
-  const baseBranch = deps.getDefaultMainBranch(workspacePath) ?? 'main'
+  // ④ Idempotent: an intent that already has a live PR is not re-PR'd (MSC-R6).
+  // A merged / closed PR does not block — that PR's life is over.
+  if (activeIntentPrs(current.prs).length > 0) {
+    deps.broadcastIntents(workspacePath)
+    return { kind: 'success', createdPr: false }
+  }
+
+  // ⑤ Resolve the PR target the same way the manual create-PR button does: the
+  // linked delivery's branch, never the workspace mainline as a fallback. With
+  // no delivery linked there is nothing to file against — a normal skip carrying
+  // a visible lifecycle log, so the code parked on the intent branch is not lost
+  // silently. An unresolvable target is a human decision ⇒ a workbench todo.
+  const target = deps.resolvePrTarget(workspacePath, current)
+  if (!target.ok) {
+    return fail('prTargetUnavailable', prTargetFailureText(target.code))
+  }
+  if (target.deliveryId === null) {
+    deps.safeInsertIntentLog(intentId, 'pr_skipped', '未关联交付,未创建 PR', 'automation')
+    deps.broadcastIntents(workspacePath)
+    return { kind: 'success', createdPr: false }
+  }
+  const { deliveryId, baseBranch } = target
+
+  // ⑥ Create the forge-aware PR/MR against the resolved delivery branch.
+  const { title, body } = buildPr(current, deps.getIntent)
+  const headBranch = current.branchName ?? branch ?? undefined
   const pr = await deps.createForgePr(
     cwd,
     title,
@@ -220,6 +263,7 @@ export async function runManualDevCleanup(
   const identity = parsePrIdentity(pr.prUrl)
   deps.upsertIntentPr({
     intentId,
+    deliveryId,
     number: pr.prId,
     status: 'reviewing',
     forge: identity.forge ?? deps.getForgeOverride(workspacePath) ?? null,
@@ -243,6 +287,7 @@ export async function runManualDevCleanup(
       headBranch,
       baseBranch,
       intentId,
+      deliveryId,
     },
     deps.normalizeEvent,
     (event) => deps.publishEvent({ workspacePath, sessionId: effectiveSessionId, event }),

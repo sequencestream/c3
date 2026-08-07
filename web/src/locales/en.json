@@ -1083,6 +1083,7 @@
         "specApproved": "Spec approved",
         "specUnapproved": "Spec unapproved",
         "prCreated": "PR created",
+        "prSkipped": "PR skipped",
         "prMerged": "PR merged",
         "prClosed": "PR closed",
         "prUpdated": "PR updated",
@@ -2165,6 +2166,7 @@
       "gitCleanupCommitPushFailed": "Auto commit/push after the work session failed: {detail}. Resolve it manually.",
       "gitCleanupGhUnavailable": "Cannot create the PR — the gh CLI is unavailable or not logged in: {detail}. Install/authenticate gh, then create the PR manually.",
       "gitCleanupPrFailed": "Automatic PR creation failed: {detail}. Create the PR manually.",
+      "gitCleanupPrTargetUnavailable": "No PR created: {detail}. Link this intent to a delivery whose branch is ready, then create the PR manually.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
       "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting work: {message}",
       "worktreeBaseMismatch": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\"). c3 never rebuilds or merges it for you — rebuild it, or merge the branch in.",
@@ -3542,7 +3544,8 @@
       "commit_failed": "Commit/push failed",
       "turn_error": "Dev turn errored",
       "judge_stuck": "Judged not really finished",
-      "judge_unavailable": "Completion judge unavailable (tool agent config)"
+      "judge_unavailable": "Completion judge unavailable (tool agent config)",
+      "pr_target_unavailable": "PR target unavailable — no PR created"
     }
   }
 }

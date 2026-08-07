@@ -253,6 +253,11 @@ export const QUEUE_REASON_CODES = [
   // one-shot died). Distinct from `judge_stuck`: nothing was judged about the
   // intent, so this never reads as "a human is needed on the work".
   'judge_unavailable',
+  // The intent finished and was marked `done`, but its PR target could not be
+  // resolved (delivery branch not ready, several deliveries linked, delivery
+  // unknown or not linked), so no PR was created. Never a park and never a
+  // failure — the work IS done; only the PR is waiting on a human decision.
+  'pr_target_unavailable',
   // recovery — the decision reason a failure-ladder park is auto-recovered with
   'auto_unpark',
 ] as const

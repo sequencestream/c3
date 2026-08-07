@@ -1084,6 +1084,7 @@
         "specApproved": "Спецификация утверждена",
         "specUnapproved": "Утверждение отменено",
         "prCreated": "PR создан",
+        "prSkipped": "PR не создан",
         "prMerged": "PR слит",
         "prClosed": "PR закрыт",
         "prUpdated": "PR обновлён",
@@ -2166,6 +2167,7 @@
       "gitCleanupCommitPushFailed": "Не удалось автоматически закоммитить/отправить изменения после сессии работы: {detail}. Решите вручную.",
       "gitCleanupGhUnavailable": "Не удаётся создать PR — gh CLI недоступен или вход не выполнен: {detail}. Установите/авторизуйте gh и создайте PR вручную.",
       "gitCleanupPrFailed": "Не удалось автоматически создать PR: {detail}. Создайте PR вручную.",
+      "gitCleanupPrTargetUnavailable": "PR не создан: {detail}. Свяжите намерение с поставкой, ветка которой готова, затем создайте PR вручную.",
       "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}.",
       "pullFailed": "Текущая ветка разошлась с удалённой и не может быть перемотана вперёд. Синхронизируйте её вручную перед началом работы: {message}",
       "worktreeBaseMismatch": "Существующий worktree не основан на «{branch}» (поставка «{deliveryTitle}»). c3 никогда не пересоздаёт и не сливает его сам — пересоздайте или влейте ветку.",
@@ -3543,7 +3545,8 @@
       "commit_failed": "Сбой commit/push",
       "turn_error": "Ошибка в ходе разработки",
       "judge_stuck": "Признано незавершённым",
-      "judge_unavailable": "Оценка завершения недоступна (настройки tool agent)"
+      "judge_unavailable": "Оценка завершения недоступна (настройки tool agent)",
+      "pr_target_unavailable": "Цель PR недоступна — PR не создан"
     }
   }
 }

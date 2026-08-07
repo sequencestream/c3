@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fakeIntentPrs } from './intent-pr-fixture.js'
 import type { Intent } from '@ccc/shared/protocol'
 import { runManualDevCleanup, type DevCleanupDeps } from './dev-cleanup.js'
+import type { PrTargetResolution } from './pr-target.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
   PR_EVENT_TYPES,
@@ -31,7 +32,9 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     content: 'do the thing',
     priority: 'P1',
     module: '',
-    status: 'in_progress',
+    // The PR half of the cleanup only runs for a `done` intent, so the default
+    // fixture is the state that exercises it; the not-done skip has its own test.
+    status: 'done',
     dependsOn: [],
     dependsOnTypes: {},
     lastWorkSessionId: 'sess-1',
@@ -84,7 +87,15 @@ interface Harness {
     broadcastIntents: ReturnType<typeof vi.fn>
     broadcastWaitUserEvents: ReturnType<typeof vi.fn>
     publishEvent: ReturnType<typeof vi.fn>
+    resolvePrTarget: ReturnType<typeof vi.fn>
   }
+}
+
+/** The default target: one linked delivery whose branch is ready. */
+const DELIVERY_TARGET: PrTargetResolution = {
+  ok: true,
+  deliveryId: 'D1',
+  baseBranch: 'delivery/alpha',
 }
 
 function harness(
@@ -94,6 +105,7 @@ function harness(
     currentBranch?: string
     forgeOverride?: 'github' | 'gitlab'
     intent?: Intent
+    prTarget?: PrTargetResolution
   } = {},
 ): Harness {
   const intent = opts.intent ?? makeIntent()
@@ -112,6 +124,7 @@ function harness(
     broadcastIntents: vi.fn(),
     broadcastWaitUserEvents: vi.fn(),
     publishEvent: vi.fn(),
+    resolvePrTarget: vi.fn(() => opts.prTarget ?? DELIVERY_TARGET),
   }
   const deps: DevCleanupDeps = {
     getGitBranchMode: () => opts.mode ?? 'worktree',
@@ -124,6 +137,7 @@ function harness(
     commitAndPush: mocks.commitAndPush,
     createForgePr: mocks.createForgePr,
     getIntent: () => intent,
+    resolvePrTarget: mocks.resolvePrTarget as unknown as DevCleanupDeps['resolvePrTarget'],
     setBranchName: mocks.setBranchName,
     setLatestCommitHash: mocks.setLatestCommitHash,
     upsertIntentPr: mocks.upsertIntentPr,
@@ -139,8 +153,8 @@ function harness(
 }
 
 describe('runManualDevCleanup', () => {
-  // ── MSC-R2: worktree happy path ──
-  it('worktree with changes: commits, pushes, opens PR, writes back all fields', async () => {
+  // ── MSC-R2: worktree happy path — PR toward the linked delivery's branch ──
+  it('worktree with changes: commits, pushes, opens a PR toward the delivery branch, writes back all fields', async () => {
     const h = harness({ mode: 'worktree' })
     const out = await runManualDevCleanup('I1', WS, h.deps)
 
@@ -148,8 +162,19 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.commitAndPush).toHaveBeenCalledWith('/abs/cwd', 'feat: Add feature')
     expect(h.mocks.setBranchName).toHaveBeenCalledWith('I1', 'intent/i1-add-feature')
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
+    // The base is the RESOLVED delivery branch — the workspace mainline is never
+    // consulted for a PR base on this path.
+    expect(h.mocks.createForgePr).toHaveBeenCalledWith(
+      '/abs/cwd',
+      expect.any(String),
+      expect.any(String),
+      'intent/i1-add-feature',
+      'delivery/alpha',
+      undefined,
+    )
     expect(h.mocks.upsertIntentPr).toHaveBeenCalledWith({
       intentId: 'I1',
+      deliveryId: 'D1',
       number: '42',
       status: 'reviewing',
       // `https://h/pull/42` names no known host ⇒ GitLab by the same fallback
@@ -159,13 +184,72 @@ describe('runManualDevCleanup', () => {
       repo: null,
       url: 'https://h/pull/42',
       headBranch: 'intent/i1-add-feature',
-      baseBranch: 'main',
+      baseBranch: 'delivery/alpha',
     })
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
     // The changelog records the first PR association exactly once, actor `automation`.
     expect(h.mocks.safeInsertIntentLog.mock.calls).toEqual([
       ['I1', 'pr_created', '创建 PR #42', 'automation'],
     ])
+  })
+
+  // ── done gate: a session that ends mid-development is a NORMAL skip ──
+  it('intent not done: commits, pushes and writes back fields, but creates no PR and does not fail', async () => {
+    const h = harness({ mode: 'worktree', intent: makeIntent({ status: 'in_progress' }) })
+    const out = await runManualDevCleanup('I1', WS, h.deps)
+
+    expect(out).toEqual({ kind: 'success', createdPr: false })
+    expect(h.mocks.commitAndPush).toHaveBeenCalledWith('/abs/cwd', 'feat: Add feature')
+    expect(h.mocks.setBranchName).toHaveBeenCalledWith('I1', 'intent/i1-add-feature')
+    expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
+    // No target is even resolved, let alone a PR created — and nothing failed.
+    expect(h.mocks.resolvePrTarget).not.toHaveBeenCalled()
+    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
+    expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
+    expect(h.mocks.publishEvent).not.toHaveBeenCalled()
+    expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
+  })
+
+  // ── no delivery linked: no PR at all, and never one against the mainline ──
+  it('done without a linked delivery: skips the PR with a visible log, never files against main', async () => {
+    const h = harness({
+      mode: 'worktree',
+      prTarget: { ok: true, deliveryId: null, baseBranch: 'main' },
+    })
+    const out = await runManualDevCleanup('I1', WS, h.deps)
+
+    expect(out).toEqual({ kind: 'success', createdPr: false })
+    expect(h.mocks.commitAndPush).toHaveBeenCalled()
+    expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
+    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
+    expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
+    expect(h.mocks.publishEvent).not.toHaveBeenCalled()
+    expect(h.mocks.safeInsertIntentLog.mock.calls).toEqual([
+      ['I1', 'pr_skipped', '未关联交付,未创建 PR', 'automation'],
+    ])
+  })
+
+  // ── target unresolvable: no PR, no mainline fallback, one workbench todo ──
+  it('done with an unready delivery branch: no PR and a todo naming the reason', async () => {
+    const h = harness({
+      mode: 'worktree',
+      prTarget: { ok: false, code: 'delivery.guard.branchNotReady' },
+    })
+    const out = await runManualDevCleanup('I1', WS, h.deps)
+
+    expect(out).toMatchObject({ kind: 'failed', code: 'prTargetUnavailable' })
+    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
+    expect(h.mocks.publishEvent).not.toHaveBeenCalled()
+    expect(h.mocks.pushFailureEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intentId: 'I1',
+        code: 'intent.gitCleanupPrTargetUnavailable',
+        params: { detail: expect.stringContaining('delivery.guard.branchNotReady') },
+      }),
+    )
   })
 
   it('explicit GitLab override creates an MR through the forge dispatcher and writes its fields', async () => {
@@ -184,18 +268,19 @@ describe('runManualDevCleanup', () => {
       expect.any(String),
       expect.any(String),
       'intent/i1-add-feature',
-      'main',
+      'delivery/alpha',
       'gitlab',
     )
     expect(h.mocks.upsertIntentPr).toHaveBeenCalledWith({
       intentId: 'I1',
+      deliveryId: 'D1',
       number: '19',
       status: 'reviewing',
       forge: 'gitlab',
       repo: 'group/project',
       url: 'https://gitlab.example/group/project/-/merge_requests/19',
       headBranch: 'intent/i1-add-feature',
-      baseBranch: 'main',
+      baseBranch: 'delivery/alpha',
     })
   })
 
@@ -328,15 +413,16 @@ describe('runManualDevCleanup', () => {
       operation: 'create',
       result: 'success',
       pr: { url: 'https://h/pull/42' },
-      // No delivery binding on this cleanup → the merge target is mainline, and
-      // the event says so explicitly rather than leaving the subscriber to infer it.
+      // The cleanup resolved a delivery → the merge target is that delivery's
+      // branch, and the event says so explicitly rather than leaving the
+      // subscriber to infer it.
       ref: {
         head: 'intent/i1-add-feature',
-        base: 'main',
-        baseBranch: 'main',
-        baseTarget: 'mainline',
+        base: 'delivery/alpha',
+        baseBranch: 'delivery/alpha',
+        baseTarget: 'delivery-branch',
       },
-      association: { intentId: 'I1' },
+      association: { intentId: 'I1', deliveryId: 'D1' },
     })
   })
 

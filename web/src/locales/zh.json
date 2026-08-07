@@ -1083,6 +1083,7 @@
         "specApproved": "批准规范",
         "specUnapproved": "取消批准",
         "prCreated": "创建 PR",
+        "prSkipped": "未创建 PR",
         "prMerged": "PR 已合并",
         "prClosed": "PR 已关闭",
         "prUpdated": "PR 已更新",
@@ -2165,6 +2166,7 @@
       "gitCleanupCommitPushFailed": "工作会话结束后自动提交/推送失败: {detail}。请手动处理。",
       "gitCleanupGhUnavailable": "无法创建 PR: gh CLI 不可用或未登录: {detail}。请先安装/登录 gh 再手动创建 PR。",
       "gitCleanupPrFailed": "自动创建 PR 失败: {detail}。请手动创建 PR。",
+      "gitCleanupPrTargetUnavailable": "未创建 PR: {detail}。请先为该意图关联一个分支已就绪的交付,再手动创建 PR。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
       "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始工作: {message}",
       "worktreeBaseMismatch": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\")。c3 从不自动重建或自动合并 —— 请选择重建,或把该分支合入当前工作分支。",
@@ -3542,7 +3544,8 @@
       "commit_failed": "提交/推送失败",
       "turn_error": "开发 turn 出错",
       "judge_stuck": "判定未真实完成",
-      "judge_unavailable": "完成判定不可用(工具 agent 配置)"
+      "judge_unavailable": "完成判定不可用(工具 agent 配置)",
+      "pr_target_unavailable": "PR 目标不可用,未创建 PR"
     }
   }
 }

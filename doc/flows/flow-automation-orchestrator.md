@@ -164,10 +164,9 @@ flowchart TD
 工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有表面(Claude SDK、Codex HTTP)自动同步,
 无需维护第二份名单。
 
-`save_intent_pr_info` 曾在此表中(「回填意图的 PR 状态」),现已**废弃并移除**:一个意图可能同时
-持有多条 PR(每个交付一条),仅凭 `intentId` 无法确定要回填哪一条。替代路径是只读的 `find_intents` /
-`view_intent` 读现状,加上携带 `association.deliveryId` 或 `pr.number` 的 `pr:update` 事件做复位;
-终态由 c3 自己从 forge 事实落库。
+**表中没有按意图回填 PR 状态的工具**:一个意图可能同时持有多条 PR(每个交付一条),仅凭 `intentId`
+无法确定要写哪一条。自动化的 PR 对账路径是只读的 `find_intents` / `view_intent` 读现状,加上携带
+`association.deliveryId` 或 `pr.number` 的 `pr:update` 事件做复位;终态由 c3 自己从 forge 事实落库。
 
 ## 顾问 Agent 的专属工具组(propose-then-validate)
 

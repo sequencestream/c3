@@ -81,10 +81,13 @@ describe('Deliveries', () => {
   it('forwards transition through the detail', async () => {
     const w = mount(Deliveries, {
       props: {
-        deliveries: [delivery()],
+        deliveries: [delivery({ status: 'verifying' })],
         activeId: 'd1',
-        activeDelivery: delivery(),
-        activePlan: PLAN,
+        activeDelivery: delivery({ status: 'verifying' }),
+        // 一个可达的返工目标:标题栏推进区渲染它,点击直接上抛 transition。
+        activePlan: {
+          targets: [{ to: 'integrating', humanAction: true, guard: 'satisfied', reasons: [] }],
+        },
         branchInit: null,
         workspaceGitBranchMode: 'worktree',
         mainlineAhead: null,
@@ -95,9 +98,7 @@ describe('Deliveries', () => {
         intents: [],
       },
     })
-    // The planned→integrating target is blocked; a rework/verify fixture is not
-    // present here — assert the container wires the emit from the selector's
-    // current delivery (cancelled is a title-bar action, covered elsewhere).
-    expect(w.find('[data-testid="delivery-status-block"]').exists()).toBe(true)
+    await w.find('[data-testid="delivery-advance-integrating"]').trigger('click')
+    expect(w.emitted('transition')?.[0]).toEqual(['integrating', false])
   })
 })

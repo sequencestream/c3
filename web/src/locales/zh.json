@@ -2574,6 +2574,9 @@
       "edit": {
         "label": "编辑"
       },
+      "editTitle": {
+        "label": "编辑交付"
+      },
       "save": {
         "label": "保存"
       },

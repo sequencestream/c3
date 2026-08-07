@@ -93,9 +93,9 @@ web/src/
 │   ├── deliveries/                                 # 交付页
 │   │   ├── Deliveries.vue                          # 交付容器页:桌面两栏(左交付列表 + 右详情);数据与动作经 App.vue props/emits 注入(含 associatedIntents 关联意图行与 intents 关联候选池),状态推进/缺口可达性均来自服务端 transitionPlan,本页只消费不重算;link-intent/unlink-intent 透传上抛;移动端 MobileStack 两级 drill-down(列表→详情,onDeliveryMobileBack 回列表)
 │   │   ├── components/
-│   │   │   ├── DeliveryList/DeliveryList.vue       # 交付列表:头部「新建交付」展开内联创建表单(标题/描述/起止日历日期,纯本地数据动作不触网);行=标题+状态徽标+集成就绪 N/M(无独立进度条/统计卡);行点击 emit open;空态文案
+│   │   │   ├── DeliveryList/DeliveryList.vue       # 交付列表(固定列宽 960px,收缩态 480px,≤1024px 按视口比例收窄、≤767px 满宽):头部最左收缩/展开按钮(⇤/⇥,c3.deliveryListCollapsed 持久化,收缩态窄条隐藏头部标题与行内集成就绪 N/M、保留状态徽标与行点击),最右纯「+」图标按钮展开内联创建表单(标题/描述/起止日历日期,纯本地数据动作不触网);行=标题+状态徽标+集成就绪 N/M(无独立进度条/统计卡);行点击 emit open;空态文案
 │   │   │   └── DeliveryDetail/                     # 右栏交付详情(容器 + 子单元):god-component 已按职责拆分
-│   │   │       ├── DeliveryDetail.vue              # 详情容器:常驻标题栏(标题+状态徽标+取消动作(danger ConfirmDialog))+仅「概览/关联意图」两个 Tab(不设 PR/设置/分支独立 Tab);终态(已发布/已取消)说明文案;缺口跳转:关联意图→切关联意图 tab,分支未就绪→切概览并聚焦分支初始化区,工作区设置→上抛 open-workspace-settings;关联意图 tab 的 link/unlink 转发为 link-intent/unlink-intent
+│   │   │       ├── DeliveryDetail.vue              # 详情容器(flex:1 + min-width:0 铺满右栏剩余宽度):常驻标题栏(标题+状态徽标+取消动作(danger ConfirmDialog))+仅「概览/关联意图」两个 Tab(不设 PR/设置/分支独立 Tab);终态(已发布/已取消)说明文案;缺口跳转:关联意图→切关联意图 tab,分支未就绪→切概览并聚焦分支初始化区,工作区设置→上抛 open-workspace-settings;关联意图 tab 的 link/unlink 转发为 link-intent/unlink-intent
 │   │   │       ├── DeliveryStatusSelector.vue      # 状态分段选择器+常驻缺口:分段只含「当前状态+合法推进/回退目标」(非法目标不出现),可执行目标亮起可点、守卫未满足/系统专属置灰;选择器下方常驻 delivery.guard.* 缺口文案+对应跳转入口+「集成就绪 N/M」(N/M 并入说明,无独立进度条);verifying→verified 点击先弹 ConfirmDialog 显式人工确认
 │   │   │       ├── DeliveryOverviewTab.vue         # 概览 tab:顶部(current-branch 模式说明文案,动作区分支/PR/合并动作不渲染)+状态选择器+常驻缺口;分支初始化区(worktree 模式:未就绪→create/bind 切换+分支名输入(默认 delivery/<short-id>-<slug>)+初始化按钮+进度行;就绪→分支名+同步主线;终态→清理分支 danger ConfirmDialog);合并区(worktree 模式,verified 起或已有交付 PR:创建交付 PR / PR 链接与状态 /「Forge 已合并,等待确认」/「合并受阻」/ 冲突文件列表 / 同步按钮——合并本身在 forge 上由人完成);下方元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接/创建/更新/描述)与内联编辑表单
 │   │   │       │   # 分支就绪且交付处于「集成中」时,分支就绪行下方出现「同步主线」区:主线领先时先显示「主线领先 N 个提交」提示,按钮点击弹 ConfirmDialog 说明「会把 origin/<base> 合入交付分支并推送,冲突原样浮出」,确认后按 fetching→merging→pushing 推进(期间按钮禁用)。只在「集成中」渲染——之前无可集成之物,验证起改动树正是让验证结论作废的事。

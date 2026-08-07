@@ -2528,9 +2528,17 @@
         }
       }
     },
+    "list": {
+      "collapse": {
+        "tooltip": "Collapse the delivery list (hide secondary info to free up space for the detail pane)"
+      },
+      "expand": {
+        "tooltip": "Expand the delivery list (show the list title and integration progress)"
+      }
+    },
     "action": {
       "create": {
-        "label": "New delivery"
+        "tooltip": "New delivery"
       },
       "edit": {
         "label": "Edit"

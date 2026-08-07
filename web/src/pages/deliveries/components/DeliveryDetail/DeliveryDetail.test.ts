@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { Delivery, DeliveryTransitionPlan } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import DeliveryDetail from './DeliveryDetail.vue'
@@ -238,5 +240,28 @@ describe('DeliveryDetail', () => {
     expect(w.find('[data-testid="delivery-meta-base-branch"]').exists()).toBe(true)
     expect(w.find('[data-testid="delivery-meta-branch"]').exists()).toBe(true)
     expect(w.find('[data-testid="delivery-meta-pr"]').exists()).toBe(true)
+  })
+})
+
+// ---- 右栏铺满样式契约 --------------------------------------------------
+
+// happy-dom 不计算布局,样式契约直接对组件源码里的 CSS 规则做断言。
+const detailSrc = readFileSync(
+  resolve(process.cwd(), 'web/src/pages/deliveries/components/DeliveryDetail/DeliveryDetail.vue'),
+  'utf8',
+)
+
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+}
+
+describe('DeliveryDetail.vue — 右栏铺满样式契约', () => {
+  it('详情根容器吃掉右栏剩余宽度(flex:1 + min-width:0),镜像 .intent-detail', () => {
+    const root = ruleBody(detailSrc, '.delivery-detail')
+    expect(root).toMatch(/flex:\s*1/)
+    expect(root).toMatch(/min-width:\s*0/)
+    // 既有的高度约束保留。
+    expect(root).toMatch(/min-height:\s*0/)
   })
 })

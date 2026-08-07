@@ -99,6 +99,17 @@ describe('save_intent_directly handler', () => {
   })
 })
 
+describe('sync_intent_pr_status tool shape', () => {
+  it('exposes only intentId — no status, prId or deliveryId a model could pass', () => {
+    const tools = buildAutomationC3Tools(proj, 'exec-1', null)
+    const tool = tools.find((t) => t.name === 'sync_intent_pr_status')
+    expect(tool).toBeDefined()
+    // The forge verdict is the ONLY status source: structurally, there is nothing
+    // in the input a model could use to write a status directly.
+    expect(Object.keys(tool!.inputSchema)).toEqual(['intentId'])
+  })
+})
+
 describe('publish_event metadata seeding', () => {
   it("seeds the automation's own metadata into the published event", async () => {
     const published: GenericEventEnvelope[] = []

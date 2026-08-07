@@ -75,20 +75,24 @@ describe('PR status poller automation template', () => {
     )
   })
 
-  it('grants no PR-status write tool, and the prompt no longer asks for one', () => {
-    // `save_intent_pr_info` is deprecated and ungrantable. Dropping it from the
-    // allowlist WITHOUT rewriting the prompt would leave the automation calling a
-    // tool it does not have — a silent loss of the reconciliation it advertises.
-    // These two assertions are one fact and must move together.
+  it('grants the sync tool as the only PR-status write surface, decided by the forge', () => {
+    // `save_intent_pr_info` is deprecated and ungrantable. The replacement is the
+    // forge-derived `sync_intent_pr_status`: dropping the deprecated tool WITHOUT
+    // granting its successor would leave the automation calling a tool it does not
+    // have — a silent loss of the reconciliation it advertises. The allowlist and
+    // the prompt are one fact and must move together.
     const input = getAutomationTemplate('pr-status-poller')?.build({
       workspaceId: '/workspace',
       agentId: 'a1',
     })
     expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intent_pr_info')
     expect(PR_STATUS_POLLER_PROMPT).not.toContain('save_intent_pr_info')
-    // The replacement is explicit: observe and publish, never write the ledger.
+    expect(input?.toolAllowlist).toContain('mcp__c3__sync_intent_pr_status')
+    expect(PR_STATUS_POLLER_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
+    // The prompt still never writes a status itself — c3 derives it from the forge
+    // — and publish_event remains the subscription signal for downstream automations.
+    expect(PR_STATUS_POLLER_PROMPT).toContain('never pass or assume a status value')
     expect(PR_STATUS_POLLER_PROMPT).toContain('publish_event')
-    expect(PR_STATUS_POLLER_PROMPT).toContain('never try to write the ledger')
   })
 
   it('prompt is ≤10 physical lines and retains core identifiers', () => {
@@ -268,9 +272,16 @@ describe('PR review runner automation template', () => {
       { type: 'pr:update', statuses: ['success'] },
     ])
     expect(input?.toolAllowlist).toEqual(
-      expect.arrayContaining(['Read', 'Grep', 'Glob', 'Bash', 'mcp__c3__publish_event']),
+      expect.arrayContaining([
+        'Read',
+        'Grep',
+        'Glob',
+        'Bash',
+        'mcp__c3__sync_intent_pr_status',
+        'mcp__c3__publish_event',
+      ]),
     )
-    // Review-only: must NOT have write tools or intent-saving tools.
+    // Review-only: must NOT have file-edit or intent-saving tools.
     expect(input?.toolAllowlist).not.toContain('Edit')
     expect(input?.toolAllowlist).not.toContain('Write')
     expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intents')
@@ -282,6 +293,9 @@ describe('PR review runner automation template', () => {
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('publish_event')
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr diff')
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('Do not modify any files')
+    // A forge-observed terminal state is reconciled through the sync tool, and the
+    // tool name must match what the allowlist actually grants.
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
   })
 })
 
@@ -310,6 +324,7 @@ describe('PR review fix automation template', () => {
         'Bash',
         'Edit',
         'Write',
+        'mcp__c3__sync_intent_pr_status',
         'mcp__c3__publish_event',
       ]),
     )
@@ -320,6 +335,8 @@ describe('PR review fix automation template', () => {
     expect(PR_REVIEW_FIX_PROMPT).toContain('publish_event')
     expect(PR_REVIEW_FIX_PROMPT).toContain('diagnose')
     expect(PR_REVIEW_FIX_PROMPT).toContain('fix')
+    // A forge-observed terminal state is reconciled through the sync tool.
+    expect(PR_REVIEW_FIX_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
     // Fix prompt must allow editing unlike the runner.
     expect(PR_REVIEW_FIX_PROMPT).toContain('editing files')
     expect(PR_REVIEW_FIX_PROMPT).not.toContain('Do not modify any files')

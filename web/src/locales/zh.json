@@ -2806,40 +2806,6 @@
       },
       "conflict": {
         "label": "交付分支与主线有 {count} 个文件冲突。交付已回退到验证中,解决冲突后重新验证。"
-      },
-      "diagnosis": {
-        "title": {
-          "label": "为什么未提供创建交付 PR"
-        },
-        "branchMode": {
-          "label": "Git 分支模式:{mode}"
-        },
-        "status": {
-          "label": "交付状态:{status}"
-        },
-        "branch": {
-          "label": "分支就绪:{branch}"
-        },
-        "branchNotReady": {
-          "label": "分支就绪:否"
-        },
-        "pr": {
-          "label": "交付 PR:#{number} {status}"
-        },
-        "prNone": {
-          "label": "交付 PR:无"
-        },
-        "diff": {
-          "ahead": {
-            "label": "交付分支领先:{count} 个提交"
-          },
-          "none": {
-            "label": "交付分支领先:无差异"
-          },
-          "unknown": {
-            "label": "交付分支领先:无法判断"
-          }
-        }
       }
     }
   },

@@ -69,7 +69,7 @@ describe('removeIntentGitResources', () => {
 // ---------------------------------------------------------------------------
 
 function createGitRepo(dir: string): void {
-  execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' })
+  execFileSync('git', ['init', '-b', 'main'], { cwd: dir, stdio: 'ignore' })
   execFileSync('git', ['config', 'user.email', 'test@test'], { cwd: dir, stdio: 'ignore' })
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir, stdio: 'ignore' })
   // An initial commit is required before `git worktree add` works.
@@ -88,7 +88,7 @@ function gitOut(cwd: string, args: string[]): string {
  */
 function attachBareRemote(repoDir: string): string {
   const bare = mkdtempSync(join(tmpdir(), 'c3-wt-remote-'))
-  execFileSync('git', ['init', '--bare'], { cwd: bare, stdio: 'ignore' })
+  execFileSync('git', ['init', '--bare', '-b', 'main'], { cwd: bare, stdio: 'ignore' })
   const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
   execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: repoDir, stdio: 'ignore' })
   execFileSync('git', ['push', '-u', 'origin', branch], { cwd: repoDir, stdio: 'ignore' })

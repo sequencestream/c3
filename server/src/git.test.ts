@@ -46,7 +46,7 @@ function run(cmd: string, args: string[], cwd: string): string {
  *  create a bare remote and set upstream so `push` (and `@{u}`) work. */
 function initRepo(path: string, name: string, withRemote = true): void {
   mkdirSync(path, { recursive: true })
-  run('git', ['init', '-q'], path)
+  run('git', ['init', '-q', '-b', 'main'], path)
   run('git', ['config', 'user.email', 't@t.dev'], path)
   run('git', ['config', 'user.name', 'tester'], path)
   run('git', ['config', 'commit.gpgsign', 'false'], path)
@@ -55,7 +55,7 @@ function initRepo(path: string, name: string, withRemote = true): void {
   run('git', ['commit', '-q', '-m', 'init'], path)
   if (withRemote) {
     const bare = join(remotes, `${name}.git`)
-    run('git', ['init', '--bare', '-q', bare], remotes)
+    run('git', ['init', '--bare', '-q', '-b', 'main', bare], remotes)
     run('git', ['remote', 'add', 'origin', bare], path)
     run('git', ['push', '-q', '-u', 'origin', 'HEAD'], path)
   }

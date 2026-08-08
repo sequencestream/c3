@@ -511,7 +511,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     execFileSync('git', ['add', '-A'], { cwd: dir })
     execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
     bare = join(dirname(dir), `${basename(dir)}-remote.git`)
-    execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+    execFileSync('git', ['init', '--bare', '-q', '-b', 'main', bare], { cwd: dirname(dir) })
     execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: dir })
     execFileSync('git', ['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir })
   }
@@ -829,7 +829,7 @@ describe('cleanup_delivery_branch — terminal manual cleanup', () => {
     execFileSync('git', ['add', '-A'], { cwd: dir })
     execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
     bare = join(dirname(dir), `${basename(dir)}-cleanup-remote.git`)
-    execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+    execFileSync('git', ['init', '--bare', '-q', '-b', 'main', bare], { cwd: dirname(dir) })
     execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: dir })
     execFileSync('git', ['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir })
     remoteHas = (branch: string) => {
@@ -898,7 +898,7 @@ describe('link / unlink intent ↔ delivery', () => {
     execFileSync('git', ['add', '-A'], { cwd: dir })
     execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
     bare = join(dirname(dir), `${basename(dir)}-remote.git`)
-    execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+    execFileSync('git', ['init', '--bare', '-q', '-b', 'main', bare], { cwd: dirname(dir) })
     execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: dir })
     execFileSync('git', ['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir })
   }

@@ -101,7 +101,7 @@ function initWorkspaceRepo(): void {
   git('add', '-A')
   git('commit', '-q', '-m', 'init')
   bare = join(dirname(dir), `${basename(dir)}-remote.git`)
-  execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+  execFileSync('git', ['init', '--bare', '-q', '-b', 'main', bare], { cwd: dirname(dir) })
   git('remote', 'add', 'origin', bare)
   git('push', '-q', '-u', 'origin', 'HEAD')
 }

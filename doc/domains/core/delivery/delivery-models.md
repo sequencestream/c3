@@ -52,7 +52,7 @@ M/N 直接由 `intent_prs.delivery_id` 查得:一个意图对同一交付至多�
 
 **唯一性。**一对(交付, 意图)至多一条边;同一意图对多个交付各一条边是**允许**的——数据层保留多交付关联能力,前端不开放该入口(见 [delivery-spec.md](delivery-spec.md) 的边界)。
 
-**生命周期。**建边由 `link_intent_to_delivery`,删边由 `unlink_intent_from_delivery`(守卫见下)。永久删除意图时同事务清边、**远端 PR 不动**;取消交付**不删边**——终态交付的关联意图仍可查,历史可查优先于表干净。
+**生命周期。**建边有两个入口:`link_intent_to_delivery`(对已存在的意图),以及新增意图时选交付作为基准来源([RM-R45](../intent-management/intent-management-spec.md))——后者在同一次创建里连同基准快照一起落边。删边只有 `unlink_intent_from_delivery`(守卫见下)。永久删除意图时同事务清边、**远端 PR 不动**;取消交付**不删边**——终态交付的关联意图仍可查,历史可查优先于表干净。
 
 ## AssociatedIntent(交付详情的关联意图行)
 

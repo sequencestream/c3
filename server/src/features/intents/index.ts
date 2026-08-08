@@ -98,7 +98,7 @@ import {
   unparkIntent,
 } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
-import { getDelivery } from '../deliveries/store.js'
+import { getDelivery, insertIntentDelivery } from '../deliveries/store.js'
 import { normalizeBranchName } from './dependency-gate.js'
 import { commitAndPush } from '../../git.js'
 import { getWorktreePath, removeIntentGitResources } from './worktree.js'
@@ -398,6 +398,14 @@ function resolveCreateBaseBranch(
  *
  * Without content this stays exactly the pre-existing blank registration —
  * that is what the older client and the "+" placeholder path still do.
+ *
+ * Choosing a DELIVERY as the base means choosing the delivery, not just its
+ * branch name: the association edge is written here too, so the PR target, the
+ * dependency gate and the session's delivery context all resolve in that
+ * delivery's context from the first moment — with no second "link to delivery"
+ * round trip the user has to remember. Regardless of whether content was typed:
+ * a blank registration that silently kept the branch but dropped the edge would
+ * be exactly the corner state this removes.
  */
 export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
@@ -430,6 +438,33 @@ export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => 
       error: { code: 'intent.createFailed', params: { detail: String(err) } },
     })
     return
+  }
+  if (msg.base?.kind === 'delivery') {
+    try {
+      // The pair cannot already exist — the intent id was minted a statement ago
+      // — so the primitive's "already linked" verdict is unreachable here and
+      // there is nothing for this caller to report about it. The branch handed
+      // over is the one the ledger itself resolved above, never the client's.
+      insertIntentDelivery(msg.base.deliveryId, intent.id, base.baseBranch ?? null)
+    } catch (err) {
+      conn.send({
+        type: 'error',
+        error: { code: 'intent.createFailed', params: { detail: String(err) } },
+      })
+      // Same rule as a failed session launch: the intent is a persisted fact the
+      // user can retry from or delete, so it stays — but the list still owes the
+      // row it does not know about yet.
+      ctx.broadcastIntents(proj)
+      return
+    }
+    // Re-read so the receipt, the list broadcast and the first prompt all carry
+    // `linkedDeliveries` — the creation is only "with a delivery" if what comes
+    // back says so.
+    intent = getIntent(intent.id) ?? intent
+    // The delivery detail renders its associated intents from the same edge, so
+    // the write has to reach that side too — same double broadcast
+    // `link_intent_to_delivery` does.
+    ctx.broadcastDeliveries(proj)
   }
   conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
   if (!content) {

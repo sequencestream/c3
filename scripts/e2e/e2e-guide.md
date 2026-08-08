@@ -71,7 +71,8 @@ Drives the request the 「+」 create dialog sends, in a throwaway git workspace
 main branch is `trunk` (deliberately not `main`, so a hardcoded default cannot pass)
 plus a second workspace to own a foreign delivery. Asserts that a `branch` source
 persists that exact name, a `delivery` source persists the delivery's OWN branch as
-read server-side, and no source at all still falls back to the workspace main branch.
+read server-side **and writes the association edge** (a `branch` source writes none),
+and no source at all still falls back to the workspace main branch.
 Then asserts every refusal writes nothing: a cross-workspace delivery, a delivery
 whose branch was never initialized, an unknown delivery, and a blank branch name.
 Finally checks the id in `create_intent_result` is the one that lands in the `intents`

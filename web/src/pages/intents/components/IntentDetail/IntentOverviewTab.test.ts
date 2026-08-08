@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
 import type { Intent } from '@ccc/shared/protocol'
+import { i18n } from '@/i18n'
 import IntentOverviewTab from './IntentOverviewTab.vue'
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
@@ -330,7 +331,6 @@ describe('IntentOverviewTab — 关联交付 in the meta strip', () => {
     expect(w.find('[data-testid="intent-meta-delivery"]').exists()).toBe(false)
   })
 
-  // 元信息区仍是纯只读:关联/解除的入口在标题栏(IntentTitleBarActions),本 tab 只导航。
   it('emits open-delivery when a linked delivery is clicked', async () => {
     const w = mountTab(intent({ id: 'r1', linkedDeliveries: [{ id: 'd1', title: 'Sprint 3' }] }))
     await w.find('[data-testid="intent-meta-delivery-d1"]').trigger('click')
@@ -363,5 +363,84 @@ describe('IntentOverviewTab — 关联交付 in the meta strip', () => {
       }),
     )
     expect(w.findAll('.req-meta-pr-group').length).toBe(0)
+  })
+})
+
+describe('IntentOverviewTab — 解除关联(自标题栏迁入元信息区)', () => {
+  const SPRINT: Intent['linkedDeliveries'] = [{ id: 'd1', title: 'Sprint 3' }]
+  const UNLINK = '[data-testid="intent-detail-unlink-delivery"]'
+
+  it('恰好关联 1 个时,解除入口渲染在交付名之后', () => {
+    const w = mountTab(intent({ id: 'r1', linkedDeliveries: SPRINT }))
+    const row = w.find('[data-testid="intent-meta-delivery"]')
+    const buttons = row.findAll('button').map((b) => b.attributes('data-testid'))
+    expect(buttons).toEqual(['intent-meta-delivery-d1', 'intent-detail-unlink-delivery'])
+  })
+
+  it('多关联只展示交付名,不给解除路径(目标不唯一不给操作路径)', () => {
+    const w = mountTab(
+      intent({
+        id: 'r1',
+        linkedDeliveries: [
+          { id: 'd1', title: 'Sprint 3' },
+          { id: 'd2', title: 'Sprint 4' },
+        ],
+      }),
+    )
+    expect(w.find('[data-testid="intent-meta-delivery-d1"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-meta-delivery-d2"]').exists()).toBe(true)
+    expect(w.find(UNLINK).exists()).toBe(false)
+  })
+
+  it('走 danger 二次确认,文案说明会关闭该交付下的 PR,确认后上抛', async () => {
+    const w = mountTab(intent({ id: 'r1', linkedDeliveries: SPRINT }))
+    await w.find(UNLINK).trigger('click')
+    expect(w.emitted('unlink-delivery')).toBeUndefined()
+    expect(w.find(CONFIRM_ACCEPT).classes()).toContain('danger')
+
+    // 二次确认正文取意图侧自有文案,并把「会关闭 PR」这个副作用讲明白。
+    const message = w.find('.cd-message').text()
+    expect(message).toBe(i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'Sprint 3' }))
+    expect(message).toContain('PR')
+
+    await w.find(CONFIRM_ACCEPT).trigger('click')
+    expect(w.emitted('unlink-delivery')).toEqual([['/proj', 'd1', 'r1']])
+  })
+
+  it('取消按钮 / 遮罩 / Esc 都不上抛', async () => {
+    const w = mountTab(intent({ id: 'r1', linkedDeliveries: SPRINT }))
+    for (const dismiss of [
+      () => w.find(CONFIRM_CANCEL).trigger('click'),
+      () => w.find(CONFIRM_OVERLAY).trigger('click'),
+      () => w.find(CONFIRM_OVERLAY).trigger('keydown.esc'),
+    ]) {
+      await w.find(UNLINK).trigger('click')
+      expect(w.find(CONFIRM_OVERLAY).exists()).toBe(true)
+      await dismiss()
+      expect(w.find(CONFIRM_OVERLAY).exists()).toBe(false)
+      expect(w.emitted('unlink-delivery')).toBeUndefined()
+    }
+  })
+
+  it('关联条数在确认框敞开期间被别处改掉时收框', async () => {
+    const w = mountTab(intent({ id: 'r1', linkedDeliveries: SPRINT }))
+    await w.find(UNLINK).trigger('click')
+    expect(w.find(CONFIRM_OVERLAY).exists()).toBe(true)
+
+    // 别的客户端解除了关联:确认框的前提已不成立,不该留着让用户对空气点确认。
+    await w.setProps({ intent: intent({ id: 'r1', linkedDeliveries: [] }) })
+    expect(w.find(CONFIRM_OVERLAY).exists()).toBe(false)
+  })
+})
+
+describe('五语言解除文案', () => {
+  // 「会关闭 PR」是解除关联唯一的不可逆副作用,任何一门语言漏讲都等于让用户在
+  // 不知情下确认 —— 因此这条按 key 逐语言守住,不随译文润色而放松。
+  it('每种语言的解除确认都点明 PR 会被关闭', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
+      const copy = i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'X' }, { locale })
+      expect(copy, locale).toContain('PR')
+      expect(copy, locale).toContain('X')
+    }
   })
 })

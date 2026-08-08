@@ -33,6 +33,8 @@ const props = defineProps<{
   associatedIntents: AssociatedIntent[]
   intents: Intent[]
   mainlineAhead: number | null
+  /** How far the open delivery's branch is ahead of mainline; null = unknown. */
+  deliveryBranchAhead: number | null
   syncPhase: 'fetching' | 'merging' | 'pushing' | null
   /** The open delivery's latest 「交付分支 → 主线」 PR; null = none opened. */
   deliveryPr: DeliveryPr | null
@@ -68,6 +70,7 @@ const emit = defineEmits<{
   'sync-delivery-pr': [deliveryId: string]
   'link-intent': [intentId: string]
   'unlink-intent': [intentId: string]
+  'open-intent': [intentId: string]
   'open-workspace-settings': []
   'mobile-back': [targetKey: string]
 }>()
@@ -107,6 +110,7 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         :associated-intents="associatedIntents"
         :intents="intents"
         :mainline-ahead="mainlineAhead"
+        :delivery-branch-ahead="deliveryBranchAhead"
         :sync-phase="syncPhase"
         :delivery-pr="deliveryPr"
         :delivery-pr-busy="deliveryPrBusy"
@@ -120,6 +124,7 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         @sync-delivery-pr="(id: string) => emit('sync-delivery-pr', id)"
         @link-intent="(id: string) => emit('link-intent', id)"
         @unlink-intent="(id: string) => emit('unlink-intent', id)"
+        @open-intent="(id: string) => emit('open-intent', id)"
         @open-workspace-settings="emit('open-workspace-settings')"
       />
     </template>

@@ -872,6 +872,142 @@ describe('CodexDriver RELAY route under an arapuca sandbox', () => {
   })
 })
 
+describe('CodexDriver custom-model catalog (2026-08-08-013)', () => {
+  const RELAY_ENDPOINT = 'http://127.0.0.1:3000/internal/relay/v1/codex'
+  const CANDIDATE: RelayCandidate = {
+    baseUrl: 'https://api.deepseek.com',
+    apiKey: 'sk-real',
+    model: 'deepseek-v4-flash',
+    wireApi: 'chat',
+  }
+  function fakeRelay() {
+    const registered: RelayCandidate[][] = []
+    const relay = {
+      endpoint: (_vendor: 'claude' | 'codex') => RELAY_ENDPOINT,
+      register(candidates: RelayCandidate[]) {
+        registered.push(candidates)
+        return 'relay-token-xyz'
+      },
+      unregister() {},
+    }
+    return { relay, registered }
+  }
+
+  it('relay + capability fields ⇒ model_catalog_json registers the CLI model id', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const { relay } = fakeRelay()
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, relay)
+    await driver.start(
+      startOpts({
+        relayCandidates: [CANDIDATE],
+        contextWindow: 65536,
+        maxOutputTokens: 8192,
+      }),
+    )
+    const catalog = captured?.config?.model_catalog_json as string | undefined
+    expect(catalog).toBeDefined()
+    // Host run: the per-run catalog lives under os.tmpdir().
+    expect(catalog!.includes('c3-codex-catalog-')).toBe(true)
+    // The relay provider routing is untouched by the catalog registration.
+    expect(captured?.config?.model_provider).toBe('c3relay')
+  })
+
+  it('relay without capability fields ⇒ no model_catalog_json', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const { relay } = fakeRelay()
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, relay)
+    await driver.start(startOpts({ relayCandidates: [CANDIDATE] }))
+    expect(captured?.config?.model_catalog_json).toBeUndefined()
+  })
+
+  it('DIRECT route never registers a catalog, even when capability fields are passed', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(startOpts({ contextWindow: 65536 }))
+    // DIRECT (system mode) has no config at all — no catalog, no relay provider.
+    expect(captured?.config).toBeUndefined()
+    expect(captured?.config?.model_catalog_json).toBeUndefined()
+  })
+
+  it('sandboxed relay places the catalog inside sandboxTmpDir (the arapuca allow set)', async () => {
+    const sandboxTmpDir = mkdtempSync(join(tmpdir(), 'c3-sb-cat-driver-'))
+    try {
+      let captured: CodexFactoryOptions | undefined
+      const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+      const { relay } = fakeRelay()
+      const driver = new CodexDriver((options) => {
+        captured = options
+        return client
+      }, relay)
+      await driver.start(
+        startOpts({
+          relayCandidates: [CANDIDATE],
+          contextWindow: 65536,
+          sandboxWrapperPath: join(sandboxTmpDir, 'wrapper.sh'),
+          sandboxTmpDir,
+        }),
+      )
+      const catalog = captured?.config?.model_catalog_json as string | undefined
+      expect(catalog).toBeDefined()
+      // Inside the allow set — a host temp path would be unreadable in arapuca.
+      expect(catalog!.startsWith(sandboxTmpDir)).toBe(true)
+      expect(catalog!.includes('model-catalog-')).toBe(true)
+    } finally {
+      rmSync(sandboxTmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('sandboxed relay without sandboxTmpDir drops the catalog with a warning (never breaks the run)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let captured: CodexFactoryOptions | undefined
+      const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+      const { relay } = fakeRelay()
+      const driver = new CodexDriver((options) => {
+        captured = options
+        return client
+      }, relay)
+      await driver.start(
+        startOpts({
+          relayCandidates: [CANDIDATE],
+          contextWindow: 65536,
+          sandboxWrapperPath: '/tmp/c3-sb-cat-missing/wrapper.sh',
+        }),
+      )
+      expect(captured?.config?.model_catalog_json).toBeUndefined()
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('host relay (no wrapper) keeps the catalog on os.tmpdir()', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const { relay } = fakeRelay()
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, relay)
+    await driver.start(startOpts({ relayCandidates: [CANDIDATE], contextWindow: 65536 }))
+    const catalog = captured?.config?.model_catalog_json as string | undefined
+    expect(catalog).toBeDefined()
+    expect(catalog!.startsWith(tmpdir())).toBe(true)
+  })
+})
+
 describe('gateToCodexPolicy', () => {
   it('plan + never-ask ⇒ read-only + never for read-only MCP-backed flows', () => {
     expect(gateToCodexPolicy('plan', 'never-ask')).toEqual({

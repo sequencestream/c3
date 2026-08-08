@@ -29,12 +29,11 @@ export interface AutomationTemplate {
 /** Wall-clock ceiling shared by every built-in template: 10 minutes per execution. */
 export const TEMPLATE_MAX_WALL_CLOCK_MS = 600_000
 
-export const PR_STATUS_POLLER_PROMPT = `Report GitHub PR status changes for this workspace. This automation OBSERVES and REPORTS; it never writes the intent ledger.
+export const PR_STATUS_POLLER_PROMPT = `Report GitHub PR status changes for this workspace. This automation OBSERVES and SYNCES; it never writes intent or PR status itself.
 
 Scope: only intents whose \`prs\` array contains an entry with status "reviewing" — locate them with find_intents and inspect each with view_intent. Each entry carries the PR's number, url and the delivery it targets.
 Query the real GitHub PR state with Bash + gh; leave an intent alone while its PR is still open/reviewing.
-Only when the real state differs from the ledger, call publish_event once per changed PR: type "pr:merge" for a merged PR or "pr:close" for one closed without merging, status "success", and data carrying { pr, repo, ref, association } — the number/url in data.pr, the merge target in data.ref.baseBranch plus data.ref.baseTarget ("mainline" or "delivery-branch"), and BOTH association.intentId and association.deliveryId so a subscriber addresses exactly one PR row.
-There is deliberately no PR-status write tool: c3 persists the terminal status itself from the forge's own answer when 「同步 PR 状态」 runs for that intent. Publishing the event IS this automation's whole job — never try to write the ledger, and never guess which PR a change belongs to.
+When the real state differs from the ledger (forge shows merged/closed but the row still says reviewing), call mcp__c3__sync_intent_pr_status once with that intent's intentId — c3 queries the forge itself and persists the terminal status, so never pass or assume a status value. You may still publish_event per changed PR (type "pr:merge" / "pr:close", status "success", data { pr, repo, ref, association } with BOTH association.intentId and association.deliveryId) as a subscription signal for downstream automations.
 
 Do not reopen PRs, merge PRs, resolve conflicts, or change intents.`
 
@@ -59,6 +58,7 @@ const PR_STATUS_POLLER: AutomationTemplate = {
       'Bash',
       'mcp__c3__find_intents',
       'mcp__c3__view_intent',
+      'mcp__c3__sync_intent_pr_status',
       'mcp__c3__publish_event',
     ],
   }),
@@ -179,6 +179,7 @@ export const PR_REVIEW_RUNNER_PROMPT = `You are the PR review automation. Review
 Identity lives in data: the PR number is data.pr.number, its URL data.pr.url, the repository data.repo.owner and data.repo.name, the branches data.ref.head and data.ref.base — data.association only carries intentId/intentTitle and NEVER the number or repo. Every field is optional, so recover a missing number or owner/name by parsing data.pr.url, then fall back to \`gh repo view --json owner,name\` in the workspace plus \`gh pr list --head <data.ref.head> --repo <owner>/<name> --json number,url\`; publish a failure and stop when no PR resolves.
 Fetch it with \`gh pr view <number> --repo <owner>/<name> --json title,body,files,additions,deletions,changedFiles\` and \`gh pr diff <number> --repo <owner>/<name>\`, inspect the changed files with Read, and produce a structured review covering correctness, security, performance and style.
 Publish the outcome with publish_event: type "pr:review", status "success" once the review completes or "failure" with the reason in description, and data carrying { pr, repo, ref, association } echoed from the triggering event (fill in the number/owner/name you resolved) so downstream automations identify the same PR.
+If the forge reports the PR merged or closed while the ledger row still says reviewing, call mcp__c3__sync_intent_pr_status with data.association.intentId — c3 derives the terminal status from the forge itself, never write one yourself.
 
 Do not modify any files. Do not rebase, merge, or approve the PR. Only review and report.`
 
@@ -197,7 +198,14 @@ const PR_REVIEW_RUNNER: AutomationTemplate = {
     cronExpression: '',
     mode: 'bypassPermissions',
     eventFilters: [{ type: 'pr:create' }, { type: 'pr:update', statuses: ['success'] }],
-    toolAllowlist: ['Read', 'Grep', 'Glob', 'Bash', 'mcp__c3__publish_event'],
+    toolAllowlist: [
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash',
+      'mcp__c3__sync_intent_pr_status',
+      'mcp__c3__publish_event',
+    ],
   }),
 }
 
@@ -206,6 +214,7 @@ export const PR_REVIEW_FIX_PROMPT = `You are the PR review fix automation. A pre
 Identity lives in data, same shape as the review event: PR number at data.pr.number, URL at data.pr.url, repository at data.repo.owner and data.repo.name, branches at data.ref.head and data.ref.base — data.association only carries intentId/intentTitle and NEVER the number or repo. Every field is optional, so recover a missing number or owner/name by parsing data.pr.url, then fall back to \`gh repo view --json owner,name\` plus \`gh pr list --head <data.ref.head> --repo <owner>/<name> --json number,url\`; publish a failure and stop when no PR resolves.
 The reported problems are in the event's description (plus its data); fetch the PR with \`gh pr view <number> --repo <owner>/<name>\` and \`gh pr diff <number> --repo <owner>/<name>\`, read the relevant code, diagnose the issues and apply fixes by editing files, then commit on the PR head branch and push it.
 Publish the outcome with publish_event: type "pr:update", status "success" once the fixes are pushed or "failure" with the reason in description, and data carrying { pr, repo, ref, association } echoed from the triggering event (fill in the number/owner/name you resolved) so the next automation identifies the same PR.
+If the forge reports the PR merged or closed while the ledger row still says reviewing, call mcp__c3__sync_intent_pr_status with data.association.intentId — c3 derives the terminal status from the forge itself, never write one yourself.
 
 Only fix problems reported by the review. Do not refactor unrelated code.`
 
@@ -224,7 +233,16 @@ const PR_REVIEW_FIX: AutomationTemplate = {
     cronExpression: '',
     mode: 'bypassPermissions',
     eventFilters: [{ type: 'pr:review', statuses: ['failure'] }],
-    toolAllowlist: ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'mcp__c3__publish_event'],
+    toolAllowlist: [
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash',
+      'Edit',
+      'Write',
+      'mcp__c3__sync_intent_pr_status',
+      'mcp__c3__publish_event',
+    ],
   }),
 }
 

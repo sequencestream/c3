@@ -40,6 +40,7 @@ import { markQueueDirty } from '../intents/workflow.js'
 import {
   createDeliveryHandler,
   createDeliveryPrHandler,
+  getDeliveryDetailHandler,
   initDeliveryBranchHandler,
   listDeliveriesHandler,
   syncDeliveryPrHandler,
@@ -705,6 +706,56 @@ describe('sync_delivery_pr — delivered atomic write and its chained actions', 
     expect(getDelivery(id)!.status).toBe('verifying')
     expect(listDeliveryLogs(id).some((l) => l.operationType === 'delivered')).toBe(false)
     expect(h.published).toHaveLength(0)
+  })
+})
+
+describe('deliveryBranchAhead — fresh on the get/create reads only', () => {
+  async function detail(id: string): Promise<Extract<ServerToClient, { type: 'delivery_detail' }>> {
+    const h = harness()
+    await getDeliveryDetailHandler(h.ctx, h.conn, {
+      type: 'get_delivery_detail',
+      deliveryId: id,
+    })
+    return detailOf(h.sent)
+  }
+
+  it('reads the delivery branch ahead of mainline on get_delivery_detail (> 0 with commits)', async () => {
+    const id = await seedDelivery('verified')
+    const frame = await detail(id)
+    // The seeded delivery branch carries one commit mainline does not.
+    expect(frame.deliveryBranchAhead).toBe(1)
+    expect(frame.mainlineAhead).toBe(0)
+  })
+
+  it('reports 0 when the delivery branch holds nothing mainline lacks', async () => {
+    const id = await seedDelivery('verified', { withCommit: false })
+    const frame = await detail(id)
+    expect(frame.deliveryBranchAhead).toBe(0)
+    expect(frame.mainlineAhead).toBe(0)
+  })
+
+  it('reports null for a delivery with no branch yet', async () => {
+    const h = harness()
+    createDeliveryHandler(h.ctx, h.conn, {
+      type: 'create_delivery',
+      workspaceId,
+      title: 'No branch',
+      description: '',
+    })
+    const id = listDeliveries(dir)[0].id
+    const frame = await detail(id)
+    expect(frame.deliveryBranchAhead).toBeNull()
+    expect(frame.mainlineAhead).toBeNull()
+  })
+
+  it('leaves deliveryBranchAhead null on the sync_delivery_pr reply (not a fresh-read site)', async () => {
+    const id = await seedWithPr()
+    forgeFactsMock.mockResolvedValue({ ok: true, status: 'closed' })
+    const h = harness()
+    await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
+    const frame = detailOf(h.sent)
+    expect(frame.deliveryBranchAhead).toBeNull()
+    expect(frame.mainlineAhead).toBeNull()
   })
 })
 

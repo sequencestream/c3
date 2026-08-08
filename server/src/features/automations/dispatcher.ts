@@ -945,7 +945,8 @@ async function executeCodexLlmPrompt(
           approvalPolicy: 'never',
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
-  const { model, relayCandidates, envOverrides } = launchForAgent(agent)
+  const { model, relayCandidates, envOverrides, contextWindow, maxOutputTokens } =
+    launchForAgent(agent)
   // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
   // so PR review/comment/merge shell commands authenticate; network access stays
   // orthogonal, governed by this automation's sandbox/toolAllowlist settings.
@@ -970,6 +971,12 @@ async function executeCodexLlmPrompt(
     toolGate,
     ...(model ? { model } : {}),
     ...(relayCandidates ? { relayCandidates } : {}),
+    // Optional model capabilities (2026-08-08-013): the codex driver's relay
+    // branch registers the CLI-launched model in a local catalog so codex stops
+    // falling back to default metadata. Automation runs are host-direct (no
+    // sandboxTmpDir), so the catalog lands in os.tmpdir().
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(networkAccess ? { networkAccess: true } : {}),
     ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
     ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),

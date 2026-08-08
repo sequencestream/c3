@@ -775,6 +775,11 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
+    "cancel": {
+      "title": "Отменить интент?",
+      "confirm": "Отменить «{title}»? Его статус переключится на «отменён», а все незакрытые PR этого интента будут закрыты; вернуть его из шапки деталей будет нельзя.",
+      "label": "Отменить интент"
+    },
     "create": {
       "label": "Add intent"
     },
@@ -2593,8 +2598,14 @@
       "confirmVerified": {
         "label": "Подтвердить прохождение проверки"
       },
-      "advance": {
-        "label": "Перейти к {status}"
+      "startIntegrating": {
+        "label": "Начать интеграцию"
+      },
+      "startVerifying": {
+        "label": "Начать проверку"
+      },
+      "confirmVerification": {
+        "label": "Подтвердить проверку"
       },
       "rework": {
         "label": "Переделать"
@@ -2654,6 +2665,9 @@
         "mergedDisabled": {
           "tooltip": "PR в эту поставку уже влит — снять связь нельзя."
         }
+      },
+      "more": {
+        "label": "Другие действия"
       }
     },
     "guard": {
@@ -2793,6 +2807,40 @@
       },
       "conflict": {
         "label": "Ветка поставки конфликтует с основной в {count} файле(ах). Поставка вернулась в состояние «Проверяется»: разрешите конфликты и проверьте заново."
+      },
+      "diagnosis": {
+        "title": {
+          "label": "Почему PR поставки не предлагается"
+        },
+        "branchMode": {
+          "label": "Режим ветвей Git: {mode}"
+        },
+        "status": {
+          "label": "Статус поставки: {status}"
+        },
+        "branch": {
+          "label": "Ветка готова: {branch}"
+        },
+        "branchNotReady": {
+          "label": "Ветка готова: нет"
+        },
+        "pr": {
+          "label": "PR поставки: #{number} {status}"
+        },
+        "prNone": {
+          "label": "PR поставки: нет"
+        },
+        "diff": {
+          "ahead": {
+            "label": "Ветка поставки впереди: {count} коммит(ов)"
+          },
+          "none": {
+            "label": "Ветка поставки впереди: различий нет"
+          },
+          "unknown": {
+            "label": "Ветка поставки впереди: невозможно определить"
+          }
+        }
       }
     }
   },

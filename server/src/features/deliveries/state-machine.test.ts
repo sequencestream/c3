@@ -269,16 +269,45 @@ describe('computeTransitionPlan — reachability the page renders + gaps', () =>
     ])
   })
 
-  it('verifying offers the rework edge always-satisfied and verified gated on confirmation', () => {
+  it('verifying offers both verified and the rework edge once branch + PRs are done', () => {
+    // 人工确认由点击时的确认弹窗满足,不是页面上的缺口 —— 计划按已确认求值,
+    // 该目标才可点(按钮才渲染),写端仍要求客户端显式传 confirmVerified。
     const plan = computeTransitionPlan(
       delivery('verifying', { branchReady: true, integration: { total: 1, merged: 1 } }),
     )
-    expect(plan.targets.map((t) => [t.to, t.humanAction, t.guard])).toEqual([
-      ['verified', true, 'failed'],
-      ['integrating', true, 'satisfied'],
+    expect(plan.targets).toEqual([
+      { to: 'verified', humanAction: true, guard: 'satisfied', reasons: [] },
+      { to: 'integrating', humanAction: true, guard: 'satisfied', reasons: [] },
     ])
-    const verified = plan.targets.find((t) => t.to === 'verified')!
-    expect(verified.reasons).toContainEqual({ code: 'delivery.guard.verificationNotConfirmed' })
+  })
+
+  it('verifying reports only the front gaps for verified — never the confirmation one', () => {
+    for (const patch of [
+      { branchReady: false, integration: { total: 1, merged: 1 } },
+      { branchReady: true, integration: { total: 2, merged: 1 } },
+      { branchReady: true, integration: { total: 0, merged: 0 } },
+    ]) {
+      const plan = computeTransitionPlan(delivery('verifying', patch))
+      const verified = plan.targets.find((t) => t.to === 'verified')!
+      expect(verified.guard, JSON.stringify(patch)).toBe('failed')
+      expect(verified.reasons.length, JSON.stringify(patch)).toBeGreaterThan(0)
+      expect(
+        verified.reasons.map((r) => r.code),
+        JSON.stringify(patch),
+      ).not.toContain('delivery.guard.verificationNotConfirmed')
+    }
+  })
+
+  it('still refuses the write itself when the client did not confirm', () => {
+    // 计划不再报该缺口,写端守卫原样保留 —— stale 客户端发 confirmVerified=false 仍被拒。
+    const v = canTransitionDelivery(
+      facts('verifying', 'verified', { confirmVerified: false, role: 'human' }),
+    )
+    expect(v.ok).toBe(false)
+    if (!v.ok) {
+      expect(v.code).toBe(DELIVERY_TRANSITION_GUARD_FAILED)
+      expect(v.reasons).toContainEqual({ code: 'delivery.guard.verificationNotConfirmed' })
+    }
   })
 
   it('verified shows only system edges (never human-invokable)', () => {

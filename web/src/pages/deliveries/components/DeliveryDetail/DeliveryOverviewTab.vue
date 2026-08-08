@@ -14,6 +14,7 @@ import type { Delivery, DeliveryPr } from '@ccc/shared/protocol'
 import { formatDate } from '@/lib/intent-list-view'
 import {
   defaultDeliveryBranchName,
+  DELIVERY_STATUS_LABEL_KEYS,
   epochMsToCalendarDate,
   isDeliveryTerminal,
   type DeliveryBranchInitPhase,
@@ -30,6 +31,8 @@ const props = defineProps<{
   workspaceGitBranchMode: 'worktree' | 'current-branch'
   /** How far mainline is ahead of the delivery branch; null = unknown / N/A. */
   mainlineAhead: number | null
+  /** How far the delivery branch is ahead of mainline; null = unknown / N/A. */
+  deliveryBranchAhead: number | null
   /** In-flight 「同步主线」 phase; null = idle. */
   syncPhase: 'fetching' | 'merging' | 'pushing' | null
   /** The delivery's latest 「交付分支 → 主线」 PR; null = none opened. */
@@ -103,6 +106,52 @@ const canCreateDeliveryPr = computed(
     props.delivery.status === 'verified' &&
     (props.deliveryPr === null || props.deliveryPr.status === 'closed'),
 )
+
+/**
+ * When the merge block renders but the create button does not, list the state
+ * facts that gate it, one per line — so "why is the button gone" is answered by
+ * the page itself instead of being a mystery. Pure read of props, no logic.
+ */
+const diagnosisFacts = computed<
+  { key: 'branchMode' | 'status' | 'branch' | 'pr' | 'diff'; text: string }[]
+>(() => {
+  const branch =
+    props.delivery.branchReady && props.delivery.branchName
+      ? t('delivery.deliveryPr.diagnosis.branch.label', { branch: props.delivery.branchName })
+      : t('delivery.deliveryPr.diagnosis.branchNotReady.label')
+  const pr = props.deliveryPr
+    ? t('delivery.deliveryPr.diagnosis.pr.label', {
+        number: props.deliveryPr.number,
+        status: t(DELIVERY_PR_STATUS_KEYS[props.deliveryPr.status]),
+      })
+    : t('delivery.deliveryPr.diagnosis.prNone.label')
+  const ahead = props.deliveryBranchAhead
+  const diff =
+    ahead === null
+      ? t('delivery.deliveryPr.diagnosis.diff.unknown.label')
+      : ahead > 0
+        ? t('delivery.deliveryPr.diagnosis.diff.ahead.label', { count: ahead })
+        : t('delivery.deliveryPr.diagnosis.diff.none.label')
+  const mode =
+    props.workspaceGitBranchMode === 'worktree'
+      ? t('workspaceSetting.gitBranchMode.option.worktree.label')
+      : t('workspaceSetting.gitBranchMode.option.currentBranch.label')
+  return [
+    {
+      key: 'branchMode',
+      text: t('delivery.deliveryPr.diagnosis.branchMode.label', { mode }),
+    },
+    {
+      key: 'status',
+      text: t('delivery.deliveryPr.diagnosis.status.label', {
+        status: t(DELIVERY_STATUS_LABEL_KEYS[props.delivery.status]),
+      }),
+    },
+    { key: 'branch', text: branch },
+    { key: 'pr', text: pr },
+    { key: 'diff', text: diff },
+  ]
+})
 
 /**
  * The forge says merged while c3 still says `verified` — the acknowledged
@@ -429,6 +478,28 @@ function saveEdit(payload: {
           {{ t('delivery.deliveryPr.running.label') }}
         </p>
       </div>
+
+      <!-- 按钮未显示时的逐条事实诊断:合并区渲染但 canCreateDeliveryPr 为 false,
+           把门控的每条状态事实列出来,「为何按钮消失」由页面自己回答。 -->
+      <div
+        v-if="!canCreateDeliveryPr"
+        class="delivery-pr-diagnosis"
+        data-testid="delivery-pr-not-shown-diagnosis"
+      >
+        <p class="delivery-pr-diagnosis-title">
+          {{ t('delivery.deliveryPr.diagnosis.title.label') }}
+        </p>
+        <ul class="delivery-pr-diagnosis-list">
+          <li
+            v-for="fact in diagnosisFacts"
+            :key="fact.key"
+            class="delivery-pr-diagnosis-fact"
+            :data-testid="`delivery-pr-diagnosis-${fact.key}`"
+          >
+            {{ fact.text }}
+          </li>
+        </ul>
+      </div>
     </div>
 
     <dl class="delivery-meta" data-testid="delivery-meta">
@@ -485,6 +556,7 @@ function saveEdit(payload: {
 
     <div class="delivery-overview-actions">
       <button
+        v-if="!isTerminal"
         type="button"
         class="delivery-edit-btn"
         data-testid="delivery-edit-btn"
@@ -724,6 +796,32 @@ function saveEdit(payload: {
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
+}
+/* 诊断块:按钮未显示时的事实列表。中性提示区,不带错误红/警告橙——它只是在陈述
+   门控的状态,不是在报错。信息不依赖颜色:每行本身就是完整的可读句子。 */
+.delivery-pr-diagnosis {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-card);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.delivery-pr-diagnosis-title {
+  margin: 0 0 var(--sp-1);
+  font-weight: 600;
+}
+.delivery-pr-diagnosis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.delivery-pr-diagnosis-fact {
+  overflow-wrap: anywhere;
 }
 .delivery-meta {
   margin: 0;

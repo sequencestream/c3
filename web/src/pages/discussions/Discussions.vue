@@ -362,6 +362,7 @@ function typeLabel(d: Discussion): string {
               :agent-switch="agentSwitch"
               :show-title-bar="false"
               :has-active-session="sessionHasActive"
+              :session-bound="researchChatReady"
               :messages="sessionMessages"
               :actionable-permission-id="actionablePermissionId"
               :task-model="taskModel"

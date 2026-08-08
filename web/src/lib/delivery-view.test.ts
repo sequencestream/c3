@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { DeliveryTransitionPlan } from '@ccc/shared/protocol'
 import {
+  DELIVERY_STATUS_LABEL_KEYS,
   calendarDateToEpochMs,
+  deliveryAdvanceLabelKey,
   deliveryGapReasons,
   deliveryTargetInvokable,
   epochMsToCalendarDate,
@@ -50,6 +52,33 @@ describe('isDeliveryReworkTarget / isVerificationConfirmTarget', () => {
     expect(isDeliveryReworkTarget('planned', 'integrating')).toBe(false)
     expect(isVerificationConfirmTarget('verifying', 'verified')).toBe(true)
     expect(isVerificationConfirmTarget('integrating', 'verifying')).toBe(false)
+  })
+})
+
+describe('deliveryAdvanceLabelKey', () => {
+  it('gives each human edge its own ACTION key', () => {
+    expect(deliveryAdvanceLabelKey('planned', 'integrating')).toBe(
+      'delivery.action.startIntegrating.label',
+    )
+    expect(deliveryAdvanceLabelKey('integrating', 'verifying')).toBe(
+      'delivery.action.startVerifying.label',
+    )
+    expect(deliveryAdvanceLabelKey('verifying', 'verified')).toBe(
+      'delivery.action.confirmVerification.label',
+    )
+    expect(deliveryAdvanceLabelKey('verifying', 'integrating')).toBe('delivery.action.rework.label')
+  })
+
+  it('never labels a button with a status name — that keyspace belongs to the badge', () => {
+    const statusKeys = new Set(Object.values(DELIVERY_STATUS_LABEL_KEYS))
+    for (const [from, to] of [
+      ['planned', 'integrating'],
+      ['integrating', 'verifying'],
+      ['verifying', 'verified'],
+      ['verifying', 'integrating'],
+    ] as const) {
+      expect(statusKeys.has(deliveryAdvanceLabelKey(from, to)), `${from}→${to}`).toBe(false)
+    }
   })
 })
 

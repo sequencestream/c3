@@ -70,10 +70,15 @@ const IntentDetailStub = defineComponent({
 
 const ChatColumnStub = defineComponent({
   name: 'ChatColumn',
-  template: '<div data-testid="standalone-chat" />',
+  props: { sessionBound: { type: Boolean, default: true } },
+  template: '<div data-testid="standalone-chat" :data-session-bound="String(sessionBound)" />',
 })
 
-function mountIntents(intents: Intent[], sessionStatus?: Record<string, SessionStatus>) {
+function mountIntents(
+  intents: Intent[],
+  sessionStatus?: Record<string, SessionStatus>,
+  options: { activeSession?: string | null } = {},
+) {
   return mount(Intents, {
     props: {
       project: '/proj',
@@ -84,9 +89,9 @@ function mountIntents(intents: Intent[], sessionStatus?: Record<string, SessionS
       intentSpecLoading: false,
       intentLogsById: {},
       intentLogsLoading: false,
-      activeSession: null,
+      activeSession: options.activeSession ?? null,
       activeTitle: '',
-      hasActiveSession: false,
+      hasActiveSession: (options.activeSession ?? null) != null,
       messages: [],
       actionablePermissionId: null,
       taskModel: { tasks: [] },
@@ -271,6 +276,62 @@ describe('Intents.vue — right column', () => {
 
     expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(false)
+  })
+})
+
+describe('Intents.vue — 独立聊天列会话绑定门控(流 B 跳转窗口)', () => {
+  it('请求到达但活动会话未对齐目标时,sessionBound=false(不渲染旧会话状态)', async () => {
+    const wrapper = mountIntents(
+      [intent({ id: 'todo-a', status: 'todo', priority: 'P1' })],
+      undefined,
+      { activeSession: 'old-session' },
+    )
+    await nextTick()
+    await wrapper.setProps({ requestedIntentSessionId: 'chat-99' })
+    await nextTick()
+
+    const chat = wrapper.find('[data-testid="standalone-chat"]')
+    expect(chat.exists()).toBe(true)
+    expect(chat.attributes('data-session-bound')).toBe('false')
+    expect(wrapper.emitted('requested-intent-session-consumed')).toHaveLength(1)
+  })
+
+  it('活动会话对齐目标会话后 sessionBound=true(该会话自身状态正常渲染)', async () => {
+    const wrapper = mountIntents(
+      [intent({ id: 'todo-a', status: 'todo', priority: 'P1' })],
+      undefined,
+      { activeSession: 'old-session' },
+    )
+    await nextTick()
+    await wrapper.setProps({ requestedIntentSessionId: 'chat-99' })
+    await nextTick()
+    expect(wrapper.find('[data-testid="standalone-chat"]').attributes('data-session-bound')).toBe(
+      'false',
+    )
+
+    await wrapper.setProps({ activeSession: 'chat-99' })
+    await nextTick()
+    expect(wrapper.find('[data-testid="standalone-chat"]').attributes('data-session-bound')).toBe(
+      'true',
+    )
+  })
+
+  it('点意图行退出独立聊天列后复位捕获并回到详情', async () => {
+    const wrapper = mountIntents(
+      [intent({ id: 'todo-a', status: 'todo', priority: 'P1' })],
+      undefined,
+      { activeSession: 'chat-99' },
+    )
+    await nextTick()
+    await wrapper.setProps({ requestedIntentSessionId: 'chat-99' })
+    await nextTick()
+    expect(wrapper.find('[data-testid="standalone-chat"]').attributes('data-session-bound')).toBe(
+      'true',
+    )
+
+    await wrapper.find('[data-intent-id="todo-a"] .req-item-main').trigger('click')
+    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
   })
 })
 

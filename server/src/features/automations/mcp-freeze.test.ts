@@ -153,6 +153,18 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.writeToolNames.has('mcp__c3__publish_event')).toBe(true)
   })
 
+  it('registers sync_intent_pr_status as a write tool (forge-derived, not model-written)', () => {
+    // The sync tool triggers server-side derivation and persists terminal PR
+    // states — a write. `sync_` is not a READ_MCP_PREFIXES prefix, so the
+    // conservative classifier lands it on the write side automatically; the
+    // freeze entry pins the same verdict.
+    expect(C3_MCP_TOOLS.map((t) => t.name)).toContain('mcp__c3__sync_intent_pr_status')
+    const frozen = freezeTools([], [], emptyConfig)
+    expect(frozen.writeToolNames.has('mcp__c3__sync_intent_pr_status')).toBe(true)
+    expect(frozen.readToolNames.has('mcp__c3__sync_intent_pr_status')).toBe(false)
+    expect(isWriteTool('mcp__c3__sync_intent_pr_status', frozen)).toBe(true)
+  })
+
   it('offers the delivery tools as READ, and no delivery write tool at all', () => {
     const frozen = freezeTools([], [], emptyConfig)
     expect(frozen.readToolNames.has('mcp__c3__find_deliveries')).toBe(true)

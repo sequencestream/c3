@@ -89,6 +89,7 @@ function detailFrame(
   delivery: Delivery,
   linkWarning?: 'delivery.diffBloat',
   mainlineAhead: number | null = null,
+  deliveryBranchAhead: number | null = null,
 ): Extract<ServerToClient, { type: 'delivery_detail' }> {
   return {
     type: 'delivery_detail',
@@ -96,6 +97,7 @@ function detailFrame(
     transitionPlan: computeTransitionPlan(delivery),
     associatedIntents: listAssociatedIntents(delivery.id),
     mainlineAhead,
+    deliveryBranchAhead,
     deliveryPr: getLatestDeliveryPr(delivery.id),
     ...(linkWarning ? { linkWarning } : {}),
   }
@@ -117,6 +119,24 @@ async function readMainlineAhead(
     workspacePath,
     `origin/${delivery.branchName}`,
     `origin/${delivery.baseBranch}`,
+  )
+}
+
+/**
+ * How far the delivery branch is ahead of `origin/<base_branch>` — the mirror of
+ * `readMainlineAhead`, same fetch-free read of the LOCAL remote-tracking refs,
+ * same `null` whenever the question does not apply or cannot be answered.
+ * `> 0` is what proves a merge would actually ship something.
+ */
+async function readDeliveryBranchAhead(
+  workspacePath: string,
+  delivery: Delivery,
+): Promise<number | null> {
+  if (!delivery.branchName || !delivery.branchReady) return null
+  return countCommitsAhead(
+    workspacePath,
+    `origin/${delivery.baseBranch}`,
+    `origin/${delivery.branchName}`,
   )
 }
 
@@ -214,7 +234,8 @@ export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = async (_
   }
   const workspacePath = resolveWorkspaceRoot(delivery.workspaceId)
   const ahead = workspacePath ? await readMainlineAhead(workspacePath, delivery) : null
-  conn.send(detailFrame(delivery, undefined, ahead))
+  const branchAhead = workspacePath ? await readDeliveryBranchAhead(workspacePath, delivery) : null
+  conn.send(detailFrame(delivery, undefined, ahead, branchAhead))
 }
 
 /**
@@ -1029,7 +1050,14 @@ export const createDeliveryPrHandler: Handler<'create_delivery_pr'> = async (ctx
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  conn.send(detailFrame(fresh, undefined, await readMainlineAhead(abs, fresh)))
+  conn.send(
+    detailFrame(
+      fresh,
+      undefined,
+      await readMainlineAhead(abs, fresh),
+      await readDeliveryBranchAhead(abs, fresh),
+    ),
+  )
   ctx.broadcastDeliveries(abs)
   // Created and forge-first adopted are the SAME fact for a subscriber — 「交付 PR
   // 已就绪」 — so the idempotent adoption publishes too. `sync_delivery_pr` does

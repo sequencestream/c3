@@ -447,12 +447,13 @@ c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出�
 因此这条无确认写入被钉死在无人值守的自动化执行上。可更新既有 intent 的
 `mcp__c3__save_intents` 刻意**不**提供给自动化。
 
-**这份清单里没有直接回填 PR 状态的工具**:一个意图可能同时持有多条 PR(每个交付一条),仅凭
-`intentId` 无法确定要写哪一条,这样一个工具等于给 agent 一个把状态写到错误 PR 行上的机会。清单外
-的名字不进表单与冻结集,自动化对它的允许列表引用不生效。模型的 PR 对账路径是:用只读的
-`find_intents` / `view_intent` 读取 PR 现状;需要把被拒/失败/关闭的 PR 复位为 `reviewing` 时,发布
-携带 `association.deliveryId` 或 `pr.number` 的 `pr:update` 事件精确定位;终态(`merged`/`closed`)
-由 c3 自己从 forge 事实落库。内置模板 `pr-status-poller` 因此是「观察并发布事件」,提示词与允许列表
+**PR 终态回填经 `sync_intent_pr_status` 显式触发**:该工具只接受 `intentId`,不接受任何状态值——一个
+意图可能同时持有多条 PR(每个交付一条),若让模型直接写状态,就等于给 agent 一个把状态写到错误 PR 行
+上的机会。工具触发服务端派生:遍历该意图全部处于 `reviewing` 的 PR 行逐条向 forge 查询真实状态,
+`merged` / `closed` 终态落库并写意图日志,仍 `open` 的行不变——终态唯一由 forge 裁决,模型不写状态。
+`rejected`/`failed`/`closed → reviewing` 的复位不在该工具职责,由携带 `association.deliveryId` 或
+`pr.number` 的 `pr:update` 事件处理。内置模板 `pr-status-poller` 因此是「观察并对账」:检测到与台账
+不一致的终态时显式调用该工具同步,`pr:merge` / `pr:close` 事件仍可发布作订阅信号;提示词与允许列表
 表达同一条路径——两者不一致时,自动化会静默失去它宣称的对账能力。
 
 ### 网络访问伪条目(`network-access`,仅 codex)
@@ -719,9 +720,10 @@ i18n 错误,不打开确认态、不发送任何写消息;合法空数组进入�
 确认;创建出来的自动化仍然完全可编辑、可删除。
 
 **PR 状态轮询器**(`pr-status-poller`)每十分钟轮询处于评审中的 GitHub PR。它的 Claude
-执行身份被显式允许使用有边界的 intent 查询/PR 对账/事件发布
-能力,以及用于 `gh` 的 shell。它只对账处于评审中的 intent,把已合并的工作标记为完成,
-记录已关闭的 PR 而不完成该工作项,并且只在状态发生变化时才发出一个 provider 中立的 PR 事件。
+执行身份被显式允许使用有边界的 intent 查询 / forge 派生 PR 状态同步 / 事件发布
+能力,以及用于 `gh` 的 shell。它只对账处于评审中的 intent:检测到与台账不一致的终态时调用
+`mcp__c3__sync_intent_pr_status` 让 c3 复核 forge 后落库(状态由 forge 裁决,模型不写),已合并的
+工作被标记为完成、已关闭的 PR 被记录而不完成该工作项,并仍可发布 provider 中立的 PR 事件作订阅信号。
 
 **每周架构稳定性评审**(`weekly-arch-review`)在每周五 18:00 运行 Claude
 (cron `0 18 * * 5`,`mode: bypassPermissions`)。它只评审 git 活动的**最近 7 天**

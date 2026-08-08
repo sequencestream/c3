@@ -72,6 +72,7 @@ c3
 │   │   │   ├── base 可达判据                     # 判据是「依赖产出在不在我的 base 上」而非「PR 合了没」:同交付看该交付的 PR 行、跨交付看依赖所属交付是否 delivered、无交付沿用旧判据;唯一一份共享纯函数,手动/队列/投影共用(ADR-0038)
 │   │   │   ├── 可解释阻塞 + 强制放行             # 阻塞文案明示「依赖在交付 X,X 未合入主线」并可跳转;依赖闸门是建议,可一次性强制放行(二次确认+风险说明+intent_logs 审计),只跳依赖一道,队列不提供
 │   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
+│   │   ├── 危险动作收进溢出层                    # 意图详情标题栏只留核心动作,「取消」「删除」收进末位常驻「…」菜单(Esc/点击外部收起),两项各走 danger 二次确认;done 两项皆无则「…」整体不渲染,cancelled 只留「删除」
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
 │   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(唯一自动 done 路径之一)
 │   │   │   ├── 确定性调度内核                    # 10s tick 全量对账:从意图账本+run 存活探测+少量调度元数据重推导动作;纯逻辑在 kernel/queue,不 import features/transport
@@ -110,7 +111,7 @@ c3
 │   │   ├── 孤儿分支防御                          # push 成功但 DB 写失败后重试:远端同名分支起点匹配则幂等绑定,不匹配报 delivery.branchConflict 且绝不覆盖远端
 │   │   ├── 多仓拒绝                              # 根非 repo 且有子仓的工作区建交付与初始化分支均报 delivery.multiRepoUnsupported(单列分支无法表达部分仓已交付)
 │   │   ├── branch_ready 闸门                     # 分支未就绪时状态推进与面向交付的意图建 PR 被拦(可读原因);就绪后成为状态机真正可用的第一级守卫
-│   │   ├── 意图关联/解除                         # intent_deliveries 关联边(与 intent_prs.delivery_id 的「PR 落点」职责分离);关联只建边不改投已有 PR;两侧页面互见,交付页与意图详情标题栏两处入口同权(服务端是唯一门禁),意图侧只覆盖 0↔1 关联
+│   │   ├── 意图关联/解除                         # intent_deliveries 关联边(与 intent_prs.delivery_id 的「PR 落点」职责分离);关联只建边不改投已有 PR;两侧页面互见,交付页与意图详情两处入口同权(服务端是唯一门禁),意图侧只覆盖 0↔1 关联;意图侧关联入口在标题栏(未关联态主色描边强调),解除入口在概览元信息「关联交付」行的交付名之后(低频维护动作不占标题栏)
 │   │   ├── 当前意图独立交付                      # 意图侧一键:以意图标题/正文建交付(起止均为当天)→关联→初始化分支到就绪,前端编排三条既有消息不加协议面;仅 worktree 模式;任一步失败停在该步,已完成部分保留可从交付页续做
 │   │   ├── PR 提向交付分支                       # 已关联交付的意图其 PR base 为交付分支,未关联仍提主线(交付是可选聚合层);目标须已关联,多关联不开放入口也不代选;PR 行按交付分组展示
 │   │   ├── merged 禁解                           # 对本交付的 PR 已合并则一律拒绝解除(本地状态 + forge 实时状态双层);forge 读不到状态同样阻塞,绝不猜「不是 merged」
@@ -148,7 +149,7 @@ c3
 │   │   ├── 会话页 live 状态                       # llm 执行注册真 SessionRuntime,SDK 流译成 wire 事件 fan-out 给 viewer:会话页选中运行中 automation 见细粒度状态栏(思考中/正在执行<工具>/就绪)+ transcript 实时增长,结束收敛 idle,事后选中回放完整 buffer;command 类仅 running/idle 二态
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
 │   │   ├── 执行 vendor                           # claude/codex/cursor 均有 dispatcher 执行路径(共享 AUTOMATION_VENDORS,表单灰显与分派门控同一份);cursor 走进程内 SDK,mode 按 cursor 目录(plan/agent/full-access)解析,SDK 不可解析/凭据缺失/agent 无效在分派期即失败,不跨 vendor 回退
-│   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
+│   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ PR 状态同步(sync_intent_pr_status,只接受 intentId,触发服务端从 forge 派生终态落库)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
 │   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网
 │   │
 │   ├── codes 代码浏览                            # 浏览器里只读浏览 Git 仓库 + 代码域内嵌会话

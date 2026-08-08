@@ -27,6 +27,32 @@ export const DELIVERY_STATUS_LABEL_KEYS: Record<DeliveryStatus, LocaleKey> = {
   cancelled: 'delivery.status.cancelled.label',
 }
 
+/**
+ * Edge `from → to` → the advance BUTTON's locale key. A button says what pressing
+ * it does; the status name says where the delivery is. Reusing
+ * {@link DELIVERY_STATUS_LABEL_KEYS} here made 「验证中」 read as the current state
+ * rather than an action, so the two keyspaces stay separate — the badge keeps the
+ * status names, the buttons get their own verbs.
+ *
+ * Only the four human edges need an entry; every other edge is system-only and
+ * never renders a button (see {@link deliveryTargetInvokable}).
+ */
+const DELIVERY_ADVANCE_LABEL_KEYS: Partial<Record<string, LocaleKey>> = {
+  'planned→integrating': 'delivery.action.startIntegrating.label',
+  'integrating→verifying': 'delivery.action.startVerifying.label',
+  'verifying→verified': 'delivery.action.confirmVerification.label',
+  'verifying→integrating': 'delivery.action.rework.label',
+}
+
+/**
+ * The advance button's label key for one edge. Unmapped edges fall back to the
+ * status name — defensive only: they belong to system-only edges that never reach
+ * a button.
+ */
+export function deliveryAdvanceLabelKey(from: DeliveryStatus, to: DeliveryStatus): LocaleKey {
+  return DELIVERY_ADVANCE_LABEL_KEYS[`${from}→${to}`] ?? DELIVERY_STATUS_LABEL_KEYS[to]
+}
+
 /** Whether a transition target is clickable (human-invokable AND guard passed). */
 export function deliveryTargetInvokable(target: DeliveryTargetTransition): boolean {
   return target.humanAction && target.guard === 'satisfied'

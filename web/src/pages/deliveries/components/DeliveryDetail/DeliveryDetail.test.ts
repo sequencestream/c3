@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Delivery, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import type { Delivery, DeliveryPr, DeliveryTransitionPlan } from '@ccc/shared/protocol'
 import { DELIVERY_STATUSES } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
+import { i18n } from '@/i18n'
+import { DELIVERY_STATUS_LABEL_KEYS } from '@/lib/delivery-view'
 import DeliveryDetail from './DeliveryDetail.vue'
 
 function delivery(over: Partial<Delivery> = {}): Delivery {
@@ -42,6 +44,9 @@ function mountDetail(
     delivery?: Delivery
     plan?: DeliveryTransitionPlan
     mode?: 'worktree' | 'current-branch'
+    mainlineAhead?: number | null
+    deliveryBranchAhead?: number | null
+    deliveryPr?: DeliveryPr | null
   } = {},
 ) {
   return mount(DeliveryDetail, {
@@ -50,9 +55,10 @@ function mountDetail(
       plan: over.plan ?? PLANNED_PLAN,
       branchInit: null,
       workspaceGitBranchMode: over.mode ?? 'worktree',
-      mainlineAhead: null,
+      mainlineAhead: over.mainlineAhead ?? null,
+      deliveryBranchAhead: over.deliveryBranchAhead ?? null,
       syncPhase: null,
-      deliveryPr: null,
+      deliveryPr: over.deliveryPr ?? null,
       deliveryPrBusy: false,
       associatedIntents: [],
       intents: [],
@@ -183,6 +189,7 @@ describe('DeliveryDetail', () => {
         branchInit: { deliveryId: 'd1', phase: 'pushing' },
         workspaceGitBranchMode: 'worktree',
         mainlineAhead: null,
+        deliveryBranchAhead: null,
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
@@ -213,15 +220,33 @@ describe('DeliveryDetail', () => {
     expect(w.emitted('cleanup-branch')?.[0]).toEqual(['d1'])
   })
 
-  it('emits cancel via the danger ConfirmDialog', async () => {
+  it('emits cancel from the overflow menu via the danger ConfirmDialog', async () => {
     const w = mountDetail()
+    // 取消不在标题栏直排,得先展开「…」。
+    expect(w.find('[data-testid="delivery-cancel-btn"]').exists()).toBe(false)
+    await w.find('[data-testid="delivery-more-btn"]').trigger('click')
     await w.find('[data-testid="delivery-cancel-btn"]').trigger('click')
-    const dialogs = w.findAllComponents(ConfirmDialog)
-    const open = dialogs.find((d) => d.props('open') === true)
+    // 点菜单项即收起菜单,确认框接手。
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(false)
+    const open = w.findAllComponents(ConfirmDialog).find((d) => d.props('open') === true)
     expect(open).toBeTruthy()
+    expect(open!.props('danger')).toBe(true)
     open!.vm.$emit('confirm')
     await w.vm.$nextTick()
     expect(w.emitted('cancel')?.[0]).toEqual(['d1'])
+  })
+
+  it('omits the cancel action for terminal statuses, keeps it reachable for non-terminal', async () => {
+    // 取消已收进「…」,可达性因此按「展开后菜单里有没有这一项」判定:终态连入口都没有,
+    // 自然也够不着取消;非终态展开后才现身。
+    for (const status of ['delivered', 'cancelled'] as const) {
+      const w = mountDetail({ delivery: delivery({ status }), plan: { targets: [] } })
+      expect(w.find('[data-testid="delivery-more-btn"]').exists(), status).toBe(false)
+      expect(w.find('[data-testid="delivery-cancel-btn"]').exists(), status).toBe(false)
+    }
+    const w = mountDetail()
+    await w.find('[data-testid="delivery-more-btn"]').trigger('click')
+    expect(w.find('[data-testid="delivery-cancel-btn"]').exists()).toBe(true)
   })
 
   it('emits transition with confirmVerified=true after the verification confirmation', async () => {
@@ -269,11 +294,13 @@ describe('DeliveryDetail', () => {
       delivery: delivery({ status: 'verifying' }),
       plan: {
         targets: [
+          // 挡住 verified 的是前置缺口(分支未就绪),不再是「未人工确认」——
+          // 后者由点击时的确认弹窗满足,服务端计划不再把它算作缺口。
           {
             to: 'verified',
             humanAction: true,
             guard: 'failed',
-            reasons: [{ code: 'delivery.guard.verificationNotConfirmed' }],
+            reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
           },
           { to: 'integrating', humanAction: true, guard: 'satisfied', reasons: [] },
         ],
@@ -283,6 +310,35 @@ describe('DeliveryDetail', () => {
     expect(w.find('[data-testid="delivery-advance-verified"]').exists()).toBe(false)
     await w.find('[data-testid="delivery-advance-integrating"]').trigger('click')
     expect(w.emitted('transition')?.[0]).toEqual(['integrating', false])
+  })
+
+  it('renders no verified button while a FRONT guard still blocks it', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verifying', integration: { total: 2, merged: 1 } }),
+      plan: {
+        targets: [
+          {
+            to: 'verified',
+            humanAction: true,
+            guard: 'failed',
+            reasons: [
+              {
+                code: 'delivery.guard.prsNotMerged',
+                params: { merged: 1, total: 2 },
+                jumpTo: 'associated-intents',
+              },
+            ],
+          },
+          { to: 'integrating', humanAction: true, guard: 'satisfied', reasons: [] },
+        ],
+      },
+    })
+    expect(w.find('[data-testid="delivery-advance-verified"]').exists()).toBe(false)
+    // 「为何推不动」由缺口横幅回答,且里面绝不出现「未人工确认」。
+    expect(w.find('[data-testid="delivery-gap-delivery.guard.prsNotMerged"]').exists()).toBe(true)
+    expect(
+      w.find('[data-testid="delivery-gap-delivery.guard.verificationNotConfirmed"]').exists(),
+    ).toBe(false)
   })
 
   it('renders the terminal note for delivered / cancelled', () => {
@@ -309,6 +365,144 @@ describe('DeliveryDetail', () => {
       expect(w.find(`[data-testid="delivery-meta-${row}"]`).exists(), row).toBe(true)
     }
   })
+
+  it('passes a title click in the intents tab through as open-intent', async () => {
+    const w = mount(DeliveryDetail, {
+      props: {
+        delivery: delivery(),
+        plan: PLANNED_PLAN,
+        branchInit: null,
+        workspaceGitBranchMode: 'worktree',
+        mainlineAhead: null,
+        deliveryBranchAhead: null,
+        syncPhase: null,
+        deliveryPr: null,
+        deliveryPrBusy: false,
+        associatedIntents: [
+          {
+            id: 'i1',
+            title: 'Alpha',
+            status: 'todo',
+            prStatus: null,
+            headBranch: null,
+          },
+        ],
+        intents: [],
+      },
+    })
+    await w.find('[data-testid="delivery-pane-tab-intents"]').trigger('click')
+    expect(w.find('[data-testid="delivery-intents-tab"]').exists()).toBe(true)
+    await w.find('[data-testid="delivery-intent-title-i1"]').trigger('click')
+    expect(w.emitted('open-intent')?.[0]).toEqual(['i1'])
+  })
+})
+
+// ---- 「…」溢出菜单 ------------------------------------------------------
+
+describe('DeliveryDetail — 标题栏「…」溢出菜单', () => {
+  it('非终态渲染入口,展开态经 aria-expanded 表达', async () => {
+    const w = mountDetail()
+    const entry = w.find('[data-testid="delivery-more-btn"]')
+    expect(entry.exists()).toBe(true)
+    expect(entry.attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(false)
+
+    await entry.trigger('click')
+    expect(w.find('[data-testid="delivery-more-btn"]').attributes('aria-expanded')).toBe('true')
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(true)
+    // 菜单里目前只有「取消交付」一项(不新增删除等能力)。
+    expect(w.findAll('[data-testid="delivery-more-menu"] button').length).toBe(1)
+  })
+
+  it('再次点击入口收起', async () => {
+    const w = mountDetail()
+    await w.find('[data-testid="delivery-more-btn"]').trigger('click')
+    await w.find('[data-testid="delivery-more-btn"]').trigger('click')
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(false)
+  })
+
+  it('点击外部与 Esc 都收起', async () => {
+    for (const dismiss of [
+      () => document.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+      () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })),
+    ]) {
+      const w = mountDetail()
+      await w.find('[data-testid="delivery-more-btn"]').trigger('click')
+      expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(true)
+      dismiss()
+      await w.vm.$nextTick()
+      expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(false)
+      w.unmount()
+    }
+  })
+
+  it('入口与菜单内的点击不冒到 document 上的收起监听(真实挂载)', async () => {
+    // 默认 mount 不挂进 document,冒泡到不了收起监听 —— 这条得真挂上才测得到:
+    // 少了 @click.stop,入口的这一下点击会立刻被 document 监听收回去,菜单永远打不开。
+    const w = mount(DeliveryDetail, {
+      attachTo: document.body,
+      props: {
+        delivery: delivery(),
+        plan: PLANNED_PLAN,
+        branchInit: null,
+        workspaceGitBranchMode: 'worktree',
+        mainlineAhead: null,
+        syncPhase: null,
+        deliveryPr: null,
+        deliveryPrBusy: false,
+        deliveryBranchAhead: null,
+        associatedIntents: [],
+        intents: [],
+      },
+    })
+    await w.find('[data-testid="delivery-more-btn"]').trigger('click')
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(true)
+    // 真实挂载下点页面别处(标题栏本身)才收起。
+    await w.find('.delivery-detail-title').trigger('click')
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('终态不渲染入口,菜单敞开期间转终态则一并收起', async () => {
+    for (const status of ['delivered', 'cancelled'] as const) {
+      const w = mountDetail({ delivery: delivery({ status }), plan: { targets: [] } })
+      expect(w.find('[data-testid="delivery-more"]').exists(), status).toBe(false)
+      expect(w.find('[data-testid="delivery-cancel-btn"]').exists(), status).toBe(false)
+    }
+    // 敞开着被广播推到终态:入口消失,菜单不留在空位上。
+    const w = mountDetail()
+    await w.find('[data-testid="delivery-more-btn"]').trigger('click')
+    await w.setProps({ delivery: delivery({ status: 'cancelled' }), plan: { targets: [] } })
+    expect(w.find('[data-testid="delivery-more"]').exists()).toBe(false)
+    await w.setProps({ delivery: delivery({ status: 'planned' }), plan: PLANNED_PLAN })
+    expect(w.find('[data-testid="delivery-more-menu"]').exists()).toBe(false)
+  })
+})
+
+// ---- 推进按钮文案 ------------------------------------------------------
+
+describe('DeliveryDetail — 推进按钮是动作文案,不是状态名', () => {
+  const CASES = [
+    { status: 'planned', to: 'integrating', key: 'delivery.action.startIntegrating.label' },
+    { status: 'integrating', to: 'verifying', key: 'delivery.action.startVerifying.label' },
+    { status: 'verifying', to: 'verified', key: 'delivery.action.confirmVerification.label' },
+    { status: 'verifying', to: 'integrating', key: 'delivery.action.rework.label' },
+  ] as const
+
+  it('四条人工边各渲染自己的动作键,均不等于目标状态名', () => {
+    const t = i18n.global.t as (key: string) => string
+    for (const { status, to, key } of CASES) {
+      const w = mountDetail({
+        delivery: delivery({ status, branchReady: true, integration: { total: 1, merged: 1 } }),
+        plan: { targets: [{ to, humanAction: true, guard: 'satisfied', reasons: [] }] },
+      })
+      const btn = w.find(`[data-testid="delivery-advance-${to}"]`)
+      expect(btn.exists(), `${status}→${to}`).toBe(true)
+      expect(btn.text(), `${status}→${to}`).toBe(t(key))
+      // 徽标仍用状态名,按钮不再复用它。
+      expect(btn.text(), `${status}→${to}`).not.toBe(t(DELIVERY_STATUS_LABEL_KEYS[to]))
+    }
+  })
 })
 
 // ---- 编辑弹窗 ----------------------------------------------------------
@@ -319,6 +513,17 @@ describe('DeliveryDetail — 交付编辑弹窗', () => {
     description: 'ship the batch',
     startDate: Date.parse('2026-08-01T00:00:00Z'),
     endDate: Date.parse('2026-08-31T00:00:00Z'),
+  })
+
+  it('omits the edit button for terminal statuses, renders it for non-terminal', () => {
+    for (const status of ['delivered', 'cancelled'] as const) {
+      const w = mountDetail({ delivery: delivery({ status }), plan: { targets: [] } })
+      expect(w.find('[data-testid="delivery-edit-btn"]').exists(), status).toBe(false)
+    }
+    // 非终态(planned)仍渲染编辑入口。
+    expect(
+      mountDetail({ delivery: EDITABLE }).find('[data-testid="delivery-edit-btn"]').exists(),
+    ).toBe(true)
   })
 
   async function openEditor(w: ReturnType<typeof mountDetail>) {
@@ -446,6 +651,43 @@ describe('DeliveryDetail.vue — 标题栏样式契约', () => {
     expect(ruleBody(detailSrc, '.delivery-head-actions')).toMatch(/flex-shrink:\s*0/)
   })
 
+  it('推进按钮有按钮感:实底填充 + hover + disabled,不是徽标那种透明底细描边', () => {
+    const btn = ruleBody(detailSrc, '.delivery-advance-btn')
+    expect(btn).toMatch(/background:\s*var\(--c-primary\)/)
+    expect(btn).not.toMatch(/background:\s*transparent/)
+    expect(btn).toMatch(/border:\s*1px solid/)
+    expect(ruleBody(detailSrc, '.delivery-advance-btn:hover')).not.toBe('')
+    expect(ruleBody(detailSrc, '.delivery-advance-btn:disabled')).toMatch(/opacity:/)
+    // 返工保留虚线描边作区分,但同样是有实底的按钮。
+    const rework = ruleBody(detailSrc, '.delivery-advance-btn.rework')
+    expect(rework).toMatch(/dashed/)
+    expect(rework).toMatch(/background:\s*var\(--c-input\)/)
+  })
+
+  it('「…」入口与菜单项具备按钮样式(底色/描边 + hover),菜单是有投影的浮层', () => {
+    const entry = ruleBody(detailSrc, '.delivery-more-btn')
+    expect(entry).toMatch(/background:\s*var\(--c-input\)/)
+    expect(entry).toMatch(/border:\s*1px solid/)
+    expect(entry).toMatch(/cursor:\s*pointer/)
+    // hover 与展开态共用同一条加深规则。
+    expect(detailSrc).toMatch(
+      /\.delivery-more-btn:hover,\s*\n\s*\.delivery-more-btn\[aria-expanded='true'\]/,
+    )
+
+    const menu = ruleBody(detailSrc, '.delivery-more-menu')
+    expect(menu).toMatch(/position:\s*absolute/)
+    expect(menu).toMatch(/background:\s*var\(--c-panel\)/)
+    expect(menu).toMatch(/box-shadow:\s*var\(--shadow-mid\)/)
+
+    expect(ruleBody(detailSrc, '.delivery-more-item:hover')).toMatch(/background:/)
+    // 危险项走危险色令牌(不再是写死的 #c53030 兜底)。
+    expect(ruleBody(detailSrc, '.delivery-more-item.danger')).toMatch(
+      /color:\s*var\(--c-error-text\)/,
+    )
+    // 取消按钮已退出标题栏直排。
+    expect(detailSrc).not.toMatch(/\.delivery-cancel-btn/)
+  })
+
   it('移动端:标题栏换行,动作组整体挤到第二行(不隐藏、不降级任何信息)', () => {
     const mobile = mobileBlock(detailSrc)
     expect(ruleBody(mobile, '.delivery-detail-head')).toMatch(/flex-wrap:\s*wrap/)
@@ -470,5 +712,106 @@ describe('DeliveryEditDialog.vue — 弹窗宽度契约', () => {
     expect(modal).toMatch(/max-width:\s*none/)
     expect(modal).toMatch(/min-height:\s*100dvh/)
     expect(ruleBody(mobile, '.de-foot')).toMatch(/margin-top:\s*auto/)
+  })
+})
+
+// ---- 交付 PR 诊断块 -----------------------------------------------------
+
+function pr(over: Partial<DeliveryPr> = {}): DeliveryPr {
+  return {
+    deliveryId: 'd1',
+    forge: null,
+    repo: 'owner/repo',
+    number: '12',
+    url: 'https://example.com/pr/12',
+    headBranch: 'delivery/d1',
+    baseBranch: 'main',
+    baseSha: 'a'.repeat(40),
+    headSha: 'b'.repeat(40),
+    status: 'merged',
+    blockedReason: null,
+    conflictFiles: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  }
+}
+
+describe('DeliveryDetail — 交付 PR 诊断块', () => {
+  it('renders the create button and NO diagnosis when verified + branch ready + no PR', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verified', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryBranchAhead: 3,
+    })
+    expect(w.find('[data-testid="delivery-merge-block"]').exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-create-pr-btn"]').exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-pr-not-shown-diagnosis"]').exists()).toBe(false)
+  })
+
+  it('lists the five facts when the merge block renders without the create button', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'delivered', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryPr: pr(),
+      deliveryBranchAhead: 0,
+    })
+    const diag = w.find('[data-testid="delivery-pr-not-shown-diagnosis"]')
+    expect(diag.exists()).toBe(true)
+    // 五条事实逐行:分支模式 / 状态 / 分支就绪 / 交付 PR / 交付分支领先。
+    expect(
+      w.findAll('[data-testid^="delivery-pr-diagnosis-"]').map((f) => f.attributes('data-testid')),
+    ).toEqual([
+      'delivery-pr-diagnosis-branchMode',
+      'delivery-pr-diagnosis-status',
+      'delivery-pr-diagnosis-branch',
+      'delivery-pr-diagnosis-pr',
+      'delivery-pr-diagnosis-diff',
+    ])
+    expect(w.find('[data-testid="delivery-pr-diagnosis-branchMode"]').text()).toContain('Worktree')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-status"]').text()).toContain('Delivered')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-branch"]').text()).toContain('delivery/d1')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-pr"]').text()).toContain('#12')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-diff"]').text()).toContain('no difference')
+  })
+
+  it('renders the diagnosis alongside the merge block while verifying with a kept PR row', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verifying', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryPr: pr({ status: 'reviewing' }),
+      deliveryBranchAhead: 4,
+    })
+    // verifying + 保留 PR 行:合并区与诊断块都渲染,不加额外状态守卫。
+    expect(w.find('[data-testid="delivery-merge-block"]').exists()).toBe(true)
+    const diag = w.find('[data-testid="delivery-pr-not-shown-diagnosis"]')
+    expect(diag.exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-pr-diagnosis-status"]').text()).toContain('Verifying')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-pr"]').text()).toContain('#12')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-pr"]').text()).toContain('Open')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-diff"]').text()).toContain('4 commit')
+  })
+
+  it('shows branch-not-ready and an undeterminable diff in the diagnostic lines', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verified', branchReady: false, branchName: null }),
+      plan: { targets: [] },
+      deliveryPr: pr({ status: 'reviewing' }),
+      deliveryBranchAhead: null,
+    })
+    const diag = w.find('[data-testid="delivery-pr-not-shown-diagnosis"]')
+    expect(diag.exists()).toBe(true)
+    expect(w.find('[data-testid="delivery-pr-diagnosis-branch"]').text()).toContain('no')
+    expect(w.find('[data-testid="delivery-pr-diagnosis-diff"]').text()).toContain('undeterminable')
+  })
+
+  it('omits the diagnosis block in current-branch mode (no merge block at all)', () => {
+    const w = mountDetail({
+      mode: 'current-branch',
+      delivery: delivery({ status: 'verified', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+    })
+    expect(w.find('[data-testid="delivery-merge-block"]').exists()).toBe(false)
+    expect(w.find('[data-testid="delivery-pr-not-shown-diagnosis"]').exists()).toBe(false)
   })
 })

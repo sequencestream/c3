@@ -112,12 +112,13 @@ function mountDetail(
     },
     global: {
       // Keep the chat column inert: we test IntentDetail's tab/gate logic, not it.
-      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable.
+      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable,
+      // and `sessionBound` so the panel's session-bound gate doesn't leak as an attribute.
       stubs: {
         ChatColumn: {
-          props: ['showMode', 'modeDisabled'],
+          props: ['showMode', 'modeDisabled', 'sessionBound'],
           template:
-            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" />',
+            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" :data-session-bound="String(sessionBound)" />',
         },
       },
     },
@@ -279,12 +280,15 @@ describe('IntentDetail.vue — engineering progress', () => {
 })
 
 describe('IntentDetail.vue — persistent header', () => {
-  it('shows delete last and confirms exactly once through danger dialog', async () => {
+  it('reaches delete through the overflow menu and confirms exactly once through danger dialog', async () => {
     const item = intent({ id: 'i1', title: 'Danger', status: 'in_progress' })
     const w = mountDetail(item)
     const actions = w.find('[data-testid="intent-detail-actions"]')
-    expect(actions.findAll('button').at(-1)?.attributes('data-testid')).toBe('intent-detail-delete')
+    // 「…」占动作区末位:危险动作退到第二层,表面不再直接给删除。
+    expect(actions.findAll('button').at(-1)?.attributes('data-testid')).toBe('intent-detail-more')
+    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(false)
 
+    await w.find('[data-testid="intent-detail-more"]').trigger('click')
     await w.find('[data-testid="intent-detail-delete"]').trigger('click')
     expect(w.find('[role="alertdialog"]').exists()).toBe(true)
     expect(w.find('[data-testid="confirm-accept"]').classes()).toContain('danger')
@@ -298,20 +302,23 @@ describe('IntentDetail.vue — persistent header', () => {
 
   it('does not emit on cancel and withdraws delete once the intent is done', async () => {
     const w = mountDetail(intent({ id: 'i1', status: 'todo' }))
+    await w.find('[data-testid="intent-detail-more"]').trigger('click')
     await w.find('[data-testid="intent-detail-delete"]').trigger('click')
     expect(w.find('.cd-message').text()).not.toContain('work products')
     await w.find('[data-testid="confirm-cancel"]').trigger('click')
     expect(w.emitted('delete')).toBeUndefined()
 
-    // done 意图通常已合并 PR 并沉淀完整产出,详情页不再提供删除入口。
+    // done 意图通常已合并 PR 并沉淀完整产出,详情页不再提供删除入口 —— 连「…」一起撤走。
     await w.setProps({ intent: intent({ id: 'i1', status: 'done' }) })
+    expect(w.find('[data-testid="intent-detail-more"]').exists()).toBe(false)
     expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(false)
     expect(w.emitted('delete')).toBeUndefined()
   })
 
-  it('keeps the delete entry for every non-done status', () => {
+  it('keeps the delete entry in the overflow menu for every non-done status', async () => {
     for (const status of ['draft', 'todo', 'in_progress', 'cancelled'] as const) {
       const w = mountDetail(intent({ id: 'i1', status }))
+      await w.find('[data-testid="intent-detail-more"]').trigger('click')
       expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(true)
     }
   })
@@ -1286,21 +1293,21 @@ describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
     const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null }), {
       sddEnabled: false,
     })
-    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
   it('SDD off but a spec session id exists → all five tabs render', () => {
     const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: 'sess-spec' }), {
       sddEnabled: false,
     })
-    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
   it('SDD on → all five tabs render regardless of spec data', () => {
     const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: null }), {
       sddEnabled: true,
     })
-    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
   it('falls back to the intent tab when the active tab becomes hidden', async () => {

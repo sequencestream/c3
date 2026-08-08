@@ -108,6 +108,7 @@ defineExpose({
     ref="chatColumn"
     data-testid="intent-detail-chat"
     :readonly="chatReadonly === true"
+    :session-bound="chatReady"
     :active-title="firstIntentTurn ? intentTitle : activeTitle"
     :vendor="vendor"
     :agent-switch="agentSwitch"

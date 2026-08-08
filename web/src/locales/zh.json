@@ -791,6 +791,42 @@
     "create": {
       "label": "增加意图"
     },
+    "createDialog": {
+      "title": {
+        "label": "新增意图"
+      },
+      "baseSource": {
+        "label": "基准",
+        "branch": {
+          "label": "基准分支"
+        },
+        "delivery": {
+          "label": "交付"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "分支名"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "选择一条交付"
+        },
+        "empty": {
+          "label": "当前工作区还没有分支已就绪的交付。"
+        }
+      },
+      "content": {
+        "label": "意图内容",
+        "placeholder": {
+          "label": "描述你想做什么。这段内容会作为意图会话的第一句话。"
+        }
+      },
+      "submit": {
+        "label": "创建并开始"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始工作吗?"
     },
@@ -2175,6 +2211,7 @@
       "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
       "deleteFailed": "删除意图失败: {detail}。",
       "createFailed": "创建意图失败: {detail}。",
+      "baseBranchRequired": "请选择基准分支,分支名不能为空。",
       "startSessionFailed": "启动意图会话失败: {detail}。",
       "sessionAlreadyBound": "该意图已绑定会话,请刷新后打开。",
       "deleteForbidden": "无法删除该草稿意图: {detail}。",

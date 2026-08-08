@@ -65,6 +65,32 @@ pair this wire/disk e2e with desktop/mobile rendering and ordering assertions.
 - `node scripts/e2e/e2e-sessions-page-setting-test.mjs ws://localhost:13000/ws` →
   expect `RESULT: PASS`.
 
+## Create intent (base resolution / refusals)
+
+Drives the request the 「+」 create dialog sends, in a throwaway git workspace whose
+main branch is `trunk` (deliberately not `main`, so a hardcoded default cannot pass)
+plus a second workspace to own a foreign delivery. Asserts that a `branch` source
+persists that exact name, a `delivery` source persists the delivery's OWN branch as
+read server-side, and no source at all still falls back to the workspace main branch.
+Then asserts every refusal writes nothing: a cross-workspace delivery, a delivery
+whose branch was never initialized, an unknown delivery, and a blank branch name.
+Finally checks the id in `create_intent_result` is the one that lands in the `intents`
+snapshot, exactly once.
+
+The `content` → owner-session path is deliberately NOT driven here: it starts a real
+agent run, and the first prompt is already pinned more precisely by
+`server/src/features/intents/create-intent.test.ts` (asserted equal to the shared
+`buildIntentSessionFirstPrompt` output). The console's tab landing and arrival-order
+handling are browser state, covered by the web unit tests.
+
+No agent tokens are spent — no create carries content, so no session is started.
+Needs `C3_DB_PATH` (the suite runner passes it) to read back `base_branch` and to mark
+a delivery branch ready without a remote; without it the test SKIPs.
+
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000 --db /tmp/c3-e2e/c3.db`
+- `C3_DB_PATH=/tmp/c3-e2e/c3.db node scripts/e2e/e2e-create-intent-test.mjs ws://localhost:13000/ws` →
+  expect `RESULT: PASS`.
+
 ## Delivery ↔ intent association (link / unlink guards)
 
 Drives the association over the real wire protocol in a throwaway git workspace

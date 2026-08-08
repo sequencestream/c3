@@ -792,6 +792,42 @@
     "create": {
       "label": "Add intent"
     },
+    "createDialog": {
+      "title": {
+        "label": "意図を追加"
+      },
+      "baseSource": {
+        "label": "ベース",
+        "branch": {
+          "label": "ベースブランチ"
+        },
+        "delivery": {
+          "label": "納品"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "ブランチ名"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "納品を選択"
+        },
+        "empty": {
+          "label": "このワークスペースには、ブランチが準備済みの納品がまだありません。"
+        }
+      },
+      "content": {
+        "label": "意図の内容",
+        "placeholder": {
+          "label": "何をしたいかを記述してください。この内容が意図セッションの最初の発言になります。"
+        }
+      },
+      "submit": {
+        "label": "作成して開始"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも作業を開始しますか?"
     },
@@ -2184,6 +2220,7 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
+      "baseBranchRequired": "ベースブランチを選択してください。ブランチ名は空にできません。",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",

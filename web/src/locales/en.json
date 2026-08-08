@@ -791,6 +791,42 @@
     "create": {
       "label": "Add intent"
     },
+    "createDialog": {
+      "title": {
+        "label": "Add intent"
+      },
+      "baseSource": {
+        "label": "Base",
+        "branch": {
+          "label": "Base branch"
+        },
+        "delivery": {
+          "label": "Delivery"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "Branch name"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "Pick a delivery"
+        },
+        "empty": {
+          "label": "No delivery in this workspace has a ready branch yet."
+        }
+      },
+      "content": {
+        "label": "Intent",
+        "placeholder": {
+          "label": "Describe what you want to do. This text becomes the first turn of the intent session."
+        }
+      },
+      "submit": {
+        "label": "Create and start"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start work anyway?"
     },
@@ -2175,6 +2211,7 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
+      "baseBranchRequired": "Pick a base branch — the branch name cannot be empty.",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",

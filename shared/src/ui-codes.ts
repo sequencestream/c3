@@ -68,6 +68,11 @@ export const UI_ERROR_CODES = {
   },
   'intent.deleteFailed': { key: 'error.intent.deleteFailed', params: ['detail'] },
   'intent.createFailed': { key: 'error.intent.createFailed', params: ['detail'] },
+  // A create asked to base the intent on a branch but sent no usable name. The
+  // create is refused rather than silently falling back to the main branch: a
+  // base branch nobody chose is exactly the un-auditable state the snapshot
+  // exists to remove.
+  'intent.baseBranchRequired': { key: 'error.intent.baseBranchRequired' },
   'intent.startSessionFailed': { key: 'error.intent.startSessionFailed', params: ['detail'] },
   'intent.sessionAlreadyBound': { key: 'error.intent.sessionAlreadyBound' },
   'intent.deleteForbidden': { key: 'error.intent.deleteForbidden', params: ['detail'] },

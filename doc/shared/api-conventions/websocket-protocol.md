@@ -249,7 +249,7 @@
 
 ### `discussion_to_intent`
 
-将已完成的 discussion 的结论桥接到 intent 领域，走与「增加意图」相同的两步。服务器从 discussion 解析项目，先创建一条空白 `draft` intent（同 `create_intent`：标题 `new intent`、`P2`、空正文）并回复 `create_intent_result`，再为**该 intent** 创建 owner 沟通会话（回填其 `intentSessionId`），注入携带 discussion 标题和结论的首条 prompt，回复 `session_selected`（空历史记录）加刷新后的 `intents` 列表。如果 discussion 未知、未 `completed` 或没有结论，则在创建 intent **之前**拒绝（`error`）；首条运行启动失败时回收会话并返回 `intent.startSessionFailed`，但保留该 intent。
+将已完成的 discussion 的结论桥接到 intent 领域，与「增加意图」共用创建原语与绑定序列，差别只在载荷。服务器从 discussion 解析项目，先创建一条空白 `draft` intent（同不带 `content`/`base` 的 `create_intent`：标题 `new intent`、`P2`、空正文）并回复 `create_intent_result`，再为**该 intent** 创建 owner 沟通会话（回填其 `intentSessionId`），注入携带 discussion 标题和结论的首条 prompt，回复 `session_selected`（空历史记录）加刷新后的 `intents` 列表。如果 discussion 未知、未 `completed` 或没有结论，则在创建 intent **之前**拒绝（`error`）；首条运行启动失败时回收会话并返回 `intent.startSessionFailed`，但保留该 intent。
 
 **字段：** `discussionId: string`
 
@@ -302,6 +302,12 @@
 切换 intent 的自动化标记；服务器回复 `intents`（RM-A1）。
 
 **字段：** `intentId: string`, `automate: boolean`
+
+### `set_intent_spec_mode`
+
+设置或清除一条 intent 的每意图级规格模式覆盖；服务器回复 `intents`（RM-R43）。`mode` 总是显式携带：`null` 表示清除覆盖、恢复继承工作区 `sddEnabled`，不是「保持原样」。只写 `spec_mode`，`specStatus` / `specApproved` 不动，也不放松任何闸门；已解析的 `effectiveSpecMode` 由广播带回。未知 intent 回 `intent.notFound`。
+
+**字段：** `intentId: string`, `mode: 'sdd' | 'fast' | null`
 
 ### `start_automation`
 
@@ -628,7 +634,11 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `create_intent` / `create_intent_result`
 
-`create_intent { workspaceId }` 是不经过智能体确认的轻量登记入口。服务端在单个事务中创建一条 `title="new intent"`、空正文、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志。仅向请求连接回复 `create_intent_result { workspaceId, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端须等待该 ID 出现在当前工作区快照后再选中，不得按标题或排序猜测。
+`create_intent { workspaceId, content?, base? }` 是不经过智能体确认的登记入口。服务端在单个事务中创建一条 `title="new intent"`、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志，正文取 `content`（省略即空）。仅向请求连接回复 `create_intent_result { workspaceId, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端须等待该 ID 出现在当前工作区快照后再选中，不得按标题或排序猜测。
+
+`base` 是互斥的基准来源，决定落库的 `base_branch`：`{ kind: 'delivery', deliveryId }` 只交出交付 id，分支由服务端从本工作区交付记录读出（交付不存在/跨工作区回 `intent.deliveryContextUnknown`，分支未就绪或为空回 `delivery.guard.branchNotReady`）；`{ kind: 'branch', branch }` 交出分支名（空白回 `intent.baseBranchRequired`）。省略 `base` 走工作区主分支解析链。所有拒绝都发生在写库之前，被拒的创建不留任何意图。
+
+`content` 非空时，服务端在同一 handler 内继续为该意图创建并绑定 owner 沟通会话，以该内容作首轮输入（与 `start_intent_session` 同一处提示词构造），回复 `session_selected`（空历史）加刷新后的 `intents` 列表。首轮启动失败回收会话并返回 `intent.startSessionFailed`，但保留意图连同其正文与基准。`content` 为空或省略时只登记意图、不建会话。
 
 ### `start_intent_session`
 

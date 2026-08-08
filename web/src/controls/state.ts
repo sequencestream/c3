@@ -863,6 +863,14 @@ export function createState(deps: StateDeps) {
    */
   const intentGateEscape = ref<{ escape: GateEscape; message: string } | null>(null)
   const createIntentPending = ref(false)
+  /**
+   * Whether the 「增加意图」 dialog is open. Held here rather than inside the
+   * intent list because the two events that close it are wire events, not user
+   * gestures: a `create_intent_result` closes it (the intent exists, the console
+   * is already jumping to it), while a refusal deliberately leaves it OPEN so the
+   * content the user typed is still in the form when they fix the base branch.
+   */
+  const createIntentDialogOpen = ref(false)
   const intentPrSync = ref<
     Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   >({})
@@ -1125,6 +1133,7 @@ export function createState(deps: StateDeps) {
     intentActionErrorSeq,
     intentGateEscape,
     createIntentPending,
+    createIntentDialogOpen,
     intentPrSync,
     devLaunch,
     specLaunch,

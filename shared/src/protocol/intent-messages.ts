@@ -8,6 +8,7 @@
  */
 
 import type {
+  CreateIntentBase,
   CreatePrStage,
   DepType,
   DevLaunchStage,
@@ -15,6 +16,7 @@ import type {
   IntentLog,
   IntentPrStatus,
   IntentSessionInfo,
+  IntentSpecMode,
   IntentStatus,
   ParkRecoveryStats,
   QueueControlAction,
@@ -28,8 +30,24 @@ import type { UiError } from '../ui-codes.js'
 /** List a project's intents (reply: `intents`), optionally filtered by status. */
 export type ClientListIntents = { type: 'list_intents'; workspaceId: string; status?: IntentStatus }
 
-/** Create one empty draft intent and return its exact server-generated id. */
-export type ClientCreateIntent = { type: 'create_intent'; workspaceId: string }
+/**
+ * Create one draft intent and return its exact server-generated id.
+ *
+ * Both payload fields are optional so the pre-existing blank-creation callers
+ * (and any older client) keep working unchanged: no `base` resolves the
+ * workspace base branch as before, and no `content` creates the empty
+ * placeholder without starting a session. When `content` is a non-empty string
+ * the server continues into the intent-communication session in the SAME
+ * handler — the intent is persisted first, then bound and launched with that
+ * content as its first turn.
+ */
+export type ClientCreateIntent = {
+  type: 'create_intent'
+  workspaceId: string
+  /** First-turn input, also persisted as the intent's body. Empty/absent = no session. */
+  content?: string
+  base?: CreateIntentBase
+}
 
 /** Create and bind an intent-owned communication session, then send its first turn. */
 export type ClientStartIntentSession = {
@@ -317,6 +335,24 @@ export type ClientSetIntentAutomate = {
   type: 'set_intent_automate'
   intentId: string
   automate: boolean
+}
+
+/**
+ * Set (or clear) an intent's per-intent spec-mode override. `mode: null` drops
+ * the override so the intent inherits the workspace's `sddEnabled` again; the
+ * field is always carried explicitly, so this never means "leave as is".
+ *
+ * It writes `spec_mode` and nothing else: `specStatus` / `specApproved` are
+ * untouched (switching to `fast` does not revoke an approved spec, switching to
+ * `sdd` does not fabricate a pending one), no gate is relaxed, and the
+ * automation queue's `specStatus==='approved'` eligibility is unchanged. The
+ * resolved `effectiveSpecMode` is recomputed server-side on the next `intents`
+ * broadcast, which is also this message's only ack.
+ */
+export type ClientSetIntentSpecMode = {
+  type: 'set_intent_spec_mode'
+  intentId: string
+  mode: IntentSpecMode | null
 }
 
 /**

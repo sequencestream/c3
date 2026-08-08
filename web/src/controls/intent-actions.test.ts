@@ -76,10 +76,16 @@ function makeCtx(opts: {
     safety: ReturnType<typeof setTimeout> | null
     jump: ReturnType<typeof setTimeout> | null
   } = { dwell: null, safety: null, jump: null }
+  const createIntentPending = ref(false)
+  const createIntentDialogOpen = ref(false)
+  const loadDeliveriesForLink = vi.fn()
   const ctx = {
     send: vi.fn(),
     t: (k: string) => k,
     persistViewMode: vi.fn(),
+    createIntentPending,
+    createIntentDialogOpen,
+    loadDeliveriesForLink,
     intentsProject: ref<string | null>(WS),
     selectedIntentSessionId: ref<string | null>(null),
     activeTab: ref('intents'),
@@ -125,6 +131,9 @@ function makeCtx(opts: {
     intents,
     currentWorkspace,
     currentSessions,
+    createIntentPending,
+    createIntentDialogOpen,
+    loadDeliveriesForLink,
   }
 }
 
@@ -286,6 +295,35 @@ describe('setIntentAutomate — todo-only mode switching', () => {
     h.ctx.setIntentAutomate('i-1', false)
     expect(h.ctx.send).not.toHaveBeenCalled()
     expect(h.showToast).toHaveBeenCalledWith('intent.automate.locked.toast')
+  })
+})
+
+describe('setIntentSpecMode — per-intent spec-mode override', () => {
+  it.each(['sdd', 'fast'] as const)('sends set_intent_spec_mode with an explicit %s', (mode) => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.setIntentSpecMode('i-1', mode)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_spec_mode',
+      intentId: 'i-1',
+      mode,
+    })
+  })
+
+  it('carries an explicit null to clear the override (never omits the field)', () => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.setIntentSpecMode('i-1', null)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_spec_mode',
+      intentId: 'i-1',
+      mode: null,
+    })
+  })
+
+  it('has no status gate — a done intent may still switch mode', () => {
+    const h = makeCtx({ intents: [{ id: 'i-1', status: 'done' } as Intent] })
+    h.ctx.setIntentSpecMode('i-1', 'fast')
+    expect(h.ctx.send).toHaveBeenCalledTimes(1)
+    expect(h.showToast).not.toHaveBeenCalled()
   })
 })
 
@@ -531,5 +569,74 @@ describe('retryIntentAction — re-enters the original entry point', () => {
     expect(h.ctx.send).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'create_pr', intentId: 'i-3' }),
     )
+  })
+})
+
+describe('新增意图弹窗 — 入口与创建请求', () => {
+  it('「+」只打开弹窗,不登记任何东西,并顺手刷新交付候选', () => {
+    const h = makeCtx({})
+
+    h.ctx.openCreateIntentDialog()
+
+    expect(h.createIntentDialogOpen.value).toBe(true)
+    // 意图页自己不列交付,别处新建/初始化的交付否则会在选择器里缺席。
+    expect(h.loadDeliveriesForLink).toHaveBeenCalledWith(WS)
+    // 打开弹窗不是一次创建——此刻不该有任何请求发出。
+    expect(h.ctx.send).not.toHaveBeenCalled()
+    expect(h.createIntentPending.value).toBe(false)
+  })
+
+  it('取消关闭弹窗', () => {
+    const h = makeCtx({})
+    h.ctx.openCreateIntentDialog()
+
+    h.ctx.closeCreateIntentDialog()
+
+    expect(h.createIntentDialogOpen.value).toBe(false)
+  })
+
+  it('带载荷创建 → 内容与互斥基准一起发出,并置在途守卫', () => {
+    const h = makeCtx({})
+
+    h.ctx.createIntent({ content: 'CONTENT_ABC', base: { kind: 'branch', branch: 'develop' } })
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'create_intent',
+      workspaceId: WS,
+      content: 'CONTENT_ABC',
+      base: { kind: 'branch', branch: 'develop' },
+    })
+    expect(h.createIntentPending.value).toBe(true)
+  })
+
+  it('选交付时只发交付 id —— 分支映射由服务端解析', () => {
+    const h = makeCtx({})
+
+    h.ctx.createIntent({ content: 'CONTENT_ABC', base: { kind: 'delivery', deliveryId: 'd1' } })
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'create_intent',
+      workspaceId: WS,
+      content: 'CONTENT_ABC',
+      base: { kind: 'delivery', deliveryId: 'd1' },
+    })
+  })
+
+  it('不带载荷 → 仍是旧的空白登记(不塞 content/base 字段)', () => {
+    const h = makeCtx({})
+
+    h.ctx.createIntent()
+
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'create_intent', workspaceId: WS })
+  })
+
+  it('在途期间重复提交被挡住,不会创建出第二条', () => {
+    const h = makeCtx({})
+    const payload = { content: 'CONTENT_ABC', base: { kind: 'branch', branch: 'main' } } as const
+
+    h.ctx.createIntent(payload)
+    h.ctx.createIntent(payload)
+
+    expect(h.ctx.send).toHaveBeenCalledTimes(1)
   })
 })

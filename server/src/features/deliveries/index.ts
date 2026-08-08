@@ -45,6 +45,7 @@ import {
 import type { KernelContext } from '../../kernel/types.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import type { Conn, Handler } from '../../transport/handler-registry.js'
+import { resolveWorkspaceBaseBranch } from '../intents/base-branch.js'
 import { parsePrIdentity } from '../intents/pr-identity.js'
 import { getIntent, upsertIntentPr } from '../intents/store.js'
 import { markQueueDirty } from '../intents/workflow.js'
@@ -56,6 +57,7 @@ import {
 } from './state-machine.js'
 import {
   activeDeliveryHoldsBranch,
+  adoptReadyDeliveryBranchAsIntentBase,
   clearDeliveryBranch,
   commitDeliveryDelivered,
   commitDeliveryMergeConflict,
@@ -506,6 +508,20 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
       branch: ready.branchName ?? branchName,
     })
 
+  /**
+   * The `false → true` edge is the ONE moment an intent's base-branch snapshot
+   * may follow a delivery: an intent linked while the branch did not exist is
+   * still holding the mainline snapshot, and a worktree created after this point
+   * must root on the delivery branch instead. Runs on every route that flips the
+   * fact, BEFORE the success frame, so a failed catch-up can never be reported
+   * as a completed initialisation. Re-running it writes the same value, so the
+   * idempotent shortcut above (already ready, same branch) needs none of its own.
+   */
+  const adoptBranchAsIntentBase = (ready: Delivery): void => {
+    const adopted = adoptReadyDeliveryBranchAsIntentBase(ready.id, ready.branchName ?? branchName)
+    if (adopted.length > 0) ctx.broadcastIntents(abs)
+  }
+
   // Idempotent shortcut: already bound to this exact branch → success, no git.
   if (delivery.branchReady && delivery.branchName === branchName) {
     conn.send({ type: 'delivery_branch_init_result', workspaceId: msg.workspaceId, delivery })
@@ -566,6 +582,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
       conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
       return
     }
+    adoptBranchAsIntentBase(updated)
     const warning = existingHead === expectedHead ? undefined : 'delivery.branchBehindMain'
     conn.send({
       type: 'delivery_branch_init_result',
@@ -589,6 +606,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
         conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
         return
       }
+      adoptBranchAsIntentBase(updated)
       conn.send({
         type: 'delivery_branch_init_result',
         workspaceId: msg.workspaceId,
@@ -631,6 +649,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
     })
     return
   }
+  adoptBranchAsIntentBase(updated)
   conn.send({
     type: 'delivery_branch_init_result',
     workspaceId: msg.workspaceId,
@@ -725,6 +744,11 @@ function resolveAssociation(
  * Link an intent to a delivery: insert the association edge, then warn (never
  * refuse) when the intent's commits would make the resulting PR's diff bloated.
  *
+ * A FIRST link also re-takes the intent's base-branch snapshot as this
+ * delivery's branch — atomically with the edge, so the ledger can never hold one
+ * without the other. Everything else about the snapshot is deliberately absent:
+ * a second link keeps the existing value, and an unready branch writes nothing.
+ *
  * Deliberately NOT done here: re-targeting an existing delivery-less PR at this
  * delivery. Linking establishes the edge only; moving a PR's base is a separate,
  * later capability, and silently re-basing an open PR is not something a link
@@ -744,9 +768,11 @@ export const linkIntentToDeliveryHandler: Handler<'link_intent_to_delivery'> = a
   const { abs, delivery } = resolved
   const latestCommitHash = getIntent(msg.intentId)?.latestCommitHash ?? null
 
+  const readyBranch = delivery.branchReady ? (delivery.branchName?.trim() ?? null) : null
+
   let inserted: boolean
   try {
-    inserted = insertIntentDelivery(msg.deliveryId, msg.intentId)
+    inserted = insertIntentDelivery(msg.deliveryId, msg.intentId, readyBranch)
   } catch (err) {
     // The unique index fired on a concurrent link — same user-visible verdict as
     // losing the in-transaction check.
@@ -802,6 +828,11 @@ export const linkIntentToDeliveryHandler: Handler<'link_intent_to_delivery'> = a
  *    merged" is treated as "may be merged", never as "probably fine".
  * 4. Only a confirmed-unmerged PR is closed, and only a successful close lets the
  *    edge and the PR row go. A close failure aborts the whole unlink.
+ *
+ * Dropping the LAST link returns the intent's base-branch snapshot to the
+ * workspace mainline, in the same transaction as the edge removal. Every refusal
+ * above leaves both untouched — a guard that stops the unlink must not move what
+ * the intent is built on.
  */
 export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delivery'> = async (
   ctx,
@@ -864,7 +895,7 @@ export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delive
     deleteIntentPr(msg.intentId, msg.deliveryId)
   }
 
-  deleteIntentDelivery(msg.deliveryId, msg.intentId)
+  deleteIntentDelivery(msg.deliveryId, msg.intentId, resolveWorkspaceBaseBranch(abs))
 
   const fresh = getDelivery(msg.deliveryId)
   if (!fresh) {

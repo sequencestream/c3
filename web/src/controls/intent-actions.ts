@@ -1,4 +1,10 @@
-import type { GitActionFailureGuidance, IntentStatus, PromptImage } from '@ccc/shared/protocol'
+import type {
+  CreateIntentBase,
+  GitActionFailureGuidance,
+  IntentSpecMode,
+  IntentStatus,
+  PromptImage,
+} from '@ccc/shared/protocol'
 import {
   beginCreatePr,
   reduceCreatePr,
@@ -165,10 +171,37 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'open_intent_session', workspaceId: intentsProject.value, sessionId })
   }
 
-  ctx.createIntent = (): void => {
+  // The 「+」 entry only OPENS the create dialog — nothing is registered until the
+  // user has picked a base and written the content. Deliveries are (re)loaded on
+  // open for the same reason the link picker does it: the intent page never lists
+  // them on its own, so one created or branch-initialized elsewhere would
+  // otherwise be missing from the picker.
+  ctx.openCreateIntentDialog = (): void => {
+    if (!intentsProject.value) return
+    ctx.loadDeliveriesForLink(intentsProject.value)
+    ctx.createIntentDialogOpen.value = true
+  }
+
+  // Cancel only. A SUCCESSFUL create closes the dialog from the message handler
+  // (where the result arrives); a refusal deliberately closes nothing, so the
+  // typed content survives for the retry.
+  ctx.closeCreateIntentDialog = (): void => {
+    ctx.createIntentDialogOpen.value = false
+  }
+
+  // Create one intent. With a payload the server also starts its owner session
+  // with that content as the first turn and persists the chosen base branch;
+  // without one this stays the blank registration the discussion bridge and the
+  // older callers rely on. The in-flight guard is released by
+  // `create_intent_result` or by any of the create refusal codes.
+  ctx.createIntent = (payload?: { content: string; base: CreateIntentBase }): void => {
     if (!intentsProject.value || ctx.createIntentPending.value) return
     ctx.createIntentPending.value = true
-    send({ type: 'create_intent', workspaceId: intentsProject.value })
+    send({
+      type: 'create_intent',
+      workspaceId: intentsProject.value,
+      ...(payload ? { content: payload.content, base: payload.base } : {}),
+    })
   }
   ctx.startIntentSession = (intentId: string, text: string, images: PromptImage[]): void => {
     if (!intentsProject.value || (!text.trim() && images.length === 0)) return
@@ -426,6 +459,13 @@ export function installIntentActions(ctx: AppCtx): void {
       return
     }
     send({ type: 'set_intent_automate', intentId, automate: automateOn })
+  }
+
+  // 每意图规格模式覆盖。与 automate 不同,这里没有状态门:模式只影响后续闸门判定,
+  // 任何状态的意图都可以改。`null` 显式下发以清除覆盖(服务端区分「省略」与「显式 null」),
+  // 生效值由服务端在下一次 intents 广播里算好回填,前端不本地推导。
+  ctx.setIntentSpecMode = (intentId: string, mode: IntentSpecMode | null): void => {
+    send({ type: 'set_intent_spec_mode', intentId, mode })
   }
 
   ctx.updateIntentDeps = (

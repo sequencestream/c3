@@ -27,6 +27,15 @@
         "label": "Copied"
       }
     },
+    "async": {
+      "loading": {
+        "label": "Loading…"
+      },
+      "error": {
+        "label": "Failed to load this view",
+        "hint": "The code for this view could not be downloaded. Check your connection, then reload the page."
+      }
+    },
     "unknown": {
       "label": "unknown"
     },
@@ -782,6 +791,42 @@
     "create": {
       "label": "Add intent"
     },
+    "createDialog": {
+      "title": {
+        "label": "Add intent"
+      },
+      "baseSource": {
+        "label": "Base",
+        "branch": {
+          "label": "Base branch"
+        },
+        "delivery": {
+          "label": "Delivery"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "Branch name"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "Pick a delivery"
+        },
+        "empty": {
+          "label": "No delivery in this workspace has a ready branch yet."
+        }
+      },
+      "content": {
+        "label": "Intent",
+        "placeholder": {
+          "label": "Describe what you want to do. This text becomes the first turn of the intent session."
+        }
+      },
+      "submit": {
+        "label": "Create and start"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start work anyway?"
     },
@@ -954,8 +999,23 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "Spec required:",
+        "tooltip": "Per-intent override of the workspace spec-driven development setting.",
+        "option": {
+          "inherit": "Inherit workspace",
+          "sdd": "Required (sdd)",
+          "fast": "Not required (fast)"
+        },
+        "derived": "currently {mode}",
+        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now."
+      },
       "branch": {
         "label": "Branch:"
+      },
+      "baseBranch": {
+        "label": "Base:",
+        "fallback": "not recorded, falling back to the mainline"
       },
       "commit": {
         "label": "Commit:"
@@ -2151,6 +2211,7 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
+      "baseBranchRequired": "Pick a base branch — the branch name cannot be empty.",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",
@@ -2806,40 +2867,6 @@
       },
       "conflict": {
         "label": "The delivery branch conflicts with mainline in {count} file(s). The delivery went back to Verifying; resolve them and verify again."
-      },
-      "diagnosis": {
-        "title": {
-          "label": "Why the delivery PR is not offered"
-        },
-        "branchMode": {
-          "label": "Git branch mode: {mode}"
-        },
-        "status": {
-          "label": "Delivery status: {status}"
-        },
-        "branch": {
-          "label": "Branch ready: {branch}"
-        },
-        "branchNotReady": {
-          "label": "Branch ready: no"
-        },
-        "pr": {
-          "label": "Delivery PR: #{number} {status}"
-        },
-        "prNone": {
-          "label": "Delivery PR: none"
-        },
-        "diff": {
-          "ahead": {
-            "label": "Delivery branch ahead: {count} commit(s)"
-          },
-          "none": {
-            "label": "Delivery branch ahead: no difference"
-          },
-          "unknown": {
-            "label": "Delivery branch ahead: undeterminable"
-          }
-        }
       }
     }
   },

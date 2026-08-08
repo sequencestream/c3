@@ -41,6 +41,7 @@ import {
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { normalizeGenericEventDefault } from '../../features/events/default-normalizer.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let home: string
 let projectDir: string
@@ -76,6 +77,9 @@ beforeAll(async () => {
   otherDir = join(home, 'other')
   mkdirSync(projectDir, { recursive: true })
   mkdirSync(otherDir, { recursive: true })
+  // A real repo: `worktree` is the default branch mode, so launching a spec
+  // session through the tool prepares the intent's worktree, which needs one.
+  initTestGitRepo(projectDir)
   addWorkspace(projectDir, Date.now())
   addWorkspace(otherDir, Date.now())
 

@@ -26,6 +26,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,
@@ -234,6 +236,21 @@ describe('Intents.vue — dependency selection', () => {
     expect(wrapper.find('[data-testid="intent-detail"]').text()).toBe('dependency')
     expect(wrapper.find('[data-intent-id="dependency"]').classes()).toContain('selected')
   })
+})
+
+describe('Intents.vue — spec-mode passthrough', () => {
+  it.each([['fast'], [null]] as const)(
+    're-emits the detail set-spec-mode (%s) upwards',
+    async (mode) => {
+      const wrapper = mountIntents([intent({ id: 'current', status: 'todo', priority: 'P1' })])
+      await nextTick()
+
+      wrapper.findComponent(IntentDetailStub).vm.$emit('set-spec-mode', 'current', mode)
+      await nextTick()
+
+      expect(wrapper.emitted('set-spec-mode')).toEqual([['current', mode]])
+    },
+  )
 })
 
 describe('Intents.vue — right column', () => {

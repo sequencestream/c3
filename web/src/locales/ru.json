@@ -28,6 +28,15 @@
         "label": "Скопировано"
       }
     },
+    "async": {
+      "loading": {
+        "label": "Загрузка…"
+      },
+      "error": {
+        "label": "Не удалось загрузить это представление",
+        "hint": "Не удалось загрузить код этого представления. Проверьте соединение и обновите страницу."
+      }
+    },
     "unknown": {
       "label": "неизвестно"
     },
@@ -783,6 +792,42 @@
     "create": {
       "label": "Add intent"
     },
+    "createDialog": {
+      "title": {
+        "label": "Добавить намерение"
+      },
+      "baseSource": {
+        "label": "База",
+        "branch": {
+          "label": "Базовая ветка"
+        },
+        "delivery": {
+          "label": "Доставка"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "Имя ветки"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "Выберите доставку"
+        },
+        "empty": {
+          "label": "В этом рабочем пространстве пока нет доставок с готовой веткой."
+        }
+      },
+      "content": {
+        "label": "Содержание намерения",
+        "placeholder": {
+          "label": "Опишите, что вы хотите сделать. Этот текст станет первой репликой сессии намерения."
+        }
+      },
+      "submit": {
+        "label": "Создать и начать"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "У этого намерения есть незавершённые зависимости. Всё равно начать работу?"
     },
@@ -955,8 +1000,23 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "Нужна спецификация:",
+        "tooltip": "Переопределение настройки разработки по спецификации рабочей области для этого интента.",
+        "option": {
+          "inherit": "Наследовать рабочую область",
+          "sdd": "Нужна (sdd)",
+          "fast": "Не нужна (fast)"
+        },
+        "derived": "сейчас действует: {mode}",
+        "workspaceOff": "В этой рабочей области разработка по спецификации выключена, поэтому сейчас настройка не влияет на поведение."
+      },
       "branch": {
         "label": "Ветка:"
+      },
+      "baseBranch": {
+        "label": "База:",
+        "fallback": "не записано, откат к основной ветке"
       },
       "commit": {
         "label": "Коммит:"
@@ -2160,6 +2220,7 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
+      "baseBranchRequired": "Выберите базовую ветку — имя ветки не может быть пустым.",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",
@@ -2807,40 +2868,6 @@
       },
       "conflict": {
         "label": "Ветка поставки конфликтует с основной в {count} файле(ах). Поставка вернулась в состояние «Проверяется»: разрешите конфликты и проверьте заново."
-      },
-      "diagnosis": {
-        "title": {
-          "label": "Почему PR поставки не предлагается"
-        },
-        "branchMode": {
-          "label": "Режим ветвей Git: {mode}"
-        },
-        "status": {
-          "label": "Статус поставки: {status}"
-        },
-        "branch": {
-          "label": "Ветка готова: {branch}"
-        },
-        "branchNotReady": {
-          "label": "Ветка готова: нет"
-        },
-        "pr": {
-          "label": "PR поставки: #{number} {status}"
-        },
-        "prNone": {
-          "label": "PR поставки: нет"
-        },
-        "diff": {
-          "ahead": {
-            "label": "Ветка поставки впереди: {count} коммит(ов)"
-          },
-          "none": {
-            "label": "Ветка поставки впереди: различий нет"
-          },
-          "unknown": {
-            "label": "Ветка поставки впереди: невозможно определить"
-          }
-        }
       }
     }
   },

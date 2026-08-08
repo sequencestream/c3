@@ -29,6 +29,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,
@@ -616,6 +618,21 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.emitted('set-automate')).toEqual([['intent-1', true]])
   })
 
+  it('passes sddEnabled down to the overview tab and re-emits its set-spec-mode', async () => {
+    const w = mountDetail(intent({ id: 'intent-1', specMode: null }), { sddEnabled: false })
+    // 工作区关了 SDD 也不隐藏开关,只多一句提示 —— 透传的是同一个 prop。
+    expect(w.find('[data-testid="intent-meta-spec-mode-off-hint"]').exists()).toBe(true)
+
+    await w.find('[data-testid="intent-meta-spec-mode-select"]').setValue('fast')
+    expect(w.emitted('set-spec-mode')).toEqual([['intent-1', 'fast']])
+  })
+
+  it('re-emits a cleared override (null) from the overview tab', async () => {
+    const w = mountDetail(intent({ id: 'intent-1', specMode: 'sdd' }), { sddEnabled: true })
+    await w.find('[data-testid="intent-meta-spec-mode-select"]').setValue('inherit')
+    expect(w.emitted('set-spec-mode')).toEqual([['intent-1', null]])
+  })
+
   it('emits create-pr in worktree mode when branch/session/no-pr/non-main and any non-done status', async () => {
     for (const status of ['todo', 'in_progress'] as const) {
       const item = intent({
@@ -845,7 +862,7 @@ describe('IntentDetail.vue — draft ↔ todo status transition buttons', () => 
 })
 
 describe('IntentDetail.vue — meta block position and field order', () => {
-  // 顶部区域字段的稳定顺序:ID → 分支 → PR → 已创建 → 已完成 → 已更新 → 依赖明细。
+  // 顶部区域字段的稳定顺序:ID → 分支 → 基准分支 → PR → 已创建 → 已完成 → 已更新 → 依赖明细。
   function metaLabels(w: ReturnType<typeof mountDetail>): string[] {
     return w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
   }
@@ -864,11 +881,12 @@ describe('IntentDetail.vue — meta block position and field order', () => {
     expect(meta.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('orders all present fields as ID → branch → PR → created → completed → updated → deps', () => {
+  it('orders all present fields as ID → spec mode → branch → base → PR → created → completed → updated → deps', () => {
     const current = intent({
       id: 'the-intent-id',
       status: 'done',
       branchName: 'feature/x',
+      baseBranch: 'delivery/alpha',
       latestCommitHash: 'abcdef1234567',
       prs: [fakeIntentPr('reviewing', { number: '42', url: 'https://github.com/o/r/pull/42' })],
       completedAt: 5,
@@ -880,15 +898,20 @@ describe('IntentDetail.vue — meta block position and field order', () => {
     })
     const labels = metaLabels(w)
 
-    expect(labels).toHaveLength(7)
+    expect(labels).toHaveLength(9)
     expect(labels[0]).toContain('the-intent-id')
-    expect(labels[1]).toContain('feature/x')
-    expect(labels[1]).toContain('abcdef1') // commit 前 7 位
-    expect(labels[2]).toContain('#42')
-    expect(labels[3]).toContain('Created:')
-    expect(labels[4]).toContain('Completed:')
-    expect(labels[5]).toContain('Updated:')
-    expect(w.findAll('.req-meta > .req-meta-item').at(6)!.classes()).toContain(
+    // 「是否需要规范」是意图自身的配置,排在 git / PR 这些既成事实与时间戳之前。
+    expect(w.findAll('.req-meta > .req-meta-item').at(1)!.attributes('data-testid')).toBe(
+      'intent-meta-spec-mode',
+    )
+    expect(labels[2]).toContain('feature/x')
+    expect(labels[2]).toContain('abcdef1') // commit 前 7 位
+    expect(labels[3]).toContain('delivery/alpha')
+    expect(labels[4]).toContain('#42')
+    expect(labels[5]).toContain('Created:')
+    expect(labels[6]).toContain('Completed:')
+    expect(labels[7]).toContain('Updated:')
+    expect(w.findAll('.req-meta > .req-meta-item').at(8)!.classes()).toContain(
       'req-meta-dependencies',
     )
   })
@@ -905,19 +928,32 @@ describe('IntentDetail.vue — meta block position and field order', () => {
     const w = mountDetail(item)
     const labels = metaLabels(w)
 
-    // 仅 ID / 已创建 / 已更新 恒显示,空字段不占位。
-    expect(labels).toHaveLength(3)
+    // 仅 ID / 是否需要规范 / 基准分支 / 已创建 / 已更新 恒显示,空字段不占位。基准分支永远
+    // 有答案(缺持久值时读模型派生主分支回退),所以它不是可省略的一项。
+    expect(labels).toHaveLength(5)
     expect(labels[0]).toContain('only-id')
-    expect(labels[1]).toContain('Created:')
-    expect(labels[2]).toContain('Updated:')
+    expect(w.findAll('.req-meta > .req-meta-item').at(1)!.attributes('data-testid')).toBe(
+      'intent-meta-spec-mode',
+    )
+    expect(labels[2]).toContain('main')
+    expect(labels[3]).toContain('Created:')
+    expect(labels[4]).toContain('Updated:')
     expect(w.find('.req-meta-dependencies').exists()).toBe(false)
     expect(w.find('.req-meta-pr-link').exists()).toBe(false)
+  })
+
+  it('marks a read-time fallback as such instead of passing it off as a recorded base', () => {
+    const w = mountDetail(intent({ id: 'i1', baseBranch: 'main', baseBranchFallback: true }))
+    const base = w.find('[data-testid="intent-meta-base-branch"]')
+    expect(base.text()).toContain('main')
+    expect(base.find('.req-meta-note').exists()).toBe(true)
   })
 
   it('shows the branch without a commit suffix when latestCommitHash is empty', () => {
     const item = intent({ id: 'i1', branchName: 'feature/y', latestCommitHash: null })
     const w = mountDetail(item)
-    const branch = w.findAll('.req-meta > .req-meta-item').at(1)!
+    const branch = w.findAll('.req-meta > .req-meta-item').at(2)!
+    expect(branch.text()).toContain('Branch:')
     expect(branch.text()).toContain('feature/y')
     expect(branch.text()).not.toContain('·')
   })

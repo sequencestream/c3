@@ -447,13 +447,50 @@ export function isIntentLinked(deliveryId: string, intentId: string): boolean {
   )
 }
 
+/** How many deliveries this intent is currently linked to. */
+function countIntentLinks(d: Db, intentId: string): number {
+  return (
+    d.get<{ n: number }>('SELECT COUNT(*) AS n FROM intent_deliveries WHERE intent_id=?', intentId)
+      ?.n ?? 0
+  )
+}
+
+/**
+ * Write an intent's base-branch snapshot. Lives in the delivery store — not the
+ * intent store — because it may only ever run in the SAME transaction as the
+ * association edge that justifies it: an edge without its snapshot, or a
+ * snapshot without its edge, is the exact drift `intents.base_branch` exists to
+ * remove. Same precedent as {@link deleteIntentPr}, which likewise writes an
+ * intent-domain table on a delivery-domain action.
+ *
+ * `intents` is created lazily by the intent store; a delivery-only database has
+ * no rows to update, so a missing table is a no-op rather than a failure.
+ */
+function writeIntentBaseBranch(d: Db, intentId: string, branch: string): void {
+  if (!hasTable(d, 'intents')) return
+  d.run('UPDATE intents SET base_branch=? WHERE id=?', branch, intentId)
+}
+
 /**
  * Create the association edge. Returns false when the pair is ALREADY linked
  * (the caller surfaces `delivery.intentAlreadyLinked`) — checked in the same
  * transaction as the insert, so a concurrent duplicate hits the unique index
  * `idx_intent_delivery_unique` and rolls back rather than creating a second row.
+ *
+ * `deliveryBranch` is the delivery's ready branch, or null when it has none yet.
+ * On the intent's FIRST link it becomes the intent's base-branch snapshot, in
+ * this same transaction. A later link never touches the snapshot: link order is
+ * not a decision about which delivery the intent is built on, and a second
+ * delivery's branch would silently re-point an intent already developed against
+ * the first. An unready delivery keeps the previous mainline snapshot — an
+ * unborn branch is not something to build on — and gets picked up when its
+ * branch becomes ready.
  */
-export function insertIntentDelivery(deliveryId: string, intentId: string): boolean {
+export function insertIntentDelivery(
+  deliveryId: string,
+  intentId: string,
+  deliveryBranch: string | null,
+): boolean {
   const d = requireDb()
   return tx(d, () => {
     if (isIntentLinked(deliveryId, intentId)) return false
@@ -464,16 +501,73 @@ export function insertIntentDelivery(deliveryId: string, intentId: string): bool
       intentId,
       Date.now(),
     )
+    const branch = deliveryBranch?.trim()
+    if (branch && countIntentLinks(d, intentId) === 1) writeIntentBaseBranch(d, intentId, branch)
     return true
   })
 }
 
-/** Drop the association edge. Returns false when there was nothing to drop. */
-export function deleteIntentDelivery(deliveryId: string, intentId: string): boolean {
+/**
+ * Drop the association edge. Returns false when there was nothing to drop.
+ *
+ * Losing the LAST link returns the intent's base-branch snapshot to
+ * `mainlineBranch` in the same transaction — an intent that belongs to no
+ * delivery is built on the workspace mainline again. While other links remain
+ * the snapshot is kept: which of them it should point at is not something the
+ * removal of a different edge can answer.
+ */
+export function deleteIntentDelivery(
+  deliveryId: string,
+  intentId: string,
+  mainlineBranch: string,
+): boolean {
   const d = requireDb()
-  if (!isIntentLinked(deliveryId, intentId)) return false
-  d.run('DELETE FROM intent_deliveries WHERE delivery_id=? AND intent_id=?', deliveryId, intentId)
-  return true
+  return tx(d, () => {
+    if (!isIntentLinked(deliveryId, intentId)) return false
+    d.run('DELETE FROM intent_deliveries WHERE delivery_id=? AND intent_id=?', deliveryId, intentId)
+    if (countIntentLinks(d, intentId) === 0) writeIntentBaseBranch(d, intentId, mainlineBranch)
+    return true
+  })
+}
+
+/**
+ * A delivery branch has just become ready: adopt it as the base-branch snapshot
+ * of every intent that is linked to THIS delivery and to no other. Returns the
+ * intents actually updated, so the caller knows whether the intent read model
+ * needs re-broadcasting.
+ *
+ * This is the one lifecycle catch-up the snapshot allows. Without it an intent
+ * linked before its delivery's branch existed would keep the mainline snapshot
+ * forever, and a worktree created afterwards would faithfully root on the wrong
+ * branch — a mistake the existing baseline guard cannot even detect, because
+ * mainline IS contained in the delivery branch's history.
+ *
+ * It is not a subscription to the delivery branch: a branch that is later
+ * advanced, renamed or rebuilt does not re-run this. Being called again for an
+ * already-ready branch writes the same value, so a repeated idempotent
+ * initialisation cannot produce a different outcome. An intent that has since
+ * gained a second delivery, or dropped this one, is left alone.
+ */
+export function adoptReadyDeliveryBranchAsIntentBase(
+  deliveryId: string,
+  branchName: string,
+): string[] {
+  const d = requireDb()
+  const branch = branchName.trim()
+  if (!branch) return []
+  return tx(d, () => {
+    const rows = d.all<{ intent_id: string }>(
+      'SELECT intent_id FROM intent_deliveries WHERE delivery_id=?',
+      deliveryId,
+    )
+    const updated: string[] = []
+    for (const r of rows) {
+      if (countIntentLinks(d, r.intent_id) !== 1) continue
+      writeIntentBaseBranch(d, r.intent_id, branch)
+      updated.push(r.intent_id)
+    }
+    return updated
+  })
 }
 
 /**

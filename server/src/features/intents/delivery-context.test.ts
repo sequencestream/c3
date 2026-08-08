@@ -38,6 +38,7 @@ import {
 } from '../deliveries/store.js'
 import { impliedDeliveryContextId, resolveSessionDeliveryContext } from './delivery-context.js'
 import { launchWorkSession, type SessionLaunchDeps } from './session-launcher.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 // 依赖闸门阻塞时的后台 PR 刷新是 fire-and-forget 的 forge 调用,这里只关心闸门本身。
 vi.mock('./pr-status-sync.js', async (importOriginal) => ({
@@ -51,7 +52,7 @@ vi.mock('./worktree-baseline.js', async (importOriginal) => ({
     baseBranch: 'main',
     remoteRef: null,
     delivery: null,
-    fellBackToMainline: false,
+    offDeliveryBranch: false,
   })),
   checkExistingWorktreeBaseline: vi.fn(() => null),
 }))
@@ -66,6 +67,7 @@ const deps: SessionLaunchDeps = {
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-delivery-context-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   process.env.C3_DIR = join(dir, 'c3home')
@@ -110,7 +112,7 @@ function seedDelivery(title: string, intentId?: string): { id: string; title: st
     endDate: null,
     baseBranch: 'main',
   })
-  if (intentId) insertIntentDelivery(delivery.id, intentId)
+  if (intentId) insertIntentDelivery(delivery.id, intentId, null)
   return { id: delivery.id, title: delivery.title }
 }
 

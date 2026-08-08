@@ -42,6 +42,20 @@ import { resolveSessionSourceAction } from '@/lib/session-jump'
 /** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
 const DEEP_LINK_TIMEOUT_MS = 10_000
 
+/**
+ * 每一种 `create_intent` 拒绝码 —— 收到任一都要释放「增加意图」的在途守卫,
+ * 否则入口与新增弹窗的提交按钮会一直禁用到页面状态重建。跨 `workspace.` /
+ * `intent.` / `delivery.` 三个前缀,因此显式列举而非前缀判断。
+ */
+const CREATE_INTENT_REFUSAL_CODES = new Set<string>([
+  'workspace.unknown',
+  'intent.dbUnavailable',
+  'intent.createFailed',
+  'intent.baseBranchRequired',
+  'intent.deliveryContextUnknown',
+  'delivery.guard.branchNotReady',
+])
+
 // Broadcast types that can change a Dashboard count (session/intent/discussion/
 // automation surfaces). While the Dashboard is the active view, each triggers one
 // coalesced snapshot refresh (dedup handled in `loadDashboard`).
@@ -127,6 +141,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     requestedIntentId,
     requestedIntentSubTab,
     createIntentPending,
+    createIntentDialogOpen,
     automation,
     queueDetail,
     discussions,
@@ -824,7 +839,19 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'create_intent_result':
         createIntentPending.value = false
+        // The intent exists — the dialog has nothing left to hold. Closing here
+        // (rather than optimistically on submit) is what lets a REFUSAL keep it
+        // open with the typed content intact.
+        createIntentDialogOpen.value = false
+        // The intent exists, so the form has nothing left to preserve — this is
+        // the ONLY thing that closes the create dialog. A refusal leaves it open
+        // with the typed content intact.
+        createIntentDialogOpen.value = false
         if (msg.workspaceId === intentsProject.value) {
+          // Land on the created intent by its exact server id — never by list
+          // position or title. The one-shot request is consumed by Intents.vue
+          // once that id appears in this workspace's snapshot, so the create
+          // result and the `intents` broadcast may arrive in either order.
           requestedIntentId.value = msg.intent.id
           requestedIntentSubTab.value = 'intentSession'
         }
@@ -1390,16 +1417,15 @@ export function installMessageHandler(ctx: AppCtx): void {
         // looked like "nothing happened". The seq bump still releases the start-dev
         // in-flight guard. Not added to the chat stream — an action error is not session
         // content.
-        // `create_intent` fails via three codes — workspace.unknown, intent.dbUnavailable,
-        // intent.createFailed. Any of them must release the "增加意图" in-flight guard, or the
-        // button stays disabled until the page state is rebuilt. workspace.unknown is not an
-        // `intent.*` code, so release here (ahead of the intent-only branch) for all three.
-        if (
-          createIntentPending.value &&
-          (msg.error.code === 'workspace.unknown' ||
-            msg.error.code === 'intent.dbUnavailable' ||
-            msg.error.code === 'intent.createFailed')
-        ) {
+        // Every way `create_intent` can be refused must release the "增加意图"
+        // in-flight guard, or the button (and the create dialog's submit) stays
+        // disabled until the page state is rebuilt. The base-selection refusals
+        // are listed alongside the original three because they are rejections of
+        // the SAME request — and they are the ones the dialog stays open for, so
+        // the user can fix the base and resubmit without retyping the content.
+        // Spread across three prefixes (`workspace.` / `intent.` / `delivery.`),
+        // hence an explicit set rather than a prefix test.
+        if (createIntentPending.value && CREATE_INTENT_REFUSAL_CODES.has(msg.error.code)) {
           createIntentPending.value = false
         }
         // An agent-configuration refusal (an unusable agent group) can arrive from

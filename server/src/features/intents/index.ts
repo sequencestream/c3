@@ -12,6 +12,7 @@ import { dirname } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
   VENDOR_IDS,
+  type CreateIntentBase,
   type DevLaunchStage,
   type Intent,
   type SessionAgentSwitch,
@@ -26,6 +27,7 @@ import {
   removeViewer,
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToId, touchWorkspace } from '../../state.js'
+import type { UiError } from '@ccc/shared'
 import {
   getDefaultMode,
   getGitBranchMode,
@@ -39,6 +41,11 @@ import {
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { groupUnavailableError, sessionAgentTargetForRole } from '../sessions/agent-target.js'
+import {
+  existingIntentSessionCwd,
+  prepareIntentSessionWorktree,
+  type IntentWorktreeFailure,
+} from './session-worktree.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
@@ -62,6 +69,7 @@ import {
   setChatSession,
   setLatestCommitHash,
   setIntentSessionId,
+  setSpecMode,
   updateIntent,
   updateIntentDeps,
   updateStatus,
@@ -90,6 +98,8 @@ import {
   unparkIntent,
 } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
+import { getDelivery } from '../deliveries/store.js'
+import { normalizeBranchName } from './dependency-gate.js'
 import { commitAndPush } from '../../git.js'
 import { getWorktreePath, removeIntentGitResources } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
@@ -218,6 +228,16 @@ export function buildIntentSessionFirstPrompt(intent: Intent, userInput: string)
  * Shared by {@link startIntentSession} and {@link discussionToIntent} so the
  * binding sequence exists once.
  */
+/**
+ * The intent-directory refusal as a WS error frame. The baseline mismatch codes
+ * are the ones the intent page already knows how to offer `repair_intent_worktree`
+ * for, so a comm / spec / review launch blocked by an out-of-date worktree lands
+ * on the same two explicit exits a work launch does.
+ */
+function intentWorktreeError(failure: IntentWorktreeFailure): UiError {
+  return failure.params ? { code: failure.code, params: failure.params } : { code: failure.code }
+}
+
 async function bindAndLaunchIntentSession(
   ctx: KernelContext,
   conn: Conn,
@@ -239,10 +259,25 @@ async function bindAndLaunchIntentSession(
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
   }
+  // The intent's own directory, on its base branch — refining an intent means
+  // reading the code the change will actually land on, not the main checkout's
+  // current branch plus whatever is uncommitted in it. Read-only: the comm agent
+  // writes no repository file, it shares the directory only to see it.
+  const cwd = prepareIntentSessionWorktree(proj, intent)
+  if (!cwd.ok) {
+    conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    // A create request has already persisted the intent by the time it gets
+    // here, so the refusal still owes the list its new row — same as the unwind
+    // below. Callers whose intent predates the launch just re-broadcast a
+    // snapshot that did not change.
+    ctx.broadcastIntents(proj)
+    return
+  }
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   try {
     if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
     const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+    rt.effectiveCwd = cwd.prepared.cwd
     bindIntentAgent(chatId, target.target.ref)
     setChatSession(proj, chatId, title)
     syncIntentSessionProjection({
@@ -308,7 +343,53 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
   })
 }
 
-export const createIntent: Handler<'create_intent'> = (ctx, conn, msg) => {
+/**
+ * Resolve the `base_branch` a create request asks for, from the ONE source it
+ * named. A delivery contributes only its id: the branch is read here from this
+ * workspace's own delivery record, so a client cannot assert a branch mapping
+ * the ledger disagrees with. A branch contributes its (trimmed) name.
+ *
+ * Every rejection leaves nothing behind because it runs BEFORE the insert — the
+ * spec's "a refused create must not leave half an intent" is structural here,
+ * not a cleanup path. `undefined` means "no explicit choice", which the store
+ * primitive turns into the workspace base branch.
+ */
+function resolveCreateBaseBranch(
+  workspacePath: string,
+  base: CreateIntentBase | undefined,
+): { ok: true; baseBranch: string | undefined } | { ok: false; code: UiErrorCode } {
+  if (!base) return { ok: true, baseBranch: undefined }
+  if (base.kind === 'branch') {
+    const branch = base.branch.trim()
+    if (!branch) return { ok: false, code: 'intent.baseBranchRequired' }
+    return { ok: true, baseBranch: branch }
+  }
+  const delivery = getDelivery(base.deliveryId)
+  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
+    return { ok: false, code: 'intent.deliveryContextUnknown' }
+  }
+  const branchName = normalizeBranchName(delivery.branchName)
+  if (!delivery.branchReady || branchName === null) {
+    return { ok: false, code: 'delivery.guard.branchNotReady' }
+  }
+  return { ok: true, baseBranch: branchName }
+}
+
+/**
+ * `create_intent` handler — register ONE intent and, when the request carries
+ * content, continue straight into its owner communication session.
+ *
+ * The two steps are one handler rather than two round-trips so the session's
+ * first prompt is built from the record just written (its id, content and base),
+ * and so a launch failure is unwound by the single owner-session path every
+ * other launcher already uses. The intent itself survives that unwind: it is a
+ * persisted fact the user can retry or delete from the detail page, and rolling
+ * it back would discard the content they just typed.
+ *
+ * Without content this stays exactly the pre-existing blank registration —
+ * that is what the older client and the "+" placeholder path still do.
+ */
+export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj || !hasWorkspace(proj)) {
     conn.send({
@@ -321,16 +402,38 @@ export const createIntent: Handler<'create_intent'> = (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
+  const base = resolveCreateBaseBranch(proj, msg.base)
+  if (!base.ok) {
+    conn.send({ type: 'error', error: { code: base.code } })
+    return
+  }
+  const content = msg.content?.trim() ?? ''
+  let intent: Intent
   try {
-    const intent = createEmptyIntent(proj, conn.subject ?? 'system')
-    conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
-    ctx.broadcastIntents(proj)
+    intent = createEmptyIntent(proj, conn.subject ?? 'system', {
+      content,
+      baseBranch: base.baseBranch,
+    })
   } catch (err) {
     conn.send({
       type: 'error',
       error: { code: 'intent.createFailed', params: { detail: String(err) } },
     })
+    return
   }
+  conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
+  if (!content) {
+    ctx.broadcastIntents(proj)
+    return
+  }
+  // The session path broadcasts on its own (both on success and on unwind), so
+  // the blank path above owns the only extra broadcast.
+  await bindAndLaunchIntentSession(ctx, conn, {
+    proj,
+    intent,
+    title: intent.title,
+    prompt: buildIntentSessionFirstPrompt(intent, content),
+  })
 }
 
 export const startIntentSession: Handler<'start_intent_session'> = async (ctx, conn, msg) => {
@@ -439,6 +542,13 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
     conn.send({ type: 'error', error: { code: 'intent.chatOpenFailed' } })
     return
   }
+  // Reopen the comm session in its intent's directory when it has one. A comm
+  // session that owns no intent yet (a brand-new "New Intent" conversation) has
+  // no worktree to bind and stays in the workspace — there is no intent id to
+  // compute a path from, and creating one before the intent exists would leave
+  // an orphan directory behind.
+  const ownerIntentId = findIntentIdByAnySessionId(chatId)
+  if (ownerIntentId) rt.effectiveCwd = existingIntentSessionCwd(proj, ownerIntentId)
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
   // Resolve the session title from the store; fall back to 'New Intent' for
@@ -565,6 +675,10 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
     // and re-pin the spec agent so a reopened spec session keeps its identity.
     // The stored spec path is absolute (centralized root, outside the workspace).
     if (intent.specPath) restored.specDir = dirname(resolveSpecFileAbs(proj, intent.specPath))
+    // Reopen the session in the directory it was authored in. Reuse only — a
+    // reopen creates no worktree, fetches nothing and blocks nothing; the
+    // admission a new turn needs runs in `launchSpecSession`.
+    restored.effectiveCwd = existingIntentSessionCwd(proj, intent.id)
     // Re-pin the spec agent (a group re-pins as its group ref). An unusable spec
     // group changes nothing here: reopening is a READ of an existing session, so it
     // keeps whatever binding it already carries and the configuration error is
@@ -638,6 +752,8 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
     const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
     const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
     const restored = ensureRuntime(chatId, proj, getDefaultMode(proj), baseline, 'spec_review')
+    // Same reuse-only rule as the author's reopen.
+    restored.effectiveCwd = existingIntentSessionCwd(proj, intent.id)
     restored.specReviewIntentId = intent.id
     // Prefer the fingerprint the stored conclusion is bound to; with no
     // conclusion yet, the spec's current content is what this session was
@@ -752,10 +868,17 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
   }
+  // Same intent directory the comm / spec / review / work sessions share.
+  const cwd = prepareIntentSessionWorktree(proj, req)
+  if (!cwd.ok) {
+    conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    return
+  }
   // Restart the comm session as a fresh one seeded with this intent.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  rt.effectiveCwd = cwd.prepared.cwd
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
   syncIntentSessionProjection({
@@ -827,10 +950,16 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
   }
+  const cwd = prepareIntentSessionWorktree(proj, req)
+  if (!cwd.ok) {
+    conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    return
+  }
   // Restart the comm session as a fresh one seeded with this intent + new input.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  rt.effectiveCwd = cwd.prepared.cwd
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
   syncIntentSessionProjection({
@@ -1244,6 +1373,28 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
     return
   }
   setAutomate(msg.intentId, msg.automate)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+}
+
+/**
+ * `set_intent_spec_mode` handler — the per-intent spec-mode override write.
+ * Pure pass-through: it persists `spec_mode` (`null` clearing the override back
+ * to workspace inheritance) and re-broadcasts, which is where the resolved
+ * `effectiveSpecMode` is recomputed. Nothing else moves — `spec_status` /
+ * `spec_approved` stay put, no admission gate is relaxed, and queue eligibility
+ * is unaffected.
+ */
+export const setIntentSpecMode: Handler<'set_intent_spec_mode'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  setSpecMode(msg.intentId, msg.mode)
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
 }
 

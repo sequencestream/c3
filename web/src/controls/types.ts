@@ -8,8 +8,10 @@ import type {
   CodeSearchHit,
   CodexPolicy,
   CreateAutomationInput,
+  CreateIntentBase,
   DeliveryStatus,
   GitActionFailureGuidance,
+  IntentSpecMode,
   IntentStatus,
   ModeToken,
   PromptImage,
@@ -185,6 +187,13 @@ export interface AppMethods {
    */
   saveSpecContent(intentId: string, content: string): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
+  /**
+   * Set (or clear) an intent's per-intent spec-mode override. `null` restores
+   * inheritance of the workspace `sddEnabled`; the value is always sent
+   * explicitly, so it never means "leave as is". Fire-and-forget: the resolved
+   * `effectiveSpecMode` comes back with the next `intents` broadcast.
+   */
+  setIntentSpecMode(intentId: string, mode: IntentSpecMode | null): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   /**
    * Create a PR for an intent. `deliveryId` names the delivery whose branch the
@@ -212,7 +221,16 @@ export interface AppMethods {
   refreshQueueDetail(): void
   queueControl(action: QueueControlAction, intentId?: string): void
   selectIntentSession(sessionId: string): void
-  createIntent(): void
+  /**
+   * Create one intent. The payload (from the create dialog) also carries the
+   * first turn of its session and the chosen base branch; omitting it keeps the
+   * blank registration older callers rely on.
+   */
+  createIntent(payload?: { content: string; base: CreateIntentBase }): void
+  /** Open the create dialog (and refresh the deliveries it picks from). */
+  openCreateIntentDialog(): void
+  /** Cancel the create dialog. A successful create closes it from the handler. */
+  closeCreateIntentDialog(): void
   startIntentSession(intentId: string, text: string, images: PromptImage[]): void
 
   // deliveries (交付作为集成单元, ADR-0036)

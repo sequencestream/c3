@@ -5,32 +5,95 @@
 // refs/computeds stay the SAME reactive objects, so the template below is
 // unchanged. See controls/index.ts for the decomposition map.
 import AppHeader from './components/AppHeader/AppHeader.vue'
-import Works from './pages/works/Works.vue'
-import Intents from './pages/intents/Intents.vue'
-import Queue from './pages/queue/Queue.vue'
-import Deliveries from './pages/deliveries/Deliveries.vue'
-import Discussions from './pages/discussions/Discussions.vue'
-import Automations from './pages/automations/Automations.vue'
-import Codes from './pages/codes/Codes.vue'
-import WorkCenter from './pages/workcenter/WorkCenter.vue'
-import Dashboard from './pages/workcenter/components/WorkspaceDashboard.vue'
-import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
-import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
-import PersonalizedSettingPage from './pages/personalizedsetting/PersonalizedSetting.vue'
 import Login from './pages/login/Login.vue'
-import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
-import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
-import CreatePrOverlay from './components/CreatePrOverlay/CreatePrOverlay.vue'
-import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
-import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
-import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
-import IntentActionErrorDialog from './components/IntentActionErrorDialog/IntentActionErrorDialog.vue'
-import GateEscapeDialog from './components/GateEscapeDialog/GateEscapeDialog.vue'
-import { computed, ref, watch } from 'vue'
+import Queue from './pages/queue/Queue.vue'
+import AsyncViewLoading from './components/AsyncFallback/AsyncViewLoading.vue'
+import AsyncViewError from './components/AsyncFallback/AsyncViewError.vue'
+import AsyncOverlayLoading from './components/AsyncFallback/AsyncOverlayLoading.vue'
+import AsyncOverlayError from './components/AsyncFallback/AsyncOverlayError.vue'
+import {
+  computed,
+  defineAsyncComponent,
+  ref,
+  watch,
+  type AsyncComponentLoader,
+  type Component,
+} from 'vue'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
 import { CODES_CHAT_WIDTH_DEFAULT } from './controls/state'
+
+// ── 懒加载装配约定 ─────────────────────────────────────────────────────────
+// App.vue 是唯一的装配边界:重量级业务页面与低频全局组件都由 defineAsyncComponent
+// 包一层动态 import,首次真正渲染时才拉取各自的 chunk。首屏只留登录门、顶栏、toast
+// 与当前分支需要的代码;静态 import 仅保留这三者和轻量的 Queue(意图页兄弟视图)。
+// 两个门槛必须同时守住,少一个懒加载就不成立:
+//   1. 挂载点必须带 v-if——tab 分支天然有,弹窗/覆盖层则以各自的 open/model/状态做门。
+//      无条件挂载的 wrapper 一上来就会触发 loader,即使组件内部靠 open 隐藏也照样下载。
+//   2. loading/error 走统一兜底(components/AsyncFallback):页面级占住内容区的 flex
+//      位置,弹窗级占住同层遮罩,不留白屏、不改布局;失败只静态兜底,不自动重试。
+// 条件回到 false 时 wrapper 卸载,再次打开复用已解析的组件与浏览器缓存,不重复下载。
+function asyncView<T extends Component>(loader: AsyncComponentLoader<T>): T {
+  return defineAsyncComponent<T>({
+    loader,
+    loadingComponent: AsyncViewLoading,
+    errorComponent: AsyncViewError,
+  })
+}
+function asyncOverlay<T extends Component>(loader: AsyncComponentLoader<T>): T {
+  return defineAsyncComponent<T>({
+    loader,
+    loadingComponent: AsyncOverlayLoading,
+    errorComponent: AsyncOverlayError,
+  })
+}
+
+// 业务页面:首次进入对应 tab / workcenter 页面时加载。
+const Works = asyncView(() => import('./pages/works/Works.vue'))
+const Intents = asyncView(() => import('./pages/intents/Intents.vue'))
+const Deliveries = asyncView(() => import('./pages/deliveries/Deliveries.vue'))
+const Discussions = asyncView(() => import('./pages/discussions/Discussions.vue'))
+const Automations = asyncView(() => import('./pages/automations/Automations.vue'))
+const Codes = asyncView(() => import('./pages/codes/Codes.vue'))
+const WorkCenter = asyncView(() => import('./pages/workcenter/WorkCenter.vue'))
+const Dashboard = asyncView(() => import('./pages/workcenter/components/WorkspaceDashboard.vue'))
+
+// 设置页与低频全局组件:首次打开(门控条件转 true)时加载。
+const SystemSettingsPage = asyncOverlay(() => import('./pages/systemsettings/SystemSettings.vue'))
+const WorkspaceSettingPage = asyncOverlay(
+  () => import('./pages/workspacesetting/WorkspaceSetting.vue'),
+)
+const PersonalizedSettingPage = asyncOverlay(
+  () => import('./pages/personalizedsetting/PersonalizedSetting.vue'),
+)
+const SkillApprovalModal = asyncOverlay(
+  () => import('./components/SkillApprovalModal/SkillApprovalModal.vue'),
+)
+const NewSessionModal = asyncOverlay(
+  () => import('./pages/works/components/NewSessionModal/NewSessionModal.vue'),
+)
+const CreatePrOverlay = asyncOverlay(
+  () => import('./components/CreatePrOverlay/CreatePrOverlay.vue'),
+)
+const DevStartupOverlay = asyncOverlay(
+  () => import('./components/DevStartupOverlay/DevStartupOverlay.vue'),
+)
+const SpecStartupOverlay = asyncOverlay(
+  () => import('./components/SpecStartupOverlay/SpecStartupOverlay.vue'),
+)
+const AutomationSaveOverlay = asyncOverlay(
+  () => import('./components/AutomationSaveOverlay/AutomationSaveOverlay.vue'),
+)
+const IntentActionErrorDialog = asyncOverlay(
+  () => import('./components/IntentActionErrorDialog/IntentActionErrorDialog.vue'),
+)
+const GateEscapeDialog = asyncOverlay(
+  () => import('./components/GateEscapeDialog/GateEscapeDialog.vue'),
+)
+const CreateIntentDialog = asyncOverlay(
+  () => import('./pages/intents/components/CreateIntentDialog/CreateIntentDialog.vue'),
+)
 
 const { t } = useTypedI18n()
 
@@ -152,6 +215,7 @@ const {
   setIntentStatus,
   deleteIntent,
   setIntentAutomate,
+  setIntentSpecMode,
   updateIntentContent,
   saveSpecContent,
   updateIntentDeps,
@@ -168,6 +232,9 @@ const {
   queueControl,
   selectIntentSession,
   createIntent,
+  createIntentDialogOpen,
+  openCreateIntentDialog,
+  closeCreateIntentDialog,
   startIntentSession,
   // ---- deliveries ----
   deliveriesProject,
@@ -405,6 +472,22 @@ function shareIntent(intentId: string): void {
 // repair is a one-off git action. The dialog closes first so a second refusal
 // (a different gate, or the same one still closed) shows as its own event.
 
+/**
+ * The intent workspace's main branch: the explicit workspace setting first, the
+ * server-side project config next, the probed default last. Named once because
+ * both the intents page and the create dialog's branch pre-fill must agree on
+ * what "the default" is — two copies of this chain could disagree.
+ */
+const intentsWorkspaceMainBranch = computed<string | null>(
+  () =>
+    currentWorkspaceSetting.value?.defaultMainBranch ??
+    (intentsProject.value
+      ? serverSettings.value?.projectConfigs?.[intentsProject.value]?.defaultMainBranch
+      : null) ??
+    detectedMainBranch.value ??
+    null,
+)
+
 /** The candidate deliveries the `delivery-context` exit offers, from the ledger. */
 const gateEscapeDeliveries = computed(() => {
   const id = intentGateEscape.value?.escape.intentId
@@ -596,13 +679,7 @@ function onCodesChatWidth(px: number): void {
           :requested-intent-id="requestedIntentId"
           :requested-intent-sub-tab="requestedIntentSubTab"
           :requested-intent-session-id="requestedIntentSessionId"
-          :workspace-main-branch="
-            currentWorkspaceSetting?.defaultMainBranch ??
-            (intentsProject
-              ? serverSettings?.projectConfigs?.[intentsProject]?.defaultMainBranch
-              : null) ??
-            detectedMainBranch
-          "
+          :workspace-main-branch="intentsWorkspaceMainBranch"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (intentsProject
@@ -668,6 +745,7 @@ function onCodesChatWidth(px: number): void {
           @set-status="setIntentStatus"
           @delete="deleteIntent"
           @set-automate="setIntentAutomate"
+          @set-spec-mode="setIntentSpecMode"
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"
@@ -682,7 +760,7 @@ function onCodesChatWidth(px: number): void {
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"
           @open-queue="openQueuePage"
-          @new-intent="createIntent"
+          @new-intent="openCreateIntentDialog"
           @start-intent-session="startIntentSession"
           @set-session-agent="onSetSessionAgent"
           @respond="respond"
@@ -935,7 +1013,11 @@ function onCodesChatWidth(px: number): void {
       </div>
     </div>
 
+    <!-- 以下设置页 / 弹窗 / 覆盖层都是懒加载装配点:v-if 既是显示条件,也是异步
+         wrapper 的挂载门(见 script 顶部的懒加载约定)。带 open prop 的组件继续传原
+         表达式——在 v-if 已放行的分支里它恒为 true,组件内部的关闭/取消协议不变。 -->
     <NewSessionModal
+      v-if="newSessionOpen"
       :open="newSessionOpen"
       :agents="serverSettings?.agents ?? []"
       :default-agent-id="serverSettings?.defaultAgentId ?? null"
@@ -946,6 +1028,7 @@ function onCodesChatWidth(px: number): void {
     />
 
     <SystemSettingsPage
+      v-if="settingsOpen"
       :open="settingsOpen"
       :settings="serverSettings"
       :host-status="hostStatus"
@@ -963,6 +1046,7 @@ function onCodesChatWidth(px: number): void {
     />
 
     <PersonalizedSettingPage
+      v-if="personalizedSettingOpen"
       :open="personalizedSettingOpen"
       :settings="personalizedSettings"
       @close="personalizedSettingOpen = false"
@@ -972,6 +1056,7 @@ function onCodesChatWidth(px: number): void {
     />
 
     <WorkspaceSettingPage
+      v-if="workspaceSettingOpen"
       :open="workspaceSettingOpen"
       :workspace-setting="currentWorkspaceSetting"
       :detected-main-branch="detectedMainBranch"
@@ -1010,6 +1095,7 @@ function onCodesChatWidth(px: number): void {
     />
 
     <SkillApprovalModal
+      v-if="skillApprovalRequest !== null"
       :open="skillApprovalRequest !== null"
       :approval="skillApprovalRequest"
       @approve="approveSkillLoad"
@@ -1021,6 +1107,7 @@ function onCodesChatWidth(px: number): void {
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 
   <IntentActionErrorDialog
+    v-if="intentActionError !== null"
     :open="intentActionError !== null"
     :message="intentActionError ?? ''"
     :guidance="intentActionErrorGuidance"
@@ -1032,6 +1119,7 @@ function onCodesChatWidth(px: number): void {
        dialog above, never alongside it: one refusal, one dialog. Every exit is an
        explicit choice — nothing here happens on its own. -->
   <GateEscapeDialog
+    v-if="intentGateEscape"
     :escape="intentGateEscape?.escape ?? null"
     :message="intentGateEscape?.message ?? ''"
     :deliveries="gateEscapeDeliveries"
@@ -1041,18 +1129,32 @@ function onCodesChatWidth(px: number): void {
     @choose-delivery="onChooseDeliveryContext"
   />
 
+  <!-- 「增加意图」 dialog: base (delivery or branch) + the content that becomes the
+       intent's body AND the first turn of its session. Opened by the intent
+       list's 「+」; closed by the create result, never by a refusal — a refused
+       create keeps the form so the user can fix the base without retyping. -->
+  <CreateIntentDialog
+    v-if="createIntentDialogOpen"
+    :open="createIntentDialogOpen"
+    :deliveries="intentLinkDeliveries"
+    :main-branch="intentsWorkspaceMainBranch"
+    :pending="createIntentPending"
+    @confirm="createIntent"
+    @cancel="closeCreateIntentDialog"
+  />
+
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction
        immediately while a manual Start-Dev launch is in flight. -->
-  <DevStartupOverlay :model="devLaunch" />
-  <SpecStartupOverlay :model="specLaunch" />
+  <DevStartupOverlay v-if="devLaunch" :model="devLaunch" />
+  <SpecStartupOverlay v-if="specLaunch" :model="specLaunch" />
 
   <!-- Create-PR progress overlay: blocks interaction while a manual 创建 PR runs
        (commit + push + forge call), lighting its four stages. -->
-  <CreatePrOverlay :model="createPrProgress" />
+  <CreatePrOverlay v-if="createPrProgress" :model="createPrProgress" />
 
   <!-- Automation save overlay: blocks interaction while a automation create/update is
        in flight (2-4s typical round-trip). -->
-  <AutomationSaveOverlay :saving="automationSaving" />
+  <AutomationSaveOverlay v-if="automationSaving" :saving="automationSaving" />
 </template>
 
 <style scoped>

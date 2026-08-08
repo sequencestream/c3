@@ -153,6 +153,7 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 | Start development      | 已连接                                                                    | `start_development`——后台开发技能启动,状态翻转为 in_progress                                                                                                                                                                                                                                                      |
 | Set intent status      | 已连接                                                                    | `update_intent_status`;广播重新丰富运行状态                                                                                                                                                                                                                                                                       |
 | Set intent automate    | 已连接                                                                    | `set_intent_automate`;广播重新丰富运行状态                                                                                                                                                                                                                                                                        |
+| Set intent spec mode   | 已连接                                                                    | `set_intent_spec_mode`(`mode` 显式携带,`null` 恢复继承工作区);广播带回重算的 `effectiveSpecMode`                                                                                                                                                                                                                  |
 | Start automation       | intents project 已设置                                                    | `start_automation`——启动该项目的编排器循环                                                                                                                                                                                                                                                                        |
 | Stop automation        | intents project 已设置                                                    | `stop_automation`——中止当前编排运行                                                                                                                                                                                                                                                                               |
 | Open workspace setting | 已选中工作区                                                              | 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`                                                                                                                                                                                                                                                      |
@@ -425,6 +426,22 @@ reducer 是共享任务模型中唯一的真实来源(reducer、空模型、
 
 ## 非功能考量
 
+- **首屏只装当前视图**——App 容器是唯一的装配边界,业务页面与低频全局组件
+  (设置页、各 modal/overlay/dialog)一律以动态 import 包成异步组件,首次真正
+  渲染时才拉取自己的 chunk;登录门、顶栏、toast 与当前视图之外的代码不进首屏
+  主包。挂载点必须带显示条件(tab 分支天然有,弹窗/覆盖层用各自的打开状态做门):
+  无条件挂载的异步包装器一上来就会触发加载,组件内部靠 `open` 隐藏也拦不住。
+  等待期间渲染统一的轻量占位(页面级占住内容区、弹窗级占住遮罩层)。条件回到关闭
+  时包装器卸载,再次打开复用已解析组件与浏览器缓存。语言包(预编译的多语言消息)
+  体量远大于业务代码,单独成 chunk 与业务代码分家缓存,但仍随首屏静态加载——按
+  语言动态加载是另一件事。
+- **chunk 加载失败只能靠刷新恢复**——失败渲染统一兜底,**不自动重试**,兜底文案
+  一律只引导整页刷新。这不是偷懒:动态 import 失败后浏览器把该 URL 的失败结果记
+  进模块图,重新挂载包装器拿回的还是同一条失败记录,连请求都不会再发,页内没有第
+  二条恢复路径。失败的影响面因此按层次圈定:页面级只废掉当前视图,其余 tab 各有各
+  的 chunk 照常可切;弹窗级的兜底不吃指针事件、应用其余部分照常可用,但收起兜底卡
+  片只是让它别挡路——打开状态由 App 的门控 ref 持有,那条流程会一直停在打开态直到
+  刷新。
 - **渲染顺序 = 到达顺序**(转发自 PERF-3;会话不做任何重排序)。
 - **无决定权**——会话不强制任何东西;服务端是决策权威(SEC-4、WC-R7)。
 - **无持久化**——刷新页面会丢失 transcript(与 SEC-2 一致)。

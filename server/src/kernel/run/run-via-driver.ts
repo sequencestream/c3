@@ -523,22 +523,26 @@ export async function runViaDriver(
           allowKeychain: resolveAgent(agentId).configMode === 'system',
         })
       : undefined
-  // Override cwd: Codex spec sessions (specs root write boundary), effectiveCwd
-  // (worktree isolation — also the arapuca same-path cwd), or original workspacePath.
-  const specDriverCwd =
-    rt.sessionKind === 'spec' && adapter.vendor === 'codex'
-      ? getSpecsBase(workspacePath)
-      : undefined
-  if (specDriverCwd) {
+  // A spec session has TWO roots, and they are not the same directory: the code
+  // it reads (the intent worktree — `effectiveCwd`) and the document it writes
+  // (the centralized specs root). Codex used to run WITH ITS CWD AT the specs
+  // root, which made the write root double as the read root — every relative
+  // path, `git` query and source search then resolved outside the repository, so
+  // the author was grounding the spec in a directory that holds no code.
+  //
+  // The cwd is now the read root for every vendor and session kind. The write
+  // root travels separately: `additionalDirectories` grants Codex access to the
+  // specs root, and the permission gateway confines writes to `rt.specDir`.
+  if (rt.sessionKind === 'spec' && adapter.vendor === 'codex') {
     try {
-      mkdirSync(specDriverCwd, { recursive: true })
+      mkdirSync(getSpecsBase(workspacePath), { recursive: true })
     } catch (err) {
       throw new Error(`[c3] Codex spec session cannot create specs root: ${errMsg(err)}`, {
         cause: err,
       })
     }
   }
-  const driverCwd = specDriverCwd ?? rt.effectiveCwd ?? workspacePath
+  const driverCwd = rt.effectiveCwd ?? workspacePath
 
   // c3 tools over the loopback streamable-HTTP MCP route — the SINGLE transport
   // both Claude and Codex now consume (no vendor branch selects the c3 transport).

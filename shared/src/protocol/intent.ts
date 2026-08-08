@@ -158,6 +158,20 @@ export interface IntentPr {
 }
 
 /**
+ * Where a NEW intent's {@link Intent.baseBranch} snapshot comes from — exactly
+ * one source, never both.
+ *
+ * The client never sends a branch it resolved from a delivery itself: the
+ * `delivery` arm carries only the id, and the server reads that delivery's
+ * `branchName` from its own records, so a stale or forged branch mapping cannot
+ * enter the ledger. The `branch` arm carries the name the user typed (or the
+ * workspace main branch the create dialog pre-filled), which makes "the default"
+ * an explicit, assertable choice rather than an implicit server-side fallback.
+ */
+export type CreateIntentBase =
+  { kind: 'delivery'; deliveryId: string } | { kind: 'branch'; branch: string }
+
+/**
  * Dependency type for an intent_deps edge.
  * - `blocks` — hard dependency: the dependent intent cannot proceed until this dep is done.
  * - `informs` — knowledge dependency: information from the dep informs the dependent, but
@@ -487,6 +501,25 @@ export interface Intent {
   runStatus: IntentRunStatus
   /** Git branch name the work session operates on; `null` when unknown. */
   branchName: string | null
+  /**
+   * The branch this intent is BUILT ON — one persisted snapshot, taken when the
+   * intent is created and re-taken only at the delivery-association lifecycle
+   * edges (first link to a delivery with a ready branch, that delivery's branch
+   * becoming ready, and losing the last link). It never follows a delivery
+   * branch that is later advanced, renamed or rebuilt.
+   *
+   * The single answer for the PR target, the worktree baseline and the detail's
+   * metadata, so those three can never derive a different branch from the same
+   * intent.
+   */
+  baseBranch: string
+  /**
+   * True when {@link baseBranch} was DERIVED at read time because the persisted
+   * snapshot was missing or unusable — the value is the workspace mainline
+   * fallback, not a recorded fact. The UI says so rather than presenting the
+   * fallback as history.
+   */
+  baseBranchFallback: boolean
   /** Latest known commit hash on the dev branch; `null` when unknown. */
   latestCommitHash: string | null
   /**

@@ -3,12 +3,11 @@
  * E2E suite runner — boots one c3 server and runs every WebSocket e2e against it,
  * then tears the server down and reports a pass/fail summary. Wired as `pnpm e2e`.
  *
- * Isolation: the intent db is pointed at a throwaway `C3_DB_PATH` and the server
- * is launched with `--settings <throwaway>` so the run never touches the real
- * `~/.c3`. The throwaway settings.json is seeded from the real one when present
- * (so the consensus tests keep their configured agents) but with `auth` stripped
- * — the suite connects without a token, so an auth-enabled real config must not
- * gate the handshake. Tests still SKIP (exit 5) when no extra agents are present.
+ * Isolation is `isolated-server.mjs`'s job — the same helper a developer runs by
+ * hand for a single test, so the suite and a manual run cannot drift apart: a
+ * throwaway `C3_DB_PATH` plus `--settings <throwaway>`, seeded read-only from the
+ * real `~/.c3/settings.json` with `auth` stripped. The run never writes to the
+ * real `~/.c3`. Tests still SKIP (exit 5) when no extra agents are present.
  *
  * The server is built first (`pnpm build`) unless `--no-build` / `E2E_NO_BUILD=1`.
  * Override the port with `--port` / `E2E_PORT`. The one-off SDK spike
@@ -24,11 +23,11 @@
  *   pnpm e2e --port 13550
  */
 import { spawn } from 'node:child_process'
-import { connect } from 'node:net'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
+import { startIsolatedServer } from './isolated-server.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
@@ -42,7 +41,8 @@ const portArg = (() => {
 const PORT = Number(portArg) || 13099
 const WS_URL = `ws://localhost:${PORT}/ws`
 
-// Throwaway state dir: isolates the intent db; an available test directory lives here too.
+// Throwaway state dir: isolates the intent db; an available test directory lives
+// here too, and `isolated-server.mjs` seeds its settings.json into it.
 const STATE_DIR = mkdtempSync(join(tmpdir(), 'c3-e2e-suite-'))
 const DB_PATH = join(STATE_DIR, 'c3.db')
 const SEED_PROJECT = join(STATE_DIR, 'seed')
@@ -51,31 +51,16 @@ writeFileSync(join(STATE_DIR, '.keep'), '')
 mkdirSync(SEED_PROJECT, { recursive: true })
 writeFileSync(join(SEED_PROJECT, 'README.md'), '# c3 e2e seed\n')
 
-// Isolated settings.json: the suite runs against its OWN settings (passed via
-// `--settings`), never the real ~/.c3/settings.json. We seed it from the real
-// file when present (so the consensus tests keep their configured agents) but
-// strip `auth` — the suite connects without a token, and an auth-enabled real
-// config would otherwise gate the WS handshake. Absent real file ⇒ `{}` (the
-// server normalizes to the default single-agent config).
-const SETTINGS_PATH = join(STATE_DIR, 'settings.json')
-;(() => {
-  let settings = {}
-  const real = join(homedir(), '.c3', 'settings.json')
-  try {
-    settings = JSON.parse(readFileSync(real, 'utf-8'))
-  } catch {
-    /* no real settings — start from empty (default agent) */
-  }
-  delete settings.auth
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2))
-})()
-
 // Each test: name, script file, and whether a non-(0/5) exit fails the suite.
 const TESTS = [
   { name: 'sessions page setting (hidden / visible)', file: 'e2e-sessions-page-setting-test.mjs' },
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
   { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
   { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },
+  {
+    name: 'create intent (base resolution / refusals)',
+    file: 'e2e-create-intent-test.mjs',
+  },
   {
     name: 'delivery ↔ intent association (link / unlink guards)',
     file: 'e2e-delivery-link-test.mjs',
@@ -91,6 +76,10 @@ const TESTS = [
   {
     name: 'dependency gate (same-delivery / cross-delivery / no-delivery)',
     file: 'e2e-dependency-gate-test.mjs',
+  },
+  {
+    name: 'per-intent spec mode (override / derive / refresh / clear)',
+    file: 'e2e-spec-mode-test.mjs',
   },
   { name: 'automation queue (park isolation + manual control)', file: 'e2e-queue-test.mjs' },
   {
@@ -127,26 +116,6 @@ function run(cmd, args, opts = {}) {
   })
 }
 
-/** Resolve once a TCP connection to the port succeeds, or reject after `tries`. */
-function waitForPort(port, tries = 60, intervalMs = 500) {
-  return new Promise((resolveP, reject) => {
-    let n = 0
-    const attempt = () => {
-      const sock = connect(port, '127.0.0.1')
-      sock.once('connect', () => {
-        sock.destroy()
-        resolveP()
-      })
-      sock.once('error', () => {
-        sock.destroy()
-        if (++n >= tries) reject(new Error(`port ${port} not up after ${tries} tries`))
-        else setTimeout(attempt, intervalMs)
-      })
-    }
-    attempt()
-  })
-}
-
 async function main() {
   if (!NO_BUILD) {
     log('building (pnpm build) — pass --no-build to skip')
@@ -159,29 +128,19 @@ async function main() {
   }
 
   log(`starting server on :${PORT} (db=${DB_PATH})`)
-  const server = spawn(
-    'node',
-    [
-      join(ROOT, 'server', 'dist', 'cli.cjs'),
-      'start',
-      '--port',
-      String(PORT),
-      '--settings',
-      SETTINGS_PATH,
-    ],
-    { cwd: ROOT, stdio: 'inherit', env: { ...process.env, C3_DB_PATH: DB_PATH } },
-  )
+  // The suite owns STATE_DIR (it holds the seed project and the db), so it hands
+  // it to the helper and does its own cleanup.
+  let started
   try {
-    await waitForPort(PORT)
+    started = await startIsolatedServer({ port: PORT, stateDir: STATE_DIR, dbPath: DB_PATH })
   } catch (err) {
     console.error(`[suite] ${err.message}`)
-    server.kill('SIGTERM')
     cleanup()
     process.exit(1)
   }
   log('server is up')
 
-  await runE2ESuite(server)
+  await runE2ESuite(started.server)
 }
 
 /**

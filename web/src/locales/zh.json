@@ -27,6 +27,15 @@
         "label": "已复制"
       }
     },
+    "async": {
+      "loading": {
+        "label": "加载中…"
+      },
+      "error": {
+        "label": "此视图加载失败",
+        "hint": "该视图的代码没能下载成功。请检查网络连接后刷新页面重试。"
+      }
+    },
     "unknown": {
       "label": "未知"
     },
@@ -782,6 +791,42 @@
     "create": {
       "label": "增加意图"
     },
+    "createDialog": {
+      "title": {
+        "label": "新增意图"
+      },
+      "baseSource": {
+        "label": "基准",
+        "branch": {
+          "label": "基准分支"
+        },
+        "delivery": {
+          "label": "交付"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "分支名"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "选择一条交付"
+        },
+        "empty": {
+          "label": "当前工作区还没有分支已就绪的交付。"
+        }
+      },
+      "content": {
+        "label": "意图内容",
+        "placeholder": {
+          "label": "描述你想做什么。这段内容会作为意图会话的第一句话。"
+        }
+      },
+      "submit": {
+        "label": "创建并开始"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始工作吗?"
     },
@@ -954,8 +999,23 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "是否需要规范:",
+        "tooltip": "在工作区规范驱动开发设置之上,对本条意图单独覆盖。",
+        "option": {
+          "inherit": "继承工作区",
+          "sdd": "需要规范（sdd）",
+          "fast": "不需要规范（fast）"
+        },
+        "derived": "当前生效：{mode}",
+        "workspaceOff": "本工作区已关闭规范驱动开发,此设置当前不产生行为差异。"
+      },
       "branch": {
         "label": "分支:"
+      },
+      "baseBranch": {
+        "label": "基准分支:",
+        "fallback": "未记录,回退到主分支"
       },
       "commit": {
         "label": "提交:"
@@ -2151,6 +2211,7 @@
       "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
       "deleteFailed": "删除意图失败: {detail}。",
       "createFailed": "创建意图失败: {detail}。",
+      "baseBranchRequired": "请选择基准分支,分支名不能为空。",
       "startSessionFailed": "启动意图会话失败: {detail}。",
       "sessionAlreadyBound": "该意图已绑定会话,请刷新后打开。",
       "deleteForbidden": "无法删除该草稿意图: {detail}。",
@@ -2806,40 +2867,6 @@
       },
       "conflict": {
         "label": "交付分支与主线有 {count} 个文件冲突。交付已回退到验证中,解决冲突后重新验证。"
-      },
-      "diagnosis": {
-        "title": {
-          "label": "为什么未提供创建交付 PR"
-        },
-        "branchMode": {
-          "label": "Git 分支模式:{mode}"
-        },
-        "status": {
-          "label": "交付状态:{status}"
-        },
-        "branch": {
-          "label": "分支就绪:{branch}"
-        },
-        "branchNotReady": {
-          "label": "分支就绪:否"
-        },
-        "pr": {
-          "label": "交付 PR:#{number} {status}"
-        },
-        "prNone": {
-          "label": "交付 PR:无"
-        },
-        "diff": {
-          "ahead": {
-            "label": "交付分支领先:{count} 个提交"
-          },
-          "none": {
-            "label": "交付分支领先:无差异"
-          },
-          "unknown": {
-            "label": "交付分支领先:无法判断"
-          }
-        }
       }
     }
   },

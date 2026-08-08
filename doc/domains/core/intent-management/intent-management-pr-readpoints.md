@@ -36,7 +36,7 @@
 | 文件:符号                                                 | 分类    | 用途                                                         |
 | --------------------------------------------------------- | ------- | ------------------------------------------------------------ |
 | `git.ts: createForgePr / getForgePrStatus / closeForgePr` | —       | forge CLI 出口,按 provider 路由;不接触意图账本               |
-| `pr-target.ts: resolvePrTarget`                           | 读      | 三条建 PR 路径共用的目标解析:关联交付 → base 分支            |
+| `pr-target.ts: resolvePrTarget`                           | 读      | 三条建 PR 路径共用的目标解析:关联交付 → 意图 `baseBranch`    |
 | `write-cores.ts: createPrForIntent`                       | 门禁→写 | 有活跃 PR 拒绝重建;成功后写入编号、来源、head/base、URL      |
 | `dev-cleanup.ts: runManualDevCleanup`                     | 门禁→写 | 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入      |
 | `queue-dev-actions.ts: maybeCreatePr`                     | 门禁→写 | 自动化队列:`done` 写入后按目标解析建 PR,未关联交付则不建     |
@@ -66,7 +66,7 @@
 | `web/src/lib/intent-engineering-progress.ts`   | 派生   | 进度条 PR 段读聚合态                                                                              |
 | `web/src/lib/intent-list-view.ts`              | 派生   | 依赖阻塞判定(聚合态)+ 行内 create-pr / prLink 可见性                                              |
 | `IntentOverviewTab.vue`                        | 读     | 逐条渲染 PR 行与状态徽标;同步按钮看有无 `reviewing` 行                                            |
-| `IntentTitleBarActions.vue`                    | 读     | 主按钮取第一条活跃 PR 跳转/复制;同步按钮同上                                                      |
+| `IntentTitleBarActions.vue`                    | 读     | 建 PR 按钮按目标 pair 看有无活跃/`merged` PR;主按钮取第一条活跃 PR 跳转/复制;同步按钮同上         |
 | `web/src/pages/automations/templates/index.ts` | 读     | `PR_STATUS_POLLER_PROMPT` 按 `prs` 描述筛选口径;终态对账指引调用 `mcp__c3__sync_intent_pr_status` |
 | `web/src/locales/*.json`                       | 读     | `intent.prStatus.*` 展示文案                                                                      |
 

@@ -47,6 +47,7 @@ import {
   getByC3Id,
   resetStoreForTests as resetSessionMetadataStoreForTests,
 } from '../sessions/session-metadata-store.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -55,6 +56,7 @@ let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-reset-session-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   prevC3Dir = process.env.C3_DIR
   process.env.C3_DIR = dir

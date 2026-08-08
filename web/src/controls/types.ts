@@ -10,6 +10,7 @@ import type {
   CreateAutomationInput,
   DeliveryStatus,
   GitActionFailureGuidance,
+  IntentSpecMode,
   IntentStatus,
   ModeToken,
   PromptImage,
@@ -185,6 +186,13 @@ export interface AppMethods {
    */
   saveSpecContent(intentId: string, content: string): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
+  /**
+   * Set (or clear) an intent's per-intent spec-mode override. `null` restores
+   * inheritance of the workspace `sddEnabled`; the value is always sent
+   * explicitly, so it never means "leave as is". Fire-and-forget: the resolved
+   * `effectiveSpecMode` comes back with the next `intents` broadcast.
+   */
+  setIntentSpecMode(intentId: string, mode: IntentSpecMode | null): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   /**
    * Create a PR for an intent. `deliveryId` names the delivery whose branch the

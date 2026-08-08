@@ -62,6 +62,7 @@ import {
   setChatSession,
   setLatestCommitHash,
   setIntentSessionId,
+  setSpecMode,
   updateIntent,
   updateIntentDeps,
   updateStatus,
@@ -1244,6 +1245,28 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
     return
   }
   setAutomate(msg.intentId, msg.automate)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+}
+
+/**
+ * `set_intent_spec_mode` handler — the per-intent spec-mode override write.
+ * Pure pass-through: it persists `spec_mode` (`null` clearing the override back
+ * to workspace inheritance) and re-broadcasts, which is where the resolved
+ * `effectiveSpecMode` is recomputed. Nothing else moves — `spec_status` /
+ * `spec_approved` stay put, no admission gate is relaxed, and queue eligibility
+ * is unaffected.
+ */
+export const setIntentSpecMode: Handler<'set_intent_spec_mode'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  setSpecMode(msg.intentId, msg.mode)
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
 }
 

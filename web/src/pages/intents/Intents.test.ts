@@ -236,6 +236,21 @@ describe('Intents.vue — dependency selection', () => {
   })
 })
 
+describe('Intents.vue — spec-mode passthrough', () => {
+  it.each([['fast'], [null]] as const)(
+    're-emits the detail set-spec-mode (%s) upwards',
+    async (mode) => {
+      const wrapper = mountIntents([intent({ id: 'current', status: 'todo', priority: 'P1' })])
+      await nextTick()
+
+      wrapper.findComponent(IntentDetailStub).vm.$emit('set-spec-mode', 'current', mode)
+      await nextTick()
+
+      expect(wrapper.emitted('set-spec-mode')).toEqual([['current', mode]])
+    },
+  )
+})
+
 describe('Intents.vue — right column', () => {
   it('uses the title-bar plus button to add an intent without entering standalone chat', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])

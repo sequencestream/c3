@@ -24,6 +24,7 @@ import type {
   DepType,
   Intent,
   IntentLog,
+  IntentSpecMode,
   IntentStatus,
 } from '@ccc/shared/protocol'
 import type { StandaloneDeliveryRequest } from '@/lib/delivery-view'
@@ -138,6 +139,8 @@ const emit = defineEmits<{
   'open-work-session': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
+  // 每意图规格模式覆盖(概览 Tab 开关);null = 恢复继承工作区 sddEnabled。
+  'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
   'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
@@ -472,8 +475,12 @@ function submitChat(text: string, images: PromptImage[]): void {
         :intents="intents"
         :intent-action-error-seq="intentActionErrorSeq"
         :intent-pr-sync="intentPrSync"
+        :sdd-enabled="sddEnabled"
         @refine="(id: string) => emit('refine', id)"
         @save-intent-content="(id: string, c: string) => emit('save-intent-content', id, c)"
+        @set-spec-mode="
+          (id: string, mode: IntentSpecMode | null) => emit('set-spec-mode', id, mode)
+        "
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="(id: string) => emit('select-dependency', id)"
         @open-delivery="(id: string) => emit('open-delivery', id)"

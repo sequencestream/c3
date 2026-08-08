@@ -51,13 +51,14 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
 
 function mountTab(
   current: Intent,
-  opts: { intents?: Intent[]; intentActionErrorSeq?: number } = {},
+  opts: { intents?: Intent[]; intentActionErrorSeq?: number; sddEnabled?: boolean } = {},
 ) {
   return mount(IntentOverviewTab, {
     props: {
       intent: current,
       intents: opts.intents ?? [current],
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
+      ...(opts.sddEnabled === undefined ? {} : { sddEnabled: opts.sddEnabled }),
     },
     global: { stubs: { MarkdownText: { template: '<div class="md" />' } } },
   })
@@ -67,6 +68,9 @@ const EDIT = '[data-testid="intent-detail-edit-content"]'
 const TEXTAREA = '[data-testid="intent-detail-content-textarea"]'
 const SAVE = '[data-testid="intent-detail-content-save"]'
 const CANCEL = '[data-testid="intent-detail-content-cancel"]'
+const SPEC_MODE_SELECT = '[data-testid="intent-meta-spec-mode-select"]'
+const SPEC_MODE_DERIVED = '[data-testid="intent-meta-spec-mode-derived"]'
+const SPEC_MODE_OFF_HINT = '[data-testid="intent-meta-spec-mode-off-hint"]'
 const DEP_DELETE = '[data-testid="dep-edit-delete"]'
 const CONFIRM_OVERLAY = '[data-testid="confirm-overlay"]'
 const CONFIRM_ACCEPT = '[data-testid="confirm-accept"]'
@@ -89,7 +93,7 @@ function depEditFixture() {
 }
 
 describe('IntentOverviewTab.vue', () => {
-  it('renders meta fields in the stable order ID → branch → PR → created → completed → updated → deps', () => {
+  it('renders meta fields in the stable order ID → spec mode → branch → PR → created → completed → updated → deps', () => {
     const current = intent({
       id: 'the-id',
       status: 'done',
@@ -102,13 +106,16 @@ describe('IntentOverviewTab.vue', () => {
     })
     const w = mountTab(current, { intents: [current, intent({ id: 'dep1', title: 'Dep one' })] })
     const labels = w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
-    expect(labels).toHaveLength(7)
+    expect(labels).toHaveLength(8)
     expect(labels[0]).toContain('the-id')
-    expect(labels[1]).toContain('feature/x')
-    expect(labels[1]).toContain('abcdef1')
-    expect(labels[2]).toContain('#42')
+    expect(w.findAll('.req-meta > .req-meta-item').at(1)!.attributes('data-testid')).toBe(
+      'intent-meta-spec-mode',
+    )
+    expect(labels[2]).toContain('feature/x')
+    expect(labels[2]).toContain('abcdef1')
+    expect(labels[3]).toContain('#42')
     expect(w.find('.req-meta-pr-link').attributes('href')).toBe('https://x/pull/42')
-    expect(w.findAll('.req-meta > .req-meta-item').at(6)!.classes()).toContain(
+    expect(w.findAll('.req-meta > .req-meta-item').at(7)!.classes()).toContain(
       'req-meta-dependencies',
     )
   })
@@ -441,6 +448,97 @@ describe('五语言解除文案', () => {
       const copy = i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'X' }, { locale })
       expect(copy, locale).toContain('PR')
       expect(copy, locale).toContain('X')
+    }
+  })
+})
+
+describe('IntentOverviewTab — 是否需要规范(每意图 specMode 覆盖)', () => {
+  it('未显式设置时选中「继承工作区」并把服务端派生值作为副标展示', () => {
+    for (const derived of ['sdd', 'fast'] as const) {
+      const w = mountTab(intent({ id: 'r1', specMode: null, effectiveSpecMode: derived }))
+      expect((w.find(SPEC_MODE_SELECT).element as HTMLSelectElement).value).toBe('inherit')
+      const hint = w.find(SPEC_MODE_DERIVED)
+      expect(hint.exists()).toBe(true)
+      expect(hint.text()).toContain(i18n.global.t(`intent.meta.specMode.option.${derived}`))
+    }
+  })
+
+  it('显式设置时选中该档,且不再展示「当前生效」副标(已无信息量)', () => {
+    for (const mode of ['sdd', 'fast'] as const) {
+      // 派生值故意与显式值相反,以证明选中态读的是 specMode 而不是 effectiveSpecMode。
+      const w = mountTab(
+        intent({ id: 'r1', specMode: mode, effectiveSpecMode: mode === 'sdd' ? 'fast' : 'sdd' }),
+      )
+      expect((w.find(SPEC_MODE_SELECT).element as HTMLSelectElement).value).toBe(mode)
+      expect(w.find(SPEC_MODE_DERIVED).exists()).toBe(false)
+    }
+  })
+
+  it('选择 sdd / fast 即 emit set-spec-mode,且不本地改选中值(等服务端广播回填)', async () => {
+    for (const mode of ['sdd', 'fast'] as const) {
+      const w = mountTab(intent({ id: 'r1', specMode: null, effectiveSpecMode: 'sdd' }))
+      const select = w.find(SPEC_MODE_SELECT)
+      await select.setValue(mode)
+      expect(w.emitted('set-spec-mode')).toEqual([['r1', mode]])
+      // props 未变 ⇒ 渲染值仍回到 inherit,不留一个服务端没确认过的假选中态。
+      await w.setProps({ intent: intent({ id: 'r1', specMode: null, effectiveSpecMode: 'sdd' }) })
+      expect((w.find(SPEC_MODE_SELECT).element as HTMLSelectElement).value).toBe('inherit')
+    }
+  })
+
+  it('从显式档选回「继承工作区」emit null 以清除覆盖', async () => {
+    const w = mountTab(intent({ id: 'r1', specMode: 'fast', effectiveSpecMode: 'fast' }))
+    await w.find(SPEC_MODE_SELECT).setValue('inherit')
+    expect(w.emitted('set-spec-mode')).toEqual([['r1', null]])
+  })
+
+  it('广播把派生值改掉后展示跟随(未显式设置的意图随工作区 sddEnabled 变化)', async () => {
+    const w = mountTab(intent({ id: 'r1', specMode: null, effectiveSpecMode: 'sdd' }))
+    expect(w.find(SPEC_MODE_DERIVED).text()).toContain(
+      i18n.global.t('intent.meta.specMode.option.sdd'),
+    )
+    await w.setProps({ intent: intent({ id: 'r1', specMode: null, effectiveSpecMode: 'fast' }) })
+    expect(w.find(SPEC_MODE_DERIVED).text()).toContain(
+      i18n.global.t('intent.meta.specMode.option.fast'),
+    )
+  })
+
+  it('已显式设置的意图不受工作区开关广播影响', async () => {
+    const w = mountTab(intent({ id: 'r1', specMode: 'sdd', effectiveSpecMode: 'sdd' }))
+    // sddEnabled 关掉后服务端仍把显式 sdd 解析成 sdd —— 显式覆盖不随工作区变。
+    await w.setProps({ intent: intent({ id: 'r1', specMode: 'sdd', effectiveSpecMode: 'sdd' }) })
+    expect((w.find(SPEC_MODE_SELECT).element as HTMLSelectElement).value).toBe('sdd')
+  })
+
+  it('sddEnabled=false:开关不隐藏、仍可设置,并附「当前无行为差异」提示', async () => {
+    const w = mountTab(intent({ id: 'r1', specMode: null, effectiveSpecMode: 'fast' }), {
+      sddEnabled: false,
+    })
+    const select = w.find(SPEC_MODE_SELECT)
+    expect(select.exists()).toBe(true)
+    expect(select.attributes('disabled')).toBeUndefined()
+    expect(w.find(SPEC_MODE_OFF_HINT).exists()).toBe(true)
+    await select.setValue('sdd')
+    expect(w.emitted('set-spec-mode')).toEqual([['r1', 'sdd']])
+  })
+
+  it('sddEnabled=true 时不出现关闭提示', () => {
+    const w = mountTab(intent({ id: 'r1' }), { sddEnabled: true })
+    expect(w.find(SPEC_MODE_OFF_HINT).exists()).toBe(false)
+  })
+
+  it('五种语言都给出三档文案与关闭态提示', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
+      for (const key of ['inherit', 'sdd', 'fast'] as const) {
+        expect(
+          i18n.global.t(`intent.meta.specMode.option.${key}`, {}, { locale }),
+          `${locale}/${key}`,
+        ).toBeTruthy()
+      }
+      expect(i18n.global.t('intent.meta.specMode.workspaceOff', {}, { locale })).toBeTruthy()
+      expect(i18n.global.t('intent.meta.specMode.derived', { mode: 'X' }, { locale })).toContain(
+        'X',
+      )
     }
   })
 })

@@ -954,6 +954,17 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "Spec required:",
+        "tooltip": "Per-intent override of the workspace spec-driven development setting.",
+        "option": {
+          "inherit": "Inherit workspace",
+          "sdd": "Required (sdd)",
+          "fast": "Not required (fast)"
+        },
+        "derived": "currently {mode}",
+        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now."
+      },
       "branch": {
         "label": "Branch:"
       },

@@ -289,6 +289,35 @@ describe('setIntentAutomate — todo-only mode switching', () => {
   })
 })
 
+describe('setIntentSpecMode — per-intent spec-mode override', () => {
+  it.each(['sdd', 'fast'] as const)('sends set_intent_spec_mode with an explicit %s', (mode) => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.setIntentSpecMode('i-1', mode)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_spec_mode',
+      intentId: 'i-1',
+      mode,
+    })
+  })
+
+  it('carries an explicit null to clear the override (never omits the field)', () => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.setIntentSpecMode('i-1', null)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_spec_mode',
+      intentId: 'i-1',
+      mode: null,
+    })
+  })
+
+  it('has no status gate — a done intent may still switch mode', () => {
+    const h = makeCtx({ intents: [{ id: 'i-1', status: 'done' } as Intent] })
+    h.ctx.setIntentSpecMode('i-1', 'fast')
+    expect(h.ctx.send).toHaveBeenCalledTimes(1)
+    expect(h.showToast).not.toHaveBeenCalled()
+  })
+})
+
 describe('syncIntentPrStatus', () => {
   it('marks the intent syncing and sends the sync request', () => {
     const h = makeCtx({ intents: [] })

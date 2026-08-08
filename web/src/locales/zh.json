@@ -954,6 +954,17 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "是否需要规范:",
+        "tooltip": "在工作区规范驱动开发设置之上,对本条意图单独覆盖。",
+        "option": {
+          "inherit": "继承工作区",
+          "sdd": "需要规范（sdd）",
+          "fast": "不需要规范（fast）"
+        },
+        "derived": "当前生效：{mode}",
+        "workspaceOff": "本工作区已关闭规范驱动开发,此设置当前不产生行为差异。"
+      },
       "branch": {
         "label": "分支:"
       },

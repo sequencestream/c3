@@ -303,6 +303,12 @@
 
 **字段：** `intentId: string`, `automate: boolean`
 
+### `set_intent_spec_mode`
+
+设置或清除一条 intent 的每意图级规格模式覆盖；服务器回复 `intents`（RM-R43）。`mode` 总是显式携带：`null` 表示清除覆盖、恢复继承工作区 `sddEnabled`，不是「保持原样」。只写 `spec_mode`，`specStatus` / `specApproved` 不动，也不放松任何闸门；已解析的 `effectiveSpecMode` 由广播带回。未知 intent 回 `intent.notFound`。
+
+**字段：** `intentId: string`, `mode: 'sdd' | 'fast' | null`
+
 ### `start_automation`
 
 启动项目的自动化编排器（已在运行则为空操作）；回复 `automation_status`（RM-A2/A3）。

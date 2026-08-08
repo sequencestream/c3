@@ -93,7 +93,7 @@ describe('intents v13 → v14 pr_url migration', () => {
       repo: null,
       baseBranch: 'main',
     })
-    expect(userVersion(raw)).toBe(21)
+    expect(userVersion(raw)).toBe(22)
   })
 
   it('is idempotent — re-init does not duplicate the column or throw', () => {
@@ -106,6 +106,6 @@ describe('intents v13 → v14 pr_url migration', () => {
     expect(() => getIntent('hist-1')).not.toThrow() // second init is a no-op
 
     expect(cols(raw, 'intents').filter((c) => c === 'pr_url')).toHaveLength(1)
-    expect(userVersion(raw)).toBe(21)
+    expect(userVersion(raw)).toBe(22)
   })
 })

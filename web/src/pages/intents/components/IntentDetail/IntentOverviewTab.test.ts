@@ -24,6 +24,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,
@@ -89,11 +91,12 @@ function depEditFixture() {
 }
 
 describe('IntentOverviewTab.vue', () => {
-  it('renders meta fields in the stable order ID → branch → PR → created → completed → updated → deps', () => {
+  it('renders meta fields in the stable order ID → branch → base → PR → created → completed → updated → deps', () => {
     const current = intent({
       id: 'the-id',
       status: 'done',
       branchName: 'feature/x',
+      baseBranch: 'delivery/alpha',
       latestCommitHash: 'abcdef1234',
       prs: [fakeIntentPr('reviewing', { number: '42', url: 'https://x/pull/42' })],
       completedAt: 5,
@@ -102,13 +105,18 @@ describe('IntentOverviewTab.vue', () => {
     })
     const w = mountTab(current, { intents: [current, intent({ id: 'dep1', title: 'Dep one' })] })
     const labels = w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
-    expect(labels).toHaveLength(7)
+    expect(labels).toHaveLength(8)
     expect(labels[0]).toContain('the-id')
     expect(labels[1]).toContain('feature/x')
     expect(labels[1]).toContain('abcdef1')
-    expect(labels[2]).toContain('#42')
+    // 基准分支是持久快照,与开发分支并列展示,而不是从交付现算。
+    expect(labels[2]).toContain('delivery/alpha')
+    expect(w.find('[data-testid="intent-meta-base-branch"]').find('.req-meta-note').exists()).toBe(
+      false,
+    )
+    expect(labels[3]).toContain('#42')
     expect(w.find('.req-meta-pr-link').attributes('href')).toBe('https://x/pull/42')
-    expect(w.findAll('.req-meta > .req-meta-item').at(6)!.classes()).toContain(
+    expect(w.findAll('.req-meta > .req-meta-item').at(7)!.classes()).toContain(
       'req-meta-dependencies',
     )
   })

@@ -230,6 +230,8 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   runStatus: 'idle',
   branchName: null,
   latestCommitHash: null,
+  baseBranch: 'main',
+  baseBranchFallback: false,
   prs: [],
   linkedDeliveries: [],
   specPath: null,
@@ -445,6 +447,8 @@ describe('queue dev actions — branch-mode git alignment', () => {
       status: 'todo',
       branchName: 'intent/Z',
       linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+      // 关联就绪交付后,基准分支快照已在关联那一刻落成该交付分支。
+      baseBranch: 'delivery/alpha',
     })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
@@ -473,8 +477,8 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(gitDiffStat).toHaveBeenCalledWith('/tmp/wt-Z')
     expect(gitRecentLog).toHaveBeenCalledWith('/tmp/wt-Z')
     expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-Z', expect.stringContaining('feat:'))
-    // The base is the linked delivery's branch — the workspace mainline is only
-    // the worktree baseline, never the PR target.
+    // The base is the intent's persisted snapshot — the linked delivery's
+    // branch — not the workspace mainline the worktree happens to know about.
     expect(createForgePr).toHaveBeenCalledWith(
       '/tmp/wt-Z',
       expect.any(String),
@@ -516,6 +520,8 @@ describe('queue dev actions — branch-mode git alignment', () => {
       status: 'todo',
       branchName: 'intent/GL',
       linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+      // 关联就绪交付后,基准分支快照已在关联那一刻落成该交付分支。
+      baseBranch: 'delivery/alpha',
     })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
@@ -661,6 +667,8 @@ describe('queue dev actions — branch-mode git alignment', () => {
       status: 'todo',
       branchName: 'intent/IP',
       linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+      // 关联就绪交付后,基准分支快照已在关联那一刻落成该交付分支。
+      baseBranch: 'delivery/alpha',
     })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
@@ -735,6 +743,8 @@ describe('queue dev actions — branch-mode git alignment', () => {
       status: 'todo',
       branchName: 'intent/F',
       linkedDeliveries: [{ id: 'D1', title: 'Delivery α' }],
+      // 关联就绪交付后,基准分支快照已在关联那一刻落成该交付分支。
+      baseBranch: 'delivery/alpha',
     })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')

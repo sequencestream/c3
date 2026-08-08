@@ -957,6 +957,10 @@
       "branch": {
         "label": "Branch:"
       },
+      "baseBranch": {
+        "label": "Base:",
+        "fallback": "not recorded, falling back to the mainline"
+      },
       "commit": {
         "label": "Commit:"
       },

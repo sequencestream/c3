@@ -45,6 +45,8 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     runStatus: 'idle',
     branchName: 'intent/i1-add-feature',
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,

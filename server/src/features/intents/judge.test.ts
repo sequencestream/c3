@@ -53,6 +53,8 @@ const req: Intent = {
   automate: true,
   branchName: null,
   latestCommitHash: null,
+  baseBranch: 'main',
+  baseBranchFallback: false,
   prs: [],
   linkedDeliveries: [],
   specPath: null,

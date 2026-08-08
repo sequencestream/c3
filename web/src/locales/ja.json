@@ -958,6 +958,10 @@
       "branch": {
         "label": "ブランチ:"
       },
+      "baseBranch": {
+        "label": "ベース:",
+        "fallback": "未記録のためメインラインにフォールバック"
+      },
       "commit": {
         "label": "コミット:"
       },

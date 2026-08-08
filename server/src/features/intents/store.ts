@@ -42,10 +42,11 @@ import {
   type Db,
 } from '../../kernel/infra/db.js'
 import { getSddEnabled } from '../../kernel/config/index.js'
+import { resolveWorkspaceBaseBranch } from './base-branch.js'
 import { parsePrIdentity } from './pr-identity.js'
 import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
 
-const SCHEMA_VERSION = 21
+const SCHEMA_VERSION = 22
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -68,6 +69,10 @@ CREATE TABLE IF NOT EXISTS intents (
   last_work_session_id TEXT,
   automate        INTEGER NOT NULL DEFAULT 0,
   branch_name     TEXT,
+  -- The branch this intent is built on. Written at creation and re-taken only at
+  -- the delivery-association lifecycle edges; nullable on disk because an
+  -- upgraded database gets the column before the backfill fills it.
+  base_branch     TEXT,
   latest_commit_hash TEXT,
   pr_id           TEXT,
   pr_status       TEXT,
@@ -205,6 +210,9 @@ CREATE INDEX IF NOT EXISTS idx_intent_delivery_intent ON intent_deliveries(inten
 
 /** Marker id for the one-shot legacy-columns → `intent_prs` backfill. */
 const BACKFILL_INTENT_PRS_MIGRATION = 'intents.backfill_intent_prs.v1'
+
+/** Marker id for the one-shot `base_branch` backfill of pre-existing intents. */
+const BACKFILL_BASE_BRANCH_MIGRATION = 'intents.backfill_base_branch.v1'
 
 let schemaReady = false
 
@@ -464,6 +472,75 @@ function backfillIntentPrs(d: Db): void {
   })
 }
 
+/**
+ * The delivery branch to adopt as an intent's base, when the intent is linked to
+ * EXACTLY ONE delivery and that delivery's branch is ready. Any other shape —
+ * no link, several links, an unready or empty branch — returns null, and the
+ * caller falls back to the workspace mainline.
+ *
+ * Several links deliberately resolve to null rather than to the first edge: link
+ * order is not a user decision about which branch the intent is built on, and
+ * treating it as one would invent a fact.
+ *
+ * The delivery tables are owned by the delivery store and created lazily, so a
+ * database that never opened the delivery page degrades to "no delivery branch".
+ */
+function soleReadyDeliveryBranch(d: Db, intentId: string): string | null {
+  if (!tableExists(d, 'intent_deliveries') || !tableExists(d, 'deliveries')) return null
+  const rows = d.all<{ branch_name: string | null; branch_ready: number }>(
+    `SELECT dl.branch_name AS branch_name, dl.branch_ready AS branch_ready
+       FROM intent_deliveries e
+       JOIN deliveries dl ON dl.id = e.delivery_id
+      WHERE e.intent_id = ?`,
+    intentId,
+  )
+  if (rows.length !== 1) return null
+  const only = rows[0]
+  if (only.branch_ready !== 1) return null
+  return only.branch_name?.trim() || null
+}
+
+/**
+ * v21 → v22: give every pre-existing intent a `base_branch`, ONCE.
+ *
+ * Guarded by a `schema_migrations` marker rather than by "is the column null":
+ * the pass resolves the workspace mainline through git, and re-running it on
+ * every start would re-probe every workspace forever. Rows plus marker land in
+ * ONE transaction, so a failure rolls both back and the next start retries
+ * cleanly — there is no "column added, some rows filled" state to audit.
+ *
+ * Priority: the intent's sole ready delivery branch, else the workspace mainline
+ * ({@link resolveWorkspaceBaseBranch}: configured setting → `origin/HEAD` →
+ * `main`/`master`). An unready delivery branch is never written — it is not a
+ * branch anything can be built on yet. A row that already carries a usable value
+ * is left alone; a blank one is repaired by the same mainline rule.
+ *
+ * The mainline is resolved ONCE per workspace: the git probe is the expensive
+ * part and every intent of a workspace shares its answer.
+ */
+function backfillIntentBaseBranch(d: Db): void {
+  if (hasMigration(d, BACKFILL_BASE_BRANCH_MIGRATION)) return
+  const rows = d.all<{ id: string; workspace_path: string; base_branch: string | null }>(
+    'SELECT id, workspace_path, base_branch FROM intents',
+  )
+  const mainlineByWorkspace = new Map<string, string>()
+  const mainlineFor = (workspacePath: string): string => {
+    const cached = mainlineByWorkspace.get(workspacePath)
+    if (cached) return cached
+    const resolved = resolveWorkspaceBaseBranch(workspacePath)
+    mainlineByWorkspace.set(workspacePath, resolved)
+    return resolved
+  }
+  tx(d, () => {
+    for (const r of rows) {
+      if (r.base_branch?.trim()) continue
+      const branch = soleReadyDeliveryBranch(d, r.id) ?? mainlineFor(r.workspace_path)
+      d.run('UPDATE intents SET base_branch=? WHERE id=?', branch, r.id)
+    }
+    markMigration(d, BACKFILL_BASE_BRANCH_MIGRATION)
+  })
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
@@ -546,10 +623,16 @@ function db(): Db | null {
     // one retroactively would re-point its worktree baseline and its dependency
     // gate at a delivery it never developed against.
     ensureColumn(d, 'intent_sessions', 'delivery_id', 'TEXT')
+    // v21 → v22: the intent's BASE BRANCH — the persisted answer to "what is this
+    // intent built on". Nullable on disk (an added column cannot be NOT NULL
+    // without inventing a default), non-empty by every write path, and backfilled
+    // once for rows that predate it.
+    ensureColumn(d, 'intents', 'base_branch', 'TEXT')
     // v19 → v20: PR facts move out of the intents row into `intent_prs`. The
     // legacy trio above is FROZEN, not dropped — runtime never reads or writes it
     // again, and it stays as the rollback script's landing site.
     backfillIntentPrs(d)
+    backfillIntentBaseBranch(d)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -600,6 +683,7 @@ interface Row {
   last_work_session_id: string | null
   automate: number
   branch_name: string | null
+  base_branch: string | null
   latest_commit_hash: string | null
   // pr_id / pr_url / pr_status are deliberately ABSENT: the columns still exist on
   // disk (frozen, never dropped, the rollback script's landing site) but nothing in
@@ -711,6 +795,18 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     byId.set(r.id, [])
     typesById.set(r.id, {})
   }
+  // Read-time fallback for a missing / blank snapshot, resolved once per
+  // workspace so a broadcast of many rows costs at most one probe. Deliberately
+  // NOT written back: a value derived while reading is not a recorded decision,
+  // and persisting it would make the two indistinguishable afterwards.
+  const mainlineByWorkspace = new Map<string, string>()
+  const mainlineFor = (workspacePath: string): string => {
+    const cached = mainlineByWorkspace.get(workspacePath)
+    if (cached) return cached
+    const resolved = resolveWorkspaceBaseBranch(workspacePath)
+    mainlineByWorkspace.set(workspacePath, resolved)
+    return resolved
+  }
   const placeholders = rows.map(() => '?').join(',')
   const deps = d.all<{ intent_id: string; depends_on_id: string; dep_type: string }>(
     `SELECT intent_id, depends_on_id, dep_type FROM intent_deps WHERE intent_id IN (${placeholders})`,
@@ -721,53 +817,58 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     const types = typesById.get(dep.intent_id)
     if (types) types[dep.depends_on_id] = dep.dep_type as DepType
   }
-  return rows.map((r) => ({
-    id: r.id,
-    workspaceId: pathToId(r.workspace_path)!,
-    title: r.title,
-    shortEnTitle: r.short_en_title,
-    content: r.content,
-    priority: r.priority as Intent['priority'],
-    module: r.module,
-    status: r.status as IntentStatus,
-    dependsOn: byId.get(r.id) ?? [],
-    dependsOnTypes: typesById.get(r.id) ?? {},
-    lastWorkSessionId: r.last_work_session_id,
-    automate: r.automate === 1,
-    branchName: r.branch_name,
-    latestCommitHash: r.latest_commit_hash,
-    prs: prsById.get(r.id) ?? [],
-    linkedDeliveries: deliveriesById.get(r.id) ?? [],
-    specPath: r.spec_path,
-    specStatus: narrowSpecStatus(r.spec_status),
-    specMode: narrowSpecMode(r.spec_mode),
-    // The effective mode is resolved HERE — the single read-model boundary — so
-    // the admission gate, the settle hook and every client read the SAME value
-    // instead of re-deriving it against a possibly-stale setting snapshot.
-    effectiveSpecMode: resolveEffectiveSpecMode(
-      narrowSpecMode(r.spec_mode),
-      getSddEnabled(r.workspace_path),
-    ),
-    specApproved: r.spec_approved === 1,
-    specApproveUser: r.spec_approve_user,
-    specSessionId: r.spec_session_id,
-    specReviewSessionId: r.spec_review_session_id,
-    specReviewVerdict: narrowSpecReviewVerdict(r.spec_review_verdict),
-    specReviewReason: r.spec_review_reason,
-    specReviewAt: r.spec_review_at,
-    specReviewFingerprint: r.spec_review_fingerprint,
-    specReviewReworkRounds: r.spec_review_rework_rounds ?? 0,
-    specReviewMachineApprovalBlocked: r.spec_review_machine_blocked === 1,
-    intentSessionId: r.intent_session_id,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    completedAt: r.completed_at,
-    runStatus: 'idle' as IntentRunStatus,
-    // Derived at send-time by enrichRunStatus from the live run registry.
-    sessionActive: false,
-    // Derived at send-time by enrichRunStatus from the recorded vendor-block facts.
-    actionDescriptor: null,
-  }))
+  return rows.map((r) => {
+    const persistedBase = r.base_branch?.trim() || null
+    return {
+      id: r.id,
+      workspaceId: pathToId(r.workspace_path)!,
+      title: r.title,
+      shortEnTitle: r.short_en_title,
+      content: r.content,
+      priority: r.priority as Intent['priority'],
+      module: r.module,
+      status: r.status as IntentStatus,
+      dependsOn: byId.get(r.id) ?? [],
+      dependsOnTypes: typesById.get(r.id) ?? {},
+      lastWorkSessionId: r.last_work_session_id,
+      automate: r.automate === 1,
+      branchName: r.branch_name,
+      baseBranch: persistedBase ?? mainlineFor(r.workspace_path),
+      baseBranchFallback: persistedBase === null,
+      latestCommitHash: r.latest_commit_hash,
+      prs: prsById.get(r.id) ?? [],
+      linkedDeliveries: deliveriesById.get(r.id) ?? [],
+      specPath: r.spec_path,
+      specStatus: narrowSpecStatus(r.spec_status),
+      specMode: narrowSpecMode(r.spec_mode),
+      // The effective mode is resolved HERE — the single read-model boundary — so
+      // the admission gate, the settle hook and every client read the SAME value
+      // instead of re-deriving it against a possibly-stale setting snapshot.
+      effectiveSpecMode: resolveEffectiveSpecMode(
+        narrowSpecMode(r.spec_mode),
+        getSddEnabled(r.workspace_path),
+      ),
+      specApproved: r.spec_approved === 1,
+      specApproveUser: r.spec_approve_user,
+      specSessionId: r.spec_session_id,
+      specReviewSessionId: r.spec_review_session_id,
+      specReviewVerdict: narrowSpecReviewVerdict(r.spec_review_verdict),
+      specReviewReason: r.spec_review_reason,
+      specReviewAt: r.spec_review_at,
+      specReviewFingerprint: r.spec_review_fingerprint,
+      specReviewReworkRounds: r.spec_review_rework_rounds ?? 0,
+      specReviewMachineApprovalBlocked: r.spec_review_machine_blocked === 1,
+      intentSessionId: r.intent_session_id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      completedAt: r.completed_at,
+      runStatus: 'idle' as IntentRunStatus,
+      // Derived at send-time by enrichRunStatus from the live run registry.
+      sessionActive: false,
+      // Derived at send-time by enrichRunStatus from the recorded vendor-block facts.
+      actionDescriptor: null,
+    }
+  })
 }
 
 // ---- Intents ----
@@ -980,6 +1081,9 @@ export function insertIntents(
   // / self / cyclic) rejects atomically with nothing persisted (RM-R17).
   const ids: string[] = items.map(() => randomUUID())
   const deps = resolveBatchDependencies(items, ids)
+  // One resolution for the whole batch: every row of a batch belongs to the same
+  // workspace, so probing per item would repeat the same git call N times.
+  const baseBranch = resolveWorkspaceBaseBranch(proj)
   tx(d, () => {
     items.forEach((it, i) => {
       // Stagger created_at by batch index so same-priority, dependency-free items keep
@@ -988,8 +1092,8 @@ export function insertIntents(
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, spec_mode)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, spec_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
         it.title,
@@ -1003,6 +1107,7 @@ export function insertIntents(
         createdAt,
         null,
         null,
+        baseBranch,
         null,
         it.specMode ?? null,
       )
@@ -1095,6 +1200,11 @@ export function upsertIntents(
   })
   // Validate + resolve intra-batch deps (out-of-range / self / cyclic throws here).
   const deps = resolveBatchDependencies(items, ids)
+  // Only the INSERT half uses it; an UPDATE never re-takes the snapshot (an edit
+  // to the text is not a change of what the intent is built on). Resolved lazily
+  // so an update-only batch does no git work at all.
+  let baseBranch: string | null = null
+  const baseBranchForInsert = (): string => (baseBranch ??= resolveWorkspaceBaseBranch(proj))
   tx(d, () => {
     items.forEach((it, i) => {
       const prior = priors[i]
@@ -1168,8 +1278,8 @@ export function upsertIntents(
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, intent_session_id, spec_mode)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
@@ -1183,6 +1293,7 @@ export function upsertIntents(
           createdAt,
           null,
           null,
+          baseBranchForInsert(),
           null,
           sessionIdParam,
           it.specMode ?? null,
@@ -1229,10 +1340,10 @@ export function createEmptyIntent(workspacePath: string, actor?: string | null):
     d.run(
       `INSERT INTO intents
          (id, workspace_path, title, short_en_title, content, priority, status, module,
-          last_work_session_id, automate, branch_name, latest_commit_hash,
+          last_work_session_id, automate, branch_name, base_branch, latest_commit_hash,
           spec_path, spec_approved, spec_approve_user, spec_session_id, intent_session_id,
           created_at, updated_at, completed_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
       proj,
       'new intent',
@@ -1244,6 +1355,7 @@ export function createEmptyIntent(workspacePath: string, actor?: string | null):
       null,
       0,
       null,
+      resolveWorkspaceBaseBranch(proj),
       null,
       null,
       0,

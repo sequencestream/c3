@@ -957,6 +957,10 @@
       "branch": {
         "label": "分支:"
       },
+      "baseBranch": {
+        "label": "基准分支:",
+        "fallback": "未记录,回退到主分支"
+      },
       "commit": {
         "label": "提交:"
       },

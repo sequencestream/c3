@@ -54,6 +54,7 @@ export const repairIntentWorktree: Handler<'repair_intent_worktree'> = (ctx, con
   }
   const baseline = resolveWorktreeBaseline(
     workspacePath,
+    intent,
     deliveryId ? getDelivery(deliveryId) : null,
   )
 

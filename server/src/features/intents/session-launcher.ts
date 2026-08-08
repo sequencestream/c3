@@ -290,9 +290,10 @@ function checkWorkAdmission(
 }
 
 /**
- * Resolve (and fetch) the worktree baseline for a delivery context, then check an
- * EXISTING worktree against it. Returns the baseline when the launch may proceed,
- * or the rejection to hand back.
+ * Resolve (and fetch) the worktree baseline from the intent's persisted base
+ * branch, then check an EXISTING worktree against it. Returns the baseline when
+ * the launch may proceed, or the rejection to hand back. The delivery context is
+ * passed for the labels the refusal carries, not to pick the branch.
  *
  * The rejection carries whether a safe rebuild is currently possible, so the page
  * can offer the right exits: a dirty worktree only gets "commit or stash first",
@@ -306,6 +307,7 @@ function prepareWorktreeBaseline(
 ): { ok: true; baseline: WorktreeBaseline } | { ok: false; result: SessionLaunchResult } {
   const baseline = resolveWorktreeBaseline(
     workspacePath,
+    intent,
     deliveryId ? getDelivery(deliveryId) : null,
   )
   const block = checkExistingWorktreeBaseline(workspacePath, intent.id, baseline)
@@ -570,10 +572,9 @@ export async function launchWorkSession(
   progress?.('fetching-remote-main')
 
   if (getGitBranchMode(workspacePath) === 'worktree') {
-    // The baseline is the delivery's branch when the session has a delivery
-    // context, else the workspace mainline. Resolving it also fetches it, and
-    // refuses when an existing worktree is rooted somewhere else — c3 never
-    // rebuilds or merges that worktree on its own.
+    // The baseline is the intent's persisted base branch. Resolving it also
+    // fetches it, and refuses when an existing worktree is rooted somewhere
+    // else — c3 never rebuilds or merges that worktree on its own.
     const prepared = prepareWorktreeBaseline(workspacePath, req, deliveryId)
     if (!prepared.ok) {
       releaseClaim()
@@ -581,12 +582,7 @@ export async function launchWorkSession(
     }
     try {
       progress?.('preparing-worktree')
-      const wt = createWorktree(
-        workspacePath,
-        req.id,
-        req.title,
-        prepared.baseline.baseBranch ?? undefined,
-      )
+      const wt = createWorktree(workspacePath, req.id, req.title, prepared.baseline.baseBranch)
       effectiveCwd = wt.worktreePath
       setBranchName(req.id, wt.branchName)
     } catch (err) {

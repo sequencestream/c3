@@ -110,7 +110,7 @@ function seedDelivery(title: string, intentId?: string): { id: string; title: st
     endDate: null,
     baseBranch: 'main',
   })
-  if (intentId) insertIntentDelivery(delivery.id, intentId)
+  if (intentId) insertIntentDelivery(delivery.id, intentId, null)
   return { id: delivery.id, title: delivery.title }
 }
 

@@ -375,7 +375,7 @@ describe('runViaDriver — Codex specs writable root', () => {
     removeRuntime(sid)
   })
 
-  it('moves Codex spec cwd to the specs root and binds read-only spec MCP', async () => {
+  it('runs a Codex spec session in its CODE root, not the specs root, and binds read-only spec MCP', async () => {
     const prevC3Dir = process.env.C3_DIR
     const tmpC3 = mkdtempSync(join(tmpdir(), 'c3-run-driver-spec-'))
     const sid = 'codex-spec-session'
@@ -383,6 +383,9 @@ describe('runViaDriver — Codex specs writable root', () => {
       process.env.C3_DIR = tmpC3
       const workspacePath = '/projects/owner/repository'
       const rt = ensureRuntime(sid, workspacePath, 'default', [], 'spec')
+      // The two roots a spec session has: the code it READS (the intent
+      // worktree) and the document it WRITES (the centralized specs root).
+      rt.effectiveCwd = '/c3home/worktrees/repository/intent-abc'
       rt.specDir = `${getSpecsBase(workspacePath)}/2026/06/27/spec`
       const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
       const started: {
@@ -445,7 +448,12 @@ describe('runViaDriver — Codex specs writable root', () => {
         },
       )
 
-      expect(started.cwd).toBe(getSpecsBase(workspacePath))
+      // The cwd is the READ root. Handing Codex the specs root as its cwd (as
+      // it once did) resolved every relative path, `git` query and source search
+      // outside the repository, so the author grounded the spec in a directory
+      // that holds no code. The WRITE root travels separately, as an additional
+      // directory plus the gateway's `specDir` confinement.
+      expect(started.cwd).toBe('/c3home/worktrees/repository/intent-abc')
       expect(started.additionalDirectories).toEqual([getSpecsBase(workspacePath)])
       expect(started.actionMode).toBe('build')
       expect(started.toolGate).toBe('never-ask')

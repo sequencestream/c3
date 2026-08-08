@@ -38,6 +38,7 @@ import {
 import { buildIntentSessionFirstPrompt, deleteIntent, discussionToIntent } from './index.js'
 import { getIntent, listIntents, resetStoreForTests } from './store.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -46,6 +47,7 @@ let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-discussion-to-intent-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   prevC3Dir = process.env.C3_DIR
   process.env.C3_DIR = dir

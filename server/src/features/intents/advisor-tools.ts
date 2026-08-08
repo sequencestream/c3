@@ -49,6 +49,7 @@ import { getIntent, isStoreAvailable, setChatSession } from './store.js'
 import { registerPendingIntentLink } from './intent-link.js'
 import { registerPendingSpecLink } from './spec-link.js'
 import { claimSpecOccupancy, releaseSpecOccupancy } from './spec-occupancy.js'
+import { prepareIntentSessionWorktree, type IntentWorktreeFailure } from './session-worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import { buildResetSpecPrompt } from './spec.js'
 import { buildResetIntentPrompt } from './reset-prompts.js'
@@ -249,6 +250,23 @@ async function confirmed(
   return run()
 }
 
+/**
+ * The intent-directory refusal as an advisor denial. A baseline mismatch is NOT
+ * retryable by the agent: the two exits (rebuild, or merge the baseline in) are
+ * explicit user actions, and an unattended retry would just hit the same block.
+ * A failed Git command is.
+ */
+function worktreeDenied(failure: IntentWorktreeFailure): AdvisorToolResult {
+  const createFailed = failure.code === 'intent.worktreeCreateFailed'
+  return denied(
+    'tool_failed',
+    createFailed
+      ? `意图 worktree 创建失败: ${failure.params?.message ?? ''}`
+      : `意图 worktree 不在基准分支 ${failure.params?.branch ?? ''} 上,需用户显式重建或合入后再试`,
+    createFailed,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Session resets — framing-free equivalents of the WS handlers
 // ---------------------------------------------------------------------------
@@ -274,8 +292,15 @@ function resetIntentSessionCore(
   if (!target.ok) {
     return denied('agent_group_unavailable', `agent 组 ${target.groupRef} 无可用成员`, false)
   }
+  // The intent's shared directory, on its base branch — the same one the spec,
+  // review and work sessions bind. Read-only for the comm agent.
+  const cwd = prepareIntentSessionWorktree(scope.workspacePath, intent)
+  if (!cwd.ok) {
+    return worktreeDenied(cwd.failure)
+  }
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, scope.workspacePath, 'default', [], 'intent')
+  rt.effectiveCwd = cwd.prepared.cwd
   setSessionAgent(chatId, target.target.ref)
   setChatSession(scope.workspacePath, chatId, intent.title)
   try {
@@ -336,6 +361,12 @@ function resetSpecSessionCore(
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 
+  const cwd = prepareIntentSessionWorktree(scope.workspacePath, intent)
+  if (!cwd.ok) {
+    releaseClaim()
+    return worktreeDenied(cwd.failure)
+  }
+
   const fileAbs = resolveSpecFileAbs(scope.workspacePath, intent.specPath)
   const rt = ensureRuntime(
     specId,
@@ -344,11 +375,14 @@ function resetSpecSessionCore(
     [],
     'spec',
   )
+  // Reads code from the intent worktree, writes only into the centralized spec
+  // root — two independent roots.
+  rt.effectiveCwd = cwd.prepared.cwd
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
   registerPendingSpecLink(specId, intent.id)
   void deps
-    .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, userInput, scope.workspacePath))
+    .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, userInput, cwd.prepared.cwd))
     .catch((err: unknown) => {
       releaseClaim()
       console.warn(`[c3:advisor] reset_spec_session launch failed: ${errMsg(err)}`)

@@ -69,6 +69,7 @@ import {
   setSpecSessionId,
 } from './store.js'
 import { resetForTests as resetIntentLink } from './intent-link.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 /**
  * Agent routing is what this file pins — not whether the machine running it has a
@@ -95,6 +96,7 @@ let opened: string[]
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-intent-session-agent-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   prevC3Dir = process.env.C3_DIR
   process.env.C3_DIR = dir

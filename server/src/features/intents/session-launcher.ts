@@ -31,7 +31,6 @@ import {
 import { setSessionAgent } from '../../kernel/agent-config/index.js'
 import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import type { RunInject } from '../../kernel/run/prompt-delivery.js'
-import { getDelivery } from '../deliveries/store.js'
 import {
   getIntent,
   getIntentSessionBySessionId,
@@ -64,7 +63,6 @@ import {
 } from './spec-review.js'
 import { armSpecContentWatch } from './spec-content-watch.js'
 import { buildDevPrompt } from './dev-prompt.js'
-import { buildGitFailureGuidance } from './git-failure.js'
 import {
   dependencyGateRejection,
   evaluateIntentDependencyGate,
@@ -77,15 +75,15 @@ import {
   type DeliveryContextResult,
 } from './delivery-context.js'
 import {
-  checkExistingWorktreeBaseline,
-  resolveWorktreeBaseline,
-  type WorktreeBaseline,
-} from './worktree-baseline.js'
+  existingIntentSessionCwd,
+  prepareIntentSessionWorktree,
+  prepareIntentWorktreeBaseline,
+} from './session-worktree.js'
 import { captureFastTurnBaseline } from './fast-spec.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
-import { createWorktree, getWorktreePath, pullCurrentBranch, readBranch } from './worktree.js'
+import { pullCurrentBranch, readBranch } from './worktree.js'
 import { hasPendingQuestion } from './turn-guards.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 
@@ -290,49 +288,32 @@ function checkWorkAdmission(
 }
 
 /**
- * Resolve (and fetch) the worktree baseline from the intent's persisted base
- * branch, then check an EXISTING worktree against it. Returns the baseline when
- * the launch may proceed, or the rejection to hand back. The delivery context is
- * passed for the labels the refusal carries, not to pick the branch.
- *
- * The rejection carries whether a safe rebuild is currently possible, so the page
- * can offer the right exits: a dirty worktree only gets "commit or stash first",
- * never a destructive button. This block is NOT force-releasable — the dependency
- * gate is advice, an out-of-date worktree is a data-safety fact.
+ * The shared intent-directory preparation, in THIS service's failure shape:
+ * resolve and fetch the baseline, refuse an existing worktree rooted elsewhere,
+ * then create or reuse `getWorktreePath(workspace, intentId)`. All four session
+ * kinds go through the same function in `session-worktree.ts` — a second copy is
+ * how a spec session ends up reading a different branch than the work session.
  */
-function prepareWorktreeBaseline(
+function prepareSessionCwd(
   workspacePath: string,
   intent: Intent,
-  deliveryId: string | null,
-): { ok: true; baseline: WorktreeBaseline } | { ok: false; result: SessionLaunchResult } {
-  const baseline = resolveWorktreeBaseline(
-    workspacePath,
-    intent,
-    deliveryId ? getDelivery(deliveryId) : null,
-  )
-  const block = checkExistingWorktreeBaseline(workspacePath, intent.id, baseline)
-  if (!block) return { ok: true, baseline }
-  return {
-    ok: false,
-    result: {
-      success: false,
-      code: block.canRebuild ? 'intent.worktreeBaseMismatch' : 'intent.worktreeBaseMismatchDirty',
-      params: {
-        branch: block.branch,
-        deliveryTitle: block.delivery?.title ?? '',
-      },
-    },
-  }
+  opts?: { deliveryId?: string | null },
+):
+  | { ok: true; cwd: string; branchName: string | null }
+  | { ok: false; result: SessionLaunchResult } {
+  const prepared = prepareIntentSessionWorktree(workspacePath, intent, opts)
+  if (!prepared.ok) return { ok: false, result: { success: false, ...prepared.failure } }
+  return { ok: true, cwd: prepared.prepared.cwd, branchName: prepared.prepared.branchName }
 }
 
-/** {@link prepareWorktreeBaseline}, for the callers that only need the refusal. */
+/** The baseline guard alone, for the callers that only need the refusal. */
 function baselineRejection(
   workspacePath: string,
   intent: Intent,
   deliveryId: string | null,
 ): SessionLaunchResult | null {
-  const prepared = prepareWorktreeBaseline(workspacePath, intent, deliveryId)
-  return prepared.ok ? null : prepared.result
+  const prepared = prepareIntentWorktreeBaseline(workspacePath, intent, deliveryId)
+  return prepared.ok ? null : { success: false, ...prepared.failure }
 }
 
 /**
@@ -411,6 +392,8 @@ async function attachOrResumeWorkSession(
 
   // The worktree the session lives in must still be rooted on this delivery's
   // branch. Never repaired silently — the two exits are explicit user actions.
+  // A resume only CHECKS: the directory this session already ran in is reused as
+  // it stands, and re-creating one that was cleaned up is not a continuation.
   if (getGitBranchMode(workspacePath) === 'worktree') {
     const mismatch = baselineRejection(workspacePath, intent, deliveryId)
     if (mismatch) return mismatch
@@ -436,10 +419,7 @@ async function attachOrResumeWorkSession(
       'work',
     )
     if (!restored.effectiveCwd) {
-      restored.effectiveCwd =
-        getGitBranchMode(workspacePath) === 'worktree'
-          ? getWorktreePath(workspacePath, intent.id)
-          : workspacePath
+      restored.effectiveCwd = existingIntentSessionCwd(workspacePath, intent.id)
     }
   }
 
@@ -574,33 +554,19 @@ export async function launchWorkSession(
   if (getGitBranchMode(workspacePath) === 'worktree') {
     // The baseline is the intent's persisted base branch. Resolving it also
     // fetches it, and refuses when an existing worktree is rooted somewhere
-    // else — c3 never rebuilds or merges that worktree on its own.
-    const prepared = prepareWorktreeBaseline(workspacePath, req, deliveryId)
+    // else — c3 never rebuilds or merges that worktree on its own. The directory
+    // may already exist because this intent's comm / spec / review session got
+    // there first; that is a reuse, not a second worktree.
+    progress?.('preparing-worktree')
+    const prepared = prepareSessionCwd(workspacePath, req, { deliveryId })
     if (!prepared.ok) {
       releaseClaim()
       return prepared.result
     }
-    try {
-      progress?.('preparing-worktree')
-      const wt = createWorktree(workspacePath, req.id, req.title, prepared.baseline.baseBranch)
-      effectiveCwd = wt.worktreePath
-      setBranchName(req.id, wt.branchName)
-    } catch (err) {
-      releaseClaim()
-      // Classified from the message the failed Git command already produced — no
-      // extra Git call, and the raw text still travels as `message`.
-      const message = errMsg(err)
-      return {
-        success: false,
-        code: 'intent.worktreeCreateFailed',
-        params: { message },
-        guidance: buildGitFailureGuidance(
-          { stage: 'worktree', text: message },
-          req.id,
-          'start-development',
-        ),
-      }
-    }
+    effectiveCwd = prepared.cwd
+    // Only the WORK launch writes `branch_name`: it is a development fact (PR
+    // head branch, the "still on main" warning), not a directory fact.
+    if (prepared.branchName) setBranchName(req.id, prepared.branchName)
   } else {
     progress?.('preparing-worktree')
     const pull = pullCurrentBranch(workspacePath)
@@ -827,6 +793,15 @@ function createFirstSpecSession(
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 
+  // The intent's directory — the code this spec is authored AGAINST. Resolved
+  // before anything is scaffolded: a baseline refusal must not leave a seeded
+  // spec file and a backfilled `spec_path` behind.
+  const cwd = prepareSessionCwd(workspacePath, intent)
+  if (!cwd.ok) {
+    releaseClaim()
+    return cwd.result
+  }
+
   // Compute dated spec layout
   const specRoot = getSpecsBase(workspacePath)
   const layout = computeSpecLayout({
@@ -866,8 +841,11 @@ function createFirstSpecSession(
   safeInsertIntentLog(intent.id, 'spec_created', '编写 spec', actor ?? 'system')
   deps.broadcastIntents(workspacePath)
 
-  // Launch spec session
+  // Launch spec session. Two independent roots: the agent RUNS in the intent
+  // worktree (that is the code it reads), and writes only into `specDir` — the
+  // centralized spec root, which is not in the worktree and not in git.
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
+  rt.effectiveCwd = cwd.cwd
   rt.specDir = layout.dirAbs
   setSessionAgent(specId, specTarget.target.ref)
 
@@ -875,7 +853,7 @@ function createFirstSpecSession(
 
   try {
     void deps
-      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs, workspacePath))
+      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs, cwd.cwd))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         releaseClaim()
@@ -968,6 +946,16 @@ export async function launchSpecReviewSession(
   }
   const releaseClaim = (): void => releaseSpecReviewOccupancy(intent.id, newReviewId)
 
+  // The reviewer checks the spec's claims against the SAME code the author read
+  // — the intent's worktree on its base branch, not whatever the main checkout
+  // happens to have checked out. Read-only either way: sharing the directory
+  // does not widen the reviewer's tool gate.
+  const cwd = prepareSessionCwd(workspacePath, intent)
+  if (!cwd.ok) {
+    releaseClaim()
+    return cwd.result
+  }
+
   progress?.('launching')
   const rt = ensureRuntime(
     newReviewId,
@@ -976,6 +964,7 @@ export async function launchSpecReviewSession(
     [],
     'spec_review',
   )
+  rt.effectiveCwd = cwd.cwd
   // Both facts are part of the security contract — `launchRun` throws without
   // them rather than binding an unbounded submit tool.
   rt.specReviewIntentId = intent.id
@@ -986,7 +975,7 @@ export async function launchSpecReviewSession(
 
   try {
     void deps
-      .launchRun(rt, buildSpecReviewPrompt(intent, fileAbs, workspacePath))
+      .launchRun(rt, buildSpecReviewPrompt(intent, fileAbs, cwd.cwd))
       .catch((err: unknown) => {
         clearPendingSpecReviewLink(newReviewId)
         releaseClaim()
@@ -1044,6 +1033,12 @@ function createSpecSessionOnExistingPath(
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 
+  const cwd = prepareSessionCwd(workspacePath, intent)
+  if (!cwd.ok) {
+    releaseClaim()
+    return cwd.result
+  }
+
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
   armSpecContentWatch({
     intentId: intent.id,
@@ -1052,6 +1047,7 @@ function createSpecSessionOnExistingPath(
     fingerprint: readSpecFingerprint(workspacePath, intent.specPath!),
   })
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
+  rt.effectiveCwd = cwd.cwd
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
 
@@ -1062,7 +1058,7 @@ function createSpecSessionOnExistingPath(
     fileAbs,
     opts.reworkReason ?? '',
     opts.reworkRound ?? intent.specReviewReworkRounds,
-    workspacePath,
+    cwd.cwd,
   )
   try {
     void deps.launchRun(rt, prompt).catch((err: unknown) => {
@@ -1112,6 +1108,11 @@ async function resumeSpecSession(
   const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
   if (blocked) return blocked
 
+  // A resume is a NEW turn, so it re-passes the directory admission: the same
+  // intent worktree, still rooted on the same baseline. Reused, never rebuilt.
+  const cwd = prepareSessionCwd(workspacePath, intent)
+  if (!cwd.ok) return cwd.result
+
   // Restore runtime if it was dropped (server restart / GC)
   if (!getRuntime(intent.specSessionId)) {
     const isPending = intent.specSessionId.startsWith(PENDING_SESSION_PREFIX)
@@ -1133,6 +1134,10 @@ async function resumeSpecSession(
     const specTarget = sessionAgentTargetForRole('spec')
     if (specTarget.ok) setSessionAgent(intent.specSessionId, specTarget.target.ref)
   }
+  // Set on the live runtime too, not just a freshly restored one: a session
+  // reopened for VIEWING carries no launch cwd, and the turn about to run must
+  // read code from the intent worktree either way.
+  getRuntime(intent.specSessionId)!.effectiveCwd = cwd.cwd
 
   // Baseline for this turn's content check: a resumed session that writes nothing
   // must not promote the intent out of `raw`.
@@ -1153,9 +1158,9 @@ async function resumeSpecSession(
         fileAbs,
         opts.reworkReason,
         opts.reworkRound ?? intent.specReviewReworkRounds,
-        workspacePath,
+        cwd.cwd,
       )
-    : buildContinueSpecPrompt(intent, fileAbs, workspacePath)
+    : buildContinueSpecPrompt(intent, fileAbs, cwd.cwd)
 
   // Re-launch — no new pending link needed (specSessionId is already set)
   try {

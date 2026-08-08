@@ -62,6 +62,7 @@ import {
   type SessionLaunchResult,
   type SessionLaunchDeps,
 } from './session-launcher.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let workspaceId: string
@@ -69,6 +70,7 @@ let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-session-launcher-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   process.env.C3_DIR = join(dir, 'c3home')
@@ -407,11 +409,10 @@ describe('launchWorkSession — RM-A12 under worktree isolation', () => {
     const [target] = insertIntents(proj, [
       { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
     ])
-    const r = asError(await launchWorkSession(proj, target.id, mockDeps()))
-    // The gate is passed: the launch reaches the git stage and only fails there,
-    // because this temp workspace is not a git repository.
-    expect(r.code).not.toBe('intent.concurrencyGate')
-    expect(r.code).toBe('intent.worktreeCreateFailed')
+    // The gate is passed and the launch goes all the way through: under
+    // `worktree` the other intent's live session shares no file with this one.
+    const r = asSuccess(await launchWorkSession(proj, target.id, mockDeps()))
+    expect(r.mode).toBe('fresh')
   })
 
   it('a RESUME is no longer rejected while another intent runs', async () => {
@@ -474,13 +475,23 @@ describe('launchWorkSession — RM-A12 under worktree isolation', () => {
   it('the manual entry and the MCP entry stay in step under worktree too', async () => {
     inProgressWithSession('Blocker', 'sess-blocker')
     markRunning('sess-blocker')
-    const [target] = insertIntents(proj, [
-      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
+    // One target per entry: two calls against the SAME intent would not compare
+    // two fresh launches (the second would attach to the first), and the point
+    // here is that both entries run the same gate chain to the same verdict.
+    const [viaManualTarget, viaMcpTarget] = insertIntents(proj, [
+      { title: 'Target manual', shortEnTitle: 'target-manual', content: '', priority: 'P1' },
+      { title: 'Target mcp', shortEnTitle: 'target-mcp', content: '', priority: 'P1' },
     ])
-    const viaManual = await launchWorkSession(proj, target.id, mockDeps(), () => {}, 'human')
-    const viaMcp = await launchWorkSession(proj, target.id, mockDeps())
-    expect(viaManual).toEqual(viaMcp)
-    expect(asError(viaManual).code).not.toBe('intent.concurrencyGate')
+    const viaManual = await launchWorkSession(
+      proj,
+      viaManualTarget.id,
+      mockDeps(),
+      () => {},
+      'human',
+    )
+    const viaMcp = await launchWorkSession(proj, viaMcpTarget.id, mockDeps())
+    expect(asSuccess(viaManual).mode).toBe('fresh')
+    expect(asSuccess(viaMcp).mode).toBe('fresh')
   })
 })
 

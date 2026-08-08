@@ -280,11 +280,10 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 - **重置 spec 会话(`reset_spec_session`):** spec 文档标签页的「我要修改」操作,镜像
   **编写 spec**,但复用**既有的** spec 目录/路径(不做脚手架搭建)。spec-session
   标签页本身没有重置按钮。当从未写过 spec 时被拒绝(`error`
-  `intent.specNotWritten`)。Claude 与 Codex 都可以运行该会话,
-  但二者使用不同的硬边界:Claude 保持 cwd 位于项目,并用 spec
-  权限网关把写入限制在 spec 目录内;Codex 将 cwd 移到集中式 specs
-  根目录,强制 `workspace-write` + `approval_policy=never`,并把 specs 根目录作为
-  `--add-dir` 传入,从而使项目、账本 DB 及其他非 specs-root 路径都留在可写根目录之外。
+  `intent.specNotWritten`)。Claude 与 Codex 都可以运行该会话,cwd 一律是该意图的读代码根
+  (RM-R45),写入根则各按自己的硬边界收口:Claude 用 spec 权限网关把写入限制在 spec 目录内;
+  Codex 额外强制 `workspace-write` + `approval_policy=never`,并把集中式 specs 根目录作为
+  `--add-dir` 传入,从而使账本 DB 及其他非 specs-root 路径都留在可写根目录之外。
   服务端启动一个新的、写入受限的 `'spec'` 会话,种子为用户的**新输入** +
   一个指向当前 `spec_path` 的指针(仅路径——智能体自己读取 spec 文件;
   提示词不再内联 spec 正文),回复 `session_selected`(以便详情页的「spec

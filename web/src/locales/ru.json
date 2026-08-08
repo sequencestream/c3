@@ -2593,8 +2593,14 @@
       "confirmVerified": {
         "label": "Подтвердить прохождение проверки"
       },
-      "advance": {
-        "label": "Перейти к {status}"
+      "startIntegrating": {
+        "label": "Начать интеграцию"
+      },
+      "startVerifying": {
+        "label": "Начать проверку"
+      },
+      "confirmVerification": {
+        "label": "Подтвердить проверку"
       },
       "rework": {
         "label": "Переделать"
@@ -2654,6 +2660,9 @@
         "mergedDisabled": {
           "tooltip": "PR в эту поставку уже влит — снять связь нельзя."
         }
+      },
+      "more": {
+        "label": "Другие действия"
       }
     },
     "guard": {

@@ -3,17 +3,25 @@
  * DeliveryDetail.vue — 交付详情容器。
  *
  * 常驻标题栏是状态的唯一去处:标题 → 紧贴的状态徽标(六态分别配色、纯展示) →
- * 弹性空隙 → 动作组(集成就绪 N/M 小字 + 可达目标推进按钮 + 取消)。推进区只渲染
- * 此刻真的能点的目标——被守卫挡住的、系统专属的目标根本不渲染;「为何推不动」由
+ * 弹性空隙 → 动作组(集成就绪 N/M 小字 + 可达目标推进按钮 + 「…」溢出菜单)。推进区
+ * 只渲染此刻真的能点的目标——被守卫挡住的、系统专属的目标根本不渲染;「为何推不动」由
  * 标题栏下方的缺口异常框回答。其下仅两个 Tab:概览(交付分支/合并/元信息,不含任何
  * 状态内容)与关联意图。不设 PR/设置/分支独立 Tab。
  *
+ * 推进按钮说的是「按下去会发生什么」(开始集成 / 开始验证 / 确认验证 / 返工),不是
+ * 目标状态名——状态名归徽标;两套文案键因此分家(见 deliveryAdvanceLabelKey)。
+ *
+ * 「取消交付」不排在标题栏上:它切 cancelled 是不可逆终态,危险动作退居「…」溢出菜单
+ * 第二层多一道缓冲,终态本身则整个入口都不渲染。菜单收起沿用列表页 kebab 范式
+ * (document click 外部收起),另补 Esc;交付转终态时随 watch 收起,不悬空。
+ *
  * 可达性与缺口全部来自服务端 `transitionPlan`,本组件只渲染,不复制状态规则;状态
  * 推进/返工/取消一律上抛由控制层发 WS,服务端回包为准。verifying→verified 是状态机
- * 语义的一部分,点击先弹 ConfirmDialog 显式人工确认才提交;取消同样走 danger
+ * 语义的一部分,点击先弹 ConfirmDialog 显式人工确认才提交(该确认正是服务端计划把
+ * verificationNotConfirmed 视为已满足的依据,写端仍会复核);取消同样走 danger
  * ConfirmDialog(web 规范,不用 window.confirm)。
  */
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type {
   AssociatedIntent,
@@ -27,9 +35,11 @@ import type {
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import {
   DELIVERY_STATUS_LABEL_KEYS,
+  deliveryAdvanceLabelKey,
   deliveryGapReasons,
   deliveryTargetInvokable,
   isDeliveryReworkTarget,
+  isDeliveryTerminal,
   isVerificationConfirmTarget,
   type DeliveryBranchInitState,
 } from '@/lib/delivery-view'
@@ -91,6 +101,41 @@ const cancelOpen = ref(false)
 // verifying→verified 的人工确认门:点中该目标先弹 ConfirmDialog,只有显式确认才推进。
 const confirmTarget = ref<DeliveryStatus | null>(null)
 
+// ── 「…」溢出菜单(当前只放「取消交付」) ─────────────────────────────────────
+const moreOpen = ref(false)
+
+// 终态没有可取消之物,整个入口不渲染。
+const showMore = computed(() => !isDeliveryTerminal(props.delivery.status))
+
+function closeMore(): void {
+  moreOpen.value = false
+}
+
+function onDocumentKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') closeMore()
+}
+
+// 外部点击/Esc 收起。入口与菜单都在 `.delivery-more` 里,该容器 @click.stop 挡下所有
+// 内部点击 —— 否则开菜单的这一下会立刻冒到这里被收回去,菜单永远打不开。
+onMounted(() => {
+  document.addEventListener('click', closeMore)
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeMore)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
+// 菜单敞开期间交付被别处推进到终态:入口随 showMore 消失,菜单不能留在空位上。
+watch(showMore, (visible) => {
+  if (!visible) closeMore()
+})
+
+function openCancelFromMenu(): void {
+  closeMore()
+  cancelOpen.value = true
+}
+
 function statusLabel(status: DeliveryStatus): string {
   return t(DELIVERY_STATUS_LABEL_KEYS[status])
 }
@@ -98,10 +143,9 @@ function statusLabel(status: DeliveryStatus): string {
 // 推进区只列此刻真的能点的目标(人工可写且守卫已过);被挡目标不是置灰,是不渲染。
 const invokableTargets = computed(() => props.plan.targets.filter(deliveryTargetInvokable))
 
+// 按钮文案是动作,不是状态名 —— 映射按 (from,to) 边取,与徽标的状态名键完全分开。
 function targetLabel(target: DeliveryTargetTransition): string {
-  return isDeliveryReworkTarget(props.delivery.status, target.to)
-    ? t('delivery.action.rework.label')
-    : statusLabel(target.to)
+  return t(deliveryAdvanceLabelKey(props.delivery.status, target.to))
 }
 
 function onAdvance(target: DeliveryTargetTransition): void {
@@ -194,14 +238,37 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
         >
           {{ targetLabel(target) }}
         </button>
-        <button
-          type="button"
-          class="delivery-cancel-btn"
-          data-testid="delivery-cancel-btn"
-          @click="cancelOpen = true"
-        >
-          {{ t('delivery.action.cancel.label') }}
-        </button>
+        <!-- 溢出层:不可逆的「取消交付」退居第二层,终态整个入口不渲染。 -->
+        <div v-if="showMore" class="delivery-more" data-testid="delivery-more" @click.stop>
+          <button
+            type="button"
+            class="delivery-more-btn"
+            data-testid="delivery-more-btn"
+            aria-haspopup="menu"
+            :aria-expanded="moreOpen"
+            :aria-label="t('delivery.action.more.label')"
+            :title="t('delivery.action.more.label')"
+            @click.stop="moreOpen = !moreOpen"
+          >
+            ⋯
+          </button>
+          <div
+            v-if="moreOpen"
+            class="delivery-more-menu"
+            role="menu"
+            data-testid="delivery-more-menu"
+          >
+            <button
+              type="button"
+              class="delivery-more-item danger"
+              role="menuitem"
+              data-testid="delivery-cancel-btn"
+              @click="openCancelFromMenu"
+            >
+              {{ t('delivery.action.cancel.label') }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -384,7 +451,7 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
   border-color: var(--c-error);
   background: transparent;
 }
-/* 动作组:N/M + 可达目标 + 取消。桌面端跟在空隙之后不被压扁,移动端整体换到第二行。 */
+/* 动作组:N/M + 可达目标 + 「…」。桌面端跟在空隙之后不被压扁,移动端整体换到第二行。 */
 .delivery-head-actions {
   flex-shrink: 0;
   display: flex;
@@ -397,35 +464,113 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
   color: var(--c-text-muted);
   white-space: nowrap;
 }
+/* 推进按钮是真按钮,不是徽标:主色实底 + 白字(两个主题下底色相同,白字是唯一正确
+   的前景),hover 加深、disabled 降透明。透明底细描边与旁边的状态徽标同貌,读起来像
+   在陈述状态而不是邀请点击,故整体退役。 */
 .delivery-advance-btn {
   flex-shrink: 0;
   padding: var(--sp-1) var(--sp-3);
   font: inherit;
   font-size: var(--fs-caption);
-  color: var(--c-primary-text);
-  background: transparent;
+  font-weight: 600;
+  color: #fff;
+  background: var(--c-primary);
   border: 1px solid var(--c-primary);
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
 }
 .delivery-advance-btn:hover {
-  background: var(--c-hover);
+  filter: brightness(1.08);
+}
+.delivery-advance-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
   filter: none;
 }
-.delivery-advance-btn.rework {
-  border-style: dashed;
+.delivery-advance-btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
 }
-.delivery-cancel-btn {
+/* 返工是回头路,不该和前进按钮同一个分量:填充降到输入底色、描边保留虚线以延续原有
+   的区分,仍是有实底的按钮而非幽灵态。 */
+.delivery-advance-btn.rework {
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px dashed var(--c-border);
+}
+.delivery-advance-btn.rework:hover {
+  background: var(--c-hover-strong);
+  filter: none;
+}
+/* 「…」入口:与列表页 kebab 同一视觉语言 —— 方形图标钮 + 实底描边,hover 与展开态
+   加深底色,始终看得出是个可点的按钮而不是三个字符。 */
+.delivery-more {
+  position: relative;
   flex-shrink: 0;
-  padding: var(--sp-1) var(--sp-2);
+}
+.delivery-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   font: inherit;
-  font-size: var(--fs-caption);
-  color: var(--c-danger-text, #c53030);
-  background: transparent;
-  border: 1px solid var(--c-danger, #e53e3e);
+  font-size: var(--fs-body);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+.delivery-more-btn:hover,
+.delivery-more-btn[aria-expanded='true'] {
+  color: var(--c-text);
+  background: var(--c-hover-strong);
+}
+.delivery-more-btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+/* 下拉浮层:面板底 + 描边 + 投影,压住其下的内容。 */
+.delivery-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-mid);
+}
+.delivery-more-item {
+  padding: 6px 10px;
+  font: inherit;
+  font-size: var(--fs-caption);
+  text-align: left;
+  white-space: nowrap;
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.delivery-more-item:hover {
+  background: var(--c-hover-strong);
+}
+.delivery-more-item:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: -2px;
+}
+/* 危险项只用危险色文字:实底留给确认框的确认键,菜单里不抢第一注意力。 */
+.delivery-more-item.danger {
+  color: var(--c-error-text);
 }
 /* 缺口异常框:描边提示区 + 文案 + 行尾跳转按钮,信息不依赖颜色单独成立
    (图标与正文都是可读文本,跳转是原生可聚焦 button)。 */

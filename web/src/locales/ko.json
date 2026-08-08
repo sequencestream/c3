@@ -2593,8 +2593,14 @@
       "confirmVerified": {
         "label": "검증 통과 확인"
       },
-      "advance": {
-        "label": "{status}(으)로 진행"
+      "startIntegrating": {
+        "label": "통합 시작"
+      },
+      "startVerifying": {
+        "label": "검증 시작"
+      },
+      "confirmVerification": {
+        "label": "검증 확인"
       },
       "rework": {
         "label": "재작업"
@@ -2654,6 +2660,9 @@
         "mergedDisabled": {
           "tooltip": "이 전달용 PR이 머지되어 연결을 해제할 수 없습니다."
         }
+      },
+      "more": {
+        "label": "추가 작업"
       }
     },
     "guard": {

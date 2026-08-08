@@ -2592,8 +2592,14 @@
       "confirmVerified": {
         "label": "Confirm verification passed"
       },
-      "advance": {
-        "label": "Advance to {status}"
+      "startIntegrating": {
+        "label": "Start integration"
+      },
+      "startVerifying": {
+        "label": "Start verification"
+      },
+      "confirmVerification": {
+        "label": "Confirm verification"
       },
       "rework": {
         "label": "Rework"
@@ -2653,6 +2659,9 @@
         "mergedDisabled": {
           "tooltip": "Its PR toward this delivery is merged — unlinking is not possible."
         }
+      },
+      "more": {
+        "label": "More actions"
       }
     },
     "guard": {

@@ -2592,8 +2592,14 @@
       "confirmVerified": {
         "label": "确认验证通过"
       },
-      "advance": {
-        "label": "推进到 {status}"
+      "startIntegrating": {
+        "label": "开始集成"
+      },
+      "startVerifying": {
+        "label": "开始验证"
+      },
+      "confirmVerification": {
+        "label": "确认验证"
       },
       "rework": {
         "label": "返工"
@@ -2653,6 +2659,9 @@
         "mergedDisabled": {
           "tooltip": "它对本交付的 PR 已合并,无法解除关联。"
         }
+      },
+      "more": {
+        "label": "更多操作"
       }
     },
     "guard": {

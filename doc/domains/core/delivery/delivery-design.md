@@ -15,7 +15,7 @@
 | 分支生命周期      | `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入                           |
 | forge 交互        | `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举) |
 | 工作区隔离 + 广播 | handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标                                                                                                                                              |
-| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                                               |
+| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进 + 「…」溢出菜单)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                               |
 
 ## SQLite 层
 
@@ -83,7 +83,8 @@
 - `state-machine.ts` 是纯函数模块(无 DB/WS 依赖),表驱动 `EDGES` 定义六态边 + 角色 + 守卫序列;`canTransitionDelivery` 对非法边返回 `delivery.invalidStatusTransition`,对角色/原因/守卫不满足返回 `delivery.transitionGuardFailed` + 缺口列表。
 - handler 的 `applyTransition` 统一服务 `transition_delivery` 与 `cancel_delivery`:从当前事实(分支就绪、聚合)重新计算守卫,失败发 `delivery_transition_failed`(含 `currentStatus` + `to` + 缺口),成功写库并回 `delivery_detail` + 广播。
 - 系统专属边(`verified → delivered`、`verified → verifying`)的唯一写入口是 `sync_delivery_pr`:它以 `role:'system'` 求值,通过后经 `commitDeliveryDelivered` / `commitDeliveryMergeConflict` 在单事务内落定。状态机本身不因此改动——两条边本就在 `EDGES` 表中。
-- `branchNotReady` 缺口的 `jumpTo` 为 `branch`(本页分支初始化区),不再是 `workspace-settings`;`branch_ready` 变为可写后,`branchNotReady` 守卫真正生效。
+- `branchNotReady` 缺口的 `jumpTo` 为 `branch`,指向本页的分支初始化区——用户能在缺口所在的页面上直接把它解决掉。
+- `computeTransitionPlan` 与 `canTransitionDelivery` 对 `confirmVerified` 的取值刻意不同:计划以 `true` 求值,因为人工确认是**点击时弹出的确认框**,不是页面上可展示、可修复的缺口——若按未确认求值,`verifying → verified` 会恒为 `failed`,那个用来弹确认框的按钮就永远渲染不出来。因此 `delivery.guard.verificationNotConfirmed` 只是**写端**理由:客户端必须显式传 `confirmVerified: true`,否则写入照拒。`mergeSucceeded` 不同——它是点击变不出来的真实结果,计划里仍是缺口。
 
 ## 事件接线(`delivery:*`)
 
@@ -111,7 +112,11 @@
 
 ## 前端
 
-`web/src/pages/deliveries/` 容器经 `App.vue` 注入 `currentDeliveries`/`activeDelivery`/`activeDeliveryPlan`/`activeDeliveryIntents`/`deliveryLinkIntents`/`activeDeliveryBranchInit`/`workspaceGitBranchMode`。页面只消费服务端 `transitionPlan`,在常驻标题栏渲染状态徽标(六态分别配色、纯展示)与推进区:推进区只渲染可达目标(非法目标与守卫未满足/系统专属的目标均不出现),「集成就绪 N/M」以小字落在同一动作组内;缺口(`delivery.guard.*` 文案 + 跳转)由标题栏下方的异常框呈现。`verifying → verified` 点击先弹 ConfirmDialog 显式人工确认。`current-branch` 模式显示「仅聚合视图」说明文案,动作区不渲染分支/PR/合并动作。角标 `HEADER_TABS` 取 `deliveriesNeedsAction[currentWorkspace]`。
+`web/src/pages/deliveries/` 容器经 `App.vue` 注入 `currentDeliveries`/`activeDelivery`/`activeDeliveryPlan`/`activeDeliveryIntents`/`deliveryLinkIntents`/`activeDeliveryBranchInit`/`workspaceGitBranchMode`。页面只消费服务端 `transitionPlan`,在常驻标题栏渲染状态徽标(六态分别配色、纯展示)与推进区:推进区只渲染可达目标(非法目标与守卫未满足/系统专属的目标均不出现),「集成就绪 N/M」以小字落在同一动作组内;缺口(`delivery.guard.*` 文案 + 跳转)由标题栏下方的异常框呈现。`current-branch` 模式显示「仅聚合视图」说明文案,动作区不渲染分支/PR/合并动作。角标 `HEADER_TABS` 取 `deliveriesNeedsAction[currentWorkspace]`。
+
+推进按钮是主色实底的真按钮,文案按边取动作用语(`deliveryAdvanceLabelKey`:开始集成 / 开始验证 / 确认验证 / 返工),与徽标的状态名分属两套 i18n 键。`verifying → verified` 点击先弹 ConfirmDialog 显式人工确认后才发 `confirmVerified: true`。
+
+「取消交付」不在标题栏直排,收在非终态才渲染的「…」溢出菜单里(点击弹 danger ConfirmDialog),终态整个入口不渲染;菜单以 document click 与 Esc 收起,交付转终态时随入口一并收起。
 
 **分支初始化区**(概览 tab,`worktree` 模式):未就绪时显示 create/bind 切换 + 分支名输入框(默认 `delivery/<short-id>-<slug>`,由 `defaultDeliveryBranchName` 生成)+「初始化分支」按钮 + 进度行(`delivery_branch_init_progress` 相位文案);就绪后显示分支名;终态且持有分支时显示「清理分支」入口(danger ConfirmDialog 二次确认)。`branchNotReady` 缺口跳转 `branch` 会切到概览并聚焦该区。`message-handler` 处理 `delivery_branch_init_progress`/`delivery_branch_init_result`(成功清 in-flight + 采纳模型 + 重取详情 + 落后警告 toast),并在 init 错误码时清 in-flight + toast。
 

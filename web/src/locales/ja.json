@@ -2593,8 +2593,14 @@
       "confirmVerified": {
         "label": "検証完了を確認"
       },
-      "advance": {
-        "label": "{status} へ進める"
+      "startIntegrating": {
+        "label": "統合を開始"
+      },
+      "startVerifying": {
+        "label": "検証を開始"
+      },
+      "confirmVerification": {
+        "label": "検証を確認"
       },
       "rework": {
         "label": "やり直し"
@@ -2654,6 +2660,9 @@
         "mergedDisabled": {
           "tooltip": "この配信向けの PR はマージ済みのため、紐付けを解除できません。"
         }
+      },
+      "more": {
+        "label": "その他の操作"
       }
     },
     "guard": {

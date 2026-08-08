@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Delivery } from '@ccc/shared/protocol'
+import { DELIVERY_STATUSES, type Delivery } from '@ccc/shared/protocol'
 import DeliveryList from './DeliveryList.vue'
 
 const STORAGE_KEY = 'c3.deliveryListCollapsed'
@@ -76,6 +76,20 @@ describe('DeliveryList', () => {
   it('shows the empty state when there are no deliveries', () => {
     const w = mount(DeliveryList, { props: { deliveries: [], activeId: null } })
     expect(w.find('[data-testid="delivery-list-empty"]').exists()).toBe(true)
+  })
+
+  it('renders a status badge carrying its own status class, one per status', () => {
+    for (const status of DELIVERY_STATUSES) {
+      const w = mount(DeliveryList, {
+        props: { deliveries: [delivery({ status })], activeId: null },
+      })
+      const badge = w.find(`[data-testid="delivery-status-${status}"]`)
+      expect(badge.exists(), status).toBe(true)
+      // 状态值即 CSS class —— 逐态配色靠它,是纯展示的 span 而非动作。
+      expect(badge.classes(), status).toContain(status)
+      expect(badge.classes(), status).toContain('delivery-row-status')
+      expect(badge.element.tagName, status).toBe('SPAN')
+    }
   })
 
   it('emits create with title/description/dates from the inline form', async () => {
@@ -199,6 +213,23 @@ describe('DeliveryList.vue — 列宽样式契约', () => {
     expect(base).toMatch(/width:\s*960px/)
     expect(base).toMatch(/flex-shrink:\s*0/)
     expect(ruleBody(listSrc, '.delivery-list.collapsed')).toMatch(/width:\s*480px/)
+  })
+
+  it('状态徽标是 pill 徽标,六态各有一条配色规则且互不相同', () => {
+    const base = ruleBody(listSrc, '.delivery-row-status')
+    // 与 .req-status 同款 pill:badge 字号 + pill 圆角,不再是描边小方块。
+    expect(base).toMatch(/font-size:\s*var\(--fs-badge\)/)
+    expect(base).toMatch(/border-radius:\s*var\(--radius-pill\)/)
+    expect(base).not.toMatch(/border:/)
+
+    const bodies = DELIVERY_STATUSES.map((s) => {
+      const body = ruleBody(listSrc, `.delivery-row-status.${s}`)
+      expect(body, s).toMatch(/color:/)
+      expect(body, s).toMatch(/background:/)
+      return body.replace(/\s+/g, '')
+    })
+    // 六态可区分:没有两态落在同一条配色上。
+    expect(new Set(bodies).size).toBe(DELIVERY_STATUSES.length)
   })
 
   it('移动端两态均满宽,不横向溢出', () => {

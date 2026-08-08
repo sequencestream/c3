@@ -591,9 +591,9 @@ export function deleteIntentPr(intentId: string, deliveryId: string): void {
 /**
  * The intents linked to a delivery, by title.
  *
- * `prStatus` / `headBranch` come from the `intent_prs` row whose `delivery_id`
- * is THIS delivery — never the intent's global PR state, which would show
- * another delivery's PR in this delivery's list.
+ * `prStatus` / `headBranch` / `prNumber` / `prUrl` come from the `intent_prs`
+ * row whose `delivery_id` is THIS delivery — never the intent's global PR
+ * state, which would show another delivery's PR in this delivery's list.
  *
  * `intents` / `intent_prs` are owned by the intent store and created lazily, so
  * a delivery read that precedes any intent operation degrades to `[]` (same
@@ -611,12 +611,16 @@ export function listAssociatedIntents(deliveryId: string): AssociatedIntent[] {
     status: string
     pr_status: string | null
     head_branch: string | null
+    pr_number: string | null
+    pr_url: string | null
   }>(
     `SELECT i.id            AS id,
             i.title         AS title,
             i.status        AS status,
             ${hasPrs ? 'p.status' : 'NULL'}      AS pr_status,
-            ${hasPrs ? 'p.head_branch' : 'NULL'} AS head_branch
+            ${hasPrs ? 'p.head_branch' : 'NULL'} AS head_branch,
+            ${hasPrs ? 'p.number' : 'NULL'}      AS pr_number,
+            ${hasPrs ? 'p.url' : 'NULL'}         AS pr_url
        FROM intent_deliveries e
        JOIN intents i ON i.id = e.intent_id
        ${hasPrs ? 'LEFT JOIN intent_prs p ON p.intent_id = e.intent_id AND p.delivery_id = e.delivery_id' : ''}
@@ -630,6 +634,8 @@ export function listAssociatedIntents(deliveryId: string): AssociatedIntent[] {
     status: r.status as IntentStatus,
     prStatus: (r.pr_status as IntentPrStatus | null) ?? null,
     headBranch: r.head_branch ?? null,
+    prNumber: r.pr_number ?? null,
+    prUrl: r.pr_url ?? null,
   }))
 }
 

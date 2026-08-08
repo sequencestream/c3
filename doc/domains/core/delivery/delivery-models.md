@@ -65,8 +65,10 @@ M/N 直接由 `intent_prs.delivery_id` 查得:一个意图对同一交付至多�
 | `status`     | `IntentStatus`           | 意图自身状态                            |
 | `prStatus`   | `IntentPrStatus \| null` | **该意图对本交付的 PR 状态**;无 PR 为空 |
 | `headBranch` | `string \| null`         | 该 PR 的 head 分支                      |
+| `prNumber`   | `string \| null`         | 该 PR 的仓库内编号;无 PR 为空           |
+| `prUrl`      | `string \| null`         | 该 PR 的 forge 链接;无 PR / 无链接为空  |
 
-`prStatus` 是「对本交付」而**非**意图的全局 PR 聚合。一个意图可对不同交付各持有一条 PR,用全局聚合会把别的交付的状态显示到这里——这是本读模型存在的全部理由。
+`prStatus` 是「对本交付」而**非**意图的全局 PR 聚合。一个意图可对不同交付各持有一条 PR,用全局聚合会把别的交付的状态显示到这里——这是本读模型存在的全部理由。四个 PR 字段同源于 `intent_prs` 中 `delivery_id` 命中本交付的那一行,同生同灭:无 PR 时四者一并为空。编号与链接由服务端联表带出而非前端按 repo/head 推测 URL——只有 forge 写回的链接才保证可跳转。
 
 ## 解除关联的守卫
 

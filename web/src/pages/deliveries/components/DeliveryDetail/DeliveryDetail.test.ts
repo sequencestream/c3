@@ -385,6 +385,8 @@ describe('DeliveryDetail', () => {
             status: 'todo',
             prStatus: null,
             headBranch: null,
+            prNumber: null,
+            prUrl: null,
           },
         ],
         intents: [],
@@ -760,7 +762,7 @@ describe('DeliveryDetail — 交付 PR 合并区', () => {
     expect(w.find('[data-testid="delivery-sync-pr-btn"]').exists()).toBe(true)
   })
 
-  it('keeps the merge block with the delivered PR after the batch shipped', () => {
+  it('keeps the merge block with the delivered PR after the batch shipped, minus the sync button', () => {
     const w = mountDetail({
       delivery: delivery({ status: 'delivered', branchReady: true, branchName: 'delivery/d1' }),
       plan: { targets: [] },
@@ -769,6 +771,17 @@ describe('DeliveryDetail — 交付 PR 合并区', () => {
     })
     expect(w.find('[data-testid="delivery-merge-block"]').text()).toContain('#12')
     expect(w.find('[data-testid="delivery-create-pr-btn"]').exists()).toBe(false)
+    // 已合并的 PR 没有下一个状态可问 forge:同步入口不渲染,不留一个点了没反应的按钮。
+    expect(w.find('[data-testid="delivery-sync-pr-btn"]').exists()).toBe(false)
+  })
+
+  it('keeps the sync button for a closed PR — that one the forge can still move', () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verified', branchReady: true, branchName: 'delivery/d1' }),
+      plan: { targets: [] },
+      deliveryPr: pr({ status: 'closed' }),
+    })
+    expect(w.find('[data-testid="delivery-sync-pr-btn"]').exists()).toBe(true)
   })
 
   it('keeps the merge block while verifying with a kept PR row', () => {

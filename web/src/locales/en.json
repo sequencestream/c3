@@ -2622,6 +2622,9 @@
         },
         "noPr": {
           "label": "No PR yet"
+        },
+        "pr": {
+          "label": "PR #{number}"
         }
       }
     },
@@ -2721,9 +2724,6 @@
         },
         "body": {
           "label": "Unlink \"{title}\" from this delivery? Its open PR toward the delivery is closed as part of this."
-        },
-        "mergedDisabled": {
-          "tooltip": "Its PR toward this delivery is merged — unlinking is not possible."
         }
       },
       "more": {

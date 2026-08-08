@@ -6,7 +6,9 @@
  * Isolation is two overrides working together: `--settings <dir>/settings.json`
  * relocates the whole config dir (settings.json AND its sibling state.json), and
  * `C3_DB_PATH` points the intent db at the same throwaway dir. Nothing the server
- * writes can reach the real `~/.c3`.
+ * writes can reach the real `~/.c3`. A caller that aims the overrides AT `~/.c3`
+ * anyway (`--state-dir ~/.c3`, `--db ~/.c3/c3.db`) is refused before the first
+ * write — the helper must not become the thing that clobbers the real config.
  *
  * The throwaway settings.json is SEEDED from the real `~/.c3/settings.json` when
  * one exists — read-only, never written back — so tests that need real configured
@@ -28,33 +30,48 @@
 import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { isRealC3Path, realDbPath, realSettingsPath } from './settings-guard.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
-
-/** The real config, used ONLY as a read-only seed source. */
-export function realSettingsFile() {
-  return join(homedir(), '.c3', 'settings.json')
-}
 
 /**
  * Write an isolated settings.json at `target`, seeded from the real one when
  * present and always without `auth`. Absent real file ⇒ `{}` (the server
  * normalizes that to the default single-agent config).
+ *
+ * Refuses when `target` IS the real `~/.c3/settings.json`, however it is spelled
+ * — `--state-dir ~/.c3` would otherwise overwrite the developer's own config
+ * with an auth-stripped copy, the exact damage this helper exists to prevent.
  */
 export function seedSettings(target) {
+  assertNotRealC3File(target, realSettingsPath(), 'settings.json')
   let settings = {}
   try {
-    settings = JSON.parse(readFileSync(realSettingsFile(), 'utf-8'))
+    settings = JSON.parse(readFileSync(realSettingsPath(), 'utf-8'))
   } catch {
     /* no real settings — start from empty (default agent) */
   }
   delete settings.auth
   writeFileSync(target, JSON.stringify(settings, null, 2))
   return target
+}
+
+/**
+ * Throw before any write when `target` resolves to the real `~/.c3` file
+ * `realPath` names. A thrown error (not `process.exit`) so both the CLI and
+ * `run-all.mjs` report it through their own error paths, and the meta-test can
+ * assert it without mocking the process.
+ */
+function assertNotRealC3File(target, realPath, label) {
+  if (!isRealC3Path(target, realPath)) return
+  throw new Error(
+    `refusing to write the real ~/.c3/${label} (${target}) — ` +
+      'an isolated server must live outside ~/.c3; pass a --state-dir / --db under a temp dir',
+  )
 }
 
 /** Resolve once a TCP connection to the port succeeds, or reject after `tries`. */
@@ -95,8 +112,12 @@ export async function startIsolatedServer(opts = {}) {
   const port = opts.port ?? 13000
   const ownsStateDir = !opts.stateDir
   const stateDir = opts.stateDir ?? mkdtempSync(join(tmpdir(), 'c3-e2e-'))
-  mkdirSync(stateDir, { recursive: true })
   const dbPath = opts.dbPath ?? join(stateDir, 'c3.db')
+  // Both refusals come BEFORE the first mkdir/write: a caller aiming at ~/.c3
+  // (`--state-dir ~/.c3`, `--db ~/.c3/c3.db`) leaves nothing behind.
+  assertNotRealC3File(join(stateDir, 'settings.json'), realSettingsPath(), 'settings.json')
+  assertNotRealC3File(dbPath, realDbPath(), 'c3.db')
+  mkdirSync(stateDir, { recursive: true })
   // A caller-supplied `--db` may name a dir that does not exist yet (the guide's
   // shared-ledger sections point several tests at one fixed path).
   mkdirSync(dirname(dbPath), { recursive: true })

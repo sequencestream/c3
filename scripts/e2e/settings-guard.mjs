@@ -15,7 +15,7 @@
  */
 import { homedir } from 'node:os'
 import { realpathSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 /** Exit code a refusal exits with — distinct from 0 PASS, 5 SKIP, 1 FAIL. */
 export const GUARD_REFUSED_EXIT_CODE = 3
@@ -25,22 +25,40 @@ export function realSettingsPath() {
   return join(homedir(), '.c3', 'settings.json')
 }
 
+/** The developer's own intent ledger — the other real-`~/.c3` file e2e must not touch. */
+export function realDbPath() {
+  return join(homedir(), '.c3', 'c3.db')
+}
+
 /**
  * Canonicalize a path for comparison: expand `~`, make it absolute, and resolve
- * symlinks where the path exists (macOS `/var` → `/private/var` is the case that
- * bites — a temp dir compared against a realpath'd home would otherwise look
- * unrelated by luck rather than by intent). A non-existent path keeps its
- * lexical form; that is enough, since the real settings.json is what we compare
- * against and a missing file cannot be the one being written.
+ * symlinks (macOS `/var` → `/private/var` is the case that bites — a temp dir
+ * compared against a realpath'd home would otherwise look unrelated by luck
+ * rather than by intent). A path that does not exist yet falls back to its
+ * parent's canonical form plus the basename, so a target about to be CREATED
+ * inside a symlinked dir still compares equal to the real file there.
  */
-function canonicalize(path) {
+export function canonicalize(path) {
   const expanded = path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
   const absolute = isAbsolute(expanded) ? expanded : resolve(expanded)
   try {
     return realpathSync(absolute)
   } catch {
+    /* not created yet — canonicalize through the parent instead */
+  }
+  try {
+    return join(realpathSync(dirname(absolute)), basename(absolute))
+  } catch {
     return resolve(absolute)
   }
+}
+
+/**
+ * True when `path` is the real `~/.c3` file `realPath` names, whichever spelling
+ * (`~`, relative, symlinked dir, non-canonical segments) it arrives in.
+ */
+export function isRealC3Path(path, realPath) {
+  return canonicalize(path) === canonicalize(realPath)
 }
 
 /**
@@ -63,7 +81,7 @@ export function decideGuard(settingsPath) {
         'the server did not report its settings path (older build) — cannot prove it is isolated',
     }
   }
-  if (canonicalize(settingsPath) === canonicalize(realSettingsPath())) {
+  if (isRealC3Path(settingsPath, realSettingsPath())) {
     return {
       allowed: false,
       reason: `the server is running on the real config: ${settingsPath}`,

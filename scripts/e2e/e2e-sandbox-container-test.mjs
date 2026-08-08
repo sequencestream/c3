@@ -109,7 +109,9 @@ function attach(socket) {
   })
   socket.addEventListener('error', (err) => {
     console.error('[e2e-sandbox-container] ws error:', err.message ?? err)
-    process.exit(3)
+    // 1 = FAIL, not 3: 3 is the settings guard's refusal code and a ws error
+    // must not read like one in the logs.
+    process.exit(1)
   })
 }
 

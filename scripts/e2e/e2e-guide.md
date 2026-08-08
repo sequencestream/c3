@@ -47,9 +47,12 @@ none beyond the default are configured.
 - `pnpm e2e --no-build` → reuse the existing `server/dist` build.
 - `pnpm e2e --port 13550` → override the port (default 13099).
 
-Per-test exit codes: `0` PASS, `5` SKIP, `3` guard refusal (the server is on the
-real config — see the constraint above), anything else FAIL; the suite exits
-non-zero if any test FAILs. The one-off SDK spike below is excluded (it runs no
+Per-test exit codes: `0` PASS, `5` SKIP, anything else FAIL; the suite exits
+non-zero if any test FAILs. `3` means the guard refused (the server is on the
+real config, or is an old build that does not report its settings path — see the
+constraint above); the suite has no separate bucket for it and counts it as a
+FAIL on purpose, since inside `pnpm e2e` a refusal means the isolation itself is
+broken. The one-off SDK spike below is excluded (it runs no
 server). The individual tests can still be run by hand as documented in each
 section.
 
@@ -368,7 +371,6 @@ Requires at least one agent besides the default (to vote). Hits the configured
 providers' APIs (spends real tokens).
 
 - `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
-  (or `pnpm dev` and use `ws://localhost:3000/ws`)
 - `node scripts/e2e/e2e-consensus-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## AskUserQuestion consensus test (per-question answering)

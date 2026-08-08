@@ -377,6 +377,72 @@ describe('IntentTitleBarActions.vue', () => {
     ).toBe(false)
   })
 
+  it('hides create-pr once the target pair owns a merged PR, per pair, and only for merged', () => {
+    const linked = { id: 'd1', title: 'Sprint 3' }
+    const base = {
+      id: 'i1',
+      status: 'in_progress' as const,
+      branchName: 'feature/x',
+      lastWorkSessionId: 'w1',
+    }
+    const shows = (overrides: Partial<Intent>): boolean =>
+      mountActions(intent({ ...base, ...overrides }), { workspaceGitBranchMode: 'worktree' })
+        .find('[data-action="createPr"]')
+        .exists()
+
+    // 合并即终点:该 pair 的分支已进 base,再点只会撞服务端 diff 闸门。主线 pair 与
+    // 交付 pair 各自成立。
+    expect(shows({ prs: [fakeIntentPr('merged', { number: '9', deliveryId: null })] })).toBe(false)
+    expect(
+      shows({
+        linkedDeliveries: [linked],
+        prs: [fakeIntentPr('merged', { number: '10', deliveryId: 'd1' })],
+      }),
+    ).toBe(false)
+
+    // merged 落在别的 pair 上不构成阻挡 —— 两个方向都验一次。
+    expect(
+      shows({
+        linkedDeliveries: [linked],
+        prs: [fakeIntentPr('merged', { number: '11', deliveryId: null })],
+      }),
+    ).toBe(true)
+    expect(shows({ prs: [fakeIntentPr('merged', { number: '12', deliveryId: 'd1' })] })).toBe(true)
+
+    // closed 是「提过但没合」,重提入口保留。
+    expect(shows({ prs: [fakeIntentPr('closed', { number: '13', deliveryId: null })] })).toBe(true)
+  })
+
+  it('keeps the PR link reachable on a merged intent (hidden create-pr is not a dead end)', () => {
+    const w = mountActions(
+      intent({
+        id: 'i1',
+        status: 'done',
+        branchName: 'feature/x',
+        lastWorkSessionId: 'w1',
+        prs: [fakeIntentPr('merged', { number: '42', url: 'https://x/pull/42' })],
+      }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
+    expect(w.find('a.req-btn.pr-link').attributes('href')).toBe('https://x/pull/42')
+    expect(w.find('a.req-btn.pr-link').text()).toContain('42')
+
+    // 无 url 时仍回退到复制编号,合并后照样够得到那条 PR。
+    const copy = mountActions(
+      intent({
+        id: 'i1',
+        status: 'done',
+        branchName: 'feature/x',
+        lastWorkSessionId: 'w1',
+        prs: [fakeIntentPr('merged', { number: '43', url: null })],
+      }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(copy.find('a.req-btn.pr-link').exists()).toBe(false)
+    expect(copy.find('button.req-btn.pr-link').text()).toContain('43')
+  })
+
   it('hides create-pr for a multi-linked intent (no unambiguous target)', () => {
     expect(
       mountActions(

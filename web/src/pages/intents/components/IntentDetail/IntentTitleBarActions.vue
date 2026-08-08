@@ -99,6 +99,10 @@ const showCreatePr = computed<boolean>(() => {
     // 与服务端幂等键 (intent_id, delivery_id) 同源:只有「按钮将指向的那个目标」
     // 已有活跃 PR 才挡住新建;别的交付下的活跃 PR 不构成阻挡。
     !activeIntentPrs(r.prs).some((pr) => pr.deliveryId === createPrDeliveryId.value) &&
+    // 同一个目标已 merged 时也收起入口:分支已落进 base,再点只会撞服务端的 diff 闸门,
+    // 是一条死路。只拦 merged —— closed 是「提过但没合」,仍留重提路径。终态判断刻意
+    // 不复用共享的 activeIntentPrs(它把两种终态同等滤除),两者语义不同。
+    !r.prs.some((pr) => pr.status === 'merged' && pr.deliveryId === createPrDeliveryId.value) &&
     !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
   )
 })

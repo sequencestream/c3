@@ -68,7 +68,7 @@ c3
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
 │   │   ├── 基准分支快照                          # 「这个意图建在哪个分支上」落库为单值快照:创建取 defaultMainBranch→origin/HEAD 探测→main/master;首关联就绪交付改为该交付分支、该分支由未就绪变就绪追平一次、失去最后一条关联回退主分支,多交付保持已设值;与关联边同事务落定,不追随交付分支后续推进;PR 目标、worktree 基线、详情元信息共读同一值
 │   │   ├── 失败定向修复指引                    # worktree 创建与 PR 创建链失败按当次命令结果(退出码/stderr/失败阶段)分类为闭集原因码,错误弹框展示对应修复指引 + 原始错误诊断详情 + 「重试原动作」入口;证据不足一律 unknown、原样展示原始错误且不臆测步骤;只分类不代劳(不清 worktree/不解冲突/不改凭据/不自动重试)
-│   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析
+│   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析;目标 pair 已有 merged PR 时标题栏不渲染该按钮(仅前端、仅 merged,closed 仍留重提入口)
 │   │   ├── PR 更新复位                           # 模型发 pr:update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing;须以 association.deliveryId 或 pr.number 唯一定位,定位不到即拒并落 error 日志,绝不猜测
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
 │   │   │   ├── base 可达判据                     # 判据是「依赖产出在不在我的 base 上」而非「PR 合了没」:同交付看该交付的 PR 行、跨交付看依赖所属交付是否 delivered、无交付沿用旧判据;唯一一份共享纯函数,手动/队列/投影共用(ADR-0038)

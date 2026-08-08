@@ -2806,40 +2806,6 @@
       },
       "conflict": {
         "label": "The delivery branch conflicts with mainline in {count} file(s). The delivery went back to Verifying; resolve them and verify again."
-      },
-      "diagnosis": {
-        "title": {
-          "label": "Why the delivery PR is not offered"
-        },
-        "branchMode": {
-          "label": "Git branch mode: {mode}"
-        },
-        "status": {
-          "label": "Delivery status: {status}"
-        },
-        "branch": {
-          "label": "Branch ready: {branch}"
-        },
-        "branchNotReady": {
-          "label": "Branch ready: no"
-        },
-        "pr": {
-          "label": "Delivery PR: #{number} {status}"
-        },
-        "prNone": {
-          "label": "Delivery PR: none"
-        },
-        "diff": {
-          "ahead": {
-            "label": "Delivery branch ahead: {count} commit(s)"
-          },
-          "none": {
-            "label": "Delivery branch ahead: no difference"
-          },
-          "unknown": {
-            "label": "Delivery branch ahead: undeterminable"
-          }
-        }
       }
     }
   },

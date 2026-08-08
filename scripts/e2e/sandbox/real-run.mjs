@@ -170,7 +170,8 @@ function openSocket(url) {
     ws.addEventListener('message', onMessage)
     ws.addEventListener('error', (e) => {
       console.error('[real-run] ws error:', e.message ?? e)
-      process.exit(3)
+      // 1 = FAIL; 3 is reserved for the settings guard's refusal.
+      process.exit(1)
     })
     ws.addEventListener('open', () => resolve())
   })

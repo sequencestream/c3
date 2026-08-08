@@ -454,7 +454,8 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
 是唯一真相来源,在每次变化时广播。
 
 - **接线分支。** `set_intent_automate` → 设置 automate 标志 + 广播
-  `intents`。`start_automation` → 启动编排器(若已在运行则为
+  `intents`(`set_intent_spec_mode` 同形:写 `spec_mode` + 广播,
+  广播时重算 `effectiveSpecMode`)。`start_automation` → 启动编排器(若已在运行则为
   no-op),然后广播状态。`stop_automation` → 停止编排器(中止正在进行的
   运行)。进入意图视图(`open_intent_chat`)也会推送当前的
   `automation_status`,以便一个新连接恢复按钮状态。

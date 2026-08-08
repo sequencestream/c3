@@ -954,6 +954,17 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "Spec required:",
+        "tooltip": "Per-intent override of the workspace spec-driven development setting.",
+        "option": {
+          "inherit": "Inherit workspace",
+          "sdd": "Required (sdd)",
+          "fast": "Not required (fast)"
+        },
+        "derived": "currently {mode}",
+        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now."
+      },
       "branch": {
         "label": "Branch:"
       },
@@ -2810,40 +2821,6 @@
       },
       "conflict": {
         "label": "The delivery branch conflicts with mainline in {count} file(s). The delivery went back to Verifying; resolve them and verify again."
-      },
-      "diagnosis": {
-        "title": {
-          "label": "Why the delivery PR is not offered"
-        },
-        "branchMode": {
-          "label": "Git branch mode: {mode}"
-        },
-        "status": {
-          "label": "Delivery status: {status}"
-        },
-        "branch": {
-          "label": "Branch ready: {branch}"
-        },
-        "branchNotReady": {
-          "label": "Branch ready: no"
-        },
-        "pr": {
-          "label": "Delivery PR: #{number} {status}"
-        },
-        "prNone": {
-          "label": "Delivery PR: none"
-        },
-        "diff": {
-          "ahead": {
-            "label": "Delivery branch ahead: {count} commit(s)"
-          },
-          "none": {
-            "label": "Delivery branch ahead: no difference"
-          },
-          "unknown": {
-            "label": "Delivery branch ahead: undeterminable"
-          }
-        }
       }
     }
   },

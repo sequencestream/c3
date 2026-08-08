@@ -2,8 +2,9 @@
 /*
  * IntentOverviewTab.vue — intent tab:元信息(顶部) + 正文 markdown / 直接编辑 + 依赖明细。
  *
- * 元信息按稳定顺序渲染:ID → 分支(+commit) → 关联交付 → PR(按交付分组;链接/状态/同步)
- * → 已创建 → 已完成 → 已更新 → 依赖。「关联交付」必须排在 PR 之前:交付决定 PR 提向
+ * 元信息按稳定顺序渲染:ID → 是否需要规范 → 分支(+commit) → 关联交付 → PR(按交付分组;
+ * 链接/状态/同步)→ 已创建 → 已完成 → 已更新 → 依赖。「是否需要规范」是意图自身的配置,
+ * 排在 git / 交付 / PR 这些既成事实与时间戳之前。「关联交付」必须排在 PR 之前:交付决定 PR 提向
  * 哪条分支,先因后果读下来才成立。「关联交付」行在恰好关联 1 个交付时于交付名之后给出
  * 「解除关联」(意图侧唯一入口,标题栏不再重复):danger ConfirmDialog 二次确认,文案点明会关闭该意图
  * 提向此交付的 PR,确认后 emit unlink-delivery 上抛;多关联只展示交付名,不给解除路径——目标不唯一
@@ -14,7 +15,13 @@
  * 编辑弹窗内可删除单条依赖(ConfirmDialog 危险二次确认,确认后剔除该项并整组回写剩余集)。
  */
 import { computed, ref, watch } from 'vue'
-import type { DepType, Intent, IntentPr, IntentPrStatus } from '@ccc/shared/protocol'
+import type {
+  DepType,
+  Intent,
+  IntentPr,
+  IntentPrStatus,
+  IntentSpecMode,
+} from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -27,11 +34,15 @@ const props = defineProps<{
   intents: Intent[]
   intentActionErrorSeq?: number
   intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
+  /** 工作区 SDD 总开关;仅用于「关闭时无行为差异」的提示文案,不参与派生(派生值由服务端给)。 */
+  sddEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
   refine: [intentId: string]
   'save-intent-content': [intentId: string, content: string]
+  /** 每意图规格模式覆盖:`null` = 恢复继承工作区。选择即保存,由服务端广播回填。 */
+  'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
   'sync-pr-status': [intentId: string]
@@ -60,6 +71,40 @@ watch(
     if (count !== 1) unlinkDialogOpen.value = false
   },
 )
+
+// ── 是否需要规范(每意图 specMode 覆盖) ───────────────────────────────────
+// 三档:继承工作区(specMode=null)/ 需要规范(sdd)/ 不需要规范(fast)。选择即保存,
+// 与 set-automate 同语义:只 emit,不本地改值,成功由 intents 广播回填;被拒时开关自然
+// 停在服务端的旧值上,不会留下一个假的选中态。
+// 派生值一律直接读服务端算好的 effectiveSpecMode,本地不重算,避免两层推导给出不同答案。
+const SPEC_MODE_INHERIT = 'inherit' as const
+type SpecModeChoice = typeof SPEC_MODE_INHERIT | IntentSpecMode
+
+const SPEC_MODE_OPTIONS: { value: SpecModeChoice; label: string }[] = [
+  { value: SPEC_MODE_INHERIT, label: t('intent.meta.specMode.option.inherit') },
+  { value: 'sdd', label: t('intent.meta.specMode.option.sdd') },
+  { value: 'fast', label: t('intent.meta.specMode.option.fast') },
+]
+
+const specModeChoice = computed<SpecModeChoice>(() => props.intent.specMode ?? SPEC_MODE_INHERIT)
+
+function specModeLabel(mode: IntentSpecMode): string {
+  return mode === 'sdd'
+    ? t('intent.meta.specMode.option.sdd')
+    : t('intent.meta.specMode.option.fast')
+}
+
+/** 继承态下的副标:说明当前实际生效的是哪一档。显式覆盖时该行没有信息量,不渲染。 */
+const specModeDerivedHint = computed<string | null>(() =>
+  props.intent.specMode === null
+    ? t('intent.meta.specMode.derived', { mode: specModeLabel(props.intent.effectiveSpecMode) })
+    : null,
+)
+
+function onSpecModeChange(e: Event): void {
+  const next = (e.target as HTMLSelectElement).value as SpecModeChoice
+  emit('set-spec-mode', props.intent.id, next === SPEC_MODE_INHERIT ? null : next)
+}
 
 // ── Dep type / PR status 标签 ───────────────────────────────────────────────
 const DEP_TYPE_OPTIONS: { value: DepType; label: string }[] = [
@@ -283,6 +328,34 @@ watch(
   <div class="intent-detail-body" data-testid="tab-intent">
     <div class="req-meta">
       <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
+      <!-- 是否需要规范:选择即保存。工作区关了 SDD 时不隐藏——隐藏会让用户以为功能没了——
+           改为附一句提示说明此时设置不产生行为差异。 -->
+      <span class="req-meta-item" data-testid="intent-meta-spec-mode">
+        {{ t('intent.meta.specMode.label') }}
+        <select
+          class="req-meta-spec-mode-select"
+          data-testid="intent-meta-spec-mode-select"
+          :value="specModeChoice"
+          :title="t('intent.meta.specMode.tooltip')"
+          @change="onSpecModeChange"
+        >
+          <option v-for="opt in SPEC_MODE_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <span
+          v-if="specModeDerivedHint"
+          class="req-meta-spec-mode-derived"
+          data-testid="intent-meta-spec-mode-derived"
+          >{{ specModeDerivedHint }}</span
+        >
+        <span
+          v-if="sddEnabled === false"
+          class="req-meta-spec-mode-hint"
+          data-testid="intent-meta-spec-mode-off-hint"
+          >{{ t('intent.meta.specMode.workspaceOff') }}</span
+        >
+      </span>
       <span v-if="intent.branchName" class="req-meta-item">
         {{ t('intent.meta.branch.label') }} {{ intent.branchName
         }}<span v-if="intent.latestCommitHash"> · {{ intent.latestCommitHash.slice(0, 7) }}</span>
@@ -536,6 +609,24 @@ watch(
   margin-left: var(--sp-2);
   padding: 0 var(--sp-1);
   color: var(--c-error-text);
+}
+/* 是否需要规范:元信息行内的紧凑下拉,尺寸跟随周围 caption 文字,不抢视线。 */
+.req-meta-spec-mode-select {
+  margin-left: var(--sp-1);
+  padding: 0 var(--sp-1);
+  font: inherit;
+  color: var(--c-text);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+/* 继承态副标(当前生效档)与工作区关闭提示:都是解释性文字,弱化处理。 */
+.req-meta-spec-mode-derived,
+.req-meta-spec-mode-hint {
+  margin-left: var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
 }
 /* PR 分组标签:标出下面这串 PR 提向哪个交付。 */
 .req-meta-pr-group {

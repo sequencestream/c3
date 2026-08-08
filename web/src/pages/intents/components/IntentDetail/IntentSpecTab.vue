@@ -202,9 +202,14 @@ watch(
             : t('intent.spec.review.approvedBy', { user: intent.specApproveUser ?? '' })
         }}
       </span>
-      <p v-if="reviewVerdict && intent.specReviewReason" class="intent-detail-spec-review-reason">
-        {{ intent.specReviewReason }}
-      </p>
+      <!-- 理由由审核智能体自由撰写,常含列表/代码块/mermaid,故与 spec 正文走同一条渲染管线。 -->
+      <div
+        v-if="reviewVerdict && intent.specReviewReason"
+        class="intent-detail-spec-review-reason"
+        data-testid="intent-detail-spec-review-reason"
+      >
+        <MarkdownText :text="intent.specReviewReason" markdown />
+      </div>
     </div>
     <p v-if="!intent.specPath" class="intent-detail-empty" data-testid="intent-detail-spec-empty">
       {{ t('intent.spec.empty') }}
@@ -320,10 +325,11 @@ watch(
 .intent-detail-spec-review-approver {
   color: var(--c-text-muted, var(--c-text));
 }
+/* 理由独占整行;换行交给 markdown 管线(.md-body 已 white-space: normal + breaks: true)。 */
 .intent-detail-spec-review-reason {
   flex-basis: 100%;
+  min-width: 0;
   margin: 0;
-  white-space: pre-wrap;
   color: var(--c-text);
 }
 </style>

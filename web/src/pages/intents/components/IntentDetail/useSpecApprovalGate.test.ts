@@ -24,6 +24,8 @@ function intent(id: string): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,

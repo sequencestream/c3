@@ -360,6 +360,12 @@ watch(
         {{ t('intent.meta.branch.label') }} {{ intent.branchName
         }}<span v-if="intent.latestCommitHash"> · {{ intent.latestCommitHash.slice(0, 7) }}</span>
       </span>
+      <span class="req-meta-item" data-testid="intent-meta-base-branch">
+        {{ t('intent.meta.baseBranch.label') }} {{ intent.baseBranch
+        }}<span v-if="intent.baseBranchFallback" class="req-meta-note">
+          ({{ t('intent.meta.baseBranch.fallback') }})</span
+        >
+      </span>
       <span
         v-if="intent.linkedDeliveries.length > 0"
         class="req-meta-item"
@@ -625,6 +631,11 @@ watch(
 /* PR 分组标签:标出下面这串 PR 提向哪个交付。 */
 .req-meta-pr-group {
   margin-left: var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+/* 读时派生的说明,不能看起来和持久事实同等分量。 */
+.req-meta-note {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
 }

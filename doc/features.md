@@ -66,6 +66,7 @@ c3
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
+│   │   ├── 基准分支快照                          # 「这个意图建在哪个分支上」落库为单值快照:创建取 defaultMainBranch→origin/HEAD 探测→main/master;首关联就绪交付改为该交付分支、该分支由未就绪变就绪追平一次、失去最后一条关联回退主分支,多交付保持已设值;与关联边同事务落定,不追随交付分支后续推进;PR 目标、worktree 基线、详情元信息共读同一值
 │   │   ├── 失败定向修复指引                    # worktree 创建与 PR 创建链失败按当次命令结果(退出码/stderr/失败阶段)分类为闭集原因码,错误弹框展示对应修复指引 + 原始错误诊断详情 + 「重试原动作」入口;证据不足一律 unknown、原样展示原始错误且不臆测步骤;只分类不代劳(不清 worktree/不解冲突/不改凭据/不自动重试)
 │   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析
 │   │   ├── PR 更新复位                           # 模型发 pr:update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing;须以 association.deliveryId 或 pr.number 唯一定位,定位不到即拒并落 error 日志,绝不猜测
@@ -101,7 +102,7 @@ c3
 │   ├── delivery 交付                             # 交付作为集成单元:一批意图共同集成并最终进入主线,回答「这批能不能合了、卡在哪」
 │   │   ├── 写入窗口闸门                          # verifying/verified/delivered/cancelled 期间其关联意图不再产生新写入会话(验证期间合代码=验证作废),多关联取最严;手动与队列同一判据
 │   │   ├── 会话交付上下文                        # 决定 base 的是会话不是意图:启动时 0 关联→无上下文/恰好 1 个→自动带入/≥2 个→必须显式选定否则拒绝;持久化于 intent_sessions.delivery_id,resume 复用不重猜
-│   │   ├── worktree 基线 origin/<交付分支>       # 新 worktree 以交付分支为根;已存在的只检测不修:基线不符阻塞启动并给「重建(需干净)」「合入该分支」两个显式出口,从不自动重建/暗中 merge,无强制放行
+│   │   ├── worktree 基线 origin/<基准分支>       # 新 worktree 以意图持久化的基准分支为根(单交付关联即交付分支);已存在的只检测不修:基线不符阻塞启动并给「重建(需干净)」「合入该分支」两个显式出口,从不自动重建/暗中 merge,无强制放行
 │   │   ├── 同步主线                              # integrating 期间人工触发把 origin/<base_branch> 合入交付分支(临时 detached worktree,不碰用户检出);冲突原样浮出不代解;页面显示「主线领先 N」提示;不做定时自动回灌
 │   │   ├── 交付账本                              # 按工作区持久化交付(标题/描述/base_branch 快照/日期/分支名),status 六态 CHECK 闭集
 │   │   ├── 受控状态机                            # planned→integrating→verifying→verified→delivered,任意非终态可取消;回退 verifying→integrating(人工返工)/verified→verifying(系统合并冲突);统一经 canTransitionDelivery 纯函数

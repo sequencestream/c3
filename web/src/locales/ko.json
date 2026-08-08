@@ -969,6 +969,10 @@
       "branch": {
         "label": "브랜치:"
       },
+      "baseBranch": {
+        "label": "기준 브랜치:",
+        "fallback": "기록되지 않아 메인라인으로 대체"
+      },
       "commit": {
         "label": "커밋:"
       },

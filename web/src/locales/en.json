@@ -27,6 +27,15 @@
         "label": "Copied"
       }
     },
+    "async": {
+      "loading": {
+        "label": "Loading…"
+      },
+      "error": {
+        "label": "Failed to load this view",
+        "hint": "The code for this view could not be downloaded. Check your connection, then reload the page."
+      }
+    },
     "unknown": {
       "label": "unknown"
     },

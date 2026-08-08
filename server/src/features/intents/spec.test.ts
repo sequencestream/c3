@@ -40,6 +40,7 @@ import {
   getByC3Id,
   resetStoreForTests as resetSessionMetadataStoreForTests,
 } from '../sessions/session-metadata-store.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -48,6 +49,7 @@ let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-approve-spec-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   // Anchor the centralized spec root under the temp dir for read_spec tests.

@@ -57,6 +57,7 @@ import { createPrHandler, setIntentGitInfo, updateIntentStatus } from './index.j
 import { approveSpecHandler, writeSpecHandler } from './spec.js'
 import { syncIntentPrStatus } from './pr-status-sync.js'
 import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sessions/session-metadata-store.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -65,6 +66,7 @@ let proj: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-intent-log-instr-'))
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   prevC3Dir = process.env.C3_DIR

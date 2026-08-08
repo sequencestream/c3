@@ -45,6 +45,7 @@ import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { dependencyGateRejection, prepareSpecLaunch } from './dependency-gate.js'
 import { claimSpecOccupancy, releaseSpecOccupancy } from './spec-occupancy.js'
+import { prepareIntentSessionWorktree } from './session-worktree.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -447,6 +448,19 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 
+  // The intent's shared directory — the code this spec is authored against.
+  const cwd = prepareIntentSessionWorktree(proj, intent)
+  if (!cwd.ok) {
+    releaseClaim()
+    conn.send({
+      type: 'error',
+      error: cwd.failure.params
+        ? { code: cwd.failure.code, params: cwd.failure.params }
+        : { code: cwd.failure.code },
+    })
+    return
+  }
+
   // The reset prompt only references the spec PATH; the agent reads the file
   // itself, so the server no longer pre-reads it. We still resolve the absolute
   // path: `rt.specDir` and the path handed to the prompt both depend on it. The
@@ -464,6 +478,9 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   // Stop viewing whatever this connection had open, then start the fresh session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
+  // Reads code from the intent worktree, writes only into `specDir` (the
+  // centralized spec root) — two independent roots.
+  rt.effectiveCwd = cwd.prepared.cwd
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
   registerPendingSpecLink(specId, intent.id)
@@ -482,7 +499,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   })
   try {
     void ctx
-      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, msg.userInput, proj))
+      .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, msg.userInput, cwd.prepared.cwd))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
         releaseClaim()

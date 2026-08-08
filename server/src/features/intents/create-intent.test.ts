@@ -41,6 +41,7 @@ import {
 import { buildIntentSessionFirstPrompt, createIntent, deleteIntent } from './index.js'
 import { getIntent, listIntentLogs, listIntents, resetStoreForTests } from './store.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
+import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let other: string
@@ -51,6 +52,8 @@ let proj: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-create-intent-'))
   other = mkdtempSync(join(tmpdir(), 'c3-create-intent-other-'))
+  // 起会话的用例要过 worktree 准入,准入要一个有提交的真实仓库。
+  initTestGitRepo(dir)
   process.env.CLAUDE_CONFIG_DIR = dir
   prevC3Dir = process.env.C3_DIR
   process.env.C3_DIR = dir
@@ -354,6 +357,8 @@ describe('create_intent — 连续启动意图会话', () => {
     expect(h.launchRun).not.toHaveBeenCalled()
   })
 
+  // 基准取仓库里真实存在的分支:这条用例钉的是 launchRun 抛错之后的回收,所以启动
+  // 必须先过 worktree 准入,否则拿到的是准入拒绝、根本走不到回收。
   it('启动失败 → 回收会话资源,但意图连同内容和基准留下', async () => {
     const h = harness(vi.fn().mockRejectedValue(new Error('LAUNCH_BOOM')))
 
@@ -361,7 +366,7 @@ describe('create_intent — 连续启动意图会话', () => {
       type: 'create_intent',
       workspaceId,
       content: 'CONTENT_ABC',
-      base: { kind: 'branch', branch: 'feature/x' },
+      base: { kind: 'branch', branch: 'main' },
     })
 
     expect(h.sent.at(-1)).toMatchObject({
@@ -371,7 +376,7 @@ describe('create_intent — 连续启动意图会话', () => {
     const intents = listIntents(proj)
     expect(intents).toHaveLength(1)
     // 意图是已经落库的事实:内容和基准都不因为会话没起来而回滚。
-    expect(intents[0]).toMatchObject({ content: 'CONTENT_ABC', baseBranch: 'feature/x' })
+    expect(intents[0]).toMatchObject({ content: 'CONTENT_ABC', baseBranch: 'main' })
     expect(getIntent(intents[0].id)?.intentSessionId).toBeNull()
     expect(takePendingIntentLink(selectedSessionId(h.sent))).toBeUndefined()
   })

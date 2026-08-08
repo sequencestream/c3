@@ -27,6 +27,7 @@ import {
   removeViewer,
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToId, touchWorkspace } from '../../state.js'
+import type { UiError } from '@ccc/shared'
 import {
   getDefaultMode,
   getGitBranchMode,
@@ -40,6 +41,11 @@ import {
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { groupUnavailableError, sessionAgentTargetForRole } from '../sessions/agent-target.js'
+import {
+  existingIntentSessionCwd,
+  prepareIntentSessionWorktree,
+  type IntentWorktreeFailure,
+} from './session-worktree.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
@@ -222,6 +228,16 @@ export function buildIntentSessionFirstPrompt(intent: Intent, userInput: string)
  * Shared by {@link startIntentSession} and {@link discussionToIntent} so the
  * binding sequence exists once.
  */
+/**
+ * The intent-directory refusal as a WS error frame. The baseline mismatch codes
+ * are the ones the intent page already knows how to offer `repair_intent_worktree`
+ * for, so a comm / spec / review launch blocked by an out-of-date worktree lands
+ * on the same two explicit exits a work launch does.
+ */
+function intentWorktreeError(failure: IntentWorktreeFailure): UiError {
+  return failure.params ? { code: failure.code, params: failure.params } : { code: failure.code }
+}
+
 async function bindAndLaunchIntentSession(
   ctx: KernelContext,
   conn: Conn,
@@ -243,10 +259,25 @@ async function bindAndLaunchIntentSession(
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
   }
+  // The intent's own directory, on its base branch — refining an intent means
+  // reading the code the change will actually land on, not the main checkout's
+  // current branch plus whatever is uncommitted in it. Read-only: the comm agent
+  // writes no repository file, it shares the directory only to see it.
+  const cwd = prepareIntentSessionWorktree(proj, intent)
+  if (!cwd.ok) {
+    conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    // A create request has already persisted the intent by the time it gets
+    // here, so the refusal still owes the list its new row — same as the unwind
+    // below. Callers whose intent predates the launch just re-broadcast a
+    // snapshot that did not change.
+    ctx.broadcastIntents(proj)
+    return
+  }
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   try {
     if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
     const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+    rt.effectiveCwd = cwd.prepared.cwd
     bindIntentAgent(chatId, target.target.ref)
     setChatSession(proj, chatId, title)
     syncIntentSessionProjection({
@@ -511,6 +542,13 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
     conn.send({ type: 'error', error: { code: 'intent.chatOpenFailed' } })
     return
   }
+  // Reopen the comm session in its intent's directory when it has one. A comm
+  // session that owns no intent yet (a brand-new "New Intent" conversation) has
+  // no worktree to bind and stays in the workspace — there is no intent id to
+  // compute a path from, and creating one before the intent exists would leave
+  // an orphan directory behind.
+  const ownerIntentId = findIntentIdByAnySessionId(chatId)
+  if (ownerIntentId) rt.effectiveCwd = existingIntentSessionCwd(proj, ownerIntentId)
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
   // Resolve the session title from the store; fall back to 'New Intent' for
@@ -637,6 +675,10 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
     // and re-pin the spec agent so a reopened spec session keeps its identity.
     // The stored spec path is absolute (centralized root, outside the workspace).
     if (intent.specPath) restored.specDir = dirname(resolveSpecFileAbs(proj, intent.specPath))
+    // Reopen the session in the directory it was authored in. Reuse only — a
+    // reopen creates no worktree, fetches nothing and blocks nothing; the
+    // admission a new turn needs runs in `launchSpecSession`.
+    restored.effectiveCwd = existingIntentSessionCwd(proj, intent.id)
     // Re-pin the spec agent (a group re-pins as its group ref). An unusable spec
     // group changes nothing here: reopening is a READ of an existing session, so it
     // keeps whatever binding it already carries and the configuration error is
@@ -710,6 +752,8 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
     const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
     const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
     const restored = ensureRuntime(chatId, proj, getDefaultMode(proj), baseline, 'spec_review')
+    // Same reuse-only rule as the author's reopen.
+    restored.effectiveCwd = existingIntentSessionCwd(proj, intent.id)
     restored.specReviewIntentId = intent.id
     // Prefer the fingerprint the stored conclusion is bound to; with no
     // conclusion yet, the spec's current content is what this session was
@@ -824,10 +868,17 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
   }
+  // Same intent directory the comm / spec / review / work sessions share.
+  const cwd = prepareIntentSessionWorktree(proj, req)
+  if (!cwd.ok) {
+    conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    return
+  }
   // Restart the comm session as a fresh one seeded with this intent.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  rt.effectiveCwd = cwd.prepared.cwd
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
   syncIntentSessionProjection({
@@ -899,10 +950,16 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
   }
+  const cwd = prepareIntentSessionWorktree(proj, req)
+  if (!cwd.ok) {
+    conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    return
+  }
   // Restart the comm session as a fresh one seeded with this intent + new input.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  rt.effectiveCwd = cwd.prepared.cwd
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
   syncIntentSessionProjection({

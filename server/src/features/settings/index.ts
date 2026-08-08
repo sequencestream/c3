@@ -11,6 +11,10 @@
  *    caller has to know which vendors are CLIs and which are in-process SDKs.
  *  - `bindingStats` — the session→agent binding counts (ADR-0015), so the console
  *    can show that a default-agent change is not retroactive.
+ *  - `settingsPath` — the absolute path of the settings.json actually in effect
+ *    (path only, no content), so a client can tell an isolated launch from one
+ *    running on the real `~/.c3`. The e2e settings guard refuses to write to the
+ *    latter.
  */
 import type {
   AdapterCapability,
@@ -32,6 +36,7 @@ import {
   saveSettings,
   saveWorkspaceSetting,
 } from '../../kernel/config/index.js'
+import { settingsFile } from '../../kernel/config/paths.js'
 import { detectDefaultBranch } from '../intents/worktree.js'
 import { getSpecsBase } from '../intents/specs-root.js'
 import { probeArapuca, sysExtraMounts } from '../../kernel/sandbox/SandboxLauncher.js'
@@ -178,6 +183,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     vendorCapabilities: vendorCapabilities(),
     skillSupport: skillSupport(),
     vendorModes: vendorModes(),
+    settingsPath: settingsFile(),
   })
 }
 
@@ -202,6 +208,7 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     vendorCapabilities: vendorCapabilities(),
     skillSupport: skillSupport(),
     vendorModes: vendorModes(),
+    settingsPath: settingsFile(),
   })
 }
 

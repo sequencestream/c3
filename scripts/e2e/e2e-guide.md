@@ -1,26 +1,54 @@
+## 约束:e2e 永不写真实 `~/.c3/settings.json`
+
+**这条对全套和单跑一视同仁,没有例外。**
+
+- e2e 用的服务器一律以 `--settings <临时路径>` 启动。该路径的目录同时承载
+  `settings.json` 与 `state.json`,整个配置目录因此被搬离 `~/.c3`;再配一个临时
+  `C3_DB_PATH`,意图台账也不落在真实库上。
+- 一条命令就能起这样一台服务器:
+
+  ```bash
+  pnpm build && node scripts/e2e/isolated-server.mjs --port 13000
+  ```
+
+  它建临时目录、从真实 `~/.c3/settings.json` **只读播种**一份(剥掉 `auth`,因为
+  e2e 不带令牌握手)、注入临时 `C3_DB_PATH`、起服并打印 ws 地址 / settings 路径 /
+  db 路径,Ctrl-C 时清理。可选 `--db <path>`(多个测试共享同一台账时)与
+  `--state-dir <dir>`。**本指南每一节的手工运行命令都以它为准,不要用裸
+  `pnpm start`。**
+
+- 只禁写、不禁读:真实 `~/.c3/settings.json` 仍可作只读播种源(consensus /
+  relay / sandbox-token 需要其中真实配置的 agent 密钥),写入一律进临时文件。
+- 会调用 `save_settings` 的测试**自带守卫**:开跑前先问服务器生效的 settings 路径
+  (`settings` 回包的 `settingsPath`),若是真实 `~/.c3/settings.json`——或服务器
+  旧到根本不报这个字段——就以退出码 `3` 拒跑,并打印隔离启动命令,一个字节都不写。
+  这些测试原有的「快照 + 退出时恢复」保留为第二道保险:它在超时被 kill、Ctrl-C 或
+  崩溃时不会执行,守卫才是真正的闸门。
+
+守卫覆盖的测试:`e2e-sessions-page-setting-test.mjs`、`e2e-consensus-test.mjs`、
+`e2e-ask-consensus-test.mjs`、`e2e-cursor-agent-config-test.mjs`、
+`e2e-cursor-automation-test.mjs`、`e2e-sandbox-container-test.mjs`、
+`e2e-cursor-session-test.mjs`。
+
 steps:
 
 ## Run the whole suite (`pnpm e2e`)
 
-`scripts/e2e/run-all.mjs` boots one server, runs every WebSocket e2e against it,
-then tears it down and prints a pass/fail summary. The intent db is pointed
-at a throwaway `C3_DB_PATH` (never touches `~/.c3/c3.db`), and the server is
-launched with `--settings <throwaway>` so it reads its OWN settings.json — seeded
-from the real `~/.c3/settings.json` when present (consensus tests keep their
-configured agents) but with `auth` stripped, since the suite connects without a
-token. Consensus tests still `SKIP` (exit 5) when none beyond the default are
-configured.
-
-> `c3 start --settings <path>` (new) points c3 at an explicit settings.json,
-> relocating the whole config dir (its directory also holds `state.json`) without
-> touching `~/.c3`. Use it to run any e2e by hand against an isolated, auth-free
-> config: write `{}` (or a tailored settings.json) to a temp path and pass it.
+`scripts/e2e/run-all.mjs` boots one server through the same
+`isolated-server.mjs` helper documented above, runs every WebSocket e2e against
+it, then tears it down and prints a pass/fail summary. The intent db is pointed
+at a throwaway `C3_DB_PATH` (never touches `~/.c3/c3.db`), and the server reads
+its OWN settings.json — seeded from the real `~/.c3/settings.json` when present
+(consensus tests keep their configured agents) but with `auth` stripped, since
+the suite connects without a token. Consensus tests still `SKIP` (exit 5) when
+none beyond the default are configured.
 
 - `pnpm e2e` → builds, boots, runs all, reports.
 - `pnpm e2e --no-build` → reuse the existing `server/dist` build.
 - `pnpm e2e --port 13550` → override the port (default 13099).
 
-Per-test exit codes: `0` PASS, `5` SKIP, anything else FAIL; the suite exits
+Per-test exit codes: `0` PASS, `5` SKIP, `3` guard refusal (the server is on the
+real config — see the constraint above), anything else FAIL; the suite exits
 non-zero if any test FAILs. The one-off SDK spike below is excluded (it runs no
 server). The individual tests can still be run by hand as documented in each
 section.
@@ -29,6 +57,10 @@ The sessions-page setting test runs first against that isolated settings file. I
 persists both `showSessionsPage: false` and `true`, verifies each authoritative
 `settings` echo, then restores the original snapshot. Frontend navigation tests
 pair this wire/disk e2e with desktop/mobile rendering and ordering assertions.
+
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
+- `node scripts/e2e/e2e-sessions-page-setting-test.mjs ws://localhost:13000/ws` →
+  expect `RESULT: PASS`.
 
 ## Delivery ↔ intent association (link / unlink guards)
 
@@ -70,8 +102,8 @@ which injects the forge results directly.
 No agent tokens are spent. Needs `C3_DB_PATH` (the suite runner passes it to every
 test); without it the test SKIPs.
 
-- `pnpm start --port 13000`
-- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-link-test.mjs ws://localhost:13000/ws`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000 --db /tmp/c3-e2e/c3.db`
+- `C3_DB_PATH=/tmp/c3-e2e/c3.db node scripts/e2e/e2e-delivery-link-test.mjs ws://localhost:13000/ws`
   → expect `RESULT: PASS`.
 
 ## Delivery PR (合并回主线)
@@ -121,6 +153,10 @@ normalization (covered by `server/src/features/deliveries/`).
 No agent tokens are spent. Needs a built server (`pnpm build` → `server/dist/cli.cjs`);
 without it the test SKIPs.
 
+Because it brings its own server with its own temp settings + ledger, it is already
+isolated by construction — no `isolated-server.mjs` needed, and the `~/.c3` constraint
+above holds without extra steps.
+
 - `pnpm build && node scripts/e2e/e2e-delivery-pr-test.mjs`
   → expect `RESULT: PASS`.
 
@@ -156,7 +192,8 @@ network. PASS asserts:
 
 No agent tokens are spent.
 
-- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-transition-test.mjs ws://localhost:13000/ws`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000 --db /tmp/c3-e2e/c3.db`
+- `C3_DB_PATH=/tmp/c3-e2e/c3.db node scripts/e2e/e2e-delivery-transition-test.mjs ws://localhost:13000/ws`
   → expect `RESULT: PASS`.
 
 ## Dependency gate (same-delivery / cross-delivery / no-delivery)
@@ -190,13 +227,13 @@ driving the launch gate to a pass would start a real session and spend tokens.
 No agent tokens are spent. Needs `C3_DB_PATH` (the suite runner passes it) to seed
 branch names and PR rows; without it the test SKIPs.
 
-- `pnpm start --port 13000`
-- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-dependency-gate-test.mjs ws://localhost:13000/ws`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000 --db /tmp/c3-e2e/c3.db`
+- `C3_DB_PATH=/tmp/c3-e2e/c3.db node scripts/e2e/e2e-dependency-gate-test.mjs ws://localhost:13000/ws`
   → expect `PASS — dependency gate three states`.
 
 ## Smoke test (permission flow)
 
-- `pnpm start --port 13000`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Pending-queue flush race (running→idle re-submit)
@@ -212,7 +249,7 @@ turn completes; FAIL = the "already running" error fires.
 
 Needs only the default agent (spends two short tool-less turns of real tokens).
 
-- `pnpm start --port 13000`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-pending-flush-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Automation queue (park isolation + manual control)
@@ -245,7 +282,7 @@ failure isolation"), which injects a real launch rejection.
 
 Spends **no** agent tokens and needs the intent db (`c3.db`).
 
-- `pnpm start --port 13000`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-queue-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Spec automation (author → review → opt-in machine approval → revoke)
@@ -282,7 +319,7 @@ the rework budget. Phase 2 asserts the approval PATH, not the reviewer's
 judgement; the rework-cap and escalation rules are pinned deterministically in
 `server/src/kernel/queue/reconcile.test.ts` instead.
 
-- `pnpm start --port 13000`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-spec-automation-test.mjs ws://localhost:13000/ws` → expect
   `RESULT: PASS`.
 
@@ -311,23 +348,26 @@ Needs only the default agent (spends two short turns of real tokens — save, th
 AskUserQuestion) and the intent db available (`C3_DB_PATH`, which `pnpm e2e`
 provides automatically).
 
-- `pnpm start --port 13000` (with a throwaway `C3_DB_PATH` set if
-  you don't want to touch `~/.c3/c3.db`)
-- `node scripts/e2e/e2e-intent-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000 --db /tmp/c3-e2e/c3.db`
+- `C3_DB_PATH=/tmp/c3-e2e/c3.db node scripts/e2e/e2e-intent-test.mjs ws://localhost:13000/ws` →
+  expect `RESULT: PASS`.
 
 ## Consensus voting test (multi-agent decision)
 
-Exercises the multi-agent consensus flow against the real `~/.c3/settings.json`
-agents. Seeds a throwaway coding project in `/tmp`, asks the model to edit a
-file (forcing a sensitive tool through the permission gateway), and checks that
-voting actually ran — `consensus_auto` (unanimous) or a `permission_request`
-carrying a `consensus` outcome (split). Consensus is enabled for the run and the
-original settings are restored on exit; the agents are never modified.
+Exercises the multi-agent consensus flow against the agents in the **isolated**
+settings the helper seeded from the real `~/.c3/settings.json` (read-only copy —
+your real configured agents are there, and nothing written here reaches them).
+Seeds a throwaway coding project in `/tmp`, asks the model to edit a file
+(forcing a sensitive tool through the permission gateway), and checks that voting
+actually ran — `consensus_auto` (unanimous) or a `permission_request` carrying a
+`consensus` outcome (split). Consensus is enabled for the run and the isolated
+settings snapshot is restored on exit; the agents are never modified. Refuses to
+run (exit `3`) against a server on the real config.
 
 Requires at least one agent besides the default (to vote). Hits the configured
 providers' APIs (spends real tokens).
 
-- `pnpm build` then `pnpm start --port 13000`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
   (or `pnpm dev` and use `ws://localhost:3000/ws`)
 - `node scripts/e2e/e2e-consensus-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
@@ -338,8 +378,9 @@ one multiple-choice question, the other agents answer it, and the gateway either
 auto-answers (`consensus_auto` with `outcome.kind === 'ask'`, all agreed) or
 surfaces the answer panel (`permission_request` with `consensus.kind === 'ask'`,
 split) which the test fills in. Verifies the answer is injected and the run
-completes. Same settings handling as the consensus test.
+completes. Same settings handling — and the same guard — as the consensus test.
 
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-ask-consensus-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Sandbox container test (config-via-c3 + real container path)
@@ -371,7 +412,7 @@ on a glibc base (`node:22-bookworm-slim`; NOT alpine — codex ships a native
 
 - Build the image (once): `node scripts/e2e/sandbox/build-image.mjs`
   (custom tag via `C3_SANDBOX_IMAGE=foo:bar`, clean rebuild via `--no-cache`).
-- `pnpm start --port 13000`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-sandbox-container-test.mjs ws://localhost:13000/ws` →
   expect `RESULT: PASS`. SKIPs (exit 5) when Docker or the image is missing.
 
@@ -524,7 +565,7 @@ Needs a real `CURSOR_API_KEY` + outbound network, so it is NOT CI-safe and NOT i
 the `pnpm e2e` suite. Preconditions unmet → SKIP (exit 5): `@cursor/sdk`
 unresolvable, or no API key.
 
-- Start the server: `pnpm start --port 13000`
+- Start an isolated server: `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-cursor-session-test.mjs ws://localhost:13000/ws` →
   `RESULT: PASS` on success; 1 = a step failed; 5 = precondition unmet (SKIP).
 
@@ -553,7 +594,7 @@ environment has its own assertion instead:
 It runs last in the suite because it temporarily rewrites `defaultAgentId`; the
 original settings snapshot is restored on every exit path.
 
-- Start the server: `pnpm start --port 13000`
+- Start an isolated server: `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-cursor-agent-config-test.mjs ws://localhost:13000/ws` →
   `RESULT: PASS` on success; 1 = a step failed.
 
@@ -585,7 +626,7 @@ never falls back to another vendor or agent. It runs last (after the agent-confi
 test) because it temporarily rewrites the agent list; the original settings
 snapshot is restored on every exit path.
 
-- Start the server: `pnpm start --port 13000`
+- Start an isolated server: `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-cursor-automation-test.mjs ws://localhost:13000/ws` →
   `RESULT: PASS` on success; 1 = a step failed.
 
@@ -632,10 +673,10 @@ prompt asking the model to echo a sentinel, and PASSes iff `turn_end` is clean A
 sentinel comes back. Spends real tokens on the agent's provider.
 
 Boot an isolated, auth-free server seeded from the real settings (keys decrypt via the
-embedded static key — path-independent), then run once per agent:
+embedded static key — path-independent), which is exactly what the shared helper does,
+then run once per agent:
 
-- `C3_DB_PATH=<tmp>/c3.db pnpm -F @ccc/server exec tsx src/cli.ts start
---port 13123 --settings <copy-of-~/.c3/settings.json, auth stripped> --dev`
+- `pnpm build && node scripts/e2e/isolated-server.mjs --port 13123`
 - `node scripts/e2e/e2e-relay-real-test.mjs ws://127.0.0.1:13123/ws <agentId> [sentinel]`
   → `RESULT: PASS` (exit 0). 1 = FAIL, 2 = TIMEOUT.
 

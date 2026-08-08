@@ -20,7 +20,7 @@
  * agent 禁用 / 缺失两条失败分支在所有环境下都断言。
  *
  * 用法:
- *   pnpm start --port 13000      # 另一个终端
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # 另一个终端
  *   node scripts/e2e/e2e-cursor-automation-test.mjs [ws-url]
  */
 import { createRequire } from 'node:module'
@@ -29,6 +29,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertIsolatedSettings } from './settings-guard.mjs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const TIMEOUT_MS = 300_000
@@ -62,6 +63,10 @@ try {
 } catch {
   /* git 不是硬性前提:自动化只需要一个可解析的工作区路径 */
 }
+
+// Rewrites the agent list (disable / remove) mid-run — refuse before the first
+// byte if the server reads the real ~/.c3/settings.json.
+await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-cursor-automation-test.mjs' })
 
 /** @type {WebSocket} */
 const ws = new WebSocket(URL)

@@ -20,6 +20,7 @@ import { createRequire } from 'node:module'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { assertIsolatedSettings } from './settings-guard.mjs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const TIMEOUT_MS = 300_000
@@ -53,6 +54,12 @@ const PROMPT_1 =
   'Use a tool to list the files in the current directory, then reply with exactly: CURSOR-E2E-ONE'
 const PROMPT_2 =
   'What exact reply phrase did I ask you to end your previous message with in this conversation? Reply with only that phrase.'
+
+// Injects a cursor agent into the running server's settings — refuse before the
+// first byte if that server reads the real ~/.c3/settings.json. This one only
+// ever runs by hand (it is not in the `pnpm e2e` suite), which is exactly the
+// case the guard exists for.
+await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-cursor-session-test.mjs' })
 
 /** @type {WebSocket} */
 const ws = new WebSocket(URL)

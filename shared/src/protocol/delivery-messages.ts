@@ -277,6 +277,17 @@ export type ServerDeliveryDetail = {
    */
   mainlineAhead: number | null
   /**
+   * How many commits `origin/<delivery_branch>` holds that mainline does not,
+   * from the LOCAL remote-tracking refs — the mirror of `mainlineAhead`. `> 0`
+   * proves the delivery branch carries commits a merge would actually ship, and
+   * together with `status === 'verified'` and `branchReady` is the fact set
+   * behind 「创建交付 PR」. `null` when it cannot be determined (no branch yet,
+   * refs unresolvable, `current-branch` mode). Same read-without-fetch rule as
+   * `mainlineAhead`; it is fresh ONLY on the replies that also make
+   * `mainlineAhead` fresh, and `null` on every other detail frame.
+   */
+  deliveryBranchAhead: number | null
+  /**
    * This delivery's most recent delivery PR (「交付分支 → 主线」), or `null` when
    * none was ever opened. Older rows stay in the ledger as history; the page
    * only ever renders this one. An old client that ignores the field simply

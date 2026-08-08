@@ -2,22 +2,28 @@
 /*
  * IntentTitleBarActions.vue — 意图详情常驻头部右侧的动作区(所有 tab 恒可见)。
  *
- * 承接:状态切换(markTodo/backToDraft/markDone/cancel)、交付归属入口、四态主按钮、修改会话入口、PR 创建/
- * 打开(取第一条活跃 PR;有 url 为跳转锚点,否则回退复制编号)/同步、分享、自动化切换与删除入口。四态主按钮的
- * 语义与禁用/标题由容器计算后以 props 输入;点击以 main-action 上抛交回容器编排(编写 Spec 门 /
- * 延迟切 Tab)。删除入口只在非终态 done 时渲染:done 通常已合并 PR 并沉淀完整产出,收紧界面可达
- * 路径以免误删可追溯记录(协议与服务端删除能力不变)。删除二次确认弹框及「可能存在工作产物」的
- * 强化提示归本组件所有,并保留防双发。
+ * 承接:状态切换(markTodo/backToDraft/markDone)、交付归属入口、四态主按钮、修改会话入口、PR 创建/
+ * 打开(取第一条活跃 PR;有 url 为跳转锚点,否则回退复制编号)/同步、分享、自动化切换,以及收容
+ * 「取消」「删除」的「…」溢出菜单。四态主按钮的语义与禁用/标题由容器计算后以 props 输入;点击以
+ * main-action 上抛交回容器编排(编写 Spec 门 / 延迟切 Tab)。
  * 其余业务动作继续以原事件名和参数上抛,不在此新增门禁。
  *
+ * 「…」溢出菜单:「取消」与「删除」都是危险动作(前者切 cancelled 后标题栏无恢复入口,后者删掉可追溯
+ * 记录),不留在标题栏表面,收进溢出层多一道缓冲。两项各自按状态可用:「删除」非 done 才有(done 通常
+ * 已合并 PR 并沉淀完整产出),「取消」非 done/cancelled 才有;两项都不可用时「…」整体不渲染。菜单靠
+ * document click + 容器 @click.stop 收起(与 IntentList 同一范式),另接 Esc。两项都走 danger
+ * ConfirmDialog 二次确认,确认框敞开期间状态转到「该动作已不可用」时主动收框且不放行,删除另有防双发。
+ *
  * 交付归属入口(意图侧,与交付页入口并存)按 linkedDeliveries 分三态:
- *   0 条  → 「关联交付」按钮,打开候选弹窗(打开时上抛 open-link-dialog 让控制层补拉列表);
- *   1 条  → 交付名(点击复用 open-delivery 跳转)+「解除关联」(danger 二次确认,文案明确会关闭 PR);
- *   >1 条 → 只展示交付名,不给关联/解除路径 —— 与「多关联不渲染建 PR 入口」同一条裁决:
+ *   0 条  → 「关联交付」按钮(主色描边强调:它决定 PR 提向哪条分支),打开候选弹窗
+ *           (打开时上抛 open-link-dialog 让控制层补拉列表);
+ *   1 条  → 只展示交付名(点击复用 open-delivery 跳转);解除关联的入口在概览元信息区的交付名之后,
+ *           标题栏不再重复;
+ *   >1 条 → 只展示交付名,不给关联路径 —— 与「多关联不渲染建 PR 入口」同一条裁决:
  *           目标不唯一时交互层不做选择,数据层的多边关系不受影响。
- * 弹窗与解除确认的开关状态归本组件所有;是否真能关联/解除由服务端复核,这里不设门禁。
+ * 关联弹窗的开关状态归本组件所有;是否真能关联由服务端复核,这里不设门禁。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Delivery, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { activeIntentPrs, pickPrimaryIntentPr } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
@@ -63,7 +69,6 @@ const emit = defineEmits<{
   /** 打开候选弹窗:意图页从不主动拉交付列表,由控制层补发 list_deliveries。 */
   'open-link-dialog': [workspaceId: string]
   'link-delivery': [workspaceId: string, deliveryId: string, intentId: string]
-  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
   'standalone-delivery': [
     payload: { workspaceId: string; intentId: string; title: string; description: string },
   ]
@@ -117,11 +122,8 @@ function copyPrId(prId: string): void {
   void navigator.clipboard.writeText(prId)
 }
 
-// ── 交付归属:关联弹窗 / 解除确认(自持) ───────────────────────────────────
+// ── 交付归属:关联弹窗(自持) ─────────────────────────────────────────────
 // 三态只看关联条数;交付页的入口照旧存在,两处并存,服务端是唯一门禁。
-const linkedDelivery = computed(() =>
-  props.intent.linkedDeliveries.length === 1 ? props.intent.linkedDeliveries[0] : null,
-)
 const showLinkButton = computed<boolean>(() => props.intent.linkedDeliveries.length === 0)
 
 const linkDialogOpen = ref(false)
@@ -150,22 +152,66 @@ function requestStandaloneDelivery(): void {
   })
 }
 
-const unlinkDialogOpen = ref(false)
-function confirmUnlink(): void {
-  const target = linkedDelivery.value
-  unlinkDialogOpen.value = false
-  if (target) emit('unlink-delivery', props.intent.workspaceId, target.id, props.intent.id)
-}
-
-// 关联条数在弹框敞开期间变化(别处关联/解除的广播)时收起对应弹框,避免对着已经
-// 不成立的前提确认。
+// 关联条数在弹框敞开期间变化(别处关联的广播)时收起弹框,避免对着已经不成立的前提确认。
 watch(
   () => props.intent.linkedDeliveries.length,
   (count) => {
     if (count !== 0) linkDialogOpen.value = false
-    if (count !== 1) unlinkDialogOpen.value = false
   },
 )
+
+// ── 「…」溢出菜单(收容取消 / 删除) ────────────────────────────────────────
+const canCancelIntent = computed<boolean>(
+  () => props.intent.status !== 'done' && props.intent.status !== 'cancelled',
+)
+const canDeleteIntent = computed<boolean>(() => props.intent.status !== 'done')
+// 两项都不可用(done)时不留一个点开只有空壳的入口。
+const showMoreMenu = computed<boolean>(() => canCancelIntent.value || canDeleteIntent.value)
+
+const moreMenuOpen = ref(false)
+
+function closeMoreMenu(): void {
+  moreMenuOpen.value = false
+}
+
+function onDocumentClick(): void {
+  closeMoreMenu()
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') closeMoreMenu()
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
+// 入口本身随状态消失时菜单不该悬空留着(如敞开期间意图转 done)。
+watch(showMoreMenu, (visible) => {
+  if (!visible) closeMoreMenu()
+})
+
+// ── 取消二次确认(自持) ────────────────────────────────────────────────────
+// 「取消」切到 cancelled 后标题栏不再提供恢复入口,危险程度与删除同级,故同样过一道 danger 确认;
+// 确认后的事件载荷与状态语义与原来的直切完全一致。
+const cancelDialogOpen = ref(false)
+
+function openCancelDialog(): void {
+  closeMoreMenu()
+  cancelDialogOpen.value = true
+}
+
+function confirmCancel(): void {
+  // 兜住「先开框、状态再转 done/cancelled」的竞态:菜单项已撤销时确认也不放行。
+  if (!canCancelIntent.value) return
+  cancelDialogOpen.value = false
+  emit('set-status', props.intent.id, 'cancelled')
+}
 
 // ── 删除二次确认(自持,防双发) ────────────────────────────────────────────
 const deleteDialogOpen = ref(false)
@@ -180,6 +226,7 @@ const deleteMessage = computed<string>(() => {
 })
 
 function openDeleteDialog(): void {
+  closeMoreMenu()
   deleteSent.value = false
   deleteDialogOpen.value = true
 }
@@ -192,173 +239,194 @@ function confirmDelete(): void {
   emit('delete', props.intent.id)
 }
 
-// 意图在确认框敞开期间转入 done 时主动收起弹框,与删除按钮的 v-if 一并撤销可达路径。
+// 意图在确认框敞开期间转入终态时主动收起对应弹框,与菜单项的 v-if 一并撤销可达路径。
 watch(
   () => props.intent.status,
-  (status) => {
-    if (status === 'done') deleteDialogOpen.value = false
+  () => {
+    if (!canDeleteIntent.value) deleteDialogOpen.value = false
+    if (!canCancelIntent.value) cancelDialogOpen.value = false
   },
 )
 </script>
 
 <template>
-  <div class="intent-detail-actions" data-testid="intent-detail-actions">
-    <button
-      v-if="intent.status === 'draft'"
-      type="button"
-      class="req-btn"
-      data-action="markTodo"
-      data-testid="intent-detail-mark-todo"
-      @click="emit('set-status', intent.id, 'todo')"
-    >
-      {{ t('intent.action.markTodo.label') }}
-    </button>
-    <button
-      v-else-if="intent.status === 'todo'"
-      type="button"
-      class="req-btn"
-      data-action="backToDraft"
-      data-testid="intent-detail-back-to-draft"
-      @click="emit('set-status', intent.id, 'draft')"
-    >
-      {{ t('intent.action.backToDraft.label') }}
-    </button>
-    <button
-      v-if="canResetIntentSession"
-      type="button"
-      class="req-btn"
-      data-testid="intent-detail-intent-modify"
-      @click="emit('modify')"
-    >
-      {{ t('intent.action.modifySession.label') }}
-    </button>
-    <button
-      v-if="intent.status === 'todo'"
-      class="req-btn primary"
-      :data-action="mainAction"
-      :aria-label="mainActionTitle"
-      :title="mainActionTitle"
-      :disabled="mainActionDisabled"
-      @click="emit('main-action')"
-    >
-      {{ mainActionLabel }}
-    </button>
-    <button
-      v-if="intent.lastWorkSessionId && intent.status !== 'done' && intent.status !== 'cancelled'"
-      class="req-btn"
-      data-action="markDone"
-      @click="emit('set-status', intent.id, 'done')"
-    >
-      {{ t('intent.action.markDone.label') }}
-    </button>
-    <button
-      v-if="intent.status !== 'done' && intent.status !== 'cancelled'"
-      class="req-btn"
-      @click="emit('set-status', intent.id, 'cancelled')"
-    >
-      {{ t('common.action.cancel.label') }}
-    </button>
-    <!-- 交付归属:排在建 PR 之前 —— 交付决定 PR 提向哪条分支,先因后果读下来才成立。 -->
-    <button
-      v-if="showLinkButton"
-      type="button"
-      class="req-btn"
-      data-action="linkDelivery"
-      data-testid="intent-detail-link-delivery"
-      @click="openLinkDialog"
-    >
-      {{ t('intent.linkDelivery.label') }}
-    </button>
-    <template v-else>
+  <!-- 定位锚:动作区自身横向可滚(overflow 会裁掉绝对定位的下拉),故菜单挂在滚动容器之外。 -->
+  <div class="intent-detail-actions-anchor">
+    <div class="intent-detail-actions" data-testid="intent-detail-actions">
       <button
-        v-for="d in intent.linkedDeliveries"
-        :key="d.id"
-        type="button"
-        class="req-btn req-delivery-link"
-        :data-testid="`intent-detail-delivery-${d.id}`"
-        :title="t('intent.linkDelivery.open.tooltip')"
-        @click="emit('open-delivery', d.id)"
-      >
-        {{ d.title }}
-      </button>
-      <button
-        v-if="linkedDelivery"
+        v-if="intent.status === 'draft'"
         type="button"
         class="req-btn"
-        data-action="unlinkDelivery"
-        data-testid="intent-detail-unlink-delivery"
-        @click="unlinkDialogOpen = true"
+        data-action="markTodo"
+        data-testid="intent-detail-mark-todo"
+        @click="emit('set-status', intent.id, 'todo')"
       >
-        {{ t('intent.linkDelivery.unlink.label') }}
+        {{ t('intent.action.markTodo.label') }}
       </button>
-    </template>
-    <button
-      v-if="showCreatePr"
-      class="req-btn primary"
-      data-action="createPr"
-      @click="emit('create-pr', intent.id, createPrDeliveryId ?? undefined)"
+      <button
+        v-else-if="intent.status === 'todo'"
+        type="button"
+        class="req-btn"
+        data-action="backToDraft"
+        data-testid="intent-detail-back-to-draft"
+        @click="emit('set-status', intent.id, 'draft')"
+      >
+        {{ t('intent.action.backToDraft.label') }}
+      </button>
+      <button
+        v-if="canResetIntentSession"
+        type="button"
+        class="req-btn"
+        data-testid="intent-detail-intent-modify"
+        @click="emit('modify')"
+      >
+        {{ t('intent.action.modifySession.label') }}
+      </button>
+      <button
+        v-if="intent.status === 'todo'"
+        class="req-btn primary"
+        :data-action="mainAction"
+        :aria-label="mainActionTitle"
+        :title="mainActionTitle"
+        :disabled="mainActionDisabled"
+        @click="emit('main-action')"
+      >
+        {{ mainActionLabel }}
+      </button>
+      <button
+        v-if="intent.lastWorkSessionId && intent.status !== 'done' && intent.status !== 'cancelled'"
+        class="req-btn"
+        data-action="markDone"
+        @click="emit('set-status', intent.id, 'done')"
+      >
+        {{ t('intent.action.markDone.label') }}
+      </button>
+      <!-- 交付归属:排在建 PR 之前 —— 交付决定 PR 提向哪条分支,先因后果读下来才成立。
+         未关联态用主色描边强调:这是决定 PR 落到哪条分支的关键入口,不该与普通按钮同级。 -->
+      <button
+        v-if="showLinkButton"
+        type="button"
+        class="req-btn req-link-delivery-accent"
+        data-action="linkDelivery"
+        data-testid="intent-detail-link-delivery"
+        @click="openLinkDialog"
+      >
+        {{ t('intent.linkDelivery.label') }}
+      </button>
+      <!-- 已关联态:只保留交付名导航,解除关联的入口在概览元信息区的交付名之后。 -->
+      <template v-else>
+        <button
+          v-for="d in intent.linkedDeliveries"
+          :key="d.id"
+          type="button"
+          class="req-btn req-delivery-link"
+          :data-testid="`intent-detail-delivery-${d.id}`"
+          :title="t('intent.linkDelivery.open.tooltip')"
+          @click="emit('open-delivery', d.id)"
+        >
+          {{ d.title }}
+        </button>
+      </template>
+      <button
+        v-if="showCreatePr"
+        class="req-btn primary"
+        data-action="createPr"
+        @click="emit('create-pr', intent.id, createPrDeliveryId ?? undefined)"
+      >
+        {{ t('intent.action.createPr.label') }}
+      </button>
+      <a
+        v-if="primaryPr && primaryPr.url"
+        class="req-btn pr-link"
+        :href="primaryPr.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        :title="t('intent.action.pr.open.tooltip')"
+      >
+        {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
+      </a>
+      <button
+        v-else-if="primaryPr"
+        class="req-btn pr-link"
+        :title="t('intent.action.pr.tooltip')"
+        @click="copyPrId(primaryPr.number)"
+      >
+        {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
+      </button>
+      <button
+        v-if="canSyncPrStatus"
+        type="button"
+        class="req-btn"
+        data-action="syncPrStatus"
+        :disabled="prSyncInFlight"
+        @click="syncPrStatus"
+      >
+        {{ prSyncInFlight ? t('intent.prSync.syncing') : t('intent.prSync.label') }}
+      </button>
+      <button
+        type="button"
+        class="req-share"
+        data-testid="share-button"
+        :title="t('share.tooltip')"
+        :aria-label="t('share.ariaLabel')"
+        @click="emit('share', intent.id)"
+      >
+        🔗
+      </button>
+      <button
+        type="button"
+        class="req-automate"
+        :class="{ active: intent.automate }"
+        :title="
+          intent.automate
+            ? t('intent.automate.queued.tooltip')
+            : t('intent.automate.manual.tooltip')
+        "
+        :aria-pressed="intent.automate"
+        @click="emit('set-automate', intent.id, !intent.automate)"
+      >
+        {{ intent.automate ? '⚙' : '🖱' }}
+      </button>
+      <!-- 溢出入口占原「删除」的末位:危险动作退到第二层,标题栏表面只留核心动作。 -->
+      <button
+        v-if="showMoreMenu"
+        type="button"
+        class="req-kebab"
+        data-testid="intent-detail-more"
+        :aria-label="t('intent.action.more.label')"
+        :title="t('intent.action.more.label')"
+        :aria-expanded="moreMenuOpen"
+        @click.stop="moreMenuOpen = !moreMenuOpen"
+      >
+        …
+      </button>
+    </div>
+    <div
+      v-if="showMoreMenu && moreMenuOpen"
+      class="req-menu intent-detail-more-menu"
+      data-testid="intent-detail-more-menu"
+      @click.stop
     >
-      {{ t('intent.action.createPr.label') }}
-    </button>
-    <a
-      v-if="primaryPr && primaryPr.url"
-      class="req-btn pr-link"
-      :href="primaryPr.url"
-      target="_blank"
-      rel="noopener noreferrer"
-      :title="t('intent.action.pr.open.tooltip')"
-    >
-      {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
-    </a>
-    <button
-      v-else-if="primaryPr"
-      class="req-btn pr-link"
-      :title="t('intent.action.pr.tooltip')"
-      @click="copyPrId(primaryPr.number)"
-    >
-      {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
-    </button>
-    <button
-      v-if="canSyncPrStatus"
-      type="button"
-      class="req-btn"
-      data-action="syncPrStatus"
-      :disabled="prSyncInFlight"
-      @click="syncPrStatus"
-    >
-      {{ prSyncInFlight ? t('intent.prSync.syncing') : t('intent.prSync.label') }}
-    </button>
-    <button
-      type="button"
-      class="req-share"
-      data-testid="share-button"
-      :title="t('share.tooltip')"
-      :aria-label="t('share.ariaLabel')"
-      @click="emit('share', intent.id)"
-    >
-      🔗
-    </button>
-    <button
-      type="button"
-      class="req-automate"
-      :class="{ active: intent.automate }"
-      :title="
-        intent.automate ? t('intent.automate.queued.tooltip') : t('intent.automate.manual.tooltip')
-      "
-      :aria-pressed="intent.automate"
-      @click="emit('set-automate', intent.id, !intent.automate)"
-    >
-      {{ intent.automate ? '⚙' : '🖱' }}
-    </button>
-    <button
-      v-if="intent.status !== 'done'"
-      type="button"
-      class="req-btn danger"
-      data-testid="intent-detail-delete"
-      @click="openDeleteDialog"
-    >
-      {{ t('common.action.delete.label') }}
-    </button>
+      <button
+        v-if="canCancelIntent"
+        type="button"
+        class="req-menu-item"
+        data-action="cancelIntent"
+        data-testid="intent-detail-cancel"
+        @click="openCancelDialog"
+      >
+        {{ t('common.action.cancel.label') }}
+      </button>
+      <button
+        v-if="canDeleteIntent"
+        type="button"
+        class="req-menu-item danger"
+        data-testid="intent-detail-delete"
+        @click="openDeleteDialog"
+      >
+        {{ t('common.action.delete.label') }}
+      </button>
+    </div>
   </div>
 
   <IntentLinkDeliveryDialog
@@ -371,17 +439,17 @@ watch(
     @cancel="linkDialogOpen = false"
   />
 
-  <!-- 解除关联:服务端会先关闭该意图指向此交付的 PR(已合并则直接拒绝),文案必须
-       把这个副作用说清楚,用户才是在知情下确认。 -->
+  <!-- 取消:服务端会连带关闭该意图全部活跃 PR,且切到 cancelled 后标题栏不再给恢复入口,
+       两个后果文案都得说清楚,用户才是在知情下确认。 -->
   <ConfirmDialog
-    :open="unlinkDialogOpen"
-    :title="t('intent.linkDelivery.unlink.title.label')"
-    :message="t('intent.linkDelivery.unlink.confirm', { title: linkedDelivery?.title ?? '' })"
-    :confirm-label="t('intent.linkDelivery.unlink.label')"
+    :open="cancelDialogOpen"
+    :title="t('intent.cancel.title')"
+    :message="t('intent.cancel.confirm', { title: intent.title })"
+    :confirm-label="t('intent.cancel.label')"
     :cancel-label="t('common.action.cancel.label')"
     danger
-    @confirm="confirmUnlink"
-    @cancel="unlinkDialogOpen = false"
+    @confirm="confirmCancel"
+    @cancel="cancelDialogOpen = false"
   />
 
   <ConfirmDialog
@@ -397,6 +465,12 @@ watch(
 </template>
 
 <style scoped>
+/* 「…」菜单的定位锚:动作区自身 overflow-x: auto,绝对定位的下拉挂在里面会被裁掉,
+ * 所以锚点上移一层,菜单与滚动容器平级。 */
+.intent-detail-actions-anchor {
+  position: relative;
+  min-width: 0;
+}
 .intent-detail-actions {
   width: auto;
   max-width: min(58vw, 720px);
@@ -411,9 +485,20 @@ watch(
 }
 .intent-detail-actions .req-btn,
 .intent-detail-actions .req-automate,
-.intent-detail-actions .req-share {
+.intent-detail-actions .req-share,
+.intent-detail-actions .req-kebab {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+/* 「关联交付」(未关联态):主色描边 + 主色文字。只到描边一级,不与实底主按钮争最高视觉级;
+ * -text 变体在浅色主题下自动深一档,对比度由 standard.css 的既有约定保证。 */
+.intent-detail-actions .req-btn.req-link-delivery-accent {
+  border-color: var(--c-primary);
+  color: var(--c-primary-text);
+}
+/* 菜单内的危险项:文字取危险色即可,实底留给确认框里的确认按钮。 */
+.intent-detail-more-menu .req-menu-item.danger {
+  color: var(--c-error-text);
 }
 /* 已关联交付名:标题栏里它是导航而非动作,收窄并省略超长标题,免得挤掉右侧真正的按钮。 */
 .intent-detail-actions .req-delivery-link {
@@ -430,6 +515,9 @@ watch(
   color: #fff;
 }
 @media (max-width: 640px) {
+  .intent-detail-actions-anchor {
+    width: 100%;
+  }
   .intent-detail-actions {
     width: 100%;
     max-width: 100%;

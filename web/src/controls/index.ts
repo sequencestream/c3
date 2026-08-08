@@ -95,7 +95,9 @@ export function useAppController(): AppCtx {
           ctx.send({ type: 'open_intent_session', workspaceId: ctx.intentsProject.value })
           ctx.send({ type: 'list_intent_sessions', workspaceId: ctx.intentsProject.value })
         } else if (ctx.activeTab.value === 'deliveries' && ctx.deliveriesProject.value) {
-          // Re-fetch the list + badge count, and re-open the viewed delivery.
+          // Re-fetch the workspace setting (the merge block gates on git-branch
+          // mode), the list + badge count, and re-open the viewed delivery.
+          ctx.send({ type: 'load_workspace_setting', workspaceId: ctx.deliveriesProject.value })
           ctx.send({ type: 'list_deliveries', workspaceId: ctx.deliveriesProject.value })
           if (ctx.activeDeliveryId.value)
             ctx.send({ type: 'get_delivery_detail', deliveryId: ctx.activeDeliveryId.value })

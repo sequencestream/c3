@@ -71,6 +71,31 @@ describe('DeliveryIntentsTab', () => {
     expect(w.findAll('[data-testid^="delivery-intent-row-"]').length).toBe(2)
   })
 
+  it('renders the title as a focusable button that emits open-intent with the row id', async () => {
+    const w = mountTab({ rows: [row(), row({ id: 'i2', title: 'Beta' })] })
+    const title = w.find('[data-testid="delivery-intent-title-i2"]')
+    expect(title.exists()).toBe(true)
+    expect(title.element.tagName).toBe('BUTTON')
+    expect(title.attributes('type')).toBe('button')
+
+    await title.trigger('click')
+    expect(w.emitted('open-intent')).toEqual([['i2']])
+  })
+
+  it('clicking a non-title cell does not emit open-intent', async () => {
+    const w = mountTab({ rows: [row({ prStatus: 'reviewing' })] })
+    await w.find('[data-testid="delivery-intent-pr-i1"]').trigger('click')
+    expect(w.emitted('open-intent')).toBeUndefined()
+  })
+
+  it('clicking the unlink button does not emit open-intent', async () => {
+    const w = mountTab({ rows: [row({ prStatus: 'reviewing' })] })
+    await w.find('[data-testid="delivery-intent-unlink-i1"]').trigger('click')
+    expect(w.emitted('open-intent')).toBeUndefined()
+    // 解除关联仍走既有 ConfirmDialog 流程,不因标题可点而改变。
+    expect(w.findComponent(ConfirmDialog).props('open')).toBe(true)
+  })
+
   it("shows THIS delivery's PR status — the same intent reads differently per delivery", () => {
     // One intent, two PRs against two different bases. Each delivery's own list
     // carries its own row; the tab must render exactly what it was handed.

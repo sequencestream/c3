@@ -48,6 +48,18 @@ export interface LaunchOverrides {
    * registers this behind a per-run token; the relay fails over across it.
    */
   relayCandidates?: RelayCandidate[]
+  /**
+   * Optional model capabilities (2026-08-08-013), read from the FIRST
+   * relay-capable leading-segment member's codex config (the member whose model
+   * the CLI launches with). When set, the codex driver's relay branch registers
+   * the model in a local catalog (`model_catalog_json`) so codex stops falling
+   * back to default metadata for an id it does not know. Absent ⇒ no catalog,
+   * current behaviour. Only a `custom` codex member produces them — a system
+   * member (no relay candidate) never does.
+   */
+  contextWindow?: number
+  /** Optional max output tokens — same catalog mechanism as {@link LaunchOverrides.contextWindow}. */
+  maxOutputTokens?: number
 }
 import {
   bindSessionAgent,
@@ -456,16 +468,31 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
   const env: Record<string, string> = {}
   const relayCandidates: RelayCandidate[] = []
   let hasCustomClaude = false
+  // The first relay-capable leading-segment member — the agent whose model the CLI
+  // launches with. Its codex config's optional capability fields ride the overrides
+  // (2026-08-08-013); a system member (no candidate) has none, so no catalog is
+  // ever produced for a system launch.
+  let firstRelayAgent: AgentConfig | undefined
   const segment = launchSegment(candidates)
   for (const agent of segment) {
     const cand = agentToRelayCandidate(agent)
     if (!cand) continue
+    if (!firstRelayAgent) firstRelayAgent = agent
     relayCandidates.push(cand)
     if (agent.vendor === 'claude') hasCustomClaude = true
   }
   // model: the CLI's fixed launch model — the first candidate's real model, else the
   // leading agent's standalone model override (read in both system and custom mode).
   const model = relayCandidates[0]?.model || segment[0]?.config.model || undefined
+  // Only a `codex` agent carries the optional capability fields; other vendors have
+  // none, so the spread below stays empty for them.
+  const codexCaps =
+    firstRelayAgent?.vendor === 'codex'
+      ? {
+          contextWindow: firstRelayAgent.config.contextWindow,
+          maxOutputTokens: firstRelayAgent.config.maxOutputTokens,
+        }
+      : {}
 
   if (hasCustomClaude) {
     // WORKAROUND (remove later): recent Claude Code introduced an "adaptive thinking"
@@ -498,6 +525,10 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
     ...(Object.keys(env).length > 0 ? { envOverrides: env } : {}),
     ...(model ? { model } : {}),
     ...(relayCandidates.length > 0 ? { relayCandidates } : {}),
+    ...(codexCaps.contextWindow !== undefined ? { contextWindow: codexCaps.contextWindow } : {}),
+    ...(codexCaps.maxOutputTokens !== undefined
+      ? { maxOutputTokens: codexCaps.maxOutputTokens }
+      : {}),
   }
 }
 

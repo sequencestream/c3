@@ -217,6 +217,14 @@ export class AgentSessionManager {
         ...(launch.model ? { model: launch.model } : {}),
         ...(envOverrides ? { envOverrides } : {}),
         ...(launch.relayCandidates ? { relayCandidates: launch.relayCandidates } : {}),
+        // Optional model capabilities (2026-08-08-013): the codex driver's relay
+        // branch registers the CLI-launched model in a local catalog so codex
+        // stops falling back to default metadata. Discussion runs are host-direct
+        // (no sandboxTmpDir), so the catalog lands in os.tmpdir().
+        ...(launch.contextWindow !== undefined ? { contextWindow: launch.contextWindow } : {}),
+        ...(launch.maxOutputTokens !== undefined
+          ? { maxOutputTokens: launch.maxOutputTokens }
+          : {}),
       })
 
       // Collect assistant text FIRST, then resolve sessionId (the id is always
@@ -279,6 +287,11 @@ export class AgentSessionManager {
         ...(launch.model ? { model: launch.model } : {}),
         ...(envOverrides ? { envOverrides } : {}),
         ...(launch.relayCandidates ? { relayCandidates: launch.relayCandidates } : {}),
+        // Optional model capabilities — same catalog mechanism as createSession.
+        ...(launch.contextWindow !== undefined ? { contextWindow: launch.contextWindow } : {}),
+        ...(launch.maxOutputTokens !== undefined
+          ? { maxOutputTokens: launch.maxOutputTokens }
+          : {}),
       })
 
       const text = await collectAssistantText(run)

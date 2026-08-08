@@ -211,6 +211,7 @@ defineExpose({
         :source-label="sourceLabel"
         :show-share="true"
         :has-active-session="hasActiveSession"
+        :session-bound="hasActiveSession"
         :show-input="showInput"
         :readonly="readonlySession === true"
         :messages="messages"

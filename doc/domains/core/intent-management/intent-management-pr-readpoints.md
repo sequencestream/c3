@@ -48,27 +48,27 @@
 
 ## 3. 闸门与工具
 
-| 文件:符号                                            | 分类  | 用途                                             |
-| ---------------------------------------------------- | ----- | ------------------------------------------------ |
-| `dependency-gate.ts: findDependencyBlockingMainline` | 门禁  | 依赖的**聚合态**为 `merged` 才不阻塞             |
-| `queue-ledger.ts: toFact`                            | 派生  | 把 PR 行归约为 `QueueIntentFact.prStatus` 聚合态 |
-| `kernel/queue/reconcile.ts`                          | 门禁  | 读 `QueueIntentFact.prStatus`(已是聚合态)        |
-| `tool-defs.ts: runSaveIntentPrInfo`                  | 读→写 | MCP 回填状态;无 PR 行或多条活跃 PR 即拒绝        |
-| `advisor-tools.ts: sync_intent_pr_status`            | —     | 顾问工具转调 `syncIntentPrStatus`                |
+| 文件:符号                                            | 分类 | 用途                                                                   |
+| ---------------------------------------------------- | ---- | ---------------------------------------------------------------------- |
+| `dependency-gate.ts: findDependencyBlockingMainline` | 门禁 | 依赖的**聚合态**为 `merged` 才不阻塞                                   |
+| `queue-ledger.ts: toFact`                            | 派生 | 把 PR 行归约为 `QueueIntentFact.prStatus` 聚合态                       |
+| `kernel/queue/reconcile.ts`                          | 门禁 | 读 `QueueIntentFact.prStatus`(已是聚合态)                              |
+| `pr-status-tool-defs.ts: runSyncIntentPrStatus`      | —    | 自动化工具(仅 `intentId`,无状态参数)转调 `syncIntentPrStatus` 触发派生 |
+| `advisor-tools.ts: sync_intent_pr_status`            | —    | 顾问工具转调 `syncIntentPrStatus`                                      |
 
 ## 4. 协议与前端
 
-| 文件:符号                                      | 分类   | 用途                                                                                   |
-| ---------------------------------------------- | ------ | -------------------------------------------------------------------------------------- |
-| `shared/src/protocol/intent.ts`                | 持久化 | `IntentPr` / `IntentPrStatus` / `IntentPrForge` 与 `Intent.prs`                        |
-| `shared/src/intent-pr-model.ts`                | 派生   | `deriveIntentPrAggregate` / `activeIntentPrs` / `pickPrimaryIntentPr`,服务端与前端共用 |
-| `shared/src/protocol/intent-messages.ts`       | 读     | `create_pr_response`、`sync_intent_pr_status_response`(其 `prStatus` 为聚合态)         |
-| `web/src/lib/intent-engineering-progress.ts`   | 派生   | 进度条 PR 段读聚合态                                                                   |
-| `web/src/lib/intent-list-view.ts`              | 派生   | 依赖阻塞判定(聚合态)+ 行内 create-pr / prLink 可见性                                   |
-| `IntentOverviewTab.vue`                        | 读     | 逐条渲染 PR 行与状态徽标;同步按钮看有无 `reviewing` 行                                 |
-| `IntentTitleBarActions.vue`                    | 读     | 主按钮取第一条活跃 PR 跳转/复制;同步按钮同上                                           |
-| `web/src/pages/automations/templates/index.ts` | 读     | `PR_STATUS_POLLER_PROMPT` 按 `prs` 描述筛选口径                                        |
-| `web/src/locales/*.json`                       | 读     | `intent.prStatus.*` 展示文案                                                           |
+| 文件:符号                                      | 分类   | 用途                                                                                              |
+| ---------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------- |
+| `shared/src/protocol/intent.ts`                | 持久化 | `IntentPr` / `IntentPrStatus` / `IntentPrForge` 与 `Intent.prs`                                   |
+| `shared/src/intent-pr-model.ts`                | 派生   | `deriveIntentPrAggregate` / `activeIntentPrs` / `pickPrimaryIntentPr`,服务端与前端共用            |
+| `shared/src/protocol/intent-messages.ts`       | 读     | `create_pr_response`、`sync_intent_pr_status_response`(其 `prStatus` 为聚合态)                    |
+| `web/src/lib/intent-engineering-progress.ts`   | 派生   | 进度条 PR 段读聚合态                                                                              |
+| `web/src/lib/intent-list-view.ts`              | 派生   | 依赖阻塞判定(聚合态)+ 行内 create-pr / prLink 可见性                                              |
+| `IntentOverviewTab.vue`                        | 读     | 逐条渲染 PR 行与状态徽标;同步按钮看有无 `reviewing` 行                                            |
+| `IntentTitleBarActions.vue`                    | 读     | 主按钮取第一条活跃 PR 跳转/复制;同步按钮同上                                                      |
+| `web/src/pages/automations/templates/index.ts` | 读     | `PR_STATUS_POLLER_PROMPT` 按 `prs` 描述筛选口径;终态对账指引调用 `mcp__c3__sync_intent_pr_status` |
+| `web/src/locales/*.json`                       | 读     | `intent.prStatus.*` 展示文案                                                                      |
 
 ## 5. 测试
 

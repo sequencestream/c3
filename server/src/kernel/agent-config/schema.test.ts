@@ -118,6 +118,65 @@ describe('agent-config schema — codex arm wireApi (2026-06-12-006)', () => {
   })
 })
 
+describe('agent-config schema — codex capability fields (2026-08-08-013)', () => {
+  const baseCodex = {
+    id: 'cx-caps',
+    vendor: 'codex' as const,
+    configMode: 'custom' as const,
+    displayName: 'Codex Caps',
+  }
+
+  it('accepts positive-integer contextWindow / maxOutputTokens', () => {
+    for (const [contextWindow, maxOutputTokens] of [
+      [65536, 8192],
+      [131072, undefined],
+      [undefined, 4096],
+    ] as const) {
+      const parsed = parseAgentConfig({
+        ...baseCodex,
+        config: {
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk',
+          model: 'deepseek-chat',
+          wireApi: 'chat',
+          ...(contextWindow !== undefined ? { contextWindow } : {}),
+          ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+        },
+      })
+      expect(parsed?.vendor).toBe('codex')
+      expect(parsed?.vendor === 'codex' && parsed.config.contextWindow).toBe(contextWindow)
+      expect(parsed?.vendor === 'codex' && parsed.config.maxOutputTokens).toBe(maxOutputTokens)
+    }
+  })
+
+  it('legacy codex config without the capability fields parses with undefined', () => {
+    const parsed = parseAgentConfig({
+      ...baseCodex,
+      config: { baseUrl: 'https://api.deepseek.com', apiKey: 'sk', model: 'deepseek-chat' },
+    })
+    expect(parsed?.vendor).toBe('codex')
+    expect(parsed?.vendor === 'codex' && parsed.config.contextWindow).toBeUndefined()
+    expect(parsed?.vendor === 'codex' && parsed.config.maxOutputTokens).toBeUndefined()
+  })
+
+  it('rejects 0 / negative / non-integer values (whole record fails, fail-soft)', () => {
+    for (const bad of [0, -1, 0.5, 65536.5]) {
+      expect(
+        parseAgentConfig({
+          ...baseCodex,
+          config: {
+            baseUrl: '',
+            apiKey: '',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+            contextWindow: bad,
+          },
+        }),
+      ).toBeNull()
+    }
+  })
+})
+
 describe('claudeConfigSchema', () => {
   it('requires all three override fields as strings', () => {
     expect(claudeConfigSchema.safeParse({ baseUrl: '', apiKey: '', model: '' }).success).toBe(true)

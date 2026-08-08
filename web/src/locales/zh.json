@@ -774,6 +774,11 @@
       "confirm": "永久删除“{title}”?其本地 Git worktree 与本地分支也会一并删除。远端分支和 PR 不受影响。",
       "confirmWithArtifacts": "永久删除“{title}”?已有工作产物、本地 Git worktree 与本地分支也会一并删除。远端分支和 PR 不受影响。"
     },
+    "cancel": {
+      "title": "取消意图?",
+      "confirm": "取消“{title}”?其状态将切换为「已取消」,该意图所有未关闭的 PR 会被一并关闭;之后详情标题栏不再提供恢复入口。",
+      "label": "取消意图"
+    },
     "create": {
       "label": "增加意图"
     },
@@ -2801,6 +2806,40 @@
       },
       "conflict": {
         "label": "交付分支与主线有 {count} 个文件冲突。交付已回退到验证中,解决冲突后重新验证。"
+      },
+      "diagnosis": {
+        "title": {
+          "label": "为什么未提供创建交付 PR"
+        },
+        "branchMode": {
+          "label": "Git 分支模式:{mode}"
+        },
+        "status": {
+          "label": "交付状态:{status}"
+        },
+        "branch": {
+          "label": "分支就绪:{branch}"
+        },
+        "branchNotReady": {
+          "label": "分支就绪:否"
+        },
+        "pr": {
+          "label": "交付 PR:#{number} {status}"
+        },
+        "prNone": {
+          "label": "交付 PR:无"
+        },
+        "diff": {
+          "ahead": {
+            "label": "交付分支领先:{count} 个提交"
+          },
+          "none": {
+            "label": "交付分支领先:无差异"
+          },
+          "unknown": {
+            "label": "交付分支领先:无法判断"
+          }
+        }
       }
     }
   },

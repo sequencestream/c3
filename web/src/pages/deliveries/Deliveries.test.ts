@@ -44,6 +44,7 @@ describe('Deliveries', () => {
         branchInit: null,
         workspaceGitBranchMode: 'worktree',
         mainlineAhead: null,
+        deliveryBranchAhead: null,
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
@@ -66,6 +67,7 @@ describe('Deliveries', () => {
         branchInit: null,
         workspaceGitBranchMode: 'current-branch',
         mainlineAhead: null,
+        deliveryBranchAhead: null,
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
@@ -91,6 +93,7 @@ describe('Deliveries', () => {
         branchInit: null,
         workspaceGitBranchMode: 'worktree',
         mainlineAhead: null,
+        deliveryBranchAhead: null,
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
@@ -100,5 +103,36 @@ describe('Deliveries', () => {
     })
     await w.find('[data-testid="delivery-advance-integrating"]').trigger('click')
     expect(w.emitted('transition')?.[0]).toEqual(['integrating', false])
+  })
+
+  it('forwards a title click in the intents tab through as open-intent', async () => {
+    const w = mount(Deliveries, {
+      props: {
+        deliveries: [delivery()],
+        activeId: 'd1',
+        activeDelivery: delivery(),
+        activePlan: PLAN,
+        branchInit: null,
+        workspaceGitBranchMode: 'worktree',
+        mainlineAhead: null,
+        deliveryBranchAhead: null,
+        syncPhase: null,
+        deliveryPr: null,
+        deliveryPrBusy: false,
+        associatedIntents: [
+          {
+            id: 'i1',
+            title: 'Alpha',
+            status: 'todo',
+            prStatus: null,
+            headBranch: null,
+          },
+        ],
+        intents: [],
+      },
+    })
+    await w.find('[data-testid="delivery-pane-tab-intents"]').trigger('click')
+    await w.find('[data-testid="delivery-intent-title-i1"]').trigger('click')
+    expect(w.emitted('open-intent')?.[0]).toEqual(['i1'])
   })
 })

@@ -172,6 +172,23 @@ export interface CodexAgentConfig {
    * `system`-mode codex (no provider override ⇒ DIRECT regardless).
    */
   wireApi: 'responses' | 'chat'
+  /**
+   * Optional context window (tokens) of the custom model (2026-08-08-013). When
+   * set, the codex driver's relay (custom) branch registers this model id in a
+   * local model catalog (`model_catalog_json`) so codex stops falling back to
+   * default metadata — eliminating the `Model metadata for <id> not found`
+   * warning and its degraded capability assembly. Absent ⇒ no catalog, codex's
+   * current behaviour stands. Set it to the REAL model capacity; a value larger
+   * than the upstream supports may cause truncation/errors.
+   */
+  contextWindow?: number
+  /**
+   * Optional max output tokens of the custom model — the same catalog mechanism
+   * as {@link CodexAgentConfig.contextWindow}. Consumption semantics are
+   * best-effort (codex 0.146 accepts the field; whether it enforces the limit is
+   * unverified upstream).
+   */
+  maxOutputTokens?: number
 }
 
 /**

@@ -40,11 +40,13 @@ export interface WorktreeBaseline {
   /**
    * True when a delivery context exists but the baseline is NOT its branch —
    * because the branch is not initialised yet, or the intent's snapshot was taken
-   * against something else. Surfaced to the caller as a notice; the launch still
-   * proceeds. An intent linked to a delivery whose branch has not been created
-   * must still be able to start work.
+   * against something else. That "something else" is not necessarily the mainline:
+   * an intent linked to several deliveries keeps the snapshot of the first one, so
+   * this is true for another delivery's branch too. Surfaced to the caller as a
+   * notice; the launch still proceeds. An intent linked to a delivery whose branch
+   * has not been created must still be able to start work.
    */
-  fellBackToMainline: boolean
+  offDeliveryBranch: boolean
 }
 
 /**
@@ -68,7 +70,7 @@ export function resolveWorktreeBaseline(
     baseBranch,
     remoteRef: fetchRemoteBase(workspacePath, baseBranch),
     delivery: delivery ? { id: delivery.id, title: delivery.title } : null,
-    fellBackToMainline: delivery !== null && deliveryBranch !== baseBranch,
+    offDeliveryBranch: delivery !== null && deliveryBranch !== baseBranch,
   }
 }
 

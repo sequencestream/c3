@@ -58,7 +58,7 @@ describe('resolveWorktreeBaseline', () => {
   it('基线取意图持久化的基准分支,不从当前交付重新推导', () => {
     const b = resolveWorktreeBaseline('/w', intent('delivery/sprint-3'), delivery())
     expect(b.baseBranch).toBe('delivery/sprint-3')
-    expect(b.fellBackToMainline).toBe(false)
+    expect(b.offDeliveryBranch).toBe(false)
     expect(b.delivery).toEqual({ id: 'd1', title: '交付 X' })
     expect(fetchRemoteBase).toHaveBeenCalledWith('/w', 'delivery/sprint-3')
   })
@@ -66,21 +66,21 @@ describe('resolveWorktreeBaseline', () => {
   it('交付分支未就绪 → 意图快照仍是主线,标记回退(不是拒绝)', () => {
     const b = resolveWorktreeBaseline('/w', intent('main'), delivery({ branchReady: false }))
     expect(b.baseBranch).toBe('main')
-    expect(b.fellBackToMainline).toBe(true)
+    expect(b.offDeliveryBranch).toBe(true)
     expect(b.delivery).toEqual({ id: 'd1', title: '交付 X' })
   })
 
   it('无交付上下文 → 用意图快照,不标记回退', () => {
     const b = resolveWorktreeBaseline('/w', intent('main'), null)
     expect(b.baseBranch).toBe('main')
-    expect(b.fellBackToMainline).toBe(false)
+    expect(b.offDeliveryBranch).toBe(false)
     expect(b.delivery).toBeNull()
   })
 
   it('快照与当前交付分支不一致(多交付)→ 仍以快照为准,并标记这不是交付分支', () => {
     const b = resolveWorktreeBaseline('/w', intent('delivery/other'), delivery())
     expect(b.baseBranch).toBe('delivery/other')
-    expect(b.fellBackToMainline).toBe(true)
+    expect(b.offDeliveryBranch).toBe(true)
     expect(fetchRemoteBase).toHaveBeenCalledWith('/w', 'delivery/other')
   })
 })
@@ -90,7 +90,7 @@ describe('checkExistingWorktreeBaseline', () => {
     baseBranch: 'delivery/sprint-3',
     remoteRef: 'origin/delivery/sprint-3',
     delivery: { id: 'd1', title: '交付 X' },
-    fellBackToMainline: false,
+    offDeliveryBranch: false,
     ...over,
   })
 

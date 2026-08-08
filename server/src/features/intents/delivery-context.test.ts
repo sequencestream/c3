@@ -51,7 +51,7 @@ vi.mock('./worktree-baseline.js', async (importOriginal) => ({
     baseBranch: 'main',
     remoteRef: null,
     delivery: null,
-    fellBackToMainline: false,
+    offDeliveryBranch: false,
   })),
   checkExistingWorktreeBaseline: vi.fn(() => null),
 }))

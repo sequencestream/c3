@@ -83,7 +83,7 @@ export const repairIntentWorktree: Handler<'repair_intent_worktree'> = (ctx, con
       type: 'error',
       error: {
         code: 'intent.worktreeRepairFailed',
-        params: { message: '交付分支远端引用不可解析' },
+        params: { message: '基准分支远端引用不可解析' },
       },
     })
     return

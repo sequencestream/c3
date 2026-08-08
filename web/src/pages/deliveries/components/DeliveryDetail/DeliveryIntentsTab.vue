@@ -13,6 +13,10 @@
  *
  * 关联入口只列出「尚未归属任何交付」的意图:第一版不开放一个意图关联多个交付的
  * 入口(数据层支持多行,交互层不给路径)。
+ *
+ * 标题渲染为链接态按钮:点击上抛 `open-intent`,最终由 App 用交付页当前工作区调
+ * `openLinkedIntent` 跳到意图页并选中该意图 —— 与意图侧「关联交付」的 `open-delivery`
+ * 反向对称。热区只覆盖标题文字,行内其余单元格与「解除关联」互不触发。
  */
 import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
@@ -31,6 +35,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   link: [intentId: string]
   unlink: [intentId: string]
+  /** 标题点击:跳到该意图详情。与意图侧的 open-delivery 反向对称。 */
+  'open-intent': [intentId: string]
 }>()
 
 const { t } = useTypedI18n()
@@ -135,9 +141,15 @@ function confirmUnlink(): void {
         class="delivery-intents-row"
         :data-testid="`delivery-intent-row-${row.id}`"
       >
-        <span class="delivery-intents-cell delivery-intents-cell--title" :title="row.title">{{
-          row.title
-        }}</span>
+        <button
+          type="button"
+          class="delivery-intents-cell delivery-intents-cell--title"
+          :data-testid="`delivery-intent-title-${row.id}`"
+          :title="row.title"
+          @click="emit('open-intent', row.id)"
+        >
+          {{ row.title }}
+        </button>
         <span class="delivery-intents-cell delivery-intents-cell--status">{{
           statusLabel(row.status)
         }}</span>
@@ -282,11 +294,24 @@ function confirmUnlink(): void {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 标题是页内导航链接(跳到该意图详情),故用按钮 + 链接态样式而不是 <a>。
+   只让标题文字可点:行尾就是「解除关联」危险按钮,整行热区会抬高误触风险。 */
 .delivery-intents-cell--title {
   flex: 1;
   min-width: 120px;
+  padding: 0;
+  font: inherit;
   font-size: var(--fs-body);
-  color: var(--c-text);
+  text-align: left;
+  color: var(--c-primary-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.delivery-intents-cell--title:hover {
+  background: var(--c-hover);
 }
 .delivery-intents-unlink-btn {
   flex-shrink: 0;

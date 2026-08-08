@@ -129,6 +129,8 @@
 
 **关联意图 tab**(`DeliveryIntentsTab.vue`):四列——意图标题 / 意图状态 / **该意图对本交付的 PR 状态** / head 分支,直接渲染服务端 `associatedIntents`,不做任何客户端聚合(用全局 PR 聚合会把别的交付的状态显示到这里)。解除入口收在行尾次级位置,PR 已 merged 的行渲染为禁用态 + tooltip,未合并行走 danger `ConfirmDialog` 二次确认;禁用只是提前表达,门禁在服务端。关联入口的候选只列「尚未归属任何交付」的意图——交互层不给出一个意图关联多个交付的路径。`openDeliveries` 顺带发 `list_intents`(用户可能直接落在交付页,意图列表未必加载过);候选取 `deliveryLinkIntents`(按**交付页**工作区取,不复用意图页的 `intentsProject`)。
 
+标题渲染为链接态按钮,点击跳到该意图详情:emit `open-intent` 经 `DeliveryDetail` → `Deliveries` → `App.vue` 上抛,`App.vue` 以**交付页当前工作区**(`deliveriesProject`)调 `openLinkedIntent`(`openIntents(path)` + 写 `requestedIntentId`),由 `Intents.vue` 在列表加载后一次性选中该意图、桌面右栏显示详情默认 tab、移动端直接落详情视图;意图已被删除 / 未出现在列表时沿用 Intents 既有的兜底选中,不白屏。热区只覆盖标题文字(行尾就是「解除关联」危险按钮,整行可点会抬高误触风险),与意图详情侧「关联交付」的 `open-delivery` 反向对称。
+
 **意图详情侧**(`IntentOverviewTab.vue`):元信息顺序 `ID → 分支+commit → 关联交付 → PR → 已创建 → …`。「关联交付」必须在 PR **之前**——交付决定 PR 提向哪条分支,先因后果读下来才成立。PR 行按交付分组(无交付归属的单列一组;只有一组且无交付归属时不渲染组标签,避免最常见场景平白多一行噪音)。点击关联交付经 `open-delivery` 一路上抛到 `App.vue` 的 `openDeliveryFromIntent`(先 `openDeliveries` 再 `openDelivery`,否则详情会在没有列表的情况下半加载)。
 
 **意图侧的解除入口就在这一行**:恰好关联 1 条时在交付名之后渲染「解除关联」,先过 danger `ConfirmDialog`(文案点明**会关闭该意图提向此交付的 PR**),确认后 `unlink-delivery(ws, deliveryId, intentId)` 经 `IntentDetail.vue` 透传到既有链路;取消 / 遮罩 / Esc 不上抛,关联条数在确认框敞开期间变为非 1 时主动收框。多关联(>1)只展示交付名、不给解除路径——与「多关联不渲染建 PR 入口」同一条裁决。放在元信息而非标题栏,是因为解除是低频维护动作:标题栏该留给核心动作与交付导航,而「解除谁」的答案就在这一行的交付名上,入口贴着对象才不需要用户二次确认目标。是否放行仍由服务端复核(本地 + forge 双层,已合并直接拒 `delivery.unlinkMergedPrDenied`,走中央错误链路,意图侧不特判)。

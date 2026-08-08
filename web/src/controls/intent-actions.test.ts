@@ -58,6 +58,7 @@ function makeCtx(opts: {
   const intents = ref<Record<string, Intent[]>>({ [WS]: opts.intents ?? [] })
   const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | 'workSession' | null>(null)
+  const requestedIntentId = ref<string | null>(null)
   const devLaunch = ref(beginDevLaunch('i-1', 0))
   const createPrProgress = ref<CreatePrModel | null>(null)
   const createPrTimers: {
@@ -82,6 +83,7 @@ function makeCtx(opts: {
     intentsProject: ref<string | null>(WS),
     selectedIntentSessionId: ref<string | null>(null),
     activeTab: ref('intents'),
+    requestedIntentId,
     currentWorkspace,
     intents,
     currentIntents: computed(() => intents.value[WS] ?? []),
@@ -113,6 +115,7 @@ function makeCtx(opts: {
     showToast,
     requestedWorkSessionId,
     requestedIntentSubTab,
+    requestedIntentId,
     activeSessionKind,
     selectSessionKind,
     devLaunchTimers,
@@ -137,6 +140,16 @@ describe('intent view loading', () => {
     })
     expect(h.ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: WS })
     expect(h.ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: WS })
+  })
+
+  it('openLinkedIntent opens the intents tab and stages the one-shot select', () => {
+    const h = makeCtx({})
+
+    h.ctx.openLinkedIntent(WS, 'i-42')
+
+    expect(h.ctx.activeTab.value).toBe('intents')
+    expect(h.ctx.intentsProject.value).toBe(WS)
+    expect(h.requestedIntentId.value).toBe('i-42')
   })
 })
 

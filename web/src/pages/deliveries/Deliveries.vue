@@ -70,6 +70,7 @@ const emit = defineEmits<{
   'sync-delivery-pr': [deliveryId: string]
   'link-intent': [intentId: string]
   'unlink-intent': [intentId: string]
+  'open-intent': [intentId: string]
   'open-workspace-settings': []
   'mobile-back': [targetKey: string]
 }>()
@@ -123,6 +124,7 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         @sync-delivery-pr="(id: string) => emit('sync-delivery-pr', id)"
         @link-intent="(id: string) => emit('link-intent', id)"
         @unlink-intent="(id: string) => emit('unlink-intent', id)"
+        @open-intent="(id: string) => emit('open-intent', id)"
         @open-workspace-settings="emit('open-workspace-settings')"
       />
     </template>

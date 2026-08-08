@@ -36,7 +36,7 @@
  * outcome of the flow, not a defect in it.
  *
  * Usage:
- *   pnpm start --port 13000     # in another terminal
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # in another terminal
  *   node scripts/e2e/e2e-spec-automation-test.mjs [ws-url]
  */
 import { execFileSync } from 'node:child_process'

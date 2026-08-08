@@ -42,8 +42,8 @@
  * NO AGENT TOKENS ARE SPENT: no session is ever started, no forge is contacted.
  *
  * Usage:
- *   pnpm start --port 13000                        # in another terminal
- *   C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-transition-test.mjs [ws-url]
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000 --db /tmp/c3-e2e/c3.db   # in another terminal
+ *   C3_DB_PATH=/tmp/c3-e2e/c3.db node scripts/e2e/e2e-delivery-transition-test.mjs [ws-url]
  */
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'

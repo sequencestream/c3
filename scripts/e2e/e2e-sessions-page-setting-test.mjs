@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 /** End-to-end settings round-trip for the sessions-page navigation gate. */
+import { assertIsolatedSettings } from './settings-guard.mjs'
 
 const url = process.argv[2] ?? 'ws://localhost:13000/ws'
+// This test writes settings — refuse before the first byte if the server runs on
+// the real ~/.c3/settings.json (the restore below would not survive a kill).
+await assertIsolatedSettings(url, { testScript: 'scripts/e2e/e2e-sessions-page-setting-test.mjs' })
+
 const ws = new WebSocket(url)
 let original = null
 let phase = 'initial'

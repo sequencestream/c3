@@ -192,6 +192,21 @@ export type ServerSettings = {
    * older servers, the UI then falls back to the built-in Claude mode list.
    */
   vendorModes?: Record<VendorId, VendorModeCatalog>
+  /**
+   * Absolute path of the settings.json this server actually reads and writes
+   * (the `--settings` override, or the default `~/.c3/settings.json`). A path
+   * only — it carries NO configuration content.
+   *
+   * Exists for the e2e settings guard: a test that calls `save_settings` first
+   * asks the server where its config lives and refuses to run when that is the
+   * developer's real `~/.c3/settings.json`. A client cannot infer this from the
+   * settings object itself, and a server-side startup log is invisible to a test
+   * that merely connects over the wire.
+   *
+   * Absent on older servers; the guard then refuses conservatively rather than
+   * assuming an isolated launch.
+   */
+  settingsPath?: string
 }
 
 /**

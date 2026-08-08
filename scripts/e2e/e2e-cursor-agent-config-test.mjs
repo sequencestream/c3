@@ -26,6 +26,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertIsolatedSettings } from './settings-guard.mjs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const TIMEOUT_MS = 300_000
@@ -53,6 +54,10 @@ writeFileSync(join(PROJECT_DIR, 'README.md'), '# c3 cursor agent config e2e\n')
 const CURSOR_AGENT_ID = 'cursor-config-e2e-agent'
 // 一轮零工具的短对话,把花费压到最低。
 const PROMPT = 'Reply with exactly: CURSOR-CONFIG-E2E-OK'
+
+// Creates a cursor agent and makes it the system default — refuse before the
+// first byte if the server reads the real ~/.c3/settings.json.
+await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-cursor-agent-config-test.mjs' })
 
 /** @type {WebSocket} */
 const ws = new WebSocket(URL)

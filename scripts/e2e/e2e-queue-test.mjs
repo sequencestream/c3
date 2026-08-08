@@ -42,7 +42,7 @@
  * ("queue driver — failure isolation"), which injects a real launch rejection.
  *
  * Usage:
- *   pnpm start --port 13000     # in another terminal
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # in another terminal
  *   node scripts/e2e/e2e-queue-test.mjs [ws-url]
  */
 import { execFileSync } from 'node:child_process'

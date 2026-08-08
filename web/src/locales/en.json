@@ -851,6 +851,16 @@
       },
       "timeout": "Couldn't confirm PR creation. Check the intent's PR status before retrying."
     },
+    "createIntentProgress": {
+      "title": "Creating intent…",
+      "step": {
+        "fetchBranch": "Download the linked branch",
+        "prepareWorktree": "Check out the linked branch",
+        "createIntent": "Create the intent",
+        "openSession": "Open the intent session"
+      },
+      "timeout": "Couldn't confirm intent creation. Check the intent list before retrying."
+    },
     "specLaunch": {
       "title": "Starting spec session…",
       "step": {

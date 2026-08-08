@@ -4,7 +4,7 @@ c3 前端（Vue 3）所有页面、组件、composable 与工具模块的树状�
 
 ```
 web/src/
-├── App.vue                                          # 应用入口壳(瘦):装配页面/模态组件,解构 useAppController() 的共享 ctx 绑定到模板(登录门 + 顶栏 + 各视图 + 模态 + 全局 toast + intent 动作错误弹框);全部控制逻辑下沉到 controls/。**懒加载装配边界**:静态 import 只留 Login/AppHeader/Queue 与 AsyncFallback 占位件,其余 8 个业务页面(Works/Intents/Deliveries/Discussions/Automations/Codes/WorkCenter/WorkspaceDashboard)经 asyncView()、11 个设置页与低频全局组件(SystemSettings/PersonalizedSetting/WorkspaceSetting/SkillApprovalModal/NewSessionModal/CreatePrOverlay/DevStartupOverlay/SpecStartupOverlay/AutomationSaveOverlay/IntentActionErrorDialog/GateEscapeDialog)经 asyncOverlay() 包一层 defineAsyncComponent(() => import(...))。装配约定(挂载门、占位与失败兜底、新增页面沿用)见 `doc/domains/core/web-console/web-console-design.md`「非功能考量」;包一层不改各组件原有的 `:open`/`:model`/`:escape`/`:saving` 输入与关闭/取消协议
+├── App.vue                                          # 应用入口壳(瘦):装配页面/模态组件,解构 useAppController() 的共享 ctx 绑定到模板(登录门 + 顶栏 + 各视图 + 模态 + 全局 toast + intent 动作错误弹框);全部控制逻辑下沉到 controls/。**懒加载装配边界**:静态 import 只留 Login/AppHeader/Queue 与 AsyncFallback 占位件,其余 8 个业务页面(Works/Intents/Deliveries/Discussions/Automations/Codes/WorkCenter/WorkspaceDashboard)经 asyncView()、12 个设置页与低频全局组件(SystemSettings/PersonalizedSetting/WorkspaceSetting/SkillApprovalModal/NewSessionModal/CreatePrOverlay/CreateIntentOverlay/DevStartupOverlay/SpecStartupOverlay/AutomationSaveOverlay/IntentActionErrorDialog/GateEscapeDialog)经 asyncOverlay() 包一层 defineAsyncComponent(() => import(...))。装配约定(挂载门、占位与失败兜底、新增页面沿用)见 `doc/domains/core/web-console/web-console-design.md`「非功能考量」;包一层不改各组件原有的 `:open`/`:model`/`:escape`/`:saving` 输入与关闭/取消协议
 ├── main.ts                                          # 应用入口:创建 Vue 实例、安装 i18n、挂载 App
 │
 ├── controls/                                        # App 控制器:拆分自原 App.vue 的状态 + 消息路由 + 各域动作,经共享 ctx 对象晚绑定串联
@@ -47,6 +47,7 @@ web/src/
 │   ├── DevStartupOverlay/DevStartupOverlay.vue     # 工作启动进度遮罩(App 根级,与全局 toast 同层):手动 Start Work 点击即全屏阻断,以最小停留防止快速启动闪烁,按有序步骤(拉取远程主分支/准备 worktree/启动工作会话/进入会话)展示后端 dev_launch_progress 阶段进度;纯展示(model 由控制层持有,判定在 lib/dev-launch-view.ts),就绪/失败/安全超时由控制层关闭
 │   ├── SpecStartupOverlay/SpecStartupOverlay.vue    # Spec 会话启动遮罩(App 根级):撰写/重置 Spec 点击即阻断,按有序步骤(检查依赖/拉取代码/启动会话)展示粗粒度进度及逐步骤 ✓/spinner/灰点标记;就绪、动作失败或安全超时后收敛关闭
 │   ├── CreatePrOverlay/CreatePrOverlay.vue         # 创建 PR 进度遮罩(App 根级):手动「创建 PR」点击即全屏阻断(挡住重复点击),按有序步骤(分析代码变更/提交变更/推送分支/创建 PR)展示后端 create_pr_progress 阶段进度及逐步骤 ✓/spinner/灰点标记;无取消入口,成功响应、动作错误或安全超时由控制层关闭(判定在 lib/create-pr-view.ts)
+│   ├── CreateIntentOverlay/CreateIntentOverlay.vue # 创建意图进度遮罩(App 根级):带内容「增加意图」提交即全屏阻断(盖住新增弹窗、挡住重复提交),按有序步骤(下载关联分支/拉取关联分支/创建意图/打开意图会话)展示阶段进度及逐步骤 ✓/spinner/灰点标记 —— 协议无进度帧,阶段由控制层按固定节奏近似推进;无取消入口,创建结果、拒绝或安全超时由控制层关闭(判定在 lib/create-intent-view.ts)
 │   ├── ExitPlanModeDisplay/ExitPlanModeDisplay.vue # ExitPlanMode 计划独立渲染块:解析输入负载中的 plan markdown + 结构化元数据(标题/步骤索引),支持 tool-use/tool-result 双态
 │   ├── MarkdownText/MarkdownText.vue               # 单条文本消息渲染器:assistant 走 Markdown+DOMPurify 双防线、user/system 纯文本转义、Shiki 代码高亮(mermaid 块除外),language 为 mermaid 的围栏块渲染为 SVG 图表(失败保留原代码块),宽表格包局部横滚容器
 │   ├── MessageInput/MessageInput.vue               # 底部输入区:斜杠命令补全、textarea 自增长、语音输入、图片附件(点击/粘贴/拖拽选图+缩略图预览+逐张删除+超阈压缩,随 submit/enqueue 以 PromptImage 上线)、动作按钮内嵌输入框(附件+语音居内部左下、发送为内部右下向下箭头图标按钮)、待发队列管理,移动端软键盘/安全区避让
@@ -179,6 +180,7 @@ web/src/
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源
 │   ├── dev-launch-view.ts                           # 工作启动遮罩纯状态机(历史文件名沿用 dev-launch):最小停留/安全超时常量 + stage→有序步骤映射(stepStatusesForPhase)+ reduceDevLaunch(stage/ready/dwell-complete/timeout 终态收敛),无 DOM/计时器,供 DevStartupOverlay 与控制层
 │   ├── create-pr-view.ts                             # 创建 PR 遮罩纯状态机:最小停留/安全超时常量 + stage→四步映射(createPrStepStatuses)+ reduceCreatePr(stage 单向不回退、异 intent/异 requestId 忽略、done/failed 须匹配本次运行 token 才收敛、dwell-complete/timeout 兜底),无 DOM/计时器,供 CreatePrOverlay 与控制层
+│   ├── create-intent-view.ts                         # 创建意图遮罩纯状态机:最小停留/安全超时/阶段节奏常量 + 四步映射(createIntentStepStatuses)+ reduceCreateIntent(advance 达节奏才推进、末步停驻、done/failed 收敛、dwell-complete/timeout 兜底)+ shouldToastCreateIntentFailure(intent./agent. 已有呈现则不重复 toast),无 DOM/计时器,供 CreateIntentOverlay 与控制层
 │   ├── work-session-jump.ts                         # Start Work 成功后自动跳转纯决策:shouldJumpAfterDevLaunch(仅 ready 跳)+ resolveJumpTargetSessionId(intent.lastWorkSessionId 反查)+ resolvePendingWorkSessionSelect(一次性待选会话落入列表即命中)+ ~1s 延迟常量;控制层据此切 console tab 并选中新 work session
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor;并含右栏 Tab 纯映射(discussionDetailTabs 按字段/researchSessionId 决定可见 tab 与顺序、defaultDiscussionTab(tabs, researchLive) 研究运行中短路到 researchSession、correctActiveTab 回落)
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染

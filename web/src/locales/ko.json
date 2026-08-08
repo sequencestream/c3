@@ -852,6 +852,16 @@
       },
       "timeout": "PR 생성 결과를 확인하지 못했습니다. 다시 시도하기 전에 인텐트의 PR 상태를 확인하세요."
     },
+    "createIntentProgress": {
+      "title": "인텐트 생성 중…",
+      "step": {
+        "fetchBranch": "연결된 브랜치 다운로드",
+        "prepareWorktree": "연결된 브랜치 체크아웃",
+        "createIntent": "인텐트 생성",
+        "openSession": "인텐트 세션 열기"
+      },
+      "timeout": "인텐트 생성 결과를 확인하지 못했습니다. 다시 시도하기 전에 인텐트 목록을 확인하세요."
+    },
     "specLaunch": {
       "title": "사양 세션 시작 중…",
       "step": {

@@ -30,6 +30,7 @@ import type {
   QueueControlAction,
 } from '@ccc/shared/protocol'
 import type { AppState, AuthApi, DepType, TypedT } from './state'
+import type { CreateIntentEvent } from '@/lib/create-intent-view'
 import type { CreatePrEvent } from '@/lib/create-pr-view'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
 import type { SpecLaunchEvent } from '@/lib/spec-launch-view'
@@ -227,6 +228,12 @@ export interface AppMethods {
    * blank registration older callers rely on.
    */
   createIntent(payload?: { content: string; base: CreateIntentBase }): void
+  /**
+   * Fold one create-intent overlay event through the reducer + handle close
+   * side-effects. Only the with-content path has an overlay to fold into; a
+   * blank registration completes at once and never arms one.
+   */
+  dispatchCreateIntent(ev: CreateIntentEvent): void
   /** Open the create dialog (and refresh the deliveries it picks from). */
   openCreateIntentDialog(): void
   /** Cancel the create dialog. A successful create closes it from the handler. */

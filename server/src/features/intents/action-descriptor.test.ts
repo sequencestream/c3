@@ -72,6 +72,8 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     automate: false,
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,

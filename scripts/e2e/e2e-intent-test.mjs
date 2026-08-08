@@ -44,7 +44,7 @@
  * points `C3_DB_PATH` at a throwaway file.
  *
  * Usage:
- *   pnpm start --port 13000     # in another terminal
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # in another terminal
  *   node scripts/e2e/e2e-intent-test.mjs [ws-url]
  */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'

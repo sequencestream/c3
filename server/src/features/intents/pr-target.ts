@@ -17,7 +17,6 @@
  * for).
  */
 import type { Intent } from '@ccc/shared/protocol'
-import { getDefaultMainBranch } from '../../kernel/config/index.js'
 import { getDelivery } from '../deliveries/store.js'
 import { pathToId } from '../../state.js'
 import { normalizeBranchName } from './dependency-gate.js'
@@ -48,6 +47,14 @@ export type PrTargetResolution =
  * a delivery `intent_deliveries` knows nothing about, which would file the PR row
  * under a group the intent detail never renders. Only then does branch readiness
  * apply, so an unusable id never surfaces as "branch not ready".
+ *
+ * The base branch comes from `intent.baseBranch` — the persisted snapshot the
+ * worktree baseline reads too, so the branch a PR targets and the branch the
+ * work was developed on are the same recorded fact rather than two live
+ * derivations that drifted. The ONE exception is an explicitly REQUESTED
+ * delivery: with several links the snapshot holds the first one, and the whole
+ * point of asking the user which delivery to file against is that their answer
+ * decides the base.
  */
 export function resolvePrTarget(
   workspacePath: string,
@@ -67,7 +74,7 @@ export function resolvePrTarget(
   }
 
   if (deliveryId === null) {
-    return { ok: true, deliveryId: null, baseBranch: getDefaultMainBranch(workspacePath) ?? 'main' }
+    return { ok: true, deliveryId: null, baseBranch: intent.baseBranch }
   }
 
   const delivery = getDelivery(deliveryId)
@@ -81,7 +88,11 @@ export function resolvePrTarget(
   if (!delivery.branchReady || branchName === null) {
     return { ok: false, code: 'delivery.guard.branchNotReady' }
   }
-  return { ok: true, deliveryId, baseBranch: branchName }
+  return {
+    ok: true,
+    deliveryId,
+    baseBranch: requestedDeliveryId ? branchName : intent.baseBranch,
+  }
 }
 
 /**

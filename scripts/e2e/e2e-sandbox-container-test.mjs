@@ -41,6 +41,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { enforceIsolatedSettings } from './settings-guard.mjs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const IMAGE = process.env.C3_SANDBOX_IMAGE || 'c3-sandbox-e2e:latest'
@@ -108,7 +109,9 @@ function attach(socket) {
   })
   socket.addEventListener('error', (err) => {
     console.error('[e2e-sandbox-container] ws error:', err.message ?? err)
-    process.exit(3)
+    // 1 = FAIL, not 3: 3 is the settings guard's refusal code and a ws error
+    // must not read like one in the logs.
+    process.exit(1)
   })
 }
 
@@ -265,6 +268,14 @@ async function main() {
   // ── Part A.1: register the system sandbox def (image = local base image) ──────
   send({ type: 'get_settings' })
   const s1 = await waitFor((m) => m.type === 'settings', 'settings (initial)')
+  // Part A writes a sandbox def into the server's settings. Refuse right here —
+  // after the read, before the first write — if that is the real
+  // ~/.c3/settings.json. Decided from this reply rather than a second probe
+  // connection, which could not pass the auth gate this test supports.
+  enforceIsolatedSettings(s1.settingsPath, {
+    testScript: 'scripts/e2e/e2e-sandbox-container-test.mjs',
+    url: URL,
+  })
   const existing = Array.isArray(s1.settings?.sandboxes) ? s1.settings.sandboxes : []
   const def = {
     name: DEF_NAME,

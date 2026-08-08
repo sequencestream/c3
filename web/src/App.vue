@@ -212,6 +212,7 @@ const {
   setIntentStatus,
   deleteIntent,
   setIntentAutomate,
+  setIntentSpecMode,
   updateIntentContent,
   saveSpecContent,
   updateIntentDeps,
@@ -728,6 +729,7 @@ function onCodesChatWidth(px: number): void {
           @set-status="setIntentStatus"
           @delete="deleteIntent"
           @set-automate="setIntentAutomate"
+          @set-spec-mode="setIntentSpecMode"
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"

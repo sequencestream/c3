@@ -8,10 +8,12 @@
  * puts the call to the *other* configured agents to vote on before either
  * auto-resolving (unanimous) or asking the human (split).
  *
- * Config: the agents/keys come from the real `~/.c3/settings.json` (driven via
- * the `get_settings` / `save_settings` wire messages). Consensus is usually off
- * there, so this test TEMPORARILY enables it for the run and RESTORES the
- * original settings on exit. The agents themselves are never modified.
+ * Config: the agents/keys come from the ISOLATED settings the e2e server was
+ * started with — seeded read-only from the real `~/.c3/settings.json`, so the
+ * configured agents are there while nothing written here can reach them. This
+ * test TEMPORARILY enables consensus for the run and RESTORES the snapshot on
+ * exit; the agents themselves are never modified. A guard refuses to run at all
+ * against a server on the real config (see `settings-guard.mjs`).
  *
  * Verification: the run must surface consensus actually executing — either a
  * `consensus_auto` event (all voters agreed → auto allow/deny) or a
@@ -19,10 +21,11 @@
  * A plain `permission_request` with no `consensus` would mean voting did not run.
  *
  * Usage:
- *   pnpm start --port 13000     # in another terminal
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # in another terminal
  *   node scripts/e2e/e2e-consensus-test.mjs [ws-url]
  */
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { assertIsolatedSettings } from './settings-guard.mjs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const TIMEOUT_MS = 300_000 // voting spawns several advisor queries — be generous
@@ -41,6 +44,10 @@ const PROMPT =
 
 console.log(`[e2e] project: ${PROJECT_DIR}`)
 console.log(`[e2e] connecting ${URL}`)
+
+// Toggles `consensus.enabled` on the running server — refuse before the first
+// byte if that server reads the real ~/.c3/settings.json.
+await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-consensus-test.mjs' })
 
 /** @type {WebSocket} */
 const ws = new WebSocket(URL)

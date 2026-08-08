@@ -206,6 +206,18 @@ export function detectDefaultBranch(workspacePath: string): string | undefined {
   return readBranch(workspacePath) ?? undefined
 }
 
+/**
+ * Whether `branch` resolves in this repo, locally or on `origin`. Used only to
+ * choose between the two conventional mainline names when nothing else could be
+ * detected — it answers "does this name exist", never "should we use it".
+ */
+export function branchExists(workspacePath: string, branch: string): boolean {
+  for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
+    if (execGit(workspacePath, ['rev-parse', '--verify', '--quiet', ref]).code === 0) return true
+  }
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // Pull / fetch the latest before a work session starts (2026-06-20)
 //

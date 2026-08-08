@@ -487,6 +487,25 @@ export interface Intent {
   runStatus: IntentRunStatus
   /** Git branch name the work session operates on; `null` when unknown. */
   branchName: string | null
+  /**
+   * The branch this intent is BUILT ON — one persisted snapshot, taken when the
+   * intent is created and re-taken only at the delivery-association lifecycle
+   * edges (first link to a delivery with a ready branch, that delivery's branch
+   * becoming ready, and losing the last link). It never follows a delivery
+   * branch that is later advanced, renamed or rebuilt.
+   *
+   * The single answer for the PR target, the worktree baseline and the detail's
+   * metadata, so those three can never derive a different branch from the same
+   * intent.
+   */
+  baseBranch: string
+  /**
+   * True when {@link baseBranch} was DERIVED at read time because the persisted
+   * snapshot was missing or unusable — the value is the workspace mainline
+   * fallback, not a recorded fact. The UI says so rather than presenting the
+   * fallback as history.
+   */
+  baseBranchFallback: boolean
   /** Latest known commit hash on the dev branch; `null` when unknown. */
   latestCommitHash: string | null
   /**

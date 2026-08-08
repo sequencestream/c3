@@ -964,8 +964,23 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "명세 필요 여부:",
+        "tooltip": "워크스페이스의 명세 주도 개발 설정을 이 인텐트에 한해 재정의합니다.",
+        "option": {
+          "inherit": "워크스페이스 상속",
+          "sdd": "명세 필요 (sdd)",
+          "fast": "명세 불필요 (fast)"
+        },
+        "derived": "현재 적용: {mode}",
+        "workspaceOff": "이 워크스페이스는 명세 주도 개발이 꺼져 있어 지금은 이 설정이 동작에 영향을 주지 않습니다."
+      },
       "branch": {
         "label": "브랜치:"
+      },
+      "baseBranch": {
+        "label": "기준 브랜치:",
+        "fallback": "기록되지 않아 메인라인으로 대체"
       },
       "commit": {
         "label": "커밋:"
@@ -2816,40 +2831,6 @@
       },
       "conflict": {
         "label": "전달 브랜치가 메인라인과 {count}개 파일에서 충돌합니다. 전달이 검증 중으로 되돌아갔습니다. 해결 후 다시 검증하세요."
-      },
-      "diagnosis": {
-        "title": {
-          "label": "전달 PR이 제공되지 않는 이유"
-        },
-        "branchMode": {
-          "label": "Git 브랜치 모드: {mode}"
-        },
-        "status": {
-          "label": "전달 상태: {status}"
-        },
-        "branch": {
-          "label": "브랜치 준비됨: {branch}"
-        },
-        "branchNotReady": {
-          "label": "브랜치 준비됨: 아니요"
-        },
-        "pr": {
-          "label": "전달 PR: #{number} {status}"
-        },
-        "prNone": {
-          "label": "전달 PR: 없음"
-        },
-        "diff": {
-          "ahead": {
-            "label": "전달 브랜치가 앞섬: {count}개 커밋"
-          },
-          "none": {
-            "label": "전달 브랜치가 앞섬: 차이 없음"
-          },
-          "unknown": {
-            "label": "전달 브랜치가 앞섬: 판단 불가"
-          }
-        }
       }
     }
   },

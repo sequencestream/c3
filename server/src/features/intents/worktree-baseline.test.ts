@@ -7,7 +7,7 @@
  * 不存在的分支挡在修复弹窗前面。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Delivery } from '@ccc/shared/protocol'
+import type { Delivery, Intent } from '@ccc/shared/protocol'
 import { checkExistingWorktreeBaseline, resolveWorktreeBaseline } from './worktree-baseline.js'
 import {
   fetchRemoteBase,
@@ -15,7 +15,6 @@ import {
   worktreeContainsRef,
   worktreeExists,
 } from './worktree.js'
-import { getDefaultMainBranch } from '../../kernel/config/index.js'
 
 vi.mock('./worktree.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./worktree.js')>()),
@@ -23,10 +22,6 @@ vi.mock('./worktree.js', async (importOriginal) => ({
   worktreeExists: vi.fn(),
   worktreeContainsRef: vi.fn(),
   isWorktreeClean: vi.fn(),
-}))
-vi.mock('../../kernel/config/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../kernel/config/index.js')>()),
-  getDefaultMainBranch: vi.fn(() => 'main'),
 }))
 
 const delivery = (over: Partial<Delivery> = {}): Delivery =>
@@ -47,45 +42,46 @@ const delivery = (over: Partial<Delivery> = {}): Delivery =>
     ...over,
   }) as Delivery
 
+/** Only the field the baseline reads — the persisted snapshot. */
+const intent = (baseBranch: string): Intent => ({ id: 'i1', baseBranch }) as Intent
+
 beforeEach(() => {
   vi.mocked(fetchRemoteBase).mockReturnValue('origin/delivery/sprint-3')
   vi.mocked(worktreeExists).mockReturnValue(true)
   vi.mocked(worktreeContainsRef).mockReturnValue(true)
   vi.mocked(isWorktreeClean).mockReturnValue(true)
-  vi.mocked(getDefaultMainBranch).mockReturnValue('main')
 })
 
 afterEach(() => vi.clearAllMocks())
 
 describe('resolveWorktreeBaseline', () => {
-  it('有交付且分支就绪 → 基线是交付分支', () => {
-    const b = resolveWorktreeBaseline('/w', delivery())
+  it('基线取意图持久化的基准分支,不从当前交付重新推导', () => {
+    const b = resolveWorktreeBaseline('/w', intent('delivery/sprint-3'), delivery())
     expect(b.baseBranch).toBe('delivery/sprint-3')
-    expect(b.fellBackToMainline).toBe(false)
+    expect(b.offDeliveryBranch).toBe(false)
     expect(b.delivery).toEqual({ id: 'd1', title: '交付 X' })
     expect(fetchRemoteBase).toHaveBeenCalledWith('/w', 'delivery/sprint-3')
   })
 
-  it('交付分支未就绪 → 回退主线基线,并说明这是回退(不是拒绝)', () => {
-    const b = resolveWorktreeBaseline('/w', delivery({ branchReady: false }))
+  it('交付分支未就绪 → 意图快照仍是主线,标记回退(不是拒绝)', () => {
+    const b = resolveWorktreeBaseline('/w', intent('main'), delivery({ branchReady: false }))
     expect(b.baseBranch).toBe('main')
-    expect(b.fellBackToMainline).toBe(true)
+    expect(b.offDeliveryBranch).toBe(true)
     expect(b.delivery).toEqual({ id: 'd1', title: '交付 X' })
   })
 
-  it('无交付上下文 → 主线基线,不标记回退', () => {
-    const b = resolveWorktreeBaseline('/w', null)
+  it('无交付上下文 → 用意图快照,不标记回退', () => {
+    const b = resolveWorktreeBaseline('/w', intent('main'), null)
     expect(b.baseBranch).toBe('main')
-    expect(b.fellBackToMainline).toBe(false)
+    expect(b.offDeliveryBranch).toBe(false)
     expect(b.delivery).toBeNull()
   })
 
-  it('工作区没有配置主线分支 → 无基线可取,也不去 fetch', () => {
-    vi.mocked(getDefaultMainBranch).mockReturnValue(undefined)
-    const b = resolveWorktreeBaseline('/w', null)
-    expect(b.baseBranch).toBeNull()
-    expect(b.remoteRef).toBeNull()
-    expect(fetchRemoteBase).not.toHaveBeenCalled()
+  it('快照与当前交付分支不一致(多交付)→ 仍以快照为准,并标记这不是交付分支', () => {
+    const b = resolveWorktreeBaseline('/w', intent('delivery/other'), delivery())
+    expect(b.baseBranch).toBe('delivery/other')
+    expect(b.offDeliveryBranch).toBe(true)
+    expect(fetchRemoteBase).toHaveBeenCalledWith('/w', 'delivery/other')
   })
 })
 
@@ -94,7 +90,7 @@ describe('checkExistingWorktreeBaseline', () => {
     baseBranch: 'delivery/sprint-3',
     remoteRef: 'origin/delivery/sprint-3',
     delivery: { id: 'd1', title: '交付 X' },
-    fellBackToMainline: false,
+    offDeliveryBranch: false,
     ...over,
   })
 

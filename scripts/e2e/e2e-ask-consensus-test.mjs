@@ -14,9 +14,11 @@
  * consensus e2e.
  *
  * Usage:
- *   pnpm start --port 13000     # in another terminal
+ *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # other terminal
  *   node scripts/e2e/e2e-ask-consensus-test.mjs [ws-url]
  */
+import { assertIsolatedSettings } from './settings-guard.mjs'
+
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const TIMEOUT_MS = 300_000
 
@@ -25,6 +27,10 @@ const PROMPT =
   'manager should this project use?" with header "PkgMgr" and options labeled ' +
   '"pnpm", "npm", "yarn". After I answer, reply with one short sentence naming my ' +
   'choice. Do not use any other tools.'
+
+// Toggles `consensus.enabled` on the running server — refuse before the first
+// byte if that server reads the real ~/.c3/settings.json.
+await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-ask-consensus-test.mjs' })
 
 const ws = new WebSocket(URL)
 

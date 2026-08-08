@@ -28,6 +28,8 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     automate: false,
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,

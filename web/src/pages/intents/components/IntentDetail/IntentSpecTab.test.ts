@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import type { Intent } from '@ccc/shared/protocol'
 import { MACHINE_SPEC_APPROVER } from '@ccc/shared/protocol'
 import IntentSpecTab from './IntentSpecTab.vue'
+
+// 透传 text 的 stub:既让文本类断言照旧成立,也能取到 text / markdown prop——
+// 渲染管线本身(高亮、mermaid、净化)由 MarkdownText.test.ts 覆盖,此处不重复。
+const MarkdownTextStub = defineComponent({
+  props: { text: { type: String, default: '' }, markdown: { type: Boolean, default: false } },
+  template: '<div class="md">{{ text }}</div>',
+})
 
 const SPEC = '/home/u/.c3/specs/proj/2026/07/07/x/spec.md'
 
@@ -25,6 +33,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: SPEC,
@@ -73,7 +83,7 @@ function mountSpec(
       showModify: opts.showModify ?? false,
       modifyDisabled: opts.modifyDisabled ?? false,
     },
-    global: { stubs: { MarkdownText: { template: '<div class="md" />' } } },
+    global: { stubs: { MarkdownText: MarkdownTextStub } },
   })
 }
 
@@ -170,6 +180,7 @@ const REVOKE = '[data-testid="intent-detail-spec-revoke"]'
 const REVIEW = '[data-testid="intent-detail-spec-review"]'
 const VERDICT = '[data-testid="intent-detail-spec-review-verdict"]'
 const APPROVER = '[data-testid="intent-detail-spec-approver"]'
+const REASON = '[data-testid="intent-detail-spec-review-reason"]'
 
 describe('IntentSpecTab — review conclusion + revoke', () => {
   it('shows nothing review-related when there is no conclusion and no approval', () => {
@@ -198,6 +209,26 @@ describe('IntentSpecTab — review conclusion + revoke', () => {
     expect(w.find(VERDICT).classes()).toContain('is-changes')
     expect(w.find(REVIEW).text()).toContain('2')
     expect(w.find(REVIEW).text()).toContain('missing acceptance criteria')
+  })
+
+  it('renders the reason through the markdown pipeline, not as raw text', () => {
+    const reason = '- **missing** acceptance criteria\n- see `spec.md`'
+    const w = mountSpec(intent({ id: 'i1', specReviewVerdict: 'pass', specReviewReason: reason }))
+    const md = w.find(REASON).findComponent(MarkdownTextStub)
+    expect(md.exists()).toBe(true)
+    expect(md.props('text')).toBe(reason)
+    expect(md.props('markdown')).toBe(true)
+  })
+
+  it('renders no reason without a conclusion or with an empty reason', () => {
+    const noVerdict = mountSpec(
+      intent({ id: 'i1', specApproved: true, specApproveUser: 'alice', specReviewReason: 'r' }),
+    )
+    expect(noVerdict.find(REASON).exists()).toBe(false)
+    const noReason = mountSpec(
+      intent({ id: 'i2', specReviewVerdict: 'pass', specReviewReason: '' }),
+    )
+    expect(noReason.find(REASON).exists()).toBe(false)
   })
 
   it('distinguishes a machine approval from a human one', () => {

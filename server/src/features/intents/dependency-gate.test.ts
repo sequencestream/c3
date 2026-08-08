@@ -67,6 +67,8 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     runStatus: 'idle',
     branchName: 'feature/dep',
     latestCommitHash: null,
+    baseBranch: 'main',
+    baseBranchFallback: false,
     prs: [],
     linkedDeliveries: [],
     specPath: null,

@@ -307,19 +307,19 @@ describe('intent_deliveries — the association edge', () => {
     const i = seedIntent(projA, 'Alpha')
 
     expect(isIntentLinked(d.id, i)).toBe(false)
-    expect(insertIntentDelivery(d.id, i)).toBe(true)
+    expect(insertIntentDelivery(d.id, i, null)).toBe(true)
     expect(isIntentLinked(d.id, i)).toBe(true)
-    expect(deleteIntentDelivery(d.id, i)).toBe(true)
+    expect(deleteIntentDelivery(d.id, i, 'main')).toBe(true)
     expect(isIntentLinked(d.id, i)).toBe(false)
     // Deleting what is not there is a no-op verdict, never a throw.
-    expect(deleteIntentDelivery(d.id, i)).toBe(false)
+    expect(deleteIntentDelivery(d.id, i, 'main')).toBe(false)
   })
 
   it('refuses a duplicate (delivery, intent) pair without creating a second row', () => {
     const d = seed(projA).delivery
     const i = seedIntent(projA, 'Alpha')
-    expect(insertIntentDelivery(d.id, i)).toBe(true)
-    expect(insertIntentDelivery(d.id, i)).toBe(false)
+    expect(insertIntentDelivery(d.id, i, null)).toBe(true)
+    expect(insertIntentDelivery(d.id, i, null)).toBe(false)
     const rows = getDb()!.all<{ c: number }>(
       'SELECT COUNT(*) AS c FROM intent_deliveries WHERE delivery_id=? AND intent_id=?',
       d.id,
@@ -332,8 +332,8 @@ describe('intent_deliveries — the association edge', () => {
     const d1 = seed(projA).delivery
     const d2 = seed(projA, 'other').delivery
     const i = seedIntent(projA, 'Alpha')
-    expect(insertIntentDelivery(d1.id, i)).toBe(true)
-    expect(insertIntentDelivery(d2.id, i)).toBe(true)
+    expect(insertIntentDelivery(d1.id, i, null)).toBe(true)
+    expect(insertIntentDelivery(d2.id, i, null)).toBe(true)
     expect(listAssociatedIntents(d1.id).map((r) => r.id)).toEqual([i])
     expect(listAssociatedIntents(d2.id).map((r) => r.id)).toEqual([i])
   })
@@ -342,8 +342,8 @@ describe('intent_deliveries — the association edge', () => {
     const d = seed(projA).delivery
     const beta = seedIntent(projA, 'Beta')
     const alpha = seedIntent(projA, 'Alpha')
-    insertIntentDelivery(d.id, beta)
-    insertIntentDelivery(d.id, alpha)
+    insertIntentDelivery(d.id, beta, null)
+    insertIntentDelivery(d.id, alpha, null)
 
     expect(listAssociatedIntents(d.id)).toEqual([
       { id: alpha, title: 'Alpha', status: 'todo', prStatus: null, headBranch: null },
@@ -355,8 +355,8 @@ describe('intent_deliveries — the association edge', () => {
     const d1 = seed(projA).delivery
     const d2 = seed(projA, 'other').delivery
     const i = seedIntent(projA, 'Alpha')
-    insertIntentDelivery(d1.id, i)
-    insertIntentDelivery(d2.id, i)
+    insertIntentDelivery(d1.id, i, null)
+    insertIntentDelivery(d2.id, i, null)
     // Two PR rows for ONE intent, one per delivery, with different states + heads.
     upsertIntentPr({
       intentId: i,

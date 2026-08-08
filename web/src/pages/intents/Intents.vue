@@ -386,7 +386,6 @@ defineExpose({
         @select-intent="handleSelectIntent"
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
-        @refine="(id: string) => emit('refine', id)"
         @action-target="(target: ActionTarget) => emit('action-target', target)"
         @new-intent="emit('new-intent')"
       />

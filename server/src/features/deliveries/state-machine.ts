@@ -78,6 +78,10 @@ const integrationNotReady = (f: DeliveryTransitionFacts): DeliveryGuardReason | 
   return null
 }
 
+// Never delete this guard because the plan stops reporting it: the plan evaluates
+// it as already met (the page's confirmation dialog IS the confirmation), while
+// the WRITE still demands the client send `confirmVerified: true` — that is what
+// refuses a stale client that clicked without confirming.
 const verificationNotConfirmed = (f: DeliveryTransitionFacts): DeliveryGuardReason | null =>
   f.confirmVerified ? null : { code: 'delivery.guard.verificationNotConfirmed' }
 
@@ -168,9 +172,18 @@ export function deliveryProgressTargets(from: DeliveryStatus): DeliveryStatus[] 
 
 /**
  * The reachability + gaps a page renders for one delivery's current status.
- * Evaluated for a HUMAN viewer (`confirmVerified` false, `mergeSucceeded`
- * false — those are write-time facts): a human-action edge whose data guards
- * pass reads `satisfied`, everything else reads `failed` with reasons.
+ * Evaluated for a HUMAN viewer: a human-action edge whose data guards pass reads
+ * `satisfied`, everything else reads `failed` with reasons.
+ *
+ * Two write-time facts are supplied differently here, because the plan answers
+ * "can the user act on this NOW", not "would this write succeed as-is":
+ * - `confirmVerified: true` — the human confirmation is the CLICK's own dialog,
+ *   not a gap the page could show a fix for. Evaluating it as unmet would make
+ *   `verifying → verified` permanently `failed`, so the button that opens that
+ *   dialog could never render. `delivery.guard.verificationNotConfirmed` is
+ *   therefore never a plan reason; it stays a WRITE reason (see the guard).
+ * - `mergeSucceeded: false` — a real outcome nobody can conjure by clicking, and
+ *   its edge is system-only anyway, so it stays a gap.
  */
 export function computeTransitionPlan(delivery: Delivery): DeliveryTransitionPlan {
   const targets: DeliveryTargetTransition[] = deliveryProgressTargets(delivery.status).map((to) => {
@@ -180,7 +193,7 @@ export function computeTransitionPlan(delivery: Delivery): DeliveryTransitionPla
       role: 'human',
       branchReady: delivery.branchReady,
       integration: delivery.integration,
-      confirmVerified: false,
+      confirmVerified: true,
       mergeSucceeded: false,
     })
     if (verdict.ok) return { to, humanAction: true, guard: 'satisfied', reasons: [] }

@@ -154,6 +154,10 @@ export interface AssociatedIntent {
   prStatus: IntentPrStatus | null
   /** Head branch of that PR; `null` when there is no PR or it is unknown. */
   headBranch: string | null
+  /** Number of that PR within its repo; `null` when there is no PR. */
+  prNumber: string | null
+  /** Link to that PR on the forge; `null` when there is no PR or no URL. */
+  prUrl: string | null
 }
 
 /**

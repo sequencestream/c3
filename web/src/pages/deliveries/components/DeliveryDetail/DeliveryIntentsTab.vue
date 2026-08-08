@@ -2,14 +2,18 @@
 /*
  * DeliveryIntentsTab.vue — 关联意图 tab。
  *
- * 列表四列:意图标题 / 意图状态 / **该意图对本交付的 PR 状态** / head 分支。第三列
- * 取服务端 `associatedIntents[].prStatus`(即 delivery_id 命中本交付的那条 PR),
- * 不是意图的全局 PR 聚合 —— 同一意图可对不同交付各有一条 PR,用全局聚合会把别的
- * 交付的状态显示到这里。本组件不做任何聚合,只渲染服务端给的行。
+ * 列表四列:意图标题 / 意图状态 / **该意图对本交付的 PR** / head 分支。第三列取服务端
+ * `associatedIntents[]` 的 `prStatus`/`prNumber`/`prUrl`(即 delivery_id 命中本交付的
+ * 那条 PR),不是意图的全局 PR 聚合 —— 同一意图可对不同交付各有一条 PR,用全局聚合会
+ * 把别的交付的状态显示到这里。本组件不做任何聚合,只渲染服务端给的行;PR 编号在有
+ * `prUrl` 时是跳向 forge 的新窗口链接,无链接时退化为纯文本。
  *
- * 解除关联收在行尾次级位置:PR 已 merged 的行渲染为禁用态(带 tooltip),未合并行
- * 走 danger ConfirmDialog 二次确认后上抛。是否真能解除由服务端复核(本地 + forge
- * 实时状态双层),本组件的禁用只是提前表达,不构成门禁。
+ * 意图状态用组件私有的徽标类分色(七态,含 blocked/failed),不复用全局 `.req-status`
+ * —— 意图主列表/详情的状态样式不在本轮范围内,私有类可独立演进而不牵动那两处。
+ *
+ * 解除关联收在行尾次级位置:PR 已 merged 的行整个按钮不渲染(合并后本就不可解除,
+ * 留一个禁用按钮只是噪声),未合并行走 danger ConfirmDialog 二次确认后上抛。是否真能
+ * 解除由服务端复核(本地 + forge 实时状态双层),本组件的隐藏只是提前表达,不构成门禁。
  *
  * 关联入口只列出「尚未归属任何交付」的意图:第一版不开放一个意图关联多个交付的
  * 入口(数据层支持多行,交互层不给路径)。
@@ -51,6 +55,11 @@ const PR_STATUS_LABEL_KEYS = {
 
 function prStatusLabel(s: IntentPrStatus | null): string {
   return s ? t(PR_STATUS_LABEL_KEYS[s]) : t('delivery.page.associatedIntents.noPr.label')
+}
+
+/** 「PR #123」—— 编号本身,链接与否由模板决定。 */
+function prNumberLabel(number: string): string {
+  return t('delivery.page.associatedIntents.pr.label', { number })
 }
 
 // ── 关联入口 ────────────────────────────────────────────────────────────────
@@ -150,30 +159,49 @@ function confirmUnlink(): void {
         >
           {{ row.title }}
         </button>
-        <span class="delivery-intents-cell delivery-intents-cell--status">{{
-          statusLabel(row.status)
-        }}</span>
+        <span
+          class="delivery-intents-cell delivery-intents-cell--status delivery-intents-status"
+          :class="row.status"
+          :data-testid="`delivery-intent-status-${row.id}`"
+          >{{ statusLabel(row.status) }}</span
+        >
         <span
           class="delivery-intents-cell delivery-intents-cell--pr"
-          :class="row.prStatus ? `req-pr-status--${row.prStatus}` : ''"
           :data-testid="`delivery-intent-pr-${row.id}`"
-          >{{ prStatusLabel(row.prStatus) }}</span
         >
+          <template v-if="row.prStatus">
+            <!-- 有 url 才是链接:新窗口跳 forge。锚点点击不冒泡到标题的 open-intent。 -->
+            <a
+              v-if="row.prNumber && row.prUrl"
+              class="delivery-intents-pr-link"
+              :href="row.prUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              :data-testid="`delivery-intent-pr-link-${row.id}`"
+              >{{ prNumberLabel(row.prNumber) }}</a
+            >
+            <span
+              v-else-if="row.prNumber"
+              class="delivery-intents-pr-number"
+              :data-testid="`delivery-intent-pr-number-${row.id}`"
+              >{{ prNumberLabel(row.prNumber) }}</span
+            >
+            <span
+              class="req-pr-status"
+              :class="`req-pr-status--${row.prStatus}`"
+              :data-testid="`delivery-intent-pr-status-${row.id}`"
+              >{{ prStatusLabel(row.prStatus) }}</span
+            >
+          </template>
+          <template v-else>{{ prStatusLabel(null) }}</template>
+        </span>
         <span class="delivery-intents-cell delivery-intents-cell--branch">{{
           row.headBranch ?? '—'
         }}</span>
+        <!-- merged 的行不渲染解除入口:合并后不可解除是既定语义,merged 徽标已说明
+             一切,留个禁用按钮只会请人来点一次再被拒。 -->
         <button
-          v-if="row.prStatus === 'merged'"
-          type="button"
-          class="delivery-intents-unlink-btn"
-          :data-testid="`delivery-intent-unlink-${row.id}`"
-          disabled
-          :title="t('delivery.action.unlink.mergedDisabled.tooltip')"
-        >
-          {{ t('delivery.action.unlink.label') }}
-        </button>
-        <button
-          v-else
+          v-if="row.prStatus !== 'merged'"
           type="button"
           class="delivery-intents-unlink-btn"
           :data-testid="`delivery-intent-unlink-${row.id}`"
@@ -313,6 +341,61 @@ function confirmUnlink(): void {
 .delivery-intents-cell--title:hover {
   background: var(--c-hover);
 }
+/* 意图状态徽标:与意图列表 .req-status 同款 pill,但类是组件私有的 —— 全局那份服务
+   意图主列表/详情,本轮不动它;这里额外补齐 blocked/failed 两态。 */
+.delivery-intents-status {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
+}
+.delivery-intents-status.draft {
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
+}
+.delivery-intents-status.todo {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--c-primary-text);
+}
+.delivery-intents-status.in_progress {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--c-warning-text);
+}
+.delivery-intents-status.done {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--c-success-text);
+}
+.delivery-intents-status.cancelled {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--c-error-text);
+}
+/* 卡住与失败都是「需要人来看一眼」,同族但比 in_progress / cancelled 更重的填充,
+   免得三个暖色/红色态在一列里读成同一个。 */
+.delivery-intents-status.blocked {
+  background: rgba(245, 158, 11, 0.3);
+  color: var(--c-warning-text);
+}
+.delivery-intents-status.failed {
+  background: rgba(239, 68, 68, 0.24);
+  color: var(--c-error-text);
+}
+/* PR 列:编号(可跳转)+ 状态徽标并排。 */
+.delivery-intents-cell--pr {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.delivery-intents-pr-link,
+.delivery-intents-pr-number {
+  white-space: nowrap;
+}
+.delivery-intents-pr-link {
+  color: var(--c-primary-text);
+  text-decoration: underline;
+}
 .delivery-intents-unlink-btn {
   flex-shrink: 0;
   margin-left: auto;
@@ -324,10 +407,6 @@ function confirmUnlink(): void {
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-}
-.delivery-intents-unlink-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 .delivery-intents-ready {
   margin: 0;

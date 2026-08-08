@@ -6,9 +6,22 @@
  */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { AssociatedIntent, Delivery, Intent } from '@ccc/shared/protocol'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import type { AssociatedIntent, Delivery, Intent, IntentStatus } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import DeliveryIntentsTab from './DeliveryIntentsTab.vue'
+
+/** 意图七态,与 `IntentStatus` 同步 —— 少一态就少一条分色断言。 */
+const INTENT_STATUSES: IntentStatus[] = [
+  'draft',
+  'todo',
+  'in_progress',
+  'done',
+  'cancelled',
+  'blocked',
+  'failed',
+]
 
 function delivery(over: Partial<Delivery> = {}): Delivery {
   return {
@@ -36,6 +49,8 @@ function row(over: Partial<AssociatedIntent> = {}): AssociatedIntent {
     status: 'todo',
     prStatus: null,
     headBranch: null,
+    prNumber: null,
+    prUrl: null,
     ...over,
   }
 }
@@ -102,22 +117,69 @@ describe('DeliveryIntentsTab', () => {
     const towardD1 = mountTab({ rows: [row({ prStatus: 'merged', headBranch: 'feat/x' })] })
     const towardD2 = mountTab({ rows: [row({ prStatus: 'reviewing', headBranch: 'feat/x' })] })
 
-    expect(towardD1.find('[data-testid="delivery-intent-pr-i1"]').classes()).toContain(
+    expect(towardD1.find('[data-testid="delivery-intent-pr-status-i1"]').classes()).toContain(
       'req-pr-status--merged',
     )
-    expect(towardD2.find('[data-testid="delivery-intent-pr-i1"]').classes()).toContain(
+    expect(towardD2.find('[data-testid="delivery-intent-pr-status-i1"]').classes()).toContain(
       'req-pr-status--reviewing',
     )
-    expect(towardD1.find('[data-testid="delivery-intent-pr-i1"]').classes()).not.toContain(
+    expect(towardD1.find('[data-testid="delivery-intent-pr-status-i1"]').classes()).not.toContain(
       'req-pr-status--reviewing',
     )
   })
 
-  it('disables unlink on a merged row and keeps it live otherwise', () => {
+  it('renders the PR number as a new-window forge link when the row carries a url', () => {
+    const w = mountTab({
+      rows: [
+        row({ prStatus: 'reviewing', prNumber: '42', prUrl: 'https://forge.test/o/r/pull/42' }),
+      ],
+    })
+    const link = w.find('[data-testid="delivery-intent-pr-link-i1"]')
+    expect(link.element.tagName).toBe('A')
+    expect(link.attributes('href')).toBe('https://forge.test/o/r/pull/42')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(link.text()).toContain('#42')
+    // 编号旁边仍有状态徽标,编号本身不承担状态语义。
+    expect(w.find('[data-testid="delivery-intent-pr-status-i1"]').exists()).toBe(true)
+  })
+
+  it('renders the PR number as plain text when there is no url', () => {
+    const w = mountTab({ rows: [row({ prStatus: 'reviewing', prNumber: '7', prUrl: null })] })
+    expect(w.find('[data-testid="delivery-intent-pr-link-i1"]').exists()).toBe(false)
+    const number = w.find('[data-testid="delivery-intent-pr-number-i1"]')
+    expect(number.exists()).toBe(true)
+    expect(number.text()).toContain('#7')
+  })
+
+  it('renders the no-PR placeholder — no number, no status badge — when the row has none', () => {
+    const w = mountTab({ rows: [row()] })
+    const cell = w.find('[data-testid="delivery-intent-pr-i1"]')
+    expect(cell.exists()).toBe(true)
+    expect(cell.text()).toBeTruthy()
+    expect(w.find('[data-testid="delivery-intent-pr-status-i1"]').exists()).toBe(false)
+    expect(w.find('[data-testid="delivery-intent-pr-link-i1"]').exists()).toBe(false)
+    expect(w.find('[data-testid="delivery-intent-pr-number-i1"]').exists()).toBe(false)
+  })
+
+  it('colours the intent status badge per status, including blocked / failed', () => {
+    for (const status of INTENT_STATUSES) {
+      const w = mountTab({ rows: [row({ status })] })
+      const badge = w.find('[data-testid="delivery-intent-status-i1"]')
+      expect(badge.exists(), status).toBe(true)
+      // 私有徽标类 + 状态值类:全局 .req-status 不参与,意图主列表样式不受牵动。
+      expect(badge.classes(), status).toContain('delivery-intents-status')
+      expect(badge.classes(), status).toContain(status)
+      expect(badge.classes(), status).not.toContain('req-status')
+    }
+  })
+
+  it('drops the unlink button entirely on a merged row and keeps it live otherwise', () => {
     const merged = mountTab({ rows: [row({ prStatus: 'merged' })] })
-    expect(merged.find('[data-testid="delivery-intent-unlink-i1"]').attributes('disabled')).toBe('')
+    expect(merged.find('[data-testid="delivery-intent-unlink-i1"]').exists()).toBe(false)
 
     const open = mountTab({ rows: [row({ prStatus: 'reviewing' })] })
+    expect(open.find('[data-testid="delivery-intent-unlink-i1"]').exists()).toBe(true)
     expect(open.find('[data-testid="delivery-intent-unlink-i1"]').attributes('disabled')).toBe(
       undefined,
     )
@@ -166,5 +228,42 @@ describe('DeliveryIntentsTab', () => {
     await w.find('[data-testid="delivery-intents-link"]').trigger('click')
     expect(w.find('[data-testid="delivery-intents-picker-empty"]').exists()).toBe(true)
     expect(w.find('[data-testid="delivery-intents-link-confirm"]').exists()).toBe(false)
+  })
+})
+
+// ---- 意图状态徽标的配色契约 --------------------------------------------
+
+// happy-dom 不计算样式,配色契约直接对组件源码里的 CSS 规则做断言(与
+// DeliveryList / DeliveryDetail 同一范式)。
+const tabSrc = readFileSync(
+  resolve(
+    process.cwd(),
+    'web/src/pages/deliveries/components/DeliveryDetail/DeliveryIntentsTab.vue',
+  ),
+  'utf8',
+)
+
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+}
+
+describe('DeliveryIntentsTab.vue — 意图状态徽标配色契约', () => {
+  it('七态各有一条配色规则且互不相同', () => {
+    const bodies = INTENT_STATUSES.map((s) => {
+      const body = ruleBody(tabSrc, `.delivery-intents-status.${s}`)
+      expect(body, s).toMatch(/color:/)
+      expect(body, s).toMatch(/background:/)
+      return body.replace(/\s+/g, '')
+    })
+    expect(new Set(bodies).size).toBe(INTENT_STATUSES.length)
+  })
+
+  it('徽标是组件私有 pill,不改写全局 .req-status', () => {
+    const base = ruleBody(tabSrc, '.delivery-intents-status')
+    expect(base).toMatch(/font-size:\s*var\(--fs-badge\)/)
+    expect(base).toMatch(/border-radius:\s*var\(--radius-pill\)/)
+    // 组件内没有任何 .req-status 规则:全局那份归意图主列表/详情,本轮不动。
+    expect(ruleBody(tabSrc, '.req-status')).toBe('')
   })
 })

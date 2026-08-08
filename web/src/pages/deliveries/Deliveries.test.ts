@@ -126,6 +126,8 @@ describe('Deliveries', () => {
             status: 'todo',
             prStatus: null,
             headBranch: null,
+            prNumber: null,
+            prUrl: null,
           },
         ],
         intents: [],

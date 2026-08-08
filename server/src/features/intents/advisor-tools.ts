@@ -10,8 +10,9 @@
  * Three properties hold it together:
  *
  *  1. **Not general automation capability.** These tools are built by their own
- *     builder and MUST NOT join `AUTOMATION_C3_TOOL_NAMES`. An ordinary
- *     automation's tool list is unchanged by this module's existence.
+ *     builder; an ordinary automation's tool list is unchanged by this module's
+ *     existence, except for the single deliberately shared name listed in
+ *     {@link ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES}.
  *  2. **Scope lives in the closure.** `workspacePath` and `intentId` are bound
  *     when the group is built. No tool accepts either as an argument, so a model
  *     cannot reach another workspace's or another intent's data by asking.
@@ -608,12 +609,30 @@ export function buildAdvisorC3Tools(
  *
  * Derived from {@link buildAdvisorC3Tools} so it can never drift from what is
  * actually registered. This list is deliberately SEPARATE from
- * `AUTOMATION_C3_TOOL_NAMES`: ordinary automations do not gain these tools.
+ * `AUTOMATION_C3_TOOL_NAMES`: apart from
+ * {@link ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES}, ordinary automations do not
+ * gain these tools.
  */
 export const ADVISOR_C3_TOOL_NAMES: readonly string[] = buildAdvisorC3Tools(
   { workspacePath: '', intentId: '', chainDepth: 0, sessionId: '' },
   null,
 ).map((t) => t.name)
+
+/**
+ * The names this group deliberately shares with `AUTOMATION_C3_TOOL_NAMES` —
+ * written out by hand, so widening the overlap is always an explicit edit rather
+ * than a silent side effect of adding a tool.
+ *
+ * `sync_intent_pr_status` is the only one. Both surfaces merely TRIGGER the same
+ * `syncIntentPrStatus` core — no status value crosses the wire either way, the
+ * forge decides — so exposing it to ordinary automations grants no advisor
+ * capability. The two registrations still differ where it matters: the automation
+ * tool takes an `intentId` argument, while the advisor's is closure-bound to its
+ * one intent and must clear human confirmation.
+ */
+export const ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES: readonly string[] = [
+  'sync_intent_pr_status',
+]
 
 /** The subset of the advisor group that must clear the write-approval queue. */
 export const ADVISOR_CONFIRMED_TOOL_NAMES: readonly string[] = buildAdvisorC3Tools(

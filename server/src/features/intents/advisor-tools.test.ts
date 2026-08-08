@@ -32,6 +32,7 @@ import {
 import {
   ADVISOR_CONFIRMED_TOOL_NAMES,
   ADVISOR_C3_TOOL_NAMES,
+  ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES,
   buildAdvisorC3Tools,
   redactAndTail,
   TRANSCRIPT_TAIL_LIMIT,
@@ -138,9 +139,16 @@ describe('advisor tool group — surface', () => {
     expect(ADVISOR_C3_TOOL_NAMES).not.toContain('approve_spec')
   })
 
-  it('does NOT leak into the ordinary automation tool set', () => {
+  it('does NOT leak into the ordinary automation tool set, beyond the one shared trigger', () => {
     for (const name of ADVISOR_C3_TOOL_NAMES) {
+      if (ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES.includes(name)) continue
       expect(AUTOMATION_C3_TOOL_NAMES).not.toContain(name)
+    }
+    // The declared overlap is not a free pass: every name on it must really be
+    // registered on BOTH surfaces, so a stale entry cannot silently excuse a leak.
+    for (const name of ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES) {
+      expect(ADVISOR_C3_TOOL_NAMES).toContain(name)
+      expect(AUTOMATION_C3_TOOL_NAMES).toContain(name)
     }
   })
 

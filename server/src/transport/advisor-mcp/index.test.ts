@@ -36,6 +36,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetStoreForTests } from '../../features/intents/store.js'
 import {
   ADVISOR_C3_TOOL_NAMES,
+  ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES,
   type AdvisorToolDeps,
 } from '../../features/intents/advisor-tools.js'
 import { AUTOMATION_C3_TOOL_NAMES } from '../../features/automations/c3-tools.js'
@@ -198,9 +199,13 @@ describe('advisor MCP HTTP route', () => {
     expect(r.status).toBe(404)
   })
 
-  it('keeps the advisor group OUT of the ordinary automation tool set', () => {
+  it('keeps the advisor group OUT of the ordinary automation tool set, beyond the one shared trigger', () => {
     for (const name of ADVISOR_C3_TOOL_NAMES) {
+      if (ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES.includes(name)) continue
       expect(AUTOMATION_C3_TOOL_NAMES).not.toContain(name)
+    }
+    for (const name of ADVISOR_SHARED_WITH_AUTOMATION_TOOL_NAMES) {
+      expect(AUTOMATION_C3_TOOL_NAMES).toContain(name)
     }
   })
 })

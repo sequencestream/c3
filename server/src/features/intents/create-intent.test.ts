@@ -11,7 +11,10 @@
  *  3. 会话只起一条,且它的第一句话就是共享 builder 对这条新记录的输出 —— 新入口不
  *     允许另写一套 prompt 模板;
  *  4. 启动失败时会话资源被回收,但意图连同内容和基准**留下** —— 用户刚敲的内容不能
- *     因为会话没起来就被丢掉。
+ *     因为会话没起来就被丢掉;
+ *  5. **选交付即关联交付** —— 选交付落的不只是一个分支名,还有 `intent_deliveries`
+ *     那条边,因此建 PR 目标、依赖闸门与会话交付上下文从第一刻起就在交付语境里,
+ *     用户不必事后再补一次「关联交付」。选分支/不选则一条边都不产生。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -31,6 +34,7 @@ import { removeRuntime } from '../../runs.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
   createDelivery,
+  listAssociatedIntents,
   resetStoreForTests as resetDeliveryStoreForTests,
   setDeliveryBranch,
 } from '../deliveries/store.js'
@@ -100,8 +104,9 @@ function harness(launchRun = vi.fn().mockResolvedValue(undefined)) {
     sendSessions: async () => {},
   } as unknown as Conn
   const broadcastIntents = vi.fn()
-  const ctx = { launchRun, broadcastIntents } as unknown as KernelContext
-  return { sent, conn, ctx, launchRun, broadcastIntents }
+  const broadcastDeliveries = vi.fn()
+  const ctx = { launchRun, broadcastIntents, broadcastDeliveries } as unknown as KernelContext
+  return { sent, conn, ctx, launchRun, broadcastIntents, broadcastDeliveries }
 }
 
 /** 一条本工作区的交付;给了 `branch` 就同时标记分支就绪。 */
@@ -162,6 +167,8 @@ describe('create_intent — 基准分支落库', () => {
       content: 'CONTENT_ABC',
       baseBranch: 'feature/x',
       baseBranchFallback: false,
+      // 选分支只是选了一个基线,不是选了一条交付——不产生任何关联边。
+      linkedDeliveries: [],
     })
 
     removeRuntime(selectedSessionId(h.sent))
@@ -199,10 +206,65 @@ describe('create_intent — 基准分支落库', () => {
       title: 'new intent',
       content: '',
       baseBranch: 'develop',
+      linkedDeliveries: [],
     })
     // 没有内容就没有会话——「+」的空白登记语义原样保留。
     expect(h.launchRun).not.toHaveBeenCalled()
     expect(h.sent.some((m) => m.type === 'session_selected')).toBe(false)
+  })
+})
+
+/**
+ * 「选交付」是一次对交付的选择,不是对分支名的选择:关联边和基准快照必须在同一次创建
+ * 里一起落定,否则用户明明选了交付,建 PR 目标、依赖闸门与会话交付上下文却仍按「无
+ * 关联交付」解析,还得再去补一次手动关联。
+ */
+describe('create_intent — 选交付即自动关联交付', () => {
+  it('落库意图的同时写入关联边,回执与读模型都带上该交付', async () => {
+    const delivery = seedDelivery('D1', 'delivery/v1')
+    const h = harness()
+
+    await createIntent(h.ctx, h.conn, {
+      type: 'create_intent',
+      workspaceId,
+      content: 'CONTENT_ABC',
+      base: { kind: 'delivery', deliveryId: delivery.id },
+    })
+
+    const created = getIntent(listIntents(proj)[0].id)!
+    expect(created).toMatchObject({
+      baseBranch: 'delivery/v1',
+      baseBranchFallback: false,
+      linkedDeliveries: [{ id: delivery.id, title: 'D1' }],
+    })
+    // 回执是客户端落点用的那份快照——它必须已经含关联,而不是等下一次广播才补上。
+    expect(h.sent.find((m) => m.type === 'create_intent_result')).toMatchObject({
+      intent: { id: created.id, linkedDeliveries: [{ id: delivery.id }] },
+    })
+    // 交付详情的「关联意图」读的是同一条边,所以这次写入也得推到交付侧。
+    expect(listAssociatedIntents(delivery.id)).toMatchObject([{ id: created.id }])
+    expect(h.broadcastDeliveries).toHaveBeenCalledWith(proj)
+
+    removeRuntime(selectedSessionId(h.sent))
+  })
+
+  it('内容为空的空白登记同样关联 —— 不留「选了交付却没有关联」的角落', async () => {
+    const delivery = seedDelivery('D1', 'delivery/v1')
+    const h = harness()
+
+    await createIntent(h.ctx, h.conn, {
+      type: 'create_intent',
+      workspaceId,
+      base: { kind: 'delivery', deliveryId: delivery.id },
+    })
+
+    expect(listIntents(proj)[0]).toMatchObject({
+      content: '',
+      baseBranch: 'delivery/v1',
+      linkedDeliveries: [{ id: delivery.id }],
+    })
+    // 空白登记的语义不变:关联了也不起会话。
+    expect(h.launchRun).not.toHaveBeenCalled()
   })
 })
 
@@ -249,6 +311,8 @@ describe('create_intent — 基准拒绝路径(一条意图都不留)', () => {
       { type: 'error', error: { code: 'delivery.guard.branchNotReady' } },
     ])
     expect(listIntents(proj)).toEqual([])
+    // 拒绝发生在 INSERT 之前,所以既没有意图,也没有那条本会跟着意图一起写的关联边。
+    expect(listAssociatedIntents(delivery.id)).toEqual([])
   })
 
   it('分支名为空白 → 拒绝,而不是落一个空基准', async () => {

@@ -792,6 +792,42 @@
     "create": {
       "label": "Add intent"
     },
+    "createDialog": {
+      "title": {
+        "label": "의도 추가"
+      },
+      "baseSource": {
+        "label": "기준",
+        "branch": {
+          "label": "기준 브랜치"
+        },
+        "delivery": {
+          "label": "납품"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "브랜치 이름"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "납품 선택"
+        },
+        "empty": {
+          "label": "이 워크스페이스에는 아직 브랜치가 준비된 납품이 없습니다."
+        }
+      },
+      "content": {
+        "label": "의도 내용",
+        "placeholder": {
+          "label": "무엇을 하고 싶은지 설명하세요. 이 내용이 의도 세션의 첫 발화가 됩니다."
+        }
+      },
+      "submit": {
+        "label": "생성하고 시작"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "이 의도에는 완료되지 않은 의존성이 있습니다. 그래도 작업을 시작할까요?"
     },
@@ -2184,6 +2220,7 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
+      "baseBranchRequired": "기준 브랜치를 선택하세요. 브랜치 이름은 비워 둘 수 없습니다.",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",

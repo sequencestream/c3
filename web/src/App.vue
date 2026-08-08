@@ -91,6 +91,9 @@ const IntentActionErrorDialog = asyncOverlay(
 const GateEscapeDialog = asyncOverlay(
   () => import('./components/GateEscapeDialog/GateEscapeDialog.vue'),
 )
+const CreateIntentDialog = asyncOverlay(
+  () => import('./pages/intents/components/CreateIntentDialog/CreateIntentDialog.vue'),
+)
 
 const { t } = useTypedI18n()
 
@@ -229,6 +232,9 @@ const {
   queueControl,
   selectIntentSession,
   createIntent,
+  createIntentDialogOpen,
+  openCreateIntentDialog,
+  closeCreateIntentDialog,
   startIntentSession,
   // ---- deliveries ----
   deliveriesProject,
@@ -466,6 +472,22 @@ function shareIntent(intentId: string): void {
 // repair is a one-off git action. The dialog closes first so a second refusal
 // (a different gate, or the same one still closed) shows as its own event.
 
+/**
+ * The intent workspace's main branch: the explicit workspace setting first, the
+ * server-side project config next, the probed default last. Named once because
+ * both the intents page and the create dialog's branch pre-fill must agree on
+ * what "the default" is — two copies of this chain could disagree.
+ */
+const intentsWorkspaceMainBranch = computed<string | null>(
+  () =>
+    currentWorkspaceSetting.value?.defaultMainBranch ??
+    (intentsProject.value
+      ? serverSettings.value?.projectConfigs?.[intentsProject.value]?.defaultMainBranch
+      : null) ??
+    detectedMainBranch.value ??
+    null,
+)
+
 /** The candidate deliveries the `delivery-context` exit offers, from the ledger. */
 const gateEscapeDeliveries = computed(() => {
   const id = intentGateEscape.value?.escape.intentId
@@ -657,13 +679,7 @@ function onCodesChatWidth(px: number): void {
           :requested-intent-id="requestedIntentId"
           :requested-intent-sub-tab="requestedIntentSubTab"
           :requested-intent-session-id="requestedIntentSessionId"
-          :workspace-main-branch="
-            currentWorkspaceSetting?.defaultMainBranch ??
-            (intentsProject
-              ? serverSettings?.projectConfigs?.[intentsProject]?.defaultMainBranch
-              : null) ??
-            detectedMainBranch
-          "
+          :workspace-main-branch="intentsWorkspaceMainBranch"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (intentsProject
@@ -744,7 +760,7 @@ function onCodesChatWidth(px: number): void {
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"
           @open-queue="openQueuePage"
-          @new-intent="createIntent"
+          @new-intent="openCreateIntentDialog"
           @start-intent-session="startIntentSession"
           @set-session-agent="onSetSessionAgent"
           @respond="respond"
@@ -1111,6 +1127,20 @@ function onCodesChatWidth(px: number): void {
     @force-dependency="onForceDependencyGate"
     @repair-worktree="onRepairWorktree"
     @choose-delivery="onChooseDeliveryContext"
+  />
+
+  <!-- 「增加意图」 dialog: base (delivery or branch) + the content that becomes the
+       intent's body AND the first turn of its session. Opened by the intent
+       list's 「+」; closed by the create result, never by a refusal — a refused
+       create keeps the form so the user can fix the base without retyping. -->
+  <CreateIntentDialog
+    v-if="createIntentDialogOpen"
+    :open="createIntentDialogOpen"
+    :deliveries="intentLinkDeliveries"
+    :main-branch="intentsWorkspaceMainBranch"
+    :pending="createIntentPending"
+    @confirm="createIntent"
+    @cancel="closeCreateIntentDialog"
   />
 
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction

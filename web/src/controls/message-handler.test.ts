@@ -39,6 +39,14 @@ function makeCtx() {
   const intentActionError = ref<string | null>(null)
   const intentActionErrorSeq = ref(0)
   const createIntentPending = ref(false)
+  const createIntentDialogOpen = ref(false)
+  const intents = ref<Record<string, unknown[]>>({})
+  const intentsSdd = ref<Record<string, boolean>>({})
+  const dispatchDevLaunch = vi.fn()
+  const consumePendingWorkSessionSelect = vi.fn()
+  const intentsProject = ref<string | null>(null)
+  const requestedIntentId = ref<string | null>(null)
+  const requestedIntentSubTab = ref<string | null>(null)
   const devLaunch = ref({})
   const specLaunch = ref({})
   const closeDevLaunch = vi.fn()
@@ -173,6 +181,14 @@ function makeCtx() {
     intentActionErrorGuidance,
     intentActionErrorSeq,
     createIntentPending,
+    createIntentDialogOpen,
+    intents,
+    intentsSdd,
+    dispatchDevLaunch,
+    consumePendingWorkSessionSelect,
+    intentsProject,
+    requestedIntentId,
+    requestedIntentSubTab,
     devLaunch,
     specLaunch,
     createPrProgress,
@@ -233,6 +249,15 @@ function makeCtx() {
     intentActionError,
     intentActionErrorGuidance,
     intentActionErrorSeq,
+    createIntentPending,
+    createIntentDialogOpen,
+    intents,
+    intentsSdd,
+    dispatchDevLaunch,
+    consumePendingWorkSessionSelect,
+    intentsProject,
+    requestedIntentId,
+    requestedIntentSubTab,
     closeDevLaunch,
     dispatchSpecLaunch,
     createPrProgress,
@@ -2105,5 +2130,83 @@ describe('delivery detail ahead facts + cross-delivery residue clearing', () => 
     expect(result.activeDeliveryPr.value).toBeNull()
     expect(result.activeDeliveryMainlineAhead.value).toBeNull()
     expect(result.activeDeliveryBranchAhead.value).toBeNull()
+  })
+})
+
+describe('create_intent_result — 精确落点与守卫释放', () => {
+  const created = (id: string, workspaceId: string) =>
+    ({
+      type: 'create_intent_result',
+      workspaceId,
+      intent: { id, title: 'new intent' },
+    }) as unknown as ServerToClient
+
+  it('按返回的精确 id 落点到该意图的意图会话 tab,并释放守卫、关掉弹窗', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+    h.createIntentPending.value = true
+    h.createIntentDialogOpen.value = true
+
+    h.ctx.handleMessage(created('i-42', '/ws'))
+
+    expect(h.requestedIntentId.value).toBe('i-42')
+    expect(h.requestedIntentSubTab.value).toBe('intentSession')
+    expect(h.createIntentPending.value).toBe(false)
+    // 意图已存在,表单再没有要留住的东西——只有成功才关弹窗。
+    expect(h.createIntentDialogOpen.value).toBe(false)
+  })
+
+  it('结果属于别的工作区 → 不设落点,但守卫与弹窗仍然释放', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+    h.createIntentPending.value = true
+    h.createIntentDialogOpen.value = true
+
+    h.ctx.handleMessage(created('i-42', '/other'))
+
+    expect(h.requestedIntentId.value).toBeNull()
+    expect(h.requestedIntentSubTab.value).toBeNull()
+    expect(h.createIntentPending.value).toBe(false)
+    expect(h.createIntentDialogOpen.value).toBe(false)
+  })
+
+  it('列表广播先到、创建结果后到 → 落点照样按 id 兑现(不依赖到达顺序)', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+
+    h.ctx.handleMessage({
+      type: 'intents',
+      workspaceId: '/ws',
+      items: [{ id: 'i-42', status: 'draft' }],
+      sddEnabled: false,
+    } as unknown as ServerToClient)
+    // 广播本身不选中任何东西——落点只能由创建结果给出。
+    expect(h.requestedIntentId.value).toBeNull()
+
+    h.ctx.handleMessage(created('i-42', '/ws'))
+
+    expect(h.requestedIntentId.value).toBe('i-42')
+    expect(h.requestedIntentSubTab.value).toBe('intentSession')
+  })
+
+  it.each([
+    'workspace.unknown',
+    'intent.dbUnavailable',
+    'intent.createFailed',
+    'intent.baseBranchRequired',
+    'intent.deliveryContextUnknown',
+    'delivery.guard.branchNotReady',
+  ])('拒绝码 %s 释放在途守卫,但弹窗保持打开以留住草稿', (code) => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+    h.createIntentPending.value = true
+    h.createIntentDialogOpen.value = true
+
+    h.ctx.handleMessage(error(code))
+
+    expect(h.createIntentPending.value).toBe(false)
+    expect(h.createIntentDialogOpen.value).toBe(true)
+    // 被拒时不设任何落点——没有意图可跳。
+    expect(h.requestedIntentId.value).toBeNull()
   })
 })

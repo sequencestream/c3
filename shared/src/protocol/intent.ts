@@ -158,6 +158,20 @@ export interface IntentPr {
 }
 
 /**
+ * Where a NEW intent's {@link Intent.baseBranch} snapshot comes from — exactly
+ * one source, never both.
+ *
+ * The client never sends a branch it resolved from a delivery itself: the
+ * `delivery` arm carries only the id, and the server reads that delivery's
+ * `branchName` from its own records, so a stale or forged branch mapping cannot
+ * enter the ledger. The `branch` arm carries the name the user typed (or the
+ * workspace main branch the create dialog pre-filled), which makes "the default"
+ * an explicit, assertable choice rather than an implicit server-side fallback.
+ */
+export type CreateIntentBase =
+  { kind: 'delivery'; deliveryId: string } | { kind: 'branch'; branch: string }
+
+/**
  * Dependency type for an intent_deps edge.
  * - `blocks` — hard dependency: the dependent intent cannot proceed until this dep is done.
  * - `informs` — knowledge dependency: information from the dep informs the dependent, but

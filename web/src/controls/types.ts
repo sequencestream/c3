@@ -8,6 +8,7 @@ import type {
   CodeSearchHit,
   CodexPolicy,
   CreateAutomationInput,
+  CreateIntentBase,
   DeliveryStatus,
   GitActionFailureGuidance,
   IntentSpecMode,
@@ -220,7 +221,16 @@ export interface AppMethods {
   refreshQueueDetail(): void
   queueControl(action: QueueControlAction, intentId?: string): void
   selectIntentSession(sessionId: string): void
-  createIntent(): void
+  /**
+   * Create one intent. The payload (from the create dialog) also carries the
+   * first turn of its session and the chosen base branch; omitting it keeps the
+   * blank registration older callers rely on.
+   */
+  createIntent(payload?: { content: string; base: CreateIntentBase }): void
+  /** Open the create dialog (and refresh the deliveries it picks from). */
+  openCreateIntentDialog(): void
+  /** Cancel the create dialog. A successful create closes it from the handler. */
+  closeCreateIntentDialog(): void
   startIntentSession(intentId: string, text: string, images: PromptImage[]): void
 
   // deliveries (交付作为集成单元, ADR-0036)

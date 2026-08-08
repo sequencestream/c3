@@ -1,4 +1,5 @@
 import type {
+  CreateIntentBase,
   GitActionFailureGuidance,
   IntentSpecMode,
   IntentStatus,
@@ -170,10 +171,37 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'open_intent_session', workspaceId: intentsProject.value, sessionId })
   }
 
-  ctx.createIntent = (): void => {
+  // The 「+」 entry only OPENS the create dialog — nothing is registered until the
+  // user has picked a base and written the content. Deliveries are (re)loaded on
+  // open for the same reason the link picker does it: the intent page never lists
+  // them on its own, so one created or branch-initialized elsewhere would
+  // otherwise be missing from the picker.
+  ctx.openCreateIntentDialog = (): void => {
+    if (!intentsProject.value) return
+    ctx.loadDeliveriesForLink(intentsProject.value)
+    ctx.createIntentDialogOpen.value = true
+  }
+
+  // Cancel only. A SUCCESSFUL create closes the dialog from the message handler
+  // (where the result arrives); a refusal deliberately closes nothing, so the
+  // typed content survives for the retry.
+  ctx.closeCreateIntentDialog = (): void => {
+    ctx.createIntentDialogOpen.value = false
+  }
+
+  // Create one intent. With a payload the server also starts its owner session
+  // with that content as the first turn and persists the chosen base branch;
+  // without one this stays the blank registration the discussion bridge and the
+  // older callers rely on. The in-flight guard is released by
+  // `create_intent_result` or by any of the create refusal codes.
+  ctx.createIntent = (payload?: { content: string; base: CreateIntentBase }): void => {
     if (!intentsProject.value || ctx.createIntentPending.value) return
     ctx.createIntentPending.value = true
-    send({ type: 'create_intent', workspaceId: intentsProject.value })
+    send({
+      type: 'create_intent',
+      workspaceId: intentsProject.value,
+      ...(payload ? { content: payload.content, base: payload.base } : {}),
+    })
   }
   ctx.startIntentSession = (intentId: string, text: string, images: PromptImage[]): void => {
     if (!intentsProject.value || (!text.trim() && images.length === 0)) return

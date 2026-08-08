@@ -1330,12 +1330,43 @@ export function upsertIntents(
   return hydrate(d, rows)
 }
 
-/** Create the lightweight, human-registered placeholder intent in one transaction. */
-export function createEmptyIntent(workspacePath: string, actor?: string | null): Intent {
+/**
+ * Facts a create may carry beyond the placeholder defaults. Both are optional so
+ * the blank-registration callers stay byte-identical to before.
+ */
+export type CreateIntentInput = {
+  /** The intent body. Absent (or blank) keeps the empty-placeholder shape. */
+  content?: string
+  /**
+   * The base-branch snapshot to persist. Absent = resolve the workspace's own,
+   * which is what every pre-existing caller relies on. A caller that HAS made an
+   * explicit choice (a delivery's branch, or a branch the user picked) passes it
+   * here so the choice lands in the same transaction as the rest of the intent —
+   * never as a follow-up update that could be lost between the two writes.
+   */
+  baseBranch?: string
+}
+
+/**
+ * Create the lightweight, human-registered placeholder intent in one transaction.
+ *
+ * Title stays the `new intent` placeholder for every caller: this primitive does
+ * not derive a title from the content, so the one creation path remains the one
+ * title policy.
+ */
+export function createEmptyIntent(
+  workspacePath: string,
+  actor?: string | null,
+  input?: CreateIntentInput,
+): Intent {
   const d = requireDb()
   const id = randomUUID()
   const proj = resolve(workspacePath)
   const now = Date.now()
+  const content = input?.content ?? ''
+  // An explicit choice wins; a blank one is not a choice, so it falls through to
+  // the workspace resolver rather than persisting an empty base branch.
+  const baseBranch = input?.baseBranch?.trim() || resolveWorkspaceBaseBranch(proj)
   tx(d, () => {
     d.run(
       `INSERT INTO intents
@@ -1348,14 +1379,14 @@ export function createEmptyIntent(workspacePath: string, actor?: string | null):
       proj,
       'new intent',
       null,
-      '',
+      content,
       'P2',
       'draft',
       '',
       null,
       0,
       null,
-      resolveWorkspaceBaseBranch(proj),
+      baseBranch,
       null,
       null,
       0,

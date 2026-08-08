@@ -139,6 +139,7 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'open-queue': []
+  /** 「+」入口:请求打开新增意图弹窗(不再直接登记空白 draft)。 */
   'new-intent': []
   'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]

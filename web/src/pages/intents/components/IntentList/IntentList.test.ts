@@ -181,27 +181,21 @@ describe('IntentList.vue — selection model', () => {
     expect(w.emitted('select-intent')).toBeUndefined()
   })
 
-  it('shows the refine entry only for todo intents and emits refine on click', async () => {
-    const w = mountList([intent({ id: 'todo-1', status: 'todo' })])
-
-    const refine = w.find('.req-refine')
-    expect(refine.exists()).toBe(true)
-
-    await refine.trigger('click')
-
-    expect(w.emitted('refine')).toEqual([['todo-1']])
-    expect(w.emitted('select-intent')).toBeUndefined()
-  })
-
-  it('does not render the refine entry for non-todo (in_progress / done) intents', () => {
+  // 该入口点一下就免输入拉起一个 agent 会话,语义误导且与详情页「优化」重复,已整条移除。
+  it('renders no refine entry for any status and never emits refine', async () => {
     const w = mountList([
+      intent({ id: 'todo-1', status: 'todo' }),
       intent({ id: 'wip-1', status: 'in_progress' }),
       intent({ id: 'done-1', status: 'done', completedAt: 100 }),
     ])
     const rows = w.findAll('.req-item')
 
-    expect(rows[0].find('.req-refine').exists()).toBe(false)
-    expect(rows[1].find('.req-refine').exists()).toBe(false)
+    expect(w.find('.req-refine').exists()).toBe(false)
+    for (const row of rows) expect(row.find('.req-refine').exists()).toBe(false)
+
+    await rows[0].find('.req-item-main').trigger('click')
+
+    expect(w.emitted('refine')).toBeUndefined()
   })
 
   it('emits ordered-change reflecting the rendered (active-first) order, not server order', () => {

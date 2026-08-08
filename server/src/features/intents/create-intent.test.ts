@@ -1,6 +1,6 @@
 /**
  * `create_intent` — 新增意图弹窗背后的那一次请求:登记意图、落基准分支快照,并在
- * 同一个 handler 里继续把内容作为意图会话的第一句话。
+ * 同一个 handler 里继续为它起意图会话。
  *
  * 这里钉四件事:
  *  1. 三种基准选择各自落库成什么 —— 选交付落该交付的分支、选分支落该分支、不选落
@@ -9,7 +9,8 @@
  *  2. 拒绝路径一律**不留半条意图** —— 校验都发生在 INSERT 之前,所以「拒绝后台账
  *     干净」是结构决定的,不靠事后清理;
  *  3. 会话只起一条,且它的第一句话就是共享 builder 对这条新记录的输出 —— 新入口不
- *     允许另写一套 prompt 模板;
+ *     允许另写一套 prompt 模板;正文由 builder 的「当前内容」前缀承载,用户输入块
+ *     只是指回它的分析指示,因此原文在首轮 prompt 里只出现一次;
  *  4. 启动失败时会话资源被回收,但意图连同内容和基准**留下** —— 用户刚敲的内容不能
  *     因为会话没起来就被丢掉。
  */
@@ -38,7 +39,12 @@ import {
   listOwnedForWorkspace,
   resetStoreForTests as resetSessionMetadataStoreForTests,
 } from '../sessions/session-metadata-store.js'
-import { buildIntentSessionFirstPrompt, createIntent, deleteIntent } from './index.js'
+import {
+  CREATE_INTENT_REFINE_INSTRUCTION,
+  buildIntentSessionFirstPrompt,
+  createIntent,
+  deleteIntent,
+} from './index.js'
 import { getIntent, listIntentLogs, listIntents, resetStoreForTests } from './store.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
 import { initTestGitRepo } from '../../../test/git-repo.js'
@@ -310,7 +316,7 @@ describe('create_intent — 连续启动意图会话', () => {
     removeRuntime(sid)
   })
 
-  it('第一句话就是共享 builder 对这条新记录的输出(新入口不另写模板)', async () => {
+  it('第一句话就是共享 builder 对这条新记录的输出,用户输入块是分析指示', async () => {
     const h = harness()
 
     await createIntent(h.ctx, h.conn, {
@@ -321,7 +327,11 @@ describe('create_intent — 连续启动意图会话', () => {
     })
 
     const created = getIntent(listIntents(proj)[0].id)!
-    expect(h.launchRun.mock.calls[0][1]).toBe(buildIntentSessionFirstPrompt(created, 'CONTENT_ABC'))
+    const prompt = h.launchRun.mock.calls[0][1]
+    expect(prompt).toBe(buildIntentSessionFirstPrompt(created, CREATE_INTENT_REFINE_INSTRUCTION))
+    // 刚敲的内容已经是这条意图的正文,builder 的「当前内容」前缀就是它的唯一副本——
+    // 用户输入块再贴一遍只会让长内容把首轮上下文占两份。
+    expect(prompt.split('CONTENT_ABC')).toHaveLength(2)
 
     removeRuntime(selectedSessionId(h.sent))
   })

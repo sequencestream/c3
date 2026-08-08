@@ -792,6 +792,42 @@
     "create": {
       "label": "Add intent"
     },
+    "createDialog": {
+      "title": {
+        "label": "Добавить намерение"
+      },
+      "baseSource": {
+        "label": "База",
+        "branch": {
+          "label": "Базовая ветка"
+        },
+        "delivery": {
+          "label": "Доставка"
+        }
+      },
+      "branch": {
+        "placeholder": {
+          "label": "Имя ветки"
+        }
+      },
+      "delivery": {
+        "placeholder": {
+          "label": "Выберите доставку"
+        },
+        "empty": {
+          "label": "В этом рабочем пространстве пока нет доставок с готовой веткой."
+        }
+      },
+      "content": {
+        "label": "Содержание намерения",
+        "placeholder": {
+          "label": "Опишите, что вы хотите сделать. Этот текст станет первой репликой сессии намерения."
+        }
+      },
+      "submit": {
+        "label": "Создать и начать"
+      }
+    },
     "startDev": {
       "confirmUnfinishedDeps": "У этого намерения есть незавершённые зависимости. Всё равно начать работу?"
     },
@@ -2184,6 +2220,7 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
+      "baseBranchRequired": "Выберите базовую ветку — имя ветки не может быть пустым.",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",

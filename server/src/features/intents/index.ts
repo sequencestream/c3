@@ -12,6 +12,7 @@ import { dirname } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
   VENDOR_IDS,
+  type CreateIntentBase,
   type DevLaunchStage,
   type Intent,
   type SessionAgentSwitch,
@@ -97,6 +98,8 @@ import {
   unparkIntent,
 } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
+import { getDelivery } from '../deliveries/store.js'
+import { normalizeBranchName } from './dependency-gate.js'
 import { commitAndPush } from '../../git.js'
 import { getWorktreePath, removeIntentGitResources } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
@@ -263,6 +266,11 @@ async function bindAndLaunchIntentSession(
   const cwd = prepareIntentSessionWorktree(proj, intent)
   if (!cwd.ok) {
     conn.send({ type: 'error', error: intentWorktreeError(cwd.failure) })
+    // A create request has already persisted the intent by the time it gets
+    // here, so the refusal still owes the list its new row — same as the unwind
+    // below. Callers whose intent predates the launch just re-broadcast a
+    // snapshot that did not change.
+    ctx.broadcastIntents(proj)
     return
   }
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -335,7 +343,53 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
   })
 }
 
-export const createIntent: Handler<'create_intent'> = (ctx, conn, msg) => {
+/**
+ * Resolve the `base_branch` a create request asks for, from the ONE source it
+ * named. A delivery contributes only its id: the branch is read here from this
+ * workspace's own delivery record, so a client cannot assert a branch mapping
+ * the ledger disagrees with. A branch contributes its (trimmed) name.
+ *
+ * Every rejection leaves nothing behind because it runs BEFORE the insert — the
+ * spec's "a refused create must not leave half an intent" is structural here,
+ * not a cleanup path. `undefined` means "no explicit choice", which the store
+ * primitive turns into the workspace base branch.
+ */
+function resolveCreateBaseBranch(
+  workspacePath: string,
+  base: CreateIntentBase | undefined,
+): { ok: true; baseBranch: string | undefined } | { ok: false; code: UiErrorCode } {
+  if (!base) return { ok: true, baseBranch: undefined }
+  if (base.kind === 'branch') {
+    const branch = base.branch.trim()
+    if (!branch) return { ok: false, code: 'intent.baseBranchRequired' }
+    return { ok: true, baseBranch: branch }
+  }
+  const delivery = getDelivery(base.deliveryId)
+  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
+    return { ok: false, code: 'intent.deliveryContextUnknown' }
+  }
+  const branchName = normalizeBranchName(delivery.branchName)
+  if (!delivery.branchReady || branchName === null) {
+    return { ok: false, code: 'delivery.guard.branchNotReady' }
+  }
+  return { ok: true, baseBranch: branchName }
+}
+
+/**
+ * `create_intent` handler — register ONE intent and, when the request carries
+ * content, continue straight into its owner communication session.
+ *
+ * The two steps are one handler rather than two round-trips so the session's
+ * first prompt is built from the record just written (its id, content and base),
+ * and so a launch failure is unwound by the single owner-session path every
+ * other launcher already uses. The intent itself survives that unwind: it is a
+ * persisted fact the user can retry or delete from the detail page, and rolling
+ * it back would discard the content they just typed.
+ *
+ * Without content this stays exactly the pre-existing blank registration —
+ * that is what the older client and the "+" placeholder path still do.
+ */
+export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj || !hasWorkspace(proj)) {
     conn.send({
@@ -348,16 +402,38 @@ export const createIntent: Handler<'create_intent'> = (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
+  const base = resolveCreateBaseBranch(proj, msg.base)
+  if (!base.ok) {
+    conn.send({ type: 'error', error: { code: base.code } })
+    return
+  }
+  const content = msg.content?.trim() ?? ''
+  let intent: Intent
   try {
-    const intent = createEmptyIntent(proj, conn.subject ?? 'system')
-    conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
-    ctx.broadcastIntents(proj)
+    intent = createEmptyIntent(proj, conn.subject ?? 'system', {
+      content,
+      baseBranch: base.baseBranch,
+    })
   } catch (err) {
     conn.send({
       type: 'error',
       error: { code: 'intent.createFailed', params: { detail: String(err) } },
     })
+    return
   }
+  conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
+  if (!content) {
+    ctx.broadcastIntents(proj)
+    return
+  }
+  // The session path broadcasts on its own (both on success and on unwind), so
+  // the blank path above owns the only extra broadcast.
+  await bindAndLaunchIntentSession(ctx, conn, {
+    proj,
+    intent,
+    title: intent.title,
+    prompt: buildIntentSessionFirstPrompt(intent, content),
+  })
 }
 
 export const startIntentSession: Handler<'start_intent_session'> = async (ctx, conn, msg) => {

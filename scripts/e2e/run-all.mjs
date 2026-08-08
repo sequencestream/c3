@@ -58,6 +58,10 @@ const TESTS = [
   { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
   { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },
   {
+    name: 'create intent (base resolution / refusals)',
+    file: 'e2e-create-intent-test.mjs',
+  },
+  {
     name: 'delivery ↔ intent association (link / unlink guards)',
     file: 'e2e-delivery-link-test.mjs',
   },

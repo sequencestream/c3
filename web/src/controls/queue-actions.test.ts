@@ -72,6 +72,7 @@ function makeCtx(opts: { project?: string | null } = {}) {
     activeDeliveryBranchInit: ref(null),
     activeDeliverySyncPhase: ref(null),
     activeDeliveryMainlineAhead: ref(null),
+    activeDeliveryBranchAhead: ref(null),
     activeDeliveryPr: ref(null),
     activeDeliveryPrBusy: ref(false),
     autoSyncedDeliveryPrs: ref(new Set<string>()),

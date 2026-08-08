@@ -213,6 +213,9 @@ describe('get_delivery_detail', () => {
         reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
       },
     ])
+    // No branch yet → both ahead reads are null, never a guess.
+    expect(frame.mainlineAhead).toBeNull()
+    expect(frame.deliveryBranchAhead).toBeNull()
   })
 
   it('errors on an unknown delivery', () => {

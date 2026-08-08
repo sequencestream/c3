@@ -20,6 +20,8 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryBranchInit,
     activeDeliveryPr,
     activeDeliveryPrBusy,
+    activeDeliveryMainlineAhead,
+    activeDeliveryBranchAhead,
     autoSyncedDeliveryPrs,
     pendingStandaloneDelivery,
     activeTab,
@@ -35,7 +37,15 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryPlan.value = null
     activeDeliveryIntents.value = []
     activeDeliveryPr.value = null
+    activeDeliveryMainlineAhead.value = null
+    activeDeliveryBranchAhead.value = null
     ctx.persistViewMode()
+    // The deliveries page gates its merge block on the workspace's git-branch
+    // mode, which is a stored setting the server resolves (worktree default).
+    // Re-fetch it here — this tab may be entered before the workspace setting
+    // ever loaded, and a stale `current-branch` fallback would hide the merge
+    // block for a worktree workspace.
+    send({ type: 'load_workspace_setting', workspaceId: path })
     send({ type: 'list_deliveries', workspaceId: path })
     // The link picker chooses from this workspace's intents, which the intents
     // tab may never have loaded (the user can land straight on deliveries). The
@@ -49,6 +59,8 @@ export function installDeliveryActions(ctx: AppCtx): void {
     if (deliveryId === activeDeliveryId.value) return
     activeDeliveryId.value = deliveryId
     activeDeliveryPr.value = null
+    activeDeliveryMainlineAhead.value = null
+    activeDeliveryBranchAhead.value = null
     // Opening the delivery re-arms the one-shot PR auto-sync: 「进页自动同步一次」
     // means once per open, so the forge-merged → c3-aware window closes each time
     // the user actually looks at the delivery.
@@ -98,6 +110,8 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryPlan.value = null
     activeDeliveryIntents.value = []
     activeDeliveryPr.value = null
+    activeDeliveryMainlineAhead.value = null
+    activeDeliveryBranchAhead.value = null
     ctx.persistViewMode()
   }
 

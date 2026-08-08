@@ -2798,6 +2798,40 @@
       },
       "conflict": {
         "label": "전달 브랜치가 메인라인과 {count}개 파일에서 충돌합니다. 전달이 검증 중으로 되돌아갔습니다. 해결 후 다시 검증하세요."
+      },
+      "diagnosis": {
+        "title": {
+          "label": "전달 PR이 제공되지 않는 이유"
+        },
+        "branchMode": {
+          "label": "Git 브랜치 모드: {mode}"
+        },
+        "status": {
+          "label": "전달 상태: {status}"
+        },
+        "branch": {
+          "label": "브랜치 준비됨: {branch}"
+        },
+        "branchNotReady": {
+          "label": "브랜치 준비됨: 아니요"
+        },
+        "pr": {
+          "label": "전달 PR: #{number} {status}"
+        },
+        "prNone": {
+          "label": "전달 PR: 없음"
+        },
+        "diff": {
+          "ahead": {
+            "label": "전달 브랜치가 앞섬: {count}개 커밋"
+          },
+          "none": {
+            "label": "전달 브랜치가 앞섬: 차이 없음"
+          },
+          "unknown": {
+            "label": "전달 브랜치가 앞섬: 판단 불가"
+          }
+        }
       }
     }
   },

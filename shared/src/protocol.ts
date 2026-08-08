@@ -97,6 +97,7 @@ export type ClientToServer =
   | IntentMsg.ClientUpdateIntentContent
   | IntentMsg.ClientUpdateIntentStatus
   | IntentMsg.ClientSetIntentAutomate
+  | IntentMsg.ClientSetIntentSpecMode
   | IntentMsg.ClientUpdateIntentDeps
   | IntentMsg.ClientSetIntentGitInfo
   | IntentMsg.ClientStartWorkflow

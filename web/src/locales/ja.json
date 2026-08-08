@@ -955,6 +955,17 @@
       "id": {
         "label": "ID:"
       },
+      "specMode": {
+        "label": "仕様の要否:",
+        "tooltip": "ワークスペースの仕様駆動開発設定を、この意図だけ上書きします。",
+        "option": {
+          "inherit": "ワークスペースを継承",
+          "sdd": "仕様が必要（sdd）",
+          "fast": "仕様は不要（fast）"
+        },
+        "derived": "現在の適用値：{mode}",
+        "workspaceOff": "このワークスペースでは仕様駆動開発が無効のため、この設定は現時点で動作に影響しません。"
+      },
       "branch": {
         "label": "ブランチ:"
       },
@@ -2807,40 +2818,6 @@
       },
       "conflict": {
         "label": "配信ブランチとメインラインで {count} 件のファイルが競合しています。配信は検証中に戻りました。解決してから再度検証してください。"
-      },
-      "diagnosis": {
-        "title": {
-          "label": "配信 PR が提供されない理由"
-        },
-        "branchMode": {
-          "label": "Git ブランチモード: {mode}"
-        },
-        "status": {
-          "label": "配信ステータス: {status}"
-        },
-        "branch": {
-          "label": "ブランチ準備完了: {branch}"
-        },
-        "branchNotReady": {
-          "label": "ブランチ準備完了: いいえ"
-        },
-        "pr": {
-          "label": "配信 PR: #{number} {status}"
-        },
-        "prNone": {
-          "label": "配信 PR: なし"
-        },
-        "diff": {
-          "ahead": {
-            "label": "配信ブランチの先行: {count} コミット"
-          },
-          "none": {
-            "label": "配信ブランチの先行: 差分なし"
-          },
-          "unknown": {
-            "label": "配信ブランチの先行: 判定不能"
-          }
-        }
       }
     }
   },

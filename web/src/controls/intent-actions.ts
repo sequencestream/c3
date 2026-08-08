@@ -1,4 +1,9 @@
-import type { GitActionFailureGuidance, IntentStatus, PromptImage } from '@ccc/shared/protocol'
+import type {
+  GitActionFailureGuidance,
+  IntentSpecMode,
+  IntentStatus,
+  PromptImage,
+} from '@ccc/shared/protocol'
 import {
   beginCreatePr,
   reduceCreatePr,
@@ -426,6 +431,13 @@ export function installIntentActions(ctx: AppCtx): void {
       return
     }
     send({ type: 'set_intent_automate', intentId, automate: automateOn })
+  }
+
+  // 每意图规格模式覆盖。与 automate 不同,这里没有状态门:模式只影响后续闸门判定,
+  // 任何状态的意图都可以改。`null` 显式下发以清除覆盖(服务端区分「省略」与「显式 null」),
+  // 生效值由服务端在下一次 intents 广播里算好回填,前端不本地推导。
+  ctx.setIntentSpecMode = (intentId: string, mode: IntentSpecMode | null): void => {
+    send({ type: 'set_intent_spec_mode', intentId, mode })
   }
 
   ctx.updateIntentDeps = (

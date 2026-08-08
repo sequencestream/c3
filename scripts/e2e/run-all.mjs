@@ -92,6 +92,10 @@ const TESTS = [
     name: 'dependency gate (same-delivery / cross-delivery / no-delivery)',
     file: 'e2e-dependency-gate-test.mjs',
   },
+  {
+    name: 'per-intent spec mode (override / derive / refresh / clear)',
+    file: 'e2e-spec-mode-test.mjs',
+  },
   { name: 'automation queue (park isolation + manual control)', file: 'e2e-queue-test.mjs' },
   {
     name: 'spec automation (author → review → opt-in machine approval → revoke)',

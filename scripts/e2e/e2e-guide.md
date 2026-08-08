@@ -194,6 +194,34 @@ branch names and PR rows; without it the test SKIPs.
 - `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-dependency-gate-test.mjs ws://localhost:13000/ws`
   → expect `PASS — dependency gate three states`.
 
+## Per-intent spec mode (override / derive / refresh / clear)
+
+`scripts/e2e/e2e-spec-mode-test.mjs` drives the intent detail's「是否需要规范」switch
+over the real wire: one throwaway workspace, two intents, and the single message the
+switch writes — `set_intent_spec_mode`.
+
+PASS asserts the contract the UI reads back:
+
+- an unset intent (`specMode: null`) inherits the workspace — `effectiveSpecMode`
+  follows `sddEnabled`;
+- an explicit `fast` / `sdd` persists and resolves to itself on the `intents`
+  broadcast, and **survives a refresh** — a brand new WebSocket connection listing
+  the same workspace still sees it, so the value came from the ledger, not client
+  state;
+- flipping `sddEnabled` moves the UNSET intent's derived value and leaves the
+  explicitly-set one alone — the derivation rule the switch exists to override;
+- an explicit `null` clears the override and inheritance resumes;
+- the write is spec-status neutral (switching to `fast` does not revoke an approved
+  spec), and an unknown intent is refused with `intent.notFound`.
+
+No agent tokens are spent — no session is started and no spec is authored. `C3_DB_PATH`
+is needed for one seed only (an `approved` `spec_status`, which real approval would
+require a live agent run to reach); without it the test SKIPs.
+
+- `pnpm start --port 13000`
+- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-spec-mode-test.mjs ws://localhost:13000/ws`
+  → expect `RESULT: PASS`.
+
 ## Smoke test (permission flow)
 
 - `pnpm start --port 13000`

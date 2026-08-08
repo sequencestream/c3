@@ -27,6 +27,7 @@ import type {
   WorkflowStatus,
   Intent,
   IntentLog,
+  IntentSpecMode,
   IntentStatus,
   PromptImage,
   SessionAgentSwitch,
@@ -133,6 +134,8 @@ const emit = defineEmits<{
   'open-work-session': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
+  /** 每意图规格模式覆盖(详情概览 Tab);null = 恢复继承工作区。 */
+  'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
   'start-automation': []
   'stop-automation': []
   'open-queue': []
@@ -459,6 +462,9 @@ defineExpose({
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
         @delete="(id: string) => emit('delete', id)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
+        @set-spec-mode="
+          (id: string, mode: IntentSpecMode | null) => emit('set-spec-mode', id, mode)
+        "
         @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
         @share="(id: string) => emit('share', id)"

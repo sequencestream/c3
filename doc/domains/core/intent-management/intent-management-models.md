@@ -9,27 +9,29 @@
 
 一个限定在单个项目范围内的台账条目。
 
-| 属性                | 类型                        | 说明                                                                                                                                                                                                |
-| ------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                | text (UUID)                 | 稳定标识符;被依赖关系与开发反向链接引用                                                                                                                                                             |
-| `workspacePath`     | text (path)                 | 解析后的绝对工作区路径;项目键(RM-R1, RM-R10)                                                                                                                                                        |
-| `title`             | text                        | 简短的意图标题                                                                                                                                                                                      |
-| `shortEnTitle`      | text \| null                | 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐                                                                     |
-| `content`           | text                        | 完整的意图描述                                                                                                                                                                                      |
-| `priority`          | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别;P0 最高                                                                                                                                                                                    |
-| `module`            | text                        | 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)                                                                                                             |
-| `status`            | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                                                                           |
-| `dependsOn`         | `id[]`                      | 该条目所依赖的项目内其他意图 id(聚合;RM-R1)                                                                                                                                                         |
-| `lastWorkSessionId` | text \| null                | 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)                                                                                                                                  |
-| `automate`          | boolean                     | 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)                                                                                                                                       |
-| `createdAt`         | timestamp                   | 创建时间                                                                                                                                                                                            |
-| `updatedAt`         | timestamp                   | 最近一次变更时间                                                                                                                                                                                    |
-| `completedAt`       | timestamp \| null           | 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9)                                                                                                |
-| `specMode`          | `'sdd'`\|`'fast'`\| null    | 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化(RM-R43)                                                                          |
-| `effectiveSpecMode` | `'sdd'`\|`'fast'`           | 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R43) |
-| `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                                                                                         |
-| `prs`               | `IntentPr[]`                | 该意图拥有的全部 PR/MR,按 `createdAt` 升序;无 PR 时为空数组。发送时由 `intent_prs` 批量挂载(见下)                                                                                                   |
-| `linkedDeliveries`  | `{ id, title }[]`           | 该意图关联的交付,按建边顺序;无关联时为空数组。发送时由 `intent_deliveries` + `deliveries` 批量挂载,是**只读投影** —— 关联边归 delivery 域写入                                                       |
+| 属性                 | 类型                        | 说明                                                                                                                                                                                                |
+| -------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | text (UUID)                 | 稳定标识符;被依赖关系与开发反向链接引用                                                                                                                                                             |
+| `workspacePath`      | text (path)                 | 解析后的绝对工作区路径;项目键(RM-R1, RM-R10)                                                                                                                                                        |
+| `title`              | text                        | 简短的意图标题                                                                                                                                                                                      |
+| `shortEnTitle`       | text \| null                | 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐                                                                     |
+| `content`            | text                        | 完整的意图描述                                                                                                                                                                                      |
+| `priority`           | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别;P0 最高                                                                                                                                                                                    |
+| `module`             | text                        | 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)                                                                                                             |
+| `status`             | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                                                                           |
+| `dependsOn`          | `id[]`                      | 该条目所依赖的项目内其他意图 id(聚合;RM-R1)                                                                                                                                                         |
+| `lastWorkSessionId`  | text \| null                | 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)                                                                                                                                  |
+| `automate`           | boolean                     | 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)                                                                                                                                       |
+| `createdAt`          | timestamp                   | 创建时间                                                                                                                                                                                            |
+| `updatedAt`          | timestamp                   | 最近一次变更时间                                                                                                                                                                                    |
+| `completedAt`        | timestamp \| null           | 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9)                                                                                                |
+| `specMode`           | `'sdd'`\|`'fast'`\| null    | 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化(RM-R43)                                                                          |
+| `effectiveSpecMode`  | `'sdd'`\|`'fast'`           | 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R43) |
+| `actionDescriptor`   | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                                                                                         |
+| `prs`                | `IntentPr[]`                | 该意图拥有的全部 PR/MR,按 `createdAt` 升序;无 PR 时为空数组。发送时由 `intent_prs` 批量挂载(见下)                                                                                                   |
+| `linkedDeliveries`   | `{ id, title }[]`           | 该意图关联的交付,按建边顺序;无关联时为空数组。发送时由 `intent_deliveries` + `deliveries` 批量挂载,是**只读投影** —— 关联边归 delivery 域写入                                                       |
+| `baseBranch`         | text                        | 意图的**基准分支快照** —— 它建在哪个分支上;非空。PR 目标与 worktree 基线共读此值(见下)                                                                                                              |
+| `baseBranchFallback` | boolean                     | `baseBranch` 是否为读时派生的主分支回退(持久值缺失或不可用),而非记录下来的事实;界面据此标注,不把回退伪装成历史                                                                                      |
 
 关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
 Dependencies;拥有零个或多个 Intent PR;关联零个或多个 Delivery(关联边见
@@ -39,6 +41,17 @@ session-registry 所有)。
 `linkedDeliveries` 与 `prs[].deliveryId` 不重复:前者是「属于哪个交付」,后者是「对某个
 交付开了哪条 PR」。意图详情把两者合并呈现 —— 元信息区先列关联交付,PR 行再按交付分组。
 已关联但尚未提 PR 的意图只有前者,这正是不能用 PR 行代表关联的原因。
+
+### 基准分支 (`baseBranch`)
+
+「这个意图建在哪个分支上」只有一个答案,并且是**落库的快照** —— 不是每个读点各自现算的
+推导。它只在几个生命周期边沿被写入(创建、首次关联就绪交付、该交付分支由未就绪变就绪、
+失去最后一条关联),之后不追随交付分支的推进、改名或重建;写入时机、取值优先级与两个
+消费点的规则见 [spec RM-R44](intent-management-spec.md)。
+
+`baseBranchFallback` 区分「记录下来的决定」与「当场派生的回退」:持久值缺失或不可用时读
+模型给出工作区主分支并置位,界面据此标注,且**不回写** —— 读时推导一旦落库,事后就再也
+分不清两者。
 
 ## Intent PR
 

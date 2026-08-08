@@ -150,8 +150,14 @@ function logsOf(intentId: string, op: string) {
 }
 
 /** Seed a qualifying intent: worktree mode + a branch. Changes are mocked per test. */
-function seedQualifying(status: 'todo' | 'in_progress' = 'todo') {
-  saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
+function seedQualifying(
+  status: 'todo' | 'in_progress' = 'todo',
+  settings: Parameters<typeof saveWorkspaceSetting>[1] = {},
+) {
+  // The settings land BEFORE the insert on purpose: the intent's base branch is
+  // a snapshot taken at creation, so a mainline configured afterwards would not
+  // reach it (and in a real workspace it is configured long before).
+  saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', ...settings })
   const [r] = insertIntents(proj, [
     { title: 'PR me', shortEnTitle: 'pr-me', content: 'body', priority: 'P1' },
   ])
@@ -219,12 +225,7 @@ describe('createPrHandler — worktree gate success paths', () => {
   }
 
   it('threads the workspace defaultMainBranch into the diff gate, forge create and pr:create event', async () => {
-    const r = seedQualifying()
-    saveWorkspaceSetting(proj, {
-      gitBranchMode: 'worktree',
-      defaultMainBranch: 'develop',
-      forge: 'gitlab',
-    })
+    const r = seedQualifying('todo', { defaultMainBranch: 'develop', forge: 'gitlab' })
     vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
     vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '43', prUrl: 'https://x/pr/43' })
@@ -802,7 +803,7 @@ function seedDelivery(
     baseBranch: 'main',
   })
   if (opts.branch) setDeliveryBranch(delivery.id, opts.branch, true)
-  if (opts.link !== false) insertIntentDelivery(delivery.id, intentId)
+  if (opts.link !== false) insertIntentDelivery(delivery.id, intentId, opts.branch ?? null)
   return delivery
 }
 
@@ -941,7 +942,7 @@ describe('createPrHandler — delivery target resolution', () => {
     })
     setDeliveryBranch(delivery.id, 'delivery/foreign', true)
     // Even a linked edge does not make a foreign delivery a legal target.
-    insertIntentDelivery(delivery.id, r.id)
+    insertIntentDelivery(delivery.id, r.id, 'delivery/foreign')
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 

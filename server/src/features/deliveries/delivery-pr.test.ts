@@ -210,7 +210,7 @@ async function seedDelivery(
   const [intent] = insertIntents(dir, [
     { title: 'Intent A', shortEnTitle: 'intent-a', content: '', priority: 'P2', module: '' },
   ])
-  insertIntentDelivery(id, intent.id)
+  insertIntentDelivery(id, intent.id, BRANCH)
   upsertIntentPr({
     intentId: intent.id,
     deliveryId: id,

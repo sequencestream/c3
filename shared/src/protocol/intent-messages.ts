@@ -15,6 +15,7 @@ import type {
   IntentLog,
   IntentPrStatus,
   IntentSessionInfo,
+  IntentSpecMode,
   IntentStatus,
   ParkRecoveryStats,
   QueueControlAction,
@@ -317,6 +318,24 @@ export type ClientSetIntentAutomate = {
   type: 'set_intent_automate'
   intentId: string
   automate: boolean
+}
+
+/**
+ * Set (or clear) an intent's per-intent spec-mode override. `mode: null` drops
+ * the override so the intent inherits the workspace's `sddEnabled` again; the
+ * field is always carried explicitly, so this never means "leave as is".
+ *
+ * It writes `spec_mode` and nothing else: `specStatus` / `specApproved` are
+ * untouched (switching to `fast` does not revoke an approved spec, switching to
+ * `sdd` does not fabricate a pending one), no gate is relaxed, and the
+ * automation queue's `specStatus==='approved'` eligibility is unchanged. The
+ * resolved `effectiveSpecMode` is recomputed server-side on the next `intents`
+ * broadcast, which is also this message's only ack.
+ */
+export type ClientSetIntentSpecMode = {
+  type: 'set_intent_spec_mode'
+  intentId: string
+  mode: IntentSpecMode | null
 }
 
 /**

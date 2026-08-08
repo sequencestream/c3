@@ -2,10 +2,12 @@
  * What a work session's worktree is ROOTED at, and what to do when an existing
  * worktree is rooted somewhere else.
  *
- * Before deliveries the answer was always the workspace mainline. With a
- * delivery context it is `origin/<delivery branch>`: a delivery is the branch
- * its intents integrate into, so developing off mainline would produce a diff
- * that carries the whole mainline-vs-delivery difference.
+ * The answer is the intent's persisted `baseBranch` snapshot — the same value
+ * the PR target reads, so a worktree is rooted at exactly the branch its PR will
+ * later be filed against. A delivery is the branch its intents integrate into,
+ * and the snapshot already follows that at the association lifecycle edges, so
+ * nothing is re-derived from the live delivery here: the delivery context only
+ * labels the baseline for the messages the user sees.
  *
  * The hard line is what happens to a worktree that ALREADY exists on the wrong
  * baseline: nothing, automatically. It is never rebuilt (that discards
@@ -14,8 +16,7 @@
  * user actions. This block has NO force-release: the dependency gate is advice,
  * this one is data safety.
  */
-import type { Delivery } from '@ccc/shared/protocol'
-import { getDefaultMainBranch } from '../../kernel/config/index.js'
+import type { Delivery, Intent } from '@ccc/shared/protocol'
 import {
   fetchRemoteBase,
   getWorktreePath,
@@ -26,8 +27,8 @@ import {
 
 /** The baseline one launch resolves for its worktree. */
 export interface WorktreeBaseline {
-  /** The branch a new worktree roots at; `null` when the workspace has none configured. */
-  baseBranch: string | null
+  /** The branch a new worktree roots at — the intent's persisted base snapshot. */
+  baseBranch: string
   /**
    * The just-fetched remote ref for {@link baseBranch} (`origin/<branch>`), or
    * `null` when there is no remote / the fetch failed. Only a remote ref is worth
@@ -37,37 +38,39 @@ export interface WorktreeBaseline {
   /** The delivery this baseline came from; `null` when the session has no context. */
   delivery: { id: string; title: string } | null
   /**
-   * True when a delivery context existed but its branch was not usable yet, so
-   * the baseline fell back to the workspace mainline. Surfaced to the caller as a
-   * notice — the launch still proceeds.
+   * True when a delivery context exists but the baseline is NOT its branch —
+   * because the branch is not initialised yet, or the intent's snapshot was taken
+   * against something else. That "something else" is not necessarily the mainline:
+   * an intent linked to several deliveries keeps the snapshot of the first one, so
+   * this is true for another delivery's branch too. Surfaced to the caller as a
+   * notice; the launch still proceeds. An intent linked to a delivery whose branch
+   * has not been created must still be able to start work.
    */
-  fellBackToMainline: boolean
+  offDeliveryBranch: boolean
 }
 
 /**
  * Resolve the baseline for one launch and fetch it, so both the new-worktree root
  * and the existing-worktree check work against the same, just-fetched commit.
  *
- * A delivery whose branch is not ready has nothing to root on, so the baseline
- * falls back to the mainline and says so. That is not a refusal: an intent linked
- * to a delivery whose branch has not been initialised yet must still be able to
- * start work.
+ * The branch itself is read, never derived: `intent.baseBranch` already carries
+ * the delivery branch when the association lifecycle put it there. `delivery` is
+ * consulted only to label the baseline and to tell the user when it is not the
+ * delivery's own branch.
  */
 export function resolveWorktreeBaseline(
   workspacePath: string,
+  intent: Intent,
   delivery: Delivery | null,
 ): WorktreeBaseline {
-  const mainline = getDefaultMainBranch(workspacePath)?.trim() || null
-  const deliveryRef = delivery ? { id: delivery.id, title: delivery.title } : null
+  const baseBranch = intent.baseBranch
   const deliveryBranch =
     delivery && delivery.branchReady ? (delivery.branchName?.trim() ?? null) : null
-  const fellBackToMainline = delivery !== null && deliveryBranch === null
-  const baseBranch = deliveryBranch ?? mainline
   return {
     baseBranch,
-    remoteRef: baseBranch ? fetchRemoteBase(workspacePath, baseBranch) : null,
-    delivery: deliveryRef,
-    fellBackToMainline,
+    remoteRef: fetchRemoteBase(workspacePath, baseBranch),
+    delivery: delivery ? { id: delivery.id, title: delivery.title } : null,
+    offDeliveryBranch: delivery !== null && deliveryBranch !== baseBranch,
   }
 }
 
@@ -97,7 +100,7 @@ export function checkExistingWorktreeBaseline(
   intentId: string,
   baseline: WorktreeBaseline,
 ): WorktreeBaselineBlock | null {
-  if (!baseline.remoteRef || !baseline.baseBranch) return null
+  if (!baseline.remoteRef) return null
   const worktreePath = getWorktreePath(workspacePath, intentId)
   if (!worktreeExists(worktreePath)) return null
   if (worktreeContainsRef(worktreePath, baseline.remoteRef) !== false) return null

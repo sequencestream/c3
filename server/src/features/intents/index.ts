@@ -208,11 +208,21 @@ function syncIntentSessionProjection(input: {
  * one item; split-out items must not reuse it). Pure (no I/O) and the single
  * source of that guard wording — {@link startIntentSession} passes the user's
  * typed text, {@link discussionToIntent} a block built from the discussion title
- * + conclusion — so the two call sites cannot drift apart.
+ * + conclusion, {@link createIntent} the refine instruction below — so the call
+ * sites cannot drift apart.
  */
 export function buildIntentSessionFirstPrompt(intent: Intent, userInput: string): string {
   return `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。这是本轮唯一允许原地更新的目标。标题:${intent.title}。当前内容:${intent.content}\n\n用户输入:\n${userInput}\n\n定稿前先查询相关意图。调用 save_intents 时批次必须恰好一项携带 id="${intent.id}"；拆分出的其他项不得使用该 id。`
 }
+
+/**
+ * The user-input block {@link createIntent} feeds the builder above. On that path
+ * the text the user just typed is already the intent's `content`, so it is
+ * *referenced* through the "当前内容" preamble instead of being pasted a second
+ * time — a long creation input would otherwise occupy the first prompt twice.
+ */
+export const CREATE_INTENT_REFINE_INSTRUCTION =
+  '请分析上述意图的当前内容，优化改善其结构，按 Why/What/Trade-offs/When/Acceptance 五维整理出可验证的意图条目'
 
 /**
  * Create → bind → launch an intent-communication session **owned by `intent`**:
@@ -432,7 +442,9 @@ export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => 
     proj,
     intent,
     title: intent.title,
-    prompt: buildIntentSessionFirstPrompt(intent, content),
+    // `content` is already the intent's own content, so the builder's preamble
+    // carries it — the user-input block only points back at it.
+    prompt: buildIntentSessionFirstPrompt(intent, CREATE_INTENT_REFINE_INSTRUCTION),
   })
 }
 

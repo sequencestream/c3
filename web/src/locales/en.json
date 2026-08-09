@@ -2711,7 +2711,7 @@
           "label": "Link an intent to this delivery"
         },
         "pickerEmpty": {
-          "label": "No intent is available to link — every intent already belongs to a delivery."
+          "label": "No intent is available to link — the rest already belong to a delivery, are cancelled, or have a merged PR."
         },
         "confirm": {
           "label": "Link"

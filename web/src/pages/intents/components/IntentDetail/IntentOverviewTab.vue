@@ -343,7 +343,7 @@ watch(
       <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
       <!-- 是否需要规范:选择即保存。工作区关了 SDD 时不隐藏——隐藏会让用户以为功能没了——
            改为附一句提示说明此时设置不产生行为差异。规范或开发已起步时整行降级为只读文本:
-           不隐藏(用户仍要看得到当前是哪一档),也不用 disabled 下拉,改为文本 + 一句不可修改提示。 -->
+           不隐藏(用户仍要看得到当前是哪一档),也不用 disabled 下拉;只读本身已表达不可改,不再附锁定提示。 -->
       <span class="req-meta-item" data-testid="intent-meta-spec-mode">
         {{ t('intent.meta.specMode.label') }}
         <select
@@ -364,12 +364,6 @@ watch(
           class="req-meta-spec-mode-derived"
           data-testid="intent-meta-spec-mode-derived"
           >{{ specModeDerivedHint }}</span
-        >
-        <span
-          v-if="!canEditSpecMode"
-          class="req-meta-spec-mode-hint"
-          data-testid="intent-meta-spec-mode-locked-hint"
-          >{{ t('intent.meta.specMode.locked') }}</span
         >
         <span
           v-if="sddEnabled === false"

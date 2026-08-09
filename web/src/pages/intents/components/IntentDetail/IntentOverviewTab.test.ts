@@ -565,15 +565,12 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
     { name: 'lastWorkSessionId 非空', patch: { lastWorkSessionId: 'work-sess' } },
   ]
 
-  it('每类锁定信号都收起下拉,改渲染只读文本 + 不可修改提示', () => {
+  it('每类锁定信号都收起下拉,改渲染只读文本,不附锁定提示', () => {
     for (const { name, patch } of LOCK_CASES) {
       const w = mountTab(intent({ id: 'r1', specMode: 'sdd', effectiveSpecMode: 'sdd', ...patch }))
       expect(w.find(SPEC_MODE_SELECT).exists(), name).toBe(false)
       expect(w.find(SPEC_MODE_READONLY).exists(), name).toBe(true)
-      expect(w.find(SPEC_MODE_LOCKED_HINT).exists(), name).toBe(true)
-      expect(w.find(SPEC_MODE_LOCKED_HINT).text(), name).toBe(
-        i18n.global.t('intent.meta.specMode.locked'),
-      )
+      expect(w.find(SPEC_MODE_LOCKED_HINT).exists(), name).toBe(false)
     }
   })
 
@@ -624,7 +621,7 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
     )
     expect(w.find(SPEC_MODE_SELECT).exists()).toBe(false)
     expect(w.find(SPEC_MODE_READONLY).exists()).toBe(true)
-    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(true)
+    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(false)
   })
 
   it('锁定态下 sddEnabled=false 的「当前无行为差异」提示仍照常渲染', () => {
@@ -633,7 +630,7 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
       { sddEnabled: false },
     )
     expect(w.find(SPEC_MODE_OFF_HINT).exists()).toBe(true)
-    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(true)
+    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(false)
   })
 
   it('未起步的意图不显示锁定提示,下拉照常可用', () => {
@@ -649,8 +646,7 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
     expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(false)
   })
 
-  it('五种语言锁定提示只陈述不可修改,不含起步原因;服务端拒绝文案仍保留原因', () => {
-    // 概览提示只说「不可再改」;起步原因仅留在 error.intent.specModeLocked。
+  it('五种语言服务端拒绝文案仍保留起步原因(概览不再渲染锁定提示)', () => {
     const locales = ['en', 'zh', 'ja', 'ko', 'ru'] as const
     const reasonPhrases: Record<(typeof locales)[number], RegExp> = {
       en: /already started/i,
@@ -660,9 +656,6 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
       ru: /уже начат/i,
     }
     for (const locale of locales) {
-      const hint = String(i18n.global.t('intent.meta.specMode.locked', {}, { locale }))
-      expect(hint, locale).toBeTruthy()
-      expect(hint, locale).not.toMatch(reasonPhrases[locale])
       const rejected = String(i18n.global.t('error.intent.specModeLocked', {}, { locale }))
       expect(rejected, locale).toBeTruthy()
       expect(rejected, locale).toMatch(reasonPhrases[locale])

@@ -1017,8 +1017,7 @@
           "fast": "Not required (fast)"
         },
         "derived": "currently {mode}",
-        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now.",
-        "locked": "This setting can no longer be changed."
+        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now."
       },
       "branch": {
         "label": "Branch:"

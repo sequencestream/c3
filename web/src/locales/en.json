@@ -1258,17 +1258,6 @@
           "label": "Force-release and start"
         }
       },
-      "worktree": {
-        "title": {
-          "label": "Worktree baseline does not match"
-        },
-        "merge": {
-          "label": "Merge the branch in"
-        },
-        "rebuild": {
-          "label": "Rebuild the worktree"
-        }
-      },
       "deliveryContext": {
         "title": {
           "label": "Which delivery does this session develop against?"
@@ -1277,6 +1266,22 @@
           "label": "Start with this delivery"
         }
       }
+    },
+    "worktreeBaseline": {
+      "stale": "This worktree is not on the latest commit of \"{branch}\" — it sits on \"{currentBranch}\" (HEAD {currentHead}). Being behind does not stop development; reconcile it when the PR is merged.",
+      "staleInDelivery": "This worktree is not on the latest commit of \"{branch}\" (delivery \"{delivery}\") — it sits on \"{currentBranch}\" (HEAD {currentHead}). Being behind does not stop development; reconcile it when the PR is merged.",
+      "dirtyHint": "The worktree holds uncommitted work — commit or stash it before rebuilding.",
+      "merge": {
+        "label": "Merge the base branch in"
+      },
+      "rebuild": {
+        "label": "Rebuild the worktree"
+      },
+      "dismiss": {
+        "label": "Got it"
+      },
+      "rebuilt": "Worktree rebuilt — the next launch roots it at the base branch.",
+      "merged": "The base branch was merged into the worktree."
     },
     "linkDelivery": {
       "label": "Link delivery",
@@ -2246,8 +2251,6 @@
       "gitCleanupPrTargetUnavailable": "No PR created: {detail}. Link this intent to a delivery whose branch is ready, then create the PR manually.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
       "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting work: {message}",
-      "worktreeBaseMismatch": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\") — it currently sits on \"{currentBranch}\" (HEAD {currentHead}). c3 never rebuilds or merges it for you — rebuild it, or merge the branch in.",
-      "worktreeBaseMismatchDirty": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\") — it currently sits on \"{currentBranch}\" (HEAD {currentHead}) — and holds uncommitted work. Commit or stash it first, or merge the branch in.",
       "worktreeDirty": "The worktree holds uncommitted work — commit or stash it before rebuilding. c3 never discards it for you.",
       "worktreeRepairFailed": "Worktree repair failed: {message}",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",

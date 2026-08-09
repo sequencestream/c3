@@ -45,8 +45,10 @@ import { groupUnavailableError, sessionAgentTargetForRole } from '../sessions/ag
 import {
   existingIntentSessionCwd,
   prepareIntentSessionWorktree,
+  worktreeBaselineNotice,
   type IntentWorktreeFailure,
 } from './session-worktree.js'
+import type { WorktreeBaselineDrift } from './worktree-baseline.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
@@ -240,13 +242,26 @@ export const CREATE_INTENT_REFINE_INSTRUCTION =
  * binding sequence exists once.
  */
 /**
- * The intent-directory refusal as a WS error frame. The baseline mismatch codes
- * are the ones the intent page already knows how to offer `repair_intent_worktree`
- * for, so a comm / spec / review launch blocked by an out-of-date worktree lands
- * on the same two explicit exits a work launch does.
+ * The intent-directory refusal as a WS error frame. Only a directory that could
+ * not be CREATED gets here — a worktree that merely fell behind its baseline is
+ * a notice ({@link sendBaselineNotice}), not a refusal.
  */
 function intentWorktreeError(failure: IntentWorktreeFailure): UiError {
   return failure.params ? { code: failure.code, params: failure.params } : { code: failure.code }
+}
+
+/**
+ * Tell the requesting connection its session runs in a worktree that does not
+ * contain the baseline tip. Sent AFTER the launch, because it changes nothing
+ * about it: the two repairs stay explicit user actions, and a worktree behind
+ * its base branch is reconciled when the PR is merged.
+ */
+function sendBaselineNotice(
+  conn: Conn,
+  intentId: string,
+  drift: WorktreeBaselineDrift | null,
+): void {
+  if (drift) conn.send(worktreeBaselineNotice(intentId, drift))
 }
 
 async function bindAndLaunchIntentSession(
@@ -313,6 +328,7 @@ async function bindAndLaunchIntentSession(
       agentSwitch: agentSwitchFor(chatId),
     })
     ctx.broadcastIntents(proj)
+    sendBaselineNotice(conn, intent.id, cwd.prepared.baselineDrift)
     await ctx.launchRun(rt, input.prompt, input.images)
   } catch (err) {
     clearPendingIntentLink(chatId)
@@ -958,6 +974,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   // subscription backfills `intent_session_id` onto the intent on first bind,
   // making the comm/refine conversation reopenable from the intent detail.
   registerPendingIntentLink(chatId, req.id)
+  sendBaselineNotice(conn, req.id, cwd.prepared.baselineDrift)
   const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
   try {
     await ctx.launchRun(rt, firstPrompt)
@@ -1040,6 +1057,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   // subscription replaces `intent_session_id` with the real comm session id on
   // first bind, making the new conversation reopenable from the intent detail.
   registerPendingIntentLink(chatId, req.id)
+  sendBaselineNotice(conn, req.id, cwd.prepared.baselineDrift)
   try {
     await ctx.launchRun(rt, buildResetIntentPrompt(req, msg.userInput))
   } catch (err) {
@@ -1342,7 +1360,11 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
         ...(result.guidance ? { guidance: result.guidance } : {}),
       },
     })
+    return
   }
+  // The session started; the worktree it started in just is not on the newest
+  // baseline. Said, not enforced — the repairs stay the user's to trigger.
+  if (result.baselineNotice) conn.send(result.baselineNotice)
 }
 
 export const updateIntentStatus: Handler<'update_intent_status'> = async (ctx, conn, msg) => {

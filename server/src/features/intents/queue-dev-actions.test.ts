@@ -416,9 +416,9 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(rt.effectiveCwd).toBe('/tmp/wt-DB')
   })
 
-  // 交付分支被推进后,已存在的 worktree 确凿落后 —— 这条守卫是有意为之,自动路径
-  // 同样不许绕过:不重建、不 merge,只记一次失败等人来处理。
-  it('worktree: 已存在目录基线确凿不符时拒绝启动,不重建也不合并', async () => {
+  // 交付分支被推进后,已存在的 worktree 确凿落后 —— 无人值守路径同样不重建、不
+  // merge,但也不再因此停工:落后的目录照样跑,分歧留到 PR 合并时处理。
+  it('worktree: 已存在目录基线不符时照常启动,不重建也不合并', async () => {
     const proj = '/test/wt-stale-base'
     const intent = makeIntent({ id: 'ST', status: 'todo', baseBranch: 'delivery/v0-14-0' })
     vi.mocked(listIntents).mockReturnValue([intent])
@@ -434,19 +434,16 @@ describe('queue dev actions — branch-mode git alignment', () => {
     startWorkflow(proj, hooks, 1)
     await flush(proj)
 
-    expect(createWorktree).not.toHaveBeenCalled()
-    expect(runDevTurn).not.toHaveBeenCalled()
-    // 失败被隔离成这一条意图的一次尝试,队列没有停。
-    expect((getQueueIntentMetaById('ST') as { failureCount: number }).failureCount).toBe(1)
-    // 拒绝理由带得出 worktree 真实所在,人能分辨是建错基线还是交付分支被推进。
-    // 同一条意图在后续 tick 上还会落退避类决策,所以看的是这一轮的全部理由。
-    const reason = (listQueueDecisions(proj) as { intentId: string; rejectReason?: string }[])
+    // 目录被复用、回合照常发出:基线不符不再是这条路径上的拒绝理由。
+    expect(runDevTurn).toHaveBeenCalled()
+    const reasons = (listQueueDecisions(proj) as { intentId: string; rejectReason?: string }[])
       .filter((d) => d.intentId === 'ST')
       .map((d) => d.rejectReason ?? '')
       .join('\n')
-    expect(reason).toContain('delivery/v0-14-0')
-    expect(reason).toContain('intent/ST')
-    expect(reason).toContain('abc1234')
+    expect(reasons).not.toContain('worktree')
+    // 目录仍以意图持久化的基准分支为根 —— 自动路径没有第二个基线源,也没借机改写它。
+    for (const call of vi.mocked(createWorktree).mock.calls)
+      expect(call[3]).toBe('delivery/v0-14-0')
   })
 
   it('fresh launch: SDD on without devSkill passes SDD instruct out-of-echo and visible spec note', async () => {

@@ -895,6 +895,20 @@ export function installMessageHandler(ctx: AppCtx): void {
         intentLogsById.value = { ...intentLogsById.value, [msg.intentId]: msg.items }
         intentLogsLoading.value = false
         break
+      case 'intent_worktree_baseline_notice':
+        // 会话已经起来了 —— 这条只是说它跑在一个落后于基准分支的目录里。存起来由
+        // 意图详情常驻提示,不弹窗、不打断,修复与否是用户的事。
+        ctx.noteWorktreeBaseline(msg)
+        break
+      case 'intent_worktree_repair_result':
+        // 修完了(重建或合入),那条提示的前提已不复存在,立刻撤掉。
+        ctx.clearWorktreeBaselineNotice(msg.intentId)
+        ctx.showToast(
+          msg.mode === 'rebuild'
+            ? t('intent.worktreeBaseline.rebuilt')
+            : t('intent.worktreeBaseline.merged'),
+        )
+        break
       case 'intent_sessions':
         intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }
         // Authoritatively reconcile the live run-state from the snapshot.

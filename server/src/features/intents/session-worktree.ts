@@ -19,16 +19,17 @@
  * centralized spec root — the permission gateway decides that, not the cwd.
  * Reading code and writing the document are two separate roots on purpose.
  */
-import type { GitActionFailureGuidance, Intent } from '@ccc/shared/protocol'
+import type { GitActionFailureGuidance, Intent, ServerToClient } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared'
 import { getGitBranchMode } from '../../kernel/config/index.js'
 import { getDelivery } from '../deliveries/store.js'
 import { impliedDeliveryContextId } from './delivery-context.js'
 import { buildGitFailureGuidance } from './git-failure.js'
 import {
-  checkExistingWorktreeBaseline,
+  detectWorktreeBaselineDrift,
   resolveWorktreeBaseline,
   type WorktreeBaseline,
+  type WorktreeBaselineDrift,
 } from './worktree-baseline.js'
 import { createWorktree, getWorktreePath, worktreeExists } from './worktree.js'
 
@@ -38,8 +39,8 @@ export interface IntentWorktreeFailure {
   params?: Record<string, string>
   /**
    * Targeted repair guidance, set only where a Git command actually failed.
-   * A baseline mismatch is not a Git failure and carries none — its exits are
-   * the `repair_intent_worktree` actions the code already names.
+   * Creating the directory is now the only way this preparation fails at all —
+   * a baseline mismatch is a notice, not a refusal.
    */
   guidance?: GitActionFailureGuidance
 }
@@ -54,6 +55,12 @@ export interface IntentSessionWorktree {
   branchName: string | null
   /** What the directory is rooted at; `null` in `current-branch` mode. */
   baseline: WorktreeBaseline | null
+  /**
+   * The pre-existing worktree did not contain the baseline tip. `null` when
+   * there is nothing to say. The launch already happened — callers that have a
+   * connection pass this on as a notice, unattended ones ignore it.
+   */
+  baselineDrift: WorktreeBaselineDrift | null
 }
 
 export type IntentWorktreeResult =
@@ -61,48 +68,56 @@ export type IntentWorktreeResult =
 
 /**
  * Resolve (and fetch) the baseline from the intent's persisted base branch, then
- * check an EXISTING worktree against it. Returns the baseline when the launch may
- * proceed, or the refusal to hand back.
+ * check an EXISTING worktree against it. Never refuses: the baseline is reported
+ * together with the drift, if any, and the caller launches either way.
  *
- * The delivery is read for the LABELS the refusal carries, never to pick the
+ * The delivery is read for the LABELS the notice carries, never to pick the
  * branch — the branch is `intent.baseBranch`. Callers that cannot ask the user
  * which delivery they mean pass none and get the implied one (or nothing).
  *
- * The refusal states whether a safe rebuild is currently possible, so the page
+ * The drift states whether a safe rebuild is currently possible, so the page
  * offers the right exits: a dirty worktree only gets "commit or stash first",
- * never a destructive button. This block is NOT force-releasable — the dependency
- * gate is advice, an out-of-date worktree is a data-safety fact.
+ * never a destructive button.
  */
 export function prepareIntentWorktreeBaseline(
   workspacePath: string,
   intent: Intent,
   deliveryId: string | null,
-): { ok: true; baseline: WorktreeBaseline } | { ok: false; failure: IntentWorktreeFailure } {
+): { baseline: WorktreeBaseline; drift: WorktreeBaselineDrift | null } {
   const baseline = resolveWorktreeBaseline(
     workspacePath,
     intent,
     deliveryId ? getDelivery(deliveryId) : null,
   )
-  const block = checkExistingWorktreeBaseline(workspacePath, intent.id, baseline)
-  if (!block) return { ok: true, baseline }
+  return { baseline, drift: detectWorktreeBaselineDrift(workspacePath, intent.id, baseline) }
+}
+
+/** The wire frame the intent page renders the drift as. */
+export type WorktreeBaselineNotice = Extract<
+  ServerToClient,
+  { type: 'intent_worktree_baseline_notice' }
+>
+
+/** The drift as the wire notice the intent page renders. */
+export function worktreeBaselineNotice(
+  intentId: string,
+  drift: WorktreeBaselineDrift,
+): WorktreeBaselineNotice {
   return {
-    ok: false,
-    failure: {
-      code: block.canRebuild ? 'intent.worktreeBaseMismatch' : 'intent.worktreeBaseMismatchDirty',
-      params: {
-        branch: block.branch,
-        deliveryTitle: block.delivery?.title ?? '',
-        currentBranch: currentBranchLabel(block.current),
-        currentHead: block.current.head ?? UNKNOWN_BASELINE,
-      },
-    },
+    type: 'intent_worktree_baseline_notice',
+    intentId,
+    branch: drift.branch,
+    deliveryTitle: drift.delivery?.title ?? '',
+    currentBranch: currentBranchLabel(drift.current),
+    currentHead: drift.current.head ?? UNKNOWN_BASELINE,
+    canRebuild: drift.canRebuild,
   }
 }
 
 /**
  * The neutral stand-in for a fact git would not give us. Deliberately not a
  * branch name: reporting the mainline (or anything else) for an unreadable HEAD
- * would dress a guess up as the diagnosis the user is reading this message for.
+ * would dress a guess up as the diagnosis the user is reading this notice for.
  */
 const UNKNOWN_BASELINE = '—'
 
@@ -130,9 +145,13 @@ export interface IntentSessionWorktreeOptions {
 
 /**
  * Prepare the directory an intent session runs in: resolve and fetch the
- * baseline, refuse when an existing worktree is rooted elsewhere, then create or
+ * baseline, note when an existing worktree is rooted elsewhere, then create or
  * reuse the worktree. Idempotent — the second session of an intent runs no git
  * command and gets the same path.
+ *
+ * Failing here means the directory could not be CREATED. A worktree that exists
+ * but has fallen behind its baseline is prepared normally and reported through
+ * `baselineDrift`; the session starts.
  *
  * In `current-branch` mode there is no intent worktree by design: every session
  * runs in the shared checkout, exactly as before.
@@ -151,13 +170,18 @@ export function prepareIntentSessionWorktree(
   if (getGitBranchMode(workspacePath) !== 'worktree') {
     return {
       ok: true,
-      prepared: { cwd: workspacePath, worktreePath: null, branchName: null, baseline: null },
+      prepared: {
+        cwd: workspacePath,
+        worktreePath: null,
+        branchName: null,
+        baseline: null,
+        baselineDrift: null,
+      },
     }
   }
   const deliveryId =
     opts?.deliveryId !== undefined ? opts.deliveryId : impliedDeliveryContextId(intent)
   const resolved = prepareIntentWorktreeBaseline(workspacePath, intent, deliveryId)
-  if (!resolved.ok) return { ok: false, failure: resolved.failure }
 
   try {
     const wt = createWorktree(workspacePath, intent.id, intent.title, resolved.baseline.baseBranch)
@@ -168,6 +192,7 @@ export function prepareIntentSessionWorktree(
         worktreePath: wt.worktreePath,
         branchName: wt.branchName,
         baseline: resolved.baseline,
+        baselineDrift: resolved.drift,
       },
     }
   } catch (err) {

@@ -1259,17 +1259,6 @@
           "label": "強制解除して開始"
         }
       },
-      "worktree": {
-        "title": {
-          "label": "worktree のベースラインが一致しません"
-        },
-        "merge": {
-          "label": "ブランチをマージ"
-        },
-        "rebuild": {
-          "label": "worktree を再作成"
-        }
-      },
       "deliveryContext": {
         "title": {
           "label": "このセッションはどのデリバリーに対して開発しますか?"
@@ -1278,6 +1267,22 @@
           "label": "このデリバリーで開始"
         }
       }
+    },
+    "worktreeBaseline": {
+      "stale": "この worktree は「{branch}」の最新コミット上にありません。現在は「{currentBranch}」(HEAD {currentHead})にあります。遅れていても開発は続けられます —— PR のマージ時に解消してください。",
+      "staleInDelivery": "この worktree は「{branch}」(デリバリー「{delivery}」)の最新コミット上にありません。現在は「{currentBranch}」(HEAD {currentHead})にあります。遅れていても開発は続けられます —— PR のマージ時に解消してください。",
+      "dirtyHint": "この worktree には未コミットの変更があります。再作成の前にコミットまたは stash してください。",
+      "merge": {
+        "label": "基準ブランチをマージ"
+      },
+      "rebuild": {
+        "label": "worktree を再作成"
+      },
+      "dismiss": {
+        "label": "了解"
+      },
+      "rebuilt": "worktree を再作成しました。次回の起動で基準ブランチを起点にします。",
+      "merged": "基準ブランチを worktree にマージしました。"
     },
     "linkDelivery": {
       "label": "デリバリーを紐付け",
@@ -2247,8 +2252,6 @@
       "gitCleanupPrTargetUnavailable": "PR は作成されませんでした: {detail}。ブランチが準備済みのデリバリーをこの意図に関連付けてから、手動で PR を作成してください。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
       "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。作業を開始する前に手動で同期してください: {message}",
-      "worktreeBaseMismatch": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしていません。現在は「{currentBranch}」(HEAD {currentHead})にあります。c3 は自動で再作成もマージもしません — 再作成するか、そのブランチをマージしてください。",
-      "worktreeBaseMismatchDirty": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしておらず、現在は「{currentBranch}」(HEAD {currentHead})にあり、未コミットの変更があります。先にコミットまたは stash するか、そのブランチをマージしてください。",
       "worktreeDirty": "worktree に未コミットの変更があります — 再作成の前にコミットまたは stash してください。c3 が勝手に破棄することはありません。",
       "worktreeRepairFailed": "worktree の修復に失敗しました: {message}",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",

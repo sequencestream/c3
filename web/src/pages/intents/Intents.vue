@@ -19,6 +19,7 @@ import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type { StandaloneDeliveryRequest } from '@/lib/delivery-view'
+import type { WorktreeBaselineNotice } from '@/lib/worktree-baseline'
 import type {
   ActionTarget,
   CodexPolicy,
@@ -59,6 +60,8 @@ const props = defineProps<{
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
   /** 本工作区的交付列表,透传给详情标题栏的「关联交付」弹窗候选。 */
   deliveries?: Delivery[]
+  /** 按意图 id 存的 worktree 基线提示;详情只取当前选中那条。 */
+  worktreeBaselineNotices?: Record<string, WorktreeBaselineNotice>
   /** 「当前意图独立交付」是否在飞行中(控制层 pending 槽)。 */
   standaloneDeliveryPending?: boolean
   /** Selected intent's spec.md content (intent detail `spec` tab); null=未加载/无。 */
@@ -115,6 +118,8 @@ const emit = defineEmits<{
   // intent list events
   filter: [status: IntentStatus | null]
   refine: [intentId: string]
+  'repair-worktree': [intentId: string, mode: 'rebuild' | 'merge']
+  'dismiss-worktree-baseline': [intentId: string]
   /** 派生「下一步」跳转:列表与详情共用同一条上抛路径,最终落到同一个分发器。 */
   'action-target': [target: ActionTarget]
   'save-intent-content': [intentId: string, content: string]
@@ -205,6 +210,20 @@ function handleOrderedChange(ids: string[]): void {
 }
 const selectedIntent = computed<Intent | null>(
   () => props.intents.find((r) => r.id === selectedIntentId.value) ?? null,
+)
+
+// 依赖整组更新:模板内写不下对象字面量的类型标注(花括号会被模板解析器吃掉),
+// 所以落成具名 handler。
+function handleUpdateDeps(
+  intentId: string,
+  deps: { dependsOnId: string; depType: DepType }[],
+): void {
+  emit('update-deps', intentId, deps)
+}
+
+// 选中意图的 worktree 基线提示;没被告知过就是 null(绝大多数情况)。
+const selectedWorktreeBaselineNotice = computed<WorktreeBaselineNotice | null>(() =>
+  selectedIntentId.value ? (props.worktreeBaselineNotices?.[selectedIntentId.value] ?? null) : null,
 )
 
 // 选中意图的变更日志(changelog tab),未拉取时为空数组。
@@ -403,6 +422,7 @@ defineExpose({
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
         :deliveries="deliveries"
+        :worktree-baseline-notice="selectedWorktreeBaselineNotice"
         :standalone-delivery-pending="standaloneDeliveryPending"
         :requested-sub-tab="detailRequestedSubTab"
         :active-session="activeSession"
@@ -437,6 +457,10 @@ defineExpose({
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
+        @repair-worktree="
+          (id: string, mode: 'rebuild' | 'merge') => emit('repair-worktree', id, mode)
+        "
+        @dismiss-worktree-baseline="(id: string) => emit('dismiss-worktree-baseline', id)"
         @save-intent-content="
           (id: string, content: string) => emit('save-intent-content', id, content)
         "
@@ -468,7 +492,7 @@ defineExpose({
         @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
         @share="(id: string) => emit('share', id)"
-        @update-deps="(id, deps) => emit('update-deps', id, deps)"
+        @update-deps="handleUpdateDeps"
         @select-dependency="handleSelectDependency"
         @open-delivery="(id: string) => emit('open-delivery', id)"
         @open-link-dialog="(ws: string) => emit('open-link-dialog', ws)"

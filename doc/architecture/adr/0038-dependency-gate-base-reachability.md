@@ -26,7 +26,7 @@
 - **判据只有一份实现,放在 `@ccc/shared` 的领域纯函数里。** 内核不得 import features(ADR-0009),共享层是让手动路径与队列内核引用同一实现的唯一干净位置;代价是输入必须全部以事实快照传入,归约由各读取方在自己的边界完成。
 - **跨交付等待从小时级变周级,是语义正确性的必然代价。** 缓解手段是可解释闸门 + 强制放行逃生口,**不是放松判据**。
 - **依赖闸门是建议,可被知情放行。** 强制放行一次性、不持久化、只跳过依赖闸门、需二次确认并展示风险说明、留 `intent_logs` 审计;自动化队列不提供——无人值守路径不替人做判断。
-- **worktree 基线是 `origin/<交付分支>`,且已存在的 worktree 一律不自动重建。** 基线不符时阻塞启动并给两个显式出口(干净才允许安全重建 / 人工确认后合入)。这类阻塞**不在逃生口范围内**:依赖闸门关乎合并成本,基线不符关乎会不会丢工作。
+- **worktree 基线是 `origin/<交付分支>`,且已存在的 worktree 一律不自动重建。** 两个显式出口(干净才允许安全重建 / 人工确认后合入)只由人触发。基线不符是否阻塞启动一条由 ADR-0041 取代:它不阻塞,只提示。
 - **交付状态是调度资格闸门。** `verifying / verified / delivered / cancelled` 期间其关联意图不再产生新的写入会话——验证期间继续合代码等于验证结论作废;手动入口与队列共用同一判据,不留「自动化被拦、手动放行」的裂缝。
 
 ## Consequences
@@ -42,5 +42,5 @@
 - `shared/src/dependency-gate-model.ts` 是判据的唯一实现;`server/src/features/intents/dependency-gate.ts` 与 `server/src/kernel/queue/reconcile.ts` 都只调用它,任何一方重述判据即违规。
 - `shared/src/delivery-gate-model.ts` 是「交付是否禁止新写入」的唯一实现,手动准入与队列共用。
 - 会话交付上下文持久化于 `intent_sessions.delivery_id`(见 `database/tables.md`)。
-- `server/src/features/intents/worktree-baseline.ts` 只做检测,不执行修复;两个出口在 `repair_intent_worktree` 里显式执行。
+- `server/src/features/intents/worktree-baseline.ts` 只做检测,不执行修复;两个出口在 `repair_intent_worktree` 里显式执行(检测结果的处置见 ADR-0041)。
 - 三态与两条路径一致性由 `shared/src/dependency-gate-model.test.ts`、`server/src/features/intents/dependency-gate.test.ts`(「两条路径结论一致」)与 `scripts/e2e/e2e-dependency-gate-test.mjs` 覆盖。

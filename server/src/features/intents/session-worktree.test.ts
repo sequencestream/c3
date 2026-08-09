@@ -6,8 +6,8 @@
  *    而不是主 checkout —— 否则代理仍然在看错分支的代码;
  * 2. 四类会话共用同一个目录,先到者建、后到者复用,不会冒出第二个 worktree;
  * 3. 共用目录 ≠ 共用写权限:规范文档仍然落集中式 spec 根,worktree 里不出现规范文件;
- * 4. worktree 已存在但不在目标基线上时,三类会话和开发会话一样被拦下,并按干净/脏
- *    给出「可重建 / 只能先提交」两种修复出口 —— 目录从不被自动改写。
+ * 4. worktree 已存在但不在目标基线上时,四类会话照常启动,只额外收到一条提示,并按
+ *    干净/脏给出「可重建 / 只能先提交」两种修复出口 —— 目录从不被自动改写。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -31,6 +31,9 @@ import { resetStoreForTests as resetSessionMetadata } from '../sessions/session-
 import { resetForTests as resetIntentLink } from './intent-link.js'
 import { resetForTests as resetSpecLink } from './spec-link.js'
 import { resetForTests as resetSpecReviewLink } from './spec-review-link.js'
+// 意图沟通会话的回执要过一次 enrichRunStatus,它读 wait_user_involve_events —— 这张
+// 表按需建,不初始化就查不到。
+import { resetStoreForTests as resetUserInvolveStore } from '../user-involve/store.js'
 import { refineIntent } from './index.js'
 import {
   launchSpecReviewSession,
@@ -39,6 +42,7 @@ import {
   type SessionLaunchDeps,
   type SessionLaunchResult,
 } from './session-launcher.js'
+import type { WorktreeBaselineNotice } from './session-worktree.js'
 import { generateBranchName, getWorktreeBase, getWorktreePath } from './worktree.js'
 import { getSpecsBase } from './specs-root.js'
 
@@ -104,6 +108,7 @@ beforeEach(() => {
   resetIntentLink()
   resetSpecLink()
   resetSpecReviewLink()
+  resetUserInvolveStore()
   addWorkspace(dir, 1)
   workspaceId = pathToId(dir)!
   proj = resolveWorkspaceRoot(workspaceId)!
@@ -186,6 +191,14 @@ function asSuccess(r: SessionLaunchResult): { sessionId: string } {
 function asError(r: SessionLaunchResult): { code: string; params?: Record<string, string> } {
   expect(r.success).toBe(false)
   return r as { success: false; code: string; params?: Record<string, string> }
+}
+
+/** 一次成功启动随身带回的基线提示;没有提示即用例本身没造出失配。 */
+function baselineNotice(r: SessionLaunchResult): WorktreeBaselineNotice {
+  expect(r.success).toBe(true)
+  const notice = r.success ? r.baselineNotice : undefined
+  expect(notice).toBeTruthy()
+  return notice!
 }
 
 /** 从 `session_selected` 回执里取会话 id。 */
@@ -301,7 +314,7 @@ describe('规范文档仍写集中式 spec 根,不进 worktree', () => {
 // 4. 基线守卫与修复出口
 // ---------------------------------------------------------------------------
 
-describe('基线失配:四类会话一并被拦下,目录从不被自动改写', () => {
+describe('基线失配:只提示不拦人,目录从不被自动改写', () => {
   /** 先在 main 上建好 worktree,再把意图的基准分支挪到一条它不可能包含的分支。 */
   async function seedMismatch(): Promise<string> {
     const id = seedIntent()
@@ -311,51 +324,53 @@ describe('基线失配:四类会话一并被拦下,目录从不被自动改写',
     return id
   }
 
-  it('干净 worktree:给出可重建的出口', async () => {
+  it('干净 worktree:会话照常启动,提示里给出可重建的出口', async () => {
     const id = await seedMismatch()
-    const e = asError(await launchSpecReviewSession(proj, id, mockDeps()))
-    expect(e.code).toBe('intent.worktreeBaseMismatch')
-    expect(e.params?.branch).toBe('delivery/v9')
+    const n = baselineNotice(await launchSpecReviewSession(proj, id, mockDeps()))
+    expect(n.branch).toBe('delivery/v9')
+    expect(n.canRebuild).toBe(true)
   })
 
-  // 报错要能回答「为什么不匹配」:这个目录当初就建在 main 上,不是交付分支推进
+  // 提示要能回答「为什么不匹配」:这个目录当初就建在 main 上,不是基准分支推进
   // 把它甩在后面 —— 两者的修复动作一样,但原因不同,用户得能分辨。
-  it('报错带上 worktree 当前实际基线(分支 + HEAD)', async () => {
+  it('提示带上 worktree 当前实际基线(分支 + HEAD)', async () => {
     const id = await seedMismatch()
-    const e = asError(await launchSpecReviewSession(proj, id, mockDeps()))
+    const n = baselineNotice(await launchSpecReviewSession(proj, id, mockDeps()))
     const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
       cwd: getWorktreePath(proj, id),
       encoding: 'utf-8',
     }).trim()
-    expect(e.params?.currentBranch).toBe(generateBranchName(id, 'Target'))
-    expect(e.params?.currentHead).toBe(head)
+    expect(n.currentBranch).toBe(generateBranchName(id, 'Target'))
+    expect(n.currentHead).toBe(head)
   })
 
-  it('有未提交改动:不给重建,只提示先提交/stash', async () => {
+  it('有未提交改动:照样启动,但提示里不给重建这个出口', async () => {
     const id = await seedMismatch()
     writeFileSync(join(getWorktreePath(proj, id), 'dirty.txt'), 'uncommitted\n', 'utf8')
-    const e = asError(await launchSpecReviewSession(proj, id, mockDeps()))
-    expect(e.code).toBe('intent.worktreeBaseMismatchDirty')
+    expect(baselineNotice(await launchSpecReviewSession(proj, id, mockDeps())).canRebuild).toBe(
+      false,
+    )
   })
 
-  it('意图沟通会话同样被拦下,且不创建会话', async () => {
+  it('意图沟通会话照常起,提示随回执一起到,且不是 error', async () => {
     const id = await seedMismatch()
     const { conn, sent } = fakeConn()
     await refineIntent(ctx(), conn, { type: 'refine_intent', workspaceId, intentId: id })
 
-    const err = sent.find((m) => m.type === 'error')
-    expect(err && err.type === 'error' ? err.error.code : '').toBe('intent.worktreeBaseMismatch')
-    expect(sent.some((m) => m.type === 'session_selected')).toBe(false)
-  })
-
-  it('开发会话同样被拦下 —— 守卫对四类会话是同一条', async () => {
-    const id = await seedMismatch()
-    expect(asError(await launchWorkSession(proj, id, mockDeps())).code).toBe(
-      'intent.worktreeBaseMismatch',
+    expect(sent.some((m) => m.type === 'error')).toBe(false)
+    expect(sent.some((m) => m.type === 'session_selected')).toBe(true)
+    const notice = sent.find((m) => m.type === 'intent_worktree_baseline_notice')
+    expect(notice && notice.type === 'intent_worktree_baseline_notice' ? notice.branch : '').toBe(
+      'delivery/v9',
     )
   })
 
-  it('被拦下时 worktree 原样保留,未提交产物不丢', async () => {
+  it('开发会话同样只收到提示 —— 四类会话共用这一条判定', async () => {
+    const id = await seedMismatch()
+    expect(baselineNotice(await launchWorkSession(proj, id, mockDeps())).branch).toBe('delivery/v9')
+  })
+
+  it('基线不符时 worktree 原样保留,未提交产物不丢', async () => {
     const id = await seedMismatch()
     const keep = join(getWorktreePath(proj, id), 'work-in-progress.txt')
     writeFileSync(keep, 'do not lose me\n', 'utf8')

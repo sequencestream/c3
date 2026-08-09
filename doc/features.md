@@ -102,7 +102,7 @@ c3
 │   ├── delivery 交付                             # 交付作为集成单元:一批意图共同集成并最终进入主线,回答「这批能不能合了、卡在哪」
 │   │   ├── 写入窗口闸门                          # verifying/verified/delivered/cancelled 期间其关联意图不再产生新写入会话(验证期间合代码=验证作废),多关联取最严;手动与队列同一判据
 │   │   ├── 会话交付上下文                        # 决定 base 的是会话不是意图:启动时 0 关联→无上下文/恰好 1 个→自动带入/≥2 个→必须显式选定否则拒绝;持久化于 intent_sessions.delivery_id,resume 复用不重猜
-│   │   ├── worktree 基线 origin/<基准分支>       # 新 worktree 以意图持久化的基准分支为根(单交付关联即交付分支);已存在的只检测不修:基线不符阻塞启动并给「重建(需干净)」「合入该分支」两个显式出口,从不自动重建/暗中 merge,无强制放行
+│   │   ├── worktree 基线 origin/<基准分支>       # 新 worktree 以意图持久化的基准分支为根(单交付关联即交付分支);已存在的只检测不修:基线不符不拦启动,只在意图详情常驻提示并给「重建(需干净)」「合入基准分支」两个人工出口,从不自动重建/暗中 merge
 │   │   ├── 同步主线                              # integrating 期间人工触发把 origin/<base_branch> 合入交付分支(临时 detached worktree,不碰用户检出);冲突原样浮出不代解;页面显示「主线领先 N」提示;不做定时自动回灌
 │   │   ├── 交付账本                              # 按工作区持久化交付(标题/描述/base_branch 快照/日期/分支名),status 六态 CHECK 闭集
 │   │   ├── 受控状态机                            # planned→integrating→verifying→verified→delivered,任意非终态可取消;回退 verifying→integrating(人工返工)/verified→verifying(系统合并冲突);统一经 canTransitionDelivery 纯函数

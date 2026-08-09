@@ -9,12 +9,19 @@
  * nothing is re-derived from the live delivery here: the delivery context only
  * labels the baseline for the messages the user sees.
  *
- * The hard line is what happens to a worktree that ALREADY exists on the wrong
- * baseline: nothing, automatically. It is never rebuilt (that discards
- * uncommitted work) and never merged into (that rewrites the user's branch
- * behind their back). The launch is blocked, and the two ways out are explicit
- * user actions. This block has NO force-release: the dependency gate is advice,
- * this one is data safety.
+ * The hard line is what happens to a worktree that ALREADY exists on a baseline
+ * it does not contain: nothing, automatically. It is never rebuilt (that
+ * discards uncommitted work) and never merged into (that rewrites the user's
+ * branch behind their back).
+ *
+ * What it is NOT is a reason to refuse the launch. The overwhelmingly common
+ * cause is the base branch simply moving ahead while work was in flight, and a
+ * worktree that is not on the newest base still develops perfectly well — the
+ * divergence is settled when the PR is merged. An ancestry test cannot tell that
+ * case apart from a directory created off the wrong base in the first place, so
+ * refusing on it stopped ordinary work far more often than it caught anything.
+ * The mismatch is therefore reported as a NOTICE the user acts on (or does not),
+ * and the two repairs stay exactly where they were: explicit user actions.
  */
 import type { Delivery, Intent } from '@ccc/shared/protocol'
 import {
@@ -76,8 +83,8 @@ export function resolveWorktreeBaseline(
   }
 }
 
-/** Why an existing worktree may not be used as it stands. */
-export type WorktreeBaselineBlock = {
+/** An existing worktree that does not contain its baseline — reported, not enforced. */
+export type WorktreeBaselineDrift = {
   /** The baseline branch the worktree does not contain. */
   branch: string
   /** The delivery that baseline came from; `null` for a mainline baseline. */
@@ -85,30 +92,30 @@ export type WorktreeBaselineBlock = {
   /** Whether a safe rebuild is currently possible (no uncommitted work). */
   canRebuild: boolean
   /**
-   * Where the worktree actually sits. Carried so the refusal can say WHY the two
+   * Where the worktree actually sits. Carried so the notice can say WHY the two
    * disagree: a directory still on the mainline was created off the wrong base,
-   * while one on its own intent branch simply fell behind a delivery branch that
-   * moved. Diagnostic only — it changes neither the verdict nor the exits.
+   * while one on its own intent branch simply fell behind a base branch that
+   * moved. Diagnostic only — it changes neither the notice nor the exits.
    */
   current: WorktreeHeadState
 }
 
 /**
- * Check an EXISTING worktree against the baseline. Returns `null` when the
- * launch may proceed — which includes every case the check cannot decide:
+ * Check an EXISTING worktree against the baseline. Returns `null` when there is
+ * nothing to report — which includes every case the check cannot decide:
  *
  * - no worktree yet (it will be created at the baseline),
  * - no remote ref (offline, no remote, or a delivery branch never pushed),
  * - the ancestry test could not be run.
  *
- * A check that cannot be made is not a violation. Blocking on one would strand
- * users behind a repair dialog for a branch that does not exist.
+ * A check that cannot be made is not a fact worth telling the user about.
+ * Neither result stops a launch: this reports, it does not admit.
  */
-export function checkExistingWorktreeBaseline(
+export function detectWorktreeBaselineDrift(
   workspacePath: string,
   intentId: string,
   baseline: WorktreeBaseline,
-): WorktreeBaselineBlock | null {
+): WorktreeBaselineDrift | null {
   if (!baseline.remoteRef) return null
   const worktreePath = getWorktreePath(workspacePath, intentId)
   if (!worktreeExists(worktreePath)) return null

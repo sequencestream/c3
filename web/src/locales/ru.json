@@ -1259,17 +1259,6 @@
           "label": "Снять и запустить"
         }
       },
-      "worktree": {
-        "title": {
-          "label": "База worktree не совпадает"
-        },
-        "merge": {
-          "label": "Влить ветку"
-        },
-        "rebuild": {
-          "label": "Пересоздать worktree"
-        }
-      },
       "deliveryContext": {
         "title": {
           "label": "Против какой поставки вести разработку?"
@@ -1278,6 +1267,22 @@
           "label": "Запустить с этой поставкой"
         }
       }
+    },
+    "worktreeBaseline": {
+      "stale": "Этот worktree не на последнем коммите «{branch}» — он находится на «{currentBranch}» (HEAD {currentHead}). Отставание не мешает разработке; разберитесь с ним при слиянии PR.",
+      "staleInDelivery": "Этот worktree не на последнем коммите «{branch}» (поставка «{delivery}») — он находится на «{currentBranch}» (HEAD {currentHead}). Отставание не мешает разработке; разберитесь с ним при слиянии PR.",
+      "dirtyHint": "В worktree есть незакоммиченные изменения — закоммитьте или отложите их перед пересозданием.",
+      "merge": {
+        "label": "Влить базовую ветку"
+      },
+      "rebuild": {
+        "label": "Пересоздать worktree"
+      },
+      "dismiss": {
+        "label": "Понятно"
+      },
+      "rebuilt": "Worktree пересоздан — при следующем запуске он будет создан от базовой ветки.",
+      "merged": "Базовая ветка влита в worktree."
     },
     "linkDelivery": {
       "label": "Связать доставку",
@@ -2247,8 +2252,6 @@
       "gitCleanupPrTargetUnavailable": "PR не создан: {detail}. Свяжите намерение с поставкой, ветка которой готова, затем создайте PR вручную.",
       "worktreeCreateFailed": "Не удалось создать рабочее дерево: {message}.",
       "pullFailed": "Текущая ветка разошлась с удалённой и не может быть перемотана вперёд. Синхронизируйте её вручную перед началом работы: {message}",
-      "worktreeBaseMismatch": "Существующий worktree не основан на «{branch}» (поставка «{deliveryTitle}») — сейчас он находится на «{currentBranch}» (HEAD {currentHead}). c3 никогда не пересоздаёт и не сливает его сам — пересоздайте или влейте ветку.",
-      "worktreeBaseMismatchDirty": "Существующий worktree не основан на «{branch}» (поставка «{deliveryTitle}») — сейчас он находится на «{currentBranch}» (HEAD {currentHead}) — и содержит незакоммиченную работу. Сначала закоммитьте или отложите её, либо влейте ветку.",
       "worktreeDirty": "В worktree есть незакоммиченная работа — закоммитьте или отложите её перед пересозданием. c3 никогда не отбрасывает её за вас.",
       "worktreeRepairFailed": "Не удалось восстановить worktree: {message}",
       "dependencyNotMerged": "Зависимость \"{title}\"({id}) ещё не слита в основную ветку.",

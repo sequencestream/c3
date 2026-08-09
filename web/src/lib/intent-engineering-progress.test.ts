@@ -41,6 +41,31 @@ describe('deriveIntentEngineeringProgress', () => {
     expect(derive({}, true, branchMode).map(({ stage }) => stage)).toEqual(expected)
   })
 
+  it('omits the spec stage for a fast intent that has no spec data yet', () => {
+    expect(derive({ effectiveSpecMode: 'fast' }).map(({ stage }) => stage)).toEqual([
+      'intent',
+      'work',
+    ])
+    // 反向生成的规范落地后又有真实的批准步骤可看,规范段回来。
+    expect(
+      derive({ effectiveSpecMode: 'fast', specPath: 'reverse.md', specStatus: 'pending' }).map(
+        ({ stage, state }) => [stage, state],
+      ),
+    ).toEqual([
+      ['intent', 'completed'],
+      ['spec', 'in_progress'],
+      ['work', 'not_started'],
+    ])
+  })
+
+  it('keeps the spec stage for an explicit sdd intent with no spec data', () => {
+    expect(derive({ effectiveSpecMode: 'sdd' }).map(({ stage }) => stage)).toEqual([
+      'intent',
+      'spec',
+      'work',
+    ])
+  })
+
   it('keeps the PR stage when SDD is disabled in worktree mode', () => {
     expect(derive({}, false, 'worktree').map(({ stage }) => stage)).toEqual([
       'intent',

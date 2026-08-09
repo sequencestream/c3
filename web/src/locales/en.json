@@ -814,7 +814,7 @@
           "label": "Pick a delivery"
         },
         "empty": {
-          "label": "No delivery in this workspace has a ready branch yet."
+          "label": "No delivery in this workspace is open for new work: it needs a ready branch and must not have entered verification or been closed."
         }
       },
       "content": {

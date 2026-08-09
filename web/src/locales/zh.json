@@ -2799,6 +2799,11 @@
         "label": "本意图提交基于主线,提向交付分支的 PR 会包含主线与交付分支的差异。"
       }
     },
+    "notice": {
+      "autoDelivered": {
+        "label": "交付分支的产出已在主线上,交付已置为已交付。"
+      }
+    },
     "syncMainline": {
       "action": {
         "label": "同步主线"

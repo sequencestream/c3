@@ -121,10 +121,11 @@ c3
 │   │   ├── diff 膨胀提示                         # 关联时按分叉点判据检测「意图基于主线而非交付分支」,只提示不阻塞;检测失败静默
 │   │   ├── 终态分支清理                          # delivered/cancelled 后不自动删分支;手动清理需 danger 二次确认,仅删本地引用不删远端
 │   │   ├── 一级页面                              # 顶栏「交付」tab 置于「需求」后;角标只计服务端计算的「需要用户处理」交付(含交付 PR 待创建/合并受阻,纯等待不计);详情仅概览/关联意图两 Tab,概览含分支初始化区与合并区
-│   │   ├── 交付 PR(交付分支→主线)               # verified 后建一条交付 PR 由人在 forge 合并,c3 从不代合;闸门 worktree→verified→分支就绪→相对主线有差异
+│   │   ├── 交付 PR(交付分支→主线)               # verified 后建一条交付 PR 由人在 forge 合并,c3 从不代合;闸门 worktree→verified→分支就绪→相对主线有差异(无差异见「已在主线即自动交付」)
 │   │   ├── 先查 forge 事实的幂等                 # 重试必须先按 (head, base) 查 forge 开放 PR,命中即复用、查不到才建、问不出来即中止;落账按 PR 身份刷新 SHA,(delivery_id, base_sha, head_sha) 唯一索引兜底
 │   │   ├── 三类失败分层                          # 冲突→回退 verifying 并落冲突文件+SHA(代码要改);CI 失败/审批不足→状态不动、落 blocked_reason 展示「合并受阻」(代码没问题);查询失败→不改状态可重试
-│   │   ├── delivered 原子写 + 连锁               # PR 变 merged 即在同事务写状态+交付日志;提交后不改写关联意图状态、触发跨交付闸门重算、发 delivery:delivered、广播;事件/重算失败不回滚
+│   │   ├── 已在主线即自动交付                    # 建 PR 时无差异按成因分流:台账证明分支承载过产出(关联意图 PR 全 merged)即判定已被 c3 外合走,直接落 delivered 并回 notice=delivery.autoDelivered 让页面说明理由;从未承载产出才拒 deliveryPrNoDiff。PR 已 closed 而代码另行进主线时同步也这样落定,但 PR 行保持 closed;尽力查 forge 已合并 PR 补身份,查不到不阻断
+│   │   ├── delivered 原子写 + 连锁               # PR 变 merged 或产出已在主线即在同事务写状态+交付日志;提交后不改写关联意图状态、触发跨交付闸门重算、发 delivery:delivered、广播;事件/重算失败不回滚
 │   │   ├── 感知窗口期                            # forge 已合并到 c3 感知之间展示「等待确认」,进页自动同步一次 + 手动同步入口;不做后台轮询
 │   │   ├── current-branch 降级                   # 该模式交付为纯聚合视图:分支/PR/合并动作不渲染并给说明文案,纯数据操作不受限
 │   │   ├── pr:merge 知情告知                     # 工作区首次创建交付时一次性提示「pr:merge 的 base 可能是交付分支」,请检查自动化订阅;pr:merge 事件的 ref 带 baseBranch(合并目标分支名)+ baseTarget(mainline / delivery-branch),订阅方据此区分产出落在交付分支还是主线(可选字段,只带 head/base 的形态同样合法)

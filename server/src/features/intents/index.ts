@@ -28,6 +28,7 @@ import {
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToId, touchWorkspace } from '../../state.js'
 import type { UiError } from '@ccc/shared'
+import { canEditIntentSpecMode } from '@ccc/shared'
 import {
   getDefaultMode,
   getGitBranchMode,
@@ -1424,12 +1425,21 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
 }
 
 /**
- * `set_intent_spec_mode` handler — the per-intent spec-mode override write.
- * Pure pass-through: it persists `spec_mode` (`null` clearing the override back
- * to workspace inheritance) and re-broadcasts, which is where the resolved
+ * `set_intent_spec_mode` handler — the per-intent spec-mode override write,
+ * admitted only while the decision still means something.
+ *
+ * `specMode` orders the work (spec first, or code first and back-fill later), so
+ * it is writable only until spec or development has started —
+ * `canEditIntentSpecMode` is the single criterion, shared verbatim with the web
+ * console that hides the control. This guard is the BACKSTOP, not the main path:
+ * it covers direct WS calls, tabs stale on an older state, and any future
+ * automated writer.
+ *
+ * Admitted, it persists `spec_mode` (`null` clearing the override back to
+ * workspace inheritance) and re-broadcasts, which is where the resolved
  * `effectiveSpecMode` is recomputed. Nothing else moves — `spec_status` /
  * `spec_approved` stay put, no admission gate is relaxed, and queue eligibility
- * is unaffected.
+ * is unaffected. Refused, nothing is written and nothing is broadcast.
  */
 export const setIntentSpecMode: Handler<'set_intent_spec_mode'> = (ctx, conn, msg) => {
   if (!isStoreAvailable()) {
@@ -1439,6 +1449,10 @@ export const setIntentSpecMode: Handler<'set_intent_spec_mode'> = (ctx, conn, ms
   const req = getIntent(msg.intentId)
   if (!req) {
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!canEditIntentSpecMode(req)) {
+    conn.send({ type: 'error', error: { code: 'intent.specModeLocked' } })
     return
   }
   setSpecMode(msg.intentId, msg.mode)

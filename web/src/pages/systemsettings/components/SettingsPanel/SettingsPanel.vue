@@ -28,7 +28,7 @@ import type {
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
-import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import { VENDOR_COLOR, VENDOR_LABEL, vendorRowTint } from '@/lib/vendor'
 import { vendorRuntimeOriginKey, vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
@@ -1405,6 +1405,10 @@ function selectAdmin(username: string) {
                 :class="{
                   'drag-over': dragOverKey === `agent:${a.id}`,
                   located: locatedAgentId === a.id,
+                }"
+                :style="{
+                  '--agent-vendor-tint': vendorRowTint(a.vendor),
+                  backgroundColor: 'var(--agent-vendor-tint)',
                 }"
                 data-testid="agent-card"
                 :data-agent-id="a.id"

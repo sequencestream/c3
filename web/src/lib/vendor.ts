@@ -24,3 +24,15 @@ export const VENDOR_COLOR: Record<VendorId, string> = {
   codex: '#a855f7',
   cursor: '#3b82f6',
 }
+
+/** Share of {@link VENDOR_COLOR} in the settings agent-row background tint. */
+const VENDOR_ROW_TINT_PCT = 12
+
+/**
+ * Light row background derived from {@link VENDOR_COLOR} for the settings Agent
+ * config list. Same formula for every vendor — only the brand colour changes —
+ * so rows stay readable while remaining scannable by vendor.
+ */
+export function vendorRowTint(vendor: VendorId): string {
+  return `color-mix(in srgb, ${VENDOR_COLOR[vendor]} ${VENDOR_ROW_TINT_PCT}%, transparent)`
+}

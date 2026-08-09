@@ -815,7 +815,7 @@
           "label": "納品を選択"
         },
         "empty": {
-          "label": "このワークスペースには、ブランチが準備済みの納品がまだありません。"
+          "label": "このワークスペースには書き込み可能な納品がありません: ブランチが準備済みで、まだ検証や締めに入っていない必要があります。"
         }
       },
       "content": {
@@ -2246,8 +2246,8 @@
       "gitCleanupPrTargetUnavailable": "PR は作成されませんでした: {detail}。ブランチが準備済みのデリバリーをこの意図に関連付けてから、手動で PR を作成してください。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
       "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。作業を開始する前に手動で同期してください: {message}",
-      "worktreeBaseMismatch": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしていません。c3 は自動で再作成もマージもしません — 再作成するか、そのブランチをマージしてください。",
-      "worktreeBaseMismatchDirty": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしておらず、未コミットの変更があります。先にコミットまたは stash するか、そのブランチをマージしてください。",
+      "worktreeBaseMismatch": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしていません。現在は「{currentBranch}」(HEAD {currentHead})にあります。c3 は自動で再作成もマージもしません — 再作成するか、そのブランチをマージしてください。",
+      "worktreeBaseMismatchDirty": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしておらず、現在は「{currentBranch}」(HEAD {currentHead})にあり、未コミットの変更があります。先にコミットまたは stash するか、そのブランチをマージしてください。",
       "worktreeDirty": "worktree に未コミットの変更があります — 再作成の前にコミットまたは stash してください。c3 が勝手に破棄することはありません。",
       "worktreeRepairFailed": "worktree の修復に失敗しました: {message}",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",
@@ -2722,7 +2722,7 @@
           "label": "この配信にインテントを紐付ける"
         },
         "pickerEmpty": {
-          "label": "紐付け可能なインテントがありません — すべてのインテントがいずれかの配信に属しています。"
+          "label": "紐付け可能なインテントがありません — 残りはいずれかの配信に属しているか、キャンセル済みか、マージ済みの PR があります。"
         },
         "confirm": {
           "label": "紐付け"

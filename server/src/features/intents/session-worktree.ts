@@ -92,9 +92,24 @@ export function prepareIntentWorktreeBaseline(
       params: {
         branch: block.branch,
         deliveryTitle: block.delivery?.title ?? '',
+        currentBranch: currentBranchLabel(block.current),
+        currentHead: block.current.head ?? UNKNOWN_BASELINE,
       },
     },
   }
+}
+
+/**
+ * The neutral stand-in for a fact git would not give us. Deliberately not a
+ * branch name: reporting the mainline (or anything else) for an unreadable HEAD
+ * would dress a guess up as the diagnosis the user is reading this message for.
+ */
+const UNKNOWN_BASELINE = '—'
+
+/** `detached HEAD` is git's own term, so it reads the same in every locale. */
+function currentBranchLabel(current: { branch: string | null; head: string | null }): string {
+  if (current.branch) return current.branch
+  return current.head ? 'detached HEAD' : UNKNOWN_BASELINE
 }
 
 /** How a caller steers {@link prepareIntentSessionWorktree}. */

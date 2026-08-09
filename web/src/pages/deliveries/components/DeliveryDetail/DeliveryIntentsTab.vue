@@ -15,8 +15,8 @@
  * 留一个禁用按钮只是噪声),未合并行走 danger ConfirmDialog 二次确认后上抛。是否真能
  * 解除由服务端复核(本地 + forge 实时状态双层),本组件的隐藏只是提前表达,不构成门禁。
  *
- * 关联入口只列出「尚未归属任何交付」的意图:第一版不开放一个意图关联多个交付的
- * 入口(数据层支持多行,交互层不给路径)。
+ * 关联入口只列出真正还能挂进本交付的意图:未归属任何交付(不开放一个意图关联多个
+ * 交付的入口,数据层支持多行,交互层不给路径)、未取消、且名下没有任何 merged PR。
  *
  * 标题渲染为链接态按钮:点击上抛 `open-intent`,最终由 App 用交付页当前工作区调
  * `openLinkedIntent` 跳到意图页并选中该意图 —— 与意图侧「关联交付」的 `open-delivery`
@@ -63,13 +63,25 @@ function prNumberLabel(number: string): string {
 }
 
 // ── 关联入口 ────────────────────────────────────────────────────────────────
-// 候选 = 本工作区中尚未关联到任何交付的意图。过滤在这里而不是服务端,是因为
-// 「不开放多交付关联」是交互层的克制,数据层依然允许多行。
+// 候选 = 本工作区中「未关联任何交付 + 未取消 + 名下没有 merged PR」的意图。三条
+// 过滤都在这里而不是服务端:这是展示规则不是门禁,服务端 link_intent_to_delivery
+// 仍接受任何未关联的意图。
+//   - 未关联:「不开放多交付关联」是交互层的克制,数据层依然允许多行;
+//   - 未取消:取消即废弃,挂进来只会污染集成就绪 N/M;
+//   - 无 merged PR:改动已落地,再挂进一条新交付无从交付,合并后本也不可解除。
+// merged 按单条 PR 字面判定,不用 deriveIntentPrAggregate —— 聚合梯子会把「一条
+// merged + 一条 reviewing」压成 reviewing,漏掉已落地的事实;deliveryId 为 null
+// 的历史 PR 同样计入。closed / rejected / failed 不算,它们仍可重新提 PR。
 const linkOpen = ref(false)
 const picked = ref('')
 
 const candidates = computed<Intent[]>(() =>
-  props.intents.filter((i) => i.linkedDeliveries.length === 0),
+  props.intents.filter(
+    (i) =>
+      i.linkedDeliveries.length === 0 &&
+      i.status !== 'cancelled' &&
+      !i.prs.some((pr) => pr.status === 'merged'),
+  ),
 )
 
 function openLink(): void {

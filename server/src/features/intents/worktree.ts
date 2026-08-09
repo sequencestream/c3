@@ -181,6 +181,28 @@ export function readBranch(worktreePath: string): string | null {
   return branch === 'HEAD' ? null : branch
 }
 
+/** What a worktree is sitting on right now — for diagnosing a baseline refusal. */
+export interface WorktreeHeadState {
+  /** The checked-out branch, or `null` on detached HEAD / unreadable repo. */
+  branch: string | null
+  /** The short HEAD commit, or `null` when it cannot be read. */
+  head: string | null
+}
+
+/**
+ * Read the worktree's CURRENT position. Purely diagnostic: it answers "what is
+ * this directory actually rooted at" so a baseline refusal can distinguish a
+ * worktree created off the wrong branch from one whose baseline simply moved on.
+ * Never used to decide anything — an unreadable repo yields nulls, not a guess.
+ */
+export function readWorktreeHead(worktreePath: string): WorktreeHeadState {
+  const head = execGit(worktreePath, ['rev-parse', '--short', 'HEAD'])
+  return {
+    branch: readBranch(worktreePath),
+    head: head.code === 0 && head.stdout.trim() ? head.stdout.trim() : null,
+  }
+}
+
 /**
  * Detect a repository's default branch for pre-filling the workspace setting.
  *

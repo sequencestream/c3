@@ -102,6 +102,9 @@ vi.mock('./worktree.js', () => ({
   getWorktreePath: vi.fn(),
   worktreeExists: vi.fn(),
   readBranch: vi.fn(() => 'main'),
+  readWorktreeHead: vi.fn(() => ({ branch: null, head: null })),
+  isWorktreeClean: vi.fn(() => true),
+  worktreeContainsRef: vi.fn(() => null),
   pullCurrentBranch: vi.fn(() => ({ ok: true, skipped: true })),
 }))
 
@@ -200,7 +203,16 @@ import {
   getForgeOverride,
   getSddEnabled,
 } from '../../kernel/config/index.js'
-import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
+import {
+  createWorktree,
+  fetchRemoteBase,
+  getWorktreePath,
+  isWorktreeClean,
+  readBranch,
+  readWorktreeHead,
+  worktreeContainsRef,
+  worktreeExists,
+} from './worktree.js'
 import { getDelivery } from '../deliveries/store.js'
 import type { Delivery } from '@ccc/shared/protocol'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
@@ -208,7 +220,11 @@ import { JudgeUnavailableError, judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
-import { getQueueIntentMetaById, resetQueueStoreForTests } from './queue-store.js'
+import {
+  getQueueIntentMetaById,
+  listQueueDecisions,
+  resetQueueStoreForTests,
+} from './queue-store.js'
 
 const prRegistry = new EventNormalizerRegistry()
 prRegistry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
@@ -285,6 +301,13 @@ describe('queue dev actions — branch-mode git alignment', () => {
       branchName: 'wt-branch',
     }))
     vi.mocked(readBranch).mockReturnValue('main')
+    // `clearAllMocks` 只清调用记录、不清实现,所以基线探针的默认值必须每条用例重设,
+    // 否则一条「已存在且失配」的用例会把守卫泄漏给后面的全新启动用例。
+    vi.mocked(fetchRemoteBase).mockReturnValue(null)
+    vi.mocked(worktreeExists).mockReturnValue(false)
+    vi.mocked(worktreeContainsRef).mockReturnValue(null)
+    vi.mocked(isWorktreeClean).mockReturnValue(true)
+    vi.mocked(readWorktreeHead).mockReturnValue({ branch: null, head: null })
     vi.mocked(gitDiffStat).mockResolvedValue('')
     vi.mocked(gitRecentLog).mockResolvedValue('')
     // Default verdict ends the develop loop after exactly one turn, so a test
@@ -338,13 +361,12 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(rt.effectiveCwd).toBe(proj)
   })
 
-  it('worktree: 全新启动 createWorktree 传 getDefaultMainBranch 作基底,effectiveCwd=worktree', async () => {
+  it('worktree: 全新启动 createWorktree 以意图基准分支作基底,effectiveCwd=worktree', async () => {
     const proj = '/test/wt-launch'
     const intent = makeIntent({ id: 'Y', status: 'todo' })
     vi.mocked(listIntents).mockReturnValue([intent])
     vi.mocked(getIntent).mockReturnValue(intent)
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
-    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
     vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-Y', branchName: 'intent/Y' })
 
     const { hooks, runDevTurn } = makeHooks()
@@ -357,6 +379,74 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(runDevTurn).toHaveBeenCalledTimes(1)
     const rt = vi.mocked(ensureRuntime).mock.results.at(-1)?.value as { effectiveCwd?: string }
     expect(rt.effectiveCwd).toBe('/tmp/wt-Y')
+  })
+
+  // 这条是本次修复钉住的东西:队列曾用工作区主分支建 worktree,于是「创建时选了
+  // 交付」的意图先被自动开发建在 main 上,之后规范 / 评审 / 工作 / 意图会话统统
+  // 撞基线守卫。基线只有一个来源 —— 意图落库的 baseBranch。
+  it('worktree: 关联交付的意图以 baseBranch 建 worktree,绝不退回工作区主分支', async () => {
+    const proj = '/test/wt-delivery-base'
+    const intent = makeIntent({
+      id: 'DB',
+      status: 'todo',
+      baseBranch: 'delivery/v0-14-0',
+      linkedDeliveries: [{ id: 'D1', title: 'v0.14.0' }],
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getDelivery).mockReturnValue(makeDelivery({ id: 'D1', title: 'v0.14.0' }))
+    vi.mocked(createWorktree).mockReturnValue({
+      worktreePath: '/tmp/wt-DB',
+      branchName: 'intent/DB',
+    })
+
+    const { hooks } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+
+    expect(createWorktree).toHaveBeenCalledWith(proj, 'DB', 'Test', 'delivery/v0-14-0')
+    // 工作区主分支绝不作为创建基底出现 —— 它只是无交付时 baseBranch 的取值来源,
+    // 不是 worktree 创建的第二个基线源。
+    for (const call of vi.mocked(createWorktree).mock.calls) expect(call[3]).not.toBe('main')
+    // 基线也是从同一个分支 fetch 的:新建位置与后续校验位置必须是同一个。
+    expect(fetchRemoteBase).toHaveBeenCalledWith(proj, 'delivery/v0-14-0')
+    const rt = vi.mocked(ensureRuntime).mock.results.at(-1)?.value as { effectiveCwd?: string }
+    expect(rt.effectiveCwd).toBe('/tmp/wt-DB')
+  })
+
+  // 交付分支被推进后,已存在的 worktree 确凿落后 —— 这条守卫是有意为之,自动路径
+  // 同样不许绕过:不重建、不 merge,只记一次失败等人来处理。
+  it('worktree: 已存在目录基线确凿不符时拒绝启动,不重建也不合并', async () => {
+    const proj = '/test/wt-stale-base'
+    const intent = makeIntent({ id: 'ST', status: 'todo', baseBranch: 'delivery/v0-14-0' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(fetchRemoteBase).mockReturnValue('origin/delivery/v0-14-0')
+    vi.mocked(worktreeExists).mockReturnValue(true)
+    vi.mocked(worktreeContainsRef).mockReturnValue(false)
+    vi.mocked(isWorktreeClean).mockReturnValue(true)
+    vi.mocked(readWorktreeHead).mockReturnValue({ branch: 'intent/ST', head: 'abc1234' })
+
+    const { hooks, runDevTurn } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+
+    expect(createWorktree).not.toHaveBeenCalled()
+    expect(runDevTurn).not.toHaveBeenCalled()
+    // 失败被隔离成这一条意图的一次尝试,队列没有停。
+    expect((getQueueIntentMetaById('ST') as { failureCount: number }).failureCount).toBe(1)
+    // 拒绝理由带得出 worktree 真实所在,人能分辨是建错基线还是交付分支被推进。
+    // 同一条意图在后续 tick 上还会落退避类决策,所以看的是这一轮的全部理由。
+    const reason = (listQueueDecisions(proj) as { intentId: string; rejectReason?: string }[])
+      .filter((d) => d.intentId === 'ST')
+      .map((d) => d.rejectReason ?? '')
+      .join('\n')
+    expect(reason).toContain('delivery/v0-14-0')
+    expect(reason).toContain('intent/ST')
+    expect(reason).toContain('abc1234')
   })
 
   it('fresh launch: SDD on without devSkill passes SDD instruct out-of-echo and visible spec note', async () => {

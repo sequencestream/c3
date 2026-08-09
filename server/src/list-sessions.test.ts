@@ -142,7 +142,10 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
     // from the tool-session table (defaults to false). The fake store's
     // `vendorExtra` is no longer the source — that's the projection's
     // job, and a session with no fact / no tool-session entry shows
-    // defaults. State is the new additive field.
+    // defaults. The listed mode is then gated to the row's vendor
+    // catalog, so a Codex row with no persisted mode reports the Codex
+    // default token `auto` instead of the bare Claude `'default'`.
+    // State is the new additive field.
     expect(byId['c-old']).toMatchObject({
       vendor: 'claude',
       mode: 'default',
@@ -159,7 +162,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
     })
     expect(byId['cx-1']).toMatchObject({
       vendor: 'codex',
-      mode: 'default',
+      mode: 'auto',
       isToolSession: false,
       lastModified: 300,
       title: 'Codex one',

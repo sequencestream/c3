@@ -1487,19 +1487,35 @@ function readPrUrl(row: Record<string, unknown>): string | null {
   return null
 }
 
+/** The PR states a (head, base) lookup asks the forge about. */
+type ForgePrLookupState = 'open' | 'merged'
+
+/** The states one lookup accepts on a returned row, normalized across forges. */
+const FORGE_PR_STATE_ALIASES: Record<ForgePrLookupState, readonly string[]> = {
+  open: ['open', 'opened'],
+  merged: ['merged'],
+}
+
 /**
- * The OPEN pull/merge request the forge already holds for `headBranch → baseBranch`,
- * or `null` when it holds none. `ok: false` means the question could not be
- * ANSWERED (CLI missing / not logged in / offline) — which a caller must treat as
- * "unknown", never as "none", or it would open a duplicate PR.
+ * The pull/merge request the forge holds for `headBranch → baseBranch` in the
+ * given STATE, or `null` when it holds none. `ok: false` means the question could
+ * not be ANSWERED (CLI missing / not logged in / offline) — which a caller must
+ * treat as "unknown", never as "none".
+ *
+ * One query path for both states: `open` drives the create-time idempotency (a
+ * duplicate PR is the failure to avoid) and `merged` answers 「这条交付分支是不
+ * 是已经通过 PR 进主线了」, and they must not drift on row filtering or provider
+ * quirks.
  */
-export async function findOpenForgePr(
+async function findForgePrByState(
   cwd: string,
   headBranch: string,
   baseBranch: string,
+  state: ForgePrLookupState,
   providerOverride?: ForgeProvider,
 ): Promise<FindOpenPrResult> {
   const provider = providerOverride ?? (await detectForge(cwd))
+  const label = state === 'open' ? '开放' : '已合并'
   const [bin, args, markers] =
     provider === 'github'
       ? ([
@@ -1512,7 +1528,7 @@ export async function findOpenForgePr(
             '--base',
             baseBranch,
             '--state',
-            'open',
+            state,
             '--json',
             'number,url',
             '--limit',
@@ -1529,6 +1545,9 @@ export async function findOpenForgePr(
             headBranch,
             '--target-branch',
             baseBranch,
+            // `glab mr list` defaults to opened; merged rows only appear when asked
+            // for explicitly.
+            ...(state === 'merged' ? ['--merged'] : []),
             '--output',
             'json',
           ],
@@ -1543,21 +1562,52 @@ export async function findOpenForgePr(
     return {
       ok: false,
       ...(notLoggedIn ? { unavailable: true } : {}),
-      error: out || `${bin} 查询开放 PR 失败`,
+      error: out || `${bin} 查询${label} PR 失败`,
     }
   }
   const rows = parseJsonArray(stdout)
-  if (!rows) return { ok: false, error: `${bin} 查询开放 PR 的输出不是有效 JSON` }
+  if (!rows) return { ok: false, error: `${bin} 查询${label} PR 的输出不是有效 JSON` }
+  const accepted = FORGE_PR_STATE_ALIASES[state]
   for (const row of rows) {
-    // `glab mr list` has no `--state open` flag equivalent to gh's; it defaults to
-    // opened, but a row that says otherwise is filtered here so both providers
-    // answer the same question.
-    const state = typeof row.state === 'string' ? row.state.toLowerCase() : ''
-    if (state && state !== 'open' && state !== 'opened') continue
+    // `glab mr list` has no `--state` flag equivalent to gh's, so a row that says
+    // otherwise is filtered here and both providers answer the same question.
+    const rowState = typeof row.state === 'string' ? row.state.toLowerCase() : ''
+    if (rowState && !accepted.includes(rowState)) continue
     const number = readPrNumber(row)
     if (number) return { ok: true, pr: { number, url: readPrUrl(row) } }
   }
   return { ok: true, pr: null }
+}
+
+/**
+ * The OPEN pull/merge request the forge already holds for `headBranch → baseBranch`,
+ * or `null` when it holds none. `ok: false` means the question could not be
+ * ANSWERED (CLI missing / not logged in / offline) — which a caller must treat as
+ * "unknown", never as "none", or it would open a duplicate PR.
+ */
+export async function findOpenForgePr(
+  cwd: string,
+  headBranch: string,
+  baseBranch: string,
+  providerOverride?: ForgeProvider,
+): Promise<FindOpenPrResult> {
+  return findForgePrByState(cwd, headBranch, baseBranch, 'open', providerOverride)
+}
+
+/**
+ * The MERGED pull/merge request the forge holds for `headBranch → baseBranch`, or
+ * `null` when it holds none — the PR identity behind a delivery branch that
+ * already reached mainline. Only ever used to ENRICH a verdict git already
+ * reached, so `ok: false` is never fatal to the caller: not knowing the PR number
+ * does not make the merge less true.
+ */
+export async function findMergedForgePr(
+  cwd: string,
+  headBranch: string,
+  baseBranch: string,
+  providerOverride?: ForgeProvider,
+): Promise<FindOpenPrResult> {
+  return findForgePrByState(cwd, headBranch, baseBranch, 'merged', providerOverride)
 }
 
 /**

@@ -2811,6 +2811,11 @@
         "label": "This intent’s commits are based on mainline, so a PR toward the delivery branch will also contain the difference between mainline and the delivery branch."
       }
     },
+    "notice": {
+      "autoDelivered": {
+        "label": "The delivery branch is already on mainline, so the delivery was marked as delivered."
+      }
+    },
     "syncMainline": {
       "action": {
         "label": "Sync mainline"

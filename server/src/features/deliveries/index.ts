@@ -29,6 +29,7 @@ import {
   deliveryMergeTrial,
   detectDeliveryDiffBloat,
   fetchRemoteBaseAsync,
+  findMergedForgePr,
   findOpenForgePr,
   getForgeDeliveryPrFacts,
   getForgePrStatus,
@@ -92,6 +93,7 @@ function detailFrame(
   linkWarning?: 'delivery.diffBloat',
   mainlineAhead: number | null = null,
   deliveryBranchAhead: number | null = null,
+  notice?: 'delivery.autoDelivered',
 ): Extract<ServerToClient, { type: 'delivery_detail' }> {
   return {
     type: 'delivery_detail',
@@ -102,6 +104,7 @@ function detailFrame(
     deliveryBranchAhead,
     deliveryPr: getLatestDeliveryPr(delivery.id),
     ...(linkWarning ? { linkWarning } : {}),
+    ...(notice ? { notice } : {}),
   }
 }
 
@@ -1016,7 +1019,15 @@ export const createDeliveryPrHandler: Handler<'create_delivery_pr'> = async (ctx
     return
   }
   if (ahead === 0) {
-    conn.send({ type: 'error', error: { code: 'delivery.deliveryPrNoDiff' } })
+    // 「没有可提的差异」有两个成因,处置完全相反。分支承载的产出已经进主线(有人
+    // 在 c3 之外合了)是「已交付」这个事实本身 —— 拿不出 PR 恰恰因为交付已经完成,
+    // 让用户卡在 verified 上既没有 PR 可建、又因 `delivered` 是系统专属边而无法
+    // 人工推进,是个死结。分支上压根没有产出才是真的「无事可提」。
+    if (!deliveryOutputIntegrated(delivery)) {
+      conn.send({ type: 'error', error: { code: 'delivery.deliveryPrNoDiff' } })
+      return
+    }
+    await settleDeliveryLanded(ctx, conn, abs, delivery, { baseSha, headSha })
     return
   }
 
@@ -1181,7 +1192,20 @@ export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, co
       url: facts.prUrl ?? undefined,
       blockedReason: null,
     })
-    finish(delivery)
+    // A closed PR normally means 「这条 PR 作废了」 — but it also covers 「PR 关了,
+    // 代码另行合进主线了」. Git decides which: when the delivery branch holds
+    // nothing mainline does not, the delivery IS delivered, and leaving it at
+    // `verified` would strand it (no PR to reopen, no human edge to `delivered`).
+    if (delivery.status !== 'delivered' && (await probeMainlineLanding(abs, delivery))) {
+      // No PR identity travels with this settle: THIS PR is closed, and naming it
+      // as the one that merged would tell every subscriber something untrue.
+      await settleDeliveryDelivered(ctx, conn, abs, delivery, null, null, {
+        markPrMerged: false,
+        notice: 'delivery.autoDelivered',
+      })
+      return
+    }
+    finish(getDelivery(delivery.id) ?? delivery)
     return
   }
 
@@ -1251,6 +1275,100 @@ export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, co
 }
 
 /**
+ * Whether the delivery branch ever CARRIED integrated output — every associated
+ * intent's PR toward this delivery is merged, and there is at least one.
+ *
+ * This is what separates 「产出已经进主线」 from 「这条分支上什么都没有」 when git
+ * reports no commits ahead of mainline: both look identical to `git rev-list`,
+ * because a delivery branch that was never written to sits exactly on its fork
+ * point. The ledger is the only place that difference is recorded.
+ */
+function deliveryOutputIntegrated(delivery: Delivery): boolean {
+  const { total, merged } = delivery.integration
+  return total > 0 && merged === total
+}
+
+/**
+ * Whether the delivery branch's commits are ALREADY reachable from mainline —
+ * asked with fresh remote refs, because a stale local ref would answer about a
+ * state that no longer exists.
+ *
+ * Fetch failures answer `false`: an unreachable remote is not evidence that
+ * anything was merged, and this verdict only ever ADDS a terminal write.
+ */
+async function probeMainlineLanding(workspacePath: string, delivery: Delivery): Promise<boolean> {
+  if (!delivery.branchName || !deliveryOutputIntegrated(delivery)) return false
+  const baseRef = await fetchRemoteBaseAsync(workspacePath, delivery.baseBranch)
+  const headRef = await fetchRemoteBaseAsync(workspacePath, delivery.branchName)
+  if (!baseRef || !headRef) return false
+  return (await countCommitsAhead(workspacePath, baseRef, headRef)) === 0
+}
+
+/**
+ * Settle a delivery whose branch reached mainline WITHOUT c3 opening (or merging)
+ * the PR itself — someone merged it by hand, or through a PR c3 never recorded.
+ *
+ * The forge is still asked for the merged PR of the same (head, base), purely to
+ * ENRICH the record: a lookup that fails or finds nothing never blocks the
+ * terminal write, because git already proved the code is in mainline and the
+ * whole point of this path is that the user has no other way out — `delivered` is
+ * a system-only edge, so nobody can move it by hand.
+ *
+ * `shas` is passed when the caller already resolved the ref pair (the create path
+ * did, as its idempotency key); without it the PR row is left alone rather than
+ * keyed to SHAs read a second time.
+ */
+async function settleDeliveryLanded(
+  ctx: KernelContext,
+  conn: Conn,
+  workspacePath: string,
+  delivery: Delivery,
+  shas: { baseSha: string; headSha: string } | null,
+): Promise<void> {
+  const forgeOverride = getForgeOverride(workspacePath)
+  const branchName = delivery.branchName ?? ''
+  const merged = await findMergedForgePr(
+    workspacePath,
+    branchName,
+    delivery.baseBranch,
+    forgeOverride,
+  )
+  const mergedPr = merged.ok ? (merged.pr ?? null) : null
+  if (mergedPr && shas) {
+    const identity = parsePrIdentity(mergedPr.url)
+    try {
+      upsertDeliveryPr({
+        deliveryId: delivery.id,
+        forge: identity.forge ?? forgeOverride ?? null,
+        repo: identity.repo,
+        number: mergedPr.number,
+        url: mergedPr.url,
+        headBranch: branchName,
+        baseBranch: delivery.baseBranch,
+        baseSha: shas.baseSha,
+        headSha: shas.headSha,
+        status: 'merged',
+      })
+    } catch (err) {
+      // The ledger row is a record OF the merge, not the merge itself: losing the
+      // race for it must not cost the delivery its terminal status.
+      console.warn(`[delivery] 已合并交付 PR 落账失败: ${String(err)}`)
+    }
+  }
+  await settleDeliveryDelivered(
+    ctx,
+    conn,
+    workspacePath,
+    delivery,
+    mergedPr?.number ?? null,
+    mergedPr?.url ?? null,
+    // The row is only rewritten to `merged` when this run actually identified a
+    // merged PR — a genuinely closed PR row must keep saying so.
+    { markPrMerged: mergedPr !== null, notice: 'delivery.autoDelivered' },
+  )
+}
+
+/**
  * Land `delivered` and everything that follows from it.
  *
  * The status write and the delivery log are ONE transaction — a delivery whose
@@ -1273,16 +1391,20 @@ async function settleDeliveryDelivered(
   conn: Conn,
   workspacePath: string,
   delivery: Delivery,
-  prNumber: string,
+  prNumber: string | null,
   prUrl: string | null,
+  options: { markPrMerged?: boolean; notice?: 'delivery.autoDelivered' } = {},
 ): Promise<void> {
+  const markPrMerged = options.markPrMerged ?? true
   if (delivery.status === 'delivered') {
     // A repeat sync of an already-settled delivery: refresh the row and stop.
-    updateDeliveryPrFacts(delivery.id, {
-      status: 'merged',
-      url: prUrl ?? undefined,
-      blockedReason: null,
-    })
+    if (markPrMerged) {
+      updateDeliveryPrFacts(delivery.id, {
+        status: 'merged',
+        url: prUrl ?? undefined,
+        blockedReason: null,
+      })
+    }
     conn.send(detailFrame(delivery))
     return
   }
@@ -1308,14 +1430,17 @@ async function settleDeliveryDelivered(
   }
   const updated = commitDeliveryDelivered(
     delivery.id,
-    `交付 PR #${prNumber} 已合入 ${delivery.baseBranch}`,
+    prNumber
+      ? `交付 PR #${prNumber} 已合入 ${delivery.baseBranch}`
+      : `交付分支 ${delivery.branchName ?? ''} 的产出已在 ${delivery.baseBranch} 上`,
     'system',
+    markPrMerged,
   )
   if (!updated) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  if (prUrl)
+  if (prUrl && markPrMerged)
     updateDeliveryPrFacts(delivery.id, { status: 'merged', url: prUrl, blockedReason: null })
 
   // Terminal double-publish: the transition trail AND the terminal fact.
@@ -1325,7 +1450,7 @@ async function settleDeliveryDelivered(
   // read live facts — the worst case of a failure here is one tick of latency.
   void markQueueDirty(workspacePath)
 
-  conn.send(detailFrame(updated))
+  conn.send(detailFrame(updated, undefined, null, null, options.notice))
   ctx.broadcastDeliveries(workspacePath)
   // The intent side renders the dependency gate off `delivered`, so the unblocked
   // intents have to reach it too.
@@ -1402,7 +1527,7 @@ function publishDeliveryDelivered(
   ctx: KernelContext,
   workspacePath: string,
   delivery: Delivery,
-  prNumber: string,
+  prNumber: string | null,
   prUrl: string | null,
 ): void {
   publishDeliveryEvent(ctx, workspacePath, 'delivered', {
@@ -1410,7 +1535,10 @@ function publishDeliveryDelivered(
     title: delivery.title,
     baseBranch: delivery.baseBranch,
     branch: delivery.branchName ?? '',
-    prNumber,
+    // Absent when the delivery branch reached mainline outside a PR c3 can name —
+    // 「已交付」 is true either way, and inventing a number would be worse than
+    // omitting one.
+    ...(prNumber ? { prNumber } : {}),
     ...(prUrl ? { prUrl } : {}),
   })
 }

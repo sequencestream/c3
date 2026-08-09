@@ -33,6 +33,7 @@ import { addWorkspace, pathToId, resetStateCacheForTests } from '../../state.js'
 import {
   createForgePr,
   deliveryMergeTrial,
+  findMergedForgePr,
   findOpenForgePr,
   getForgeDeliveryPrFacts,
 } from '../../git.js'
@@ -65,6 +66,7 @@ import { insertIntentDelivery, listAssociatedIntents } from './store.js'
 vi.mock('../../git.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../git.js')>()),
   findOpenForgePr: vi.fn(),
+  findMergedForgePr: vi.fn(),
   createForgePr: vi.fn(),
   getForgeDeliveryPrFacts: vi.fn(),
   deliveryMergeTrial: vi.fn(),
@@ -76,6 +78,7 @@ vi.mock('../intents/workflow.js', async (importOriginal) => ({
 }))
 
 const findOpenForgePrMock = vi.mocked(findOpenForgePr)
+const findMergedForgePrMock = vi.mocked(findMergedForgePr)
 const createForgePrMock = vi.mocked(createForgePr)
 const forgeFactsMock = vi.mocked(getForgeDeliveryPrFacts)
 const mergeTrialMock = vi.mocked(deliveryMergeTrial)
@@ -119,6 +122,9 @@ beforeEach(() => {
   workspaceId = pathToId(dir)!
   saveWorkspaceSetting(dir, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
   vi.clearAllMocks()
+  // Every path that reaches the forge for a MERGED PR treats 「查不到」 as a
+  // non-event, so that is the default here too; the cases that care set their own.
+  findMergedForgePrMock.mockResolvedValue({ ok: true, pr: null })
   initWorkspaceRepo()
 })
 
@@ -282,8 +288,22 @@ describe('create_delivery_pr — gates', () => {
     expect(errorCodes(h.sent)).toEqual(['delivery.deliveryPrForbidden'])
   })
 
-  it('refuses when the delivery branch holds nothing mainline does not', async () => {
+  it('refuses when the delivery branch never carried integrated output', async () => {
     const id = await seedDelivery('verified', { withCommit: false })
+    // A second association whose PR is NOT merged: the ledger no longer proves the
+    // branch carries everything it should, so 「无差异」 stays 「无事可提」.
+    const [extra] = insertIntents(dir, [
+      { title: 'Intent B', shortEnTitle: 'intent-b', content: '', priority: 'P2', module: '' },
+    ])
+    insertIntentDelivery(id, extra.id, BRANCH)
+    upsertIntentPr({
+      intentId: extra.id,
+      deliveryId: id,
+      forge: 'github',
+      repo: 'o/r',
+      number: '2',
+      status: 'reviewing',
+    })
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
@@ -292,6 +312,74 @@ describe('create_delivery_pr — gates', () => {
     })
     expect(errorCodes(h.sent)).toEqual(['delivery.deliveryPrNoDiff'])
     expect(createForgePrMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('create_delivery_pr — a branch already on mainline settles as delivered', () => {
+  it('settles delivered instead of refusing, and adopts the merged PR the forge holds', async () => {
+    // The delivery branch carries the integrated output but holds nothing mainline
+    // does not — somebody merged it outside c3. There is no PR left to open, and
+    // `delivered` is a system-only edge, so refusing here would strand the delivery.
+    const id = await seedDelivery('verified', { withCommit: false })
+    findMergedForgePrMock.mockResolvedValue({
+      ok: true,
+      pr: { number: '88', url: 'https://github.com/o/r/pull/88' },
+    })
+    const h = harness('alice')
+    await createDeliveryPrHandler(h.ctx, h.conn, {
+      type: 'create_delivery_pr',
+      workspaceId,
+      deliveryId: id,
+    })
+
+    expect(errorCodes(h.sent)).toEqual([])
+    expect(createForgePrMock).not.toHaveBeenCalled()
+    expect(getDelivery(id)!.status).toBe('delivered')
+    expect(getLatestDeliveryPr(id)).toMatchObject({ number: '88', status: 'merged' })
+    const frame = detailOf(h.sent)
+    expect(frame.delivery.status).toBe('delivered')
+    // The user asked for a PR and got a terminal status — the page has to say why.
+    expect(frame.notice).toBe('delivery.autoDelivered')
+    expect(listDeliveryLogs(id).find((l) => l.operationType === 'delivered')!.summary).toContain(
+      '#88',
+    )
+    expect(h.published.map((p) => p.event.type)).toEqual([
+      'delivery:status_changed',
+      'delivery:delivered',
+    ])
+    expect(markQueueDirtyMock).toHaveBeenCalledWith(dir)
+  })
+
+  it('settles delivered even when the forge holds no merged PR to name', async () => {
+    const id = await seedDelivery('verified', { withCommit: false })
+    const h = harness()
+    await createDeliveryPrHandler(h.ctx, h.conn, {
+      type: 'create_delivery_pr',
+      workspaceId,
+      deliveryId: id,
+    })
+
+    expect(getDelivery(id)!.status).toBe('delivered')
+    // Nothing is invented: no PR row, and the event carries no `prNumber`.
+    expect(getLatestDeliveryPr(id)).toBeNull()
+    const metadata = h.published.find((p) => p.event.type === 'delivery:delivered')!.event.metadata
+    expect(metadata).toMatchObject({ deliveryId: id, branch: BRANCH })
+    expect(metadata?.prNumber).toBeUndefined()
+  })
+
+  it('settles delivered even when the merged-PR lookup itself fails', async () => {
+    // Git already proved the code is in mainline; an unreadable forge only costs
+    // the PR number, never the terminal status.
+    const id = await seedDelivery('verified', { withCommit: false })
+    findMergedForgePrMock.mockResolvedValue({ ok: false, error: 'offline' })
+    const h = harness()
+    await createDeliveryPrHandler(h.ctx, h.conn, {
+      type: 'create_delivery_pr',
+      workspaceId,
+      deliveryId: id,
+    })
+    expect(errorCodes(h.sent)).toEqual([])
+    expect(getDelivery(id)!.status).toBe('delivered')
   })
 })
 
@@ -604,6 +692,29 @@ describe('sync_delivery_pr — layered settlement', () => {
     await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
     expect(getLatestDeliveryPr(id)!.status).toBe('closed')
     expect(getDelivery(id)!.status).toBe('verified')
+  })
+
+  it('a closed PR whose code reached mainline anyway settles the delivery as delivered', async () => {
+    const id = await seedWithPr()
+    // The PR was closed and the branch merged another way — mainline now contains
+    // everything the delivery branch holds.
+    git('checkout', '-q', 'main')
+    git('merge', '-q', '--no-ff', '--no-edit', BRANCH)
+    git('push', '-q', 'origin', 'main')
+    forgeFactsMock.mockResolvedValue({ ok: true, status: 'closed' })
+    const h = harness()
+    await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
+
+    expect(getDelivery(id)!.status).toBe('delivered')
+    // The PR really is closed: settling the delivery must not forge a merge on it.
+    expect(getLatestDeliveryPr(id)!.status).toBe('closed')
+    expect(detailOf(h.sent).notice).toBe('delivery.autoDelivered')
+    const log = listDeliveryLogs(id).find((l) => l.operationType === 'delivered')!
+    expect(log.summary).toContain(BRANCH)
+    expect(h.published.map((p) => p.event.type)).toEqual([
+      'delivery:status_changed',
+      'delivery:delivered',
+    ])
   })
 
   it('a forge lookup failure changes nothing and is retryable', async () => {

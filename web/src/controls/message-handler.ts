@@ -998,6 +998,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (msg.linkWarning === 'delivery.diffBloat') {
           ctx.showToast(t('delivery.warning.diffBloat.label'))
         }
+        // The server settled 「已交付」 on its own because the branch was already on
+        // mainline — the user asked for a PR (or a sync) and got a terminal status,
+        // so the reason has to be said out loud.
+        if (msg.notice === 'delivery.autoDelivered') {
+          ctx.showToast(t('delivery.notice.autoDelivered.label'))
+        }
         ctx.persistViewMode()
         break
       case 'delivery_transition_failed':

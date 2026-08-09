@@ -180,8 +180,15 @@ export type ClientSyncDeliveryMainline = {
  * action idempotent.
  *
  * Gates, in order: `worktree` mode → the delivery is `verified` → its branch is
- * ready → it holds commits mainline does not (a delivery branch already merged
- * by hand has nothing left to open a PR for).
+ * ready → it holds commits mainline does not.
+ *
+ * That last gate splits by CAUSE. A delivery branch whose integrated output is
+ * already reachable from mainline (someone merged it outside c3) is DELIVERED,
+ * not refused: the reply settles it as `delivered` and carries
+ * `notice: 'delivery.autoDelivered'`. Refusing there would strand the delivery —
+ * there is no PR left to open, and `delivered` is a system-only edge no human can
+ * take. Only a branch that never carried integrated output is refused with
+ * `delivery.deliveryPrNoDiff`.
  *
  * Retrying ALWAYS asks the forge first — an open PR for the same (head, base) is
  * adopted into the ledger rather than duplicated, so "created but the response
@@ -210,6 +217,10 @@ export type ClientCreateDeliveryPr = {
  *   condition is missing: the status does not move, `blockedReason` is recorded
  *   and the page shows 「合并受阻」. Rolling the status back here would make the
  *   user redo a verification that was never invalidated.
+ * - closed → the row is synced as `closed`; if git then shows the delivery
+ *   branch's output already on mainline (the PR was closed and the code merged
+ *   another way), the delivery settles as `delivered` with
+ *   `notice: 'delivery.autoDelivered'` while the PR row keeps saying `closed`.
  * - a lookup that fails (network / CLI) changes nothing and is retryable.
  *
  * Always human/page-invoked: the detail page syncs once on open and offers a
@@ -302,6 +313,15 @@ export type ServerDeliveryDetail = {
    * warning the page surfaces, never a rejection.
    */
   linkWarning?: 'delivery.diffBloat'
+  /**
+   * Set ONLY when this reply carries a status the SERVER decided on its own and
+   * the user did not ask for: `delivery.autoDelivered` means the delivery branch
+   * turned out to be on mainline already (merged outside c3), so the delivery was
+   * settled as `delivered` instead of opening a PR that would carry nothing. The
+   * page surfaces it as a toast; an old client that ignores the field simply sees
+   * the delivery come back `delivered`.
+   */
+  notice?: 'delivery.autoDelivered'
 }
 
 /**

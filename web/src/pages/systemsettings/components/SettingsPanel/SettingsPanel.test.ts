@@ -1916,6 +1916,110 @@ describe('SettingsPanel.vue — agent list vendor sub-tabs', () => {
   })
 })
 
+// A group's identity is `(vendor, group)` and the virtual ref `_c3_<vendor>_<group>`
+// encodes the vendor, so two vendors may reuse ONE group name and each is its own
+// failover pool. Keying containers by the bare name would merge them: one vendor's
+// members would vanish from its tab and an edit would rewrite the other side.
+describe('SettingsPanel.vue — same group name under two vendors stays two containers', () => {
+  const sameName: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'cl-1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Claude pool',
+        enabled: true,
+        group: 'pool',
+        config: { baseUrl: 'https://cl', apiKey: 'k', model: '' },
+      },
+      {
+        id: 'cx-1',
+        vendor: 'codex',
+        configMode: 'custom',
+        displayName: 'Codex pool',
+        enabled: true,
+        group: 'pool',
+        config: { baseUrl: 'https://cx', apiKey: 'k', model: '', wireApi: 'chat' },
+      },
+    ],
+  }
+  const groupBox = (w: ReturnType<typeof mount>, name: string) =>
+    w
+      .findAll('[data-testid="agent-group-box"]')
+      .find((b) => b.attributes('data-group-name') === name)
+
+  it('shows each vendor its own `pool` container with only its own members', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: sameName } })
+    const claudePool = groupBox(w, 'pool')
+    expect(claudePool?.attributes('data-group-vendor')).toBe('claude')
+    expect(
+      claudePool!.findAll('[data-testid="agent-card"]').map((r) => r.attributes('data-agent-id')),
+    ).toEqual(['cl-1'])
+
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    const codexPool = groupBox(w, 'pool')
+    expect(codexPool?.attributes('data-group-vendor')).toBe('codex')
+    expect(
+      codexPool!.findAll('[data-testid="agent-card"]').map((r) => r.attributes('data-agent-id')),
+    ).toEqual(['cx-1'])
+  })
+
+  it('renaming one vendor’s container leaves the same-named group on the other vendor alone', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: sameName } })
+    const input = groupBox(w, 'pool')!.find('[data-testid="agent-group-name"]')
+    ;(input.element as HTMLInputElement).value = 'fast'
+    await input.trigger('change')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.find((a) => a.id === 'cl-1')?.group).toBe('fast')
+    expect(saved.agents.find((a) => a.id === 'cx-1')?.group).toBe('pool')
+  })
+
+  it('dissolving one vendor’s container keeps the other vendor’s members grouped', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: sameName } })
+    await groupBox(w, 'pool')!.find('[data-testid="agent-group-remove"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.find((a) => a.id === 'cl-1')?.group).toBe('')
+    expect(saved.agents.find((a) => a.id === 'cx-1')?.group).toBe('pool')
+  })
+
+  it('refuses a drop into the other vendor’s same-named container', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: sameName } })
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    await w.find('[data-agent-id="cx-1"]').find('[data-testid="agent-drag"]').trigger('dragstart')
+    await w.find('[data-testid="agent-vendor-tab-btn-claude"]').trigger('click')
+    await groupBox(w, 'pool')!.trigger('drop')
+    expect(w.find('[data-testid="agent-group-notice"]').text()).toContain('one agent type')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.find((a) => a.id === 'cx-1')?.vendor).toBe('codex')
+    expect(saved.agents.find((a) => a.id === 'cx-1')?.group).toBe('pool')
+  })
+
+  it('retyping a member’s vendor onto a vendor that already owns that group name drops it to default', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: sameName, vendorAvailability: availability() },
+    })
+    await w.find('[data-agent-id="cl-1"]').find('[data-testid="agent-vendor"]').setValue('codex')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    const moved = saved.agents.find((a) => a.id === 'cl-1')!
+    expect(moved.vendor).toBe('codex')
+    // It must NOT silently join the codex `pool` the user never dragged it into.
+    expect(moved.group).toBe('')
+    expect(saved.agents.find((a) => a.id === 'cx-1')?.group).toBe('pool')
+  })
+})
+
 describe('SettingsPanel.vue — agent row vendor tint', () => {
   const multiVendor: SystemSettings = {
     ...baseSettings,

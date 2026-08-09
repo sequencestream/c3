@@ -92,7 +92,7 @@ export interface DevCleanupDeps {
   /** Best-effort lifecycle log write (never throws). */
   safeInsertIntentLog: (
     intentId: string,
-    operationType: 'pr_created' | 'pr_skipped',
+    operationType: 'pr_created',
     summary: string,
     actor?: string | null,
   ) => void

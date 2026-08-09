@@ -10,11 +10,13 @@
  * write-cores because the automatic paths need the resolver, not write-cores'
  * whole commit/close/status surface.
  *
- * The resolution itself is target-only. What an entry point DOES with a
- * resolution is its own policy: the human path may file against the mainline
- * when no delivery is linked, the automatic paths deliberately do not (they
- * skip the PR entirely rather than push an unreviewed mainline PR nobody asked
- * for).
+ * The resolution itself is target-only, and all three entry points now file
+ * against the base it returns — including the unlinked case, where that base is
+ * the intent's persisted `baseBranch`. What stays each entry point's own policy
+ * is WHEN it runs and what a failed resolution costs: the automatic paths file
+ * only once the intent reads back as `done` and turn an unusable target into a
+ * workbench todo, while the human path is status-independent and surfaces the
+ * bare code as a UI error. Neither invents a base the resolver did not return.
  */
 import type { Intent } from '@ccc/shared/protocol'
 import { getDelivery } from '../deliveries/store.js'

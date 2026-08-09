@@ -132,14 +132,23 @@ function mountHost(props: Record<string, unknown>) {
 }
 
 describe('useIntentDetailTabs', () => {
-  it('hides spec tabs when SDD off and no history; shows them with history data', () => {
-    const off = mountHost({ intent: intent({ id: 'i1', specPath: null, specSessionId: null }) })
-    expect(off.visibleKeys()).toEqual(['intent', 'intentSession', 'changelog'])
+  it.each([false, true])(
+    'hides both spec tabs for an intent with no spec data (sddEnabled=%s)',
+    (sddEnabled) => {
+      const { visibleKeys } = mountHost({
+        intent: intent({ id: 'i1', specPath: null, specSessionId: null }),
+        sddEnabled,
+      })
+      expect(visibleKeys()).toEqual(['intent', 'intentSession', 'changelog'])
+    },
+  )
 
-    const hist = mountHost({
-      intent: intent({ id: 'i2', specPath: '.s/spec.md', specSessionId: null }),
+  it('shows both spec tabs as soon as either spec field carries data', () => {
+    // 只有 specPath 的旧意图(spec 会话早已结束)仍保留读取入口。
+    const path = mountHost({
+      intent: intent({ id: 'i1', specPath: '.s/spec.md', specSessionId: null }),
     })
-    expect(hist.visibleKeys()).toEqual([
+    expect(path.visibleKeys()).toEqual([
       'intent',
       'intentSession',
       'specSession',
@@ -147,8 +156,18 @@ describe('useIntentDetailTabs', () => {
       'changelog',
     ])
 
-    const sdd = mountHost({ intent: intent({ id: 'i3' }), sddEnabled: true })
-    expect(sdd.visibleKeys()).toContain('spec')
+    // 只有 specSessionId(撰写刚开始,文档还没落盘)同样显示。
+    const session = mountHost({
+      intent: intent({ id: 'i2', specPath: null, specSessionId: 'sess-spec' }),
+      sddEnabled: true,
+    })
+    expect(session.visibleKeys()).toEqual([
+      'intent',
+      'intentSession',
+      'specSession',
+      'spec',
+      'changelog',
+    ])
   })
 
   it('defaults to intent session for empty content, intent tab otherwise, on intent switch', async () => {
@@ -299,9 +318,9 @@ describe('useIntentDetailTabs', () => {
     })
     expect(sddOff.visibleKeys()).not.toContain('specReviewSession')
 
-    // 两者齐备 → 显示,且排在规范之后。
+    // 两者齐备 → 显示,且排在规范之后(规范 tab 由该意图自己的规范数据带出)。
     const on = mountHost({
-      intent: intent({ id: 'i3', specReviewSessionId: 'rev-1' }),
+      intent: intent({ id: 'i3', specReviewSessionId: 'rev-1', specPath: '.s/spec.md' }),
       sddEnabled: true,
     })
     expect(on.visibleKeys()).toEqual([
@@ -435,5 +454,36 @@ describe('useIntentDetailTabs', () => {
     // 新会话回填 → 切到 specSession。
     await w.setProps({ intent: intent({ id: 'i1', specPath: '.s/spec.md', specSessionId: 'new' }) })
     expect(activeTab()).toBe('specSession')
+  })
+
+  it('switches a blank intent to spec session once the first spec session id backfills', async () => {
+    // 「编写 Spec」的真实起点:两个规范 tab 此刻都还不可见,所以任何固定定时的
+    // selectTab 都会被可见性门吞掉 —— 只有回填驱动能把流程走通。
+    const { w, activeTab, tabs, visibleKeys } = mountHost({
+      intent: intent({ id: 'i1', content: 'body', specPath: null, specSessionId: null }),
+      sddEnabled: true,
+    })
+    expect(visibleKeys()).not.toContain('specSession')
+    tabs().markPendingSpecSwitch('i1', null)
+    expect(activeTab()).toBe('intent')
+
+    await w.setProps({
+      intent: intent({ id: 'i1', content: 'body', specPath: null, specSessionId: 'sess-1' }),
+    })
+    expect(visibleKeys()).toContain('specSession')
+    expect(activeTab()).toBe('specSession')
+  })
+
+  it('never lets a pending spec switch follow the user to another intent', async () => {
+    const { w, activeTab, tabs } = mountHost({
+      intent: intent({ id: 'i1', content: 'body' }),
+      sddEnabled: true,
+    })
+    tabs().markPendingSpecSwitch('i1', null)
+
+    // 切走意图后旧的待切状态被清除,新意图的会话回填不得抢占当前页面。
+    await w.setProps({ intent: intent({ id: 'i2', content: 'body' }) })
+    await w.setProps({ intent: intent({ id: 'i2', content: 'body', specSessionId: 'sess-2' }) })
+    expect(activeTab()).toBe('intent')
   })
 })

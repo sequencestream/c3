@@ -110,6 +110,7 @@ function toQueueFact(r: Intent): QueueIntentFact {
     automate: r.automate,
     dependsOn: r.dependsOn,
     specStatus: r.specStatus,
+    effectiveSpecMode: r.effectiveSpecMode,
     prStatus: deriveIntentPrAggregate(r.prs),
     branchName: gate.branchName,
     deliveryIds: gate.deliveryIds,

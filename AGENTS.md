@@ -12,11 +12,6 @@ c3 - code creative center - An **AI workbench** that centrally manages and drive
 - Build: esbuild (server), bun build --compile (binary)
 - Test: Vitest
 
-## Rules
-
-- Code comments should not contain document references or number references, like: `SR-R14`, `ADR-0002` etc.
-- No `Co-Authored-By` in commit messages.
-
 ## Commands
 
 ```bash
@@ -29,7 +24,13 @@ pnpm dev                                        # server :3000 + Vite :5173 — 
 pnpm start [--port 3000] # start is default cmd; workspaces added from Web UI
 ```
 
-do `pnpm allcheck` at the end of an edit session.
+## Rules
+
+- Code comments should not contain document references or number references, like: `SR-R14`, `ADR-0002` etc.
+- No `Co-Authored-By` in commit messages.
+- At the end of an edit session
+  - Run `pnpm allcheck`.
+  - Run unit tests in edited modules.
 
 ## Dir&File Index
 

@@ -32,6 +32,7 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     automate: true,
     dependsOn: [],
     specStatus: 'raw',
+    effectiveSpecMode: 'sdd',
     prStatus: null,
     branchName: null,
     deliveryIds: [],
@@ -150,6 +151,41 @@ describe('reconcileQueue — gates', () => {
     expect(decisionFor(out, 'A')).toBeDefined()
     // A blocked candidate is NOT a finished queue.
     expect(out.state).toBe('running')
+  })
+
+  it('SDD on lets a FAST intent develop without an approved spec, and authors none', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        machineApprovalEnabled: true,
+        intents: [intent({ id: 'A', specStatus: 'raw', effectiveSpecMode: 'fast' })],
+      }),
+    )
+    // Same relaxation the manual admission gate applies: fast does not author a
+    // spec up front, so the queue must not wedge behind one either — and it must
+    // not start a spec session for it (that intent never enters the spec phase).
+    expect(launched(out)).toBe('A')
+    expect(out.actions.some((a) => a.kind.startsWith('launch_spec'))).toBe(false)
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+  })
+
+  it('the fast relaxation opens the spec gate ONLY — every other gate still applies', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        intents: [
+          intent({ id: 'dep', status: 'in_progress' }),
+          intent({
+            id: 'A',
+            specStatus: 'raw',
+            effectiveSpecMode: 'fast',
+            dependsOn: ['dep'],
+          }),
+        ],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'A')?.reason).toBe('blocked_dependency')
   })
 
   it('leaves the spec gate fully closed when SDD is off — no spec phase at all', () => {

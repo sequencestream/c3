@@ -42,13 +42,12 @@
     },
     "vendor": {
       "unavailable": {
-        "hostCliMissing": "CLI поставщика не найден на этом хосте",
-        "sdkUnresolved": "встроенная среда выполнения SDK не найдена — установите сайдкар SDK рядом с исполняемым файлом или задайте CURSOR_SDK_PATH"
+        "hostCliMissing": "CLI поставщика не найден на этом хосте"
       },
       "origin": {
         "installed": "установлено с пакетом",
-        "sidecar": "сайдкар",
-        "override": "CURSOR_SDK_PATH"
+        "hostPath": "найдено в PATH",
+        "override": "переопределение пути"
       }
     }
   },
@@ -316,7 +315,8 @@
         "placeholder": "ANTHROPIC_BASE_URL"
       },
       "apiKey": {
-        "placeholder": "API-ключ"
+        "placeholder": "API-ключ",
+        "placeholderOptional": "API-ключ (необязательно — используется вход cursor-agent)"
       },
       "model": {
         "placeholder": "напр. claude-sonnet-5 (пусто = модель по умолчанию)"
@@ -538,11 +538,10 @@
       "title": {
         "label": "Драйверы среды выполнения"
       },
-      "hint": "Доступность среды выполнения для каждого поставщика агентов (CLI на хосте или SDK в процессе) и драйвера Sandbox.",
+      "hint": "Доступность среды выполнения для CLI каждого поставщика агентов и драйвера песочницы.",
       "present": "доступно",
       "missing": "недоступно",
-      "sandbox": "Драйвер Sandbox",
-      "embeddedSdk": "SDK в процессе"
+      "sandbox": "Драйвер Sandbox"
     },
     "vendorCli": {
       "title": {

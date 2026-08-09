@@ -66,12 +66,13 @@
   (always-ask / on-sensitive / trusted-prefix / never-ask)。每个适配器把自己原生的模式翻译到
   这个网格上(见下表);该网格永远无法 1:1 逆向还原(Claude `auto` 的偏向以及 `always-ask` 在
   Claude 侧没有对应项,都是被记录在案的损失)。
-- **能力台账**——必备能力**没有标志**(它们就是接口契约本身);台账恰好持有七个**可选/可降级**
+- **能力台账**——必备能力**没有标志**(它们就是接口契约本身);台账恰好持有八个**可选/可降级**
   标志:interrupt、set-action-mode、streaming-push、进程内 MCP、fork-session、逐工具批准
-  (per-tool-approval)以及 task-store。第六项(逐工具批准)是在最初五个 Claude 专属控制项之外
-  新增的,因为 008 证明了逐工具批准**并非**普适能力。第七项(task-store)是 SDK 任务工具面,当前
-  三个厂商均为 true。
-- **Amendment(本阶段)——结构化的会话生命周期能力状态。** 上述六个标志是诚实的布尔值(一个厂商
+  (per-tool-approval)、task-store 以及 native-user-input。逐工具批准是在最初五个 Claude
+  专属控制项之外新增的,因为 008 证明了逐工具批准**并非**普适能力;task-store 是厂商的任务
+  工具面;native-user-input 是厂商能否在轮次中途向人发问 —— 为假时,人的介入降级为 c3 自己
+  的流程。
+- **Amendment(本阶段)——结构化的会话生命周期能力状态。** 上述标志是诚实的布尔值(一个厂商
   要么有一个回合中途的 interrupt 点,要么没有)。**会话生命周期**操作(list / read / resume /
   rename / delete)则**不是**:008 证明了 Codex SDK 没有 listing/reading API;后来本地
   transcript 读取器让 Codex 的 rename/delete 存在于一个尚未接线的 REST 回写之后,而一个偶尔宕机
@@ -90,9 +91,9 @@
   | rename | full   | temporarily-unavailable | none   |
   | delete | full   | temporarily-unavailable | none   |
 
-  Cursor 适配器自报同一子台账:`list` / `read` 为 `partial`(读 `@cursor/sdk` 的 local agent
-  store,只覆盖经 SDK 创建的 agent,不回读 Cursor IDE 私有 store)、`resume` 为 `full`、
-  `rename` / `delete` 为 `none`。
+  Cursor 适配器自报同一子台账:`list` / `read` / `resume` 为 `full`(读厂商自己的磁盘会话库,
+  它由 CLI 与 Cursor IDE 共写,故覆盖该工作区的全部历史)、`rename` / `delete` 为 `none`
+  ——那是用户自己的 IDE 数据,c3 不修改不属于自己的存储。
 
   控制台按能力*状态*渲染 rename/delete 行按钮(none 隐藏,temporarily-unavailable 禁用,
   full/partial 启用)——一个降级函数,没有厂商分支。wire 在一个新的顶层
@@ -221,7 +222,7 @@ push-input);interrupt / fork-session 虽然厂商为 true,但要等到重写阶�
 
 - **Easier:** 一个新厂商添加一个实现三个接口并声明自己能力台账的兄弟适配器;上层通过中立接口
   驱动它,不带任何新的 Claude 假设。必备与可选的界线是机械地被检查的(一个契约测试钉住能力
-  台账恰好是那七个可选标志,且必备接口面始终存在)。
+  台账恰好是那八个可选标志,且必备接口面始终存在)。
 - **Harder:** 中立权限网格比 Claude 的五种模式更粗;`auto` 的偏向以及一个 always-ask 网关在
   Claude 侧没有精确对应项(这些损失被记录在案,并在翻译处被暴露出来)。未来若某个 UI 想要找回
   丢失的细节,必须把它作为一个厂商额外字段重新引入,而不是塞进中立网格。
@@ -240,7 +241,7 @@ push-input);interrupt / fork-session 虽然厂商为 true,但要等到重写阶�
   一条边界规则注释里提到 SDK 的名字。
 - 厂商适配层**不得** import features 层或 transport 层(ADR-0009 R1)。
 - `pnpm typecheck` + `pnpm lint` **必须**为绿。
-- `pnpm vitest run` **必须**为绿:厂商中立的契约钉住必备接口面 + 七个布尔标志 + 会话子台账;
+- `pnpm vitest run` **必须**为绿:厂商中立的契约钉住必备接口面 + 八个布尔标志 + 会话子台账;
   一个能力测试端到端地钉住权威的会话能力矩阵;Claude 符合性测试对参考适配器上报每个会话操作均
   为 full;web 会话列表按能力*状态*(none ⇒ 隐藏,temporarily-unavailable ⇒ 禁用,full ⇒
   启用)演练行操作门控,不带任何一处按厂商的分支。

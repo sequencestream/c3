@@ -55,13 +55,16 @@ import { cursorToolCategory } from './tools.js'
 export interface CursorEvent {
   type?: unknown
   subtype?: unknown
+  session_id?: unknown
   agent_id?: unknown
   run_id?: unknown
   call_id?: unknown
+  tool_call?: unknown
   name?: unknown
   status?: unknown
   args?: unknown
   result?: unknown
+  is_error?: unknown
   message?: unknown
   text?: unknown
   usage?: unknown
@@ -171,6 +174,32 @@ const TERMINAL_STATUS: Readonly<Record<string, { isError: boolean; message: stri
   EXPIRED: { isError: true, message: 'cursor run expired' },
 }
 
+/** The suffix every arm of the native tool-call union carries. */
+const TOOL_CALL_SUFFIX = 'ToolCall'
+
+/**
+ * Unwrap a `tool_call` payload.
+ *
+ * The frame nests its tool under a single discriminant key naming the tool plus a
+ * `ToolCall` suffix — `{ editToolCall: { args, result } }` — so the tool's
+ * identity is the key, not a field. Stripping the suffix yields exactly the names
+ * {@link cursorToolCategory} is keyed by. Returns `undefined` for a payload with
+ * no such arm, leaving the caller to fall back rather than inventing a name.
+ */
+function cursorToolPayload(
+  raw: unknown,
+): { name: string; args?: unknown; result?: unknown } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!key.endsWith(TOOL_CALL_SUFFIX)) continue
+    const name = key.slice(0, -TOOL_CALL_SUFFIX.length)
+    if (!name) continue
+    const payload = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+    return { name, args: payload.args, result: payload.result }
+  }
+  return undefined
+}
+
 /**
  * Stateful normalizer for one Cursor run.
  *
@@ -242,7 +271,10 @@ export class CursorStreamTranslator {
 
   /** Translate one frame. Frames that carry no canonical meaning yield nothing. */
   consume(event: CursorEvent): CursorTranslation {
-    const sid = str(event.agent_id)
+    // The run's identity is reported under `session_id`; `agent_id` is the same
+    // fact under the name an earlier frame vocabulary used. Reading both keeps a
+    // stream that still speaks the older name from losing its identity entirely.
+    const sid = str(event.session_id) ?? str(event.agent_id)
     if (sid) this.sessionId = sid
 
     const type = str(event.type)
@@ -270,6 +302,9 @@ export class CursorStreamTranslator {
 
       case 'status':
         return this.onStatus(event)
+
+      case 'result':
+        return this.onResult(event)
 
       case 'task':
       case 'usage':
@@ -328,7 +363,9 @@ export class CursorStreamTranslator {
     // than merged into what came before.
     const pending = [...this.closeThinking(), ...this.closeAssistant()]
 
-    const status = str(event.status)
+    // The lifecycle is reported as `subtype`; `status` is the same fact under the
+    // name an earlier frame vocabulary used.
+    const status = str(event.subtype) ?? str(event.status)
     const finished = status === 'completed' || status === 'error'
 
     let id = str(event.call_id)
@@ -340,13 +377,18 @@ export class CursorStreamTranslator {
 
     const prior = this.openTools.get(id)
     const orphanCompletion = finished && !prior
-    const name = str(event.name) ?? prior?.name ?? 'unknown'
+    // The tool, its arguments and its result all live inside the discriminated
+    // `tool_call` payload; the flat fields are the older shape of the same three.
+    const native = cursorToolPayload(event.tool_call)
+    const name = str(event.name) ?? native?.name ?? prior?.name ?? 'unknown'
     // The running frame carries the arguments; the completed one need not repeat
     // them, so the opening call's input is what the block keeps.
-    const input = prior?.input ?? event.args ?? {}
+    const input = prior?.input ?? native?.args ?? event.args ?? {}
     if (!prior) this.openTools.set(id, { name, input })
 
-    const result = finished ? toolResult(event.result, status === 'error') : undefined
+    const result = finished
+      ? toolResult(native?.result ?? event.result, status === 'error')
+      : undefined
 
     const block: CanonicalBlock = {
       type: 'tool_use',
@@ -393,6 +435,33 @@ export class CursorStreamTranslator {
       ended: {
         isError: terminal.isError,
         ...(terminal.isError ? { errorMessage: message ?? terminal.message } : {}),
+      },
+    }
+  }
+
+  /**
+   * The turn's outcome frame — the terminal truth for a run.
+   *
+   * This is the only frame that reliably ends a turn, so it must close the open
+   * span the way a terminal `status` does: a reply whose last paragraph is still
+   * accumulating would otherwise never reach the transcript. Failure is read from
+   * `is_error` when present, and inferred from a non-success `subtype` otherwise,
+   * so an outcome c3 has not seen before is treated as a failure rather than
+   * quietly passing as success.
+   */
+  private onResult(event: CursorEvent): CursorTranslation {
+    const subtype = str(event.subtype)
+    const isError =
+      typeof event.is_error === 'boolean'
+        ? event.is_error
+        : subtype !== undefined && subtype !== 'success'
+    return {
+      messages: this.flush().messages,
+      ended: {
+        isError,
+        ...(isError
+          ? { errorMessage: str(event.message) ?? `cursor run ended: ${subtype ?? 'unknown'}` }
+          : {}),
       },
     }
   }

@@ -41,13 +41,12 @@
     },
     "vendor": {
       "unavailable": {
-        "hostCliMissing": "本机未找到该 vendor 的 CLI",
-        "sdkUnresolved": "内置 SDK 运行时解析不到 —— 请在可执行文件旁安装 SDK 旁挂目录,或设置 CURSOR_SDK_PATH"
+        "hostCliMissing": "本机未找到该 vendor 的 CLI"
       },
       "origin": {
         "installed": "随包安装",
-        "sidecar": "旁挂目录",
-        "override": "CURSOR_SDK_PATH"
+        "hostPath": "宿主 PATH",
+        "override": "路径覆盖"
       }
     }
   },
@@ -315,7 +314,8 @@
         "placeholder": "ANTHROPIC_BASE_URL"
       },
       "apiKey": {
-        "placeholder": "API key"
+        "placeholder": "API key",
+        "placeholderOptional": "API key(可选,留空用 cursor-agent 登录态)"
       },
       "model": {
         "placeholder": "例如 claude-sonnet-5（留空=使用默认模型）"
@@ -537,11 +537,10 @@
       "title": {
         "label": "运行时驱动"
       },
-      "hint": "各 agent vendor(宿主 CLI 或进程内 SDK)与 Sandbox 驱动的运行时可用性。",
+      "hint": "各 agent vendor CLI 与沙箱驱动的运行时可用性。",
       "present": "可用",
       "missing": "不可用",
-      "sandbox": "Sandbox 驱动",
-      "embeddedSdk": "进程内 SDK"
+      "sandbox": "Sandbox 驱动"
     },
     "vendorCli": {
       "title": {

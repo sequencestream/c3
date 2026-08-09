@@ -55,6 +55,16 @@ interface RawBunDb {
   close(): void
 }
 
+/** How to open a database file. */
+export interface OpenOptions {
+  /**
+   * Open without write access. Required when reading a file another program owns:
+   * a read-write open would take a lock and can create sidecar journal files in a
+   * directory that is not ours.
+   */
+  readonly?: boolean
+}
+
 function isBun(): boolean {
   return typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 }
@@ -74,11 +84,12 @@ function driverName(): string {
 const runtimeRequire: NodeRequire =
   typeof require !== 'undefined' ? require : createRequire(import.meta.url)
 
-function nodeAdapter(path: string): Db {
+function nodeAdapter(path: string, options: OpenOptions = {}): Db {
   const { DatabaseSync } = runtimeRequire('node:sqlite') as {
-    DatabaseSync: new (p: string) => RawNodeDb
+    DatabaseSync: new (p: string, o: { readOnly?: boolean }) => RawNodeDb
   }
-  const db = new DatabaseSync(path)
+  // Always an object: `node:sqlite` rejects an explicit `undefined` here.
+  const db = new DatabaseSync(path, options.readonly ? { readOnly: true } : {})
   return {
     exec: (sql) => db.exec(sql),
     run: (sql, ...p) => {
@@ -90,11 +101,11 @@ function nodeAdapter(path: string): Db {
   }
 }
 
-function bunAdapter(path: string): Db {
+function bunAdapter(path: string, options: OpenOptions = {}): Db {
   const { Database } = runtimeRequire('bun:sqlite') as {
-    Database: new (p: string) => RawBunDb
+    Database: new (p: string, o: { readonly?: boolean }) => RawBunDb
   }
-  const db = new Database(path)
+  const db = new Database(path, options.readonly ? { readonly: true } : {})
   return {
     exec: (sql) => db.exec(sql),
     run: (sql, ...p) => {
@@ -142,6 +153,23 @@ export function getDb(): Db | null {
     available = false
   }
   return instance
+}
+
+/**
+ * Open an arbitrary SQLite file with this runtime's driver, or `null` when it
+ * cannot be opened.
+ *
+ * Separate from {@link getDb}, which owns the single shared c3 database: this is
+ * for reading a file some *other* program owns, where a failure to open is an
+ * ordinary outcome (missing, locked, or written by a newer schema) rather than a
+ * condition worth logging as a c3 fault. Callers close what they open.
+ */
+export function openSqlite(path: string, options: OpenOptions = {}): Db | null {
+  try {
+    return isBun() ? bunAdapter(path, options) : nodeAdapter(path, options)
+  } catch {
+    return null
+  }
 }
 
 /**

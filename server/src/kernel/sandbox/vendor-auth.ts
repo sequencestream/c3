@@ -30,7 +30,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { VendorId } from '@ccc/shared/protocol'
-import { hostCodexHome } from '../config/workspace-path.js'
+import { hostCodexHome, hostCursorHome } from '../config/workspace-path.js'
 import { SandboxLaunchError } from './errors.js'
 import type { ResolvedMount, ResolvedSandboxPaths } from './types.js'
 
@@ -229,22 +229,60 @@ const codexProfile: SandboxAuthResolver = ({ paths, systemAuth }) => {
   }
 }
 
+// ─── Cursor ──────────────────────────────────────────────────────────────────
+
+/**
+ * Cursor.
+ *
+ * A subscription login lives in the host keychain — `cursor-agent` reports it as
+ * `apiKeySource: "login"` — and no environment variable can stand in for it, so
+ * the keychain grant is what makes a system-auth run work at all. An agent with
+ * its own key needs none of that: the key arrives by name through `forwardEnv`.
+ *
+ * The data root is the HOST `~/.cursor` on both scopes, mounted rw. Sessions land
+ * in `chats/<workspace-hash>/<id>/` there, and c3's session store reads that same
+ * directory host-side — so redirecting it would hide every sandboxed session from
+ * the very list that is supposed to show it. There is no environment variable to
+ * redirect it with in any case.
+ *
+ * The binary is distributed by Cursor's own installer into a versioned directory
+ * with a symlink pointing at it; both must be readable or exec fails on the
+ * link's target. They are mounted only when present, because mounting a missing
+ * path aborts the run and neither path exists when the CLI came from elsewhere.
+ */
+const cursorProfile: SandboxAuthResolver = ({ systemAuth, host }) => {
+  const dataRoot = hostCursorHome()
+  const installRoot = join(host.homeDir, '.local', 'share', 'cursor-agent')
+  const linkDir = join(host.homeDir, '.local', 'bin')
+  return {
+    entryCommand: 'cursor-agent',
+    allowKeychain: systemAuth,
+    literalEnv: [],
+    forwardEnv: ['CURSOR_API_KEY'],
+    mounts: [
+      { path: dataRoot, readonly: false },
+      ...(host.exists(installRoot) ? [{ path: installRoot, readonly: true }] : []),
+      ...(host.exists(linkDir) ? [{ path: linkDir, readonly: true }] : []),
+    ],
+    preRunDirs: [dataRoot],
+  }
+}
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 /**
  * The per-vendor strategy registry — the vendors c3 sandboxes by wrapping their
  * host CLI in arapuca.
  *
- * Deliberately partial over {@link VendorId}: `cursor` runs on an in-process SDK,
- * so there is no child process for a wrapper script to narrow and no data root
- * for it to mount. Its isolation comes from the SDK's own sandbox instead, which
- * the driver switches on for a sandboxed run. Absence here is what states that —
- * and {@link resolveSandboxAuthProfile} still fails closed, so a vendor that DOES
- * spawn a CLI can never be wrapped without a described credential channel.
+ * Partial over {@link VendorId} so the type survives vendors coming and going,
+ * but it must cover every vendor c3 launches as a host CLI: a wrapper without a
+ * data root and without a credential channel is exactly what
+ * {@link resolveSandboxAuthProfile} fails closed on.
  */
 export const VENDOR_AUTH_PROFILES: Readonly<Partial<Record<VendorId, SandboxAuthResolver>>> = {
   claude: claudeProfile,
   codex: codexProfile,
+  cursor: cursorProfile,
 }
 
 /**

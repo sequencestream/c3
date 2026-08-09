@@ -18,7 +18,6 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.220",
     "@ccc/shared": "workspace:*",
-    "@cursor/sdk": "1.0.26",
     "@hono/node-server": "^1.13.7",
     "@hono/node-ws": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",

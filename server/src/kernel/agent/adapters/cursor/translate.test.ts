@@ -316,6 +316,84 @@ describe('terminal status', () => {
   })
 })
 
+describe('result frame', () => {
+  it('reads the run identity from session_id as well as agent_id', () => {
+    const { messages } = translate([
+      { type: 'system', subtype: 'init', session_id: 'chat-9' },
+      {
+        type: 'assistant',
+        session_id: 'chat-9',
+        message: { content: [{ type: 'text', text: 'x' }] },
+      },
+    ])
+    expect(messages.every((m) => m.sessionId === 'chat-9')).toBe(true)
+  })
+
+  it('ends the turn cleanly and emits the open span', () => {
+    // The turn's last paragraph is still accumulating when the outcome arrives;
+    // it has to reach the transcript rather than die with the span.
+    const { messages, last } = translate([
+      text('all done'),
+      { type: 'result', subtype: 'success', is_error: false, session_id: 'agent-1' },
+    ])
+    expect(last.ended).toEqual({ isError: false })
+    expect(textBlocks(messages).map(([, t]) => t)).toEqual(['all done'])
+  })
+
+  it('ends the turn as an error when is_error is set, carrying the reported message', () => {
+    const { last } = translate([
+      { type: 'result', subtype: 'error_during_execution', is_error: true, message: 'boom' },
+    ])
+    expect(last.ended).toEqual({ isError: true, errorMessage: 'boom' })
+  })
+
+  it('treats an unrecognized outcome as a failure rather than a silent success', () => {
+    const { last } = translate([{ type: 'result', subtype: 'something_new' }])
+    expect(last.ended?.isError).toBe(true)
+  })
+})
+
+describe('discriminated tool_call payloads', () => {
+  it('takes the tool name from the union arm and strips the wrapper suffix', () => {
+    const { messages } = translate([
+      {
+        type: 'tool_call',
+        subtype: 'started',
+        call_id: 'call-1',
+        session_id: 'agent-1',
+        tool_call: { shellToolCall: { args: { command: 'ls' } } },
+      },
+    ])
+    const block = messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_use')
+    expect(block).toMatchObject({ name: 'shell', input: { command: 'ls' } })
+    // `shell` is in the neutral table, so the risk layer gets a real category.
+    expect(block?.vendorExtra?.category).toBe('execute')
+  })
+
+  it('back-fills the result from the completed arm onto the same block', () => {
+    const { messages } = translate([
+      {
+        type: 'tool_call',
+        subtype: 'started',
+        call_id: 'call-1',
+        tool_call: { editToolCall: { args: { path: '/f' } } },
+      },
+      {
+        type: 'tool_call',
+        subtype: 'completed',
+        call_id: 'call-1',
+        tool_call: {
+          editToolCall: { args: { path: '/f' }, result: { success: { linesAdded: 1 } } },
+        },
+      },
+    ])
+    const blocks = messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_use')
+    // Same id twice: the accumulator upserts, so the second carries the result.
+    expect(blocks.map((b) => b.id)).toEqual(['call-1', 'call-1'])
+    expect(blocks[1]).toMatchObject({ name: 'edit', result: { isError: false } })
+  })
+})
+
 describe('unmodelled frames', () => {
   it('preserves runtime bookkeeping without inventing transcript content', () => {
     const { messages } = translate([

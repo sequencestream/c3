@@ -41,13 +41,12 @@
     },
     "vendor": {
       "unavailable": {
-        "hostCliMissing": "vendor CLI not found on this host",
-        "sdkUnresolved": "built-in SDK runtime not resolvable — install the SDK sidecar next to the executable, or set CURSOR_SDK_PATH"
+        "hostCliMissing": "vendor CLI not found on this host"
       },
       "origin": {
         "installed": "installed",
-        "sidecar": "sidecar",
-        "override": "CURSOR_SDK_PATH"
+        "hostPath": "found on PATH",
+        "override": "path override"
       }
     }
   },
@@ -315,7 +314,8 @@
         "placeholder": "ANTHROPIC_BASE_URL"
       },
       "apiKey": {
-        "placeholder": "API key"
+        "placeholder": "API key",
+        "placeholderOptional": "API key (optional — uses cursor-agent login)"
       },
       "model": {
         "placeholder": "e.g. claude-sonnet-5 (leave empty = use default)"
@@ -537,11 +537,10 @@
       "title": {
         "label": "Runtime drivers"
       },
-      "hint": "Runtime availability for each agent vendor (host CLI or in-process SDK) and the Sandbox driver.",
+      "hint": "Runtime availability for each agent vendor CLI and the Sandbox driver.",
       "present": "available",
       "missing": "unavailable",
-      "sandbox": "Sandbox driver",
-      "embeddedSdk": "in-process SDK"
+      "sandbox": "Sandbox driver"
     },
     "vendorCli": {
       "title": {

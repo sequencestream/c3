@@ -103,9 +103,9 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
     runtime.cursor = {
       vendor: 'cursor',
       available: false,
-      runtime: 'embedded-sdk',
-      runtimeId: '@cursor/sdk',
-      reason: 'sdk-unresolved',
+      runtime: 'host-cli',
+      runtimeId: 'cursor-agent',
+      reason: 'host-cli-missing',
     }
     const w = mountModal({ vendorAvailability: runtime })
     const option = vendorOption(w, 'cursor')

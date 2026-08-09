@@ -1,10 +1,10 @@
 /**
  * 「这个 vendor 现在能不能跑」的客户端唯一判定来源。
  *
- * 服务端把每个 vendor 的运行时可用性统一说成 `VendorRuntimeStatus`(宿主 CLI 与
- * 进程内 SDK 同一套词汇),前端所有门控——agent 配置的 vendor 下拉、新建会话弹窗、
- * 自动化表单——都只读这里派生出的结果,因此没有任何一处需要写
- * `if (vendor === 'cursor')`:新增 vendor 时服务端多答一项即可,前端不动。
+ * 服务端把每个 vendor 的运行时可用性统一说成 `VendorRuntimeStatus`,前端所有
+ * 门控——agent 配置的 vendor 下拉、新建会话弹窗、自动化表单——都只读这里派生出的
+ * 结果,因此没有任何一处需要写 `if (vendor === 'cursor')`:新增 vendor 时服务端
+ * 多答一项即可,前端不动。
  */
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type {
@@ -48,7 +48,7 @@ export function deriveVendorAvailability(
           runtimeId: host.binary,
           ...(host.present ? {} : { reason: 'host-cli-missing' as const }),
         }
-      : { vendor, available: false, runtime: 'embedded-sdk', reason: 'sdk-unresolved' }
+      : { vendor, available: false, runtime: 'host-cli', reason: 'host-cli-missing' }
   }
   return out
 }
@@ -59,7 +59,6 @@ export function deriveVendorAvailability(
  */
 export const VENDOR_UNAVAILABLE_REASON_KEY = {
   'host-cli-missing': 'common.vendor.unavailable.hostCliMissing',
-  'sdk-unresolved': 'common.vendor.unavailable.sdkUnresolved',
 } as const satisfies Record<VendorUnavailableReason, LocaleKey>
 
 /** 取不可用原因的 i18n key;可用(或无原因码)时返回 null,调用方不渲染说明。 */
@@ -76,7 +75,7 @@ export function vendorUnavailableReasonKey(
  */
 export const VENDOR_RUNTIME_ORIGIN_KEY = {
   installed: 'common.vendor.origin.installed',
-  sidecar: 'common.vendor.origin.sidecar',
+  'host-path': 'common.vendor.origin.hostPath',
   override: 'common.vendor.origin.override',
 } as const satisfies Record<VendorRuntimeOrigin, LocaleKey>
 

@@ -7,6 +7,7 @@
 import type { VendorId, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
+import { createCursorAdapter } from './cursor/index.js'
 import { HOST_BINARIES, resolveExecutable, type VendorProbe } from '../process/launcher.js'
 
 /** Builds a fresh {@link VendorAdapter}. */
@@ -16,6 +17,7 @@ type VendorFactory = () => VendorAdapter
 export const VENDOR_FACTORIES: Partial<Record<VendorId, VendorFactory>> = {
   claude: createClaudeAdapter,
   codex: () => createCodexAdapter(),
+  cursor: () => createCursorAdapter(),
 }
 
 /** A vendor whose adapter exists but whose host CLI was not found on this host. */

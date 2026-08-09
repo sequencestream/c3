@@ -44,11 +44,8 @@ import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../../kernel/agent/adapters/codex/gh-token.js'
-import {
-  createCursorAdapter,
-  cursorModeCatalog,
-  cursorSdkAvailable,
-} from '../../kernel/agent/adapters/cursor/index.js'
+import { createCursorAdapter, cursorModeCatalog } from '../../kernel/agent/adapters/cursor/index.js'
+import { resolve as resolveVendorCli } from '../../kernel/agent/process/launcher.js'
 import { tokenToGrid } from '../../kernel/agent/adapters/mode-catalog.js'
 import type {
   AgentRun,
@@ -995,20 +992,15 @@ async function executeCodexLlmPrompt(
 /**
  * The cursor `llm` executor.
  *
- * Cursor's runtime is the in-process `@cursor/sdk`, so there is no child process
- * to spawn and no wrapper to narrow: the dispatcher hands the adapter neutral
- * {@link DriverStartOptions} and the SDK does the rest. Two things are resolved
- * here and nowhere else:
+ * The dispatcher hands the adapter neutral {@link DriverStartOptions} and the
+ * driver spawns the CLI. Two things are resolved here and nowhere else:
  *
- *  - **Availability.** The SDK is a deployment artifact (an npm dependency or the
- *    binary's sidecar tree), not a host CLI, so an unresolvable copy is a
- *    dispatch-time failure with a locatable reason — never a fall-through to
- *    another vendor's engine.
- *  - **Credential.** The SDK authenticates with an API key only. The bound
- *    agent's own key travels on the run's env map (the one credential channel
- *    `DriverStartOptions` has); empty ⇒ the driver falls back to the server's
- *    ambient `CURSOR_API_KEY` and fails at the door when that is empty too, with
- *    a message naming both places.
+ *  - **Availability.** A missing `cursor-agent` is a dispatch-time failure with a
+ *    locatable reason — never a fall-through to another vendor's engine.
+ *  - **Credential.** The bound agent's own key travels on the run's env map (the
+ *    one credential channel `DriverStartOptions` has). Empty is legal: the CLI
+ *    then authenticates with its own keychain login, so an automation on a
+ *    subscription account needs no key at all.
  *
  * The mode is read through `cursorModeCatalog`, so `plan` / `agent` /
  * `full-access` mean exactly what they mean in a cursor session (and any other
@@ -1023,11 +1015,11 @@ async function executeCursorLlmPrompt(
   abortController: AbortController,
   agent: AgentConfig,
 ): Promise<void> {
-  if (!cursorSdkAvailable()) {
+  if (!resolveVendorCli('cursor')) {
     updateLog(logId, {
       finishedAt: Date.now(),
       status: 'failed',
-      error: 'cursor_sdk_unresolved',
+      error: 'cursor_cli_missing',
     })
     return
   }

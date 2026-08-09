@@ -399,7 +399,7 @@ getter、以及 abort signal——是按每次运行提供的(run-id getter 与 
 暴露在这条路由上(挂载在 c3 自己的服务器上,位于 SPA 兜底路由之前,与 codex relay
 类似),**三个厂商都消费它**——这样意图面板与厂商无关。Claude 边界把中立的远程 MCP
 描述符转译成 Claude SDK 的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`);
-codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界把描述符作为 `mcpServers` 选项直接传给 `Agent.create`。
+codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界把描述符写进工作区的 `.cursor/mcp.json`(轮次期间生效,结束还原)。
 
 - **按运行绑定 + 隔离。** intent profile 通过中立的 `bindMcp` 绑定一个按运行区分的
   MCP 服务器(对三个厂商一致):一个不透明 token 映射到一个私有 MCP 服务器,其工具
@@ -414,7 +414,7 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
   `find_intents`/`view_intent` 同样自动允许(只读)。
 - **厂商转译。** 中立的远程 MCP 描述符(type、url、可选的 bearer-token 环境变量)
   被 Claude 边界转译为 Claude SDK 的 HTTP MCP 配置,被 codex 驱动转译为其写入的
-  streamable-HTTP MCP 形式,cursor 边界把描述符作为 `Agent.create` 的 `mcpServers` 选项直接传入;三者指向同一条回环路由。
+  streamable-HTTP MCP 形式,cursor 边界把描述符写进工作区的 `.cursor/mcp.json`;三者指向同一条回环路由。
 
 ## 启动开发(`start_development`)
 

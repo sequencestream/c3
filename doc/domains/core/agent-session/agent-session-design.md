@@ -38,7 +38,7 @@ c3 自己的 MCP 工具面对**三个厂商**都走**同一条回环 streamable-
 描述符(以名称标识的 HTTP 服务器,带 URL 和可选的 bearer-token 环境变量),并交由厂商边界
 转译为各自原生的配置——codex driver 写入 codex CLI 的 `codex mcp add --url` 形式所产生的
 streamable-HTTP 服务器条目;Claude 边界的一个小转换器把同一批中立描述符翻译成 Claude SDK
-的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`);cursor 边界把同一批描述符作为 `mcpServers` 选项直接传给 `Agent.create`(无配置文件改写)。Claude SDK 仍**具备**托管进程内
+的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`);cursor 边界把同一批描述符写进工作区的 `.cursor/mcp.json`(轮次期间生效,结束还原)。Claude SDK 仍**具备**托管进程内
 MCP 的能力(`AdapterCapabilities.inProcessMcp` 保留为一个潜在能力),但 c3 自己的工具面
 不再使用它。c3 目前的生产者是 intent comm-agent:三个厂商路径都绑定一个每次运行的回环
 HTTP MCP 路由,携带三个 intent 工具(见

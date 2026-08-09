@@ -229,33 +229,31 @@ export interface VendorHostStatus {
 /**
  * Where a vendor's runtime physically lives — the one dimension that decides
  * which diagnostics a status row can honestly show.
- *  - `host-cli`     — an executable c3 resolves and spawns (claude, codex). It has
- *                     a binary name, a path and a version to report.
- *  - `embedded-sdk` — a runtime that ships inside c3 and executes in the server
- *                     process (cursor via `@cursor/sdk`). It has no binary to
- *                     find and nothing for the install/version machinery to do.
+ *  - `host-cli` — an executable c3 resolves and spawns. It has a binary name, a
+ *                 path and a version to report.
+ *
+ * A single member today, and deliberately still a union: it is the field a
+ * differently-hosted runtime would widen, and the reason a status row never has
+ * to ask which vendor it is describing.
  */
-export type VendorRuntimeKind = 'host-cli' | 'embedded-sdk'
+export type VendorRuntimeKind = 'host-cli'
 
 /**
  * Why a vendor's runtime is unavailable — a **stable code**, not a message.
  * The console localizes it into actionable guidance; an internal exception text
  * must never become the UI contract.
  *  - `host-cli-missing` — no runnable vendor CLI resolved from any allowed source.
- *  - `sdk-unresolved`   — the embedded SDK could not be resolved from this
- *                         process: neither installed as a module nor present as a
- *                         sidecar tree beside the executable.
  */
-export type VendorUnavailableReason = 'host-cli-missing' | 'sdk-unresolved'
+export type VendorUnavailableReason = 'host-cli-missing'
 
 /**
  * Which source a resolved runtime came from — the provenance a diagnostics row
  * shows so "available" is never just a claim.
- *  - `installed` — ordinary module/binary resolution (an npm install of c3).
- *  - `sidecar`   — the tree the release lays beside the executable.
- *  - `override`  — a deployment-supplied path took priority over both.
+ *  - `installed`  — a CLI c3 distributes itself, under its managed vendor dir.
+ *  - `host-path`  — a CLI found on the host PATH, distributed by the vendor.
+ *  - `override`   — a deployment-supplied path took priority over both.
  */
-export type VendorRuntimeOrigin = 'installed' | 'sidecar' | 'override'
+export type VendorRuntimeOrigin = 'installed' | 'host-path' | 'override'
 
 /**
  * One vendor's **runtime availability** — the vendor-neutral signal every config

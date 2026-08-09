@@ -60,9 +60,9 @@ const OPS = ['list', 'read', 'resume', 'rename', 'delete'] as const
 const EXPECTED: Partial<Record<VendorId, SessionCapabilities>> = {
   claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
   codex: { list: 'full', read: 'full', resume: 'full', rename: 'none', delete: 'none' },
-  // Cursor resumes through its own native store, but list/read are served from
-  // c3's mirror of what it observed — real, yet narrower than the vendor's truth.
-  cursor: { list: 'partial', read: 'partial', resume: 'full', rename: 'none', delete: 'none' },
+  // Cursor resumes by an id it minted itself, and list/read read its own on-disk
+  // chat store — the same one the IDE writes, so the whole history is visible.
+  cursor: { list: 'full', read: 'full', resume: 'full', rename: 'none', delete: 'none' },
 }
 
 describe('structured session-capability ledger', () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Cursor 会话端到端验证 — 走真实 WS 协议与真实 `@cursor/sdk` 本地运行时(花费少量
+ * Cursor 会话端到端验证 — 走真实 WS 协议与真实 `cursor-agent` CLI(花费少量
  * 真实额度,两轮短对话)。复核 c3 服务端的 Cursor 接线:新建 Cursor 会话 → 第一轮
  * 产出 text 与 tool_use → 会话进入列表 → 以捕获的原生 agent id 续聊第二轮。
  *
@@ -9,14 +9,15 @@
  *   - 会话出现在列表中。
  *   - 使用 Cursor 原生 session id 成功续聊第二轮。
  *
- * 前置(不满足即 SKIP,退出码 5):环境变量 CURSOR_API_KEY 已设置,且 `@cursor/sdk`
+ * 前置(不满足即 SKIP,退出码 5):环境变量 CURSOR_API_KEY 已设置,且 `cursor-agent`
  * 可解析。SDK 只认 API Key —— `cursor-agent login` 的钥匙串登录态对它无效。
  * 非 CI 安全 —— 需要真实密钥与出网。
  *
  * 用法:
  *   node scripts/e2e/e2e-cursor-session-test.mjs [ws-url]
  */
-import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,18 +33,20 @@ function skip(reason) {
   process.exit(5)
 }
 
-// ─── 前置检查:SDK 可解析且有 API Key ─────────────────────────────────────────
-function sdkAvailable() {
-  try {
-    createRequire(import.meta.url).resolve('@cursor/sdk')
-    return true
-  } catch {
-    return false
-  }
+// ─── 前置检查:CLI 可解析,且已登录或有 API Key ──────────────────────────────
+function cliAvailable() {
+  const override = (process.env.CURSOR_PATH ?? '').trim()
+  if (override) return existsSync(override)
+  const r = spawnSync('sh', ['-c', 'command -v cursor-agent'], { encoding: 'utf-8' })
+  return r.status === 0 && (r.stdout || '').trim().length > 0
+}
+function loggedIn() {
+  const r = spawnSync('cursor-agent', ['status'], { encoding: 'utf-8' })
+  return r.status === 0 && !/not logged in|logged out/i.test(`${r.stdout}${r.stderr}`)
 }
 const API_KEY = (process.env.CURSOR_API_KEY ?? '').trim()
-if (!sdkAvailable()) skip('@cursor/sdk 无法解析(未安装或缺少本平台原生包)')
-if (!API_KEY) skip('未设置 CURSOR_API_KEY(SDK 只认 API Key,不读 cursor-agent 登录态)')
+if (!cliAvailable()) skip('宿主上找不到 cursor-agent(未安装,或 $CURSOR_PATH 指向不存在的路径)')
+if (!API_KEY && !loggedIn()) skip('既没有 CURSOR_API_KEY,cursor-agent 也未登录')
 
 // ─── 工作区 ────────────────────────────────────────────────────────────────────
 const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'c3-cursor-e2e-'))

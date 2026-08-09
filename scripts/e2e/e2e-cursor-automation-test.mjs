@@ -8,12 +8,12 @@
  *     服务端不再以 `automation_vendor_unsupported` 拒绝分派);
  *   - 一次成功的 `llm_prompt` 运行:执行日志落 `success`,带非空 output,并绑定
  *     一个可回放的 agent session id;
- *   - 分派期失败分支:运行时不可用(`cursor_sdk_unresolved`)、凭据缺失、
+ *   - 分派期失败分支:运行时不可用(`cursor_cli_missing`)、凭据缺失、
  *     绑定 agent 被禁用 / 已不存在。每一条都必须以可行动的错误结束,且
  *     **不跨 vendor 回退** —— 失败后 automation 自身的 vendor 仍是 cursor。
  *
  * 与 cursor agent 配置 e2e 同样**没有 SKIP 分支**,三种环境各有确定断言:
- *   A. `@cursor/sdk` 解析不到 ⇒ 首轮必须以 `cursor_sdk_unresolved` 失败;
+ *   A. `cursor-agent` 找不到 ⇒ 首轮必须以 `cursor_cli_missing` 失败;
  *   B. SDK 可用但没有 CURSOR_API_KEY ⇒ 首轮必须失败,且错误同时点名 agent 的
  *      apiKey 字段与 CURSOR_API_KEY 环境变量;
  *   C. SDK 可用且有 key ⇒ 首轮跑完一轮真实短对话(花费少量真实额度)。
@@ -23,12 +23,10 @@
  *   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000   # 另一个终端
  *   node scripts/e2e/e2e-cursor-automation-test.mjs [ws-url]
  */
-import { createRequire } from 'node:module'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { assertIsolatedSettings } from './settings-guard.mjs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
@@ -37,17 +35,15 @@ const POLL_MS = 1000
 
 const log = (s) => console.log(`[cursor-automation-e2e] ${s}`)
 
-// 从 SERVER 包解析:`@cursor/sdk` 是服务端依赖,从仓库根探测会在健康安装上误报缺失。
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-function sdkAvailable() {
-  try {
-    createRequire(join(REPO_ROOT, 'server', 'package.json')).resolve('@cursor/sdk')
-    return true
-  } catch {
-    return false
-  }
+// cursor-agent 由 Cursor 自己的安装器分发,探测与服务端 launcher 同序:
+// $CURSOR_PATH → PATH。
+function cliAvailable() {
+  const override = (process.env.CURSOR_PATH ?? '').trim()
+  if (override) return existsSync(override)
+  const r = spawnSync('sh', ['-c', 'command -v cursor-agent'], { encoding: 'utf-8' })
+  return r.status === 0 && (r.stdout || '').trim().length > 0
 }
-const SDK_OK = sdkAvailable()
+const CLI_OK = cliAvailable()
 const API_KEY = (process.env.CURSOR_API_KEY ?? '').trim()
 
 const CURSOR_AGENT_ID = 'cursor-automation-e2e-agent'
@@ -251,23 +247,29 @@ async function runAssertions() {
 
   // ── 主运行:按环境断言成功或分派期失败 ─────────────────────────────────
   phase = 'run-main'
-  log(`触发运行(SDK 可解析=${SDK_OK}, 有 API key=${!!API_KEY})`)
+  log(`触发运行(CLI 可解析=${CLI_OK}, 有 API key=${!!API_KEY})`)
   const main = await runOnceAndReadLog('主运行')
   if (main) {
-    if (!SDK_OK) {
-      check(main.status === 'failed', 'SDK 不可解析:执行失败而不是静默成功')
+    if (!CLI_OK) {
+      check(main.status === 'failed', 'CLI 找不到:执行失败而不是静默成功')
       check(
-        main.error === 'cursor_sdk_unresolved',
-        `失败原因可定位为 cursor_sdk_unresolved(实际 ${main.error})`,
+        main.error === 'cursor_cli_missing',
+        `失败原因可定位为 cursor_cli_missing(实际 ${main.error})`,
       )
       check(main.sessionId === null, '分派期失败没有产生会话')
     } else if (!API_KEY) {
-      check(main.status === 'failed', '缺少凭据:执行失败')
-      const err = String(main.error ?? '')
-      check(
-        /apiKey/.test(err) && /CURSOR_API_KEY/.test(err),
-        `缺少 key 的报错同时点名 agent 字段与环境变量(实际 ${err})`,
-      )
+      // key 是可选的:装了 CLI 又登录过就该正常跑完。两种结局都合法,但失败必须
+      // 可行动 —— 指出登录与填 key 这两条出路。
+      if (main.status === 'success') {
+        check(String(main.output ?? '').length > 0, '无 key 凭登录态跑完:执行日志记录了模型输出')
+        check(!!main.sessionId, '无 key 凭登录态跑完:执行绑定了可回放的 agent session id')
+      } else {
+        const err = String(main.error ?? '')
+        check(
+          /cursor-agent login/.test(err) || /API key/i.test(err),
+          `无 key 且未登录时的报错要指出一条出路(实际 ${err})`,
+        )
+      }
     } else {
       check(main.status === 'success', `一次真实 cursor 自动化运行成功(实际 ${main.status})`)
       check(String(main.output ?? '').length > 0, '执行日志记录了模型输出')

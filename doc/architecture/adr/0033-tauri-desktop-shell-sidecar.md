@@ -73,9 +73,9 @@ c3 现有交付物只有一种形态:用户从终端运行 `./c3 --daemon`,再�
 - **GUI 进程的 PATH 问题被显式处理。** Finder 启动的进程只有最小 PATH,c3 却需要在
   PATH 上找到 `git` 与用户自装的 vendor CLI。壳在 Unix 上向登录 shell 问一次真实
   PATH 再传给 sidecar;取不到就什么都不做(纯增强)。
-- **桌面包不携带 Cursor SDK sidecar 树。** CLI 包把 `node_modules` 放在二进制旁边,
-  而 Tauri 的 `externalBin` 只搬单个文件。桌面版的 Cursor vendor 需要用户设置
-  `CURSOR_SDK_PATH`,或改用 CLI 版。这是本次明确的边界,不是缺陷遗留。
+- **桌面包不携带任何厂商运行时。** Tauri 的 `externalBin` 只搬单个文件,而三个
+  vendor 都落在运行期解析的宿主 CLI 上,所以桌面版与 CLI 版在这一点上没有差别:
+  装了哪个 vendor 的 CLI,就能用哪个。
 - **自动更新留了扩展点,本次不实现。** 桌面产物与 CLI 产物同版本、同 manifest、同
   校验链,只是 `channel` 与文件名不同;后续的 App 内自动更新
   (意图 `47422c5e-03d7-45fa-8928-64cf905e7936`)接的就是这份 manifest 与壳的生命

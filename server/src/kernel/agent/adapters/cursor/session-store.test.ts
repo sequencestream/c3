@@ -1,162 +1,209 @@
 /**
- * CursorSessionStore tests. The store's `read` joins two SDK surfaces — the
- * prompt side (`Agent.messages.list`, one entry per run, oneof-wrapped) and the
- * reply side (`run.conversation()` steps) — so a fake `CursorSessionSource`
- * stands in for both and asserts on the interleaved canonical transcript.
+ * CursorSessionStore tests.
+ *
+ * Listing is exercised against a real chat-directory tree under a temporary home,
+ * because the layout — the workspace-hash directory and the `meta.json` fields —
+ * IS the contract with Cursor's own store. Replay is exercised through the source
+ * seam, where a scripted transcript keeps the message-shape assertions readable.
  */
-import { describe, expect, it } from 'vitest'
-import type { CanonicalMessage } from '../types.js'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CursorSessionStore,
-  type CursorConversationStep,
+  cursorWorkspaceHash,
+  type CursorChatMeta,
   type CursorSessionSource,
-  type CursorStoredMessage,
 } from './session-store.js'
+import type { CursorStoredMessage } from './store-db.js'
 
-/** A source whose prompts / reply steps are scripted, everything else no-op. */
-function fakeSource(over: Partial<CursorSessionSource>): CursorSessionSource {
-  return {
-    list: async () => [],
-    messages: async () => [],
-    conversations: async () => [],
-    ...over,
-  }
+let home = ''
+
+beforeEach(() => {
+  home = mkdtempSync(join(os.tmpdir(), 'c3-cursor-store-'))
+  vi.spyOn(os, 'homedir').mockReturnValue(home)
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  rmSync(home, { recursive: true, force: true })
+})
+
+/**
+ * Lay down one chat the way Cursor does. Raw JSON text rather than a serializer:
+ * the fixture is the on-disk contract, so it is written as the file literally is.
+ */
+function writeChat(
+  chatId: string,
+  cwd: string,
+  over: { title?: string; updatedAtMs?: number; hash?: string } = {},
+): void {
+  const hash = over.hash ?? createHash('md5').update(cwd).digest('hex')
+  const dir = join(home, '.cursor', 'chats', hash, chatId)
+  mkdirSync(dir, { recursive: true })
+  const title = over.title ?? 'Some Chat'
+  const updated = over.updatedAtMs ?? Date.now()
+  writeFileSync(
+    join(dir, 'meta.json'),
+    `{"schemaVersion":1,"createdAtMs":${updated},"hasConversation":true,"title":"${title}","updatedAtMs":${updated},"cwd":"${cwd}"}`,
+    'utf-8',
+  )
 }
 
-/** The oneof wrapper the current SDK stores every message in. */
-function turn(payload: Record<string, unknown>): unknown {
-  return { turn: { case: 'agentConversationTurn', value: payload } }
+function fakeSource(
+  chats: CursorChatMeta[],
+  transcript: CursorStoredMessage[],
+): CursorSessionSource {
+  return { chats: () => chats, transcript: () => transcript }
 }
 
-function stored(
-  entries: Array<{ type?: string; uuid?: string; message?: unknown }>,
-): CursorStoredMessage[] {
-  return entries.map((e) => ({ type: 'user', ...e }))
+const CHAT: CursorChatMeta = {
+  chatId: 'chat-1',
+  dir: '/nowhere',
+  cwd: '/ws',
+  title: 'Some Chat',
+  updatedAtMs: 1,
 }
 
-function steps(entries: Array<{ type?: string; message?: unknown }>): CursorConversationStep[] {
-  return entries.map((e) => ({ type: 'assistantMessage', ...e }))
-}
+describe('listing the on-disk chat store', () => {
+  it('finds a workspace’s chats through the hash directory', async () => {
+    writeChat('chat-a', '/ws/project', { title: 'First' })
+    const store = new CursorSessionStore()
 
-function textBlocks(messages: CanonicalMessage[]): string[] {
-  return messages
-    .flatMap((m) => m.blocks)
-    .filter((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text')
-    .map((b) => b.text)
-}
+    const listed = await store.list({ cwd: '/ws/project' })
 
-describe('CursorSessionStore', () => {
-  it("interleaves the oneof-wrapped prompt with that run's reply steps", async () => {
+    expect(listed).toMatchObject([{ sessionId: 'chat-a', title: 'First' }])
+    expect(listed[0]?.vendorExtra).toMatchObject({ cwd: '/ws/project' })
+  })
+
+  it('finds a chat whose directory hash does not match, by its recorded cwd', async () => {
+    // The hash is a fast path, not the truth: a store written under a different
+    // canonicalization of the same path must still be found.
+    writeChat('chat-b', '/ws/project', { hash: 'not-the-hash-of-this-path' })
+    const store = new CursorSessionStore()
+
+    await expect(store.list({ cwd: '/ws/project' })).resolves.toMatchObject([
+      { sessionId: 'chat-b' },
+    ])
+  })
+
+  it('lists most-recent first and excludes other workspaces', async () => {
+    writeChat('older', '/ws/project', { title: 'Older', updatedAtMs: 1_000 })
+    writeChat('newer', '/ws/project', { title: 'Newer', updatedAtMs: 2_000 })
+    writeChat('elsewhere', '/ws/other', { title: 'Elsewhere' })
+    const store = new CursorSessionStore()
+
+    const listed = await store.list({ cwd: '/ws/project' })
+
+    expect(listed.map((s) => s.sessionId)).toEqual(['newer', 'older'])
+  })
+
+  it('skips an unreadable chat rather than failing the whole listing', async () => {
+    writeChat('good', '/ws/project', { title: 'Good' })
+    const broken = join(home, '.cursor', 'chats', cursorWorkspaceHash('/ws/project'), 'broken')
+    mkdirSync(broken, { recursive: true })
+    writeFileSync(join(broken, 'meta.json'), '{ not json', 'utf-8')
+    const store = new CursorSessionStore()
+
+    await expect(store.list({ cwd: '/ws/project' })).resolves.toMatchObject([{ sessionId: 'good' }])
+  })
+
+  it('returns nothing when the store does not exist, instead of throwing', async () => {
+    const store = new CursorSessionStore()
+    await expect(store.list({ cwd: '/ws/never-used' })).resolves.toEqual([])
+  })
+})
+
+describe('replaying a stored transcript', () => {
+  it('keeps the prompt and reply in order and drops the harness prompt', async () => {
     const store = new CursorSessionStore(
-      fakeSource({
-        messages: async () =>
-          stored([
-            {
-              uuid: 'agent-1:0',
-              message: turn({ userMessage: { text: 'fix the bug' } }),
-            },
-          ]),
-        conversations: async () => [
-          steps([
-            { message: { text: 'looking' } },
-            { type: 'assistantMessage', message: { text: 'done' } },
-          ]),
+      fakeSource(
+        [CHAT],
+        [
+          { role: 'system', content: 'You are an AI coding assistant.' },
+          { role: 'user', content: [{ type: 'text', text: 'do it' }] },
+          { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
         ],
-      }),
+      ),
     )
 
-    const out = await store.read('agent-1', { cwd: '/ws' })
-    expect(textBlocks(out)).toEqual(['fix the bug', 'looking', 'done'])
-    expect(out[0].role).toBe('user')
-    expect(out[1].role).toBe('assistant')
+    const messages = await store.read('chat-1', { cwd: '/ws' })
+
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(messages[1]?.blocks[0]).toMatchObject({ type: 'text', text: 'done' })
   })
 
-  it('still reads a legacy plain `{ text }` payload', async () => {
+  it('translates reasoning into a thinking block, never inferring it from prose', async () => {
     const store = new CursorSessionStore(
-      fakeSource({
-        messages: async () => stored([{ message: { text: 'legacy prompt' } }]),
-      }),
+      fakeSource([CHAT], [{ role: 'assistant', content: [{ type: 'reasoning', text: 'hmm' }] }]),
     )
 
-    const out = await store.read('agent-1', { cwd: '/ws' })
-    expect(textBlocks(out)).toEqual(['legacy prompt'])
+    const [message] = await store.read('chat-1', { cwd: '/ws' })
+    expect(message?.blocks[0]).toMatchObject({ type: 'thinking', thinking: 'hmm' })
   })
 
-  it('turns a toolCall step into a tool_use block with its embedded result', async () => {
+  it('fills a tool result onto the call it answers, by native call id', async () => {
     const store = new CursorSessionStore(
-      fakeSource({
-        messages: async () => stored([{ message: turn({ userMessage: { text: 'run it' } }) }]),
-        conversations: async () => [
-          steps([
-            {
-              type: 'toolCall',
-              message: {
-                type: 'shell',
+      fakeSource(
+        [CHAT],
+        [
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool-call',
+                toolCallId: 'call-7',
+                toolName: 'Shell',
                 args: { command: 'ls' },
-                result: { status: 'success', value: { stdout: 'src\n', exitCode: 0 } },
               },
-            },
-          ]),
+            ],
+          },
+          {
+            role: 'tool',
+            content: [
+              { type: 'tool-result', toolCallId: 'call-7', toolName: 'Shell', result: 'a\nb' },
+            ],
+          },
         ],
-      }),
+      ),
     )
 
-    const out = await store.read('agent-1', { cwd: '/ws' })
-    const tool = out.flatMap((m) => m.blocks).find((b) => b.type === 'tool_use')
-    expect(tool).toBeDefined()
-    expect(tool?.type).toBe('tool_use')
-    if (tool?.type === 'tool_use') {
-      expect(tool.name).toBe('shell')
-      expect(tool.input).toEqual({ command: 'ls' })
-      expect(tool.result?.content).toBe('src\n')
-      expect(tool.result?.isError).toBe(false)
-    }
+    const [message] = await store.read('chat-1', { cwd: '/ws' })
+
+    expect(message?.blocks[0]).toMatchObject({
+      type: 'tool_use',
+      id: 'call-7',
+      name: 'Shell',
+      input: { command: 'ls' },
+      result: { content: 'a\nb', isError: false },
+    })
+    // Every tool in a stored transcript already ran under the launch-time gate.
+    expect(message?.preApproved).toBe(true)
   })
 
-  it('marks a tool result with status error as failed', async () => {
+  it('drops the environment context the harness injects into the user turn', async () => {
+    // It arrives as a plain string rather than a block list, and opening the
+    // transcript with a wall of machine-generated text buries the conversation.
     const store = new CursorSessionStore(
-      fakeSource({
-        conversations: async () => [
-          steps([
-            {
-              type: 'toolCall',
-              message: { type: 'read', result: { status: 'error', value: { stderr: 'no' } } },
-            },
-          ]),
+      fakeSource(
+        [CHAT],
+        [
+          { role: 'user', content: '<user_info>\nOS Version: darwin\n</user_info>' },
+          { role: 'user', content: 'the real question' },
         ],
-      }),
+      ),
     )
 
-    const out = await store.read('agent-1', { cwd: '/ws' })
-    const tool = out.flatMap((m) => m.blocks).find((b) => b.type === 'tool_use')
-    expect(tool?.type).toBe('tool_use')
-    if (tool?.type === 'tool_use') {
-      expect(tool.result?.isError).toBe(true)
-      expect(tool.result?.content).toContain('no')
-    }
+    const messages = await store.read('chat-1', { cwd: '/ws' })
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.blocks[0]).toMatchObject({ text: 'the real question' })
   })
 
-  it('keeps multi-turn prompts in front of the replies they produced', async () => {
-    const store = new CursorSessionStore(
-      fakeSource({
-        messages: async () =>
-          stored([
-            { uuid: 'agent-1:0', message: turn({ userMessage: { text: 'first' } }) },
-            { uuid: 'agent-1:1', message: turn({ userMessage: { text: 'second' } }) },
-          ]),
-        conversations: async () => [
-          steps([{ message: { text: 'reply-1' } }]),
-          steps([{ message: { text: 'reply-2' } }]),
-        ],
-      }),
-    )
-
-    const out = await store.read('agent-1', { cwd: '/ws' })
-    expect(textBlocks(out)).toEqual(['first', 'reply-1', 'second', 'reply-2'])
-  })
-
-  it('emits nothing for a store with no messages and no conversations', async () => {
-    const store = new CursorSessionStore(fakeSource({}))
-    expect(await store.read('agent-1', { cwd: '/ws' })).toEqual([])
+  it('returns nothing for a session this workspace does not have', async () => {
+    const store = new CursorSessionStore(fakeSource([CHAT], []))
+    await expect(store.read('other-chat', { cwd: '/ws' })).resolves.toEqual([])
   })
 })

@@ -49,8 +49,6 @@ function intent(id: string): Intent {
 }
 
 function mountGate(props: Record<string, unknown> = {}) {
-  // switches 用闭包捕获(而非 prop)以记录切 Tab 调用,避免测试组件变更 prop。
-  const switches: string[] = []
   const Host = defineComponent({
     props: {
       intentId: { type: String, default: 'i1' },
@@ -60,7 +58,6 @@ function mountGate(props: Record<string, unknown> = {}) {
       const gate = useSpecApprovalGate({
         intent: () => intent(hostProps.intentId),
         mainAction: computed(() => hostProps.mainAction),
-        onSwitchToSpecSession: () => switches.push(hostProps.intentId),
       })
       return { gate }
     },
@@ -74,7 +71,7 @@ function mountGate(props: Record<string, unknown> = {}) {
       .value
   const trigger = (id: string) =>
     (w.vm as unknown as { gate: ReturnType<typeof useSpecApprovalGate> }).gate.triggerWriteSpec(id)
-  return { w, switches, blocked, trigger }
+  return { w, blocked, trigger }
 }
 
 describe('useSpecApprovalGate', () => {
@@ -107,23 +104,6 @@ describe('useSpecApprovalGate', () => {
     expect(blocked()).toBe(false)
   })
 
-  it('switches to the spec session tab ~1s after writeSpec when the intent is unchanged', async () => {
-    const { switches, trigger } = mountGate({ intentId: 'i1' })
-    trigger('i1')
-    vi.advanceTimersByTime(999)
-    expect(switches).toEqual([])
-    vi.advanceTimersByTime(1)
-    expect(switches).toEqual(['i1'])
-  })
-
-  it('does not steal the tab back if the intent switched within 1s', async () => {
-    const { w, switches, trigger } = mountGate({ intentId: 'a' })
-    trigger('a')
-    await w.setProps({ intentId: 'b' })
-    vi.advanceTimersByTime(1000)
-    expect(switches).toEqual([])
-  })
-
   it('survives a remount within the 10s window (module-level guard, no bypass)', async () => {
     const first = mountGate({ intentId: 'i1', mainAction: 'writeSpec' })
     first.trigger('i1')
@@ -137,11 +117,10 @@ describe('useSpecApprovalGate', () => {
     expect(second.blocked()).toBe(false)
   })
 
-  it('clears pending timers on unmount without switching', () => {
-    const { w, switches, trigger } = mountGate({ intentId: 'i1' })
+  it('clears the pending gate timer on unmount', () => {
+    const { w, trigger } = mountGate({ intentId: 'i1' })
     trigger('i1')
     w.unmount()
     expect(() => vi.advanceTimersByTime(10000)).not.toThrow()
-    expect(switches).toEqual([])
   })
 })

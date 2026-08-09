@@ -14,10 +14,11 @@
  *    pin the intent to explicit `sdd`, and let the ordinary spec gate refuse the
  *    next resume/continue until a spec is authored, reviewed and approved.
  *
- * Only manual turns are handled: the automation queue still requires
- * `specStatus === 'approved'` regardless of mode, so an unattended run never
- * reaches this path. `attach` sends no new turn, and `sddEnabled=false`
- * performs no spec stage at all.
+ * Only MANUAL turns are handled: the run:settled handler calls this from the
+ * not-driven-by-the-orchestrator branch, so an automation-driven turn never
+ * reaches this path even though the queue's spec gate now lets a fast intent
+ * start without an approved spec. `attach` sends no new turn, and
+ * `sddEnabled=false` performs no spec stage at all.
  *
  * The diff is always measured against the fixed turn-start baseline (persisted
  * at launch in `intent_fast_turns`), so committing the turn's changes during

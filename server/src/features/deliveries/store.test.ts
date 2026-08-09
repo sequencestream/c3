@@ -346,8 +346,24 @@ describe('intent_deliveries — the association edge', () => {
     insertIntentDelivery(d.id, alpha, null)
 
     expect(listAssociatedIntents(d.id)).toEqual([
-      { id: alpha, title: 'Alpha', status: 'todo', prStatus: null, headBranch: null },
-      { id: beta, title: 'Beta', status: 'todo', prStatus: null, headBranch: null },
+      {
+        id: alpha,
+        title: 'Alpha',
+        status: 'todo',
+        prStatus: null,
+        headBranch: null,
+        prNumber: null,
+        prUrl: null,
+      },
+      {
+        id: beta,
+        title: 'Beta',
+        status: 'todo',
+        prStatus: null,
+        headBranch: null,
+        prNumber: null,
+        prUrl: null,
+      },
     ])
   })
 
@@ -358,12 +374,14 @@ describe('intent_deliveries — the association edge', () => {
     insertIntentDelivery(d1.id, i, null)
     insertIntentDelivery(d2.id, i, null)
     // Two PR rows for ONE intent, one per delivery, with different states + heads.
+    // The second one carries no URL — the page has to tell "linkable" from "not".
     upsertIntentPr({
       intentId: i,
       deliveryId: d1.id,
       forge: 'github',
       repo: 'o/r',
       number: '1',
+      url: 'https://example.com/o/r/pull/1',
       status: 'merged',
       headBranch: 'feat/one',
     })
@@ -378,10 +396,26 @@ describe('intent_deliveries — the association edge', () => {
     })
 
     expect(listAssociatedIntents(d1.id)).toEqual([
-      { id: i, title: 'Alpha', status: 'todo', prStatus: 'merged', headBranch: 'feat/one' },
+      {
+        id: i,
+        title: 'Alpha',
+        status: 'todo',
+        prStatus: 'merged',
+        headBranch: 'feat/one',
+        prNumber: '1',
+        prUrl: 'https://example.com/o/r/pull/1',
+      },
     ])
     expect(listAssociatedIntents(d2.id)).toEqual([
-      { id: i, title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/two' },
+      {
+        id: i,
+        title: 'Alpha',
+        status: 'todo',
+        prStatus: 'reviewing',
+        headBranch: 'feat/two',
+        prNumber: '2',
+        prUrl: null,
+      },
     ])
   })
 

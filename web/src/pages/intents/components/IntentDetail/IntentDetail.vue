@@ -238,10 +238,14 @@ function startDev(): void {
 // 投影只看 specStatus:raw(无 spec,或只有服务端播种的占位)一律停在「编写 Spec」——
 // 此时点它继续/恢复撰写会话,而不是把一份还没写出来的文档推给人审批;pending 才是「批准 Spec」;
 // approved 才是「开始工作」。不再用 specPath + specApproved 组合推断。
+//
+// 每意图 fast 模式(「是否需要规范」选 fast)是唯一的例外:fast 不先写规范,规范由工作回合
+// 落定后反向生成,所以 raw 态不给「编写规范」入口,直接落到「开始工作」——服务端的准入门同样
+// 对 fast 放行未批准的规范。反向规范生成后的 pending 态仍给「批准 Spec」,那正是 fast 的闭环。
 const mainAction = computed<MainAction>(() => {
   const r = props.intent
   if (!r || !props.sddEnabled) return 'startDev'
-  if (r.specStatus === 'raw') return 'writeSpec'
+  if (r.specStatus === 'raw') return r.effectiveSpecMode === 'fast' ? 'startDev' : 'writeSpec'
   if (r.specStatus === 'pending') return 'approveSpec'
   return 'startDev'
 })
@@ -308,11 +312,10 @@ const {
   onRequestedSubTabConsumed: () => emit('requested-subtab-consumed'),
 })
 
-// ── 编写 Spec 门 + 延迟切 Tab(Tab 与动作之间的跨域协调) ───────────────────
+// ── 编写 Spec 防误审门 ──────────────────────────────────────────────────────
 const { approveGateBlocked, triggerWriteSpec } = useSpecApprovalGate({
   intent: () => props.intent,
   mainAction,
-  onSwitchToSpecSession: () => selectTab('specSession'),
 })
 
 function onMainAction(): void {
@@ -320,7 +323,9 @@ function onMainAction(): void {
   if (!r) return
   if (mainAction.value === 'writeSpec') {
     emit('write-spec', r.id)
-    // 武装防误审门(以触发时刻锚定),并约 1 秒后自动切到 spec session Tab。
+    // 武装防误审门(以触发时刻锚定);切到规范会话 Tab 由 Tab 状态机在 specSessionId
+    // 回填为新值后驱动 —— 空白意图此刻两个规范 Tab 还不可见,定时切换会被可见性门吞掉。
+    markPendingSpecSwitch(r.id, r.specSessionId)
     triggerWriteSpec(r.id)
     return
   }

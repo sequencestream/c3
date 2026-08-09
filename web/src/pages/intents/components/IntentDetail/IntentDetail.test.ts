@@ -333,6 +333,7 @@ describe('IntentDetail.vue — persistent header', () => {
       priority: 'P0',
       status: 'todo',
       runStatus: 'running',
+      specPath: '.specs/x/spec.md',
     })
     const w = mountDetail(item, { sddEnabled: true })
     expect(w.find('.intent-detail-title').text()).toBe('My intent')
@@ -438,6 +439,29 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
     expect(w.emitted('approve-spec')).toBeUndefined()
   })
 
+  it('SDD on + fast intent with no spec → Start Work, never offers Write Spec', async () => {
+    // fast 不先写规范(规范由工作回合落定后反向生成),所以标题栏不该给「编写规范」入口;
+    // 服务端的准入门同样对 fast 放行未批准的规范,两侧必须一致。
+    const item = intent({ id: 'i1', specPath: null, effectiveSpecMode: 'fast' })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('startDev')
+    await btn.trigger('click')
+    expect(w.emitted('start-dev')).toEqual([['i1', false]])
+    expect(w.emitted('write-spec')).toBeUndefined()
+  })
+
+  it('SDD on + fast intent with a reverse-authored pending spec → Approve Spec', () => {
+    const item = intent({
+      id: 'i1',
+      specPath: '.specs/x/spec.md',
+      specStatus: 'pending',
+      effectiveSpecMode: 'fast',
+    })
+    const w = mountDetail(item, { sddEnabled: true })
+    expect(w.find('.req-btn.primary').attributes('data-action')).toBe('approveSpec')
+  })
+
   it('SDD on + spec approved → Start Work, emits start-dev', async () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: true })
     const w = mountDetail(item, { sddEnabled: true })
@@ -456,8 +480,8 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
     vi.useRealTimers()
   })
 
-  it('writeSpec: switches to the spec session tab after ~1s and opens the session', async () => {
-    const item = intent({ id: 'guide-tab', specPath: null, specSessionId: 'sess-spec' })
+  it('writeSpec: switches to the spec session tab once the new session id backfills', async () => {
+    const item = intent({ id: 'guide-tab', specPath: null, specSessionId: null })
     const w = mountDetail(item, { sddEnabled: true })
     const btn = w.find('.req-btn.primary')
     expect(btn.attributes('data-action')).toBe('writeSpec')
@@ -465,30 +489,33 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
     await btn.trigger('click')
     expect(w.emitted('write-spec')).toEqual([['guide-tab']])
 
-    // 不足 1 秒不切。
-    vi.advanceTimersByTime(999)
+    // 会话还没创建出来:规范 tab 尚未出现,不切、不打开任何会话。时间流逝也改变不了这一点。
+    vi.advanceTimersByTime(5000)
     await nextTick()
-    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').exists()).toBe(false)
+    expect(w.emitted('open-spec-session')).toBeUndefined()
 
-    // 满 1 秒切到 spec session,并打开会话。
-    vi.advanceTimersByTime(1)
-    await nextTick()
+    // 服务端回填 specSessionId → tab 出现、自动切过去并打开会话。
+    await w.setProps({
+      intent: intent({ id: 'guide-tab', specPath: null, specSessionId: 'sess-spec' }),
+    })
     expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).toContain('active')
     expect(w.emitted('open-spec-session')).toEqual([['guide-tab']])
   })
 
-  it('writeSpec: does not steal the tab back if the user switches intent within 1s', async () => {
+  it('writeSpec: does not steal the tab back after the user switches intent', async () => {
     const a = intent({ id: 'guide-a', specPath: null })
     const b = intent({ id: 'guide-b', specPath: null })
     const w = mountDetail(a, { intents: [a, b], sddEnabled: true })
 
     await w.find('.req-btn.primary').trigger('click')
-    // 1 秒内切到另一个意图。
+    // 会话创建完成前切到另一个意图。
     await w.setProps({ intent: b })
+    await w.setProps({
+      intent: intent({ id: 'guide-b', specPath: null, specSessionId: 'sess-b' }),
+    })
 
-    vi.advanceTimersByTime(1000)
-    await nextTick()
-    // 仍停在默认 intent tab,未被抢切到 specSession。
+    // 仍停在默认 intent tab,未被上一个意图的待切状态抢切到 specSession。
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
     expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
   })
@@ -1035,8 +1062,8 @@ describe('IntentDetail.vue — dependency metadata', () => {
 })
 
 describe('IntentDetail.vue — tabs', () => {
-  it('renders five tabs and defaults to the intent tab when SDD is on', () => {
-    const w = mountDetail(intent({ id: 'i1' }), { sddEnabled: true })
+  it('renders five tabs and defaults to the intent tab for an intent with spec data', () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md' }), { sddEnabled: true })
     expect(w.findAll('.intent-detail-tab')).toHaveLength(5)
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
@@ -1101,7 +1128,10 @@ describe('IntentDetail.vue — tabs', () => {
   })
 
   it('spec tab: empty state when no spec path, emits read-spec when present', async () => {
-    const noSpec = mountDetail(intent({ id: 'i1', specPath: null }), { sddEnabled: true })
+    // 撰写会话已开始但文档还没落盘:tab 由 specSessionId 带出,内容仍是空态。
+    const noSpec = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: 'sess-spec' }), {
+      sddEnabled: true,
+    })
     await noSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
     expect(noSpec.find('[data-testid="intent-detail-spec-empty"]').exists()).toBe(true)
     expect(noSpec.emitted('read-spec')).toBeUndefined()
@@ -1122,7 +1152,8 @@ describe('IntentDetail.vue — tabs', () => {
   })
 
   it('spec session tab: opens automatically when its session id is backfilled after switching', async () => {
-    const item = intent({ id: 'i1', specSessionId: null })
+    // 已有 specPath 的意图:两个规范 tab 已可见,会话 id 稍后才回填。
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null })
     const w = mountDetail(item, { sddEnabled: true })
     await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
     expect(w.emitted('open-spec-session')).toBeUndefined()
@@ -1187,7 +1218,9 @@ describe('IntentDetail.vue — session reset', () => {
   })
 
   it('spec tab: no modify button when no spec has been written', async () => {
-    const w = mountDetail(intent({ id: 'i1', specPath: null }), { sddEnabled: true })
+    const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: 'sess-spec' }), {
+      sddEnabled: true,
+    })
     await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
     expect(w.find('[data-testid="intent-detail-spec-modify"]').exists()).toBe(false)
   })
@@ -1313,7 +1346,7 @@ describe('IntentDetail.vue — auto-switch to spec session tab after change requ
   })
 })
 
-describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
+describe('IntentDetail.vue — spec/spec-session tab visibility by spec data', () => {
   function tabKeys(w: ReturnType<typeof mountDetail>): string[] {
     return w.findAll('.intent-detail-tab').map((b) => b.attributes('data-tab') ?? '')
   }
@@ -1339,10 +1372,17 @@ describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
     expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
-  it('SDD on → all five tabs render regardless of spec data', () => {
+  it('SDD on but no spec data → both spec tabs stay hidden', () => {
+    // SDD 只说明「能写规范」,不说明「已经有规范」:新建空白意图不该常驻两个点进去
+    // 无内容、无会话、无法启动任何东西的死入口。
     const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: null }), {
       sddEnabled: true,
     })
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'changelog'])
+  })
+
+  it('SDD on and spec data present → all five tabs render', () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md' }), { sddEnabled: true })
     expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
@@ -1422,7 +1462,7 @@ describe('IntentDetail.vue — default tab on intent switch', () => {
 
   it('requestedSubTab still overrides the content-based default', async () => {
     const a = intent({ id: 'a', content: 'A body' })
-    const b = intent({ id: 'b', content: '' })
+    const b = intent({ id: 'b', content: '', specPath: '.specs/b/spec.md' })
     const w = mountDetail(a, { intents: [a, b], sddEnabled: true })
 
     await w.setProps({ intent: b, requestedSubTab: 'specSession' })
@@ -1566,8 +1606,10 @@ describe('IntentDetail.vue — inline spec edit', () => {
     const { w } = await mountSpecTab({ id: 'ok', status: 'todo' })
     expect(w.find(EDIT).exists()).toBe(true)
 
-    // No specPath → the tab renders empty and there is no edit entry.
-    const noSpec = mountDetail(intent({ id: 'nospec', specPath: null }), { sddEnabled: true })
+    // No specPath (只有撰写会话)→ the tab renders empty and there is no edit entry.
+    const noSpec = mountDetail(intent({ id: 'nospec', specPath: null, specSessionId: 'sess' }), {
+      sddEnabled: true,
+    })
     await noSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
     expect(noSpec.find(EDIT).exists()).toBe(false)
 

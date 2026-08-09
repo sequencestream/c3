@@ -11,7 +11,9 @@
  *  1. `{ kind: 'branch' }` persists exactly that branch name.
  *  2. `{ kind: 'delivery' }` persists the DELIVERY'S branch, read by the server
  *     from its own records — the request never carries a branch name, so a
- *     client cannot assert a mapping the ledger disagrees with.
+ *     client cannot assert a mapping the ledger disagrees with — AND writes the
+ *     association edge, so choosing a delivery means being linked to it. A
+ *     branch source writes no edge at all.
  *  3. No `base` at all keeps the pre-existing behaviour: the workspace's own
  *     main branch (`trunk` here, so this cannot pass by accidentally matching a
  *     hardcoded `main`).
@@ -141,6 +143,20 @@ function baseBranchOf(intentId) {
     return (
       db.prepare('SELECT base_branch FROM intents WHERE id=?').get(intentId)?.base_branch ?? null
     )
+  } finally {
+    db.close()
+  }
+}
+
+/** The deliveries this intent is associated with, straight from the edge table. */
+function linkedDeliveryIdsOf(intentId) {
+  const db = new DatabaseSync(DB_PATH)
+  try {
+    db.exec('PRAGMA busy_timeout=5000;')
+    return db
+      .prepare('SELECT delivery_id FROM intent_deliveries WHERE intent_id=?')
+      .all(intentId)
+      .map((r) => r.delivery_id)
   } finally {
     db.close()
   }
@@ -276,6 +292,7 @@ async function runAssertions() {
     baseBranchOf(branchId) === 'feature/from-dialog',
     'branch source persists exactly the submitted branch',
   )
+  check(linkedDeliveryIdsOf(branchId).length === 0, 'branch source creates no delivery association')
 
   // 2) A delivery contributes its OWN branch, resolved server-side.
   phase = 'base-delivery'
@@ -287,6 +304,12 @@ async function runAssertions() {
   check(
     baseBranchOf(deliveryIntentId) === DELIVERY_BRANCH,
     "delivery source persists the delivery's own branch",
+  )
+  // Choosing a delivery is choosing the delivery, not just its branch name: the
+  // association edge lands in the same create, with no second "link" round trip.
+  check(
+    JSON.stringify(linkedDeliveryIdsOf(deliveryIntentId)) === JSON.stringify([deliveries.ready]),
+    'delivery source also associates the intent with that delivery',
   )
 
   // 3) No choice at all → the workspace's main branch, unchanged behaviour.

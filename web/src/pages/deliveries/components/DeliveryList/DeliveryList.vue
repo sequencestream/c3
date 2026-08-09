@@ -379,16 +379,40 @@ function submitCreate(): void {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
 }
+/* 状态徽标:与意图列表 .req-status 同款 pill(badge 字号、pill 圆角、无描边),
+   六态语义色映射与交付详情标题栏 .delivery-detail-status 一致 —— 同一个状态在列表
+   和详情里读起来必须是同一个颜色。全部走 --c-* 令牌,唯一字面量是实底上的白字。 */
 .delivery-row-status {
   flex-shrink: 0;
-  font-size: var(--fs-caption);
+  font-size: var(--fs-badge);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-hover-strong);
   color: var(--c-text-muted);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: 2px var(--sp-2);
 }
-.delivery-row-status.cancelled,
+.delivery-row-status.planned {
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
+}
+.delivery-row-status.integrating {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--c-info);
+}
+.delivery-row-status.verifying {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--c-warning-text);
+}
+.delivery-row-status.verified {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--c-success-text);
+}
 .delivery-row-status.delivered {
-  opacity: 0.7;
+  background: var(--c-primary);
+  color: #fff;
+}
+.delivery-row-status.cancelled {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--c-error-text);
 }
 </style>

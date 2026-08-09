@@ -638,7 +638,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 `base` 是互斥的基准来源，决定落库的 `base_branch`：`{ kind: 'delivery', deliveryId }` 只交出交付 id，分支由服务端从本工作区交付记录读出（交付不存在/跨工作区回 `intent.deliveryContextUnknown`，分支未就绪或为空回 `delivery.guard.branchNotReady`）；`{ kind: 'branch', branch }` 交出分支名（空白回 `intent.baseBranchRequired`）。省略 `base` 走工作区主分支解析链。所有拒绝都发生在写库之前，被拒的创建不留任何意图。
 
-`content` 非空时，服务端在同一 handler 内继续为该意图创建并绑定 owner 沟通会话，以该内容作首轮输入（与 `start_intent_session` 同一处提示词构造），回复 `session_selected`（空历史）加刷新后的 `intents` 列表。首轮启动失败回收会话并返回 `intent.startSessionFailed`，但保留意图连同其正文与基准。`content` 为空或省略时只登记意图、不建会话。
+`content` 非空时，服务端在同一 handler 内继续为该意图创建并绑定 owner 沟通会话：正文已落库，首轮提示词由与 `start_intent_session` 同一处的构造产出，其「当前内容」前缀即承载该正文，用户输入块是指向它的分析/优化指示而非正文副本。回复 `session_selected`（空历史）加刷新后的 `intents` 列表。首轮启动失败回收会话并返回 `intent.startSessionFailed`，但保留意图连同其正文与基准。`content` 为空或省略时只登记意图、不建会话。
 
 ### `start_intent_session`
 

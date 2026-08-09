@@ -2632,6 +2632,9 @@
         },
         "noPr": {
           "label": "尚无 PR"
+        },
+        "pr": {
+          "label": "PR #{number}"
         }
       }
     },
@@ -2731,9 +2734,6 @@
         },
         "body": {
           "label": "将「{title}」从本交付解除关联?它提向本交付的未合并 PR 会被一并关闭。"
-        },
-        "mergedDisabled": {
-          "tooltip": "它对本交付的 PR 已合并,无法解除关联。"
         }
       },
       "more": {

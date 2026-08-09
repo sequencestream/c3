@@ -23,8 +23,8 @@ export interface DetailTabItem {
 /**
  * 意图详情页的会话 Tab 状态机——统一持有 activeTab、可见 Tab、默认 Tab 与当前期望会话。
  * 只编排页面状态并返回声明式结果:不直接操作 DOM、不持有全局活动会话;打开会话、读取
- * spec、加载日志均通过注入回调交回现有控制层。负责:SDD / 历史 Spec 可见性、空正文默认进
- * 意图会话、切换意图复位、隐藏 Tab 回退、外部 requestedSubTab 覆盖并恰好消费一次、changelog
+ * spec、加载日志均通过注入回调交回现有控制层。负责:规范数据 / 评审 / 工作会话的 Tab 可见性、
+ * 空正文默认进意图会话、切换意图复位、隐藏 Tab 回退、外部 requestedSubTab 覆盖并恰好消费一次、changelog
  * / spec 的按需加载信号、四类会话 ID 异步回填补发一次 open、活动会话对齐去重、评审 Tab 的
  * 只读呈现开关,以及「编写 Spec 后待新会话创建再切」的一次性协调。
  */
@@ -80,11 +80,12 @@ export function useIntentDetailTabs(opts: {
     { key: 'changelog', label: t('intent.tab.changelog.label') },
   ]
 
-  // spec / spec session 两 tab 的可见条件:workspace 开启 SDD,或当前意图已有历史 spec 数据
-  // (specPath 或 specSessionId 非空)。SDD 关闭且无历史数据时隐藏,避免暴露两个空态 tab 入口。
+  // spec / spec session 两 tab 的唯一可见条件:当前意图已有规范数据(specPath 或
+  // specSessionId 非空)。与评审会话/工作会话两个 tab 同构 —— 有对应产出才给入口。
+  // 工作区是否开启 SDD 不再参与判断:SDD 只决定"能不能写规范",不代表"已经有规范",
+  // 否则新建空白意图会长期暴露两个点进去无内容、无会话、无法启动任何东西的死入口。
   // 纯 UI 隐藏,不影响已有 spec 内容/会话的读取。
   const specTabsVisible = computed<boolean>(() => {
-    if (sddEnabled()) return true
     const r = intent()
     return !!(r?.specPath || r?.specSessionId)
   })
@@ -131,9 +132,11 @@ export function useIntentDetailTabs(opts: {
     return st && st !== 'idle' ? st : null
   })
 
-  // spec tab「我要修改」提交后,待新 spec 会话真正创建(specSessionId 回填为新非空值)
-  // 再自动切到 spec session tab 的一次性状态。记录待切意图 id 与提交时刻的旧 specSessionId,
-  // 用于判定"是否换了新会话"。提交失败/未创建时 specSessionId 不变,该状态不触发切换。
+  // 标题栏「编写 Spec」/ spec tab「我要修改」发起后,待新 spec 会话真正创建(specSessionId
+  // 回填为新非空值)再自动切到 spec session tab 的一次性状态。记录待切意图 id 与发起时刻的旧
+  // specSessionId,用于判定"是否换了新会话"。发起失败/未创建时 specSessionId 不变,该状态不
+  // 触发切换 —— 这也是自动切 Tab 不用固定定时器的原因:空白意图的规范 Tab 在会话创建前尚不
+  // 可见,定时到点的 selectTab 会被可见性门吞掉。
   const pendingSpecSwitch = ref<{ intentId: string; oldSpecSessionId: string | null } | null>(null)
   function markPendingSpecSwitch(intentId: string, oldSpecSessionId: string | null): void {
     pendingSpecSwitch.value = { intentId, oldSpecSessionId }
@@ -142,7 +145,7 @@ export function useIntentDetailTabs(opts: {
   // 切到会话/spec tab 时按需读取 spec;会话打开由下方 watch 统一处理,避免
   // 「切 tab 时已有 id」与「id 在激活 tab 下回填」两条路径重复发出 open。
   function selectTab(tab: DetailTab): void {
-    // 可见性门:不可见 tab(SDD 关闭且无历史 spec 数据时的 spec/specSession)不切换、不触发副作用。
+    // 可见性门:不可见 tab(无规范数据时的 spec/specSession 等)不切换、不触发副作用。
     // 外部一次性请求(requestedSubTab)命中不可见 tab 时由此静默忽略,消费仍在 watcher 内照常进行。
     if (!isTabVisible(tab)) return
     activeTab.value = tab
@@ -191,7 +194,7 @@ export function useIntentDetailTabs(opts: {
     }
   }
 
-  // props 变化(SDD 开关切换 / 意图 spec 字段变化)导致当前激活 tab 不再可见时回退到 intent。
+  // props 变化(意图 spec / 会话字段变化、SDD 开关切换)导致当前激活 tab 不再可见时回退到 intent。
   // 意图切换时的复位由下方 intent.id watch 负责,intent tab 恒可见故与本 watch 不冲突。
   watch(visibleTabs, () => {
     if (!isTabVisible(activeTab.value)) activeTab.value = 'intent'
@@ -220,7 +223,7 @@ export function useIntentDetailTabs(opts: {
     },
   )
 
-  // spec tab「我要修改」提交后,以新 spec 会话实际创建为触发条件自动切到 spec session tab:
+  // 编写 Spec / 「我要修改」发起后,以新 spec 会话实际创建为触发条件自动切到 spec session tab:
   // 待切状态存在、意图匹配、且 specSessionId 变为非空且不同于提交时记录的旧值时切换并清除。
   // 切到该 tab 后,openActiveSessionIfNeeded 会自动补发 open-spec-session 绑定聊天列。
   watch(

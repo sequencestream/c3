@@ -9,6 +9,7 @@ import type {
   GitBranchMode,
   IntentPrStatus,
   IntentPriority,
+  IntentSpecMode,
   IntentStatus,
   SpecReviewVerdict,
   SpecStatus,
@@ -81,6 +82,14 @@ export interface QueueIntentFact {
    * is never reviewed and never blocks as "awaiting approval".
    */
   specStatus: SpecStatus
+  /**
+   * The intent's RESOLVED spec mode, already reduced from the persisted override
+   * plus the workspace switch at the assembly boundary. `fast` is the one
+   * relaxation of the spec gate below: such an intent may start work without an
+   * approved spec, exactly as the manual admission gate allows, so automation and
+   * the button cannot disagree. Every other gate stays closed for it.
+   */
+  effectiveSpecMode: IntentSpecMode
   /**
    * The intent's AGGREGATE PR status — one value reduced from every PR it owns
    * (`deriveIntentPrAggregate`), `null` when it owns none. The kernel gates on one

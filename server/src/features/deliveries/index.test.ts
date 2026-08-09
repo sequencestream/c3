@@ -962,7 +962,15 @@ describe('link / unlink intent ↔ delivery', () => {
 
     const h = await link(d, i)
     expect(detail(h.sent)?.associatedIntents).toEqual([
-      { id: i, title: 'Alpha', status: 'todo', prStatus: null, headBranch: null },
+      {
+        id: i,
+        title: 'Alpha',
+        status: 'todo',
+        prStatus: null,
+        headBranch: null,
+        prNumber: null,
+        prUrl: null,
+      },
     ])
     expect(detail(h.sent)?.linkWarning).toBeUndefined()
     expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)

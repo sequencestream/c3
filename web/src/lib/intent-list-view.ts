@@ -101,7 +101,6 @@ export function rowVisibility(collapsed: boolean): RowVisibility {
  * 顺序即渲染顺序,与 IntentList 模板内联按钮排布一致。
  */
 export const INTENT_ROW_ACTIONS = [
-  'refine',
   'startDev',
   'openSession',
   'markDone',
@@ -169,7 +168,7 @@ export type IntentActionInput = Pick<
 /**
  * 单个意图行在当前状态下应显示哪些行内操作,按渲染顺序返回。
  * 条件沿用 IntentList 模板既有的 per-status 渲染规则:
- * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastWorkSessionId`;
+ * - `startDev` ← `todo`;`openSession` ← 有 `lastWorkSessionId`;
  * - `markDone`/`cancel` ← 非终止态(非 done/cancelled);
  * - `createPr` ← 有 `lastWorkSessionId`、无活跃 PR 且 intent 分支存在并不是 workspace 主分支;
  * - `prLink` ← 有任意 PR 行;`automate` ← 恒显示。
@@ -181,7 +180,7 @@ export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
   // 与服务端建 PR 守卫同源:已合并/已关闭的 PR 不再挡住新建。
   const hasActivePr = activeIntentPrs(r.prs).length > 0
   const out: IntentRowAction[] = []
-  if (r.status === 'todo') out.push('refine', 'startDev')
+  if (r.status === 'todo') out.push('startDev')
   if (r.lastWorkSessionId) out.push('openSession')
   if (!terminal) out.push('markDone', 'cancel')
   if (r.lastWorkSessionId && !hasActivePr && branchName !== null && !onMainBranch) {

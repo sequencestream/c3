@@ -1961,12 +1961,28 @@ describe('delivery branch-init frames', () => {
       deliveryBranchAhead: null,
       deliveryPr: null,
       associatedIntents: [
-        { id: 'i1', title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/x' },
+        {
+          id: 'i1',
+          title: 'Alpha',
+          status: 'todo',
+          prStatus: 'reviewing',
+          headBranch: 'feat/x',
+          prNumber: '42',
+          prUrl: 'https://forge.test/o/r/pull/42',
+        },
       ],
     } as ServerToClient)
 
     expect(result.activeDeliveryIntents.value).toEqual([
-      { id: 'i1', title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/x' },
+      {
+        id: 'i1',
+        title: 'Alpha',
+        status: 'todo',
+        prStatus: 'reviewing',
+        headBranch: 'feat/x',
+        prNumber: '42',
+        prUrl: 'https://forge.test/o/r/pull/42',
+      },
     ])
     expect(result.showToast).not.toHaveBeenCalled()
   })

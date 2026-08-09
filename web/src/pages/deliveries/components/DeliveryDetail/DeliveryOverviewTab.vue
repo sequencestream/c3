@@ -111,6 +111,17 @@ const canCreateDeliveryPr = computed(
 )
 
 /**
+ * 「同步」only asks the forge about a PR whose fate is still open. A merged PR has
+ * no next state to learn — c3 writes `merged` on the delivery PR row only inside
+ * the very transaction that settles the delivery as `delivered`, so a sync there
+ * could at best re-confirm what is already terminal. reviewing / closed keep the
+ * button: those are exactly the states the forge can still move.
+ */
+const showSyncDeliveryPr = computed(
+  () => props.deliveryPr !== null && props.deliveryPr.status !== 'merged',
+)
+
+/**
  * The forge says merged while c3 still says `verified` — the acknowledged
  * awareness window. Syncing settles it; the banner exists so the state does not
  * read as "stuck".
@@ -422,7 +433,7 @@ function saveEdit(payload: {
           {{ t('delivery.deliveryPr.create.label') }}
         </button>
         <button
-          v-if="props.deliveryPr"
+          v-if="showSyncDeliveryPr"
           type="button"
           class="delivery-sync-btn"
           :disabled="props.deliveryPrBusy"

@@ -146,14 +146,17 @@ export const UI_ERROR_CODES = {
   // branch tip. NEVER auto-repaired — the user picks rebuild or merge. The two
   // codes differ only in which exits are open, which is what the page must show:
   // a clean worktree may be rebuilt, a dirty one may only be merged into (or
-  // committed / stashed first).
+  // committed / stashed first). `currentBranch` / `currentHead` report where the
+  // directory actually sits, so the user can tell a worktree created off the
+  // wrong base from one whose delivery branch simply moved on; an unreadable
+  // fact travels as a neutral placeholder, never as a guessed branch name.
   'intent.worktreeBaseMismatch': {
     key: 'error.intent.worktreeBaseMismatch',
-    params: ['branch', 'deliveryTitle'],
+    params: ['branch', 'deliveryTitle', 'currentBranch', 'currentHead'],
   },
   'intent.worktreeBaseMismatchDirty': {
     key: 'error.intent.worktreeBaseMismatchDirty',
-    params: ['branch', 'deliveryTitle'],
+    params: ['branch', 'deliveryTitle', 'currentBranch', 'currentHead'],
   },
   // Safe rebuild refused at execution time: the worktree holds uncommitted work.
   // Committing or stashing is the user's call; c3 never discards it.

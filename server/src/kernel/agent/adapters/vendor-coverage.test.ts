@@ -12,7 +12,12 @@ import { describe, expect, it } from 'vitest'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { VENDOR_CAPABILITIES } from './capabilities.js'
 import { MODE_CATALOGS } from './index.js'
-import { HOST_BINARIES, isManagedVendor, managedVendorSpecs } from '../process/launcher.js'
+import {
+  HOST_BINARIES,
+  isManagedVendor,
+  isNpmManagedVendor,
+  managedVendorSpecs,
+} from '../process/launcher.js'
 import { VENDOR_AUTH_PROFILES } from '../../sandbox/vendor-auth.js'
 import { VENDOR_AGENT_SCHEMAS, agentConfigSchema } from '../../agent-config/schema.js'
 import {
@@ -25,11 +30,13 @@ import { normalizeToolRequest } from '../../permission/risk.js'
 const VENDORS = [...VENDOR_IDS]
 
 /**
- * Vendors c3 drives through an in-process SDK rather than a host CLI. They have
- * no binary descriptor and no arapuca auth profile by design, so the coverage
- * assertions below exempt exactly these — and nothing else.
+ * Vendors c3 drives through an in-process SDK rather than a host CLI. They would
+ * have no binary descriptor and no arapuca auth profile, so the coverage
+ * assertions below exempt exactly these — and nothing else. Empty today: every
+ * vendor is a host CLI. The constant is what carries that statement, and what an
+ * SDK-embedded vendor would have to be added to before it could skip a map.
  */
-const SDK_EMBEDDED_VENDORS: string[] = ['cursor']
+const SDK_EMBEDDED_VENDORS: string[] = []
 
 describe('vendor registration coverage', () => {
   it('cursor is a registered vendor', () => {
@@ -69,8 +76,8 @@ describe('vendor registration coverage', () => {
   })
 
   it.each(VENDORS)('%s has a sandbox auth profile iff it is launched as a host CLI', (vendor) => {
-    // arapuca narrows a child process; an in-process SDK has none to narrow, so it
-    // isolates through its own runtime and registers no profile here.
+    // arapuca narrows a child process, so every vendor that spawns one must
+    // describe its data root and credential channel here — and only those can.
     const expected = HOST_BINARIES[vendor] !== undefined
     expect(VENDOR_AUTH_PROFILES[vendor] !== undefined).toBe(expected)
   })
@@ -91,10 +98,19 @@ describe('vendor registration coverage', () => {
 })
 
 describe('cursor-specific registration facts', () => {
-  it('cursor runs on the in-process SDK, so it has no host CLI to install or version', () => {
-    expect(HOST_BINARIES.cursor).toBeUndefined()
-    expect(isManagedVendor('cursor')).toBe(false)
+  it('cursor is a host CLI that c3 launches but does not distribute', () => {
+    expect(HOST_BINARIES.cursor).toBeDefined()
+    expect(isManagedVendor('cursor')).toBe(true)
+    // Unmanaged: cursor-agent ships through its own installer and versions itself
+    // by release date, so it must stay out of every npm download/pin/compare path.
+    expect(isNpmManagedVendor('cursor')).toBe(false)
     expect(managedVendorSpecs().map((s) => s.vendor)).not.toContain('cursor')
+  })
+
+  it('cursor is the one vendor whose binary is not named after it', () => {
+    // Every resolution path reads the name off the spec; assuming the vendor id
+    // would look for a `cursor` that does not exist.
+    expect(HOST_BINARIES.cursor?.binary).toBe('cursor-agent')
   })
 
   it('cursor declares no per-tool approval, in-process MCP, task store, or native user input', () => {
@@ -103,10 +119,11 @@ describe('cursor-specific registration facts', () => {
     expect(caps.inProcessMcp).toBe(false)
     expect(caps.taskStore).toBe(false)
     expect(caps.nativeUserInput).toBe(false)
-    // Resume is native and proven; list/read see only what ran through the SDK.
+    // Resume is native and proven; list/read come from Cursor's own on-disk chat
+    // store, which the CLI and the IDE both write, so they see the whole history.
     expect(caps.sessions.resume).toBe('full')
-    expect(caps.sessions.list).toBe('partial')
-    expect(caps.sessions.read).toBe('partial')
+    expect(caps.sessions.list).toBe('full')
+    expect(caps.sessions.read).toBe('full')
   })
 
   it('cursor offers a plan mode backed by the SDK plan conversation mode', () => {

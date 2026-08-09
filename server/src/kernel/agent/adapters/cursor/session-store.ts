@@ -1,329 +1,218 @@
 /**
- * Cursor {@link SessionStore} — a reader of the SDK's own local agent store.
+ * Cursor {@link SessionStore} — a reader of Cursor's own on-disk chat store.
  *
- * The SDK persists every agent it creates under its state root (SQLite by
- * default, keyed by workspace), and exposes it through `Agent.list`,
- * `Agent.messages.list` and `Agent.listRuns`. c3 reads that store rather than
- * Cursor's private chat database: the SDK's is a published API with a stable
- * shape, the IDE's is an internal format that carries no compatibility promise
- * and would rot on the next release.
+ * Chats live under `<cursor home>/chats/<workspace hash>/<chat id>/`, where the
+ * hash is the md5 of the workspace's real path. Each directory holds `meta.json`
+ * — title, cwd and timestamps, everything a listing needs — and `store.db`, the
+ * transcript. Listing therefore reads only small JSON files, and never opens a
+ * database.
  *
- * A session's transcript is spread across two SDK surfaces, and `read` joins
- * them: `Agent.messages.list` carries the prompt side (one entry per run), and
- * each run's `conversation()` carries the reply side — assistant text, thinking
- * and tool calls. The two interleave one-to-one in run order, so a replayed
- * history keeps the same prompt → reply shape as the live stream.
+ * Because this is the store the CLI and the Cursor IDE both write, a session
+ * started anywhere shows up here: `list` and `read` cover the workspace's whole
+ * history rather than the subset c3 happened to create.
  *
- * The consequence is stated honestly in the capability ledger as `list`/`read` =
- * `'partial'`: this store holds exactly the agents created through the SDK, and
- * nothing the user ran in the Cursor IDE or the `cursor-agent` CLI. **Recovery
- * never comes from here** — resume replays Cursor's own context through
- * `Agent.resume`, so what this reader shows only changes what the console
- * displays, never what the model remembers.
+ * Nothing here is recovery: resume replays Cursor's own context by chat id, so a
+ * transcript this reader cannot decode changes what the console displays and
+ * never what the model remembers. Every step fails soft for that reason.
  *
- * `rename`/`delete` are absent by design (`'none'` in the ledger): the SDK
- * exposes neither for local agents, and c3 must not pretend to mutate a store it
- * does not own.
+ * `rename`/`delete` are absent by design (`'none'` in the ledger): this is the
+ * user's own IDE data, and c3 does not mutate a store it does not own.
+ *
+ * @module
  */
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { hostCursorHome } from '../../../config/workspace-path.js'
 import type {
+  CanonicalBlock,
   CanonicalMessage,
   CanonicalToolResult,
   SessionListOptions,
   SessionStore,
   SessionSummary,
 } from '../types.js'
-import { loadCursorSdk } from './sdk-resolve.js'
+import { readCursorStoreMessages, type CursorStoredMessage } from './store-db.js'
 
-/** One agent as the SDK's local store lists it (the fields c3 consumes). */
-export interface CursorStoredAgent {
-  agentId: string
-  name?: string
-  summary?: string
-  lastModified?: number
-  status?: string
-}
+/** How far back a listing looks. Older chats stay resumable, just unlisted. */
+const MAX_LIST_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
-/** One stored message. `message` is the SDK's own payload, read defensively. */
-export interface CursorStoredMessage {
-  type?: string
-  uuid?: string
-  agent_id?: string
-  message?: unknown
-}
-
-/** One step of a run's conversation — the SDK's reply-side unit. */
-export interface CursorConversationStep {
-  type?: string
-  message?: unknown
+/** The facts `meta.json` carries about one chat. */
+export interface CursorChatMeta {
+  readonly chatId: string
+  readonly dir: string
+  readonly cwd: string
+  readonly title: string
+  readonly updatedAtMs: number
 }
 
 /**
- * Read seam over the SDK's local store. Injected so tests (and a c3 running
- * without the SDK's native runtime available) can exercise the store without
- * touching disk.
+ * Read seam over the on-disk store. Injected so tests can exercise listing and
+ * replay against a scripted store without laying out a chat directory tree.
  */
 export interface CursorSessionSource {
-  list(cwd: string): Promise<CursorStoredAgent[]>
-  messages(agentId: string, cwd: string): Promise<CursorStoredMessage[]>
-  /** Each run's conversation steps, in run order. `messages.list` carries only
-   * the prompt side, so this is where the reply side comes from. */
-  conversations(agentId: string, cwd: string): Promise<CursorConversationStep[][]>
+  chats(cwd: string): CursorChatMeta[]
+  transcript(meta: CursorChatMeta): CursorStoredMessage[]
+}
+
+/** The chats root — one directory per workspace hash. */
+export function cursorChatsRoot(home = hostCursorHome()): string {
+  return join(home, 'chats')
 }
 
 /**
- * The default source — the SDK's local-runtime store, loaded lazily through the
- * shared resolution boundary so that merely constructing the adapter never pulls
- * the SDK's native runtime into the process, and the store reads the same copy the
- * driver runs.
+ * The directory name Cursor derives for a workspace: the md5 of its real path.
+ * Not a security boundary — a layout convention, and the reason a listing can go
+ * straight to one directory instead of scanning every workspace's chats.
  */
-const sdkSource: CursorSessionSource = {
-  async list(cwd) {
-    const { Agent } = await loadCursorSdk()
-    const result = await Agent.list({ runtime: 'local', cwd })
-    return result.items.map((item) => ({
-      agentId: item.agentId,
-      name: item.name,
-      summary: item.summary,
-      lastModified: item.lastModified,
-      status: item.status,
-    }))
-  },
-  async messages(agentId, cwd) {
-    const { Agent } = await loadCursorSdk()
-    return (await Agent.messages.list(agentId, { runtime: 'local', cwd })) as CursorStoredMessage[]
-  },
-  async conversations(agentId, cwd) {
-    const { Agent } = await loadCursorSdk()
-    const runs = await Agent.listRuns(agentId, { runtime: 'local', cwd })
-    const out: CursorConversationStep[][] = []
-    for (const run of runs.items ?? []) {
-      // The SDK's `Run.conversation()` is reached structurally (ADR-0009 keeps
-      // SDK types out of the kernel); a run without it — a terminal shape the
-      // SDK itself may drop — simply contributes no reply side.
-      const handle = run as { conversation?: () => Promise<unknown> }
-      if (typeof handle.conversation !== 'function') continue
-      const turns = (await handle.conversation()) as Array<{
-        turn?: { steps?: unknown }
-      }> | null
-      const steps: CursorConversationStep[] = []
-      for (const turn of turns ?? []) {
-        const inner = turn?.turn?.steps
-        if (Array.isArray(inner)) steps.push(...(inner as CursorConversationStep[]))
+export function cursorWorkspaceHash(cwd: string): string {
+  return createHash('md5').update(realPath(cwd)).digest('hex')
+}
+
+/** The canonical form of a path, or the path itself when it cannot be resolved. */
+function realPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+/** Parse one chat directory's `meta.json`, or `null` when it is not readable. */
+function readChatMeta(dir: string, chatId: string): CursorChatMeta | null {
+  try {
+    const raw = readFileSync(join(dir, 'meta.json'), 'utf-8')
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const record = parsed as Record<string, unknown>
+    const cwd = typeof record.cwd === 'string' ? record.cwd : null
+    if (!cwd) return null
+    const updatedAtMs =
+      typeof record.updatedAtMs === 'number'
+        ? record.updatedAtMs
+        : typeof record.createdAtMs === 'number'
+          ? record.createdAtMs
+          : statSync(dir).mtimeMs
+    const title = typeof record.title === 'string' && record.title.trim() ? record.title : chatId
+    return { chatId, dir, cwd, title, updatedAtMs }
+  } catch {
+    return null
+  }
+}
+
+/** Every chat directly under one workspace-hash directory. */
+function readWorkspaceChats(hashDir: string): CursorChatMeta[] {
+  const out: CursorChatMeta[] = []
+  let entries: string[]
+  try {
+    entries = readdirSync(hashDir)
+  } catch {
+    return out
+  }
+  for (const chatId of entries) {
+    const meta = readChatMeta(join(hashDir, chatId), chatId)
+    if (meta) out.push(meta)
+  }
+  return out
+}
+
+/**
+ * The default source: the host chat store.
+ *
+ * The hash is a fast path, not the truth. A chat whose recorded `cwd` matches is
+ * this workspace's regardless of which directory it sits in, so a store written
+ * under a different canonicalization of the same path is still found — at the
+ * cost of a wider scan, bounded by age.
+ */
+const diskSource: CursorSessionSource = {
+  chats(cwd) {
+    const root = cursorChatsRoot()
+    if (!existsSync(root)) return []
+    const target = realPath(cwd)
+    const direct = join(root, cursorWorkspaceHash(cwd))
+    if (existsSync(direct)) {
+      const hit = readWorkspaceChats(direct).filter((meta) => realPath(meta.cwd) === target)
+      if (hit.length > 0) return hit
+    }
+    const cutoff = Date.now() - MAX_LIST_AGE_MS
+    const out: CursorChatMeta[] = []
+    let hashDirs: string[]
+    try {
+      hashDirs = readdirSync(root)
+    } catch {
+      return out
+    }
+    for (const hash of hashDirs) {
+      for (const meta of readWorkspaceChats(join(root, hash))) {
+        if (meta.updatedAtMs < cutoff) continue
+        if (realPath(meta.cwd) !== target) continue
+        out.push(meta)
       }
-      if (steps.length > 0) out.push(steps)
     }
     return out
   },
-}
-
-/**
- * Pull the display text out of a stored message payload. The SDK has shipped
- * more than one message shape — a plain `{ text }`, a `{ content: [...] }` block
- * list in the run stream, and the current oneof-wrapped
- * `{ turn: { case: 'agentConversationTurn', value: { userMessage | assistantMessage } } }` —
- * so all three are read and neither is assumed; an unrecognised payload yields
- * empty text rather than a stringified blob.
- */
-function storedText(message: unknown): string {
-  if (typeof message === 'string') return message
-  if (!message || typeof message !== 'object') return ''
-  const record = message as Record<string, unknown>
-  if (typeof record.text === 'string') return record.text
-  // Newer SDK versions wrap a stored message in a protobuf oneof: the field
-  // `turn` names the message kind via `case`, and the payload sits on `value`.
-  const turn = record.turn
-  if (turn && typeof turn === 'object') {
-    const wrapper = turn as { case?: unknown; value?: unknown }
-    if (
-      wrapper.case === 'agentConversationTurn' &&
-      wrapper.value &&
-      typeof wrapper.value === 'object'
-    ) {
-      const value = wrapper.value as Record<string, unknown>
-      for (const side of [value.userMessage, value.assistantMessage]) {
-        if (
-          side &&
-          typeof side === 'object' &&
-          typeof (side as { text?: unknown }).text === 'string'
-        ) {
-          return (side as { text: string }).text
-        }
-      }
-    }
-  }
-  const content = record.content
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((part) =>
-      part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
-        ? (part as { text: string }).text
-        : '',
-    )
-    .filter((text) => text.length > 0)
-    .join('')
-}
-
-/** The title c3 shows for a stored agent, preferring its own summary. */
-function title(agent: CursorStoredAgent): string {
-  return agent.summary?.trim() || agent.name?.trim() || agent.agentId
+  transcript(meta) {
+    return readCursorStoreMessages(join(meta.dir, 'store.db'))
+  },
 }
 
 export class CursorSessionStore implements SessionStore {
-  constructor(private readonly source: CursorSessionSource = sdkSource) {}
+  constructor(private readonly source: CursorSessionSource = diskSource) {}
 
   async list(opts: SessionListOptions): Promise<SessionSummary[]> {
-    const agents = await this.source.list(opts.cwd)
-    return agents.map((agent) => ({
-      sessionId: agent.agentId,
-      title: title(agent),
-      vendorExtra: {
-        ...(agent.status ? { status: agent.status } : {}),
-        ...(agent.lastModified !== undefined ? { lastModified: agent.lastModified } : {}),
-      },
-    }))
+    return this.source
+      .chats(opts.cwd)
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+      .map((meta) => ({
+        sessionId: meta.chatId,
+        title: meta.title,
+        vendorExtra: { lastModified: meta.updatedAtMs, cwd: meta.cwd },
+      }))
   }
 
   async read(sessionId: string, opts: SessionListOptions): Promise<CanonicalMessage[]> {
-    const [stored, conversations] = await Promise.all([
-      this.source.messages(sessionId, opts.cwd),
-      this.source.conversations(sessionId, opts.cwd),
-    ])
+    const meta = this.source.chats(opts.cwd).find((chat) => chat.chatId === sessionId)
+    if (!meta) return []
+    const stored = this.source.transcript(meta)
+    // Results are recorded as their own messages, so they are indexed up front
+    // and filled into the calls they answer — the same one-block-carries-its-
+    // result shape the live stream produces.
+    const results = collectToolResults(stored)
     const out: CanonicalMessage[] = []
-    // `messages.list` keeps one prompt per run and `conversations` keeps that
-    // run's reply steps, so the two interleave one-to-one in run order — the
-    // only ordering that keeps a multi-turn session's prompts in front of the
-    // replies they produced.
-    const turns = Math.max(stored.length, conversations.length)
-    for (let turn = 0; turn < turns; turn++) {
-      const entry = stored[turn]
-      if (entry) {
-        const text = storedText(entry.message)
-        if (text) {
-          // The store keeps only the two conversational roles; a payload that
-          // names neither is read as assistant output, which is what the console
-          // renders for anything the model produced.
-          const role = entry.type === 'user' ? 'user' : 'assistant'
-          out.push({
-            vendor: 'cursor',
-            sessionId,
-            role,
-            blocks: [{ type: 'text', text, id: entry.uuid ?? `${sessionId}-${turn}` }],
-            ts: 0,
-          })
-        }
-      }
-      const steps = conversations[turn]
-      if (steps) out.push(...stepsToMessages(steps, sessionId))
+    for (const [index, message] of stored.entries()) {
+      const canonical = storedToCanonical(message, sessionId, index, results)
+      if (canonical) out.push(canonical)
     }
     return out
   }
 }
 
-/**
- * Flatten a run's conversation steps into canonical messages. The SDK's
- * `conversation()` steps are the reply-side mirror of `messages.list`'s prompts:
- * `assistantMessage` / `thinkingMessage` become text / thinking blocks, and
- * `toolCall` becomes a `tool_use` block with its embedded result.
- */
-function stepsToMessages(
-  steps: readonly CursorConversationStep[],
-  sessionId: string,
-): CanonicalMessage[] {
-  const out: CanonicalMessage[] = []
-  for (const [index, step] of steps.entries()) {
-    if (!step || typeof step !== 'object') continue
-    if (step.type === 'assistantMessage') {
-      const text = stepText(step.message)
-      if (!text) continue
-      out.push({
-        vendor: 'cursor',
-        sessionId,
-        role: 'assistant',
-        blocks: [{ type: 'text', text, id: `${sessionId}-step-${index}` }],
-        ts: 0,
+/** Index every stored tool result by the call id it answers. */
+function collectToolResults(
+  stored: readonly CursorStoredMessage[],
+): Map<string, CanonicalToolResult> {
+  const out = new Map<string, CanonicalToolResult>()
+  for (const message of stored) {
+    if (message.role !== 'tool' || !Array.isArray(message.content)) continue
+    for (const item of message.content) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as Record<string, unknown>
+      if (record.type !== 'tool-result' || typeof record.toolCallId !== 'string') continue
+      const isError = record.isError === true
+      out.set(record.toolCallId, {
+        content: flattenToText(record.result ?? record.output),
+        isError,
       })
-    } else if (step.type === 'thinkingMessage') {
-      const text = stepText(step.message)
-      if (!text) continue
-      out.push({
-        vendor: 'cursor',
-        sessionId,
-        role: 'assistant',
-        blocks: [{ type: 'thinking', thinking: text, id: `${sessionId}-think-${index}` }],
-        ts: 0,
-      })
-    } else if (step.type === 'toolCall') {
-      const message = toolCallToMessage(step.message, sessionId, index)
-      if (message) out.push(message)
     }
   }
   return out
 }
 
-/** The text carried by an assistant/thinking step's `message`. */
-function stepText(message: unknown): string {
-  if (!message || typeof message !== 'object') return ''
-  return typeof (message as { text?: unknown }).text === 'string'
-    ? (message as { text: string }).text
-    : ''
-}
-
-/** One tool call step → a canonical `tool_use` block with its embedded result. */
-function toolCallToMessage(
-  message: unknown,
-  sessionId: string,
-  index: number,
-): CanonicalMessage | null {
-  if (!message || typeof message !== 'object') return null
-  const call = message as { type?: unknown; args?: unknown; result?: unknown }
-  const name = typeof call.type === 'string' ? call.type : 'unknown'
-  const raw = call.result
-  // The SDK wraps the outcome as `{ status, value }`; anything without a
-  // `status: 'error'` is read as a success.
-  const isError = !!(
-    raw &&
-    typeof raw === 'object' &&
-    (raw as { status?: unknown }).status === 'error'
-  )
-  const result = toolResult(raw, isError)
-  return {
-    vendor: 'cursor',
-    sessionId,
-    role: 'assistant',
-    blocks: [
-      {
-        type: 'tool_use',
-        id: `${sessionId}-tool-${index}`,
-        name,
-        input: call.args ?? {},
-        ...(result ? { result } : {}),
-      },
-    ],
-    ts: 0,
-  }
-}
-
 /**
- * Collapse a native tool result into the canonical flat display string without
- * `JSON.stringify` (ADR-0009 R2). Prefers the text-bearing field a result
- * actually carries (`content`/`text`/`message`/`output`/`stdout`, then `value`),
- * recursing through nested shapes; the readable rendering is what the transcript
- * shows, never a serialized blob.
+ * Flatten a stored result to the display string a transcript shows, without
+ * `JSON.stringify`. Prefers the text-bearing field a result actually carries,
+ * recursing through the nested shapes tools use.
  */
-function toolResult(raw: unknown, isError: boolean): CanonicalToolResult | undefined {
-  if (raw === undefined || raw === null) {
-    return isError ? { content: '', isError: true } : undefined
-  }
-  if (typeof raw === 'object') {
-    const record = raw as Record<string, unknown>
-    if ('error' in record) return { content: flattenToText(record.error), isError: true }
-    if ('success' in record) return { content: flattenToText(record.success), isError }
-    if ('value' in record) return { content: flattenToText(record.value), isError }
-  }
-  return { content: flattenToText(raw), isError }
-}
-
 function flattenToText(value: unknown, depth = 0): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
@@ -346,4 +235,95 @@ function flattenToText(value: unknown, depth = 0): string {
       .join('\n')
   }
   return ''
+}
+
+/**
+ * Context the harness injects into the user turn — environment facts and file
+ * attachments, not anything a human typed. It is dropped for the same reason the
+ * system prompt is: a transcript that opens with a wall of machine-generated
+ * environment text buries the actual conversation.
+ */
+function isInjectedContext(text: string): boolean {
+  const head = text.trimStart()
+  return (
+    head.startsWith('<user_info>') ||
+    head.startsWith('<environment_details>') ||
+    head.startsWith('<attached_files>')
+  )
+}
+
+/**
+ * One stored message → one canonical envelope.
+ *
+ * The store's `system` role is the harness prompt, not conversation, and its
+ * `tool` role carries results that belong on the call they answer — both are
+ * dropped here, and the results are re-attached where the call is translated.
+ */
+function storedToCanonical(
+  stored: CursorStoredMessage,
+  sessionId: string,
+  index: number,
+  results: ReadonlyMap<string, CanonicalToolResult>,
+): CanonicalMessage | null {
+  if (stored.role === 'system' || stored.role === 'tool') return null
+  const role = stored.role === 'user' ? 'user' : 'assistant'
+  const blocks = contentToBlocks(stored.content, sessionId, index, results)
+  if (blocks.length === 0) return null
+  return {
+    vendor: 'cursor',
+    sessionId,
+    role,
+    blocks,
+    ts: 0,
+    // Every tool call in a stored transcript already ran: the permission decision
+    // was made when the turn launched, so there is no per-call ruling to record.
+    ...(blocks.some((block) => block.type === 'tool_use') ? { preApproved: true } : {}),
+  }
+}
+
+/** A stored message's content → canonical blocks. */
+function contentToBlocks(
+  content: unknown,
+  sessionId: string,
+  index: number,
+  results: ReadonlyMap<string, CanonicalToolResult>,
+): CanonicalBlock[] {
+  if (typeof content === 'string') {
+    return content.trim() && !isInjectedContext(content)
+      ? [{ type: 'text', text: content, id: `${sessionId}-${index}` }]
+      : []
+  }
+  if (!Array.isArray(content)) return []
+  const out: CanonicalBlock[] = []
+  for (const [part, item] of content.entries()) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const id = `${sessionId}-${index}-${part}`
+    const text = typeof record.text === 'string' ? record.text : ''
+    switch (record.type) {
+      case 'text':
+        if (text.trim() && !isInjectedContext(text)) out.push({ type: 'text', text, id })
+        break
+      case 'reasoning':
+        if (text.trim()) out.push({ type: 'thinking', thinking: text, id })
+        break
+      case 'tool-call': {
+        // The native call id is what a result was recorded against, so keeping it
+        // is what lets the two be matched.
+        const callId = typeof record.toolCallId === 'string' ? record.toolCallId : id
+        const result = results.get(callId)
+        out.push({
+          type: 'tool_use',
+          id: callId,
+          name: typeof record.toolName === 'string' ? record.toolName : 'unknown',
+          input: record.args ?? {},
+          ...(result ? { result } : {}),
+        })
+        break
+      }
+      default:
+        break
+    }
+  }
+  return out
 }

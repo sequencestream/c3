@@ -726,9 +726,9 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     runtime.cursor = {
       vendor: 'cursor',
       available: false,
-      runtime: 'embedded-sdk',
-      runtimeId: '@cursor/sdk',
-      reason: 'sdk-unresolved',
+      runtime: 'host-cli',
+      runtimeId: 'cursor-agent',
+      reason: 'host-cli-missing',
     }
     const w = mountForm({ vendorAvailability: runtime })
     const opts = w.findAll('[data-testid="automation-vendor"] option')

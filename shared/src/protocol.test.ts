@@ -203,12 +203,14 @@ describe('protocol wire format', () => {
           runtimeId: 'codex',
           reason: 'host-cli-missing',
         },
-        // An SDK-backed vendor answers in the same terms, with no CLI fields.
+        // A vendor c3 launches but does not distribute answers in the same terms,
+        // and reports where the binary it found came from.
         cursor: {
           vendor: 'cursor',
           available: true,
-          runtime: 'embedded-sdk',
-          runtimeId: '@cursor/sdk',
+          runtime: 'host-cli',
+          runtimeId: 'cursor-agent',
+          origin: 'host-path',
         },
       },
       bindingStats: { bound: 3, pending: 1 },

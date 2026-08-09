@@ -11,6 +11,7 @@ import {
   cleanManagedHistory,
   lookupCommand,
   managedBinPath,
+  managedVendorSpecs,
   parseVendorVersion,
   probeAll,
   readVendorCliStatus,
@@ -48,12 +49,14 @@ beforeEach(() => {
   resetProbeCache()
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH
+  delete process.env.CURSOR_PATH
 })
 
 afterEach(() => {
   process.env.PATH = savedPath
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH
+  delete process.env.CURSOR_PATH
   resetProbeCache()
   rmSync(dir, { recursive: true, force: true })
 })
@@ -345,10 +348,68 @@ describe('probeAll', () => {
     // Only vendors c3 launches as a host process are probed: a vendor whose
     // runtime is an in-process SDK has no binary to find, and reporting one as
     // "missing" would put an install hint in front of the user for a CLI c3 never
-    // runs.
+    // runs. Every vendor qualifies today, npm-distributed or not.
     expect(probes.map((p) => p.vendor).sort()).toEqual(Object.keys(HOST_BINARIES).sort())
-    expect(probes.map((p) => p.vendor)).not.toContain('cursor')
+    expect(probes.map((p) => p.vendor)).toContain('cursor')
     for (const p of probes) expect(p.source).toBeTruthy()
+  })
+})
+
+describe('unmanaged host CLI resolution', () => {
+  it('resolves an unmanaged vendor from its env override, reporting the raw version', () => {
+    const bin = join(dir, 'bin', 'cursor-agent')
+    fakeBin(bin, '2026.08.04-aaa8809')
+    process.env.CURSOR_PATH = bin
+    const probe = resolveExecutable('cursor')
+    expect(probe.source).toBe('env-override')
+    expect(probe.path).toBe(bin)
+    expect(probe.version).toBe('2026.08.04-aaa8809')
+    // Nothing distributes it, so there is no range to report a version against.
+    expect(probe.compatibleRange).toBe('')
+  })
+
+  it('falls straight to host PATH without probing a managed install', () => {
+    const binDir = join(dir, 'hostbin')
+    fakeBin(join(binDir, 'cursor-agent'), '2026.08.04-aaa8809')
+    process.env.PATH = `${binDir}:/bin`
+    // A pin and a manifest entry would both steer a managed vendor; an unmanaged
+    // one must ignore them, because `~/.c3/vendor/cursor/...` is never populated.
+    pinVendorCliVersion('cursor', '2026.01.01-deadbee')
+    writeManifest({
+      version: 1,
+      vendors: { cursor: { vendor: 'cursor', source: 'managed', selectedVersion: '2026.01.01' } },
+    })
+    resetProbeCache()
+    const probe = resolveExecutable('cursor')
+    expect(probe.source).toBe('host-path-fallback')
+    expect(probe.version).toBe('2026.08.04-aaa8809')
+  })
+
+  it('reports a missing unmanaged CLI as missing, never as a failed install', () => {
+    process.env.PATH = `${join(dir, 'empty')}:/bin`
+    const probe = resolveExecutable('cursor')
+    // `install-failed` would blame an install c3 never attempts for this vendor.
+    expect(probe.source).toBe('missing')
+    expect(probe.path).toBeNull()
+    expect(probe.managedError).toBeUndefined()
+    expect(probe.installHint).toContain('CURSOR_PATH')
+  })
+
+  it('keeps an unmanaged vendor out of the npm distribution set', () => {
+    expect(managedVendorSpecs().map((s) => s.vendor)).toEqual(['claude', 'codex'])
+    // Reaching the npm version selector for it is a wiring bug, not a soft miss.
+    expect(() => selectNpmVersion('cursor', { 'dist-tags': {}, versions: {} })).toThrow(
+      /not distributed by c3/,
+    )
+  })
+
+  it('parses the date-and-sha version cursor-agent prints, and only that shape', () => {
+    expect(parseVendorVersion('cursor', '2026.08.04-aaa8809')).toBe('2026.08.04-aaa8809')
+    // Older builds carry more segments.
+    expect(parseVendorVersion('cursor', '2026.06.15-18-00-12-6f5a2cf')).toBe(
+      '2026.06.15-18-00-12-6f5a2cf',
+    )
+    expect(parseVendorVersion('cursor', 'garbage')).toBeNull()
   })
 })
 

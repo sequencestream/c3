@@ -16,8 +16,7 @@ c3
 │   │   ├── 运行态机                              # idle / running / awaiting-permission,每会话单飞(single-flight)
 │   │   ├── 取消中止                              # 用户命令或断连时干净中止在途 run
 │   │   ├── 历史续传                              # 每轮持久化,浏览器刷新可完整回放 transcript
-│   │   ├── 多厂商                                # 同时支持 Claude、Codex 与 Cursor 三个 vendor(均经各自官方 SDK;Cursor 的 SDK 在 c3 进程内运行)
-│   │   ├── Cursor 二进制旁挂                      # 单文件二进制不内含 Cursor runtime,发布物按平台附带 @cursor/sdk 旁挂树(二进制同级 node_modules,CURSOR_SDK_PATH 可覆盖);无旁挂则显式不可用,二进制形态不支持 Cursor 沙箱运行
+│   │   ├── 多厂商                                # 同时支持 Claude、Codex 与 Cursor 三个 vendor(均落在宿主 CLI 上;claude/codex 由 c3 分发,cursor-agent 由厂商自己的安装器分发)
 │   │   └── Codex GH_TOKEN 桥接                    # codex 会话启动时把宿主 gh 钥匙串令牌注入 GH_TOKEN,沙箱内 gh 可认证(已有 token 不覆盖/探测失败静默降级)
 │   │
 │   ├── permission-gateway 权限网关               # 智能体与人之间的控制点,有副作用的工具须过此门
@@ -152,7 +151,7 @@ c3
 │   │   ├── automation 会话                       # 每次执行跑在独立 automation-kind 会话
 │   │   ├── 会话页 live 状态                       # llm 执行注册真 SessionRuntime,SDK 流译成 wire 事件 fan-out 给 viewer:会话页选中运行中 automation 见细粒度状态栏(思考中/正在执行<工具>/就绪)+ transcript 实时增长,结束收敛 idle,事后选中回放完整 buffer;command 类仅 running/idle 二态
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
-│   │   ├── 执行 vendor                           # claude/codex/cursor 均有 dispatcher 执行路径(共享 AUTOMATION_VENDORS,表单灰显与分派门控同一份);cursor 走进程内 SDK,mode 按 cursor 目录(plan/agent/full-access)解析,SDK 不可解析/凭据缺失/agent 无效在分派期即失败,不跨 vendor 回退
+│   │   ├── 执行 vendor                           # claude/codex/cursor 均有 dispatcher 执行路径(共享 AUTOMATION_VENDORS,表单灰显与分派门控同一份);cursor 走 cursor-agent CLI,mode 按 cursor 目录(plan/agent/full-access)解析,CLI 找不到/agent 无效在分派期即失败,不跨 vendor 回退
 │   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ PR 状态同步(sync_intent_pr_status,只接受 intentId,触发服务端从 forge 派生终态落库)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
 │   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网
 │   │
@@ -208,9 +207,9 @@ c3
 ├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
-│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl)
+│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl;apiKey 可留空,回落 cursor-agent 登录态)
 │   │   ├── 分组容器编辑                          # agent 列表按分组容器渲染,group 为空的归入 default 容器;拖动跨容器移动、组内箭头调优先级(可见顺序即故障转移顺序),容器可重命名/解散;一个组只装一种 vendor,空容器不落盘
-│   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(宿主 CLI 探测 / 进程内 SDK 能否解析);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑
+│   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(统一的宿主 CLI 探测);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑
 │   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId)
 │   │   ├── 专用 agent 路由                       # 工具/意图/规格/规格审核/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/specReview/automationAgentId);审核槽位唯一,无 sandbox 变体
 │   │   ├── 角色配组与故障转移                    # default/tool/intent/spec/specReview 可指向虚拟组 _c3_<vendor>_<group>;会话绑定保留组引用、代表成员(order_seq 首个 enabled)决定 vendor/展示,每次运行重解析;组无可用成员(全禁用或组 vendor 运行时缺失)时创建/绑定明确报错 agent.groupUnavailable,不回落 System
@@ -219,12 +218,12 @@ c3
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
-│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页为每个 vendor 出一行诊断(宿主 CLI 二进制名+绝对路径 / 进程内 SDK 包名+解析来源与已解析位置),另展示 sandbox(arapuca)驱动状态
+│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页为每个 vendor 出一行诊断(二进制名 + 解析来源 + 已解析绝对路径),另展示 sandbox(arapuca)驱动状态
 │   │   ├── 显示与本地化                          # voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释);界面语言属个人化设置
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
 │   │   ├── 工具会话显示                          # showToolSessions 独立开关,决定工具类会话是否进聚合页侧栏
-│   │   ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退
+│   │   ├── vendor CLI 多版本生效选择             # 仅托管 vendor(claude/codex):下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退;非托管 vendor(cursor)不进该面板
 │   │   ├── 子进程代理                            # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境(不改服务端自身出网)
 │   │   ├── 会话清理                              # sessionCleanup 开关 + 保留天数(默认关、30 天),每日删除各 vendor 会话存储中超期的会话记录;vendor 中立、覆盖沙箱与宿主 home
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图

@@ -337,11 +337,20 @@ try {
     )
   }
 
-  // 8. vendor CLI 启动探测 —— claude / codex 能否在沙箱内、深层 worktree cwd 下起来。
-  //    token-free:只跑 `<bin> --version`。真实 turn 需认证 + 花 token,不在此列。
-  //    找不到二进制则 SKIP。深层 cwd 正是 canonicalize 补丁修复价值的体现。
-  for (const vendor of ['claude', 'codex']) {
-    const bin = findBin(vendor, ['/opt/homebrew/bin', '/usr/local/bin'])
+  // 8. vendor CLI 启动探测 —— 每个 vendor 的 CLI 能否在沙箱内、深层 worktree cwd
+  //    下起来。token-free:只跑 `<bin> --version`。真实 turn 需认证 + 花 token,
+  //    不在此列。找不到二进制则 SKIP。深层 cwd 正是 canonicalize 补丁的价值所在。
+  //
+  //    二进制名与 vendor 名并不总是相同(cursor → cursor-agent),此表与
+  //    launcher 的 HOST_BINARIES 保持一致。cursor-agent 由官方安装器装到
+  //    ~/.local/bin,故候选目录多一项。
+  const VENDOR_BINARIES = { claude: 'claude', codex: 'codex', cursor: 'cursor-agent' }
+  for (const [vendor, binary] of Object.entries(VENDOR_BINARIES)) {
+    const bin = findBin(binary, [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      join(process.env.HOME || '', '.local', 'bin'),
+    ])
     if (!bin) {
       record(`vendor:${vendor} 沙箱内 --version`, false, null, '宿主未装该 CLI,跳过')
       continue

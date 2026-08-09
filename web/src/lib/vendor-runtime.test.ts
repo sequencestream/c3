@@ -32,8 +32,9 @@ describe('deriveVendorAvailability', () => {
     const cursor: VendorRuntimeStatus = {
       vendor: 'cursor',
       available: true,
-      runtime: 'embedded-sdk',
-      runtimeId: '@cursor/sdk',
+      runtime: 'host-cli',
+      runtimeId: 'cursor-agent',
+      origin: 'host-path',
     }
     // The host probe says nothing about cursor; the neutral signal decides.
     const out = deriveVendorAvailability({ cursor }, [CLAUDE_HOST])
@@ -58,15 +59,14 @@ describe('deriveVendorAvailability', () => {
   })
 
   it('treats a vendor the old server cannot describe as unavailable, never as available', () => {
-    // The fail-closed direction: an old server has no way to say whether an
-    // in-process runtime resolved, so the console must not let the user into a
-    // path that would fail at launch.
+    // The fail-closed direction: an old server may not describe every vendor, so
+    // the console must not let the user into a path that would fail at launch.
     const out = deriveVendorAvailability(undefined, [CLAUDE_HOST, CODEX_HOST_MISSING])
     expect(out.cursor).toEqual({
       vendor: 'cursor',
       available: false,
-      runtime: 'embedded-sdk',
-      reason: 'sdk-unresolved',
+      runtime: 'host-cli',
+      reason: 'host-cli-missing',
     })
   })
 
@@ -91,14 +91,6 @@ describe('vendorUnavailableReasonKey', () => {
         reason: 'host-cli-missing',
       }),
     ).toBe('common.vendor.unavailable.hostCliMissing')
-    expect(
-      vendorUnavailableReasonKey({
-        vendor: 'cursor',
-        available: false,
-        runtime: 'embedded-sdk',
-        reason: 'sdk-unresolved',
-      }),
-    ).toBe('common.vendor.unavailable.sdkUnresolved')
   })
 
   it('returns null for an available vendor or a missing entry', () => {
@@ -114,12 +106,12 @@ describe('vendorRuntimeOriginKey', () => {
     const cursor = (origin: VendorRuntimeStatus['origin']): VendorRuntimeStatus => ({
       vendor: 'cursor',
       available: true,
-      runtime: 'embedded-sdk',
-      runtimeId: '@cursor/sdk',
+      runtime: 'host-cli',
+      runtimeId: 'cursor-agent',
       origin,
     })
     expect(vendorRuntimeOriginKey(cursor('installed'))).toBe('common.vendor.origin.installed')
-    expect(vendorRuntimeOriginKey(cursor('sidecar'))).toBe('common.vendor.origin.sidecar')
+    expect(vendorRuntimeOriginKey(cursor('host-path'))).toBe('common.vendor.origin.hostPath')
     expect(vendorRuntimeOriginKey(cursor('override'))).toBe('common.vendor.origin.override')
   })
 
@@ -128,8 +120,8 @@ describe('vendorRuntimeOriginKey', () => {
       vendorRuntimeOriginKey({
         vendor: 'cursor',
         available: false,
-        runtime: 'embedded-sdk',
-        reason: 'sdk-unresolved',
+        runtime: 'host-cli',
+        reason: 'host-cli-missing',
       }),
     ).toBeNull()
     expect(

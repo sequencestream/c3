@@ -89,13 +89,17 @@ const cursor = vi.hoisted(() => ({
   start: (_o: unknown): Promise<unknown> => Promise.resolve({}),
   lastStart: undefined as Record<string, unknown> | undefined,
 }))
+// The CLI probe decides whether a cursor automation can dispatch at all.
+vi.mock('../../kernel/agent/process/launcher.js', () => ({
+  resolve: (vendor: string) =>
+    vendor === 'cursor' ? (cursor.available ? '/x/cursor-agent' : null) : `/x/${vendor}`,
+}))
 vi.mock('../../kernel/agent/adapters/cursor/index.js', async () => {
-  // The real mode catalog is the point of the mode assertions — only the SDK
-  // probe and the driver are faked.
+  // The real mode catalog is the point of the mode assertions — only the driver
+  // is faked.
   const { cursorModeCatalog } = await import('../../kernel/agent/adapters/cursor/modes.js')
   return {
     cursorModeCatalog,
-    cursorSdkAvailable: () => cursor.available,
     createCursorAdapter: () => ({
       driver: {
         start: (o: unknown) => {
@@ -363,12 +367,12 @@ describe('cursor automation — c3 MCP over the shared loopback route', () => {
 })
 
 describe('cursor automation — dispatch-time failures, never a vendor fallback', () => {
-  it('fails with a locatable reason when the SDK cannot be resolved', async () => {
+  it('fails with a locatable reason when the CLI cannot be resolved', async () => {
     cursor.available = false
 
     const updates = await run(cursorAutomation())
 
-    expect(updates.at(-1)).toMatchObject({ status: 'failed', error: 'cursor_sdk_unresolved' })
+    expect(updates.at(-1)).toMatchObject({ status: 'failed', error: 'cursor_cli_missing' })
     expect(cursor.lastStart).toBeUndefined()
     expect(claudeQuery.calls).toBe(0)
     expect(codexStart.calls).toBe(0)

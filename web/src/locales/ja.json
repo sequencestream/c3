@@ -42,13 +42,12 @@
     },
     "vendor": {
       "unavailable": {
-        "hostCliMissing": "このホストにベンダー CLI が見つかりません",
-        "sdkUnresolved": "組み込み SDK ランタイムを解決できません — 実行ファイルの隣に SDK サイドカーを配置するか、CURSOR_SDK_PATH を設定してください"
+        "hostCliMissing": "このホストにベンダー CLI が見つかりません"
       },
       "origin": {
         "installed": "同梱インストール",
-        "sidecar": "サイドカー",
-        "override": "CURSOR_SDK_PATH"
+        "hostPath": "PATH 上で検出",
+        "override": "パス上書き"
       }
     }
   },
@@ -316,7 +315,8 @@
         "placeholder": "ANTHROPIC_BASE_URL"
       },
       "apiKey": {
-        "placeholder": "API キー"
+        "placeholder": "API キー",
+        "placeholderOptional": "API キー(任意 — 未入力なら cursor-agent のログインを使用)"
       },
       "model": {
         "placeholder": "例: claude-sonnet-5（空欄=デフォルトモデル）"
@@ -538,11 +538,10 @@
       "title": {
         "label": "ランタイムドライバー"
       },
-      "hint": "各エージェントベンダー(ホスト CLI またはプロセス内 SDK)と Sandbox ドライバーのランタイム可用性。",
+      "hint": "各エージェントベンダー CLI とサンドボックスドライバーの実行時可用性。",
       "present": "利用可能",
       "missing": "利用不可",
-      "sandbox": "Sandbox ドライバー",
-      "embeddedSdk": "プロセス内 SDK"
+      "sandbox": "Sandbox ドライバー"
     },
     "vendorCli": {
       "title": {

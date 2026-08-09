@@ -2,63 +2,54 @@
  * "Can c3 run this vendor right now" — answered once, for every vendor, in terms
  * every vendor can answer.
  *
- * c3 backs its vendors with two different kinds of runtime: a host CLI it
- * resolves and spawns, and an SDK that ships inside c3 and executes in the server
- * process. Asking the CLI probe alone therefore stopped being a valid
- * availability test the moment the second kind existed — an in-process runtime
- * has no binary to be "on PATH", so a CLI-shaped question answers `false` for a
- * perfectly healthy vendor.
+ * Every vendor is backed by a host CLI that c3 resolves and spawns, so the
+ * question reduces to whether that CLI resolved. What differs between vendors is
+ * only *who distributes* the binary, which the provenance below reports and no
+ * gate reads. Every caller that gates on availability (the settings snapshot, the
+ * session agent switcher) reads the answer from here, which is what keeps them
+ * from drifting apart or growing an `if (vendor === …)`.
  *
- * The two registries this module reads — the launcher's `HOST_BINARIES` and the
- * adapters' `EMBEDDED_RUNTIME_PROBES` — partition {@link VENDOR_IDS} between
- * them, so applying that split IS the answer. Every caller that gates on
- * availability (the settings snapshot, the session agent switcher) reads it from
- * here, which is what keeps them from drifting apart or growing an
- * `if (vendor === …)`.
+ * @module
  */
 import { VENDOR_IDS } from '@ccc/shared/protocol'
-import type { VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
-import { EMBEDDED_RUNTIME_PROBES } from './adapters/index.js'
-import { isManagedVendor, probeAll } from './process/launcher.js'
+import type { VendorId, VendorRuntimeOrigin, VendorRuntimeStatus } from '@ccc/shared/protocol'
+import { isManagedVendor, probeAll, type VendorCliSource } from './process/launcher.js'
 
 /**
- * Every vendor's runtime status. Host-CLI vendors answer from the ProcessLauncher
- * probe — exactly the presence `hostStatus` reports, so CLI semantics are
- * unchanged; embedded-runtime vendors answer from their own module probe, the
- * same one `server.ts` gates adapter construction on at startup.
+ * How a resolution source reads as provenance. Sources that mean "nothing
+ * resolved" map to nothing: an unavailable runtime has no copy to point at.
+ */
+const ORIGIN_BY_SOURCE: Partial<Record<VendorCliSource, VendorRuntimeOrigin>> = {
+  'env-override': 'override',
+  managed: 'installed',
+  'host-path-fallback': 'host-path',
+}
+
+/**
+ * Every vendor's runtime status, from the ProcessLauncher probe — exactly the
+ * presence `hostStatus` reports, so CLI semantics are unchanged.
  *
- * A vendor in neither registry is reported unavailable rather than assumed
- * runnable: an unregistered runtime is one nothing can launch.
+ * A vendor with no registered host CLI is reported unavailable rather than
+ * assumed runnable: an unregistered runtime is one nothing can launch.
  */
 export function vendorRuntimeStatuses(): Record<VendorId, VendorRuntimeStatus> {
   const probes = new Map(probeAll().map((p) => [p.vendor, p]))
   const out = {} as Record<VendorId, VendorRuntimeStatus>
   for (const vendor of VENDOR_IDS) {
-    if (isManagedVendor(vendor)) {
-      const probe = probes.get(vendor)
-      const available = probe ? probe.path !== null : false
-      out[vendor] = {
-        vendor,
-        available,
-        runtime: 'host-cli',
-        ...(probe ? { runtimeId: probe.binary } : {}),
-        ...(available ? {} : { reason: 'host-cli-missing' as const }),
-      }
-      continue
-    }
-    const spec = EMBEDDED_RUNTIME_PROBES[vendor]
-    const probe = spec?.probe() ?? { available: false }
+    const probe = isManagedVendor(vendor) ? probes.get(vendor) : undefined
+    const available = probe ? probe.path !== null : false
+    const origin = probe ? ORIGIN_BY_SOURCE[probe.source] : undefined
     out[vendor] = {
       vendor,
-      available: probe.available,
-      runtime: 'embedded-sdk',
-      ...(spec ? { runtimeId: spec.module } : {}),
+      available,
+      runtime: 'host-cli',
+      ...(probe ? { runtimeId: probe.binary } : {}),
       // Provenance travels with availability: "runnable" and "which copy" come
-      // from one resolution, so the row can never name a module the run will not
-      // load.
-      ...(probe.origin ? { origin: probe.origin } : {}),
-      ...(probe.location ? { location: probe.location } : {}),
-      ...(probe.available ? {} : { reason: 'sdk-unresolved' as const }),
+      // from one resolution, so the row can never name a binary the run will not
+      // launch.
+      ...(available && origin ? { origin } : {}),
+      ...(available && probe?.path ? { location: probe.path } : {}),
+      ...(available ? {} : { reason: 'host-cli-missing' as const }),
     }
   }
   return out
@@ -66,9 +57,7 @@ export function vendorRuntimeStatuses(): Record<VendorId, VendorRuntimeStatus> {
 
 /**
  * The vendors that can run right now, as a set — the shape the agent-switcher
- * resolver takes. Reading it from {@link vendorRuntimeStatuses} rather than from
- * the CLI probe is what stops a session bound to an SDK-backed vendor being
- * reported as "current agent unavailable" while it is happily running.
+ * resolver takes.
  */
 export function availableVendorSet(): Set<VendorId> {
   const statuses = vendorRuntimeStatuses()

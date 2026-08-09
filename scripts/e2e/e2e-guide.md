@@ -510,8 +510,10 @@ scenarios can be covered separately; the chosen link being unavailable is a SKIP
   on its temp mounts to mirror c3's `resolvePaths` (so macOS `/var`→`/private/var`
   firmlink mismatch — a separate EPERM cause — is excluded).
 
-- **Vendor launch probe (`claude` / `codex`):** token-free — runs `<bin> --version`
-  inside the sandbox from a deep worktree cwd (SKIP when the CLI isn't installed).
+- **Vendor launch probe (`claude` / `codex` / `cursor-agent`):** token-free — runs
+  `<bin> --version` inside the sandbox from a deep worktree cwd (SKIP when the CLI
+  isn't installed). The binary name is read from a table, because it does not always
+  match the vendor id.
   Proves the vendor CLI starts under arapuca and that deep-cwd resolution works
   (the ancestor-traversal fix's payoff). Real turns (`-p`) need creds + tokens and
   are out of scope.
@@ -591,36 +593,35 @@ if it persists, reported as SKIP (auth already proven, block is environmental).
   in and replied; 1 = still 401 / no reply / structure guard failed; 5 = a
   precondition unmet or an OpenAI geo-block (SKIP).
 
-## Cursor SDK probe (vendor go/no-go gate)
+## Cursor CLI probe (vendor go/no-go gate)
 
-Standalone capability probe for `@cursor/sdk`'s local runtime — the evidence source
-for Cursor's capability ledger (see
+Standalone capability probe for `cursor-agent` — the evidence source for Cursor's
+capability ledger (see
 [`doc/domains/core/agent-session/features/agent-session-cursor.md`](../../doc/domains/core/agent-session/features/agent-session-cursor.md)).
-It asserts the two blocking gates — `Agent.resume` restoring native context, and an
-agent staying resumable after a turn killed with `Run.cancel()` — plus the native
-tool inventory, `call_id` stability across a tool's running/completed frames, the
-plan conversation mode, and the SDK local store listing agents c3 created.
+It asserts the two blocking gates — the id `create-chat` mints being the one the run
+reports and persists under, and `--resume` restoring context — plus the frame
+vocabulary, the field the run identity travels on, the terminal frame's shape, and
+the discriminated `tool_call` payload.
 
-Needs a real `CURSOR_API_KEY` + outbound network (the SDK does NOT read the
-`cursor-agent login` keychain credential), so it is NOT CI-safe and NOT in the
-`pnpm e2e` suite. No key ⇒ SKIP (exit 5).
+Needs a working `cursor-agent` login or `CURSOR_API_KEY`, plus outbound network, so
+it is NOT CI-safe and NOT in the `pnpm e2e` suite. No credential ⇒ SKIP (exit 5).
 
-- `node scripts/e2e/cursor-sdk-probe.mjs` → VERDICT: GO (exit 0) when both gates
+- `node scripts/e2e/cursor-cli-probe.mjs` → VERDICT: GO (exit 0) when both gates
   pass; 1 = a gate failed (no-go); 5 = unauthenticated (SKIP). `--gates-only`,
   `--json`, `--keep` (retain the temp workspace) are supported.
 
 ## Cursor session test (new → run → list → native-id resume)
 
-Server-wiring E2E over the real WS protocol and the real Cursor SDK (spends two
+Server-wiring E2E over the real WS protocol and the real `cursor-agent` CLI (spends two
 short turns of real quota). Creates a Cursor session (a `system`-mode Cursor agent
 carrying `CURSOR_API_KEY` is injected into settings, snapshot/restore), runs a first
 turn asserting `assistant_text` + `tool_use` + a clean `turn_end`, confirms the
 bound session appears in `list_sessions`, then re-selects it by the native agent id
 captured from `session_started` and runs a second turn to prove resume continuation.
 
-Needs a real `CURSOR_API_KEY` + outbound network, so it is NOT CI-safe and NOT in
-the `pnpm e2e` suite. Preconditions unmet → SKIP (exit 5): `@cursor/sdk`
-unresolvable, or no API key.
+Needs outbound network and a credential, so it is NOT CI-safe and NOT in the
+`pnpm e2e` suite. Preconditions unmet → SKIP (exit 5): `cursor-agent` unresolvable,
+or neither an API key nor a CLI login.
 
 - Start an isolated server: `pnpm build && node scripts/e2e/isolated-server.mjs --port 13000`
 - `node scripts/e2e/e2e-cursor-session-test.mjs ws://localhost:13000/ws` →
@@ -631,8 +632,8 @@ unresolvable, or no API key.
 Covers the console-facing half of Cursor support: that a Cursor agent can be
 created the way the settings panel creates one and then actually run. Asserts the
 `settings` reply's neutral `vendorRuntime` companion answers for every vendor
-(cursor as `embedded-sdk`, claude/codex as `host-cli`, cursor absent from
-`hostStatus`), that the saved Cursor agent round-trips as
+(every vendor as `host-cli`, every vendor present in `hostStatus`), that the saved
+Cursor agent round-trips as
 `configMode: 'system'` + `config: { apiKey, model }` with no `baseUrl` and a
 plaintext (still-editable) key, and that it can be made the **system default
 agent** and launch a session as such.
@@ -640,12 +641,12 @@ agent** and launch a session as such.
 In the `pnpm e2e` suite, and deliberately **without a SKIP branch** — each
 environment has its own assertion instead:
 
-- `@cursor/sdk` unresolvable → cursor must report `available: false` with reason
-  `sdk-unresolved` (explicit degradation), config assertions still run, no turn is spent;
-- SDK resolvable, no `CURSOR_API_KEY` → the run must fail at the door with a
-  message naming BOTH the agent's `apiKey` field and the `CURSOR_API_KEY`
-  environment variable;
-- SDK resolvable + key present → one short tool-less turn runs to completion on
+- `cursor-agent` unresolvable → cursor must report `available: false` with reason
+  `host-cli-missing` (explicit degradation), config assertions still run, no turn is spent;
+- CLI resolvable, no `CURSOR_API_KEY` → the key is optional, so either outcome is
+  legal: the turn completes on the CLI's own login, or it fails with a message
+  naming a way forward (login, or a key);
+- CLI resolvable + key present → one short tool-less turn runs to completion on
   the Cursor default agent (spends a small amount of real quota).
 
 It runs last in the suite because it temporarily rewrites `defaultAgentId`; the
@@ -667,11 +668,11 @@ throwaway workspace plus a Cursor agent, creates one paused cron automation
 In the `pnpm e2e` suite and, like the agent-config test, deliberately **without a
 SKIP branch** — each environment has its own assertion for the main run:
 
-- `@cursor/sdk` unresolvable → the execution must fail with the locatable
-  `cursor_sdk_unresolved` and bind no session;
-- SDK resolvable, no `CURSOR_API_KEY` → the failure message must name BOTH the
-  agent's `apiKey` field and the environment variable;
-- SDK resolvable + key present → one short tool-less `llm_prompt` run completes
+- `cursor-agent` unresolvable → the execution must fail with the locatable
+  `cursor_cli_missing` and bind no session;
+- CLI resolvable, no `CURSOR_API_KEY` → the key is optional; the run either
+  completes on the CLI's own login or fails with an actionable message;
+- CLI resolvable + key present → one short tool-less `llm_prompt` run completes
   with `success`, a non-empty output and a replayable session id (spends a small
   amount of real quota).
 

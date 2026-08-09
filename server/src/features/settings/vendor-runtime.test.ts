@@ -11,11 +11,10 @@ import type { Conn } from '../../transport/handler-registry.js'
 /**
  * The `settings` reply's neutral runtime-availability companion.
  *
- * Two runtimes back c3's vendors — a host CLI it spawns, and an SDK that ships
- * inside the process — and the console must be able to gate on "can this vendor
- * run" without knowing which is which. These tests pin exactly that: every
- * vendor answers, a CLI vendor's answer still comes from the CLI probe (no
- * change in meaning), and an SDK vendor's answer follows its module probe.
+ * The console gates on "can this vendor run" without knowing anything about how
+ * a given vendor is distributed. These tests pin exactly that: every vendor
+ * answers, each answer comes from the CLI probe, and the provenance a row shows
+ * is derived from where the binary resolved.
  */
 
 const cfg = vi.hoisted(() => ({ saved: null as unknown as SystemSettings }))
@@ -30,7 +29,9 @@ vi.mock('../../kernel/config/index.js', () => ({
   saveWorkspaceSetting: (_p: string, c: unknown) => c,
 }))
 
-// The CLI probe: claude resolves, codex does not.
+// The CLI probe: claude and cursor resolve, codex does not. cursor's presence is
+// scripted per test, because it is the vendor c3 does not distribute.
+const cursorCli = vi.hoisted(() => ({ present: true }))
 vi.mock('../../kernel/agent/process/launcher.js', () => ({
   probeAll: () =>
     [
@@ -50,25 +51,32 @@ vi.mock('../../kernel/agent/process/launcher.js', () => ({
         compatibleRange: '',
         installHint: 'install codex',
       },
+      cursorCli.present
+        ? {
+            vendor: 'cursor',
+            binary: 'cursor-agent',
+            path: '/home/u/.local/bin/cursor-agent',
+            source: 'host-path-fallback',
+            compatibleRange: '',
+            installHint: '',
+          }
+        : {
+            vendor: 'cursor',
+            binary: 'cursor-agent',
+            path: null,
+            source: 'missing',
+            compatibleRange: '',
+            installHint: 'install cursor-agent',
+          },
     ] as never,
   applyVendorCliChoices: () => {},
   readVendorCliStatus: () => ({ installedVersions: [] }),
-  isManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
+  isManagedVendor: (vendor: string) =>
+    vendor === 'claude' || vendor === 'codex' || vendor === 'cursor',
 }))
 
-// The embedded-runtime registry: cursor's SDK resolvability is scripted per test.
-const sdk = vi.hoisted(() => ({ available: true }))
 vi.mock('../../kernel/agent/adapters/index.js', () => ({
   MODE_CATALOGS: { claude: {}, codex: {}, cursor: {} },
-  EMBEDDED_RUNTIME_PROBES: {
-    cursor: {
-      module: '@cursor/sdk',
-      probe: () =>
-        sdk.available
-          ? { available: true, origin: 'sidecar', location: '/opt/c3/node_modules/@cursor/sdk' }
-          : { available: false },
-    },
-  },
 }))
 
 import { getSettings } from './index.js'
@@ -111,7 +119,7 @@ function snapshot(): Record<VendorId, VendorRuntimeStatus> {
 
 beforeEach(() => {
   cfg.saved = { ...base }
-  sdk.available = true
+  cursorCli.present = true
 })
 
 describe('settings — vendor runtime availability', () => {
@@ -121,13 +129,15 @@ describe('settings — vendor runtime availability', () => {
     for (const vendor of VENDOR_IDS) expect(runtime[vendor].vendor).toBe(vendor)
   })
 
-  it('keeps claude/codex on their host-CLI probe result', () => {
+  it('keeps every vendor on its host-CLI probe result', () => {
     const runtime = snapshot()
     expect(runtime.claude).toEqual({
       vendor: 'claude',
       available: true,
       runtime: 'host-cli',
       runtimeId: 'claude',
+      origin: 'installed',
+      location: '/x/claude',
     })
     expect(runtime.codex).toEqual({
       vendor: 'codex',
@@ -138,38 +148,40 @@ describe('settings — vendor runtime availability', () => {
     })
   })
 
-  it('marks cursor available when its SDK resolves, and says where it resolved from', () => {
+  it('says where a vendor-distributed CLI was found', () => {
     const runtime = snapshot()
     expect(runtime.cursor).toEqual({
       vendor: 'cursor',
       available: true,
-      runtime: 'embedded-sdk',
-      runtimeId: '@cursor/sdk',
-      origin: 'sidecar',
-      location: '/opt/c3/node_modules/@cursor/sdk',
+      runtime: 'host-cli',
+      runtimeId: 'cursor-agent',
+      // Found on PATH rather than installed by c3 — the honest provenance for a
+      // CLI c3 launches but does not distribute.
+      origin: 'host-path',
+      location: '/home/u/.local/bin/cursor-agent',
     })
   })
 
-  it('marks cursor unavailable with a stable reason code when the SDK does not resolve', () => {
-    sdk.available = false
+  it('marks a vendor unavailable with a stable reason code when its CLI is missing', () => {
+    cursorCli.present = false
     const runtime = snapshot()
     expect(runtime.cursor).toEqual({
       vendor: 'cursor',
       available: false,
-      runtime: 'embedded-sdk',
-      runtimeId: '@cursor/sdk',
-      reason: 'sdk-unresolved',
+      runtime: 'host-cli',
+      runtimeId: 'cursor-agent',
+      reason: 'host-cli-missing',
     })
-    // The SDK's own availability must not leak into the CLI vendors' answers.
+    // One vendor's absence must not leak into another's answer.
     expect(runtime.claude.available).toBe(true)
   })
 
-  it('does not put an SDK-backed vendor into hostStatus', () => {
+  it('reports every host CLI in hostStatus', () => {
     const { conn: c, sent } = conn()
     getSettings({} as never, c, { type: 'get_settings' })
     const reply = sent.find((m) => m.type === 'settings') as {
       hostStatus: { vendor: VendorId }[]
     }
-    expect(reply.hostStatus.map((h) => h.vendor)).toEqual(['claude', 'codex'])
+    expect(reply.hostStatus.map((h) => h.vendor)).toEqual(['claude', 'codex', 'cursor'])
   })
 })

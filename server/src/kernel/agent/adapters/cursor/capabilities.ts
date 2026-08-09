@@ -1,42 +1,27 @@
 /**
- * Cursor's probed capability ledger (ADR-0011). c3 drives `@cursor/sdk`'s local
- * runtime: `Agent.create` → `send` → an async `Run.stream()`. The stream is
- * read-only and single-directional, so the whole of c3's run-time control is
- * "start it" and "cancel it" — every live-run control below is `false`, and each
- * stays false until a probe proves otherwise rather than being assumed from
- * another vendor's shape.
+ * Cursor's probed capability ledger.
  *
- * `perToolApproval: false` is the load-bearing one: the permission decision is
- * fixed when the turn starts (the conversation mode + whether Cursor's
- * Auto-review classifier vets calls), so a tool can only be allowed or vetted for
- * the whole turn, never per call — nothing in the SDK can pause a run to ask a
- * human.
+ * c3 drives `cursor-agent` as a non-interactive per-turn process: the prompt goes
+ * in on stdin, stdin closes, and what comes back is a one-directional stream of
+ * frames. **Every live-run control is therefore false**, and the load-bearing one
+ * is `perToolApproval`: there is no write-back channel, no approval-request frame
+ * and no way to pause a turn to ask a human, so a tool can only be allowed or
+ * vetted for the whole turn — by the launch-time gate — never call by call.
  *
- * `interrupt: false` is narrower than it looks: `Run.cancel()` exists and is a
- * real cooperative stop, but it ends the turn. There is no way to interject and
- * have the same run continue, which is what this flag means.
+ * The rest are false for the same structural reason: no mid-turn `interrupt`
+ * (only a whole-turn kill), no live `setActionMode` (the mode is argv, fixed at
+ * launch), no `streamingPush` (stdin closes after dispatch), no in-process MCP
+ * server, and no `forkSession`. `taskStore` is false because the todo tool is
+ * conversation-local bookkeeping, not a store c3 can read or write.
+ * `nativeUserInput` is false because a headless run never asks the human
+ * anything; human involvement degrades to c3's own flows.
  *
- * `inProcessMcp: false` is a c3-side fact, not an SDK limitation. The SDK does
- * offer in-process callback tools (`local.customTools`, surfaced to the model as
- * a synthetic MCP server), but c3 does not wire its own tools through them yet;
- * the flag flips when that is built, not before.
- *
- * `taskStore` is false: the SDK has no task API — its `updateTodos` tool is a
- * conversation-local bookkeeping call, not a store c3 can read or write.
- * `nativeUserInput` is false: a headless run never asks the human anything;
- * human involvement degrades to c3's own flows.
- *
- * The structured {@link AdapterCapabilities.sessions} sub-ledger is the honest
- * split between what the SDK's store guarantees and what it does not cover:
- * `resume` is `'full'` — `Agent.resume(agentId)` restores native context, and the
- * id is minted by the SDK itself so it can never be fabricated. `list`/`read` are
- * `'partial'`: they are served from the SDK's own local agent store, which holds
- * exactly the agents created through the SDK and silently misses anything the
- * user ran in the Cursor IDE or the `cursor-agent` CLI. That is a genuine
- * reduction, and `'partial'` is the state that says so without either
- * overclaiming (`'full'`) or hiding the affordance (`'none'`). `rename`/`delete`
- * are `'none'`: the SDK exposes neither for local agents, and c3 must not pretend
- * to mutate a store it does not own.
+ * The session sub-ledger is `full` across the operations c3 supports. Sessions
+ * live in Cursor's own on-disk chat store, which the CLI and the Cursor IDE both
+ * write, so `list` and `read` cover the workspace's whole history rather than the
+ * subset c3 created. `resume` continues a chat by an id Cursor itself minted, so
+ * it can never be a fabrication. `rename`/`delete` are `none`: this is the user's
+ * IDE data, and c3 does not mutate a store it does not own.
  */
 import type { AdapterCapabilities } from '../types.js'
 
@@ -50,8 +35,8 @@ export const cursorCapabilities: AdapterCapabilities = {
   taskStore: false,
   nativeUserInput: false,
   sessions: {
-    list: 'partial',
-    read: 'partial',
+    list: 'full',
+    read: 'full',
     resume: 'full',
     rename: 'none',
     delete: 'none',

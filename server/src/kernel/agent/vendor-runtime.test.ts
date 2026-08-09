@@ -1,73 +1,66 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 
 /**
- * The neutral availability derivation, and the reason it exists: a session bound
- * to a vendor whose runtime is an in-process SDK must not be reported as
- * "unavailable" just because the host-CLI probe has nothing to say about it.
+ * The neutral availability derivation. Every vendor is backed by a host CLI, so
+ * the answer comes from one probe — what varies between them is only where the
+ * binary came from, which travels as provenance and gates nothing.
  */
 
 vi.mock('./process/launcher.js', () => ({
   probeAll: () =>
     [
-      { vendor: 'claude', binary: 'claude', path: '/x/claude' },
-      { vendor: 'codex', binary: 'codex', path: null },
+      { vendor: 'claude', binary: 'claude', path: '/x/claude', source: 'managed' },
+      { vendor: 'codex', binary: 'codex', path: null, source: 'missing' },
+      {
+        vendor: 'cursor',
+        binary: 'cursor-agent',
+        path: '/home/u/.local/bin/cursor-agent',
+        source: 'host-path-fallback',
+      },
     ] as never,
-  isManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
-}))
-
-const sdk = vi.hoisted(() => ({ available: true }))
-vi.mock('./adapters/index.js', () => ({
-  EMBEDDED_RUNTIME_PROBES: {
-    cursor: {
-      module: '@cursor/sdk',
-      probe: () =>
-        sdk.available
-          ? { available: true, origin: 'sidecar', location: '/opt/c3/node_modules/@cursor/sdk' }
-          : { available: false },
-    },
-  },
+  isManagedVendor: (vendor: string) =>
+    vendor === 'claude' || vendor === 'codex' || vendor === 'cursor',
 }))
 
 import { availableVendorSet, vendorRuntimeStatuses } from './vendor-runtime.js'
 
-beforeEach(() => {
-  sdk.available = true
-})
-
 describe('vendorRuntimeStatuses', () => {
-  it('answers for every registered vendor, whichever runtime backs it', () => {
+  it('answers for every registered vendor in the same terms', () => {
     const statuses = vendorRuntimeStatuses()
     expect(Object.keys(statuses).sort()).toEqual([...VENDOR_IDS].sort())
     expect(statuses.claude.runtime).toBe('host-cli')
-    expect(statuses.cursor.runtime).toBe('embedded-sdk')
+    expect(statuses.cursor.runtime).toBe('host-cli')
   })
 
-  it('keeps CLI vendors on the CLI probe', () => {
+  it('reports availability and the missing-CLI reason from the probe', () => {
     const statuses = vendorRuntimeStatuses()
     expect(statuses.claude.available).toBe(true)
     expect(statuses.codex.available).toBe(false)
     expect(statuses.codex.reason).toBe('host-cli-missing')
   })
 
-  it('follows the embedded probe for an SDK vendor, in both directions', () => {
-    expect(vendorRuntimeStatuses().cursor.available).toBe(true)
-    sdk.available = false
-    const off = vendorRuntimeStatuses().cursor
-    expect(off.available).toBe(false)
-    expect(off.reason).toBe('sdk-unresolved')
+  it('names the binary and where it was found, so availability is never just a claim', () => {
+    const cursor = vendorRuntimeStatuses().cursor
+    expect(cursor).toMatchObject({
+      available: true,
+      runtimeId: 'cursor-agent',
+      // Distributed by the vendor, found on PATH — not something c3 installed.
+      origin: 'host-path',
+      location: '/home/u/.local/bin/cursor-agent',
+    })
+    expect(vendorRuntimeStatuses().claude.origin).toBe('installed')
+  })
+
+  it('carries no provenance for a vendor that did not resolve', () => {
+    const codex = vendorRuntimeStatuses().codex
+    expect(codex.origin).toBeUndefined()
+    expect(codex.location).toBeUndefined()
   })
 })
 
 describe('availableVendorSet', () => {
-  it('includes an SDK-backed vendor the CLI probe knows nothing about', () => {
-    // This is the whole point: gating on the CLI probe alone would drop cursor
-    // and make a running Cursor session report "current agent unavailable".
+  it('is exactly the vendors whose CLI resolved', () => {
     expect(availableVendorSet()).toEqual(new Set(['claude', 'cursor']))
-  })
-
-  it('drops the SDK vendor when its runtime is gone', () => {
-    sdk.available = false
-    expect(availableVendorSet()).toEqual(new Set(['claude']))
   })
 })

@@ -1533,9 +1533,9 @@ function availability(
 const CURSOR_UNAVAILABLE: VendorRuntimeStatus = {
   vendor: 'cursor',
   available: false,
-  runtime: 'embedded-sdk',
-  runtimeId: '@cursor/sdk',
-  reason: 'sdk-unresolved',
+  runtime: 'host-cli',
+  runtimeId: 'cursor-agent',
+  reason: 'host-cli-missing',
 }
 
 function vendorOptions(w: ReturnType<typeof mount>) {
@@ -1602,11 +1602,11 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     })
     const cursorOption = vendorOptions(w).find((o) => o.element.value === 'cursor')!
     expect(cursorOption.attributes('disabled')).toBeDefined()
-    expect(cursorOption.text()).toContain('built-in SDK runtime not resolvable')
+    expect(cursorOption.text()).toContain('vendor CLI not found on this host')
     // …and the same reason is repeated under the roster, so it is visible without
     // opening the dropdown.
     expect(w.find('[data-testid="agent-vendor-notes"]').text()).toContain(
-      'built-in SDK runtime not resolvable',
+      'vendor CLI not found on this host',
     )
   })
 
@@ -1669,9 +1669,9 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     const rows = w.findAll('[data-testid="diagnostics-row"]')
     expect(rows).toHaveLength(VENDOR_IDS.length)
     const cursorRow = rows.find((r) => r.attributes('data-vendor') === 'cursor')!
-    expect(cursorRow.text()).toContain('@cursor/sdk')
-    // 原因文案要可行动:指向旁挂安装方式与覆盖变量,而不只是"不可用"。
-    expect(cursorRow.text()).toContain('CURSOR_SDK_PATH')
+    expect(cursorRow.text()).toContain('cursor-agent')
+    // 原因文案要可行动,而不只是"不可用"。
+    expect(cursorRow.text()).toContain('vendor CLI not found')
     // 解析不到时没有来源可讲,不渲染来源/位置列。
     expect(cursorRow.find('.diagnostics-path').exists()).toBe(false)
     // 宿主 CLI 行照旧显示解析到的绝对路径。
@@ -1679,7 +1679,7 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     expect(claudeRow.find('.diagnostics-path').text()).toBe('/usr/local/bin/claude')
   })
 
-  it('shows an in-process SDK’s resolution source and the copy that will load', () => {
+  it('shows where a vendor-distributed CLI resolved from, and which copy will run', () => {
     const w = mount(SettingsPanel, {
       props: {
         open: true,
@@ -1688,10 +1688,10 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
           cursor: {
             vendor: 'cursor',
             available: true,
-            runtime: 'embedded-sdk',
-            runtimeId: '@cursor/sdk',
-            origin: 'sidecar',
-            location: '/opt/c3/node_modules/@cursor/sdk/index.cjs',
+            runtime: 'host-cli',
+            runtimeId: 'cursor-agent',
+            origin: 'host-path',
+            location: '/home/u/.local/bin/cursor-agent',
           },
         }),
         hostStatus: [],
@@ -1701,8 +1701,8 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
       .findAll('[data-testid="diagnostics-row"]')
       .find((r) => r.attributes('data-vendor') === 'cursor')!
     const origin = cursorRow.get('[data-testid="diagnostics-origin"]')
-    expect(origin.text()).toContain('sidecar')
-    expect(origin.text()).toContain('/opt/c3/node_modules/@cursor/sdk/index.cjs')
+    expect(origin.text()).toContain('found on PATH')
+    expect(origin.text()).toContain('/home/u/.local/bin/cursor-agent')
   })
 
   it('lists no CLI version panel row for an SDK-backed vendor', () => {

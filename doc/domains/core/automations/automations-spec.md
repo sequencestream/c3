@@ -521,21 +521,20 @@ adapter 路径运行:claude 走 SDK 的 `query()`,codex 与 cursor 走各自 ada
 生命周期(session id 绑定、canonical→wire 投影、超时/中止、执行日志、runtime 收尾、
 MCP token 释放)是同一段代码,因此同一种失败在两个 vendor 上的可观察行为一致。
 
-**cursor 分支**的两件事在别处不发生:它的运行时是进程内 `@cursor/sdk`(部署工件,
-不是宿主 CLI),SDK 解析不到时在**分派期**以可定位的 `cursor_sdk_unresolved` 失败,
-绝不改跑别的引擎;它的凭据只认 API key,绑定 Agent 的 key 经本轮 `envOverrides.CURSOR_API_KEY`
-到达 driver,为空则回落到服务端环境变量,两处皆空时由 cursor 的启动前置校验以
-同时点名两处的可行动错误失败。它不生成子进程 wrapper(进程内 runtime 没有子进程可窄化),
-也不引入进程内 `customTools` 之类的旁路工具通道;隔离一旦需要,由中立的
-`DriverStartOptions.sandboxed` 交给 SDK 自带 sandbox 兑现 —— 自动化目前没有沙箱开关,
-三个 vendor 的自动化都不置该标志,所以这里与 claude/codex 一样是未沙箱运行。cursor 的
-mode 由 `cursorModeCatalog` 解析为 `actionMode × toolGate`(`plan` / `agent` /
+**cursor 分支**的两件事在别处不发生:它的 CLI 由厂商自己分发,c3 只解析与启动,
+找不到时在**分派期**以可定位的 `cursor_cli_missing` 失败,绝不改跑别的引擎;它的
+凭据是二选一,绑定 Agent 的 key 经本轮 `envOverrides.CURSOR_API_KEY` 到达 driver,
+为空先回落服务端环境变量,再空则由 CLI 自己的钥匙串登录态兜底,因此"没有 key"不是
+失败条件。它不引入进程内旁路工具通道;隔离一旦需要,由中立的
+`DriverStartOptions.sandboxed` 兑现 —— 自动化目前没有沙箱开关,三个 vendor 的自动化
+都不置该标志,所以这里与 claude/codex 一样是未沙箱运行。cursor 的 mode 由
+`cursorModeCatalog` 解析为 `actionMode × toolGate`(`plan` / `agent` /
 `full-access`,其余令牌降级到目录默认 `agent`),不借用 claude 或 codex 对同一个词的解释。
 
 有执行路径的 vendor 集合是共享常量 `AUTOMATION_VENDORS`(claude / codex / cursor):
 分派前的 hard-fail 与创建/编辑表单的灰显读的是**同一份**列表,因此表单不可能提供一个
 分派会拒绝的选择。"有没有执行路径"与 `vendorRuntime` 的"此刻运行时可用不可用"是两项
-独立条件,都要满足才可选:cursor 的 SDK 解析不到时,选项仍按运行时不可用灰显并就地
+独立条件,都要满足才可选:cursor 的 CLI 解析不到时,选项仍按运行时不可用灰显并就地
 标注原因。表单侧的表现:没有执行路径的 vendor 选项禁用并标注"不支持自动化",
 `llm_prompt` 型任务**新选中**它时禁止保存;系统配置的 `automationAgentId` 跟随链若解析到
 这样的 vendor,表单不把它当作可提交的默认值,而是回落到受支持的 vendor 并要求用户显式改选。

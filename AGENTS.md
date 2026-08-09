@@ -48,7 +48,7 @@ pnpm start [--port 3000] # start is default cmd; workspaces added from Web UI
 - doc/constitution.md: constitution of the system
 - doc/glossary.md: glossary of the system
 - doc/architecture/architecture.md: architecture spec
-- doc/adr/adr.md: architecture decision records
+- doc/architecture/adr/adr.md: architecture decision records
 - doc/domains/: domain doc
 - doc/flows/flows.md: flow doc
 - doc/non-functional/: non-functional doc

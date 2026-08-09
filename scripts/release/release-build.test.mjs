@@ -40,22 +40,19 @@ describe('release-build orchestrator', () => {
     expect(stdout).toMatch(/Phase2\s+(.*\s+)?compile \(parallel\)/)
   })
 
-  it('stages the cursor sidecar after compile and before pack', () => {
-    // Order is load-bearing: the sidecar has to be in `dist/<target>/` before pack
-    // runs, or the archive and every checksum over it would cover a Cursor-less
-    // artifact that still advertises the vendor.
+  it('packs after compile, so every checksum covers the final bytes', () => {
     const { stdout } = dryRun()
     const compile = stdout.indexOf('Phase2  ')
-    const sidecar = stdout.indexOf('Phase2.4')
     const pack = stdout.indexOf('Phase2.5')
-    expect(sidecar).toBeGreaterThan(compile)
-    expect(pack).toBeGreaterThan(sidecar)
-    expect(stdout).toMatch(/Phase2\.4 cursor sidecar\s+→ dist\/\{target\}\/node_modules/)
+    expect(pack).toBeGreaterThan(compile)
   })
 
-  it('can skip the sidecar for a debug build', () => {
-    const { stdout } = dryRun(['--skip-sidecar'])
-    expect(stdout).toMatch(/Phase2\.4 cursor sidecar \(skipped\)/)
+  it('carries no vendor runtime into the artifact', () => {
+    // Every vendor is a host CLI resolved at run time, so a release stages no
+    // vendor tree and an artifact never advertises one it does not contain.
+    const { stdout } = dryRun()
+    expect(stdout).not.toMatch(/sidecar/i)
+    expect(stdout).not.toMatch(/cursor/i)
   })
 
   it('experimental targets are best-effort by default, hard failures under --strict', () => {

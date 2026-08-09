@@ -50,8 +50,8 @@
 只有一个 key 和一个 model,**没有 `baseUrl`**:c3 没有讲 Cursor 协议的 relay,
 故 Cursor 智能体不能被指向别的 provider,`configMode` 恒为 `'system'`(schema 拒绝
 携带 `baseUrl` 的配置,手改 settings.json 里的 `'custom'` 在加载时被钉回 `'system'`)。
-与其他厂商的 `system` 模式不同,Cursor 的 `system` **不等于**"用厂商 CLI 自己的登录
-态"——`@cursor/sdk` 只认 API key,不读 `cursor-agent login` 写入钥匙串的凭据。
+`apiKey` 是**可选**的:填了就用,留空则由 `cursor-agent login` 写入操作系统钥匙串的
+登录态兜底,与其他厂商的 `system` 模式含义一致。
 
 | 属性     | 类型 | 说明                                                                                                                   |
 | -------- | ---- | ---------------------------------------------------------------------------------------------------------------------- |

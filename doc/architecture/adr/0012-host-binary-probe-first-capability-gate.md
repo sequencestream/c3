@@ -1,6 +1,6 @@
 # 0012 — 厂商可执行文件解析是首要能力关卡
 
-- **Status:** accepted, revised 2026-07-01
+- **Status:** accepted, revised 2026-08-09
 - **Date:** 2026-06-06
 
 ## Context
@@ -14,13 +14,18 @@ shell 不同。
 
 c3 拥有默认厂商 CLI 来源。启动器按以下固定顺序解析每个厂商：
 
-1. 显式的 `CLAUDE_PATH` / `CODEX_PATH`；
+1. 显式的 `<VENDOR>_PATH`；
 2. `~/.c3/vendor/<vendor>/<version>/bin/<binary>` 下 c3 托管的 CLI；
 3. 降级的宿主 `PATH` 回退。
 
-并非每个厂商都有宿主二进制:**cursor 完全不进入这条解析链**——它由 `@cursor/sdk` 的
-进程内 runtime 驱动(SDK 随 c3 依赖发布),没有可执行文件可解析、没有版本可钉选。因此
-`HOST_BINARIES` 对 vendor 是**部分映射**,cursor 的可用性判定退化为"该 SDK 包能否被解析"。
+**分发方与启动方是两件事**：每个厂商都由 c3 启动为宿主 CLI,但不是每个都由 c3 分发。
+描述符里的 npm 三项(包名、dist-tag、兼容范围)缺席即表示**非托管**:该厂商的 CLI 由
+厂商自己的安装器发布、按自己的方式版本化,因而跳过第 2 级,只走覆盖与 PATH 两级,并且
+不得进入下载、版本比较、钉选与历史清理的任何一条路径 —— 那些路径要求一个 c3 能获取、
+能比较的 semver 版本,而非托管厂商两者都不提供。它报告的版本只用于展示。
+
+二进制名不必等于 vendor 名,因此每条解析路径都从描述符读取名字,不得拿 vendor id 当
+二进制名。
 
 一个无效的显式覆盖项对该厂商而言是硬性的解析失败。它不会被静默绕过，因为操作者提供的
 路径是有意为之的配置。
@@ -46,14 +51,17 @@ registry 的快慢无关。每个厂商各自遵守 24 小时远端检查冷却�
   在同步落盘之前，当前进程沿用刷新前的解析结果；
 - 环境变量覆盖项对开发、调试与企业锁定版本仍然有用；
 - c3 现在拥有 npm 包下载、完整性校验、原子替换、平台标签与版本兼容策略；
-- c3 不修改用户 PATH、shell 配置文件、Homebrew/npm 全局安装、或 Claude/Codex/Cursor 凭据。
+- c3 不修改用户 PATH、shell 配置文件、Homebrew/npm 全局安装、或任何厂商的凭据;
+- 非托管厂商的版本由用户自己的安装器决定,c3 只报告不干预。
 
 ## Compliance
 
 - 解析结果必须是结构化的，来源状态须为 `env-override`、`managed`、
   `host-path-fallback`、`missing`、`install-failed`、`override-invalid` 之一。
 - 托管安装失败不得删除或覆盖已存在的可用版本。
-- `vendorCliVersions.claude` / `vendorCliVersions.codex` 选择的是运行时*生效*的托管版
+- 非托管厂商必须在描述符中缺省 npm 三项,且不得出现在托管集合、下载路径与版本比较中;
+  二进制名一律从描述符读取,不得由 vendor id 推导。
+- `vendorCliVersions.<vendor>` 选择的是运行时*生效*的托管版
   本——它们**不是**下载锁定项。同步流程始终追踪最新的兼容发布版本；一个缺失或不兼容的
   生效版本会降级为最新兼容版本，记录一条可见的 `lastError`，并且**不会**改写用户的选
   择。多版本目录共存于 `~/.c3/vendor/<vendor>/<version>/` 下；活动版本可通过系统设置面

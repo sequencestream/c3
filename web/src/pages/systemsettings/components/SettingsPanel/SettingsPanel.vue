@@ -117,14 +117,13 @@ const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
 interface DiagnosticsRow {
   vendor: VendorId
   status: VendorRuntimeStatus
-  /** 该 vendor 的宿主 CLI 探测结果;进程内 SDK 的 vendor 没有这一项。 */
+  /** 该 vendor 的宿主 CLI 探测结果;探测不到时缺席。 */
   host?: VendorHostStatus
 }
 
-// Runtime diagnostics rows — one per vendor, whatever backs it. Availability and
-// the reason come from the neutral signal; the CLI-only columns (resolved path,
-// install hint) render only where a host probe actually exists, so an in-process
-// SDK is never dressed up as a binary.
+// Runtime diagnostics rows — one per vendor. Availability and the reason come
+// from the neutral signal; the probe-only columns (resolved path, install hint)
+// render only where a host probe actually exists.
 const diagnostics = computed<DiagnosticsRow[]>(() => {
   const byVendor = new Map(props.hostStatus.map((h) => [h.vendor, h]))
   return VENDOR_ORDER.map((vendor) => {
@@ -132,9 +131,9 @@ const diagnostics = computed<DiagnosticsRow[]>(() => {
     const status: VendorRuntimeStatus = props.vendorAvailability[vendor] ?? {
       vendor,
       available: host?.present ?? false,
-      runtime: host ? 'host-cli' : 'embedded-sdk',
+      runtime: 'host-cli',
       ...(host ? { runtimeId: host.binary } : {}),
-      ...(host?.present ? {} : { reason: host ? 'host-cli-missing' : 'sdk-unresolved' }),
+      ...(host?.present ? {} : { reason: 'host-cli-missing' }),
     }
     return { vendor, status, ...(host ? { host } : {}) }
   })
@@ -706,12 +705,20 @@ function showBaseUrl(a: AgentConfig): boolean {
   return hasProviderConfig(a) && a.configMode === 'custom'
 }
 
-// The API key follows the base URL for redirectable vendors, but cursor needs one
-// in `system` mode too: its SDK authenticates with a key only and cannot use the
-// `cursor-agent login` credential, so hiding the field would leave the agent
-// unrunnable with nowhere to fix it.
+// The API key follows the base URL for redirectable vendors, and cursor offers it
+// in `system` mode too: its CLI accepts either a key or the `cursor-agent login`
+// credential, so the field has to be reachable — while staying optional, which is
+// what `apiKeyPlaceholder` says.
 function showApiKey(a: AgentConfig): boolean {
   return a.vendor === 'cursor' || a.configMode === 'custom'
+}
+
+// Cursor is the one vendor whose key is optional: left empty, the run uses the
+// CLI's own login. Saying so in the field is what stops it reading as required.
+function apiKeyPlaceholder(a: AgentConfig): string {
+  return a.vendor === 'cursor'
+    ? t('settings.agents.apiKey.placeholderOptional')
+    : t('settings.agents.apiKey.placeholder')
 }
 
 // Narrow the union for template read/write — `baseUrl` lives only on the
@@ -1496,7 +1503,7 @@ function selectAdmin(username: string) {
                   type="password"
                   autocomplete="off"
                   :title="t('settings.agents.col.apiKey.label')"
-                  :placeholder="t('settings.agents.apiKey.placeholder')"
+                  :placeholder="apiKeyPlaceholder(a)"
                 />
                 <input
                   v-model="a.config.model"
@@ -1744,9 +1751,7 @@ function selectAdmin(username: string) {
                 :title="vendorLabel(row.vendor)"
               ></span>
               <span class="diagnostics-vendor">{{ vendorLabel(row.vendor) }}</span>
-              <code class="diagnostics-binary">{{
-                row.status.runtimeId ?? t('settings.diagnostics.embeddedSdk')
-              }}</code>
+              <code class="diagnostics-binary">{{ row.status.runtimeId ?? '—' }}</code>
               <span
                 class="diagnostics-status"
                 :class="row.status.available ? 'present' : 'missing'"

@@ -27,30 +27,31 @@ export type VendorCliSource =
   | 'override-invalid'
 
 /**
- * A vendor CLI c3 installs and versions itself from npm, under
- * `~/.c3/vendor/<vendor>/<version>`. Every spec participates in remote version
- * discovery, download, pinning and history cleanup — a vendor with no spec is one
- * c3 does not launch as a host process at all (see {@link HOST_BINARIES}).
+ * A vendor CLI c3 launches as a host process.
+ *
+ * The npm trio (`packageName` / `preferredDistTag` / `compatibleRange`) is what
+ * makes a spec *managed*: c3 downloads it into `~/.c3/vendor/<vendor>/<version>`
+ * and runs it through remote version discovery, pinning and history cleanup. A
+ * spec without the trio is **unmanaged** — c3 launches the binary but does not
+ * distribute it, so resolution is `$<PATH_ENV>` then host PATH, and nothing in
+ * the npm install/sync machinery may touch it.
  */
 export interface VendorBinarySpec {
   readonly vendor: VendorId
   readonly binary: string
   readonly pathEnv: string
-  readonly packageName: string
-  readonly preferredDistTag: string
-  readonly compatibleRange: string
   readonly installHint: string
+  readonly packageName?: string
+  readonly preferredDistTag?: string
+  readonly compatibleRange?: string
 }
 
 /**
  * The vendors c3 drives by launching a host CLI, keyed by vendor.
  *
- * Deliberately partial over {@link VendorId}: `cursor` runs on `@cursor/sdk`'s
- * local runtime **inside the c3 process**, so it has no binary to find, no
- * version to pin and nothing for the npm install/sync machinery to do. Absence
- * from this table is what states that — the alternative, a fake spec, would put
- * cursor into every version panel and background registry check for a CLI that is
- * never launched.
+ * Partial over {@link VendorId} so the type stays honest as vendors come and go,
+ * but today every vendor is here: each one is a host CLI. What differs is who
+ * distributes it — see {@link isNpmManagedVendor}.
  */
 export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
   claude: {
@@ -73,38 +74,76 @@ export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
     installHint:
       'c3 installs Codex under ~/.c3/vendor/codex by default. Override with $CODEX_PATH, or keep a host `codex` on PATH as a degraded fallback.',
   },
+  cursor: {
+    vendor: 'cursor',
+    // The binary is named differently from the vendor — the only one that is, so
+    // every path must read it off the spec rather than assuming the vendor id.
+    binary: 'cursor-agent',
+    pathEnv: 'CURSOR_PATH',
+    installHint:
+      'cursor-agent ships through its own installer (`curl https://cursor.com/install -fsS | bash`) and versions itself by release date, so c3 neither downloads nor pins it. Point $CURSOR_PATH at the binary, or keep `cursor-agent` on PATH.',
+  },
 }
 
-/** Whether c3 launches this vendor as a host CLI it installs and versions itself. */
+/** Whether c3 launches this vendor as a host CLI. */
 export function isManagedVendor(vendor: VendorId): boolean {
   return HOST_BINARIES[vendor] !== undefined
 }
 
 /**
+ * Whether c3 distributes this vendor's CLI from npm — the gate on every path that
+ * downloads, compares or pins a version. An unmanaged vendor answers `false` and
+ * must never reach the npm machinery, because it has neither a package to fetch
+ * nor a semver-shaped version to reason about.
+ */
+export function isNpmManagedVendor(vendor: VendorId): boolean {
+  return HOST_BINARIES[vendor]?.packageName !== undefined
+}
+
+/**
  * The compatibility statement c3 reports for a vendor — the semver range its
- * managed CLI must satisfy. An SDK-embedded vendor has no CLI to constrain, so it
- * reports an empty label rather than a range that would imply one exists.
+ * managed CLI must satisfy. A vendor c3 does not distribute has no range to
+ * enforce, so it reports an empty label rather than one implying c3 controls it.
  */
 export function vendorCompatibilityLabel(vendor: VendorId): string {
   return HOST_BINARIES[vendor]?.compatibleRange ?? ''
 }
 
-/** Every managed spec — the set the npm install/sync/cleanup paths may touch. */
-export function managedVendorSpecs(): VendorBinarySpec[] {
-  return Object.values(HOST_BINARIES)
+/**
+ * Every npm-managed spec — the set the install/sync/cleanup paths may touch.
+ * Returns the fully-populated shape so callers iterating it can reach the npm
+ * fields without re-proving they exist.
+ */
+export function managedVendorSpecs(): Required<VendorBinarySpec>[] {
+  return Object.values(HOST_BINARIES).filter(
+    (spec): spec is Required<VendorBinarySpec> => spec.packageName !== undefined,
+  )
 }
 
 /**
  * Assert a vendor has a host CLI before entering any path that resolves, probes,
- * installs or versions one. Reaching here with an SDK-embedded vendor is a wiring
- * bug: it fails loudly rather than inventing a binary name.
+ * installs or versions one. Reaching here with a vendor that has no spec is a
+ * wiring bug: it fails loudly rather than inventing a binary name.
  */
 function requireManaged(vendor: VendorId): VendorBinarySpec {
   const spec = HOST_BINARIES[vendor]
   if (!spec) {
-    throw new Error(`${vendor} has no host CLI: it runs on an in-process SDK`)
+    throw new Error(`${vendor} has no host CLI spec`)
   }
   return spec
+}
+
+/**
+ * Assert a vendor is npm-distributed before entering the download/version paths.
+ * Separate from {@link requireManaged} because the two failures are different
+ * bugs: no spec at all, versus a spec c3 is not allowed to fetch.
+ */
+function requireNpmManaged(vendor: VendorId): Required<VendorBinarySpec> {
+  const spec = requireManaged(vendor)
+  if (!spec.packageName || !spec.preferredDistTag || !spec.compatibleRange) {
+    throw new Error(`${vendor} is not distributed by c3: its CLI has no npm package`)
+  }
+  return spec as Required<VendorBinarySpec>
 }
 
 export interface VendorProbe {
@@ -248,6 +287,12 @@ export function parseVendorVersion(vendor: VendorId, output: string): string | n
       /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s+\(?claude(?:\s+code)?\)?/i,
     ],
     codex: [/codex(?:-cli)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i],
+    // cursor-agent versions itself by release date plus a short sha
+    // (`2026.08.04-aaa8809`), and prints the bare string with no vendor prefix —
+    // so the pattern anchors on the date rather than on a name. The value only
+    // ever gets displayed: nothing compares or range-checks it, because cursor is
+    // not npm-managed.
+    cursor: [/\b(\d{4}\.\d{2}\.\d{2}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)\b/],
   }
   for (const pattern of patterns[vendor] ?? []) {
     const m = pattern.exec(text)
@@ -300,7 +345,7 @@ function stateEntry(vendor: VendorId, patch: Partial<VendorStateEntry>): VendorS
   return {
     vendor,
     source: 'missing',
-    compatibleRange: spec.compatibleRange,
+    compatibleRange: spec.compatibleRange ?? '',
     versionHistory: [],
     ...patch,
   }
@@ -333,7 +378,7 @@ function recordState(
 }
 
 function probeManaged(vendor: VendorId, version: string, deps?: VendorInstallerDeps): VendorProbe {
-  const spec = requireManaged(vendor)
+  const spec = requireNpmManaged(vendor)
   const path = managedBinPath(vendor, version)
   const versionText = probeVersion(path, vendor, deps)
   if (!satisfiesRange(versionText, spec.compatibleRange)) {
@@ -369,7 +414,7 @@ function fallbackProbe(
         source: 'host-path-fallback',
         present: true,
         version,
-        compatibleRange: spec.compatibleRange,
+        compatibleRange: spec.compatibleRange ?? '',
         installHint: spec.installHint,
         managedError,
       }
@@ -392,7 +437,7 @@ function missingProbe(vendor: VendorId, error?: string, managedError?: string): 
     path: null,
     source: managedError ? 'install-failed' : 'missing',
     present: false,
-    compatibleRange: spec.compatibleRange,
+    compatibleRange: spec.compatibleRange ?? '',
     installHint: spec.installHint,
     ...(error ? { error } : {}),
     ...(managedError ? { managedError } : {}),
@@ -416,7 +461,7 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
         source: 'env-override',
         present: true,
         version,
-        compatibleRange: spec.compatibleRange,
+        compatibleRange: spec.compatibleRange ?? '',
         installHint: spec.installHint,
       }
       cache.set(vendor, probe)
@@ -433,7 +478,7 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
         path: null,
         source: 'override-invalid',
         present: false,
-        compatibleRange: spec.compatibleRange,
+        compatibleRange: spec.compatibleRange ?? '',
         installHint: spec.installHint,
         error: `${spec.pathEnv} invalid: ${(err as Error).message}`,
       }
@@ -445,6 +490,25 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
       )
       return probe
     }
+  }
+
+  // Unmanaged vendors stop here: there is no npm package to have downloaded and
+  // no `~/.c3/vendor/<vendor>/<version>` to probe, so host PATH is the only
+  // remaining source. Passing no managedError keeps a miss reported as `missing`
+  // rather than `install-failed`, which would blame an install c3 never attempts.
+  if (!isNpmManagedVendor(vendor)) {
+    const probe = fallbackProbe(vendor, undefined, deps)
+    cache.set(vendor, probe)
+    recordState(
+      vendor,
+      {
+        source: probe.source,
+        ...(probe.path ? { path: probe.path } : {}),
+        ...(probe.version ? { selectedVersion: probe.version } : {}),
+      },
+      deps,
+    )
+    return probe
   }
 
   const pins = getVendorCliVersions()
@@ -554,7 +618,7 @@ export function selectNpmVersion(
   platform = process.platform,
   arch = process.arch,
 ): { version: string; sourceTag: string } {
-  const spec = requireManaged(vendor)
+  const spec = requireNpmManaged(vendor)
   const tags = packument['dist-tags'] ?? {}
   const candidates =
     vendor === 'codex'
@@ -625,7 +689,7 @@ export async function syncManagedVendorCli(
   vendor: VendorId,
   deps: VendorInstallerDeps = {},
 ): Promise<VendorProbe> {
-  const spec = requireManaged(vendor)
+  const spec = requireNpmManaged(vendor)
   const home = c3HomeDir()
   const state = readState(home)
   // The download target is decoupled from the user's effective-version choice

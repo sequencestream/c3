@@ -138,6 +138,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (tr.closedReason === 'timeout') {
       ctx.showToast(t('intent.createIntentProgress.timeout'))
       ctx.createIntentPending.value = false
+      ctx.awaitingIntentSessionBindId.value = null
     }
   }
 
@@ -186,6 +187,9 @@ export function installIntentActions(ctx: AppCtx): void {
 
   ctx.openIntents = (path: string): void => {
     activeTab.value = 'intents'
+    // Switching workspace discards any post-create session-bind wait for the
+    // previous project's intent — otherwise the loader could stick on the wrong id.
+    if (intentsProject.value !== path) ctx.awaitingIntentSessionBindId.value = null
     intentsProject.value = path
     ctx.persistViewMode()
     // The detail progress and PR actions depend on the normalized workspace branch mode.

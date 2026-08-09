@@ -40,6 +40,7 @@ function makeCtx() {
   const intentActionErrorSeq = ref(0)
   const createIntentPending = ref(false)
   const createIntentDialogOpen = ref(false)
+  const awaitingIntentSessionBindId = ref<string | null>(null)
   const intents = ref<Record<string, unknown[]>>({})
   const intentsSdd = ref<Record<string, boolean>>({})
   const dispatchDevLaunch = vi.fn()
@@ -183,6 +184,7 @@ function makeCtx() {
     intentActionErrorSeq,
     createIntentPending,
     createIntentDialogOpen,
+    awaitingIntentSessionBindId,
     intents,
     intentsSdd,
     dispatchDevLaunch,
@@ -253,6 +255,7 @@ function makeCtx() {
     intentActionErrorSeq,
     createIntentPending,
     createIntentDialogOpen,
+    awaitingIntentSessionBindId,
     intents,
     intentsSdd,
     dispatchDevLaunch,
@@ -2153,11 +2156,11 @@ describe('delivery detail ahead facts + cross-delivery residue clearing', () => 
 })
 
 describe('create_intent_result — 精确落点与守卫释放', () => {
-  const created = (id: string, workspaceId: string) =>
+  const created = (id: string, workspaceId: string, content = '') =>
     ({
       type: 'create_intent_result',
       workspaceId,
-      intent: { id, title: 'new intent' },
+      intent: { id, title: 'new intent', content, intentSessionId: null },
     }) as unknown as ServerToClient
 
   it('按返回的精确 id 落点到该意图的意图会话 tab,并释放守卫、关掉弹窗', () => {
@@ -2166,7 +2169,7 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
     h.createIntentPending.value = true
     h.createIntentDialogOpen.value = true
 
-    h.ctx.handleMessage(created('i-42', '/ws'))
+    h.ctx.handleMessage(created('i-42', '/ws', 'build the feature'))
 
     expect(h.requestedIntentId.value).toBe('i-42')
     expect(h.requestedIntentSubTab.value).toBe('intentSession')
@@ -2175,16 +2178,99 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
     expect(h.createIntentDialogOpen.value).toBe(false)
   })
 
+  it('带内容成功 → 回执意图立刻写入本地快照,无需等待 intents 广播即可落点', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+    h.createIntentPending.value = true
+
+    h.ctx.handleMessage(created('i-new', '/ws', 'ship it'))
+
+    // 快照已含目标,Intents.vue 的「须在列表中」门可立刻消费。
+    expect(h.intents.value['/ws']).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'i-new', content: 'ship it' })]),
+    )
+    expect(h.requestedIntentId.value).toBe('i-new')
+    expect(h.requestedIntentSubTab.value).toBe('intentSession')
+    expect(h.awaitingIntentSessionBindId.value).toBe('i-new')
+    expect(h.dispatchCreateIntent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'done' }))
+  })
+
+  it('带内容成功后 intents 广播尚无该 id 或仅有无 session 的行 → 落点与等待标记仍成立', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+
+    h.ctx.handleMessage(created('i-late', '/ws', 'contentful'))
+    expect(h.awaitingIntentSessionBindId.value).toBe('i-late')
+    expect(h.requestedIntentId.value).toBe('i-late')
+
+    // Mid-prepare broadcast: id present, still no intentSessionId — must NOT clear.
+    h.ctx.handleMessage({
+      type: 'intents',
+      workspaceId: '/ws',
+      items: [{ id: 'i-late', status: 'draft', intentSessionId: null, content: 'contentful' }],
+      sddEnabled: false,
+    } as unknown as ServerToClient)
+
+    expect(h.awaitingIntentSessionBindId.value).toBe('i-late')
+    expect(h.requestedIntentId.value).toBe('i-late')
+    expect(h.requestedIntentSubTab.value).toBe('intentSession')
+  })
+
+  it('intentSessionId 回填后清除等待标记', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+    h.ctx.handleMessage(created('i-bound', '/ws', 'go'))
+    expect(h.awaitingIntentSessionBindId.value).toBe('i-bound')
+
+    h.ctx.handleMessage({
+      type: 'intents',
+      workspaceId: '/ws',
+      items: [{ id: 'i-bound', status: 'draft', intentSessionId: 'sess-1', content: 'go' }],
+      sddEnabled: false,
+    } as unknown as ServerToClient)
+
+    expect(h.awaitingIntentSessionBindId.value).toBeNull()
+  })
+
+  it.each(['intent.startSessionFailed', 'intent.worktreeCreateFailed', 'agent.groupUnavailable'])(
+    '会话启动失败码 %s 清除等待标记',
+    (code) => {
+      const h = makeCtx()
+      h.intentsProject.value = '/ws'
+      h.ctx.handleMessage(created('i-fail', '/ws', 'go'))
+      expect(h.awaitingIntentSessionBindId.value).toBe('i-fail')
+
+      h.ctx.handleMessage(error(code))
+
+      expect(h.awaitingIntentSessionBindId.value).toBeNull()
+    },
+  )
+
+  it('空白登记不武装等待标记,仍按 id 落点', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+
+    h.ctx.handleMessage(created('i-blank', '/ws', ''))
+
+    expect(h.requestedIntentId.value).toBe('i-blank')
+    expect(h.requestedIntentSubTab.value).toBe('intentSession')
+    expect(h.awaitingIntentSessionBindId.value).toBeNull()
+    expect(h.intents.value['/ws']).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'i-blank' })]),
+    )
+  })
+
   it('结果属于别的工作区 → 不设落点,但守卫与弹窗仍然释放', () => {
     const h = makeCtx()
     h.intentsProject.value = '/ws'
     h.createIntentPending.value = true
     h.createIntentDialogOpen.value = true
 
-    h.ctx.handleMessage(created('i-42', '/other'))
+    h.ctx.handleMessage(created('i-42', '/other', 'x'))
 
     expect(h.requestedIntentId.value).toBeNull()
     expect(h.requestedIntentSubTab.value).toBeNull()
+    expect(h.awaitingIntentSessionBindId.value).toBeNull()
     expect(h.createIntentPending.value).toBe(false)
     expect(h.createIntentDialogOpen.value).toBe(false)
   })
@@ -2196,16 +2282,17 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
     h.ctx.handleMessage({
       type: 'intents',
       workspaceId: '/ws',
-      items: [{ id: 'i-42', status: 'draft' }],
+      items: [{ id: 'i-42', status: 'draft', intentSessionId: null }],
       sddEnabled: false,
     } as unknown as ServerToClient)
     // 广播本身不选中任何东西——落点只能由创建结果给出。
     expect(h.requestedIntentId.value).toBeNull()
 
-    h.ctx.handleMessage(created('i-42', '/ws'))
+    h.ctx.handleMessage(created('i-42', '/ws', 'later result'))
 
     expect(h.requestedIntentId.value).toBe('i-42')
     expect(h.requestedIntentSubTab.value).toBe('intentSession')
+    expect(h.awaitingIntentSessionBindId.value).toBe('i-42')
   })
 
   it.each([
@@ -2227,6 +2314,7 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
     expect(h.createIntentDialogOpen.value).toBe(true)
     // 被拒时不设任何落点——没有意图可跳。
     expect(h.requestedIntentId.value).toBeNull()
+    expect(h.awaitingIntentSessionBindId.value).toBeNull()
     // 同一条拒绝也是进度遮罩的失败终端(它没有回显 token,拒绝码就是相关性)。
     expect(h.dispatchCreateIntent).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'failed', code }),

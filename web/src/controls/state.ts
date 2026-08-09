@@ -8,6 +8,7 @@ import {
   type DiscussionPhase,
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
+import { type CreateIntentModel } from '@/lib/create-intent-view'
 import { type CreatePrModel } from '@/lib/create-pr-view'
 import type { DeliveryBranchInitState } from '@/lib/delivery-view'
 import { type DevLaunchModel } from '@/lib/dev-launch-view'
@@ -955,6 +956,26 @@ export function createState(deps: StateDeps) {
     createPrTimers.safety = null
   }
 
+  // ---- Create-intent progress overlay (App-global, same shape as the create-PR one) ----
+  // Tracks a WITH-CONTENT `create_intent` run so the blocking overlay can narrate
+  // the server's chain (fetch → worktree → persist → session) immediately. null =
+  // nothing in flight / overlay closed. `stage` paces the narration and exists
+  // only here: the protocol pushes no progress for this request.
+  const createIntentProgress = ref<CreateIntentModel | null>(null)
+  const createIntentTimers: {
+    stage: ReturnType<typeof setInterval> | null
+    dwell: ReturnType<typeof setTimeout> | null
+    safety: ReturnType<typeof setTimeout> | null
+  } = { stage: null, dwell: null, safety: null }
+  function clearCreateIntentTimers(): void {
+    if (createIntentTimers.stage) clearInterval(createIntentTimers.stage)
+    if (createIntentTimers.dwell) clearTimeout(createIntentTimers.dwell)
+    if (createIntentTimers.safety) clearTimeout(createIntentTimers.safety)
+    createIntentTimers.stage = null
+    createIntentTimers.dwell = null
+    createIntentTimers.safety = null
+  }
+
   // ---- Pure (state-only) message-append helpers ----
   function add(m: ChatBody): void {
     messages.value.push({ ...m, id: counters.nextId++ } as ChatMsg)
@@ -991,6 +1012,8 @@ export function createState(deps: StateDeps) {
     closeSpecLaunch,
     createPrTimers,
     clearCreatePrTimers,
+    createIntentTimers,
+    clearCreateIntentTimers,
     clearPendingDeepLink,
     // refs
     messages,
@@ -1138,6 +1161,7 @@ export function createState(deps: StateDeps) {
     devLaunch,
     specLaunch,
     createPrProgress,
+    createIntentProgress,
     // computeds
     authStatus,
     workcenterPendingCount,

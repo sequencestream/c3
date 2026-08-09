@@ -4,15 +4,26 @@
  * 这里钉的是弹窗对「一次提交就建好意图并开始会话」的四项承诺:
  *  1. 基准两支互斥,默认停在分支支并预填工作区主分支——「默认」因此是一次显式选择,
  *     提交出去的载荷里能看见它;
- *  2. 交付支只列分支已就绪的交付,因为分支没就绪的交付没有可写入的 base_branch,
- *     服务端会拒——与其让用户提交后碰壁,不如不给选;
+ *  2. 交付支只列「分支已就绪且仍可写入」的交付(planned / integrating):分支没就绪的
+ *     没有可写入的 base_branch 服务端会拒,被写入闸门阻塞的(verifying / verified /
+ *     delivered / cancelled)则一开发就会被拒——两种都是走不通的选项,不如不给选。
+ *     候选随广播收缩时,已失效的选中项必须同时让提交禁用;
  *  3. 必填校验与提交中防重都落在确认按钮上;
  *  4. 草稿只在「打开」这一刻重置。被拒绝时父组件让弹窗保持打开,内容必须还在。
  */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Delivery } from '@ccc/shared/protocol'
+import type { Delivery, DeliveryStatus } from '@ccc/shared/protocol'
 import CreateIntentDialog from './CreateIntentDialog.vue'
+
+/** 交付的全部状态,写入闸门把它切成「可写入」与「被阻塞」两半。 */
+const WRITABLE_STATUSES: readonly DeliveryStatus[] = ['planned', 'integrating']
+const BLOCKED_STATUSES: readonly DeliveryStatus[] = [
+  'verifying',
+  'verified',
+  'delivered',
+  'cancelled',
+]
 
 function delivery(over: Partial<Delivery> = {}): Delivery {
   return {
@@ -49,6 +60,15 @@ function mountDialog(
       pending: over.pending ?? false,
     },
   })
+}
+
+/** 交付下拉当前列出的 option 值,首项恒为占位空值。 */
+async function optionValues(w: ReturnType<typeof mountDialog>): Promise<string[]> {
+  await w.vm.$nextTick()
+  return w
+    .find('[data-testid="create-intent-delivery"]')
+    .findAll('option')
+    .map((o) => o.element.value)
 }
 
 describe('CreateIntentDialog — 打开/关闭', () => {
@@ -110,18 +130,62 @@ describe('CreateIntentDialog — 基准来源互斥与默认', () => {
       ],
     })
     await w.find('[data-testid="create-intent-base-delivery"]').setValue()
-    const values = w
-      .find('[data-testid="create-intent-delivery"]')
-      .findAll('option')
-      .map((o) => o.element.value)
     // 首项是占位空值,其后只有那条就绪的。
-    expect(values).toEqual(['', 'ready'])
+    expect(await optionValues(w)).toEqual(['', 'ready'])
   })
+
+  // 6 种状态 × branchReady 两态:只有「就绪 + 可写入」这一角进候选。被写入闸门阻塞的
+  // 交付分支健在,却已不接纳新的写入会话——列出来只会让用户建出一条一开发就被拒的意图。
+  for (const status of [...WRITABLE_STATUSES, ...BLOCKED_STATUSES]) {
+    const writable = WRITABLE_STATUSES.includes(status)
+    for (const branchReady of [true, false]) {
+      const listed = writable && branchReady
+      it(`status=${status} branchReady=${branchReady} → ${listed ? '进' : '不进'}候选`, async () => {
+        const w = mountDialog({
+          deliveries: [delivery({ id: 'd1', status, branchReady })],
+        })
+        await w.find('[data-testid="create-intent-base-delivery"]').setValue()
+        expect(await optionValues(w)).toEqual(listed ? ['', 'd1'] : [''])
+      })
+    }
+  }
 
   it('一条可选交付都没有时给出说明', async () => {
     const w = mountDialog({ deliveries: [delivery({ branchReady: false })] })
     await w.find('[data-testid="create-intent-base-delivery"]').setValue()
     expect(w.find('[data-testid="create-intent-delivery-empty"]').exists()).toBe(true)
+  })
+
+  it('交付都在但全部不可写入 → 同样进空态', async () => {
+    const w = mountDialog({
+      deliveries: BLOCKED_STATUSES.map((status) =>
+        delivery({ id: status, title: status, status, branchReady: true }),
+      ),
+    })
+    await w.find('[data-testid="create-intent-base-delivery"]').setValue()
+    expect(await optionValues(w)).toEqual([''])
+    expect(w.find('[data-testid="create-intent-delivery-empty"]').exists()).toBe(true)
+  })
+
+  it('弹窗开着时广播把已选交付推进到验证期 → 该项消失且提交禁用', async () => {
+    const w = mountDialog({
+      deliveries: [delivery({ id: 'd1', status: 'integrating', branchReady: true })],
+    })
+    await w.find('[data-testid="create-intent-content"]').setValue('CONTENT_ABC')
+    await w.find('[data-testid="create-intent-base-delivery"]').setValue()
+    await w.find('[data-testid="create-intent-delivery"]').setValue('d1')
+    const submit = () => w.find<HTMLButtonElement>('[data-testid="create-intent-submit"]')
+    expect(submit().element.disabled).toBe(false)
+
+    // 交付广播:同一条交付进入 verifying。
+    await w.setProps({
+      deliveries: [delivery({ id: 'd1', status: 'verifying', branchReady: true })],
+    })
+
+    expect(await optionValues(w)).toEqual([''])
+    // baseComplete 判的是「选中项仍在候选内」,所以提交当场禁用,而不是留着一个
+    // 已不可写入的 deliveryId 让用户提交出去。
+    expect(submit().element.disabled).toBe(true)
   })
 })
 

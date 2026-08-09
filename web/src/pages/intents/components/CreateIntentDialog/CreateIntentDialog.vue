@@ -11,8 +11,12 @@
  * 并预填工作区主分支——「默认」因此是一次显式选择,而不是服务端的隐式兜底,它落库
  * 的值可以被断言。
  *
- * 只列出分支已就绪的交付:分支未初始化的交付没有可写入的 base_branch,服务端会拒,
- * 与其让用户提交后才被拒,不如不给选。
+ * 只列出「分支已就绪且仍可写入」的交付,即 planned / integrating 两态。分支未初始化
+ * 的交付没有可写入的 base_branch,服务端会拒;验证期与终态的交付虽然分支健在,却已不
+ * 再接纳新的写入会话,选中它建出来的意图一开发就会被写入闸门挡住。两种都是走不通的
+ * 选项,与其让用户提交或开发后才碰壁,不如不给选。判据取 shared 的
+ * isDeliveryWriteBlocked——这里重述一份状态清单,就是「一个入口放行、另一个入口拒绝」
+ * 的来源。这是展示口径,不是新门禁:服务端解析基准的规则不变。
  *
  * 受控模态范式沿用 InputDialog/ConfirmDialog/DeliveryEditDialog(父持 open、遮罩/
  * Esc/取消一律 emit cancel、移动端全屏 sheet)。宽度取设计规范的弹窗默认值:页面
@@ -23,13 +27,14 @@
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import type { CreateIntentBase, Delivery } from '@ccc/shared/protocol'
+import { isDeliveryWriteBlocked } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
 
 const props = defineProps<{
   open: boolean
-  /** 当前工作区的交付;只有分支已就绪的才可选。 */
+  /** 当前工作区的交付;只有分支已就绪且仍可写入的才可选。 */
   deliveries: Delivery[]
   /** 工作区主分支,作为「分支」支的预填值。 */
   mainBranch: string | null
@@ -50,11 +55,19 @@ const deliveryId = ref('')
 const content = ref('')
 const contentInput = ref<HTMLTextAreaElement | null>(null)
 
-/** 分支已就绪且分支名非空的交付——其余没有可写入的基准,不进选项。 */
+/**
+ * 分支已就绪、分支名非空、且未被写入闸门阻塞的交付——其余要么没有可写入的基准,要么
+ * 已不再接纳新的写入会话,都不进选项。deliveries 由交付广播实时喂入,因此这个过滤是
+ * 响应式的:弹窗开着时已选交付被推进到验证期,它会当场从候选里消失。
+ */
 const selectableDeliveries = computed<Delivery[]>(() =>
-  props.deliveries.filter((d) => d.branchReady && !!d.branchName?.trim()),
+  props.deliveries.filter(
+    (d) => d.branchReady && !!d.branchName?.trim() && !isDeliveryWriteBlocked(d.status),
+  ),
 )
 
+// 交付支判的是「选中项仍在候选集内」而非「deliveryId 非空」:候选随广播收缩时,已经
+// 失效的选择必须同时让提交禁用,否则会提交一条已不可写入的基准。
 const baseComplete = computed<boolean>(() =>
   baseKind.value === 'branch'
     ? branch.value.trim().length > 0

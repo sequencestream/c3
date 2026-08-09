@@ -56,6 +56,7 @@ export const UI_ERROR_CODES = {
   // intent
   'intent.notFound': { key: 'error.intent.notFound' },
   'intent.dbUnavailable': { key: 'error.intent.dbUnavailable' },
+  'intent.specModeLocked': { key: 'error.intent.specModeLocked' },
   'intent.chatOpenFailed': { key: 'error.intent.chatOpenFailed' },
   'intent.chatSessionNotFound': { key: 'error.intent.chatSessionNotFound', params: ['sessionId'] },
   'intent.renameChatSessionFailed': {

@@ -57,7 +57,7 @@ c3
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
-│   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管
+│   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管;该开关**仅在规范与开发均未起步前可改**(无规范内容 + 无规范会话 + 无工作会话,判据 canEditIntentSpecMode),起步后概览页降级为只读文本 + 锁定原因、set_intent_spec_mode 回 intent.specModeLocked 不落库不广播,无强制解锁入口
 │   │   │   └── 「是否需要规范」开关              # 人工入口在意图详情「概览」tab 元信息区,三档(继承工作区/需要规范/不需要规范)选择即保存,展示服务端派生的 effectiveSpecMode;sddEnabled 关闭时仍可设置并提示此时无行为差异
 │   │   ├── 规格只读审核                          # 独立 spec_review 会话读 spec/源码/本项目意图,写任意路径一律拒绝;结论只经 submit_spec_review 结构化提交
 │   │   │   ├── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过

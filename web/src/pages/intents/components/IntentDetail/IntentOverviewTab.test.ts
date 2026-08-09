@@ -73,6 +73,8 @@ const CANCEL = '[data-testid="intent-detail-content-cancel"]'
 const SPEC_MODE_SELECT = '[data-testid="intent-meta-spec-mode-select"]'
 const SPEC_MODE_DERIVED = '[data-testid="intent-meta-spec-mode-derived"]'
 const SPEC_MODE_OFF_HINT = '[data-testid="intent-meta-spec-mode-off-hint"]'
+const SPEC_MODE_READONLY = '[data-testid="intent-meta-spec-mode-readonly"]'
+const SPEC_MODE_LOCKED_HINT = '[data-testid="intent-meta-spec-mode-locked-hint"]'
 const DEP_DELETE = '[data-testid="dep-edit-delete"]'
 const CONFIRM_OVERLAY = '[data-testid="confirm-overlay"]'
 const CONFIRM_ACCEPT = '[data-testid="confirm-accept"]'
@@ -547,6 +549,110 @@ describe('IntentOverviewTab — 是否需要规范(每意图 specMode 覆盖)', 
       expect(i18n.global.t('intent.meta.specMode.derived', { mode: 'X' }, { locale })).toContain(
         'X',
       )
+    }
+  })
+})
+
+describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为只读', () => {
+  /** 四类锁定信号,各自单独成立即应锁定(不靠彼此叠加)。 */
+  const LOCK_CASES = [
+    // specStatus 显式钉回 raw,以证明是路径本身在锁,而不是工厂顺带推出的 pending。
+    { name: 'specPath 非空', patch: { specPath: 'doc/spec.md', specStatus: 'raw' as const } },
+    { name: 'specStatus=pending', patch: { specStatus: 'pending' as const } },
+    { name: 'specStatus=approved', patch: { specStatus: 'approved' as const } },
+    { name: 'specSessionId 非空', patch: { specSessionId: 'spec-sess' } },
+    { name: 'specReviewSessionId 非空', patch: { specReviewSessionId: 'review-sess' } },
+    { name: 'lastWorkSessionId 非空', patch: { lastWorkSessionId: 'work-sess' } },
+  ]
+
+  it('每类锁定信号都收起下拉,改渲染只读文本 + 锁定原因', () => {
+    for (const { name, patch } of LOCK_CASES) {
+      const w = mountTab(intent({ id: 'r1', specMode: 'sdd', effectiveSpecMode: 'sdd', ...patch }))
+      expect(w.find(SPEC_MODE_SELECT).exists(), name).toBe(false)
+      expect(w.find(SPEC_MODE_READONLY).exists(), name).toBe(true)
+      expect(w.find(SPEC_MODE_LOCKED_HINT).exists(), name).toBe(true)
+      expect(w.find(SPEC_MODE_LOCKED_HINT).text(), name).toBe(
+        i18n.global.t('intent.meta.specMode.locked'),
+      )
+    }
+  })
+
+  it('锁定态下显式覆盖展示对应档位文案', () => {
+    for (const mode of ['sdd', 'fast'] as const) {
+      const w = mountTab(
+        intent({ id: 'r1', specMode: mode, effectiveSpecMode: mode, lastWorkSessionId: 'w1' }),
+      )
+      expect(w.find(SPEC_MODE_READONLY).text(), mode).toBe(
+        i18n.global.t(`intent.meta.specMode.option.${mode}`),
+      )
+      // 显式覆盖时「当前生效」副标仍无信息量,不渲染。
+      expect(w.find(SPEC_MODE_DERIVED).exists(), mode).toBe(false)
+    }
+  })
+
+  it('锁定态下继承态展示「继承工作区」并保留服务端派生的「当前生效」副标', () => {
+    for (const derived of ['sdd', 'fast'] as const) {
+      const w = mountTab(
+        intent({
+          id: 'r1',
+          specMode: null,
+          effectiveSpecMode: derived,
+          lastWorkSessionId: 'w1',
+        }),
+      )
+      expect(w.find(SPEC_MODE_READONLY).text(), derived).toBe(
+        i18n.global.t('intent.meta.specMode.option.inherit'),
+      )
+      const hint = w.find(SPEC_MODE_DERIVED)
+      expect(hint.exists(), derived).toBe(true)
+      // 生效值直读服务端的 effectiveSpecMode,前端不本地重算。
+      expect(hint.text(), derived).toContain(
+        i18n.global.t(`intent.meta.specMode.option.${derived}`),
+      )
+    }
+  })
+
+  it('已 merged 的意图进概览 Tab 即为只读态(经工作会话命中,不另设 PR 判据)', () => {
+    const w = mountTab(
+      intent({
+        id: 'r1',
+        specMode: 'sdd',
+        effectiveSpecMode: 'sdd',
+        lastWorkSessionId: 'work-sess',
+        prs: [fakeIntentPr('merged', { number: '42', url: 'https://x/pull/42' })],
+      }),
+    )
+    expect(w.find(SPEC_MODE_SELECT).exists()).toBe(false)
+    expect(w.find(SPEC_MODE_READONLY).exists()).toBe(true)
+    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(true)
+  })
+
+  it('锁定态下 sddEnabled=false 的「当前无行为差异」提示仍照常渲染', () => {
+    const w = mountTab(
+      intent({ id: 'r1', specMode: null, effectiveSpecMode: 'fast', lastWorkSessionId: 'w1' }),
+      { sddEnabled: false },
+    )
+    expect(w.find(SPEC_MODE_OFF_HINT).exists()).toBe(true)
+    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(true)
+  })
+
+  it('未起步的意图不显示锁定提示,下拉照常可用', () => {
+    const w = mountTab(intent({ id: 'r1' }))
+    expect(w.find(SPEC_MODE_SELECT).exists()).toBe(true)
+    expect(w.find(SPEC_MODE_READONLY).exists()).toBe(false)
+    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(false)
+  })
+
+  it('空白 specPath 不算规范内容,仍可编辑', () => {
+    const w = mountTab(intent({ id: 'r1', specPath: '   ', specStatus: 'raw' }))
+    expect(w.find(SPEC_MODE_SELECT).exists()).toBe(true)
+    expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(false)
+  })
+
+  it('五种语言都给出锁定提示文案', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
+      expect(i18n.global.t('intent.meta.specMode.locked', {}, { locale }), locale).toBeTruthy()
+      expect(i18n.global.t('error.intent.specModeLocked', {}, { locale }), locale).toBeTruthy()
     }
   })
 })

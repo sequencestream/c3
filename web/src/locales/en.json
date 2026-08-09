@@ -1008,7 +1008,8 @@
           "fast": "Not required (fast)"
         },
         "derived": "currently {mode}",
-        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now."
+        "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now.",
+        "locked": "Spec or development has already started, so this setting can no longer be changed."
       },
       "branch": {
         "label": "Branch:"
@@ -2205,6 +2206,7 @@
     "intent": {
       "notFound": "Intent not found.",
       "dbUnavailable": "Intents feature unavailable (c3.db).",
+      "specModeLocked": "Spec mode is locked: spec or development has already started on this intent.",
       "chatOpenFailed": "Failed to open intent session.",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",

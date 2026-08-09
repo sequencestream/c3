@@ -22,6 +22,7 @@ import type {
   IntentPrStatus,
   IntentSpecMode,
 } from '@ccc/shared/protocol'
+import { canEditIntentSpecMode } from '@ccc/shared'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -93,6 +94,18 @@ function specModeLabel(mode: IntentSpecMode): string {
     ? t('intent.meta.specMode.option.sdd')
     : t('intent.meta.specMode.option.fast')
 }
+
+// 规范或开发一旦起步,这个决策就再无意义(切换既不撤销已批准的规范,也不回滚已跑完的开发),
+// 于是锁定为只读。判据是 shared 里的同一个纯函数,服务端 handler 也调它——UI 收起入口,
+// handler 兜住直连 WS 与过期页签,两处必须给出同一答案。
+const canEditSpecMode = computed(() => canEditIntentSpecMode(props.intent))
+
+/** 锁定态展示的那一档:显式覆盖读 specMode,继承态读「继承工作区」。 */
+const specModeReadonlyLabel = computed(() =>
+  props.intent.specMode === null
+    ? t('intent.meta.specMode.option.inherit')
+    : specModeLabel(props.intent.specMode),
+)
 
 /** 继承态下的副标:说明当前实际生效的是哪一档。显式覆盖时该行没有信息量,不渲染。 */
 const specModeDerivedHint = computed<string | null>(() =>
@@ -329,10 +342,13 @@ watch(
     <div class="req-meta">
       <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
       <!-- 是否需要规范:选择即保存。工作区关了 SDD 时不隐藏——隐藏会让用户以为功能没了——
-           改为附一句提示说明此时设置不产生行为差异。 -->
+           改为附一句提示说明此时设置不产生行为差异。规范或开发已起步时整行降级为只读文本:
+           不隐藏(用户仍要看得到当前是哪一档),也不用 disabled 下拉(灰掉的控件只说得出
+           「现在不能点」,说不出「为什么永远不能点了」),改为文本 + 一句锁定原因。 -->
       <span class="req-meta-item" data-testid="intent-meta-spec-mode">
         {{ t('intent.meta.specMode.label') }}
         <select
+          v-if="canEditSpecMode"
           class="req-meta-spec-mode-select"
           data-testid="intent-meta-spec-mode-select"
           :value="specModeChoice"
@@ -343,11 +359,18 @@ watch(
             {{ opt.label }}
           </option>
         </select>
+        <span v-else data-testid="intent-meta-spec-mode-readonly">{{ specModeReadonlyLabel }}</span>
         <span
           v-if="specModeDerivedHint"
           class="req-meta-spec-mode-derived"
           data-testid="intent-meta-spec-mode-derived"
           >{{ specModeDerivedHint }}</span
+        >
+        <span
+          v-if="!canEditSpecMode"
+          class="req-meta-spec-mode-hint"
+          data-testid="intent-meta-spec-mode-locked-hint"
+          >{{ t('intent.meta.specMode.locked') }}</span
         >
         <span
           v-if="sddEnabled === false"

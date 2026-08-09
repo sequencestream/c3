@@ -56,6 +56,21 @@ const CREATE_INTENT_REFUSAL_CODES = new Set<string>([
   'delivery.guard.branchNotReady',
 ])
 
+/**
+ * Explicit errors that mean the post-create owner-session bind will not complete
+ * on this connection. Clearing the awaiting-bind flag on these restores
+ * `firstIntentTurn` so the user can retry; a mid-bind `intents` snapshot that
+ * merely lists the id without `intentSessionId` is NOT a clear signal.
+ */
+const INTENT_SESSION_BIND_FAIL_CODES = new Set<string>([
+  'intent.startSessionFailed',
+  'intent.worktreeCreateFailed',
+  'intent.worktreeBaseMismatch',
+  'intent.worktreeBaseMismatchDirty',
+  'intent.worktreeDirty',
+  'intent.worktreeRepairFailed',
+])
+
 // Broadcast types that can change a Dashboard count (session/intent/discussion/
 // automation surfaces). While the Dashboard is the active view, each triggers one
 // coalesced snapshot refresh (dedup handled in `loadDashboard`).
@@ -142,6 +157,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     requestedIntentSubTab,
     createIntentPending,
     createIntentDialogOpen,
+    awaitingIntentSessionBindId,
     automation,
     queueDetail,
     discussions,
@@ -835,6 +851,16 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (sl && msg.items.some((it) => it.id === sl.intentId && !!it.specSessionId)) {
           ctx.dispatchSpecLaunch({ kind: 'ready', intentId: sl.intentId, now: Date.now() })
         }
+        // Clear the post-create "awaiting session bind" flag only when the session
+        // id actually lands — a mid-prepare snapshot that lists the id without a
+        // session is the normal create window and must keep the in-page loader.
+        const awaitingBind = awaitingIntentSessionBindId.value
+        if (
+          awaitingBind &&
+          msg.items.some((it) => it.id === awaitingBind && !!it.intentSessionId)
+        ) {
+          awaitingIntentSessionBindId.value = null
+        }
         break
       }
       case 'create_intent_result':
@@ -844,12 +870,28 @@ export function installMessageHandler(ctx: AppCtx): void {
         // with the typed content intact.
         createIntentDialogOpen.value = false
         if (msg.workspaceId === intentsProject.value) {
+          // Merge the receipt into the local snapshot so Intents.vue can select
+          // immediately — do not wait for a later `intents` broadcast (which often
+          // arrives only after worktree / session bind). Later broadcasts remain
+          // authoritative and overwrite this row (including intentSessionId).
+          const prev = intents.value[msg.workspaceId] ?? []
+          const idx = prev.findIndex((it) => it.id === msg.intent.id)
+          const merged =
+            idx >= 0 ? prev.map((it, i) => (i === idx ? msg.intent : it)) : [...prev, msg.intent]
+          intents.value = { ...intents.value, [msg.workspaceId]: merged }
           // Land on the created intent by its exact server id — never by list
           // position or title. The one-shot request is consumed by Intents.vue
-          // once that id appears in this workspace's snapshot, so the create
-          // result and the `intents` broadcast may arrive in either order.
+          // once that id is in this workspace's snapshot (now true via the merge
+          // above), so the create result and the `intents` broadcast may arrive
+          // in either order.
           requestedIntentId.value = msg.intent.id
           requestedIntentSubTab.value = 'intentSession'
+          // Contentful creates start an owner session asynchronously; arm the
+          // in-page loading gate so firstIntentTurn does not flash during bind.
+          // Blank registration does not start a session and must not arm.
+          if ((msg.intent.content ?? '').trim() !== '') {
+            awaitingIntentSessionBindId.value = msg.intent.id
+          }
         }
         // The wait is over: close the progress overlay (silently, after its
         // minimum dwell) so it only covers the switch to the new intent's tab.
@@ -1436,6 +1478,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         // with any other code leaves the overlay up for its safety timeout.
         if (createIntentPending.value && CREATE_INTENT_REFUSAL_CODES.has(msg.error.code)) {
           createIntentPending.value = false
+          awaitingIntentSessionBindId.value = null
           ctx.dispatchCreateIntent({
             kind: 'failed',
             code: msg.error.code,
@@ -1453,6 +1496,7 @@ export function installMessageHandler(ctx: AppCtx): void {
           if (devLaunch.value) ctx.closeDevLaunch()
           if (specLaunch.value) ctx.dispatchSpecLaunch({ kind: 'failed', now: Date.now() })
           createIntentPending.value = false
+          awaitingIntentSessionBindId.value = null
           // The create overlay closes without a toast of its own: the one below is
           // the report, and repeating it would say the same thing twice.
           ctx.dispatchCreateIntent({
@@ -1463,6 +1507,11 @@ export function installMessageHandler(ctx: AppCtx): void {
           })
           ctx.showToast(reason)
           break
+        }
+        // Post-create owner-session bind failed: drop the in-page loading gate so
+        // firstIntentTurn / start_intent_session retry is available again.
+        if (INTENT_SESSION_BIND_FAIL_CODES.has(msg.error.code)) {
+          awaitingIntentSessionBindId.value = null
         }
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1

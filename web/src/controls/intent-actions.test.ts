@@ -84,6 +84,7 @@ function makeCtx(opts: {
   } = { dwell: null, safety: null, jump: null }
   const createIntentPending = ref(false)
   const createIntentDialogOpen = ref(false)
+  const awaitingIntentSessionBindId = ref<string | null>(null)
   const createIntentProgress = ref<CreateIntentModel | null>(null)
   const createIntentTimers: {
     stage: ReturnType<typeof setInterval> | null
@@ -105,6 +106,7 @@ function makeCtx(opts: {
     persistViewMode: vi.fn(),
     createIntentPending,
     createIntentDialogOpen,
+    awaitingIntentSessionBindId,
     loadDeliveriesForLink,
     intentsProject: ref<string | null>(WS),
     selectedIntentSessionId: ref<string | null>(null),
@@ -159,6 +161,7 @@ function makeCtx(opts: {
     currentSessions,
     createIntentPending,
     createIntentDialogOpen,
+    awaitingIntentSessionBindId,
     loadDeliveriesForLink,
   }
 }
@@ -175,6 +178,15 @@ describe('intent view loading', () => {
     })
     expect(h.ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: WS })
     expect(h.ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: WS })
+  })
+
+  it('openIntents to another workspace clears awaiting session-bind flag', () => {
+    const h = makeCtx({})
+    h.awaitingIntentSessionBindId.value = 'i-stale'
+
+    h.ctx.openIntents('/other-ws')
+
+    expect(h.awaitingIntentSessionBindId.value).toBeNull()
   })
 
   it('openLinkedIntent opens the intents tab and stages the one-shot select', () => {

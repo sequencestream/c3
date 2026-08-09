@@ -103,6 +103,11 @@ const props = defineProps<{
   /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source / post-Start-Work jump). */
   requestedIntentSubTab?: RequestedDetailSubTab | null
   /**
+   * Contentful create waiting for owner-session bind; passed through to IntentDetail
+   * so the intent-session tab shows in-page loading until the session id lands.
+   */
+  awaitingIntentSessionBindId?: string | null
+  /**
    * One-shot request to open a standalone intent (chat) session here (from the
    * session page's title-bar source button, for a chat with no owning intent).
    * When set, the right column flips to the standalone chat bound to `activeSession`;
@@ -405,6 +410,7 @@ defineExpose({
         :deliveries="deliveries"
         :standalone-delivery-pending="standaloneDeliveryPending"
         :requested-sub-tab="detailRequestedSubTab"
+        :awaiting-intent-session-bind-id="awaitingIntentSessionBindId"
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor="vendor ?? null"

@@ -182,6 +182,7 @@ const {
   intentsProject,
   requestedIntentId,
   requestedIntentSubTab,
+  awaitingIntentSessionBindId,
   openLinkedIntent,
   requestedIntentSessionId,
   requestedWorkcenterEventId,
@@ -683,6 +684,7 @@ function onCodesChatWidth(px: number): void {
           :sdd-enabled="currentIntentsSdd"
           :requested-intent-id="requestedIntentId"
           :requested-intent-sub-tab="requestedIntentSubTab"
+          :awaiting-intent-session-bind-id="awaitingIntentSessionBindId"
           :requested-intent-session-id="requestedIntentSessionId"
           :workspace-main-branch="intentsWorkspaceMainBranch"
           :workspace-git-branch-mode="

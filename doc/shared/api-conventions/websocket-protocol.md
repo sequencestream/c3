@@ -634,7 +634,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `create_intent` / `create_intent_result`
 
-`create_intent { workspaceId, content?, base? }` 是不经过智能体确认的登记入口。服务端在单个事务中创建一条 `title="new intent"`、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志，正文取 `content`（省略即空）。仅向请求连接回复 `create_intent_result { workspaceId, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端须等待该 ID 出现在当前工作区快照后再选中，不得按标题或排序猜测。
+`create_intent { workspaceId, content?, base? }` 是不经过智能体确认的登记入口。服务端在单个事务中创建一条 `title="new intent"`、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志，正文取 `content`（省略即空）。仅向请求连接回复 `create_intent_result { workspaceId, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端凭回执中的精确 id 即可选中并落点「意图会话」（可将回执意图乐观合并进本地快照，不要求先等广播），账本仍以后续 `intents` 快照为准；不得按标题或排序猜测。带内容创建成功后允许会话页内加载直至 `intentSessionId` 回填。
 
 `base` 是互斥的基准来源，决定落库的 `base_branch`：`{ kind: 'delivery', deliveryId }` 只交出交付 id，分支由服务端从本工作区交付记录读出（交付不存在/跨工作区回 `intent.deliveryContextUnknown`，分支未就绪或为空回 `delivery.guard.branchNotReady`）；`{ kind: 'branch', branch }` 交出分支名（空白回 `intent.baseBranchRequired`）。省略 `base` 走工作区主分支解析链。所有拒绝都发生在写库之前，被拒的创建不留任何意图。
 

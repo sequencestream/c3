@@ -123,11 +123,10 @@ describe('SettingsPanel.vue — model input visibility by configMode (2026-07-02
     expect(sysRow.find('.agent-wireapi').exists()).toBe(false)
   })
 
-  it('system-mode codex — model input visible, baseUrl/apiKey/wireApi hidden', () => {
+  it('system-mode codex — model input visible, baseUrl/apiKey/wireApi hidden', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: systemClaude } })
-    const agentRows = w.findAll('[data-testid="agent-card"]')
-    // Third row is system codex
-    const sysRow = agentRows[2]
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    const sysRow = w.find('[data-agent-id="system-codex"]')
     expect(sysRow.find('.agent-model').exists()).toBe(true)
     expect(sysRow.find('.agent-url').exists()).toBe(false)
     expect(sysRow.find('.agent-key').exists()).toBe(false)
@@ -1030,17 +1029,24 @@ describe('SettingsPanel.vue — agent group containers (ADR-0029)', () => {
   const groupNames = (w: ReturnType<typeof mount>) =>
     boxes(w).map((b) => b.attributes('data-group-name'))
 
-  it('renders one container per group plus the default bucket, ordered by first member', () => {
+  it('renders one container per group plus the default bucket, ordered by first member', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
-    // The System agent is ungrouped, so `default` holds the first member overall
-    // and renders first; `pool` follows.
+    // Claude tab: System in default, `pool` follows. Codex agent is on its own tab.
     expect(groupNames(w)).toEqual(['', 'pool'])
     const rowsOf = (box: number) =>
       boxes(w)
         [box].findAll('[data-testid="agent-card"]')
         .map((r) => r.attributes('data-agent-id'))
-    expect(rowsOf(0)).toEqual([SYSTEM_AGENT_ID, 'cx'])
+    expect(rowsOf(0)).toEqual([SYSTEM_AGENT_ID])
     expect(rowsOf(1)).toEqual(['a1', 'a2'])
+
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    expect(groupNames(w)).toEqual([''])
+    expect(
+      boxes(w)[0]
+        .findAll('[data-testid="agent-card"]')
+        .map((r) => r.attributes('data-agent-id')),
+    ).toEqual(['cx'])
   })
 
   it('the in-group arrow swaps two members and Save keeps the new failover order', async () => {
@@ -1068,20 +1074,25 @@ describe('SettingsPanel.vue — agent group containers (ADR-0029)', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
     const def = boxes(w)[0]
     expect(def.findAll('[data-testid="agent-move-down"]')[0].attributes('disabled')).toBeDefined()
-    // `cx` sits right below it, so moving up would put it above System.
-    expect(def.findAll('[data-testid="agent-move-up"]')[1].attributes('disabled')).toBeDefined()
+    // On the Claude tab the default bucket only holds System (codex lives on its tab).
+    expect(def.findAll('[data-testid="agent-card"]')).toHaveLength(1)
   })
 
-  it('dragging a row onto another container moves it there, and Save persists the new group', async () => {
+  it('dragging a row onto another vendor’s container is refused and leaves group untouched', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
     const cxRow = w.find('[data-agent-id="cx"]')
     await cxRow.find('[data-testid="agent-drag"]').trigger('dragstart')
-    // `pool` is a claude group — a codex agent is refused with a notice.
-    await boxes(w)[1].trigger('drop')
+    // Switch mid-drag: the Claude `pool` group must still refuse a codex agent.
+    await w.find('[data-testid="agent-vendor-tab-btn-claude"]').trigger('click')
+    const pool = boxes(w).find((b) => b.attributes('data-group-name') === 'pool')
+    expect(pool).toBeTruthy()
+    await pool!.trigger('drop')
     expect(w.find('[data-testid="agent-group-notice"]').text()).toContain('one agent type')
     await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.agents.find((a) => a.id === 'cx')?.group).toBe('')
+    expect(saved.agents.find((a) => a.id === 'cx')?.vendor).toBe('codex')
   })
 
   it('a system-config agent may join a group — it is a legitimate first hop', async () => {
@@ -1625,7 +1636,7 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     expect(saved.agents[0].vendor).toBe('claude')
   })
 
-  it('keeps an already-configured cursor agent selectable even when its runtime is gone', () => {
+  it('keeps an already-configured cursor agent selectable even when its runtime is gone', async () => {
     const withCursor: SystemSettings = {
       ...baseSettings,
       agents: [
@@ -1646,6 +1657,7 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
         vendorAvailability: availability({ cursor: CURSOR_UNAVAILABLE }),
       },
     })
+    await w.find('[data-testid="agent-vendor-tab-btn-cursor"]').trigger('click')
     const cursorOption = vendorOptions(w).find((o) => o.element.value === 'cursor')!
     expect(cursorOption.attributes('disabled')).toBeUndefined()
   })
@@ -1818,6 +1830,92 @@ describe('SettingsPanel.vue — a Cursor agent is a first-class pick in every ro
   })
 })
 
+describe('SettingsPanel.vue — agent list vendor sub-tabs', () => {
+  const multi: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        enabled: true,
+        group: 'pool',
+        config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
+      },
+      {
+        id: 'cx',
+        vendor: 'codex',
+        configMode: 'custom',
+        displayName: 'CX',
+        enabled: true,
+        group: 'cx-pool',
+        config: { baseUrl: 'https://cx', apiKey: 'k', model: '', wireApi: 'chat' },
+      },
+    ],
+  }
+
+  const vendorTabBtns = (w: ReturnType<typeof mount>) =>
+    w.findAll('[data-testid^="agent-vendor-tab-btn-"]')
+
+  it('offers one sub-tab per registered vendor and no All overview tab', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: multi } })
+    const ids = vendorTabBtns(w).map((b) => b.attributes('data-testid'))
+    expect(ids).toEqual(VENDOR_IDS.map((v) => `agent-vendor-tab-btn-${v}`))
+    expect(w.find('[data-testid="agent-vendor-tab-btn-all"]').exists()).toBe(false)
+  })
+
+  it('filters the list to the active vendor’s agents and group containers', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: multi } })
+    expect(w.find('[data-agent-id="a1"]').exists()).toBe(true)
+    expect(w.find('[data-agent-id="cx"]').exists()).toBe(false)
+    expect(
+      w.findAll('[data-testid="agent-group-box"]').map((b) => b.attributes('data-group-name')),
+    ).toEqual(['', 'pool'])
+
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    expect(w.find('[data-agent-id="a1"]').exists()).toBe(false)
+    expect(w.find('[data-agent-id="cx"]').exists()).toBe(true)
+    expect(
+      w.findAll('[data-testid="agent-group-box"]').map((b) => b.attributes('data-group-name')),
+    ).toEqual(['', 'cx-pool'])
+  })
+
+  it('keeps same-vendor group structure visible on its tab', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: multi } })
+    const pool = w
+      .findAll('[data-testid="agent-group-box"]')
+      .find((b) => b.attributes('data-group-name') === 'pool')
+    expect(pool?.find('[data-agent-id="a1"]').exists()).toBe(true)
+    expect(w.find('[data-testid="agent-group-box"].is-default').exists()).toBe(true)
+  })
+
+  it('adds a new agent under the active vendor tab', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: multi, vendorAvailability: availability() },
+    })
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    const cards = w.findAll('[data-testid="agent-card"]')
+    const added = cards[cards.length - 1]
+    expect(added.attributes('data-agent-vendor')).toBe('codex')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    const minted = saved.agents.filter(
+      (a) => a.id !== SYSTEM_AGENT_ID && a.id !== 'a1' && a.id !== 'cx',
+    )
+    expect(minted).toHaveLength(1)
+    expect(minted[0].vendor).toBe('codex')
+  })
+})
+
 describe('SettingsPanel.vue — agent row vendor tint', () => {
   const multiVendor: SystemSettings = {
     ...baseSettings,
@@ -1844,17 +1942,19 @@ describe('SettingsPanel.vue — agent row vendor tint', () => {
     return el.style.getPropertyValue('--agent-vendor-tint')
   }
 
-  it('tints each agent row from its vendor VENDOR_COLOR-derived mix', () => {
+  it('tints each agent row from its vendor VENDOR_COLOR-derived mix', async () => {
     const w = mount(SettingsPanel, {
       props: { open: true, settings: multiVendor, vendorAvailability: availability() },
     })
     const claudeTint = rowTint(w, 'claude-1')
-    const codexTint = rowTint(w, 'codex-1')
     expect(claudeTint).toContain(VENDOR_COLOR.claude)
-    expect(codexTint).toContain(VENDOR_COLOR.codex)
-    expect(claudeTint).not.toBe(codexTint)
     expect(claudeTint).toMatch(/color-mix\(in srgb,/i)
+
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    const codexTint = rowTint(w, 'codex-1')
+    expect(codexTint).toContain(VENDOR_COLOR.codex)
     expect(codexTint).toMatch(/color-mix\(in srgb,/i)
+    expect(claudeTint).not.toBe(codexTint)
   })
 
   it('updates the row tint immediately when the vendor select changes', async () => {

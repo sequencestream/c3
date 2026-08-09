@@ -33,18 +33,18 @@
 
 ## 2. PR 生命周期
 
-| 文件:符号                                                 | 分类    | 用途                                                         |
-| --------------------------------------------------------- | ------- | ------------------------------------------------------------ |
-| `git.ts: createForgePr / getForgePrStatus / closeForgePr` | —       | forge CLI 出口,按 provider 路由;不接触意图账本               |
-| `pr-target.ts: resolvePrTarget`                           | 读      | 三条建 PR 路径共用的目标解析:关联交付 → 意图 `baseBranch`    |
-| `write-cores.ts: createPrForIntent`                       | 门禁→写 | 有活跃 PR 拒绝重建;成功后写入编号、来源、head/base、URL      |
-| `dev-cleanup.ts: runManualDevCleanup`                     | 门禁→写 | 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入      |
-| `queue-dev-actions.ts: maybeCreatePr`                     | 门禁→写 | 自动化队列:`done` 写入后按目标解析建 PR,未关联交付则不建     |
-| `pr-status-sync.ts: syncIntentPrStatus`                   | 读→写   | 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志  |
-| `pr-status-sync.ts: depsWithUnconfirmedPr`                | 读      | 依赖意图存在 `reviewing` 行即触发后台补同步                  |
-| `write-cores.ts: applyIntentStatusChange`                 | 读→写   | 取消意图:遍历全部活跃 PR 逐条关闭,全成功才放行               |
-| `pr-update-consumer.ts: handlePrUpdateEvent`              | 读→写   | `pr:update` 事件把指定行从 `rejected`/`failed`/`closed` 复位 |
-| `pr-events/tool-defs.ts: runServerSidePrCreate`           | —       | 发布 `pr:create` 事件;载荷取自创建结果,不读账本              |
+| 文件:符号                                                 | 分类    | 用途                                                             |
+| --------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| `git.ts: createForgePr / getForgePrStatus / closeForgePr` | —       | forge CLI 出口,按 provider 路由;不接触意图账本                   |
+| `pr-target.ts: resolvePrTarget`                           | 读      | 三条建 PR 路径共用的目标解析:关联交付 → 意图 `baseBranch`        |
+| `write-cores.ts: createPrForIntent`                       | 门禁→写 | 有活跃 PR 拒绝重建;成功后写入编号、来源、head/base、URL          |
+| `dev-cleanup.ts: runManualDevCleanup`                     | 门禁→写 | 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入          |
+| `queue-dev-actions.ts: maybeCreatePr`                     | 门禁→写 | 自动化队列:`done` 写入后按目标解析建 PR(未关联则向 `baseBranch`) |
+| `pr-status-sync.ts: syncIntentPrStatus`                   | 读→写   | 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志      |
+| `pr-status-sync.ts: depsWithUnconfirmedPr`                | 读      | 依赖意图存在 `reviewing` 行即触发后台补同步                      |
+| `write-cores.ts: applyIntentStatusChange`                 | 读→写   | 取消意图:遍历全部活跃 PR 逐条关闭,全成功才放行                   |
+| `pr-update-consumer.ts: handlePrUpdateEvent`              | 读→写   | `pr:update` 事件把指定行从 `rejected`/`failed`/`closed` 复位     |
+| `pr-events/tool-defs.ts: runServerSidePrCreate`           | —       | 发布 `pr:create` 事件;载荷取自创建结果,不读账本                  |
 
 ## 3. 闸门与工具
 

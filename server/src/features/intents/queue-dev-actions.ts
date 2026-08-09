@@ -14,9 +14,9 @@
  * - an intent only reaches `done` through the existing judge → commit → push
  *   path. Nothing here shortcuts it.
  * - a PR is never filed at a target the user did not decide: the base comes from
- *   the intent's delivery association (`resolvePrTarget`), never from the
- *   workspace mainline as a fallback, and an intent with no delivery gets no
- *   automatic PR at all.
+ *   `resolvePrTarget` (linked ready delivery ⇒ that delivery's branch; unlinked ⇒
+ *   the intent's persisted `baseBranch`). The resolver's failure modes still
+ *   withhold the PR; there is no fallback that invents a different base.
  *
  * Deliberately not here: in-flight registration, cooldown pre-writes and status
  * projection (the controller owns those), and any gate decision (the kernel
@@ -419,11 +419,11 @@ async function commitWithLintHeal(
  *  - the PR target resolves through the SAME `resolvePrTarget` the human button
  *    uses, so an automatic PR reaches exactly the targets a human could reach.
  *
- * The automatic policy on top of that resolution, and the only place it differs
- * from the human path: an intent with NO linked delivery gets no PR at all
- * (recorded as a `pr_skipped` log rather than silently dropped) instead of a
- * mainline PR nobody decided on, and an unresolvable target raises a todo. There
- * is no fallback to the mainline in either case.
+ * On a successful resolution the automatic path files the PR against
+ * `target.baseBranch` whether or not a delivery is linked (`deliveryId` may be
+ * null ⇒ mainline / intent `baseBranch` snapshot). An unresolvable target raises
+ * a todo. There is no fallback that invents a different base than the resolver
+ * returned.
  */
 async function maybeCreatePr(ctx: QueueActionContext, intentId: string): Promise<void> {
   if (getGitBranchMode(ctx.workspacePath) !== 'worktree') return
@@ -442,14 +442,6 @@ async function maybeCreatePr(ctx: QueueActionContext, intentId: string): Promise
       title: `「${req.title}」${detail}`,
       reasonCode: 'pr_target_unavailable',
     })
-    return
-  }
-  if (target.deliveryId === null) {
-    // No delivery to file against. The code is committed and pushed on the
-    // intent's own branch; the user links a delivery and creates the PR by hand.
-    safeInsertIntentLog(req.id, 'pr_skipped', '未关联交付,未创建 PR', 'automation')
-    ctx.hooks.broadcastIntents(ctx.workspacePath)
-    console.log(`[c3:queue]「${req.title}」未关联交付,未创建 PR`)
     return
   }
 

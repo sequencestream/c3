@@ -213,24 +213,41 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
 
-  // ── no delivery linked: no PR at all, and never one against the mainline ──
-  it('done without a linked delivery: skips the PR with a visible log, never files against main', async () => {
+  // ── no delivery linked: PR against intent.baseBranch (mainline snapshot) ──
+  it('done without a linked delivery: opens a PR toward baseBranch with null delivery_id', async () => {
     const h = harness({
       mode: 'worktree',
       prTarget: { ok: true, deliveryId: null, baseBranch: 'main' },
     })
     const out = await runManualDevCleanup('I1', WS, h.deps)
 
-    expect(out).toEqual({ kind: 'success', createdPr: false })
+    expect(out).toEqual({ kind: 'success', createdPr: true })
     expect(h.mocks.commitAndPush).toHaveBeenCalled()
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
-    expect(h.mocks.createForgePr).not.toHaveBeenCalled()
-    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
+    expect(h.mocks.createForgePr).toHaveBeenCalledWith(
+      '/abs/cwd',
+      expect.any(String),
+      expect.any(String),
+      'intent/i1-add-feature',
+      'main',
+      undefined,
+    )
+    expect(h.mocks.upsertIntentPr).toHaveBeenCalledWith({
+      intentId: 'I1',
+      deliveryId: null,
+      number: '42',
+      status: 'reviewing',
+      forge: 'gitlab',
+      repo: null,
+      url: 'https://h/pull/42',
+      headBranch: 'intent/i1-add-feature',
+      baseBranch: 'main',
+    })
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
-    expect(h.mocks.publishEvent).not.toHaveBeenCalled()
     expect(h.mocks.safeInsertIntentLog.mock.calls).toEqual([
-      ['I1', 'pr_skipped', '未关联交付,未创建 PR', 'automation'],
+      ['I1', 'pr_created', '创建 PR #42', 'automation'],
     ])
+    expect(h.mocks.publishEvent).toHaveBeenCalled()
   })
 
   // ── target unresolvable: no PR, no mainline fallback, one workbench todo ──

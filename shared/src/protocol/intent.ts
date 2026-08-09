@@ -725,11 +725,9 @@ export const INTENT_LOG_OPERATIONS = [
   'spec_approved',
   'spec_unapproved',
   'pr_created',
-  // An automatic path finished the work but deliberately created NO PR (the
-  // intent is not associated with any delivery, so there is no target it may
-  // file against). Its own operation rather than a flavour of `pr_created`:
-  // "created" and "deliberately skipped" are two different audit facts, and only
-  // separate rows make either searchable.
+  // Retained for historical intent_logs rows. Current automatic paths create a
+  // PR against the intent's persisted baseBranch when no delivery is linked, so
+  // new writers no longer emit this operation for that case.
   'pr_skipped',
   'pr_merged',
   'pr_closed',

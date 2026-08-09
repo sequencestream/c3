@@ -5,6 +5,8 @@
  *  - never touches `spec_status` / `spec_approved`: switching to fast does not
  *    revoke an approved spec, switching to sdd does not fabricate a pending one.
  *  - unknown intent: `intent.notFound`, nothing written, no broadcast.
+ *  - spec or development already started: `intent.specModeLocked`, nothing
+ *    written, no broadcast — the backstop behind the UI that hides the control.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -25,8 +27,12 @@ import {
   getIntent,
   insertIntents,
   resetStoreForTests,
+  setLastWorkSession,
   setSpecApproved,
   setSpecPath,
+  setSpecReviewSessionId,
+  setSpecSessionId,
+  upsertIntentPr,
 } from './store.js'
 import { setIntentSpecMode } from './index.js'
 import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sessions/session-metadata-store.js'
@@ -116,24 +122,6 @@ describe('set_intent_spec_mode — override write + broadcast', () => {
     expect(broadcastIntents).toHaveBeenCalledTimes(2)
   })
 
-  it('leaves spec_status / spec_approved untouched in both directions', () => {
-    const id = newIntent()
-    setSpecPath(id, 'doc/spec.md')
-    setSpecApproved(id, true, 'alice')
-    const { ctx } = fakeCtx()
-    const { conn } = fakeConn()
-    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'fast' })
-    let after = getIntent(id)!
-    expect(after.specStatus).toBe('approved')
-    expect(after.specApproved).toBe(true)
-    expect(after.specApproveUser).toBe('alice')
-
-    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'sdd' })
-    after = getIntent(id)!
-    expect(after.specStatus).toBe('approved')
-    expect(after.specApproved).toBe(true)
-  })
-
   it('rejects an unknown intent with intent.notFound and does not broadcast', () => {
     const { ctx, broadcastIntents } = fakeCtx()
     const { conn, sent } = fakeConn()
@@ -144,5 +132,109 @@ describe('set_intent_spec_mode — override write + broadcast', () => {
     })
     expect(sent).toEqual([{ type: 'error', error: { code: 'intent.notFound' } }])
     expect(broadcastIntents).not.toHaveBeenCalled()
+  })
+})
+
+describe('set_intent_spec_mode — locked once spec or development has started', () => {
+  const LOCKED = [{ type: 'error', error: { code: 'intent.specModeLocked' } }]
+
+  /** Set the override while still editable, so each lock case has a value to protect. */
+  function seedOverride(id: string): void {
+    const { ctx } = fakeCtx()
+    const { conn } = fakeConn()
+    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'sdd' })
+    expect(getIntent(id)!.specMode).toBe('sdd')
+  }
+
+  /** Apply `start` to a seeded intent, then assert the next write is refused outright. */
+  function expectLocked(start: (id: string) => void): void {
+    const id = newIntent()
+    seedOverride(id)
+    start(id)
+    const { ctx, broadcastIntents } = fakeCtx()
+    const { conn, sent } = fakeConn()
+    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'fast' })
+    expect(sent).toEqual(LOCKED)
+    expect(getIntent(id)!.specMode).toBe('sdd')
+    expect(broadcastIntents).not.toHaveBeenCalled()
+  }
+
+  it('refuses once a spec document exists (specPath set)', () => {
+    expectLocked((id) => setSpecPath(id, 'doc/spec.md'))
+  })
+
+  it('refuses once the spec status moved past raw', () => {
+    // Un-approval lands `pending` with no path — the status half of the criterion alone.
+    expectLocked((id) => setSpecApproved(id, false, null))
+    expectLocked((id) => setSpecApproved(id, true, 'alice'))
+  })
+
+  it('refuses once a spec-authoring session was started', () => {
+    expectLocked((id) => setSpecSessionId(id, 'spec-sess'))
+  })
+
+  it('refuses once a spec-review session was started', () => {
+    expectLocked((id) => setSpecReviewSessionId(id, 'review-sess'))
+  })
+
+  it('refuses once development ran — this is what covers merged intents', () => {
+    expectLocked((id) => setLastWorkSession(id, 'work-sess'))
+  })
+
+  it('refuses a merged intent, whose work session is what trips the lock', () => {
+    const id = newIntent()
+    seedOverride(id)
+    setLastWorkSession(id, 'work-sess')
+    upsertIntentPr({
+      intentId: id,
+      number: '42',
+      url: 'https://example.test/pull/42',
+      status: 'merged',
+      forge: 'github',
+      repo: 'acme/app',
+    })
+    const { ctx, broadcastIntents } = fakeCtx()
+    const { conn, sent } = fakeConn()
+    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'fast' })
+    expect(sent).toEqual(LOCKED)
+    expect(getIntent(id)!.specMode).toBe('sdd')
+    expect(broadcastIntents).not.toHaveBeenCalled()
+  })
+
+  it('clearing the override back to inheritance is refused too — refusal is total', () => {
+    expectLocked((id) => setLastWorkSession(id, 'work-sess'))
+    const id = newIntent()
+    seedOverride(id)
+    setLastWorkSession(id, 'work-sess')
+    const { ctx, broadcastIntents } = fakeCtx()
+    const { conn, sent } = fakeConn()
+    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: null })
+    expect(sent).toEqual(LOCKED)
+    expect(getIntent(id)!.specMode).toBe('sdd')
+    expect(broadcastIntents).not.toHaveBeenCalled()
+  })
+
+  it('leaves the spec checkpoint untouched when refusing (no revocation as a side effect)', () => {
+    const id = newIntent()
+    setSpecPath(id, 'doc/spec.md')
+    setSpecApproved(id, true, 'alice')
+    const { ctx } = fakeCtx()
+    const { conn } = fakeConn()
+    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'fast' })
+    const after = getIntent(id)!
+    expect(after.specStatus).toBe('approved')
+    expect(after.specApproved).toBe(true)
+    expect(after.specApproveUser).toBe('alice')
+  })
+
+  it('an intent with a blank spec path stays editable — empty strings are not spec content', () => {
+    const id = newIntent()
+    setSpecPath(id, '   ')
+    const { ctx, broadcastIntents } = fakeCtx()
+    const { conn, sent } = fakeConn()
+    setIntentSpecMode(ctx, conn, { type: 'set_intent_spec_mode', intentId: id, mode: 'fast' })
+    expect(sent).toEqual([])
+    expect(getIntent(id)!.specMode).toBe('fast')
+    expect(broadcastIntents).toHaveBeenCalledWith(proj)
   })
 })

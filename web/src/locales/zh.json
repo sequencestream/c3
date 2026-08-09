@@ -1008,7 +1008,8 @@
           "fast": "不需要规范（fast）"
         },
         "derived": "当前生效：{mode}",
-        "workspaceOff": "本工作区已关闭规范驱动开发,此设置当前不产生行为差异。"
+        "workspaceOff": "本工作区已关闭规范驱动开发,此设置当前不产生行为差异。",
+        "locked": "规范或开发已起步,此设置不可再修改。"
       },
       "branch": {
         "label": "分支:"
@@ -2205,6 +2206,7 @@
     "intent": {
       "notFound": "意图不存在。",
       "dbUnavailable": "意图功能不可用 (c3.db)。",
+      "specModeLocked": "规范模式已锁定:该意图的规范或开发已经起步。",
       "chatOpenFailed": "打开意图会话失败。",
       "chatSessionNotFound": "意图会话不存在: {sessionId}。",
       "renameChatSessionFailed": "重命名意图会话失败: {detail}。",

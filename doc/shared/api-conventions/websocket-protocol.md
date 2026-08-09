@@ -305,7 +305,7 @@
 
 ### `set_intent_spec_mode`
 
-设置或清除一条 intent 的每意图级规格模式覆盖；服务器回复 `intents`（RM-R43）。`mode` 总是显式携带：`null` 表示清除覆盖、恢复继承工作区 `sddEnabled`，不是「保持原样」。只写 `spec_mode`，`specStatus` / `specApproved` 不动，也不放松任何闸门；已解析的 `effectiveSpecMode` 由广播带回。未知 intent 回 `intent.notFound`。
+设置或清除一条 intent 的每意图级规格模式覆盖；服务器回复 `intents`（RM-R43）。`mode` 总是显式携带：`null` 表示清除覆盖、恢复继承工作区 `sddEnabled`，不是「保持原样」。只写 `spec_mode`，`specStatus` / `specApproved` 不动，也不放松任何闸门；已解析的 `effectiveSpecMode` 由广播带回。未知 intent 回 `intent.notFound`。规范或开发已起步的 intent 回 `intent.specModeLocked`，不落库也不广播——判据为 `canEditIntentSpecMode`(无规范内容 + 无规范会话 + 无工作会话,三条同时成立才可写),清除覆盖(`mode: null`)同样被拒。
 
 **字段：** `intentId: string`, `mode: 'sdd' | 'fast' | null`
 

@@ -284,8 +284,8 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   `worktree` 模式(或 `current-branch` 且偏离 `defaultMainBranch`)且存在变更时,
   它会提交并推送;**只有当意图状态为 `done` 时**才继续建 PR —— 意图仍在开发中时,
   会话结束只做提交/推送与字段回写,这是一次正常跳过而非失败。建 PR 时目标与手动入口
-  同一份解析:关联交付 ⇒ base 为该交付分支;未关联交付 ⇒ 不建 PR,只记一条 `pr_skipped`
-  日志;目标不可用 ⇒ 不建 PR 并推一条待办,**绝不回退主线**。创建走工作区的 forge-aware
+  同一份解析:关联交付 ⇒ base 为该交付分支;未关联交付 ⇒ 向意图 `baseBranch` 建 PR
+  (`delivery_id` 为空);目标不可用 ⇒ 不建 PR 并推一条待办,**绝不另选主线顶替**。创建走工作区的 forge-aware
   分发器:显式的
   工作区 `forge` 设置为 `github` 或 `gitlab` 会覆盖仓库来源检测,而
   `auto`(或缺省值)使用检测。对 GitHub 调用 `gh`,对 GitLab 调用 `glab`,然后回写

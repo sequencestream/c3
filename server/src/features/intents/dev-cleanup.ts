@@ -17,10 +17,10 @@
  * The PR half is gated twice more. The intent must READ BACK as `done` — a
  * session that ends mid-development commits and pushes but files no PR, a normal
  * skip rather than a failure. And the target comes from `resolvePrTarget` (the
- * same resolution the manual create-PR button runs): the linked delivery's
- * branch, NEVER the workspace mainline as a fallback. With no delivery linked
- * there is no PR at all, only a `pr_skipped` lifecycle log; with an unusable
- * target (branch not ready, ambiguous, unknown, not linked) there is a todo.
+ * same resolution the manual create-PR button runs): a linked ready delivery's
+ * branch, or — when none is linked — the intent's persisted `baseBranch`. An
+ * unusable target (branch not ready, ambiguous, unknown, not linked) raises a
+ * todo; the cleanup never invents a different base than the resolver returned.
  *
  * Failure is explicit (MSC-R4): no committable changes, a commit/push failure,
  * forge CLI unavailable / not logged in, or a change-request failure all return a `failed`
@@ -226,23 +226,17 @@ export async function runManualDevCleanup(
     return { kind: 'success', createdPr: false }
   }
 
-  // ⑤ Resolve the PR target the same way the manual create-PR button does: the
-  // linked delivery's branch, never the workspace mainline as a fallback. With
-  // no delivery linked there is nothing to file against — a normal skip carrying
-  // a visible lifecycle log, so the code parked on the intent branch is not lost
-  // silently. An unresolvable target is a human decision ⇒ a workbench todo.
+  // ⑤ Resolve the PR target the same way the manual create-PR button / queue
+  // auto path does: linked ready delivery ⇒ that delivery's branch; unlinked ⇒
+  // intent.baseBranch. An unresolvable target is a human decision ⇒ a workbench
+  // todo — never invent a different base than the resolver returned.
   const target = deps.resolvePrTarget(workspacePath, current)
   if (!target.ok) {
     return fail('prTargetUnavailable', prTargetFailureText(target.code))
   }
-  if (target.deliveryId === null) {
-    deps.safeInsertIntentLog(intentId, 'pr_skipped', '未关联交付,未创建 PR', 'automation')
-    deps.broadcastIntents(workspacePath)
-    return { kind: 'success', createdPr: false }
-  }
   const { deliveryId, baseBranch } = target
 
-  // ⑥ Create the forge-aware PR/MR against the resolved delivery branch.
+  // ⑥ Create the forge-aware PR/MR against the resolved base branch.
   const { title, body } = buildPr(current, deps.getIntent)
   const headBranch = current.branchName ?? branch ?? undefined
   const pr = await deps.createForgePr(

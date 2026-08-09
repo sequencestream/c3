@@ -22,7 +22,6 @@ import { ensureRuntime, getRuntime, isRunning } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
 import { loadHistory, sessionExists } from '../../sessions.js'
 import {
-  getDefaultMainBranch,
   getDefaultMode,
   getDevSkill,
   getGitBranchMode,
@@ -78,7 +77,10 @@ import {
   existingIntentSessionCwd,
   prepareIntentSessionWorktree,
   prepareIntentWorktreeBaseline,
+  worktreeBaselineNotice,
+  type WorktreeBaselineNotice,
 } from './session-worktree.js'
+import type { WorktreeBaselineDrift } from './worktree-baseline.js'
 import { captureFastTurnBaseline } from './fast-spec.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
 import { computeSpecLayout } from './spec-path.js'
@@ -109,7 +111,19 @@ const WORK_CONTINUE_PROMPT = 'continue'
 export type SessionLaunchMode = 'fresh' | 'resume' | 'attach'
 
 export type SessionLaunchResult =
-  | { success: true; sessionId: string; mode: SessionLaunchMode }
+  | {
+      success: true
+      sessionId: string
+      mode: SessionLaunchMode
+      /**
+       * The worktree this session runs in does not contain its baseline tip.
+       * The launch happened anyway — falling behind a base branch is settled at
+       * PR merge, not at launch — so this rides the SUCCESS result as a notice
+       * the page turns into the two explicit repairs. Adapters with no UI (the
+       * MCP tool surface, the queue) ignore it.
+       */
+      baselineNotice?: WorktreeBaselineNotice
+    }
   | {
       success: false
       code: string
@@ -299,21 +313,33 @@ function prepareSessionCwd(
   intent: Intent,
   opts?: { deliveryId?: string | null },
 ):
-  | { ok: true; cwd: string; branchName: string | null }
+  | { ok: true; cwd: string; branchName: string | null; notice: WorktreeBaselineNotice | null }
   | { ok: false; result: SessionLaunchResult } {
   const prepared = prepareIntentSessionWorktree(workspacePath, intent, opts)
   if (!prepared.ok) return { ok: false, result: { success: false, ...prepared.failure } }
-  return { ok: true, cwd: prepared.prepared.cwd, branchName: prepared.prepared.branchName }
+  return {
+    ok: true,
+    cwd: prepared.prepared.cwd,
+    branchName: prepared.prepared.branchName,
+    notice: baselineNoticeOf(intent.id, prepared.prepared.baselineDrift),
+  }
 }
 
-/** The baseline guard alone, for the callers that only need the refusal. */
-function baselineRejection(
+/** The baseline check alone, for the resume path that creates no directory. */
+function baselineNoticeFor(
   workspacePath: string,
   intent: Intent,
   deliveryId: string | null,
-): SessionLaunchResult | null {
-  const prepared = prepareIntentWorktreeBaseline(workspacePath, intent, deliveryId)
-  return prepared.ok ? null : { success: false, ...prepared.failure }
+): WorktreeBaselineNotice | null {
+  const { drift } = prepareIntentWorktreeBaseline(workspacePath, intent, deliveryId)
+  return baselineNoticeOf(intent.id, drift)
+}
+
+function baselineNoticeOf(
+  intentId: string,
+  drift: WorktreeBaselineDrift | null,
+): WorktreeBaselineNotice | null {
+  return drift ? worktreeBaselineNotice(intentId, drift) : null
 }
 
 /**
@@ -390,14 +416,16 @@ async function attachOrResumeWorkSession(
   })
   if (denied) return denied
 
-  // The worktree the session lives in must still be rooted on this delivery's
-  // branch. Never repaired silently — the two exits are explicit user actions.
+  // Whether the worktree this session lives in still contains its baseline.
+  // Never repaired silently — the two exits are explicit user actions — and
+  // never a reason to refuse the turn either: a directory that fell behind its
+  // base branch keeps developing, and the divergence is settled at PR merge.
   // A resume only CHECKS: the directory this session already ran in is reused as
   // it stands, and re-creating one that was cleaned up is not a continuation.
-  if (getGitBranchMode(workspacePath) === 'worktree') {
-    const mismatch = baselineRejection(workspacePath, intent, deliveryId)
-    if (mismatch) return mismatch
-  }
+  const baselineNotice =
+    getGitBranchMode(workspacePath) === 'worktree'
+      ? baselineNoticeFor(workspacePath, intent, deliveryId)
+      : null
 
   // A fast-mode resume is a NEW turn with a NEW baseline: capture the git HEAD
   // it resumes from, so the settle can measure only this turn's diff against it.
@@ -431,7 +459,7 @@ async function attachOrResumeWorkSession(
   } catch (err) {
     console.warn(`[c3:intents] launchWorkSession (resume) sync fail: ${errMsg(err)}`)
   }
-  return { success: true, sessionId, mode: 'resume' }
+  return { success: true, sessionId, mode: 'resume', ...(baselineNotice ? { baselineNotice } : {}) }
 }
 
 // ── Work session launcher ──
@@ -549,14 +577,16 @@ export async function launchWorkSession(
 
   // ── Git branch strategy ──
   let effectiveCwd: string
+  let baselineNotice: WorktreeBaselineNotice | null = null
   progress?.('fetching-remote-main')
 
   if (getGitBranchMode(workspacePath) === 'worktree') {
     // The baseline is the intent's persisted base branch. Resolving it also
-    // fetches it, and refuses when an existing worktree is rooted somewhere
-    // else — c3 never rebuilds or merges that worktree on its own. The directory
-    // may already exist because this intent's comm / spec / review session got
-    // there first; that is a reuse, not a second worktree.
+    // fetches it, and NOTES when an existing worktree does not contain it — c3
+    // never rebuilds or merges that worktree on its own, and never refuses the
+    // launch over it either. The directory may already exist because this
+    // intent's comm / spec / review session got there first; that is a reuse,
+    // not a second worktree.
     progress?.('preparing-worktree')
     const prepared = prepareSessionCwd(workspacePath, req, { deliveryId })
     if (!prepared.ok) {
@@ -564,6 +594,7 @@ export async function launchWorkSession(
       return prepared.result
     }
     effectiveCwd = prepared.cwd
+    baselineNotice = prepared.notice
     // Only the WORK launch writes `branch_name`: it is a development fact (PR
     // head branch, the "still on main" warning), not a directory fact.
     if (prepared.branchName) setBranchName(req.id, prepared.branchName)
@@ -645,7 +676,12 @@ export async function launchWorkSession(
     console.warn(`[c3:intents] launchWorkSession sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: devId, mode: 'fresh' }
+  return {
+    success: true,
+    sessionId: devId,
+    mode: 'fresh',
+    ...(baselineNotice ? { baselineNotice } : {}),
+  }
 }
 
 // ── Spec session launcher ──
@@ -866,7 +902,12 @@ function createFirstSpecSession(
     console.warn(`[c3:intents] launchSpecSession (first) sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: specId, mode: 'fresh' }
+  return {
+    success: true,
+    sessionId: specId,
+    mode: 'fresh',
+    ...(cwd.notice ? { baselineNotice: cwd.notice } : {}),
+  }
 }
 
 // ── Spec review session launcher ──
@@ -988,7 +1029,12 @@ export async function launchSpecReviewSession(
     console.warn(`[c3:intents] launchSpecReviewSession sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: newReviewId, mode: 'fresh' }
+  return {
+    success: true,
+    sessionId: newReviewId,
+    mode: 'fresh',
+    ...(cwd.notice ? { baselineNotice: cwd.notice } : {}),
+  }
 }
 
 /**
@@ -1075,7 +1121,12 @@ function createSpecSessionOnExistingPath(
     console.warn(`[c3:intents] launchSpecSession (rework, new session) sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: specId, mode: 'fresh' }
+  return {
+    success: true,
+    sessionId: specId,
+    mode: 'fresh',
+    ...(cwd.notice ? { baselineNotice: cwd.notice } : {}),
+  }
 }
 
 /** Internal: RESUME an existing spec session. The intent already has
@@ -1172,5 +1223,10 @@ async function resumeSpecSession(
     console.warn(`[c3:intents] launchSpecSession (resume) sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: intent.specSessionId, mode: 'resume' }
+  return {
+    success: true,
+    sessionId: intent.specSessionId,
+    mode: 'resume',
+    ...(cwd.notice ? { baselineNotice: cwd.notice } : {}),
+  }
 }

@@ -12,15 +12,11 @@ describe('gateEscapeFor', () => {
     }
   })
 
-  it('基线不符按 worktree 是否干净分成两个出口集合', () => {
-    expect(gateEscapeFor('intent.worktreeBaseMismatch', 'i1')).toEqual({
-      kind: 'worktree-clean',
-      intentId: 'i1',
-    })
-    expect(gateEscapeFor('intent.worktreeBaseMismatchDirty', 'i1')).toEqual({
-      kind: 'worktree-dirty',
-      intentId: 'i1',
-    })
+  // 基线不符已不拦启动,因此这里没有它的出口:提示与两个修复动作都在意图详情的
+  // WorktreeBaselineBanner 上,不再经这条「被拒之后给出口」的路径。
+  it('基线不符不在此列 —— 它根本不产生拒绝', () => {
+    expect(gateEscapeFor('intent.worktreeBaseMismatch', 'i1')).toBeNull()
+    expect(gateEscapeFor('intent.worktreeBaseMismatchDirty', 'i1')).toBeNull()
   })
 
   it('多交付关联给出「选定交付」出口', () => {
@@ -38,6 +34,6 @@ describe('gateEscapeFor', () => {
 
   it('没有可归属的意图时不给出口:点了也无处可去', () => {
     expect(gateEscapeFor('intent.dependencyNotMerged', null)).toBeNull()
-    expect(gateEscapeFor('intent.worktreeBaseMismatch', null)).toBeNull()
+    expect(gateEscapeFor('intent.deliveryContextRequired', null)).toBeNull()
   })
 })

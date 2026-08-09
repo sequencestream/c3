@@ -178,6 +178,7 @@ export type ServerToClient =
   | IntentMsg.ServerCreateIntentResult
   | IntentMsg.ServerDevLaunchProgress
   | IntentMsg.ServerIntentWorktreeRepairResult
+  | IntentMsg.ServerIntentWorktreeBaselineNotice
   | IntentMsg.ServerSpecLaunchProgress
   | IntentMsg.ServerIntentSessions
   | IntentMsg.ServerIntentLogsList

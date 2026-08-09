@@ -13,6 +13,7 @@ import { type CreatePrModel } from '@/lib/create-pr-view'
 import type { DeliveryBranchInitState } from '@/lib/delivery-view'
 import { type DevLaunchModel } from '@/lib/dev-launch-view'
 import type { GateEscape } from '@/lib/gate-escape'
+import type { WorktreeBaselineNotice } from '@/lib/worktree-baseline'
 import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
 import { type SessionSourceAction } from '@/lib/session-jump'
@@ -863,6 +864,14 @@ export function createState(deps: StateDeps) {
    * it, and only one dialog is shown for a given refusal.
    */
   const intentGateEscape = ref<{ escape: GateEscape; message: string } | null>(null)
+  /**
+   * 每条意图最近一次被告知的「worktree 基线不符」,按意图 id 存。
+   *
+   * 它不是拒绝:会话已经起来了,只是那个目录不在基准分支的最新提交上。所以它不弹
+   * 窗、不拦操作,只在意图详情里常驻一条提示,把两个修复动作摆在用户手边 —— 落后
+   * 本身可以一直留到 PR 合并时再处理。修复成功或用户关掉即移除该条。
+   */
+  const worktreeBaselineNotices = ref<Record<string, WorktreeBaselineNotice>>({})
   const createIntentPending = ref(false)
   /**
    * After a contentful `create_intent_result`, the owner session may still be
@@ -906,6 +915,15 @@ export function createState(deps: StateDeps) {
   }
   function closeIntentGateEscape(): void {
     intentGateEscape.value = null
+  }
+  function noteWorktreeBaseline(notice: WorktreeBaselineNotice): void {
+    worktreeBaselineNotices.value = { ...worktreeBaselineNotices.value, [notice.intentId]: notice }
+  }
+  function clearWorktreeBaselineNotice(intentId: string): void {
+    if (!(intentId in worktreeBaselineNotices.value)) return
+    const next = { ...worktreeBaselineNotices.value }
+    delete next[intentId]
+    worktreeBaselineNotices.value = next
   }
 
   // ---- Dev-launch startup overlay (App-global, like the toast) ----
@@ -1012,6 +1030,8 @@ export function createState(deps: StateDeps) {
     closeIntentActionError,
     showIntentGateEscape,
     closeIntentGateEscape,
+    noteWorktreeBaseline,
+    clearWorktreeBaselineNotice,
     sessionTitleById,
     devLaunchTimers,
     clearDevLaunchTimers,
@@ -1164,6 +1184,7 @@ export function createState(deps: StateDeps) {
     intentActionErrorGuidance,
     intentActionErrorSeq,
     intentGateEscape,
+    worktreeBaselineNotices,
     createIntentPending,
     awaitingIntentSessionBindId,
     createIntentDialogOpen,

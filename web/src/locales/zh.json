@@ -1257,17 +1257,6 @@
           "label": "强制放行并启动"
         }
       },
-      "worktree": {
-        "title": {
-          "label": "worktree 基线不符"
-        },
-        "merge": {
-          "label": "合入该分支"
-        },
-        "rebuild": {
-          "label": "重建 worktree"
-        }
-      },
       "deliveryContext": {
         "title": {
           "label": "本次开发针对哪个交付?"
@@ -1276,6 +1265,22 @@
           "label": "以该交付启动"
         }
       }
+    },
+    "worktreeBaseline": {
+      "stale": "当前 worktree 不在\"{branch}\"的最新提交上,它位于\"{currentBranch}\"(HEAD {currentHead})。落后不影响继续开发,留到合并 PR 时处理即可。",
+      "staleInDelivery": "当前 worktree 不在\"{branch}\"(交付\"{delivery}\")的最新提交上,它位于\"{currentBranch}\"(HEAD {currentHead})。落后不影响继续开发,留到合并 PR 时处理即可。",
+      "dirtyHint": "该 worktree 有未提交的改动,重建前请先提交或暂存。",
+      "merge": {
+        "label": "合入基准分支"
+      },
+      "rebuild": {
+        "label": "重建 worktree"
+      },
+      "dismiss": {
+        "label": "知道了"
+      },
+      "rebuilt": "worktree 已重建,下次启动将以基准分支为根。",
+      "merged": "基准分支已合入该 worktree。"
     },
     "linkDelivery": {
       "label": "关联交付",
@@ -2245,8 +2250,6 @@
       "gitCleanupPrTargetUnavailable": "未创建 PR: {detail}。请先为该意图关联一个分支已就绪的交付,再手动创建 PR。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
       "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始工作: {message}",
-      "worktreeBaseMismatch": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\"),它当前位于\"{currentBranch}\"(HEAD {currentHead})。c3 从不自动重建或自动合并 —— 请选择重建,或把该分支合入当前工作分支。",
-      "worktreeBaseMismatchDirty": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\"),它当前位于\"{currentBranch}\"(HEAD {currentHead}),且有未提交的改动。请先提交或暂存,或把该分支合入当前工作分支。",
       "worktreeDirty": "worktree 有未提交的改动 —— 重建前请先提交或暂存。c3 绝不代你丢弃这些工作。",
       "worktreeRepairFailed": "worktree 修复失败:{message}",
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",

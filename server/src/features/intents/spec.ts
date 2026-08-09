@@ -45,7 +45,7 @@ import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { dependencyGateRejection, prepareSpecLaunch } from './dependency-gate.js'
 import { claimSpecOccupancy, releaseSpecOccupancy } from './spec-occupancy.js'
-import { prepareIntentSessionWorktree } from './session-worktree.js'
+import { prepareIntentSessionWorktree, worktreeBaselineNotice } from './session-worktree.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -209,7 +209,10 @@ export const writeSpecHandler: Handler<'write_spec'> = async (ctx, conn, msg) =>
         ...(result.params ? { params: result.params } : {}),
       },
     })
+    return
   }
+  // Started, just not on the newest baseline — a notice, never a refusal.
+  if (result.baselineNotice) conn.send(result.baselineNotice)
 }
 
 /**
@@ -484,6 +487,9 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
   registerPendingSpecLink(specId, intent.id)
+  if (cwd.prepared.baselineDrift) {
+    conn.send(worktreeBaselineNotice(intent.id, cwd.prepared.baselineDrift))
+  }
   conn.viewing = specId
   touchWorkspace(proj, Date.now())
   addViewer(specId, conn.deliver)

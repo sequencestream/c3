@@ -510,6 +510,32 @@ export type ServerIntentWorktreeRepairResult = {
 }
 
 /**
+ * The existing worktree does not contain the baseline tip — pushed AFTER the
+ * session has started, because this is a notice and not a refusal. A worktree
+ * that merely fell behind its base branch still develops fine; whether the
+ * divergence matters is settled when the PR is merged, not at launch.
+ *
+ * It carries exactly what the two exits need: the expected baseline (branch +
+ * delivery label), where the directory actually sits, and whether a rebuild is
+ * safe right now. Acting on it stays a user decision — c3 never rebuilds and
+ * never merges on its own, so the page only offers `repair_intent_worktree`.
+ */
+export type ServerIntentWorktreeBaselineNotice = {
+  type: 'intent_worktree_baseline_notice'
+  intentId: string
+  /** The expected baseline — the intent's persisted base branch. */
+  branch: string
+  /** The delivery that baseline came from; empty for a mainline baseline. */
+  deliveryTitle: string
+  /** Where the worktree actually sits; a neutral placeholder when unreadable. */
+  currentBranch: string
+  /** The worktree's short HEAD; a neutral placeholder when unreadable. */
+  currentHead: string
+  /** Whether a rebuild is safe right now (no uncommitted work) — one exit or two. */
+  canRebuild: boolean
+}
+
+/**
  * A project's intent-communication-session list (reply to `list_intent_sessions`
  * or push after a change). `runStates` is a live snapshot of which listed
  * sessions have an active agent run (id → `'running'`) — absent entries have

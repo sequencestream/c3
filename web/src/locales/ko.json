@@ -1258,17 +1258,6 @@
           "label": "강제 해제 후 시작"
         }
       },
-      "worktree": {
-        "title": {
-          "label": "worktree 기준선이 일치하지 않습니다"
-        },
-        "merge": {
-          "label": "브랜치 병합"
-        },
-        "rebuild": {
-          "label": "worktree 재생성"
-        }
-      },
       "deliveryContext": {
         "title": {
           "label": "이 세션은 어느 딜리버리를 대상으로 개발하나요?"
@@ -1277,6 +1266,22 @@
           "label": "이 딜리버리로 시작"
         }
       }
+    },
+    "worktreeBaseline": {
+      "stale": "이 worktree는 \"{branch}\"의 최신 커밋에 있지 않습니다. 현재 \"{currentBranch}\"(HEAD {currentHead})에 있습니다. 뒤처져 있어도 개발은 계속할 수 있으며, PR 병합 시점에 해결하면 됩니다.",
+      "staleInDelivery": "이 worktree는 \"{branch}\"(딜리버리 \"{delivery}\")의 최신 커밋에 있지 않습니다. 현재 \"{currentBranch}\"(HEAD {currentHead})에 있습니다. 뒤처져 있어도 개발은 계속할 수 있으며, PR 병합 시점에 해결하면 됩니다.",
+      "dirtyHint": "이 worktree에 커밋되지 않은 변경이 있습니다. 재생성 전에 커밋하거나 stash 하세요.",
+      "merge": {
+        "label": "기준 브랜치 병합"
+      },
+      "rebuild": {
+        "label": "worktree 재생성"
+      },
+      "dismiss": {
+        "label": "확인"
+      },
+      "rebuilt": "worktree를 재생성했습니다. 다음 시작 시 기준 브랜치를 기점으로 만듭니다.",
+      "merged": "기준 브랜치를 worktree에 병합했습니다."
     },
     "linkDelivery": {
       "label": "딜리버리 연결",
@@ -2246,8 +2251,6 @@
       "gitCleanupPrTargetUnavailable": "PR을 생성하지 않았습니다: {detail}. 브랜치가 준비된 딜리버리를 이 의도에 연결한 뒤 수동으로 PR을 생성하세요.",
       "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。",
       "pullFailed": "현재 브랜치가 원격과 분기되어 빨리 감기를 할 수 없습니다. 작업을 시작하기 전에 수동으로 동기화하세요: {message}",
-      "worktreeBaseMismatch": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아닙니다. 현재 \"{currentBranch}\"(HEAD {currentHead})에 있습니다. c3는 자동으로 재생성하거나 병합하지 않습니다 — 재생성하거나 해당 브랜치를 병합하세요.",
-      "worktreeBaseMismatchDirty": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아니며 현재 \"{currentBranch}\"(HEAD {currentHead})에 있고 커밋되지 않은 작업이 있습니다. 먼저 커밋하거나 stash 하거나, 해당 브랜치를 병합하세요.",
       "worktreeDirty": "worktree에 커밋되지 않은 작업이 있습니다 — 재생성 전에 커밋하거나 stash 하세요. c3는 절대 대신 버리지 않습니다.",
       "worktreeRepairFailed": "worktree 복구에 실패했습니다: {message}",
       "dependencyNotMerged": "종속성 \"{title}\"({id})이(가) 아직 메인 브랜치에 병합되지 않았습니다.",

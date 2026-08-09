@@ -62,3 +62,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0038](0038-dependency-gate-base-reachability.md)                            | 依赖闸门判据改为 base 可达:唯一共享纯函数 + 会话交付上下文 + `origin/<交付分支>` 基线(从不自动重建/暗中 merge)+ 一次性强制放行 | accepted   |
 | [0039](0039-delivery-merge-via-delivery-pr.md)                               | 合并回主线走交付 PR:先查 forge 事实的幂等 + 三类失败分层 + `delivered` 原子写 + 跨交付闸门重算(c3 从不代合)                    | accepted   |
 | [0040](0040-cursor-as-host-cli-vendor.md)                                    | Cursor 改为每轮一个 `cursor-agent` 子进程,并作为**非托管**宿主 CLI 进入解析链(凭据二选一、会话读厂商磁盘库、发布链去旁挂)      | accepted   |
+| [0041](0041-worktree-baseline-drift-as-notice.md)                            | worktree 基线不符是提示,不是闸门                                                                                               | accepted   |

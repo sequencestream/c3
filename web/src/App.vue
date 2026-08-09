@@ -195,6 +195,8 @@ const {
   intentGateEscape,
   closeIntentGateEscape,
   repairIntentWorktree,
+  worktreeBaselineNotices,
+  clearWorktreeBaselineNotice,
   createIntentPending,
   intentPrSync,
   closeIntentActionError,
@@ -506,8 +508,9 @@ function onForceDependencyGate(intentId: string): void {
   startDevelopment(intentId, false, { forceDependencyGate: true })
 }
 
+// worktree 基线提示上的两个显式出口。提示本身不阻断任何操作,所以这里只发动作,
+// 提示由 `intent_worktree_repair_result` 回来时撤掉。
 function onRepairWorktree(intentId: string, mode: 'rebuild' | 'merge'): void {
-  closeIntentGateEscape()
   repairIntentWorktree(intentId, mode)
 }
 
@@ -695,6 +698,7 @@ function onCodesChatWidth(px: number): void {
             'current-branch'
           "
           :deliveries="intentLinkDeliveries"
+          :worktree-baseline-notices="worktreeBaselineNotices"
           :standalone-delivery-pending="pendingStandaloneDelivery !== null"
           :automation="currentWorkflow"
           :intent-action-error-seq="intentActionErrorSeq"
@@ -735,6 +739,8 @@ function onCodesChatWidth(px: number): void {
           @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
+          @repair-worktree="onRepairWorktree"
+          @dismiss-worktree-baseline="clearWorktreeBaselineNotice"
           @save-intent-content="updateIntentContent"
           @save-spec-content="saveSpecContent"
           @write-spec="writeSpec"
@@ -1132,7 +1138,6 @@ function onCodesChatWidth(px: number): void {
     :deliveries="gateEscapeDeliveries"
     @cancel="closeIntentGateEscape"
     @force-dependency="onForceDependencyGate"
-    @repair-worktree="onRepairWorktree"
     @choose-delivery="onChooseDeliveryContext"
   />
 

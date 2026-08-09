@@ -43,6 +43,8 @@ import type { ChatMsg, PermissionMsg, RunActivity } from '../../../../lib/chat-t
 import { useTypedI18n } from '@/i18n'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
 import ActionDescriptorBanner from '../../../../components/ActionDescriptorBanner/ActionDescriptorBanner.vue'
+import WorktreeBaselineBanner from '../../../../components/WorktreeBaselineBanner/WorktreeBaselineBanner.vue'
+import type { WorktreeBaselineNotice } from '../../../../lib/worktree-baseline'
 import { hasDependencyBlockingSpecSession, statusLabel } from '../../../../lib/intent-list-view'
 import { actionTargetIntent } from '../../../../lib/action-descriptor'
 import IntentEngineeringProgress from './IntentEngineeringProgress.vue'
@@ -73,6 +75,8 @@ const props = defineProps<{
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
   /** 本工作区的交付列表,作为标题栏「关联交付」弹窗的候选池。 */
   deliveries?: Delivery[]
+  /** 该意图的 worktree 落后于基准分支这条提示;null=无事可说。不阻断任何操作。 */
+  worktreeBaselineNotice?: WorktreeBaselineNotice | null
   /** 「当前意图独立交付」是否在飞行中(控制层 pending 槽)。 */
   standaloneDeliveryPending?: boolean
   // ── chat column passthrough(intent session / spec session 两 tab 共用)──
@@ -135,6 +139,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refine: [intentId: string]
+  // worktree 基线提示的两个显式出口 / 收下提示,由控制层执行。
+  'repair-worktree': [intentId: string, mode: 'rebuild' | 'merge']
+  'dismiss-worktree-baseline': [intentId: string]
   // 直接编辑意图正文:上抛 id + 新正文,由控制层透传为 update_intent_content。
   'save-intent-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
@@ -462,6 +469,12 @@ function submitChat(text: string, images: PromptImage[]): void {
           :review-reason="intent.specReviewReason"
           :target-intent="actionTargetIntent(intent.actionDescriptor, intentById)"
           @navigate="(target: ActionTarget) => emit('action-target', target)"
+        />
+        <!-- worktree 落后于基准分支:只提示,两个修复动作都由用户点。 -->
+        <WorktreeBaselineBanner
+          :notice="worktreeBaselineNotice ?? null"
+          @repair="(id: string, mode: 'rebuild' | 'merge') => emit('repair-worktree', id, mode)"
+          @dismiss="(id: string) => emit('dismiss-worktree-baseline', id)"
         />
         <IntentEngineeringProgress
           :intent="intent"

@@ -315,25 +315,16 @@ function buildFirstTurn(
 }
 
 /**
- * Render a worktree preparation refusal for the queue's failure ledger.
+ * Render a worktree preparation failure for the queue's failure ledger.
  *
- * The queue has no dialog and no locale: the refusal becomes ONE failed attempt
- * whose reason a human reads under the intent. The exits it names stay where
- * they are — the `repair_intent_worktree` actions on the intent page — because
- * an unattended path never rebuilds or merges a worktree on its own.
+ * The queue has no dialog and no locale: the failure becomes ONE failed attempt
+ * whose reason a human reads under the intent. Only a directory that could not
+ * be CREATED gets here — a worktree that merely fell behind its baseline no
+ * longer stops anything, and the unattended path has nothing to decide about it.
  */
 function worktreeFailureText(failure: IntentWorktreeFailure): string {
-  const p = failure.params ?? {}
-  const where = `当前位于「${p.currentBranch ?? '—'}」(HEAD ${p.currentHead ?? '—'})`
-  const target = `「${p.branch ?? ''}」` + (p.deliveryTitle ? `(交付「${p.deliveryTitle}」)` : '')
-  switch (failure.code) {
-    case 'intent.worktreeBaseMismatch':
-      return `已存在的 worktree 不是基于${target},${where}。c3 从不自动重建或自动合并 —— 请在意图页选择重建,或把该分支合入当前工作分支。`
-    case 'intent.worktreeBaseMismatchDirty':
-      return `已存在的 worktree 不是基于${target},${where},且有未提交的改动。请先提交或暂存后重建,或把该分支合入当前工作分支。`
-    default:
-      return p.message ? `worktree 准备失败:${p.message}` : `worktree 准备失败(${failure.code})`
-  }
+  const message = failure.params?.message
+  return message ? `worktree 准备失败:${message}` : `worktree 准备失败(${failure.code})`
 }
 
 function buildContinueTurn(

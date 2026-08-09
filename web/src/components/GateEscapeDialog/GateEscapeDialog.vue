@@ -5,12 +5,13 @@
  * 与 IntentActionErrorDialog 的分工:那个只负责把失败说清楚,这个负责在说清楚之后
  * 给出用户可以做的事。两者不叠加 —— 有出口时只弹这一个。
  *
- * 三种出口形态共用一套骨架:
+ * 两种出口形态共用一套骨架:
  *   - 依赖闸门 → 「强制放行并启动」。必须先看到风险说明才有按钮可点,因为放行的
  *     后果(合并冲突、返工)只有用户能判断值不值。
- *   - 基线不符 → 「重建 worktree」/「合入交付分支」。**没有强制放行**:这类阻塞
- *     关乎会不会丢工作,不是建议。worktree 有未提交改动时连重建按钮都不渲染。
  *   - 多交付关联 → 选定本次开发针对的交付,再启动。不提供默认值。
+ *
+ * worktree 基线不符已不在此列:它不再拦启动,重建 / 合入两个动作改由意图详情里的
+ * WorktreeBaselineBanner 常驻提供。
  *
  * 受控组件:父持有 open 状态与出口种类;本组件不发消息,只上抛用户的选择。
  */
@@ -33,8 +34,6 @@ const emit = defineEmits<{
   cancel: []
   /** 强制放行依赖闸门并重新启动。 */
   forceDependency: [intentId: string]
-  /** 修复 worktree 基线。 */
-  repairWorktree: [intentId: string, mode: 'rebuild' | 'merge']
   /** 以选定的交付上下文重新启动。 */
   chooseDelivery: [intentId: string, deliveryId: string]
 }>()
@@ -53,9 +52,6 @@ const title = computed(() => {
   switch (props.escape?.kind) {
     case 'dependency':
       return t('intent.gateEscape.dependency.title.label')
-    case 'worktree-clean':
-    case 'worktree-dirty':
-      return t('intent.gateEscape.worktree.title.label')
     case 'delivery-context':
       return t('intent.gateEscape.deliveryContext.title.label')
     default:
@@ -106,24 +102,6 @@ const risk = computed(() =>
             @click="emit('forceDependency', escape.intentId)"
           >
             {{ t('intent.gateEscape.dependency.confirm.label') }}
-          </button>
-        </template>
-
-        <template v-else-if="escape.kind === 'worktree-clean' || escape.kind === 'worktree-dirty'">
-          <button
-            class="ge-confirm"
-            data-testid="gate-escape-merge"
-            @click="emit('repairWorktree', escape.intentId, 'merge')"
-          >
-            {{ t('intent.gateEscape.worktree.merge.label') }}
-          </button>
-          <button
-            v-if="escape.kind === 'worktree-clean'"
-            class="ge-confirm danger"
-            data-testid="gate-escape-rebuild"
-            @click="emit('repairWorktree', escape.intentId, 'rebuild')"
-          >
-            {{ t('intent.gateEscape.worktree.rebuild.label') }}
           </button>
         </template>
 

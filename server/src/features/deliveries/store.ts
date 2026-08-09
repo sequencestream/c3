@@ -897,11 +897,17 @@ export interface DeliveryLogEntry {
  * broadcasts) deliberately sits OUTSIDE the transaction: they are consequences of
  * a fact that is already true, and failing to publish one must not un-deliver a
  * delivery whose code is in mainline. A repeat sync re-runs them idempotently.
+ *
+ * `markPrMerged` is false on the path where the delivery reached mainline WITHOUT
+ * the recorded PR being the thing that merged (it was closed, or there is no row
+ * at all): the delivery is delivered, but rewriting a closed PR row into `merged`
+ * would forge a merge that never happened.
  */
 export function commitDeliveryDelivered(
   deliveryId: string,
   summary: string,
   actor: string,
+  markPrMerged = true,
 ): Delivery | null {
   const d = requireDb()
   return tx(d, () => {
@@ -911,7 +917,7 @@ export function commitDeliveryDelivered(
     d.run('UPDATE deliveries SET status=?, updated_at=? WHERE id=?', 'delivered', now, deliveryId)
     // Only the LATEST row — a superseded PR that was genuinely closed must keep
     // saying so rather than be rewritten into history that never happened.
-    updateDeliveryPrFacts(deliveryId, { status: 'merged', blockedReason: null })
+    if (markPrMerged) updateDeliveryPrFacts(deliveryId, { status: 'merged', blockedReason: null })
     insertDeliveryLog(deliveryId, 'delivered', summary, actor)
     return getDelivery(deliveryId)
   })

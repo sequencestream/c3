@@ -1018,7 +1018,7 @@
         },
         "derived": "currently {mode}",
         "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now.",
-        "locked": "Spec or development has already started, so this setting can no longer be changed."
+        "locked": "This setting can no longer be changed."
       },
       "branch": {
         "label": "Branch:"

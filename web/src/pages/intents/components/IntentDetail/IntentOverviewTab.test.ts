@@ -565,7 +565,7 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
     { name: 'lastWorkSessionId 非空', patch: { lastWorkSessionId: 'work-sess' } },
   ]
 
-  it('每类锁定信号都收起下拉,改渲染只读文本 + 锁定原因', () => {
+  it('每类锁定信号都收起下拉,改渲染只读文本 + 不可修改提示', () => {
     for (const { name, patch } of LOCK_CASES) {
       const w = mountTab(intent({ id: 'r1', specMode: 'sdd', effectiveSpecMode: 'sdd', ...patch }))
       expect(w.find(SPEC_MODE_SELECT).exists(), name).toBe(false)
@@ -649,10 +649,23 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
     expect(w.find(SPEC_MODE_LOCKED_HINT).exists()).toBe(false)
   })
 
-  it('五种语言都给出锁定提示文案', () => {
-    for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
-      expect(i18n.global.t('intent.meta.specMode.locked', {}, { locale }), locale).toBeTruthy()
-      expect(i18n.global.t('error.intent.specModeLocked', {}, { locale }), locale).toBeTruthy()
+  it('五种语言锁定提示只陈述不可修改,不含起步原因;服务端拒绝文案仍保留原因', () => {
+    // 概览提示只说「不可再改」;起步原因仅留在 error.intent.specModeLocked。
+    const locales = ['en', 'zh', 'ja', 'ko', 'ru'] as const
+    const reasonPhrases: Record<(typeof locales)[number], RegExp> = {
+      en: /already started/i,
+      zh: /已.?起步/,
+      ja: /始まって/,
+      ko: /시작되었/,
+      ru: /уже начат/i,
+    }
+    for (const locale of locales) {
+      const hint = String(i18n.global.t('intent.meta.specMode.locked', {}, { locale }))
+      expect(hint, locale).toBeTruthy()
+      expect(hint, locale).not.toMatch(reasonPhrases[locale])
+      const rejected = String(i18n.global.t('error.intent.specModeLocked', {}, { locale }))
+      expect(rejected, locale).toBeTruthy()
+      expect(rejected, locale).toMatch(reasonPhrases[locale])
     }
   })
 })

@@ -180,9 +180,8 @@ describe('visibleIntentActions', () => {
     ...o,
   })
 
-  it('todo:Refine/Start work/Mark done/Cancel/automate(无 session/无 PR)', () => {
+  it('todo:Start work/Mark done/Cancel/automate(无 session/无 PR)', () => {
     expect(visibleIntentActions(make({ status: 'todo' }))).toEqual([
-      'refine',
       'startDev',
       'markDone',
       'cancel',
@@ -192,7 +191,6 @@ describe('visibleIntentActions', () => {
 
   it('有 lastWorkSessionId 时插入 openSession(顺序在 cancel 之前)', () => {
     expect(visibleIntentActions(make({ status: 'todo', lastWorkSessionId: 's-1' }))).toEqual([
-      'refine',
       'startDev',
       'openSession',
       'markDone',
@@ -201,7 +199,7 @@ describe('visibleIntentActions', () => {
     ])
   })
 
-  it('in_progress:无 Refine/Start work,有 Mark done/Cancel/automate', () => {
+  it('in_progress:无 Start work,有 Mark done/Cancel/automate', () => {
     expect(visibleIntentActions(make({ status: 'in_progress' }))).toEqual([
       'markDone',
       'cancel',

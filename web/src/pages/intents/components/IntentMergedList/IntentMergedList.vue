@@ -43,7 +43,6 @@ const emit = defineEmits<{
   'select-intent': [intentId: string]
   'ordered-change': [ids: string[]]
   'set-automate': [intentId: string, automate: boolean]
-  refine: [intentId: string]
   'action-target': [target: ActionTarget]
   'new-intent': []
 }>()
@@ -254,7 +253,6 @@ function setFilterFromMenu(value: string): void {
         @select-intent="(id: string) => emit('select-intent', id)"
         @ordered-change="(ids: string[]) => emit('ordered-change', ids)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
-        @refine="(id: string) => emit('refine', id)"
         @action-target="(target: ActionTarget) => emit('action-target', target)"
       />
     </div>

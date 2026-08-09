@@ -54,8 +54,6 @@ const emit = defineEmits<{
   'ordered-change': [ids: string[]]
   /** 行内模式快捷切换:复用 IntentDetail 的 set-automate 事件流(→ set_intent_automate)。 */
   'set-automate': [intentId: string, automate: boolean]
-  /** 行内 todo 编辑入口:复用 IntentDetail 的 refine 事件流(→ refine_intent)。 */
-  refine: [intentId: string]
   /** 派生「下一步」跳转:与 IntentDetail 汇入同一个分发器,两处跳法完全一致。 */
   'action-target': [target: ActionTarget]
 }>()
@@ -385,16 +383,6 @@ function automateToneClass(r: Intent): string {
               @click.stop="emit('set-automate', r.id, !r.automate)"
             >
               {{ r.automate ? '⚙' : '🖱' }}
-            </button>
-            <button
-              v-if="r.status === 'todo'"
-              type="button"
-              class="req-refine"
-              :title="t('intent.action.refine.label')"
-              :aria-label="t('intent.action.refine.label')"
-              @click.stop="emit('refine', r.id)"
-            >
-              ✎
             </button>
           </div>
         </div>

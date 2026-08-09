@@ -852,6 +852,16 @@
       },
       "timeout": "PR の作成結果を確認できませんでした。再試行する前にインテントの PR ステータスを確認してください。"
     },
+    "createIntentProgress": {
+      "title": "インテントを作成中…",
+      "step": {
+        "fetchBranch": "関連ブランチをダウンロード",
+        "prepareWorktree": "関連ブランチをチェックアウト",
+        "createIntent": "インテントを作成",
+        "openSession": "インテントセッションを開く"
+      },
+      "timeout": "インテントの作成結果を確認できませんでした。再試行する前にインテント一覧を確認してください。"
+    },
     "specLaunch": {
       "title": "仕様セッションを開始中…",
       "step": {

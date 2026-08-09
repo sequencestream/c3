@@ -851,6 +851,16 @@
       },
       "timeout": "未能确认 PR 创建结果,请先查看意图的 PR 状态再重试。"
     },
+    "createIntentProgress": {
+      "title": "正在创建意图…",
+      "step": {
+        "fetchBranch": "下载关联分支",
+        "prepareWorktree": "拉取关联分支",
+        "createIntent": "创建意图",
+        "openSession": "打开意图会话"
+      },
+      "timeout": "未能确认意图创建结果,请先查看意图列表再重试。"
+    },
     "specLaunch": {
       "title": "正在启动规范会话…",
       "step": {

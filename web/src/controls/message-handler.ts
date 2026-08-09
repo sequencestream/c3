@@ -839,10 +839,6 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'create_intent_result':
         createIntentPending.value = false
-        // The intent exists — the dialog has nothing left to hold. Closing here
-        // (rather than optimistically on submit) is what lets a REFUSAL keep it
-        // open with the typed content intact.
-        createIntentDialogOpen.value = false
         // The intent exists, so the form has nothing left to preserve — this is
         // the ONLY thing that closes the create dialog. A refusal leaves it open
         // with the typed content intact.
@@ -855,6 +851,9 @@ export function installMessageHandler(ctx: AppCtx): void {
           requestedIntentId.value = msg.intent.id
           requestedIntentSubTab.value = 'intentSession'
         }
+        // The wait is over: close the progress overlay (silently, after its
+        // minimum dwell) so it only covers the switch to the new intent's tab.
+        ctx.dispatchCreateIntent({ kind: 'done', now: Date.now() })
         break
       case 'dev_launch_progress':
         // Advance the overlay's coarse phase; a `failed` stage closes it with an
@@ -1425,8 +1424,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         // the user can fix the base and resubmit without retyping the content.
         // Spread across three prefixes (`workspace.` / `intent.` / `delivery.`),
         // hence an explicit set rather than a prefix test.
+        // The same refusals are also the create overlay's failure terminal — it has
+        // no echoed token of its own, so the refusal codes ARE the correlation (the
+        // single-flight guard means at most one create is ever in flight). An error
+        // with any other code leaves the overlay up for its safety timeout.
         if (createIntentPending.value && CREATE_INTENT_REFUSAL_CODES.has(msg.error.code)) {
           createIntentPending.value = false
+          ctx.dispatchCreateIntent({
+            kind: 'failed',
+            code: msg.error.code,
+            message: translateUiError(msg.error),
+            now: Date.now(),
+          })
         }
         // An agent-configuration refusal (an unusable agent group) can arrive from
         // ANY creation flow — new session, intent conversation, spec authoring or
@@ -1434,10 +1443,19 @@ export function installMessageHandler(ctx: AppCtx): void {
         // channel, and it releases whatever startup overlay was waiting on the
         // session that will now never exist.
         if (msg.error.code.startsWith('agent.')) {
+          const reason = translateUiError(msg.error)
           if (devLaunch.value) ctx.closeDevLaunch()
           if (specLaunch.value) ctx.dispatchSpecLaunch({ kind: 'failed', now: Date.now() })
           createIntentPending.value = false
-          ctx.showToast(translateUiError(msg.error))
+          // The create overlay closes without a toast of its own: the one below is
+          // the report, and repeating it would say the same thing twice.
+          ctx.dispatchCreateIntent({
+            kind: 'failed',
+            code: msg.error.code,
+            message: reason,
+            now: Date.now(),
+          })
+          ctx.showToast(reason)
           break
         }
         if (msg.error.code.startsWith('intent.')) {

@@ -76,6 +76,9 @@ const NewSessionModal = asyncOverlay(
 const CreatePrOverlay = asyncOverlay(
   () => import('./components/CreatePrOverlay/CreatePrOverlay.vue'),
 )
+const CreateIntentOverlay = asyncOverlay(
+  () => import('./components/CreateIntentOverlay/CreateIntentOverlay.vue'),
+)
 const DevStartupOverlay = asyncOverlay(
   () => import('./components/DevStartupOverlay/DevStartupOverlay.vue'),
 )
@@ -430,6 +433,8 @@ const {
   specLaunch,
   // ---- create-PR progress overlay ----
   createPrProgress,
+  // ---- create-intent progress overlay ----
+  createIntentProgress,
 } = useAppController()
 
 /** 当前工作区 id 解析出的 `WorkspaceInfo`,只供工作区设置页页头展示「正在改哪个
@@ -1151,6 +1156,11 @@ function onCodesChatWidth(px: number): void {
   <!-- Create-PR progress overlay: blocks interaction while a manual 创建 PR runs
        (commit + push + forge call), lighting its four stages. -->
   <CreatePrOverlay v-if="createPrProgress" :model="createPrProgress" />
+
+  <!-- Create-intent progress overlay: covers the create dialog while a with-content
+       创建意图 runs (fetch branch + worktree + persist + session), narrating its
+       four stages until the console lands on the new intent. -->
+  <CreateIntentOverlay v-if="createIntentProgress" :model="createIntentProgress" />
 
   <!-- Automation save overlay: blocks interaction while a automation create/update is
        in flight (2-4s typical round-trip). -->

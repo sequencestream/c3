@@ -9,6 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import type { Intent, SessionInfo } from '@ccc/shared/protocol'
 import {
+  CREATE_INTENT_MIN_DWELL_MS,
+  CREATE_INTENT_SAFETY_TIMEOUT_MS,
+  CREATE_INTENT_STAGE_DWELL_MS,
+  type CreateIntentModel,
+} from '@/lib/create-intent-view'
+import {
   CREATE_PR_MIN_DWELL_MS,
   CREATE_PR_SAFETY_TIMEOUT_MS,
   type CreatePrModel,
@@ -78,6 +84,20 @@ function makeCtx(opts: {
   } = { dwell: null, safety: null, jump: null }
   const createIntentPending = ref(false)
   const createIntentDialogOpen = ref(false)
+  const createIntentProgress = ref<CreateIntentModel | null>(null)
+  const createIntentTimers: {
+    stage: ReturnType<typeof setInterval> | null
+    dwell: ReturnType<typeof setTimeout> | null
+    safety: ReturnType<typeof setTimeout> | null
+  } = { stage: null, dwell: null, safety: null }
+  const clearCreateIntentTimers = vi.fn(() => {
+    if (createIntentTimers.stage) clearInterval(createIntentTimers.stage)
+    if (createIntentTimers.dwell) clearTimeout(createIntentTimers.dwell)
+    if (createIntentTimers.safety) clearTimeout(createIntentTimers.safety)
+    createIntentTimers.stage = null
+    createIntentTimers.dwell = null
+    createIntentTimers.safety = null
+  })
   const loadDeliveriesForLink = vi.fn()
   const ctx = {
     send: vi.fn(),
@@ -104,6 +124,9 @@ function makeCtx(opts: {
     createPrProgress,
     createPrTimers,
     clearCreatePrTimers,
+    createIntentProgress,
+    createIntentTimers,
+    clearCreateIntentTimers,
     showToast,
     enterConsole,
     selectSessionKind,
@@ -128,6 +151,9 @@ function makeCtx(opts: {
     createPrProgress,
     createPrTimers,
     clearCreatePrTimers,
+    createIntentProgress,
+    createIntentTimers,
+    clearCreateIntentTimers,
     intents,
     currentWorkspace,
     currentSessions,
@@ -506,6 +532,153 @@ describe('createPr — progress overlay wiring', () => {
     expect(h.createPrProgress.value?.pendingCloseReason).toBeUndefined()
     // A fresh token, so the previous run's frames cannot reach this overlay.
     expect(runToken(h)).not.toBe(firstRun)
+  })
+})
+
+/**
+ * Create-intent overlay wiring, from the submit onwards: the with-content path
+ * blocks the page and narrates the server's chain on a client cadence, the blank
+ * registration stays instant, and every terminal releases the overlay — the
+ * safety timeout also releasing the in-flight guard so the form is usable again.
+ */
+describe('createIntent — progress overlay wiring', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const PAYLOAD = {
+    content: 'do the thing',
+    base: { kind: 'branch', branch: 'main' },
+  } as Parameters<AppCtx['createIntent']>[0]
+
+  /** Submit with content and let the minimum dwell elapse so terminals resolve at once. */
+  function submitAndDwell(h: ReturnType<typeof makeCtx>) {
+    h.ctx.createIntent(PAYLOAD)
+    vi.advanceTimersByTime(CREATE_INTENT_MIN_DWELL_MS)
+  }
+
+  it('shows the overlay on the first step and arms both timers before sending', () => {
+    const h = makeCtx({})
+
+    h.ctx.createIntent(PAYLOAD)
+
+    expect(h.createIntentProgress.value).toMatchObject({ phase: 'fetch-branch' })
+    expect(h.createIntentTimers.stage).not.toBeNull()
+    expect(h.createIntentTimers.safety).not.toBeNull()
+    expect(h.createIntentPending.value).toBe(true)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'create_intent',
+      workspaceId: WS,
+      content: 'do the thing',
+      base: { kind: 'branch', branch: 'main' },
+    })
+  })
+
+  it('arms no overlay for a blank registration', () => {
+    const h = makeCtx({})
+
+    h.ctx.createIntent()
+
+    expect(h.createIntentProgress.value).toBeNull()
+    expect(h.createIntentTimers.stage).toBeNull()
+    expect(h.createIntentTimers.safety).toBeNull()
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'create_intent', workspaceId: WS })
+  })
+
+  it('narrates one step per cadence tick and parks on the last one', () => {
+    const h = makeCtx({})
+    h.ctx.createIntent(PAYLOAD)
+
+    for (const step of ['prepare-worktree', 'create-intent', 'open-session'] as const) {
+      vi.advanceTimersByTime(CREATE_INTENT_STAGE_DWELL_MS)
+      expect(h.createIntentProgress.value?.phase).toBe(step)
+    }
+    vi.advanceTimersByTime(5 * CREATE_INTENT_STAGE_DWELL_MS)
+    expect(h.createIntentProgress.value?.phase).toBe('open-session')
+  })
+
+  it('closes silently on the create result and stops narrating', () => {
+    const h = makeCtx({})
+    submitAndDwell(h)
+
+    h.ctx.dispatchCreateIntent({ kind: 'done', now: Date.now() })
+
+    expect(h.createIntentProgress.value).toBeNull()
+    expect(h.clearCreateIntentTimers).toHaveBeenCalled()
+    expect(h.createIntentTimers.stage).toBeNull()
+    expect(h.createIntentTimers.safety).toBeNull()
+    expect(h.showToast).not.toHaveBeenCalled()
+  })
+
+  it('closes on a refusal the intents page shows nowhere else, with its reason', () => {
+    const h = makeCtx({})
+    submitAndDwell(h)
+
+    h.ctx.dispatchCreateIntent({
+      kind: 'failed',
+      code: 'delivery.guard.branchNotReady',
+      message: '交付分支未就绪',
+      now: Date.now(),
+    })
+
+    expect(h.createIntentProgress.value).toBeNull()
+    expect(h.createIntentTimers.stage).toBeNull()
+    expect(h.showToast).toHaveBeenCalledWith('交付分支未就绪')
+  })
+
+  it('closes without a toast for a refusal that already has one', () => {
+    const h = makeCtx({})
+    submitAndDwell(h)
+
+    // `intent.*` is spelled out by the intent-action error dialog; `agent.*` toasts
+    // in the handler. Repeating either would report the same refusal twice.
+    h.ctx.dispatchCreateIntent({
+      kind: 'failed',
+      code: 'intent.baseBranchRequired',
+      message: '请选择基准分支',
+      now: Date.now(),
+    })
+
+    expect(h.createIntentProgress.value).toBeNull()
+    expect(h.showToast).not.toHaveBeenCalled()
+  })
+
+  it('reports a refusal once even if a second one follows', () => {
+    const h = makeCtx({})
+    h.ctx.createIntent(PAYLOAD)
+
+    const refusal = {
+      kind: 'failed',
+      code: 'workspace.unknown',
+      message: '工作区不存在',
+      now: Date.now(),
+    } as const
+    h.ctx.dispatchCreateIntent(refusal)
+    h.ctx.dispatchCreateIntent(refusal)
+
+    expect(h.showToast).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds a fast terminal for the minimum dwell, then closes via its timer', () => {
+    const h = makeCtx({})
+    h.ctx.createIntent(PAYLOAD)
+
+    h.ctx.dispatchCreateIntent({ kind: 'done', now: Date.now() })
+    expect(h.createIntentProgress.value).toMatchObject({ pendingCloseReason: 'done' })
+
+    vi.advanceTimersByTime(CREATE_INTENT_MIN_DWELL_MS)
+    expect(h.createIntentProgress.value).toBeNull()
+  })
+
+  it('releases the overlay AND the in-flight guard when nothing ever arrives', () => {
+    const h = makeCtx({})
+    h.ctx.createIntent(PAYLOAD)
+
+    vi.advanceTimersByTime(CREATE_INTENT_SAFETY_TIMEOUT_MS)
+
+    expect(h.createIntentProgress.value).toBeNull()
+    expect(h.showToast).toHaveBeenCalledWith('intent.createIntentProgress.timeout')
+    // Without this the dialog's submit would stay disabled for good.
+    expect(h.createIntentPending.value).toBe(false)
   })
 })
 

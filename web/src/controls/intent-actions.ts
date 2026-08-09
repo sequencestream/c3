@@ -6,6 +6,15 @@ import type {
   PromptImage,
 } from '@ccc/shared/protocol'
 import {
+  beginCreateIntent,
+  reduceCreateIntent,
+  shouldToastCreateIntentFailure,
+  CREATE_INTENT_MIN_DWELL_MS,
+  CREATE_INTENT_SAFETY_TIMEOUT_MS,
+  CREATE_INTENT_STAGE_DWELL_MS,
+  type CreateIntentEvent,
+} from '@/lib/create-intent-view'
+import {
   beginCreatePr,
   reduceCreatePr,
   CREATE_PR_MIN_DWELL_MS,
@@ -97,6 +106,39 @@ export function installIntentActions(ctx: AppCtx): void {
       )
     }
     if (tr.closedReason === 'timeout') ctx.showToast(t('intent.createPrProgress.timeout'))
+  }
+
+  // Same shape for the create-intent overlay, with one extra effect: the timeout
+  // also releases the in-flight guard it was armed alongside, or the dialog's
+  // submit stays disabled for good. A refusal is toasted at the moment it lands
+  // (the toast sits above the overlay, so the reason is readable during the
+  // remaining dwell) and only when nothing else already reports it; success
+  // closes silently — the console is already landing on the new intent.
+  ctx.dispatchCreateIntent = (ev: CreateIntentEvent): void => {
+    const prev = ctx.createIntentProgress.value
+    const tr = reduceCreateIntent(prev, ev)
+    ctx.createIntentProgress.value = tr.model
+    if (!tr.model) ctx.clearCreateIntentTimers()
+    else if (tr.model.pendingCloseReason && !ctx.createIntentTimers.dwell) {
+      ctx.createIntentTimers.dwell = setTimeout(
+        () => ctx.dispatchCreateIntent({ kind: 'dwell-complete', now: Date.now() }),
+        Math.max(0, tr.model.visibleAt + CREATE_INTENT_MIN_DWELL_MS - Date.now()),
+      )
+    }
+    // Report only the refusal that actually became this overlay's terminal: a
+    // second one arriving after it is ignored by the reducer and must not toast.
+    if (
+      ev.kind === 'failed' &&
+      !prev?.pendingCloseReason &&
+      (tr.closedReason === 'failed' || tr.model?.pendingCloseReason === 'failed') &&
+      shouldToastCreateIntentFailure(ev.code)
+    ) {
+      ctx.showToast(ev.message)
+    }
+    if (tr.closedReason === 'timeout') {
+      ctx.showToast(t('intent.createIntentProgress.timeout'))
+      ctx.createIntentPending.value = false
+    }
   }
 
   // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, stay on the
@@ -197,6 +239,21 @@ export function installIntentActions(ctx: AppCtx): void {
   ctx.createIntent = (payload?: { content: string; base: CreateIntentBase }): void => {
     if (!intentsProject.value || ctx.createIntentPending.value) return
     ctx.createIntentPending.value = true
+    // Only the with-content path gets the overlay: it is the one that fetches a
+    // branch, prepares the worktree and starts a session, so it is the one with a
+    // wait worth narrating. A blank registration returns at once — an overlay
+    // would flash for nothing. Armed BEFORE sending, so the page is blocked from
+    // this instant until the result, a refusal, or the safety timeout.
+    if (payload) {
+      ctx.clearCreateIntentTimers()
+      ctx.createIntentProgress.value = beginCreateIntent(Date.now())
+      ctx.createIntentTimers.stage = setInterval(() => {
+        ctx.dispatchCreateIntent({ kind: 'advance', now: Date.now() })
+      }, CREATE_INTENT_STAGE_DWELL_MS)
+      ctx.createIntentTimers.safety = setTimeout(() => {
+        ctx.dispatchCreateIntent({ kind: 'timeout', now: Date.now() })
+      }, CREATE_INTENT_SAFETY_TIMEOUT_MS)
+    }
     send({
       type: 'create_intent',
       workspaceId: intentsProject.value,

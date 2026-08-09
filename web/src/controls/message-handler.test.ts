@@ -53,6 +53,7 @@ function makeCtx() {
   const dispatchSpecLaunch = vi.fn()
   const createPrProgress = ref<unknown>(null)
   const dispatchCreatePr = vi.fn()
+  const dispatchCreateIntent = vi.fn()
   const showToast = vi.fn((text: string) => (toast.value = text))
   const intentActionErrorGuidance = ref<GitActionFailureGuidance | null>(null)
   const showIntentActionError = vi.fn(
@@ -195,6 +196,7 @@ function makeCtx() {
     closeDevLaunch,
     dispatchSpecLaunch,
     dispatchCreatePr,
+    dispatchCreateIntent,
     showToast,
     showIntentActionError,
     automationSaving,
@@ -262,6 +264,7 @@ function makeCtx() {
     dispatchSpecLaunch,
     createPrProgress,
     dispatchCreatePr,
+    dispatchCreateIntent,
     showToast,
     showIntentActionError,
     automationSaving,
@@ -2224,5 +2227,53 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
     expect(h.createIntentDialogOpen.value).toBe(true)
     // 被拒时不设任何落点——没有意图可跳。
     expect(h.requestedIntentId.value).toBeNull()
+    // 同一条拒绝也是进度遮罩的失败终端(它没有回显 token,拒绝码就是相关性)。
+    expect(h.dispatchCreateIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'failed', code }),
+    )
+  })
+})
+
+/**
+ * Create-intent overlay routing: the handler forwards each terminal at the point
+ * it already releases the in-flight guard, and forwards nothing for a frame that
+ * is not a create outcome (the reducer would have nothing to decide, and the
+ * overlay must keep waiting for its own result).
+ */
+describe('create_intent 进度遮罩路由', () => {
+  it('创建结果派发 done', () => {
+    const h = makeCtx()
+    h.intentsProject.value = '/ws'
+
+    h.ctx.handleMessage({
+      type: 'create_intent_result',
+      workspaceId: '/ws',
+      intent: { id: 'i-42', title: 'new intent' },
+    } as unknown as ServerToClient)
+
+    expect(h.dispatchCreateIntent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'done' }))
+  })
+
+  it('agent.* 拒绝关闭遮罩,理由由既有 toast 给出', () => {
+    const h = makeCtx()
+    h.createIntentPending.value = true
+
+    h.ctx.handleMessage(error('agent.groupUnavailable'))
+
+    expect(h.dispatchCreateIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'failed', code: 'agent.groupUnavailable' }),
+    )
+    expect(h.showToast).toHaveBeenCalledOnce()
+  })
+
+  it('无关 error 帧不派发任何终端 —— 遮罩等自己的结果或安全超时', () => {
+    const h = makeCtx()
+    h.createIntentPending.value = true
+
+    h.ctx.handleMessage(error('session.turnRunning'))
+
+    expect(h.dispatchCreateIntent).not.toHaveBeenCalled()
+    // 守卫也不释放:这条错误不是本次创建的答复。
+    expect(h.createIntentPending.value).toBe(true)
   })
 })

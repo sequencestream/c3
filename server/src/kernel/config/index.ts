@@ -45,7 +45,7 @@ import type {
   UiLang,
   VendorId,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, SESSION_KINDS, isVendorId } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, SESSION_KINDS, VENDOR_IDS, isVendorId } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
@@ -68,6 +68,11 @@ import {
   resetPersonalizedCache,
 } from './personalized.js'
 import { mcpApiKeyFileKeys, resetMcpApiKeyCache } from './mcp-api-keys.js'
+import { isKnownToken } from '../agent/adapters/mode-catalog.js'
+import { claudeModeCatalog } from '../agent/adapters/claude/modes.js'
+import { codexModeCatalog } from '../agent/adapters/codex/modes.js'
+import { cursorModeCatalog } from '../agent/adapters/cursor/modes.js'
+import type { VendorModeCatalog } from '../agent/adapters/types.js'
 
 export { c3HomeDir, DEFAULT_UI_LANG, getAgentLang }
 
@@ -81,6 +86,25 @@ const DEFAULT_MODE_MAP: Record<VendorId, ModeToken> = {
   claude: 'default',
   codex: 'auto',
   cursor: 'agent',
+}
+
+/** Leaf catalogs only — avoid importing the adapters barrel (circular with config). */
+const DEFAULT_MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
+  claude: claudeModeCatalog,
+  codex: codexModeCatalog,
+  cursor: cursorModeCatalog,
+}
+
+/**
+ * Keep a string mode token only when the vendor catalog declares it; otherwise
+ * fall back to that vendor's {@link DEFAULT_MODE_MAP} entry (matches catalog
+ * `defaultToken`). Used by workspace `defaultMode` normalization so a Cursor
+ * key never retains Claude's `'default'` (which leaves the title-bar dropdown empty).
+ */
+function gateDefaultModeToken(vendor: VendorId, token: string): ModeToken {
+  const cat = DEFAULT_MODE_CATALOGS[vendor]
+  if (isKnownToken(cat, token)) return token as ModeToken
+  return DEFAULT_MODE_MAP[vendor]
 }
 
 /**
@@ -833,29 +857,31 @@ function normalizeSandboxConfig(raw: unknown): WorkspaceSandboxConfig | undefine
  * 1. A string (pre-017 legacy) — seeded as the value for every vendor whose
  *    catalog accepts it; vendors without this token get their vendor defaultToken.
  * 2. A `Record<VendorId, ModeToken>` (new format) — each vendor key is checked;
- *    missing keys or empty strings fall back to DEFAULT_MODE_MAP[vendor].
+ *    missing keys, empty strings, or tokens outside that vendor's catalog fall
+ *    back to DEFAULT_MODE_MAP[vendor]. Codex dual-policy objects keep the object
+ *    path (no string catalog gate).
  * 3. undefined/null/missing — every vendor gets its DEFAULT_MODE_MAP entry.
  */
 function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexPolicy> {
-  const VENDORS: VendorId[] = ['claude', 'codex']
+  const vendors = VENDOR_IDS as readonly VendorId[]
 
-  // Legacy: single string value → per-vendor distribution.
+  // Legacy: single string value → per-vendor distribution with catalog gate.
   if (typeof raw === 'string' && raw.length > 0) {
     const result: Partial<Record<VendorId, ModeToken | CodexPolicy>> = {}
-    for (const v of VENDORS) result[v] = raw as ModeToken
+    for (const v of vendors) result[v] = gateDefaultModeToken(v, raw)
     return result as Record<VendorId, ModeToken | CodexPolicy>
   }
 
   // New format: Record<VendorId, ModeToken | CodexPolicy>, or missing/undefined.
   const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
   const result: Partial<Record<VendorId, ModeToken | CodexPolicy>> = {}
-  for (const v of VENDORS) {
+  for (const v of vendors) {
     const val = obj ? obj[v] : undefined
     if (val && typeof val === 'object' && 'sandboxMode' in (val as Record<string, unknown>)) {
       // Codex dual-policy object (2026-06-08).
       result[v] = val as CodexPolicy
     } else if (typeof val === 'string' && (val as string).length > 0) {
-      result[v] = val as ModeToken
+      result[v] = gateDefaultModeToken(v, val)
     } else {
       result[v] = DEFAULT_MODE_MAP[v]
     }

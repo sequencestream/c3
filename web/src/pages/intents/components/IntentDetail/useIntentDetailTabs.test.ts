@@ -89,6 +89,7 @@ function mountHost(props: Record<string, unknown>) {
         type: String as () => RequestedDetailSubTab | null,
         default: null,
       },
+      awaitingSessionBind: { type: Boolean, default: false },
       intentLogsLength: { type: Number, default: 0 },
       workSessionStatus: { type: String as () => SessionStatus | null, default: null },
       intentSessionStatus: { type: String as () => SessionStatus | null, default: null },
@@ -101,6 +102,7 @@ function mountHost(props: Record<string, unknown>) {
         sddEnabled: () => hostProps.sddEnabled,
         activeSession: () => hostProps.activeSession,
         requestedSubTab: () => hostProps.requestedSubTab,
+        awaitingSessionBind: () => hostProps.awaitingSessionBind,
         intentLogsLength: () => hostProps.intentLogsLength,
         workSessionStatus: () => hostProps.workSessionStatus,
         intentSessionStatus: () => hostProps.intentSessionStatus,
@@ -252,6 +254,29 @@ describe('useIntentDetailTabs', () => {
     await w.setProps({ activeSession: 'sess' })
     expect(tabs().chatReady.value).toBe(true)
     expect(calls.openIntent).toEqual(['sess'])
+  })
+
+  it('awaitingSessionBind suppresses firstIntentTurn while the owner session is binding', async () => {
+    const { w, tabs, select } = mountHost({
+      intent: intent({ id: 'i1', intentSessionId: null, content: 'already typed' }),
+      awaitingSessionBind: true,
+    })
+    await select('intentSession')
+    expect(tabs().firstIntentTurn.value).toBe(false)
+    expect(tabs().chatReady.value).toBe(false)
+
+    // Clearing the flag (session-start failure / discard) restores firstIntentTurn.
+    await w.setProps({ awaitingSessionBind: false })
+    expect(tabs().firstIntentTurn.value).toBe(true)
+  })
+
+  it('non-empty content alone does not suppress firstIntentTurn without the bind flag', async () => {
+    const { tabs, select } = mountHost({
+      intent: intent({ id: 'i1', intentSessionId: null, content: 'edited after blank create' }),
+      awaitingSessionBind: false,
+    })
+    await select('intentSession')
+    expect(tabs().firstIntentTurn.value).toBe(true)
   })
 
   it('exposes status dots only for non-idle known statuses and mode locking off work tab', async () => {

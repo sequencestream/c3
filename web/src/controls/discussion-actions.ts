@@ -124,6 +124,8 @@ export function installDiscussionActions(ctx: AppCtx): void {
   ctx.convertDiscussionToIntent = (): void => {
     const d = activeDiscussion.value
     if (!d || d.status !== 'completed') return
+    // Landing on intents for a different create path discards any prior bind wait.
+    ctx.awaitingIntentSessionBindId.value = null
     intentsProject.value = d.workspaceId
     activeTab.value = 'intents'
     ctx.persistViewMode()

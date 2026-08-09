@@ -129,6 +129,12 @@ const props = defineProps<{
    * workSession).
    * Cleared via `requested-subtab-consumed`. */
   requestedSubTab?: RequestedDetailSubTab | null
+  /**
+   * Contentful create is waiting for this intent's owner session to bind — when
+   * equal to the selected intent id, the intent-session tab shows in-page loading
+   * instead of the first-turn composer.
+   */
+  awaitingIntentSessionBindId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -305,6 +311,8 @@ const {
   sddEnabled: () => props.sddEnabled === true,
   activeSession: () => props.activeSession,
   requestedSubTab: () => props.requestedSubTab,
+  awaitingSessionBind: () =>
+    !!props.awaitingIntentSessionBindId && props.awaitingIntentSessionBindId === props.intent?.id,
   intentLogsLength: () => props.intentLogs.length,
   workSessionStatus: () => props.workSessionStatus,
   intentSessionStatus: () => props.intentSessionStatus,

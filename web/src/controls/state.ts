@@ -874,6 +874,15 @@ export function createState(deps: StateDeps) {
   const worktreeBaselineNotices = ref<Record<string, WorktreeBaselineNotice>>({})
   const createIntentPending = ref(false)
   /**
+   * After a contentful `create_intent_result`, the owner session may still be
+   * binding (worktree / agent). While this holds that intent's id, the detail's
+   * intent-session tab shows in-page loading instead of `firstIntentTurn`. Cleared
+   * only when `intentSessionId` lands, a session-start error arrives on this
+   * connection, or the create/landing is discarded (workspace switch, refuse,
+   * timeout) — never merely because a snapshot lists the id without a session.
+   */
+  const awaitingIntentSessionBindId = ref<string | null>(null)
+  /**
    * Whether the 「增加意图」 dialog is open. Held here rather than inside the
    * intent list because the two events that close it are wire events, not user
    * gestures: a `create_intent_result` closes it (the intent exists, the console
@@ -1177,6 +1186,7 @@ export function createState(deps: StateDeps) {
     intentGateEscape,
     worktreeBaselineNotices,
     createIntentPending,
+    awaitingIntentSessionBindId,
     createIntentDialogOpen,
     intentPrSync,
     devLaunch,

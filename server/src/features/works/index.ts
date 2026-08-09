@@ -306,6 +306,25 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   conn.sendWorkspaces()
 }
 
+/**
+ * Ensure a session mode token is in the vendor's mode catalog before the
+ * title bar binds it. Illegal persisted tokens (common: Claude `'default'` on
+ * Cursor) must not ship on `session_selected` — BaseDropdown shows blank when
+ * `mode ∉ modeOptions`. Prefer the workspace default; if that is somehow still
+ * illegal, fall to the catalog `defaultToken`.
+ */
+function coerceSessionModeForVendor(
+  candidate: ModeToken,
+  vendor: VendorId,
+  workspacePath: string,
+): ModeToken {
+  const cat = MODE_CATALOGS[vendor]
+  if (cat && isKnownToken(cat, candidate)) return candidate
+  const workspaceDefault = getDefaultMode(workspacePath, vendor)
+  if (cat && isKnownToken(cat, workspaceDefault)) return workspaceDefault
+  return (cat?.defaultToken as ModeToken | undefined) ?? workspaceDefault
+}
+
 export const createWorkSession: Handler<'create_work_session'> = (ctx, conn, msg) =>
   createSession(ctx, conn, {
     type: 'create_session',
@@ -353,6 +372,17 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
           researchOwner ? 'discussion' : 'work',
         )
     if (researchOwner) rt.researchDiscussionId = researchOwner.id
+    // Title-bar mode must be a catalog token for this vendor. Persisted
+    // illegal values (e.g. Claude's `'default'` on a Cursor session) ignore
+    // getSessionMode's fallback and leave BaseDropdown with no match — coerce
+    // here for both cold restore and warm reuse; write back only when illegal.
+    const displayMode = coerceSessionModeForVendor(rt.mode, effectiveVendor, abs)
+    if (displayMode !== rt.mode) {
+      rt.mode = displayMode
+      if (!msg.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+        setSessionMode(msg.sessionId, displayMode)
+      }
+    }
     conn.viewing = msg.sessionId
     touchWorkspace(abs, Date.now())
     setActiveSessionId(msg.sessionId)

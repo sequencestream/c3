@@ -310,6 +310,8 @@ describe('queue dev actions — branch-mode git alignment', () => {
     vi.mocked(readWorktreeHead).mockReturnValue({ branch: null, head: null })
     vi.mocked(gitDiffStat).mockResolvedValue('')
     vi.mocked(gitRecentLog).mockResolvedValue('')
+    // Forge override is sticky across tests (clearAllMocks does not clear impl).
+    vi.mocked(getForgeOverride).mockReturnValue(undefined)
     // Default verdict ends the develop loop after exactly one turn, so a test
     // that only asserts on the LAUNCH is not dragged through continuations.
     vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'stuck', reason: 'test-default' })
@@ -661,11 +663,16 @@ describe('queue dev actions — branch-mode git alignment', () => {
     })
   })
 
-  // ── The automatic PR target: association decides, never the mainline ────────
+  // ── The automatic PR target: resolvePrTarget decides base, including unlinked ─
 
-  it('worktree: 未关联交付时置 done、不建 PR,并记一条 pr_skipped 日志', async () => {
+  it('worktree: 未关联交付时置 done、向 intent.baseBranch 建 PR,并记 pr_created', async () => {
     const proj = '/test/wt-no-delivery'
-    const intent = makeIntent({ id: 'ND', status: 'todo', branchName: 'intent/ND' })
+    const intent = makeIntent({
+      id: 'ND',
+      status: 'todo',
+      branchName: 'intent/ND',
+      baseBranch: 'main',
+    })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
     vi.mocked(getDefaultMainBranch).mockReturnValue('main')
     vi.mocked(createWorktree).mockReturnValue({
@@ -680,6 +687,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
     vi.mocked(getIntent).mockReturnValue(intent)
     vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '88', prUrl: 'http://x/pull/88' })
     vi.mocked(getRuntime).mockReturnValue(undefined)
 
     const { hooks, runDevTurn } = makeHooks()
@@ -689,16 +697,39 @@ describe('queue dev actions — branch-mode git alignment', () => {
 
     await notifyTurnSettled(proj, launchedId, 'complete', 'ND')
 
-    // The work is committed and pushed and the intent completes — only the PR is
-    // withheld, and never re-pointed at the mainline.
+    // Unlinked + resolved baseBranch ⇒ mainline PR with null delivery_id.
     expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-ND', expect.stringContaining('feat:'))
     expect(updateStatus).toHaveBeenCalledWith('ND', 'done')
-    expect(createForgePr).not.toHaveBeenCalled()
-    expect(upsertIntentPr).not.toHaveBeenCalled()
+    expect(createForgePr).toHaveBeenCalledWith(
+      '/tmp/wt-ND',
+      expect.any(String),
+      expect.any(String),
+      'intent/ND',
+      'main',
+      undefined,
+    )
+    expect(upsertIntentPr).toHaveBeenCalledWith({
+      intentId: 'ND',
+      deliveryId: null,
+      number: '88',
+      status: 'reviewing',
+      forge: 'gitlab',
+      repo: null,
+      url: 'http://x/pull/88',
+      headBranch: 'intent/ND',
+      baseBranch: 'main',
+    })
     expect(hooks.createUserTodo).not.toHaveBeenCalled()
     expect(vi.mocked(safeInsertIntentLog).mock.calls).toEqual([
-      ['ND', 'pr_skipped', '未关联交付,未创建 PR', 'automation'],
+      ['ND', 'pr_created', '创建 PR #88', 'automation'],
     ])
+    expect(
+      vi
+        .mocked(safeInsertIntentLog)
+        .mock.calls.some(
+          ([, op, summary]) => op === 'pr_skipped' && String(summary).includes('未关联交付'),
+        ),
+    ).toBe(false)
   })
 
   it('worktree: 关联交付分支未就绪时不建 PR,推一条说明原因的待办', async () => {

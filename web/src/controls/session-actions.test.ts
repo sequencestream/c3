@@ -74,6 +74,7 @@ function makeCtx(
   const persistCurrentWorkspace = vi.fn()
   const currentWorkspace = ref<string | null>(null)
   const intentsProject = ref<string | null>(null)
+  const awaitingIntentSessionBindId = ref<string | null>(null)
   const workspaceSettingOpen = ref(false)
   const currentWorkspaceSetting = ref<unknown>(null)
   const detectedMainBranch = ref<string | null>(null)
@@ -133,6 +134,7 @@ function makeCtx(
     persistCurrentWorkspace,
     currentWorkspace,
     intentsProject,
+    awaitingIntentSessionBindId,
     workspaceSettingOpen,
     currentWorkspaceSetting,
     detectedMainBranch,

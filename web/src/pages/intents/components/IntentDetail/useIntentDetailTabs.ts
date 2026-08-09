@@ -33,6 +33,13 @@ export function useIntentDetailTabs(opts: {
   sddEnabled: () => boolean
   activeSession: () => string | null
   requestedSubTab: () => RequestedDetailSubTab | null | undefined
+  /**
+   * True while a contentful create is waiting for this intent's owner session to
+   * bind. Suppresses `firstIntentTurn` so the session tab shows in-page loading
+   * instead of the blank first-turn composer (the create path already sent that
+   * prompt). Must come from the create-success flag — never from content heuristics.
+   */
+  awaitingSessionBind?: () => boolean
   intentLogsLength: () => number
   workSessionStatus: () => SessionStatus | null | undefined
   intentSessionStatus: () => SessionStatus | null | undefined
@@ -51,6 +58,7 @@ export function useIntentDetailTabs(opts: {
     sddEnabled,
     activeSession,
     requestedSubTab,
+    awaitingSessionBind,
     intentLogsLength,
     workSessionStatus,
     intentSessionStatus,
@@ -269,7 +277,10 @@ export function useIntentDetailTabs(opts: {
     () => expectedSessionId.value !== null && activeSession() === expectedSessionId.value,
   )
   const firstIntentTurn = computed<boolean>(
-    () => activeTab.value === 'intentSession' && expectedSessionId.value === null,
+    () =>
+      activeTab.value === 'intentSession' &&
+      expectedSessionId.value === null &&
+      !(awaitingSessionBind?.() ?? false),
   )
 
   // 意图会话 / spec 会话的权限模式由服务端钉死为默认(权限网关必须触发),标题栏

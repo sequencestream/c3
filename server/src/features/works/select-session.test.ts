@@ -76,10 +76,21 @@ import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { getByC3Id } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { findDiscussionByResearchSessionId } from '../discussions/store.js'
-import { ensureRuntime } from '../../runs.js'
+import { ensureRuntime, getRuntime } from '../../runs.js'
+import { getDefaultMode } from '../../kernel/config/index.js'
+import { getSessionMode, setSessionMode } from '../../state.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(resolveSessionVendor).mockReturnValue('claude')
+  vi.mocked(getSessionMode).mockReturnValue('default')
+  vi.mocked(getDefaultMode).mockReturnValue('default')
+  vi.mocked(getRuntime).mockReturnValue(undefined)
+  vi.mocked(getByC3Id).mockReturnValue(null)
+  vi.mocked(findIntentIdBySessionId).mockReturnValue(null)
+  vi.mocked(findDiscussionByResearchSessionId).mockReturnValue(null)
+})
 
 function fakeConn() {
   const sent: Array<{ type: string; [k: string]: unknown }> = []
@@ -271,5 +282,86 @@ describe('select_session — cold restore of a discussion research session', () 
     expect(ensureRuntime).toHaveBeenCalledWith('plain-2', '/abs/proj', 'default', [], 'work')
     const rt = vi.mocked(ensureRuntime).mock.results[0].value as { researchDiscussionId?: string }
     expect(rt.researchDiscussionId).toBeUndefined()
+  })
+})
+
+describe('select_session — Cursor mode catalog coerce (title-bar empty fix)', () => {
+  // Persisted Claude `'default'` on a Cursor session ignores getSessionMode
+  // fallback; BaseDropdown then finds no modeOptions match → blank label.
+  it('cold select with persisted illegal mode → session_selected uses workspace/cursor default and writes back', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('cursor')
+    vi.mocked(getSessionMode).mockReturnValue('default')
+    vi.mocked(getDefaultMode).mockImplementation((_path?: string, vendor?: string) =>
+      vendor === 'cursor' ? 'plan' : 'default',
+    )
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'cursor-illegal-1',
+    })
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.mode).toBe('plan')
+    expect(sel?.vendor).toBe('cursor')
+    expect(setSessionMode).toHaveBeenCalledWith('cursor-illegal-1', 'plan')
+    const rt = vi.mocked(ensureRuntime).mock.results[0].value as { mode: string }
+    expect(rt.mode).toBe('plan')
+  })
+
+  it('warm select with illegal rt.mode → coerces and writes back', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('cursor')
+    vi.mocked(getDefaultMode).mockReturnValue('agent')
+    const warm = {
+      mode: 'default',
+      baseline: [],
+      status: 'idle',
+      buffer: [],
+    }
+    vi.mocked(getRuntime).mockReturnValue(warm as never)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'cursor-warm-1',
+    })
+    expect(ensureRuntime).not.toHaveBeenCalled()
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.mode).toBe('agent')
+    expect(warm.mode).toBe('agent')
+    expect(setSessionMode).toHaveBeenCalledWith('cursor-warm-1', 'agent')
+  })
+
+  it('legal persisted Cursor mode is echoed and not rewritten', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('cursor')
+    vi.mocked(getSessionMode).mockReturnValue('full-access')
+    vi.mocked(getDefaultMode).mockReturnValue('agent')
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'cursor-legal-1',
+    })
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.mode).toBe('full-access')
+    expect(setSessionMode).not.toHaveBeenCalled()
+  })
+
+  it('Claude legal mode is unchanged (regression on shared select path)', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('claude')
+    vi.mocked(getSessionMode).mockReturnValue('acceptEdits')
+    vi.mocked(getDefaultMode).mockReturnValue('default')
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'claude-legal-1',
+    })
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.mode).toBe('acceptEdits')
+    expect(setSessionMode).not.toHaveBeenCalled()
   })
 })

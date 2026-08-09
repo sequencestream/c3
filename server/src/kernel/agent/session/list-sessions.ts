@@ -25,7 +25,7 @@
  * `validateLazy` re-checks rows older than `LAZY_VALIDATE_MS` against
  * the native stores; the wire reply is not blocked (F-8).
  */
-import type { SessionInfo, SessionKind, VendorId } from '@ccc/shared/protocol'
+import type { SessionInfo, SessionKind, VendorId, ModeToken } from '@ccc/shared/protocol'
 import type { SessionAccessor } from './accessor.js'
 // ADR-0009 R1 exception: the daily `list_sessions` read path needs the
 // projection store (features/works) and the hidden-set filter
@@ -44,6 +44,7 @@ import { getDefaultAgentId } from '../../agent-config/index.js'
 import { getSessionMode } from '../../../state.js'
 import { listWorkspaceSessions } from '../../../sessions.js'
 import { isRunning } from '../../../runs.js'
+import { MODE_CATALOGS, isKnownToken } from '../adapters/index.js'
 // eslint-disable-next-line no-restricted-imports
 import {
   listForWorkspace,
@@ -101,14 +102,23 @@ function lastModifiedOf(extra: Record<string, unknown>): number {
  * `state.ts` (per-session persisted mode), applies the additive `state`
  * field, defaults `lastModified` to 0 for Codex rows whose bind-time
  * `last_modified` is null (the next lazy validation will populate it).
+ * Mode is gated to the row's vendor catalog so Cursor rows never expose a
+ * bare Claude `'default'` that the title-bar dropdown cannot match.
  */
+function listedModeForVendor(sessionId: string, vendor: VendorId): ModeToken {
+  const mode = getSessionMode(sessionId)
+  const cat = MODE_CATALOGS[vendor]
+  if (cat && isKnownToken(cat, mode)) return mode
+  return (cat?.defaultToken as ModeToken | undefined) ?? mode
+}
+
 function rowToSessionInfo(row: SessionMetadataRow): SessionInfo {
   const sessionId = row.vendorSessionId ?? row.c3Id
   return {
     sessionId,
     title: row.title,
     lastModified: row.lastModified ?? 0,
-    mode: getSessionMode(sessionId),
+    mode: listedModeForVendor(sessionId, row.vendor),
     isToolSession: isToolSessionRecorded(sessionId),
     vendor: row.vendor,
     state: row.state,

@@ -189,9 +189,10 @@ automation orchestrator 使用同一检查点作为准入闸门:SDD 开启时,�
    处理读取同一值,不再各自推导(`RM-R22`、`WC-R25` 的按钮事实源不变)。
 2. **手动准入。** `checkWorkAdmission` 是 fresh 与 resume 的共同准入点。仅当
    `sddEnabled` 开启且有效模式为 `fast` 时,跳过 `specStatus !== 'approved'`
-   对应的 `intent.specNotApproved` 拒绝;其余闸门顺序与语义原样保持。fast 不是
-   通用绕过标志:自动化队列的资格判定不读取它 —— `spec_status==='approved'`
-   仍是无人值守开发候选的必要条件,未批准显式投影 `blocked_spec_not_approved`。
+   对应的 `intent.specNotApproved` 拒绝;其余闸门顺序与语义原样保持。自动化队列
+   的规格闸门适用**同一条例外**(见下),因此自动与手动对同一批事实不会给出相反
+   结论。fast 不是通用绕过标志:它只打开规格闸门这一项,交付可写性、交付上下文、
+   依赖、并发、退避与 park 全部照旧。
 3. **turn 落定后的反向补轨。** 仅处理 `sddEnabled` 开启、有效模式仍为 `fast`
    的人工工作 turn(自动化 run、attach、SDD 关闭态不触发)。落定时按相对本 turn
    启动基线的 Git diff 统计唯一变更文件数与行数(多仓合并统计,重命名按一个目标

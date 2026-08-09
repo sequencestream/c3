@@ -1,4 +1,4 @@
-import type { IntentPr, IntentStatus } from '@ccc/shared/protocol'
+import type { IntentPr, IntentSpecMode, IntentStatus } from '@ccc/shared/protocol'
 import { deriveIntentPrAggregate } from '@ccc/shared'
 
 export type EngineeringProgressState = 'not_started' | 'in_progress' | 'completed' | 'closed'
@@ -9,6 +9,12 @@ export interface EngineeringProgressInput {
   specPath?: string | null
   specStatus?: 'raw' | 'pending' | 'approved'
   specSessionId?: string | null
+  /**
+   * The intent's resolved spec mode. `fast` means "no spec stage up front" — the
+   * document, if any, is reverse-authored after a work turn settles — so the spec
+   * segment is omitted until such a document actually exists.
+   */
+  effectiveSpecMode?: IntentSpecMode
   lastWorkSessionId?: string | null
   /** Every PR the intent owns; the PR stage reads its aggregate, never one row. */
   prs?: IntentPr[]
@@ -35,9 +41,14 @@ export function deriveIntentEngineeringProgress(
     },
   ]
 
-  if (sddEnabled) {
-    const hasSpecPath = hasValue(intent.specPath)
-    const hasSpecEvidence = hasSpecPath || hasValue(intent.specSessionId)
+  const hasSpecPath = hasValue(intent.specPath)
+  const hasSpecEvidence = hasSpecPath || hasValue(intent.specSessionId)
+  // A `fast` intent has no spec stage to walk through: it goes straight to work
+  // and only gets a document reverse-authored afterwards. Showing an empty
+  // "规范 / 未开始" segment for it would announce a step that will never be taken.
+  // Once such a document does exist the segment comes back, because there is then
+  // a real approval step to see — the same "has spec data" rule the spec tabs use.
+  if (sddEnabled && (intent.effectiveSpecMode !== 'fast' || hasSpecEvidence)) {
     progress.push({
       stage: 'spec',
       state:

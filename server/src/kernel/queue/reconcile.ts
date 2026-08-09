@@ -308,7 +308,16 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     // The spec gate reads the STATUS and nothing else: `raw` (still being
     // authored) and `pending` (authored, unapproved) both fail it, and the
     // spec phase below says which of the two an intent is actually in.
-    if (sddEnabled && intent.specStatus !== 'approved') {
+    //
+    // The ONE relaxation is per-intent `fast` mode, mirroring the manual
+    // admission gate verbatim: a fast intent does not write its spec up front, so
+    // waiting for an approved one would wedge it here forever and the queue would
+    // disagree with the button on the same facts. It is only the spec gate that
+    // opens — delivery writability, delivery ambiguity, dependencies, concurrency,
+    // backoff and park all still apply below, and the spec phase never picks a
+    // fast intent up (it only sees `blocked_spec_not_approved` ones), so
+    // automation never authors a spec for it either.
+    if (sddEnabled && intent.specStatus !== 'approved' && intent.effectiveSpecMode !== 'fast') {
       return {
         eligible: false,
         reason: 'blocked_spec_not_approved',

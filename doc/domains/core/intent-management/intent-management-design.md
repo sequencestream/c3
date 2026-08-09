@@ -814,7 +814,10 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   由 `automation_status` 消息刷新;意图列表以 prop 形式接收当前项目的
   状态。
 - **工程进度:** 意图详情头部按意图字段派生只读进度。意图、规范、工作依次展示,
-  SDD 关闭时省略规范；仅 worktree 工作区在末尾展示 PR。工作是否完成只取决于
+  SDD 关闭时省略规范;有效规格模式为 `fast` 且该意图尚无规范数据(`specPath`、
+  `specSessionId` 皆空)时同样省略 —— fast 不走规范前置,展示一个永不发生的
+  「规范 / 未开始」只会误导;反向生成的规范落地后规范段回来,此时确有批准步骤可看。
+  仅 worktree 工作区在末尾展示 PR。工作是否完成只取决于
   `intent.status === 'done'`,与 PR 独立。PR 段读**聚合态**(`deriveIntentPrAggregate`,与服务端
   闸门同一份规则):无 PR 行为未开始;聚合 `merged` 为已完成,`rejected`/`failed`/`closed` 为
   已关闭/失败,其余(有行且聚合 `reviewing`)为进行中。进度条在窄屏横向滚动。

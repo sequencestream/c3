@@ -2926,6 +2926,46 @@ button.deny:hover:not(:disabled) {
   flex-direction: column;
   gap: var(--sp-3);
 }
+
+/* Vendor sub-tabs inside the Agent settings tab (no "All"). Compact variant of
+   the main settings tab bar, scoped to the agent list. */
+.agent-vendor-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--c-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.agent-vendor-tabs::-webkit-scrollbar {
+  display: none;
+}
+.agent-vendor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-code);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.agent-vendor-tab:hover:not(:disabled) {
+  filter: none;
+  color: var(--c-text);
+}
+.agent-vendor-tab.active {
+  color: var(--c-text);
+  border-bottom-color: var(--c-primary);
+}
 /* Group containers (ADR-0029): each box is one failover pool whose member rows
  * are tried top to bottom; the `default` box is the ungrouped bucket, so it is
  * drawn flatter (dashed, no vendor accent) to read as "not a pool". */

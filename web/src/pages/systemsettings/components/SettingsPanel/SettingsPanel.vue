@@ -113,6 +113,10 @@ function tabLabel(tab: SettingsTab): string {
 // appears in every picker/panel here instead of being silently omitted.
 const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
 
+/** Active vendor sub-tab under the Agent settings tab (no "All" overview).
+ *  Declared early so the one-shot locate watcher can switch it before querying rows. */
+const activeAgentVendor = ref<VendorId>(VENDOR_ORDER[0])
+
 /** 一行运行时诊断:中立可用性 + (仅宿主 CLI 才有的)探测详情。 */
 interface DiagnosticsRow {
   vendor: VendorId
@@ -478,11 +482,12 @@ watch(
 
 // Fire (or re-fire) the locate once the Agent tab is actually showing AND the
 // rows exist — the settings pushback that fills `draft.agents` often lands after
-// the target does.
+// the target does. Switch the vendor sub-tab first so the row is in the DOM.
 watch(
   () => [activeTab.value, draft.value.agents.length, pendingLocate.value] as const,
   ([tab, agentCount, target]) => {
     if (!target || tab !== target.tab || agentCount === 0) return
+    activeAgentVendor.value = target.vendor
     void nextTick(locateNow)
   },
 )
@@ -615,11 +620,13 @@ function mintAgentId(): string {
 function addAgent() {
   // Locally-unique id so the default-agent radio can target it before save; the
   // server keeps it as-is (only id-less agents get a freshly minted one on normalize).
+  // New agents land on the active vendor sub-tab (vendor matches the tab).
   const id = mintAgentId()
+  const vendor = activeAgentVendor.value
   draft.value.agents.push(
-    makeAgent('claude', {
+    makeAgent(vendor, {
       id,
-      configMode: 'custom',
+      configMode: vendor === 'cursor' ? 'system' : 'custom',
       displayName: '',
       icon: '',
       enabled: true,
@@ -639,10 +646,15 @@ function setVendor(a: AgentConfig, vendor: VendorId) {
   if (!vendorAvailable(vendor)) return
   // A group holds one vendor (ADR-0029). Retyping a member that is no longer alone
   // in its group would split the container into two invisible pools, so it falls
-  // back to `default` instead — the change the user asked for still lands.
+  // back to `default` instead — the change the user asked for still lands. Same when
+  // the new vendor already has a group of that name: the row would silently join a
+  // pool the user never dragged it into.
   const group = groupOf(a)
   const leavesGroup =
-    group !== DEFAULT_GROUP && draft.value.agents.some((x) => x !== a && groupOf(x) === group)
+    group !== DEFAULT_GROUP &&
+    draft.value.agents.some(
+      (x) => x !== a && groupOf(x) === group && (x.vendor === a.vendor || x.vendor === vendor),
+    )
   if (leavesGroup) notifyGroup(t('settings.agents.group.notice.vendorChanged', { group }))
   draft.value.agents[idx] = makeAgent(vendor, {
     id: a.id,
@@ -652,6 +664,8 @@ function setVendor(a: AgentConfig, vendor: VendorId) {
     enabled: a.enabled !== false,
     group: leavesGroup ? DEFAULT_GROUP : group,
   })
+  // Follow the row onto its new vendor sub-tab so tint / edits stay on-screen.
+  activeAgentVendor.value = vendor
 }
 
 // An agent counts as enabled unless explicitly disabled (back-compat with
@@ -791,27 +805,74 @@ function copyAgent(a: AgentConfig) {
 // container is one real `(vendor, group)` pool whose members are tried top to
 // bottom, so the visible order IS the failover order.
 //
-// The draft's flat `agents` array stays the single source of truth: a container
-// is a view over it (members in array order, containers ordered by their first
-// member's array index). Nothing is reordered on seed, so merely opening the panel
-// on a server list whose groups are interleaved never looks like an unsaved edit —
-// Save is what stamps the visual order into `order_seq`.
+// Vendor sub-tabs (no "All") scope which containers/members are shown; the draft's
+// flat `agents` array stays the single source of truth for Save/`order_seq`. A
+// container is a view over it (members in array order, containers ordered by their
+// first member's array index). Nothing is reordered on seed, so merely opening the
+// panel on a server list whose groups are interleaved never looks like an unsaved
+// edit — Save is what stamps the visual order into `order_seq`.
 const DEFAULT_GROUP = ''
 
 /** One rendered container: the default bucket, or one real failover group. */
 interface AgentGroupView {
+  /** Container identity — `(vendor, name)` for a real group, a fixed key for the
+   *  default bucket. A bare name is NOT unique: two vendors may reuse one group
+   *  name and each is its own pool. */
+  key: string
   /** The persisted `group` value — `''` for the default bucket. */
   name: string
-  /** The vendor the group is locked to (its first member's); null while empty. */
+  /** The vendor the group is locked to — null only for the default bucket, which
+   *  spans vendors (its members are filtered per sub-tab at render time). */
   vendor: VendorId | null
   members: AgentConfig[]
   isDefault: boolean
 }
 
+/** The default bucket's container key — no real group can collide with it, since a
+ *  named group's key always carries a vendor. */
+const DEFAULT_GROUP_KEY = '__default__'
+
+/** The container key for a real `(vendor, group)` pool. `:` separates the two
+ *  unambiguously: vendor ids are a closed set that never contains one, so no two
+ *  distinct pairs can collapse onto the same key. */
+function groupKey(vendor: VendorId, name: string): string {
+  return `${vendor}:${name}`
+}
+
+/** The container an agent belongs to: the default bucket when ungrouped, else its
+ *  own `(vendor, group)` — NOT every container sharing the group name. */
+function containerKeyOf(a: AgentConfig): string {
+  const name = groupOf(a)
+  return name === DEFAULT_GROUP ? DEFAULT_GROUP_KEY : groupKey(a.vendor, name)
+}
+
+/** Whether `a` is a member of `group` — vendor-aware, so a same-named group under
+ *  another vendor is a different container. */
+function inGroup(a: AgentConfig, group: AgentGroupView): boolean {
+  return containerKeyOf(a) === group.key
+}
+
+/** Empty named groups live only in the draft; each is bound to the vendor tab
+ *  where it was created so it does not leak across sub-tabs. */
+interface PendingGroup {
+  name: string
+  vendor: VendorId
+}
+
 // Groups created here that have no member yet. A group exists on the wire only
 // through its members' `group` field, so an empty one lives in the draft alone and
 // is dropped (with a notice) at Save.
-const pendingGroups = ref<string[]>([])
+const pendingGroups = ref<PendingGroup[]>([])
+
+const agentVendorDirtyMap = computed(
+  () => Object.fromEntries(VENDOR_ORDER.map((v) => [v, false])) as Record<VendorId, boolean>,
+)
+function agentVendorTabLabel(v: VendorId): string {
+  return VENDOR_LABELS[v]
+}
+function selectAgentVendor(v: VendorId): void {
+  activeAgentVendor.value = v
+}
 
 /** An agent's container name — a blank/absent `group` is the default bucket. */
 function groupOf(a: AgentConfig): string {
@@ -819,42 +880,71 @@ function groupOf(a: AgentConfig): string {
 }
 
 /**
- * The containers to render, ordered by their first member's position in the draft
- * array — including `default`, which is NOT pinned first: the built-in System agent
- * may itself join a group, and the server pins that agent to `order_seq` 0, so the
- * container holding it must render first or the list would jump on the next save.
- * A memberless container (the default bucket when everything is grouped, or a
- * freshly created group) sorts to the tail.
+ * The containers across every vendor, ordered by their first member's position in
+ * the draft array — including `default`, which is NOT pinned first: the built-in
+ * System agent may itself join a group, and the server pins that agent to
+ * `order_seq` 0, so the container holding it must render first or the list would
+ * jump on the next save. A memberless container (the default bucket when everything
+ * is grouped, or a freshly created group) sorts to the tail.
+ *
+ * Display uses {@link vendorGroupsView}; this full view drives Save/`order_seq`.
  */
 const groupsView = computed<AgentGroupView[]>(() => {
-  const members = new Map<string, AgentConfig[]>([[DEFAULT_GROUP, []]])
+  // Keyed by `(vendor, group)`, never by the bare name: two vendors may reuse one
+  // group name and each is its own failover pool, so merging them into a single
+  // container would hide one vendor's members and let an edit rewrite the other side.
+  const containers = new Map<string, AgentGroupView>([
+    [
+      DEFAULT_GROUP_KEY,
+      { key: DEFAULT_GROUP_KEY, name: DEFAULT_GROUP, vendor: null, members: [], isDefault: true },
+    ],
+  ])
   for (const a of draft.value.agents) {
-    const list = members.get(groupOf(a))
-    if (list) list.push(a)
-    else members.set(groupOf(a), [a])
+    const key = containerKeyOf(a)
+    const box = containers.get(key)
+    if (box) box.members.push(a)
+    else
+      containers.set(key, {
+        key,
+        name: groupOf(a),
+        vendor: a.vendor,
+        members: [a],
+        isDefault: false,
+      })
   }
-  for (const name of pendingGroups.value) if (!members.has(name)) members.set(name, [])
-  const order = new Map([...members.keys()].map((name, i) => [name, i]))
-  return [...members.entries()]
-    .map(([name, list]) => ({
-      name,
-      members: list,
-      isDefault: name === DEFAULT_GROUP,
-      vendor: name === DEFAULT_GROUP ? null : (list[0]?.vendor ?? null),
-    }))
-    .sort((a, b) => {
-      const ia = a.members.length ? draft.value.agents.indexOf(a.members[0]) : Infinity
-      const ib = b.members.length ? draft.value.agents.indexOf(b.members[0]) : Infinity
-      if (ia !== ib) return ia - ib
-      // Both memberless — keep them in creation order rather than swapping around.
-      return (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0)
-    })
+  for (const p of pendingGroups.value) {
+    const key = groupKey(p.vendor, p.name)
+    if (!containers.has(key))
+      containers.set(key, { key, name: p.name, vendor: p.vendor, members: [], isDefault: false })
+  }
+  const order = new Map([...containers.keys()].map((key, i) => [key, i]))
+  return [...containers.values()].sort((a, b) => {
+    const ia = a.members.length ? draft.value.agents.indexOf(a.members[0]) : Infinity
+    const ib = b.members.length ? draft.value.agents.indexOf(b.members[0]) : Infinity
+    if (ia !== ib) return ia - ib
+    // Both memberless — keep them in creation order rather than swapping around.
+    return (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0)
+  })
 })
 
 /**
- * The draft's agents in VISUAL (grouped) order. Every order-sensitive consumer
- * reads this rather than `draft.agents`: the default-agent fall-through rule and
- * the `order_seq` stamped at Save must both follow what the user actually sees.
+ * Containers/members for the active vendor sub-tab only: named groups locked to
+ * that vendor (including empty pending ones), plus the default bucket filtered to
+ * that vendor's ungrouped agents. Cross-vendor rows are not rendered here, so a
+ * drag cannot park an agent under another vendor's tab.
+ */
+const vendorGroupsView = computed<AgentGroupView[]>(() => {
+  const vendor = activeAgentVendor.value
+  return groupsView.value
+    .map((g) => (g.isDefault ? { ...g, members: g.members.filter((a) => a.vendor === vendor) } : g))
+    .filter((g) => g.isDefault || g.vendor === vendor)
+})
+
+/**
+ * The draft's agents in VISUAL (grouped) order across every vendor. Every
+ * order-sensitive consumer reads this rather than `draft.agents`: the
+ * default-agent fall-through rule and the `order_seq` stamped at Save must both
+ * follow the full registry, not only the active sub-tab.
  */
 const flatAgents = computed<AgentConfig[]>(() => groupsView.value.flatMap((g) => g.members))
 
@@ -878,7 +968,11 @@ function notifyGroup(message: string): void {
  * login), the server just launches that hop directly instead of through the relay.
  */
 function canJoinGroup(a: AgentConfig, group: AgentGroupView): boolean {
-  if (group.isDefault || groupOf(a) === group.name) return true
+  if (group.isDefault || inGroup(a, group)) return true
+  // Named groups (including empty pending ones bound to a vendor tab) hold ONE
+  // vendor — refuse a cross-vendor drop so a mid-drag tab switch cannot rewrite
+  // group membership onto the wrong side. A same-named group under another vendor
+  // is a DIFFERENT container, so matching the name alone would let it through.
   if (group.vendor && group.vendor !== a.vendor) {
     notifyGroup(
       t('settings.agents.group.notice.vendorMismatch', { vendor: VENDOR_LABELS[group.vendor] }),
@@ -893,17 +987,21 @@ function canJoinGroup(a: AgentConfig, group: AgentGroupView): boolean {
  * The built-in System agent is pinned to the very front by the server's normalize,
  * so nothing may be placed above it — a drop targeting it lands just after instead.
  */
-function moveAgentToGroup(agentId: string, groupName: string, beforeId: string | null): void {
+function moveAgentToGroup(agentId: string, targetKey: string, beforeId: string | null): void {
   const agents = draft.value.agents
   const from = agents.findIndex((a) => a.id === agentId)
-  const target = groupsView.value.find((g) => g.name === groupName)
+  // Resolve by container key, not name: a same-named group under another vendor is
+  // a different container and must not be picked up as the drop target.
+  const target = groupsView.value.find((g) => g.key === targetKey)
   if (from < 0 || !target || beforeId === agentId) return
   const agent = agents[from]
   if (!canJoinGroup(agent, target)) return
+  const previousKey = containerKeyOf(agent)
   const previousGroup = groupOf(agent)
+  const previousVendor = agent.vendor
 
   agents.splice(from, 1)
-  agent.group = groupName
+  agent.group = target.name
   const anchor = beforeId ? agents.findIndex((a) => a.id === beforeId) : -1
   if (anchor >= 0)
     agents.splice(agents[anchor].id === SYSTEM_AGENT_ID ? anchor + 1 : anchor, 0, agent)
@@ -913,17 +1011,19 @@ function moveAgentToGroup(agentId: string, groupName: string, beforeId: string |
     // `groupsView` places the container by itself.
     let last = -1
     agents.forEach((a, i) => {
-      if (groupOf(a) === groupName) last = i
+      if (inGroup(a, target)) last = i
     })
     agents.splice(last + 1, 0, agent)
   }
 
   // Keep an emptied group visible instead of letting the container vanish under
   // the cursor, and drop the target from the pending list now that it has a member.
-  if (previousGroup !== DEFAULT_GROUP && !agents.some((a) => groupOf(a) === previousGroup)) {
-    if (!pendingGroups.value.includes(previousGroup)) pendingGroups.value.push(previousGroup)
+  if (previousGroup !== DEFAULT_GROUP && !agents.some((a) => containerKeyOf(a) === previousKey)) {
+    if (!pendingGroups.value.some((p) => p.name === previousGroup && p.vendor === previousVendor)) {
+      pendingGroups.value.push({ name: previousGroup, vendor: previousVendor })
+    }
   }
-  pendingGroups.value = pendingGroups.value.filter((n) => n !== groupName)
+  pendingGroups.value = pendingGroups.value.filter((p) => groupKey(p.vendor, p.name) !== target.key)
 }
 
 // The System agent is pinned to `order_seq` 0 by the server, so it stays the very
@@ -952,17 +1052,21 @@ function moveWithinGroup(group: AgentGroupView, index: number, delta: -1 | 1): v
   agents[j] = agent
 }
 
-/** Create an empty container the user can drag agents into. */
+/** Create an empty container the user can drag agents into on the active vendor tab.
+ *  The auto-name only has to be free on THIS vendor — another vendor's group of the
+ *  same name is a separate pool. */
 function addGroup(): void {
-  const taken = new Set(groupsView.value.map((g) => g.name))
+  const vendor = activeAgentVendor.value
+  const taken = new Set(groupsView.value.filter((g) => g.vendor === vendor).map((g) => g.name))
   const base = t('settings.agents.group.new.name')
   let n = 1
   while (taken.has(`${base}-${n}`)) n++
-  pendingGroups.value.push(`${base}-${n}`)
+  pendingGroups.value.push({ name: `${base}-${n}`, vendor })
 }
 
-/** Rename a container, rewriting every member's `group`. Refuses a blank, a
- *  duplicate, or the reserved `_c3_` prefix (which collides with a group ref). */
+/** Rename a container, rewriting its OWN members' `group` (same vendor only — a
+ *  same-named group under another vendor is untouched). Refuses a blank, a name
+ *  already taken on this vendor, or the reserved `_c3_` prefix. */
 function renameGroup(group: AgentGroupView, raw: string): boolean {
   const name = raw.trim()
   if (name === group.name) return true
@@ -974,12 +1078,14 @@ function renameGroup(group: AgentGroupView, raw: string): boolean {
     notifyGroup(t('settings.agents.group.notice.reservedName', { prefix: GROUP_AGENT_PREFIX }))
     return false
   }
-  if (groupsView.value.some((g) => g.name === name)) {
+  if (groupsView.value.some((g) => g.vendor === group.vendor && g.name === name)) {
     notifyGroup(t('settings.agents.group.notice.duplicateName', { name }))
     return false
   }
-  for (const a of draft.value.agents) if (groupOf(a) === group.name) a.group = name
-  pendingGroups.value = pendingGroups.value.map((n) => (n === group.name ? name : n))
+  for (const a of draft.value.agents) if (inGroup(a, group)) a.group = name
+  pendingGroups.value = pendingGroups.value.map((p) =>
+    groupKey(p.vendor, p.name) === group.key ? { ...p, name } : p,
+  )
   return true
 }
 
@@ -993,8 +1099,8 @@ function onRenameGroup(group: AgentGroupView, e: Event): void {
 /** Dissolve a container: every member falls back to `default` (nothing is deleted). */
 function removeGroup(group: AgentGroupView): void {
   if (group.isDefault) return
-  for (const a of draft.value.agents) if (groupOf(a) === group.name) a.group = DEFAULT_GROUP
-  pendingGroups.value = pendingGroups.value.filter((n) => n !== group.name)
+  for (const a of draft.value.agents) if (inGroup(a, group)) a.group = DEFAULT_GROUP
+  pendingGroups.value = pendingGroups.value.filter((p) => groupKey(p.vendor, p.name) !== group.key)
 }
 
 // ---- Drag between containers (native HTML5 DnD, no library) -----------------
@@ -1004,7 +1110,8 @@ function removeGroup(group: AgentGroupView): void {
 // so a move survives the round trip to the server, which then regularizes it into
 // a dense 0..n sequence.
 const dragAgentId = ref<string | null>(null)
-// The highlighted drop target: `agent:<id>` for a row, `group:<name>` for a body.
+// The highlighted drop target: `agent:<id>` for a row, `group:<key>` for a body
+// (the container key, so same-named groups on two vendors never light up together).
 const dragOverKey = ref<string | null>(null)
 
 function onAgentDragStart(agent: AgentConfig, e: DragEvent): void {
@@ -1015,17 +1122,17 @@ function onDragOverRow(agent: AgentConfig): void {
   dragOverKey.value = dragAgentId.value === null ? null : `agent:${agent.id}`
 }
 function onDragOverGroup(group: AgentGroupView): void {
-  dragOverKey.value = dragAgentId.value === null ? null : `group:${group.name}`
+  dragOverKey.value = dragAgentId.value === null ? null : `group:${group.key}`
 }
 function onDropOnRow(group: AgentGroupView, agent: AgentConfig): void {
   const dragged = dragAgentId.value
   onAgentDragEnd()
-  if (dragged) moveAgentToGroup(dragged, group.name, agent.id)
+  if (dragged) moveAgentToGroup(dragged, group.key, agent.id)
 }
 function onDropOnGroup(group: AgentGroupView): void {
   const dragged = dragAgentId.value
   onAgentDragEnd()
-  if (dragged) moveAgentToGroup(dragged, group.name, null)
+  if (dragged) moveAgentToGroup(dragged, group.key, null)
 }
 function onAgentDragEnd(): void {
   dragAgentId.value = null
@@ -1059,9 +1166,15 @@ function buildTabPayload(
       payload.agents = agents
       // A memberless container exists only in this draft — say so rather than let
       // it disappear silently on the round trip.
-      const empty = pendingGroups.value.filter((n) => !agents.some((a) => a.group === n))
+      const empty = pendingGroups.value.filter(
+        (p) => !agents.some((a) => a.group === p.name && a.vendor === p.vendor),
+      )
       if (empty.length > 0) {
-        notifyGroup(t('settings.agents.group.notice.emptyDiscarded', { name: empty.join(', ') }))
+        notifyGroup(
+          t('settings.agents.group.notice.emptyDiscarded', {
+            name: empty.map((p) => p.name).join(', '),
+          }),
+        )
       }
       payload.defaultAgentId = src.defaultAgentId
       payload.toolAgentId = src.toolAgentId
@@ -1346,14 +1459,25 @@ function selectAdmin(username: string) {
           >
             {{ groupNotice }}
           </p>
-          <div ref="agentListEl" class="agent-list">
+          <!-- Per-vendor sub-tabs: no "All" overview; list below shows only this vendor. -->
+          <TabNav
+            :tabs="VENDOR_ORDER"
+            :active-tab="activeAgentVendor"
+            :dirty-map="agentVendorDirtyMap"
+            :tab-label="agentVendorTabLabel"
+            prefix="agent-vendor"
+            :dirty-title="''"
+            @select="selectAgentVendor"
+          />
+          <div ref="agentListEl" class="agent-list" data-testid="agent-list">
             <section
-              v-for="g in groupsView"
-              :key="g.name || '__default__'"
+              v-for="g in vendorGroupsView"
+              :key="g.key"
               class="agent-group-box"
-              :class="{ 'drag-over': dragOverKey === `group:${g.name}`, 'is-default': g.isDefault }"
+              :class="{ 'drag-over': dragOverKey === `group:${g.key}`, 'is-default': g.isDefault }"
               data-testid="agent-group-box"
               :data-group-name="g.name"
+              :data-group-vendor="g.vendor ?? ''"
               @dragover.prevent="onDragOverGroup(g)"
               @drop.prevent="onDropOnGroup(g)"
             >

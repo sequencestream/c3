@@ -815,7 +815,7 @@
           "label": "납품 선택"
         },
         "empty": {
-          "label": "이 워크스페이스에는 아직 브랜치가 준비된 납품이 없습니다."
+          "label": "이 워크스페이스에는 쓰기 가능한 납품이 없습니다: 브랜치가 준비되어 있고 아직 검증이나 마감에 들어가지 않아야 합니다."
         }
       },
       "content": {
@@ -2238,8 +2238,8 @@
       "gitCleanupPrTargetUnavailable": "PR을 생성하지 않았습니다: {detail}. 브랜치가 준비된 딜리버리를 이 의도에 연결한 뒤 수동으로 PR을 생성하세요.",
       "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。",
       "pullFailed": "현재 브랜치가 원격과 분기되어 빨리 감기를 할 수 없습니다. 작업을 시작하기 전에 수동으로 동기화하세요: {message}",
-      "worktreeBaseMismatch": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아닙니다. c3는 자동으로 재생성하거나 병합하지 않습니다 — 재생성하거나 해당 브랜치를 병합하세요.",
-      "worktreeBaseMismatchDirty": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아니며 커밋되지 않은 작업이 있습니다. 먼저 커밋하거나 stash 하거나, 해당 브랜치를 병합하세요.",
+      "worktreeBaseMismatch": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아닙니다. 현재 \"{currentBranch}\"(HEAD {currentHead})에 있습니다. c3는 자동으로 재생성하거나 병합하지 않습니다 — 재생성하거나 해당 브랜치를 병합하세요.",
+      "worktreeBaseMismatchDirty": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아니며 현재 \"{currentBranch}\"(HEAD {currentHead})에 있고 커밋되지 않은 작업이 있습니다. 먼저 커밋하거나 stash 하거나, 해당 브랜치를 병합하세요.",
       "worktreeDirty": "worktree에 커밋되지 않은 작업이 있습니다 — 재생성 전에 커밋하거나 stash 하세요. c3는 절대 대신 버리지 않습니다.",
       "worktreeRepairFailed": "worktree 복구에 실패했습니다: {message}",
       "dependencyNotMerged": "종속성 \"{title}\"({id})이(가) 아직 메인 브랜치에 병합되지 않았습니다.",
@@ -2714,7 +2714,7 @@
           "label": "이 전달에 인텐트 연결"
         },
         "pickerEmpty": {
-          "label": "연결할 수 있는 인텐트가 없습니다 — 모든 인텐트가 이미 어떤 전달에 속해 있습니다."
+          "label": "연결할 수 있는 인텐트가 없습니다 — 나머지는 이미 어떤 전달에 속해 있거나, 취소되었거나, 병합된 PR이 있습니다."
         },
         "confirm": {
           "label": "연결"

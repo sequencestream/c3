@@ -814,7 +814,7 @@
           "label": "选择一条交付"
         },
         "empty": {
-          "label": "当前工作区还没有分支已就绪的交付。"
+          "label": "当前工作区没有可写入的交付:需要分支已就绪,且尚未进入验证或结账。"
         }
       },
       "content": {
@@ -2237,8 +2237,8 @@
       "gitCleanupPrTargetUnavailable": "未创建 PR: {detail}。请先为该意图关联一个分支已就绪的交付,再手动创建 PR。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
       "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始工作: {message}",
-      "worktreeBaseMismatch": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\")。c3 从不自动重建或自动合并 —— 请选择重建,或把该分支合入当前工作分支。",
-      "worktreeBaseMismatchDirty": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\"),且有未提交的改动。请先提交或暂存,或把该分支合入当前工作分支。",
+      "worktreeBaseMismatch": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\"),它当前位于\"{currentBranch}\"(HEAD {currentHead})。c3 从不自动重建或自动合并 —— 请选择重建,或把该分支合入当前工作分支。",
+      "worktreeBaseMismatchDirty": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\"),它当前位于\"{currentBranch}\"(HEAD {currentHead}),且有未提交的改动。请先提交或暂存,或把该分支合入当前工作分支。",
       "worktreeDirty": "worktree 有未提交的改动 —— 重建前请先提交或暂存。c3 绝不代你丢弃这些工作。",
       "worktreeRepairFailed": "worktree 修复失败:{message}",
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",
@@ -2713,7 +2713,7 @@
           "label": "关联意图到本交付"
         },
         "pickerEmpty": {
-          "label": "没有可关联的意图——所有意图都已归属某个交付。"
+          "label": "没有可关联的意图——其余意图已归属某个交付、已取消,或已有合并的 PR。"
         },
         "confirm": {
           "label": "关联"

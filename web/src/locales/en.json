@@ -814,7 +814,7 @@
           "label": "Pick a delivery"
         },
         "empty": {
-          "label": "No delivery in this workspace has a ready branch yet."
+          "label": "No delivery in this workspace is open for new work: it needs a ready branch and must not have entered verification or been closed."
         }
       },
       "content": {
@@ -2237,8 +2237,8 @@
       "gitCleanupPrTargetUnavailable": "No PR created: {detail}. Link this intent to a delivery whose branch is ready, then create the PR manually.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
       "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting work: {message}",
-      "worktreeBaseMismatch": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\"). c3 never rebuilds or merges it for you — rebuild it, or merge the branch in.",
-      "worktreeBaseMismatchDirty": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\") and holds uncommitted work. Commit or stash it first, or merge the branch in.",
+      "worktreeBaseMismatch": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\") — it currently sits on \"{currentBranch}\" (HEAD {currentHead}). c3 never rebuilds or merges it for you — rebuild it, or merge the branch in.",
+      "worktreeBaseMismatchDirty": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\") — it currently sits on \"{currentBranch}\" (HEAD {currentHead}) — and holds uncommitted work. Commit or stash it first, or merge the branch in.",
       "worktreeDirty": "The worktree holds uncommitted work — commit or stash it before rebuilding. c3 never discards it for you.",
       "worktreeRepairFailed": "Worktree repair failed: {message}",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",
@@ -2713,7 +2713,7 @@
           "label": "Link an intent to this delivery"
         },
         "pickerEmpty": {
-          "label": "No intent is available to link — every intent already belongs to a delivery."
+          "label": "No intent is available to link — the rest already belong to a delivery, are cancelled, or have a merged PR."
         },
         "confirm": {
           "label": "Link"

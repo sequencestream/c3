@@ -8,7 +8,13 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { AssociatedIntent, Delivery, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  AssociatedIntent,
+  Delivery,
+  Intent,
+  IntentPr,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import DeliveryIntentsTab from './DeliveryIntentsTab.vue'
 
@@ -59,9 +65,30 @@ function intent(over: Partial<Intent> = {}): Intent {
   return {
     id: 'i9',
     title: 'Free intent',
+    status: 'todo',
     linkedDeliveries: [],
+    prs: [],
     ...over,
   } as unknown as Intent
+}
+
+/** 一条 PR 台账行,只有 `status` 参与候选判定,其余字段填占位值。 */
+function pr(over: Partial<IntentPr> = {}): IntentPr {
+  return {
+    id: 'pr-1',
+    intentId: 'i9',
+    deliveryId: null,
+    forge: null,
+    repo: null,
+    number: '1',
+    url: null,
+    status: 'reviewing',
+    headBranch: null,
+    baseBranch: null,
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  }
 }
 
 function mountTab(over: { rows?: AssociatedIntent[]; intents?: Intent[] } = {}) {
@@ -221,9 +248,78 @@ describe('DeliveryIntentsTab', () => {
     expect(w.emitted('link')).toEqual([['free']])
   })
 
-  it('shows the picker empty state when every intent already belongs to a delivery', async () => {
+  it('drops cancelled intents from the picker — abandoned work is not delivery material', async () => {
     const w = mountTab({
-      intents: [intent({ id: 'taken', linkedDeliveries: [{ id: 'dX', title: 'Other' }] })],
+      intents: [
+        intent({ id: 'live', title: 'Live', status: 'todo' }),
+        intent({ id: 'dead', title: 'Dead', status: 'cancelled' }),
+      ],
+    })
+    await w.find('[data-testid="delivery-intents-link"]').trigger('click')
+    const options = w.findAll('[data-testid="delivery-intents-picker"] option')
+    expect(options.map((o) => o.attributes('value'))).toEqual(['live'])
+  })
+
+  it('drops intents carrying a merged PR — including one with no delivery binding', async () => {
+    const w = mountTab({
+      intents: [
+        intent({ id: 'open', title: 'Open', prs: [pr({ status: 'reviewing' })] }),
+        // 无交付归属的历史 PR 同样计入:改动已落地,再挂进一条新交付无从交付。
+        intent({
+          id: 'landed',
+          title: 'Landed',
+          prs: [pr({ status: 'merged', deliveryId: null })],
+        }),
+      ],
+    })
+    await w.find('[data-testid="delivery-intents-link"]').trigger('click')
+    const options = w.findAll('[data-testid="delivery-intents-picker"] option')
+    expect(options.map((o) => o.attributes('value'))).toEqual(['open'])
+  })
+
+  it('drops an intent whose PRs mix merged and reviewing — no aggregate ladder to hide behind', async () => {
+    // deriveIntentPrAggregate 会把这组压成 `reviewing`;候选判定按单条 PR 字面
+    // 取值,所以这条意图必须被排除。
+    const w = mountTab({
+      intents: [
+        intent({
+          id: 'mixed',
+          title: 'Mixed',
+          prs: [pr({ id: 'a', status: 'merged' }), pr({ id: 'b', status: 'reviewing' })],
+        }),
+      ],
+    })
+    await w.find('[data-testid="delivery-intents-link"]').trigger('click')
+    expect(w.find('[data-testid="delivery-intents-picker-empty"]').exists()).toBe(true)
+  })
+
+  it('keeps intents whose PRs are closed / rejected / failed — they can still be re-opened', async () => {
+    const w = mountTab({
+      intents: [
+        intent({ id: 'closed', title: 'Closed', prs: [pr({ status: 'closed' })] }),
+        intent({ id: 'rejected', title: 'Rejected', prs: [pr({ status: 'rejected' })] }),
+        intent({ id: 'failed', title: 'Failed', prs: [pr({ status: 'failed' })] }),
+      ],
+    })
+    await w.find('[data-testid="delivery-intents-link"]').trigger('click')
+    const options = w.findAll('[data-testid="delivery-intents-picker"] option')
+    expect(options.map((o) => o.attributes('value'))).toEqual(['closed', 'rejected', 'failed'])
+  })
+
+  it('links an intent that is unlinked, not cancelled and free of merged PRs', async () => {
+    const w = mountTab({ intents: [intent({ id: 'free', prs: [pr({ status: 'closed' })] })] })
+    await w.find('[data-testid="delivery-intents-link"]').trigger('click')
+    await w.find('[data-testid="delivery-intents-link-confirm"]').trigger('click')
+    expect(w.emitted('link')).toEqual([['free']])
+  })
+
+  it('shows the picker empty state when every intent is linked, cancelled or merged', async () => {
+    const w = mountTab({
+      intents: [
+        intent({ id: 'taken', linkedDeliveries: [{ id: 'dX', title: 'Other' }] }),
+        intent({ id: 'dead', status: 'cancelled' }),
+        intent({ id: 'landed', prs: [pr({ status: 'merged' })] }),
+      ],
     })
     await w.find('[data-testid="delivery-intents-link"]').trigger('click')
     expect(w.find('[data-testid="delivery-intents-picker-empty"]').exists()).toBe(true)

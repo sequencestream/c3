@@ -3027,7 +3027,8 @@ button.deny:hover:not(:disabled) {
   align-items: center;
   gap: var(--sp-2);
   overflow-x: auto;
-  padding-bottom: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
 }
 /* In the flex row, fields size by their per-field flex below, not the default
  * full width the `.agent-field` base rule gives them (used in other layouts). */

@@ -7,6 +7,7 @@ import SettingsPanel from './SettingsPanel.vue'
 import { SYSTEM_AGENT_ID, VENDOR_IDS } from '@ccc/shared/protocol'
 import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import { useAuth } from '@/composables/useAuth'
+import { VENDOR_COLOR } from '@/lib/vendor'
 
 const baseSettings: SystemSettings = {
   agents: [
@@ -1814,6 +1815,60 @@ describe('SettingsPanel.vue — a Cursor agent is a first-class pick in every ro
     await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.defaultAgentId).toBe('cursor-a')
+  })
+})
+
+describe('SettingsPanel.vue — agent row vendor tint', () => {
+  const multiVendor: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: 'claude-1',
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'Claude One',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'codex-1',
+        vendor: 'codex',
+        configMode: 'system',
+        displayName: 'Codex One',
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'responses' },
+      },
+    ],
+  }
+
+  function rowTint(w: ReturnType<typeof mount>, agentId: string): string {
+    const el = w.find(`[data-agent-id="${agentId}"]`).element as HTMLElement
+    return el.style.getPropertyValue('--agent-vendor-tint')
+  }
+
+  it('tints each agent row from its vendor VENDOR_COLOR-derived mix', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: multiVendor, vendorAvailability: availability() },
+    })
+    const claudeTint = rowTint(w, 'claude-1')
+    const codexTint = rowTint(w, 'codex-1')
+    expect(claudeTint).toContain(VENDOR_COLOR.claude)
+    expect(codexTint).toContain(VENDOR_COLOR.codex)
+    expect(claudeTint).not.toBe(codexTint)
+    expect(claudeTint).toMatch(/color-mix\(in srgb,/i)
+    expect(codexTint).toMatch(/color-mix\(in srgb,/i)
+  })
+
+  it('updates the row tint immediately when the vendor select changes', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: multiVendor, vendorAvailability: availability() },
+    })
+    expect(rowTint(w, 'claude-1')).toContain(VENDOR_COLOR.claude)
+
+    await w
+      .find('[data-agent-id="claude-1"]')
+      .find('[data-testid="agent-vendor"]')
+      .setValue('cursor')
+    expect(rowTint(w, 'claude-1')).toContain(VENDOR_COLOR.cursor)
+    expect(rowTint(w, 'claude-1')).not.toContain(VENDOR_COLOR.claude)
   })
 })
 

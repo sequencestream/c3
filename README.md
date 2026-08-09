@@ -24,6 +24,46 @@ An **AI workbench** that centrally manages and drives the work of multiple AI co
   <img src="handbook/images/c3-consensus-example.png" alt="Consensus example" width="49%" />
 </p>
 
+## Core workflow
+
+```mermaid
+flowchart LR
+  Disc["Discussion<br/>several agents (and you)<br/>round-table a topic"]
+  Auto["Automation<br/>cron schedule<br/>/ system event"]
+  Queue["Intent queue<br/>intents marked automate,<br/>ordered by deps + priority"]
+
+  subgraph Intents["Intents — one tracked unit of work each"]
+    direction TB
+    I1["Intent A<br/>spec → review → worktree → commit → PR"]
+    I2["Intent B"]
+    I3["Intent C"]
+  end
+
+  Del["Delivery<br/>one branch collects<br/>the PRs of N intents"]
+  Main["Mainline"]
+
+  Disc -->|conclusions become intents| Intents
+  Auto -->|creates intents, starts discussions| Intents
+  Queue -->|develops them unattended| Intents
+  I1 --> Del
+  I2 --> Del
+  I3 --> Del
+  Del -->|every intent PR merged → verify → delivery PR| Main
+```
+
+- **Discussions are where intents come from.** Round-table a topic with several
+  agents, then turn the conclusion into one or more intents — or write an intent
+  directly if you already know what you want.
+- **An intent is one tracked unit of work**: spec → read-only review → human
+  approval → code in its own Git worktree → commit → PR.
+- **A delivery is the integration unit.** Many intents point at one delivery; their
+  PRs land on its branch, and once all of them are merged and you have verified the
+  result, one delivery PR takes the batch to the mainline.
+- **Automations and the intent queue drive the loop.** Automations fire on a cron or
+  a system event to create intents and start discussions; the queue picks up every
+  intent marked `automate` and develops them in dependency order, backing off and
+  parking on failure.
+
 ## Features
 
 - **Browser-mediated permission gateway** — approve/deny every sensitive tool use in the browser, not the terminal; optional multi-agent consensus voting.
@@ -40,7 +80,7 @@ An **AI workbench** that centrally manages and drives the work of multiple AI co
 - **Optional account auth** — username/password accounts with an admin gate (off by default; loopback-only otherwise).
 - **External MCP access** — let your _own_ agents (an independent Claude Code / Codex session, a CI job) read this c3 over MCP with a long-lived API key, scoped to the workspaces you grant.
 - **Single self-contained binary** — one native executable per platform, with a`c3 upgrade` self-update from GitHub Releases.
-- **Desktop app** — a Tauri 2 shell that runs that same binary as a sidecar: install, double-click, tray-resident, optional start-at-login. No terminal, no browser.
+- **Desktop app** — download the installer from GitHub Releases, double-click, tray-resident. No terminal, no browser.
 
 See [`doc/features.md`](doc/features.md) for the full feature tree.
 
@@ -48,12 +88,11 @@ See [`doc/features.md`](doc/features.md) for the full feature tree.
 
 c3 ships in **two flavours from the same release** — pick one:
 
-|          | **Desktop app (UI)**                            | **CLI single binary**                  |
-| -------- | ----------------------------------------------- | -------------------------------------- |
-| Artifact | `c3-desktop-v{ver}-{target}.{dmg\|msi\|deb\|…}` | `c3-v{ver}-{target}.{tar.gz\|zip}`     |
-| Start it | install, then double-click                      | `./c3 --daemon`, then open a browser   |
-| Window   | native WebView, tray-resident                   | your browser                           |
-| Best for | anyone who would rather not touch a terminal    | servers, remote boxes, scripted setups |
+|          | **Desktop app (UI)**                         | **CLI single binary**                  |
+| -------- | -------------------------------------------- | -------------------------------------- |
+| Start it | install, then double-click                   | `./c3 --daemon`, then open a browser   |
+| Window   | native WebView, tray-resident                | your browser                           |
+| Best for | anyone who would rather not touch a terminal | servers, remote boxes, scripted setups |
 
 Both drive the same backend and **share the same `~/.c3`** — settings, credentials,
 workspaces, database and sessions. You can install both and switch freely; just don't
@@ -61,29 +100,10 @@ run them at the same time against the same data directory.
 
 ### Desktop app
 
-Download the installer for your platform from **GitHub Releases**:
-
-| Platform    | Artifact                                                    |
-| ----------- | ----------------------------------------------------------- |
-| macOS arm64 | `c3-desktop-v{ver}-macos-arm64.dmg` (signed + notarized)    |
-| Windows x64 | `c3-desktop-v{ver}-windows-x64.msi` or `…-windows-x64.exe`  |
-| Linux x64   | `c3-desktop-v{ver}-linux-x64.deb` or `…-linux-x64.AppImage` |
-
-Install and double-click. The app starts the c3 backend for you on a loopback-only
-port and renders the Web UI in a native window — no terminal, no browser. Closing the
-window keeps the backend running; use the tray icon to bring it back, toggle
-**Start at login**, or **Quit**.
-
-Notes:
-
-- **Windows** installers are unsigned unless a code-signing certificate was configured
-  for the release; SmartScreen will warn on first run.
-- **Linux** needs WebKitGTK (`libwebkit2gtk-4.1-0`) and GTK 3 — the `.deb` declares them.
-- Desktop **Start at login** and the CLI's `c3 install` OS service are two separate
-  entry points. Enabling both gives you two c3 instances fighting over one data
-  directory — pick one.
-- The desktop bundle does not carry the Cursor SDK tree; set `CURSOR_SDK_PATH` (or use
-  the CLI flavour) if you need the Cursor vendor.
+Download the installer for your platform from
+[**GitHub Releases**](https://github.com/sequencestream/c3/releases/latest)
+(`.dmg` for macOS, `.msi` for Windows, `.deb` / `.AppImage` for Linux), install it and
+double-click. Everything else — backend, port, window — is handled for you.
 
 ### CLI single binary
 

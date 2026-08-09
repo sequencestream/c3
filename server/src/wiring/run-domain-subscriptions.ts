@@ -461,8 +461,9 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // Manual fast-mode turn: settle the reverse-spec first. The diff is
       // measured against the FIXED turn-start baseline, so the cleanup commit
       // below never moves it — the two can run independently. Only SDD-on +
-      // effective-fast manual turns reach here; automation still requires an
-      // approved spec and never takes this path.
+      // effective-fast manual turns reach here: the enclosing branch is what
+      // excludes automation-driven turns, which settle through the orchestrator's
+      // own path and never reverse-author a spec.
       if (getSddEnabled(workspacePath) && matched.effectiveSpecMode === 'fast') {
         void settleFastTurn(workspacePath, sessionId, matched.id, { broadcastIntents }).catch(
           (err) =>

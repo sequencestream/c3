@@ -12,6 +12,7 @@ import { checkExistingWorktreeBaseline, resolveWorktreeBaseline } from './worktr
 import {
   fetchRemoteBase,
   isWorktreeClean,
+  readWorktreeHead,
   worktreeContainsRef,
   worktreeExists,
 } from './worktree.js'
@@ -22,6 +23,7 @@ vi.mock('./worktree.js', async (importOriginal) => ({
   worktreeExists: vi.fn(),
   worktreeContainsRef: vi.fn(),
   isWorktreeClean: vi.fn(),
+  readWorktreeHead: vi.fn(),
 }))
 
 const delivery = (over: Partial<Delivery> = {}): Delivery =>
@@ -50,6 +52,7 @@ beforeEach(() => {
   vi.mocked(worktreeExists).mockReturnValue(true)
   vi.mocked(worktreeContainsRef).mockReturnValue(true)
   vi.mocked(isWorktreeClean).mockReturnValue(true)
+  vi.mocked(readWorktreeHead).mockReturnValue({ branch: 'main', head: 'abc1234' })
 })
 
 afterEach(() => vi.clearAllMocks())
@@ -118,6 +121,7 @@ describe('checkExistingWorktreeBaseline', () => {
       branch: 'delivery/sprint-3',
       delivery: { id: 'd1', title: '交付 X' },
       canRebuild: true,
+      current: { branch: 'main', head: 'abc1234' },
     })
   })
 
@@ -126,6 +130,24 @@ describe('checkExistingWorktreeBaseline', () => {
     vi.mocked(isWorktreeClean).mockReturnValue(false)
     expect(checkExistingWorktreeBaseline('/w', 'i1', baseline())).toMatchObject({
       canRebuild: false,
+    })
+  })
+
+  // 「建错基线」和「交付分支被推进」都走这一条拦截,报错必须能把两者区分开:
+  // 前者 worktree 还坐在主线上,后者已经在自己的意图分支上。
+  it('阻塞时带上 worktree 真实所在位置,便于区分建错基线与基线过期', () => {
+    vi.mocked(worktreeContainsRef).mockReturnValue(false)
+    vi.mocked(readWorktreeHead).mockReturnValue({ branch: 'intent/abc-x', head: 'deadbee' })
+    expect(checkExistingWorktreeBaseline('/w', 'i1', baseline())).toMatchObject({
+      current: { branch: 'intent/abc-x', head: 'deadbee' },
+    })
+  })
+
+  it('HEAD 分离或读不出来时如实报 null,不拿主线冒充', () => {
+    vi.mocked(worktreeContainsRef).mockReturnValue(false)
+    vi.mocked(readWorktreeHead).mockReturnValue({ branch: null, head: null })
+    expect(checkExistingWorktreeBaseline('/w', 'i1', baseline())).toMatchObject({
+      current: { branch: null, head: null },
     })
   })
 })

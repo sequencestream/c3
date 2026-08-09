@@ -39,7 +39,7 @@ import {
   type SessionLaunchDeps,
   type SessionLaunchResult,
 } from './session-launcher.js'
-import { getWorktreeBase, getWorktreePath } from './worktree.js'
+import { generateBranchName, getWorktreeBase, getWorktreePath } from './worktree.js'
 import { getSpecsBase } from './specs-root.js'
 
 let dir: string
@@ -316,6 +316,19 @@ describe('基线失配:四类会话一并被拦下,目录从不被自动改写',
     const e = asError(await launchSpecReviewSession(proj, id, mockDeps()))
     expect(e.code).toBe('intent.worktreeBaseMismatch')
     expect(e.params?.branch).toBe('delivery/v9')
+  })
+
+  // 报错要能回答「为什么不匹配」:这个目录当初就建在 main 上,不是交付分支推进
+  // 把它甩在后面 —— 两者的修复动作一样,但原因不同,用户得能分辨。
+  it('报错带上 worktree 当前实际基线(分支 + HEAD)', async () => {
+    const id = await seedMismatch()
+    const e = asError(await launchSpecReviewSession(proj, id, mockDeps()))
+    const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: getWorktreePath(proj, id),
+      encoding: 'utf-8',
+    }).trim()
+    expect(e.params?.currentBranch).toBe(generateBranchName(id, 'Target'))
+    expect(e.params?.currentHead).toBe(head)
   })
 
   it('有未提交改动:不给重建,只提示先提交/stash', async () => {

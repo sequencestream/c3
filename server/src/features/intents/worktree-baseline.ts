@@ -21,8 +21,10 @@ import {
   fetchRemoteBase,
   getWorktreePath,
   isWorktreeClean,
+  readWorktreeHead,
   worktreeContainsRef,
   worktreeExists,
+  type WorktreeHeadState,
 } from './worktree.js'
 
 /** The baseline one launch resolves for its worktree. */
@@ -82,6 +84,13 @@ export type WorktreeBaselineBlock = {
   delivery: { id: string; title: string } | null
   /** Whether a safe rebuild is currently possible (no uncommitted work). */
   canRebuild: boolean
+  /**
+   * Where the worktree actually sits. Carried so the refusal can say WHY the two
+   * disagree: a directory still on the mainline was created off the wrong base,
+   * while one on its own intent branch simply fell behind a delivery branch that
+   * moved. Diagnostic only — it changes neither the verdict nor the exits.
+   */
+  current: WorktreeHeadState
 }
 
 /**
@@ -108,5 +117,6 @@ export function checkExistingWorktreeBaseline(
     branch: baseline.baseBranch,
     delivery: baseline.delivery,
     canRebuild: isWorktreeClean(worktreePath),
+    current: readWorktreeHead(worktreePath),
   }
 }

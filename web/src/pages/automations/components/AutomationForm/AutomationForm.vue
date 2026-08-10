@@ -1762,7 +1762,9 @@ function save(): void {
 }
 .sf-input,
 .sf-textarea {
-  background: var(--c-input);
+  /* background-color(而非简写)+ 下拉专属右内边距：同一个类也用在 <select> 上，
+     简写会连带清掉基线画在背景上的箭头，padding 简写则会盖掉给箭头的留白。 */
+  background-color: var(--c-input);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   color: var(--c-text);
@@ -1770,6 +1772,9 @@ function save(): void {
   padding: var(--sp-2);
   font-family: inherit;
   width: 100%;
+}
+select.sf-input {
+  padding-right: var(--sp-select-arrow);
 }
 .sf-input:focus,
 .sf-textarea:focus {

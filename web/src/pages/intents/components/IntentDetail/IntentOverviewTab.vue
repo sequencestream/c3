@@ -629,10 +629,10 @@ watch(
 /* 是否需要规范:元信息行内的紧凑下拉,尺寸跟随周围 caption 文字,不抢视线。 */
 .req-meta-spec-mode-select {
   margin-left: var(--sp-1);
-  padding: 0 var(--sp-1);
+  padding: 0 var(--sp-select-arrow) 0 var(--sp-1);
   font: inherit;
   color: var(--c-text);
-  background: var(--c-bg);
+  background-color: var(--c-bg);
   border: 1px solid var(--c-border);
   border-radius: 4px;
   cursor: pointer;

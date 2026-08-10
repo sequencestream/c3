@@ -188,9 +188,9 @@ function confirm(): void {
 .ild-select {
   font: inherit;
   font-size: var(--fs-body);
-  padding: var(--sp-2);
+  padding: var(--sp-2) var(--sp-select-arrow) var(--sp-2) var(--sp-2);
   color: var(--c-text);
-  background: var(--c-bg);
+  background-color: var(--c-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
 }

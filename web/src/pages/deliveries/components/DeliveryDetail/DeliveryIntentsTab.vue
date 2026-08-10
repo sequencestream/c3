@@ -299,9 +299,9 @@ function confirmUnlink(): void {
   min-width: 160px;
   font: inherit;
   font-size: var(--fs-caption);
-  padding: var(--sp-1);
+  padding: var(--sp-1) var(--sp-select-arrow) var(--sp-1) var(--sp-1);
   color: var(--c-text);
-  background: var(--c-bg);
+  background-color: var(--c-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
 }

@@ -82,6 +82,13 @@ const fontScale = computed<number>(() => props.settings.fontScale ?? DEFAULT_FON
 function onFontScaleChange(e: Event): void {
   emit('set-font-scale', Number((e.target as HTMLInputElement).value))
 }
+
+// 已拖过的那一段轨道要上主色。浏览器给不出这个百分比:`accent-color` 只有 Blink 会拿
+// 去填充轨道,WebKit(桌面壳的 WebView 就是它)下滑块只剩一条灰轨。于是自己算,交给
+// `--range-fill`,由 standard.css 的滑块基线画出来,两个引擎看到的是同一个滑块。
+const fontScaleFill = computed<string>(
+  () => `${((fontScale.value - FONT_SCALE_MIN) / (FONT_SCALE_MAX - FONT_SCALE_MIN)) * 100}%`,
+)
 </script>
 
 <template>
@@ -132,6 +139,7 @@ function onFontScaleChange(e: Event): void {
             :max="FONT_SCALE_MAX"
             step="1"
             :value="fontScale"
+            :style="{ '--range-fill': fontScaleFill }"
             class="font-scale-slider"
             data-testid="personalized-font-scale"
             @input="onFontScaleChange"
@@ -157,6 +165,8 @@ function onFontScaleChange(e: Event): void {
   align-items: center;
   gap: var(--sp-4);
 }
+/* 轨道与滑钮的外观在 standard.css 的滑块基线里，这里只管它在行里怎么排。
+   `accent-color` 留着给 Firefox 的 `::-moz-range-progress` 之外的细节(聚焦环等)。 */
 .font-scale-slider {
   flex: 1;
   min-width: 0;

@@ -323,8 +323,8 @@ function onCreate(): void {
   color: var(--c-text-muted);
 }
 .ns-select {
-  padding: var(--sp-2);
-  background: var(--c-bg);
+  padding: var(--sp-2) var(--sp-select-arrow) var(--sp-2) var(--sp-2);
+  background-color: var(--c-bg);
   color: var(--c-text);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm, 4px);

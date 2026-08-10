@@ -3222,12 +3222,18 @@ button.deny:hover:not(:disabled) {
   width: 100%;
   height: 34px;
   padding: 0 var(--sp-3);
-  background: var(--c-input);
+  /* background-color(而非 background 简写)：同一个类也用在 <select> 上，简写会连带
+     清掉基线画在背景上的下拉箭头。下同。 */
+  background-color: var(--c-input);
   color: var(--c-text);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   font-family: var(--font-ui);
   font-size: var(--fs-code);
+}
+/* 上面的 padding 简写盖掉了基线留给箭头的右内边距，这里补回。 */
+select.agent-field {
+  padding-right: var(--sp-select-arrow);
 }
 .agent-field:focus {
   outline: none;
@@ -3235,7 +3241,7 @@ button.deny:hover:not(:disabled) {
 }
 .agent-field:disabled {
   color: var(--c-text-muted);
-  background: transparent;
+  background-color: transparent;
   border-color: transparent;
   cursor: default;
 }
@@ -3410,8 +3416,8 @@ button.deny:hover:not(:disabled) {
 }
 .mode-select {
   height: 34px;
-  padding: 0 var(--sp-3);
-  background: var(--c-input);
+  padding: 0 var(--sp-select-arrow) 0 var(--sp-3);
+  background-color: var(--c-input);
   color: var(--c-text);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
@@ -3697,11 +3703,11 @@ button.deny:hover:not(:disabled) {
   gap: var(--sp-2);
 }
 .req-filter {
-  background: var(--c-input);
+  background-color: var(--c-input);
   color: var(--c-text);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  padding: 2px var(--sp-select-arrow) 2px 6px;
   font-size: var(--fs-caption);
 }
 /* 新增需求按钮:状态过滤右侧,点击开启新沟通会话 */
@@ -4079,10 +4085,10 @@ button.deny:hover:not(:disabled) {
 }
 .dep-edit-select {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  padding: 4px var(--sp-select-arrow) 4px 8px;
   border: 1px solid var(--c-border);
   border-radius: 4px;
-  background: var(--c-bg);
+  background-color: var(--c-bg);
   color: var(--c-text);
   font-size: 12px;
   cursor: pointer;

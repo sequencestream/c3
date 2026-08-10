@@ -91,6 +91,10 @@
   --sp-6: 24px;
   --sp-8: 32px;
 
+  /* 下拉框右侧留给自绘箭头的空间。站点若用 padding 简写覆盖了基线，用它补回右内边距，
+     箭头与文字的间距才不会各处不一。 */
+  --sp-select-arrow: 22px;
+
   /* ---- 圆角 ---- */
   --radius-sm: 8px; /* 按钮 / 输入框 / 标签 */
   --radius-md: 12px; /* 卡片 / 面板 / 对话框 */
@@ -178,6 +182,106 @@ html {
   :root {
     --app-height: 100dvh;
   }
+}
+
+/* ---- 原生表单控件基线 ----
+ * 同一份界面既跑在浏览器里，也跑在桌面壳的系统 WebView（macOS 上即 WKWebView）里，
+ * 而原生控件的默认外观与度量在 Blink 与 WebKit 之间并不相同：默认字号（11px vs
+ * 13.3px）、复选框外边距、下拉框被强制的内边距与圆角、以及 <input> 由默认 size 得
+ * 到的固有宽度，都各算各的。任何一处漏出默认值，同一行控件就会在两个引擎里排出不同
+ * 的宽度甚至整行错位。
+ *
+ * 这里只做「归一」：把外观与度量收归样式表，让显式的尺寸真正说了算；控件皮肤（背景
+ * 色、边框、圆角、间距）仍由 style.css 与各组件自己定义。 */
+
+/* 字体不继承是 UA 默认，两个引擎各自的默认字号又不同——先让它们都随正文。 */
+input,
+select,
+optgroup,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* <input> / <select> 的固有宽度按各自的字体度量算（input 默认 size=20），两引擎并
+   不相等；而 flex 项的 `min-width:auto` 会让这个固有宽度顶穿显式的 width /
+   flex-basis，于是同一行在 WebKit 下整体右移。归零后显式宽度才真正生效。 */
+input,
+select {
+  min-width: 0;
+}
+
+/* 复选框 / 单选钮：默认外边距两引擎不同（Blink 非对称，WebKit 对称），统一取对称
+   值；选中色跟随主色，两处都不再是系统蓝。 */
+input[type='checkbox'],
+input[type='radio'] {
+  margin: 3px;
+  accent-color: var(--c-primary);
+}
+
+/* 下拉框：WebKit 的原生 popup 会忽略 padding、强制自己的圆角与高度，Blink 只是部分
+   原生。索性两边都接管——箭头用两段渐变拼出，跟随 currentColor，不依赖任何图片资源；
+   右侧留白给箭头，站点若用 padding 简写覆盖，需自行补回 padding-right。 */
+select {
+  appearance: none;
+  padding-right: var(--sp-select-arrow);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 10px top 50%,
+    right 6px top 50%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+}
+select:disabled {
+  background-image: none;
+}
+
+/* 滑块：`accent-color` 只有 Blink 会用来给已填充的轨道上色，WebKit 下滑块因此是一
+   条灰轨加白色圆钮。两边都自绘：轨道的填充由站点写入 `--range-fill`（百分比），没
+   写时退化为整条底色，外观仍然一致。 */
+input[type='range'] {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--c-primary) 0 var(--range-fill, 0%),
+    var(--c-border) var(--range-fill, 0%) 100%
+  );
+}
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -5px; /* (thumb 14 - track 4) / 2 */
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--c-primary);
+}
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--c-border);
+}
+input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--c-primary);
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-primary);
 }
 
 /* 自定义滚动条（规范 3.3） */

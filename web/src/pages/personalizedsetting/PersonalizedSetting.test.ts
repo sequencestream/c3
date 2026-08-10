@@ -102,6 +102,18 @@ describe('PersonalizedSetting.vue — font size', () => {
     expect(w.find('[data-testid="personalized-font-scale-value"]').text()).toBe('115%')
   })
 
+  // 已拖过的那段轨道靠 `--range-fill` 上色,不靠 `accent-color` —— 后者只有 Blink 认,
+  // WebKit(桌面壳的 WebView)下会退化成一条灰轨。百分比错了两个引擎就又不一样了。
+  it('exposes the dragged-through fraction as --range-fill', () => {
+    const at = (scale: number): string | undefined =>
+      mountPage({ fontScale: scale })
+        .find('[data-testid="personalized-font-scale"]')
+        .attributes('style')
+    expect(at(FONT_SCALE_MIN)).toContain('--range-fill: 0%')
+    expect(at(FONT_SCALE_MAX)).toContain('--range-fill: 100%')
+    expect(at((FONT_SCALE_MIN + FONT_SCALE_MAX) / 2)).toContain('--range-fill: 50%')
+  })
+
   it('defaults to 100% when no scale is resolved yet', () => {
     const w = mountPage({})
     expect(w.find<HTMLInputElement>('[data-testid="personalized-font-scale"]').element.value).toBe(

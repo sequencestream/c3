@@ -16,6 +16,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentConfig } from '@ccc/shared/protocol'
 import { bindClaudeRelay, launchForAgent, unbindRelay } from './kernel/agent-config/index.js'
 import { findClaudeExecutable } from './kernel/infra/child-env.js'
+import { beginInternalRun } from './kernel/run/internal-run.js'
 import { addToolSession } from './sessions.js'
 import type { SessionOwnerKind } from './features/sessions/session-metadata-store.js'
 
@@ -71,6 +72,15 @@ export async function askAgentOnce(
 
   let text = ''
   let sessionId = ''
+  // 一次性 advisor 调用也是一次 run:登记生命周期,让它的启动/退出同样出现在日志
+  // 和事件总线上(此前这类 run 完全不可见)。真实会话 id 一到手就 `bind`,后续日
+  // 志据此定位到具体会话。
+  const runRecord = beginInternalRun({
+    sessionKind: 'tool',
+    workspacePath: cwd,
+    agentId: agent.id,
+    vendor: agent.vendor,
+  })
   try {
     for await (const m of q) {
       if (signal.aborted) break
@@ -79,6 +89,7 @@ export async function askAgentOnce(
         const sid = (m as { session_id?: unknown }).session_id
         if (typeof sid === 'string' && sid) {
           sessionId = sid
+          runRecord.bind(sid)
           addToolSession(sid, {
             workspacePath: cwd,
             agentId: agent.id,
@@ -99,6 +110,13 @@ export async function askAgentOnce(
         break
       }
     }
+    // 被中断的一次性调用不是失败,记为 `aborted`;正常跑完记 `complete`。
+    runRecord.settle(signal.aborted ? 'aborted' : 'complete')
+  } catch (err) {
+    // 抛出的异常先落成一条带 stack 的异常退出日志,再原样抛给调用方(降级/兜底
+    // 逻辑仍归调用方处理,这里只保证异常不再是无声的)。
+    runRecord.fail('advisor', err)
+    throw err
   } finally {
     signal.removeEventListener('abort', onAbort)
     if (claudeRelay) unbindRelay(claudeRelay.token)

@@ -42,6 +42,7 @@ import {
   stopQueueTickLoop,
 } from './features/intents/workflow.js'
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
+import { setRunLifecycleBus } from './kernel/run/internal-run.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
 import { buildSpecReviewAgentPrompt } from './features/intents/spec-review.js'
@@ -139,6 +140,7 @@ import {
   mountDevPlaceholder,
   mountStaticAssets,
   registerRunDomainSubscriptions,
+  registerRunLifecycleLogging,
   startSchedulerWiring,
   stopSchedulerWiring,
 } from './wiring/index.js'
@@ -485,6 +487,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   //    launcher stays features-free (ADR-0009 R1).
   const eventBus = new EventBus()
   setIntentLifecycleEventBus(eventBus)
+  setRunLifecycleBus(eventBus)
+  // Run 生命周期日志:注册在总线建好后的第一时间,这样此后任何发布者(交互式
+  // launcher、driver、automation、discussion、一次性内部调用)的启动/退出都被记
+  // 录,不依赖各自的调用顺序。
+  registerRunLifecycleLogging(eventBus)
 
   // Generic event contract + kernel normalizer registry. Every model-publishable
   // event is routed through `type → normalizer`: a KNOWN type gets its dedicated

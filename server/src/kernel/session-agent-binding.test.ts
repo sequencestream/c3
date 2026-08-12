@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
@@ -18,6 +18,8 @@ import {
   saveSettings,
   setPendingIntent,
 } from './config/index.js'
+import { releaseConfigDb, seedSession, useConfigDb } from './config/config-fixture.js'
+import { SESSION_KEYS } from './config/config-schema.js'
 import {
   freezeSessionAgent,
   getDefaultAgentId,
@@ -29,9 +31,9 @@ import {
 } from './agent-config/index.js'
 import type { VendorId } from '@ccc/shared/protocol'
 
-// Two-key session→agent binding space + frozen-vendor invariant (ADR-0015).
-// `~/.c3` is redirected to a throwaway dir (os.homedir() honours $HOME on POSIX)
-// so these never touch the developer's real state.json.
+// Two-key session→agent binding space + frozen-vendor invariant (ADR-0015). Runs
+// against a throwaway database (and a throwaway `$HOME`) so these never touch the
+// developer's real configuration.
 let dir: string
 let prevHome: string | undefined
 
@@ -39,13 +41,13 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-binding-'))
   prevHome = process.env.HOME
   process.env.HOME = dir
-  resetSettingsCacheForTests()
+  useConfigDb(dir)
 })
 
 afterEach(() => {
   if (prevHome === undefined) delete process.env.HOME
   else process.env.HOME = prevHome
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -79,15 +81,21 @@ function seedAgents(): void {
   } as unknown as SystemSettings)
 }
 
-/**
- * Write a raw `~/.c3/state.json` body, then drop the cache so the next read
- * re-parses. The JSON is passed pre-serialized (built with template strings) —
- * `JSON.stringify` is banned under `kernel/` by the ADR-0009 R2 lint rule.
- */
-function writeRawState(json: string): void {
-  const c3 = join(dir, '.c3')
-  mkdirSync(c3, { recursive: true })
-  writeFileSync(join(c3, 'state.json'), json, 'utf-8')
+/** Seed a pending intent straight into storage, with an explicit creation stamp. */
+function writePendingIntent(pendingId: string, agentId: string, createdAt: number): void {
+  seedSession(pendingId, {
+    [SESSION_KEYS.agentId]: agentId,
+    [SESSION_KEYS.pendingCreatedAt]: String(createdAt),
+  })
+  resetSettingsCacheForTests()
+}
+
+/** Seed a session fact (agent + frozen vendor) straight into storage. */
+function writeSessionFact(sessionId: string, agentId: string, vendor: string): void {
+  seedSession(sessionId, {
+    [SESSION_KEYS.agentId]: agentId,
+    [SESSION_KEYS.vendor]: vendor,
+  })
   resetSettingsCacheForTests()
 }
 
@@ -537,13 +545,9 @@ describe('cleanupStalePendingIntents (janitor)', () => {
     const stale = now - PENDING_INTENT_TTL_MS - 1
     const fresh = now - 1000
     // Stale intent written far in the past; fresh one written "now".
-    writeRawState(
-      `{"version":2,` +
-        `"pendingIntents":{` +
-        `"pending:old":{"agentId":"oc","createdAt":${stale}},` +
-        `"pending:new":{"agentId":"oc","createdAt":${fresh}}},` +
-        `"sessionAgents":{"real-keep":{"agentId":"claude-b","vendor":"claude"}}}`,
-    )
+    writePendingIntent('pending:old', 'oc', stale)
+    writePendingIntent('pending:new', 'oc', fresh)
+    writeSessionFact('real-keep', 'claude-b', 'claude')
 
     const reaped = cleanupStalePendingIntents(now, PENDING_INTENT_TTL_MS)
     expect(reaped).toEqual(['pending:old'])
@@ -579,15 +583,5 @@ describe('getSessionBindingStats', () => {
   })
 })
 
-describe('v1 → v2 state migration', () => {
-  it('splits a legacy single map: pending keys → intents, real keys → claude facts', () => {
-    writeRawState(`{"version":1,"sessionAgents":{"pending:legacy":"oc","real-legacy":"claude-b"}}`)
-
-    // Pending key migrated to an intent (readable via the pending id, no vendor).
-    expect(getSessionAgentId('pending:legacy')).toBe('oc')
-    expect(getSessionVendor('pending:legacy')).toBeNull()
-    // Real key migrated to a fact frozen to claude (the only pre-multi-vendor vendor).
-    expect(getSessionAgentId('real-legacy')).toBe('claude-b')
-    expect(getSessionVendor('real-legacy')).toBe('claude')
-  })
-})
+// The v1 → v2 legacy-shape migration now lives in the one-shot import
+// (kernel/config/import-legacy.ts) and is covered by its own tests.

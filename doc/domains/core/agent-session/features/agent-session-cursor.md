@@ -188,7 +188,7 @@ agent 配置形状:`{ apiKey, model }`,**没有 `baseUrl`** —— c3 没有讲 
 的 relay,故 Cursor agent 不能被指向其他 provider,`configMode` 恒为 `system`
 (schema 拒绝携带 baseUrl 的配置)。`apiKey` 落盘按 SEC-13 加密(与其他厂商同一
 机制,按字段名而非厂商分支处理):线上与内存里是明文(故保存后仍可继续编辑),
-写入 `settings.json` 时是带 `c3secretv1:` 前缀的密文。
+落库时是带 `c3secretv1:` 前缀的密文(`config_type='secret'`)。
 
 数据根恒为 `$HOME/.cursor`,沙箱内外同一个:会话落在 `chats/<工作区哈希>/<id>/`,
 与运行加载的工作区 rules / skills 同根。该根**只存会话状态,不含凭据**。

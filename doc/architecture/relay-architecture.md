@@ -237,7 +237,7 @@ provider 端点在 spawn 时就写进子进程 env(`ANTHROPIC_BASE_URL`、codex 
 - **首项一定被使用**。若改为"收集全部 custom 候选",一个排在最前的 `system` 成员会被静默跳过,可见顺序就不再等于实际运行的 agent。
 - 段内 failover 由 relay 负责(§8.1/§8.2),段边界由**会话游标**跨越。
 
-会话游标 `SessionAgentFact.groupCursor`(state.json,类比已冻结的 `vendor`/`storeScope`,但它是可变的):
+会话游标 `SessionAgentFact.groupCursor`(`session_configs` 的 `groupCursor` 键,类比已冻结的 `vendor`/`storeScope`,但它是可变的):
 
 - 记录**下一次启动从组内哪个成员起算**,仅在绑定为组引用时有意义。
 - `resolveSessionLaunch` 读它,把成员列表旋转成以该成员为首,再取启动段。

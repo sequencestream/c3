@@ -25,6 +25,11 @@ describe('buildStartArgs', () => {
     expect(args).toEqual(['start', '--port', '3000'])
   })
 
+  it('threads the database first so the child relocates before reading anything', () => {
+    const args = buildStartArgs({ port: 8080, dev: false, dbPath: '/abs/c3.db' })
+    expect(args).toEqual(['start', '--db', '/abs/c3.db', '--port', '8080'])
+  })
+
   it('threads settings first, plus dev when set', () => {
     const args = buildStartArgs({
       port: 8080,

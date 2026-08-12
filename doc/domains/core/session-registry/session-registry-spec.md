@@ -108,4 +108,4 @@ runtime 的 `statuses`)、`workspaces`、`sessions`、`session_selected`(携带 
 - **已查看会话** —— 一个连接当前正在查看的会话;来自该连接的下一个 `user_prompt`
   会针对它运行(真实或待处理）。是一种查看,而不是运行所有权。
 - **最后活跃会话** —— 持久化的 `activeSessionId`;一个重启提示,而不是一次实时运行。
-- **state.json** —— 位于 `${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json` 的持久化 registry。
+- **registry** —— 持久化在 `c3.db`:`workspaces` 表 + `session_configs` 的每会话模式。

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
@@ -46,10 +46,18 @@ import {
   MIN_SPEECH_CHARS,
 } from './config/index.js'
 import { savePersonalizedFor } from './config/personalized.js'
-import { readJsonFile, writeAtomic } from './config/store.js'
+import {
+  readRawSystemRows,
+  releaseConfigDb,
+  seedRawSystemRows,
+  seedSystemSettings,
+  seedWorkspaceSetting,
+  useConfigDb,
+} from './config/config-fixture.js'
 
-// Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
-// these tests never touch the developer's real settings.json.
+// Run against a throwaway database (and a throwaway `$HOME`, so anything that still
+// resolves a home dir lands somewhere harmless) — these tests must never touch the
+// developer's real configuration.
 let dir: string
 let prevHome: string | undefined
 
@@ -57,27 +65,27 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-settings-'))
   prevHome = process.env.HOME
   process.env.HOME = dir
-  resetSettingsCacheForTests()
+  useConfigDb(dir)
 })
 
 afterEach(() => {
   if (prevHome === undefined) delete process.env.HOME
   else process.env.HOME = prevHome
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(dir, { recursive: true, force: true })
 })
 
 /** Dummy project path for project-level config tests. */
 const TEST_PROJ = '/test/project'
 
+/** Whether any stored system row carries `plaintext` verbatim (secrets must not). */
+function anyRowContains(plaintext: string): boolean {
+  return readRawSystemRows().some((r) => (r.value ?? '').includes(plaintext))
+}
+
 /** Persist just a `devSkill` value (with the required baseline fields). */
 function saveWithDevSkill(devSkill: string | undefined): void {
   saveWorkspaceSetting(TEST_PROJ, { devSkill } as WorkspaceSetting)
-}
-
-/** The on-disk settings.json path under the throwaway $HOME for this test run. */
-function settingsPath(): string {
-  return join(dir, '.c3', 'settings.json')
 }
 
 describe('unique write path — anti-clobber + cross-process merge (2026-06-08-003)', () => {
@@ -91,19 +99,12 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
     expect(getDevSkill('/proj/b')).toBe('/b')
   })
 
-  it('cross-process: saveWorkspaceSetting re-reads disk and keeps a project another process just added', () => {
+  it('cross-process: a workspace another instance just wrote survives our next save', () => {
     saveWorkspaceSetting('/proj/a', { devSkill: '/a' } as WorkspaceSetting)
-    // Simulate ANOTHER c3 instance writing /proj/b straight to disk. We deliberately
-    // do NOT reset the in-memory cache — proving our write reads disk, not the cache.
-    const disk = readJsonFile<SystemSettings>(settingsPath())!
-    writeAtomic(settingsPath(), {
-      ...disk,
-      projectConfigs: {
-        ...disk.projectConfigs,
-        '/proj/b': { devSkill: '/b' },
-      },
-    })
-    // Now this process saves /proj/c — it must merge over fresh disk, not stale cache.
+    // Simulate ANOTHER c3 instance writing /proj/b straight into the store. We
+    // deliberately leave our in-memory cache alone — a save must not resurrect it
+    // over what is actually stored.
+    seedWorkspaceSetting('/proj/b', { devSkill: '/b' })
     saveWorkspaceSetting('/proj/c', { devSkill: '/c' } as WorkspaceSetting)
     expect(getDevSkill('/proj/a')).toBe('/a')
     expect(getDevSkill('/proj/b')).toBe('/b') // the foreign write survived
@@ -1496,15 +1497,16 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
 
   it('save writes ciphertext to disk (prefix, no plaintext); load restores plaintext for both vendors', () => {
     saveTwoVendorAgents()
-    // Disk: both apiKeys are prefixed ciphertext and the raw plaintext appears nowhere.
-    const rawText = readFileSync(settingsPath(), 'utf-8')
-    expect(rawText).not.toContain(CLAUDE_KEY)
-    expect(rawText).not.toContain(CODEX_KEY)
-    const disk = readJsonFile<SystemSettings>(settingsPath())!
-    const diskCl = disk.agents.find((a) => a.id === 'cl')!
-    const diskCx = disk.agents.find((a) => a.id === 'cx')!
-    expect(diskCl.config.apiKey.startsWith('c3secretv1:')).toBe(true)
-    expect(diskCx.config.apiKey.startsWith('c3secretv1:')).toBe(true)
+    // Storage: both apiKeys are prefixed ciphertext under `secret` rows, and the raw
+    // plaintext appears in no row at all.
+    expect(anyRowContains(CLAUDE_KEY)).toBe(false)
+    expect(anyRowContains(CODEX_KEY)).toBe(false)
+    const rows = readRawSystemRows()
+    for (const id of ['cl', 'cx']) {
+      const row = rows.find((r) => r.key === `agents.${id}.config.apiKey`)!
+      expect(row.type).toBe('secret')
+      expect(row.value?.startsWith('c3secretv1:')).toBe(true)
+    }
 
     // Load (fresh, cache cleared): both back to plaintext, and launch env injection too.
     resetSettingsCacheForTests()
@@ -1519,31 +1521,30 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
   })
 
   it('legacy no-prefix plaintext loads fine and is upgraded to ciphertext on next save', () => {
-    // Hand-write a legacy on-disk shape with a PLAINTEXT apiKey (no c3secret prefix).
-    writeAtomic(settingsPath(), {
+    // Hand-write a legacy row shape: a PLAINTEXT apiKey stored as a plain string.
+    seedSystemSettings({
       agents: [
         {
           id: 'cl',
           vendor: 'claude',
           configMode: 'custom',
           displayName: 'Cl',
-          config: { baseUrl: '', apiKey: CLAUDE_KEY, model: '' },
+          config: { baseUrl: '', model: '' },
         },
       ],
       defaultAgentId: 'cl',
     })
+    seedRawSystemRows([{ key: 'agents.cl.config.apiKey', value: CLAUDE_KEY, type: 'string' }])
     resetSettingsCacheForTests()
     // Load: legacy plaintext used as-is.
     const cl = loadSettings().agents.find((a) => a.id === 'cl')!
     expect(cl.config.apiKey).toBe(CLAUDE_KEY)
-    // Save back the (plaintext) loaded settings → disk upgrades to ciphertext.
+    // Save back the (plaintext) loaded settings → storage upgrades to ciphertext.
     saveSettings(loadSettings())
-    const rawText = readFileSync(settingsPath(), 'utf-8')
-    expect(rawText).not.toContain(CLAUDE_KEY)
-    const disk = readJsonFile<SystemSettings>(settingsPath())!
-    expect(disk.agents.find((a) => a.id === 'cl')!.config.apiKey.startsWith('c3secretv1:')).toBe(
-      true,
-    )
+    const row = readRawSystemRows().find((r) => r.key === 'agents.cl.config.apiKey')!
+    expect(row.type).toBe('secret')
+    expect(row.value?.startsWith('c3secretv1:')).toBe(true)
+    expect(anyRowContains(CLAUDE_KEY)).toBe(false)
     // And it still loads back to the original plaintext.
     resetSettingsCacheForTests()
     expect(loadSettings().agents.find((a) => a.id === 'cl')!.config.apiKey).toBe(CLAUDE_KEY)
@@ -1563,10 +1564,8 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
       ],
       defaultAgentId: SYSTEM_AGENT_ID,
     } as unknown as SystemSettings)
-    const disk = readJsonFile<SystemSettings>(settingsPath())!
-    for (const a of disk.agents) {
-      expect(a.config.apiKey).toBe('')
-      expect(a.config.apiKey.startsWith('c3secret')).toBe(false)
+    for (const row of readRawSystemRows().filter((r) => r.key.endsWith('.config.apiKey'))) {
+      expect(row.value).toBe('')
     }
   })
 
@@ -1574,12 +1573,11 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
     saveTwoVendorAgents()
     resetSettingsCacheForTests()
     loadSettings() // warm cache with plaintext
-    // A workspace-config save re-reads disk (ciphertext), normalizes, re-writes.
+    // A workspace-config save writes only that workspace's own scope.
     saveWorkspaceSetting('/proj/x', { devSkill: '/x' } as WorkspaceSetting)
-    // Disk stays ciphertext (no plaintext leaked by the workspace write path)...
-    const rawText = readFileSync(settingsPath(), 'utf-8')
-    expect(rawText).not.toContain(CLAUDE_KEY)
-    expect(rawText).not.toContain(CODEX_KEY)
+    // The agent rows stay ciphertext (no plaintext leaked by the workspace path)...
+    expect(anyRowContains(CLAUDE_KEY)).toBe(false)
+    expect(anyRowContains(CODEX_KEY)).toBe(false)
     // ...and the in-memory cache still serves plaintext (launch must not get ciphertext).
     const cl = loadSettings().agents.find((a) => a.id === 'cl')!
     expect(cl.config.apiKey).toBe(CLAUDE_KEY)
@@ -1646,32 +1644,18 @@ describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
   })
 
   it('reads the legacy on-disk key `gitCommitMode` when the new key is absent', () => {
-    // Simulate a pre-rename settings.json: only the legacy `gitCommitMode` key is
-    // persisted (no `gitBranchMode`). Write it straight to disk to bypass the
-    // normalize-on-save path, then prove load falls back to the legacy key.
-    const disk = readJsonFile<SystemSettings>(settingsPath()) ?? ({} as SystemSettings)
-    writeAtomic(settingsPath(), {
-      ...disk,
-      projectConfigs: {
-        ...disk.projectConfigs,
-        [TEST_PROJ]: { gitCommitMode: 'worktree' } as unknown as WorkspaceSetting,
-      },
-    })
+    // Simulate a pre-rename record: only the legacy `gitCommitMode` key is stored (no
+    // `gitBranchMode`). Seeded directly to bypass the normalize-on-save path, then
+    // prove load falls back to the legacy key.
+    seedWorkspaceSetting(TEST_PROJ, { gitCommitMode: 'worktree' })
     expect(getGitBranchMode(TEST_PROJ)).toBe('worktree')
     expect(loadWorkspaceSetting(TEST_PROJ).gitBranchMode).toBe('worktree')
   })
 
   it('prefers the new key `gitBranchMode` over the legacy `gitCommitMode` on disk', () => {
-    const disk = readJsonFile<SystemSettings>(settingsPath()) ?? ({} as SystemSettings)
-    writeAtomic(settingsPath(), {
-      ...disk,
-      projectConfigs: {
-        ...disk.projectConfigs,
-        [TEST_PROJ]: {
-          gitBranchMode: 'current-branch',
-          gitCommitMode: 'worktree',
-        } as unknown as WorkspaceSetting,
-      },
+    seedWorkspaceSetting(TEST_PROJ, {
+      gitBranchMode: 'current-branch',
+      gitCommitMode: 'worktree',
     })
     expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
   })
@@ -2071,10 +2055,10 @@ describe('session process proxy config — normalizeProxyConfig + getProxyConfig
 })
 
 describe('legacy sandbox-only role keys are dropped on load and save', () => {
-  /** A disk sample written by an older build: the five removed `sandbox*AgentId`
+  /** A stored sample written by an older build: the five removed `sandbox*AgentId`
    *  keys alongside the unified roles and the protected merge fields. */
   function writeLegacyDisk(): void {
-    writeAtomic(settingsPath(), {
+    seedSystemSettings({
       agents: [
         {
           id: 'a1',
@@ -2134,7 +2118,7 @@ describe('legacy sandbox-only role keys are dropped on load and save', () => {
     writeLegacyDisk()
     const loaded = loadSettings()
     saveSettings({ ...loaded, toolAgentId: 'a1' })
-    const onDisk = readJsonFile<Record<string, unknown>>(settingsPath()) ?? {}
+    const stored = Object.fromEntries(readRawSystemRows().map((r) => [r.key, r.value]))
     for (const key of [
       'sandboxDefaultAgentId',
       'sandboxToolAgentId',
@@ -2142,13 +2126,14 @@ describe('legacy sandbox-only role keys are dropped on load and save', () => {
       'sandboxSpecAgentId',
       'sandboxAutomationAgentId',
     ]) {
-      expect(onDisk[key]).toBeUndefined()
+      expect(stored[key]).toBeUndefined()
     }
-    expect(onDisk.toolAgentId).toBe('a1')
-    expect(onDisk.specAgentId).toBe('a2')
+    const settings = loadSettings()
+    expect(settings.toolAgentId).toBe('a1')
+    expect(settings.specAgentId).toBe('a2')
     // The anti-clobber merge fields survive the rewrite.
-    expect(onDisk.proxy).toMatchObject({ enabled: true, httpProxy: 'http://p:3128' })
-    expect(onDisk.projectConfigs).toMatchObject({ '/proj/a': { devSkill: '/a' } })
-    expect(onDisk.degradationChain).toEqual(['a2'])
+    expect(settings.proxy).toMatchObject({ enabled: true, httpProxy: 'http://p:3128' })
+    expect(settings.projectConfigs).toMatchObject({ '/proj/a': { devSkill: '/a' } })
+    expect(settings.degradationChain).toEqual(['a2'])
   })
 })

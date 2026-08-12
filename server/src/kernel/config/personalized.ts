@@ -3,13 +3,14 @@
  * (`PersonalizedSettings`: preferences that differ per person, with no administrator
  * gate).
  *
- * Two top-level keys of `settings.json` are owned here, both **siblings of**
- * `SystemSettings` rather than fields of it, so a whole-object system-settings save
- * neither carries nor clobbers them (`config/index.ts` re-attaches them on write):
+ * Two things are owned here, both **siblings of** `SystemSettings` rather than fields
+ * of it, so a whole-object system-settings save neither carries nor clobbers them —
+ * structurally now, since they are separate rows (and, per account, a separate scope)
+ * rather than keys of one shared document:
  *
- *  - `personalizedSettings` — verified subject → that account's preferences. Only a
- *    server-verified connection identity ever selects a record; a client cannot name
- *    the account it reads or writes.
+ *  - `personalized_configs` — verified subject → that account's preferences, one
+ *    scope per subject. Only a server-verified connection identity ever selects a
+ *    record; a client cannot name the account it reads or writes.
  *  - `agentLang` — the language server-side agent prompts are written in (intent
  *    analysis replies, spec documents, automation titles, discussion/consensus
  *    summaries). Those call sites run without a connection — background automations
@@ -18,10 +19,9 @@
  *    including an unauthenticated one (whose preference lives only in its browser).
  *    It is not an account default and is never read back as anyone's preference.
  *
- * Writes go through the same cross-process file lock as every other settings write,
- * re-reading the disk inside the lock, so a first-login seed and a concurrent save
- * cannot lose each other. Reads are cached like `loadSettings`; the cache is
- * refreshed by our own writes.
+ * Writes run in one transaction that re-reads first, so a first-login seed and a
+ * concurrent save cannot lose each other. Reads are cached like `loadSettings`; the
+ * cache is refreshed by our own writes.
  */
 import type {
   PersonalizedSettings,
@@ -29,8 +29,9 @@ import type {
   UiLang,
   UiTheme,
 } from '@ccc/shared/protocol'
-import { readJsonFile, withFileLock, writeAtomic } from './store.js'
-import { settingsFile } from './paths.js'
+import { fromEntries, toEntries } from './config-codec.js'
+import { AGENT_LANG_KEY, PERSONALIZED_RULES } from './config-schema.js'
+import { configTx, listScopeOwners, readAllScopes, readKey, writeScope } from './config-store.js'
 
 /** UI display languages, in dropdown order. The single source for validity here. */
 export const UI_LANGS: readonly UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
@@ -55,18 +56,7 @@ export const FONT_SCALE_MAX = 120
 /** The scale when a record is missing, malformed, or out of range — 100%, the built-in size. */
 export const DEFAULT_FONT_SCALE = 100
 
-/**
- * The raw settings-file shape as far as this module cares: the two keys it owns,
- * plus whatever else the file holds (preserved verbatim on write). Read untyped and
- * written back untouched, so this store never needs the `SystemSettings` shape and
- * never re-normalizes — in particular it never has to decrypt agent api keys.
- */
-interface PersonalizedFileShape extends Record<string, unknown> {
-  personalizedSettings?: unknown
-  agentLang?: unknown
-}
-
-/** In-memory mirror of the two owned keys; `null` until first read. */
+/** In-memory mirror of the stored records; `null` until first read. */
 let cache: { bySubject: PersonalizedSettingsBySubject; agentLang: UiLang } | null = null
 
 /** Drop the cache so the next read re-reads the (possibly relocated) file. Test seam. */
@@ -113,66 +103,57 @@ function normalizeMap(raw: unknown): PersonalizedSettingsBySubject {
   return out
 }
 
-function readFile(): PersonalizedFileShape {
-  return readJsonFile<PersonalizedFileShape>(settingsFile()) ?? {}
+/** Read every stored record straight from the tables (cache-bypassing). */
+function readStored(): { bySubject: PersonalizedSettingsBySubject; agentLang: UiLang } {
+  const raw: Record<string, unknown> = {}
+  for (const [subject, entries] of readAllScopes('personalized')) {
+    raw[subject] = fromEntries(entries, PERSONALIZED_RULES)
+  }
+  const lang = readKey({ kind: 'system' }, AGENT_LANG_KEY)?.value
+  return { bySubject: normalizeMap(raw), agentLang: isUiLang(lang) ? lang : DEFAULT_UI_LANG }
 }
 
-/** Populate (or reuse) the cache from disk. */
+/** Populate (or reuse) the cache. */
 function load(): { bySubject: PersonalizedSettingsBySubject; agentLang: UiLang } {
   if (cache) return cache
-  const raw = readFile()
-  cache = {
-    bySubject: normalizeMap(raw.personalizedSettings),
-    agentLang: isUiLang(raw.agentLang) ? raw.agentLang : DEFAULT_UI_LANG,
-  }
+  cache = readStored()
   return cache
 }
 
 /**
- * The owned keys as they must appear on disk, read from a raw file snapshot. Used by
- * the system-settings write path to re-attach them to the object it writes, so a
- * whole-object save preserves them.
- */
-export function personalizedFileKeys(diskRaw: unknown): {
-  personalizedSettings?: PersonalizedSettingsBySubject
-  agentLang?: UiLang
-} {
-  const raw = (diskRaw && typeof diskRaw === 'object' ? diskRaw : {}) as PersonalizedFileShape
-  const bySubject = normalizeMap(raw.personalizedSettings)
-  return {
-    ...(Object.keys(bySubject).length > 0 ? { personalizedSettings: bySubject } : {}),
-    ...(isUiLang(raw.agentLang) ? { agentLang: raw.agentLang } : {}),
-  }
-}
-
-/**
- * Write the owned keys back into the settings file, preserving every other key
- * verbatim. Runs inside the cross-process settings lock with a fresh disk read, so
- * it never trusts a stale snapshot and never rewrites a sibling key it did not
- * intend to touch. Throws when the write fails (callers surface a UI error rather
- * than echo a pseudo-success).
+ * Apply a change to the stored records inside one transaction, re-reading first so a
+ * first-login seed and a concurrent save cannot lose each other. Each account is its
+ * own scope, so a write here can never disturb another account's record — nor the
+ * system settings, which used to share the same file. Throws when the write fails
+ * (callers surface a UI error rather than echo a pseudo-success).
  */
 function mutate<T>(
   apply: (state: { bySubject: PersonalizedSettingsBySubject; agentLang: UiLang }) => T,
 ): T {
-  return withFileLock(settingsFile(), () => {
-    const raw = readFile()
-    const state = {
-      bySubject: normalizeMap(raw.personalizedSettings),
-      agentLang: isUiLang(raw.agentLang) ? raw.agentLang : DEFAULT_UI_LANG,
-    }
+  return configTx(() => {
+    const state = readStored()
+    const before = new Set(Object.keys(state.bySubject))
     const result = apply(state)
-    writeAtomic(settingsFile(), {
-      ...raw,
-      // The legacy system-wide display language is dropped here as well as by the
-      // system-settings normalize, so no write path can resurrect it.
-      uiLang: undefined,
-      personalizedSettings: state.bySubject,
-      agentLang: state.agentLang,
-    })
+    for (const [subject, record] of Object.entries(state.bySubject)) {
+      writeScope({ kind: 'personalized', owner: subject }, toEntries(record, PERSONALIZED_RULES))
+      before.delete(subject)
+    }
+    for (const subject of before) {
+      writeScope({ kind: 'personalized', owner: subject }, [])
+    }
+    writeScope(
+      { kind: 'system' },
+      [{ key: AGENT_LANG_KEY, value: state.agentLang, type: 'string' }],
+      { replace: false },
+    )
     cache = state
     return result
   })
+}
+
+/** Subjects that currently have a stored record. */
+export function listPersonalizedSubjects(): string[] {
+  return listScopeOwners('personalized')
 }
 
 /** This account's stored preferences, or `null` when it has no record yet. */

@@ -12,10 +12,16 @@ import {
   savePersonalizedFor,
 } from './personalized.js'
 import { loadSettings, resetSettingsCacheForTests, saveSettings } from './index.js'
-import { readJsonFile, writeAtomic } from './store.js'
+import {
+  readStoredPersonalized,
+  readStoredSystemSettings,
+  releaseConfigDb,
+  seedPersonalized,
+  useConfigDb,
+} from './config-fixture.js'
 
-// Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
-// these tests never touch the developer's real settings.json.
+// Run against a throwaway database (and a throwaway `$HOME`, so a leak would be both
+// harmless and visible) — these tests must never touch the developer's real config.
 let dir: string
 let prevHome: string | undefined
 
@@ -23,23 +29,15 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-personalized-'))
   prevHome = process.env.HOME
   process.env.HOME = dir
-  resetSettingsCacheForTests()
+  useConfigDb(dir)
 })
 
 afterEach(() => {
   if (prevHome === undefined) delete process.env.HOME
   else process.env.HOME = prevHome
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(dir, { recursive: true, force: true })
 })
-
-function settingsPath(): string {
-  return join(dir, '.c3', 'settings.json')
-}
-
-function diskRaw(): Record<string, unknown> {
-  return readJsonFile<Record<string, unknown>>(settingsPath()) ?? {}
-}
 
 /**
  * A fully normalized record: every field filled with its own default, which is what
@@ -136,9 +134,9 @@ describe('per-account storage', () => {
     expect(loadPersonalizedFor('nobody')).toBe(null)
   })
 
-  it('persists under a top-level map that is not part of SystemSettings', () => {
+  it('persists in its own scope, outside SystemSettings', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
-    expect(diskRaw().personalizedSettings).toEqual({ alice: rec('zh') })
+    expect(readStoredPersonalized()).toEqual({ alice: rec('zh') })
     expect(
       (loadSettings() as unknown as Record<string, unknown>).personalizedSettings,
     ).toBeUndefined()
@@ -146,7 +144,7 @@ describe('per-account storage', () => {
 
   it('creates no shared record when the connection has no subject', () => {
     savePersonalizedFor(null, { uiLang: 'zh' })
-    expect(diskRaw().personalizedSettings).toEqual({})
+    expect(readStoredPersonalized()).toEqual({})
     expect(getAgentLang()).toBe('zh')
   })
 })
@@ -188,7 +186,7 @@ describe('first-login seeding from the browser fallback', () => {
 
   it('stores nothing per account when there is no subject', () => {
     expect(resolvePersonalized(null, { uiLang: 'ru' })).toEqual(rec('ru'))
-    expect(diskRaw().personalizedSettings).toEqual({})
+    expect(readStoredPersonalized()).toEqual({})
   })
 
   it('falls back to the built-in default with neither subject nor local record', () => {
@@ -207,8 +205,7 @@ describe('first-login seeding from the browser fallback', () => {
   })
 
   it('reads an account record written before themes existed as dark', () => {
-    writeAtomic(settingsPath(), { personalizedSettings: { alice: { uiLang: 'zh' } } })
-    resetSettingsCacheForTests()
+    seedPersonalized('alice', { uiLang: 'zh' })
     expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'dark'))
     expect(resolvePersonalized('alice', { theme: 'light' })).toEqual(rec('zh', 'dark'))
   })
@@ -219,7 +216,7 @@ describe('coexistence with the system settings write path', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
     saveSettings(baseSystemSettings({ voiceLang: 'en-US' }))
     expect(loadPersonalizedFor('alice')).toEqual(rec('zh'))
-    expect(diskRaw().personalizedSettings).toEqual({ alice: rec('zh') })
+    expect(readStoredPersonalized()).toEqual({ alice: rec('zh') })
     expect(loadSettings().voiceLang).toBe('en-US')
   })
 
@@ -233,28 +230,23 @@ describe('coexistence with the system settings write path', () => {
 
   it('drops a legacy system-wide uiLang instead of adopting it for any account', () => {
     saveSettings(baseSystemSettings({ uiLang: 'zh' } as Partial<SystemSettings>))
-    expect(diskRaw().uiLang).toBeUndefined()
+    expect(readStoredSystemSettings().uiLang).toBeUndefined()
     expect(loadPersonalizedFor('alice')).toBe(null)
     expect(resolvePersonalized('alice', undefined)).toEqual(rec('en'))
   })
 
-  it('drops malformed entries from a hand-edited personalized map', () => {
-    savePersonalizedFor('alice', { uiLang: 'zh' })
-    writeAtomic(settingsPath(), {
-      ...diskRaw(),
-      personalizedSettings: {
-        alice: 'not-an-object',
-        '': { uiLang: 'zh' },
-        bob: { uiLang: 'ja' },
-      },
-    })
-    resetSettingsCacheForTests()
-    expect(loadPersonalizedFor('alice')).toBe(null)
+  it('drops an empty-subject record and normalizes junk fields', () => {
+    seedPersonalized('', { uiLang: 'zh' })
+    seedPersonalized('bob', { uiLang: 'ja' })
+    seedPersonalized('carol', { uiLang: 'klingon', theme: 'neon' })
     expect(loadPersonalizedFor('')).toBe(null)
     expect(loadPersonalizedFor('bob')).toEqual(rec('ja'))
-    // A system-settings save must not resurrect what the read already rejected.
+    // A field nobody recognizes falls back to its own default; it never takes the
+    // whole account record down with it.
+    expect(loadPersonalizedFor('carol')).toEqual(rec('en'))
+    // A system-settings save touches no personalized scope at all.
     saveSettings(baseSystemSettings())
-    expect(diskRaw().personalizedSettings).toEqual({ bob: rec('ja') })
+    expect(loadPersonalizedFor('bob')).toEqual(rec('ja'))
   })
 })
 
@@ -323,8 +315,7 @@ describe('font scale persistence', () => {
   })
 
   it('reads an account record written before the scale existed as 100%', () => {
-    writeAtomic(settingsPath(), { personalizedSettings: { alice: { uiLang: 'zh' } } })
-    resetSettingsCacheForTests()
+    seedPersonalized('alice', { uiLang: 'zh' })
     expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'dark', 100))
   })
 

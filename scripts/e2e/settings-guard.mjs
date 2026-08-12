@@ -5,10 +5,10 @@
  * Those tests rewrite the running server's configuration (default agent,
  * consensus switch, agent list, sandbox definitions) and undo it from an exit
  * handler. That undo never runs when the test is killed on timeout, Ctrl-C'd, or
- * crashes — so pointing one at a server on the real `~/.c3/settings.json`
- * silently corrupts the developer's own config. The guard closes that hole
- * before the first byte is written: ask the server where its settings.json
- * actually lives, and refuse to run when that is the real one.
+ * crashes — so pointing one at a server on the real `~/.c3/c3.db` silently
+ * corrupts the developer's own config. The guard closes that hole before the
+ * first byte is written: ask the server which database it actually uses (that is
+ * where configuration lives), and refuse to run when that is the real one.
  *
  * Zero dependencies (Node built-ins only) so both the plain `.mjs` test scripts
  * and vitest can load it without a build step.
@@ -20,12 +20,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 /** Exit code a refusal exits with — distinct from 0 PASS, 5 SKIP, 1 FAIL. */
 export const GUARD_REFUSED_EXIT_CODE = 3
 
-/** The one path e2e must never write: the developer's own config. */
-export function realSettingsPath() {
-  return join(homedir(), '.c3', 'settings.json')
-}
-
-/** The developer's own intent ledger — the other real-`~/.c3` file e2e must not touch. */
+/** The one path e2e must never write: the developer's own configuration + ledger. */
 export function realDbPath() {
   return join(homedir(), '.c3', 'c3.db')
 }
@@ -62,32 +57,31 @@ export function isRealC3Path(path, realPath) {
 }
 
 /**
- * Decide from the server's reported settings path alone — no I/O beyond
+ * Decide from the server's reported database path alone — no I/O beyond
  * canonicalization, so the whole rule is directly testable.
  *
- * `settingsPath` absent means an older server that does not report the field.
- * That is refused too rather than assumed safe: "no proof of isolation" and
- * "proof of the real config" carry the same risk, and the fix (`pnpm build`) is
- * one command.
+ * `dbPath` absent means an older server that does not report the field. That is
+ * refused too rather than assumed safe: "no proof of isolation" and "proof of the
+ * real config" carry the same risk, and the fix (`pnpm build`) is one command.
  *
- * @param {string | undefined | null} settingsPath value from the `settings` reply
+ * @param {string | undefined | null} dbPath value from the `settings` reply
  * @returns {{ allowed: boolean, reason: string }}
  */
-export function decideGuard(settingsPath) {
-  if (typeof settingsPath !== 'string' || settingsPath.length === 0) {
+export function decideGuard(dbPath) {
+  if (typeof dbPath !== 'string' || dbPath.length === 0) {
     return {
       allowed: false,
       reason:
-        'the server did not report its settings path (older build) — cannot prove it is isolated',
+        'the server did not report its database path (older build) — cannot prove it is isolated',
     }
   }
-  if (isRealC3Path(settingsPath, realSettingsPath())) {
+  if (isRealC3Path(dbPath, realDbPath())) {
     return {
       allowed: false,
-      reason: `the server is running on the real config: ${settingsPath}`,
+      reason: `the server is running on the real config: ${dbPath}`,
     }
   }
-  return { allowed: true, reason: `isolated settings: ${settingsPath}` }
+  return { allowed: true, reason: `isolated database: ${dbPath}` }
 }
 
 /**
@@ -99,7 +93,7 @@ export function refusalMessage(reason, { testScript, port = 13000 } = {}) {
   const script = testScript ?? 'scripts/e2e/<test>.mjs'
   return [
     `[e2e-guard] REFUSED — ${reason}`,
-    '[e2e-guard] this test rewrites the server settings; it will not touch the real ~/.c3/settings.json.',
+    '[e2e-guard] this test rewrites the server settings; it will not touch the real ~/.c3/c3.db.',
     '[e2e-guard] start an isolated server instead, then re-run:',
     `[e2e-guard]   pnpm build && node scripts/e2e/isolated-server.mjs --port ${port}`,
     `[e2e-guard]   node ${script} ws://localhost:${port}/ws`,
@@ -107,7 +101,7 @@ export function refusalMessage(reason, { testScript, port = 13000 } = {}) {
 }
 
 /**
- * Ask `url` for its settings path over a short-lived, read-only WebSocket
+ * Ask `url` for its database path over a short-lived, read-only WebSocket
  * (`get_settings` only — the guard never writes) and resolve the server's
  * answer. Separate from the test's own connection so it cannot disturb the
  * test's snapshot/restore sequencing.
@@ -116,7 +110,7 @@ export function refusalMessage(reason, { testScript, port = 13000 } = {}) {
  *   server does not report one. Rejects on connection/timeout failure — the
  *   caller surfaces that as its own failure, unchanged.
  */
-export function probeSettingsPath(url, timeoutMs = 10_000) {
+export function probeDbPath(url, timeoutMs = 10_000) {
   return new Promise((resolvePromise, reject) => {
     const ws = new WebSocket(url)
     let settled = false
@@ -153,7 +147,7 @@ export function probeSettingsPath(url, timeoutMs = 10_000) {
       } catch {
         return
       }
-      if (msg?.type === 'settings') done(resolvePromise, msg.settingsPath)
+      if (msg?.type === 'settings') done(resolvePromise, msg.dbPath)
     })
   })
 }
@@ -168,17 +162,17 @@ function portOf(url) {
 }
 
 /**
- * Apply the verdict to a `settingsPath` the caller already has — for a test that
- * reads `get_settings` on its own connection anyway (and whose connection may be
+ * Apply the verdict to a `dbPath` the caller already has — for a test that reads
+ * `get_settings` on its own connection anyway (and whose connection may be
  * auth-gated, which the anonymous probe below cannot pass). Exits non-zero with
  * the fix when refused; returns normally only when isolation is proven.
  *
- * @param {string | undefined} settingsPath from the `settings` reply
+ * @param {string | undefined} dbPath from the `settings` reply
  * @param {{ testScript?: string, url?: string }} opts
  */
-export function enforceIsolatedSettings(settingsPath, opts = {}) {
-  const verdict = decideGuard(settingsPath)
-  if (verdict.allowed) return settingsPath
+export function enforceIsolatedSettings(dbPath, opts = {}) {
+  const verdict = decideGuard(dbPath)
+  if (verdict.allowed) return dbPath
   console.error(
     refusalMessage(verdict.reason, { testScript: opts.testScript, port: portOf(opts.url) }),
   )
@@ -194,6 +188,6 @@ export function enforceIsolatedSettings(settingsPath, opts = {}) {
  * @param {{ testScript?: string, timeoutMs?: number }} opts
  */
 export async function assertIsolatedSettings(url, opts = {}) {
-  const settingsPath = await probeSettingsPath(url, opts.timeoutMs)
-  return enforceIsolatedSettings(settingsPath, { testScript: opts.testScript, url })
+  const dbPath = await probeDbPath(url, opts.timeoutMs)
+  return enforceIsolatedSettings(dbPath, { testScript: opts.testScript, url })
 }

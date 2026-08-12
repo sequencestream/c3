@@ -219,7 +219,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 
 ## 持久化存储(c3.db)
 
-位于 `~/.c3/c3.db` 的 SQLite 台账(区别于 registry 的 `state.json`)。Schema 版本通过
+位于 `~/.c3/c3.db` 的 SQLite 台账(与工作区注册表同库,不同表)。Schema 版本通过
 `PRAGMA user_version` 管理(目前为 `19` —— v2 新增 `intents.module` 列,v3 新增可空的
 `intents.completed_at` 列,v4 新增 `intents.automate` INTEGER NOT NULL DEFAULT 0,v6 把
 遗留的 requirement- 前缀表重命名为 intent- 前缀,v7 新增可空的 `intent_chats.title` 列,
@@ -227,7 +227,7 @@ v8 新增 git 追踪字段,v9 新增 `intent_deps.dep_type` + `created_at`,v10 �
 `intent_sessions` 审计表,v11 把工作区键列 `project_path` → `workspace_path` 原地重命名到
 `intents` + `intent_chats` 上,并把复合索引重建为 `idx_intent_workspace_status`,v12 新增
 可空的 `intents.short_en_title` 列(派生分支/worktree 名称的稳定 ASCII 来源;历史行保持
-null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectConfigs` settings.json 键
+null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectConfigs` 协议键
 产生分歧,该键保留其历史名称 —— 见 2026-06-14 的 workspace-path 迁移记录)。v18→v19
 新增可空的 `intents.spec_mode` 列(CHECK(sdd/fast),三态:NULL=继承工作区、'sdd'=显式固定
 规格先行、'fast'=显式固定规格延后;存量不回填继续派生)与 `intent_fast_turns` 结算表

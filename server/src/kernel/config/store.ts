@@ -1,16 +1,14 @@
 /**
- * Settings persistence mechanism (2026-06-08-003) — the low-level, concurrency-safe
- * write primitives that make `~/.c3/settings.json` have a *single, serialized*
- * write path. This module owns ONLY the mechanics; the settings shape, `normalize`,
- * caches and merge policy live in `config/index.ts`, which funnels every write
- * through {@link withSettingsLock}.
+ * Concurrency-safe JSON file primitives for the state c3 still keeps in files: the
+ * vendor manifest under the managed vendor dir (`kernel/agent/process/launcher.ts`).
+ * Configuration itself lives in the database and uses transactions instead
+ * (`kernel/config/config-store.ts`).
  *
- * The double-lock model (see specs/domains/system-config/persistence.md):
- *  1. **In-process serialization** — the whole codebase's settings writes are
- *     synchronous with no `await` suspension points, so JS's single-threaded
- *     synchronous execution already serializes them (strictly stronger than an
- *     async mutex). We still funnel everything through one entry point so the
- *     invariant is structural, not incidental.
+ * The double-lock model:
+ *  1. **In-process serialization** — these writes are synchronous with no `await`
+ *     suspension points, so JS's single-threaded synchronous execution already
+ *     serializes them (strictly stronger than an async mutex). Everything still goes
+ *     through one entry point so the invariant is structural, not incidental.
  *  2. **Cross-process file lock** — a zero-dependency, atomic `mkdirSync`-based
  *     directory lock guards the read-modify-write *sequence* across multiple c3
  *     instances). `mkdirSync` without `recursive` fails with

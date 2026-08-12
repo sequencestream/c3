@@ -113,8 +113,8 @@ to exist — one `pnpm release:desktop` run stages it, after which plain `cargo 
 
 ## End-to-end tests
 
-`pnpm e2e` runs the whole WebSocket suite: it boots one server (with a throwaway
-requirement db, leaving `~/.c3` untouched), runs every test against it, and
+`pnpm e2e` runs the whole WebSocket suite: it boots one server (on a throwaway
+database — configuration included — leaving `~/.c3` untouched), runs every test against it, and
 prints a pass/fail summary. See [`scripts/e2e/e2e-guide.md`](scripts/e2e/e2e-guide.md)
 for the individual tests (smoke, requirement management, consensus voting).
 

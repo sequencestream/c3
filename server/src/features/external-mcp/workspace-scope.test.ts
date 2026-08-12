@@ -16,6 +16,7 @@ import {
 } from './workspace-scope.js'
 import { canonicalizeWorkspacePath } from '../../kernel/config/mcp-api-keys.js'
 import { addWorkspace, pathToId, removeWorkspace, resetStateCacheForTests } from '../../state.js'
+import { releaseConfigDb, useConfigDb } from '../../kernel/config/config-fixture.js'
 
 let home: string
 let prevHome: string | undefined
@@ -24,12 +25,15 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'c3-ws-scope-'))
   prevHome = process.env.HOME
   process.env.HOME = home
+  useConfigDb(home)
   resetStateCacheForTests()
 })
 
 afterEach(() => {
   if (prevHome === undefined) delete process.env.HOME
   else process.env.HOME = prevHome
+  releaseConfigDb()
+  resetStateCacheForTests()
   resetStateCacheForTests()
   rmSync(home, { recursive: true, force: true })
 })

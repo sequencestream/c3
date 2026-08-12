@@ -238,7 +238,7 @@ async function main() {
   }
 
   // Enter intent view → comm session + intent list.
-  send({ type: 'open_intent_chat', workspaceId })
+  send({ type: 'open_intent_session', workspaceId })
   const commSel = await waitFor((m) => m.type === 'session_selected', 'comm session_selected')
   commSessionId = commSel.sessionId
   console.log(`[real-run] comm session ${commSessionId}`)

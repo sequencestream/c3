@@ -18,40 +18,31 @@ import {
   updateMcpApiKeyTools,
   verifyMcpApiKey,
 } from './mcp-api-keys.js'
-import { loadSettings, resetSettingsCacheForTests, saveSettings } from './index.js'
-import { readJsonFile, writeAtomic } from './store.js'
+import { loadSettings, saveSettings } from './index.js'
+import {
+  readStoredMcpKeys,
+  releaseConfigDb,
+  resetConfigCaches,
+  seedMcpKey,
+  useConfigDb,
+} from './config-fixture.js'
 
-// Redirect the c3 config dir to a throwaway dir via C3_DIR (NOT HOME: os.homedir()
-// caches its first call in the worker, so an env change after startup is ignored)
-// so these tests never touch the developer's real settings.json.
+// Run against a throwaway database so these tests never touch the developer's real
+// configuration.
 let dir: string
-let prevC3Dir: string | undefined
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-mcp-keys-'))
-  prevC3Dir = process.env.C3_DIR
-  process.env.C3_DIR = join(dir, '.c3')
-  resetSettingsCacheForTests()
+  useConfigDb(dir)
 })
 
 afterEach(() => {
-  if (prevC3Dir === undefined) delete process.env.C3_DIR
-  else process.env.C3_DIR = prevC3Dir
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(dir, { recursive: true, force: true })
 })
 
-function settingsPath(): string {
-  return join(dir, '.c3', 'settings.json')
-}
-
-function diskRaw(): Record<string, unknown> {
-  return readJsonFile<Record<string, unknown>>(settingsPath()) ?? {}
-}
-
-function diskRecords(): Record<string, unknown>[] {
-  const raw = diskRaw().mcpApiKeys
-  return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []
+function storedRecords(): Record<string, unknown>[] {
+  return readStoredMcpKeys()
 }
 
 /** A workspace directory that actually exists, so canonicalization has something to resolve. */
@@ -110,11 +101,11 @@ describe('persistence', () => {
     const ws = makeWorkspace('proj')
     const { key } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
 
-    const serialized = JSON.stringify(diskRaw())
+    const serialized = JSON.stringify(storedRecords())
     expect(serialized).not.toContain(key)
     expect(serialized).not.toContain(parseMcpApiKey(key)!.secret)
 
-    const [rec] = diskRecords()
+    const [rec] = storedRecords()
     expect(rec.algo).toBe('scrypt')
     expect(rec.hashVersion).toBe(1)
     expect(typeof rec.salt).toBe('string')
@@ -125,7 +116,7 @@ describe('persistence', () => {
     const ws = makeWorkspace('proj')
     await createMcpApiKey('a', ws, READ_TOOLS, 1)
     await createMcpApiKey('b', ws, READ_TOOLS, 2)
-    const salts = diskRecords().map((r) => r.salt)
+    const salts = storedRecords().map((r) => r.salt)
     expect(new Set(salts).size).toBe(2)
   })
 
@@ -148,7 +139,7 @@ describe('persistence', () => {
   it('authenticates a key after a full reload from disk', async () => {
     const ws = makeWorkspace('proj')
     const { key, meta } = await createMcpApiKey('ci', ws, ['find_intents'], 1000)
-    resetSettingsCacheForTests()
+    resetConfigCaches()
 
     const auth = await verifyMcpApiKey(key)
     expect(auth).toEqual({ id: meta.id, workspace: ws, tools: ['find_intents'] })
@@ -171,11 +162,8 @@ describe('persistence', () => {
   it('rejects a record whose hash scheme is not supported, rather than failing open', async () => {
     const ws = makeWorkspace('proj')
     const { key } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
-    const raw = diskRaw()
-    const records = raw.mcpApiKeys as Record<string, unknown>[]
-    records[0].hashVersion = 99
-    writeAtomic(settingsPath(), raw)
-    resetSettingsCacheForTests()
+    const [rec] = storedRecords()
+    seedMcpKey(rec.id as string, { ...rec, hashVersion: 99 })
 
     expect(await verifyMcpApiKey(key)).toBeNull()
   })
@@ -190,9 +178,9 @@ describe('persistence', () => {
       baseUrl: 'http://192.168.1.5:3000',
     }
     saveSettings(next)
-    resetSettingsCacheForTests()
+    resetConfigCaches()
 
-    expect(diskRecords()).toHaveLength(1)
+    expect(storedRecords()).toHaveLength(1)
     expect(await verifyMcpApiKey(key)).not.toBeNull()
   })
 
@@ -202,8 +190,8 @@ describe('persistence', () => {
       mcpApiKeys: [{ id: 'deadbeefdeadbeef', salt: 'x', hash: 'y' }],
     } as SystemSettings & { mcpApiKeys: unknown }
     saveSettings(forged)
-    resetSettingsCacheForTests()
-    expect(diskRecords()).toHaveLength(0)
+    resetConfigCaches()
+    expect(storedRecords()).toHaveLength(0)
     expect(listMcpApiKeys()).toHaveLength(0)
   })
 
@@ -229,13 +217,11 @@ describe('legacy migration', () => {
     const ws = makeWorkspace('proj')
     // A pre-scope record: `workspaces` array of one, no `tools`.
     const { key } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
-    const raw = diskRaw()
-    const rec = (raw.mcpApiKeys as Record<string, unknown>[])[0]
-    rec.workspaces = [rec.workspace]
-    delete rec.workspace
-    delete rec.tools
-    writeAtomic(settingsPath(), raw)
-    resetSettingsCacheForTests()
+    const [rec] = storedRecords()
+    const legacy: Record<string, unknown> = { ...rec, workspaces: [rec.workspace] }
+    delete legacy.workspace
+    delete legacy.tools
+    seedMcpKey(rec.id as string, legacy)
 
     const auth = await verifyMcpApiKey(key)
     expect(auth).not.toBeNull()
@@ -247,12 +233,10 @@ describe('legacy migration', () => {
     const a = makeWorkspace('a')
     const b = makeWorkspace('b')
     const { key, meta } = await createMcpApiKey('multi', a, READ_TOOLS, 1000)
-    const raw = diskRaw()
-    const rec = (raw.mcpApiKeys as Record<string, unknown>[])[0]
-    rec.workspaces = [a, b]
-    delete rec.workspace
-    writeAtomic(settingsPath(), raw)
-    resetSettingsCacheForTests()
+    const [rec] = storedRecords()
+    const legacy: Record<string, unknown> = { ...rec, workspaces: [a, b] }
+    delete legacy.workspace
+    seedMcpKey(rec.id as string, legacy)
 
     // Dropped on load: gone from the roster, and the plaintext is now invalid.
     expect(listMcpApiKeys()).toHaveLength(0)
@@ -263,12 +247,10 @@ describe('legacy migration', () => {
   it('revokes a legacy key with no resolvable workspace', async () => {
     const ws = makeWorkspace('proj')
     const { key } = await createMcpApiKey('ghost', ws, READ_TOOLS, 1000)
-    const raw = diskRaw()
-    const rec = (raw.mcpApiKeys as Record<string, unknown>[])[0]
-    rec.workspaces = []
-    delete rec.workspace
-    writeAtomic(settingsPath(), raw)
-    resetSettingsCacheForTests()
+    const [rec] = storedRecords()
+    const legacy: Record<string, unknown> = { ...rec, workspaces: [] }
+    delete legacy.workspace
+    seedMcpKey(rec.id as string, legacy)
 
     expect(listMcpApiKeys()).toHaveLength(0)
     expect(await verifyMcpApiKey(key)).toBeNull()

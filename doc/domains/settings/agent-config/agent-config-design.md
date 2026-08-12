@@ -15,13 +15,13 @@ web console 中的完整设置视图页面。
 
 ## 持久化
 
-- **`settings.json`**,位于 `~/.c3/settings.json`——保存智能体注册表、默认智能体 id,以及
-  按项目的配置(在 `projectConfigs` key 下,见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))。
-- **`state.json`**,位于 `~/.c3/state.json`——双键绑定(ADR-0015),带版本号:一个 pending-intent
-  map(待定 id → 期望的智能体 + 创建时间)是可变的意图;一个 session-agent map(真实 id
-  → 智能体 + 被冻结的厂商)是被冻结的事实。旧版单一 map 的数据在首次读取时迁移:
-  `pending:` 开头的 key 变为意图,其余变为冻结为 claude 的事实。
-- 每个文件都惰性加载到内存缓存中;每次变更都同步持久化。
+- **`system_configs`** —— 智能体注册表(`agents.<id>.*`,apiKey 以 `secret` 类型落库)与
+  默认智能体 id;按工作区的配置在 `workspace_configs`(见
+  [workspace-setting](../workspace-setting/workspace-setting-spec.md))。
+- **`session_configs`** —— 双键绑定(ADR-0015):带 `pendingCreatedAt` 的作用域是可变的意图
+  (待定 id → 期望的智能体 + 创建时间),带 `vendor` 的是被冻结的事实(真实 id → 智能体 +
+  被冻结的厂商)。
+- 两者都惰性加载到内存缓存中;每次变更只写受影响的行。
 - **原子写:** 先写入按进程区分的临时文件,再重命名覆盖目标文件。
 - **失败降级:** 缺失/损坏的文件会回退到默认值(仅系统智能体 / 空
   绑定),系统仍能正常启动(AC-R7,AVAIL)。
@@ -270,12 +270,12 @@ janitor:    pending intents older than 7 days → reaped (facts untouched)
 
 ## 非功能性考量
 
-- **密钥** —— API key 以明文形式存储在 `~/.c3/settings.json` 下(与用户的
-  `~/.claude` 凭证信任模型相同);视图将该字段渲染为密码输入框。
+- **密钥** —— API key 以 `config_type='secret'` 的密文落库(见
+  [security](../../../non-functional/security.md) § SEC-13);视图将该字段渲染为密码输入框。
 - **系统智能体不变式** —— 每次加载/保存都会重新注入,因此即使手动编辑文件
   也无法删除它或给它加上覆盖项(AC-R1)。
-- **解耦的持久化** —— 该绑定存放在 `~/.c3/state.json` 中,独立于
-  `~/.claude/c3/` 下 session-registry 的状态文件,因此这两个关注点可以各自独立演进。
+- **解耦的持久化** —— 该绑定的键(`agentId` / `vendor` / `storeScope`)与 session-registry
+  的每会话模式同处一个会话作用域,但各自只写自己的键,因此这两个关注点可以各自独立演进。
 - **临时变通方案(技术债)** —— 非系统智能体上的自适应思维禁用环境变量
   是针对消息格式不兼容的权宜之计;一旦第三方厂商支持新
   格式(见上文变通方案小节),就应移除它。

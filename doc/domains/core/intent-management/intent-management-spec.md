@@ -405,7 +405,7 @@ worktree、本地分支与不可逆性,`in_progress` 额外提示工作产物(�
   一个真实的 SDK 会话。
 - **Hidden set(隐藏集)** —— 一个项目中从 `list_sessions` 排除的会话 id:所有沟通会话 id 与
   所有意图 spec 会话 id。
-- **c3.db** —— 位于 `~/.c3/c3.db` 的 SQLite 账本(注意:与 registry 的 `state.json` 不同,后者
+- **c3.db** —— 位于 `~/.c3/c3.db` 的 SQLite 账本(注意:与工作区注册表不同,后者
   位于 `~/.claude/c3/` 下)。
 - **lastWorkSessionId** —— 一条意图最后一次工作运行产生的会话 id;回链目标。
 - **intentSessionId** —— 意图细化 / 沟通会话 id;不同于 `lastWorkSessionId`。

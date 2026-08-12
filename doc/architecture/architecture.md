@@ -98,14 +98,17 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   切换观看的会话与关闭 socket 只会改变订阅关系 —— 运行在后台继续，直到它结束或被显式停止
   （`stop_run`）。不同会话可以并发运行，没有固定上限；单个会话是串行的（在其回合进行中会拒绝
   新的 prompt）。
-- **工作区/会话注册表是持久化的。** c3 保存一份小的 JSON 注册表
-  （`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`）：工作区 + 最近访问顺序、每会话模式，
-  以及当前活跃会话。会话本身存在于 SDK 的转录存储中。见 [ADR 0004](adr/0004-persist-workspace-session-registry.md)。
-- **Intent ledger 是一个独立的 SQLite 存储（ADR 0007）。** 项目范围的 intent 存在
-  `~/.c3/c3.db` 中（不同于注册表的 `~/.claude/c3/state.json`），背后是一个跨运行时的驱动
-  适配器（`node:sqlite` / `bun:sqlite`）。它是软失败的：如果 db 不可用，intent 功能会降级，
-  但 c3 仍能启动并服务正常会话。intent-communication agent 复用运行时注册表与权限 gateway，
-  以只读的 `intent` 类型运行。
+- **配置与注册表都在 c3.db 里。** 系统设置、每工作区设置、个性化设置、会话绑定与 MCP 密钥
+  存在 config 模块的表中，一字段一行；工作区注册表（工作区 + 最近访问顺序）、每会话模式与当前
+  活跃会话同样如此。会话本身存在于 SDK 的转录存储中。见
+  [ADR 0004](adr/0004-persist-workspace-session-registry.md)、
+  [ADR 0042](adr/0042-configuration-in-database.md)。
+- **数据库位置决定整个实例。** `--db <path>` > `C3_DB_PATH` > `C3_DIR` > `~/.c3/c3.db`；c3 主
+  目录（日志、worktree、sandbox 分发）跟随数据库文件所在目录，因此一个覆盖项即可搬走整个 c3。
+- **Intent ledger 与配置同库（ADR 0007）。** 项目范围的 intent 存在 `~/.c3/c3.db`，背后是一个
+  跨运行时的驱动适配器（`node:sqlite` / `bun:sqlite`）。它是软失败的：如果 db 不可用，intent
+  功能会降级，但 c3 仍能启动并服务正常会话。intent-communication agent 复用运行时注册表与权限
+  gateway，以只读的 `intent` 类型运行。
 - **Session metadata 投影是一个统一的读缓存。** c3.db 中的 `session_metadata` 是
   `work_session_metadata` 改名/泛化后的继任者。它为六种会话类型（work / intent / spec /
   discussion / automation / tool）携带寻址与生命周期元数据，包括用于跳回的可选逻辑归属字段。

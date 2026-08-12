@@ -64,13 +64,13 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   因此一个非法配置永远不会意外把用户锁在外面或破坏启动。`none` provider 是"无认证"的
   显式一等公民形式:规范化会把它的 `enabled` 钉为 `false`,使 provider kind 成为唯一真源
   (没有第二个标志位与之矛盾)。
-- **AUTH-R2(向后兼容)** —— 一个没有 `auth` 字段的既有 `settings.json` 经过
+- **AUTH-R2(向后兼容)** —— 一份没有 `auth` 键的既有配置经过
   load → normalize → save 会保持相同行为(无认证)。新增本 domain 不改变
   任何既有配置的语义。
 - **AUTH-R3(绝不明文)** —— 密码只以哈希形式存储(`BasicAuthProvider.passwordHash`,
   一个 PHC 字符串)。明文的 `AuthLoginRequest.password` 只在传输中存在——
   与哈希比对校验,绝不持久化。没有任何类型、示例或测试携带真实明文密码作为存储值。
-- **AUTH-R4(密钥按引用存放)** —— 令牌签名密钥绝不持久化到 `settings.json`;
+- **AUTH-R4(密钥按引用存放)** —— 令牌签名密钥绝不落库;
   `AuthSessionPolicy.signingKeyRef` 引用它(环境变量名 / keystore id)。运行时解析
   真正的密钥(延后)。
 - **AUTH-R5(会话/消息与 provider 无关)** —— `AuthSessionToken`、`AuthLoginRequest/Result`、
@@ -97,7 +97,7 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   一种认证方式处于激活状态。在 `basic` 下,当 `accounts` 非空时,`adminUsername`
   必须恰好引用一个账户,且用户名必须唯一。两层强制执行这一点:**保存层**用一个结构化代码
   拒绝 UI 触发的违规(`account_op_result`);规范化是针对手工编辑
-  `settings.json` 的**软失败兜底**——一个悬空/重复管理员的 `basic` 块会被丢弃(无认证)。
+  配置的**软失败兜底**——一个悬空/重复管理员的 `basic` 块会被丢弃(无认证)。
   `basic.enabled` 是派生的:true ⇔ `accounts` 非空 且 `adminUsername` 引用一个账户。
   当其他账户还存在时,移除管理员账户会被拒绝(`admin_must_reassign`);当它是唯一账户时
   移除它会把存储清空回未配置状态。旧版单账户
@@ -152,7 +152,7 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   服务端的配置校验层中。
 - **Config panel** —— System Settings 页面承载认证区域,并路由
   账户管理消息及其结果。
-- 持久化在 `~/.c3/settings.json` 内的 `SystemSettings.auth` 下,通过与其余
+- 持久化在 `system_configs` 的 `auth.*` 键空间下,通过与其余
   系统配置相同的单一并发安全写路径。
 
 ## References

@@ -2,16 +2,19 @@
  * Integration tests for the shared cross-runtime SQLite adapter (`db.ts`).
  *
  * Under Node these exercise the `node:sqlite` (`DatabaseSync`) branch — the path
- * a `node cli.cjs` deployment takes. The `bun:sqlite` branch is structurally
- * identical and only reachable under a Bun binary (out of scope for vitest/Node).
+ * a `node cli.cjs` deployment takes. The `bun:sqlite` branch — the one the shipped
+ * single binary takes — is unreachable from vitest/Node, so it is covered by a
+ * child-process test that drives a real `bun` over this same source file.
  * Covered here: `?` positional-param round-trips against a real temp file, the
  * WAL + busy_timeout pragmas not throwing, the `:memory:` sentinel passthrough
  * (reviewer's fix), and the open-failure degradation contract.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { checkDbDriver, getDb, isDbAvailable, resetDbForTests } from './db.js'
 
 let dir: string
@@ -92,6 +95,41 @@ describe('db adapter — file-backed (node:sqlite)', () => {
     process.env.C3_DB_PATH = join(dir, 'other.db')
     const second = getDb()
     expect(second).not.toBe(first)
+  })
+})
+
+describe('db adapter — file-backed (bun:sqlite)', () => {
+  // The branch the shipped single binary (and therefore the desktop sidecar)
+  // actually takes. Node's vitest cannot load `bun:sqlite`, so drive a real Bun
+  // over the same source file in a child process. Skipped where Bun is absent —
+  // it still runs on any dev/CI box that can build the binary at all.
+  const hasBun = spawnSync('bun', ['--version'], { encoding: 'utf8' }).status === 0
+  const dbSrc = fileURLToPath(new URL('./db.ts', import.meta.url))
+
+  it.skipIf(!hasBun)('opens read-write, applies WAL, and reads back under Bun', () => {
+    // Regression: passing an empty options object made bun:sqlite compute
+    // flags=0 and throw SQLITE_MISUSE, so every binary build booted with the
+    // database "unavailable" (intents/discussions/automations dead) while Node
+    // builds were fine.
+    const script = `
+      const m = await import(${JSON.stringify(dbSrc)})
+      if (!m.checkDbDriver()) { console.log('PROBE_FAILED'); process.exit(1) }
+      const db = m.getDb()
+      if (!db || !m.isDbAvailable()) { console.log('UNAVAILABLE'); process.exit(1) }
+      db.exec('CREATE TABLE t (id TEXT)')
+      db.run('INSERT INTO t (id) VALUES (?)', 'z')
+      const journal = String(db.get('PRAGMA journal_mode')?.journal_mode).toLowerCase()
+      const ro = m.openSqlite(process.env.C3_DB_PATH, { readonly: true })
+      console.log(JSON.stringify({ id: db.get('SELECT id FROM t')?.id, journal, ro: !!ro }))
+    `
+    const r = spawnSync('bun', ['-e', script], {
+      encoding: 'utf8',
+      env: { ...process.env, C3_DB_PATH: join(dir, 'bun.db') },
+    })
+    expect(r.stdout.trim().split('\n').at(-1)).toBe(
+      JSON.stringify({ id: 'z', journal: 'wal', ro: true }),
+    )
+    expect(r.status).toBe(0)
   })
 })
 

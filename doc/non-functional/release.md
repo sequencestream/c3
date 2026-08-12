@@ -114,6 +114,10 @@ bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 
   `--skip-smoke` 可以跳过。这条冒烟例程**本身就是**测试载体;一个配套的单元测试
   覆盖其中的纯函数辅助逻辑(这样 `pnpm test`——本身就是 pregate 的一部分——在任何
   制品存在之前就能保持绿色)。
+  HTTP 存活之外,冒烟还断言这次启动的**持久化诊断是干净的**:db 打不开时服务器
+  照样监听、照样回 200,只是 intent / 讨论 / 自动化全部降级——单看 HTTP 分不出
+  可发布的二进制和坏掉的二进制,只有驱动自己的启动诊断能(启动输出里出现
+  `c3.db unavailable` 或 `FATAL: SQLite driver` 即判定失败)。
 - **发布门禁**(`release:verify-dist`)在生成校验和之后、打 tag 之前的发布步骤内运行:
   它重新对每个制品做哈希,检查 manifest、`SHA256SUMS` 与磁盘上的字节是否逐行一致,
   确认**每个 P0 目标都在场**、manifest 的 `schema` 属于 `c3-release-manifest/*`,

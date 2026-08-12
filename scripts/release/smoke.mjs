@@ -68,7 +68,28 @@ function waitForHttp(port, timeoutMs) {
 }
 
 /**
- * Smoke one artifact: `--version` echo + a random-port server boot probed over HTTP.
+ * The boot lines that mean "this binary starts, but its persistence is dead".
+ *
+ * A db that fails to open never stops the server — the process listens and answers
+ * HTTP exactly like a healthy one, while intents / discussions / automations are all
+ * unavailable. HTTP liveness alone therefore cannot tell a shippable binary from a
+ * broken one; the driver's own boot diagnostics can. (Real case: `bun:sqlite` rejected
+ * the empty open-options object with SQLITE_MISUSE, so every Bun binary shipped with
+ * the database off while the Node bundle stayed fine.)
+ */
+const DB_FAULT = /c3\.db unavailable|FATAL: SQLite driver/
+
+/** Throw if the booted binary reported its database unusable. */
+export function assertNoDbFault(stderr, label = 'binary') {
+  const line = String(stderr)
+    .split('\n')
+    .find((l) => DB_FAULT.test(l))
+  if (line) throw new Error(`${label} booted with persistence broken: ${line.trim()}`)
+}
+
+/**
+ * Smoke one artifact: `--version` echo + a random-port server boot probed over HTTP,
+ * with the boot's own database diagnostics asserted clean.
  * Never calls claude. Throws on any failure; resolves with the version string on success.
  * @param {string} file       absolute path to a host-runnable c3 binary
  * @param {object} [o]
@@ -98,6 +119,11 @@ export async function smokeArtifact(file, { timeoutMs = 15000, log = () => {} } 
   try {
     const status = await Promise.race([waitForHttp(port, timeoutMs), exited])
     log(`  ✓ ${basename(file)} server live on :${port} (HTTP ${status})`)
+    // The db diagnostics are printed during boot, i.e. before the port is up; a short
+    // beat lets the last chunk of that output land before we read it.
+    await new Promise((r) => setTimeout(r, 300))
+    assertNoDbFault(stderr, basename(file))
+    log(`  ✓ ${basename(file)} persistence driver clean`)
     return version
   } finally {
     child.kill('SIGKILL')

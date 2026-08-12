@@ -13,7 +13,7 @@ import {
   KNOWN_TARGETS,
   EXPERIMENTAL_TARGETS,
 } from './targets.mjs'
-import { assertVersionOutput, freePort, smokeArtifact } from './smoke.mjs'
+import { assertNoDbFault, assertVersionOutput, freePort, smokeArtifact } from './smoke.mjs'
 import { parseSha256Sums } from './postgate.mjs'
 import { artifactName, binaryName, packageName, packageExt } from './artifact-name.mjs'
 import { defaultOutfile, TARGETS } from '../../server/scripts/release/build-target.mjs'
@@ -106,6 +106,26 @@ describe('parseSha256Sums', () => {
     const map = parseSha256Sums(`${hex}  c3-v0.1.0-macos-arm64.tar.gz\n# comment\n`)
     expect(map.get('c3-v0.1.0-macos-arm64.tar.gz')).toBe(hex)
     expect(map.size).toBe(1)
+  })
+})
+
+describe('assertNoDbFault', () => {
+  it('rejects a boot whose SQLite driver or db failed to open', () => {
+    expect(() =>
+      assertNoDbFault(
+        '[c3] FATAL: SQLite driver "bun:sqlite" unavailable on darwin/arm64 (Bun runtime).',
+        'c3',
+      ),
+    ).toThrow(/persistence broken/)
+    expect(() =>
+      assertNoDbFault('[c3] c3.db unavailable (driver bun:sqlite): SQLiteError', 'c3'),
+    ).toThrow(/persistence broken/)
+  })
+
+  it('passes an ordinary boot, warnings included', () => {
+    expect(() =>
+      assertNoDbFault('[c3] server listening on 127.0.0.1:3000\n[c3] vendor check-skip: claude'),
+    ).not.toThrow()
   })
 })
 

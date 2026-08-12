@@ -139,6 +139,10 @@
   (过度限制),也应拒绝把它当作自动放行的读取工具处理(那样注入的答案会丢失)。
 - SQLite 驱动 MUST 由 `globalThis.Bun` 选择;`node:sqlite` 与 `bun:sqlite` MUST 对打包器都标记为 `external`。
   该存储 MUST 软失败,使 c3 在没有它的情况下依然能启动。
+- 每个驱动的打开选项 MUST 显式表达读写意图,不得依赖驱动的默认值:`bun:sqlite` 完全由这个选项对象推导
+  SQLite open flags,只有**省略该参数**时才走「读写 + 建库」默认值,因此一个空对象会算出 flags=0 并以
+  `SQLITE_MISUSE` 被拒。软失败在这里会放大代价——库打不开只是一条日志,二进制照常监听,持久化却整体缺席。
+  评审者应拒绝任何把 flags 交给驱动默认值去猜的适配器写法。
 
 ## References
 

@@ -103,9 +103,21 @@ function nodeAdapter(path: string, options: OpenOptions = {}): Db {
 
 function bunAdapter(path: string, options: OpenOptions = {}): Db {
   const { Database } = runtimeRequire('bun:sqlite') as {
-    Database: new (p: string, o: { readonly?: boolean }) => RawBunDb
+    Database: new (
+      p: string,
+      o: { readonly?: boolean; readwrite?: boolean; create?: boolean },
+    ) => RawBunDb
   }
-  const db = new Database(path, options.readonly ? { readonly: true } : {})
+  // bun:sqlite derives the SQLite open flags from THIS object and nothing else:
+  // its read-write+create default applies only when the argument is omitted, so
+  // an empty `{}` computes flags=0 and Bun throws SQLITE_MISUSE ("flags must
+  // include SQLITE_OPEN_READONLY or SQLITE_OPEN_READWRITE") — the whole database
+  // then degrades to unavailable under the binary while Node stays fine. Spell
+  // the write intent out instead of relying on any default.
+  const db = new Database(
+    path,
+    options.readonly ? { readonly: true } : { readwrite: true, create: true },
+  )
   return {
     exec: (sql) => db.exec(sql),
     run: (sql, ...p) => {

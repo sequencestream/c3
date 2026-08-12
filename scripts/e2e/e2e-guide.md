@@ -383,7 +383,7 @@ judgement; the rework-cap and escalation rules are pinned deterministically in
 ## Intent management (save flow + AskUserQuestion gate)
 
 Exercises the intent-management feature end-to-end: register a throwaway
-project, enter its intent view (`open_intent_chat` → read-only comm
+project, enter its intent view (`open_intent_session` → read-only comm
 session + `intents` list), then run the two-turn confirmation flow — turn 1
 proposes and must save nothing, turn 2 replies with an explicit textual
 confirmation and the agent's `save_intents` call must persist at once with NO

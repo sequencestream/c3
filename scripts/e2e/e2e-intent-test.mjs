@@ -3,7 +3,7 @@
  * End-to-end test for the INTENT-MANAGEMENT save flow (confirmation by chat text).
  *
  * Scenario: register a throwaway project under /tmp, enter its intent view
- * (`open_intent_chat` — opens/resumes the read-only communication session
+ * (`open_intent_session` — opens/resumes the read-only communication session
  * and returns the project's intent list), then run the two-turn confirmation
  * flow the comm agent must follow:
  *   1. propose — the agent lists ONE intent in full and waits; nothing may be
@@ -124,15 +124,15 @@ let askAnswered = false // we submitted answers to the panel
 let askAnswerInjected = false // the agent echoed ASK_CHOICE back (withAnswers worked)
 let sawAskTurnEnd = false // the AskUserQuestion turn completed
 
-// ---- new_intent_chat ("+" → brand-new comm session) ----
-let newChatSent = false // we sent new_intent_chat
+// ---- new_intent_session ("+" → brand-new comm session) ----
+let newChatSent = false // we sent new_intent_session
 let sawNewChat = false // got a fresh session_selected with a different id + empty history
 
 // ---- Intent session list operations (list/switch/delete) ----
 let sessionListRequested = false // we sent list_intent_sessions
 let sawSessionList = false // received intent_sessions with items
 let sessionIds = [] // cached session ids from the list
-let switchRequested = false // we sent open_intent_chat with a specific sessionId
+let switchRequested = false // we sent open_intent_session with a specific sessionId
 let sessionSwitched = false // received session_selected for the switched session
 let deleteRequested = false // we sent delete_intent_session
 let sessionDeleted = false // confirmed session removed from the list
@@ -184,14 +184,14 @@ ws.addEventListener('message', (evt) => {
           return
         }
         chatOpened = true
-        console.log('[e2e] entering intent view (open_intent_chat)')
-        send({ type: 'open_intent_chat', workspaceId })
+        console.log('[e2e] entering intent view (open_intent_session)')
+        send({ type: 'open_intent_session', workspaceId })
       }
       break
 
     case 'session_selected':
       if (switchRequested) {
-        // Response to open_intent_chat with a specific sessionId: verify it's the
+        // Response to open_intent_session with a specific sessionId: verify it's the
         // targeted session.
         const expected = sessionIds[1] // the second session in the list
         sessionSwitched = msg.sessionId === expected
@@ -214,12 +214,12 @@ ws.addEventListener('message', (evt) => {
         break
       }
       if (newChatSent) {
-        // Response to new_intent_chat: must be a DIFFERENT session id with an
+        // Response to new_intent_session: must be a DIFFERENT session id with an
         // empty history (the old conversation must not bleed into the new one).
         const fresh = msg.sessionId !== commSessionId && (msg.history?.length ?? 0) === 0
         sawNewChat = fresh
         console.log(
-          `[e2e] ${fresh ? '✅' : '⚠️'} new_intent_chat → session ${msg.sessionId} ` +
+          `[e2e] ${fresh ? '✅' : '⚠️'} new_intent_session → session ${msg.sessionId} ` +
             `(prev ${commSessionId}, history=${msg.history?.length ?? 0})`,
         )
         // Don't finish yet — proceed to session list operations.
@@ -316,8 +316,8 @@ ws.addEventListener('message', (evt) => {
         // Proceed to switch test: open a different session (the second one, if available).
         if (sessionIds.length >= 2) {
           switchRequested = true
-          console.log(`[e2e] open_intent_chat → session ${sessionIds[1]}`)
-          send({ type: 'open_intent_chat', workspaceId, sessionId: sessionIds[1] })
+          console.log(`[e2e] open_intent_session → session ${sessionIds[1]}`)
+          send({ type: 'open_intent_session', workspaceId, sessionId: sessionIds[1] })
         } else {
           finish(judge())
         }
@@ -409,7 +409,7 @@ ws.addEventListener('message', (evt) => {
       console.log(`[e2e] turn_end: ${reason}`)
       if (askPromptSent) {
         // The AskUserQuestion (second) turn finished. Last flow: exercise the "+"
-        // (new_intent_chat) before judging.
+        // (new_intent_session) before judging.
         sawAskTurnEnd = true
         askTurnReason = reason
         maybeStartNewChat()
@@ -510,8 +510,8 @@ function maybeStartSessionListTest() {
 function maybeStartNewChat() {
   if (newChatSent || finished) return
   newChatSent = true
-  console.log('[e2e] sending new_intent_chat (the "+" button)')
-  send({ type: 'new_intent_chat', workspaceId })
+  console.log('[e2e] sending new_intent_session (the "+" button)')
+  send({ type: 'new_intent_session', workspaceId })
 }
 
 function judge() {
@@ -533,11 +533,11 @@ function judge() {
     ask_gated: sawAskPermission,
     ask_answer_injected: askAnswerInjected,
     ask_turn_completed_clean: sawAskTurnEnd && askTurnReason.startsWith('complete'),
-    // "+" → new_intent_chat: fresh session id, empty history (old chat not threaded in).
+    // "+" → new_intent_session: fresh session id, empty history (old chat not threaded in).
     new_chat_fresh_session: sawNewChat,
     // Session list: list_intent_sessions returns items.
     session_list_returned: sawSessionList,
-    // Session switch: open a different session via open_intent_chat with sessionId.
+    // Session switch: open a different session via open_intent_session with sessionId.
     session_switched: sessionSwitched,
     // Session delete: delete_intent_session removes from the list.
     session_deleted: sessionDeleted,

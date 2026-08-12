@@ -64,8 +64,9 @@ import { connect } from 'node:net'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { seedConfig } from './isolated-server.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
@@ -95,21 +96,12 @@ try {
 // ---- Private server state: own ledger, own settings, own forge script ----
 const STATE_DIR = mkdtempSync(join(tmpdir(), 'c3-delivery-pr-state-'))
 const DB_PATH = join(STATE_DIR, 'c3.db')
-const SETTINGS_PATH = join(STATE_DIR, 'settings.json')
 const FORGE_STATE = join(STATE_DIR, 'forge-state.json')
 const FORGE_CALLS = join(STATE_DIR, 'forge-calls.log')
-// Seeded from the real settings minus `auth` (same rule as the suite runner: this
-// connection carries no token, and an auth-enabled config would gate the handshake).
-;(() => {
-  let settings = {}
-  try {
-    settings = JSON.parse(readFileSync(join(homedir(), '.c3', 'settings.json'), 'utf-8'))
-  } catch {
-    /* no real settings — the server normalizes {} to its defaults */
-  }
-  delete settings.auth
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2))
-})()
+// Configuration seeded from the real database minus `auth.*` (same rule as the suite
+// runner: this connection carries no token, and an auth-enabled config would gate the
+// handshake).
+seedConfig(DB_PATH)
 
 /** Drive what the fake forge answers next. */
 function setForge(state) {
@@ -157,20 +149,16 @@ function cleanupDirs() {
 // ---- Start the private server ----
 console.log(`[e2e] workspace: ${PROJECT_DIR}`)
 console.log(`[e2e] starting private server on :${PORT} (fake forge on PATH)`)
-const server = spawn(
-  'node',
-  [SERVER_CLI, 'start', '--port', String(PORT), '--settings', SETTINGS_PATH],
-  {
-    cwd: ROOT,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      C3_DB_PATH: DB_PATH,
-      C3_E2E_FORGE_STATE: FORGE_STATE,
-      PATH: `${FAKE_FORGE_DIR}:${process.env.PATH ?? ''}`,
-    },
+const server = spawn('node', [SERVER_CLI, 'start', '--port', String(PORT), '--db', DB_PATH], {
+  cwd: ROOT,
+  stdio: 'ignore',
+  env: {
+    ...process.env,
+    C3_DB_PATH: DB_PATH,
+    C3_E2E_FORGE_STATE: FORGE_STATE,
+    PATH: `${FAKE_FORGE_DIR}:${process.env.PATH ?? ''}`,
   },
-)
+})
 let serverExited = false
 server.on('exit', () => {
   serverExited = true

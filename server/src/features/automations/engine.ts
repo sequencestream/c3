@@ -17,6 +17,7 @@ import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 import { getTimezone } from '../../kernel/config/index.js'
+import { logRunFailure } from '../../kernel/run/run-log.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
 import { isAgentQuotaRecoveryAutomation } from './store.js'
 
@@ -189,7 +190,23 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
     }
   }
 
+  // `catch` 必须排在 `finally` 前面:执行抛出时先把 `success` 翻成 false,下面的
+  // `finally` 才会以 `error` 结算。反过来接的话,一个抛出的执行会被结算成
+  // `complete` —— 事件与日志都在说它成功了。
   const exec = execute(automation, logId, trackingUpdateLog, triggerEvent)
+    .catch((err: unknown) => {
+      success = false
+      logRunFailure(
+        {
+          sessionId: logId,
+          workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+          sessionKind: 'automation',
+          runKind: 'headless',
+        },
+        `automation:${automation.id}`,
+        err,
+      )
+    })
     .finally(() => {
       inFlight.delete(automation.id)
       const workspacePath = resolveWorkspaceRoot(automation.workspaceId)!
@@ -234,9 +251,6 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
         runKind: 'headless',
         metadata: eventMetadata,
       })
-    })
-    .catch((err) => {
-      console.error('[scheduler] execution failed for %s:', automation.id, err)
     })
 
   inFlight.set(automation.id, exec)

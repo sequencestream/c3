@@ -63,6 +63,7 @@ import {
 } from '../features/discussions/store.js'
 import { emit, ensureRuntime, finalizeRun, getRuntime, setStatus } from '../runs.js'
 import { freezeSessionAgent } from '../kernel/agent-config/index.js'
+import { logRunFailure } from '../kernel/run/run-log.js'
 import {
   deleteByVendorId,
   touchByOwner,
@@ -293,7 +294,16 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     void runDiscussion(discussion.id, abort.signal, discussionDeps)
       .catch((err) => {
         settledReason = 'error'
-        console.warn(`[c3] discussion orchestration error: ${errMsg(err)}`)
+        logRunFailure(
+          {
+            sessionId: discussion.id,
+            workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+            sessionKind: 'discussion',
+            runKind: 'internal',
+          },
+          'discussion-orchestration',
+          err,
+        )
       })
       .finally(() => {
         if (abort.signal.aborted) settledReason = 'aborted'
@@ -492,6 +502,16 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       .catch((err) => {
         // Defensive: research itself swallows its run error (returns ok=false),
         // so this only fires on a wiring fault. Ensure settled fires for liveness.
+        logRunFailure(
+          {
+            sessionId: discussion.id,
+            workspacePath,
+            sessionKind: 'discussion',
+            runKind: 'internal',
+          },
+          'discussion-research',
+          err,
+        )
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
           workspacePath,
@@ -503,7 +523,6 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         deleteResearchRun(discussion.id)
         clearResearchTranscript(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
-        console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
       })
   }
 

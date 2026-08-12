@@ -31,6 +31,7 @@ import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
+import { logRunFailure, type RunLogIdentity } from './run-log.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../permission/index.js'
 import {
@@ -275,6 +276,15 @@ export async function launchRun(
     )
   }
 
+  // 本次 run 的日志身份。`runId` 会在 pending→real 绑定后改写,所以每次取用都重新
+  // 读一遍闭包变量,而不是提前算好一份快照。
+  const runLogIdentity = (): RunLogIdentity => ({
+    sessionId: runId,
+    workspacePath,
+    sessionKind: rt.sessionKind,
+    runKind: rt.runKind,
+  })
+
   // Publish the run-started lifecycle event once per launchRun, before the vendor
   // fork so it covers both the claude path below and the driver path (ADR-0018).
   // sessionId is the current runId (possibly a pending id); event-triggered
@@ -363,7 +373,7 @@ export async function launchRun(
         // vendor-unavailable early return below so the started→settled invariant holds.
         const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
         const error = `[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`
-        console.warn(`[sandbox] run hard-failed: ${error}`)
+        logRunFailure(runLogIdentity(), `sandbox:${uiCode}`, err)
         emit(runId, { type: 'user_text', text: prompt })
         emit(runId, { type: 'turn_end', reason: 'error', error })
         finalizeRun(runId)
@@ -396,7 +406,7 @@ export async function launchRun(
     if (vendor !== 'claude' && isResearch) {
       const error =
         '[c3] research session resolved to a non-claude agent — refusing to run without the read-only research gate.'
-      console.warn(error)
+      logRunFailure(runLogIdentity(), 'research-gate', error)
       emit(runId, { type: 'user_text', text: prompt })
       emit(runId, { type: 'turn_end', reason: 'error', error })
       finalizeRun(runId)
@@ -429,6 +439,7 @@ export async function launchRun(
           resolvedSpecReviewProfile,
         )
       const unavailable = `${vendor} is unavailable (its host CLI is missing or incompatible — install it to use a ${vendor} agent).`
+      logRunFailure(runLogIdentity(), `vendor-unavailable:${vendor}`, unavailable)
       emit(runId, { type: 'user_text', text: prompt })
       emit(runId, { type: 'turn_end', reason: 'error', error: unavailable })
       finalizeRun(runId)
@@ -811,6 +822,9 @@ export async function launchRun(
       justAdvanced = true
     }
   } catch (err) {
+    // 异常退出必须留下现场:此前这里只把消息发到线上,日志里什么都没有,一个抛
+    // 出来的 run 事后无从查起。消息 + stack 都打,再照旧把终态发给客户端。
+    logRunFailure(runLogIdentity(), 'launch', err)
     emit(runId, { type: 'turn_end', reason: 'error', error: errMsg(err) })
   } finally {
     if (rt.run) rt.run = null
@@ -837,6 +851,14 @@ export async function launchRun(
       failedAgents.length > 0 &&
       (hasDegradation || crossVendorSkipped.length > 0)
     if (exhausted) {
+      // 降级链走尽也是一次异常退出:把每个 agent 的失败原因整条记下来,否则日志里
+      // 只剩一条笼统的 `settled reason=error`,查不到是谁、因为什么失败的。
+      logRunFailure(
+        runLogIdentity(),
+        'chain-exhausted',
+        `all ${failedAgents.length} agent(s) failed: ` +
+          failedAgents.map((a) => `${a.agentId}=${a.error}`).join('; '),
+      )
       emit(runId, {
         type: 'all_agents_failed',
         agents: failedAgents,

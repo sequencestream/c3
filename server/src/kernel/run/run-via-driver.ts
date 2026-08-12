@@ -48,6 +48,7 @@ import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import { VENDOR_AUTH_PROFILES } from '../sandbox/vendor-auth.js'
 import { agentErrorEvent } from './agent-events.js'
+import { logRunFailure } from './run-log.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import {
   bindPending,
@@ -646,9 +647,19 @@ export async function runViaDriver(
   } catch (err) {
     settledReason = 'error'
     const message = errMsg(err)
-    console.error(
-      `[c3] ${adapter.vendor} driver run failed before settle ` +
-        `(session=${runId}, workspace=${workspacePath}): ${message}`,
+    // 与 launcher 路径同一套异常退出日志:消息 + stack。此前这里只打一行消息,
+    // 抛点在哪一层看不出来。
+    logRunFailure(
+      {
+        sessionId: runId,
+        workspacePath,
+        sessionKind: rt.sessionKind,
+        runKind: rt.runKind,
+        agentId,
+        vendor: adapter.vendor,
+      },
+      'driver',
+      err,
     )
     if (isDegradableError(message)) {
       const agent = resolveAgent(agentId)

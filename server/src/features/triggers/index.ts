@@ -61,17 +61,29 @@ export interface TriggerMatchResult {
 }
 
 /**
+ * 只在**显式白名单**下才参与自动化触发的会话场景。
+ *
+ * 一次性 advisor 调用(共识投票、判定、编排者笔记)也会发 run 生命周期事件,好让
+ * 它们在日志与审计里可见;但它们的频次远高于用户可见的 run,且几乎从不是用户想
+ * 触发自动化的那种「run」。若让它们落进「空过滤器 = 所有场景」的默认语义,一个既
+ * 有的 `run:settled` 订阅会突然被每一次投票唤醒。因此这类场景反过来:必须由
+ * `eventSessionKindFilter` 点名,才会参与匹配。
+ */
+const OPT_IN_ONLY_SESSION_KINDS: readonly SessionKind[] = ['tool']
+
+/**
  * Pure evaluator: does `view` match any of `automation`'s subscription rows? When
  * any row subscribes a run-lifecycle type (`run:started` / `run:settled` /
  * `run:*`) AND the automation has a NON-EMPTY `eventSessionKindFilter`, it FIRST
  * applies that filter as an exact whitelist — an event whose `sessionKind` is not
  * in it (or that carries no session origin) fails — then the shared generic match
  * (any row: workspace + type + status + metadata). An absent/empty filter means
- * "every session kind" and skips the sessionKind dimension entirely. For every
- * other type only the generic match runs (a PR / intent event carries no
- * sessionKind). The breakdown reports the sessionKind dimension (only when a
- * non-empty filter applied) followed by the generic dimensions of the matching
- * (or last evaluated) row under their vendor-neutral names.
+ * "every session kind" and skips the sessionKind dimension entirely, EXCEPT for
+ * the opt-in-only kinds in {@link OPT_IN_ONLY_SESSION_KINDS}, which an empty
+ * filter never matches. For every other type only the generic match runs (a PR /
+ * intent event carries no sessionKind). The breakdown reports the sessionKind
+ * dimension (only when it applied) followed by the generic dimensions of the
+ * matching (or last evaluated) row under their vendor-neutral names.
  */
 export function evaluateAutomationTriggerMatch(
   automation: Automation,
@@ -81,12 +93,17 @@ export function evaluateAutomationTriggerMatch(
   const breakdown: TriggerMatchBreakdownItem[] = []
 
   const skf = automation.eventSessionKindFilter
+  const isRunLifecycle = hasRunLifecycleEventFilter(filters) && view.event.type.startsWith('run:')
+  const whitelist = skf && skf.length > 0 ? skf : null
   if (
-    hasRunLifecycleEventFilter(filters) &&
-    view.event.type.startsWith('run:') &&
-    !!skf &&
-    skf.length > 0
+    isRunLifecycle &&
+    !whitelist &&
+    !!view.sessionKind &&
+    OPT_IN_ONLY_SESSION_KINDS.includes(view.sessionKind)
   ) {
+    // 空过滤器对这些场景不再意味着「全都要」—— 没点名就是不匹配。
+    breakdown.push({ name: 'sessionKind', passed: false })
+  } else if (isRunLifecycle && whitelist) {
     // The sessionKind filter is optional: an absent/empty filter means "every
     // session kind" and skips this dimension entirely (including events with no
     // session origin). Only a NON-EMPTY filter is enforced, as an exact
@@ -98,7 +115,7 @@ export function evaluateAutomationTriggerMatch(
     // same automation is matched by its own non-run row and carries no sessionKind.
     breakdown.push({
       name: 'sessionKind',
-      passed: !!view.sessionKind && skf.includes(view.sessionKind),
+      passed: !!view.sessionKind && whitelist.includes(view.sessionKind),
     })
   }
 

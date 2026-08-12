@@ -20,6 +20,7 @@ import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getAgentLangName } from '../../kernel/config/index.js'
 import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 import { addToolSession } from '../../sessions.js'
+import { beginInternalRun } from '../../kernel/run/internal-run.js'
 
 /**
  * This module's SessionKind: title/name derivation is an internal, socket-less
@@ -97,6 +98,13 @@ const defaultInvokeLlm: InvokeLlm = async (prompt, context) => {
   // Name derivation is a background tool session ⇒ run on the configured tool
   // agent's model/provider env (falls back to the default agent when unset).
   const launch = resolveToolSessionLaunch()
+  // 标题生成同样是一次 run,启动/退出照样记账。它可能没有工作区(创建自动化时还
+  // 没绑定),那种情况下只留日志、不发事件。
+  const runRecord = beginInternalRun({
+    sessionKind: 'tool',
+    workspacePath: context?.workspacePath ?? '',
+    agentId: launch.agentId,
+  })
   try {
     const q = query({
       prompt,
@@ -117,6 +125,7 @@ const defaultInvokeLlm: InvokeLlm = async (prompt, context) => {
         const sid = (m as { session_id?: unknown }).session_id
         if (typeof sid === 'string' && sid) {
           sessionId = sid
+          runRecord.bind(sid)
           if (context?.workspacePath) {
             addToolSession(sid, {
               workspacePath: context.workspacePath,
@@ -142,7 +151,13 @@ const defaultInvokeLlm: InvokeLlm = async (prompt, context) => {
         break
       }
     }
+    runRecord.settle(abort.signal.aborted ? 'aborted' : 'complete')
     return text
+  } catch (err) {
+    // 标题生成失败会被上层兜底成默认名,但异常本身必须留痕,否则「为什么名字总
+    // 是兜底值」永远查不出来。
+    runRecord.fail('naming', err)
+    throw err
   } finally {
     clearTimeout(timer)
   }

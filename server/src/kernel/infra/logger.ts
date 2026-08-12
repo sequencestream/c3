@@ -19,6 +19,9 @@
  * logging subsystem must never crash the main process (and must never go
  * silent). All disk work is synchronous (`appendFileSync`), so a write is
  * durable on return and shutdown needs only to restore the original streams.
+ *
+ * 时间戳前缀与文件落盘是**两件独立的事**:日志目录建不出来时文件日志关闭,但两个
+ * 流的按行时间戳前缀照装不误 —— 「每行日志都带时间」不该因为磁盘不可写而消失。
  */
 import {
   appendFileSync,
@@ -290,24 +293,33 @@ function makeTee(original: WriteFn, stream: NodeJS.WriteStream): WriteFn {
  */
 export function initLogging(): void {
   if (installed) return
-  let logDir: string
-  try {
-    logDir = join(c3HomeDir(), 'log')
-    mkdirSync(logDir, { recursive: true })
-  } catch (err) {
-    warnInternal(`failed to create log dir, file logging disabled: ${String(err)}`)
-    return
-  }
+  // 时间戳前缀与文件落盘是两件事,前者不能被后者拖下水:日志目录建不出来时,文件
+  // 日志降级为关闭,但终端输出**仍然**要带时间戳 —— 「每行日志都有时间」是无条件
+  // 的,不该因为磁盘不可写就整体消失。
+  const logDir = ((): string | null => {
+    try {
+      const dir = join(c3HomeDir(), 'log')
+      mkdirSync(dir, { recursive: true })
+      return dir
+    } catch (err) {
+      warnInternal(
+        `failed to create log dir, file logging disabled (timestamps stay on): ${String(err)}`,
+      )
+      return null
+    }
+  })()
 
   const now = new Date()
-  activeLogDir = logDir
-  try {
-    activeDateKey = startupArchive(logDir, now)
-  } catch (err) {
-    warnInternal(`startup archive failed: ${String(err)}`)
-    activeDateKey = localDateKey(now)
+  if (logDir) {
+    activeLogDir = logDir
+    try {
+      activeDateKey = startupArchive(logDir, now)
+    } catch (err) {
+      warnInternal(`startup archive failed: ${String(err)}`)
+      activeDateKey = localDateKey(now)
+    }
+    cleanupOldArchives(logDir, now)
   }
-  cleanupOldArchives(logDir, now)
 
   origStdoutWrite = process.stdout.write.bind(process.stdout)
   origStderrWrite = process.stderr.write.bind(process.stderr)
@@ -315,6 +327,8 @@ export function initLogging(): void {
   process.stderr.write = makeTee(origStderrWrite, process.stderr)
   installed = true
 
+  // 边界计时器只为归档服务,没有文件日志就不需要它。
+  if (!logDir) return
   boundaryTimer = setInterval(() => {
     if (!activeLogDir || activeDateKey === null) return
     const tick = new Date()

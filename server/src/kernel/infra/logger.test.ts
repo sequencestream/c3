@@ -286,4 +286,31 @@ describe('error paths — best-effort, no crash', () => {
 
     expect(warnings.join('')).toContain('[c3][logger]')
   })
+
+  it('keeps the timestamp prefix on terminal output even with file logging disabled', () => {
+    process.env.C3_DIR = dir
+    // 同样用一个文件占住日志目录路径,让 mkdir 失败 ⇒ 文件日志关闭。
+    writeFileSync(join(dir, 'log'), 'i am a file, not a dir')
+
+    const captured: string[] = []
+    const realWrite = process.stdout.write.bind(process.stdout)
+    const realErr = process.stderr.write.bind(process.stderr)
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      captured.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    process.stderr.write = (() => true) as typeof process.stderr.write
+    try {
+      initLogging()
+      process.stdout.write('no-disk-but-timestamped\n')
+    } finally {
+      shutdownLogging()
+      process.stdout.write = realWrite
+      process.stderr.write = realErr
+    }
+
+    expect(captured.join('')).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} no-disk-but-timestamped\n$/,
+    )
+  })
 })

@@ -7,34 +7,28 @@
  *   `sandbox.sessionRetentionDays` never back-fills the global block
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import {
-  loadSettings,
-  getSessionCleanup,
-  setSettingsPath,
-  resetSettingsCacheForTests,
-} from './index.js'
+import { loadSettings, getSessionCleanup } from './index.js'
+import { releaseConfigDb, seedSystemSettings, useConfigDb } from './config-fixture.js'
 import type { SystemSettings } from '@ccc/shared/protocol'
 
 let tmpDir: string
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'c3-session-cleanup-test-'))
+  useConfigDb(tmpDir)
 })
 
 afterEach(() => {
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(tmpDir, { recursive: true, force: true })
 })
 
-/** Write a settings.json carrying `raw` and load it back normalized. */
+/** Store `raw` as the whole settings record and load it back normalized. */
 function loadWith(raw: Record<string, unknown>): SystemSettings {
-  const file = join(tmpDir, 'settings.json')
-  writeFileSync(file, JSON.stringify(raw))
-  setSettingsPath(file)
-  resetSettingsCacheForTests()
+  seedSystemSettings(raw)
   return loadSettings()
 }
 

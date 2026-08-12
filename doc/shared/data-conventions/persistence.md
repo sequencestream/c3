@@ -1,77 +1,51 @@
-# settings: 持久化（唯一写入路径 + 双层锁）
+# 配置持久化
 
-> 2026-06-08-003 引入。`~/.c3/settings.json` 的全部写入收敛到一个并发安全的公共写入路径，
-> 根治三类 bug：进程内丢更新、跨进程覆盖、覆盖式清空（“重启后项目配置消失”）。
+配置存在 `c3.db` 的 config 模块表中,一字段一行。表结构与展开规则见
+[database/tables.md](../../../database/tables.md) § config。
 
-## 唯一写入路径
+## 作用域即写入边界
 
-`settings.json` 的所有写入必须经过统一的锁包装写入路径，不得再各自直接原子写 `settings.json`。
-当前三个写入点：
+每类配置有自己的作用域,一次写入只触及一个作用域:
 
-| 写入点                 | 行为                                                               |
-| ---------------------- | ------------------------------------------------------------------ |
-| 系统配置整体保存       | agent/语言/时区等的整体保存                                        |
-| 单工作区设置写入       | 单个工作区设置写入                                                 |
-| 工作区设置迁移回写分支 | 旧全局默认值一次性 seed 到 per-project（经整体保存路径，非嵌套锁） |
+- 系统设置 → `system_configs`
+- 每工作区设置 → `workspace_configs`,按 `workspaces.id` 分组
+- 每账号个性化设置 → `personalized_configs`,按已验证身份分组
+- 每会话事实 (agent 绑定 / 权限模式 / codex 策略) → `session_configs`
+- MCP 密钥 → `mcp_api_keys`,按密钥 id 分组
 
-> `state.json`（ADR-0015 的 session→agent 绑定）是独立文件、单进程语义，**不**纳入此锁，
-> 仅共用同一套原子写工具。
+因此保存一个工作区的设置不可能改到系统设置或另一个工作区,保存系统设置也不可能抹掉个性化设置
+或 MCP 密钥——写入方无需"记得带上"它并不拥有的字段,存储层本身就不给它这个机会。
 
-## 双层锁模型
+`system_configs` 另有两个不属于 `SystemSettings` 的键空间:`state.*` (活动会话、skill 挂载索引
+与 ack) 与 `agentLang`。整体保存系统设置时以 `preservePrefixes` 保护它们。
 
-1. **进程内串行**：整条 settings 写链路是同步代码、无切点，JS 单线程同步执行已天然
-   串行化本进程写入（强于 async mutex）。仍统一收口到单一入口，使该不变量是结构性的、非偶然的。
-2. **跨进程文件锁**：基于原子目录创建的目录锁（`${file}.lock/`，零依赖、跨平台）。
-   不带递归的目录创建在目录已存在时抛出已存在错误，即原子 test-and-set，守护
-   多个 c3 实例进程对同一文件的 read-modify-write **序列**。
+## 原子性
 
-## 写前持锁重读磁盘（不信任内存缓存）
+写入在 SQLite 事务内完成 (`configTx`,可重入),数据库以 `journal_mode=WAL` +
+`busy_timeout=3000` 打开。多个 c3 实例指向同一文件时,事务与 WAL 即是跨进程保证。
 
-每次写入：**持锁 → 重读磁盘原始内容（绕过内存缓存，磁盘为权威）→ 合并 → normalize →
-原子写 → 用写盘结果刷新内存缓存 → 释放锁**。
-内存缓存可能因别进程刚落盘而陈旧，因此写入绝不以缓存为基准合并。
+整体保存系统设置前先重读存储 (而非内存缓存) 并合并未携带的字段,使一次保存不会回退另一个实例
+刚写入的值。
 
-## 合并而非覆盖（save_settings 不得清空项目级配置）
+## 缓存
 
-写入时对**未携带**的字段保留磁盘已有值：
+读路径带进程内缓存 (`loadSettings` / 个性化 / MCP 密钥 / 会话状态各一份),由本进程的写入刷新。
+缓存不跨进程失效:另一个实例的写入要到下次重建缓存时才可见。
 
-- `projectConfigs`：整体保存中 `undefined ⇒ 保留磁盘整张表`；显式传入 ⇒ 逐项浅合并
-  （别进程新增的项目存活，显式项覆盖）。单工作区设置写入只写入目标路径单键，兄弟项目
-  （含别进程刚加的）原样保留。
-- `degradationChain` / `socketAutoResume`：`undefined ⇒ 保留磁盘；显式 ⇒ 用传入值`。
+## agent apiKey 落盘加密
 
-这是杜绝 `save_settings` 清空项目配置的服务端硬规则。**第二层防御在前端**：设置面板
-重建 draft 时保留全部服务端字段（含 `projectConfigs`/`degradationChain`/`socketAutoResume`），
-保存不丢字段。
+`config_type='secret'` 的行在磁盘上是密文,读出即解密——**内存恒明文、磁盘恒密文**。适用于
+agent 的 `config.apiKey`、auth 账号口令哈希与 MCP 密钥摘要。加解密由 codec 在编解码时完成,
+调用方看到的始终是明文。
 
-## agent apiKey 落盘加密(磁盘边界对称加解密)
-
-agent 的 `apiKey`(claude/codex 的 `config.apiKey`)在**磁盘边界**做对称加解密,使
-**内存缓存恒为明文、磁盘恒为密文**:
-
-- **读路径(解密)**:`loadSettings` 与 `readSettingsFromDisk`(持锁重读)在 `JSON.parse`
-  之后、`normalize` 之前调用 `decryptAgentApiKeys` 原地解密 → 缓存与运行时(`launchForAgent`
-  注入 `ANTHROPIC_API_KEY` 等)始终拿原始明文。
-- **写路径(加密)**:`saveSettings` 与单工作区设置写入,在 `normalize` 之后、原子写之前,
-  对写盘对象副本调用 `encryptAgentApiKeys`(非空 `apiKey` → 密文,空键不动);内存缓存
-  仍存明文的 normalize 结果。两条写路径都加密,因为单工作区设置写入会重读磁盘(密文)
-  经 normalize 后刷新缓存,若不在该路径加解密会把密文污染进缓存。
-- 密文格式 `c3secretvN:base64url(IV‖密文‖tag)`、多版本约定、懒迁移、混淆级强度等详见
-  `doc/non-functional/security.md` § Agent apiKey at-rest encryption(SEC-13);原语在
-  `server/src/kernel/config/encryption.ts`。
-
-## 锁健壮性
-
-- **超时**（默认 5s）、退避（默认 25ms，用同步等待原语 sleep，不空转 CPU）。
-- **陈旧锁回收**：持锁方崩溃残留的锁，按锁内元数据时间戳（或目录修改时间）判定超过
-  陈旧阈值（默认 30s）即回收后重试。
-- **降级兜底（绝不静默丢写）**：拿锁超时 ⇒ 大声告警并**仍执行写入**
-  （best-effort），仅退化跨进程原子保证，不丢数据；且不删除别进程持有的锁。
+密文格式 `c3secretvN:base64url(IV‖密文‖tag)`、多版本约定、懒迁移与混淆级强度见
+[security](../../non-functional/security.md) § Agent apiKey at-rest encryption;原语在
+`server/src/kernel/config/encryption.ts`。
 
 ## 不变量
 
-- settings.json 任一写入都经统一锁包装；不存在绕过锁的 settings.json 直写。
-- 写入以磁盘为权威重读合并，不以陈旧内存缓存为基准。
-- 未携带字段保留磁盘值；`save_settings` 永不清空 `projectConfigs`。
-- 拿锁失败不静默丢写。
-- agent `apiKey` 内存缓存恒明文、磁盘恒密文：读路径 normalize 前解密,两条写路径原子写前加密。
+- 配置读写一律经 `config-store.ts` 的作用域原语,不直接写 SQL。
+- 一次写入只触及本作用域;未携带的键在其它作用域里不受影响。
+- 整体保存以存储为权威重读合并,不以陈旧缓存为基准。
+- `secret` 行永不以明文落库。
+- 数据库不可用时读退化为默认值、写抛错,不静默丢写。

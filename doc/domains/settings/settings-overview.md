@@ -22,11 +22,11 @@
 ## 组级共享上下文
 
 - 共用 [`shared/api-conventions/websocket-protocol.md`](../../shared/api-conventions/websocket-protocol.md) 的 wire 协议(`get_settings`、`save_settings`、`settings`、`load_workspace_setting`、`save_workspace_setting`、`workspace_setting`、`get_personalized_settings`、`save_personalized_settings`、`personalized_settings`)。
-- 默认持久化到 `~/.c3/settings.json`。路径可为隔离启动(如 e2e)经 `c3 start --settings <path>` CLI 覆盖——它指定具体 settings.json 文件,其目录同时存 `state.json`,整体迁移配置目录而不动真实 `~/.c3`(`C3_DIR` 环境变量亦可迁移目录)。按工作区配置存于 `projectConfigs` 键(工作区路径 → workspace-setting 映射)。
-- **所有写入走单一、并发安全的写路径**:进程内串行化 + 跨进程文件锁,写时磁盘重读并 merge-not-overwrite,故 `save_settings` 绝不抹掉按项目配置或按账户的个人化映射。见 [persistence](../../shared/data-conventions/persistence.md)。
-- 按账户个人化偏好存于 `personalizedSettings` 顶层键(subject → 偏好),是 `SystemSettings` 的兄弟键而非字段,故不进系统设置快照。
-- 外部 MCP 的长期 API key 存于 `mcpApiKeys` 顶层键,同样是 `SystemSettings` 的兄弟键而非字段。这不只是布局:整对象 `save_settings` 因此既不携带也无法注入/读出其哈希,进出只有专用的管理员操作。见 [system-setting](system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
-- 与 session-registry 的 `state.json`(`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`)相互独立。
+- 持久化到 `c3.db` 的配置表,一字段一行。隔离启动(如 e2e)用 `c3 start --db <path>` 指定数据库——它同时决定 c3 主目录,整体迁移实例而不动真实 `~/.c3`。
+- 每类设置有自己的作用域表(系统 / 每工作区 / 每账号 / 每会话 / MCP 密钥),一次写入只触及一个作用域,故 `save_settings` 在存储层就不可能抹掉工作区配置、个人化偏好或 MCP 密钥。见 [persistence](../../shared/data-conventions/persistence.md)。
+- 每工作区配置按 `workspaces.id` 分组;协议上仍以 `projectConfigs`(工作区路径 → workspace-setting 映射)呈现。
+- 外部 MCP 的长期 API key 独立成表,整对象 `save_settings` 既不携带也无法注入/读出其哈希,进出只有专用的管理员操作。见 [system-setting](system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
+- 工作区注册表(id ↔ 路径)与会话绑定同在此库,见 [session-registry](../core/session-registry/session-registry-spec.md)。
 
 ## 依赖方向
 

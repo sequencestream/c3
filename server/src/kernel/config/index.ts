@@ -1,34 +1,50 @@
 /**
  * System configuration store + reads (server refactor 3/3, ADR-0009 — sunk from
- * the old root `settings.ts`). Persisted under `~/.c3/`:
- *   1. `settings.json` — the agent registry + which agent is the default.
- *   2. `state.json`    — the two-key session→agent binding space (ADR-0015):
- *      a mutable `pendingIntents` map (pending session → desired agent, before a
- *      run binds it) and the `sessionAgents` *facts* (real SDK id → the agent that
- *      actually ran + its **frozen vendor**). c3 never stores any session content;
- *      the vendor is the immutable half of a fact because a session's transcript
- *      lives only in that vendor's native store.
+ * the old root `settings.ts`). Persisted in `c3.db` (kernel/config/config-store.ts):
+ *   1. `system_configs` / `workspace_configs` — the agent registry, which agent is
+ *      the default, and every per-workspace knob, one row per field.
+ *   2. `session_configs` — the two-key session→agent binding space (ADR-0015):
+ *      mutable pending intents (pending session → desired agent, before a run binds
+ *      it) and the *facts* (real SDK id → the agent that actually ran + its **frozen
+ *      vendor**). c3 never stores any session content; the vendor is the immutable
+ *      half of a fact because a session's transcript lives only in that vendor's
+ *      native store.
  *
- * This module owns the persistence mechanics (atomic write, in-memory caches),
- * the whole-settings `normalize`, and the *config-flavoured* reads (timezone,
- * ui-lang, dev-skill, round/speech caps, consensus/auto-resume switches). The
- * *agent-flavoured* reads (resolve agent / launch overrides / degradation chain)
- * live in `kernel/agent-config`, which imports `loadSettings` from here. The
- * pure agent-shape normalizers it shares with `normalize` come from
- * `agent-config/normalize` (a leaf), so there is no import cycle.
+ * This module owns the whole-settings `normalize`, the in-memory caches, and the
+ * *config-flavoured* reads (timezone, ui-lang, dev-skill, round/speech caps,
+ * consensus/auto-resume switches). The *agent-flavoured* reads (resolve agent /
+ * launch overrides / degradation chain) live in `kernel/agent-config`, which imports
+ * `loadSettings` from here. The pure agent-shape normalizers it shares with
+ * `normalize` come from `agent-config/normalize` (a leaf), so there is no import cycle.
  *
- * Both files are written atomically; on any read/parse error we fall back to a
+ * Writes are transactional and field-grained; on any read error we fall back to a
  * clean default (system agent only) so c3 still boots.
  */
-import { readFileSync } from 'node:fs'
 import { z } from 'zod'
-import { readJsonFile, withFileLock, writeAtomic } from './store.js'
+import { c3HomeDir, setSettingsPath as setSettingsPathOverride } from './paths.js'
+import { fromEntries, toEntries, type ConfigEntry } from './config-codec.js'
 import {
-  c3HomeDir,
-  setSettingsPath as setSettingsPathOverride,
-  settingsFile,
-  stateFile,
-} from './paths.js'
+  AGENT_LANG_KEY,
+  SESSION_KEYS,
+  STATE_PREFIX,
+  SYSTEM_RULES,
+  WORKSPACE_RULES,
+} from './config-schema.js'
+import {
+  configTx,
+  deleteKeys,
+  deleteScope,
+  listScopeOwners,
+  readAllScopes,
+  readScope,
+  writeScope,
+} from './config-store.js'
+import {
+  ensureWorkspaceId,
+  findWorkspaceById,
+  findWorkspaceByPath,
+  listAllWorkspaceRows,
+} from './workspace-store.js'
 import type {
   AgentConfig,
   ClaudeAgentConfig,
@@ -61,13 +77,8 @@ import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
 import { DEFAULT_SESSION_RETENTION_DAYS, MIN_SESSION_RETENTION_DAYS } from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
-import {
-  DEFAULT_UI_LANG,
-  getAgentLang,
-  personalizedFileKeys,
-  resetPersonalizedCache,
-} from './personalized.js'
-import { mcpApiKeyFileKeys, resetMcpApiKeyCache } from './mcp-api-keys.js'
+import { DEFAULT_UI_LANG, getAgentLang, resetPersonalizedCache } from './personalized.js'
+import { resetMcpApiKeyCache } from './mcp-api-keys.js'
 import { isKnownToken } from '../agent/adapters/mode-catalog.js'
 import { claudeModeCatalog } from '../agent/adapters/claude/modes.js'
 import { codexModeCatalog } from '../agent/adapters/codex/modes.js'
@@ -328,9 +339,11 @@ interface SessionAgentState {
 }
 
 /**
- * Point every subsequent load/save at another settings.json (CLI `--settings
- * <path>`; the cli's `start` action calls this). Every cache keyed to the old path
- * is dropped, so a relocation mid-process cannot serve stale values.
+ * Point the legacy import at another settings.json (the deprecated CLI `--settings
+ * <path>`; the cli's `start` action calls this). Configuration itself lives in the
+ * database, so this only decides which file the one-shot import reads — but every
+ * cache is still dropped, because relocating the home dir mid-process must not serve
+ * values loaded from the previous one.
  */
 export function setSettingsPath(path: string): void {
   setSettingsPathOverride(path)
@@ -920,30 +933,27 @@ export function loadWorkspaceSetting(workspacePath: string): WorkspaceSetting {
 }
 
 /**
- * Save a project's configuration. Returns the normalized result. Goes through the
- * single locked write path (2026-06-08-003): hold the cross-process lock, re-read
- * the *disk* (NOT the possibly-stale `settingsCache`), set only this project's key
- * (sibling projects — including ones another c3 instance just added — survive),
- * normalize, atomic-write, refresh the cache. Does NOT call {@link saveSettings}:
- * the directory lock is non-reentrant, so a nested acquire would self-deadlock.
+ * Save a project's configuration. Returns the normalized result. Writes ONLY this
+ * workspace's own rows: sibling workspaces, the system settings, personalized
+ * settings and MCP keys are all separate scopes now, so none of them can be
+ * collaterally rewritten (or erased) by a workspace save.
  */
 export function saveWorkspaceSetting(
   workspacePath: string,
   cfg: WorkspaceSetting,
 ): WorkspaceSetting {
   const normalized = normalizeWorkspaceSetting(cfg, loadSettings().agents)
-  withFileLock(settingsFile(), () => {
-    const disk = readSettingsFromDisk()
-    const configs = { ...(disk?.projectConfigs ?? {}), [workspacePath]: normalized }
-    const mergedSettings = normalize({ ...(disk ?? {}), projectConfigs: configs })
-    try {
-      // Encrypt apiKeys for disk only; the cache keeps the plaintext `mergedSettings`.
-      writeAtomic(settingsFile(), encryptAgentApiKeys(mergedSettings))
-      settingsCache = mergedSettings
-    } catch (err) {
-      console.error('[c3] failed to persist project config:', err)
+  try {
+    writeWorkspaceScope(workspacePath, normalized)
+    if (settingsCache) {
+      settingsCache = {
+        ...settingsCache,
+        projectConfigs: { ...(settingsCache.projectConfigs ?? {}), [workspacePath]: normalized },
+      }
     }
-  })
+  } catch (err) {
+    console.error('[c3] failed to persist project config:', err)
+  }
   return normalized
 }
 
@@ -983,30 +993,46 @@ function normalizeDevSkill(raw: unknown): string {
 export function loadSettings(): SystemSettings {
   if (settingsCache) return settingsCache
   try {
-    const raw = JSON.parse(readFileSync(settingsFile(), 'utf-8')) as Partial<SystemSettings>
-    // Decrypt at-rest agent apiKeys back to plaintext before normalize, so the
-    // in-memory cache (and thus launchForAgent's env injection) always sees the
-    // original key. Legacy (no-prefix) keys pass through untouched.
-    decryptAgentApiKeys(raw)
-    settingsCache = normalize(raw)
-  } catch {
+    settingsCache = normalize(readSettingsFromDb())
+  } catch (err) {
+    console.error('[c3] 系统配置读取失败,本次使用默认配置:', err)
     settingsCache = defaultSettings()
   }
   return settingsCache
 }
 
 /**
- * Read the on-disk settings raw (cache-bypassing). This is the authoritative source
- * inside a write lock — the in-memory {@link settingsCache} may be stale relative to
- * another c3 instance that wrote since this process last loaded.
+ * Assemble the stored settings from their rows (cache-bypassing). `projectConfigs` is
+ * rebuilt from `workspace_configs` keyed back by workspace path, so the shape callers
+ * (and the web console) see is exactly the one the single JSON document had — the
+ * split into per-workspace scopes is a storage fact, not a contract change.
+ *
+ * The `state.*` namespace and `agentLang` share the system scope but are NOT part of
+ * `SystemSettings`; they are dropped here and preserved on write.
  */
-function readSettingsFromDisk(): Partial<SystemSettings> | undefined {
-  const raw = readJsonFile<Partial<SystemSettings>>(settingsFile())
-  // Same plaintext invariant as loadSettings: decrypt before any merge/normalize so
-  // a re-read inside a write lock (saveSettings / saveWorkspaceSetting) round-trips
-  // plaintext through the cache and re-encrypts on write — never caches ciphertext.
-  if (raw) decryptAgentApiKeys(raw)
+function readSettingsFromDb(): Partial<SystemSettings> {
+  const rows = readScope({ kind: 'system' }).filter(
+    (e) =>
+      e.key !== AGENT_LANG_KEY && e.key !== STATE_PREFIX && !e.key.startsWith(`${STATE_PREFIX}.`),
+  )
+  const raw = fromEntries(rows, SYSTEM_RULES) as Partial<SystemSettings>
+  const projectConfigs = readProjectConfigsFromDb()
+  if (Object.keys(projectConfigs).length > 0) raw.projectConfigs = projectConfigs
   return raw
+}
+
+/** Every workspace's stored configuration, keyed by workspace path. */
+function readProjectConfigsFromDb(): Record<string, WorkspaceSetting> {
+  const byId = new Map(listAllWorkspaceRows().map((w) => [w.id, w.path]))
+  const out: Record<string, WorkspaceSetting> = {}
+  for (const [workspaceId, entries] of readAllScopes('workspace')) {
+    const path = byId.get(workspaceId)
+    // A scope whose workspace row is gone can no longer be addressed by path; it is
+    // left in place (harmless, and the row may come back) rather than surfaced.
+    if (!path || entries.length === 0) continue
+    out[path] = fromEntries(entries, WORKSPACE_RULES) as WorkspaceSetting
+  }
+  return out
 }
 
 /**
@@ -1046,35 +1072,42 @@ function mergeSettingsOverDisk(
 }
 
 /**
- * Validate + persist new settings; returns the normalized result. Goes through the
- * single locked write path (2026-06-08-003): hold the cross-process lock, re-read
- * the *disk* (authoritative — not the possibly-stale cache), merge over it preserving
- * uncarried fields (see {@link mergeSettingsOverDisk}), normalize, atomic-write,
- * refresh the cache.
+ * Validate + persist new settings; returns the normalized result. One transaction:
+ * re-read the stored rows (authoritative — not the possibly-stale cache), merge over
+ * them preserving uncarried fields (see {@link mergeSettingsOverDisk}), normalize, and
+ * write the system rows plus any workspace scope the caller carried.
+ *
+ * Personalized settings, MCP keys and the `state.*` namespace live in their own scopes
+ * (or, for `state.*`, behind a preserved prefix), so a whole-object system save can no
+ * longer touch them — the re-attach dance the single JSON document needed is gone.
  */
 export function saveSettings(next: SystemSettings): SystemSettings {
-  return withFileLock(settingsFile(), () => {
-    const disk = readSettingsFromDisk()
-    const merged = mergeSettingsOverDisk(disk, next)
-    const normalized = normalize(merged)
-    try {
-      // Encrypt apiKeys for disk only; the cache keeps the plaintext `normalized`
-      // so the runtime (launchForAgent env injection) always reads the real key.
-      // The personalized-settings and external-MCP-key collections are siblings of
-      // SystemSettings and never travel in a system-settings snapshot, so re-attach
-      // the disk copy — a whole-object save must not wipe another settings class,
-      // and (for the keys) must not be able to inject or read back hash material.
-      writeAtomic(settingsFile(), {
-        ...encryptAgentApiKeys(normalized),
-        ...personalizedFileKeys(disk),
-        ...mcpApiKeyFileKeys(disk),
+  const stored = readSettingsFromDb()
+  const normalized = normalize(mergeSettingsOverDisk(stored, next))
+  try {
+    configTx(() => {
+      // apiKeys are encrypted by the codec's `secret` rule; the cache keeps the
+      // plaintext `normalized` so the runtime (launchForAgent env injection) always
+      // reads the real key.
+      const { projectConfigs, ...system } = normalized
+      writeScope({ kind: 'system' }, toEntries(system, SYSTEM_RULES), {
+        preservePrefixes: [STATE_PREFIX, AGENT_LANG_KEY],
       })
-      settingsCache = normalized
-    } catch (err) {
-      console.error('[c3] failed to persist settings:', err)
-    }
-    return settingsCache ?? normalized
-  })
+      for (const [path, cfg] of Object.entries(projectConfigs ?? {})) {
+        writeWorkspaceScope(path, cfg)
+      }
+    })
+    settingsCache = normalized
+  } catch (err) {
+    console.error('[c3] failed to persist settings:', err)
+  }
+  return settingsCache ?? normalized
+}
+
+/** Write one workspace's configuration rows, creating its id row when needed. */
+function writeWorkspaceScope(workspacePath: string, cfg: WorkspaceSetting): void {
+  const workspaceId = ensureWorkspaceId(workspacePath, Date.now())
+  writeScope({ kind: 'workspace', owner: workspaceId }, toEntries(cfg, WORKSPACE_RULES))
 }
 
 export function getVendorCliVersions(): Partial<Record<VendorId, string>> {
@@ -1199,20 +1232,85 @@ function migrateState(raw: unknown, now: number): SessionAgentState {
   return { version: 2, pendingIntents, sessionAgents }
 }
 
+/**
+ * The binding space, assembled from `session_configs` (one scope per session id) and
+ * cached in memory. A scope carrying `pendingCreatedAt` is an intent; one carrying a
+ * vendor is a fact. Rows this module does not own (a session's permission mode, its
+ * codex policy) share the scope and are left alone.
+ */
 function loadState(): SessionAgentState {
   if (stateCache) return stateCache
+  const state: SessionAgentState = { version: 2, pendingIntents: {}, sessionAgents: {} }
   try {
-    const raw = JSON.parse(readFileSync(stateFile(), 'utf-8'))
-    stateCache = migrateState(raw, Date.now())
-  } catch {
-    stateCache = { version: 2, pendingIntents: {}, sessionAgents: {} }
+    for (const [sessionId, entries] of readAllScopes('session')) {
+      const row = Object.fromEntries(entries.map((e) => [e.key, e.value]))
+      const agentId = row[SESSION_KEYS.agentId]
+      if (!agentId) continue
+      const createdAt = row[SESSION_KEYS.pendingCreatedAt]
+      if (createdAt !== undefined && createdAt !== null) {
+        state.pendingIntents[sessionId] = { agentId, createdAt: Number(createdAt) || 0 }
+        continue
+      }
+      const vendor = row[SESSION_KEYS.vendor]
+      if (!isVendorId(vendor)) continue
+      const storeScope = row[SESSION_KEYS.storeScope]
+      const groupCursor = row[SESSION_KEYS.groupCursor]
+      state.sessionAgents[sessionId] = {
+        agentId,
+        vendor,
+        ...(storeScope === 'host' || storeScope === 'sandbox' ? { storeScope } : {}),
+        ...(groupCursor ? { groupCursor } : {}),
+      }
+    }
+  } catch (err) {
+    console.error('[c3] 会话绑定状态读取失败,本次按空状态处理:', err)
   }
+  stateCache = state
   return stateCache
 }
 
-function persistState(): void {
+/** Persist one session's fact (or intent) — only the rows this module owns. */
+function persistSession(sessionId: string): void {
+  const state = loadState()
+  const fact = state.sessionAgents[sessionId]
+  const intent = state.pendingIntents[sessionId]
+  const entries: ConfigEntry[] = []
+  const drop: string[] = []
+  if (fact) {
+    entries.push({ key: SESSION_KEYS.agentId, value: fact.agentId, type: 'string' })
+    entries.push({ key: SESSION_KEYS.vendor, value: fact.vendor, type: 'string' })
+    if (fact.storeScope)
+      entries.push({ key: SESSION_KEYS.storeScope, value: fact.storeScope, type: 'string' })
+    else drop.push(SESSION_KEYS.storeScope)
+    if (fact.groupCursor)
+      entries.push({ key: SESSION_KEYS.groupCursor, value: fact.groupCursor, type: 'string' })
+    else drop.push(SESSION_KEYS.groupCursor)
+    drop.push(SESSION_KEYS.pendingCreatedAt)
+  } else if (intent) {
+    entries.push({ key: SESSION_KEYS.agentId, value: intent.agentId, type: 'string' })
+    entries.push({
+      key: SESSION_KEYS.pendingCreatedAt,
+      value: String(intent.createdAt),
+      type: 'number',
+    })
+    drop.push(SESSION_KEYS.vendor, SESSION_KEYS.storeScope, SESSION_KEYS.groupCursor)
+  } else {
+    // Neither space holds it anymore: drop the binding rows but keep the session's
+    // own settings (mode, codex policy), which are not this module's to delete.
+    drop.push(
+      SESSION_KEYS.agentId,
+      SESSION_KEYS.vendor,
+      SESSION_KEYS.storeScope,
+      SESSION_KEYS.groupCursor,
+      SESSION_KEYS.pendingCreatedAt,
+    )
+  }
+  const scope = { kind: 'session' as const, owner: sessionId }
   try {
-    writeAtomic(stateFile(), loadState())
+    configTx(() => {
+      if (entries.length > 0) writeScope(scope, entries, { replace: false })
+      if (drop.length > 0) deleteKeys(scope, drop)
+    })
   } catch (err) {
     console.error('[c3] failed to persist session-agent state:', err)
   }
@@ -1291,7 +1389,7 @@ export function setSessionGroupCursor(realId: string, memberId: string | null): 
   if ((fact.groupCursor ?? null) === memberId) return
   if (memberId === null) delete fact.groupCursor
   else fact.groupCursor = memberId
-  persistState()
+  persistSession(realId)
 }
 
 /**
@@ -1308,7 +1406,7 @@ export function setPendingIntent(pendingId: string, agentId: string | null): voi
   } else {
     state.pendingIntents[pendingId] = { agentId, createdAt: Date.now() }
   }
-  persistState()
+  persistSession(pendingId)
 }
 
 /**
@@ -1327,16 +1425,14 @@ export function bindSessionAgent(
   storeScope: StoreScope,
 ): void {
   const state = loadState()
-  let dirty = false
   if (pendingId in state.pendingIntents) {
     delete state.pendingIntents[pendingId]
-    dirty = true
+    persistSession(pendingId)
   }
   if (!(realId in state.sessionAgents)) {
     state.sessionAgents[realId] = { agentId, vendor, storeScope }
-    dirty = true
+    persistSession(realId)
   }
-  if (dirty) persistState()
 }
 
 /**
@@ -1359,23 +1455,17 @@ export function changeSessionAgentFact(realId: string, agentId: string, vendor: 
     vendor: existing?.vendor ?? vendor,
     ...(existing?.storeScope ? { storeScope: existing.storeScope } : {}),
   }
-  persistState()
+  persistSession(realId)
   return true
 }
 
 /** Drop a session from both key spaces (session deleted). */
 export function deleteSessionAgentId(sessionId: string): void {
   const state = loadState()
-  let dirty = false
-  if (sessionId in state.pendingIntents) {
-    delete state.pendingIntents[sessionId]
-    dirty = true
-  }
-  if (sessionId in state.sessionAgents) {
-    delete state.sessionAgents[sessionId]
-    dirty = true
-  }
-  if (dirty) persistState()
+  const known = sessionId in state.pendingIntents || sessionId in state.sessionAgents
+  delete state.pendingIntents[sessionId]
+  delete state.sessionAgents[sessionId]
+  if (known) persistSession(sessionId)
 }
 
 /**
@@ -1393,7 +1483,7 @@ export function cleanupStalePendingIntents(now: number, maxAgeMs: number): strin
       reaped.push(id)
     }
   }
-  if (reaped.length > 0) persistState()
+  for (const id of reaped) persistSession(id)
   return reaped
 }
 

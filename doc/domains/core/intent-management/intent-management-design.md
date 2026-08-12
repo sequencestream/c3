@@ -74,7 +74,7 @@
 (`dep_type` 与 `created_at`),v10 一张审计表,**v11 在 `intents` + `intent_chats` 上
 将工作区键列 `project_path` → `workspace_path` 原地重命名**(复合索引重建为
 `idx_intent_workspace_status`;chat 的单列索引保留原名,其列引用
-随重命名自动更新)。v11 **有意与** settings.json 中保持向后兼容的 `projectConfigs`
+随重命名自动更新)。v11 **有意与**协议上保持向后兼容的 `projectConfigs`
 键**分道而行**,后者沿用旧名(参见 2026-06-14 的 workspace-path 迁移记录)。该重命名
 在 schema 应用之前执行(新的复合索引引用了
 重命名后的列);幂等,从不删表。与下文相同的「按列是否存在来判断」模式。

@@ -49,8 +49,10 @@ export interface DaemonStartOptions {
    * the OS picks".
    */
   host?: string
-  /** Absolute settings.json path when `--settings` was given (so the child reads
-   * the SAME c3 home as the parent), otherwise undefined. */
+  /** Absolute c3.db path when `--db` was given (so the child reads the SAME
+   * database — and therefore the same configuration — as the parent). */
+  dbPath?: string
+  /** Absolute legacy settings.json path when the deprecated `--settings` was given. */
   settingsPath?: string
 }
 
@@ -68,12 +70,13 @@ export interface DaemonDeps {
 
 /**
  * The argv (after the executable) for the daemon child: a plain `start` carrying
- * the SAME host/port/dev/settings, and pointedly NO `--daemon` (the child must
- * run the server, not fork again). `--settings` is emitted first so the child
- * relocates its config root before anything reads it.
+ * the SAME host/port/dev/db, and pointedly NO `--daemon` (the child must run the
+ * server, not fork again). `--db` (and the deprecated `--settings`) are emitted
+ * first so the child relocates its home before anything reads it.
  */
 export function buildStartArgs(opts: DaemonStartOptions): string[] {
   const args = ['start']
+  if (opts.dbPath) args.push('--db', opts.dbPath)
   if (opts.settingsPath) args.push('--settings', opts.settingsPath)
   args.push('--port', String(opts.port))
   if (opts.host) args.push('--host', opts.host)
@@ -159,6 +162,9 @@ export function readDaemonOptions(optionsPath: string): DaemonStartOptions | nul
   if (typeof o.dev !== 'boolean') return null
   // Gracefully ignore the legacy workspacePath field left by older runtime files.
   if (o.settingsPath !== undefined && typeof o.settingsPath !== 'string') return null
+  // A sidecar written before `--db` existed simply has no db path: restart then
+  // relaunches on the default `~/.c3/c3.db`, the same instance it was running on.
+  if (o.dbPath !== undefined && typeof o.dbPath !== 'string') return null
   // A sidecar written before `--host` existed simply has no host: restart then
   // relaunches on the loopback default, which is the safe direction.
   if (o.host !== undefined && typeof o.host !== 'string') return null
@@ -166,6 +172,7 @@ export function readDaemonOptions(optionsPath: string): DaemonStartOptions | nul
     port: o.port,
     dev: o.dev,
     ...(typeof o.host === 'string' && o.host ? { host: o.host } : {}),
+    dbPath: o.dbPath as string | undefined,
     settingsPath: o.settingsPath as string | undefined,
   }
 }

@@ -25,6 +25,7 @@ import {
   vendorManifestPath,
 } from './launcher.js'
 import { getVendorCliVersions, saveSettings, setSettingsPath } from '../../config/index.js'
+import { releaseConfigDb, useConfigDb } from '../../config/config-fixture.js'
 import { writeAtomic } from '../../config/store.js'
 
 let dir = ''
@@ -46,6 +47,7 @@ beforeEach(() => {
   dir = join(tmpdir(), `c3-launcher-${process.pid}-${Date.now()}-${Math.random()}`)
   mkdirSync(dir, { recursive: true })
   setSettingsPath(join(dir, 'settings.json'))
+  useConfigDb(dir)
   resetProbeCache()
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH
@@ -53,6 +55,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  releaseConfigDb()
   process.env.PATH = savedPath
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH

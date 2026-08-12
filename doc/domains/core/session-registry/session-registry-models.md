@@ -51,16 +51,15 @@
 
 关系:一旦首次运行绑定了真实会话 id,即被替换为真实的 Session。
 
-## 持久化状态(state.json)
+## 持久化状态
 
-c3 拥有的 registry —— 唯一持久化的 c3 数据(ADR 0004）。
+c3 拥有的 registry,存于 `c3.db`(ADR 0004、ADR-0042）。
 
-| 字段              | 类型                             | 说明                                |
-| ----------------- | -------------------------------- | ----------------------------------- |
-| `version`         | `1`                              | 模式版本                            |
-| `workspaces`      | Workspace 列表                   | registry 本身(SR-R2)                |
-| `sessionModes`    | 会话 id → permission mode 的映射 | 每会话模式(SR-R5）;过期 id 会被忽略 |
-| `activeSessionId` | text \| null                     | 最后活跃的真实会话,用于启动时恢复   |
+| 事实         | 位置                                        | 说明                                |
+| ------------ | ------------------------------------------- | ----------------------------------- |
+| 工作区       | `workspaces` 表                             | registry 本身(SR-R2)                |
+| 每会话模式   | `session_configs` 的 `mode`                 | 每会话模式(SR-R5）;过期 id 会被忽略 |
+| 最后活跃会话 | `system_configs` 的 `state.activeSessionId` | 用于启动时恢复                      |
 
 绝不包含权限决策或批准(SR-R11）。
 

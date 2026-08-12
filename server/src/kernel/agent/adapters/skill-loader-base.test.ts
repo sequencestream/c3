@@ -11,6 +11,7 @@ import { mkdtemp, readlink, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createSkillLoader, type SkillSupportProbe } from './skill-loader-base.js'
 import { resetStateCacheForTests } from '../../../state.js'
+import { releaseConfigDb, useConfigDb } from '../../config/config-fixture.js'
 import { rm } from 'node:fs/promises'
 
 function fakeProbe(
@@ -32,8 +33,10 @@ describe('SkillLoader base', () => {
     origConfigDir = process.env.CLAUDE_CONFIG_DIR
     resetStateCacheForTests()
     tmpRoot = await mkdtemp(join(tmpdir(), 'skill-loader-base-'))
-    // Isolate state.json reads to a temp dir so tests don't hit the real file.
+    // Isolate persisted state to a throwaway db so tests don't hit the real one.
     process.env.CLAUDE_CONFIG_DIR = tmpRoot
+    useConfigDb(tmpRoot)
+    resetStateCacheForTests()
     tmpProject = join(tmpRoot, 'project')
     await mkdir(tmpProject, { recursive: true })
   })
@@ -41,6 +44,7 @@ describe('SkillLoader base', () => {
   afterEach(async () => {
     if (origConfigDir !== undefined) process.env.CLAUDE_CONFIG_DIR = origConfigDir
     else delete process.env.CLAUDE_CONFIG_DIR
+    releaseConfigDb()
     resetStateCacheForTests()
     await rm(tmpRoot, { recursive: true, force: true }).catch(() => {})
   })

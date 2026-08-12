@@ -7,28 +7,27 @@
  * - A record that carries an id keeps it verbatim, legacy prefixes included.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadSettings, setSettingsPath, resetSettingsCacheForTests } from './index.js'
+import { loadSettings } from './index.js'
+import { releaseConfigDb, seedSystemSettings, useConfigDb } from './config-fixture.js'
 
 let tmpDir: string
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'c3-agent-id-test-'))
+  useConfigDb(tmpDir)
 })
 
 afterEach(() => {
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(tmpDir, { recursive: true, force: true })
 })
 
-/** Write a settings.json carrying `agents` verbatim and load it back normalized. */
+/** Store `agents` verbatim and load it back normalized. */
 function loadWithAgents(agents: unknown[]) {
-  const file = join(tmpDir, 'settings.json')
-  writeFileSync(file, JSON.stringify({ agents }))
-  setSettingsPath(file)
-  resetSettingsCacheForTests()
+  seedSystemSettings({ agents })
   return loadSettings()
 }
 

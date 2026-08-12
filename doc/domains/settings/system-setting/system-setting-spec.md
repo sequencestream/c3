@@ -15,7 +15,7 @@
 
 - **可选字段**:空值或缺失均视为「未配置」,消费者回退默认行为。
 - **规范化**:保存时 trim 首尾空白并去除尾部斜杠(`http://host:3000///` → `http://host:3000`)。纯空白视为空值,不落库。
-- **存储**:明文存于 `~/.c3/settings.json` 顶层(非敏感,不走 `c3secretv1:` 加密路径)。
+- **存储**:明文存于 `system_configs`(非敏感,不走 `secret` 类型的加密路径)。
 - **作用域**:系统级,不与 `WorkspaceSetting` / `projectConfigs` 交互。
 - **不做格式校验**:不解析 URL、不校验协议/主机、不探测可达性。
 
@@ -51,7 +51,7 @@
 
 长期 API key 是 [外部 MCP 路由 `/mcp/<api-key>`](../../core/external-mcp/external-mcp-spec.md) 的**唯一凭据**:c3 没有拉起的 agent(独立 Claude Code / Codex 会话、CI 任务、监控脚本)凭它访问本部署。**生命周期(生成/列示/改工具范围/吊销)在工作区设置「外部 MCP 接入」页**,不在系统设置——每把 key 绑定单一工作区,按工作区管理;只有存储与哈希仍属本域。
 
-**存储位置是安全边界。** key 记录存于 `~/.c3/settings.json` 的顶层键 `mcpApiKeys`,是 `SystemSettings` 的**兄弟键而非字段**(与 `personalizedSettings` 同一所有权切分)。因此整对象 `save_settings` 既不携带它、也无法注入/覆盖/读出哈希——进出只有下述专用操作。
+**存储位置是安全边界。** key 记录存于独立的 `mcp_api_keys` 表,一密钥一作用域,不属于 `SystemSettings`(与个人化设置同一所有权切分)。因此整对象 `save_settings` 既不携带它、也无法注入/覆盖/读出哈希——进出只有下述专用操作。
 
 每条记录含:不可变 id、显示名称、创建时间、最后使用时间(可空)、**唯一绑定的规范化 workspace 路径**、工具范围、每 key 独立随机盐、`scrypt` 哈希及其参数与版本。**磁盘上没有明文。**
 

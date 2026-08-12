@@ -99,6 +99,7 @@ import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
 import { checkDbDriver } from './kernel/infra/db.js'
+import { ensureLegacyImport } from './kernel/config/import-legacy.js'
 import {
   getPendingIntent,
   JANITOR_INTERVAL_MS,
@@ -129,7 +130,7 @@ import type { VendorId } from '@ccc/shared/protocol'
 import { hasAnyInstalledSkill } from './kernel/skill-loader/index.js'
 import { setSkillApprovalSend } from './kernel/skill-loader/approval.js'
 import { getSkillRepos } from './kernel/config/index.js'
-import { settingsFile } from './kernel/config/paths.js'
+import { dbPath } from './kernel/infra/db.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
 import {
@@ -311,6 +312,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // detect it loudly at boot instead. The app still starts (callers degrade), but
   // the operator is told exactly what broke.
   checkDbDriver()
+
+  // Import the legacy JSON configuration files (settings.json / state.json) into the
+  // database, once per installation. Deliberately triggered HERE and nowhere else:
+  // a read path that imported on demand would make any process that merely reads a
+  // setting — a unit test, a one-off script — rewrite and retire the user's real
+  // files. Only a starting server owns that transition.
+  ensureLegacyImport()
 
   // Probe vendor CLIs up front. The default source is c3's managed vendor dir;
   // env overrides remain explicit, and host PATH is only a degraded fallback.
@@ -860,9 +868,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const host = opts.host?.trim() || DEFAULT_HOST
   const server = serve({ fetch: app.fetch, port: opts.port, hostname: host }, (info) => {
     console.log(`[c3] server listening on ${host}:${info.port}`)
-    // Which config dir is in effect — the one thing that tells an isolated launch
-    // apart from one running on the real `~/.c3` at a glance. Path only.
-    console.log(`[c3] settings: ${settingsFile()}`)
+    // Which database is in effect — it holds the configuration, so this is the one
+    // thing that tells an isolated launch apart from one running on the real
+    // `~/.c3` at a glance. Path only.
+    console.log(`[c3] database: ${dbPath()}`)
     if (host === DEFAULT_HOST) console.log(`[c3] open http://localhost:${info.port}`)
     else console.log(`[c3] reachable from other hosts — external access is API-key gated`)
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)

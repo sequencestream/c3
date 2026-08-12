@@ -59,7 +59,7 @@ create-if-not-exists）：
 （可空，历史行保持 NULL —— 历史调研跑批没有留下任何厂商会话，无从回填）；**v3→v4 原地将工作区键列 `project_path` 重命名为
 `workspace_path`**（复合索引重建），在 schema-ensure 步骤之前运行——
 幂等，从不删表。这**有意地**与向后兼容的 `projectConfigs`
-settings.json 键不同步（见 `database/migrate/2026/06/14/012`）。这个单一的共享版本计数器
+协议键不同步（见 `database/migrate/2026/06/14/012`）。这个单一的共享版本计数器
 与 intent store **共享**，因此两者写入时会相互覆盖——这是有意为之且
 无害的：迁移的触发依据是**实际存在与否**（对列用 table-info 内省，
 对表用 create-if-not-exists），从不依据版本号。该值仅作参考。

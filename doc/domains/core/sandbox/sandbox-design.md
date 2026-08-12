@@ -228,7 +228,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 **① 读取端两处扫(dual-scan,兜底)**:`CodexSessionStore.list/read` 不再硬编码宿主 `~/.codex`,而按 `storeRoots` 扫描多个 CODEX_HOME 根;缺省即扫**宿主 `~/.codex` + 本工作区 sandbox home 两处**(`codexStoreRoots`),命中即算——按 `session id + cwd` 精确匹配,thread id 唯一不冲突。侧栏冷枚举/回填与存量 session 天然鲁棒。
 
-**② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(state.json)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
+**② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(`session_configs` 的 `storeScope` 键)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
 
 **③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛各 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`;cursor → 两 scope 均为宿主 `~/.cursor`(SDK 在 c3 进程内运行,不随沙箱换根)。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
 
@@ -238,7 +238,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 sandbox run **不做任何 agent 挑选**：它使用该 run 正常解析链得出的 agent——session 上有显式绑定就用绑定的，否则按 session kind 走现有的 `default` / `tool` / `intent` / `spec` 入口经 `resolveAgent` 回退。沙箱开关只决定该 vendor 的 CLI 是否被包进 arapuca，同一 session 在开/关沙箱两种模式下解析出的 agent 完全一致。
 
-- 不存在 sandbox 专属的角色配置（旧版 `sandbox*AgentId` 五个字段已移除；遗留 settings.json 中的这些键在加载时按未知字段直接丢弃，不迁移、不校验、不覆盖统一角色，下一次保存后自然从磁盘消失）。
+- 不存在 sandbox 专属的角色配置（`sandbox*AgentId` 五个键在加载时按未知字段直接丢弃，不迁移、不校验、不覆盖统一角色，下一次保存后自然从存储中消失）。
 - system / custom agent 一视同仁进入沙箱：不弹窗、不换绑、不因缺少 custom agent 而失败。system agent（订阅态）在沙箱内通过 wrapper 打开的宿主 keychain 完成登录（见 §9）。
 - automation 仍使用创建时保存的 agent 快照；统一的 `automationAgentId` 只负责新建表单预选，不参与运行期解析。
 

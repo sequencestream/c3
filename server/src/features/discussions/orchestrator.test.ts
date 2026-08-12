@@ -8,14 +8,33 @@
  * and a fresh post-conclusion round driven to a new conclusion (the `continue`
  * path: append a human question, flip back to in_progress, re-run the engine).
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentConfig, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import { releaseConfigDb, useConfigDb } from '../../kernel/config/config-fixture.js'
 import {
   runDiscussion,
   type DiscussionDeps,
   type DiscussionStore,
   type DispatchStatus,
 } from './orchestrator.js'
+
+// The orchestrator reads the agent-prompt language from configuration (the fallback
+// conclusion is written in it), so it needs a throwaway database like any other test
+// that touches settings.
+let configDir: string
+
+beforeEach(() => {
+  configDir = mkdtempSync(join(tmpdir(), 'c3-discussion-'))
+  useConfigDb(configDir)
+})
+
+afterEach(() => {
+  releaseConfigDb()
+  rmSync(configDir, { recursive: true, force: true })
+})
 
 const agent = (id: string, name: string): AgentConfig => ({
   id,

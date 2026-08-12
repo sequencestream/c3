@@ -1,8 +1,10 @@
 /**
- * Shared SQLite access for c3, persisted at `~/.c3/c3.db` (overridable for tests
- * via `C3_DB_PATH`, or the dir via `C3_DIR`). The single c3.db backs every
- * persistence domain (intents, discussions, …); each domain store owns its
- * own tables and schema-ensure flag over this one connection.
+ * Shared SQLite access for c3, persisted at `~/.c3/c3.db` (overridable by the CLI
+ * `--db <path>`, by `C3_DB_PATH`, or the dir via `C3_DIR`). The single c3.db backs
+ * every persistence domain — configuration included (kernel/config/config-store.ts),
+ * which is what makes the db path the one override that relocates a whole c3
+ * instance; each domain store owns its own tables and schema-ensure flag over this
+ * one connection.
  *
  * Cross-runtime: c3 ships both as a Node bundle (`node cli.cjs`) and a Bun
  * single binary. The two runtimes expose DIFFERENT builtin SQLite modules and
@@ -130,10 +132,35 @@ function bunAdapter(path: string, options: OpenOptions = {}): Db {
   }
 }
 
-function dbPath(): string {
+/**
+ * Explicit database path (CLI `--db <path>`), set once at startup before anything
+ * opens the db. It is the strongest override there is: c3.db holds the whole
+ * configuration, so pointing at another file relocates the entire instance — which
+ * is why `c3HomeDir()` derives the config home from it (kernel/config/paths.ts).
+ */
+let dbPathOverride: string | null = null
+
+/**
+ * Set the database file used for all subsequent access. Must be called before the
+ * first {@link getDb} (the cli's `start` action does this).
+ */
+export function setDbPath(path: string): void {
+  dbPathOverride = path === ':memory:' ? ':memory:' : resolve(path)
+}
+
+/** Whether `--db` was given — the config home follows it (kernel/config/paths.ts). */
+export function hasDbPathOverride(): boolean {
+  return dbPathOverride !== null
+}
+
+/**
+ * The resolved database file: `--db` → `C3_DB_PATH` → `<C3_DIR>/c3.db` → `~/.c3/c3.db`.
+ * The `:memory:` sentinel is preserved verbatim — `resolve()` would turn it into a
+ * literal file path and defeat the in-memory special-case in {@link getDb}.
+ */
+export function dbPath(): string {
+  if (dbPathOverride) return dbPathOverride
   if (process.env.C3_DB_PATH) {
-    // Preserve the `:memory:` sentinel verbatim — `resolve()` would turn it into
-    // a literal file path and defeat the in-memory special-case in `getDb()`.
     return process.env.C3_DB_PATH === ':memory:' ? ':memory:' : resolve(process.env.C3_DB_PATH)
   }
   const home = process.env.C3_DIR ? resolve(process.env.C3_DIR) : join(homedir(), '.c3')
@@ -271,4 +298,5 @@ export function resetDbForTests(): void {
   instance = null
   opened = false
   available = false
+  dbPathOverride = null
 }

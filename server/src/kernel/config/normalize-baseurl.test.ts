@@ -5,28 +5,27 @@
  * - Empty / absent / non-string ⇒ omitted (optional semantics).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadSettings, setSettingsPath, resetSettingsCacheForTests } from './index.js'
+import { loadSettings } from './index.js'
+import { releaseConfigDb, seedSystemSettings, useConfigDb } from './config-fixture.js'
 
 let tmpDir: string
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'c3-baseurl-test-'))
+  useConfigDb(tmpDir)
 })
 
 afterEach(() => {
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(tmpDir, { recursive: true, force: true })
 })
 
-/** Write a minimal valid settings.json and load it. */
+/** Store a minimal valid settings record and load it. */
 function loadWith(raw: Record<string, unknown>) {
-  const file = join(tmpDir, 'settings.json')
-  writeFileSync(file, JSON.stringify(raw))
-  setSettingsPath(file)
-  resetSettingsCacheForTests()
+  seedSystemSettings(raw)
   return loadSettings()
 }
 

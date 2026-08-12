@@ -1,27 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadSettings, resetSettingsCacheForTests, saveSettings, setSettingsPath } from './index.js'
+import { loadSettings, saveSettings } from './index.js'
+import {
+  readStoredSystemSettings,
+  releaseConfigDb,
+  seedSystemSettings,
+  useConfigDb,
+} from './config-fixture.js'
 
 let tempDir: string
-let settingsFile: string
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'c3-show-sessions-page-'))
-  settingsFile = join(tempDir, 'settings.json')
-  setSettingsPath(settingsFile)
-  resetSettingsCacheForTests()
+  useConfigDb(tempDir)
 })
 
 afterEach(() => {
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(tempDir, { recursive: true, force: true })
 })
 
 function loadRaw(raw: Record<string, unknown>) {
-  writeFileSync(settingsFile, JSON.stringify(raw))
-  resetSettingsCacheForTests()
+  seedSystemSettings(raw)
   return loadSettings()
 }
 
@@ -39,9 +41,9 @@ describe('SystemSettings.showSessionsPage', () => {
     const normalized = loadRaw({ showSessionsPage: true, showToolSessions: false })
     saveSettings(normalized)
 
-    const disk = JSON.parse(readFileSync(settingsFile, 'utf8')) as Record<string, unknown>
-    expect(disk.showSessionsPage).toBe(true)
-    expect(disk.showToolSessions).toBe(false)
+    const stored = readStoredSystemSettings()
+    expect(stored.showSessionsPage).toBe(true)
+    expect(stored.showToolSessions).toBe(false)
     expect(loadSettings().showSessionsPage).toBe(true)
   })
 })

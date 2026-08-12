@@ -5,6 +5,7 @@ import { findUnknownCommand } from './cli-args.js'
 import { resolve } from 'node:path'
 import { startServer } from './server.js'
 import { setSettingsPath } from './kernel/config/index.js'
+import { setDbPath } from './kernel/infra/db.js'
 import { versionString } from './version.js'
 import { startDaemon, type DaemonStartOptions } from './daemon.js'
 import { installService, UnsupportedPlatformError } from './service-install.js'
@@ -25,6 +26,8 @@ interface LaunchOpts {
   dev: boolean
   /** `--host <address>`; unset ⇒ the server's loopback default. */
   host?: string
+  /** `--db <path>`; unset ⇒ `~/.c3/c3.db`. Relocates the whole c3 instance. */
+  db?: string
   settings?: string
 }
 
@@ -37,6 +40,7 @@ function resolveLaunchOptions(opts: LaunchOpts): {
   port: number
   dev: boolean
   host?: string
+  dbPath?: string
   settingsPath?: string
 } {
   const port = Number(opts.port)
@@ -44,14 +48,15 @@ function resolveLaunchOptions(opts: LaunchOpts): {
     console.error(`[c3] error: invalid port: ${opts.port}`)
     process.exit(1)
   }
-  // Settings path is resolved to absolute so a daemon child / service unit reads
-  // the SAME c3 home as this invocation (a relative path would re-resolve against
-  // the child's cwd).
+  // Both paths are resolved to absolute so a daemon child / service unit reads the
+  // SAME c3 home as this invocation (a relative path would re-resolve against the
+  // child's cwd).
+  const dbPath = opts.db ? resolve(opts.db) : undefined
   const settingsPath = opts.settings ? resolve(opts.settings) : undefined
   // An omitted/blank host stays undefined so exactly one place decides the
   // default (the server), instead of two that could drift apart.
   const host = opts.host?.trim() || undefined
-  return { port, dev: opts.dev, host, settingsPath }
+  return { port, dev: opts.dev, host, dbPath, settingsPath }
 }
 
 program
@@ -65,8 +70,12 @@ program
   .option('--dev', 'development mode (do not serve static frontend)', false)
   .option('--daemon', 'run in the background (detach from the terminal) and exit', false)
   .option(
+    '--db <path>',
+    'path to the c3 database (default ~/.c3/c3.db). Holds all configuration; its directory becomes the c3 home (logs, worktrees, sandbox)',
+  )
+  .option(
     '--settings <path>',
-    'path to settings.json (overrides the default ~/.c3/settings.json; its directory also holds state.json)',
+    '[deprecated] legacy settings.json to import once; configuration now lives in the database (--db)',
   )
   .action(async (opts: LaunchOpts & { daemon: boolean }, command: CommanderCommand) => {
     // Guard BEFORE any side-effecting launch step: an unsupported subcommand
@@ -79,14 +88,16 @@ program
       process.exit(1)
     }
 
-    const { port, dev, host, settingsPath } = resolveLaunchOptions(opts)
-    // Relocate the config dir before anything reads settings (loadSettings is lazy).
-    // Done AFTER resolveLaunchOptions so the daemon child gets the absolute path too.
+    const { port, dev, host, dbPath, settingsPath } = resolveLaunchOptions(opts)
+    // Relocate the database (and with it the c3 home) before anything opens it —
+    // configuration reads are lazy, so this must land first. Done AFTER
+    // resolveLaunchOptions so the daemon child gets the absolute paths too.
+    if (dbPath) setDbPath(dbPath)
     if (settingsPath) setSettingsPath(settingsPath)
 
     if (opts.daemon) {
       // Re-spawn a detached `start` WITHOUT --daemon (never self-fork) and exit.
-      const startOpts: DaemonStartOptions = { port, dev, host, settingsPath }
+      const startOpts: DaemonStartOptions = { port, dev, host, dbPath, settingsPath }
       const outcome = startDaemon(startOpts)
       if (outcome.kind === 'already-running') {
         console.error(
@@ -114,18 +125,22 @@ program
   )
   .option('--dev', 'development mode (do not serve static frontend)', false)
   .option(
+    '--db <path>',
+    'path to the c3 database baked into the service unit (absolute; default ~/.c3/c3.db)',
+  )
+  .option(
     '--settings <path>',
-    'path to settings.json baked into the service unit (absolute; the service reads the same ~/.c3)',
+    '[deprecated] legacy settings.json to import once, baked into the service unit',
   )
   .action((opts: LaunchOpts) => {
-    const { port, dev, host, settingsPath } = resolveLaunchOptions(opts)
+    const { port, dev, host, dbPath, settingsPath } = resolveLaunchOptions(opts)
     try {
       const result = installService({
         platform: process.platform,
         execPath: process.execPath,
         scriptPath: process.argv[1],
         execArgv: process.execArgv,
-        start: { port, dev, host, settingsPath },
+        start: { port, dev, host, dbPath, settingsPath },
       })
       if (result.kind === 'register-failed') {
         const { command, status, stderr } = result

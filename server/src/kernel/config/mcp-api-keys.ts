@@ -25,11 +25,9 @@ import { isAbsolute, resolve } from 'node:path'
 import { realpathSync } from 'node:fs'
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import { EXTERNAL_MCP_DEFAULT_TOOLS } from '@ccc/shared/protocol'
-import { readJsonFile, withFileLock, writeAtomic } from './store.js'
-import { settingsFile } from './paths.js'
-
-/** The single settings-file key this module owns. */
-const FILE_KEY = 'mcpApiKeys'
+import { fromEntries, toEntries } from './config-codec.js'
+import { MCP_KEY_RULES } from './config-schema.js'
+import { configTx, listScopeOwners, readAllScopes, writeScope } from './config-store.js'
 
 /** Plaintext key prefix — a stable, greppable marker so a leaked key is recognisable. */
 const KEY_PREFIX = 'c3k'
@@ -86,11 +84,6 @@ interface McpApiKeyRecord {
   hash: string
 }
 
-/** The settings-file shape as far as this module cares; every other key is preserved verbatim. */
-interface McpApiKeyFileShape extends Record<string, unknown> {
-  mcpApiKeys?: unknown
-}
-
 /** In-memory mirror of the owned key; `null` until first read. Test seam via {@link resetMcpApiKeyCache}. */
 let cache: McpApiKeyRecord[] | null = null
 
@@ -125,8 +118,17 @@ export function canonicalizeWorkspacePath(raw: string): string | null {
 
 // ---- Persistence ----
 
-function readFile(): McpApiKeyFileShape {
-  return readJsonFile<McpApiKeyFileShape>(settingsFile()) ?? {}
+/**
+ * Read every stored key record (cache-bypassing). One scope per key id, so a record
+ * is addressable on its own: revoking one deletes its scope instead of rewriting the
+ * whole collection, and touching `lastUsedAt` updates a single row.
+ */
+function readStored(): McpApiKeyRecord[] {
+  const raw: unknown[] = []
+  for (const [id, entries] of readAllScopes('mcpKey')) {
+    raw.push({ id, ...(fromEntries(entries, MCP_KEY_RULES) as Record<string, unknown>) })
+  }
+  return normalizeRecords(raw)
 }
 
 /**
@@ -218,35 +220,34 @@ function dedupe(values: string[]): string[] {
 
 function load(): McpApiKeyRecord[] {
   if (cache) return cache
-  cache = normalizeRecords(readFile()[FILE_KEY])
+  cache = readStored()
   return cache
 }
 
 /**
- * The owned key as it must appear on disk, read from a raw file snapshot. The
- * system-settings write path re-attaches this so a whole-object save preserves
- * the key store instead of wiping it.
- */
-export function mcpApiKeyFileKeys(diskRaw: unknown): { mcpApiKeys?: McpApiKeyRecord[] } {
-  const raw = (diskRaw && typeof diskRaw === 'object' ? diskRaw : {}) as McpApiKeyFileShape
-  const records = normalizeRecords(raw[FILE_KEY])
-  return records.length > 0 ? { mcpApiKeys: records } : {}
-}
-
-/**
- * Read-modify-write the owned key inside the cross-process settings lock, with a
- * fresh disk read, preserving every other settings key verbatim. Throws when the
+ * Read-modify-write the key collection in one transaction with a fresh read. Records
+ * the caller dropped have their scope deleted; the rest are rewritten. Throws when the
  * write fails so callers surface a real error rather than a pseudo-success.
  */
 function mutate<T>(apply: (records: McpApiKeyRecord[]) => T): T {
-  return withFileLock(settingsFile(), () => {
-    const raw = readFile()
-    const records = normalizeRecords(raw[FILE_KEY])
+  return configTx(() => {
+    const records = readStored()
+    const before = new Set(records.map((r) => r.id))
     const result = apply(records)
-    writeAtomic(settingsFile(), { ...raw, [FILE_KEY]: records })
+    for (const record of records) {
+      const { id, ...fields } = record
+      writeScope({ kind: 'mcpKey', owner: id }, toEntries(fields, MCP_KEY_RULES))
+      before.delete(id)
+    }
+    for (const id of before) writeScope({ kind: 'mcpKey', owner: id }, [])
     cache = records
     return result
   })
+}
+
+/** Ids of every stored key (diagnostics; the records themselves go through {@link load}). */
+export function listMcpApiKeyIds(): string[] {
+  return listScopeOwners('mcpKey')
 }
 
 // ---- Plaintext key format ----

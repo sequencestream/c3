@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resetDbForTests } from './kernel/infra/db.js'
+import { resetConfigStoreForTests } from './kernel/config/config-store.js'
+import { resetLegacyImportForTests } from './kernel/config/import-legacy.js'
 import {
   addWorkspace,
   deleteSessionMode,
@@ -24,11 +27,17 @@ let dir: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-state-'))
   process.env.CLAUDE_CONFIG_DIR = dir
+  process.env.C3_DB_PATH = join(dir, 'c3.db')
+  resetDbForTests()
+  resetConfigStoreForTests()
+  resetLegacyImportForTests()
   resetStateCacheForTests()
 })
 
 afterEach(() => {
+  resetDbForTests()
   delete process.env.CLAUDE_CONFIG_DIR
+  delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
 

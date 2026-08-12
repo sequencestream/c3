@@ -39,13 +39,13 @@
 - **`contextWindow`**(正整数,可选): 模型的上下文窗口(token)声明。仅在 `custom` 模式(codex 走 relay)下消费:codex driver 的 relay 分支把它与 `maxOutputTokens` 一起注册进本地 model catalog(`model_catalog_json`),让 codex 不再对三方模型 id 回退默认元数据(消「Model metadata not found」告警)。缺省 ⇒ 不生成 catalog。请按模型**真实能力**填写——值大于真实窗口可能引发上游截断/报错。见 [relay-architecture](../../../architecture/relay-architecture.md) §10。
 - **`maxOutputTokens`**(正整数,可选): 模型单次输出上限(token)声明,与 `contextWindow` 同一机制。注意:**`max_output_tokens` 被 codex serde 接受,但是否被实际消费为生成上限未经真实上游验证**,当前仅作声明、**尽力而为**,不保证截断行为;不受支持时该声明无副作用。
 
-> **数值边界告警**:`contextWindow`/`maxOutputTokens` 必须为正整数;`0`/负数/非整数会让 `codexConfigSchema` 校验失败,`parseAgentConfig` 返回 `null`,**整个 codex agent 被 normalize 按 fail-soft 策略从注册表丢弃**(与重复 id 同策略),会话回退到默认 agent。手改 `~/.c3/settings.json` 填错数值会导致该 codex agent 静默消失——这是既有 fail-soft 行为,不是「该字段被忽略」。
+> **数值边界告警**:`contextWindow`/`maxOutputTokens` 必须为正整数;`0`/负数/非整数会让 `codexConfigSchema` 校验失败,`parseAgentConfig` 返回 `null`,**整个 codex agent 被 normalize 按 fail-soft 策略从注册表丢弃**(与重复 id 同策略),会话回退到默认 agent。手改存储里的数值填错会导致该 codex agent 静默消失——这是既有 fail-soft 行为,不是「该字段被忽略」。
 
 ### Cursor 配置子对象(`vendor === 'cursor'`)
 
 只有一个 key 和一个 model,**没有 `baseUrl`**:c3 没有讲 Cursor 协议的 relay,
 故 Cursor 智能体不能被指向别的 provider,`configMode` 恒为 `'system'`(schema 拒绝
-携带 `baseUrl` 的配置,手改 settings.json 里的 `'custom'` 在加载时被钉回 `'system'`)。
+携带 `baseUrl` 的配置,手改存储里的 `'custom'` 在加载时被钉回 `'system'`)。
 `apiKey` 是**可选**的:填了就用,留空则由 `cursor-agent login` 写入操作系统钥匙串的
 登录态兜底,与其他厂商的 `system` 模式含义一致。
 
@@ -65,7 +65,7 @@
 
 ## System settings(系统设置)
 
-整个配置,持久化在 `~/.c3/settings.json`。
+整个配置,持久化在 `system_configs` 的 `agents.<id>.*` 键空间。
 
 - **`agents`**(智能体列表): 注册表;始终包含系统智能体(AC-R1)
 - **`defaultAgentId`**(text): 某个已存在智能体的 id;找不到时回退到系统智能体(AC-R2)
@@ -77,7 +77,7 @@
 - **`maxRoundsPerStage`**(number,可选): 多智能体讨论每阶段的轮次上限;归一化为 ≥ 8,默认 12(AC-R9)。由讨论引擎消费。
 - **`timezone`**(text,可选): 用于解释每个自动化的 cron 字段的系统级 IANA 时区(例如 `Asia/Shanghai`);无效/未设置时回退到服务器本地时区。由 [automations](../../core/automations/automations-design.md) 引擎消费——见 SCH-R3a。
 
-## Session binding(会话绑定,state.json,`~/.c3`)
+## Session binding(会话绑定,`session_configs`)
 
 按会话的智能体绑定——一个**双键空间**(ADR-0015,AC-R16/R17),与
 session-registry 自身的状态是分离的。

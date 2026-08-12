@@ -1,29 +1,28 @@
-## 约束:e2e 永不写真实 `~/.c3/settings.json`
+## 约束:e2e 永不写真实 `~/.c3/c3.db`
 
 **这条对全套和单跑一视同仁,没有例外。**
 
-- e2e 用的服务器一律以 `--settings <临时路径>` 启动。该路径的目录同时承载
-  `settings.json` 与 `state.json`,整个配置目录因此被搬离 `~/.c3`;再配一个临时
-  `C3_DB_PATH`,意图台账也不落在真实库上。
+- e2e 用的服务器一律以 `--db <临时路径>` 启动。配置与意图台账都在这个库里,c3 主目录
+  也跟着它走,因此一个覆盖项就把整个实例搬离了 `~/.c3`。
 - 一条命令就能起这样一台服务器:
 
   ```bash
   pnpm build && node scripts/e2e/isolated-server.mjs --port 13000
   ```
 
-  它建临时目录、从真实 `~/.c3/settings.json` **只读播种**一份(剥掉 `auth`,因为
-  e2e 不带令牌握手)、注入临时 `C3_DB_PATH`、起服并打印 ws 地址 / settings 路径 /
-  db 路径,Ctrl-C 时清理。可选 `--db <path>`(多个测试共享同一台账时)与
-  `--state-dir <dir>`。**本指南每一节的手工运行命令都以它为准,不要用裸
-  `pnpm start`。**
+  它建临时目录、从真实 `~/.c3/c3.db` **只读播种**配置表一份(剥掉 `auth.*`,因为
+  e2e 不带令牌握手;业务表不复制)、盖上三条旧配置导入标记(免得隔离服务器去读并弃用
+  开发者真实的 `settings.json`)、起服并打印 ws 地址与 db 路径,Ctrl-C 时清理。可选
+  `--db <path>`(多个测试共享同一台账时)与 `--state-dir <dir>`。**本指南每一节的手工
+  运行命令都以它为准,不要用裸 `pnpm start`。**
 
-- 只禁写、不禁读:真实 `~/.c3/settings.json` 仍可作只读播种源(consensus /
-  relay / sandbox-token 需要其中真实配置的 agent 密钥),写入一律进临时文件。
-- 会调用 `save_settings` 的测试**自带守卫**:开跑前先问服务器生效的 settings 路径
-  (`settings` 回包的 `settingsPath`),若是真实 `~/.c3/settings.json`——或服务器
-  旧到根本不报这个字段——就以退出码 `3` 拒跑,并打印隔离启动命令,一个字节都不写。
-  这些测试原有的「快照 + 退出时恢复」保留为第二道保险:它在超时被 kill、Ctrl-C 或
-  崩溃时不会执行,守卫才是真正的闸门。
+- 只禁写、不禁读:真实 `~/.c3/c3.db` 仍可作只读播种源(consensus / relay /
+  sandbox-token 需要其中真实配置的 agent 密钥),写入一律进临时库。
+- 会调用 `save_settings` 的测试**自带守卫**:开跑前先问服务器生效的数据库路径
+  (`settings` 回包的 `dbPath`),若是真实 `~/.c3/c3.db`——或服务器旧到根本不报这个
+  字段——就以退出码 `3` 拒跑,并打印隔离启动命令,一个字节都不写。这些测试原有的
+  「快照 + 退出时恢复」保留为第二道保险:它在超时被 kill、Ctrl-C 或崩溃时不会执行,
+  守卫才是真正的闸门。
 
 守卫覆盖的测试:`e2e-sessions-page-setting-test.mjs`、`e2e-consensus-test.mjs`、
 `e2e-ask-consensus-test.mjs`、`e2e-cursor-agent-config-test.mjs`、
@@ -38,7 +37,7 @@ steps:
 `isolated-server.mjs` helper documented above, runs every WebSocket e2e against
 it, then tears it down and prints a pass/fail summary. The intent db is pointed
 at a throwaway `C3_DB_PATH` (never touches `~/.c3/c3.db`), and the server reads
-its OWN settings.json — seeded from the real `~/.c3/settings.json` when present
+its OWN database — configuration seeded from the real `~/.c3/c3.db` when present
 (consensus tests keep their configured agents) but with `auth` stripped, since
 the suite connects without a token. Consensus tests still `SKIP` (exit 5) when
 none beyond the default are configured.
@@ -413,7 +412,7 @@ provides automatically).
 ## Consensus voting test (multi-agent decision)
 
 Exercises the multi-agent consensus flow against the agents in the **isolated**
-settings the helper seeded from the real `~/.c3/settings.json` (read-only copy —
+settings the helper seeded from the real `~/.c3/c3.db` (read-only copy —
 your real configured agents are there, and nothing written here reaches them).
 Seeds a throwaway coding project in `/tmp`, asks the model to edit a file
 (forcing a sensitive tool through the permission gateway), and checks that voting
@@ -691,7 +690,7 @@ snapshot is restored on every exit path.
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from
-`~/.c3/settings.json` (default `claude-deepseek` / `codex-deepseek`) to send an
+the real configuration (default `claude-deepseek` / `codex-deepseek`) to send an
 actual token-billed request from inside an arapuca sandbox, mirroring the
 arapuca command shape `SandboxLauncher.createSandboxWrapper` emits (`--seccomp
 baseline` for network, `/tmp/claude-<uid>` runtime dir allowed, `CODEX_HOME`

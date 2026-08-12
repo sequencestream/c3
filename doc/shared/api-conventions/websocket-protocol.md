@@ -594,7 +594,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `settings`
 
-（标准化后的）系统配置，回复 `get_settings` / `save_settings`。携带若干运行时派生的伴生数据，配置对象本身不包含（它们都不写入 `SystemSettings` / `settings.json`）：
+（标准化后的）系统配置，回复 `get_settings` / `save_settings`。携带若干运行时派生的伴生数据，配置对象本身不包含（它们都不写入 `SystemSettings`，也不落库）：
 
 - `hostStatus: VendorHostStatus[]` — 每个供应商的主机 CLI 存在情况 + 已安装二进制的绝对路径 `path`（ADR-0012），驱动设置页 vendor CLI 版本面板与诊断面板的安装位置展示。它**只讲宿主 CLI**：每个 c3 启动的供应商都在其中，一个没有 CLI 的供应商不会被伪装成假二进制
 - `vendorRuntime?: Record<VendorId, VendorRuntimeStatus>` — 每个供应商的**运行时可用性**（2026-08-03-002），即"c3 现在能不能在这个供应商上起一轮"。这是控制台所有运行入口（agent 配置的 vendor 下拉、新建会话弹窗、自动化表单）唯一的门控依据，写法上零 `if (vendor === …)`。每项为 `{ vendor, available, runtime: 'host-cli', runtimeId?, origin?, location?, reason? }`；`reason` 是稳定原因码（`host-cli-missing`），由前端本地化成可行动说明，服务端内部异常文本不进 UI 契约。`origin`（`installed` / `host-path` / `override`）与绝对路径 `location` 只在可用时给出，供运行时诊断行回答"跑起来的是哪一份"；两者是纯诊断字段，不参与任何门控，也不扩展原因码。可用性一律取 CLI 探测结果（与服务端启动时构造 adapter 用的是同一条解析链）。旧服务端缺此字段时，前端从 `hostStatus` 推导 CLI 供应商，其余一律按不可用处理——只会挡住路径，不会放行必然失败的路径

@@ -55,12 +55,10 @@ function query({
 
 ### 消息类型（SDKMessage 判别联合）
 
-| `type`      | 含义                                                                     |
-| ----------- | ------------------------------------------------------------------------ |
-| `system`    | 子类型 `init`（会话初始化元数据）、`compact_boundary`（上下文压缩）等    |
-| `assistant` | Claude 的回复；`message.content` 内含 `text` 与 `tool_use` 块            |
-| `user`      | 工具结果（`tool_result` 块）回灌；也是流式用户输入                       |
-| `result`    | 终态；含 `subtype`、`total_cost_usd`、`usage`、`session_id`、`num_turns` |
+- `system` — 子类型 `init`（会话初始化元数据）、`compact_boundary`（上下文压缩）等
+- `assistant` — Claude 的回复；`message.content` 内含 `text` 与 `tool_use` 块
+- `user` — 工具结果（`tool_result` 块）回灌；也是流式用户输入
+- `result` — 终态；含 `subtype`、`total_cost_usd`、`usage`、`session_id`、`num_turns`
 
 > c3 的消费方式：对 `assistant` 拆出 `text`/`tool_use`，对 `user` 拆出 `tool_result`，
 > 对 `result` 发出 `turn_end`，再映射到
@@ -96,13 +94,11 @@ c3 显式探测并传入 `pathToClaudeCodeExecutable`：
 
 SDK 进程对子进程的控制分层进行：
 
-| 层级     | 机制                                                                                                     |
-| -------- | -------------------------------------------------------------------------------------------------------- |
-| 进程管理 | Node `child_process.spawn()` 拉起 `claude`；会话期间常驻，可 `interrupt`/`close`                         |
-| 报文协议 | stdio 上的 JSON-lines，每行一个 JSON 对象，带请求 ID 做双向多路复用                                      |
-| 权限回调 | `canUseTool(toolName, input, ctx)`：子进程请求工具 → SDK 回调 → 返回 `allow`/`deny` → 子进程据此执行     |
-| MCP      | `mcpServers` 配置下发给子进程；stdio 服务由子进程拉起，HTTP/SSE 走网络，进程内 SDK MCP 工具在 SDK 侧定义 |
-| Hooks    | 在 **SDK 进程内**执行（`PreToolUse`/`PostToolUse`/`SessionStart`/`Stop` 等），可拦截/改写/注入上下文     |
+- **进程管理**: Node `child_process.spawn()` 拉起 `claude`；会话期间常驻，可 `interrupt`/`close`
+- **报文协议**: stdio 上的 JSON-lines，每行一个 JSON 对象，带请求 ID 做双向多路复用
+- **权限回调**: `canUseTool(toolName, input, ctx)`：子进程请求工具 → SDK 回调 → 返回 `allow`/`deny` → 子进程据此执行
+- **MCP**: `mcpServers` 配置下发给子进程；stdio 服务由子进程拉起，HTTP/SSE 走网络，进程内 SDK MCP 工具在 SDK 侧定义
+- **Hooks**: 在 **SDK 进程内**执行（`PreToolUse`/`PostToolUse`/`SessionStart`/`Stop` 等），可拦截/改写/注入上下文
 
 ### 权限回调（c3 的核心）
 
@@ -321,12 +317,10 @@ flowchart LR
 
 ## 附录：来源与可信度
 
-| 主题                                                                    | 来源                                           | 可信度                         |
-| ----------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------ |
-| `query()`/消息/会话/Skill/权限                                          | 官方文档 `code.claude.com/docs/en/agent-sdk/*` | 高                             |
-| c3 的 PATH 解析、`interrupt` 兜底、`settingSources: ['user','project']` | 本仓库已落地代码                               | 高（已落地代码）               |
-| 二进制如何被打包/提取的内部细节                                         | 第三方博客 + 推断                              | 中（实现细节，跨版本可能变化） |
-| `plugins` 注入 Skill 的字段形态                                         | 官方文档 + 推断                                | 中（以所用版本类型为准）       |
+- **`query()`/消息/会话/Skill/权限** — 来源: 官方文档 `code.claude.com/docs/en/agent-sdk/*`；可信度: 高
+- **c3 的 PATH 解析、`interrupt` 兜底、`settingSources: ['user','project']`** — 来源: 本仓库已落地代码；可信度: 高（已落地代码）
+- **二进制如何被打包/提取的内部细节** — 来源: 第三方博客 + 推断；可信度: 中（实现细节，跨版本可能变化）
+- **`plugins` 注入 Skill 的字段形态** — 来源: 官方文档 + 推断；可信度: 中（以所用版本类型为准）
 
 > 维护提示：本文件描述外部依赖，**会随 SDK 版本漂移**。升级
 > `@anthropic-ai/claude-agent-sdk` 时复核「需不需要本机 claude」「`settingSources` 语义」

@@ -15,7 +15,7 @@
   该 id，例如签名 HTTP POST）时的匹配键。c3 走的是相反路径——`canUseTool` **内联返回** branded
   `allow`/`deny`，由 SDK 自己的 transport 送回控制响应，SDK 内部按自己的信封匹配，c3 从不需要该 id。
   c3 自有的 `randomUUID()` `requestId` 位于**另一个平面**（浏览器往返），已经充分覆盖
-  wire/pending/event 关联，接入 SDK id 无可验证增益且返回 `null` 有永久阻塞风险。详见下表与「requestId
+  wire/pending/event 关联，接入 SDK id 无可验证增益且返回 `null` 有永久阻塞风险。详见下列清单与「requestId
   深评」一节。
 - vendor 中性适配器面（`adapters/types.ts` 与 ADR-0011 capability ledger）**未被任何接入触及**：
   `requestId` 关联完全内化在 Claude 权限网关内，不是新的能力 flag，也未提升到 neutral surface，
@@ -27,22 +27,48 @@
 
 每条 SDK 变化都给出「接入/不接入 + 依据 + 留痕去向」，便于人工逐项抽查。
 
-| SDK 变化（版本）                                                            | 决策                           | 依据                                                                                                                                                                                                                                                                                                                                                                                                      | 留痕去向                                                                                   |
-| --------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `canUseTool.requestId`（0.3.199）                                           | 不接入                         | SDK id 是控制协议信封键，仅供「返回 `null` + 带外 echo」模式使用；c3 内联返回 allow/deny，SDK 自匹配信封，无需该 id。c3 自有 id 覆盖浏览器往返 + consensus 自动决策 + AskUserQuestion 注入 + save_intents 门（后者在 MCP handler，SDK id 根本触不到）。返回 `null` 会因 fail-closed 无 `control_response` 导致 tool 永久阻塞。                                                                            | 代码注释：`kernel/permission/gateway.ts` 的 `createCanUseTool`；本表；「requestId 深评」节 |
-| `canUseTool` 返回 `null` 抑制自动控制响应（0.3.199）                        | 不接入                         | 同上；`null` 仅用于带外响应，c3 不接管 transport，误用即永久阻塞。c3 保持每个分支返回 branded verdict。                                                                                                                                                                                                                                                                                                   | 同上                                                                                       |
-| `workflow_agent.blocked` 进度字段（0.3.199）                                | 不适用                         | c3 不消费 SDK `workflow_agent` 进度事件（无 SDK-managed workflow 产品入口）；`blocked` 无落点。                                                                                                                                                                                                                                                                                                           | 本表                                                                                       |
-| `sandbox.credentials` `mode:"mask"` + `injectHosts`（0.3.199）              | 不接入                         | c3 的 `query()` 不传 `sandbox` 选项；隔离靠 Docker 容器 + `buildChildEnv` + `docker exec --env-file`，凭据边界已由容器 + env-file 覆盖，无 SDK 原生 sandbox credential 需求。                                                                                                                                                                                                                             | 本表                                                                                       |
-| `canUseTool` + `allowedTools`/`bypassPermissions` 运行时警告（0.3.198）     | 兼容确认，无冲突（实盘已确认） | SDK 仅在①`permissionMode==='bypassPermissions'`（code `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`）或②传了裸 `allowedTools` 时 `process.emitWarning`。c3 **从不传 `allowedTools`**（query 选项只有 `disallowedTools`），故②不触发；①仅当用户显式选 `bypassPermissions`（never-ask 工具门）的**标准 work 会话**时出现，是「用户已授权 never-ask」的预期语义，非配置冲突。详见「bypassPermissions 警告实盘确认」节。 | 本表；「bypassPermissions 警告实盘确认」节                                                 |
-| `mcp_set_servers` per-server `request_timeout_ms`（0.3.198）                | 不接入                         | c3 在 `query()` 构造时经 `mcpServers` 绑定 in-process MCP，不通过 SDK control request 动态下发服务器变更，无 `mcp_set_servers` 调用点（该字段在 sdk.mjs 中亦未出现于常规路径）。本次只记兼容性结论，不新增控制面。                                                                                                                                                                                        | 本表                                                                                       |
-| `isSynthetic` → `isMeta` 映射修复（0.3.198）                                | 升级即自动受益                 | c3 代码零处引用 `isSynthetic`/`isMeta`（`stringifyToolResult` 不透明转字符串，message loop 不解析该字段），映射修复对 c3 透明。                                                                                                                                                                                                                                                                           | 本表                                                                                       |
-| 工作流进度事件丢弃最早 agent 条目修复（0.3.198）                            | 升级即自动受益                 | 代码零改动；c3 不消费 workflow 进度事件，修复无害。                                                                                                                                                                                                                                                                                                                                                       | 本表                                                                                       |
-| `'manual'` 作为 `'default'` 权限模式别名（0.3.200）                         | 不接入                         | c3 统一用 `'default'`（见 `claude/modes.ts` 与共享 wire `PermissionMode`）；别名加性，不加入 mode catalog / dropdown / 共享协议，无影响。                                                                                                                                                                                                                                                                 | 本表                                                                                       |
-| `onSetPermissionMode` 在 SDK-managed Remote Control 中未触发修复（0.3.200） | 不适用                         | c3 不使用 SDK 托管 Remote Control；mode 切换走 `handle.setPermissionMode(...)`（`claude/driver.ts`），不经该路径。                                                                                                                                                                                                                                                                                        | 本表                                                                                       |
-| `set_model` 拒绝无效模型（0.3.200）                                         | 兼容确认，不新增校验           | c3 agent config 的 `model` 是字符串透传，运行时仍允许任意 provider/model 组合。SDK 侧多一层拒绝无效模型的防御有利无害；按「运行失败可见、配置不静默丢失」处理——若 SDK 拒绝未知 model override，c3 既有 degradable/error path 露出明确失败，不吞错、不改写用户配置。本次不建模型枚举白名单。                                                                                                               | 本表                                                                                       |
-| `prompt_id` hook 负载字段（0.3.196，OTEL 关联）                             | 不接入                         | c3 无 OTEL / telemetry 产品入口，无消费点。                                                                                                                                                                                                                                                                                                                                                               | 本表                                                                                       |
-| 控制协议去重 1000 次解析后丢 tool-use ID 修复（0.3.196）                    | 升级即自动受益                 | 代码零改动；长会话权限/工具关联自动受益。                                                                                                                                                                                                                                                                                                                                                                 | 本表                                                                                       |
-| 引擎同步 Claude Code v2.1.197 / v2.1.201（0.3.197 / 0.3.201）               | 兼容确认                       | 纯引擎同步，无 SDK 功能新增；typecheck 全绿证实无破坏性类型变化。                                                                                                                                                                                                                                                                                                                                         | 本表                                                                                       |
+- **`canUseTool.requestId`（0.3.199）** — 决策: 不接入
+  - 依据: SDK id 是控制协议信封键，仅供「返回 `null` + 带外 echo」模式使用；c3 内联返回 allow/deny，SDK 自匹配信封，无需该 id。c3 自有 id 覆盖浏览器往返 + consensus 自动决策 + AskUserQuestion 注入 + save_intents 门（后者在 MCP handler，SDK id 根本触不到）。返回 `null` 会因 fail-closed 无 `control_response` 导致 tool 永久阻塞。
+  - 留痕去向: 代码注释：`kernel/permission/gateway.ts` 的 `createCanUseTool`；本列表；「requestId 深评」节
+- **`canUseTool` 返回 `null` 抑制自动控制响应（0.3.199）** — 决策: 不接入
+  - 依据: 同上；`null` 仅用于带外响应，c3 不接管 transport，误用即永久阻塞。c3 保持每个分支返回 branded verdict。
+  - 留痕去向: 同上
+- **`workflow_agent.blocked` 进度字段（0.3.199）** — 决策: 不适用
+  - 依据: c3 不消费 SDK `workflow_agent` 进度事件（无 SDK-managed workflow 产品入口）；`blocked` 无落点。
+  - 留痕去向: 本列表
+- **`sandbox.credentials` `mode:"mask"` + `injectHosts`（0.3.199）** — 决策: 不接入
+  - 依据: c3 的 `query()` 不传 `sandbox` 选项；隔离靠 Docker 容器 + `buildChildEnv` + `docker exec --env-file`，凭据边界已由容器 + env-file 覆盖，无 SDK 原生 sandbox credential 需求。
+  - 留痕去向: 本列表
+- **`canUseTool` + `allowedTools`/`bypassPermissions` 运行时警告（0.3.198）** — 决策: 兼容确认，无冲突（实盘已确认）
+  - 依据: SDK 仅在①`permissionMode==='bypassPermissions'`（code `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`）或②传了裸 `allowedTools` 时 `process.emitWarning`。c3 **从不传 `allowedTools`**（query 选项只有 `disallowedTools`），故②不触发；①仅当用户显式选 `bypassPermissions`（never-ask 工具门）的**标准 work 会话**时出现，是「用户已授权 never-ask」的预期语义，非配置冲突。详见「bypassPermissions 警告实盘确认」节。
+  - 留痕去向: 本列表；「bypassPermissions 警告实盘确认」节
+- **`mcp_set_servers` per-server `request_timeout_ms`（0.3.198）** — 决策: 不接入
+  - 依据: c3 在 `query()` 构造时经 `mcpServers` 绑定 in-process MCP，不通过 SDK control request 动态下发服务器变更，无 `mcp_set_servers` 调用点（该字段在 sdk.mjs 中亦未出现于常规路径）。本次只记兼容性结论，不新增控制面。
+  - 留痕去向: 本列表
+- **`isSynthetic` → `isMeta` 映射修复（0.3.198）** — 决策: 升级即自动受益
+  - 依据: c3 代码零处引用 `isSynthetic`/`isMeta`（`stringifyToolResult` 不透明转字符串，message loop 不解析该字段），映射修复对 c3 透明。
+  - 留痕去向: 本列表
+- **工作流进度事件丢弃最早 agent 条目修复（0.3.198）** — 决策: 升级即自动受益
+  - 依据: 代码零改动；c3 不消费 workflow 进度事件，修复无害。
+  - 留痕去向: 本列表
+- **`'manual'` 作为 `'default'` 权限模式别名（0.3.200）** — 决策: 不接入
+  - 依据: c3 统一用 `'default'`（见 `claude/modes.ts` 与共享 wire `PermissionMode`）；别名加性，不加入 mode catalog / dropdown / 共享协议，无影响。
+  - 留痕去向: 本列表
+- **`onSetPermissionMode` 在 SDK-managed Remote Control 中未触发修复（0.3.200）** — 决策: 不适用
+  - 依据: c3 不使用 SDK 托管 Remote Control；mode 切换走 `handle.setPermissionMode(...)`（`claude/driver.ts`），不经该路径。
+  - 留痕去向: 本列表
+- **`set_model` 拒绝无效模型（0.3.200）** — 决策: 兼容确认，不新增校验
+  - 依据: c3 agent config 的 `model` 是字符串透传，运行时仍允许任意 provider/model 组合。SDK 侧多一层拒绝无效模型的防御有利无害；按「运行失败可见、配置不静默丢失」处理——若 SDK 拒绝未知 model override，c3 既有 degradable/error path 露出明确失败，不吞错、不改写用户配置。本次不建模型枚举白名单。
+  - 留痕去向: 本列表
+- **`prompt_id` hook 负载字段（0.3.196，OTEL 关联）** — 决策: 不接入
+  - 依据: c3 无 OTEL / telemetry 产品入口，无消费点。
+  - 留痕去向: 本列表
+- **控制协议去重 1000 次解析后丢 tool-use ID 修复（0.3.196）** — 决策: 升级即自动受益
+  - 依据: 代码零改动；长会话权限/工具关联自动受益。
+  - 留痕去向: 本列表
+- **引擎同步 Claude Code v2.1.197 / v2.1.201（0.3.197 / 0.3.201）** — 决策: 兼容确认
+  - 依据: 纯引擎同步，无 SDK 功能新增；typecheck 全绿证实无破坏性类型变化。
+  - 留痕去向: 本列表
 
 ## requestId 深评（0.3.199 唯一深入评估项）
 

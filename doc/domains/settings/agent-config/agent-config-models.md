@@ -12,13 +12,11 @@
 
 ### 公共外壳
 
-| 属性          | 类型        | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`          | text        | 稳定 id;内建智能体固定为 `'system'`                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `displayName` | text        | 展示名称(在厂商重构前叫 `name`)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `enabled`     | bool (可选) | 启用标志;缺省/`true` ⇒ 启用,只有显式 `false` 才禁用。禁用的智能体会从所有列表消费方(参与者、投票者、降级链、默认选择器)中退出,但仍可作为有效的启动兜底(AC-R10)                                                                                                                                                                                                                                                                                                   |
-| `icon`        | text (可选) | 可选展示图标(表情符号/短文本)。空/缺省 ⇒ 无自定义图标。会被去除首尾空白并截断到 16 字符;不校验是否为真实的表情符号。没有该字段的旧配置加载为 `''`(AC-R11)                                                                                                                                                                                                                                                                                                        |
-| `group`       | text (可选) | 分组名。非空 ⇒ 该 agent 归入 `(vendor, group)` 组;相同 `(vendor, group)` 的 enabled agent 按 `order_seq` 优先级构成一个可 failover 的候选集,暴露为虚拟 group agent `_c3_<vendor>_<group>`。虚拟引用编码 vendor,故**不同 vendor 可复用同一分组名**(各成独立组)。成员可混 `custom` 与 `system` 配置模式。为空/缺省 ⇒ 不参与任何组,控制台把这批 agent 归入名为 `default` 的容器展示。设计见 [relay-architecture](../../../architecture/relay-architecture.md) §6–§8 |
+- **`id`**(text): 稳定 id;内建智能体固定为 `'system'`
+- **`displayName`**(text): 展示名称
+- **`enabled`**(bool,可选): 启用标志;缺省/`true` ⇒ 启用,只有显式 `false` 才禁用。禁用的智能体会从所有列表消费方(参与者、投票者、降级链、默认选择器)中退出,但仍可作为有效的启动兜底(AC-R10)
+- **`icon`**(text,可选): 可选展示图标(表情符号/短文本)。空/缺省 ⇒ 无自定义图标。会被去除首尾空白并截断到 16 字符;不校验是否为真实的表情符号。没有该字段的配置加载为 `''`(AC-R11)
+- **`group`**(text,可选): 分组名。非空 ⇒ 该 agent 归入 `(vendor, group)` 组;相同 `(vendor, group)` 的 enabled agent 按 `order_seq` 优先级构成一个可 failover 的候选集,暴露为虚拟 group agent `_c3_<vendor>_<group>`。虚拟引用编码 vendor,故**不同 vendor 可复用同一分组名**(各成独立组)。成员可混 `custom` 与 `system` 配置模式。为空/缺省 ⇒ 不参与任何组,控制台把这批 agent 归入名为 `default` 的容器展示。设计见 [relay-architecture](../../../architecture/relay-architecture.md) §6–§8
 
 ### Claude 配置子对象(`vendor === 'claude'`)
 
@@ -34,14 +32,12 @@
 (`sandboxMode`/`approvalPolicy`)**不**持久化在这里——它是在启动时根据
 会话 `defaultMode` 通过中立映射表推导出来的(2026-06-06-008)。
 
-| 属性              | 类型                    | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `baseUrl`         | text (url)              | OpenAI 兼容的 base URL 覆盖项(仅自定义模式);为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `apiKey`          | text                    | API key / 鉴权 token 覆盖项;为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `model`           | text                    | 模型别名或 id;为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `wireApi`         | `'responses' \| 'chat'` | 自定义厂商的线上协议——codex 自身的 wire-api 术语。ADR-0029 起**所有 custom codex 都走 relay**,`wireApi` 降为**候选级**的 relay 内部适配选择:`'chat'` ⇒ 仅支持 Chat-Completions ⇒ relay 做 Responses↔Chat **翻译**;`'responses'` ⇒ 厂商原生 Responses ⇒ relay **透传**(仅换 key、覆盖 model)。没有该字段的旧记录迁移为 `'chat'`。与 `system` 模式的 codex 无关(无 custom 上游 ⇒ codex 自身登录)。见 [relay-architecture](../../../architecture/relay-architecture.md) §9。 |
-| `contextWindow`   | 正整数 (可选)           | 模型的上下文窗口(token)声明(2026-08-08-013)。仅在 `custom` 模式(codex 走 relay)下消费:codex driver 的 relay 分支把它与 `maxOutputTokens` 一起注册进本地 model catalog(`model_catalog_json`),让 codex 不再对三方模型 id 回退默认元数据(消「Model metadata not found」告警)。缺省 ⇒ 不生成 catalog,行为保持现状。请按模型**真实能力**填写——值大于真实窗口可能引发上游截断/报错。见 [relay-architecture](../../../architecture/relay-architecture.md) §10。                  |
-| `maxOutputTokens` | 正整数 (可选)           | 模型单次输出上限(token)声明,与 `contextWindow` 同一机制。注意:**`max_output_tokens` 被 codex 0.146.0 的 serde 接受,但是否被实际消费为生成上限未经真实上游验证**,当前仅作声明、**尽力而为**,不保证截断行为;不受支持时该声明无副作用。                                                                                                                                                                                                                                      |
+- **`baseUrl`**(text, url): OpenAI 兼容的 base URL 覆盖项(仅自定义模式);为空 ⇒ 不覆盖
+- **`apiKey`**(text): API key / 鉴权 token 覆盖项;为空 ⇒ 不覆盖
+- **`model`**(text): 模型别名或 id;为空 ⇒ 不覆盖
+- **`wireApi`**(`'responses' | 'chat'`): 自定义厂商的线上协议——codex 自身的 wire-api 术语。所有 custom codex 都走 relay(ADR-0029),`wireApi` 是**候选级**的 relay 内部适配选择:`'chat'` ⇒ 仅支持 Chat-Completions ⇒ relay 做 Responses↔Chat **翻译**;`'responses'` ⇒ 厂商原生 Responses ⇒ relay **透传**(仅换 key、覆盖 model)。缺该字段的记录读为 `'chat'`。与 `system` 模式的 codex 无关(无 custom 上游 ⇒ codex 自身登录)。见 [relay-architecture](../../../architecture/relay-architecture.md) §9。
+- **`contextWindow`**(正整数,可选): 模型的上下文窗口(token)声明。仅在 `custom` 模式(codex 走 relay)下消费:codex driver 的 relay 分支把它与 `maxOutputTokens` 一起注册进本地 model catalog(`model_catalog_json`),让 codex 不再对三方模型 id 回退默认元数据(消「Model metadata not found」告警)。缺省 ⇒ 不生成 catalog。请按模型**真实能力**填写——值大于真实窗口可能引发上游截断/报错。见 [relay-architecture](../../../architecture/relay-architecture.md) §10。
+- **`maxOutputTokens`**(正整数,可选): 模型单次输出上限(token)声明,与 `contextWindow` 同一机制。注意:**`max_output_tokens` 被 codex serde 接受,但是否被实际消费为生成上限未经真实上游验证**,当前仅作声明、**尽力而为**,不保证截断行为;不受支持时该声明无副作用。
 
 > **数值边界告警**:`contextWindow`/`maxOutputTokens` 必须为正整数;`0`/负数/非整数会让 `codexConfigSchema` 校验失败,`parseAgentConfig` 返回 `null`,**整个 codex agent 被 normalize 按 fail-soft 策略从注册表丢弃**(与重复 id 同策略),会话回退到默认 agent。手改 `~/.c3/settings.json` 填错数值会导致该 codex agent 静默消失——这是既有 fail-soft 行为,不是「该字段被忽略」。
 
@@ -53,10 +49,8 @@
 `apiKey` 是**可选**的:填了就用,留空则由 `cursor-agent login` 写入操作系统钥匙串的
 登录态兜底,与其他厂商的 `system` 模式含义一致。
 
-| 属性     | 类型 | 说明                                                                                                                   |
-| -------- | ---- | ---------------------------------------------------------------------------------------------------------------------- |
-| `apiKey` | text | Cursor API key。为空 ⇒ 回落到服务端环境变量 `CURSOR_API_KEY`;两者皆空 ⇒ 运行在启动处即以可行动错误失败(同时点名这两处) |
-| `model`  | text | 模型别名或 id(如 `auto`、`claude-4.5-sonnet`);为空 ⇒ 沿用 Cursor 的 `auto`                                             |
+- **`apiKey`**(text): Cursor API key。为空 ⇒ 回落到服务端环境变量 `CURSOR_API_KEY`;两者皆空 ⇒ 运行在启动处即以可行动错误失败(同时点名这两处)
+- **`model`**(text): 模型别名或 id(如 `auto`、`claude-4.5-sonnet`);为空 ⇒ 沿用 Cursor 的 `auto`
 
 关系:零个或多个 Session(会话)绑定到一个 Agent;未绑定的会话使用默认智能体。
 
@@ -73,28 +67,24 @@
 
 整个配置,持久化在 `~/.c3/settings.json`。
 
-| 字段                | 类型                | 说明                                                                                                                                                                                            |
-| ------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents`            | 智能体列表          | 注册表;始终包含系统智能体(AC-R1)                                                                                                                                                                |
-| `defaultAgentId`    | text                | 某个已存在智能体的 id;找不到时回退到系统智能体(AC-R2)                                                                                                                                           |
-| `toolAgentId`       | text                | 运行后台工具会话(完成度判定、自动化/会话命名推导;异常处理尚未由智能体驱动)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R21)。         |
-| `intentAgentId`     | text                | 运行意图沟通会话(意图分析师的需求拆解对话)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R23)。                                         |
-| `specAgentId`       | text                | 运行规格编写会话(编写/完善项目规格)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认/工具/意图智能体一样按顺序号回退(AC-R24)。                                  |
-| `defaultMode`       | 权限模式(可选)      | 新会话启动时所处的权限模式;为五种权限模式取值之一,找不到时回退到 `default`(AC-R8)。为 session-registry 中新会话的模式做种(SR-R6)。                                                              |
-| `consensus`         | `{ enabled }`(可选) | 权限提示上的多智能体共识投票;默认关闭。由权限网关消费——见 [consensus](../../core/permission-gateway/features/permission-gateway-consensus.md)。                                                 |
-| `maxRoundsPerStage` | number(可选)        | 多智能体讨论每阶段的轮次上限;归一化为 ≥ 8,默认 12(AC-R9)。由讨论引擎消费。                                                                                                                      |
-| `timezone`          | text(可选)          | 用于解释每个自动化的 cron 字段的系统级 IANA 时区(例如 `Asia/Shanghai`);无效/未设置时回退到服务器本地时区。由 [automations](../../core/automations/automations-design.md) 引擎消费——见 SCH-R3a。 |
+- **`agents`**(智能体列表): 注册表;始终包含系统智能体(AC-R1)
+- **`defaultAgentId`**(text): 某个已存在智能体的 id;找不到时回退到系统智能体(AC-R2)
+- **`toolAgentId`**(text): 运行后台工具会话(完成度判定、自动化/会话命名推导;异常处理尚未由智能体驱动)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R21)。
+- **`intentAgentId`**(text): 运行意图沟通会话(意图分析师的需求拆解对话)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R23)。
+- **`specAgentId`**(text): 运行规格编写会话(编写/完善项目规格)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认/工具/意图智能体一样按顺序号回退(AC-R24)。
+- **`defaultMode`**(权限模式,可选): 新会话启动时所处的权限模式;为五种权限模式取值之一,找不到时回退到 `default`(AC-R8)。为 session-registry 中新会话的模式做种(SR-R6)。
+- **`consensus`**(`{ enabled }`,可选): 权限提示上的多智能体共识投票;默认关闭。由权限网关消费——见 [consensus](../../core/permission-gateway/features/permission-gateway-consensus.md)。
+- **`maxRoundsPerStage`**(number,可选): 多智能体讨论每阶段的轮次上限;归一化为 ≥ 8,默认 12(AC-R9)。由讨论引擎消费。
+- **`timezone`**(text,可选): 用于解释每个自动化的 cron 字段的系统级 IANA 时区(例如 `Asia/Shanghai`);无效/未设置时回退到服务器本地时区。由 [automations](../../core/automations/automations-design.md) 引擎消费——见 SCH-R3a。
 
 ## Session binding(会话绑定,state.json,`~/.c3`)
 
 按会话的智能体绑定——一个**双键空间**(ADR-0015,AC-R16/R17),与
 session-registry 自身的状态是分离的。
 
-| 字段             | 类型                                     | 说明                                                                                                    |
-| ---------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `version`        | `2`                                      | Schema 版本(v1 单一 map 的旧数据在首次读取时迁移)                                                       |
-| `pendingIntents` | map `pendingId → { agentId, createdAt }` | **意图**——尚未运行的会话所期望的智能体;可变,无厂商信息;由清理任务在 7 天后回收(AC-R17)                  |
-| `sessionAgents`  | map `realId → { agentId, vendor }`       | **事实**——某个真实会话实际运行所用的智能体 + 其被冻结的 `vendor`;缺失该条目 ⇒ 使用默认智能体(AC-R4/R16) |
+- **`version`**(`2`): Schema 版本(v1 单一 map 的旧数据在首次读取时迁移)
+- **`pendingIntents`**(map `pendingId → { agentId, createdAt }`): **意图**——尚未运行的会话所期望的智能体;可变,无厂商信息;由清理任务在 7 天后回收(AC-R17)
+- **`sessionAgents`**(map `realId → { agentId, vendor }`): **事实**——某个真实会话实际运行所用的智能体 + 其被冻结的 `vendor`;缺失该条目 ⇒ 使用默认智能体(AC-R4/R16)
 
 ### Session binding 实体
 

@@ -109,12 +109,10 @@ pnpm release:github --dry-run      # 排练每个阶段,不打 tag / 不跑 gh
 
 ## 相关脚本速查
 
-| 命令                       | 作用                                                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------- |
-| `pnpm release`             | **交互式本地构建**:提示版本 → 交叉编译三目标 → 生成校验和 → 汇集 `dist/release-artifacts/v<版本>/` |
-| `pnpm release:build`       | 仅构建 + 打包 + manifest(`--targets` / `--skip-web` / `--skip-pack`)                               |
-| `pnpm release:desktop`     | 桌面渠道:sidecar 编译 → 暂存 + 版本门禁 → `tauri build` → 收集 + manifest(`--require-signing`)     |
-| `pnpm release:checksum`    | 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)                                               |
-| `pnpm release:smoke`       | 冒烟:`--version` + headless 启动                                                                   |
-| `pnpm release:verify-dist` | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性 + 必需目标 + schema + 无孤儿制品                       |
-| `pnpm release:github`      | GitHub 发布编排:gate → build → notes → 切公开 GitHub Release                                       |
+- **`pnpm release`**: **交互式本地构建**:提示版本 → 交叉编译三目标 → 生成校验和 → 汇集 `dist/release-artifacts/v<版本>/`
+- **`pnpm release:build`**: 仅构建 + 打包 + manifest(`--targets` / `--skip-web` / `--skip-pack`)
+- **`pnpm release:desktop`**: 桌面渠道:sidecar 编译 → 暂存 + 版本门禁 → `tauri build` → 收集 + manifest(`--require-signing`)
+- **`pnpm release:checksum`**: 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)
+- **`pnpm release:smoke`**: 冒烟:`--version` + headless 启动
+- **`pnpm release:verify-dist`**: postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性 + 必需目标 + schema + 无孤儿制品
+- **`pnpm release:github`**: GitHub 发布编排:gate → build → notes → 切公开 GitHub Release

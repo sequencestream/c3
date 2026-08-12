@@ -65,22 +65,24 @@ relay 是内核基础设施层的独立模块,vendor 中立。分层:
 
 职责边界:
 
-| 层                          | 职责                                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| Agent-config resolve        | 把 agent 引用(真实 id / `_c3_<group>`)解析为**有序候选列表**(每项含真实上游配置)。    |
-| Relay kernel 面             | `register(candidates) → token` / `unregister(token)` / 各 vendor 端点 baseUrl。       |
-| Relay transport 面          | HTTP handler、token registry、failover 路由、协议适配、上游出站(触碰 Hono / 序列化)。 |
-| Protocol Adapter(每 vendor) | 纯函数:请求/响应流的协议翻译或透传;无 SDK、无 HTTP 依赖。                             |
-| Vendor driver               | 把 CLI 指向 relay 的 vendor 端点、传 token、注入 `NO_PROXY`;不再注入真实 key。        |
+- **Agent-config resolve**: 把 agent 引用(真实 id / `_c3_<group>`)解析为**有序候选列表**(每项含真实上游配置)。
+- **Relay kernel 面**: `register(candidates) → token` / `unregister(token)` / 各 vendor 端点 baseUrl。
+- **Relay transport 面**: HTTP handler、token registry、failover 路由、协议适配、上游出站(触碰 Hono / 序列化)。
+- **Protocol Adapter(每 vendor)**: 纯函数:请求/响应流的协议翻译或透传;无 SDK、无 HTTP 依赖。
+- **Vendor driver**: 把 CLI 指向 relay 的 vendor 端点、传 token、注入 `NO_PROXY`;不再注入真实 key。
 
 ## 4. Relay 端点(vendor 维度)
 
 relay 按 vendor 暴露不同端点(不同 vendor 的线缆协议不同),token 机制通用:
 
-| Vendor | 端点(loopback)                                  | 上游协议                       | 适配方式                                                |
-| ------ | ----------------------------------------------- | ------------------------------ | ------------------------------------------------------- |
-| codex  | `POST /internal/relay/v1/codex/responses`       | OpenAI Responses(CLI 侧固定)   | `wireApi=chat` → Responses↔Chat 翻译;`responses` → 透传 |
-| claude | `POST /internal/relay/v1/anthropic/v1/messages` | Anthropic Messages(CLI 侧固定) | anthropic-compat 上游 → 透传;跨协议 → 翻译(后续)        |
+- **codex**
+  - 端点(loopback): `POST /internal/relay/v1/codex/responses`
+  - 上游协议: OpenAI Responses(CLI 侧固定)
+  - 适配方式: `wireApi=chat` → Responses↔Chat 翻译;`responses` → 透传
+- **claude**
+  - 端点(loopback): `POST /internal/relay/v1/anthropic/v1/messages`
+  - 上游协议: Anthropic Messages(CLI 侧固定)
+  - 适配方式: anthropic-compat 上游 → 透传;跨协议 → 翻译(后续)
 
 - 端点前缀统一为 `/internal/relay/v1/<vendor>/…`;原 `/internal/codex-relay/v1/responses` 作为 codex 端点的迁移别名保留一个过渡期(§13)。
 - CLI 侧协议由 vendor 决定、固定不变:codex 只说 Responses,claude 只说 Anthropic Messages。relay 的适配器把它转成候选上游能接受的协议。

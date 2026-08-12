@@ -111,21 +111,19 @@ automation、tool。本 amendment 记录这份契约。
 自己的业务表,仍然是会话*内容*与归属事实的事实来源。这份投影只承载用于读侧聚合的
 寻址/生命周期元数据:
 
-| Field             | Purpose                                                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| c3 session id     | 不透明的 c3 会话 id(确定性的无厂商摘要)。主键。                                                                                  |
-| workspace         | 这一行所属的工作区;驱动每日读路径的过滤条件。                                                                                    |
-| vendor session id | 原生的厂商 id(pending 行可为空)。                                                                                                |
-| agent             | 该会话运行所在的 agent(一个绑定事实或一个待处理意图)。                                                                           |
-| title             | 展示标题;由惰性校验/运行结束重写。                                                                                               |
-| last modified     | UTC 毫秒;对一个真实行(所有厂商,包括 Codex——SR-R13)戳记为绑定时刻,由惰性校验细化为原生 transcript 的 mtime;仅 pending 行为 null。 |
-| state             | 生命周期状态(born / alive / stale / orphaned / ghost)。                                                                          |
-| state updated at  | UTC 毫秒;驱动 STALE 窗口和预热策略。                                                                                             |
-| kind              | 为兼容性保留的旧版绑定标记;读路径忽略它。                                                                                        |
-| session kind      | 业务类别:work / intent / spec / discussion / automation / tool。                                                                 |
-| owner kind        | 可为空的逻辑归属者类别(当前为 intent / discussion / automation),供客户端"跳回"规则使用。                                         |
-| owner id          | 可为空的逻辑归属者 id。                                                                                                          |
-| bound             | 取代 `kind` 的整型布尔值:真实行为 `1`,仅供 work 使用的 pending 占位行为 `0`。                                                    |
+- **c3 session id**: 不透明的 c3 会话 id(确定性的无厂商摘要)。主键。
+- **workspace**: 这一行所属的工作区;驱动每日读路径的过滤条件。
+- **vendor session id**: 原生的厂商 id(pending 行可为空)。
+- **agent**: 该会话运行所在的 agent(一个绑定事实或一个待处理意图)。
+- **title**: 展示标题;由惰性校验/运行结束重写。
+- **last modified**: UTC 毫秒;对一个真实行(所有厂商,包括 Codex——SR-R13)戳记为绑定时刻,由惰性校验细化为原生 transcript 的 mtime;仅 pending 行为 null。
+- **state**: 生命周期状态(born / alive / stale / orphaned / ghost)。
+- **state updated at**: UTC 毫秒;驱动 STALE 窗口和预热策略。
+- **kind**: 为兼容性保留的旧版绑定标记;读路径忽略它。
+- **session kind**: 业务类别:work / intent / spec / discussion / automation / tool。
+- **owner kind**: 可为空的逻辑归属者类别(当前为 intent / discussion / automation),供客户端"跳回"规则使用。
+- **owner id**: 可为空的逻辑归属者 id。
+- **bound**: 取代 `kind` 的整型布尔值:真实行为 `1`,仅供 work 使用的 pending 占位行为 `0`。
 
 **这份投影**从不写入任何 transcript、prompt、工具调用或工具结果内容。由一个字段白名单
 正向断言测试钉住。
@@ -152,15 +150,13 @@ schema 目标。
 
 ### Write triggers
 
-| Trigger                     | Effect                                                                                                                                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create work session (UI)    | 插入一条 work 类别的 pending 行(ADR-0015 那个意图的新归宿)。                                                                                                                                             |
-| Freeze session agent (bind) | 丢弃 pending 行,插入真实行(两条运行路径共用的单一入口点);由 intent 发起的开发会话携带 `owner_kind='intent'` 与 `owner_id=<intent id>`,手动创建的 work 会话保持 owner 为空。                              |
-| Intent chat lifecycle       | 为 intent 通信会话 upsert intent 类别的已绑定行;rename/delete 与 intent 会话列表保持镜像同步。                                                                                                           |
-| Same-vendor agent swap      | 更新真实行的 agent。                                                                                                                                                                                     |
-| Rename session              | 更新真实行的 title。                                                                                                                                                                                     |
-| Finalize run (run end)      | 更新真实行的 title(从原生存储解析——与标题栏/janitor 使用**同一个**来源,而不是首次运行时为空的基线;首个用户 prompt 作为兜底)、last-modified 和 agent,然后重新广播列表(异步的原生读取在运行结束后才落地)。 |
-| Remove session (delete)     | 删除该行。                                                                                                                                                                                               |
+- **Create work session (UI)**: 插入一条 work 类别的 pending 行(ADR-0015 那个意图的新归宿)。
+- **Freeze session agent (bind)**: 丢弃 pending 行,插入真实行(两条运行路径共用的单一入口点);由 intent 发起的开发会话携带 `owner_kind='intent'` 与 `owner_id=<intent id>`,手动创建的 work 会话保持 owner 为空。
+- **Intent chat lifecycle**: 为 intent 通信会话 upsert intent 类别的已绑定行;rename/delete 与 intent 会话列表保持镜像同步。
+- **Same-vendor agent swap**: 更新真实行的 agent。
+- **Rename session**: 更新真实行的 title。
+- **Finalize run (run end)**: 更新真实行的 title(从原生存储解析——与标题栏/janitor 使用**同一个**来源,而不是首次运行时为空的基线;首个用户 prompt 作为兜底)、last-modified 和 agent,然后重新广播列表(异步的原生读取在运行结束后才落地)。
+- **Remove session (delete)**: 删除该行。
 
 ### Freshness & janitor
 

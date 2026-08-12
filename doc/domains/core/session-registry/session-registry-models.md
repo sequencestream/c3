@@ -21,16 +21,14 @@
 
 工作区内一个由厂商托管的会话,为列表/计数读取投影到 `session_metadata` 中。
 
-| 属性           | 类型            | 说明                                                                |
-| -------------- | --------------- | ------------------------------------------------------------------- |
-| `sessionId`    | text            | 线上不透明的 c3 会话 id;内部映射到厂商 + 原生 id                    |
-| `title`        | text            | 厂商自定义标题 / 摘要 / 首条提示                                    |
-| `lastModified` | timestamp       | 厂商最后修改时间;工作区内的排序键(SR-R4)                            |
-| `mode`         | permission mode | c3 跟踪的每会话权限模式;默认 `default`(SR-R5)                       |
-| `sessionKind`  | enum            | work / intent / spec / spec_review / discussion / automation / tool |
-| `ownerKind`    | enum \| null    | 用于跳回的逻辑所有者类别;无所有者会话为 null                        |
-| `ownerId`      | text \| null    | 逻辑所有者 id;null 表示该会话无法跳回某个所有者                     |
-| `bound`        | boolean         | 真实行为 true;仅当为 work 待处理占位符时为 false                    |
+- **`sessionId`**(text): 线上不透明的 c3 会话 id;内部映射到厂商 + 原生 id
+- **`title`**(text): 厂商自定义标题 / 摘要 / 首条提示
+- **`lastModified`**(timestamp): 厂商最后修改时间;工作区内的排序键(SR-R4)
+- **`mode`**(permission mode): c3 跟踪的每会话权限模式;默认 `default`(SR-R5)
+- **`sessionKind`**(enum): work / intent / spec / spec_review / discussion / automation / tool
+- **`ownerKind`**(enum | null): 用于跳回的逻辑所有者类别;无所有者会话为 null
+- **`ownerId`**(text | null): 逻辑所有者 id;null 表示该会话无法跳回某个所有者
+- **`bound`**(boolean): 真实行为 true;仅当为 work 待处理占位符时为 false
 
 关系:属于一个 Workspace;其 transcript 与 title 由智能体厂商拥有,其
 `mode` 由 registry 拥有。所有者字段指回诸如 intent、discussion 或 automation 等域实体;

@@ -11,16 +11,30 @@
 
 ## 流程一览
 
-| 流程                                                            | 场景                                                                                                                | 涉及的领域                                                                               |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [prompt → gated run(受门控的运行)](flow-prompt-to-gated-run.md) | 一条 prompt 变成一次运行；敏感工具会被门控(先共识后人工)；文本流式回传                                              | web-console · session-registry · agent-config · agent-session · permission-gateway       |
-| [工作区与会话生命周期](flow-workspace-session-lifecycle.md)     | 注册工作区,创建/选择/绑定/重命名/删除会话,冻结其厂商                                                                | web-console · session-registry · agent-session · agent-config                            |
-| [运行的韧性](flow-run-resilience.md)                            | 一次运行在断开 socket、智能体故障或厂商不可达时依然不丢失上下文                                                     | agent-session · agent-config · permission-gateway                                        |
-| [意图 → 开发](flow-intent-to-development.md)                    | 一个想法被细化为可验证的意图,再挑一个启动为后台工作会话                                                             | intent-management · agent-session · permission-gateway · session-registry · agent-config |
-| [自动化队列(确定性调度内核)](flow-automation-orchestrator.md)   | 一批标记为 `automate` 的意图逐一被构建:tick 对账 → 开发、评判、提交/推送、推进;单意图失败隔离(退避 → park),队列不停 | intent-management · agent-session · permission-gateway · git                             |
-| [讨论 → 意图](flow-discussion-to-intent.md)                     | 对一个目标进行调研,由组织者主持的圆桌讨论得出结论,再转化为多个意图                                                  | discussion · agent-config · intent-management                                            |
-| [自动化执行](flow-automation-execution.md)                      | cron/事件触发器触发一个命令或 LLM-prompt 任务,以某个执行身份运行;结果被记录                                         | automations · session-registry · agent-session                                           |
-| [auth 登录门](flow-auth-login.md)                               | 一个连接在驱动智能体之前先完成身份认证(这是对外暴露到网络的前置条件)                                                | auth · web-console · settings                                                            |
+- [prompt → gated run(受门控的运行)](flow-prompt-to-gated-run.md)
+  - 场景: 一条 prompt 变成一次运行；敏感工具会被门控(先共识后人工)；文本流式回传
+  - 领域: web-console · session-registry · agent-config · agent-session · permission-gateway
+- [工作区与会话生命周期](flow-workspace-session-lifecycle.md)
+  - 场景: 注册工作区,创建/选择/绑定/重命名/删除会话,冻结其厂商
+  - 领域: web-console · session-registry · agent-session · agent-config
+- [运行的韧性](flow-run-resilience.md)
+  - 场景: 一次运行在断开 socket、智能体故障或厂商不可达时依然不丢失上下文
+  - 领域: agent-session · agent-config · permission-gateway
+- [意图 → 开发](flow-intent-to-development.md)
+  - 场景: 一个想法被细化为可验证的意图,再挑一个启动为后台工作会话
+  - 领域: intent-management · agent-session · permission-gateway · session-registry · agent-config
+- [自动化队列(确定性调度内核)](flow-automation-orchestrator.md)
+  - 场景: 一批标记为 `automate` 的意图逐一被构建:tick 对账 → 开发、评判、提交/推送、推进;单意图失败隔离(退避 → park),队列不停
+  - 领域: intent-management · agent-session · permission-gateway · git
+- [讨论 → 意图](flow-discussion-to-intent.md)
+  - 场景: 对一个目标进行调研,由组织者主持的圆桌讨论得出结论,再转化为多个意图
+  - 领域: discussion · agent-config · intent-management
+- [自动化执行](flow-automation-execution.md)
+  - 场景: cron/事件触发器触发一个命令或 LLM-prompt 任务,以某个执行身份运行;结果被记录
+  - 领域: automations · session-registry · agent-session
+- [auth 登录门](flow-auth-login.md)
+  - 场景: 一个连接在驱动智能体之前先完成身份认证(这是对外暴露到网络的前置条件)
+  - 领域: auth · web-console · settings
 
 ## 阅读约定
 

@@ -5,11 +5,18 @@ c3 驱动三种 agent vendor,每一种都落在一个宿主 CLI 二进制上。C
 spawn(见
 [Cursor 特性文档](../domains/core/agent-session/features/agent-session-cursor.md))。
 
-| Vendor | 驱动方式                         | 宿主 CLI       | 分发方 | 来源 / 仓库                                                                                         |
-| ------ | -------------------------------- | -------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| Claude | `@anthropic-ai/claude-agent-sdk` | `claude`       | c3     | [anthropics/claude-agent-sdk-typescript](https://github.com/anthropics/claude-agent-sdk-typescript) |
-| Codex  | `@openai/codex-sdk`              | `codex`        | c3     | [openai/codex](https://github.com/openai/codex)                                                     |
-| Cursor | 直接 spawn                       | `cursor-agent` | 厂商   | [Cursor CLI 文档](https://cursor.com/docs/cli)(官方安装器分发,按发布日期版本化)                     |
+- **Claude**
+  - 驱动方式: `@anthropic-ai/claude-agent-sdk`
+  - 宿主 CLI: `claude`,由 c3 分发
+  - 来源: [anthropics/claude-agent-sdk-typescript](https://github.com/anthropics/claude-agent-sdk-typescript)
+- **Codex**
+  - 驱动方式: `@openai/codex-sdk`
+  - 宿主 CLI: `codex`,由 c3 分发
+  - 来源: [openai/codex](https://github.com/openai/codex)
+- **Cursor**
+  - 驱动方式: 直接 spawn
+  - 宿主 CLI: `cursor-agent`,由厂商分发
+  - 来源: [Cursor CLI 文档](https://cursor.com/docs/cli)(官方安装器分发,按发布日期版本化)
 
 差异集中在**谁分发那个二进制**,而非它怎么被驱动,见 [`architecture.md`](architecture.md) 与
 [`adr/0011-vendor-neutral-agent-abstraction.md`](adr/0011-vendor-neutral-agent-abstraction.md)。

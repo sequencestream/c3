@@ -8,19 +8,17 @@
 
 运行调用 SDK 的 `query()`,参数如下:
 
-| Option                            | Value                                       | Why                                                                                                                                                                               |
-| --------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`                          | 流式输入的 async-iterable                   | 流式输入模式(AS-R13, ADR 0008):用户的第一个 turn 被推入;保持 SDK 控制通道存活,让 team lead 能比一次 `result` 存活得更久。不是一次性字符串。                                       |
-| `cwd`                             | 会话的工作区路径                            | Claude 读写的位置(AS-R1)                                                                                                                                                          |
-| `resume`                          | session id \| omit                          | 继续一个已有会话;pending 会话的首次运行时省略(AS-R10)                                                                                                                             |
-| `settingSources`                  | `['user', 'project']`                       | 继承用户/项目设置、hook、allow 规则、Skills — ADR 0005 / C-SEC-1                                                                                                                  |
-| `systemPrompt`                    | `{ type: 'preset', preset: 'claude_code' }` | 使用 Claude Code 的完整 system prompt,包括动态部分(工作目录、git 状态、CLAUDE.md/memory);没有它 SDK 0.3.x 的默认值会省略环境上下文,模型永远学不到 `cwd`                           |
-| `permissionMode`                  | 会话的模式(来自其 runtime)                  | 起始策略(AS-R3)                                                                                                                                                                   |
-| `allowDangerouslySkipPermissions` | `true`                                      | 允许随时切换到 `bypassPermissions`;c3 仍是 UI(C-SEC)                                                                                                                              |
-| `pathToClaudeCodeExecutable`      | 解析出的 `claude` 路径                      | 仅在找到时设置(ADR 0003)                                                                                                                                                          |
-| `env`                             | `buildChildEnv(overrides)`                  | 始终设置的完整子进程环境:keepalive 默认值 < 宿主 shell < 活跃 agent 覆盖(`ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`);`NO_PROXY` 见 § 远程 MCP 的回环代理旁路 |
-| `model`                           | 活跃 agent 的模型 \| omit                   | 来自活跃 agent 的模型覆盖;省略 ⇒ SDK 默认(agent-config AC-R5)                                                                                                                     |
-| `canUseTool`                      | gateway 回调                                | 门控敏感工具(AS-R5)                                                                                                                                                               |
+- **`prompt`** = 流式输入的 async-iterable — 流式输入模式(AS-R13, ADR 0008):用户的第一个 turn 被推入;保持 SDK 控制通道存活,让 team lead 能比一次 `result` 存活得更久。不是一次性字符串。
+- **`cwd`** = 会话的工作区路径 — Claude 读写的位置(AS-R1)
+- **`resume`** = session id | omit — 继续一个已有会话;pending 会话的首次运行时省略(AS-R10)
+- **`settingSources`** = `['user', 'project']` — 继承用户/项目设置、hook、allow 规则、Skills — ADR 0005 / C-SEC-1
+- **`systemPrompt`** = `{ type: 'preset', preset: 'claude_code' }` — 使用 Claude Code 的完整 system prompt,包括动态部分(工作目录、git 状态、CLAUDE.md/memory);没有它 SDK 0.3.x 的默认值会省略环境上下文,模型永远学不到 `cwd`
+- **`permissionMode`** = 会话的模式(来自其 runtime) — 起始策略(AS-R3)
+- **`allowDangerouslySkipPermissions`** = `true` — 允许随时切换到 `bypassPermissions`;c3 仍是 UI(C-SEC)
+- **`pathToClaudeCodeExecutable`** = 解析出的 `claude` 路径 — 仅在找到时设置(ADR 0003)
+- **`env`** = `buildChildEnv(overrides)` — 始终设置的完整子进程环境:keepalive 默认值 < 宿主 shell < 活跃 agent 覆盖(`ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`);`NO_PROXY` 见 § 远程 MCP 的回环代理旁路
+- **`model`** = 活跃 agent 的模型 | omit — 来自活跃 agent 的模型覆盖;省略 ⇒ SDK 默认(agent-config AC-R5)
+- **`canUseTool`** = gateway 回调 — 门控敏感工具(AS-R5)
 
 一个 start callback 会把 **Run Handle**(设置权限模式、推入输入)回传,以便运行中的
 `set_mode` 能对实时 query 应用新模式(AS-R4),team 会话的下一个 turn 能推入
@@ -169,13 +167,11 @@ writing");该 rejection 被吞掉,永远不会使进程崩溃(AS-R6, AVAIL-4)。
 
 对 `query()` 的迭代把每个 SDK 消息映射为(AS-R9):
 
-| SDK message | Block                       | Wire event                                                                                                                                     |
-| ----------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system`    | `init`(带 session id)       | 报告一次 session id(AS-R10)                                                                                                                    |
-| `assistant` | text                        | `assistant_text { text }`                                                                                                                      |
-| `assistant` | tool-use(带 id + name)      | `tool_use { toolUseId, toolName, input }`;若为 team 工具 ⇒ 先触发一次 team hook(AS-R14)                                                        |
-| `user`      | tool-result(带 tool-use id) | `tool_result { toolUseId, content, isError }`                                                                                                  |
-| `result`    | —                           | 若该 turn 未产生任何可见 block ⇒ 先发 `notice { text }`,再发 `turn_end { reason: 'complete' }`,然后分叉:非 team 关闭输入;team 保持打开(AS-R15) |
+- `system` / `init`(带 session id) → 报告一次 session id(AS-R10)
+- `assistant` / text → `assistant_text { text }`
+- `assistant` / tool-use(带 id + name) → `tool_use { toolUseId, toolName, input }`;若为 team 工具 ⇒ 先触发一次 team hook(AS-R14)
+- `user` / tool-result(带 tool-use id) → `tool_result { toolUseId, content, isError }`
+- `result` → 若该 turn 未产生任何可见 block ⇒ 先发 `notice { text }`,再发 `turn_end { reason: 'complete' }`,然后分叉:非 team 关闭输入;team 保持打开(AS-R15)
 
 - 用户 prompt 在运行开始前作为 `user_text { text }` 回显一次(AS-R1),因此
   切回时的回放能展示它(它不在之前捕获的磁盘 baseline 中)。

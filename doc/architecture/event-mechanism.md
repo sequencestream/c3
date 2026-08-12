@@ -35,12 +35,10 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 
 ## 1. 三层结构（扩展点都在前两层）
 
-| 层                               | 是否已支持多事件                                                                                     | 说明                                        |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| **总线核 `EventBus`**            | ✅ 类型化 topic map，任意扩 topic                                                                    | `server/src/kernel/events/event-bus.ts`     |
-| **订阅侧（含 Automation 订阅）** | ✅ 通用 `eventFilters[]` 多行 OR + `:*` 大类通配                                                     | 常驻订阅 + `dispatchEventTriggers(view)`    |
-| **模型可发布事件（归一化层）**   | ✅ 按 type 注册归一化器 + 默认归一化器兜底自定义 type；当前注册 6 个 `pr:<op>` + `pr:operation` 别名 | `server/src/kernel/events/generic-event.ts` |
-| **模型对外 MCP 工具**            | ✅ 单一通用 `publish_event`（入参即 `GenericEvent`）                                                 | `server/src/features/events/tool-defs.ts`   |
+- **总线核 `EventBus`** — ✅ 类型化 topic map，任意扩 topic（`server/src/kernel/events/event-bus.ts`）
+- **订阅侧（含 Automation 订阅）** — ✅ 通用 `eventFilters[]` 多行 OR + `:*` 大类通配（常驻订阅 + `dispatchEventTriggers(view)`）
+- **模型可发布事件（归一化层）** — ✅ 按 type 注册归一化器 + 默认归一化器兜底自定义 type；当前注册 6 个 `pr:<op>` + `pr:operation` 别名（`server/src/kernel/events/generic-event.ts`）
+- **模型对外 MCP 工具** — ✅ 单一通用 `publish_event`（入参即 `GenericEvent`）（`server/src/features/events/tool-defs.ts`）
 
 **关键认知**：你要的「扩展性」绝大部分已在**总线核 + 订阅侧**就位——加新事件类型是「一行 topic + 一处 publish」，已有订阅者零改动（ADR-0018 已验证：降级链三个 agent topic 就是这么加进来的）。**模型可发布事件**这层经 kernel 归一化器注册表按 `type` 分派（[ADR-0026](adr/0026-generic-event-normalizer-registry.md)，§9.3）：已知 type 走其专用归一化器,其余自定义 type 落到**默认归一化器**兜底（仍做字段级脱敏/截断,只是不绑定固定字段形状）——`type` 是开放的 `<category>:<action>` 字符串,`custom:*` 也能发布,不再「未注册即拒」。**模型对外 MCP 工具**现在收敛为单一 `publish_event`：入参就是通用事件，`type` 选中注册的归一化器，加新可发布事件时**工具面零改动**，只需注册一个归一化器（见 [§7 扩展指南](#7-扩展指南)）。
 
@@ -48,13 +46,11 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 
 定义于 `server/src/kernel/events/event-bus.ts`，是一个无 I/O 的纯类，三个操作：`publish` / `subscribe`（返回 dispose 函数）/ `clear`。
 
-| 维度             | 决策                                | 含义                                                                  |
-| ---------------- | ----------------------------------- | --------------------------------------------------------------------- |
-| **分发**         | 同步、按订阅注册序                  | `publish` 返回 `void`；发布者调用栈内完成所有 handler                 |
-| **错误隔离**     | 每个 handler `try/catch`            | 一个 handler 抛错被捕获并日志，**不中止后续 handler、不传播给发布者** |
-| **异步 handler** | fire-and-forget                     | handler 返回 Promise 时总线捕获 unhandled rejection 但**不 await**    |
-| **类型安全**     | `EventBusEvents` 映射 topic→payload | `publish`/`subscribe` 编译期按 topic 校验 payload 形状                |
-| **位置**         | kernel 自包含模块                   | 不 import features/transport 层（ADR-0009 R1 边界）                   |
+- **分发**: 同步、按订阅注册序——`publish` 返回 `void`；发布者调用栈内完成所有 handler
+- **错误隔离**: 每个 handler `try/catch`——一个 handler 抛错被捕获并日志，**不中止后续 handler、不传播给发布者**
+- **异步 handler**: fire-and-forget——handler 返回 Promise 时总线捕获 unhandled rejection 但**不 await**
+- **类型安全**: `EventBusEvents` 映射 topic→payload——`publish`/`subscribe` 编译期按 topic 校验 payload 形状
+- **位置**: kernel 自包含模块——不 import features/transport 层（ADR-0009 R1 边界）
 
 > ⚠️ **同步语义的副作用**：发布者在自己的调用栈里跑完所有订阅者。订阅者里做重活会拖慢发布路径，且异步副作用的完成顺序对发布者不可见（ADR-0018 否决了 microtask 异步分发正是为此）。订阅者应「快进快出」，重活自己起异步链。
 
@@ -62,18 +58,46 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 
 唯一定义源：`EventBusEvents`（`event-bus.ts`）。payload 中的领域类型定义在 `shared/src/protocol/` 的对应领域模块（经 `shared/src/protocol.ts` barrel 导出）。
 
-| Topic                   | Payload（要点）                                                                                                   | 发布者                                              | 主要消费者                                                                                                                                                                                                                                                                         |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run:bound`             | `prevId, realId, workspacePath`                                                                                   | run launcher / discussion starter / scheduler       | 常驻 run-bound 订阅（pending→real 绑定、intent 重绑、session-started 广播）                                                                                                                                                                                                        |
-| `run:started`           | `sessionId, workspacePath, sessionKind: SessionKind, runKind: RunKind`                                            | 同上 + 一次性内部调用                               | run 生命周期日志（常驻）+ Automation 事件触发分发                                                                                                                                                                                                                                  |
-| `run:settled`           | `sessionId, workspacePath, reason: RunEndReason, sessionKind, runKind`                                            | 同上 + 一次性内部调用                               | run 生命周期日志（常驻）+ 各 domain 列表广播 + automation 编排 FSM + Automation 触发                                                                                                                                                                                               |
-| `agent:error`           | `sessionId, workspacePath, agentId, agentName, error, degradable`                                                 | run launcher（降级链）                              | 审计 / 可挂动作（bypass，不改降级控制流）                                                                                                                                                                                                                                          |
-| `agent:fallback`        | `from*/to* agentId+Name`                                                                                          | 同上                                                | 同上                                                                                                                                                                                                                                                                               |
-| `agent:all_failed`      | `agents[], crossVendorSkipped?`                                                                                   | 同上                                                | 同上                                                                                                                                                                                                                                                                               |
-| `intent:status_changed` | `intentId, workspacePath, fromStatus, toStatus`                                                                   | `update_intent_status` handler                      | automation 编排 / 审计                                                                                                                                                                                                                                                             |
-| `intent:lifecycle`      | `{ workspacePath } & IntentLifecycleEvent`（`phase, intentId, title, module, toStatus`）                          | intents 生命周期                                    | Automation 事件触发分发（相位已迁入 `intent:<phase>` type）                                                                                                                                                                                                                        |
-| `discussion:lifecycle`  | `{ workspacePath } & DiscussionLifecycleEvent`（`phase, discussionId, title, discussionType, metadata, reason?`） | `startDiscussionRun`（正式编排边界，research 不发） | Automation 事件触发分发（相位已迁入 `discussion:<phase>` type，`end` 的 reason 落到 status）                                                                                                                                                                                       |
-| `event`                 | `GenericEventEnvelope = { workspacePath, sessionId, event: GenericEvent }`                                        | **模型经 `publish_event` 工具** + c3 自建 PR        | 消费者按 `event.type` 判别。当前 `type='pr:operation'` 有两个独立消费者:①Automation 事件触发分发(判别 PR type 后从 `metadata.operation`+`status` 投影,按 `operation`+`result` 过滤);②intent-domain PR 状态复位(`pr:update`/success 把 rejected/failed/closed 意图复位为 reviewing) |
+- `run:bound`
+  - Payload（要点）: `prevId, realId, workspacePath`
+  - 发布者: run launcher / discussion starter / scheduler
+  - 主要消费者: 常驻 run-bound 订阅（pending→real 绑定、intent 重绑、session-started 广播）
+- `run:started`
+  - Payload（要点）: `sessionId, workspacePath, sessionKind: SessionKind, runKind: RunKind`
+  - 发布者: run launcher / discussion starter / scheduler + 一次性内部调用
+  - 主要消费者: run 生命周期日志（常驻）+ Automation 事件触发分发
+- `run:settled`
+  - Payload（要点）: `sessionId, workspacePath, reason: RunEndReason, sessionKind, runKind`
+  - 发布者: run launcher / discussion starter / scheduler + 一次性内部调用
+  - 主要消费者: run 生命周期日志（常驻）+ 各 domain 列表广播 + automation 编排 FSM + Automation 触发
+- `agent:error`
+  - Payload（要点）: `sessionId, workspacePath, agentId, agentName, error, degradable`
+  - 发布者: run launcher（降级链）
+  - 主要消费者: 审计 / 可挂动作（bypass，不改降级控制流）
+- `agent:fallback`
+  - Payload（要点）: `from*/to* agentId+Name`
+  - 发布者: run launcher（降级链）
+  - 主要消费者: 审计 / 可挂动作（bypass，不改降级控制流）
+- `agent:all_failed`
+  - Payload（要点）: `agents[], crossVendorSkipped?`
+  - 发布者: run launcher（降级链）
+  - 主要消费者: 审计 / 可挂动作（bypass，不改降级控制流）
+- `intent:status_changed`
+  - Payload（要点）: `intentId, workspacePath, fromStatus, toStatus`
+  - 发布者: `update_intent_status` handler
+  - 主要消费者: automation 编排 / 审计
+- `intent:lifecycle`
+  - Payload（要点）: `{ workspacePath } & IntentLifecycleEvent`（`phase, intentId, title, module, toStatus`）
+  - 发布者: intents 生命周期
+  - 主要消费者: Automation 事件触发分发（相位已迁入 `intent:<phase>` type）
+- `discussion:lifecycle`
+  - Payload（要点）: `{ workspacePath } & DiscussionLifecycleEvent`（`phase, discussionId, title, discussionType, metadata, reason?`）
+  - 发布者: `startDiscussionRun`（正式编排边界，research 不发）
+  - 主要消费者: Automation 事件触发分发（相位已迁入 `discussion:<phase>` type，`end` 的 reason 落到 status）
+- `event`
+  - Payload（要点）: `GenericEventEnvelope = { workspacePath, sessionId, event: GenericEvent }`
+  - 发布者: **模型经 `publish_event` 工具** + c3 自建 PR
+  - 主要消费者: 消费者按 `event.type` 判别。当前 `type='pr:operation'` 有两个独立消费者:①Automation 事件触发分发(判别 PR type 后从 `metadata.operation`+`status` 投影,按 `operation`+`result` 过滤);②intent-domain PR 状态复位(`pr:update`/success 把 rejected/failed/closed 意图复位为 reviewing)
 
 枚举常量（均为 `as const` 数组派生联合）——`SessionKind` / `RunKind` 在 `shared/src/protocol/session.ts`，`RunEndReason` 在 `shared/src/protocol/automation.ts`，`PR_OPERATIONS` / `INTENT_LIFECYCLE_PHASES` / `DISCUSSION_LIFECYCLE_PHASES` 在 `shared/src/event-model.ts`：
 
@@ -101,22 +125,62 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 
 ### 已知事件类型
 
-| 大类 `category` | 动作 `action`                                       | 完整 type                 | status 建议集                | metadata 建议键                                                 | 发布者                                         |
-| --------------- | --------------------------------------------------- | ------------------------- | ---------------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
-| `run`           | `started`                                           | `run:started`             | —                            | `sessionKind`, `runKind`                                        | run 生命周期桥                                 |
-| `run`           | `settled`                                           | `run:settled`             | `complete`/`error`/`aborted` | 同上                                                            | 同上                                           |
-| `pr`            | `create`                                            | `pr:create`               | `success`/`failure`/`error`  | `operation`(冗余), `provider`, `repo`…                          | 模型 `publish_event` + c3 自建 PR              |
-| `pr`            | `review`/`merge`/`close`/`comment`/`update`         | `pr:*`                    | 同上                         | 同上                                                            | 模型 `publish_event`                           |
-| `intent`        | `created`/`dev_started`/`done`/`failed`/`cancelled` | `intent:*`                | —                            | `intentId`, `title`, `module`, `toStatus`                       | intent 生命周期桥                              |
-| `intent`        | `spec_approve`                                      | `intent:spec_approve`     | —                            | `intentId`, `title`                                             | 服务端 `approveSpecHandler`                    |
-| `discussion`    | `start`                                             | `discussion:start`        | —                            | `discussionId`, `title`, `discussionType` + 调用方业务 metadata | discussion 生命周期桥（`startDiscussionRun`）  |
-| `discussion`    | `end`                                               | `discussion:end`          | `complete`/`error`/`aborted` | 同上                                                            | 同上                                           |
-| `delivery`      | `created`                                           | `delivery:created`        | —                            | `deliveryId`, `title`, `baseBranch`                             | 交付域 `create_delivery`                       |
-| `delivery`      | `status_changed`                                    | `delivery:status_changed` | —                            | `deliveryId`, `title`, **`from`**, **`to`**（六态值）           | 交付域每一次状态写                             |
-| `delivery`      | `branch_ready`                                      | `delivery:branch_ready`   | —                            | `deliveryId`, `title`, `branch`                                 | 交付域 `init_delivery_branch`                  |
-| `delivery`      | `pr_created`                                        | `delivery:pr_created`     | —                            | `deliveryId`, `title`, `prNumber`, `prUrl`, `baseBranch`        | 交付域 `create_delivery_pr`                    |
-| `delivery`      | `delivered`                                         | `delivery:delivered`      | —                            | 上述 + `branch`, `prNumber`, `prUrl`                            | 交付域 `sync_delivery_pr`（forge 判定 merged） |
-| `delivery`      | `cancelled`                                         | `delivery:cancelled`      | —                            | `deliveryId`, `title`                                           | 交付域状态写（目标为 `cancelled`）             |
+- `run:started`（大类 `run` · 动作 `started`）
+  - status 建议集: —
+  - metadata 建议键: `sessionKind`, `runKind`
+  - 发布者: run 生命周期桥
+- `run:settled`（大类 `run` · 动作 `settled`）
+  - status 建议集: `complete`/`error`/`aborted`
+  - metadata 建议键: `sessionKind`, `runKind`
+  - 发布者: run 生命周期桥
+- `pr:create`（大类 `pr` · 动作 `create`）
+  - status 建议集: `success`/`failure`/`error`
+  - metadata 建议键: `operation`(冗余), `provider`, `repo`…
+  - 发布者: 模型 `publish_event` + c3 自建 PR
+- `pr:*`（大类 `pr` · 动作 `review`/`merge`/`close`/`comment`/`update`）
+  - status 建议集: `success`/`failure`/`error`
+  - metadata 建议键: `operation`(冗余), `provider`, `repo`…
+  - 发布者: 模型 `publish_event`
+- `intent:*`（大类 `intent` · 动作 `created`/`dev_started`/`done`/`failed`/`cancelled`）
+  - status 建议集: —
+  - metadata 建议键: `intentId`, `title`, `module`, `toStatus`
+  - 发布者: intent 生命周期桥
+- `intent:spec_approve`（大类 `intent` · 动作 `spec_approve`）
+  - status 建议集: —
+  - metadata 建议键: `intentId`, `title`
+  - 发布者: 服务端 `approveSpecHandler`
+- `discussion:start`（大类 `discussion` · 动作 `start`）
+  - status 建议集: —
+  - metadata 建议键: `discussionId`, `title`, `discussionType` + 调用方业务 metadata
+  - 发布者: discussion 生命周期桥（`startDiscussionRun`）
+- `discussion:end`（大类 `discussion` · 动作 `end`）
+  - status 建议集: `complete`/`error`/`aborted`
+  - metadata 建议键: `discussionId`, `title`, `discussionType` + 调用方业务 metadata
+  - 发布者: discussion 生命周期桥（`startDiscussionRun`）
+- `delivery:created`（大类 `delivery` · 动作 `created`）
+  - status 建议集: —
+  - metadata 建议键: `deliveryId`, `title`, `baseBranch`
+  - 发布者: 交付域 `create_delivery`
+- `delivery:status_changed`（大类 `delivery` · 动作 `status_changed`）
+  - status 建议集: —
+  - metadata 建议键: `deliveryId`, `title`, **`from`**, **`to`**（六态值）
+  - 发布者: 交付域每一次状态写
+- `delivery:branch_ready`（大类 `delivery` · 动作 `branch_ready`）
+  - status 建议集: —
+  - metadata 建议键: `deliveryId`, `title`, `branch`
+  - 发布者: 交付域 `init_delivery_branch`
+- `delivery:pr_created`（大类 `delivery` · 动作 `pr_created`）
+  - status 建议集: —
+  - metadata 建议键: `deliveryId`, `title`, `prNumber`, `prUrl`, `baseBranch`
+  - 发布者: 交付域 `create_delivery_pr`
+- `delivery:delivered`（大类 `delivery` · 动作 `delivered`）
+  - status 建议集: —
+  - metadata 建议键: `deliveryId`, `title`, `prNumber`, `prUrl`, `baseBranch` + `branch`
+  - 发布者: 交付域 `sync_delivery_pr`（forge 判定 merged）
+- `delivery:cancelled`（大类 `delivery` · 动作 `cancelled`）
+  - status 建议集: —
+  - metadata 建议键: `deliveryId`, `title`
+  - 发布者: 交付域状态写（目标为 `cancelled`）
 
 `pr:operation` 是 v12 及之前的旧类型名，v13 已拆为 `pr:<op>` 按操作命名。归一化器保留
 `pr:operation` 作为过渡别名——收到该 type 的旧格式时自动改写为新 type 输出。
@@ -147,14 +211,12 @@ merge 上触发发布的自动化尤其需要检查它。只带 `head`/`base` �
 
 ## 4. 发布者地图（谁在 `publish`）
 
-| 来源                 | 文件                                                                      | 发布的 topic                                               |
-| -------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| run 启动/收尾        | `server/src/kernel/run/run-lifecycle.ts`、`run-via-driver.ts`             | `run:bound`/`run:started`/`run:settled` + 降级链 `agent:*` |
-| discussion run       | `server/src/wiring/discussion-runs.ts`                                    | `run:*`（kind=`discussion`）+ `discussion:lifecycle`       |
-| scheduler 自身执行   | `server/src/features/automations/scheduler.ts`（`dispatchAndTrack`）      | `run:*`（kind=`automation`）                               |
-| intent 状态/生命周期 | `server/src/features/intents/lifecycle-events.ts`                         | `intent:status_changed`、`intent:lifecycle`                |
-| **模型可发布事件**   | `server/src/features/events/`（工具）+ `pr-events/`（PR 归一化，详见 §6） | `event`（当前 `type='pr:create'`…`pr:update`）             |
-| **c3 服务端自建 PR** | `dev-cleanup.ts`、`automation.ts`、`intents/index.ts`（create_pr）        | `event`（`type='pr:create'`，仅 `create`/`success`）       |
+- **run 启动/收尾** — `server/src/kernel/run/run-lifecycle.ts`、`run-via-driver.ts`；发布 `run:bound`/`run:started`/`run:settled` + 降级链 `agent:*`
+- **discussion run** — `server/src/wiring/discussion-runs.ts`；发布 `run:*`（kind=`discussion`）+ `discussion:lifecycle`
+- **scheduler 自身执行** — `server/src/features/automations/scheduler.ts`（`dispatchAndTrack`）；发布 `run:*`（kind=`automation`）
+- **intent 状态/生命周期** — `server/src/features/intents/lifecycle-events.ts`；发布 `intent:status_changed`、`intent:lifecycle`
+- **模型可发布事件** — `server/src/features/events/`（工具）+ `pr-events/`（PR 归一化，详见 §6）；发布 `event`（当前 `type='pr:create'`…`pr:update`）
+- **c3 服务端自建 PR** — `dev-cleanup.ts`、`automation.ts`、`intents/index.ts`（create_pr）；发布 `event`（`type='pr:create'`，仅 `create`/`success`）
 
 ## 5. 订阅者地图（常驻订阅，应用生命周期）
 
@@ -162,14 +224,18 @@ ADR-0018 的核心修正：run 生命周期订阅从「per-launch 订阅/释放�
 
 注册点：`server/src/wiring/run-domain-subscriptions.ts`（domain 侧常驻订阅）与 `server/src/wiring/scheduler-startup.ts`（Automation 事件桥）。
 
-| 订阅                                    | topic + 过滤                                                                  | 动作                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| run-bound（intent/session domain）      | `run:bound`                                                                   | pending→real 绑定；intent kind 重绑聊天会话；否则持久化 mode + 消费 pending dev-link + 广播 session-started                                                                                                                                                                                                                                                                                                                                              |
-| run-settled（intents-automation）       | `run:settled`，kind=`session`                                                 | 刷新 session 列表；匹配 intent 的 dev-session → 刷新 intent 列表 + 通知 automation 控制器 turn 结束                                                                                                                                                                                                                                                                                                                                                      |
-| run-settled（discussion）               | `run:settled`，kind=`discussion`                                              | 刷新 discussion 列表                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| run-settled（automation）               | `run:settled`，kind=`automation`                                              | 刷新 automation 列表                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Automation 事件触发分发**             | `run:started`/`run:settled`/`event`/`intent:lifecycle`/`discussion:lifecycle` | 见 §6/§7：各订阅桥把总线事件归一化为 `view={workspacePath, event, sessionKind?}`（envelope 直接透传，不再按 `event.type` 投影出 operation/result），统一交给 `dispatchEventTriggers(view)`；通用匹配器 `genericEventFiltersMatch` 按多行 OR + 每行 workspace→type→status→metadata 匹配（type 支持 `:*` 通配），`getEventAutomations(type)` 按 `eventTypeMatches` 筛选                                                                                    |
-| **intent PR 状态复位（intent domain）** | `event`（判别 `type='pr:operation'`，`operation=update` + `result=success`）  | 判别 PR type 后从 `metadata.operation`/`status`/`data.association.intentId` 投影;携 `intentId` 且定位到的 PR 行状态 ∈{rejected,failed,closed} 时复位为 `reviewing` + 写 `pr_updated` 日志 + 广播(带 `data.pr.number` 精确定位,不带则回退该意图唯一未合并行,多条则忽略);非 PR type/缺 intentId/意图不存在/跨 workspace/`merged` 等静默忽略。与 Automation 分发是同一总线事件的两个独立副作用,注册于 `run-domain-subscriptions.ts`,不依赖 Automation store |
+- **run-bound（intent/session domain）** — topic `run:bound`
+  - 动作: pending→real 绑定；intent kind 重绑聊天会话；否则持久化 mode + 消费 pending dev-link + 广播 session-started
+- **run-settled（intents-automation）** — topic `run:settled`，kind=`session`
+  - 动作: 刷新 session 列表；匹配 intent 的 dev-session → 刷新 intent 列表 + 通知 automation 控制器 turn 结束
+- **run-settled（discussion）** — topic `run:settled`，kind=`discussion`
+  - 动作: 刷新 discussion 列表
+- **run-settled（automation）** — topic `run:settled`，kind=`automation`
+  - 动作: 刷新 automation 列表
+- **Automation 事件触发分发** — topic `run:started`/`run:settled`/`event`/`intent:lifecycle`/`discussion:lifecycle`
+  - 动作: 见 §6/§7：各订阅桥把总线事件归一化为 `view={workspacePath, event, sessionKind?}`（envelope 直接透传，不再按 `event.type` 投影出 operation/result），统一交给 `dispatchEventTriggers(view)`；通用匹配器 `genericEventFiltersMatch` 按多行 OR + 每行 workspace→type→status→metadata 匹配（type 支持 `:*` 通配），`getEventAutomations(type)` 按 `eventTypeMatches` 筛选
+- **intent PR 状态复位（intent domain）** — topic `event`（判别 `type='pr:operation'`，`operation=update` + `result=success`）
+  - 动作: 判别 PR type 后从 `metadata.operation`/`status`/`data.association.intentId` 投影;携 `intentId` 且定位到的 PR 行状态 ∈{rejected,failed,closed} 时复位为 `reviewing` + 写 `pr_updated` 日志 + 广播(带 `data.pr.number` 精确定位,不带则回退该意图唯一未合并行,多条则忽略);非 PR type/缺 intentId/意图不存在/跨 workspace/`merged` 等静默忽略。与 Automation 分发是同一总线事件的两个独立副作用,注册于 `run-domain-subscriptions.ts`,不依赖 Automation store
 
 **automation 编排**已从「内部 await 循环」改为「事件驱动 FSM」：turn-settled 通知触发 judge→commit→next/continue/fail 链；并发门、续跑上限(10)、lint-heal 重试均保留，只是驱动机制换成事件。
 
@@ -270,13 +336,11 @@ GenericEventFilter = {
 
 **消费侧兼容映射**（订阅桥 `wiring/scheduler-startup.ts` 把各来源 payload 投影为通用视图，不改发布侧）：
 
-| 来源                   | 投影为 `GenericEvent`                                                                                                  | sessionKind    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `run:started`          | `{ type:'run:started', metadata:{sessionKind,runKind} }`（无 status）                                                  | 有（安全边界） |
-| `run:settled`          | `{ type:'run:settled', status:reason, metadata:{sessionKind,runKind} }`                                                | 有（安全边界） |
-| `pr:*`                 | 归一化 envelope 直接透传：`type='pr:<op>'`、`status=result`、`metadata.operation=operation`（冗余）                    | 无             |
-| `intent:lifecycle`     | `{ type:'intent:<phase>', metadata:{intentId,title,module?,toStatus} }`                                                | 无             |
-| `discussion:lifecycle` | `{ type:'discussion:<phase>', status:reason(仅 end), metadata:{...业务 metadata, discussionId,title,discussionType} }` | 无             |
+- `run:started` → `{ type:'run:started', metadata:{sessionKind,runKind} }`（无 status）；带 sessionKind（安全边界）
+- `run:settled` → `{ type:'run:settled', status:reason, metadata:{sessionKind,runKind} }`；带 sessionKind（安全边界）
+- `pr:*` → 归一化 envelope 直接透传：`type='pr:<op>'`、`status=result`、`metadata.operation=operation`（冗余）；无 sessionKind
+- `intent:lifecycle` → `{ type:'intent:<phase>', metadata:{intentId,title,module?,toStatus} }`；无 sessionKind
+- `discussion:lifecycle` → `{ type:'discussion:<phase>', status:reason(仅 end), metadata:{...业务 metadata, discussionId,title,discussionType} }`；无 sessionKind
 
 `discussion:lifecycle` 的业务 metadata 来自调用方（MCP `start_discussion` 的 `metadata` 入参，
 持久化在 `discussions.metadata`）。投影时**保留身份键 `discussionId` / `title` / `discussionType`
@@ -352,22 +416,20 @@ dispatchAndTrack(automation) ─► 发 run:started(kind=automation) → 执行�
 
 ## 11. 关键文件索引
 
-| 关注点                                        | 文件                                                                                                                                                                                                                                |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 总线核 + topic map                            | `server/src/kernel/events/event-bus.ts`（`event-bus.test.ts`）                                                                                                                                                                      |
-| 通用事件契约 + 校验                           | `shared/src/event-model.ts`（`GenericEvent`/`GenericEventEnvelope`）、`server/src/kernel/events/generic-event-validate.ts`（`validateGenericEvent`）                                                                                |
-| 归一化器注册表(通用发布层)                    | `server/src/kernel/events/generic-event.ts`（`generic-event.test.ts`）                                                                                                                                                              |
-| 总线挂上下文                                  | `server/src/kernel/types.ts`（`KernelContext.eventBus`）                                                                                                                                                                            |
-| run/agent 事件发布                            | `server/src/kernel/run/run-lifecycle.ts`、`run-via-driver.ts`、`agent-events.ts`                                                                                                                                                    |
-| intent 事件发布                               | `server/src/features/intents/lifecycle-events.ts`                                                                                                                                                                                   |
-| discussion 生命周期事件发布                   | `server/src/wiring/discussion-runs.ts`（`startDiscussionRun` 的 start/settle 唯一边界；metadata 由 `features/discussions/tool-defs.ts` 的 `start_discussion` 写入 store）                                                           |
-| `publish_event` 通用工具核                    | `server/src/features/events/tool-defs.ts`（schema/描述/`runPublishEvent`）                                                                                                                                                          |
-| PR 归一化器(6 type + 别名) + 消费侧投影       | `server/src/features/pr-events/tool-defs.ts`（`normalizePrGenericEvent`/`projectPrOperationEvent`/`runServerSidePrCreate`/`PR_EVENT_TYPES`/`PR_LEGACY_EVENT_TYPE`）                                                                 |
-| `publish_event` 回环 HTTP MCP（Claude+Codex） | `server/src/transport/event-mcp/index.ts`；Claude 边界转译：`server/src/kernel/agent/adapters/claude/mcp.ts`（`remoteMcpToClaudeConfig`）                                                                                           |
-| 常驻 domain 订阅（含 PR 复位）                | `server/src/wiring/run-domain-subscriptions.ts`、`features/intents/pr-update-consumer.ts`                                                                                                                                           |
-| Automation 事件桥 + 分发/过滤                 | `server/src/wiring/scheduler-startup.ts`、`server/src/features/automations/scheduler.ts`                                                                                                                                            |
-| 组合根（构建总线 + 注入 sink）                | `server/src/server.ts`                                                                                                                                                                                                              |
-| 协议类型唯一定义源                            | `shared/src/protocol/automation.ts`（枚举/payload/filter/`Automation`，经 `shared/src/protocol.ts` barrel 导出）、`shared/src/event-catalog.ts`（`EVENT_CATALOG`）、`server/src/kernel/events/event-match.ts`（`eventTypeMatches`） |
+- **总线核 + topic map**: `server/src/kernel/events/event-bus.ts`（`event-bus.test.ts`）
+- **通用事件契约 + 校验**: `shared/src/event-model.ts`（`GenericEvent`/`GenericEventEnvelope`）、`server/src/kernel/events/generic-event-validate.ts`（`validateGenericEvent`）
+- **归一化器注册表(通用发布层)**: `server/src/kernel/events/generic-event.ts`（`generic-event.test.ts`）
+- **总线挂上下文**: `server/src/kernel/types.ts`（`KernelContext.eventBus`）
+- **run/agent 事件发布**: `server/src/kernel/run/run-lifecycle.ts`、`run-via-driver.ts`、`agent-events.ts`
+- **intent 事件发布**: `server/src/features/intents/lifecycle-events.ts`
+- **discussion 生命周期事件发布**: `server/src/wiring/discussion-runs.ts`（`startDiscussionRun` 的 start/settle 唯一边界；metadata 由 `features/discussions/tool-defs.ts` 的 `start_discussion` 写入 store）
+- **`publish_event` 通用工具核**: `server/src/features/events/tool-defs.ts`（schema/描述/`runPublishEvent`）
+- **PR 归一化器(6 type + 别名) + 消费侧投影**: `server/src/features/pr-events/tool-defs.ts`（`normalizePrGenericEvent`/`projectPrOperationEvent`/`runServerSidePrCreate`/`PR_EVENT_TYPES`/`PR_LEGACY_EVENT_TYPE`）
+- **`publish_event` 回环 HTTP MCP（Claude+Codex）**: `server/src/transport/event-mcp/index.ts`；Claude 边界转译：`server/src/kernel/agent/adapters/claude/mcp.ts`（`remoteMcpToClaudeConfig`）
+- **常驻 domain 订阅（含 PR 复位）**: `server/src/wiring/run-domain-subscriptions.ts`、`features/intents/pr-update-consumer.ts`
+- **Automation 事件桥 + 分发/过滤**: `server/src/wiring/scheduler-startup.ts`、`server/src/features/automations/scheduler.ts`
+- **组合根（构建总线 + 注入 sink）**: `server/src/server.ts`
+- **协议类型唯一定义源**: `shared/src/protocol/automation.ts`（枚举/payload/filter/`Automation`，经 `shared/src/protocol.ts` barrel 导出）、`shared/src/event-catalog.ts`（`EVENT_CATALOG`）、`server/src/kernel/events/event-match.ts`（`eventTypeMatches`）
 
 ## 12. 关联文档
 
@@ -375,5 +437,5 @@ dispatchAndTrack(automation) ─► 发 run:started(kind=automation) → 执行�
 - [ADR-0026 — 通用事件契约 + 按 type 注册的归一化器](adr/0026-generic-event-normalizer-registry.md)：
 - [ADR-0027 — `<category>:<action>` 事件命名 + 多行订阅 + 级联表单](adr/0027-event-naming-and-multi-row-subscription.md)：统一事件命名规范为 `<category>:<action>`（大类:动作），引入多行订阅 `eventFilters[]`、大类通配 `:*`、以及级联表单 UI。模型可发布事件从「每种事件新增窄工具」修订为「type 判别 + 归一化器注册（自定义 type 默认归一化兜底）」，及保留类型化 topic 适配层的边界。
 - [ADR-0009 — Unidirectional boundaries](adr/0009-unidirectional-boundaries.md)：总线为何必须在 kernel 层、不得 import features/transport。
-- [架构总览](architecture.md)：系统形态与模块表（事件总线在模块表中有一行）。
+- [架构总览](architecture.md)：系统形态与模块清单（事件总线在其中有一条）。
 - [automation 执行流](../flows/flow-automation-execution.md)：cron/event 触发到执行落日志的端到端路径。

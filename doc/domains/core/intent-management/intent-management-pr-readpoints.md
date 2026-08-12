@@ -13,62 +13,54 @@
 
 ## 1. 持久化与仓储
 
-| 文件:符号                                          | 分类   | 用途                                                       |
-| -------------------------------------------------- | ------ | ---------------------------------------------------------- |
-| `database/intents/intent_prs.sql`                  | 持久化 | 表与索引 DDL(唯一键 + 部分唯一索引)                        |
-| `database/infra/schema_migrations.sql`             | 持久化 | 一次性数据迁移标记表 DDL                                   |
-| `server/src/kernel/infra/db.ts`                    | 持久化 | `ensureMigrationsTable` / `hasMigration` / `markMigration` |
-| `store.ts: SCHEMA`                                 | 持久化 | 新建库的建表 + 索引                                        |
-| `store.ts: backfillIntentPrs`                      | 写     | 从冻结的旧三列一次性回填(事务 + 标记判定幂等)              |
-| `store.ts: upsertIntentPr`                         | 写     | **唯一** PR 写入口;身份冲突到别的意图即抛错                |
-| `store.ts: listIntentPrs / listReviewingIntentPrs` | 读     | 单意图全部 PR / 仅 `reviewing` 行                          |
-| `store.ts: hasIntentPrs`                           | 门禁   | 永久删除草稿的守卫:有 PR 行即不可删                        |
-| `store.ts: hydrate`                                | 读     | 按 workspace 批量取行并挂载到 `Intent.prs`                 |
-| `store.ts: deleteIntentRecords`                    | 写     | 删除意图的同一事务内清理其 PR 行                           |
-| `pr-identity.ts: parsePrIdentity`                  | 派生   | 从 PR URL 还原 `forge`/`repo`(回填与三条创建路径共用)      |
-| `scripts/rollback-intent-prs.mjs`                  | 读     | 回退:每意图最早一条投影回旧三列;只读 `intent_prs`          |
+- `database/intents/intent_prs.sql`(持久化): 表与索引 DDL(唯一键 + 部分唯一索引)
+- `database/infra/schema_migrations.sql`(持久化): 一次性数据迁移标记表 DDL
+- `server/src/kernel/infra/db.ts`(持久化): `ensureMigrationsTable` / `hasMigration` / `markMigration`
+- `store.ts: SCHEMA`(持久化): 新建库的建表 + 索引
+- `store.ts: backfillIntentPrs`(写): 从冻结的旧三列一次性回填(事务 + 标记判定幂等)
+- `store.ts: upsertIntentPr`(写): **唯一** PR 写入口;身份冲突到别的意图即抛错
+- `store.ts: listIntentPrs / listReviewingIntentPrs`(读): 单意图全部 PR / 仅 `reviewing` 行
+- `store.ts: hasIntentPrs`(门禁): 永久删除草稿的守卫:有 PR 行即不可删
+- `store.ts: hydrate`(读): 按 workspace 批量取行并挂载到 `Intent.prs`
+- `store.ts: deleteIntentRecords`(写): 删除意图的同一事务内清理其 PR 行
+- `pr-identity.ts: parsePrIdentity`(派生): 从 PR URL 还原 `forge`/`repo`(回填与三条创建路径共用)
+- `scripts/rollback-intent-prs.mjs`(读): 回退:每意图最早一条投影回旧三列;只读 `intent_prs`
 
 `intents` 的 `pr_id`/`pr_url`/`pr_status` 三列**已冻结**:除上面的回填(读)与回退脚本(写旧列)
 外,运行时不读不写。
 
 ## 2. PR 生命周期
 
-| 文件:符号                                                 | 分类    | 用途                                                             |
-| --------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
-| `git.ts: createForgePr / getForgePrStatus / closeForgePr` | —       | forge CLI 出口,按 provider 路由;不接触意图账本                   |
-| `pr-target.ts: resolvePrTarget`                           | 读      | 三条建 PR 路径共用的目标解析:关联交付 → 意图 `baseBranch`        |
-| `write-cores.ts: createPrForIntent`                       | 门禁→写 | 有活跃 PR 拒绝重建;成功后写入编号、来源、head/base、URL          |
-| `dev-cleanup.ts: runManualDevCleanup`                     | 门禁→写 | 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入          |
-| `queue-dev-actions.ts: maybeCreatePr`                     | 门禁→写 | 自动化队列:`done` 写入后按目标解析建 PR(未关联则向 `baseBranch`) |
-| `pr-status-sync.ts: syncIntentPrStatus`                   | 读→写   | 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志      |
-| `pr-status-sync.ts: depsWithUnconfirmedPr`                | 读      | 依赖意图存在 `reviewing` 行即触发后台补同步                      |
-| `write-cores.ts: applyIntentStatusChange`                 | 读→写   | 取消意图:遍历全部活跃 PR 逐条关闭,全成功才放行                   |
-| `pr-update-consumer.ts: handlePrUpdateEvent`              | 读→写   | `pr:update` 事件把指定行从 `rejected`/`failed`/`closed` 复位     |
-| `pr-events/tool-defs.ts: runServerSidePrCreate`           | —       | 发布 `pr:create` 事件;载荷取自创建结果,不读账本                  |
+- `git.ts: createForgePr / getForgePrStatus / closeForgePr`: forge CLI 出口,按 provider 路由;不接触意图账本
+- `pr-target.ts: resolvePrTarget`(读): 三条建 PR 路径共用的目标解析:关联交付 → 意图 `baseBranch`
+- `write-cores.ts: createPrForIntent`(门禁→写): 有活跃 PR 拒绝重建;成功后写入编号、来源、head/base、URL
+- `dev-cleanup.ts: runManualDevCleanup`(门禁→写): 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入
+- `queue-dev-actions.ts: maybeCreatePr`(门禁→写): 自动化队列:`done` 写入后按目标解析建 PR(未关联则向 `baseBranch`)
+- `pr-status-sync.ts: syncIntentPrStatus`(读→写): 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志
+- `pr-status-sync.ts: depsWithUnconfirmedPr`(读): 依赖意图存在 `reviewing` 行即触发后台补同步
+- `write-cores.ts: applyIntentStatusChange`(读→写): 取消意图:遍历全部活跃 PR 逐条关闭,全成功才放行
+- `pr-update-consumer.ts: handlePrUpdateEvent`(读→写): `pr:update` 事件把指定行从 `rejected`/`failed`/`closed` 复位
+- `pr-events/tool-defs.ts: runServerSidePrCreate`: 发布 `pr:create` 事件;载荷取自创建结果,不读账本
 
 ## 3. 闸门与工具
 
-| 文件:符号                                            | 分类 | 用途                                                                   |
-| ---------------------------------------------------- | ---- | ---------------------------------------------------------------------- |
-| `dependency-gate.ts: findDependencyBlockingMainline` | 门禁 | 依赖的**聚合态**为 `merged` 才不阻塞                                   |
-| `queue-ledger.ts: toFact`                            | 派生 | 把 PR 行归约为 `QueueIntentFact.prStatus` 聚合态                       |
-| `kernel/queue/reconcile.ts`                          | 门禁 | 读 `QueueIntentFact.prStatus`(已是聚合态)                              |
-| `pr-status-tool-defs.ts: runSyncIntentPrStatus`      | —    | 自动化工具(仅 `intentId`,无状态参数)转调 `syncIntentPrStatus` 触发派生 |
-| `advisor-tools.ts: sync_intent_pr_status`            | —    | 顾问工具转调 `syncIntentPrStatus`                                      |
+- `dependency-gate.ts: findDependencyBlockingMainline`(门禁): 依赖的**聚合态**为 `merged` 才不阻塞
+- `queue-ledger.ts: toFact`(派生): 把 PR 行归约为 `QueueIntentFact.prStatus` 聚合态
+- `kernel/queue/reconcile.ts`(门禁): 读 `QueueIntentFact.prStatus`(已是聚合态)
+- `pr-status-tool-defs.ts: runSyncIntentPrStatus`: 自动化工具(仅 `intentId`,无状态参数)转调 `syncIntentPrStatus` 触发派生
+- `advisor-tools.ts: sync_intent_pr_status`: 顾问工具转调 `syncIntentPrStatus`
 
 ## 4. 协议与前端
 
-| 文件:符号                                      | 分类   | 用途                                                                                              |
-| ---------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------- |
-| `shared/src/protocol/intent.ts`                | 持久化 | `IntentPr` / `IntentPrStatus` / `IntentPrForge` 与 `Intent.prs`                                   |
-| `shared/src/intent-pr-model.ts`                | 派生   | `deriveIntentPrAggregate` / `activeIntentPrs` / `pickPrimaryIntentPr`,服务端与前端共用            |
-| `shared/src/protocol/intent-messages.ts`       | 读     | `create_pr_response`、`sync_intent_pr_status_response`(其 `prStatus` 为聚合态)                    |
-| `web/src/lib/intent-engineering-progress.ts`   | 派生   | 进度条 PR 段读聚合态                                                                              |
-| `web/src/lib/intent-list-view.ts`              | 派生   | 依赖阻塞判定(聚合态)+ 行内 create-pr / prLink 可见性                                              |
-| `IntentOverviewTab.vue`                        | 读     | 逐条渲染 PR 行与状态徽标;同步按钮看有无 `reviewing` 行                                            |
-| `IntentTitleBarActions.vue`                    | 读     | 建 PR 按钮按目标 pair 看有无活跃/`merged` PR;主按钮取第一条活跃 PR 跳转/复制;同步按钮同上         |
-| `web/src/pages/automations/templates/index.ts` | 读     | `PR_STATUS_POLLER_PROMPT` 按 `prs` 描述筛选口径;终态对账指引调用 `mcp__c3__sync_intent_pr_status` |
-| `web/src/locales/*.json`                       | 读     | `intent.prStatus.*` 展示文案                                                                      |
+- `shared/src/protocol/intent.ts`(持久化): `IntentPr` / `IntentPrStatus` / `IntentPrForge` 与 `Intent.prs`
+- `shared/src/intent-pr-model.ts`(派生): `deriveIntentPrAggregate` / `activeIntentPrs` / `pickPrimaryIntentPr`,服务端与前端共用
+- `shared/src/protocol/intent-messages.ts`(读): `create_pr_response`、`sync_intent_pr_status_response`(其 `prStatus` 为聚合态)
+- `web/src/lib/intent-engineering-progress.ts`(派生): 进度条 PR 段读聚合态
+- `web/src/lib/intent-list-view.ts`(派生): 依赖阻塞判定(聚合态)+ 行内 create-pr / prLink 可见性
+- `IntentOverviewTab.vue`(读): 逐条渲染 PR 行与状态徽标;同步按钮看有无 `reviewing` 行
+- `IntentTitleBarActions.vue`(读): 建 PR 按钮按目标 pair 看有无活跃/`merged` PR;主按钮取第一条活跃 PR 跳转/复制;同步按钮同上
+- `web/src/pages/automations/templates/index.ts`(读): `PR_STATUS_POLLER_PROMPT` 按 `prs` 描述筛选口径;终态对账指引调用 `mcp__c3__sync_intent_pr_status`
+- `web/src/locales/*.json`(读): `intent.prStatus.*` 展示文案
 
 ## 5. 测试
 

@@ -151,15 +151,13 @@ c3 完全绕过这套逻辑：从 PATH 解析出绝对路径，通过 SDK 的 `c
 
 SDK 对子进程的控制比 Claude 更有限，总结如下：
 
-| 层级     | 机制                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------- |
-| 进程管理 | Node `child_process.spawn()` 拉起 `codex exec`；turn 进程常驻期间，唯一控制是 AbortSignal         |
-| 报文协议 | stdio 上的 JSON-lines 事件流，**单向输出**——stdin 发完 prompt 即关闭，无反向通道                  |
-| 权限控制 | **无 per-tool 运行时审批**——`sandboxMode` + `approvalPolicy` 是启动时固定的全量开关               |
-| 沙箱模式 | `read-only` / `workspace-write` / `danger-full-access`（claude 不存在的概念）                     |
-| 审批策略 | `never` / `on-failure` / `on-request`（在非交互式 exec 中实际无用户通道）                         |
-| MCP      | 通过 CLI 配置的 `mcpServers` 下发给子进程；SDK 无 `PreToolUse` hook 等效物                        |
-| Hooks    | Codex CLI 有 hooks 系统，但**SDK 进程内无 hook 注入点**（Claude SDK 的 `Pre/PostToolUse` 不存在） |
+- **进程管理**: Node `child_process.spawn()` 拉起 `codex exec`；turn 进程常驻期间，唯一控制是 AbortSignal
+- **报文协议**: stdio 上的 JSON-lines 事件流，**单向输出**——stdin 发完 prompt 即关闭，无反向通道
+- **权限控制**: **无 per-tool 运行时审批**——`sandboxMode` + `approvalPolicy` 是启动时固定的全量开关
+- **沙箱模式**: `read-only` / `workspace-write` / `danger-full-access`（claude 不存在的概念）
+- **审批策略**: `never` / `on-failure` / `on-request`（在非交互式 exec 中实际无用户通道）
+- **MCP**: 通过 CLI 配置的 `mcpServers` 下发给子进程；SDK 无 `PreToolUse` hook 等效物
+- **Hooks**: Codex CLI 有 hooks 系统，但**SDK 进程内无 hook 注入点**（Claude SDK 的 `Pre/PostToolUse` 不存在）
 
 ### 集中式 Spec 根与 `--add-dir`
 
@@ -207,11 +205,18 @@ session 一联网即被拒。c3 通过两个中性驱动选项字段控制，由
 
 各 session 类型的取值（2026-06-15）：
 
-| Session       | 启动点                        | networkAccess / webSearch         | 说明                                                                                                                                             |
-| ------------- | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| work / intent | 交互式运行启动路径            | 固定 `true` / `true`              | 交互式、用户驱动的运行，恒开网络                                                                                                                 |
-| discussion    | 讨论 agent 会话管理           | 固定 `true` / `true`              | 讨论 agent 边研究边推演                                                                                                                          |
-| automation    | 调度分派（codex driver 路径） | 按 `network-access` 伪条目 / 不传 | `toolAllowlist` 含伪条目 `network-access` 且 `sandboxMode='workspace-write'` 时传 `networkAccess:true`，否则不传（默认断网）；`webSearch` 恒不开 |
+- **work / intent**
+  - 启动点: 交互式运行启动路径
+  - networkAccess / webSearch: 固定 `true` / `true`
+  - 说明: 交互式、用户驱动的运行，恒开网络
+- **discussion**
+  - 启动点: 讨论 agent 会话管理
+  - networkAccess / webSearch: 固定 `true` / `true`
+  - 说明: 讨论 agent 边研究边推演
+- **automation**
+  - 启动点: 调度分派（codex driver 路径）
+  - networkAccess / webSearch: 按 `network-access` 伪条目 / 不传
+  - 说明: `toolAllowlist` 含伪条目 `network-access` 且 `sandboxMode='workspace-write'` 时传 `networkAccess:true`，否则不传（默认断网）；`webSearch` 恒不开
 
 > Automation 的 `network-access` 是 `toolAllowlist` 里的保留伪条目（非工具）：调度分派在进入 `freezeTools()`/权限网格前将其剔除，仅用于决定 codex `workspace-write` 沙箱的原始网络开关。`read-only` 沙箱网络恒禁；claude vendor 无 seatbelt 网络开关，携带该值时静默忽略。默认不勾＝断网，需要联网的 automation（尤其 PR 评审/合并类需 `gh`/`curl`）显式开启。
 
@@ -555,18 +560,16 @@ const turn = await thread.run('分析仓库状态', {
 
 ## 附录：来源与可信度
 
-| 主题                                                      | 来源                                                    | 可信度                             |
-| --------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------- |
-| `Codex`/`startThread`/`runStreamed`/事件/权限模式/Sandbox | 官方文档 `developers.openai.com/codex/sdk` + npm README | 高                                 |
-| SDK 三层类结构（Codex/Thread/CodexExec）                  | DeepWiki `openai/codex` + GitHub 源码                   | 中（实现细节可能跨版本变化）       |
-| c3 的 PATH 探测、`codexPathOverride` 注入                 | 本仓库已落地代码                                        | 高（已落地代码）                   |
-| c3 的审批桥（结构性空操作）、已预审印章                   | 本仓库已落地代码                                        | 高（已落地代码 + Phase 0 结论）    |
-| c3 的会话存储空实现                                       | 本仓库已落地代码                                        | 高（已落地代码）                   |
-| Responses-to-Chat 中继设计与协议转换                      | 本仓库已落地代码                                        | 高（已落地代码 + 单元测试）        |
-| 能力矩阵与 Mode 目录                                      | 本仓库已落地代码                                        | 高（已落地代码）                   |
-| 外部 skill 挂载兼容性（单层 glob / 扁平布局）             | ADR-0016 spike B                                        | 高（已实测）                       |
-| 默认配置与 Web UI 侧 Codex policy 双选下拉                | 本仓库已落地代码                                        | 高（已落地代码）                   |
-| SDK 结构化输出机制                                        | DeepWiki `openai/codex` + 官方文档                      | 中（非 c3 使用路径，未在生产验证） |
+- **`Codex`/`startThread`/`runStreamed`/事件/权限模式/Sandbox** — 来源: 官方文档 `developers.openai.com/codex/sdk` + npm README；可信度: 高
+- **SDK 三层类结构（Codex/Thread/CodexExec）** — 来源: DeepWiki `openai/codex` + GitHub 源码；可信度: 中（实现细节可能跨版本变化）
+- **c3 的 PATH 探测、`codexPathOverride` 注入** — 来源: 本仓库已落地代码；可信度: 高（已落地代码）
+- **c3 的审批桥（结构性空操作）、已预审印章** — 来源: 本仓库已落地代码；可信度: 高（已落地代码 + Phase 0 结论）
+- **c3 的会话存储空实现** — 来源: 本仓库已落地代码；可信度: 高（已落地代码）
+- **Responses-to-Chat 中继设计与协议转换** — 来源: 本仓库已落地代码；可信度: 高（已落地代码 + 单元测试）
+- **能力矩阵与 Mode 目录** — 来源: 本仓库已落地代码；可信度: 高（已落地代码）
+- **外部 skill 挂载兼容性（单层 glob / 扁平布局）** — 来源: ADR-0016 spike B；可信度: 高（已实测）
+- **默认配置与 Web UI 侧 Codex policy 双选下拉** — 来源: 本仓库已落地代码；可信度: 高（已落地代码）
+- **SDK 结构化输出机制** — 来源: DeepWiki `openai/codex` + 官方文档；可信度: 中（非 c3 使用路径，未在生产验证）
 
 > **维护提示**：本文件描述外部依赖，**会随 SDK 版本漂移**。升级 `@openai/codex-sdk` 时复核
 > 「是否需要本机 codex」「事件类型与 ThreadItem 种类」「sandbox/approvalPolicy 枚举值」

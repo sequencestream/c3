@@ -50,27 +50,25 @@ JSON 美化与单行格式化;发送队列逻辑(合并 / 是否应刷新 / comp
 
 ## 状态(容器)
 
-| 状态                      | 用途                                                                                                                                                                                                                 |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rendered messages         | 有序渲染列表(WC-R1);传递给聊天消息视图                                                                                                                                                                               |
-| Current workspace         | 唯一的全局当前工作区路径(WC-R8);从持久化选择或最近使用中解析,本地持久化,驱动会话 tab 的会话列表(其在按工作区分组的会话中的切片)。与当前查看会话的工作区解耦                                                          |
-| Connection status         | 连接指示器——connecting / open / closed(WC-R6)                                                                                                                                                                        |
-| Per-session status        | 来自 `ready` / `session_status` 事件的逐会话实时状态(WC-R12)                                                                                                                                                         |
-| Running (derived)         | 当前查看会话的状态 ≠ idle;启用状态栏的 Stop 按钮并把 Send 切换为入队(输入框保持可编辑;Send 文案固定不变)(WC-R2/R14)                                                                                                  |
-| Pending queues            | 逐会话、仅客户端的发送队列(普通会话)。会话切换后仍保留;刷新页面则丢失。当前查看会话的切片即当前队列                                                                                                                  |
-| Run activity              | 当前查看会话的细粒度运行状态,从事件流推断;驱动状态栏(WC-R15)                                                                                                                                                         |
-| Mode                      | 当前的厂商原生模式 token;从会话选择 / `mode_changed` 同步(WC-R4)。通过活动会话的厂商目录解释                                                                                                                         |
-| Mode options (derived)    | 模式下拉框的选项,从活动会话的厂商模式目录(来自 `settings.vendorModes`)派生。厂商目录尚未加载时回退到内置的 Claude 模式列表                                                                                           |
-| Vendor modes              | 按厂商的模式目录(2026-06-07-012),由 `settings.vendorModes` 播种。驱动选择器中按厂商区分的模式选项                                                                                                                    |
-| Actionable permission     | 用户仍可操作的那一个权限的请求 id,或 none;从逐会话状态 + transcript 派生(WC-R16)                                                                                                                                     |
-| Intents                   | 按项目的 intent 列表;在 `intents` 推送或 `list_intents` 回复时更新                                                                                                                                                   |
-| Automation                | 按项目的自动化编排器状态;在 `automation_status` 推送时更新                                                                                                                                                           |
-| Active tab                | 驱动内容区渲染哪个页面的显式顶部栏 tab 选择(WC-R18)。由一个数据驱动的 tab 列表支撑(可扩展——未来的「讨论」tab 只是多一个条目 + 一个正文分支)。本地持久化(键为 `c3.viewMode`),硬刷新后恢复该 tab                       |
-| Intents project           | 当前打开的 intent 页面所属的项目路径;与当前 tab 一同持久化                                                                                                                                                           |
-| Console session           | 「会话」tab 自己的最后查看会话指针,独立于 intent tab 的通讯会话——因此切换 tab 永远不会跨污聊天内容。驱动会话 tab 的重新绑定。内存态(WS 重连后存活,刷新页面后丢失,与 transcript 一致)。见下文 _按 tab 分别记忆的会话_ |
-| Workspace-setting open    | 工作区设置浮层是否打开;由 app-header 的工作区设置按钮切换。在工作区切换与 WS 重连时关闭                                                                                                                              |
-| Current workspace-setting | 来自服务端的最近一次 `workspace_setting` 回复,播种进工作区设置草稿。在工作区切换与 WS 重连时清空                                                                                                                     |
-| Detected main branch      | `workspace_setting` 回复上携带的、服务端探测到的默认分支;传给工作区设置页面,在没有已保存值时预填默认主分支。在工作区切换与 WS 重连时清空                                                                             |
+- **Rendered messages**: 有序渲染列表(WC-R1);传递给聊天消息视图
+- **Current workspace**: 唯一的全局当前工作区路径(WC-R8);从持久化选择或最近使用中解析,本地持久化,驱动会话 tab 的会话列表(其在按工作区分组的会话中的切片)。与当前查看会话的工作区解耦
+- **Connection status**: 连接指示器——connecting / open / closed(WC-R6)
+- **Per-session status**: 来自 `ready` / `session_status` 事件的逐会话实时状态(WC-R12)
+- **Running (derived)**: 当前查看会话的状态 ≠ idle;启用状态栏的 Stop 按钮并把 Send 切换为入队(输入框保持可编辑;Send 文案固定不变)(WC-R2/R14)
+- **Pending queues**: 逐会话、仅客户端的发送队列(普通会话)。会话切换后仍保留;刷新页面则丢失。当前查看会话的切片即当前队列
+- **Run activity**: 当前查看会话的细粒度运行状态,从事件流推断;驱动状态栏(WC-R15)
+- **Mode**: 当前的厂商原生模式 token;从会话选择 / `mode_changed` 同步(WC-R4)。通过活动会话的厂商目录解释
+- **Mode options (derived)**: 模式下拉框的选项,从活动会话的厂商模式目录(来自 `settings.vendorModes`)派生。厂商目录尚未加载时回退到内置的 Claude 模式列表
+- **Vendor modes**: 按厂商的模式目录,由 `settings.vendorModes` 播种。驱动选择器中按厂商区分的模式选项
+- **Actionable permission**: 用户仍可操作的那一个权限的请求 id,或 none;从逐会话状态 + transcript 派生(WC-R16)
+- **Intents**: 按项目的 intent 列表;在 `intents` 推送或 `list_intents` 回复时更新
+- **Automation**: 按项目的自动化编排器状态;在 `automation_status` 推送时更新
+- **Active tab**: 驱动内容区渲染哪个页面的显式顶部栏 tab 选择(WC-R18)。由一个数据驱动的 tab 列表支撑(可扩展——未来的「讨论」tab 只是多一个条目 + 一个正文分支)。本地持久化(键为 `c3.viewMode`),硬刷新后恢复该 tab
+- **Intents project**: 当前打开的 intent 页面所属的项目路径;与当前 tab 一同持久化
+- **Console session**: 「会话」tab 自己的最后查看会话指针,独立于 intent tab 的通讯会话——因此切换 tab 永远不会跨污聊天内容。驱动会话 tab 的重新绑定。内存态(WS 重连后存活,刷新页面后丢失,与 transcript 一致)。见下文 _按 tab 分别记忆的会话_
+- **Workspace-setting open**: 工作区设置浮层是否打开;由 app-header 的工作区设置按钮切换。在工作区切换与 WS 重连时关闭
+- **Current workspace-setting**: 来自服务端的最近一次 `workspace_setting` 回复,播种进工作区设置草稿。在工作区切换与 WS 重连时清空
+- **Detected main branch**: `workspace_setting` 回复上携带的、服务端探测到的默认分支;传给工作区设置页面,在没有已保存值时预填默认主分支。在工作区切换与 WS 重连时清空
 
 组件本地 UI 状态(不在容器中):消息输入框中的提示词草稿 + 斜杠菜单;
 聊天消息视图中的工具/批次展开集合;权限提示中的逐问题应答草稿;会话列表中的
@@ -89,22 +87,20 @@ tool-result · permission · consensus · system,各自带一个数字 id。
 
 入站派发按消息类型分支:
 
-| Wire 事件                  | UI 效果                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ready`                    | 设置模式;从 `statuses` 播种逐会话状态;解析当前工作区(持久化选择 → 最近使用)并为其请求 `list_sessions`(WC-R8)  |
-| `workspaces`               | 替换工作区列表;若当前工作区已被移除,则回退到最近使用的工作区并加载其会话(WC-R8)                               |
-| `session_status`           | 替换逐会话状态;当后台会话为 `awaiting_permission` 时通知(WC-R13)                                              |
-| `mode_changed`             | 设置模式                                                                                                      |
-| `session_selected`         | 清空事件流,渲染 `history`,从 `status` 播种该会话的状态(立即锁定 composer);缓冲区的尾部作为实时事件跟进(WC-R9) |
-| `user_text`                | 追加用户消息                                                                                                  |
-| `assistant_text`           | 追加助手消息                                                                                                  |
-| `tool_use` / `tool_result` | 追加 tool-use / tool-result 消息                                                                              |
-| `permission_request`       | 追加一条未决的权限消息(实时或回放皆然;可操作性是派生的,见下文)                                                |
-| `consensus_auto`           | 追加共识消息                                                                                                  |
-| `turn_end`                 | 仅在 `error` 时追加一条系统提示;运行状态通过 `session_status` 解锁(WC-R5)                                     |
-| `intents`                  | 用推送的列表替换该项目的 intent 列表(WC-R10)                                                                  |
-| `automation_status`        | 用推送的状态替换该项目的自动化编排器状态(WC-R11)                                                              |
-| `workspace_setting`        | 把当前工作区设置设为返回的配置,把检测到的主分支设为回复中探测到的分支;供工作区设置草稿消费                    |
+- **`ready`**: 设置模式;从 `statuses` 播种逐会话状态;解析当前工作区(持久化选择 → 最近使用)并为其请求 `list_sessions`(WC-R8)
+- **`workspaces`**: 替换工作区列表;若当前工作区已被移除,则回退到最近使用的工作区并加载其会话(WC-R8)
+- **`session_status`**: 替换逐会话状态;当后台会话为 `awaiting_permission` 时通知(WC-R13)
+- **`mode_changed`**: 设置模式
+- **`session_selected`**: 清空事件流,渲染 `history`,从 `status` 播种该会话的状态(立即锁定 composer);缓冲区的尾部作为实时事件跟进(WC-R9)
+- **`user_text`**: 追加用户消息
+- **`assistant_text`**: 追加助手消息
+- **`tool_use` / `tool_result`**: 追加 tool-use / tool-result 消息
+- **`permission_request`**: 追加一条未决的权限消息(实时或回放皆然;可操作性是派生的,见下文)
+- **`consensus_auto`**: 追加共识消息
+- **`turn_end`**: 仅在 `error` 时追加一条系统提示;运行状态通过 `session_status` 解锁(WC-R5)
+- **`intents`**: 用推送的列表替换该项目的 intent 列表(WC-R10)
+- **`automation_status`**: 用推送的状态替换该项目的自动化编排器状态(WC-R11)
+- **`workspace_setting`**: 把当前工作区设置设为返回的配置,把检测到的主分支设为回复中探测到的分支;供工作区设置草稿消费
 
 ## Intent runStatus 指示器
 
@@ -134,30 +130,72 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 
 ## 用户操作(UI → wire)
 
-| 操作                   | 前置条件                                                                  | 发送                                                                                                                                                                                                                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Submit                 | 非空、已连接;只有 idle 或 team 状态下才会触发(WC-R2)                      | `user_prompt`;乐观地把当前查看会话标记为运行中                                                                                                                                                                                                                                                                    |
-| Enqueue                | 普通会话正在运行(composer 操作)                                           | 无——追加到当前查看会话的待发送队列(仅客户端);清空 composer                                                                                                                                                                                                                                                        |
-| Edit queued            | 队列中的条目                                                              | 无——移除该条目,并把其文本折叠回 composer 草稿                                                                                                                                                                                                                                                                     |
-| Delete queued          | 队列中的条目                                                              | 无——从队列中移除该条目                                                                                                                                                                                                                                                                                            |
-| Flush if ready         | should-flush(idle + 非空;每次状态应用时做边沿观察 + 水平复查)             | 合并当前查看会话的队列(以空行连接)→ 提交 → 清空它                                                                                                                                                                                                                                                                 |
-| Stop run               | 由状态栏 Stop 按钮触发;当前查看会话运行中或团队处于活跃状态时启用(WC-R14) | `stop_run`(打断一次普通回合,或结束整个团队)                                                                                                                                                                                                                                                                       |
-| Select workspace       | 路径 ≠ 当前(WC-R8)                                                        | 设置当前工作区 + 持久化;切换到「意图」并把 intents project 指向该工作区(走意图页标准入口:工作区设置 + 意图通讯会话 + 意图会话列表);同时对活动的 `sessionKind` 切片**强制** `list_sessions`(绕过会话缓存——只刷新该工作区/种类切片)并请求 `get_session_counts`,会话重新绑定留待用户之后进入「会话」时按入口决策执行 |
-| Add / remove workspace | 切换器新增 / 行移除(二次确认)(WC-R8)                                      | `add_workspace` / `remove_workspace`                                                                                                                                                                                                                                                                              |
-| Respond                | 已连接,提示可操作(⇒ 未决)(WC-R3)                                          | `permission_response`;在本地设置决定                                                                                                                                                                                                                                                                              |
-| Set mode               | 已连接,值发生变化                                                         | 乐观模式更新 + `set_mode`(WC-R4)                                                                                                                                                                                                                                                                                  |
-| Select tab             | 顶部栏 tab 点击(WC-R18)                                                   | 无——console → 切换到「会话」(翻转 + 重新绑定会话 tab 的会话);intents → 打开 intent 聊天(无工作区时为 no-op)                                                                                                                                                                                                       |
-| Open intents           | 已连接                                                                    | `open_intent_chat`——服务端以通讯 `session_selected` + `intents` 回复                                                                                                                                                                                                                                              |
-| Set intent filter      | intents project 已设置                                                    | 带可选状态筛选的 `list_intents`                                                                                                                                                                                                                                                                                   |
-| Refine intent          | 已连接                                                                    | `refine_intent`;启动一个新的预置通讯会话                                                                                                                                                                                                                                                                          |
-| Start development      | 已连接                                                                    | `start_development`——后台开发技能启动,状态翻转为 in_progress                                                                                                                                                                                                                                                      |
-| Set intent status      | 已连接                                                                    | `update_intent_status`;广播重新丰富运行状态                                                                                                                                                                                                                                                                       |
-| Set intent automate    | 已连接                                                                    | `set_intent_automate`;广播重新丰富运行状态                                                                                                                                                                                                                                                                        |
-| Set intent spec mode   | 已连接                                                                    | `set_intent_spec_mode`(`mode` 显式携带,`null` 恢复继承工作区);广播带回重算的 `effectiveSpecMode`                                                                                                                                                                                                                  |
-| Start automation       | intents project 已设置                                                    | `start_automation`——启动该项目的编排器循环                                                                                                                                                                                                                                                                        |
-| Stop automation        | intents project 已设置                                                    | `stop_automation`——中止当前编排运行                                                                                                                                                                                                                                                                               |
-| Open workspace setting | 已选中工作区                                                              | 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`                                                                                                                                                                                                                                                      |
-| Save workspace setting | 已选中工作区                                                              | 携带项目路径与当前 Tab 覆盖后的完整配置发送 `save_workspace_setting`;浮层保持打开以接收回包并清理刚保存 Tab 的脏状态(浮层仍在工作区切换、WS 重连、用户主动关闭时关闭)                                                                                                                                             |
+- **Submit**
+  - 前置条件: 非空、已连接;只有 idle 或 team 状态下才会触发(WC-R2)
+  - 发送: `user_prompt`;乐观地把当前查看会话标记为运行中
+- **Enqueue**
+  - 前置条件: 普通会话正在运行(composer 操作)
+  - 发送: 无——追加到当前查看会话的待发送队列(仅客户端);清空 composer
+- **Edit queued**
+  - 前置条件: 队列中的条目
+  - 发送: 无——移除该条目,并把其文本折叠回 composer 草稿
+- **Delete queued**
+  - 前置条件: 队列中的条目
+  - 发送: 无——从队列中移除该条目
+- **Flush if ready**
+  - 前置条件: should-flush(idle + 非空;每次状态应用时做边沿观察 + 水平复查)
+  - 发送: 合并当前查看会话的队列(以空行连接)→ 提交 → 清空它
+- **Stop run**
+  - 前置条件: 由状态栏 Stop 按钮触发;当前查看会话运行中或团队处于活跃状态时启用(WC-R14)
+  - 发送: `stop_run`(打断一次普通回合,或结束整个团队)
+- **Select workspace**
+  - 前置条件: 路径 ≠ 当前(WC-R8)
+  - 发送: 设置当前工作区 + 持久化;切换到「意图」并把 intents project 指向该工作区(走意图页标准入口:工作区设置 + 意图通讯会话 + 意图会话列表);同时对活动的 `sessionKind` 切片**强制** `list_sessions`(绕过会话缓存——只刷新该工作区/种类切片)并请求 `get_session_counts`,会话重新绑定留待用户之后进入「会话」时按入口决策执行
+- **Add / remove workspace**
+  - 前置条件: 切换器新增 / 行移除(二次确认)(WC-R8)
+  - 发送: `add_workspace` / `remove_workspace`
+- **Respond**
+  - 前置条件: 已连接,提示可操作(⇒ 未决)(WC-R3)
+  - 发送: `permission_response`;在本地设置决定
+- **Set mode**
+  - 前置条件: 已连接,值发生变化
+  - 发送: 乐观模式更新 + `set_mode`(WC-R4)
+- **Select tab**
+  - 前置条件: 顶部栏 tab 点击(WC-R18)
+  - 发送: 无——console → 切换到「会话」(翻转 + 重新绑定会话 tab 的会话);intents → 打开 intent 聊天(无工作区时为 no-op)
+- **Open intents**
+  - 前置条件: 已连接
+  - 发送: `open_intent_chat`——服务端以通讯 `session_selected` + `intents` 回复
+- **Set intent filter**
+  - 前置条件: intents project 已设置
+  - 发送: 带可选状态筛选的 `list_intents`
+- **Refine intent**
+  - 前置条件: 已连接
+  - 发送: `refine_intent`;启动一个新的预置通讯会话
+- **Start development**
+  - 前置条件: 已连接
+  - 发送: `start_development`——后台开发技能启动,状态翻转为 in_progress
+- **Set intent status**
+  - 前置条件: 已连接
+  - 发送: `update_intent_status`;广播重新丰富运行状态
+- **Set intent automate**
+  - 前置条件: 已连接
+  - 发送: `set_intent_automate`;广播重新丰富运行状态
+- **Set intent spec mode**
+  - 前置条件: 已连接
+  - 发送: `set_intent_spec_mode`(`mode` 显式携带,`null` 恢复继承工作区);广播带回重算的 `effectiveSpecMode`
+- **Start automation**
+  - 前置条件: intents project 已设置
+  - 发送: `start_automation`——启动该项目的编排器循环
+- **Stop automation**
+  - 前置条件: intents project 已设置
+  - 发送: `stop_automation`——中止当前编排运行
+- **Open workspace setting**
+  - 前置条件: 已选中工作区
+  - 发送: 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`
+- **Save workspace setting**
+  - 前置条件: 已选中工作区
+  - 发送: 携带项目路径与当前 Tab 覆盖后的完整配置发送 `save_workspace_setting`;浮层保持打开以接收回包并清理刚保存 Tab 的脏状态(浮层仍在工作区切换、WS 重连、用户主动关闭时关闭)
 
 ## 权限可操作性(实时 vs. 回放)
 

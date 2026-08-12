@@ -54,12 +54,18 @@
 构建以严格的、无竞态的阶段运行。Phase0/1 恰好各执行一次;Phase2 扇出且只是
 纯读取者,因此 N 个目标从不会写同一个共享文件(这是旧竞态的根源)。
 
-| Phase    | 步骤                  | 基数                             | 产出                                                                                        |
-| -------- | --------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
-| Phase0   | web 构建              | 一次,与平台无关                  | 编译后的 web bundle                                                                         |
-| Phase1   | generate-static-embed | 一次                             | web bundle 的一次性快照,可嵌入二进制文件(已被 gitignore,不提交)                             |
-| Phase2   | `bun --compile` 扇出  | 每个目标一次,**并行**            | 每个目标各自 scratch 区域中的 `c3` 二进制文件(相对 Phase1 快照只读)                         |
-| Phase2.5 | pack                  | 每个目标一次,Phase2 之后**串行** | 可分发的包 `c3-v{ver}-{target}{.tar.gz\|.zip}`,连同二进制文件内部的 sha256 sidecar 一起打包 |
+- **Phase0 · web 构建**
+  - 基数: 一次,与平台无关
+  - 产出: 编译后的 web bundle
+- **Phase1 · generate-static-embed**
+  - 基数: 一次
+  - 产出: web bundle 的一次性快照,可嵌入二进制文件(已被 gitignore,不提交)
+- **Phase2 · `bun --compile` 扇出**
+  - 基数: 每个目标一次,**并行**
+  - 产出: 每个目标各自 scratch 区域中的 `c3` 二进制文件(相对 Phase1 快照只读)
+- **Phase2.5 · pack**
+  - 基数: 每个目标一次,Phase2 之后**串行**
+  - 产出: 可分发的包 `c3-v{ver}-{target}{.tar.gz|.zip}`,连同二进制文件内部的 sha256 sidecar 一起打包
 
 可嵌入的快照保存在**已提交源码树之外**:源码里携带一个永久性的空占位符,供日常
 bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 重定向到 Phase1
@@ -86,11 +92,15 @@ bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 
 的本地产物集合,而不是直接切割 GitHub Release(切割公开 Release 由 CI 的
 `pnpm release:github` 负责)。
 
-| #   | 门禁         | 层级 | 运行内容                                                              | 遇红时                       |
-| --- | ------------ | ---- | --------------------------------------------------------------------- | ---------------------------- |
-| 0   | **pregate**  | 源码 | `typecheck → lint → test → i18n:check → i18n:check-freeze`(严格顺序)  | 在任何编译**之前**中止       |
-| 1   | **制品门禁** | 产物 | 每个 host-runnable 目标:`c3 --version` + 无头冒烟测试                 | 构建失败                     |
-| 2   | **发布门禁** | 分发 | manifest ↔ SHA256SUMS ↔ 磁盘上 sha256 三方一致 + **所有 P0 目标齐全** | 在打 tag / `gh` **之前**中止 |
+- **0 · pregate**(层级: 源码)
+  - 运行内容: `typecheck → lint → test → i18n:check → i18n:check-freeze`(严格顺序)
+  - 遇红时: 在任何编译**之前**中止
+- **1 · 制品门禁**(层级: 产物)
+  - 运行内容: 每个 host-runnable 目标:`c3 --version` + 无头冒烟测试
+  - 遇红时: 构建失败
+- **2 · 发布门禁**(层级: 分发)
+  - 运行内容: manifest ↔ SHA256SUMS ↔ 磁盘上 sha256 三方一致 + **所有 P0 目标齐全**
+  - 遇红时: 在打 tag / `gh` **之前**中止
 
 - **Pregate**(`release:gate`)在 `pnpm release` 中最先运行,并且快速失败:第一个
   非零门禁就中止,所以红色的 typecheck 永远不会走到多平台的 `bun --compile`。
@@ -116,7 +126,7 @@ bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 
 | --------------------------- | -------------------- | ----------------- | ------------------------------------------ |
 | husky + lint-staged         | **仅暂存文件**(增量) | 每次 `git commit` | `eslint --fix` + `prettier` + `i18n:check` |
 | CI on push/PR               | 整棵树               | 每次 push / PR    | `typecheck` + `lint` + `i18n:check`        |
-| **release pregate + gates** | 整棵树 + 每个制品    | 切割一次发布      | 上面完整的表格                             |
+| **release pregate + gates** | 整棵树 + 每个制品    | 切割一次发布      | 上面完整的门禁清单                         |
 
 husky/lint-staged 守护的是 **commit 级增量**;release 门禁守护的是**完整分发**。
 它们刻意不重叠——`test` 和 `i18n:check-freeze` 只在 release 时跑(对每次 commit

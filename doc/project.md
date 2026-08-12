@@ -32,13 +32,12 @@ Claude Code 的权限提示存在于智能体运行所在的终端中。这把�
 
 ## 干系人
 
-| 角色                  | 关注点                                                        |
-| --------------------- | ------------------------------------------------------------- |
-| 本地开发者(主要用户） | 针对某个项目运行 c3,在浏览器中批准工具使用                    |
-| 维护者                | 拥有服务端、协议与前端                                        |
-| 智能体 SDK            | 三个上游依赖,各自拥有不同的 SDK 架构:                         |
-|                       | • `@anthropic-ai/claude-agent-sdk` — 子进程 JSON stdio 包装器 |
-|                       | • `@openai/codex-sdk` — 子进程 HTTP/SSE + Responses→Chat 中继 |
+- **本地开发者(主要用户)**: 针对某个项目运行 c3,在浏览器中批准工具使用
+- **维护者**: 拥有服务端、协议与前端
+- **智能体 SDK**: 三个上游依赖,各自拥有不同的 SDK 架构
+  - `@anthropic-ai/claude-agent-sdk` — 子进程 JSON stdio 包装器
+  - `@openai/codex-sdk` — 子进程 HTTP/SSE + Responses→Chat 中继
+  - `cursor-agent` — 无 SDK 包装层,由 c3 直接 spawn 的厂商 CLI
 
 ## 成功标准
 

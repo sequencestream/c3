@@ -134,17 +134,20 @@ _Con:_ 仍把 basic 的字段（用户名/口令哈希）焊在顶层；加 SSO/
 
 **WS 协议增补**（作为 wire 契约记录）：
 
-| 方向            | 消息                    | 字段 / 语义                                                       |
-| --------------- | ----------------------- | ----------------------------------------------------------------- |
-| 客户端 → 服务端 | `login`                 | 携登录请求（用户名 + 口令）                                       |
-| 客户端 → 服务端 | `logout`                | 无                                                                |
-| 客户端 → 服务端 | `set_admin_password`    | username + password + 可选 currentPassword；upsert 账号口令       |
-| 客户端 → 服务端 | `remove_account`        | username                                                          |
-| 客户端 → 服务端 | `set_admin_account`     | username                                                          |
-| 服务端 → 客户端 | `login_result`          | 携登录结果                                                        |
-| 服务端 → 客户端 | `admin_password_result` | 携改密结果                                                        |
-| 服务端 → 客户端 | `account_op_result`     | 结果码：成功 \| `not_found` \| `admin_must_reassign` \| `invalid` |
-| 服务端 → 客户端 | `unauthenticated`       | reason：`missing` \| `expired` \| `invalid`（401 语义）           |
+客户端 → 服务端:
+
+- `login`: 携登录请求（用户名 + 口令）
+- `logout`: 无
+- `set_admin_password`: username + password + 可选 currentPassword；upsert 账号口令
+- `remove_account`: username
+- `set_admin_account`: username
+
+服务端 → 客户端:
+
+- `login_result`: 携登录结果
+- `admin_password_result`: 携改密结果
+- `account_op_result`: 结果码：成功 | `not_found` | `admin_must_reassign` | `invalid`
+- `unauthenticated`: reason：`missing` | `expired` | `invalid`（401 语义）
 
 系统设置增补可选的认证配置字段，缺省 = 未启用，向后兼容。
 

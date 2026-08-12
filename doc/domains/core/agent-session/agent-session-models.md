@@ -6,17 +6,15 @@
 
 进程范围内某个会话执行的所有者,以 session id 为键,跨连接共享(ADR 0006)。一旦创建即存活于进程生命周期内(尚无淘汰机制)。
 
-| Attribute      | Type                        | Description                                                                                    |
-| -------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
-| Session id     | text (UUID \| pending form) | Map 键;在首次绑定时从 pending 重新键入为真实值(AS-R10)                                         |
-| Workspace path | text (path)                 | 该运行的工作目录(由 runtime 拥有)                                                              |
-| Mode           | permission mode             | 该会话的模式;运行的起始策略(AS-R3, SR-R5)                                                      |
-| Baseline       | list of transcript items    | runtime 创建时的磁盘转录快照;在 buffer 之前回放                                                |
-| Buffer         | list of wire events         | 创建以来发出的每个事件(所有 turn);在视图加入时回放(AS-R11)                                     |
-| Run            | reference \| none           | 正在进行的 Agent Run 的中止句柄 + handle,或 turn 之间为 none                                   |
-| Status         | enum                        | idle \| running \| awaiting_permission \| team(AS-R12)                                         |
-| Session kind   | enum                        | work \| intent \| spec \| discussion \| automation \| tool;为 projection/list 路由标记 runtime |
-| Viewers        | set of delivery callbacks   | 当前正在观察该会话的连接;实时事件分发给它们                                                    |
+- **Session id**(text, UUID | pending form): Map 键;在首次绑定时从 pending 重新键入为真实值(AS-R10)
+- **Workspace path**(text, path): 该运行的工作目录(由 runtime 拥有)
+- **Mode**(permission mode): 该会话的模式;运行的起始策略(AS-R3, SR-R5)
+- **Baseline**(list of transcript items): runtime 创建时的磁盘转录快照;在 buffer 之前回放
+- **Buffer**(list of wire events): 创建以来发出的每个事件(所有 turn);在视图加入时回放(AS-R11)
+- **Run**(reference | none): 正在进行的 Agent Run 的中止句柄 + handle,或 turn 之间为 none
+- **Status**(enum): idle | running | awaiting_permission | team(AS-R12)
+- **Session kind**(enum): work | intent | spec | discussion | automation | tool;为 projection/list 路由标记 runtime
+- **Viewers**(set of delivery callbacks): 当前正在观察该会话的连接;实时事件分发给它们
 
 关系:每个 runtime 至多有一个进行中的 Agent Run(串行,AS-R2);许多 runtime
 并发运行。连接关闭后仍存活(AS-R8);在 `delete_session` /
@@ -69,14 +67,12 @@ Request 门控敏感工具(permission-gateway 域)。
 一次运行的输入。除 [agent-session-design.md](agent-session-design.md) § Run construction 中列出的
 SDK 选项外,与业务相关的补充项:
 
-| Input                      | Kind     | Description                                                                                                                                    |
-| -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start callback             | callback | 用 **Run Handle** 触发一次,以便调用方驱动实时运行                                                                                              |
-| Session-id callback        | callback | 用 `init` 消息中的 SDK session id 触发一次(AS-R10)                                                                                             |
-| Team callback              | callback | 在检测到第一个 team 工具时触发一次——运行变为持久化(AS-R14)                                                                                     |
-| Degradable-error callback  | callback | 在速率限制/鉴权/连接错误时触发,以便调用方切换 agent(降级链);该运行会跳过其终止性 `turn_end`                                                    |
-| Socket-disconnect callback | callback | 在出现 `socket connection was closed unexpectedly` 时触发,携带 AS-R19 门控结论,以便调用方决定是否单次自动 `resume`;运行跳过 `turn_end`(AS-R18) |
-| Reconnect-attempt flag     | boolean  | 当本次运行**是**断线后自动 `resume` 的单次尝试时为 true;为该 turn 的 `turn_end` 打上 `reconnect_attempted`/`retry_count` 标记(AS-R18)          |
+- **Start callback**(callback): 用 **Run Handle** 触发一次,以便调用方驱动实时运行
+- **Session-id callback**(callback): 用 `init` 消息中的 SDK session id 触发一次(AS-R10)
+- **Team callback**(callback): 在检测到第一个 team 工具时触发一次——运行变为持久化(AS-R14)
+- **Degradable-error callback**(callback): 在速率限制/鉴权/连接错误时触发,以便调用方切换 agent(降级链);该运行会跳过其终止性 `turn_end`
+- **Socket-disconnect callback**(callback): 在出现 `socket connection was closed unexpectedly` 时触发,携带 AS-R19 门控结论,以便调用方决定是否单次自动 `resume`;运行跳过 `turn_end`(AS-R18)
+- **Reconnect-attempt flag**(boolean): 当本次运行**是**断线后自动 `resume` 的单次尝试时为 true;为该 turn 的 `turn_end` 打上 `reconnect_attempted`/`retry_count` 标记(AS-R18)
 
 ## Permission mode
 

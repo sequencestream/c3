@@ -15,7 +15,7 @@
 - **`canUseTool` allow-without-updatedInput 修复（0.3.207）评估结论：升级即自动受益。** 该修复将 `{ behavior:
 'allow' }`（无 `updatedInput`）从被 Zod 拒绝（返回原始 ZodError 消息作为 deny）恢复为按文档契约正常允许
   （使用原始输入）。不过 c3 的 `allow()` 调用全部传入了 `input` 参数（生成 `{ behavior: 'allow', updatedInput:
-input }`），所以该修复对 c3 当前所有调用路径**没有行为改变**——它仅防止未来误用场景。详见下表与「canUseTool
+input }`），所以该修复对 c3 当前所有调用路径**没有行为改变**——它仅防止未来误用场景。详见下列清单与「canUseTool
   修复深评」一节。
 - 其余 5 个版本（0.3.202—0.3.206）的变更，c3 要么不适用（`interrupt_receipt_v1`、peer message 字段、
   `parent_agent_id`、`apply_flag_settings`）、要么兼容但忽略（`command_lifecycle` 帧、`background_tasks_changed`
@@ -38,7 +38,7 @@ input }`），所以该修复对 c3 当前所有调用路径**没有行为改变
 - **Claude Code v2.1.204 引擎同步（0.3.204）** — 兼容确认：纯引擎同步，无 SDK 功能或类型新增。
 - **`interrupt_receipt_v1` 能力 + 结构化中断回执（0.3.205）** — 不接入：`interrupt_receipt_v1` 是 SDK 内部 capability 通告，用于 interrupt 协议兼容性探测。c3 的 `q.interrupt?.()` 带 `.catch()` 处理异步拒绝，按 spec 不将此协议能力提升到 ADR-0011 ledger。c3 不从回执中提取 `still_queued` 字段（无 SDK-managed 异步消息队列消费点）。
 - **peer message 结构化 `name`/`body` 字段（0.3.205）** — 不接入：c3 不使用 SDK-managed peer messaging（团队通信走 c3 自有协议：SendMessage channel + 工作项输入推送）。peer message 事件中新增的结构化字段无消费点。
-- **`canUseTool` allow-without-updatedInput 被 ZodError 拒绝修复（0.3.207）** — 升级即自动受益：`{ behavior: 'allow' }`（无 `updatedInput`）此前被 SDK Zod schema 拒绝为 deny + 原始 ZodError 消息，0.3.207 修复为按文档契约正常 allow（使用原始输入）。c3 的 `allow()` 全部传入 `input` → 生成 `{ behavior: 'allow', updatedInput: input }`，所以该修复对 c3 当前调用路径**无行为改变**。详见「canUseTool 修复深评」节。（留痕:本表；「canUseTool 修复深评」节）
+- **`canUseTool` allow-without-updatedInput 被 ZodError 拒绝修复（0.3.207）** — 升级即自动受益：`{ behavior: 'allow' }`（无 `updatedInput`）此前被 SDK Zod schema 拒绝为 deny + 原始 ZodError 消息，0.3.207 修复为按文档契约正常 allow（使用原始输入）。c3 的 `allow()` 全部传入 `input` → 生成 `{ behavior: 'allow', updatedInput: input }`，所以该修复对 c3 当前调用路径**无行为改变**。详见「canUseTool 修复深评」节。（留痕:本清单；「canUseTool 修复深评」节）
 - **`AgentToolCompletedOutput` 公开类型（0.3.207）** — 不接入：Agent tool 的结构化结果类型。c3 不直接引用 Agent tool 的返回类型（`runClaude` 中 `Agent` tool 的 tool_result 经 `stringifyToolResult` 不透明转字符串消费）。
 
 ## canUseTool 修复深评（0.3.207 唯一深入评估项）
@@ -108,16 +108,12 @@ capability ledger 的 8 个 boolean flags（`interrupt`、`setActionMode`、`str
 - `pnpm typecheck`：通过（server + web 全绿，SDK 类型无破坏性变化）。
 - `pnpm lint`（`pnpm exec eslint . --max-warnings=0`）：0 error，0 warning。
 - `pnpm vitest run` 关键文件（对 SDK 升级敏感的权限/消息循环测试）：
-  | 测试文件                                                                                 | 用例数 | 结果                                                     |
-  | ---------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------- |
-  | `server/src/kernel/permission/gateway.test.ts`                                           | 25     | 全绿（auto-allow/deny/consensus/AskUserQuestion 各分支） |
-  | `server/src/kernel/permission/registry.test.ts`                                          | 11     | 全绿                                                     |
-  | `server/src/kernel/permission/risk.test.ts`                                              | 17     | 全绿                                                     |
-  | `server/src/kernel/agent/adapters/claude/sdk-warning-filter.test.ts`                     | 5      | 全绿                                                     |
-  | `server/src/features/permissions/index.test.ts`                                          | 5      | 全绿                                                     |
-  | 累计 **63 用例、0 失败**。完整套件因 worktree 沙箱中 tinypool worker 清理递归导致        |
-  | `Maximum call stack size exceeded`（已知环境限制，不影响测试正确性），无法在本次工作流中 |
-  | 获取完整汇总行。单独测试均通过。                                                         |
+  - `server/src/kernel/permission/gateway.test.ts` — 25 用例，全绿（auto-allow/deny/consensus/AskUserQuestion 各分支）
+  - `server/src/kernel/permission/registry.test.ts` — 11 用例，全绿
+  - `server/src/kernel/permission/risk.test.ts` — 17 用例，全绿
+  - `server/src/kernel/agent/adapters/claude/sdk-warning-filter.test.ts` — 5 用例，全绿
+  - `server/src/features/permissions/index.test.ts` — 5 用例，全绿
+  - 累计 **63 用例、0 失败**。完整套件因 worktree 沙箱中 tinypool worker 清理递归导致 `Maximum call stack size exceeded`（已知环境限制，不影响测试正确性），无法在本次工作流中获取完整汇总行。单独测试均通过。
 - `server/package.json`：仅 `@anthropic-ai/claude-agent-sdk` `^0.3.201 → ^0.3.207`。
 - `pnpm-lock.yaml`：diff 仅含 claude-agent-sdk 主包 specifier + 各平台子包版本号 `0.3.201 → 0.3.211`，
   无关依赖零改动。

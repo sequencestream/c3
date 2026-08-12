@@ -93,15 +93,13 @@ _Con:_ 与 c3 现有的"项目可覆盖系统设置"的授权模型不一致。
 
 **项目级沙箱配置（项目开发者管理）** 包含以下字段：
 
-| 字段                  | 含义                                                          |
-| --------------------- | ------------------------------------------------------------- |
-| `enabled`             | 主开关                                                        |
-| `sandbox`             | 引用的系统定义名称                                            |
-| `agentIds`            | 容器内可运行的 custom agent id（worktree-only + custom-only） |
-| `imageOverride`       | 覆盖镜像                                                      |
-| `memoryLimitOverride` | 覆盖内存限制                                                  |
-| `cpuLimitOverride`    | 覆盖 CPU 限制                                                 |
-| `envVarsOverride`     | 附加环境变量                                                  |
+- `enabled`: 主开关
+- `sandbox`: 引用的系统定义名称
+- `agentIds`: 容器内可运行的 custom agent id（worktree-only + custom-only）
+- `imageOverride`: 覆盖镜像
+- `memoryLimitOverride`: 覆盖内存限制
+- `cpuLimitOverride`: 覆盖 CPU 限制
+- `envVarsOverride`: 附加环境变量
 
 > **改名说明（2026-06-12）**：原项目级沙箱配置统一改名为工作区沙箱配置，与工作区设置对齐。仅改概念标识符，磁盘键（工作区设置的 `sandbox` 字段及其内部键）不变，无 wire/磁盘迁移。
 >

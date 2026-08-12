@@ -158,14 +158,12 @@ Client → server:
 
 Server → client:
 
-| type                 | meaning                                                           |
-| -------------------- | ----------------------------------------------------------------- |
-| `ready`              | WS handshake complete                                             |
-| `assistant_text`     | streamed text block from the model                                |
-| `tool_use`           | model decided to call a tool _(already approved when this fires)_ |
-| `tool_result`        | tool finished                                                     |
-| `permission_request` | **block point — UI must answer with `permission_response`**       |
-| `turn_end`           | query completed (or errored)                                      |
+- `ready` — WS handshake complete
+- `assistant_text` — streamed text block from the model
+- `tool_use` — model decided to call a tool _(already approved when this fires)_
+- `tool_result` — tool finished
+- `permission_request` — **block point: UI must answer with `permission_response`**
+- `turn_end` — query completed (or errored)
 
 ## How permission interception works
 

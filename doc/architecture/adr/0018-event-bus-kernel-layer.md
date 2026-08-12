@@ -49,14 +49,12 @@ _缺点:_ 从生产者视角看,微任务之间的顺序是不确定的;一个�
 
 ### Key characteristics
 
-| Aspect         | Decision                                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------- |
-| **分发**       | 同步,按订阅注册顺序执行。发布操作不返回任何内容。                                                   |
-| **错误隔离**   | 每个处理器都被 try/catch 包裹。抛出的异常会被捕获并记录;它既不会阻断后续处理器,也不会传播给发布者。 |
-| **异步处理器** | 触发即忘。如果处理器返回一个 promise,总线会捕获未处理的 rejection,但不会 await 它。                 |
-| **清理**       | 订阅会返回一个 dispose 函数。逐次启动的订阅必须在 settled 事件之后被 dispose,以防止泄漏。           |
-| **类型安全**   | 事件映射把每个主题映射到其负载类型。发布和订阅都会据此进行静态检查。                                |
-| **位置**       | 一个自包含的内核模块——不引入 features 或 transport 层(ADR-0009 R1)。                                |
+- **分发**: 同步,按订阅注册顺序执行。发布操作不返回任何内容。
+- **错误隔离**: 每个处理器都被 try/catch 包裹。抛出的异常会被捕获并记录;它既不会阻断后续处理器,也不会传播给发布者。
+- **异步处理器**: 触发即忘。如果处理器返回一个 promise,总线会捕获未处理的 rejection,但不会 await 它。
+- **清理**: 订阅会返回一个 dispose 函数。逐次启动的订阅必须在 settled 事件之后被 dispose,以防止泄漏。
+- **类型安全**: 事件映射把每个主题映射到其负载类型。发布和订阅都会据此进行静态检查。
+- **位置**: 一个自包含的内核模块——不引入 features 或 transport 层(ADR-0009 R1)。
 
 ### Event bus surface area
 
@@ -73,24 +71,20 @@ run-started/run-settled 携带(并贯穿会话运行时)的 kind,被拆分为两
 
 `SessionKind`——业务场景枚举(此前是单一的 7 值 `RunKind`;这些值在 2026-06-26 原样迁移到此处,并将 `'session' → 'work'`;而 `RunKind` 更早之前是两值的 normal/intent 会话种类,`'normal' → 'session'`):
 
-| SessionKind  | 业务场景                                                                         |
-| ------------ | -------------------------------------------------------------------------------- |
-| `work`       | 通用开发会话(用户控制台、intent→dev 交接、自动化 dev-turn)。此前为 `'session'`。 |
-| `intent`     | 只读的意图沟通会话。                                                             |
-| `discussion` | 讨论编排器 + 其研究阶段。                                                        |
-| `automation` | 由调度器发起、**无 socket** 的 run(例如一个 `llm` 任务)。                        |
-| `consensus`  | 一次共识投票。                                                                   |
-| `tool`       | 一次内部工具调用:完成度判定(judge)+ 标题推导。                                   |
-| `spec`       | 一次规格撰写会话(写入被限定在该 intent 的规格目录内)。                           |
+- `work`: 通用开发会话(用户控制台、intent→dev 交接、自动化 dev-turn)。
+- `intent`: 只读的意图沟通会话。
+- `discussion`: 讨论编排器 + 其研究阶段。
+- `automation`: 由调度器发起、**无 socket** 的 run(例如一个 `llm` 任务)。
+- `consensus`: 一次共识投票。
+- `tool`: 一次内部工具调用:完成度判定(judge)+ 标题推导。
+- `spec`: 一次规格撰写会话(写入被限定在该 intent 的规格目录内)。
 
 `RunKind`——细化的执行形式枚举(与 SessionKind 正交;目前仅用于审计/可扩展性记录,尚无消费者分支):
 
-| RunKind       | 执行形式                                                                     |
-| ------------- | ---------------------------------------------------------------------------- |
-| `interactive` | 有 socket 支撑、由人类观察的 run(用户控制台、intent→dev、intent/spec 沟通)。 |
-| `background`  | 无 socket 但仍在 run 总线上的 run(自动化 dev-turn)。                         |
-| `headless`    | 调度器自身的无 socket run。                                                  |
-| `internal`    | 一次内部编排/工具调用(discussion、consensus、judge/naming)。                 |
+- `interactive`: 有 socket 支撑、由人类观察的 run(用户控制台、intent→dev、intent/spec 沟通)。
+- `background`: 无 socket 但仍在 run 总线上的 run(自动化 dev-turn)。
+- `headless`: 调度器自身的无 socket run。
+- `internal`: 一次内部编排/工具调用(discussion、consensus、judge/naming)。
 
 同一个 `sessionKind` 的两个 run 可以有不同的 `runKind`——例如一个 `work` 控制台是 `interactive`,而一个 `work` 自动化 dev-turn 是 `background`。
 
@@ -131,13 +125,11 @@ run-started/run-settled 携带(并贯穿会话运行时)的 kind,被拆分为两
 
 **设计原则:**
 
-| Aspect         | Decision                                                                                                                                |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **注册**       | 在组合根处一次性完成;永不释放。                                                                                                         |
-| **匹配**       | 每个订阅使用事件的会话 id / 旧 id 来查找域状态(运行时种类、intent 最后一次开发会话 id、待处理的开发链接)——而**不是**订阅 id。           |
-| **幂等性**     | 对不匹配所属域状态的事件为空操作(例如未知会话的 run-bound,或会话 id 不匹配任何 intent 最后一次开发会话 id 的 run-settled)。             |
-| **按连接**     | 被查看会话的重新指向由客户端驱动(在收到广播的 session-started 且其活动会话与客户端 id 匹配时,回显 view-rebind 消息)。没有逐次启动订阅。 |
-| **自动化触发** | 已有的自动化派发订阅一直都是常驻的(作为参考模板)。其 run-kind 过滤条件从“非 session”改为对 `session` 种类的显式白名单,以便于测试。      |
+- **注册**: 在组合根处一次性完成;永不释放。
+- **匹配**: 每个订阅使用事件的会话 id / 旧 id 来查找域状态(运行时种类、intent 最后一次开发会话 id、待处理的开发链接)——而**不是**订阅 id。
+- **幂等性**: 对不匹配所属域状态的事件为空操作(例如未知会话的 run-bound,或会话 id 不匹配任何 intent 最后一次开发会话 id 的 run-settled)。
+- **按连接**: 被查看会话的重新指向由客户端驱动(在收到广播的 session-started 且其活动会话与客户端 id 匹配时,回显 view-rebind 消息)。没有逐次启动订阅。
+- **自动化触发**: 自动化派发订阅是常驻的(作为参考模板)。其 run-kind 过滤条件是对 `session` 种类的显式白名单,以便于测试。
 
 **四个常驻订阅(2026-06-08-010 增加了 discussion + automation):**
 

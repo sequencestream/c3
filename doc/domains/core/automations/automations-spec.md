@@ -28,10 +28,10 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 
 ## 核心实体
 
-| 实体         | 说明                                                  | 关键属性                                                                                                                                                              |
-| ------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Automation   | 一项任务:命令或 LLM prompt,由 cron 或任意通用事件触发 | `id`, `workspaceId`, `taskType`, `vendor`, `state`, `triggerType`, `metadata`, `cronExpression` / (`eventFilter{type,statuses?,metadata?}`, `eventSessionKindFilter`) |
-| ExecutionLog | 单次自动化执行的记录                                  | `id`, `automationId`, `status`, `startedAt`, `output`                                                                                                                 |
+- **Automation**: 一项任务:命令或 LLM prompt,由 cron 或任意通用事件触发
+  - 关键属性: `id`, `workspaceId`, `taskType`, `vendor`, `state`, `triggerType`, `metadata`, `cronExpression` / (`eventFilter{type,statuses?,metadata?}`, `eventSessionKindFilter`)
+- **ExecutionLog**: 单次自动化执行的记录
+  - 关键属性: `id`, `automationId`, `status`, `startedAt`, `output`
 
 完整属性见 [automations-models.md](automations-models.md)。
 
@@ -191,11 +191,10 @@ discussions 所用的那个——把一个 transcript 条目转换为一条聊�
 
 ## 任务类型
 
-| 类型         | 配置                         | 执行模型                                                                                                          |
-| ------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `command`    | Shell 命令字符串             | 在工作区目录中生成一个无头 OS 进程。stdout + stderr 会被捕获进输出中。退出码 0 ⇒ `success`;非零/出错 ⇒ `failed`。 |
-| `llm_prompt` | Prompt 文本 + 可选的会话模式 | 将文本作为第一个用户回合提交给工作区中一个全新的智能体会话。运行流会被捕获。该回合结束后会话结束。                |
-|              |                              |                                                                                                                   |
+- **`command`** — 配置: Shell 命令字符串
+  - 执行模型: 在工作区目录中生成一个无头 OS 进程。stdout + stderr 会被捕获进输出中。退出码 0 ⇒ `success`;非零/出错 ⇒ `failed`。
+- **`llm_prompt`** — 配置: Prompt 文本 + 可选的会话模式
+  - 执行模型: 将文本作为第一个用户回合提交给工作区中一个全新的智能体会话。运行流会被捕获。该回合结束后会话结束。
 
 两种类型共享通用的调度、权限与日志基础设施。差异只在执行驱动器上。
 
@@ -203,12 +202,14 @@ discussions 所用的那个——把一个 transcript 条目转换为一条聊�
 
 自动化从两种触发器类型之一触发(SCH-R17、SCH-R18):
 
-| 触发器                     | 触发条件                                                                                                     | 重新装填                                    |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| `cron`                     | 在系统时区(SCH-R3a)中,通过 10 秒 tick 循环对 `cronExpression` 做一次挂钟时间匹配。                           | tick 循环在每次运行后重新计算 `nextRunAt`。 |
-| `event` run-lifecycle      | 内核事件总线(ADR-0018)上一个被订阅的运行生命周期事件:`run:started` 或 `run:settled`。                        | 等待下一个匹配事件——没有 `nextRunAt`。      |
-| `event` `pr:operation`     | 内核事件总线上的一个 PR 操作事件——模型发布或服务端发布(`eventFilter.type='pr:operation'`,SCH-R22、SCH-R23)。 | 等待下一个匹配事件——没有 `nextRunAt`。      |
-| `event` `intent:lifecycle` | 进程内的一个 intent 生命周期边界:`created`、`dev_started`、`done`、`failed` 或 `cancelled`。                 | 等待下一个匹配事件——没有 `nextRunAt`。      |
+- **`cron`**: 在系统时区(SCH-R3a)中,通过 10 秒 tick 循环对 `cronExpression` 做一次挂钟时间匹配。
+  - 重新装填: tick 循环在每次运行后重新计算 `nextRunAt`。
+- **`event` run-lifecycle**: 内核事件总线(ADR-0018)上一个被订阅的运行生命周期事件:`run:started` 或 `run:settled`。
+  - 重新装填: 等待下一个匹配事件——没有 `nextRunAt`。
+- **`event` `pr:operation`**: 内核事件总线上的一个 PR 操作事件——模型发布或服务端发布(`eventFilter.type='pr:operation'`,SCH-R22、SCH-R23)。
+  - 重新装填: 等待下一个匹配事件——没有 `nextRunAt`。
+- **`event` `intent:lifecycle`**: 进程内的一个 intent 生命周期边界:`created`、`dev_started`、`done`、`failed` 或 `cancelled`。
+  - 重新装填: 等待下一个匹配事件——没有 `nextRunAt`。
 
 内部智能体恢复行复用 cron 触发器的存储方式,外加一个等于解析出的重置时刻的具体
 `nextRunAt`。触发后它们会自我删除,因此它们表现为一次性自动化,而无需新增
@@ -284,15 +285,13 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 
 **事件契约(厂商中立):**
 
-| 字段           | 含义                                                                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `operation`    | `create` / `review` / `merge` / `close` / `comment` / `update` (必填)。`update` = 已有 PR 被模型修改后重新提交/重新打开(非新建 PR)。 |
-| `result`       | `success` / `failure` / `error` (必填)。`error` 表示执行异常(CI 超时/工具出错),区别于评审不通过。                                    |
-| `pr`           | 可选的 PR 身份:`number` / `id` / `url` / `title` / `state`。                                                                         |
-| `repo`         | 可选的仓库上下文:`provider`(默认 `github`,例如 `gitlab`)/ `host` / `owner` / `name`。                                                |
-| `ref`          | 可选的分支上下文:`head` / `base`。                                                                                                   |
-| `association`  | 可选的、回指某个 c3 工作项的链接:`intentId` + `intentTitle`(意图名称,自解释)+ `deliveryId`(该 PR 面向的交付)。                       |
-| `errorSummary` | 可选,只在 `failure` 或 `error` 时有意义;在服务端安全归一化(不含秘密信息)。                                                           |
+- **`operation`**: `create` / `review` / `merge` / `close` / `comment` / `update` (必填)。`update` = 已有 PR 被模型修改后重新提交/重新打开(非新建 PR)。
+- **`result`**: `success` / `failure` / `error` (必填)。`error` 表示执行异常(CI 超时/工具出错),区别于评审不通过。
+- **`pr`**: 可选的 PR 身份:`number` / `id` / `url` / `title` / `state`。
+- **`repo`**: 可选的仓库上下文:`provider`(默认 `github`,例如 `gitlab`)/ `host` / `owner` / `name`。
+- **`ref`**: 可选的分支上下文:`head` / `base`。
+- **`association`**: 可选的、回指某个 c3 工作项的链接:`intentId` + `intentTitle`(意图名称,自解释)+ `deliveryId`(该 PR 面向的交付)。
+- **`errorSummary`**: 可选,只在 `failure` 或 `error` 时有意义;在服务端安全归一化(不含秘密信息)。
 
 **边界:**
 

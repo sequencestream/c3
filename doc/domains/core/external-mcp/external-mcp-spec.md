@@ -49,10 +49,8 @@ flowchart LR
 
 分级按**真实效果**:`read` 不修改意图台账、讨论、spec 或会话生命周期;`write` 会。`publish_event` 属 `read`——它投递事实,envelope 的 workspace 与来源由 key 绑定生成,调用方不能伪造来源;订阅自动化可能因该事件异步执行,这是它本来的可观察语义。
 
-| 分级  | 工具                                                                                                                                                           |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| read  | `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event`(新 key 默认勾选)、`find_deliveries` `view_delivery`(可授权,但**默认不勾选**) |
-| write | `save_intents` `save_intent_directly` `submit_spec_review` `start_session_for_intent` `start_discussion` `continue_discussion`(默认**不勾选**)                 |
+- **read**: `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event`(新 key 默认勾选)、`find_deliveries` `view_delivery`(可授权,但**默认不勾选**)
+- **write**: `save_intents` `save_intent_directly` `submit_spec_review` `start_session_for_intent` `start_discussion` `continue_discussion`(默认**不勾选**)
 
 **目录与默认集是两份名表,刻意解耦**:「可被管理员勾选」与「新 key 自动获得」是两个不同的问题。
 `EXTERNAL_MCP_READ_TOOLS` 只作分级来源,`EXTERNAL_MCP_DEFAULT_TOOLS` 才是创建 key 时服务端强制

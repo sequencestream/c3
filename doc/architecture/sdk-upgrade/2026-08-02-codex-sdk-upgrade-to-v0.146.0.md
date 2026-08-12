@@ -41,22 +41,34 @@
 分类口径：**兼容且自动获益**（随 CLI 升级生效、无需 c3 改动）／**不适用**（落在 c3 未使用的
 TUI / 插件市场 / app-server / 安装 / 平台面，或 c3 不生产也不消费）／**需接入**（本轮无）。
 
-| 上游条目                                                                                                   | 分类               | 是否接入 | 依据                                                                                                                                                                                      |
-| ---------------------------------------------------------------------------------------------------------- | ------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/new`/`/clear` 命名新会话、置顶线程、不关闭切换侧边会话                                                   | 不适用             | 不接入   | TUI 会话管理面；c3 经中性驱动管理会话，不渲染 TUI，会话恢复走只读磁盘 JSONL（`session-store.ts`）。                                                                                       |
-| Agent Plugins manifest、工作区插件发布、新增插件市场来源（Bedrock/Claude）                                 | 不适用             | 不接入   | 插件市场面；c3 不发布/消费工作区插件，不接入插件市场来源。                                                                                                                                |
-| 线程 fork 分页历史（含不出现在列表的临时 fork）                                                            | 不适用             | 不接入   | 与上一轮一致：c3 不采纳分页历史/临时 fork API，会话恢复继续走只读磁盘 JSONL，不依赖该 API。                                                                                               |
-| app-server 经 WebSocket 连接远程 Code Mode 主机                                                            | 不适用             | 不接入   | app-server 远程表面；c3 不接入远程 Code Mode WebSocket，relay 继续使用自定义 provider 的 HTTP/SSE 路径并显式 `supports_websockets=false`。                                                |
-| 兼容的自定义 model provider 启用独立 web search                                                            | 不适用             | 不接入   | provider 侧能力；c3 的 web search 仍由既有中性选项 `webSearch`→`webSearchEnabled/webSearchMode` 控制，relay 为 Chat Completions 转换路径，不产生新的 c3 接入点。                          |
-| 发现 executor 提供的 skills 并安全读取其资源（含显式选中的 skill）                                         | 不适用             | 不接入   | c3 不生产也不消费 executor skills 项；skill 发现仍走 `<projectDir>/.codex/skills/` 通用基础设施。                                                                                         |
-| **代理全面生效**（认证/插件下载/MCP 授权/远程执行/WebSocket/重定向/LM Studio）                             | **兼容且自动获益** | 即时     | CLI 侧扩大代理生效面，位于 c3 之下游。c3 注入的回环 MCP endpoint 经 `withLoopbackNoProxy`（`127.0.0.1`/`localhost`/`::1`）绕过宿主代理；已完成专项验证（见验证节），绕过仍必要且充分。    |
-| 认证/配置变更时 MCP 连接与 Apps 工具保持最新（重连已关闭、不重启健康连接）                                 | 兼容且自动获益     | 即时     | CLI 侧 MCP 生命周期修复；`mcpServersToCodexConfig` 输出形状不变，c3 不依赖旧的重连语义，作为兼容收益使用。                                                                                |
-| 跨中断/replay/导入/fork 保留已提交消息、最终响应、失败 turn 错误、时间戳与审批设置                         | 兼容且自动获益     | 即时     | 位于 c3 事件翻译之下游，不改变 `ThreadEvent` / `ThreadItem` 输出形状与 JSONL 生命周期；`session-store.ts` 只读磁盘 JSONL 恢复路径不受影响（定向套件覆盖失败 turn/JSONL 生命周期，全绿）。 |
-| 终端响应性与渲染改进（非阻塞中断、键盘、窄布局、超链接、刷新 mention）                                     | 不适用             | 不接入   | TUI 渲染面，不落 SDK dist，不影响 JSONL；c3 经 relay 传输、不渲染 TUI。                                                                                                                   |
-| Windows 导航键、可靠终止沙箱进程树、安全审查期间保留代理设置                                               | 兼容且自动获益     | 即时     | CLI 内部可靠性修复（进程树终止、安全审查代理保留）位于 c3 之下游，自动获益；c3 主平台 macOS/Linux，Windows 导航键不形成接入点。                                                           |
-| 上下文预算紧张时保留更多 skills、skill 目录截断时告警                                                      | 不适用             | 不接入   | CLI 内部上下文预算；c3 不生产也不消费 executor skills，无接入点。                                                                                                                         |
-| 文档：共享 HTTP client 用法、代理感知连接池、安全外发、`PathUri` Windows 规范化                            | 不适用             | 不接入   | 文档面，不形成 c3 接入点。                                                                                                                                                                |
-| 杂项：OpenAI 托管发布（GitHub 回退）、macOS helper 签名公证、app-server 序列化降本、企业计划识别与更新控制 | 不适用             | 不接入   | 发布/平台/服务内部事项；macOS helper 公证为平台侧收益，不形成 c3 接入点。                                                                                                                 |
+- **`/new`/`/clear` 命名新会话、置顶线程、不关闭切换侧边会话** — 不适用 · 不接入
+  - 依据: TUI 会话管理面；c3 经中性驱动管理会话，不渲染 TUI，会话恢复走只读磁盘 JSONL（`session-store.ts`）。
+- **Agent Plugins manifest、工作区插件发布、新增插件市场来源（Bedrock/Claude）** — 不适用 · 不接入
+  - 依据: 插件市场面；c3 不发布/消费工作区插件，不接入插件市场来源。
+- **线程 fork 分页历史（含不出现在列表的临时 fork）** — 不适用 · 不接入
+  - 依据: 与上一轮一致：c3 不采纳分页历史/临时 fork API，会话恢复继续走只读磁盘 JSONL，不依赖该 API。
+- **app-server 经 WebSocket 连接远程 Code Mode 主机** — 不适用 · 不接入
+  - 依据: app-server 远程表面；c3 不接入远程 Code Mode WebSocket，relay 继续使用自定义 provider 的 HTTP/SSE 路径并显式 `supports_websockets=false`。
+- **兼容的自定义 model provider 启用独立 web search** — 不适用 · 不接入
+  - 依据: provider 侧能力；c3 的 web search 仍由既有中性选项 `webSearch`→`webSearchEnabled/webSearchMode` 控制，relay 为 Chat Completions 转换路径，不产生新的 c3 接入点。
+- **发现 executor 提供的 skills 并安全读取其资源（含显式选中的 skill）** — 不适用 · 不接入
+  - 依据: c3 不生产也不消费 executor skills 项；skill 发现仍走 `<projectDir>/.codex/skills/` 通用基础设施。
+- **代理全面生效（认证/插件下载/MCP 授权/远程执行/WebSocket/重定向/LM Studio）** — **兼容且自动获益** · 即时接入
+  - 依据: CLI 侧扩大代理生效面，位于 c3 之下游。c3 注入的回环 MCP endpoint 经 `withLoopbackNoProxy`（`127.0.0.1`/`localhost`/`::1`）绕过宿主代理；已完成专项验证（见验证节），绕过仍必要且充分。
+- **认证/配置变更时 MCP 连接与 Apps 工具保持最新（重连已关闭、不重启健康连接）** — 兼容且自动获益 · 即时接入
+  - 依据: CLI 侧 MCP 生命周期修复；`mcpServersToCodexConfig` 输出形状不变，c3 不依赖旧的重连语义，作为兼容收益使用。
+- **跨中断/replay/导入/fork 保留已提交消息、最终响应、失败 turn 错误、时间戳与审批设置** — 兼容且自动获益 · 即时接入
+  - 依据: 位于 c3 事件翻译之下游，不改变 `ThreadEvent` / `ThreadItem` 输出形状与 JSONL 生命周期；`session-store.ts` 只读磁盘 JSONL 恢复路径不受影响（定向套件覆盖失败 turn/JSONL 生命周期，全绿）。
+- **终端响应性与渲染改进（非阻塞中断、键盘、窄布局、超链接、刷新 mention）** — 不适用 · 不接入
+  - 依据: TUI 渲染面，不落 SDK dist，不影响 JSONL；c3 经 relay 传输、不渲染 TUI。
+- **Windows 导航键、可靠终止沙箱进程树、安全审查期间保留代理设置** — 兼容且自动获益 · 即时接入
+  - 依据: CLI 内部可靠性修复（进程树终止、安全审查代理保留）位于 c3 之下游，自动获益；c3 主平台 macOS/Linux，Windows 导航键不形成接入点。
+- **上下文预算紧张时保留更多 skills、skill 目录截断时告警** — 不适用 · 不接入
+  - 依据: CLI 内部上下文预算；c3 不生产也不消费 executor skills，无接入点。
+- **文档：共享 HTTP client 用法、代理感知连接池、安全外发、`PathUri` Windows 规范化** — 不适用 · 不接入
+  - 依据: 文档面，不形成 c3 接入点。
+- **杂项：OpenAI 托管发布（GitHub 回退）、macOS helper 签名公证、app-server 序列化降本、企业计划识别与更新控制** — 不适用 · 不接入
+  - 依据: 发布/平台/服务内部事项；macOS helper 公证为平台侧收益，不形成 c3 接入点。
 
 ## 受影响的特性与契约
 

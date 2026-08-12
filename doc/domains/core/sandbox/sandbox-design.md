@@ -32,14 +32,12 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 
 ## 3. 模块结构
 
-| 模块                             | 职责                                                                                                                                          |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/src/kernel/sandbox/`     | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                                               |
-| workspace sandbox 配置校验       | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds`）。                                              |
-| `SandboxLauncher`                | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。       |
-| `kernel/sandbox/arapuca-dist.ts` | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装 + 24h 安装尝试冷却（见 §14）。 |
-| `kernel/sandbox/vendor-auth.ts`  | per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。                                            |
-| ProcessSandbox 层（arapuca）     | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                                |
+- **`server/src/kernel/sandbox/`**: sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。
+- **workspace sandbox 配置校验**: 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds`）。
+- **`SandboxLauncher`**: run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。
+- **`kernel/sandbox/arapuca-dist.ts`**: arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装 + 24h 安装尝试冷却（见 §14）。
+- **`kernel/sandbox/vendor-auth.ts`**: per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。
+- **ProcessSandbox 层（arapuca）**: 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。
 
 > 与容器方案的差异：不再有 `DockerDriver`、镜像 / registry、seccomp profile 加载、bind mount、forwarder sidecar、内部网络。原容器 runtime、容器供应链、网络分段相关模块整体移除。既有"沙箱 backend 作为独立内核模块""系统 + 项目双层配置"的抽象概念保留，但不再承载镜像 / 资源 / 网络等容器字段；当前范围内所有隔离参数由 workspace 配置与该 run 的执行根（worktree 或源工作区）直接驱动。具体文件切分由实现阶段确定。
 
@@ -384,9 +382,15 @@ worktree 直接位于宿主同路径，agent 的写入实时落在宿主 worktre
 
 ## 17. Phase plan
 
-| 阶段    | 范围                                                                                                                                                                                                          | 状态 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| Phase A | 文档与配置类型：`WorkspaceSandboxConfig` 收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`；移除容器 / 网络字段与供应链协议。                                                                          | 完成 |
-| Phase B | arapuca wrapper 与路径放行：`resolvePaths()`（执行根 rw + 源工作区 ro[同路径并入执行根] + specsBase rw + extraMounts）、保留路径校验 + canonicalize + allowlist、生成 `arapuca run … -- <cli> "$@"` wrapper。 | 完成 |
-| Phase C | 探测、自动安装与硬失败：平台能力门禁 + 「管理版本 → PATH」二进制解析链 + 异步安装关联版本；所有失败路径保持 hard-fail，不回落宿主裸跑。                                                                       | 完成 |
-| Phase D | 网络收窄（后续阶段）：按平台引入网络禁用 / 出站白名单 / 代理与对应 workspace 开关，保证回环 c3 MCP 端点收窄后仍可达。                                                                                         | 未来 |
+- **Phase A**
+  - 范围: 文档与配置类型：`WorkspaceSandboxConfig` 收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`；移除容器 / 网络字段与供应链协议。
+  - 状态: 完成
+- **Phase B**
+  - 范围: arapuca wrapper 与路径放行：`resolvePaths()`（执行根 rw + 源工作区 ro[同路径并入执行根] + specsBase rw + extraMounts）、保留路径校验 + canonicalize + allowlist、生成 `arapuca run … -- <cli> "$@"` wrapper。
+  - 状态: 完成
+- **Phase C**
+  - 范围: 探测、自动安装与硬失败：平台能力门禁 + 「管理版本 → PATH」二进制解析链 + 异步安装关联版本；所有失败路径保持 hard-fail，不回落宿主裸跑。
+  - 状态: 完成
+- **Phase D**
+  - 范围: 网络收窄（后续阶段）：按平台引入网络禁用 / 出站白名单 / 代理与对应 workspace 开关，保证回环 c3 MCP 端点收窄后仍可达。
+  - 状态: 未来

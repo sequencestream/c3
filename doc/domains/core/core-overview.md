@@ -8,21 +8,42 @@
 
 ## Domains
 
-| Domain                                                                  | Responsibility                                                                                                               | API                                 | Status        |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------- |
-| [permission-gateway](permission-gateway/permission-gateway-overview.md) | 拦截 SDK 权限请求,路由到浏览器,阻塞直到用户决策(中止时拒绝)                                                                  | 内部(无对外公开 HTTP API)           | active        |
-| [agent-session](agent-session/agent-session-overview.md)                | 驱动 SDK 的 `query()` 循环,把 SDK 消息映射到线协议,管理模式与生命周期                                                        | WebSocket `/ws`(见 shared protocol) | active        |
-| [session-registry](session-registry/session-registry-overview.md)       | 管理工作区与会话;拥有每会话模式、最近访问顺序、历史回放                                                                      | WebSocket `/ws`(见 shared protocol) | active        |
-| [codes](codes/codes-overview.md)                                        | 只读工作区代码浏览:在已注册的工作区根目录下列目录、读文本文件、做有界搜索                                                    | WebSocket `/ws`(见 shared protocol) | active        |
-| [web-console](web-console/web-console-overview.md)                      | 浏览器 UI:侧边栏、prompt 输入、活动流、权限对话框、模式切换                                                                  | 消费 `/ws`                          | active        |
-| [intent-management](intent-management/intent-management-overview.md)    | 项目级意图台账(SQLite);只读意图沟通智能体;`save_intents` 对话确认后落库;启动可配置的开发技能                                 | WebSocket `/ws`(见 shared protocol) | active        |
-| [codes](codes/codes-overview.md)                                        | 只读工作区代码浏览与有界搜索,仅根植于已注册的工作区 id                                                                       | WebSocket `/ws`(见 shared protocol) | active        |
-| [discussion](discussion/discussion-overview.md)                         | 项目级讨论存储(SQLite):讨论 + 有序消息,带状态生命周期与结论。持久化基础;智能体/编排/UI 尚未构建                              | 内部(尚无公开 API)                  | partial       |
-| [delivery](delivery/delivery-overview.md)                               | 交付作为集成单元:一批意图的 Git 生命周期承载体——本地账本 + 受控状态机 + 集成就熟 N/M 聚合;本阶段不建分支/不关联意图/不动 PR  | WebSocket `/ws`(见 shared protocol) | active        |
-| [automations](automations/automations-overview.md)                      | 跨工作区的基于时间的命令与 LLM prompt 执行;执行日志记录与查看                                                                | WebSocket `/ws`(见 shared protocol) | planned       |
-| [session-cleanup](session-cleanup/session-cleanup-design.md)            | 按保留期删除各 vendor 会话存储中过期的会话记录(系统级开关,vendor 中立,每日执行)                                              | 内部(无对外公开 API)                | active        |
-| [auth](auth/auth-overview.md)                                           | 认证抽象:可扩展的提供方联合类型(`basic` 优先)、会话令牌模型、login/logout/401 消息——面向网络暴露场景的可选能力               | WebSocket `/ws`(见 shared protocol) | contract-only |
-| [external-mcp](external-mcp/external-mcp-spec.md)                       | 面向 c3 未拉起的 agent 的公开 MCP 入口:key 即地址段(`/mcp/<api-key>`),绑定单一工作区,按该 key 工具范围服务(默认五个只读工具) | Streamable HTTP `/mcp/<api-key>`    | active        |
+- [permission-gateway](permission-gateway/permission-gateway-overview.md) — active
+  - 职责: 拦截 SDK 权限请求,路由到浏览器,阻塞直到用户决策(中止时拒绝)
+  - API: 内部(无对外公开 HTTP API)
+- [agent-session](agent-session/agent-session-overview.md) — active
+  - 职责: 驱动 SDK 的 `query()` 循环,把 SDK 消息映射到线协议,管理模式与生命周期
+  - API: WebSocket `/ws`(见 shared protocol)
+- [session-registry](session-registry/session-registry-overview.md) — active
+  - 职责: 管理工作区与会话;拥有每会话模式、最近访问顺序、历史回放
+  - API: WebSocket `/ws`(见 shared protocol)
+- [codes](codes/codes-overview.md) — active
+  - 职责: 只读工作区代码浏览:仅根植于已注册的工作区 id,在其根目录下列目录、读文本文件、做有界搜索
+  - API: WebSocket `/ws`(见 shared protocol)
+- [web-console](web-console/web-console-overview.md) — active
+  - 职责: 浏览器 UI:侧边栏、prompt 输入、活动流、权限对话框、模式切换
+  - API: 消费 `/ws`
+- [intent-management](intent-management/intent-management-overview.md) — active
+  - 职责: 项目级意图台账(SQLite);只读意图沟通智能体;`save_intents` 对话确认后落库;启动可配置的开发技能
+  - API: WebSocket `/ws`(见 shared protocol)
+- [discussion](discussion/discussion-overview.md) — partial
+  - 职责: 项目级讨论存储(SQLite):讨论 + 有序消息,带状态生命周期与结论。持久化基础;智能体/编排/UI 尚未构建
+  - API: 内部(尚无公开 API)
+- [delivery](delivery/delivery-overview.md) — active
+  - 职责: 交付作为集成单元:一批意图的 Git 生命周期承载体——本地账本 + 受控状态机 + 集成就熟 N/M 聚合;本阶段不建分支/不关联意图/不动 PR
+  - API: WebSocket `/ws`(见 shared protocol)
+- [automations](automations/automations-overview.md) — planned
+  - 职责: 跨工作区的基于时间的命令与 LLM prompt 执行;执行日志记录与查看
+  - API: WebSocket `/ws`(见 shared protocol)
+- [session-cleanup](session-cleanup/session-cleanup-design.md) — active
+  - 职责: 按保留期删除各 vendor 会话存储中过期的会话记录(系统级开关,vendor 中立,每日执行)
+  - API: 内部(无对外公开 API)
+- [auth](auth/auth-overview.md) — contract-only
+  - 职责: 认证抽象:可扩展的提供方联合类型(`basic` 优先)、会话令牌模型、login/logout/401 消息——面向网络暴露场景的可选能力
+  - API: WebSocket `/ws`(见 shared protocol)
+- [external-mcp](external-mcp/external-mcp-spec.md) — active
+  - 职责: 面向 c3 未拉起的 agent 的公开 MCP 入口:key 即地址段(`/mcp/<api-key>`),绑定单一工作区,按该 key 工具范围服务(默认五个只读工具)
+  - API: Streamable HTTP `/mcp/<api-key>`
 
 ## Shared context
 

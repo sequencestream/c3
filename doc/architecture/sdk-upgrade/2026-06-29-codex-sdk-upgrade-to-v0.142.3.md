@@ -83,40 +83,56 @@
 
 ### 0.142.0
 
-| changelog 项（PR）                                                                                                   | 决策             | 依据                                                                                                                                                                                                                |
-| -------------------------------------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 可配置 rollout token 预算：跨 agent 线程追踪用量、余额提醒、耗尽中止（#28746/#28494/#28707/#29423）                  | 暂不接入         | 该能力依赖 Codex CLI 新暴露的 token 预算配置层。c3 当前无用量仪表盘 / token 预算 UI 的产品入口，也无对应 usage 数据模型。记录为后续候选；当前不接入不影响任何现状。                                                 |
-| app-server 多 agent 委派配置 disabled / explicit-request-only / proactive（#28685/#28792/#29324）                    | 不适用           | 此为 **app-server** 客户端能力。c3 走 `codex exec` 一次性非交互子进程，不使用 app-server 协议路径；`AgentDriver` 一次只持一个 `AgentRun`，无多 agent 编排。`codex exec` 不会因此默认 spawn 子 agent，无需显式关闭。 |
-| 索引式 web-search 模式（允许实时搜索但限制直连页面到服务端批准 URL）（#28489）                                       | 暂不接入         | c3 已通过 `threadOptions.webSearchMode='live'` / `webSearchEnabled` 接入 codex 第一方 web-search；新「indexed」模式是附加选项，缺省不启用即维持现状。需要时再在 `driver.ts` 的 `web_search` 配置分支扩一个枚举值。  |
-| `/usage` 兑换用量重置额度（#28154/#28793）                                                                           | 不适用           | TUI 交互特性；c3 不使用 codex TUI。                                                                                                                                                                                 |
-| `/plugins` 远程插件分区与推荐安装（#26703 等）                                                                       | 不适用           | 插件/TUI 特性，c3 无落点。                                                                                                                                                                                          |
-| 定时 UTC 时间提醒 / 直接查询当前时间（含 app-server 时钟）（#28822 等）                                              | 不适用           | app-server 时钟特性；c3 不走该路径。                                                                                                                                                                                |
-| exec-server 进程与 stdio MCP 会话在瞬断后存活（含签名 URL 刷新、重试安全 stdin 写入）（#28512/#28374/#28546/#28895） | 不适用           | c3 注入的是 **streamable-HTTP MCP**（`config.mcp_servers.<name>.url`），不是 stdio MCP；且 `codex exec` 是一次性子进程，不用 exec-server。此项不触及 c3 的 MCP 注入与确认门链路。                                   |
-| 远程环境保留 executor-native 路径 / shell / `AGENTS.md` 发现 / sandbox 行为（#28146 等）                             | 不适用           | 涉及 Codex-hosted 远程执行器特性。c3 的「远程/沙箱」是自管 Docker 容器 + `docker exec codex`，不使用 codex 的 `--remote` 类宿主远程路径。                                                                           |
-| 插件加载/安装健壮性（根 marketplace 布局、manifest 回退、多 skill 路径等）（#28771 等）                              | 不适用           | 插件特性，c3 无落点。                                                                                                                                                                                               |
-| 父 agent 收到子 agent 终止错误（而非空成功）（#28375）                                                               | 不适用           | 多 agent 特性；c3 单线程 driver 无子 agent。                                                                                                                                                                        |
-| goal-first 线程重新被 `thread/list` 与 `thread/search` 返回（#28808）                                                | 不适用           | c3 的 `CodexSessionStore.list()` 从磁盘 `~/.codex/sessions/` JSONL 逐文件扫描，不调用 Codex CLI 的 `thread/list` API。c3 的会话列举行为不变。                                                                       |
-| 启动/会话延迟优化、日志 churn 削减（#28542 等 / #29432/#29457）                                                      | 兼容确认（获益） | 透明性能/日志改进，操作侧把 PATH codex 升到 0.142.x 后自动获益，无 c3 接口面。                                                                                                                                      |
-| Linux TUI `Ctrl+Z`/`fg` 恢复渲染（#28342）                                                                           | 不适用           | TUI 特性。                                                                                                                                                                                                          |
+- **可配置 rollout token 预算：跨 agent 线程追踪用量、余额提醒、耗尽中止（#28746/#28494/#28707/#29423）** — 暂不接入
+  - 依据: 该能力依赖 Codex CLI 新暴露的 token 预算配置层。c3 当前无用量仪表盘 / token 预算 UI 的产品入口，也无对应 usage 数据模型。记录为后续候选；当前不接入不影响任何现状。
+- **app-server 多 agent 委派配置 disabled / explicit-request-only / proactive（#28685/#28792/#29324）** — 不适用
+  - 依据: 此为 **app-server** 客户端能力。c3 走 `codex exec` 一次性非交互子进程，不使用 app-server 协议路径；`AgentDriver` 一次只持一个 `AgentRun`，无多 agent 编排。`codex exec` 不会因此默认 spawn 子 agent，无需显式关闭。
+- **索引式 web-search 模式（允许实时搜索但限制直连页面到服务端批准 URL）（#28489）** — 暂不接入
+  - 依据: c3 已通过 `threadOptions.webSearchMode='live'` / `webSearchEnabled` 接入 codex 第一方 web-search；新「indexed」模式是附加选项，缺省不启用即维持现状。需要时再在 `driver.ts` 的 `web_search` 配置分支扩一个枚举值。
+- **`/usage` 兑换用量重置额度（#28154/#28793）** — 不适用
+  - 依据: TUI 交互特性；c3 不使用 codex TUI。
+- **`/plugins` 远程插件分区与推荐安装（#26703 等）** — 不适用
+  - 依据: 插件/TUI 特性，c3 无落点。
+- **定时 UTC 时间提醒 / 直接查询当前时间（含 app-server 时钟）（#28822 等）** — 不适用
+  - 依据: app-server 时钟特性；c3 不走该路径。
+- **exec-server 进程与 stdio MCP 会话在瞬断后存活（含签名 URL 刷新、重试安全 stdin 写入）（#28512/#28374/#28546/#28895）** — 不适用
+  - 依据: c3 注入的是 **streamable-HTTP MCP**（`config.mcp_servers.<name>.url`），不是 stdio MCP；且 `codex exec` 是一次性子进程，不用 exec-server。此项不触及 c3 的 MCP 注入与确认门链路。
+- **远程环境保留 executor-native 路径 / shell / `AGENTS.md` 发现 / sandbox 行为（#28146 等）** — 不适用
+  - 依据: 涉及 Codex-hosted 远程执行器特性。c3 的「远程/沙箱」是自管 Docker 容器 + `docker exec codex`，不使用 codex 的 `--remote` 类宿主远程路径。
+- **插件加载/安装健壮性（根 marketplace 布局、manifest 回退、多 skill 路径等）（#28771 等）** — 不适用
+  - 依据: 插件特性，c3 无落点。
+- **父 agent 收到子 agent 终止错误（而非空成功）（#28375）** — 不适用
+  - 依据: 多 agent 特性；c3 单线程 driver 无子 agent。
+- **goal-first 线程重新被 `thread/list` 与 `thread/search` 返回（#28808）** — 不适用
+  - 依据: c3 的 `CodexSessionStore.list()` 从磁盘 `~/.codex/sessions/` JSONL 逐文件扫描，不调用 Codex CLI 的 `thread/list` API。c3 的会话列举行为不变。
+- **启动/会话延迟优化、日志 churn 削减（#28542 等 / #29432/#29457）** — 兼容确认（获益）
+  - 依据: 透明性能/日志改进，操作侧把 PATH codex 升到 0.142.x 后自动获益，无 c3 接口面。
+- **Linux TUI `Ctrl+Z`/`fg` 恢复渲染（#28342）** — 不适用
+  - 依据: TUI 特性。
 
 ### 0.142.1
 
-| changelog 项（PR）                                                           | 决策     | 依据                                                                                                                                                                           |
-| ---------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 可选的 Windows 系统代理支持（PAC / WPAD / 静态代理 / bypass 规则）（#26708） | 兼容确认 | opt-in、默认关闭；与 c3 在 relay/MCP 路径对 loopback 注入 `NO_PROXY`（`withLoopback`）正交，不改变 c3 的回环 hop 绕代理行为。c3 部署主体为 macOS/Linux，Windows 代理无回归面。 |
+- **可选的 Windows 系统代理支持（PAC / WPAD / 静态代理 / bypass 规则）（#26708）** — 兼容确认
+  - 依据: opt-in、默认关闭；与 c3 在 relay/MCP 路径对 loopback 注入 `NO_PROXY`（`withLoopback`）正交，不改变 c3 的回环 hop 绕代理行为。c3 部署主体为 macOS/Linux，Windows 代理无回归面。
 
 ### 0.142.2
 
-| changelog 项（PR）                                                                                                               | 决策         | 依据                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MCP 工具默认改用 tool search（#29486）                                                                                           | **兼容确认** | 见上文「MCP 工具默认改用 tool search」专节：`enabled_tools` 白名单与 tool search 正交，意图三工具仍可发现/调用，零代码改动。                                                       |
-| 远程 stdio MCP 服务器接受绝对工作目录（#29493）                                                                                  | 不适用       | c3 用 streamable-HTTP MCP，非 stdio MCP；不涉及 stdio cwd。                                                                                                                        |
-| 远程 HTTP(S) 图片输入返回模型可见的校验错误（#29417/#29419）                                                                     | 不适用       | c3 的图片输入走 `local_image` 路径（`--image <FILE>` 写临时文件，`image-files.ts`），不是远程 HTTP(S) 图片 URL。现有「带图 user_prompt」适配不受影响、不回归。                     |
-| PowerShell 不可解析 AST 区段的命令需审批（#24092）                                                                               | 兼容确认     | Windows shell 审批收紧。c3 codex 为非交互 `exec`，审批由 launch-time 的 sandbox/approvalPolicy 决定（`gateToCodexPolicy`），无 per-tool 交互点；macOS/Linux 主体无 PowerShell 面。 |
-| Code Mode 在所选模型缺元数据时告警（#29490）                                                                                     | 兼容确认     | 仅为告警；c3 不依赖 Code Mode 元数据路径。                                                                                                                                         |
-| macOS 认证客户端可遵循系统代理（#26709）                                                                                         | 兼容确认     | 认证侧代理改进；c3 对 loopback 注入 `NO_PROXY` 的行为不受影响。                                                                                                                    |
-| 插件暗色 logo（#29488）、Apps 更丰富的 safety-buffering UI（#29473）、远程插件精选排序（#29485）、Bedrock 凭据错误指引（#28992） | 不适用       | 插件/Apps/Bedrock 特性，c3 无落点。                                                                                                                                                |
-| OpenSSL / esbuild 依赖更新、formatter 成功时静默（#29487/#29489/#29467）                                                         | 兼容确认     | 上游 chore，无 c3 接口面。                                                                                                                                                         |
+- **MCP 工具默认改用 tool search（#29486）** — **兼容确认**
+  - 依据: 见上文「MCP 工具默认改用 tool search」专节：`enabled_tools` 白名单与 tool search 正交，意图三工具仍可发现/调用，零代码改动。
+- **远程 stdio MCP 服务器接受绝对工作目录（#29493）** — 不适用
+  - 依据: c3 用 streamable-HTTP MCP，非 stdio MCP；不涉及 stdio cwd。
+- **远程 HTTP(S) 图片输入返回模型可见的校验错误（#29417/#29419）** — 不适用
+  - 依据: c3 的图片输入走 `local_image` 路径（`--image <FILE>` 写临时文件，`image-files.ts`），不是远程 HTTP(S) 图片 URL。现有「带图 user_prompt」适配不受影响、不回归。
+- **PowerShell 不可解析 AST 区段的命令需审批（#24092）** — 兼容确认
+  - 依据: Windows shell 审批收紧。c3 codex 为非交互 `exec`，审批由 launch-time 的 sandbox/approvalPolicy 决定（`gateToCodexPolicy`），无 per-tool 交互点；macOS/Linux 主体无 PowerShell 面。
+- **Code Mode 在所选模型缺元数据时告警（#29490）** — 兼容确认
+  - 依据: 仅为告警；c3 不依赖 Code Mode 元数据路径。
+- **macOS 认证客户端可遵循系统代理（#26709）** — 兼容确认
+  - 依据: 认证侧代理改进；c3 对 loopback 注入 `NO_PROXY` 的行为不受影响。
+- **插件暗色 logo（#29488）、Apps 更丰富的 safety-buffering UI（#29473）、远程插件精选排序（#29485）、Bedrock 凭据错误指引（#28992）** — 不适用
+  - 依据: 插件/Apps/Bedrock 特性，c3 无落点。
+- **OpenSSL / esbuild 依赖更新、formatter 成功时静默（#29487/#29489/#29467）** — 兼容确认
+  - 依据: 上游 chore，无 c3 接口面。
 
 ### 0.142.3
 

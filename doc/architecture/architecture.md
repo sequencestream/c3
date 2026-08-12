@@ -66,27 +66,25 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 
 ## 模块地图
 
-| 模块                   | 职责                                                                                                                                                                                                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI 入口               | 命令行入口；`start` 是默认命令（`--port` 默认为 3000，`--host` 默认为 `127.0.0.1`——监听地址是显式选择，不再有"不传 hostname 即全网卡"的隐式行为；工作区通过 Web UI 管理）                                                                                                     |
-| 桌面壳（Tauri 2）      | `desktop/` 下的原生外壳：把同一份 c3 单二进制当 sidecar 拉起（`start --host 127.0.0.1 --port <空闲回环端口>`），就绪后在 WebView 中加载 **sidecar 自带的** SPA；托盘常驻、单实例、可选开机自启。壳内无业务逻辑，共享同一个 c3 home（ADR-0033）                                |
-| HTTP/WS 服务器         | 升级 `/ws`、提供静态资源、追踪每个连接观看的会话、分发消息并广播状态                                                                                                                                                                                                          |
-| 外部 MCP 路由          | 公开的 `/mcp/<api-key>`：key 即地址段,绑定单一工作区,按该 key 勾选的工具子集服务(默认五个只读工具,写工具须显式勾选)。与六条 `/internal/*-mcp/v1` 并列而非放宽——后者保留 loopback guard 与 per-run token。见 [external-mcp](../domains/core/external-mcp/external-mcp-spec.md) |
-| Session-runtime 注册表 | 进程级注册表，记录每个会话的运行句柄、回放基线 + 缓冲区、观看者及状态（ADR 0006）                                                                                                                                                                                             |
-| Host-CLI launcher      | vendor 无关的宿主 CLI 探测：把 vendor 解析为绝对二进制路径或 none，为每个 vendor 携带安装提示，并运行健康检查；第一道能力关卡（ADR-0012）                                                                                                                                     |
-| Kernel 事件总线        | 进程内的类型化发布/订阅总线：同步、错误隔离、静态类型化的 topic→payload map；承载 run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018                                                                                  |
-| Session 注册表         | 持久化的工作区注册表、每会话模式、最近活跃会话                                                                                                                                                                                                                                |
-| Session IO             | 列出 / 读取 / 重命名 / 删除会话，以及转录内容映射                                                                                                                                                                                                                             |
-| 权限注册表             | 待审批 map，带等待/解析决策与超时处理                                                                                                                                                                                                                                         |
-| 结果格式化             | 把工具结果内容摊平为展示字符串                                                                                                                                                                                                                                                |
-| Intent ledger          | SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）                                                                                                                                                                                                                   |
-| 静态内嵌               | 生成并内联的 web bundle                                                                                                                                                                                                                                                       |
-| Wire 协议              | client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现。领域契约按域分区在 `shared/src/protocol/`，`shared/src/protocol.ts` 收敛为 barrel 与两个联合的唯一装配点                                                               |
-| 共享领域 helper        | `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出                                                                                                    |
-| WS client              | 浏览器 WebSocket 包装器                                                                                                                                                                                                                                                       |
-| UI shell               | 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container                                                                                                                                                                                                  |
-| Pages                  | 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件                                                                                                                                                                                  |
-| 共享组件               | 跨页面组件，每个都配有同址单元测试                                                                                                                                                                                                                                            |
+- **CLI 入口**: 命令行入口；`start` 是默认命令（`--port` 默认为 3000，`--host` 默认为 `127.0.0.1`——监听地址是显式选择，不再有"不传 hostname 即全网卡"的隐式行为；工作区通过 Web UI 管理）
+- **桌面壳（Tauri 2）**: `desktop/` 下的原生外壳：把同一份 c3 单二进制当 sidecar 拉起（`start --host 127.0.0.1 --port <空闲回环端口>`），就绪后在 WebView 中加载 **sidecar 自带的** SPA；托盘常驻、单实例、可选开机自启。壳内无业务逻辑，共享同一个 c3 home（ADR-0033）
+- **HTTP/WS 服务器**: 升级 `/ws`、提供静态资源、追踪每个连接观看的会话、分发消息并广播状态
+- **外部 MCP 路由**: 公开的 `/mcp/<api-key>`：key 即地址段,绑定单一工作区,按该 key 勾选的工具子集服务(默认五个只读工具,写工具须显式勾选)。与六条 `/internal/*-mcp/v1` 并列而非放宽——后者保留 loopback guard 与 per-run token。见 [external-mcp](../domains/core/external-mcp/external-mcp-spec.md)
+- **Session-runtime 注册表**: 进程级注册表，记录每个会话的运行句柄、回放基线 + 缓冲区、观看者及状态（ADR 0006）
+- **Host-CLI launcher**: vendor 无关的宿主 CLI 探测：把 vendor 解析为绝对二进制路径或 none，为每个 vendor 携带安装提示，并运行健康检查；第一道能力关卡（ADR-0012）
+- **Kernel 事件总线**: 进程内的类型化发布/订阅总线：同步、错误隔离、静态类型化的 topic→payload map；承载 run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018
+- **Session 注册表**: 持久化的工作区注册表、每会话模式、最近活跃会话
+- **Session IO**: 列出 / 读取 / 重命名 / 删除会话，以及转录内容映射
+- **权限注册表**: 待审批 map，带等待/解析决策与超时处理
+- **结果格式化**: 把工具结果内容摊平为展示字符串
+- **Intent ledger**: SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）
+- **静态内嵌**: 生成并内联的 web bundle
+- **Wire 协议**: client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现。领域契约按域分区在 `shared/src/protocol/`，`shared/src/protocol.ts` 收敛为 barrel 与两个联合的唯一装配点
+- **共享领域 helper**: `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出
+- **WS client**: 浏览器 WebSocket 包装器
+- **UI shell**: 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container
+- **Pages**: 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件
+- **共享组件**: 跨页面组件，每个都配有同址单元测试
 
 ## 横切约定
 
@@ -172,16 +170,14 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 
 ## 关键决策
 
-| ADR                                                         | 决策                                                                                                          |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _（已被 0005 取代）_ c3 是唯一的权限权威                                                                      |
-| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket 是权限传输方式                                                                                      |
-| [0003](adr/0003-single-binary-via-bun-compile.md)           | 通过 `bun build --compile` 发布为单一二进制                                                                   |
-| [0004](adr/0004-persist-workspace-session-registry.md)      | 持久化一份 c3 所有的工作区与会话注册表                                                                        |
-| [0005](adr/0005-inherit-user-project-settings.md)           | 继承用户与项目设置；c3 是权限 gateway（`settingSources: ['user', 'project']`）                                |
-| [0006](adr/0006-decouple-runs-from-connections.md)          | 把 agent 运行与 WebSocket 连接解耦；运行存在于模块级注册表中                                                  |
-| [0007](adr/0007-read-only-intent-agent.md)                  | 只读的 intent-communication agent；`save_intents` 经对话确认后落库；跨运行时 SQLite ledger                    |
-| [0009](adr/0009-unidirectional-boundaries.md)               | 单向边界：kernel → transport/features；SDK 类型永不离开 kernel                                                |
-| [0011](adr/0011-vendor-neutral-agent-abstraction.md)        | Vendor 中性的 Agent 抽象：要求三件套接口 + 探测式能力台账；五档权限模式改为 action-mode × tool-gate 网格      |
-| [0012](adr/0012-host-binary-probe-first-capability-gate.md) | 宿主二进制探测是第一道能力关卡；vendor CLI 缺失 ⇒ agent 类型不可用（按 agent 类型安装，单一二进制并非自包含） |
-| [0018](adr/0018-event-bus-kernel-layer.md)                  | kernel 层的进程内类型化事件总线（发布/订阅、错误隔离、同步分发，符合 ADR-0009 边界安全）                      |
+- [0001](adr/deprecated/0001-c3-sole-permission-authority.md) — _（已被 0005 取代）_ c3 是唯一的权限权威
+- [0002](adr/0002-websocket-as-permission-transport.md) — WebSocket 是权限传输方式
+- [0003](adr/0003-single-binary-via-bun-compile.md) — 通过 `bun build --compile` 发布为单一二进制
+- [0004](adr/0004-persist-workspace-session-registry.md) — 持久化一份 c3 所有的工作区与会话注册表
+- [0005](adr/0005-inherit-user-project-settings.md) — 继承用户与项目设置；c3 是权限 gateway（`settingSources: ['user', 'project']`）
+- [0006](adr/0006-decouple-runs-from-connections.md) — 把 agent 运行与 WebSocket 连接解耦；运行存在于模块级注册表中
+- [0007](adr/0007-read-only-intent-agent.md) — 只读的 intent-communication agent；`save_intents` 经对话确认后落库；跨运行时 SQLite ledger
+- [0009](adr/0009-unidirectional-boundaries.md) — 单向边界：kernel → transport/features；SDK 类型永不离开 kernel
+- [0011](adr/0011-vendor-neutral-agent-abstraction.md) — Vendor 中性的 Agent 抽象：要求三件套接口 + 探测式能力台账；五档权限模式改为 action-mode × tool-gate 网格
+- [0012](adr/0012-host-binary-probe-first-capability-gate.md) — 宿主二进制探测是第一道能力关卡；vendor CLI 缺失 ⇒ agent 类型不可用（按 agent 类型安装，单一二进制并非自包含）
+- [0018](adr/0018-event-bus-kernel-layer.md) — kernel 层的进程内类型化事件总线（发布/订阅、错误隔离、同步分发，符合 ADR-0009 边界安全）

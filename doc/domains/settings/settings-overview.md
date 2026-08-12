@@ -6,12 +6,18 @@
 
 ## Domains
 
-| Domain                                                                    | 职责                                                                                                                                    | API                            | Status |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------ |
-| [agent-config](agent-config/agent-config-overview.md)                     | 智能体档案(url/key/model + 名称)、默认智能体、按角色的 agent 路由、按会话绑定、降级链                                                   | WebSocket `/ws`(见共享协议)    | active |
-| [system-setting](system-setting/system-setting-spec.md)                   | 管理员级全局旋钮:语音输入/时区/baseUrl、vendor CLI 生效版本、系统沙箱定义、子进程代理、鉴权、外部 MCP API key、监听地址、诊断、会话开关 | `SystemSettings`(见协议)       | active |
-| [workspace-setting](workspace-setting/workspace-setting-spec.md)          | 按工作区旋钮:defaultMode、consensus、devSkill、讨论上限、Git 分支策略、沙箱引用、SDD、skillRepos、forge                                 | WebSocket `/ws`(见共享协议)    | active |
-| [personalized-setting](personalized-setting/personalized-setting-spec.md) | 按人偏好:显示语言。已认证按账户存服务端,无身份存浏览器;首次登录以本地值播种                                                             | `PersonalizedSettings`(见协议) | active |
+- [agent-config](agent-config/agent-config-overview.md) — active
+  - 职责: 智能体档案(url/key/model + 名称)、默认智能体、按角色的 agent 路由、按会话绑定、降级链
+  - API: WebSocket `/ws`(见共享协议)
+- [system-setting](system-setting/system-setting-spec.md) — active
+  - 职责: 管理员级全局旋钮:语音输入/时区/baseUrl、vendor CLI 生效版本、系统沙箱定义、子进程代理、鉴权、外部 MCP API key、监听地址、诊断、会话开关
+  - API: `SystemSettings`(见协议)
+- [workspace-setting](workspace-setting/workspace-setting-spec.md) — active
+  - 职责: 按工作区旋钮:defaultMode、consensus、devSkill、讨论上限、Git 分支策略、沙箱引用、SDD、skillRepos、forge
+  - API: WebSocket `/ws`(见共享协议)
+- [personalized-setting](personalized-setting/personalized-setting-spec.md) — active
+  - 职责: 按人偏好:显示语言。已认证按账户存服务端,无身份存浏览器;首次登录以本地值播种
+  - API: `PersonalizedSettings`(见协议)
 
 ## 组级共享上下文
 

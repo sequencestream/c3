@@ -56,45 +56,66 @@ app-server / TUI / 安装 / 平台面）／**后续能力**（有价值但需独
 
 ### `rust-v0.143.0`
 
-| 上游条目                                                                               | 分类           | 依据                                                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MCP 工具默认走 tool search；ChatGPT-hosted MCP 可用会话认证 (#29486, #29733)           | 兼容且自动获益 | c3 以 `enabled_tools` **显式 allowlist** 注入 intent MCP，并置 `default_tools_approval_mode: 'approve'`；tool search 是模型侧发现机制，不改变 allowlist 语义。ChatGPT-hosted 认证不适用（c3 注入的是自建 HTTP MCP + `bearer_token_env_var`）。 |
-| 认证与 Responses 流量可走 macOS/Windows 系统代理，含 PAC/WPAD (#26708, #26709, #31335) | 兼容且自动获益 | 仅影响 codex 自身的出站网络。c3 relay 是 `127.0.0.1` 本地回环，不经系统代理；DIRECT 路径随 CLI 获益。relay 合约不变。                                                                                                                          |
-| 关闭时保留尾部 realtime transcript 与 terminal rollout 事件 (#29918, #30144)           | 兼容且自动获益 | c3 `session-store.ts` 读取 codex 落盘的 rollout JSONL；该修复使中断/关闭时的 JSONL 更完整，对会话投影只增不减，无需适配。                                                                                                                      |
-| Code Mode 缺少模型元数据时告警 (#29490)                                                | 兼容且自动获益 | 与 c3 已知的「relay 自定义模型下 code-mode 元数据 fallback」问题同源；c3 已通过钉 codex-facing 模型别名规避，此告警仅提升可诊断性。                                                                                                            |
-| 增量 WebSocket 请求成功率（忽略响应元数据比较）(#30770)                                | 不适用         | c3 relay 强制 `supports_websockets=false`（HTTP POST + SSE），无 WebSocket 面。                                                                                                                                                                |
-| 远程插件默认启用 + 目录/npm marketplace (#30297 等)                                    | 不适用         | TUI/插件面；c3 走 `codex exec --experimental-json` 一次性非交互执行。                                                                                                                                                                          |
-| `codex remote-control pair` 配对码 (#29913)                                            | 不适用         | c3 不使用 remote-control daemon。                                                                                                                                                                                                              |
-| Bedrock GPT-5.6 Sol/Terra/Luna + `max` reasoning effort (#30285, #30467)               | 后续能力       | c3 经 relay 接自有 upstream；新增 Bedrock 模型族需独立的模型清单/能力决策。                                                                                                                                                                    |
-| app-server 可查环境、列子线程、按轮次 fork (#30291, #29591, #30277)                    | 不适用         | app-server 协议面，`codex exec` 路径不消费。                                                                                                                                                                                                   |
-| Windows ConPTY、TUI 安全提示、exec server 离线恢复等修复                               | 不适用         | TUI / Windows / remote-executor 面。                                                                                                                                                                                                           |
-| OpenSSL 3.6.3、Hono、fast-uri 等安全公告升级 (#29487 等)                               | 兼容且自动获益 | 随 codex Rust 二进制发布，托管 CLI 已含。                                                                                                                                                                                                      |
+- **MCP 工具默认走 tool search；ChatGPT-hosted MCP 可用会话认证 (#29486, #29733)** — 兼容且自动获益
+  - 依据: c3 以 `enabled_tools` **显式 allowlist** 注入 intent MCP，并置 `default_tools_approval_mode: 'approve'`；tool search 是模型侧发现机制，不改变 allowlist 语义。ChatGPT-hosted 认证不适用（c3 注入的是自建 HTTP MCP + `bearer_token_env_var`）。
+- **认证与 Responses 流量可走 macOS/Windows 系统代理，含 PAC/WPAD (#26708, #26709, #31335)** — 兼容且自动获益
+  - 依据: 仅影响 codex 自身的出站网络。c3 relay 是 `127.0.0.1` 本地回环，不经系统代理；DIRECT 路径随 CLI 获益。relay 合约不变。
+- **关闭时保留尾部 realtime transcript 与 terminal rollout 事件 (#29918, #30144)** — 兼容且自动获益
+  - 依据: c3 `session-store.ts` 读取 codex 落盘的 rollout JSONL；该修复使中断/关闭时的 JSONL 更完整，对会话投影只增不减，无需适配。
+- **Code Mode 缺少模型元数据时告警 (#29490)** — 兼容且自动获益
+  - 依据: 与 c3 已知的「relay 自定义模型下 code-mode 元数据 fallback」问题同源；c3 已通过钉 codex-facing 模型别名规避，此告警仅提升可诊断性。
+- **增量 WebSocket 请求成功率（忽略响应元数据比较）(#30770)** — 不适用
+  - 依据: c3 relay 强制 `supports_websockets=false`（HTTP POST + SSE），无 WebSocket 面。
+- **远程插件默认启用 + 目录/npm marketplace (#30297 等)** — 不适用
+  - 依据: TUI/插件面；c3 走 `codex exec --experimental-json` 一次性非交互执行。
+- **`codex remote-control pair` 配对码 (#29913)** — 不适用
+  - 依据: c3 不使用 remote-control daemon。
+- **Bedrock GPT-5.6 Sol/Terra/Luna + `max` reasoning effort (#30285, #30467)** — 后续能力
+  - 依据: c3 经 relay 接自有 upstream；新增 Bedrock 模型族需独立的模型清单/能力决策。
+- **app-server 可查环境、列子线程、按轮次 fork (#30291, #29591, #30277)** — 不适用
+  - 依据: app-server 协议面，`codex exec` 路径不消费。
+- **Windows ConPTY、TUI 安全提示、exec server 离线恢复等修复** — 不适用
+  - 依据: TUI / Windows / remote-executor 面。
+- **OpenSSL 3.6.3、Hono、fast-uri 等安全公告升级 (#29487 等)** — 兼容且自动获益
+  - 依据: 随 codex Rust 二进制发布，托管 CLI 已含。
 
 ### `rust-v0.144.0`
 
-| 上游条目                                                                     | 分类           | 依据                                                                                                                                                                                                        |
-| ---------------------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 新增 `writes` app-approval 模式（放行只读、写入时提示）(#30482)              | 不适用（边界） | app-approval 属 app-server/TUI 面，**未进入 SDK `ApprovalMode` 类型**（见「结论速览」取证）。c3 `codex exec` 无交互审批接收方（`perToolApproval: false`），接入将产生无人应答的提示。不映射到 c3 权限网格。 |
-| MCP 工具可交互式请求认证，无需实验性开关 (#28772)                            | 不适用         | c3 注入的 MCP 用 `bearer_token_env_var` 预置认证，非交互路径无 elicitation 接收方；c3 不新增认证 UI/状态/协议处理。                                                                                         |
-| Responses WebSocket 保持低延迟传输并尊重系统代理与自定义 CA (#31441, #31622) | 不适用         | 同上，c3 relay 关闭 WebSocket。DIRECT 路径可随 CLI 获益，但不扩展 relay 合约。                                                                                                                              |
-| Intel macOS 发行二进制的 Code Mode 崩溃修复 (#30953)                         | 兼容且自动获益 | 平台可靠性修复，随二进制生效。c3 intent run 本就关闭 code mode（见 `0.144.1` 条目）。                                                                                                                       |
-| 恢复的 ChatGPT 线程在 compaction 引用退役模型时用当前模型重试 (#30319)       | 不适用         | 针对 ChatGPT 认证线程的 compaction 路径；c3 经 relay 走 API key + 显式钉定模型。                                                                                                                            |
-| 用量额度重置显示类型/过期并可选择兑换 (#30488)                               | 不适用         | TUI 用量选择器面。                                                                                                                                                                                          |
-| app-server 运行时提供认证 + 托管登录重定向 (#28745, #31274)                  | 不适用         | app-server/登录面。                                                                                                                                                                                         |
-| 检测全局 pnpm 安装以修正诊断与更新 (#31503)                                  | 不适用         | c3 托管安装直接解包 npm tarball 到 `~/.c3/vendor/codex`，不依赖 codex 自更新。                                                                                                                              |
-| Ultra reasoning 高并发用量告警 (#31621)                                      | 不适用         | TUI 面。                                                                                                                                                                                                    |
-| Windows sandbox 写入/主运行时访问修复 (#31138, #31574)                       | 不适用         | Windows 面；c3 sandbox 走 arapuca（macOS/Linux）。                                                                                                                                                          |
-| 粘贴终端控制序列破坏 TUI 渲染/恢复历史 (#31494)                              | 不适用         | TUI 渲染面。                                                                                                                                                                                                |
-| `codex_apps` 连接器过期认证刷新 (#31486)                                     | 不适用         | Codex Apps 连接器面。                                                                                                                                                                                       |
-| `/review` 分支选择器、插件 skill 加载性能等 (#31348, #31464, #31480)         | 不适用         | TUI/远程执行器面。                                                                                                                                                                                          |
+- **新增 `writes` app-approval 模式（放行只读、写入时提示）(#30482)** — 不适用（边界）
+  - 依据: app-approval 属 app-server/TUI 面，**未进入 SDK `ApprovalMode` 类型**（见「结论速览」取证）。c3 `codex exec` 无交互审批接收方（`perToolApproval: false`），接入将产生无人应答的提示。不映射到 c3 权限网格。
+- **MCP 工具可交互式请求认证，无需实验性开关 (#28772)** — 不适用
+  - 依据: c3 注入的 MCP 用 `bearer_token_env_var` 预置认证，非交互路径无 elicitation 接收方；c3 不新增认证 UI/状态/协议处理。
+- **Responses WebSocket 保持低延迟传输并尊重系统代理与自定义 CA (#31441, #31622)** — 不适用
+  - 依据: 同上，c3 relay 关闭 WebSocket。DIRECT 路径可随 CLI 获益，但不扩展 relay 合约。
+- **Intel macOS 发行二进制的 Code Mode 崩溃修复 (#30953)** — 兼容且自动获益
+  - 依据: 平台可靠性修复，随二进制生效。c3 intent run 本就关闭 code mode（见 `0.144.1` 条目）。
+- **恢复的 ChatGPT 线程在 compaction 引用退役模型时用当前模型重试 (#30319)** — 不适用
+  - 依据: 针对 ChatGPT 认证线程的 compaction 路径；c3 经 relay 走 API key + 显式钉定模型。
+- **用量额度重置显示类型/过期并可选择兑换 (#30488)** — 不适用
+  - 依据: TUI 用量选择器面。
+- **app-server 运行时提供认证 + 托管登录重定向 (#28745, #31274)** — 不适用
+  - 依据: app-server/登录面。
+- **检测全局 pnpm 安装以修正诊断与更新 (#31503)** — 不适用
+  - 依据: c3 托管安装直接解包 npm tarball 到 `~/.c3/vendor/codex`，不依赖 codex 自更新。
+- **Ultra reasoning 高并发用量告警 (#31621)** — 不适用
+  - 依据: TUI 面。
+- **Windows sandbox 写入/主运行时访问修复 (#31138, #31574)** — 不适用
+  - 依据: Windows 面；c3 sandbox 走 arapuca（macOS/Linux）。
+- **粘贴终端控制序列破坏 TUI 渲染/恢复历史 (#31494)** — 不适用
+  - 依据: TUI 渲染面。
+- **`codex_apps` 连接器过期认证刷新 (#31486)** — 不适用
+  - 依据: Codex Apps 连接器面。
+- **`/review` 分支选择器、插件 skill 加载性能等 (#31348, #31464, #31480)** — 不适用
+  - 依据: TUI/远程执行器面。
 
 ### `rust-v0.144.1`
 
-| 上游条目                                                               | 分类           | 依据                                                                                                                                                                   |
-| ---------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| standalone 安装器在 GitHub 返回紧凑/乱序 release 元数据时失败 (#31913) | 不适用         | c3 托管安装自行从 npm registry 取 tarball + `integrity` 校验，不使用 codex standalone installer 脚本。                                                                 |
-| macOS 包安装同时暴露 code-mode host (#31913)                           | 兼容且自动获益 | 安装完整性修复，随二进制生效。                                                                                                                                         |
-| companion host 二进制不可用时 code mode 回退到内嵌运行时 (#31913)      | 兼容且自动获益 | 可靠性兜底。c3 的 **intent run 显式设 `features.js_repl=false`**（`driver.ts`），本就关闭 code-execution 沙箱，该回退对 intent run 不触发；对其它 codex run 为纯增益。 |
+- **standalone 安装器在 GitHub 返回紧凑/乱序 release 元数据时失败 (#31913)** — 不适用
+  - 依据: c3 托管安装自行从 npm registry 取 tarball + `integrity` 校验，不使用 codex standalone installer 脚本。
+- **macOS 包安装同时暴露 code-mode host (#31913)** — 兼容且自动获益
+  - 依据: 安装完整性修复，随二进制生效。
+- **companion host 二进制不可用时 code mode 回退到内嵌运行时 (#31913)** — 兼容且自动获益
+  - 依据: 可靠性兜底。c3 的 **intent run 显式设 `features.js_repl=false`**（`driver.ts`），本就关闭 code-execution 沙箱，该回退对 intent run 不触发；对其它 codex run 为纯增益。
 
 ## 受影响的特性与契约
 

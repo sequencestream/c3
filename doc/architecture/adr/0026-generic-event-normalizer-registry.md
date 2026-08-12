@@ -48,15 +48,13 @@ _Con:_ 通用 `data` 放弃「全字段先验强类型」，安全边界改由 `
 
 采用**选项 3**。落地边界：
 
-| 关注点           | 决策                                                                                                                                                                                                                                                                                                                     |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 通用契约         | `GenericEvent`（`type` 必填非空判别值 + `status`/`description` + 扁平 `metadata` + JSON `data`）与 `GenericEventEnvelope` 定义在 `shared/src/event-model.ts`；`server/src/kernel/events/generic-event-validate.ts` 的 `validateGenericEvent` 拒绝空 type、嵌套 metadata、非 JSON `data`。                                |
-| 注册表位置       | `EventNormalizerRegistry`（`server/src/kernel/events/generic-event.ts`）在 kernel 事件边界，不 import features/transport（ADR-0009 R1）；具体 type 的归一化器由 feature 提供，在**组合根显式注册**。                                                                                                                     |
-| 拒绝语义         | 查无注册、核心非法、归一化器抛错、或归一化结果非法/改写了 `type`，均同步返回 `{ ok: false }` 且**不调用 `EventBus.publish`**；错误文本不回显原始敏感值。发布前失败**不属于**订阅者错误隔离范围（ADR-0018）。                                                                                                             |
-| 重复注册         | 启动期配置错误（`register` 抛错）。                                                                                                                                                                                                                                                                                      |
-| PR 作为首个 type | 注册 `type: 'pr:operation'`：`status = result`，`metadata.operation = operation`，`description = errorSummary`，`data` 承载 `pr`/`repo`/`ref`/`association`。现有 PR 字段级脱敏/剥路径/折叠空白/截断规则**迁入该归一化器**，成为模型发布与三条服务端建 PR 路径的**唯一归一化实现**（不再走旧 `normalizePrEvent` 旁路）。 |
-| 保留类型化 topic | 本 ADR **不**迁移 `run:*`、`intent:lifecycle` 等已有专属消费者的内部 topic。PR 经**兼容桥**（确定性形状转换，不再次清洗）在归一化后的 envelope 上发布既有 `pr:operation` bus payload，使 Automation 与意图 PR 状态复位消费者契约不变。总线仍保持 ADR-0018 的同步、按注册序、订阅者错误隔离语义。                         |
-| 未纳入本 ADR     | 不替换 `publish_pr_event` 工具、不改 Automation 事件过滤/数据库字段/匹配逻辑、不新增 `publish_event` MCP 工具、不改权限策略与分发时序。统一模型工具 `publish_event` 仅作为**后续可复用目标**记录。                                                                                                                       |
+- **通用契约**: `GenericEvent`（`type` 必填非空判别值 + `status`/`description` + 扁平 `metadata` + JSON `data`）与 `GenericEventEnvelope` 定义在 `shared/src/event-model.ts`；`server/src/kernel/events/generic-event-validate.ts` 的 `validateGenericEvent` 拒绝空 type、嵌套 metadata、非 JSON `data`。
+- **注册表位置**: `EventNormalizerRegistry`（`server/src/kernel/events/generic-event.ts`）在 kernel 事件边界，不 import features/transport（ADR-0009 R1）；具体 type 的归一化器由 feature 提供，在**组合根显式注册**。
+- **拒绝语义**: 查无注册、核心非法、归一化器抛错、或归一化结果非法/改写了 `type`，均同步返回 `{ ok: false }` 且**不调用 `EventBus.publish`**；错误文本不回显原始敏感值。发布前失败**不属于**订阅者错误隔离范围（ADR-0018）。
+- **重复注册**: 启动期配置错误（`register` 抛错）。
+- **PR 作为首个 type**: 注册 `type: 'pr:operation'`：`status = result`，`metadata.operation = operation`，`description = errorSummary`，`data` 承载 `pr`/`repo`/`ref`/`association`。PR 字段级脱敏/剥路径/折叠空白/截断规则由该归一化器承载，是模型发布与三条服务端建 PR 路径的**唯一归一化实现**。
+- **保留类型化 topic**: 本 ADR **不**迁移 `run:*`、`intent:lifecycle` 等已有专属消费者的内部 topic。PR 经**兼容桥**（确定性形状转换，不再次清洗）在归一化后的 envelope 上发布既有 `pr:operation` bus payload，使 Automation 与意图 PR 状态复位消费者契约不变。总线仍保持 ADR-0018 的同步、按注册序、订阅者错误隔离语义。
+- **未纳入本 ADR**: 不替换 `publish_pr_event` 工具、不改 Automation 事件过滤/数据库字段/匹配逻辑、不新增 `publish_event` MCP 工具、不改权限策略与分发时序。统一模型工具 `publish_event` 仅作为**后续可复用目标**记录。
 
 ## 后果
 

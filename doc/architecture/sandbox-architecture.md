@@ -97,12 +97,10 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 
 职责边界:
 
-| 模块                | 职责                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `SandboxLauncher`   | 解析 workspace sandbox config、探测 arapuca、`resolvePaths()`、生成 wrapper。                          |
-| per-vendor 认证策略 | 按 vendor 注册:该 vendor 的入口命令、数据根、凭据变量、额外挂载、身份变量、keychain 开关、启动前目录。 |
-| ProcessSandbox 层   | 把 resolved 路径集映射为 arapuca `run` 参数;把 vendor CLI 包成 `arapuca run -- <cli>` 形态的 wrapper。 |
-| arapuca 二进制      | c3 关联并自动安装一个经过验证的版本;管理版本不可用时回退宿主 PATH 上使用方自装的二进制。               |
+- **`SandboxLauncher`**: 解析 workspace sandbox config、探测 arapuca、`resolvePaths()`、生成 wrapper。
+- **per-vendor 认证策略**: 按 vendor 注册:该 vendor 的入口命令、数据根、凭据变量、额外挂载、身份变量、keychain 开关、启动前目录。
+- **ProcessSandbox 层**: 把 resolved 路径集映射为 arapuca `run` 参数;把 vendor CLI 包成 `arapuca run -- <cli>` 形态的 wrapper。
+- **arapuca 二进制**: c3 关联并自动安装一个经过验证的版本;管理版本不可用时回退宿主 PATH 上使用方自装的二进制。
 
 > 与容器方案的差异:不再有 `DockerDriver` / 镜像 / bind mount / env-file 注入 / 转发 sidecar / 自定义网络。原容器供应链、网络分段章节整体移除。
 
@@ -285,16 +283,14 @@ interface WorkspaceSandboxConfig {
 
 ## 16. 风险与决策
 
-| 风险                             | 决策                                                                                                                                                                                                                                                                    |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 进程级隔离弱于容器/microVM       | 明确定位:当前只做目录 ro/rw + 网络全开,不承诺完全不可信代码的强隔离。                                                                                                                                                                                                   |
-| 同路径放行暴露宿主目录结构       | canonicalize + allowlist;项目原目录 ro;补充目录默认 ro;敏感目录不放行。                                                                                                                                                                                                 |
-| arapuca 缺失或平台不支持         | 启动前探测,hard-fail 并给出明确 UiCode。                                                                                                                                                                                                                                |
-| 补充目录逃逸或覆盖保留路径       | 保留路径(worktree/原目录/specsBase)不可被 `extraMounts` 覆盖。                                                                                                                                                                                                          |
-| vendor CLI 认证所需配置读不到    | wrapper 最小化放行其自身配置目录;不牵连 home 其它敏感目录。                                                                                                                                                                                                             |
-| macOS Seatbelt 已 deprecated     | 当前范围只用文件系统 MAC(15 仍可用);能力差异在文档标注。                                                                                                                                                                                                                |
-| 网络当前全开带来的出站风险       | 已知取舍:当前范围不控网络;网络收窄列为后续阶段(§8)。                                                                                                                                                                                                                    |
-| sandbox session 历史读写目录错位 | 已知限制(待修):transcript 读取端硬编码宿主 home,与 sandbox per-workspace home 不一致,sandbox session 历史读不到 / 切模式续接失败。vendor 中立(codex `CODEX_HOME` / claude `CLAUDE_CONFIG_DIR`)。方向见 design §9.1(读取端两处扫兜底 + session `storeScope` 冻结 fact)。 |
+- **进程级隔离弱于容器/microVM**: 明确定位:当前只做目录 ro/rw + 网络全开,不承诺完全不可信代码的强隔离。
+- **同路径放行暴露宿主目录结构**: canonicalize + allowlist;项目原目录 ro;补充目录默认 ro;敏感目录不放行。
+- **arapuca 缺失或平台不支持**: 启动前探测,hard-fail 并给出明确 UiCode。
+- **补充目录逃逸或覆盖保留路径**: 保留路径(worktree/原目录/specsBase)不可被 `extraMounts` 覆盖。
+- **vendor CLI 认证所需配置读不到**: wrapper 最小化放行其自身配置目录;不牵连 home 其它敏感目录。
+- **macOS Seatbelt 已 deprecated**: 当前范围只用文件系统 MAC(15 仍可用);能力差异在文档标注。
+- **网络当前全开带来的出站风险**: 已知取舍:当前范围不控网络;网络收窄列为后续阶段(§8)。
+- **sandbox session 历史读写目录错位**: 已知限制(待修):transcript 读取端硬编码宿主 home,与 sandbox per-workspace home 不一致,sandbox session 历史读不到 / 切模式续接失败。vendor 中立(codex `CODEX_HOME` / claude `CLAUDE_CONFIG_DIR`)。方向见 design §9.1(读取端两处扫兜底 + session `storeScope` 冻结 fact)。
 
 ## 17. 分阶段实施
 

@@ -6,16 +6,14 @@
 
 ## 职责
 
-| 关注点            | 说明                                                                                                                                                                                                                                                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 台账读写          | `store.ts`:`listDeliveries`/`getDelivery`/`createDelivery`/`updateDelivery`/`setDeliveryStatus`/`integrationAggregate`/`setDeliveryBranch`/`clearDeliveryBranch`/`activeDeliveryHoldsBranch`                                                                                                                           |
-| 交付 PR + 日志    | `store.ts`:`getLatestDeliveryPr`/`upsertDeliveryPr`/`updateDeliveryPrFacts`/`insertDeliveryLog`/`listDeliveryLogs`/`commitDeliveryDelivered`/`commitDeliveryMergeConflict`;handler 端 `createDeliveryPrHandler` / `syncDeliveryPrHandler`                                                                              |
-| 关联边            | `store.ts`:`insertIntentDelivery`/`deleteIntentDelivery`/`isIntentLinked`/`listAssociatedIntents`/`deleteIntentPr`;handler 端 `linkIntentToDeliveryHandler` / `unlinkIntentFromDeliveryHandler`                                                                                                                        |
-| 状态机            | `state-machine.ts`:`canTransitionDelivery`(唯一写状态门)/`deliveryTargets`/`computeTransitionPlan`/`deliveryRequiresAction`/`countDeliveriesNeedingAction`                                                                                                                                                             |
-| 分支生命周期      | `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入                                                                         |
-| forge 交互        | `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`findMergedForgePr`(分支已在主线时补 PR 身份)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举) |
-| 工作区隔离 + 广播 | handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标                                                                                                                                                                                            |
-| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进 + 「…」溢出菜单)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                                                                             |
+- **台账读写**: `store.ts`:`listDeliveries`/`getDelivery`/`createDelivery`/`updateDelivery`/`setDeliveryStatus`/`integrationAggregate`/`setDeliveryBranch`/`clearDeliveryBranch`/`activeDeliveryHoldsBranch`
+- **交付 PR + 日志**: `store.ts`:`getLatestDeliveryPr`/`upsertDeliveryPr`/`updateDeliveryPrFacts`/`insertDeliveryLog`/`listDeliveryLogs`/`commitDeliveryDelivered`/`commitDeliveryMergeConflict`;handler 端 `createDeliveryPrHandler` / `syncDeliveryPrHandler`
+- **关联边**: `store.ts`:`insertIntentDelivery`/`deleteIntentDelivery`/`isIntentLinked`/`listAssociatedIntents`/`deleteIntentPr`;handler 端 `linkIntentToDeliveryHandler` / `unlinkIntentFromDeliveryHandler`
+- **状态机**: `state-machine.ts`:`canTransitionDelivery`(唯一写状态门)/`deliveryTargets`/`computeTransitionPlan`/`deliveryRequiresAction`/`countDeliveriesNeedingAction`
+- **分支生命周期**: `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入
+- **forge 交互**: `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`findMergedForgePr`(分支已在主线时补 PR 身份)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举)
+- **工作区隔离 + 广播**: handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标
+- **页面**: `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进 + 「…」溢出菜单)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`
 
 ## SQLite 层
 

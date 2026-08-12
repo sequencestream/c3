@@ -6,18 +6,16 @@
 
 ## 如何导航
 
-| 如果你想知道…                | 请阅读                                                                                         |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| 项目的目的、范围、干系人     | [`project.md`](project.md)                                                                     |
-| 任何人都不得违反的硬性规则   | [`constitution.md`](constitution.md)                                                           |
-| 某个术语的含义               | [`glossary.md`](glossary.md)                                                                   |
-| 系统的形态以及各部分如何连接 | [`architecture/architecture.md`](architecture/architecture.md)                                 |
-| 为什么做出某个关键决策       | [`architecture/adr/`](architecture/adr/)                                                       |
-| 某个场景的端到端路径         | [`flows/flows.md`](flows/flows.md)                                                             |
-| WebSocket 通信契约           | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
-| 前端视觉风格指南             | [`style/style-spec.md`](style/style-spec.md)                                                   |
-| 性能 / 安全 / 可用性目标     | [`non-functional/`](non-functional/)                                                           |
-| 某个具体能力的行为           | [`domains/core/`](domains/core/)                                                               |
+- 项目的目的、范围、干系人 — [`project.md`](project.md)
+- 任何人都不得违反的硬性规则 — [`constitution.md`](constitution.md)
+- 某个术语的含义 — [`glossary.md`](glossary.md)
+- 系统的形态以及各部分如何连接 — [`architecture/architecture.md`](architecture/architecture.md)
+- 为什么做出某个关键决策 — [`architecture/adr/`](architecture/adr/)
+- 某个场景的端到端路径 — [`flows/flows.md`](flows/flows.md)
+- WebSocket 通信契约 — [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
+- 前端视觉风格指南 — [`style/style-spec.md`](style/style-spec.md)
+- 性能 / 安全 / 可用性目标 — [`non-functional/`](non-functional/)
+- 某个具体能力的行为 — [`domains/core/`](domains/core/)
 
 ## 领域(Domains)
 
@@ -25,21 +23,17 @@ c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
 
 ### 组 `core`
 
-| 领域                                                     | 职责                                                                                                    |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`permission-gateway`](domains/core/permission-gateway/) | 拦截 SDK 权限请求,将其路由到浏览器,阻塞直到用户做出决定(运行中止则视为拒绝)                             |
-| [`agent-session`](domains/core/agent-session/)           | 驱动 SDK 的 `query()` 循环,把 SDK 消息映射为通信协议,管理权限模式与运行生命周期                         |
-| [`session-registry`](domains/core/session-registry/)     | 管理工作区与会话;负责每个会话的模式、最近访问顺序、历史回放                                             |
-| [`web-console`](domains/core/web-console/)               | 浏览器 UI:prompt 输入、活动流、权限对话框、模式切换                                                     |
-| [`intent-management`](domains/core/intent-management/)   | 一个项目范围的意图台账,以及一个只读的意图沟通智能体,负责把想法拆解为可验证的条目,并启动可配置的开发技能 |
+- [`permission-gateway`](domains/core/permission-gateway/): 拦截 SDK 权限请求,将其路由到浏览器,阻塞直到用户做出决定(运行中止则视为拒绝)
+- [`agent-session`](domains/core/agent-session/): 驱动 SDK 的 `query()` 循环,把 SDK 消息映射为通信协议,管理权限模式与运行生命周期
+- [`session-registry`](domains/core/session-registry/): 管理工作区与会话;负责每个会话的模式、最近访问顺序、历史回放
+- [`web-console`](domains/core/web-console/): 浏览器 UI:prompt 输入、活动流、权限对话框、模式切换
+- [`intent-management`](domains/core/intent-management/): 一个项目范围的意图台账,以及一个只读的意图沟通智能体,负责把想法拆解为可验证的条目,并启动可配置的开发技能
 
 ### 组 `settings`
 
-| 领域                                                                                | 职责                                                                                    |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [`agent-config`](domains/settings/agent-config/)                                    | 管理智能体配置(url/key/model + 名称)、默认智能体、专用 agent 路由、按会话绑定           |
-| [`system-setting`](domains/settings/system-setting/system-setting-spec.md)          | 管理员全局配置(显示/时区/baseUrl、vendor CLI 版本、系统沙箱定义、代理、鉴权、诊断)      |
-| [`workspace-setting`](domains/settings/workspace-setting/workspace-setting-spec.md) | 按工作区配置(默认模式、dev 技能、Git 分支策略、沙箱引用、共识、讨论上限、SDD、技能仓库) |
+- [`agent-config`](domains/settings/agent-config/): 管理智能体配置(url/key/model + 名称)、默认智能体、专用 agent 路由、按会话绑定
+- [`system-setting`](domains/settings/system-setting/system-setting-spec.md): 管理员全局配置(显示/时区/baseUrl、vendor CLI 版本、系统沙箱定义、代理、鉴权、诊断)
+- [`workspace-setting`](domains/settings/workspace-setting/workspace-setting-spec.md): 按工作区配置(默认模式、dev 技能、Git 分支策略、沙箱引用、共识、讨论上限、SDD、技能仓库)
 
 ## 使用规则
 

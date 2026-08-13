@@ -521,9 +521,9 @@
         "label": "Proxy"
       },
       "toggle": {
-        "label": "Enable proxy for session processes"
+        "label": "Enable proxy"
       },
-      "hint": "When enabled, the proxy URLs below are injected as HTTP_PROXY/HTTPS_PROXY env vars into every new session subprocess. Running sessions are not affected. The server process itself does not use these settings.",
+      "hint": "When enabled, the proxy URLs below are injected as HTTP_PROXY/HTTPS_PROXY env vars into every new session subprocess, and c3's own outbound requests — the update check and the release download — go through the same proxy. Loopback targets and NO_PROXY matches stay direct. Running sessions are not affected.",
       "httpProxy": {
         "label": "HTTP proxy URL"
       },

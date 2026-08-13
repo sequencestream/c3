@@ -15,7 +15,7 @@
  */
 
 /** The loopback hosts every c3-served endpoint is reached at. */
-const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const
+export const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const
 
 /**
  * Add the loopback hosts to a comma-separated `NO_PROXY` value (idempotent).

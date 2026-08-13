@@ -18,6 +18,7 @@ import {
   normalizeVersion,
   resolveTagViaRedirect,
 } from '../../upgrade.js'
+import { outboundFetch } from '../../kernel/infra/proxy-fetch.js'
 import { VERSION } from '../../version.js'
 import type { UpdateStatus } from '@ccc/shared/protocol'
 
@@ -95,7 +96,9 @@ export async function runUpdateCheckOnce(
   opts: { url?: string; fetchImpl?: typeof fetch; now?: number } = {},
 ): Promise<UpdateStatus> {
   const override = opts.url ?? updateCheckUrlOverride()
-  const doFetch = opts.fetchImpl ?? fetch
+  // The configured proxy applies to c3's own outbound requests too — on a network
+  // where GitHub is only reachable through it, a direct check would never resolve.
+  const doFetch = opts.fetchImpl ?? outboundFetch
 
   if (!override) {
     const tag = await resolveTagViaRedirect(DEFAULT_REPO, doFetch, 'c3-update-checker')

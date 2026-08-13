@@ -47,6 +47,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { c3HomeDir } from './kernel/config/index.js'
+import { outboundFetch } from './kernel/infra/proxy-fetch.js'
 import { isInterpreter } from './daemon.js'
 import { detectRuntimeForms, type RuntimeForms } from './restart.js'
 import { VERSION } from './version.js'
@@ -522,7 +523,9 @@ export async function runUpgrade(
   const version = deps.version ?? VERSION
   const home = deps.home ?? c3HomeDir()
   const env = deps.env ?? process.env
-  const fetchFn = deps.fetch ?? fetch
+  // Same proxy the console's self-update uses: `c3 upgrade` reads the very same
+  // system settings, so both entry points reach GitHub over the same route.
+  const fetchFn = deps.fetch ?? outboundFetch
   const io = deps.io ?? defaultIo
   const log = deps.log ?? ((m: string) => console.log(m))
   const errlog = deps.errlog ?? ((m: string) => console.error(m))

@@ -33,6 +33,7 @@ import type {
   SelfUpdateState,
 } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/index.js'
+import { outboundFetch } from '../../kernel/infra/proxy-fetch.js'
 import { detectRuntimeForms, resolveRelaunchStrategy } from '../../restart.js'
 import { SYSTEMD_UNIT_NAME } from '../../service-install.js'
 import { spawnUpdateAssistant } from '../../update-assistant.js'
@@ -258,7 +259,8 @@ export async function startSelfUpdate(deps: SelfUpdateDeps = {}): Promise<void> 
   busy = true
   cancelled = false
   const io = deps.io ?? defaultUpgradeIo()
-  const fetchFn = deps.fetchFn ?? fetch
+  // Resolution + download go through the configured proxy (see `proxy-fetch.ts`).
+  const fetchFn = deps.fetchFn ?? outboundFetch
   const { env, execPath, platform, arch } = facts
   const repo = deps.repo ?? DEFAULT_REPO
   const now = deps.now ?? Date.now

@@ -521,9 +521,9 @@
         "label": "代理"
       },
       "toggle": {
-        "label": "为会话进程启用代理"
+        "label": "启用代理"
       },
-      "hint": "启用后，以下代理 URL 会以 HTTP_PROXY/HTTPS_PROXY 环境变量的形式注入到每个新会话子进程中。已在运行中的会话不受影响。服务端主进程自身不使用这些设置。",
+      "hint": "启用后，以下代理 URL 会以 HTTP_PROXY/HTTPS_PROXY 环境变量的形式注入到每个新会话子进程中；c3 服务端自身的出网请求——版本检查与新版下载——也走同一代理，回环地址与 NO_PROXY 命中项仍直连。已在运行中的会话不受影响。",
       "httpProxy": {
         "label": "HTTP 代理 URL"
       },

@@ -14,6 +14,7 @@ self-update 领域把「检查 → 下载 → 重启生效」在服务端串成�
 
 - **不重造升级内核**。版本事实、发行包解析、传输与 sha256 规则、平台替换策略全部复用 `server/src/upgrade-core.ts` 与 `server/src/upgrade.ts`，与 `c3 upgrade` 同一套。
 - **不改 `c3 upgrade` 的契约**。CLI 仍只替换磁盘上的二进制、从不重启；自更新是它之上的编排层。
+- **不自带出网路由**。版本检查与下载都经服务端的代理感知 `fetch`，走哪条路由由系统设置的 `proxy` 块决定（判定见 [system-setting](../../settings/system-setting/system-setting-spec.md)「服务端自身出网」）；本领域只负责拿到字节。
 - **不接管桌面壳**。桌面版按整包升级（壳与 sidecar 成对），单独替换 sidecar 会破坏 bundle 签名，所以桌面形态下本领域整体让位（见 `doc/non-functional/release.md`「桌面渠道」）。
 - **不越过包管理器**。装在 Homebrew 前缀下的二进制由 `brew upgrade` 管。
 - **不做降级、不做版本选择**。目标恒为最新发行版。

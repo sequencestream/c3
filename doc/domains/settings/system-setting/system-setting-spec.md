@@ -27,21 +27,38 @@
 
 系统级沙箱定义(镜像/挂载模板),供各工作区按 name 引用(工作区侧引用见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))。仅管理员经系统设置面板 CRUD;缺省/空 ⇒ 无沙箱定义,工作区配置面板隐藏其沙箱区。沙箱运行语义见 [sandbox](../../core/sandbox/sandbox-design.md)。
 
-## 子进程代理 `proxy`
+## 代理 `proxy`
 
-`proxy` 块控制新会话子进程是否注入 `HTTP_PROXY`/`http_proxy`/`HTTPS_PROXY`/`https_proxy` 环境变量:
+`proxy` 块是本部署「出网走哪条路」的唯一声明,同时管两类流量:**会话子进程**(经环境变量)与 **c3 服务端自身的出网请求**(经进程内路由)。
 
-- **`proxy.enabled`** — 总开关(严格布尔,仅 `true` 启用)。关闭时无论 URL 为何都不注入。
+- **`proxy.enabled`** — 总开关(严格布尔,仅 `true` 启用)。关闭时无论 URL 为何都不注入、也不路由。
 - **`proxy.httpProxy`** — HTTP 代理 URL(如 `http://proxy.local:3128`)。启用且非空时注入 `HTTP_PROXY` 与 `http_proxy`。
 - **`proxy.httpsProxy`** — HTTPS 代理 URL。启用且非空时注入 `HTTPS_PROXY` 与 `https_proxy`。
 
 要点:
 
-- 仅支持上述四个变量——无 `NO_PROXY`/`ALL_PROXY`/SOCKS/PAC。
-- 仅影响**新启动**的 vendor CLI 子进程(全部厂商,经 `envOverrides` 生效);运行中的会话不追溯更新。服务端自身出网不受影响。
+- 子进程侧仅支持上述四个变量——无 `NO_PROXY`/`ALL_PROXY`/SOCKS/PAC。
+- 仅影响**新启动**的 vendor CLI 子进程(全部厂商,经 `envOverrides` 生效);运行中的会话不追溯更新。
 - 关闭 `enabled` 时保留 URL 值,便于快速开关而不必重填。
 - 代理认证可内嵌于 URL(`http://user:pass@host:port`),无专门表单;明文存储(不走 `c3secretv1:`,有意取舍)。
 - 注入发生在 `launchForAgent()` 的 `envOverrides`,覆盖所有入口(主运行、工具会话、意图沟通、规格撰写、讨论、自动化执行、顾问会话)。`buildChildEnv` 合并序(keepalive < process.env < envOverrides)不变:代理变量落在 `envOverrides`,优先于用户 shell,但仍可被 shell 中显式 `HTTP_PROXY`/`HTTPS_PROXY` 覆盖。
+
+### 服务端自身出网
+
+c3 代表自己发出的请求(版本检查与自更新下载,`c3 upgrade` 亦同)按同一份配置路由。这是必须的:Node 的全局 `fetch` 默认无视 `HTTP(S)_PROXY`(除非进程以 `--use-env-proxy` 启动),因此在只能经代理访问外网的网络里,顶栏永远不会提示新版本,控制台的下载也只会连接超时。
+
+单次请求的路由判定(命中即止):
+
+1. 目标是回环、或命中环境 `NO_PROXY`/`no_proxy` ⇒ 直连(c3 自己的回环源永不经代理,与子进程侧的 `NO_PROXY` 回环兜底同一约定);
+2. `proxy.enabled` 为真 ⇒ 用配置的地址(https 目标优先 `httpsProxy`,回退 `httpProxy`;http 目标反之);
+3. 否则回退宿主环境的 `HTTPS_PROXY`/`HTTP_PROXY`(含小写);
+4. 都没有 ⇒ 直连,且原样交给运行时自带的 `fetch`(无代理路径行为零改变)。
+
+其它约定:
+
+- 只支持 `http://`/`https://` 代理。配置里填了 `socks5://`(校验器允许,因为 vendor CLI 可能认)时,服务端自身的请求**明确失败并给出原因**,而不是悄悄直连绕过用户指定的路由;环境变量里的 SOCKS 值则只降级为直连(原生 `fetch` 本来也不会用它)。
+- 传输随运行时:Bun 编译二进制交给原生 `fetch` 的 `proxy` 选项;Node 下由 c3 自行走 `CONNECT` 隧道 + TLS(https 目标)或绝对形式请求行(http 目标),按 fetch 标准跟随重定向,跨源时丢弃 `Authorization`/`Cookie`。
+- 配置**每次请求重读**,改完代理无需重启即对下一次检查/下载生效。
 
 ## 鉴权 `auth`
 

@@ -225,7 +225,7 @@ c3
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
 │   │   ├── 工具会话显示                          # showToolSessions 独立开关,决定工具类会话是否进聚合页侧栏
 │   │   ├── vendor CLI 多版本生效选择             # 仅托管 vendor(claude/codex):下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退;非托管 vendor(cursor)不进该面板
-│   │   ├── 子进程代理                            # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境(不改服务端自身出网)
+│   │   ├── 代理                                  # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境;服务端自身出网(版本检查/发行包下载)同样按此路由,回环与 NO_PROXY 直连
 │   │   ├── 会话清理                              # sessionCleanup 开关 + 保留天数(默认关、30 天),每日删除各 vendor 会话存储中超期的会话记录;按目录名约定识别(vendor 中立)、覆盖沙箱与宿主 home,不碰 Cursor 与 IDE 共写的 `~/.cursor/chats`
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图
 │   │   ├── 外部 MCP API Key 存储                # mcpApiKeys 长期 key 记录(唯一绑定工作区+工具范围+加盐 scrypt 哈希),是 SystemSettings 的兄弟键故 save_settings 既不携带也无法注入;生命周期管理在工作区设置

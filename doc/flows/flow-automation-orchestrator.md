@@ -167,8 +167,7 @@ flowchart TD
 - **`continue_discussion`**(写): 继续或恢复一个讨论
 - **`start_session_for_intent`**(写): **按意图启动 spec 或 work 会话**。接受 `intentId` + `sessionType`(`'spec'` / `'work'`),复用与手动操作一致的校验门禁(状态、SDD 审批、依赖阻塞、Git 分支策略)。`work` 分支按 `lastWorkSessionId` 三态解析:运行中 **attach**(返回原 id,不发新 turn)、空闲 **resume**(原 id 上续跑)、无会话才 **fresh**;fresh 与 resume 发起新 turn 前都要过下沉到 `launchWorkSession` 内的同一条闸门链(RM-A12 并发 → SDD 批准 → 依赖)。成功返回 JSON `{sessionId, sessionType, mode}`,失败返回 JSON `{code, params}` 且 `isError: true`。不发送 WebSocket 进度事件。
 
-工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有表面(Claude SDK、Codex HTTP)自动同步,
-无需维护第二份名单。
+工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有厂商表面自动同步,无需维护第二份名单。
 
 **PR 终态回填经 `sync_intent_pr_status` 显式触发**:工具只接受 `intentId`,不携带任何状态值——服务端
 遍历该意图全部处于 `reviewing` 的 PR 行逐条向 forge 查询真实状态,`merged` / `closed` 终态落库并写

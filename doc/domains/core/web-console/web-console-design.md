@@ -113,7 +113,7 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 - **dangling** ——开发进程已死,但 intent 仍处于 in_progress(服务端重启 / 崩溃 /
   正常退出但完成判定器发现未完成)。UI 渲染一个琥珀色圆点 + "已中断" 警告。
 - **idle** ——非 in_progress,或已自动完成。不渲染运行状态指示器。
-- **重连 / 硬刷新。** 重开回调会重新发送 `open_intent_chat`,触发一次
+- **重连 / 硬刷新。** 重开回调会重新发送 `open_intent_session`,触发一次
   全新的和解 + 丰富过程,持久化的 tab(及其项目)从本地
   存储恢复。两条路径都无需用户操作即可恢复正确的运行状态。
 - **广播丰富。** 每一条 intent 广播都应用这个丰富过程,它先检查实时
@@ -165,7 +165,7 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
   - 发送: 无——console → 切换到「会话」(翻转 + 重新绑定会话 tab 的会话);intents → 打开 intent 聊天(无工作区时为 no-op)
 - **Open intents**
   - 前置条件: 已连接
-  - 发送: `open_intent_chat`——服务端以通讯 `session_selected` + `intents` 回复
+  - 发送: `open_intent_session`——服务端以通讯 `session_selected` + `intents` 回复
 - **Set intent filter**
   - 前置条件: intents project 已设置
   - 发送: 带可选状态筛选的 `list_intents`
@@ -374,7 +374,7 @@ reducer 是共享任务模型中唯一的真实来源(reducer、空模型、
 - **为什么重新选择而不是缓存。** 服务端只把实时事件流式传给该连接
   当前查看的会话,因此为未查看的 tab 缓存的消息流会过时。因此切
   回时会重新选择会话(重放历史 + 缓冲尾部)——与重连路径使用的
-  恢复方式相同。intent tab 重新发送 `open_intent_chat`,服务端将其解析到
+  恢复方式相同。intent tab 重新发送 `open_intent_session`,服务端将其解析到
   该项目当前的通讯会话;不需要客户端侧的通讯指针。
 - **会话 tab 的会话指针。** 会话 tab 自己的工作区 + 会话(或没有)。它**仅在
   会话 tab 处于活跃状态时**才在会话选择时被记录——通讯会话选择(打开/新建/refine

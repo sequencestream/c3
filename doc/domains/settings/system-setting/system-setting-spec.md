@@ -21,7 +21,7 @@
 
 ## vendor CLI 生效版本 `vendorCliVersions`
 
-`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,记录可见 `lastError`,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
+`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。只有受管厂商在此列:`cursor-agent` 不由 c3 分发,没有可选版本,不出现在该字段与面板里。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,记录可见 `lastError`,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
 
 ## 系统沙箱定义 `sandboxes`
 
@@ -38,7 +38,7 @@
 要点:
 
 - 仅支持上述四个变量——无 `NO_PROXY`/`ALL_PROXY`/SOCKS/PAC。
-- 仅影响**新启动**的 `claude`/`codex` 子进程;运行中的会话不追溯更新。服务端自身出网不受影响。
+- 仅影响**新启动**的 vendor CLI 子进程(全部厂商,经 `envOverrides` 生效);运行中的会话不追溯更新。服务端自身出网不受影响。
 - 关闭 `enabled` 时保留 URL 值,便于快速开关而不必重填。
 - 代理认证可内嵌于 URL(`http://user:pass@host:port`),无专门表单;明文存储(不走 `c3secretv1:`,有意取舍)。
 - 注入发生在 `launchForAgent()` 的 `envOverrides`,覆盖所有入口(主运行、工具会话、意图沟通、规格撰写、讨论、自动化执行、顾问会话)。`buildChildEnv` 合并序(keepalive < process.env < envOverrides)不变:代理变量落在 `envOverrides`,优先于用户 shell,但仍可被 shell 中显式 `HTTP_PROXY`/`HTTPS_PROXY` 覆盖。

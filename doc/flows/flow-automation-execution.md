@@ -93,7 +93,7 @@ kernel 运行总线之上,拥有自己独立的三层 MCP 安全模型(它**不�
 
 - **SDK → wire。** Claude `query()` 消息通过一个纯函数转换(`assistant` 文本 →
   `assistant_text`,`tool_use` → `tool_use`,`user` 的 `tool_result` → `tool_result`,
-  `result` → `turn_end`);Codex 的 `run.messages()` 规范化帧则通过共享的驱动路径
+  `result` → `turn_end`);Codex 与 Cursor 的规范化帧则通过共享的驱动路径
   `WireEmitter` 差分转换。每个事件都经过 `emit()`——在该运行时上缓冲,并向每个正在查看该
   会话的连接扇出。
 - **状态。** 起始时 `setStatus('running')`,结束时 `idle`,驱动 works 页面状态栏上的细粒度

@@ -15,6 +15,7 @@ session-cleanup 领域提供**按保留期删除过期会话记录**的能力：
 - 不改变任何 vendor 的存储位置与目录布局——那由 sandbox 与 vendor adapter 决定（见 `doc/domains/core/sandbox/sandbox-design.md` §9）。
 - 不删除会话之外的文件：vendor 配置、凭证、技能、状态库一律不动。
 - 不清理 c3 自身的 SQLite 数据（会话台账、意图、讨论有各自的生命周期）。
+- 不碰 Cursor 的会话库（`~/.cursor/chats/`）：那是 CLI 与 Cursor IDE 共写的用户自有数据，c3 只读不改（见 [agent-session-cursor](../agent-session/features/agent-session-cursor.md)）。
 
 ## 3. 配置
 

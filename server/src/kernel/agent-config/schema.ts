@@ -79,9 +79,9 @@ const codexAgentSchema = baseShellSchema.extend({
 
 /**
  * The `cursor` vendor's config sub-object — a key and a model, no base URL. The
- * Cursor SDK authenticates with a key only (a `cursor-agent login` session does
- * not apply to it); an empty key defers to `CURSOR_API_KEY` in the server
- * environment, and an empty model to Cursor's own `auto` selection.
+ * key is optional: an empty key defers to `CURSOR_API_KEY` in the server
+ * environment and then to the CLI's own keychain login, and an empty model to
+ * Cursor's own `auto` selection.
  *
  * `.strict()` keeps `baseUrl` out: c3 has no relay speaking Cursor's protocol, so
  * a stored base URL is rejected rather than silently ignored — which is what

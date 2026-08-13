@@ -218,7 +218,7 @@ export interface RunOptions {
   /**
    * Bind the c3 tools (intent find/view/save, spec find/view, or a work run's
    * `publish_event`) over c3's loopback streamable-HTTP MCP route — the SAME
-   * transport Codex consumes, so both vendors share one route, handler and tool
+   * transport the driver-path vendors consume, so every vendor shares one route, handler and tool
    * definition. Called at query construction with the workspace + live run id getter
    * + abort signal; it mints a per-run token, stands up the private MCP server, and
    * returns the neutral {@link RemoteMcpServer} descriptors plus a `dispose` this run

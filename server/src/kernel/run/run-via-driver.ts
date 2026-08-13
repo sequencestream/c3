@@ -70,7 +70,7 @@ export interface IntentProfile {
   disallowedTools: string[]
   /**
    * Bind the three intent tools over c3's loopback streamable-HTTP MCP route, the
-   * SINGLE vendor-neutral transport both Claude and Codex now consume. The run-level
+   * SINGLE vendor-neutral transport every vendor consumes. The run-level
    * binding (workspace + live run id + abort signal) does not exist at profile-build
    * time, so the composition root returns a binder the run paths call once started:
    * it mints a per-run token, stands up the private MCP server, and returns the
@@ -546,7 +546,7 @@ export async function runViaDriver(
   const driverCwd = rt.effectiveCwd ?? workspacePath
 
   // c3 tools over the loopback streamable-HTTP MCP route — the SINGLE transport
-  // both Claude and Codex now consume (no vendor branch selects the c3 transport).
+  // every vendor consumes (no vendor branch selects the c3 transport).
   // The active profile's `bindMcp` mints a per-run token, stands up the private MCP
   // server for this run's tool face (intent find/view/save, spec find/view, or work
   // `publish_event`), and returns the neutral descriptors + a `dispose` evicted in

@@ -1,5 +1,5 @@
 /**
- * Cursor SDK stream → {@link CanonicalMessage} normalization (ADR-0011/0013).
+ * `cursor-agent` NDJSON stream → {@link CanonicalMessage} normalization (ADR-0011/0013).
  *
  * `Run.stream()` yields the SDK's own `SDKMessage` union:
  *   `system`      — the run's identity (`agent_id` / `run_id`), model and tools.

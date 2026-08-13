@@ -211,7 +211,7 @@
 
 **字段：** `workspacePath: string`, `status?: IntentStatus`
 
-### `open_intent_chat`
+### `open_intent_session`
 
 进入 intent 视图：打开或切换到通信会话。提供 `sessionId` 时打开该特定会话（并将其设为 `isCurrent`）；不提供时打开项目的 `is_current` 会话（若无则创建一个新的 `pending:` 会话）。回复 `session_selected` 加 `intents` 列表（intent-management RM-R4）。
 
@@ -235,7 +235,7 @@
 
 **字段：** `workspacePath: string`, `sessionId: string`
 
-### `new_intent_chat`
+### `new_intent_session`
 
 启动全新的通信会话：将之前 `is_current` 的通信会话重置为 0，创建一个标记为当前的新会话，回复 `session_selected`（空历史记录）加 `intents` 列表。由 intent 标题栏中的 "+" 按钮触发（RM-R4）。
 
@@ -281,7 +281,7 @@
 
 ### `open_spec_session`
 
-打开 intent 的 spec 撰写会话(`specSessionId`)供意图详情的「spec session」tab 查看。服务器解析该 intent 存储的 spec 会话 id;若其写入受限的 `'spec'` 运行时已被回收则按 `specPath` 重建(写入仍受限于 spec 目录、重新绑定 spec agent),回复 `session_selected`(历史 + 状态)。区别于 `open_intent_chat`(打开的是另一类 `'intent'` 运行时的沟通/refine 会话);intent 的沟通会话 tab 仍走 `open_intent_chat`。无 `specSessionId` 时拒绝(`error`)。
+打开 intent 的 spec 撰写会话(`specSessionId`)供意图详情的「spec session」tab 查看。服务器解析该 intent 存储的 spec 会话 id;若其写入受限的 `'spec'` 运行时已被回收则按 `specPath` 重建(写入仍受限于 spec 目录、重新绑定 spec agent),回复 `session_selected`(历史 + 状态)。区别于 `open_intent_session`(打开的是另一类 `'intent'` 运行时的沟通/refine 会话);intent 的沟通会话 tab 仍走 `open_intent_session`。无 `specSessionId` 时拒绝(`error`)。
 
 **字段：** `workspaceId: string`, `intentId: string`
 
@@ -630,7 +630,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `intents`
 
-项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在 `save_intents` 落库后广播（intent-management）。`sddEnabled` 是该 workspace 的 SDD 总开关,随每次列表广播携带,供四态意图操作按钮无需单独拉取设置即可定态（RM-R22）。
+项目的 intent 列表，回复 `list_intents` / `open_intent_session`，或在 `save_intents` 落库后广播（intent-management）。`sddEnabled` 是该 workspace 的 SDD 总开关,随每次列表广播携带,供四态意图操作按钮无需单独拉取设置即可定态（RM-R22）。
 
 ### `create_intent` / `create_intent_result`
 
@@ -878,7 +878,7 @@ automation 的执行日志。
 
 每条 `WaitUserInvolveEvent` 的溯源跳转契约（WorkCenter 据此跳回来源）：
 
-- `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_chat` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
+- `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_session` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
 - `sessionKind`：产生事件的运行的完整 `SessionKind`（`work | intent | discussion | automation | consensus | tool | spec`），由调用方原样写入（不再折叠为可跳转子集）；driver 路径取运行的 `sessionKind`、agent 网控路径取 gate 派生。协议层类型为 `string`，前端 `jumpToSource` 据此 switch 路由，未识别取值兜底进控制台。
 - `sessionId`：产生事件的真实会话 id（work/intent/spec 会话 id、discussion id、automation id）。无归属事件的溯源跳转据 `sessionKind + sessionId` 路由；为 `null` 时降级到对应列表页且不选中。历史行可能携带意图对象 id（非会话 id），这类行反查不到意图、跳转降级，不回填。
 - `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_work_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。`intentId` 非空即为溯源跳转的分流条件（与 `intentLevel` 无关）：跳意图页并选中该意图，`sessionKind` 只决定意图详情子页签（`spec`→编写规范、`intent`→意图会话、`work`/`tool`→默认页签）。
@@ -952,7 +952,7 @@ automation 的执行日志。
 - **`CanonicalRole`** — `'user' | 'assistant'`。模型承诺的唯一角色。Codex 从项类型合成。
 - **`CanonicalMessage`** — `{ vendor, sessionId, turnId?, role, blocks: CanonicalBlock[], ts, preApproved?, vendorExtra? }`。`vendor`/`sessionId` 是无条件的；`role`/`blocks`/`ts`/`turnId?` 携带折扣（合成/upsert/c3 时间戳/可丢弃）。无法在所有三种供应商中存活的任何内容落在 `vendorExtra` 中，永不放在顶层。
 
-**双形式 upsert。**两种供应商消息形式折叠为一种规则——块按 `(sessionId, block.id)` 键控并 **upsert**，而非仅追加：Claude 发出完整消息（完整块集，幂等重新发出），Codex 发出增量更新帧原地修订较早的块。工具结果单调回填其 `tool_use`（后续仅输入的修订永不擦除已到达的结果）。
+**双形式 upsert。**两种供应商消息形式折叠为一种规则——块按 `(sessionId, block.id)` 键控并 **upsert**，而非仅追加：Claude 发出完整消息（完整块集，幂等重新发出），Codex 发出增量更新帧原地修订较早的块；Cursor 的原生帧同样是增量，但其适配器把一段话累积完再发出一次，因此线上是完整块。工具结果单调回填其 `tool_use`（后续仅输入的修订永不擦除已到达的结果）。
 
 **审批是独立流。**审批/权限事件**不是**规范消息——它们走独立的审批桥（目前作为 `permission_request` / `permission_response` 呈现），因此信封不会变成上帝类型。
 
@@ -972,7 +972,7 @@ automation 的执行日志。
   - `{ type: 'intent-work-session', intentId }` — 意图详情的工作会话页签(停滞意图的检查入口;该意图尚无工作会话时静默落到默认页签)。
     后续阻塞态深链靠给联合加分支扩展,而不是把既有分支撑宽。
 - **`ActionDescriptor`** — `{ labelCode: ActionLabelCode, target: ActionTarget }`。一条派生的「下一步」:展示什么 + 跳到哪里,最小必要集。**运行时展示投影,不是业务状态**——每次发送(列表 / 刷新 / 广播)从已有事实按优先级重新派生(vendor 阻塞 → 待处理 wait-user 事件 → 规格返工触顶 → spec 待批准 → 依赖阻塞 → 静默超时),不落库、不缓存,也不改变意图 `status`、队列判定或任何闸门。依赖阻塞的目标只携带前序意图 id,标题与状态由客户端从同一批 `intents` 读模型解析,目标不在当前视野时提示语不声称标题。派生只暴露稳定原因码与导航所需身份,**绝不**携带凭据、供应商原始错误全文或响应体。
-- **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_chat` 可解析）。`save_intent_directly`（automation 路径）的 schema 不含该字段。
+- **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_session` 可解析）。`save_intent_directly`（automation 路径）的 schema 不含该字段。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
 - **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
 

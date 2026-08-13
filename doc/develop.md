@@ -60,11 +60,12 @@ BUN_TARGET=bun-linux-x64 BUN_OUTFILE=dist/c3-linux-x64 \
   node server/scripts/pkg.mjs
 ```
 
-The binary spawns the resolved vendor CLI for agent processes. The default path is
-c3-managed (`~/.c3/vendor/claude/.../bin/claude` or
+The binary spawns the resolved vendor CLI for agent processes. For managed vendors
+the default path is c3-managed (`~/.c3/vendor/claude/.../bin/claude` or
 `~/.c3/vendor/codex/.../bin/codex`); explicit `CLAUDE_PATH` / `CODEX_PATH` still
 win for development and debugging. Host `PATH` is only a compatibility fallback
-when managed install or health checks fail.
+when managed install or health checks fail. `cursor-agent` is not distributed by
+c3 at all: it resolves from `CURSOR_PATH` or host `PATH` only.
 
 ## Release build
 

@@ -205,11 +205,12 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
   SDK 层面的硬禁用列表
   (Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand)不变,且
   **不包含 `AskUserQuestion`**。
-- **Codex 驱动的权限形态。** 当默认/绑定的沟通智能体是 Codex 时,
-  驱动路径仍运行 intent profile 并注入本地 HTTP MCP 服务器,但使用
-  Codex 的 `plan + never-ask` 网格(映射为 `read-only + never`)而非 `plan + always-ask`。
-  Codex 没有实时批准通道,因此 `always-ask` 可能阻塞 MCP 的使用;文件系统仍保持
-  只读,而 `save_intents` 的人工授权与 claude 一致,来自对话中的文字确认。
+- **驱动路径的权限形态。** 当默认/绑定的沟通智能体是 Codex 或 Cursor 时,
+  驱动路径仍运行 intent profile 并注入本地 HTTP MCP 服务器,但工具闸门按**能力**而非
+  vendor id 决定:没有逐工具批准通道的厂商拿到 `plan + never-ask`(Codex 映射为
+  `read-only + never`,Cursor 映射为 `--mode plan`)而非 `plan + always-ask`——没有可问的
+  对象时,`always-ask` 只会阻塞 MCP 的使用。文件系统仍保持只读,而 `save_intents` 的人工
+  授权与 claude 一致,来自对话中的文字确认。
 - **Codex 意图会话关闭 code execution 与 web search。** 意图 profile 的 codex 运行显式下发
   `features.js_repl=false`、`tools.web_search=false` 与旧式 `web_search="disabled"`,使
   `mcp__c3` 工具一律走标准 MCP tool-call 路径,而不是被包进 code_mode 沙箱的一次代码执行里
@@ -217,13 +218,13 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
   `save_intents`(意图 profile 独有),因此只读的 spec / work profile 不受影响。意图智能体的
   职责是对话澄清 + 读本项目材料 + 查台账,不检索外部网页,关闭 web search 没有能力损失;
   未知配置键在旧版 codex 上被静默忽略,故新旧两种写法可同时下发。
-- **独立的 viewer 编排。** `open_intent_chat` / `new_intent_chat` /
+- **独立的 viewer 编排。** `open_intent_session` / `new_intent_session` /
   `refine_intent` 自行管理
   viewer 切换(移除旧 viewer → 设置被查看的会话 → 添加新 viewer),并且
   **不**复用 `select_session` 的内部逻辑(后者会无条件设置活动会话)。
   沟通会话的 session-id 绑定会重绑定真实 id,但**从不**写入持久化的
   活动会话提示——隐藏会话绝不能污染它。
-- **打开/恢复(`open_intent_chat`):** db 不可用 → `error`。接受一个可选的
+- **打开/恢复(`open_intent_session`):** db 不可用 → `error`。接受一个可选的
   `sessionId`——若提供,校验该会话存在于本项目并打开它(同时
   将其标记为 `isCurrent`,这样后续无 sessionId 的打开会回到这里);若缺省,则使用
   当前(`is_current=1`)会话,若不存在则创建一个新的 `pending:` 会话。
@@ -231,12 +232,12 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
   列表(运行状态的 reconcile 之后在后台运行——见 Reconcile)。这个分支同样是
   首次进入、WS 重连、以及整页刷新时重新加载项目当前沟通会话的
   路径(RM-R4)。
-- **新会话(`new_intent_chat`):** 未知工作区 / db 不可用 → `error`;否则
+- **新会话(`new_intent_session`):** 未知工作区 / db 不可用 → `error`;否则
   无条件启动一个全新的 `pending:` intent 运行时(`default` 模式)并将其设为当前
   会话——这会先清除该项目此前的当前行,再把新行标记为当前。
   切换 viewer,回复 `session_selected`(空历史)与一个 `intents` 列表。不会
   注入首条提示词(与 refine 不同):对话框以空白状态打开,开始新一轮沟通。
-  由于新会话现在是当前会话,之后的 `open_intent_chat`(刷新/重连)会
+  由于新会话现在是当前会话,之后的 `open_intent_session`(刷新/重连)会
   恢复**这个**会话,而非被放弃的那个。由标题栏的「+」触发(RM-R4)。
 - **精炼(`refine_intent`):** 切出旧的沟通视图,启动一个新的
   `pending:` intent 运行时(`default` 模式),将其设为当前,回复 `session_selected`
@@ -249,7 +250,7 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
   常驻的 `run:bound` 订阅在首次绑定时,用真实的沟通会话 id 回填源意图的
   `intentSessionId`——与回填 `specSessionId` 的 spec-session 链接机制相同——
   使该 refine 对话之后可以从意图详情的
-  「intent session」标签页重新打开(用该 id 调用 `open_intent_chat`)。一个绑定前出错的边界情况
+  「intent session」标签页重新打开(用该 id 调用 `open_intent_session`)。一个绑定前出错的边界情况
   由 `run:settled`(kind=intent)安全网清理。
 - **来自讨论(`discussion_to_intent`):** 与**增加意图**共用创建原语和绑定序列,而非一个
   游离的种子会话;差别只在载荷 —— 它落的是空白正文、无显式基准选择。
@@ -279,10 +280,10 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 - **重置 spec 会话(`reset_spec_session`):** spec 文档标签页的「我要修改」操作,镜像
   **编写 spec**,但复用**既有的** spec 目录/路径(不做脚手架搭建)。spec-session
   标签页本身没有重置按钮。当从未写过 spec 时被拒绝(`error`
-  `intent.specNotWritten`)。Claude 与 Codex 都可以运行该会话,cwd 一律是该意图的读代码根
-  (RM-R46),写入根则各按自己的硬边界收口:Claude 用 spec 权限网关把写入限制在 spec 目录内;
-  Codex 额外强制 `workspace-write` + `approval_policy=never`,并把集中式 specs 根目录作为
-  `--add-dir` 传入,从而使账本 DB 及其他非 specs-root 路径都留在可写根目录之外。
+  `intent.specNotWritten`)。该会话不限厂商,cwd 一律是该意图的读代码根(RM-R46),写入根另行收口:
+  Claude 用 spec 权限网关把写入限制在 spec 目录内;Codex 额外强制 `workspace-write` +
+  `approval_policy=never`,并把集中式 specs 根目录作为 `--add-dir` 传入,从而使账本 DB 及其他
+  非 specs-root 路径都留在可写根目录之外。
   服务端启动一个新的、写入受限的 `'spec'` 会话,种子为用户的**新输入** +
   一个指向当前 `spec_path` 的指针(仅路径——智能体自己读取 spec 文件;
   提示词不再内联 spec 正文),回复 `session_selected`(以便详情页的「spec
@@ -332,7 +333,7 @@ title/content/priority P0–P3/可选依赖/**推断出的 module 名**);先与�
 该项的 `intentSessionId`(提示词禁止在多条目批次上这样做——批次没有单一
 源会话)。在提示词构建时注入的 id 是一个 `pending:` id(SDK 尚未绑定),
 因此**保存 handler 会将其归一化**为绑定后的沟通会话 id 再持久化——与
-`open_intent_chat` 解析所依据的以及 refine 的 `run:bound` 回填所写入的是同一个 id,
+`open_intent_session` 解析所依据的以及 refine 的 `run:bound` 回填所写入的是同一个 id,
 使两条链接来源落在同一 id 空间。模型只决定**是否**设置该字段;
 **值**由服务端权威决定。
 
@@ -455,7 +456,7 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
   `intents`(`set_intent_spec_mode` 同形:写 `spec_mode` + 广播,
   广播时重算 `effectiveSpecMode`)。`start_automation` → 启动编排器(若已在运行则为
   no-op),然后广播状态。`stop_automation` → 停止编排器(中止正在进行的
-  运行)。进入意图视图(`open_intent_chat`)也会推送当前的
+  运行)。进入意图视图(`open_intent_session`)也会推送当前的
   `automation_status`,以便一个新连接恢复按钮状态。
 - **依赖注入。** 编排器直接 import store/judge/git,但通过注入式钩子
   获取服务端接线:一个开发轮运行器(绑定到 WS-server 闭包)、
@@ -612,7 +613,7 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
 ## Reconcile
 
 一个独立(注入式)的 reconcile 函数由服务端的
-`open_intent_chat` handler 调用,**在后台、在**意图
+`open_intent_session` handler 调用,**在后台、在**意图
 列表已经发送给客户端**之后**运行(性能考量:面板基于
 缓存/派生的 `runStatus` 立即渲染,而一次 intents 刷新广播会在 reconcile 结束后
 推送刷新后的列表——判断一个死会话是一次 LLM 调用,绝不能
@@ -679,9 +680,10 @@ Git 资源 → 数据库事务 → 广播”。Git 清理只接受确定性 work
 
 会话清理按每个会话的**真实供应商**分派:transcript 删除只交给会话能力账本里
 `sessions.delete` 非 `none` 的供应商(当前只有 claude,由其 SDK 删除
-`~/.claude/projects/` 下的 transcript);codex 自报 `none`,其
-`~/.codex/sessions/` 下的 JSONL 保留在磁盘上,c3 只回收自己持有的引用。把 codex 的会话 id
-交给 claude SDK 会抛出 “Session not found”,正是这类异常曾中断整轮删除。
+`~/.claude/projects/` 下的 transcript);codex 与 cursor 都自报 `none`——前者的
+`~/.codex/sessions/` JSONL、后者 `~/.cursor/chats/` 下与 Cursor IDE 共写的会话库都保留在
+磁盘上,c3 只回收自己持有的引用。把别的供应商的会话 id 交给 claude SDK 会抛出
+“Session not found”,正是这类异常曾中断整轮删除。
 清理的异常边界落在**每一步**上,而非每个会话:供应商解析、运行时移除、transcript 删除、沟通会话行
 删除、会话投影删除各自独立,任一步失败只记录告警,既不跳过其后的步骤,也不阻断其余会话以及随后的
 Git 资源与数据库记录清理。这样意图记录不会被一个清不掉的会话永久卡住;而由于意图主记录是无条件
@@ -709,7 +711,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   spec 目录内(意图**绝对**的集中式 `specPath` 的父目录),重新钉住 spec
   智能体,然后回复
   `session_selected` 并注册 viewer。意图自身的沟通/refine 会话
-  (`intentSessionId`)则由既有的 `open_intent_chat` 打开——两种会话是
+  (`intentSessionId`)则由既有的 `open_intent_session` 打开——两种会话是
   不同的运行时 kind。当该意图没有 `specSessionId` 时被拒绝(`error`)。
   统一的 Sessions 页面从不通过原始会话 id 打开一个 spec 行;它使用投影出的
   `owner_kind='intent'` / `owner_id` 组合导航到所属意图的「spec session」标签页,
@@ -759,17 +761,17 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 - **入口按钮:** 会话侧边栏在「＋ new session」左侧新增一个 idea(💡)按钮,
   会发出一个带工作区路径的 open-intents 事件。
 - **视图切换:** app 新增一个视图模式(`console` | `intents`)+ intents 项目。
-  打开时发送 `open_intent_chat`(其响应携带列表);选中任何普通
+  打开时发送 `open_intent_session`(其响应携带列表);选中任何普通
   会话都会重置回 `console`。intent 视图不渲染模式选择器(RM-R3)。
 - **标题栏(RM-R3):** 对话列复用会话标题栏,但隐藏模式选择器。
   console 标签页仍显示模式选择器。标题展示活动标题或「New Intent」。
 - **新建意图按钮:** 「+」按钮位于意图列表头部,状态过滤器的
   右侧。它发出一个 new-intent 事件 → app 发送
-  `new_intent_chat`;随之而来的 `session_selected`(空历史)会清空对话框,
+  `new_intent_session`;随之而来的 `session_selected`(空历史)会清空对话框,
   开始新的一轮。
 - **重连/刷新恢复:** 每个项目当前的沟通会话被持久化在
   chat 表的 current 标志中,因此进入意图视图会自动重新加载它。在 WS 重开时,
-  若视图模式为 intents,重新发送 `open_intent_chat`;视图模式与 intents 项目
+  若视图模式为 intents,重新发送 `open_intent_session`;视图模式与 intents 项目
   也会被镜像到本地存储中,以在强制刷新后存活。无需新的服务端消息——
   既有的恢复分支已经足够。
 - **布局:** 左侧意图列表(默认完整宽度 960px,窄屏 `min(960px,68vw)`;可在标题栏

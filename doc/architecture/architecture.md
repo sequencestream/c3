@@ -17,25 +17,27 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 │            │                 │  │  adapter │  adapter │  adapter     │          │
 │            │                 │  └────┬─────┴────┬─────┴──────┬───────┘          │
 │            │                 │       │          │            │                  │
-│            │                 │     Claude     Codex         其他                │
+│            │                 │     Claude     Codex        Cursor               │
 │            │                 │     vendor     vendor       vendor               │
 │            │                 │       │          │            │                  │
-│            │                 │       │    ┌─────┘            │  Responses→Chat  │
-│            │                 │       │    │  relay proxy     │  relay (ADR-14)  │
-│            │                 │       │    │  (ADR-0014)      │                  │
-└────────────┘                 └───────┼────┼──────────────────┼──────────────────┘
-                                       │    │                  │
-                                       ▼    ▼                  ▼
-                                    CLI      CLI        remote server
+└────────────┘                 └───────┼──────────┼────────────┼──────────────────┘
+                                       │          │            │
+                                       ▼          ▼            ▼
+                                   claude      codex     cursor-agent
+                                    CLI         CLI          CLI
 ```
 
-> 三个 vendor 的接入模式完全不同，详情见 [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)（Claude）、
-> ADR-0011（vendor-neutral 抽象层设计）和 ADR-0014（Codex Responses→Chat relay）。
+> 三个 vendor 都落在宿主 CLI 上，但接入模式各不相同：详情见
+> [`agent-sdk.md`](agent-sdk.md)（三者的驱动方式与分发）、
+> [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)（Claude）、
+> ADR-0011（vendor-neutral 抽象层设计）、ADR-0029（vendor 中立 relay，服务 custom provider）
+> 和 ADR-0040（Cursor 作为非托管宿主 CLI）。
 >
 > | Vendor | 接入架构                 | 进程模型       | 工具级审批 |
 > | ------ | ------------------------ | -------------- | ---------- |
 > | Claude | 子进程包装（JSON stdio） | 本地常驻子进程 | ✔ 逐工具   |
 > | Codex  | 子进程包装（HTTP/SSE）   | 本地子进程     | ✗ 仅整轮   |
+> | Cursor | 子进程（NDJSON stdio）   | 每轮一个子进程 | ✗ 仅整轮   |
 >
 > 三者的能力差异（中断、模式切换、流式输入、fork、session 操作等）由一份逐能力声明的检查表
 > 管理，上层统一通过中性接口驱动（ADR-0011）。
@@ -55,14 +57,18 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   循环从不直接接触 SDK 类型。
   - **Claude** 通过子进程 JSON stdio 运行 Claude Agent SDK 的 query loop
     （见 [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)）。
-  - **Codex** 以 experimental-JSON 模式运行 `codex` CLI，并为第三方 provider 提供一个进程内的
-    Responses→Chat relay（ADR-0014）。
+  - **Codex** 以 experimental-JSON 模式运行 `codex` CLI，并为第三方 provider 提供一个
+    Responses→Chat relay（ADR-0029）。
+  - **Cursor** 每轮拉起一个 `cursor-agent` 子进程，逐行解析其 NDJSON 帧
+    （见 [Cursor 特性文档](../domains/core/agent-session/features/agent-session-cursor.md)）。
 - **permission-gateway** — 一个审批桥回调加上一个 request→resolver 注册表，把敏感工具路由到
-  浏览器并阻塞直到用户作答；对 Codex 而言会降级为启动时策略（逐工具审批在结构上就不存在，
-  ADR-0011）。
+  浏览器并阻塞直到用户作答；对 Codex 与 Cursor 而言会降级为启动时策略（逐工具审批在结构上
+  就不存在，ADR-0011）。
 - **Agent 宿主 CLI** — 每个 vendor 的 CLI 都是硬性运行时依赖：
   - `claude` CLI —— 由 Claude Agent SDK 作为子进程拉起。
   - `codex` CLI —— 由 c3 作为子进程拉起。
+  - `cursor-agent` CLI —— 由 c3 作为子进程拉起；**不由 c3 分发**，只从 `CURSOR_PATH` 与宿主
+    PATH 解析（ADR-0040）。
 
 ## 模块地图
 
@@ -134,8 +140,8 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 - **Vendor 中性性活在适配器层（ADR-0011）。** 一个中性的三件套接口
   （一个负责运行生命周期 + 规范消息流的 driver、一个拦截/挂起/写回决策的审批桥、
   以及一个把历史藏在同一个面孔后面的 session store）加上一份能力台账，让 c3 可以通过同一个
-  界面驱动 Claude、Codex 及未来的 vendor；可选能力（中断、模式切换、流式输入、进程内 MCP、
-  session fork、逐工具审批、task store）在使用前会被探测。**修订（2026-06-07）：**
+  界面驱动 Claude、Codex、Cursor 及未来的 vendor；可选能力（中断、模式切换、流式输入、
+  进程内 MCP、session fork、逐工具审批、task store）在使用前会被探测。
   会话生命周期操作（list / read / resume / rename / delete）被诚实地评为一份结构化的
   逐操作子台账 —— 每个操作是 _none_ / _partial_ / _full_ / _temporarily-unavailable_
   四者之一 —— 因为一个布尔值无法区分结构性的 NO（根本没有路由）和一次瞬时故障。
@@ -144,11 +150,12 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   作用在一个正交的 action-mode（plan、build）× tool-gate（always-ask / on-sensitive /
   trusted-prefix / never-ask）网格之上（Claude 原本的五档权限模式不再是一一对应）。
   **没有任何 vendor SDK 类型跨越适配器边界** —— SDK 的值以无类型的形式进入适配器，并在
-  那里被收窄（ADR-0009）。今天 Claude 参考适配器委托给现有的运行路径、gateway 和 session
-  IO；让 driver 成为唯一路径的运行循环重写是后续阶段的工作。
+  那里被收窄（ADR-0009）。Claude 参考适配器委托给既有的运行路径、gateway 和 session IO；
+  Codex 与 Cursor 经统一的 driver 路径运行。
 - **宿主二进制探测是第一道能力关卡（ADR-0012）。** 每个 agent vendor 都以宿主 CLI 子进程的
-  形式运行，无法被打包进 c3 的单一二进制中 —— 这个二进制只发布 c3 本身，因此每种 agent 类型
-  都需要在宿主 PATH 上安装其 vendor CLI。host-CLI launcher 把一个 vendor 解析为其绝对二进制
+  形式运行，无法被打包进 c3 的单一二进制中 —— 这个二进制只发布 c3 本身。claude 与 codex 由
+  c3 安装到 `~/.c3/vendor` 并可被 env override 或宿主 PATH 覆盖；`cursor-agent` 不由 c3 分发，
+  只从 `CURSOR_PATH` 与宿主 PATH 解析（ADR-0040）。host-CLI launcher 把一个 vendor 解析为其绝对二进制
   路径或 none；只有当其二进制能解析出来时，才会为该 vendor 构造一个适配器，因此 CLI 缺失
   意味着该 agent 类型不可用（这是一个产品约定，不是 bug），并附带安装指引，其能力台账也就
   永远不会派上用场。启动时的健康报告会响亮但非致命地列出存在/缺失的二进制。

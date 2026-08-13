@@ -1,7 +1,8 @@
 /**
- * Cursor's {@link ApprovalBridge} — a structural no-op. c3 drives the Cursor SDK
- * headlessly and reads a one-way message stream: there is no event that asks for
- * permission and no channel to answer one on. So `onRequest` honours the required
+ * Cursor's {@link ApprovalBridge} — a structural no-op. c3 drives `cursor-agent`
+ * headlessly and reads a one-way message stream: stdin closes once the prompt is
+ * dispatched, so there is no event that asks for permission and no channel to
+ * answer one on. So `onRequest` honours the required
  * contract (registers a handler, returns a working disposer —
  * `assertNeutralAdapterShape` checks exactly this) while the handler never fires,
  * because nothing can fire it.

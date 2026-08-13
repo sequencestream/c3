@@ -16,7 +16,7 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 - **消费者**在启动时 `subscribe('<topic>', handler)`，**只听自己关心的 topic**；
 - 总线**同步、按注册序、错误隔离**地分发，发布者从不等待消费者。
 
-模型（Claude/Codex）**不能直接碰总线**。它只能调用一个收敛的 MCP 工具 `publish_event`（入参就是通用事件 `GenericEvent`），由服务端 handler 按 `type` 归一化（脱敏/截断）+补信封后，**代它**以 `GenericEventEnvelope` 发到单一 `'event'` topic。这是「事件机制」唯一对模型开放的入口。此外，c3 三条服务端自建 PR 的路径（dev-cleanup / automation / 手动 create_pr）在成功建 PR 后也会构造 `type='pr:operation'` 的 `create` 通用事件走同一条链——PR 操作事件有两个发布者，都落到 `'event'` topic。
+模型（任何厂商）**不能直接碰总线**。它只能调用一个收敛的 MCP 工具 `publish_event`（入参就是通用事件 `GenericEvent`），由服务端 handler 按 `type` 归一化（脱敏/截断）+补信封后，**代它**以 `GenericEventEnvelope` 发到单一 `'event'` topic。这是「事件机制」唯一对模型开放的入口。此外，c3 三条服务端自建 PR 的路径（dev-cleanup / automation / 手动 create_pr）在成功建 PR 后也会构造 `type='pr:operation'` 的 `create` 通用事件走同一条链——PR 操作事件有两个发布者，都落到 `'event'` topic。
 
 ```
                          ┌──────────────── EventBus（kernel 层，同步/错误隔离/类型化 topic→payload） ───────────────┐
@@ -278,13 +278,13 @@ publish_event(core) ─► handler: normalizeEvent(core)   // 查表(命中专�
 
 ### 6.5 回环 HTTP MCP 表面（厂商统一），共享一套 framing-free 核
 
-各接入路径共享同一份通用工具核 `features/events/tool-defs.ts`（schema、描述、`runPublishEvent` 核心 handler、结果形状），传输侧只负责工具注册与 framing + per-run 绑定。run 级 `publish_event` 现在对**两个厂商**都走**同一条回环 streamable-HTTP MCP 路由**：
+各接入路径共享同一份通用工具核 `features/events/tool-defs.ts`（schema、描述、`runPublishEvent` 核心 handler、结果形状），传输侧只负责工具注册与 framing + per-run 绑定。run 级 `publish_event` 对**每个厂商**都走**同一条回环 streamable-HTTP MCP 路由**：
 
-| 表面                                 | 文件                                      | 说明                                                      |
-| ------------------------------------ | ----------------------------------------- | --------------------------------------------------------- |
-| run 级 `publish_event`(Claude+Codex) | `server/src/transport/event-mcp/index.ts` | 回环 HTTP MCP 路由；token mint + loopback guard，纵深防御 |
+| 表面                             | 文件                                      | 说明                                                      |
+| -------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| run 级 `publish_event`(全部厂商) | `server/src/transport/event-mcp/index.ts` | 回环 HTTP MCP 路由；token mint + loopback guard，纵深防御 |
 
-Claude 边界(`server/src/kernel/agent/adapters/claude/mcp.ts` 的 `remoteMcpToClaudeConfig`)把中立的远程 MCP 描述符转译成 Claude SDK 的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`)，Codex/Driver 转译成其原生 streamable-HTTP 条目；两者指向同一路由。另一条表面是 Automation 无人执行的 c3 MCP 工具集（`features/automations/c3-tools.ts`）里的 `publish_event`，经 automation-mcp 回环 HTTP MCP 路由对两个厂商暴露，同样复用通用工具核。组合根 `server/src/server.ts` 构建 `publishEvent` sink（`eventBus.publish('event', envelope)`）并注入这些表面。
+Claude 边界(`server/src/kernel/agent/adapters/claude/mcp.ts` 的 `remoteMcpToClaudeConfig`)把中立的远程 MCP 描述符转译成 Claude SDK 的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`)，Codex driver 转译成其原生 streamable-HTTP 条目，Cursor driver 在轮次期间把它写进项目 `.cursor/mcp.json` 并在轮次结束还原；三者指向同一路由。另一条表面是 Automation 无人执行的 c3 MCP 工具集（`features/automations/c3-tools.ts`）里的 `publish_event`，经 automation-mcp 回环 HTTP MCP 路由对全部厂商暴露，同样复用通用工具核。组合根 `server/src/server.ts` 构建 `publishEvent` sink（`eventBus.publish('event', envelope)`）并注入这些表面。
 
 ### 6.6 归一化经通用链路：`pr:operation` 是首个注册 type（[ADR-0026](adr/0026-generic-event-normalizer-registry.md)）
 
@@ -425,7 +425,7 @@ dispatchAndTrack(automation) ─► 发 run:started(kind=automation) → 执行�
 - **discussion 生命周期事件发布**: `server/src/wiring/discussion-runs.ts`（`startDiscussionRun` 的 start/settle 唯一边界；metadata 由 `features/discussions/tool-defs.ts` 的 `start_discussion` 写入 store）
 - **`publish_event` 通用工具核**: `server/src/features/events/tool-defs.ts`（schema/描述/`runPublishEvent`）
 - **PR 归一化器(6 type + 别名) + 消费侧投影**: `server/src/features/pr-events/tool-defs.ts`（`normalizePrGenericEvent`/`projectPrOperationEvent`/`runServerSidePrCreate`/`PR_EVENT_TYPES`/`PR_LEGACY_EVENT_TYPE`）
-- **`publish_event` 回环 HTTP MCP（Claude+Codex）**: `server/src/transport/event-mcp/index.ts`；Claude 边界转译：`server/src/kernel/agent/adapters/claude/mcp.ts`（`remoteMcpToClaudeConfig`）
+- **`publish_event` 回环 HTTP MCP（全部厂商）**: `server/src/transport/event-mcp/index.ts`；Claude 边界转译：`server/src/kernel/agent/adapters/claude/mcp.ts`（`remoteMcpToClaudeConfig`）
 - **常驻 domain 订阅（含 PR 复位）**: `server/src/wiring/run-domain-subscriptions.ts`、`features/intents/pr-update-consumer.ts`
 - **Automation 事件桥 + 分发/过滤**: `server/src/wiring/scheduler-startup.ts`、`server/src/features/automations/scheduler.ts`
 - **组合根（构建总线 + 注入 sink）**: `server/src/server.ts`

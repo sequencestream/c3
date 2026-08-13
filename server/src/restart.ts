@@ -120,6 +120,44 @@ export function detectRuntimeForms(opts: {
   return { service, daemonPid }
 }
 
+// ── Relaunch strategy ───────────────────────────────────────────────────────
+
+/**
+ * How a *running* c3 gets itself replaced by a new process. This differs from
+ * `c3 restart`, which acts on some OTHER instance and can therefore just issue a
+ * stop+start: an instance restarting ITSELF cannot outlive the command it issues.
+ *
+ * - `systemd` — ask systemd for the restart and exit. The request MUST be
+ *   non-blocking: the `systemctl` child lives in the unit's own cgroup and is
+ *   killed along with it, so a blocking call would die mid-wait. Enqueued jobs
+ *   survive that.
+ * - `launchd` — the agent is `KeepAlive`, so a clean exit is the whole restart.
+ * - `assistant-daemon` / `assistant-schtasks` — hand off to a detached helper
+ *   process that outlives this one, waits for it to die, then relaunches.
+ * - `inline-foreground` — nobody owns this process; it spawns its own successor
+ *   on the same terminal before exiting.
+ */
+export type RelaunchStrategy =
+  'systemd' | 'launchd' | 'assistant-daemon' | 'assistant-schtasks' | 'inline-foreground'
+
+/**
+ * Pick the self-relaunch strategy for the detected runtime forms. Service beats
+ * daemon (the longer-lived, OS-managed form wins), matching {@link runRestart}'s
+ * priority; an unsupported service platform falls back to the helper.
+ */
+export function resolveRelaunchStrategy(
+  forms: RuntimeForms,
+  platform: NodeJS.Platform,
+): RelaunchStrategy {
+  if (forms.service) {
+    if (platform === 'linux') return 'systemd'
+    if (platform === 'darwin') return 'launchd'
+    if (platform === 'win32') return 'assistant-schtasks'
+  }
+  if (forms.daemonPid !== null) return 'assistant-daemon'
+  return 'inline-foreground'
+}
+
 // ── Restart orchestration ───────────────────────────────────────────────────
 
 export interface RestartDeps {

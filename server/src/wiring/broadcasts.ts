@@ -49,6 +49,7 @@ import {
   listEvents as listWaitUserEvents,
 } from '../features/user-involve/store.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
+import { currentSelfUpdateState } from '../features/updates/self-update.js'
 
 /** The single fan-out reference; threaded in by the composition root. */
 export interface BroadcastsDeps {
@@ -113,6 +114,8 @@ export interface Broadcasts {
   broadcastWaitUserEvents: (workspacePath: string) => void
   /** Push the current update-availability snapshot to every connection. */
   broadcastUpdateStatus: () => void
+  /** Push the current self-update snapshot (download progress / staged / failed). */
+  broadcastSelfUpdateState: () => void
 }
 
 /**
@@ -351,6 +354,12 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcaster.toAll({ type: 'update_status', updateStatus: currentUpdateStatus() })
   }
 
+  // Push the self-update snapshot. Sent to everyone even though only an admin can
+  // act on it: an imminent restart concerns every open console.
+  const broadcastSelfUpdateState = (): void => {
+    broadcaster.toAll({ type: 'self_update_state', selfUpdate: currentSelfUpdateState() })
+  }
+
   return {
     broadcastStatuses,
     broadcastIntents,
@@ -368,5 +377,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastResearchRunStatus,
     broadcastWaitUserEvents,
     broadcastUpdateStatus,
+    broadcastSelfUpdateState,
   }
 }

@@ -79,7 +79,7 @@ flowchart LR
 - **Workcenter** — cross-workspace dashboard plus a notification inbox for answering permission prompts in one place.
 - **Optional account auth** — username/password accounts with an admin gate (off by default; loopback-only otherwise).
 - **External MCP access** — let your _own_ agents (an independent Claude Code / Codex session, a CI job) read this c3 over MCP with a long-lived API key, scoped to the workspaces you grant.
-- **Single self-contained binary** — one native executable per platform, with a`c3 upgrade` self-update from GitHub Releases.
+- **Single self-contained binary** — one native executable per platform. New releases download in the background; the header offers "restart to update", and `c3 upgrade` + `c3 restart` do the same from a terminal.
 - **Desktop app** — download the installer from GitHub Releases, double-click, tray-resident. No terminal, no browser.
 
 See [`doc/features.md`](doc/features.md) for the full feature tree.

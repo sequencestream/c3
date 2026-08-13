@@ -57,7 +57,18 @@
       "workcenter": "ワークセンター"
     },
     "update": {
-      "available": "新しいバージョン v{version}"
+      "available": "新しいバージョン v{version}",
+      "download": "v{version} に更新",
+      "downloading": "v{version} をダウンロード中 · {percent}%",
+      "restart": "再起動して v{version} に更新",
+      "restarting": "再起動中…",
+      "pendingAdmin": "v{version} は準備完了 · 管理者の再起動待ち",
+      "failed": "v{version} への更新に失敗 · 再試行",
+      "confirmRestart": {
+        "title": "再起動して更新",
+        "message": "c3 は新しいバージョンで再起動します。開いているセッションはすべて切断され自動的に再接続します。実行中のエージェントは中断されます。",
+        "confirm": "今すぐ再起動"
+      }
     },
     "tab": {
       "console": {

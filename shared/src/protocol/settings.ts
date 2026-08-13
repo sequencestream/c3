@@ -480,3 +480,65 @@ export interface UpdateStatus {
   /** When the last successful check completed (unix ms); null before the first success. */
   checkedAt: number | null
 }
+
+/**
+ * Where the console-driven self-update currently stands.
+ *
+ * - `idle` — nothing staged and nothing in flight.
+ * - `downloading` / `verifying` — the release package is being fetched, then
+ *   cross-checked against its published checksum.
+ * - `ready` — a verified package is staged; the installed binary is still the OLD
+ *   one. Applying it is what swaps the binary and relaunches.
+ * - `applying` — the binary has been swapped and the relaunch is handed off; the
+ *   connection is about to drop.
+ * - `failed` — download / verify / apply failed. The running version is untouched
+ *   and the action is retryable.
+ */
+export type SelfUpdatePhase = 'idle' | 'downloading' | 'verifying' | 'ready' | 'applying' | 'failed'
+
+/**
+ * Why this installation cannot self-update. A machine token, not UI copy — the
+ * console maps it to a localized hint.
+ *
+ * `dev-runtime` ⇒ an unbuilt dev version or an interpreter run (no single binary
+ * to swap); `desktop-managed` ⇒ the desktop shell owns the update lifecycle for
+ * its sidecar; `package-manager` ⇒ the binary lives inside a package manager's
+ * prefix and must be updated through it; `not-writable` ⇒ the binary's directory
+ * cannot be written.
+ */
+export type SelfUpdateIncapableReason =
+  'dev-runtime' | 'desktop-managed' | 'package-manager' | 'not-writable'
+
+/**
+ * Which step failed. A machine token, not UI copy; `detail` carries the raw
+ * English diagnostic for logs and tooltips.
+ */
+export type SelfUpdateFailureCode =
+  'network' | 'no-artifact' | 'checksum' | 'unpack' | 'replace' | 'relaunch' | 'unknown'
+
+/**
+ * The console-driven self-update snapshot: download the newest release in the
+ * background, then let an admin restart into it.
+ *
+ * Complements {@link UpdateStatus}, which answers only "is a newer release out?".
+ * This one carries the transfer progress and the failure surface, and its actions
+ * are admin-gated (a restart drops every connected session).
+ */
+export interface SelfUpdateState {
+  /** The stage of the download/apply pipeline. Always `idle` when `capable` is false. */
+  phase: SelfUpdatePhase
+  /** Whether this installation can swap its own binary at all. */
+  capable: boolean
+  /** Why not, when `capable` is false; absent otherwise. */
+  incapableReason?: SelfUpdateIncapableReason
+  /** The running version (the server's build-time `VERSION`). */
+  currentVersion: string
+  /** The version being downloaded or staged; null when nothing is in flight. */
+  targetVersion: string | null
+  /** Bytes written so far during `downloading`; 0 otherwise. */
+  downloadedBytes: number
+  /** The package's total size in bytes when known; 0 otherwise. */
+  totalBytes: number
+  /** Present only in `failed`. */
+  failure?: { code: SelfUpdateFailureCode; detail?: string }
+}

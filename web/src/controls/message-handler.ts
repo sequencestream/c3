@@ -371,6 +371,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Seed the header upgrade hint from the handshake snapshot (refreshed later
         // by `update_status`).
         ctx.updateStatus.value = msg.updateStatus
+        // Seed the self-update pipeline too, so a download already running — or a
+        // package waiting for a restart — is visible the moment the console loads.
+        ctx.selfUpdate.value = msg.selfUpdate
         workspaces.value = msg.workspaces
         // Close workspace setting on reconnect — workspace may have changed.
         workspaceSettingOpen.value = false
@@ -1688,6 +1691,11 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Refreshed "is a newer c3 release available?" snapshot. Drives the header
         // upgrade hint; fail-soft on the server means this only moves toward known.
         ctx.updateStatus.value = msg.updateStatus
+        break
+      case 'self_update_state':
+        // Download progress / staged / failed. The server is the only authority
+        // here, so the snapshot is adopted wholesale.
+        ctx.selfUpdate.value = msg.selfUpdate
         break
     }
     // A count-affecting broadcast while the Dashboard is active → one coalesced refresh.

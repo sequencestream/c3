@@ -23,7 +23,7 @@ import type {
   SlashCommandInfo,
   TranscriptItem,
 } from './session.js'
-import type { UpdateStatus } from './settings.js'
+import type { SelfUpdateState, UpdateStatus } from './settings.js'
 import type { CodexPolicy, ModeToken, VendorId } from './vendor.js'
 import type { WorkspaceInfo } from './workspace.js'
 
@@ -166,6 +166,13 @@ export type ServerReady = {
    * signed-in connection — a plain UX state, not admin-gated.
    */
   updateStatus: UpdateStatus
+  /**
+   * The server's current {@link SelfUpdateState} snapshot (is a release staged,
+   * and can this installation swap its own binary?). Seeds the header so a
+   * download already in flight — or a package waiting for a restart — shows up
+   * immediately on connect.
+   */
+  selfUpdate: SelfUpdateState
 }
 
 /** Live run statuses for all sessions with a runtime; drives sidebar badges. */

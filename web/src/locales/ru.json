@@ -57,7 +57,18 @@
       "workcenter": "Верстак"
     },
     "update": {
-      "available": "Новая версия v{version}"
+      "available": "Новая версия v{version}",
+      "download": "Обновить до v{version}",
+      "downloading": "Загрузка v{version} · {percent}%",
+      "restart": "Перезапустить и обновить до v{version}",
+      "restarting": "Перезапуск…",
+      "pendingAdmin": "v{version} готова · ожидается перезапуск администратором",
+      "failed": "Не удалось обновить до v{version} · повторить",
+      "confirmRestart": {
+        "title": "Перезапуск для обновления",
+        "message": "c3 перезапустится в новой версии. Все открытые сессии потеряют соединение и переподключатся автоматически; работающие агенты будут прерваны.",
+        "confirm": "Перезапустить сейчас"
+      }
     },
     "tab": {
       "console": {

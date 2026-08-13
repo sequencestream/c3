@@ -31,6 +31,7 @@ import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
 import { isAdminConn } from '../features/auth/authz.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
+import { currentSelfUpdateState } from '../features/updates/self-update.js'
 
 /**
  * Rollback escape hatch for the cross-vendor `list_sessions` swap (ADR-0013).
@@ -172,6 +173,9 @@ export function createWsHandler(deps: {
           // on connect, without waiting for the next `update_status` push. Visible
           // to every signed-in connection — a plain UX state, not admin-gated.
           updateStatus: currentUpdateStatus(),
+          // The self-update snapshot, so a download already in flight — or a
+          // package waiting for a restart — shows up immediately on connect.
+          selfUpdate: currentSelfUpdateState(),
         })
       },
       // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):

@@ -56,7 +56,18 @@
       "workcenter": "Workcenter"
     },
     "update": {
-      "available": "New version v{version}"
+      "available": "New version v{version}",
+      "download": "Update to v{version}",
+      "downloading": "Downloading v{version} · {percent}%",
+      "restart": "Restart to update to v{version}",
+      "restarting": "Restarting…",
+      "pendingAdmin": "v{version} is ready · waiting for an admin to restart",
+      "failed": "Update to v{version} failed · retry",
+      "confirmRestart": {
+        "title": "Restart to update",
+        "message": "c3 will restart into the new version. Every open session loses its connection and reconnects automatically; running agents are interrupted.",
+        "confirm": "Restart now"
+      }
     },
     "tab": {
       "console": {

@@ -56,7 +56,18 @@
       "workcenter": "工作台"
     },
     "update": {
-      "available": "有新版本 v{version}"
+      "available": "有新版本 v{version}",
+      "download": "更新到 v{version}",
+      "downloading": "正在下载 v{version} · {percent}%",
+      "restart": "重启以更新到 v{version}",
+      "restarting": "正在重启…",
+      "pendingAdmin": "v{version} 已就绪 · 等待管理员重启",
+      "failed": "更新到 v{version} 失败 · 重试",
+      "confirmRestart": {
+        "title": "重启以更新",
+        "message": "c3 将重启到新版本。所有打开的会话会断开并自动重连，运行中的智能体会被中断。",
+        "confirm": "立即重启"
+      }
     },
     "tab": {
       "console": {

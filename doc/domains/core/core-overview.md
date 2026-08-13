@@ -38,6 +38,9 @@
 - [session-cleanup](session-cleanup/session-cleanup-design.md) — active
   - 职责: 按保留期删除各 vendor 会话存储中过期的会话记录(系统级开关,vendor 中立,每日执行)
   - API: 内部(无对外公开 API)
+- [self-update](self-update/self-update-design.md) — active
+  - 职责: 后台下载并校验最新发行包到暂存区,由管理员在控制台一键重启生效;按运行形态选择重启方式,不可自更新的形态明确让位
+  - API: WebSocket `/ws`(见 shared protocol)
 - [auth](auth/auth-overview.md) — contract-only
   - 职责: 认证抽象:可扩展的提供方联合类型(`basic` 优先)、会话令牌模型、login/logout/401 消息——面向网络暴露场景的可选能力
   - API: WebSocket `/ws`(见 shared protocol)

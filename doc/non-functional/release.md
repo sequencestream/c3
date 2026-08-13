@@ -532,11 +532,17 @@ sidecar + 汇总的 `SHA256SUMS`。所有外层 sidecar 覆盖的是包(tar/zip 
     (JSON),这条路径保留了带 token 的 `GITHUB_TOKEN`/`GH_TOKEN` 请求头、
     资源列表选择,以及 403 限速提示。这个改动只影响*如何定位最新版本 +
     下载 URL*;GitHub Releases 仍然是唯一的分发来源(没有新增镜像)。
-  - **后台新版本检查**(顶栏「新版本提示」的数据来源)复用同一套解析:先走
+  - **后台新版本检查**(顶栏更新胶囊的数据来源)复用同一套解析:先走
     releases 重定向拿 tag,拿不到才回退 JSON API(带 `GITHUB_TOKEN`/`GH_TOKEN`,
     403 且 `x-ratelimit-remaining: 0` 时日志给出限速提示)。设置了
     `C3_UPDATE_CHECK_URL`(镜像 / 私有 fork)则跳过重定向,直接查该端点。
     任何失败都保留上一次快照,下一轮重试。
+- **控制台自更新** —— 把 upgrade 的两个机械步骤(下载校验解包 / 替换)与重启在
+  服务端编排起来:检查到新版即后台下载到 `<c3Home>/update-staging/`,管理员在顶栏
+  点「重启以更新」才替换并重启。它与 `c3 upgrade` 共用同一套版本事实、完整性规则
+  与平台替换策略,因此这里不存在第二条信任链;`c3 upgrade` 自身「从不重启」的契约
+  也不变。状态机、能力门与各运行形态的重启策略见
+  [self-update](../domains/core/self-update/self-update-design.md)。
 - **macOS 代码签名** —— 分两档,由**凭证的实际可用性**决定,CLI 与桌面两个渠道
   共用同一套判定:
 

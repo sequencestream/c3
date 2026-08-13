@@ -525,9 +525,9 @@ describe('AppHeader.vue — 账户菜单(ADR-0023)', () => {
 })
 
 describe('AppHeader.vue — 新版本提示(header upgrade hint)', () => {
-  const UPGRADE_URL = 'https://github.com/sequencestream/c3#upgrade'
+  const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 
-  it('有更新时桌面渲染提示外链,文案含版本号,新标签页跳转升级文档', () => {
+  it('不能自更新时桌面渲染提示外链,文案含版本号,新标签页跳到发布页', () => {
     const w = mount(AppHeader, {
       props: {
         ...baseProps,
@@ -537,12 +537,12 @@ describe('AppHeader.vue — 新版本提示(header upgrade hint)', () => {
     const link = w.find('.desktop-header-row .update-hint')
     expect(link.exists()).toBe(true)
     expect(link.text()).toContain('1.2.3')
-    expect(link.attributes('href')).toBe(UPGRADE_URL)
+    expect(link.attributes('href')).toBe(RELEASES_URL)
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toBe('noopener noreferrer')
   })
 
-  it('有更新时移动端操作菜单同样渲染提示外链', () => {
+  it('不能自更新时移动端操作菜单同样渲染提示外链', () => {
     const w = mount(AppHeader, {
       props: {
         ...baseProps,
@@ -551,7 +551,7 @@ describe('AppHeader.vue — 新版本提示(header upgrade hint)', () => {
     } as never)
     const link = w.find('.mobile-actions-menu .update-hint-mobile')
     expect(link.exists()).toBe(true)
-    expect(link.attributes('href')).toBe(UPGRADE_URL)
+    expect(link.attributes('href')).toBe(RELEASES_URL)
     expect(link.attributes('target')).toBe('_blank')
   })
 
@@ -581,5 +581,121 @@ describe('AppHeader.vue — 新版本提示(header upgrade hint)', () => {
     const w = mount(AppHeader, { props: baseProps })
     expect(w.find('.update-hint').exists()).toBe(false)
     expect(w.find('.update-hint-mobile').exists()).toBe(false)
+  })
+})
+
+describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
+  const available = { available: true, latestVersion: '1.2.3', checkedAt: 1 }
+  const capableIdle = {
+    phase: 'idle' as const,
+    capable: true,
+    currentVersion: '1.0.0',
+    targetVersion: null,
+    downloadedBytes: 0,
+    totalBytes: 0,
+  }
+
+  function mountWith(
+    selfUpdate: Record<string, unknown>,
+    updateStatus: {
+      available: boolean
+      latestVersion: string | null
+      checkedAt: number
+    } = available,
+  ) {
+    return mount(AppHeader, { props: { ...baseProps, updateStatus, selfUpdate } } as never)
+  }
+
+  it('能自更新且是管理员时,idle 渲染为「更新到」动作按钮而非外链', () => {
+    const w = mountWith(capableIdle)
+    expect(w.find('[data-testid="nav-update-link"]').exists()).toBe(false)
+    const btn = w.find('[data-testid="nav-update-action"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.text()).toContain('1.2.3')
+    expect(btn.attributes('disabled')).toBeUndefined()
+    btn.trigger('click')
+    expect(w.emitted('start-self-update')).toHaveLength(1)
+  })
+
+  it('下载中显示百分比且不可点', () => {
+    const w = mountWith({
+      ...capableIdle,
+      phase: 'downloading',
+      targetVersion: '1.2.3',
+      downloadedBytes: 25,
+      totalBytes: 100,
+    })
+    const btn = w.find('[data-testid="nav-update-action"]')
+    expect(btn.text()).toContain('25')
+    expect(btn.attributes('disabled')).toBeDefined()
+  })
+
+  it('总字节未知时进度按 0 处理,绝不编造百分比', () => {
+    const w = mountWith({
+      ...capableIdle,
+      phase: 'downloading',
+      targetVersion: '1.2.3',
+      downloadedBytes: 4096,
+      totalBytes: 0,
+    })
+    expect(w.find('[data-testid="nav-update-action"]').text()).toContain('0')
+  })
+
+  it('就绪时管理员点击先弹二次确认,确认后才 emit apply-self-update', async () => {
+    const w = mountWith({ ...capableIdle, phase: 'ready', targetVersion: '1.2.3' })
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    await w.find('[data-testid="nav-update-action"]').trigger('click')
+    expect(w.emitted('apply-self-update')).toBeUndefined()
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+    expect(w.emitted('apply-self-update')).toHaveLength(1)
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+  })
+
+  it('就绪但非管理员 → 只告知,按钮不可点且不发任何消息', async () => {
+    useAuth().setIsAdmin(false)
+    try {
+      const w = mountWith({ ...capableIdle, phase: 'ready', targetVersion: '1.2.3' })
+      const btn = w.find('[data-testid="nav-update-action"]')
+      expect(btn.attributes('disabled')).toBeDefined()
+      await btn.trigger('click')
+      expect(w.emitted('apply-self-update')).toBeUndefined()
+      expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    } finally {
+      useAuth().setIsAdmin(true)
+    }
+  })
+
+  it('失败时管理员看到重试态,点击重新发起下载', () => {
+    const w = mountWith({
+      ...capableIdle,
+      phase: 'failed',
+      targetVersion: '1.2.3',
+      failure: { code: 'network', detail: 'boom' },
+    })
+    const btn = w.find('[data-testid="nav-update-action"]')
+    expect(btn.classes()).toContain('update-hint-retry')
+    btn.trigger('click')
+    expect(w.emitted('start-self-update')).toHaveLength(1)
+  })
+
+  it('正在重启 → 即便没有可用更新快照也渲染,且不可点', () => {
+    const w = mountWith(
+      { ...capableIdle, phase: 'applying', targetVersion: '1.2.3' },
+      { available: false, latestVersion: null, checkedAt: 1 },
+    )
+    const btn = w.find('[data-testid="nav-update-action"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('disabled')).toBeDefined()
+  })
+
+  it('不能自更新 → 即使是管理员也只给外链,不给动作按钮', () => {
+    const w = mountWith({
+      ...capableIdle,
+      capable: false,
+      incapableReason: 'package-manager',
+    })
+    expect(w.find('[data-testid="nav-update-action"]').exists()).toBe(false)
+    expect(w.find('[data-testid="nav-update-link"]').exists()).toBe(true)
   })
 })

@@ -64,3 +64,4 @@ c3 文档中使用的业务与技术术语。在此处统一定义;各领域文�
 - **channel**: 发布产物的命名分发轨道(例如 `stable`、`nightly`)。决定产物命名/后缀以及发布哪个版本。在 release 1/7 中是**占位符**——编排者目前还没有 channel 概念就能构建。
 - **version SoT**: 产物版本及其构建期注入的唯一事实来源(目前是包清单;`--version` 标志报告 `0.1.0`)。统一的 version SoT + git-tag/channel 注入是留给后续发布波次的**占位符**。
 - **update check (更新检查)**: c3 查询 GitHub Releases API(`sequencestream/c3`)判断是否有更早于当前二进制的更新版本可用。这是一个只读的公开查询,不携带任何凭据,也不依赖任何自建服务端。
+- **self-update (自更新)**: c3 把新版发行包下载并校验到暂存区、在管理员确认后替换自身二进制并重启的能力。与 update check 的区别是它会改动安装位置的文件;与 `c3 upgrade` 的区别是它把「让新版本生效」也包含在内。参见 [self-update](domains/core/self-update/self-update-design.md)、ADR-0043。

@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { vi } from 'vitest'
 import {
   UPGRADE_EXIT,
   UpgradeError,
   compareVersions,
   decideAction,
+  downloadStreamed,
   normalizeVersion,
   parseManifest,
   parseSha256Line,
@@ -262,5 +264,90 @@ describe('sha256 helpers', () => {
   })
   it('compares hex case-insensitively', () => {
     expect(verifySha256('ABC', 'abc')).toBe(true)
+  })
+})
+
+// ── Streamed download ───────────────────────────────────────────────────────
+
+describe('downloadStreamed', () => {
+  const body = Buffer.from('c3-package-bytes'.repeat(32))
+  const expectedSha = createHash('sha256').update(body).digest('hex')
+
+  function ok(): Response {
+    return new Response(new Uint8Array(body), {
+      status: 200,
+      headers: { 'content-length': String(body.length) },
+    })
+  }
+
+  function sink() {
+    const chunks: Buffer[] = []
+    const progress: Array<[number, number]> = []
+    return {
+      chunks,
+      progress,
+      write: (c: Uint8Array) => {
+        chunks.push(Buffer.from(c))
+      },
+      onProgress: (received: number, total: number) => {
+        progress.push([received, total])
+      },
+    }
+  }
+
+  it('hands every byte to the sink and hashes exactly what it wrote', async () => {
+    const s = sink()
+    const result = await downloadStreamed('https://x/pkg', async () => ok(), {}, s)
+    expect(Buffer.concat(s.chunks).equals(body)).toBe(true)
+    expect(result.sha256).toBe(expectedSha)
+    expect(result.receivedBytes).toBe(body.length)
+    expect(result.totalBytes).toBe(body.length)
+    expect(s.progress.at(-1)).toEqual([body.length, body.length])
+  })
+
+  it('falls back to the received size when the server omits content-length', async () => {
+    const s = sink()
+    const noLength = async () => new Response(new Uint8Array(body), { status: 200 })
+    const result = await downloadStreamed('https://x/pkg', noLength, {}, s)
+    // A caller cannot compute a percentage from a total it was never told, so the
+    // in-flight total stays 0 and only the final figure is filled in.
+    expect(s.progress.every(([, total]) => total === 0)).toBe(true)
+    expect(result.totalBytes).toBe(body.length)
+  })
+
+  it('throws so a cancelled transfer can never look like a complete one', async () => {
+    const s = sink()
+    await expect(
+      downloadStreamed('https://x/pkg', async () => ok(), {}, { ...s, shouldAbort: () => true }),
+    ).rejects.toThrow(/cancelled/)
+  })
+
+  it('maps a non-2xx and a transport error to the network code', async () => {
+    const s = sink()
+    for (const fetchImpl of [
+      async () => new Response(null, { status: 502 }),
+      async () => {
+        throw new Error('ECONNRESET')
+      },
+    ]) {
+      try {
+        await downloadStreamed('https://x/pkg', fetchImpl as typeof fetch, {}, s)
+        throw new Error('should have thrown')
+      } catch (e) {
+        expect(e).toBeInstanceOf(UpgradeError)
+        expect((e as UpgradeError).code).toBe(UPGRADE_EXIT.network)
+      }
+    }
+  })
+
+  it('surfaces a sink write failure as an interrupted download, not a success', async () => {
+    const failing = {
+      write: vi.fn(() => {
+        throw new Error('ENOSPC')
+      }),
+    }
+    await expect(downloadStreamed('https://x/pkg', async () => ok(), {}, failing)).rejects.toThrow(
+      /ENOSPC/,
+    )
   })
 })

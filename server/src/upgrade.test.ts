@@ -231,6 +231,15 @@ function realIo(overrides: Partial<UpgradeIo> = {}): UpgradeIo {
       rmSync(from, { force: true })
     },
     remove: (path: string) => rmSync(path, { recursive: true, force: true }),
+    openWrite: (path: string) => {
+      const chunks: Buffer[] = []
+      return {
+        write: (chunk: Uint8Array) => {
+          chunks.push(Buffer.from(chunk))
+        },
+        close: () => writeFileSync(path, Buffer.concat(chunks)),
+      }
+    },
     unpack: () => {},
     selfCheckVersion: () => 'ok',
   }
@@ -302,6 +311,7 @@ describe('replaceWindows', () => {
       remove: (path) => {
         store.delete(path)
       },
+      openWrite: () => ({ write: () => {}, close: () => {} }),
       unpack: () => {},
       selfCheckVersion: () => 'ok',
     }
@@ -335,6 +345,7 @@ describe('replaceWindows', () => {
         store.delete(from)
       },
       remove: (path) => store.delete(path),
+      openWrite: () => ({ write: () => {}, close: () => {} }),
       unpack: () => {},
       selfCheckVersion: () => {
         throw new UpgradeError('bad exe', UPGRADE_EXIT.replaceFailed)

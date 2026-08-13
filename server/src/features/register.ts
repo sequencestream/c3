@@ -23,6 +23,11 @@ import {
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
 import {
+  applySelfUpdateHandler,
+  cancelSelfUpdateHandler,
+  startSelfUpdateHandler,
+} from './updates/index.js'
+import {
   getPersonalizedSettings,
   savePersonalizedSettingsHandler,
 } from './settings/personalized.js'
@@ -163,6 +168,10 @@ export const handlerMap: HandlerMap = {
   revoke_mcp_api_key: revokeMcpApiKeyHandler,
   load_workspace_setting: loadWorkspaceSettingHandler,
   save_workspace_setting: saveWorkspaceSettingHandler,
+  // updates
+  start_self_update: startSelfUpdateHandler,
+  apply_self_update: applySelfUpdateHandler,
+  cancel_self_update: cancelSelfUpdateHandler,
   // permissions
   permission_response: permissionResponse,
   // workspaces

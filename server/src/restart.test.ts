@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { detectRuntimeForms, runRestart } from './restart.js'
+import { detectRuntimeForms, resolveRelaunchStrategy, runRestart } from './restart.js'
 import { DAEMON_OPTIONS_NAME, PID_FILE_NAME, type DaemonStartOptions } from './daemon.js'
 
 let c3Home: string
@@ -283,5 +283,39 @@ describe('runRestart nothing to restart', () => {
     })
     expect(code).toBe(0)
     expect(log.mock.calls.flat().join('\n')).toContain('no OS service or background daemon')
+  })
+})
+
+// ── resolveRelaunchStrategy ─────────────────────────────────────────────────
+
+describe('resolveRelaunchStrategy', () => {
+  const service = { service: true, daemonPid: null }
+  const daemon = { service: false, daemonPid: 42 }
+  const none = { service: false, daemonPid: null }
+
+  it('lets the service manager own the restart on linux and macOS', () => {
+    expect(resolveRelaunchStrategy(service, 'linux')).toBe('systemd')
+    expect(resolveRelaunchStrategy(service, 'darwin')).toBe('launchd')
+  })
+
+  it('uses the helper for a Windows scheduled task, which cannot re-run itself', () => {
+    expect(resolveRelaunchStrategy(service, 'win32')).toBe('assistant-schtasks')
+  })
+
+  it('falls back to the helper for a service platform c3 does not manage', () => {
+    expect(resolveRelaunchStrategy(service, 'freebsd')).toBe('inline-foreground')
+  })
+
+  it('uses the helper for a --daemon background process', () => {
+    expect(resolveRelaunchStrategy(daemon, 'linux')).toBe('assistant-daemon')
+  })
+
+  it('prefers the service over a daemon, matching runRestart priority', () => {
+    expect(resolveRelaunchStrategy({ service: true, daemonPid: 42 }, 'linux')).toBe('systemd')
+  })
+
+  it('spawns its own successor when nobody owns the process', () => {
+    expect(resolveRelaunchStrategy(none, 'linux')).toBe('inline-foreground')
+    expect(resolveRelaunchStrategy(none, 'win32')).toBe('inline-foreground')
   })
 })

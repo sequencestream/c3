@@ -64,6 +64,9 @@ export type ClientToServer =
   | SettingsMsg.ClientCreateMcpApiKey
   | SettingsMsg.ClientUpdateMcpApiKey
   | SettingsMsg.ClientRevokeMcpApiKey
+  | SettingsMsg.ClientStartSelfUpdate
+  | SettingsMsg.ClientApplySelfUpdate
+  | SettingsMsg.ClientCancelSelfUpdate
   | AuthMsg.ClientLogin
   | AuthMsg.ClientLogout
   | AuthMsg.ClientSetAdminPassword
@@ -154,6 +157,7 @@ export type ServerToClient =
   | SessionMsg.ServerReady
   | SessionMsg.ServerSessionStatus
   | SettingsMsg.ServerUpdateStatus
+  | SettingsMsg.ServerSelfUpdateState
   | WorkspaceMsg.ServerWorkspaces
   | SessionMsg.ServerSessions
   | SessionMsg.ServerSessionCounts

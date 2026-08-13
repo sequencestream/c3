@@ -67,6 +67,15 @@ describe('protocol wire format', () => {
       isAdmin: true,
       subject: null,
       updateStatus: { available: false, latestVersion: null, checkedAt: null },
+      selfUpdate: {
+        phase: 'idle',
+        capable: false,
+        incapableReason: 'dev-runtime',
+        currentVersion: '0.0.0-dev',
+        targetVersion: null,
+        downloadedBytes: 0,
+        totalBytes: 0,
+      },
     },
     {
       type: 'session_status',

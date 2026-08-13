@@ -45,6 +45,7 @@ import type {
   IntentLog,
   IntentSessionInfo,
   UpdateStatus,
+  SelfUpdateState,
   PromptImage,
   PersonalizedSettings,
   WorkspaceSetting as WorkspaceSettingType,
@@ -367,6 +368,19 @@ export function createState(deps: StateDeps) {
     available: false,
     latestVersion: null,
     checkedAt: null,
+  })
+
+  // Server-driven self-update pipeline (seeded on `ready`, refreshed by
+  // `self_update_state`). Drives the header's download progress and its
+  // "restart to update" action. The cold-start value is deliberately incapable:
+  // until the server says otherwise, no restart action is offered.
+  const selfUpdate = ref<SelfUpdateState>({
+    phase: 'idle',
+    capable: false,
+    currentVersion: '',
+    targetVersion: null,
+    downloadedBytes: 0,
+    totalBytes: 0,
   })
 
   // ---- View mode (workspace / workcenter) ----
@@ -1077,6 +1091,7 @@ export function createState(deps: StateDeps) {
     currentAgentIndexBySession,
     availableCommands,
     updateStatus,
+    selfUpdate,
     viewMode,
     savedTab,
     activeTab,

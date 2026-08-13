@@ -12,6 +12,7 @@ import type {
   McpApiKeyMeta,
   PersonalizedSettings,
   PersonalizedSettingsScope,
+  SelfUpdateState,
   SystemSettings,
   UpdateStatus,
 } from './settings.js'
@@ -131,6 +132,33 @@ export type ServerMcpApiKeys = {
  * snapshot, so this only ever moves toward "known" (never blanks a prior hit).
  */
 export type ServerUpdateStatus = { type: 'update_status'; updateStatus: UpdateStatus }
+
+/**
+ * Start (or retry) staging the newest release. The server also starts this on its
+ * own once a check reports an update, so the client only sends it to retry a
+ * failure. Admin-only; ignored while a download is already in flight.
+ */
+export type ClientStartSelfUpdate = { type: 'start_self_update' }
+
+/**
+ * Swap in the staged binary and relaunch. Valid only in `ready`. Admin-only — the
+ * relaunch drops every connected session.
+ */
+export type ClientApplySelfUpdate = { type: 'apply_self_update' }
+
+/**
+ * Abandon the current self-update: interrupt an in-flight download or discard a
+ * staged package, returning to `idle`. Admin-only.
+ */
+export type ClientCancelSelfUpdate = { type: 'cancel_self_update' }
+
+/**
+ * Push the {@link SelfUpdateState} snapshot to every connection whenever it moves
+ * (phase change or throttled download progress). Broadcast rather than
+ * per-connection: the state is a property of the server, and every console needs
+ * to know a restart is imminent even though only an admin can trigger one.
+ */
+export type ServerSelfUpdateState = { type: 'self_update_state'; selfUpdate: SelfUpdateState }
 
 /**
  * The (normalized) system configuration, in reply to `get_settings`/`save_settings`.

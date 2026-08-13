@@ -6,6 +6,7 @@
  * helper closures have been pushed into `wiring/`; all domain logic lives in
  * `kernel/`. The `KernelContext` shape is unchanged.
  */
+import { spawn, spawnSync } from 'node:child_process'
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
@@ -89,6 +90,14 @@ import {
   DESKTOP_UPDATE_CHECK_PATH,
   DESKTOP_UPDATE_DOWNLOAD_PATH,
 } from './features/updates/desktop-update-http.js'
+import {
+  configureRelaunch,
+  configureSelfUpdate,
+  maybeAutoDownload,
+  restoreStagedOnBoot,
+} from './features/updates/self-update.js'
+import { spawnUpdateAssistant } from './update-assistant.js'
+import { resolveSelfCommand } from './daemon.js'
 import {
   startSessionJanitor,
   stopSessionJanitor,
@@ -894,10 +903,73 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     .catch((err) => console.error('[c3:queue] 启动对账失败:', err))
   startQueueTickLoop()
 
+  // Self-update: reconcile whatever the staging area holds from a previous run
+  // (a package waiting for this restart, or a failure the relaunch helper left
+  // behind), then let it broadcast every state change.
+  configureSelfUpdate({ onChange: broadcasts.broadcastSelfUpdateState })
+  restoreStagedOnBoot()
+
+  // Stop everything and release the listening port. Shared by the signal handler
+  // and by self-update's relaunch, which must free the port before its successor
+  // binds it. Connection close is bounded so a lingering WebSocket cannot wedge a
+  // restart.
+  const stopAndRelease = async (): Promise<void> => {
+    stopUpdateCheckScheduler()
+    stopSessionJanitor()
+    stopQueueTickLoop()
+    await stopSchedulerWiring(30_000)
+    await new Promise<void>((resolve) => {
+      const done = setTimeout(resolve, 5000)
+      done.unref?.()
+      server.close(() => {
+        clearTimeout(done)
+        resolve()
+      })
+      ;(server as { closeAllConnections?: () => void }).closeAllConnections?.()
+    })
+    shutdownLogging()
+  }
+
+  configureRelaunch({
+    pid: process.pid,
+    releasePort: stopAndRelease,
+    exit: (code) => process.exit(code),
+    run: (cmd, args) => {
+      const r = spawnSync(cmd, args, { encoding: 'utf-8' })
+      if (r.error) return { status: r.status ?? 1, stderr: String(r.error) }
+      return { status: r.status, stderr: r.stderr ?? '' }
+    },
+    spawnAssistant: spawnUpdateAssistant,
+    // The foreground successor keeps this terminal and this process group, so
+    // Ctrl-C still reaches it; only the shell prompt returns early.
+    spawnSuccessor: () => {
+      const { command, args } = resolveSelfCommand(
+        process.execPath,
+        process.argv[1],
+        process.argv.slice(2),
+        process.execArgv,
+      )
+      try {
+        const child = spawn(command, args, { stdio: 'inherit', detached: false })
+        child.unref()
+        return child.pid !== undefined
+      } catch {
+        return false
+      }
+    },
+  })
+
   // Start the update-availability checker: poll the GitHub releases endpoint for
   // the latest release and broadcast the refreshed snapshot after each check.
-  // Fail-soft; drives the header's "new version available" hint.
-  startUpdateCheckScheduler({ onChange: broadcasts.broadcastUpdateStatus })
+  // A check that finds a newer release also arms the background download, so the
+  // console can offer "restart to update" without the user going to a terminal.
+  // Fail-soft.
+  startUpdateCheckScheduler({
+    onChange: () => {
+      broadcasts.broadcastUpdateStatus()
+      maybeAutoDownload()
+    },
+  })
 
   // Start the session janitor: when cleanup is switched on system-wide, prune
   // session transcripts older than the retention window from every reachable
@@ -907,12 +979,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
-    stopUpdateCheckScheduler()
-    stopSessionJanitor()
-    stopQueueTickLoop()
-    await stopSchedulerWiring(30_000)
-    server.close()
-    shutdownLogging()
+    await stopAndRelease()
     process.exit(0)
   }
   process.on('SIGINT', shutdown)

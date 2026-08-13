@@ -339,6 +339,9 @@ async fn spawn_and_wait(app: &AppHandle, attempt: u32) -> Result<String, String>
     let port = sidecar::pick_loopback_port().map_err(|e| format!("no free loopback port: {e}"))?;
 
     let mut env: HashMap<String, String> = HashMap::new();
+    // 告诉 sidecar 它归壳管:壳按整包升级(壳与 sidecar 成对),控制台里的自更新
+    // 必须让位,否则单独替换 sidecar 会破坏 bundle 签名。
+    env.insert("C3_MANAGED_BY".to_string(), "desktop".to_string());
     if let Some(path) = sidecar::login_shell_path() {
         // GUI 启动的进程拿不到登录 shell 的 PATH,c3 却需要在 PATH 上找到 git 与
         // 用户自装的 vendor CLI。纯增强:取不到就什么都不做。

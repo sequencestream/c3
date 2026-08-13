@@ -6,6 +6,11 @@
  * kernel (`upgrade-core.ts`); this file adds the CLI's output, exit-code contract,
  * runtime-form gate and the same-directory atomic replace.
  *
+ * Its two mechanical halves — `stageRelease` (download → verify → unpack, touching
+ * nothing installed) and `applyStaged` (the one mutating swap) — are also what the
+ * console's self-update drives, so both entry points share one set of integrity
+ * rules and one replace strategy per platform.
+ *
  * Flow: resolve runtime form → resolve the latest release tag (GitHub Releases
  * redirect first, JSON API only as fallback) → pick this platform's
  * package → download package + `.sha256` → cross-check the PACKAGE bytes against
@@ -29,12 +34,15 @@
 import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
+  closeSync,
   existsSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -48,9 +56,12 @@ import {
   UpgradeError,
   decideAction,
   downloadBuffer,
+  downloadStreamed,
   normalizeVersion,
+  parseSha256Line,
   resolveLatestRelease,
   sha256Hex,
+  verifySha256,
   type ReleaseAsset,
 } from './upgrade-core.js'
 
@@ -176,10 +187,31 @@ export interface UpgradeIo {
   chmod(path: string, mode: number): void
   rename(from: string, to: string): void
   remove(path: string): void
+  /** Open `path` for chunked writes, so a large package never has to fit in memory. */
+  openWrite(path: string): WriteHandle
   /** Extract `archivePath` into `destDir` using the platform archive tool. */
   unpack(archivePath: string, destDir: string, target: string): void
   /** Run `binPath --version`; resolves on success, throws on a non-runnable binary. */
   selfCheckVersion(binPath: string): string
+}
+
+/** A chunked writer opened by {@link UpgradeIo.openWrite}. */
+export interface WriteHandle {
+  write(chunk: Uint8Array): void
+  close(): void
+}
+
+function defaultOpenWrite(path: string): WriteHandle {
+  const fd = openSync(path, 'w')
+  let open = true
+  return {
+    write: (chunk) => writeSync(fd, chunk),
+    close: () => {
+      if (!open) return
+      open = false
+      closeSync(fd)
+    },
+  }
 }
 
 function defaultUnpack(archivePath: string, destDir: string, target: string): void {
@@ -222,11 +254,144 @@ const defaultIo: UpgradeIo = {
   chmod: (path, mode) => chmodSync(path, mode),
   rename: (from, to) => renameSync(from, to),
   remove: (path) => rmSync(path, { recursive: true, force: true }),
+  openWrite: defaultOpenWrite,
   unpack: defaultUnpack,
   selfCheckVersion: defaultSelfCheck,
 }
 
+/** The default side effects, for callers that only need to override a few. */
+export function defaultUpgradeIo(): UpgradeIo {
+  return defaultIo
+}
+
+// ── Staging: download → verify → unpack ─────────────────────────────────────
+
+/** A downloaded, checksum-verified, unpacked release sitting in a scratch dir. */
+export interface StagedRelease {
+  /** The normalized version staged. */
+  version: string
+  /** The published tag the package came from (e.g. `v2.0.0`). */
+  tag: string
+  /** The package basename that was downloaded. */
+  pkgName: string
+  /** Absolute path of the unpacked inner `c3` / `c3.exe`. */
+  binPath: string
+  /** True when the release published a `.sha256` sidecar and it matched. */
+  checksumVerified: boolean
+}
+
+export interface StageReleaseParams {
+  repo: string
+  /** The published tag to download from. */
+  tag: string
+  /** The normalized version that tag resolves to. */
+  version: string
+  /** Release target (`macos-arm64`, `windows-x64`, …). */
+  target: string
+  /** An existing directory the package and its unpacked contents land in. */
+  dir: string
+  /** Enumerated release assets when the resolver had them; else URLs come from the tag. */
+  assets?: ReleaseAsset[]
+}
+
+export interface StageReleaseDeps {
+  io: UpgradeIo
+  fetchFn: typeof fetch
+  env: NodeJS.ProcessEnv
+  /** Provide to stream the package with progress instead of buffering it whole. */
+  onProgress?: (receivedBytes: number, totalBytes: number) => void
+  /** Polled between chunks of a streamed download; true stops the transfer. */
+  shouldAbort?: () => boolean
+}
+
+/**
+ * Turn "a release tag" into "a runnable binary on disk", without touching the
+ * installed one. Download the package, cross-check it against the published
+ * `.sha256` sidecar, unpack it and confirm the inner binary is there.
+ *
+ * A missing sidecar is tolerated (the transport is already TLS-authenticated to
+ * github.com); a present-but-mismatching one is fatal — the caller's install is
+ * left untouched.
+ *
+ * Every failure is an {@link UpgradeError} with a stable code, so both the CLI
+ * (exit codes) and the console (failure tokens) map it without string matching.
+ */
+export async function stageRelease(
+  params: StageReleaseParams,
+  deps: StageReleaseDeps,
+): Promise<StagedRelease> {
+  const { repo, tag, version, target, dir, assets } = params
+  const { io, fetchFn, env } = deps
+  const pkgName = packageNameFor(version, target)
+  const selected = assets ? selectAssets(assets, pkgName) : buildDownloadUrls(repo, tag, pkgName)
+  const pkgPath = join(dir, selected.pkgName)
+
+  // Hash while the bytes flow rather than re-reading the file afterwards: the
+  // digest must cover exactly what was written, not whatever is on disk later.
+  let actualSha: string
+  if (deps.onProgress || deps.shouldAbort) {
+    const handle = io.openWrite(pkgPath)
+    try {
+      const streamed = await downloadStreamed(selected.pkgUrl, fetchFn, env, {
+        write: (chunk) => handle.write(chunk),
+        onProgress: deps.onProgress,
+        shouldAbort: deps.shouldAbort,
+      })
+      actualSha = streamed.sha256
+    } finally {
+      handle.close()
+    }
+  } else {
+    const bytes = await downloadBuffer(selected.pkgUrl, fetchFn, env)
+    io.writeFile(pkgPath, bytes)
+    actualSha = sha256Hex(bytes)
+  }
+
+  const sha256Line = selected.sha256Url
+    ? (await downloadBuffer(selected.sha256Url, fetchFn, env)).toString('utf-8')
+    : undefined
+  let checksumVerified = false
+  if (sha256Line && sha256Line.trim() !== '') {
+    const expected = parseSha256Line(sha256Line)
+    if (!expected || !verifySha256(actualSha, expected)) {
+      throw new UpgradeError(
+        `sha256 mismatch (have ${actualSha}, expected ${expected ?? 'an unreadable sidecar'})`,
+        UPGRADE_EXIT.verifyFailed,
+      )
+    }
+    checksumVerified = true
+  }
+
+  // Package contents are flat (`c3`, `c3.sha256`); their names don't collide with
+  // the downloaded package-level files (`c3-v…{.tar.gz,.sha256}`).
+  io.unpack(pkgPath, dir, target)
+  const binPath = join(dir, binaryNameFor(target))
+  if (!io.exists(binPath)) {
+    throw new UpgradeError(
+      `unpacked archive is missing the expected binary ${binaryNameFor(target)}`,
+      UPGRADE_EXIT.unpackFailed,
+    )
+  }
+
+  return { version, tag, pkgName: selected.pkgName, binPath, checksumVerified }
+}
+
 // ── Binary replacement strategies ───────────────────────────────────────────
+
+/**
+ * Swap `targetPath` for the staged binary using the platform's strategy. This is
+ * the single mutating step of an upgrade; everything before it is reversible by
+ * deleting a scratch directory.
+ */
+export function applyStaged(
+  io: UpgradeIo,
+  srcBinPath: string,
+  targetPath: string,
+  platform: NodeJS.Platform,
+): void {
+  if (platform === 'win32') replaceWindows(io, srcBinPath, targetPath)
+  else replacePosix(io, srcBinPath, targetPath)
+}
 
 /**
  * POSIX replace: copy the new binary to a temp file in the SAME directory as the
@@ -398,62 +563,31 @@ export async function runUpgrade(
       return UPGRADE_EXIT.ok
     }
 
-    // Select the target + assets for the latest version. On the primary redirect
-    // path there is no asset list, so download URLs are derived deterministically
-    // from the tag; the fallback JSON path still selects from the enumerated assets.
+    // Select the target for the latest version. On the primary redirect path there
+    // is no asset list, so download URLs are derived deterministically from the tag;
+    // the fallback JSON path still selects from the enumerated assets.
     const target = options.target ?? hostTarget(platform, arch)
-    const pkgName = packageNameFor(latest, target)
-    const selected = resolved.assets
-      ? selectAssets(resolved.assets, pkgName)
-      : buildDownloadUrls(repo, resolved.tag, pkgName)
     log(
       action === 'reinstall'
-        ? `[c3 upgrade] reinstalling ${latest} (${pkgName})`
-        : `[c3 upgrade] upgrading ${version} → ${latest} (${pkgName})`,
+        ? `[c3 upgrade] reinstalling ${latest} (${packageNameFor(latest, target)})`
+        : `[c3 upgrade] upgrading ${version} → ${latest} (${packageNameFor(latest, target)})`,
     )
 
-    // Download package + sha256 sidecar into a scratch dir.
+    // Download + verify + unpack into a scratch dir. Nothing installed is touched
+    // until the replace below, so any failure here leaves the original in place.
     tempDir = io.mkdtemp('c3-upgrade-')
-    const pkgPath = join(tempDir, selected.pkgName)
-    io.writeFile(pkgPath, await downloadBuffer(selected.pkgUrl, fetchFn, env))
-    const sha256Line = selected.sha256Url
-      ? (await downloadBuffer(selected.sha256Url, fetchFn, env)).toString('utf-8')
-      : undefined
-
-    // Integrity gate: cross-check the PACKAGE bytes against the published .sha256
-    // sidecar before unpacking. (The sha256 checksum + GitHub HTTPS are the integrity
-    // anchor.) A missing sidecar is tolerated — the transport is already
-    // TLS-authenticated to github.com.
-    if (sha256Line && sha256Line.trim() !== '') {
-      const actual = sha256Hex(io.readFile(pkgPath))
-      const expected = sha256Line.trim().split(/\s+/)[0]?.toLowerCase()
-      if (expected && expected !== actual) {
-        errlog(`[c3 upgrade] sha256 mismatch (have ${actual}, expected ${expected})`)
-        errlog(
-          `[c3 upgrade] refusing to install a corrupted artifact; your current c3 is unchanged`,
-        )
-        return UPGRADE_EXIT.verifyFailed
-      }
-      log(`[c3 upgrade] sha256 verified ${selected.pkgName}`)
-    } else {
-      log(`[c3 upgrade] no .sha256 sidecar published — skipping checksum cross-check`)
-    }
-
-    // Unpack into the (already-created) scratch dir and locate the inner binary.
-    // Package contents are flat (c3, c3.sha256); their names don't collide with the
-    // downloaded package-level files (c3-v…{.tar.gz,.sha256}).
-    io.unpack(pkgPath, tempDir, target)
-    const innerBin = join(tempDir, binaryNameFor(target))
-    if (!io.exists(innerBin)) {
-      throw new UpgradeError(
-        `unpacked archive is missing the expected binary ${binaryNameFor(target)}`,
-        UPGRADE_EXIT.unpackFailed,
-      )
-    }
+    const staged = await stageRelease(
+      { repo, tag: resolved.tag, version: latest, target, dir: tempDir, assets: resolved.assets },
+      { io, fetchFn, env },
+    )
+    log(
+      staged.checksumVerified
+        ? `[c3 upgrade] sha256 verified ${staged.pkgName}`
+        : `[c3 upgrade] no .sha256 sidecar published — skipping checksum cross-check`,
+    )
 
     // Replace the current binary (atomic on POSIX; placeholder swap on Windows).
-    if (platform === 'win32') replaceWindows(io, innerBin, execPath)
-    else replacePosix(io, innerBin, execPath)
+    applyStaged(io, staged.binPath, execPath, platform)
 
     log(`[c3 upgrade] installed ${latest} at ${execPath}`)
     for (const line of restartGuidance(detectRuntimeForms({ platform, c3Home: home }))) log(line)
@@ -461,6 +595,11 @@ export async function runUpgrade(
   } catch (e) {
     if (e instanceof UpgradeError) {
       errlog(`[c3 upgrade] ${e.message}`)
+      if (e.code === UPGRADE_EXIT.verifyFailed) {
+        errlog(
+          `[c3 upgrade] refusing to install a corrupted artifact; your current c3 is unchanged`,
+        )
+      }
       return e.code
     }
     errlog(`[c3 upgrade] unexpected error: ${(e as Error).message}`)

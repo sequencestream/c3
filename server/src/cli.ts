@@ -12,6 +12,7 @@ import { installService, UnsupportedPlatformError } from './service-install.js'
 import { uninstallService } from './service-uninstall.js'
 import { runUpgrade, DEFAULT_REPO } from './upgrade.js'
 import { runRestart } from './restart.js'
+import { runUpdateAssistant, UPDATE_ASSISTANT_COMMAND } from './update-assistant.js'
 
 const program = new Command()
 
@@ -234,6 +235,30 @@ program
   )
   .action(async () => {
     process.exit(await runRestart())
+  })
+
+// Hidden: never invoked by a user. The console's "restart to update" spawns this
+// so a managed instance (a --daemon process, a Windows scheduled task) can be
+// replaced by something that outlives its exit.
+program
+  .command(UPDATE_ASSISTANT_COMMAND, { hidden: true })
+  .description('[internal] finish a staged update after the running c3 exits')
+  .requiredOption('--wait-pid <pid>', 'pid of the exiting c3 process')
+  .requiredOption('--update-dir <path>', 'staging directory holding the verified package')
+  .requiredOption('--form <form>', 'which form to relaunch: daemon | schtasks')
+  .action(async (opts: { waitPid: string; updateDir: string; form: string }) => {
+    const waitPid = Number(opts.waitPid)
+    if (!Number.isInteger(waitPid) || waitPid <= 0) {
+      console.error(`[c3] error: invalid --wait-pid: ${opts.waitPid}`)
+      process.exit(1)
+    }
+    if (opts.form !== 'daemon' && opts.form !== 'schtasks') {
+      console.error(`[c3] error: invalid --form: ${opts.form}`)
+      process.exit(1)
+    }
+    process.exit(
+      await runUpdateAssistant({ waitPid, updateDir: resolve(opts.updateDir), form: opts.form }),
+    )
   })
 
 program.parseAsync(process.argv).catch((err) => {

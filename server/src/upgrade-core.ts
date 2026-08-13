@@ -292,6 +292,93 @@ export async function downloadBuffer(
   return Buffer.from(await res.arrayBuffer())
 }
 
+/** What a streamed download consumed and what it hashed to. */
+export interface StreamedDownload {
+  /** `Content-Length` when the server advertises one, else 0. */
+  totalBytes: number
+  /** Bytes actually handed to the sink. */
+  receivedBytes: number
+  /** SHA-256 of everything handed to the sink. */
+  sha256: string
+}
+
+/** The chunk consumer a streamed download drives. */
+export interface DownloadSink {
+  /** Persist one chunk. Throwing aborts the download (the caller cleans up). */
+  write(chunk: Uint8Array): void
+  /** Called as bytes land, at whatever cadence the caller throttles to. */
+  onProgress?(receivedBytes: number, totalBytes: number): void
+  /** Polled between chunks; returning true stops the transfer. */
+  shouldAbort?(): boolean
+}
+
+/**
+ * Download a resource chunk by chunk, hashing as it goes, so a caller can report
+ * progress and stop early. Used for the release package, which is large enough
+ * that {@link downloadBuffer}'s whole-body-in-memory shape is the wrong trade;
+ * the tiny `.sha256` sidecar still uses that one.
+ *
+ * The digest is computed here, over exactly the bytes the sink received — a
+ * separate re-read of the file could hash something else. Verification stays the
+ * caller's decision; this function only reports.
+ *
+ * Aborting (via `shouldAbort`) throws so a cancelled transfer can never be
+ * mistaken for a complete one.
+ */
+export async function downloadStreamed(
+  url: string,
+  fetchFn: typeof fetch,
+  env: NodeJS.ProcessEnv,
+  sink: DownloadSink,
+): Promise<StreamedDownload> {
+  let res: Response
+  try {
+    res = await fetchFn(url, { headers: githubHeaders(env) })
+  } catch (e) {
+    throw new UpgradeError(
+      `download failed for ${url}: ${(e as Error).message}`,
+      UPGRADE_EXIT.network,
+    )
+  }
+  if (!res.ok) {
+    throw new UpgradeError(`download failed for ${url}: HTTP ${res.status}`, UPGRADE_EXIT.network)
+  }
+  if (!res.body) {
+    throw new UpgradeError(`download failed for ${url}: empty response body`, UPGRADE_EXIT.network)
+  }
+
+  const advertised = Number(res.headers.get('content-length') ?? '0')
+  const totalBytes = Number.isFinite(advertised) && advertised > 0 ? advertised : 0
+  const hasher = createHash('sha256')
+  let receivedBytes = 0
+
+  const reader = res.body.getReader()
+  try {
+    for (;;) {
+      if (sink.shouldAbort?.()) {
+        throw new UpgradeError(`download cancelled for ${url}`, UPGRADE_EXIT.network)
+      }
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value || value.length === 0) continue
+      sink.write(value)
+      hasher.update(value)
+      receivedBytes += value.length
+      sink.onProgress?.(receivedBytes, totalBytes)
+    }
+  } catch (e) {
+    if (e instanceof UpgradeError) throw e
+    throw new UpgradeError(
+      `download interrupted for ${url}: ${(e as Error).message}`,
+      UPGRADE_EXIT.network,
+    )
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+
+  return { totalBytes: totalBytes || receivedBytes, receivedBytes, sha256: hasher.digest('hex') }
+}
+
 /** SHA-256 hex digest of the given bytes. */
 export function sha256Hex(data: Buffer | Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')

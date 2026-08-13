@@ -15,8 +15,9 @@
  *               service wrapper — the single binary is not SCM-compatible, and a
  *               logon task needs no admin and matches the per-user scope).
  *
- * Non-goals (held): no auto-update. The pure plan builders are
- * snapshot-tested per platform; execution side effects (write unit, run register
+ * Install only registers the unit; keeping it current is the updater's job (the
+ * console's "restart to update", or `c3 upgrade` + `c3 restart`). The pure plan
+ * builders are snapshot-tested per platform; execution side effects (write unit, run register
  * command) are injectable so the failure path (register non-zero ⇒ surfaced
  * stderr, never swallowed) is testable without touching the real OS.
  */
@@ -134,7 +135,7 @@ function planLinux(inputs: ServiceInstallInputs): ServicePlan {
       'To keep c3 running after logout / start at boot before login, enable lingering:',
       '  loginctl enable-linger',
       'To remove this service, run: c3 uninstall',
-      'Auto-update is not provided.',
+      'Updates: the console offers "restart to update"; c3 upgrade + c3 restart also work.',
     ],
   }
 }
@@ -176,7 +177,7 @@ function planDarwin(inputs: ServiceInstallInputs): ServicePlan {
     notes: [
       'The LaunchAgent starts within your login session each time you log in.',
       'To remove this service, run: c3 uninstall',
-      'Auto-update is not provided.',
+      'Updates: the console offers "restart to update"; c3 upgrade + c3 restart also work.',
     ],
   }
 }
@@ -199,7 +200,7 @@ function planWindows(inputs: ServiceInstallInputs): ServicePlan {
     notes: [
       'The task runs c3 at logon (it is a logon-triggered task, not a pre-login service).',
       'To remove this task, run: c3 uninstall',
-      'Auto-update is not provided.',
+      'Updates: the console offers "restart to update"; c3 upgrade + c3 restart also work.',
     ],
   }
 }

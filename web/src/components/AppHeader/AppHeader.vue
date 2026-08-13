@@ -20,15 +20,17 @@
  * 故无障碍文案取各 tab 自带的 badgeAriaLabel。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
-import type { UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
+import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.vue'
+import type { SelfUpdateState, UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 const { t } = useTypedI18n()
 
-// 新版本提示外链:点击新标签页跳到升级文档(实际升级仍由用户手动 `c3 upgrade`)。
-const UPGRADE_DOCS_URL = 'https://github.com/sequencestream/c3#upgrade'
+// 外链兜底:仅当这台机器不能自更新(dev 运行 / 桌面壳托管 / 包管理器安装 / 目录不可写)
+// 时出现,点击新标签页跳到发布页,由用户按自己的安装方式升级。
+const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 // 登录身份(basic 用户名),响应式来自每个 `ready`。供桌面账户菜单与
@@ -114,6 +116,8 @@ const props = defineProps<{
   showLogout?: boolean
   /** Server-detected update-availability snapshot; drives the header upgrade hint. */
   updateStatus?: UpdateStatus | null
+  /** Server-driven self-update pipeline; turns the hint into progress + a restart action. */
+  selfUpdate?: SelfUpdateState | null
 }>()
 
 const emit = defineEmits<{
@@ -126,19 +130,84 @@ const emit = defineEmits<{
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
   'select-workcenter-page': [page: 'dashboard' | 'notifications']
+  'start-self-update': []
+  'apply-self-update': []
   logout: []
 }>()
 
-// 新版本提示:仅当服务端判定"有更新"且已知最新版本号时渲染;无更新 / 未知 / 检查失败
-// 都表现为不渲染(available=false 或 latestVersion 为空)。文案走 i18n,点击外链到升级文档。
+// 新版本提示:仅当服务端判定"有更新"且已知最新版本号时为真;无更新 / 未知 / 检查失败
+// 都表现为 false(available=false 或 latestVersion 为空)。
 const showUpdate = computed<boolean>(
   () => props.updateStatus?.available === true && !!props.updateStatus.latestVersion,
 )
-const updateText = computed<string>(() =>
-  showUpdate.value
-    ? t('nav.update.available', { version: props.updateStatus!.latestVersion! })
-    : '',
-)
+
+// 下载进度百分比。服务端不给总字节数时按 0 处理 —— 宁可不显示进度,也不编一个数字。
+const downloadPercent = computed<number>(() => {
+  const su = props.selfUpdate
+  if (!su || su.totalBytes <= 0) return 0
+  return Math.min(100, Math.round((su.downloadedBytes / su.totalBytes) * 100))
+})
+
+/**
+ * 顶栏更新胶囊的形态。一个控件按服务端状态换形:
+ * - `link`   本机不能自更新(dev / 桌面壳托管 / 包管理器 / 目录不可写)→ 外链发布页
+ * - `download` 有新版但还没开始下载 → 点击手动开始(常态下服务端已自动下载)
+ * - `progress` 下载 / 校验中 → 不可点,显示百分比
+ * - `restart`  已就绪且是管理员 → 点击二次确认后重启生效
+ * - `pending`  已就绪但不是管理员 → 只告知,等管理员重启
+ * - `applying` 正在重启 → 不可点;连接随即断开,由 WS 自动重连回到新版本
+ * - `retry`    失败且是管理员 → 点击重试
+ * 都不满足时不渲染。
+ */
+type UpdatePillKind =
+  'link' | 'download' | 'progress' | 'restart' | 'pending' | 'applying' | 'retry'
+
+const updatePill = computed<{ kind: UpdatePillKind; text: string } | null>(() => {
+  const su = props.selfUpdate
+  const latest = props.updateStatus?.latestVersion ?? null
+  const target = su?.targetVersion ?? latest
+  const phase = su?.phase ?? 'idle'
+
+  if (phase === 'applying') return { kind: 'applying', text: t('nav.update.restarting') }
+  if (phase === 'ready' && target) {
+    return isAdmin.value
+      ? { kind: 'restart', text: t('nav.update.restart', { version: target }) }
+      : { kind: 'pending', text: t('nav.update.pendingAdmin', { version: target }) }
+  }
+  if ((phase === 'downloading' || phase === 'verifying') && target) {
+    return {
+      kind: 'progress',
+      text: t('nav.update.downloading', { version: target, percent: downloadPercent.value }),
+    }
+  }
+  if (!showUpdate.value || !latest) return null
+  if (su?.capable && isAdmin.value) {
+    return phase === 'failed'
+      ? { kind: 'retry', text: t('nav.update.failed', { version: latest }) }
+      : { kind: 'download', text: t('nav.update.download', { version: latest }) }
+  }
+  return { kind: 'link', text: t('nav.update.available', { version: latest }) }
+})
+
+// 重启会断开所有人的连接,所以走二次确认(项目约定:危险操作不用 window.confirm)。
+const restartConfirmOpen = ref(false)
+
+function onUpdatePillClick(): void {
+  const kind = updatePill.value?.kind
+  if (kind === 'restart') restartConfirmOpen.value = true
+  else if (kind === 'download' || kind === 'retry') emit('start-self-update')
+}
+
+// 移动端:先收起「⋯」菜单,再走同一条动作分支(重启确认框在菜单之上照常可见)。
+function onMobileUpdatePillClick(): void {
+  closeActions()
+  onUpdatePillClick()
+}
+
+function confirmRestart(): void {
+  restartConfirmOpen.value = false
+  emit('apply-self-update')
+}
 
 // 工作区/工作台两模式切换器(顶栏最左,桌面 + 移动端共用同一份图标标记)。
 // 当前生效模式图标蓝(--c-primary),另一个灰(--c-text-muted),点击 emit update:viewMode。
@@ -329,16 +398,32 @@ function selectTab(tab: HeaderTab): void {
 
       <!-- Right area: update hint + settings + account + status -->
       <div class="header-right">
-        <!-- 新版本提示(独立控件):仅"有更新"时渲染,点击新标签页跳转升级文档。 -->
+        <!-- 更新胶囊(独立控件):不能自更新时是外链,能自更新时是进度/重启按钮。 -->
         <a
-          v-if="showUpdate"
+          v-if="updatePill?.kind === 'link'"
           class="update-hint"
-          :href="UPGRADE_DOCS_URL"
+          :href="RELEASES_URL"
           target="_blank"
           rel="noopener noreferrer"
-          :title="updateText"
-          >{{ updateText }}</a
+          :title="updatePill.text"
+          data-testid="nav-update-link"
+          >{{ updatePill.text }}</a
         >
+        <button
+          v-else-if="updatePill"
+          class="update-hint update-hint-btn"
+          :class="`update-hint-${updatePill.kind}`"
+          :disabled="
+            updatePill.kind === 'progress' ||
+            updatePill.kind === 'pending' ||
+            updatePill.kind === 'applying'
+          "
+          :title="updatePill.text"
+          data-testid="nav-update-action"
+          @click="onUpdatePillClick"
+        >
+          {{ updatePill.text }}
+        </button>
         <!-- 个人化设置入口:不受 isAdmin 约束,任何账户恒可达(该域无管理员门禁)。 -->
         <button
           class="icon-btn personalized-setting-btn"
@@ -528,16 +613,28 @@ function selectTab(tab: HeaderTab): void {
       <details ref="actionsEl" class="mobile-actions" @toggle="syncOutsideListener">
         <summary class="icon-btn mobile-actions-trigger" aria-label="Actions">⋯</summary>
         <div class="mobile-actions-menu">
-          <!-- 新版本提示(移动端):仅"有更新"时出现,点击新标签页跳转升级文档并收起菜单。 -->
+          <!-- 更新胶囊(移动端):与桌面同一份状态,外链或动作二选一,点完收起菜单。 -->
           <a
-            v-if="showUpdate"
+            v-if="updatePill?.kind === 'link'"
             class="mobile-action-item update-hint-mobile"
-            :href="UPGRADE_DOCS_URL"
+            :href="RELEASES_URL"
             target="_blank"
             rel="noopener noreferrer"
             @click="closeActions"
-            >{{ updateText }}</a
+            >{{ updatePill.text }}</a
           >
+          <button
+            v-else-if="updatePill"
+            class="mobile-action-item update-hint-mobile"
+            :disabled="
+              updatePill.kind === 'progress' ||
+              updatePill.kind === 'pending' ||
+              updatePill.kind === 'applying'
+            "
+            @click="onMobileUpdatePillClick"
+          >
+            {{ updatePill.text }}
+          </button>
           <button
             class="mobile-action-item"
             :disabled="!currentWorkspace"
@@ -588,6 +685,18 @@ function selectTab(tab: HeaderTab): void {
         </span>
       </button>
     </nav>
+
+    <!-- 重启生效的二次确认:重启会断开所有已连接会话,所以按危险操作处理。 -->
+    <ConfirmDialog
+      :open="restartConfirmOpen"
+      :title="t('nav.update.confirmRestart.title')"
+      :message="t('nav.update.confirmRestart.message')"
+      :confirm-label="t('nav.update.confirmRestart.confirm')"
+      :cancel-label="t('common.action.cancel.label')"
+      danger
+      @confirm="confirmRestart"
+      @cancel="restartConfirmOpen = false"
+    />
   </header>
 </template>
 
@@ -666,7 +775,7 @@ function selectTab(tab: HeaderTab): void {
   overflow-x: auto;
 }
 
-/* 新版本提示(独立控件):蓝底胶囊外链 */
+/* 更新胶囊(独立控件):蓝底胶囊,外链与按钮共用同一视觉 */
 .update-hint {
   display: inline-flex;
   align-items: center;
@@ -684,6 +793,21 @@ function selectTab(tab: HeaderTab): void {
 }
 .update-hint:hover {
   opacity: 0.85;
+}
+/* 按钮形态:去掉浏览器默认边框/字体,视觉与外链形态完全一致 */
+.update-hint-btn {
+  border: none;
+  font-family: inherit;
+}
+/* 只告知、不可操作的形态(下载中 / 等管理员 / 正在重启):降饱和并禁用指针 */
+.update-hint-btn:disabled {
+  background: var(--c-text-muted);
+  cursor: default;
+  opacity: 1;
+}
+/* 失败态转危险色,和「有新版可装」明确区分 */
+.update-hint-retry {
+  background: var(--c-danger, #e53e3e);
 }
 
 /* 个人化设置入口图标:与账户人形图标同尺寸,currentColor 着色随按钮态 */

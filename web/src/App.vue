@@ -105,6 +105,9 @@ const {
   auth,
   authStatus,
   updateStatus,
+  selfUpdate,
+  startSelfUpdate,
+  applySelfUpdate,
   status,
   workspaces,
   currentWorkspace,
@@ -591,6 +594,7 @@ function onCodesChatWidth(px: number): void {
       :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
       :update-status="updateStatus"
+      :self-update="selfUpdate"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"
       @select-workcenter-page="setWorkcenterPage"
@@ -600,6 +604,8 @@ function onCodesChatWidth(px: number): void {
       @add-workspace="addWorkspace"
       @select-workspace="selectWorkspace"
       @remove-workspace="removeWorkspace"
+      @start-self-update="startSelfUpdate"
+      @apply-self-update="applySelfUpdate"
       @logout="auth.logout"
     />
 

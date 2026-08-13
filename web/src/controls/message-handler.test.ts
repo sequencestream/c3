@@ -112,6 +112,14 @@ function makeCtx() {
     latestVersion: null,
     checkedAt: null,
   })
+  const selfUpdate = ref<import('@ccc/shared/protocol').SelfUpdateState>({
+    phase: 'idle',
+    capable: false,
+    currentVersion: '',
+    targetVersion: null,
+    downloadedBytes: 0,
+    totalBytes: 0,
+  })
   // `settings` 分支写入的其余快照 refs —— 测试只断言 settingsOpen,其余仅为避免
   // 处理器写入 undefined 而抛错。
   const settingsOpen = ref(false)
@@ -232,6 +240,7 @@ function makeCtx() {
     deepLinkFulfilled,
     deepLinkTimers,
     updateStatus,
+    selfUpdate,
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
     t: (key: string) => key,
     add: vi.fn(),
@@ -1250,6 +1259,14 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
         available: false,
         latestVersion: null,
         checkedAt: null,
+      }),
+      selfUpdate: ref<import('@ccc/shared/protocol').SelfUpdateState>({
+        phase: 'idle',
+        capable: false,
+        currentVersion: '',
+        targetVersion: null,
+        downloadedBytes: 0,
+        totalBytes: 0,
       }),
       workcenterHasMore: ref(false),
       workcenterLoading: ref(false),

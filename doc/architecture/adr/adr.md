@@ -62,3 +62,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0040](0040-cursor-as-host-cli-vendor.md) · accepted — Cursor 改为每轮一个 `cursor-agent` 子进程,并作为**非托管**宿主 CLI 进入解析链(凭据二选一、会话读厂商磁盘库、发布链去旁挂)
 - [0041](0041-worktree-baseline-drift-as-notice.md) · accepted — worktree 基线不符是提示,不是闸门
 - [0042](0042-configuration-in-database.md) · accepted — 配置只有一处事实源 c3.db:一字段一行的细粒度 KV + `--db` 单一覆盖 + 旧 JSON 一次性导入后弃用
+- [0043](0043-console-self-update-and-relaunch.md) · accepted — 控制台自更新:服务端唯一状态机 + `ready` 前不碰已装二进制 + 按运行形态移交重启(systemd `--no-block` / launchd KeepAlive / 助手进程 / 前台就地派生)

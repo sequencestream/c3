@@ -20,6 +20,7 @@ import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
 import { installDashboardActions } from './dashboard-actions'
 import { installShareActions } from './share-actions'
+import { installUpdateActions } from './update-actions'
 import type { AppCtx } from './types'
 
 export type { AppCtx } from './types'
@@ -68,6 +69,7 @@ export function useAppController(): AppCtx {
   installWorkcenterActions(ctx)
   installDashboardActions(ctx)
   installShareActions(ctx)
+  installUpdateActions(ctx)
 
   onMounted(() => {
     // Read the startup hash for deep-link routing (before creating the WS client).

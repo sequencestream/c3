@@ -32,18 +32,17 @@ export async function loadHistoryForVendor(
       )
     }
     case 'cursor':
-      // Read from the SDK's own local agent store (a published API), never from
-      // the Cursor IDE's private chat database. That store holds exactly the
-      // agents c3 created through the SDK, which is why the capability ledger
-      // calls this read `partial`. A read that finds nothing yields an empty
-      // transcript — resume still replays Cursor's own context regardless.
+      // Read Cursor's own on-disk chat store (`~/.cursor/chats/`), the same one
+      // the CLI and the Cursor IDE write — so the workspace's whole history is
+      // readable, not just what c3 created. A read that finds nothing yields an
+      // empty transcript — resume still replays Cursor's own context regardless.
       try {
         return canonicalToTranscript(
           await cursorHistoryStore.read(sessionId, { cwd: workspacePath }),
         )
       } catch (err) {
-        // The SDK's store lives behind an optional native module; a host without
-        // it must not take the whole history read down with it.
+        // The store format carries no compatibility promise; a chat this reader
+        // cannot decode must not take the whole history read down with it.
         console.warn(
           `[c3] cursor history unavailable for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
         )

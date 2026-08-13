@@ -175,7 +175,7 @@ System——那正是本轮修复的缺陷:用户把默认/意图配成组,新�
 
 解析器原样返回中立覆盖项;把自定义厂商重新路由通过 c3 进程内 Responses→Chat
 relay 的是**codex 驱动器**(它把真实的 base URL + key 注册在一个 token 之后,
-并把 codex 指向回环 relay;AC-R15 / ADR-0014)。relay 的转换器 + HTTP 处理器
+并把 codex 指向回环 relay;AC-R15 / ADR-0029)。relay 的转换器 + HTTP 处理器
 是传输层,不是内核层(ADR-0009 R2)。
 
 当 `baseUrl`/`apiKey` 为空时,system 模式的智能体不产生任何连接覆盖项,因此

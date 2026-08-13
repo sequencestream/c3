@@ -1,6 +1,6 @@
 /**
  * Localhost HTTP MCP route for the spec REVIEWER's tools — the same transport
- * both Claude and Codex consume (no in-process SDK MCP server for c3 tools).
+ * every vendor consumes (no in-process SDK MCP server for c3 tools).
  *
  * Deliberately NOT a reuse of the spec-query route: a reviewer needs one tool the
  * author must never have (`submit_spec_review`), and the author needs none of the

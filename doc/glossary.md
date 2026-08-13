@@ -3,7 +3,7 @@
 c3 文档中使用的业务与技术术语。在此处统一定义;各领域文档引用这些定义,而不是重新
 定义。
 
-- **c3**: Code Creative Center。该应用:一个通过浏览器对 Claude Code 工具调用进行门控的 Web UI。
+- **c3**: Code Creative Center。该应用:一个通过浏览器集中驱动多个 AI 编码智能体(Claude / Codex / Cursor)并对其工具调用进行门控的 Web UI。
 - **Agent run**: 由一次用户提示驱动的单次 `query()` 调用。持续流式输出智能体文本、工具活动与权限请求,直至完成或出错。
 - **VendorModeCatalog**: 各厂商声明的原生模式 token 清单(2026-06-07-012)。每个条目将某厂商的 `token`(一个 `ModeToken`)与其 i18n `labelCode`,以及它映射到的中立 `ActionMode × ToolGate` 网格单元配对。每个厂商声明自己的 catalog;这些 catalog 按厂商聚合为一个编译期穷尽的集合。通过 `settings.vendorModes` 下发给 Web 端,使控制台无需任何厂商特定分支即可为每个厂商渲染模式选择器。
 - **Permission decision**: 用户对权限请求的应答:`allow` 或 `deny`。
@@ -17,7 +17,7 @@ c3 文档中使用的业务与技术术语。在此处统一定义;各领域文�
 - **AuthConfig**: 挂载在 `SystemSettings.auth?` 上的认证配置——`{ enabled, provider, session, exposure? }`(ADR-0023)。缺失该块或 `enabled: false` ⇒ 无认证(默认值);格式错误的块会(fail-soft)归一化为禁用。`session` 是厂商中立的 `AuthSessionPolicy`(令牌 `ttlSeconds` + `signingKeyRef`,一个指向签名密钥的引用,而非密钥本身);`exposure.bindAddress` 记录服务端绑定地址/网络暴露意图。
 - **Session token (会话令牌)**: 客户端登录后出示的、厂商中立的已签发凭证——`AuthSessionToken { tokenId, subject, issuedAt, expiresAt }`(ADR-0023)。在 `login` 成功后签发,在 wire 上以不透明形式携带,按请求校验(签名/校验推迟到后续任务)。区别于 c3 的**Session**(一次智能体对话)以及会话注册表持久化状态。
 - **passwordHash / signingKeyRef**: `AuthConfig` 的"通过引用存放机密"字段(ADR-0023、AUTH-R3/R4/R9)。`passwordHash` 仅以 PHC 哈希形式存储密码——绝不明文;明文的 `AuthLoginRequest.password` 仅在传输过程中存在。`signingKeyRef` 是对令牌签名密钥的一个*引用*(环境变量名/密钥库 id),该密钥本身绝不持久化在系统设置中。
-- **Workspace directory**: 已注册的工作区目录,用作 SDK 的 `cwd`。工作区通过 Web UI 或 `add_workspace` WebSocket 消息注册。Claude 相对它读写文件。
+- **Workspace directory**: 已注册的工作区目录,用作 SDK 的 `cwd`。工作区通过 Web UI 或 `add_workspace` WebSocket 消息注册。智能体相对它读写文件。
 - **Session**: 工作区内一个由厂商支撑的对话。其执行由一个进程级的**Session Runtime**拥有;一个连接一次只**查看**一个会话。运行不绑定到某个连接(ADR 0006)。列表/计数读取使用可重建的 `session_metadata` 投影。
 - **Sessions tab**: 顶层导航标签,聚合某工作区的六种 `SessionKind` 类别。它实现于历史遗留的 `works/` 前端目录中,内部视图键仍沿用 `console`,但面向用户的标签是 "Sessions" /「会话」。
 - **Work session**: Sessions tab 中主要的开发对话类型(`sessionKind: 'work'`)。用于区分一般工作会话与 intent、spec、discussion、automation、tool 会话。
@@ -29,15 +29,15 @@ c3 文档中使用的业务与技术术语。在此处统一定义;各领域文�
 - **Run handle**: 交给连接处理器的、对一次在途运行的实时控制(一个设置权限模式的控制),使模式变更可以在运行途中生效。
 - **Interrupt / abort**: 通过 SDK 的中断控制停止一次在途运行。仅由 `stop_run`、`delete_session` 或 `remove_workspace` 触发——绝不会因切换所查看会话或关闭连接而触发。
 - **Static embed**: 内联进已编译二进制文件中的 Web 构建产物(生成且被 gitignore)。当磁盘上不存在文件系统 Web 构建产物时提供服务。
-- **claude CLI**: SDK 用来运行智能体的 `claude` 可执行文件。优先从 `CLAUDE_PATH` 解析,否则从 c3 托管的、位于 `~/.c3/vendor/claude/<version>/bin/claude` 的安装中解析,主机 PATH 仅作为降级后备(ADR-0012)。Claude 的登录状态仍属于 Claude Code 本身,而非 c3。
+- **Vendor CLI**: 各厂商用来运行智能体的宿主可执行文件——`claude`、`codex` 与 `cursor-agent`。解析顺序是显式 env override(`CLAUDE_PATH` / `CODEX_PATH` / `CURSOR_PATH`)→ c3 托管安装(`~/.c3/vendor/<vendor>/<version>/bin/<binary>`,仅受管厂商)→ 主机 PATH(ADR-0012)。`cursor-agent` **不由 c3 分发**,只有 env override 与 PATH 两级,版本由 Cursor 官方安装器决定(ADR-0040);二进制名从厂商描述符读取,不由 vendor id 推导。登录状态始终属于该 CLI 自身,而非 c3。
 - **turn_end**: 一次 prompt→result 轮次的终止性服务端→客户端事件,`reason` 为 `complete`(含被停止的运行)或 `error`。绝不意味着会话结束——它仍存活以等待下一个 prompt。
 - **Intent (意图)**: 一个项目范围内的台账条目——`title`、`content`、`priority`(P0–P3)、`status`、可选的项目内依赖关系——持久化在本地 intent 台账中,以解析后的工作区路径为键。intent 列表、精炼、开始工作这些操作所共同作用的单元(ADR 0007)。由 **Requirement** 更名而来(requirements→intents,PR-2)。**歧义说明:** 领域概念 **Intent**(首字母大写,一个持久化的工作单元实体)*不是*其他地方用于无关概念的小写单词 _intent_——例如某个 Vue 子组件的事件 _intent_(一次用户操作 emit)、ADR-0011 中的权限 _intent_、共识投票中厂商中立的 _intent_,以及编排者的下一子话题/广播 _intent_。这些是同词异义(在此交叉引用),本次更名刻意不涉及它们。
 - **意图级别 (Intent priority)**: 一个 intent 的优先级,取值为 `P0`、`P1`、`P2`、`P3` 之一(P0 最高)。
 - **模块名称 (Module)**: 一个 intent 所属的模块——由沟通智能体从条目的标题/内容中推断出的自由文本标签(例如 认证、会话、意图管理)。作为必填的自由文本字段持久化在 intent 上,默认值为空字符串;当无法识别或对于历史行时为 `''`。为后续基于模块的组织/展示打下数据基础(ADR 0007)。
 - **New Intent session (Communication session)**: 用于将想法精炼为 intent 条目的、按项目划分的长驻只读智能体会话。是一个真实的 SDK 会话,但被排除在普通会话列表之外(隐藏集合);以强制的 `default` 模式运行,不能编辑/写入/运行命令/派生子智能体/运行 slash 命令(ADR 0007)。
-- **save_intents**: 沟通智能体调用以持久化一批 intent 的 MCP 工具(`mcp__c3__save_intents`)。它的人工授权是**用户在对话中的明确文字确认**:智能体先把本轮全部意图完整列出并等待确认,确认后调用工具,处理器随即写入台账,不产生权限弹框。三个厂商都通过**同一条回环 HTTP MCP 路由**到达同一个处理器(ADR 0007)。一个批次条目可以携带可选的 `intentSessionId`,将该 intent 反向链接到产生它的沟通会话——但**仅当该批次恰好保存一个 intent 时**(多条目批次会忽略它;store 对 `length > 1` 的情况从不写入它)。智能体用注入其 prompt 中的会话 id 填充该字段,保存处理器将其归一化为绑定的沟通会话 id,以便通过 `open_intent_chat` 解析。仅供 automation 使用的 `save_intent_directly` 工具不暴露该字段。
+- **save_intents**: 沟通智能体调用以持久化一批 intent 的 MCP 工具(`mcp__c3__save_intents`)。它的人工授权是**用户在对话中的明确文字确认**:智能体先把本轮全部意图完整列出并等待确认,确认后调用工具,处理器随即写入台账,不产生权限弹框。三个厂商都通过**同一条回环 HTTP MCP 路由**到达同一个处理器(ADR 0007)。一个批次条目可以携带可选的 `intentSessionId`,将该 intent 反向链接到产生它的沟通会话——但**仅当该批次恰好保存一个 intent 时**(多条目批次会忽略它;store 对 `length > 1` 的情况从不写入它)。智能体用注入其 prompt 中的会话 id 填充该字段,保存处理器将其归一化为绑定的沟通会话 id,以便通过 `open_intent_session` 解析。仅供 automation 使用的 `save_intent_directly` 工具不暴露该字段。
 - **开始工作 (Start work)**: 将一个 `todo` 状态的 intent 转变为一个**后台普通会话**的操作,该会话以可配置的开发技能(系统设置中的 `devSkill`;默认为空 ⇒ 无技能前缀)运行,携带该 intent 的内容,将 intent 置为 `in_progress`,并记录 `lastWorkSessionId` 用于工作会话的反向链接。该运行从不自动完成该 intent。
-- **撰写 spec (Write spec)**: 质量关口动作(`write_spec`),将一个 intent 转变为一份受限的、可评审的 **spec 文档**,位于**固定的、集中式的 spec 根目录**下(`<c3 home>/doc/<project-path-segment>`,按项目隔离,由该项目的所有 worktree 共享),置于按日期组织的 `yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>` 目录中。该 intent 的 `spec_path` 记录**绝对**位置(doc 存在于工作区之外,不提交到 Git)。它会在已配置的 spec 智能体(`specAgentId`)上启动一个**限定写入**的 spec 会话,其写入被限制在 spec 目录内(项目的其余部分只读)——它只写 spec,从不写代码。仅限 Claude(路径级写入锁是一种 Claude 路径机制);非 Claude 的 spec 智能体会被拒绝(RM-R21)。spec 根目录**不可**由用户配置。
+- **撰写 spec (Write spec)**: 质量关口动作(`write_spec`),将一个 intent 转变为一份受限的、可评审的 **spec 文档**,位于**固定的、集中式的 spec 根目录**下(`<c3 home>/doc/<project-path-segment>`,按项目隔离,由该项目的所有 worktree 共享),置于按日期组织的 `yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>` 目录中。该 intent 的 `spec_path` 记录**绝对**位置(doc 存在于工作区之外,不提交到 Git)。它会在已配置的 spec 智能体(`specAgentId`)上启动一个**限定写入**的 spec 会话,其写入被限制在 spec 目录内(项目的其余部分只读)——它只写 spec,从不写代码。限定写入的兑现方式按厂商而异:Claude 用路径级的 permission-gateway 写入锁,Codex 用驱动的沙箱边界(读代码的 cwd 之外,specs 根经 `--add-dir` 传入)(RM-R21)。spec 根目录**不可**由用户配置。
 - **Spec document (规范文档)**: 一次变更在开发之前、从某个 intent 撰写而来的单一事实来源。它描述"做什么"和"为什么"(而非实现代码),提炼保留意图的必要信息以便**独立评审**,需通过四个维度的自查:自洽、一致、可验证、可追溯(RM-R21)。
 - **自动提交 lint 自愈 (Auto-commit lint self-heal)**: 当 automation 编排者的 `done` 自动提交被**pre-commit lint 钩子**拒绝时(提交并推送步骤报告了一次提交钩子失败),它不会硬性中止,而是自愈——将失败交给**开发智能体一次**——因为不同项目的 lint 工具链各不相同,不存在通用的修复命令。它恢复同一个工作会话,附上 lint 错误摘要,让智能体修复,然后**一次性**重试提交。任何非 lint 的提交/推送失败,或者 lint 失败在智能体单次尝试后仍未解决,都会硬性中止(RM-A13/RM-A6)。
 - **Intent ledger**: c3 home 目录中用于存放 intent 的本地 SQLite 存储。区别于会话注册表的持久化状态(位于继承的 `.claude` home 下);通过一个跨运行时的 SQLite 驱动适配器访问,该适配器会 fail soft,因此即使它不可用 c3 仍能启动(ADR 0007)。
@@ -54,7 +54,7 @@ c3 文档中使用的业务与技术术语。在此处统一定义;各领域文�
 - **Vendor executable resolver**: 与厂商无关的启动器:它将某个厂商解析为一个可执行文件路径,外加来源/健康状况(`env-override`、`managed`、`host-path-fallback`、`missing`、`install-failed`、`override-invalid`)。优先级为:显式环境变量覆盖 → c3 在 `~/.c3/vendor` 下托管的 CLI → 降级的主机 PATH 后备。它是**第一道能力门**——一个无法解析的可执行文件会在触及任何适配器或能力之前就短路(ADR-0012)。
 - **Adapter registry**: 将每个已实现的厂商映射到其工厂,并将厂商可执行文件解析结果拆分为可用集合/缺失集合。在构造每个适配器**之前**进行探测;无法解析的可执行文件会落入缺失集合,并带有来源感知的失败信息,且永远不会被构建。可用集合是内核判定可用智能体类型的唯一事实来源,在启动时被记录日志(ADR-0012)。
 - **AdapterCapability (wire capability set)**: 面向 wire 的能力名称集合(ADR-0013),命名了八个可选/可降级能力:`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`/`taskStore`/`nativeUserInput`。内核的布尔能力台账正是以这些名称为键;一个编译期断言将两者锁定,使其不会产生偏差。
-- **Block upsert (two-form)**: 使两种厂商消息形式得以共享一个模型的规则(ADR-0013):块以 `(sessionId, block.id)` 为键并被 **upsert**(而非只追加)。Claude 的整消息帧与 Codex 的增量更新帧都收敛为"原地修订,而不是堆叠";一次工具调用的返回值会单调地回填其 `tool_use` 块。由规范化累加器的 block-upsert 步骤实现。
+- **Block upsert (two-form)**: 使两种厂商消息形式得以共享一个模型的规则(ADR-0013):块以 `(sessionId, block.id)` 为键并被 **upsert**(而非只追加)。Claude 的整消息帧与 Codex 的增量更新帧都收敛为"原地修订,而不是堆叠"(Cursor 的增量帧由其适配器先累积成整段再发出,线上即整块);一次工具调用的返回值会单调地回填其 `tool_use` 块。由规范化累加器的 block-upsert 步骤实现。
 - **c3SessionId**: 不透明的、与厂商无关的会话句柄(`"c3s_" + sha256(vendor \0 vendorSessionId)[:32]`,ADR-0013)——唯一一个跨出内核边界的会话 id。是确定性的(无需持久化),且既不包含厂商名称、也不以原始 id 作为子串,因此厂商 id 永远不会泄漏进 URL 或存储键。可解析为内核内部保存的 `{ vendor, vendorSessionId }` 引用。
 - **SessionAccessor**: 对各可用厂商原生会话存储的**只读**惰性归一化联合(ADR-0013):列表跨厂商合并(原生 id 隐藏在 `vendorExtra` 中),读取则通过一个惰性构建的 c3 句柄 → 引用索引路由到所属的存储。原生存储始终是事实来源——不做双写;该索引是一个可重建的运行时缓存(存储形态归一、位置不归一)。
 - **Session→agent binding (two-key)**: 记录某会话运行在哪个智能体上的按会话记录,拆分为两个键空间(ADR-0015,agent-config AC-R16):一个可变的**pending intent** 和一个已落定的**session fact**。持久化在注册表状态中(一个 `pending-intents` 空间 + 一个 `session-agents` 空间);解析某会话的智能体时两者都会读取。区别于 c3SessionId / SessionAccessor,后两者关乎读取转录内容。

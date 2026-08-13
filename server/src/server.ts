@@ -571,16 +571,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       appendSystemPrompt: buildIntentAgentPrompt(getAgentLang(), sessionId),
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       // The three intent tools over c3's loopback HTTP MCP route — the SINGLE
-      // transport both Claude and Codex consume. Bound per-run (the run path
+      // transport every vendor consumes. Bound per-run (the run path
       // supplies workspace + live run id + signal); `save_intents` lands in the
       // shared comm handler (`runCommSave`, wired into `intentMcpTools` above),
-      // so claude/codex persist through one identical path.
+      // so every vendor persists through one identical path.
       bindMcp: (binding) => intentMcp.bind(binding),
       gate: 'intent' as const,
     }),
     // Spec-authoring profile (write-confined gate + disallowed-tools lock + spec
     // prompt). `specDir` is per-run and rides on the runtime, not this static
-    // profile. Both Claude and Codex consume the two READ-ONLY ledger query tools
+    // profile. Every vendor consumes the two READ-ONLY ledger query tools
     // (find/view) over the same loopback HTTP MCP route. No save, no run-level
     // binding — the spec author reads existing intents to ground the spec but can
     // never write the ledger. The same path runs on reset_spec_session, so a reset
@@ -617,7 +617,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // Work-session base MCP profile: every new and resumed work session gets
     // `publish_event` so the model can publish a vendor-neutral generic event
     // after acting with its own tools. No gate override, no disallowed-tools lock
-    // — the run keeps its standard surface. Both Claude and Codex bind the same
+    // — the run keeps its standard surface. Every vendor binds the same
     // loopback HTTP MCP route.
     sessionProfile: () => ({
       bindMcp: (binding) => eventMcp.bind(binding),
@@ -690,9 +690,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Configure the automation c3 MCP deps AFTER the discussion run starters exist
   // (the discussion tools need `startDiscussionRun`). The stored deps are only
   // invoked at automation-dispatch runtime, well after startup. ONE deps object
-  // feeds the loopback HTTP MCP route (`createAutomationMcp`) that BOTH Claude and
-  // Codex automations bind per execution, so both vendors run the SAME tool
-  // behaviors from one definition.
+  // feeds the loopback HTTP MCP route (`createAutomationMcp`) that EVERY vendor's
+  // automations bind per execution, so they all run the SAME tool behaviors from
+  // one definition.
   const automationMcpDeps: AutomationMcpDeps = {
     broadcastIntents: broadcasts.broadcastIntents,
     normalizeEvent,
@@ -740,7 +740,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // The QUEUE ADVISOR c3 MCP over loopback HTTP — a route of its own, bound per
   // consultation (workspace + one intent + chain depth). Kept separate from the
   // automation route on purpose: an ordinary automation must not be able to reach
-  // these tools. Both vendors read the same group from this one route (ADR-0011).
+  // these tools. Every vendor reads the same group from this one route (ADR-0011).
   // Confirmation-required tools run through the SAME approval gate `save_intents`
   // uses, so a human sees advisor writes where they see every other write request.
   const advisorMcp = createAdvisorMcp(`http://127.0.0.1:${opts.port}`, {

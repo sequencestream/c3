@@ -1891,10 +1891,9 @@ function selectAdmin(username: string) {
                     : t('settings.diagnostics.missing')
                 }}
               </span>
-              <!-- Where the runtime came from: a host CLI shows its resolved
-                   binary path, an in-process SDK shows the source it resolved
-                   from plus the copy that will actually load. Same column, same
-                   question — "which one is this". -->
+              <!-- Where the runtime came from: the resolved binary path, or
+                   failing that the origin plus location the runtime signal
+                   reports. Same column, same question — "which one is this". -->
               <code
                 v-if="row.status.available && row.host?.path"
                 class="diagnostics-path"

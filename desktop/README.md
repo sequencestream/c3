@@ -102,8 +102,6 @@ pnpm test -- scripts/release/desktop  # 命名/三元组/bundle 发现/manifest 
 
 ## 已知边界
 
-- 桌面包**不携带** Cursor SDK sidecar 树(Tauri 的 `externalBin` 只搬单个文件)。
-  桌面版要用 Cursor vendor 需自行设置 `CURSOR_SDK_PATH`,或改用 CLI 版。
 - 应用内自动更新安装**完整桌面包**(壳与 sidecar 成对升级),不是改写 bundle 内的
   sidecar —— 单文件替换会破坏 macOS 代码签名。更新器的版本事实、下载与双重 sha256
   校验复用 CLI 的共享升级内核,经 sidecar 回环 API 提供;暂存、写盘与安装由壳负责,

@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-sandbox 领域为 agent 执行提供**进程级轻量隔离**。c3 不再让 vendor CLI 直接在宿主工作区里裸跑，而是在**工作区启用且 SessionKind 入选**的 run 中，用 [arapuca](https://github.com/sergio-correia/arapuca) 把 Claude Code / Codex CLI 进程包裹起来：进程仍在宿主同一文件系统内、以当前宿主用户身份、在宿主原路径上运行，由内核 MAC（Linux Landlock / macOS Seatbelt / Windows AppContainer）收窄它能读写哪些目录。不使用容器、镜像、bind mount、独立 rootfs。是否进沙箱只取决于工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds`，与 run 来源（Intent / spec / 普通）、是否使用 worktree、`gitBranchMode` 均无关。vendor CLI（claude / codex）由使用方在宿主预装；c3 不下载、不版本化 vendor CLI。arapuca 是例外：c3 关联并自动安装一个经过验证的版本（见 §2、§14）。
+sandbox 领域为 agent 执行提供**进程级轻量隔离**。c3 不再让 vendor CLI 直接在宿主工作区里裸跑，而是在**工作区启用且 SessionKind 入选**的 run 中，用 [arapuca](https://github.com/sergio-correia/arapuca) 把该 run 的 vendor CLI（`claude` / `codex` / `cursor-agent`）进程包裹起来：进程仍在宿主同一文件系统内、以当前宿主用户身份、在宿主原路径上运行，由内核 MAC（Linux Landlock / macOS Seatbelt / Windows AppContainer）收窄它能读写哪些目录。不使用容器、镜像、bind mount、独立 rootfs。是否进沙箱只取决于工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds`，与 run 来源（Intent / spec / 普通）、是否使用 worktree、`gitBranchMode` 均无关。沙箱不参与 vendor CLI 的安装与版本选择（claude / codex 由 c3 分发，`cursor-agent` 由使用方预装）。arapuca 则是 c3 关联并自动安装的一个经过验证的版本（见 §2、§14）。
 
 本文负责实现细节：配置模型、路径放行解析、arapuca wrapper 生成、run lifecycle 接线、文件系统策略、网络策略、运行期环境卫生、启动前探测。大方向架构（为什么用进程级 arapuca、平台能力面、演进方向）见 `doc/architecture/sandbox-architecture.md`。
 
@@ -25,7 +25,7 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 - sandbox 领域不决定普通 chat run 是否进入 sandbox。
 - sandbox 领域不理解业务 session、intent、automation 的语义。
 - sandbox 领域不实现远程 / 云端 sandbox。
-- sandbox 领域不下载、不版本化、不验证 vendor CLI；工具由使用方在宿主预装。
+- sandbox 领域不下载、不版本化、不验证 vendor CLI：受管厂商的分发属 host-CLI launcher，`cursor-agent` 由使用方预装。
 - arapuca 分发只维护单一「当前版本」指向：不做多版本共存、历史版本、回滚 UI，也不复用 vendor CLI 的多版本选择与远端同步模型。
 - 不追踪上游 `latest`、不支持用户配置下载源 / 镜像、不做源码构建；无制品映射的平台一律 `platform-unsupported`。
 - sandbox 领域当前不施加网络约束（网络全开），网络收窄是后续阶段。
@@ -189,7 +189,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 - `--seccomp baseline` 打开出站网络（当前网络全开）。arapuca 默认 `strict` 全断网络，vendor CLI 的 provider 调用会 `ConnectionRefused`，故必须显式开网。macOS 无 per-host 白名单；Linux 后续可 `--allow-host` 收窄到 provider 域名。
 - `--cwd` 显式设为执行根（worktree 或源工作区）；进程同路径运行，cwd 天然一致。
-- 入口命令是宿主 PATH 中的 vendor CLI 名（如 `claude`、`codex`），不是任何容器内安装路径。
+- 入口命令是该 vendor 策略声明的 CLI 名（`claude` / `codex` / `cursor-agent`），不是任何容器内安装路径。
 - wrapper 需要能在宿主 PATH 中找到 arapuca 可执行文件（该 arapuca 须含 macOS profile 的 mount-ancestor 遍历与 `/tmp` symlink 放行两处修复，否则 codex `canonicalize(CODEX_HOME)` / claude `mkdir /tmp/claude-<uid>` 会 EPERM）。
 - **凭据不落盘**：arapuca env **deny-by-default**（除自身管理的 `HOME` / `PATH` 外不继承父进程 env，裸名 `--env KEY` 被拒），故策略声明的凭据变量以 `--env "KEY=$KEY"` 透传——`$KEY` 由 `/bin/sh` 运行时从 wrapper 进程 env 展开，token 值不进脚本文本；未设变量展开为 `KEY=`，arapuca 视为未设。策略对象本身只带变量名，不带值。
 - **代理透传（`--allow-proxy-env`）**：宿主 `process.env` 中 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` 及四个小写变体中**任一存在且非空**，wrapper 即追加一次 `--allow-proxy-env`（arapuca ≥ 0.2.5），由 arapuca 负责转发这组标准变量，c3 不逐项生成 `--env`。这是宿主事实而非 vendor 差异，不进 per-vendor 策略：所有 vendor 同一逻辑，零配置、不新增工作区开关。只看键的存在性：不解析 URL、不复制任意环境变量、不脱敏值；空值视为未设（它本就不授予任何东西）。
@@ -222,6 +222,12 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 - custom（relay）：`CODEX_HOME` 指向**全局持久目录** `~/.c3/relay/codex`（`relayCodexHome()`），位于执行根**之外**、独立 rw volume 传入，满足 macOS profile 对启动期 canonicalize 的授权，并避免 arapuca 默认临时 HOME 被 codex 拒绝创建 PATH helper；凭据是 relay token `CODEX_API_KEY`，**不挂宿主 `~/.codex`**。**为何持久而非逐 run**：codex 第二轮 `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout，若随 run 清理则下轮空目录 → `no rollout found`。持久目录让所有 relay session 共用一个 home、每个 thread 的 rollout（以 thread id 命名）跨 run 存活；单一目录也让 relay 状态便于统一查看与清理。逐 run tmpDir 仅放 wrapper 脚本并随 run 清理；持久 codexHome 的 rollout 只增不减，其按保留期的清理由独立的 session-cleanup 能力承担（见 `doc/domains/core/session-cleanup/session-cleanup-design.md`），sandbox 不参与该决策。
 - system（订阅态）：认证在 `$CODEX_HOME/auth.json`（ChatGPT OAuth token），隔离目录没有它就会以空 bearer 直连并 401，故 `CODEX_HOME` 指向**宿主 `~/.codex`** 并 rw 挂载；该 session 的 `storeScope` 相应冻结为 `host`（§9.2），rollout / resume / transcript 读取全部落在同一处。
 
+**cursor 策略**：数据根恒为宿主 `~/.cursor`（两个 scope 同一个），rw 挂载并列入 `preRunDirs`。没有任何环境变量能重定向它；即便有，重定向也会让沙箱内跑出来的会话在列表里不存在——c3 的会话存储读的正是宿主端这同一个目录。
+
+- custom：不适用——Cursor agent 恒为 `system` 模式（c3 没有讲 Cursor 协议的 relay），`CURSOR_API_KEY` 仍按名经 `forwardEnv` 透传，供自带密钥的 agent 使用。
+- system（订阅态）：登录态在宿主 keychain（`cursor-agent` 报为 `apiKeySource: "login"`），没有替代变量，故 `--allow-keychain` 是这类运行能成立的前提。
+- 二进制：官方安装器把 CLI 装进按版本命名的目录并留一个 symlink 指过去，两条路径都要可读，否则 exec 会在解析链接目标时失败；两者都**只在存在时**挂载（挂不存在的路径会让 run 失败）。
+
 ### 9.2 transcript store 定位:冻结 storeScope + vendor 中立数据根
 
 历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`features/sessions/history.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`、cursor 走 `CursorSessionStore.read`(读 `~/.cursor/chats/` 下 Cursor 自己的磁盘会话库)。所有已持久化 transcript 的读取方共用它——交互式 `select_session` 与自动化执行详情(`get_execution_transcript`,按自动化冻结的 `vendor` 分派)——两条读路径不会对"会话在哪"产生分歧。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
@@ -230,7 +236,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 **② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(`session_configs` 的 `storeScope` 键)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
 
-**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛各 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`;cursor → 两 scope 均为宿主 `~/.cursor`(SDK 在 c3 进程内运行,不随沙箱换根)。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
+**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛各 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`;cursor → 两 scope 均为宿主 `~/.cursor`(没有可重定向它的环境变量,沙箱内外同一个目录)。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
 
 **为何 claude 不需要按 scope 分支读取**:claude sandbox 复用宿主 config dir(见 §9.1 claude 策略),sandbox 写入即落在 server 读取端同一处,查看零改动即成立;故 `storeScope` 的读取分支实际只对 codex 生效,但模型保持 vendor 中立。
 
@@ -248,6 +254,7 @@ provider 接线：
 - Claude / Codex system agent：走 vendor CLI 自身登录（宿主 keychain，经 `--allow-keychain` 放行），c3 不注入任何凭证。
 - Codex DIRECT：base URL / model 由 SDK 生成 argv，经 wrapper `"$@"` 进入进程；网络全开下直连 provider 天然可用。
 - Codex RELAY：agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接回连宿主 loopback relay，无需 host-gateway、内部网络或 sidecar。
+- Cursor：没有 relay 可指（恒 `system` 模式），凭据要么是 agent 自带的 `CURSOR_API_KEY`（经 `forwardEnv` 透传），要么是宿主 keychain 里的 CLI 登录态（经 `--allow-keychain` 放行）。
 
 hard-fail 仍是安全要求，但只针对**隔离能力本身**：arapuca 探测失败、平台不支持、放行路径非法、wrapper 启动失败时该 run 硬失败，绝不回落宿主裸跑。agent 的认证失败（含 system agent 在某平台上 keychain 不可用）是普通运行失败，按 vendor 错误上报，不触发绕过沙箱。
 

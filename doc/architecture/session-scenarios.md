@@ -1,12 +1,12 @@
 # 会话场景（Session Scenarios）
 
-> 本文是**活文档（current state）**：清点 c3 里**所有构造 prompt 的场景**（prompt construction sites），
-> 记录每个场景的会话类型（sessionKind）、构造位置、系统提示路径，以及 Claude / Codex 各自的支持情况与是否存在**缓存/融合问题**。
-> 目的：一处集中审视「system instruction 与 user prompt 是否被分离」，为跨厂商的 prompt/cache 优化提供地图。
+> 本文清点 c3 里**所有构造 prompt 的场景**（prompt construction sites），记录每个场景的会话类型
+> （sessionKind）、构造位置、系统提示路径，以及 Claude / Codex / Cursor 各自的支持情况与是否存在
+> **缓存/融合问题**。目的：一处集中审视「system instruction 与 user prompt 是否被分离」，为跨厂商的
+> prompt/cache 优化提供地图。
 >
-> **状态（2026-07-01 起）**：所有工具会话提示词已完成 system/user 拆分（见「拆分所有工具会话提示词」意图）。
-> `driverModelPrompt()` 融合逻辑已删除，改为 `modelUserTurn()`（仅拼 user turn）+ 各厂商的独立 system 通道。
-> 唯一保留单字符串的是 `runTaskTool`（按意图 C11 显式决策，收益极低）。
+> 所有工具会话提示词都已 system/user 拆分：`modelUserTurn()` 只拼 user turn，system 走各厂商的独立
+> 通道。唯一保留单字符串的是 `runTaskTool`（显式决策，收益极低）。
 
 ## 心智模型
 
@@ -19,48 +19,50 @@
 
 - **Claude**：`appendSystemPrompt`（挂到 `runClaude` 的 preset system append）/ 顾问 one-shot 走裸字符串 custom `systemPrompt`（`askAgentOnce`）或 preset append（`askOneShot`）；
 - **Codex**：无独立 system 角色，driver 把 system 文本作为**输入数组首个 text item（position 0）**交付——每轮字节稳定的前缀，即 API prompt cache 的命中键。`DriverStartOptions.systemInstruction` 承载该通道，`run-via-driver.ts` 解析出 `{ systemInstruction, userTurn }` 分别传入 `driver.start`。
+- **Cursor**：同样没有独立 system 角色，也没有可下发 system 文本的 argv。走同一个 `DriverStartOptions.systemInstruction`，由 cursor driver 拼成本轮 stdin 提示的**首段**（`cursorUserMessage()`），与 user turn 之间空行分隔——同样是每轮字节稳定的前缀。
 
 **缓存标记图例**：✅ = system 与 user 已分离（Separate），system 段可缓存；⚠️ = 单字符串未拆分（当前仅 `runTaskTool`，按设计保留）。
 
 ---
 
-## 一、Claude / Codex 共有的场景
+## 一、三厂商共有的场景
 
-以下场景两个厂商都会走到。Claude 经 `appendSystemPrompt` 分离，Codex 经 driver 的 `systemInstruction` 通道（首个 text item）分离——两侧均已消除融合缺口。
+以下场景三个厂商都会走到。Claude 经 `appendSystemPrompt` 分离；Codex 与 Cursor 经 driver 的
+`systemInstruction` 通道分离——两侧均无融合缺口。
+
+### Work chat（普通用户消息） — work ✅
+
+普通聊天消息在 `works/index.ts` 经 `launchRun(rt, msg.text)` 进入，prompt 只是**单一 user turn**，不带任何 system instruction。天然分离，无缓存问题，与厂商无关。
 
 ### Dev turn（SDD + devSkill） — work
 
 `dev-prompt.ts` 先做 split，拆出 `systemInstruction`、可见部分（visible）与 devSkill 的 `userTurnPrefix`。
 
 - **Claude** ✅：`systemInstruction` 交给 `appendSystemPrompt`（`run-lifecycle.ts:521-522`），visible + devSkill 前缀经 `modelUserTurn()` 组成 user turn。
-- **Codex** ✅：`run-via-driver.ts` 把 `inject.systemInstruction` 经 `DriverStartOptions.systemInstruction` 交给 driver（作为首个 text item），`userTurn`（devSkill 前缀 + visible）单独传入（`run-via-driver.ts:364-368,511-512`）。
+- **Codex / Cursor** ✅：`run-via-driver.ts` 把 `inject.systemInstruction` 经 `DriverStartOptions.systemInstruction` 交给 driver，`userTurn`（devSkill 前缀 + visible）单独传入；driver 各自把它落成首个 text item / 提示首段。
 
 ### Intent comm create/refine/split — intent
 
 `buildIntentAgentPrompt()` 生成意图沟通 agent 的系统提示（`IntentProfile.appendSystemPrompt`）。
 
 - **Claude** ✅：经 `appendSystemPrompt` 挂到 `runClaude`，user prompt 独立传入。
-- **Codex** ✅：`intentProfile.appendSystemPrompt` 经 driver 的 `systemInstruction` 通道交付（`run-via-driver.ts:364-366`），user turn 独立。
+- **Codex / Cursor** ✅：`intentProfile.appendSystemPrompt` 经 driver 的 `systemInstruction` 通道交付，user turn 独立。
 
 ### Spec author create/reset — spec
 
 `buildSpecAgentPrompt()` 生成规范作者 agent 的系统提示（`SpecProfile.appendSystemPrompt`）。
 
 - **Claude** ✅：经 `appendSystemPrompt` 挂到 `runClaude`，user prompt 独立。
-- **Codex** ✅：`specProfile.appendSystemPrompt` 经 driver 的 `systemInstruction` 通道交付，user turn 独立。
+- **Codex / Cursor** ✅：`specProfile.appendSystemPrompt` 经 driver 的 `systemInstruction` 通道交付，user turn 独立。
 
 ### Discussion research — discussion
 
 - **Claude** ✅：`research.ts` 用 `DISCUSSION_RESEARCH_PROMPT` 经 `appendSystemPrompt`，`buildResearchPrompt()` 生成 prompt，经 `runClaude`。分离（one-shot）。
-- **Codex**：N/A —— research 仅 Claude 支持，Codex 侧无此场景。
+- **Codex / Cursor**：N/A —— research 组织者仅 Claude，其余厂商无此场景。
 
 ---
 
 ## 二、仅 Claude 的场景
-
-### Work chat（普通用户消息） — work ✅
-
-普通聊天消息在 `works/index.ts` 经 `launchRun(rt, msg.text)` 进入，prompt 只是**单一 user turn**，不带任何 system instruction。天然分离，无缓存问题。
 
 ### Dev turn team-lead push — work ✅
 
@@ -92,7 +94,7 @@ team-lead 进程在**启动时**已一次性设置 `systemInstruction`（`runCla
 
 ### askOneShot（general） — tool / Claude CLI ✅（可分离）
 
-`kernel/agent/index.ts:299` 的 `askOneShot` 新增可选 `systemInstruction`，经 preset `append` 交付；调用方（judge）传入稳定角色即分离。未传时退化为裸 preset（旧行为）。
+`kernel/agent/index.ts:299` 的 `askOneShot` 带可选 `systemInstruction`，经 preset `append` 交付；调用方（judge）传入稳定角色即分离。未传时退化为裸 preset。
 
 ### runTaskTool — tool / Claude CLI ⚠️（按设计保留单字符串）
 
@@ -102,8 +104,8 @@ team-lead 进程在**启动时**已一次性设置 `systemInstruction`（`runCla
 
 ## 观察
 
-- **2026-07-01 拆分后**：dev / intent / spec 三类多轮场景在 **Claude 与 Codex 两侧均已分离**（Codex 经 driver 的 `systemInstruction` 首 text-item 通道），此前经 `driverModelPrompt()` 融合的主要缺口已消除。
+- dev / intent / spec 三类多轮场景在**三个厂商侧均已分离**（Codex 经首 text-item、Cursor 经提示首段，同一个 `systemInstruction` 通道）。
 - **Dev turn team-lead push** 不再每轮重复前置 system，缓存前缀稳定。
 - **Consensus / checkpoint / judge** 顾问 one-shot 均拆为 `{ system, user }`：N 路并行 voter 现共享同一份可缓存 system 角色前缀（`askAgentOnce` 用裸字符串 custom systemPrompt 保持轻量，`askOneShot` 用 preset append）。
 - **runTaskTool** 是唯一按设计保留的单字符串场景（收益极低、避免回归）。
-- 说明：Codex CLI（`codex exec`）经 stdin 送出整段 prompt，首个 text item 作为字节稳定前缀落在请求体的用户消息前段，即 API prompt cache 的命中键；因此「首 text item」等价于稳定可缓存前缀。
+- 说明：Codex CLI（`codex exec`）与 `cursor-agent` 都经 stdin 送出整段 prompt，其首个 text item / 首段作为字节稳定前缀落在请求体的用户消息前段，即 API prompt cache 的命中键。

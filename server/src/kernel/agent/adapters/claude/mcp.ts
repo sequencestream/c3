@@ -1,7 +1,7 @@
 /**
  * Claude-boundary translation of the vendor-neutral {@link RemoteMcpServer}
- * descriptors into the Claude Agent SDK's HTTP MCP config. Both Claude and Codex
- * now reach c3's own tools (intent / spec-query / work-event / automation) over
+ * descriptors into the Claude Agent SDK's HTTP MCP config. Every vendor
+ * reaches c3's own tools (intent / spec-query / work-event / automation) over
  * the SAME loopback streamable-HTTP MCP routes; this is the only place the neutral
  * descriptor meets an Anthropic SDK type, so the SDK dependency stays confined to
  * the Claude adapter and never leaks into the neutral descriptor or the transport.

@@ -2,7 +2,7 @@
 
 ## 1. 背景与结论
 
-c3 的 sandbox 服务**工作区启用且 SessionKind 入选**的 run:是否进沙箱由工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds` 决定,与 run 来源(Intent / spec / 普通)、是否使用 worktree、`gitBranchMode` 无关。普通工作会话、current-branch dev run 只要 kind 命中即进沙箱。沙箱的职责是给这次 run 的 vendor CLI(claude / codex)加一层**进程级隔离**,约束它能读写哪些目录、能否访问网络。
+c3 的 sandbox 服务**工作区启用且 SessionKind 入选**的 run:是否进沙箱由工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds` 决定,与 run 来源(Intent / spec / 普通)、是否使用 worktree、`gitBranchMode` 无关。普通工作会话、current-branch dev run 只要 kind 命中即进沙箱。沙箱的职责是给这次 run 的 vendor CLI(claude / codex / cursor-agent)加一层**进程级隔离**,约束它能读写哪些目录、能否访问网络。
 
 本文负责"大方向架构设计"。具体启动参数、wrapper、配置合并、run lifecycle 接线等实现细节,由 `doc/domains/core/sandbox/sandbox-design.md` 维护。
 
@@ -159,7 +159,8 @@ run 启动（任意来源 / 分支模式）
        workspace root:ro（仅当 ≠ executionRoot；同路径并入 executionRoot rw）
        specsBase:rw
        extraMounts[i]:(ro|rw)
-       codexHome:rw（`~/.c3/relay/codex`，全局持久，跨 run 存活）
+       该 vendor 认证策略声明的数据根:rw（codex 的持久 `~/.c3/relay/codex`、
+         claude 的宿主 config dir、cursor 的宿主 `~/.cursor` 等）
   → 在执行根内创建逐 run tmpDir（仅放 wrapper 脚本）
   → 解析该 vendor 的认证策略(数据根 / 凭据变量 / 额外挂载 / keychain / 启动前目录)
   → createSandboxWrapper(vendor, paths, cwd=executionRoot, 本次 agent 的认证模式)
@@ -187,7 +188,7 @@ exec "<arapuca 绝对路径>" run \
   -- "<策略入口命令>" "$@"
 ```
 
-- 入口命令是宿主 PATH 中的 vendor CLI 名(`claude` / `codex`)。
+- 入口命令是该 vendor 描述符声明的 CLI 名(`claude` / `codex` / `cursor-agent`),从描述符读取而不由 vendor id 推导——cursor 的二进制名与 vendor 名不同。
 - vendor SDK/driver 仍以为自己 spawn 的是本地 CLI;wrapper 只是把这次 spawn 包进 arapuca。
   provider 认证由 driver 经子进程 env 注入,但 arapuca env deny-by-default 不继承父 env,故策略声明的凭据
   变量须以 `--env "KEY=$KEY"` 显式透传——`$KEY` 由 `/bin/sh` 在运行时从 wrapper 进程 env 展开,token
@@ -211,7 +212,8 @@ exec "<arapuca 绝对路径>" run \
   TMPDIR 且 arapuca 锁定 TMPDIR 无法重定向,故 wrapper 预建该宿主目录并按 canonical 路径放行。
   它是逐用户共享目录(非逐 run),放行但不清理;codex 不使用它。
 - Codex 在 arapuca 内以 `danger-full-access` 关闭其内层文件系统 sandbox，避免 macOS Seatbelt
-  嵌套启动返回 EPERM；外层 arapuca 仍执行目录隔离，Codex approval policy 保持原值。
+  嵌套启动返回 EPERM；外层 arapuca 仍执行目录隔离，Codex approval policy 保持原值。Cursor 同理
+  下发 `--sandbox disabled`：外层已经把进程围起来，内建沙箱只会在已被拿掉的系统调用上失败。
 - 宿主 spawn cwd 是宿主 worktree;进程同路径运行,cwd 语义天然一致。
 - 无长驻容器,无需 start/stop 容器;run 结束清理临时 wrapper 文件即可。
 
@@ -229,7 +231,7 @@ exec "<arapuca 绝对路径>" run \
 
 ## 11. c3 MCP 接入
 
-沙箱内 vendor agent 需要调用 c3 自身的 MCP 工具(`publish_event`、`save_intents`、spec 查询、automation 等)。两个 vendor 都通过宿主回环上的 c3 HTTP MCP 端点(`http://127.0.0.1:<port>/internal/...`)访问。
+沙箱内 vendor agent 需要调用 c3 自身的 MCP 工具(`publish_event`、`save_intents`、spec 查询、automation 等)。三个 vendor 都通过宿主回环上的 c3 HTTP MCP 端点(`http://127.0.0.1:<port>/internal/...`)访问。
 
 **进程级沙箱下这一路径天然成立**:agent 是宿主进程,`127.0.0.1` 就是宿主本机,直接够到 c3 回环 HTTP MCP 端点。**不需要**内部网络、转发 sidecar 或 URL 改写——这些都是容器方案为"容器内 loopback 不是宿主 loopback"而付出的复杂度,进程级沙箱直接消除。
 
@@ -244,7 +246,7 @@ exec "<arapuca 绝对路径>" run \
 
 ## 13. arapuca 二进制依赖与探测
 
-- c3 显式关联一个经过验证的 arapuca 版本并自动安装到 `~/.c3/sandbox/arapuca/`,校验通过后才激活——vendor CLI(claude/codex)仍由使用方预装,arapuca 是唯一例外,因为沙箱能否成立直接取决于它的版本。
+- c3 显式关联一个经过验证的 arapuca 版本并自动安装到 `~/.c3/sandbox/arapuca/`,校验通过后才激活。这是 c3 唯一钉选版本的沙箱依赖:vendor CLI 的版本由各自的分发渠道决定(claude/codex 由 c3 按兼容范围安装,cursor-agent 由使用方预装),而沙箱能否成立直接取决于 arapuca 的版本。
 - 二进制解析链:c3 管理版本优先,宿主 PATH 兜底。管理版本缺失时后台异步安装,当次 run 不等待、按 PATH 结果判定;安装尝试(无论成败)持久化时间戳并冷却 24 小时,避免网络故障期间反复下载。
 - 启动前探测:平台能力满足当前策略 + 至少一条链解析出可执行文件。类比宿主二进制探测作为第一道能力关卡。
 - 两条链皆无或平台不支持时 hard-fail,给出明确 UiCode,不静默降级。
@@ -290,7 +292,7 @@ interface WorkspaceSandboxConfig {
 - **vendor CLI 认证所需配置读不到**: wrapper 最小化放行其自身配置目录;不牵连 home 其它敏感目录。
 - **macOS Seatbelt 已 deprecated**: 当前范围只用文件系统 MAC(15 仍可用);能力差异在文档标注。
 - **网络当前全开带来的出站风险**: 已知取舍:当前范围不控网络;网络收窄列为后续阶段(§8)。
-- **sandbox session 历史读写目录错位**: 已知限制(待修):transcript 读取端硬编码宿主 home,与 sandbox per-workspace home 不一致,sandbox session 历史读不到 / 切模式续接失败。vendor 中立(codex `CODEX_HOME` / claude `CLAUDE_CONFIG_DIR`)。方向见 design §9.1(读取端两处扫兜底 + session `storeScope` 冻结 fact)。
+- **sandbox 与宿主的会话数据根可能不是同一个**: 由会话冻结的 `storeScope` 加读取端两处扫兜底解决,机制 vendor 中立(见 design §9.2)。实际只有 codex 两个 scope 取不同根;claude 与 cursor 的数据根在沙箱内外同一个,故不受影响。
 
 ## 17. 分阶段实施
 

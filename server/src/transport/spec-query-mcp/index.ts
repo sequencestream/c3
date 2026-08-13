@@ -1,7 +1,7 @@
 /**
  * Localhost HTTP MCP route for the spec author's read-only ledger tools. Spec
  * sessions attach this smaller HTTP server carrying only `find_intents` and
- * `view_intent` — the SAME transport both Claude and Codex consume (neither uses
+ * `view_intent` — the SAME transport every vendor consumes (none uses
  * an in-process SDK MCP server for c3 tools).
  */
 import type { Context } from 'hono'

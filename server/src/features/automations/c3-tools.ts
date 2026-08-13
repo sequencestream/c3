@@ -2,7 +2,7 @@
  * Framing-free builder for the automation c3 MCP tool set — ONE source registered
  * onto the localhost HTTP MCP route (`transport/automation-mcp`) that BOTH Claude
  * and Codex automations bind per execution. There is no separate in-process SDK MCP
- * surface anymore; both vendors read these tools over the same streamable-HTTP route.
+ * surface anymore; every vendor reads these tools over the same streamable-HTTP route.
  *
  * Each entry pairs a tool name + description + zod input shape with a handler
  * closure bound to ONE automation execution (its `workspacePath` + `executionId`).

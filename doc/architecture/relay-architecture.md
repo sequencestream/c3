@@ -8,7 +8,7 @@
 
 ## 1. 定位与目标
 
-relay 是 c3 进程内的 **provider 接入枢纽**:所有 vendor CLI(claude / codex)的 provider 流量,不再直接连上游,而是统一发到 c3 自身 loopback 上的 relay 端点,由 relay 负责认证换发、协议适配与故障转移。
+relay 是 c3 进程内的 **provider 接入枢纽**:能自定义 provider 的 vendor CLI(claude / codex)的 provider 流量,不再直接连上游,而是统一发到 c3 自身 loopback 上的 relay 端点,由 relay 负责认证换发、协议适配与故障转移。cursor 不在此列——c3 没有讲 Cursor 协议的 relay,其 agent 恒为 `system` 模式(见 [ADR-0040](adr/0040-cursor-as-host-cli-vendor.md)),凭据由 CLI 自己持有。
 
 本次演进的三个目标:
 

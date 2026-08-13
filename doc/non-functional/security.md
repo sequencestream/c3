@@ -35,7 +35,7 @@
 
 ## Agent apiKey 静态加密(SEC-13)
 
-一个 `custom` 智能体(claude 或 codex)会存储一个 provider/网关的 `apiKey`。为了让该密钥不以明文留在库中,c3 在**存储边界**处对其加密:明文只存在于内存中(运行时——例如 `launchForAgent` 的 `ANTHROPIC_API_KEY` 注入——始终看到真实密钥),落库的值是 `config_type='secret'` 的密文。
+智能体配置会存储一个 `apiKey`:`custom` 模式的 claude / codex 存的是 provider/网关密钥,`system` 模式的 cursor 存的是可选的 Cursor API key。加密按**字段名**而非厂商分支施加,因此三者同路。为了让该密钥不以明文留在库中,c3 在**存储边界**处对其加密:明文只存在于内存中(运行时——例如 `launchForAgent` 的 `ANTHROPIC_API_KEY` 注入——始终看到真实密钥),落库的值是 `config_type='secret'` 的密文。
 
 一个加密后密钥的**线路格式**:
 

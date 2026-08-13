@@ -154,7 +154,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 - **`module`**(text,可选): 推断出的模块名称;省略时 —— 插入场景下落库为 `''`(RM-R14);更新场景下保留原值(RM-R20)
 - **`dependsOn`**(`id[]`,可选): 对**已存在**的项目内意图的提议依赖(按 id);更新场景下,提供它(或 `dependsOnIndexes`)会替换依赖集合,两者都省略则保持不变(RM-R20)
 - **`dependsOnIndexes`**(`number[]`,可选): 对同一批次内**兄弟**条目的提议依赖,按从 0 开始的数组下标;在保存时解析为该兄弟条目的 id(RM-R17)。被下标引用的兄弟条目自身也可能是一个更新目标(RM-R20)。
-- **`intentSessionId`**(text,可选): 反向链接到产生此意图的沟通会话,持久化到 `intent_session_id`。**仅当该批次恰好保存一个意图时才生效** —— 多条目批次会忽略它(存储层只在 `length === 1` 时才写入)。智能体用注入到其提示词中的会话 id 来填充它;保存处理器会把它归一化为已绑定的沟通会话 id,以便通过 `open_intent_chat` 解析。这弥补了 refine 的 `run:bound` 回填所无法覆盖的新建意图缺口。`save_intent_directly` 中不存在此字段。
+- **`intentSessionId`**(text,可选): 反向链接到产生此意图的沟通会话,持久化到 `intent_session_id`。**仅当该批次恰好保存一个意图时才生效** —— 多条目批次会忽略它(存储层只在 `length === 1` 时才写入)。智能体用注入到其提示词中的会话 id 来填充它;保存处理器会把它归一化为已绑定的沟通会话 id,以便通过 `open_intent_session` 解析。这弥补了 refine 的 `run:bound` 回填所无法覆盖的新建意图缺口。`save_intent_directly` 中不存在此字段。
 - **`specMode`**(`'sdd'`|`'fast'`| null,可选): 每意图级规格模式覆盖。省略 = 不改动(新建意图按 `null` 继承工作区);显式 `null` = 清除覆盖恢复继承;`'sdd'` / `'fast'` = 固定该模式。缺省与显式 `null` 刻意区分,使一次普通意图编辑不会意外清除或改写已有模式。规范或开发已起步的意图,该字段经 `set_intent_spec_mode` 的写入(含清除覆盖)一律被拒(RM-R43)。
 
 ## Intent Dependency

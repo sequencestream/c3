@@ -37,14 +37,15 @@
 智能体执行使用 c3 管理的 vendor 安装,路径为 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`。
 发布文档必须把这一契约写明:
 
-- **解析优先级是固定的。** `CLAUDE_PATH` / `CODEX_PATH` 优先,其次是 c3 管理的 CLI,最后是
-  降级的 host PATH 回退。
+- **解析优先级是固定的。** env override(`CLAUDE_PATH` / `CODEX_PATH` / `CURSOR_PATH`)优先,
+  其次是 c3 管理的 CLI,最后是降级的 host PATH 回退。非托管厂商(cursor)没有中间那一级,
+  也不进入下载、版本比较与钉选的任何一条路径。
 - **托管安装是经过校验且有状态的。** c3 读取 npm packument,下载 tarball,
   校验 `dist.integrity`,暂存/自检二进制文件,并把来源/版本/错误状态记录在
   `~/.c3/vendor/manifest.json` 中。
 - **回退不等于成功。** 如果托管安装或同步失败,但 host PATH 中存在可用的 CLI,
   智能体可以在 `host-path-fallback` 状态下运行;日志必须保留托管失败的原因。
-- **凭据在 c3 之外。** c3 从不写入或迁移 `~/.claude`、`~/.codex`、令牌、shell
+- **凭据在 c3 之外。** c3 从不写入或迁移 `~/.claude`、`~/.codex`、`~/.cursor`、令牌、shell
   配置文件、包管理器安装,或 PATH。
 
 这是 ADR-0012(vendor 可执行文件解析是第一个能力门禁)在分发层面的体现。

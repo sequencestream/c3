@@ -3,7 +3,7 @@
  * `find_intents` / `view_intent` / `save_intents` are served over this ONE
  * streamable-HTTP MCP route bound to a single run — the SAME transport both Claude
  * and Codex now consume (neither uses an in-process SDK MCP server for c3 tools).
- * The tool logic comes from the shared framing-free definitions, so both vendors
+ * The tool logic comes from the shared framing-free definitions, so every vendor
  * run identical behavior and permission gates from one place.
  *
  * Mirrors the provider relay (`transport/relay`): a kernel-neutral bind/dispose

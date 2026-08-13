@@ -194,11 +194,11 @@ export interface CodexAgentConfig {
 /**
  * The `cursor` vendor's config sub-object — a key and a model, no base URL.
  *
- * The Cursor SDK authenticates with an API key only: it does not read the
- * credential `cursor-agent login` writes to the OS keychain. So unlike the other
- * vendors, whose `system` mode means "use the vendor CLI's own login", a Cursor
- * agent always needs a key — from here, or from `CURSOR_API_KEY` in the server's
- * environment when this is empty.
+ * The key is OPTIONAL: supplied it is used, left empty the run falls back to
+ * `CURSOR_API_KEY` in the server's environment and then to the login
+ * `cursor-agent login` writes to the OS keychain — so a subscriber needs no key
+ * at all. All three being empty is not an error here; the failure, if any,
+ * surfaces from the CLI itself.
  *
  * There is deliberately no `baseUrl`: c3 has no relay that speaks Cursor's
  * protocol, so a Cursor agent cannot be pointed at a different provider and is

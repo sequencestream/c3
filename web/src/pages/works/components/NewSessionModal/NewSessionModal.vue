@@ -6,7 +6,7 @@
  * 服务端首跑回落 defaultAgentId。选定某 vendor 后再从该 vendor 的 agent 里挑一个,
  * 选定的 agent 作为 pending 会话的 intent 随 create_session 上送。
  *
- * 运行时不可用的 vendor(宿主 CLI 不在 PATH、或进程内 SDK 解析不到)在 vendor 下拉里
+ * 运行时不可用的 vendor(宿主 CLI 解析不到)在 vendor 下拉里
  * 灰显并就地标注原因,无法选中;底部给出「前往检测面板」入口(emit goto-settings)。
  * 可用性一律读 App 派生的中立信号,这里不解读 hostStatus、也不按 vendor 名分支。
  * presentational:确认/取消/跳转均上抛,实际建会话由 App 处理。

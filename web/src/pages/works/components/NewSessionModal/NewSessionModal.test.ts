@@ -98,7 +98,7 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
     expect(vendorOption(w, 'claude')?.attributes('disabled')).toBeUndefined()
   })
 
-  it('cursor SDK 不可解析时 cursor 选项禁用并标注原因', () => {
+  it('cursor CLI 不可解析时 cursor 选项禁用并标注原因', () => {
     const runtime = availability()
     runtime.cursor = {
       vendor: 'cursor',

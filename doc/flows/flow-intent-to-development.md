@@ -15,7 +15,7 @@
 
 ```mermaid
 flowchart TD
-    IDEA[open_intent_chat] --> COMM[read-only communication agent]
+    IDEA[open_intent_session] --> COMM[read-only communication agent]
     COMM --> SAVE[save_intents — human confirm]
     SAVE -- allow --> LEDGER[(intent ledger · todo)]
     SAVE -- deny --> X[nothing written]
@@ -39,7 +39,7 @@ flowchart TD
 
 ## 细化 — 只读沟通智能体
 
-1. **web-console → intent-management。** 用户点击想法(💡)按钮;`open_intent_chat`
+1. **web-console → intent-management。** 用户点击想法(💡)按钮;`open_intent_session`
    切换到意图视图,并(重新)加载该项目 `isCurrent` 的沟通会话
    (历史 + 实时流),以解析出的绝对项目路径为键(`RM-R4`、`RM-R10`)。进入时
    服务端会**协调**每一条 `in_progress` 的意图(见下文的*协调*,`RM-R18`)。
@@ -274,7 +274,7 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   空白,直到目标会话的行出现在侧边栏中。一旦该行到达,
   `consumePendingWorkSessionSelect` 只选中那一个会话,绝不选历史会话。
   如果目标行始终没有到达(例如广播丢失),右栏将保持空白。
-- **进入时协调(`RM-R18`)。** 在 `open_intent_chat` 时,每一条 `in_progress` 意图的
+- **进入时协调(`RM-R18`)。** 在 `open_intent_session` 时,每一条 `in_progress` 意图的
   `lastWorkSessionId` 会与进程表比对:一个**已死**的进程,若其最后 3 条助手
   消息被完成度判定确认为 `done`,则被**自动完成**(提交 + 推送 +
   状态置为 `done`) — 手动**与**自动化运行都适用;一个存活的进程派生出

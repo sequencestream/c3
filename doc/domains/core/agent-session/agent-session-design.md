@@ -48,8 +48,8 @@ Codex 是由 c3 自身极简的 `codex exec --experimental-json` 包装器启动
 事件/类型参考保留。
 
 **回环代理旁路(三个厂商)。** 每个 vendor 子进程的环境都以 `NO_PROXY` / `no_proxy`
-追加 `127.0.0.1,localhost,::1` 收尾——claude 路径在 `buildChildEnv` 中,codex 路径在其
-driver 的 env 构造中(两者共用同一个幂等追加函数)。cursor 无子进程可配 env——其 SDK 在 c3 进程内发起请求,故沿用 c3 服务进程自身的代理旁路设置,宿主已配置的旁路条目只增不减。
+追加 `127.0.0.1,localhost,::1` 收尾——claude 路径在 `buildChildEnv` 中,codex 与 cursor 路径
+在各自 driver 的 env 构造中(三者共用同一个幂等追加函数,宿主已配置的旁路条目只增不减)。
 c3 提供给子进程的一切(四条 MCP 路由与 provider relay)都在 c3 自己的回环 origin 上,
 而宿主导出 `HTTP(S)_PROXY` 却未设旁路时,vendor CLI 会把这些回环请求发给代理并收到
 502/空响应。**其失败模式是静默的**:MCP 服务器连接不上,该服务器的工具就整体缺席于
@@ -79,12 +79,13 @@ c3 提供给子进程的一切(四条 MCP 路由与 provider relay)都在 c3 自
 - 关闭会结束该流,使迭代返回,query 正常终止。
 - 构造流程先推入原始 prompt(及其图片,如果有),然后循环运行。
 
-**Prompt 图片(2026-06-16)**:当第一个 turn 携带图片时,推送会把 SDK 用户
+**Prompt 图片**:当第一个 turn 携带图片时,推送会把 SDK 用户
 消息内容构建为一个 block 数组——一个前导文本 block 加上每个附件一个 base64 图片 block——
 而不是一个普通字符串(这是 CLI 原样转发的 Anthropic Messages 内容形状)。仅有
 文本的 turn 仍是字符串(不变)。team lead 推入的 turn 始终为纯文本。图片通过
 中立的 driver-start / run-options images 字段到达,Codex 路径以不同方式编码
-同一字段(临时文件的 `--image` 路径——见 [codex-sdk-guide](../../../architecture/codex-sdk-guide.md))。
+同一字段(临时文件的 `--image` 路径——见 [codex-sdk-guide](../../../architecture/codex-sdk-guide.md));
+Cursor 路径把该字段显式丢弃并告警——`cursor-agent` 不接受图片输入,丢弃胜过让整轮失败。
 
 除 team 之外还有两个好处:SDK 控制请求(`setPermissionMode` / `interrupt`)**仅**在
 流式输入模式下生效——在字符串 prompt 下它们会被静默吞掉(ADR 0008)。

@@ -63,7 +63,7 @@ const READ_MCP_PREFIXES = [
  * c3 MCP tools shown in the automation allowlist UI. They are attached to an
  * execution (Claude or Codex) only when that automation explicitly selects one.
  *
- * Both vendors reach these over the loopback HTTP MCP route (`transport/automation-mcp`,
+ * Every vendor reaches these over the loopback HTTP MCP route (`transport/automation-mcp`,
  * from the shared `c3-tools.ts` builder). They live outside the workspace MCP config
  * (they're c3's own tools, not user-configured), so they're explicitly registered
  * both here in `freezeTools()` and in the automation form's tool manifest handler.

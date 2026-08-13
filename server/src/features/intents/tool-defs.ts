@@ -1,6 +1,6 @@
 /**
  * Shared definitions for the three intent tools, kept ONE source so every surface
- * that exposes them never drifts. Both Claude and Codex now reach these tools over
+ * that exposes them never drifts. Every vendor reaches these tools over
  * the SAME loopback HTTP MCP route (`transport/intent-mcp`); there is no in-process
  * SDK MCP server for c3 tools anymore.
  *

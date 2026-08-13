@@ -135,9 +135,9 @@ stateDiagram-v2
 > 也是今天的 wire/UI 表面。在其下面,一个厂商中立的适配层引入了一个中立的
 > **agent driver**,gateway 变为一个中立的**审批桥接**,历史记录变为一个中立的**会话
 > 存储**,五路模式被简化为一个中立的网格(action mode plan/build × 一个 tool gate),
-> 每个 adapter 都把它转换出来。逐厂商的分歧(Codex 没有逐工具审批;只有 Claude
-> 会 fork/流式传输)存在于一个被探测出来的**能力账本**中,而不在这份规格的模式表里。Codex 被
-> 路由通过中立 driver,而 Claude 路径保持逐字节不变:当会话的 vendor 是非 Claude 时,启动会分叉
+> 每个 adapter 都把它转换出来。逐厂商的分歧(Codex 与 Cursor 都没有逐工具审批;只有 Claude
+> 会 fork/流式传输)存在于一个被探测出来的**能力账本**中,而不在这份规格的模式表里。Codex 与
+> Cursor 被路由通过中立 driver,而 Claude 路径保持逐字节不变:当会话的 vendor 是非 Claude 时,启动会分叉
 > 到 driver 路由,从头到尾练习中立 driver / 审批
 > 桥接 / 会话存储接口。driver 路由会解析该会话 agent 的启动
 > 覆盖(model / base URL / API key / env 覆盖 + 仅 codex 才有的策略),并把它们编入
@@ -150,8 +150,8 @@ stateDiagram-v2
 > 源码和账本 DB 留在可写根目录之外,同时仍允许 `spec.md` 的写入。若那道 cwd /
 > specs-root 边界无法建立,启动会失败关闭,而不是回落到一个
 > 项目可写的 cwd。driver 路由刻意是*最小*路由——没有降级链、
-> socket 自动 resume、共识或 intent profile(那些是 Claude 特有的)。Codex 没有逐工具
-> 审批(008),因此其审批桥接从不触发;agent 启动时的沙箱模式/审批
+> socket 自动 resume、共识或 intent profile(那些是 Claude 特有的)。Codex 与 Cursor 都没有
+> 逐工具审批,因此其审批桥接从不触发;agent 启动时的沙箱模式/审批
 > 策略就是门控。没有厂商 SDK 类型跨入中立表面或共享协议
 > (ADR-0009);每个 SDK 只活在它自己的厂商 adapter 内部。
 
@@ -160,7 +160,9 @@ stateDiagram-v2
 > 解析该厂商的启动器二进制是第一道能力门控:adapter 注册表只有在其二进制能被解析时
 > 才会构造该厂商的 adapter,因此一个缺失的 CLI 意味着该 agent 类型只是
 > 不可用(去安装它;这是一个产品约定,以指引呈现,而非一个运行错误)。
-> Claude 二进制发现(`$CLAUDE_PATH`,否则 PATH 查找)是该门控在 Claude 上的实例。
+> Claude 二进制发现(`$CLAUDE_PATH` → c3 托管安装 → PATH 查找)是该门控在 Claude 上的实例;
+> Cursor 是同一道门控上不由 c3 分发的实例,只有 `$CURSOR_PATH` → PATH 两级,且二进制名
+> (`cursor-agent`)与 vendor 名不同,从描述符读取而非由 vendor id 推导(ADR-0040)。
 
 > **本地 MCP 服务器监督者。** 一个其 MCP 能力需要一个长期存活本地服务器的厂商会得到
 > 一个 SDK 未提供的监督者——SDK 在 spawn 之后就放弃了它(静默崩溃,无

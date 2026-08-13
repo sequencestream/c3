@@ -32,10 +32,17 @@ import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isRealC3Path, realDbPath } from './settings-guard.mjs'
+
+// Loaded through a runtime require, never a static import: this file is also
+// imported by a vitest test, and Vite's resolver only knows the builtins listed
+// in `module.builtinModules` — which excludes prefix-only modules like
+// `node:sqlite`, so a static import dies at collection with "Failed to load url
+// sqlite". A runtime require is opaque to the bundler and resolves normally.
+const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite')
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { DELIVERY_STATUSES, type Delivery } from '@ccc/shared/protocol'
@@ -92,13 +93,13 @@ describe('DeliveryList', () => {
     }
   })
 
-  it('emits create with title/description/dates from the inline form', async () => {
+  it('emits create with title/description/dates from the create dialog', async () => {
     const w = mount(DeliveryList, { props: { deliveries: [], activeId: null } })
     await w.find('[data-testid="delivery-new-btn"]').trigger('click')
     await w.find('[data-testid="delivery-create-title"]').setValue('Release X')
     await w.find('[data-testid="delivery-create-desc"]').setValue('the batch')
     await w.find('[data-testid="delivery-create-start"]').setValue('2026-08-06')
-    await w.find('[data-testid="delivery-create-submit"]').trigger('submit')
+    await w.find('[data-testid="delivery-create-submit"]').trigger('click')
     const created = w.emitted('create')?.[0]?.[0] as {
       title: string
       description: string
@@ -185,12 +186,117 @@ describe('DeliveryList — 头部折叠与「+」新建', () => {
     expect(title).not.toContain('delivery.action.create')
     expect(newBtn.attributes('aria-label')).toBe(title)
 
-    // 仍是开合内联表单,而非弹窗。
+    // 打开的是弹窗,而非把表单塞进列表(旧的内联表单钩子彻底消失)。
+    expect(w.find('[data-testid="delivery-create-dialog"]').exists()).toBe(false)
     expect(w.find('[data-testid="delivery-create-form"]').exists()).toBe(false)
     await newBtn.trigger('click')
-    expect(w.find('[data-testid="delivery-create-form"]').exists()).toBe(true)
-    await newBtn.trigger('click')
+    expect(w.find('[data-testid="delivery-create-dialog"]').exists()).toBe(true)
     expect(w.find('[data-testid="delivery-create-form"]').exists()).toBe(false)
+  })
+})
+
+// ---- 新建交付弹窗 ------------------------------------------------------
+
+describe('DeliveryList — 新建交付弹窗', () => {
+  beforeEach(() => {
+    installLocalStorage()
+  })
+
+  afterEach(() => {
+    ;(globalThis as { localStorage?: unknown }).localStorage = undefined
+  })
+
+  async function openCreate() {
+    const w = mount(DeliveryList, {
+      props: { deliveries: [delivery()], activeId: null },
+      attachTo: document.body,
+    })
+    await w.find('[data-testid="delivery-new-btn"]').trigger('click')
+    await nextTick()
+    return w
+  }
+
+  it('「+」打开的是模态弹窗:有 dialog 语义与本地化可访问名,标题输入获得焦点', async () => {
+    const w = await openCreate()
+    const dialog = w.find('[data-testid="delivery-create-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.attributes('role')).toBe('dialog')
+    expect(dialog.attributes('aria-modal')).toBe('true')
+    // i18n 已解析(非 key 原样回显)。
+    const name = dialog.attributes('aria-label')
+    expect(name).toBeTruthy()
+    expect(name).not.toContain('delivery.action.createTitle')
+
+    expect(document.activeElement).toBe(w.find('[data-testid="delivery-create-title"]').element)
+    w.unmount()
+  })
+
+  it('标题去空白后为空时提交禁用', async () => {
+    const w = await openCreate()
+    // 初始空标题即禁用。
+    expect(w.find('[data-testid="delivery-create-submit"]').attributes('disabled')).toBeDefined()
+    await w.find('[data-testid="delivery-create-title"]').setValue('   ')
+    expect(w.find('[data-testid="delivery-create-submit"]').attributes('disabled')).toBeDefined()
+    await w.find('[data-testid="delivery-create-title"]').setValue('Release X')
+    expect(w.find('[data-testid="delivery-create-submit"]').attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('提交一次 create:标题/描述去空白,填了的日期落 UTC 零点、留空落 null,并关闭弹窗', async () => {
+    const w = await openCreate()
+    await w.find('[data-testid="delivery-create-title"]').setValue('  Release X  ')
+    await w.find('[data-testid="delivery-create-desc"]').setValue('  the batch  ')
+    await w.find('[data-testid="delivery-create-start"]').setValue('2026-08-06')
+    await w.find('[data-testid="delivery-create-end"]').setValue('')
+    await w.find('[data-testid="delivery-create-submit"]').trigger('click')
+
+    expect(w.emitted('create')).toHaveLength(1)
+    expect(w.emitted('create')?.[0]).toEqual([
+      {
+        title: 'Release X',
+        description: 'the batch',
+        startDate: Date.parse('2026-08-06T00:00:00Z'),
+        endDate: null,
+      },
+    ])
+    expect(w.find('[data-testid="delivery-create-dialog"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('取消按钮/遮罩/Esc 三路等价:都关闭弹窗、都不 emit create', async () => {
+    for (const dismiss of [
+      (w: VueWrapper) => w.find('[data-testid="delivery-create-cancel"]').trigger('click'),
+      (w: VueWrapper) => w.find('[data-testid="delivery-create-overlay"]').trigger('click'),
+      (w: VueWrapper) => w.find('[data-testid="delivery-create-overlay"]').trigger('keydown.esc'),
+    ]) {
+      const w = await openCreate()
+      await w.find('[data-testid="delivery-create-title"]').setValue('draft')
+      await dismiss(w)
+      expect(w.emitted('create')).toBeFalsy()
+      expect(w.find('[data-testid="delivery-create-dialog"]').exists()).toBe(false)
+      // 取消不改动列表已有数据(仍是那一条 Sprint 3,没有多出草稿行)。
+      const rows = w.findAll('[data-testid="delivery-row-planned"]')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].text()).toContain('Sprint 3')
+      w.unmount()
+    }
+  })
+
+  it('重新打开清空草稿:四个字段全空', async () => {
+    const w = await openCreate()
+    await w.find('[data-testid="delivery-create-title"]').setValue('draft never submitted')
+    await w.find('[data-testid="delivery-create-desc"]').setValue('draft desc')
+    await w.find('[data-testid="delivery-create-start"]').setValue('2026-08-06')
+    await w.find('[data-testid="delivery-create-end"]').setValue('2026-08-07')
+    await w.find('[data-testid="delivery-create-cancel"]').trigger('click')
+
+    await w.find('[data-testid="delivery-new-btn"]').trigger('click')
+    for (const id of ['title', 'desc', 'start', 'end']) {
+      const el = w.find(`[data-testid="delivery-create-${id}"]`).element as
+        HTMLInputElement | HTMLTextAreaElement
+      expect(el.value, id).toBe('')
+    }
+    w.unmount()
   })
 })
 
@@ -238,5 +344,45 @@ describe('DeliveryList.vue — 列宽样式契约', () => {
     expect(mobile).toContain('.delivery-list.collapsed')
     expect(mobile).toMatch(/width:\s*100%/)
     expect(mobile).toMatch(/min-width:\s*0/)
+  })
+
+  it('内联创建表单的样式已随交互一并移除', () => {
+    expect(listSrc).not.toMatch(/\.delivery-create-form/)
+    expect(listSrc).not.toMatch(/\.delivery-form-field/)
+    expect(listSrc).not.toMatch(/\.delivery-create-submit/)
+  })
+})
+
+// ---- 新建弹窗样式契约 --------------------------------------------------
+
+const createDialogSrc = readFileSync(
+  resolve(
+    process.cwd(),
+    'web/src/pages/deliveries/components/DeliveryList/DeliveryCreateDialog.vue',
+  ),
+  'utf8',
+)
+
+describe('DeliveryCreateDialog.vue — 弹窗宽度契约', () => {
+  it('桌面端默认宽度为页面宽度的二分之一,上下限与编辑弹窗同一对值', () => {
+    const modal = ruleBody(createDialogSrc, '.dc-modal')
+    expect(modal).toMatch(/width:\s*50vw/)
+    expect(modal).toMatch(/min-width:\s*420px/)
+    expect(modal).toMatch(/max-width:\s*860px/)
+  })
+
+  it('移动端退化为全屏 sheet:满宽、撑满视高、去边框圆角、安全区留白、日期竖排、页脚吸底', () => {
+    const mobile = /@media \(max-width: 767px\) \{([\s\S]*?)\n\}/.exec(createDialogSrc)?.[1] ?? ''
+    const modal = ruleBody(mobile, '.dc-modal')
+    expect(modal).toMatch(/width:\s*100vw/)
+    expect(modal).toMatch(/min-width:\s*0/)
+    expect(modal).toMatch(/max-width:\s*none/)
+    expect(modal).toMatch(/min-height:\s*100dvh/)
+    expect(modal).toMatch(/border:\s*0/)
+    expect(modal).toMatch(/border-radius:\s*0/)
+    expect(modal).toMatch(/env\(safe-area-inset-/)
+    // 起止日期由并排改为竖排。
+    expect(ruleBody(mobile, '.dc-row')).toMatch(/flex-direction:\s*column/)
+    expect(ruleBody(mobile, '.dc-foot')).toMatch(/margin-top:\s*auto/)
   })
 })

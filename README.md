@@ -15,15 +15,6 @@ An **AI workbench** that centrally manages and drives the work of multiple AI co
                              `claude/codex` CLI binary
 ```
 
-<p align="center">
-  <img src="handbook/images/c3-agents.png" alt="Agents" width="49%" />
-  <img src="handbook/images/c3-intent-work.png" alt="Intent work" width="49%" />
-</p>
-<p align="center">
-  <img src="handbook/images/c3-automation-pr-fix.png" alt="Automation PR fix" width="49%" />
-  <img src="handbook/images/c3-consensus-example.png" alt="Consensus example" width="49%" />
-</p>
-
 ## Core workflow
 
 ```mermaid
@@ -84,26 +75,16 @@ flowchart LR
 
 See [`doc/features.md`](doc/features.md) for the full feature tree.
 
+<p align="center">
+  <img src="handbook/images/c3-agents.png" alt="Agents" width="49%" />
+  <img src="handbook/images/c3-intent-work.png" alt="Intent work" width="49%" />
+</p>
+<p align="center">
+  <img src="handbook/images/c3-automation-pr-fix.png" alt="Automation PR fix" width="49%" />
+  <img src="handbook/images/c3-consensus-example.png" alt="Consensus example" width="49%" />
+</p>
+
 ## Usage
-
-c3 ships in **two flavours from the same release** — pick one:
-
-|          | **Desktop app (UI)**                         | **CLI single binary**                  |
-| -------- | -------------------------------------------- | -------------------------------------- |
-| Start it | install, then double-click                   | `./c3 --daemon`, then open a browser   |
-| Window   | native WebView, tray-resident                | your browser                           |
-| Best for | anyone who would rather not touch a terminal | servers, remote boxes, scripted setups |
-
-Both drive the same backend and **share the same `~/.c3`** — settings, credentials,
-workspaces, database and sessions. You can install both and switch freely; just don't
-run them at the same time against the same data directory.
-
-### Desktop app
-
-Download the installer for your platform from
-[**GitHub Releases**](https://github.com/sequencestream/c3/releases/latest)
-(`.dmg` for macOS, `.msi` for Windows, `.deb` / `.AppImage` for Linux), install it and
-double-click. Everything else — backend, port, window — is handled for you.
 
 ### CLI single binary
 
@@ -119,8 +100,8 @@ brew upgrade sequencestream/tap/c3   # update to the latest release
 Release binaries are published on **GitHub Releases**.
 
 ```bash
-shasum -a 256 -c c3-v0.9.6-macos-arm64.sha256
-# c3-v0.9.6-macos-arm64: OK
+shasum -a 256 -c c3-v0.18.0-macos-arm64.sha256
+# c3-v0.18.0-macos-arm64: OK
 # or check every artifact at once:
 shasum -a 256 -c SHA256SUMS
 ```

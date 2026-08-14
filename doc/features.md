@@ -208,10 +208,14 @@ c3
 │       ├── 会话四元组钉定                        # (keyId, secretVersion, workspaceName, policyEpoch);换 key 与未知会话同答 404;版本/epoch 变化先清场再 404;先持久化后清连接
 │       ├── trusted-local                         # 无管理员关卡 + 回环 peer 时无需 key,合成 local 主体拥有全部工作区与全部工具;已出示的 bearer 必须校验通过,绝不降级
 │       ├── 暴露未配置 503                        # 绑定非回环地址却无管理员时整面 503 + 引导文案,回环请求同样拒绝,不建立任何会话
-│       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event(新 key 默认勾选)+ find_deliveries/view_delivery(可授权但**默认不勾选**);写:save_intents/save_intent_directly/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选);目录不含按意图回填 PR 状态的工具,无法授权
+│       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event/list_workspaces/whoami(新 key 默认勾选)+ find_deliveries/view_delivery(可授权但**默认不勾选**);写:save_intents/save_intent_directly/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选);目录不含按意图回填 PR 状态的工具,无法授权
 │       ├── 目录与默认集解耦                      # 「可被管理员勾选」与「新 key 自动获得」是两份名表:EXTERNAL_MCP_READ_TOOLS 是分级来源,EXTERNAL_MCP_DEFAULT_TOOLS 是建 key 时服务端强制写入的初值;编译期钉死默认集只能取读级工具
 │       ├── 越权拒绝                              # 未勾选工具不进 tools/list,绕过发现直接调用返回稳定 forbidden 且无副作用
-│       └── 事件归属                              # publish_event 的 envelope workspace 取自会话选定的工作区,sessionId 固定 external-mcp:<key-id>,调用方无法伪造
+│       ├── 逐次授权与写工具目标                  # 目录不闭包作用域,handler 只收本次调用求解出的 EffectiveScope;写工具可选入参 workspaceName 逐次指定目标(读工具不接受),越权目标返回与「工具未授权」逐字相同的 forbidden
+│       ├── id 归属校验                          # save_intents 的 upsert 目标与持久化依赖引用、submit_spec_review、start_session_for_intent、continue_discussion 先全库反查归属工作区并比对,不符即在落库/广播/事件/拉起之前拒绝,绝不静默改到 id 真实归属的工作区
+│       ├── 范围自检工具                          # list_workspaces 返回有效范围内的工作区名(无路径),whoami 回显 keyId/归属账号/本会话工作区/可访问工作区/已授权工具(无密钥、哈希、认证头、路径)
+│       ├── 事件归属                              # publish_event 的 envelope workspace 取自校验后的工作区,sessionId 固定 external-mcp:<key-id>@<工作区名>,载荷里的 workspace/session/source 不进 envelope;save_intents 剥掉调用方传入的 intentSessionId
+│       └── 写调用审计                            # 每次已知写工具调用尝试(success/failure/rejected)落且只落一行 external_mcp_write_audits(keyId/归属/工作区/工具/结果/时间,无入参、输出与任何密钥材料);先定业务结果、等审计写入再回响应,落库失败保持业务结果不变但发脱敏运维错误;读操作与速率限制是已知缺口
 │
 ├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │

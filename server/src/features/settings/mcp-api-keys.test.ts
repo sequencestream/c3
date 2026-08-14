@@ -7,18 +7,17 @@
  * appearance of the plaintext, and revocation/re-scoping reaching live sessions.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import { EXTERNAL_MCP_DEFAULT_TOOLS, type ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import type { McpApiKeyInfo } from '../../kernel/config/mcp-api-keys.js'
 
-const READ_TOOLS = [
-  'find_intents',
-  'view_intent',
-  'find_discussions',
-  'view_discussion',
-  'publish_event',
-]
+/**
+ * What the server forces onto a fresh key. Taken from the shared list rather
+ * than spelled out again: this file asserts that the handler ignores whatever
+ * the client asked for, not what the default set happens to contain today.
+ */
+const READ_TOOLS = [...EXTERNAL_MCP_DEFAULT_TOOLS]
 
 const h = vi.hoisted(() => ({
   admin: true,

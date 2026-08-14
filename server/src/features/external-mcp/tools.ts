@@ -23,14 +23,20 @@
  *
  * Tool BEHAVIOUR is the same `run*` core the internal surfaces call, so an
  * external caller never observes different rules from an internal one; only the
- * binding differs. The binding comes from the authenticated request
- * ({@link ExternalMcpScope}) rather than from a run closure — an external caller
- * has no run.
+ * binding differs. The binding comes from the authenticated request — the
+ * {@link EffectiveScope} the gate produced for THIS call — rather than from a run
+ * closure; an external caller has no run.
+ *
+ * The catalog closes over NO scope. Every handler receives the scope as an
+ * argument, so a write that names another workspace is served by the same entry
+ * under a freshly authorized scope, and there is no closure left holding the
+ * workspace a session happened to initialize with.
  */
 import type { ZodRawShape } from 'zod'
 import { z } from 'zod'
 import type { Intent } from '@ccc/shared/protocol'
 import { canonicalizeWorkspacePath } from '../../kernel/config/mcp-api-keys.js'
+import { listWorkspacesForSubject, type EffectiveScope } from '../auth/authorization.js'
 import { workspaceNameToCanonicalPath } from './workspace-scope.js'
 import {
   findDesc,
@@ -60,6 +66,7 @@ import {
   type FindDeliveriesArgs,
   type ViewDeliveryArgs,
 } from '../deliveries/tool-defs.js'
+import { getDiscussion } from '../discussions/store.js'
 import {
   continueDiscussionDesc,
   continueDiscussionSchema,
@@ -113,16 +120,12 @@ import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 
 /**
- * What one authenticated external request acts on: the workspace resolved from
- * the key's binding, the key id that answered, and the tool scope that key was
- * granted. All three are server-derived — the caller supplies only a key.
+ * What one authenticated external CALL acts on. It is the gate's own frozen
+ * result, re-derived per call — never a session-lifetime value and never
+ * anything the caller supplied. Aliased rather than re-declared so a field can
+ * not drift away from what `authorizeCall` actually decided.
  */
-export interface ExternalMcpScope {
-  workspacePath: string
-  keyId: string
-  /** The names this key may call; anything outside it is refused by the transport. */
-  tools: readonly string[]
-}
+export type ExternalMcpScope = EffectiveScope
 
 /** Composition-root callbacks the external tool handlers need at dispatch time. */
 export interface ExternalMcpToolDeps {
@@ -152,7 +155,7 @@ export type ExternalToolResult = {
   isError?: boolean
 }
 
-/** One catalog entry: wire identity + grading + zod input shape + a scope-bound handler. */
+/** One catalog entry: wire identity + grading + zod input shape + a scope-taking handler. */
 export interface ExternalMcpTool {
   name: ExternalMcpToolName
   /**
@@ -163,37 +166,75 @@ export interface ExternalMcpTool {
   access: ExternalMcpToolAccess
   description: string
   inputSchema: ZodRawShape
-  handler: (args: unknown) => ExternalToolResult | Promise<ExternalToolResult>
+  /**
+   * Refuse the call BEFORE the business core runs, returning the tool text to
+   * answer with. This is where an id whose real owner is another workspace is
+   * caught: the dispatcher reports it as a `rejected` write, so it is
+   * distinguishable in the audit trail from a handler that ran and failed.
+   */
+  validate?: (args: unknown, scope: ExternalMcpScope) => string | null
+  handler: (
+    args: unknown,
+    scope: ExternalMcpScope,
+  ) => ExternalToolResult | Promise<ExternalToolResult>
 }
 
-/** A catalog entry before its grading is attached. */
+/** A catalog entry before its grading (and the write-only workspace override) is attached. */
 type ExternalMcpToolSpec = Omit<ExternalMcpTool, 'access'>
 
 /**
  * The stable source identity an external call is attributed to. It names the
- * KEY, never a run — an external caller has no session, and letting it choose one
- * would let it forge provenance on the bus and in the intent log.
+ * KEY and the workspace the call was authorized against — never a run, because
+ * an external caller has no session and letting it choose one would let it forge
+ * provenance on the bus and in the intent log. The workspace is part of the id
+ * so events from ONE range-scoped key stay attributable when that key operates
+ * across several workspaces.
  */
-export function externalMcpSourceId(keyId: string): string {
-  return `external-mcp:${keyId}`
+export function externalMcpSourceId(keyId: string, workspaceName: string): string {
+  return `external-mcp:${keyId}@${workspaceName}`
 }
 
 const text = (s: string): ExternalToolResult['content'] => [{ type: 'text' as const, text: s }]
+const ok = (s: string): ExternalToolResult => ({ content: text(s) })
 
 /**
- * Build the WHOLE catalog bound to ONE authenticated request scope. Filtering to
- * the key's granted subset is the transport's job — keeping the two apart means
- * the catalog cannot quietly become "whatever this key happens to have".
+ * The optional per-call workspace override, attached to EVERY write entry and to
+ * no read entry. Centralized rather than repeated per tool: the two grades are
+ * derived from one name list, so "which tools accept an override" cannot drift
+ * away from "which tools are writes".
  */
-export function buildExternalMcpCatalog(
-  scope: ExternalMcpScope,
-  deps: ExternalMcpToolDeps,
-): ExternalMcpTool[] {
-  return buildToolSpecs(scope, deps).map((spec) => ({ ...spec, access: accessOf(spec.name) }))
+const workspaceOverrideField = z
+  .string()
+  .optional()
+  .describe(
+    '可选:本次调用的目标工作区名称,必须是 list_workspaces 返回的名字之一;' +
+      '省略则使用建立连接时 X-C3-Workspace 选定的工作区。' +
+      '范围外或不存在的名字一律拒绝,不会改写为任何其它工作区。',
+  )
+
+/**
+ * Build the WHOLE catalog. It closes over the composition root's callbacks and
+ * over NOTHING about who is calling: the scope arrives per call, so one built
+ * catalog serves every key, every session and every workspace.
+ *
+ * Filtering to the key's granted subset is the transport's job — keeping the two
+ * apart means the catalog cannot quietly become "whatever this key happens to
+ * have".
+ */
+export function buildExternalMcpCatalog(deps: ExternalMcpToolDeps): ExternalMcpTool[] {
+  return buildToolSpecs(deps).map((spec) => {
+    const access = accessOf(spec.name)
+    return access === 'write'
+      ? {
+          ...spec,
+          access,
+          inputSchema: { ...spec.inputSchema, workspaceName: workspaceOverrideField },
+        }
+      : { ...spec, access }
+  })
 }
 
-function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): ExternalMcpToolSpec[] {
-  const sourceId = externalMcpSourceId(scope.keyId)
+function buildToolSpecs(deps: ExternalMcpToolDeps): ExternalMcpToolSpec[] {
   // Discussion run controls: the live-run guard is feature-private, the starter
   // and broadcasts come from the composition root.
   const runStarter = {
@@ -210,25 +251,26 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       name: 'find_intents',
       description: findDesc,
       inputSchema: findSchema,
-      handler: (args) => runFind(scope.workspacePath, args as FindArgs),
+      handler: (args, scope) => runFind(scope.workspacePath, args as FindArgs),
     },
     {
       name: 'view_intent',
       description: viewDesc,
       inputSchema: viewSchema,
-      handler: (args) => runView(scope.workspacePath, args as ViewArgs),
+      handler: (args, scope) => runView(scope.workspacePath, args as ViewArgs),
     },
     {
       name: 'find_discussions',
       description: findDiscussionsDesc,
       inputSchema: findDiscussionsSchema,
-      handler: (args) => runFindDiscussions(scope.workspacePath, args as FindDiscussionsArgs),
+      handler: (args, scope) =>
+        runFindDiscussions(scope.workspacePath, args as FindDiscussionsArgs),
     },
     {
       name: 'view_discussion',
       description: viewDiscussionDesc,
       inputSchema: viewDiscussionSchema,
-      handler: (args) => runViewDiscussion(scope.workspacePath, args as ViewDiscussionArgs),
+      handler: (args, scope) => runViewDiscussion(scope.workspacePath, args as ViewDiscussionArgs),
     },
     // Delivery tools are read-only and, unlike the other read entries, are NOT in
     // the default scope of a new key: a fresh key must not silently gain the
@@ -237,13 +279,43 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       name: 'find_deliveries',
       description: findDeliveriesDesc,
       inputSchema: findDeliveriesSchema,
-      handler: (args) => runFindDeliveries(scope.workspacePath, args as FindDeliveriesArgs),
+      handler: (args, scope) => runFindDeliveries(scope.workspacePath, args as FindDeliveriesArgs),
     },
     {
       name: 'view_delivery',
       description: viewDeliveryDesc,
       inputSchema: viewDeliverySchema,
-      handler: (args) => runViewDelivery(scope.workspacePath, args as ViewDeliveryArgs),
+      handler: (args, scope) => runViewDelivery(scope.workspacePath, args as ViewDeliveryArgs),
+    },
+    {
+      name: 'list_workspaces',
+      description: listWorkspacesDesc,
+      inputSchema: {},
+      handler: (_args, scope) =>
+        ok(JSON.stringify({ workspaces: reachableWorkspaceNames(scope) }, null, 2)),
+    },
+    {
+      name: 'whoami',
+      description: whoamiDesc,
+      inputSchema: {},
+      // Owner, reach and granted tools — the three answers a caller would
+      // otherwise guess by probing. Never a path, never anything about the key
+      // beyond its non-secret id: this tool exists to remove the need for
+      // enumeration, not to become an enumeration surface of its own.
+      handler: (_args, scope) =>
+        ok(
+          JSON.stringify(
+            {
+              keyId: scope.keyId,
+              owner: scope.ownerSubject,
+              workspace: scope.workspaceName,
+              workspaces: reachableWorkspaceNames(scope),
+              tools: [...scope.tools],
+            },
+            null,
+            2,
+          ),
+        ),
     },
     {
       name: 'publish_event',
@@ -252,11 +324,14 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       // The envelope's workspace and source come from the authenticated scope,
       // never from the arguments: an external caller can describe an event but
       // cannot decide which workspace hears it or whom it appears to come from.
-      handler: (args) =>
+      // Whatever workspace/session/source fields the payload carries stay inside
+      // the event body as ordinary (normalized) data — nothing is copied out of
+      // it into the envelope.
+      handler: (args, scope) =>
         runPublishEvent(args as PublishEventArgs, deps.normalizeEvent, (event) =>
           deps.publishEvent({
             workspacePath: scope.workspacePath,
-            sessionId: sourceId,
+            sessionId: externalMcpSourceId(scope.keyId, scope.workspaceName),
             event,
           }),
         ),
@@ -267,13 +342,18 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       name: 'save_intents',
       description: saveDesc,
       inputSchema: saveSchema,
+      // Every id the batch names — the upsert targets AND the dependency
+      // references that get persisted as edges — must already belong to this
+      // call's workspace. Checked as a whole before anything is written, so a
+      // batch carrying one foreign id lands nothing at all.
+      validate: (args, scope) => validateIntentBatchOwnership(args as SaveArgs, scope),
       // Interactively this tool is gated by the user's textual go-ahead in the
       // conversation. An unattended external caller has no conversation partner,
       // so the administrator's decision to tick this tool for this key IS the
       // authorization. That replaces the confirmation gate and nothing else: the
       // batch still goes through the store's own atomic validation and the same
       // intent-state rules.
-      handler: (args) =>
+      handler: (args, scope) =>
         runSaveConfirmed(scope.workspacePath, stripSessionBackLinks(args as SaveArgs), (path) =>
           deps.broadcastIntents(path),
         ),
@@ -282,7 +362,7 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       name: 'save_intent_directly',
       description: saveIntentDirectlyDesc,
       inputSchema: saveIntentDirectlySchema,
-      handler: (args) =>
+      handler: (args, scope) =>
         runSaveIntentDirectly(scope.workspacePath, args as SaveIntentDirectlyArgs, (path) =>
           deps.broadcastIntents(path),
         ),
@@ -298,7 +378,11 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
         intentId: z.string().describe('要提交审核结论的意图 id'),
         ...submitSpecReviewSchema,
       },
-      handler: (args) =>
+      validate: (args, scope) =>
+        intentOwnedByScope((args as { intentId: string }).intentId, scope)
+          ? null
+          : SPEC_REVIEW_INTENT_NOT_FOUND,
+      handler: (args, scope) =>
         runExternalSpecReview(scope, args as SubmitSpecReviewArgs & { intentId: string }),
     },
     {
@@ -317,21 +401,33 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
         intentId: z.string().describe('要启动会话的意图 id'),
         sessionType: z.enum(['spec', 'work']).describe('会话类型:spec=编写需求文档, work=开始开发'),
       },
-      handler: (args) =>
+      // Before ANY launch gate is evaluated and before a worktree is prepared:
+      // an intent from another workspace must not reach the launcher at all.
+      validate: (args, scope) =>
+        intentOwnedByScope((args as StartSessionArgs).intentId, scope)
+          ? null
+          : JSON.stringify({ code: 'intent.notFound' }),
+      handler: (args, scope) =>
         runStartSession(scope.workspacePath, args as StartSessionArgs, sessionLaunchDeps),
     },
     {
       name: 'start_discussion',
       description: startDiscussionDesc,
       inputSchema: startDiscussionSchema,
-      handler: (args) =>
+      handler: (args, scope) =>
         runStartDiscussion(scope.workspacePath, args as StartDiscussionArgs, runStarter),
     },
     {
       name: 'continue_discussion',
       description: continueDiscussionDesc,
       inputSchema: continueDiscussionSchema,
-      handler: (args) =>
+      // Before the message is appended, the status moves, the list is broadcast
+      // or a run starts — all four are side effects a mis-owned id must not buy.
+      validate: (args, scope) => {
+        const id = (args as ContinueDiscussionArgs).discussionId
+        return discussionOwnedByScope(id, scope) ? null : discussionNotFound(id)
+      },
+      handler: (args, scope) =>
         runContinueDiscussion(scope.workspacePath, args as ContinueDiscussionArgs, {
           ...runStarter,
           broadcastDiscussionMessage: (id, message) => deps.broadcastDiscussionMessage(id, message),
@@ -367,6 +463,94 @@ function intentInWorkspace(workspacePath: string, intent: Intent): boolean {
   return owned !== null && owned === canonicalizeWorkspacePath(workspacePath)
 }
 
+/** The established in-scope not-found text for an intent id. */
+function intentNotFound(id: string): string {
+  return `未找到 id 为 ${id} 的意图(本项目)。`
+}
+
+/** The established in-scope not-found text for a discussion id. */
+function discussionNotFound(id: string): string {
+  return `未找到 id 为 ${id} 的讨论(本项目)。`
+}
+
+/** `submit_spec_review` answers with its own wording; the intent id is not echoed back. */
+const SPEC_REVIEW_INTENT_NOT_FOUND = '待审核的意图不存在,结论未记录。'
+
+/**
+ * Whether one persisted intent id is really this call's workspace's.
+ *
+ * The lookup is GLOBAL on purpose: an id addresses a row, not a workspace, so
+ * the only truthful check is "fetch it, then compare its immutable owner". An id
+ * that belongs elsewhere is answered exactly like an id that does not exist —
+ * the caller must not be able to tell a foreign workspace's ledger apart from an
+ * empty one.
+ */
+function intentOwnedByScope(id: unknown, scope: ExternalMcpScope): boolean {
+  if (typeof id !== 'string' || id.length === 0) return false
+  const intent = getIntent(id)
+  return intent !== null && intent !== undefined && intentInWorkspace(scope.workspacePath, intent)
+}
+
+/** The same question for a discussion id. */
+function discussionOwnedByScope(id: unknown, scope: ExternalMcpScope): boolean {
+  if (typeof id !== 'string' || id.length === 0) return false
+  const discussion = getDiscussion(id)
+  if (!discussion) return false
+  const owned = workspaceNameToCanonicalPath(discussion.workspaceName)
+  return owned !== null && owned === canonicalizeWorkspacePath(scope.workspacePath)
+}
+
+/**
+ * Refuse a `save_intents` batch that names any intent this workspace does not
+ * own — as an upsert target OR as a persisted `dependsOn` reference.
+ *
+ * Both are ownership questions, not just the obvious one: a dependency edge is
+ * persisted, so accepting a foreign id would write a cross-workspace edge into
+ * this workspace's graph without ever "updating" the foreign intent. Intra-batch
+ * `dependsOnIndexes` are NOT checked here — they address siblings of this very
+ * batch, which by construction land in this workspace.
+ *
+ * The first offending id rejects the WHOLE batch, before any write: partial
+ * application of a batch the caller submitted as one unit is not a state c3 will
+ * produce.
+ */
+function validateIntentBatchOwnership(args: SaveArgs, scope: ExternalMcpScope): string | null {
+  for (const intent of args?.intents ?? []) {
+    if (intent.id !== undefined && !intentOwnedByScope(intent.id, scope)) {
+      return intentNotFound(String(intent.id))
+    }
+    for (const dep of intent.dependsOn ?? []) {
+      if (!intentOwnedByScope(dep, scope)) return intentNotFound(String(dep))
+    }
+  }
+  return null
+}
+
+/**
+ * The workspace names this call's principal may reach, in registry order.
+ *
+ * Derived from the SAME owner-scope resolver `authorizeCall` intersects, never
+ * from the workspace the key was filed under and never from the arguments — so
+ * "what `list_workspaces` shows" and "what a write override is allowed to name"
+ * are one answer. Names only: a path would hand out filesystem layout the wire
+ * protocol deliberately keeps server-side.
+ */
+function reachableWorkspaceNames(scope: ExternalMcpScope): string[] {
+  return listWorkspacesForSubject(scope.ownerSubject).map((w) => w.name)
+}
+
+const listWorkspacesDesc =
+  '列出本 key 当前可访问的工作区名称(只读)。' +
+  '返回 JSON:{"workspaces":["…"]},顺序与注册表一致,只含名称、不含任何磁盘路径。' +
+  '写工具的 workspaceName 入参必须取自本列表;列表之外的名字一律被拒绝。'
+
+const whoamiDesc =
+  '回显本次调用的身份与权限(只读),用于自检而不必靠试错探测。' +
+  '返回 JSON:{"keyId","owner","workspace","workspaces":[…],"tools":[…]} —— ' +
+  'owner 是该 key 的归属账号,workspace 是本会话选定的工作区,' +
+  'workspaces 是当前可访问的全部工作区名,tools 是本 key 实际可调用的工具名。' +
+  '不返回任何密钥、哈希、认证头或磁盘路径。'
+
 /**
  * Submit a review conclusion from outside.
  *
@@ -385,13 +569,17 @@ function runExternalSpecReview(
 ): ExternalToolResult {
   const intent = getIntent(args.intentId)
   if (!intent || !intentInWorkspace(scope.workspacePath, intent)) {
-    return { content: text('待审核的意图不存在,结论未记录。'), isError: true }
+    return { content: text(SPEC_REVIEW_INTENT_NOT_FOUND), isError: true }
   }
   const live = readSpecFingerprint(scope.workspacePath, intent.specPath)
   if (live === null) return { content: text('spec 当前不可读,结论未记录。'), isError: true }
   return runSubmitSpecReview(
     scope.workspacePath,
-    { intentId: args.intentId, sessionId: externalMcpSourceId(scope.keyId), fingerprint: live },
+    {
+      intentId: args.intentId,
+      sessionId: externalMcpSourceId(scope.keyId, scope.workspaceName),
+      fingerprint: live,
+    },
     { verdict: args.verdict, reason: args.reason },
   )
 }
@@ -405,7 +593,10 @@ async function runStartSession(
   deps: SessionLaunchDeps,
 ): Promise<ExternalToolResult> {
   // The launcher binds by intentId but acts on `workspacePath`; an intent from
-  // another workspace must not be reachable through this key's scope.
+  // another workspace must not be reachable through this key's scope. The
+  // dispatcher already refused that case through this entry's `validate` — this
+  // is the in-core backstop, kept so the invariant does not depend on a single
+  // call site remembering to ask.
   const intent = getIntent(args.intentId)
   if (!intent || !intentInWorkspace(workspacePath, intent)) {
     return {

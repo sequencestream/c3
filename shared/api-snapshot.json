@@ -338,11 +338,15 @@
     },
     "EXTERNAL_MCP_DEFAULT_TOOLS": {
       "space": "value",
-      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"publish_event\"]"
+      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"publish_event\", \"list_workspaces\", \"whoami\"]"
     },
     "EXTERNAL_MCP_READ_TOOLS": {
       "space": "value",
-      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"find_deliveries\", \"view_delivery\", \"publish_event\"]"
+      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"find_deliveries\", \"view_delivery\", \"publish_event\", \"list_workspaces\", \"whoami\"]"
+    },
+    "EXTERNAL_MCP_TOOL_NAMES": {
+      "space": "value",
+      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"find_deliveries\", \"view_delivery\", \"publish_event\", \"list_workspaces\", \"whoami\", \"save_intents\", \"save_intent_directly\", \"submit_spec_review\", \"start_session_for_intent\", \"start_discussion\", \"continue_discussion\"]"
     },
     "EXTERNAL_MCP_WRITE_TOOLS": {
       "space": "value",
@@ -366,7 +370,7 @@
     },
     "ExternalMcpToolName": {
       "space": "type",
-      "shape": "(\"continue_discussion\" | \"find_deliveries\" | \"find_discussions\" | \"find_intents\" | \"publish_event\" | \"save_intent_directly\" | \"save_intents\" | \"start_discussion\" | \"start_session_for_intent\" | \"submit_spec_review\" | \"view_delivery\" | \"view_discussion\" | \"view_intent\")"
+      "shape": "(\"continue_discussion\" | \"find_deliveries\" | \"find_discussions\" | \"find_intents\" | \"list_workspaces\" | \"publish_event\" | \"save_intent_directly\" | \"save_intents\" | \"start_discussion\" | \"start_session_for_intent\" | \"submit_spec_review\" | \"view_delivery\" | \"view_discussion\" | \"view_intent\" | \"whoami\")"
     },
     "GIT_ACTION_FAILURE_REASONS": {
       "space": "value",
@@ -1340,11 +1344,15 @@
     },
     "EXTERNAL_MCP_DEFAULT_TOOLS": {
       "space": "value",
-      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"publish_event\"]"
+      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"publish_event\", \"list_workspaces\", \"whoami\"]"
     },
     "EXTERNAL_MCP_READ_TOOLS": {
       "space": "value",
-      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"find_deliveries\", \"view_delivery\", \"publish_event\"]"
+      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"find_deliveries\", \"view_delivery\", \"publish_event\", \"list_workspaces\", \"whoami\"]"
+    },
+    "EXTERNAL_MCP_TOOL_NAMES": {
+      "space": "value",
+      "shape": "[\"find_intents\", \"view_intent\", \"find_discussions\", \"view_discussion\", \"find_deliveries\", \"view_delivery\", \"publish_event\", \"list_workspaces\", \"whoami\", \"save_intents\", \"save_intent_directly\", \"submit_spec_review\", \"start_session_for_intent\", \"start_discussion\", \"continue_discussion\"]"
     },
     "EXTERNAL_MCP_WRITE_TOOLS": {
       "space": "value",
@@ -1376,7 +1384,7 @@
     },
     "ExternalMcpToolName": {
       "space": "type",
-      "shape": "(\"continue_discussion\" | \"find_deliveries\" | \"find_discussions\" | \"find_intents\" | \"publish_event\" | \"save_intent_directly\" | \"save_intents\" | \"start_discussion\" | \"start_session_for_intent\" | \"submit_spec_review\" | \"view_delivery\" | \"view_discussion\" | \"view_intent\")"
+      "shape": "(\"continue_discussion\" | \"find_deliveries\" | \"find_discussions\" | \"find_intents\" | \"list_workspaces\" | \"publish_event\" | \"save_intent_directly\" | \"save_intents\" | \"start_discussion\" | \"start_session_for_intent\" | \"submit_spec_review\" | \"view_delivery\" | \"view_discussion\" | \"view_intent\" | \"whoami\")"
     },
     "FlatMetadataRejection": {
       "space": "type",

@@ -713,12 +713,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   }
   setWorkflowHooks(workflowHooks)
   // Build the adapter lookup for AgentSessionManager (used by discussion runs).
-  // claude is always present; codex joins only when its host CLI
+  // claude is always present; codex and cursor join only when their host CLI
   // was detected at boot (null-entries are skipped — missing vendors throw at
   // runtime, which is a fatal developer error, not a silent degradation).
   const discussionAdapters = new Map<VendorId, VendorAdapter>()
   discussionAdapters.set('claude', createClaudeAdapter())
   if (codexAdapter) discussionAdapters.set('codex', codexAdapter)
+  if (cursorAdapter) discussionAdapters.set('cursor', cursorAdapter)
   const discussionRuns = createDiscussionRuns({
     broadcasts,
     eventBus,

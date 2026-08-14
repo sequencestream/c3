@@ -704,61 +704,6 @@
       },
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
-    },
-    "mcpApiKey": {
-      "title": {
-        "label": "外部 MCP API キー"
-      },
-      "hint": "長期キーにより、c3 が起動していないエージェント(独立した Claude Code / Codex セッション、CI ジョブ、監視スクリプト)が /mcp/v1 経由で MCP としてこのデプロイを読み取れます。各キーは指定したワークスペースにのみ許可され、意図と議論の参照とイベント発行のみが可能で、書き込みは一切できません。",
-      "security": {
-        "hint": "キーは URL のクエリ文字列で送られるため、プロキシやアクセスログに残る可能性があります。平文 HTTP では同一ネットワーク上の第三者に読まれます。外部へ公開する前に HTTPS リバースプロキシを前段に置いてください。"
-      },
-      "empty": "API キーはまだありません。",
-      "meta": "作成 {created} · 最終使用 {lastUsed}",
-      "lastUsed": {
-        "never": "未使用"
-      },
-      "grant": {
-        "label": "ワークスペース: {workspaces}",
-        "none": "なし",
-        "stale": "登録済みではありません(到達不可): {paths}",
-        "edit": {
-          "label": "ワークスペースを変更"
-        },
-        "emptyWarning": "ワークスペースを選択しない場合、このキーは何にも到達できません。"
-      },
-      "create": {
-        "open": {
-          "label": "キーを生成"
-        },
-        "submit": {
-          "label": "生成"
-        },
-        "name": {
-          "placeholder": "名称(例: release-bot)"
-        },
-        "workspaces": {
-          "label": "このキーが読み取れるワークスペース"
-        },
-        "noWorkspaces": "まず c3 にワークスペースを追加してください — キーには最低 1 つ必要です。"
-      },
-      "reveal": {
-        "title": "キー「{name}」を生成しました",
-        "onceOnly": "平文が表示されるのはこの一度だけです。今すぐコピーしてください — 復元はできず、再生成のみ可能です。",
-        "dismiss": {
-          "label": "コピーしました"
-        }
-      },
-      "revoke": {
-        "label": "失効",
-        "confirm": {
-          "body": "失効は即座に有効になります: 次のリクエストは失敗し、開いている MCP セッションも閉じられます。取り消せません。",
-          "confirm": {
-            "label": "失効"
-          },
-          "title": "この API キーを失効しますか?"
-        }
-      }
     }
   },
   "personalizedSetting": {
@@ -3232,7 +3177,7 @@
       "title": {
         "label": "外部 MCP アクセス"
       },
-      "hint": "c3 が起動していないエージェントが「このワークスペース」へ MCP でアクセスする方法です。キーの作成・権限設定・失効はここで行います。各キーはこのワークスペースにのみ紐づき、アドレスは /mcp/[key] です。",
+      "hint": "c3 が起動していないエージェントがこのデプロイへ MCP でアクセスする方法です。キーの作成・権限設定・失効はここで行います。エンドポイントは常に /mcp、資格情報は Authorization: Bearer、ワークスペースは X-C3-Workspace ヘッダーで指定します。キーが到達できるワークスペースは、その所有アカウントに対する管理者設定で決まります。",
       "security": {
         "hint": "キー自体がアドレスで、URL パスに載るためプロキシ/アクセスログに残る可能性があります。このマシンの外へ公開する前に HTTPS リバースプロキシを前段に置いてください。書き込みツールは c3 の状態を実際に変更します — 信頼できるプロセスにのみ付与し、使い終わったら失効させてください。"
       },

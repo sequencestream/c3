@@ -22,6 +22,8 @@ import type { AuthConfig, AuthSessionPolicy, BasicAuthProvider } from '@ccc/shar
 import type { Handler } from '../../transport/handler-registry.js'
 import { loadSettings, saveSettings } from '../../kernel/config/index.js'
 import { DEFAULT_SESSION_TTL_SECONDS, deriveBasicEnabled } from '../../kernel/config/auth-schema.js'
+import { configTx } from '../../kernel/config/config-store.js'
+import { bumpPolicyEpoch } from '../../kernel/config/policy-epoch.js'
 import { hashPassword, verifyPassword } from './password.js'
 import { mintSession, revokeSession } from './session-store.js'
 import { requireAdmin } from './authz.js'
@@ -79,7 +81,15 @@ export const logout: Handler<'logout'> = (_ctx, conn) => {
 }
 
 /** Persist a mutated `basic` provider, re-deriving `enabled` (AC3.5) and creating
- *  a default auth block when none exists yet (bootstrap). */
+ *  a default auth block when none exists yet (bootstrap).
+ *
+ *  Every roster write advances the policy epoch in the SAME transaction. Which
+ *  accounts exist, and which of them is the administrator, decides who owns a
+ *  valid key and who resolves to an `all` scope — so a session pinned before the
+ *  change must not survive it. The epoch also covers password rotation, which is
+ *  broader than identity alone; over-invalidating costs a reconnect, while
+ *  splitting the cases would need every future roster edit to classify itself
+ *  correctly. */
 function persistBasicProvider(
   settings: ReturnType<typeof loadSettings>,
   provider: BasicAuthProvider,
@@ -88,7 +98,10 @@ function persistBasicProvider(
   const nextAuth: AuthConfig = settings.auth
     ? { ...settings.auth, provider, enabled }
     : { enabled, provider, session: DEFAULT_SESSION }
-  saveSettings({ ...settings, auth: nextAuth })
+  configTx(() => {
+    saveSettings({ ...settings, auth: nextAuth })
+    bumpPolicyEpoch()
+  })
 }
 
 export const setAdminPassword: Handler<'set_admin_password'> = (_ctx, conn, msg) => {

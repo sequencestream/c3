@@ -102,7 +102,7 @@ import {
 import {
   EXTERNAL_MCP_DEFAULT_TOOLS,
   EXTERNAL_MCP_READ_TOOLS,
-  EXTERNAL_MCP_WRITE_TOOLS,
+  EXTERNAL_MCP_TOOL_NAMES,
   type Discussion,
   type DiscussionMessage,
   type ExternalMcpToolAccess,
@@ -477,10 +477,7 @@ export function normalizeExternalMcpToolScope(
 }
 
 /** The catalog's declared order: read tools first, then write tools. */
-const EXTERNAL_MCP_TOOL_ORDER: readonly ExternalMcpToolName[] = [
-  ...EXTERNAL_MCP_READ_TOOLS,
-  ...EXTERNAL_MCP_WRITE_TOOLS,
-]
+const EXTERNAL_MCP_TOOL_ORDER: readonly ExternalMcpToolName[] = EXTERNAL_MCP_TOOL_NAMES
 
 function accessOf(name: ExternalMcpToolName): ExternalMcpToolAccess {
   return (EXTERNAL_MCP_READ_TOOLS as readonly string[]).includes(name) ? 'read' : 'write'

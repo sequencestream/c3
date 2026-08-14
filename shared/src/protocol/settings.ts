@@ -156,6 +156,16 @@ export type ExternalMcpToolName =
   (typeof EXTERNAL_MCP_READ_TOOLS)[number] | (typeof EXTERNAL_MCP_WRITE_TOOLS)[number]
 
 /**
+ * The whole externally-grantable catalog in its declared order (read tools, then
+ * write tools). This is the set an effective tool scope is intersected with, so a
+ * name a key still carries but the catalog no longer offers grants nothing.
+ */
+export const EXTERNAL_MCP_TOOL_NAMES = [
+  ...EXTERNAL_MCP_READ_TOOLS,
+  ...EXTERNAL_MCP_WRITE_TOOLS,
+] as const satisfies readonly ExternalMcpToolName[]
+
+/**
  * What a NEW key is granted. The server writes exactly this set on creation
  * regardless of what the client asked for, so a forged "default" cannot smuggle
  * an ungranted tool into a fresh key.

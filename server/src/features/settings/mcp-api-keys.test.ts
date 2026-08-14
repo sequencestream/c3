@@ -23,7 +23,14 @@ const READ_TOOLS = [
 const h = vi.hoisted(() => ({
   admin: true,
   records: [] as McpApiKeyInfo[],
-  created: null as { name: string; workspaceName: string; tools: string[] } | null,
+  created: null as {
+    name: string
+    workspaceName: string
+    ownerSubject: string
+    tools: string[]
+  } | null,
+  /** Owners this deployment still recognizes; anything else is a dead key. */
+  validOwners: new Set<string>(['admin']),
   updatedTools: null as { id: string; tools: string[] } | null,
   renamed: null as { id: string; name: string } | null,
   revoked: [] as string[],
@@ -49,14 +56,21 @@ vi.mock('../auth/authz.js', () => ({
 vi.mock('../../kernel/config/mcp-api-keys.js', () => ({
   listMcpApiKeysForWorkspace: (workspaceName: string) =>
     h.records.filter((r) => r.workspaceName === workspaceName),
-  createMcpApiKey: async (name: string, workspaceName: string, tools: string[]) => {
+  createMcpApiKey: async (
+    name: string,
+    workspaceName: string,
+    ownerSubject: string,
+    tools: string[],
+  ) => {
     if (h.throwOnWrite) throw new Error('disk full')
-    h.created = { name, workspaceName, tools: [...tools] }
+    h.created = { name, workspaceName, ownerSubject, tools: [...tools] }
     const meta: McpApiKeyInfo = {
       id: 'key-new',
       name,
       createdAt: 10,
       lastUsedAt: null,
+      ownerSubject,
+      secretVersion: 1,
       workspaceName,
       tools: [...tools],
       displayPrefix: 'c3k_key-new',
@@ -101,6 +115,11 @@ vi.mock('../external-mcp/workspace-scope.js', () => ({
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (name: string) => h.registry.get(name) ?? null,
   isDirectory: (path: string) => !h.goneDirs.has(path),
+}))
+
+vi.mock('../auth/authorization.js', () => ({
+  resolveAuthSubject: (subject: string | null) => subject,
+  isValidOwner: (owner: string) => h.validOwners.has(owner),
 }))
 
 vi.mock('../external-mcp/tools.js', () => ({
@@ -163,6 +182,8 @@ function key(over: Partial<McpApiKeyInfo> = {}): McpApiKeyInfo {
     name: 'ci',
     createdAt: 1,
     lastUsedAt: null,
+    ownerSubject: 'admin',
+    secretVersion: 1,
     workspaceName: 'ws-alpha',
     tools: [...READ_TOOLS],
     displayPrefix: 'c3k_key-1',
@@ -181,6 +202,7 @@ beforeEach(() => {
   h.closed = []
   h.throwOnWrite = false
   h.goneDirs.clear()
+  h.validOwners = new Set(['admin'])
   setExternalMcpSessionCloser((id) => h.closed.push(id))
 })
 
@@ -255,15 +277,14 @@ describe('list_mcp_api_keys', () => {
     expect((msg as { created?: unknown }).created).toBeUndefined()
   })
 
-  it('marks a key unavailable when its workspace directory is gone, without disclosing the path', () => {
-    seed([key()])
-    h.goneDirs.add('/canon/alpha')
+  it('marks a key unavailable when its owner is no longer recognized, without disclosing the path', () => {
+    seed([key({ ownerSubject: 'departed' })])
     const { conn, sent } = makeConn()
     listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys', workspaceName: 'ws-alpha' })
     const msg = sent[0] as Extract<ServerToClient, { type: 'mcp_api_keys' }>
     expect(msg.keys[0].workspaceName).toBe('ws-alpha')
     expect(msg.keys[0].unavailable).toBe(true)
-    // The path stays server-side.
+    // The host path is never on the wire, whatever the key's state.
     expect(JSON.stringify(msg)).not.toContain('/canon/alpha')
   })
 
@@ -300,15 +321,34 @@ describe('create_mcp_api_key', () => {
     expect(JSON.stringify(again.sent)).not.toContain('THE-PLAINTEXT')
   })
 
-  it('binds the workspace name and forces the read-only scope', async () => {
+  it('files the key under the named workspace, owns it by the verified subject, and forces the read-only scope', async () => {
     const { conn } = makeConn()
     await createMcpApiKeyHandler(ctx, conn, {
       type: 'create_mcp_api_key',
       workspaceName: 'ws-beta',
       name: 'ci',
     })
-    // The handler decides the initial scope: full read-only set, no write tool.
-    expect(h.created).toEqual({ name: 'ci', workspaceName: 'ws-beta', tools: READ_TOOLS })
+    // The handler decides both: the owner is the connection's verified subject
+    // (never the page it was created from), and the initial scope is the full
+    // read-only set with no write tool.
+    expect(h.created).toEqual({
+      name: 'ci',
+      workspaceName: 'ws-beta',
+      ownerSubject: 'admin',
+      tools: READ_TOOLS,
+    })
+  })
+
+  it('refuses to mint a key when no subject can be resolved', async () => {
+    const { conn, sent } = makeConn()
+    ;(conn as { subject: string | null }).subject = null
+    await createMcpApiKeyHandler(ctx, conn, {
+      type: 'create_mcp_api_key',
+      workspaceName: 'ws-beta',
+      name: 'ci',
+    })
+    expect(h.created).toBeNull()
+    expect(sent).toEqual([{ type: 'error', error: { code: 'auth.adminOnly' } }])
   })
 
   it('rejects an unknown workspace id and mints nothing', async () => {

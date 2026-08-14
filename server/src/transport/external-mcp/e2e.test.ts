@@ -1,16 +1,22 @@
 /**
  * End-to-end pass over the public external MCP surface: a REAL Streamable HTTP
  * MCP client, a REAL long-lived API key (minted and hashed by the key store), the
- * REAL externally-grantable catalog over the REAL intent/discussion stores, and —
- * where the host has a LAN interface — a genuinely NON-LOOPBACK peer, which is
- * the property that distinguishes this route from the six internal ones.
+ * REAL authorization gate over the REAL workspace registry and account roster,
+ * the REAL externally-grantable catalog over the REAL intent/discussion stores,
+ * and — where the host has a LAN interface — a genuinely NON-LOOPBACK peer, which
+ * is the property that distinguishes this route from the six internal ones.
  *
- * What it proves that the unit tests cannot: the address IS the key (`/mcp/<key>`);
- * `tools/list` is exactly the key's granted scope; an un-granted tool is refused
- * with no side effect; a granted write tool (save / review / session) really acts
- * on the workspace the key is bound to; the retired query entry point is
- * discontinued; and revoking the key stops both the next handshake and the
- * session already open.
+ * The deployment modelled here is the one that makes the whole surface meaningful:
+ * bound to every interface, with a configured administrator. That is also why the
+ * keys are owned by the administrator — under basic auth `local` is not a
+ * principal, and an ownerless key does not exist.
+ *
+ * What it proves that the unit tests cannot: the address carries no credential;
+ * one key reaches every workspace its owner may reach, chosen per session by
+ * `X-C3-Workspace`; `tools/list` is exactly the key's granted scope; an un-granted
+ * tool is refused with no side effect; a granted write tool (save / review /
+ * session) really acts on the selected workspace; the former URL forms are gone;
+ * and revoking the key stops both the next handshake and the session already open.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -21,22 +27,23 @@ import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { GenericEventEnvelope } from '@ccc/shared'
-import { createExternalMcp, EXTERNAL_MCP_PATH_PREFIX, type ServedExternalMcp } from './index.js'
+import { createExternalMcp, EXTERNAL_MCP_PATH, type ServedExternalMcp } from './index.js'
 import { buildExternalMcpCatalog, externalMcpSourceId } from '../../features/external-mcp/tools.js'
-import { EXTERNAL_MCP_READ_TOOLS } from '@ccc/shared/protocol'
+import { EXTERNAL_MCP_READ_TOOLS, type AuthConfig } from '@ccc/shared/protocol'
 import {
   createMcpApiKey,
   revokeMcpApiKey,
   verifyMcpApiKey,
 } from '../../kernel/config/mcp-api-keys.js'
-import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
+import { authorizeCall, localPrincipal } from '../../features/auth/authorization.js'
+import { configuredAdmin } from '../../features/auth/authz.js'
+import { hashPassword } from '../../features/auth/password.js'
 import {
-  addWorkspace,
-  isDirectory,
-  pathToName,
-  resetStateCacheForTests,
-  resolveWorkspaceRoot,
-} from '../../state.js'
+  loadSettings,
+  resetSettingsCacheForTests,
+  saveSettings,
+} from '../../kernel/config/index.js'
+import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
 import {
   getIntent,
   insertIntents,
@@ -104,14 +111,30 @@ beforeAll(async () => {
     { title: 'Unrelated neighbour intent', shortEnTitle: 'neighbour', content: '', priority: 'P1' },
   ])
 
+  // A configured administrator: the deployment shape an all-interfaces bind
+  // requires, and the principal every key below is owned by.
+  useAdminAccount()
+
   const normalizers = new EventNormalizerRegistry(normalizeGenericEventDefault)
   route = createExternalMcp({
-    authenticate: (key) => verifyMcpApiKey(key),
-    // Same name→path resolution the real server wires.
-    resolveRegisteredWorkspace: (workspaceName) => {
-      const path = resolveWorkspaceRoot(workspaceName)
-      return path && isDirectory(path) ? path : null
+    authenticate: async (key) => {
+      const verified = await verifyMcpApiKey(key)
+      return verified
+        ? {
+            keyId: verified.id,
+            ownerSubject: verified.ownerSubject,
+            secretVersion: verified.secretVersion,
+            tools: verified.tools,
+          }
+        : null
     },
+    trustedLocalPrincipal: () =>
+      configuredAdmin(loadSettings().auth) === null ? localPrincipal() : null,
+    // The REAL gate over the real registry and roster.
+    authorize: authorizeCall,
+    // The real predicate for a server bound to every interface.
+    exposedWithoutAdmin: () => configuredAdmin(loadSettings().auth) === null,
+    remoteAddress: () => undefined,
     buildCatalog: (scope) =>
       buildExternalMcpCatalog(scope, {
         normalizeEvent: (core) => normalizers.normalize(core),
@@ -127,8 +150,8 @@ beforeAll(async () => {
   })
 
   const app = new Hono()
-  app.all(EXTERNAL_MCP_PATH_PREFIX, (c) => route.handler(c))
-  app.all(`${EXTERNAL_MCP_PATH_PREFIX}/*`, (c) => route.handler(c))
+  app.all(EXTERNAL_MCP_PATH, (c) => route.handler(c))
+  app.all(`${EXTERNAL_MCP_PATH}/*`, (c) => route.handler(c))
   await new Promise<void>((resolve) => {
     // Bind ALL interfaces so the non-loopback case below has something to reach.
     server = serve({ fetch: app.fetch, port: 0, hostname: '0.0.0.0' }, (info) => {
@@ -152,24 +175,48 @@ afterEach(() => {
   launches.length = 0
 })
 
-function mcpUrl(host: string, key: string): URL {
-  return new URL(`http://${host}:${port}${EXTERNAL_MCP_PATH_PREFIX}/${encodeURIComponent(key)}`)
+/** The administrator every key is owned by. */
+const ADMIN = 'root'
+
+/** Configure `basic` with one administrator account. */
+function useAdminAccount(): void {
+  const auth: AuthConfig = {
+    enabled: true,
+    provider: {
+      kind: 'basic',
+      accounts: [{ username: ADMIN, passwordHash: hashPassword('correct horse') }],
+      adminUsername: ADMIN,
+    },
+    session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+  }
+  saveSettings({ ...loadSettings(), auth })
 }
 
-async function connect(host: string, key: string): Promise<Client> {
+/** Mint a key owned by the administrator, filed under the project workspace. */
+function mintKey(name: string, tools: readonly string[]): ReturnType<typeof createMcpApiKey> {
+  return createMcpApiKey(name, projectWs, ADMIN, tools, Date.now())
+}
+
+function mcpUrl(host: string): URL {
+  return new URL(`http://${host}:${port}${EXTERNAL_MCP_PATH}`)
+}
+
+/** Connect the way a real client is configured: bearer + workspace, both headers. */
+async function connect(host: string, key: string, workspace = projectWs): Promise<Client> {
   const client = new Client({ name: 'external-e2e', version: '1.0.0' })
-  await client.connect(new StreamableHTTPClientTransport(mcpUrl(host, key)))
+  await client.connect(
+    new StreamableHTTPClientTransport(mcpUrl(host), {
+      requestInit: {
+        headers: { authorization: `Bearer ${key}`, 'x-c3-workspace': workspace },
+      },
+    }),
+  )
   return client
 }
 
 describe('external MCP over a real Streamable HTTP client', () => {
   it('advertises exactly the granted scope — read-only by default, no write tool', async () => {
-    const created = await createMcpApiKey(
-      'default',
-      projectWs,
-      [...EXTERNAL_MCP_READ_TOOLS],
-      Date.now(),
-    )
+    const created = await mintKey('default', [...EXTERNAL_MCP_READ_TOOLS])
     const client = await connect('127.0.0.1', created.key)
     try {
       const names = (await client.listTools()).tools.map((t) => t.name).sort()
@@ -183,12 +230,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   })
 
   it('reads only the workspace the key is bound to', async () => {
-    const created = await createMcpApiKey(
-      'reader',
-      projectWs,
-      [...EXTERNAL_MCP_READ_TOOLS],
-      Date.now(),
-    )
+    const created = await mintKey('reader', [...EXTERNAL_MCP_READ_TOOLS])
     const client = await connect('127.0.0.1', created.key)
     try {
       const res = await client.callTool({ name: 'find_intents', arguments: {} })
@@ -202,12 +244,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   })
 
   it('refuses an un-granted write tool with a forbidden error and no side effect', async () => {
-    const created = await createMcpApiKey(
-      'narrow',
-      projectWs,
-      [...EXTERNAL_MCP_READ_TOOLS],
-      Date.now(),
-    )
+    const created = await mintKey('narrow', [...EXTERNAL_MCP_READ_TOOLS])
     const client = await connect('127.0.0.1', created.key)
     try {
       const before = await client.callTool({ name: 'find_intents', arguments: {} })
@@ -227,12 +264,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   })
 
   it('persists an intent through a key granted save_intents', async () => {
-    const created = await createMcpApiKey(
-      'writer',
-      projectWs,
-      ['find_intents', 'view_intent', 'save_intents'],
-      Date.now(),
-    )
+    const created = await mintKey('writer', ['find_intents', 'view_intent', 'save_intents'])
     const client = await connect('127.0.0.1', created.key)
     try {
       const res = await client.callTool({
@@ -265,12 +297,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
     mkdirSync(join(projectDir, 'specs'), { recursive: true })
     writeFileSync(join(projectDir, specRel), '# Spec\n\nbody\n', 'utf8')
 
-    const created = await createMcpApiKey(
-      'reviewer',
-      projectWs,
-      ['find_intents', 'view_intent', 'submit_spec_review'],
-      Date.now(),
-    )
+    const created = await mintKey('reviewer', ['find_intents', 'view_intent', 'submit_spec_review'])
     const client = await connect('127.0.0.1', created.key)
     try {
       const res = await client.callTool({
@@ -284,16 +311,11 @@ describe('external MCP over a real Streamable HTTP client', () => {
     }
   })
 
-  it('refuses to act on an intent outside the key’s bound workspace', async () => {
+  it('refuses to act on an intent outside the session’s selected workspace', async () => {
     const [foreign] = insertIntents(otherDir, [
       { title: 'Foreign neighbour', shortEnTitle: 'foreign', content: '', priority: 'P3' },
     ])
-    const created = await createMcpApiKey(
-      'guarded-reviewer',
-      projectWs,
-      ['submit_spec_review'],
-      Date.now(),
-    )
+    const created = await mintKey('guarded-reviewer', ['submit_spec_review'])
     const client = await connect('127.0.0.1', created.key)
     try {
       const res = await client.callTool({
@@ -312,12 +334,11 @@ describe('external MCP over a real Streamable HTTP client', () => {
     const [intent] = insertIntents(projectDir, [
       { title: 'Launch me', shortEnTitle: 'launch-me', content: '', priority: 'P2' },
     ])
-    const created = await createMcpApiKey(
-      'launcher',
-      projectWs,
-      ['find_intents', 'view_intent', 'start_session_for_intent'],
-      Date.now(),
-    )
+    const created = await mintKey('launcher', [
+      'find_intents',
+      'view_intent',
+      'start_session_for_intent',
+    ])
     const client = await connect('127.0.0.1', created.key)
     try {
       const launchesBefore = launches.length
@@ -343,12 +364,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   })
 
   it('attributes an external publish to the key, with the authorized workspace', async () => {
-    const created = await createMcpApiKey(
-      'publisher',
-      projectWs,
-      [...EXTERNAL_MCP_READ_TOOLS],
-      Date.now(),
-    )
+    const created = await mintKey('publisher', [...EXTERNAL_MCP_READ_TOOLS])
     published.length = 0
     const client = await connect('127.0.0.1', created.key)
     try {
@@ -366,13 +382,56 @@ describe('external MCP over a real Streamable HTTP client', () => {
     }
   })
 
+  it('reaches a second workspace with the SAME key by starting a new session', async () => {
+    const otherWs = pathToName(otherDir)!
+    const created = await mintKey('roaming', [...EXTERNAL_MCP_READ_TOOLS])
+
+    const inProject = await connect('127.0.0.1', created.key, projectWs)
+    try {
+      const res = await inProject.callTool({ name: 'find_intents', arguments: {} })
+      expect(JSON.stringify(res.content)).toContain('Ship the external MCP route')
+    } finally {
+      await inProject.close()
+    }
+
+    // One key, another workspace: the owner's scope decides, not the key.
+    const inOther = await connect('127.0.0.1', created.key, otherWs)
+    try {
+      const res = await inOther.callTool({ name: 'find_intents', arguments: {} })
+      const text = JSON.stringify(res.content)
+      expect(text).toContain('Unrelated neighbour intent')
+      expect(text).not.toContain('Ship the external MCP route')
+    } finally {
+      await inOther.close()
+    }
+  })
+
+  it('refuses a session for a workspace name the registry does not have', async () => {
+    const created = await mintKey('unknown-ws', [...EXTERNAL_MCP_READ_TOOLS])
+    const res = await fetch(`http://127.0.0.1:${port}${EXTERNAL_MCP_PATH}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${created.key}`,
+        'x-c3-workspace': 'never-registered',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'x', version: '1' },
+        },
+      }),
+    })
+    expect(res.status).toBe(403)
+  })
+
   it('accepts a connection from a non-loopback address — no loopback guard applies', async () => {
-    const created = await createMcpApiKey(
-      'lan',
-      projectWs,
-      [...EXTERNAL_MCP_READ_TOOLS],
-      Date.now(),
-    )
+    const created = await mintKey('lan', [...EXTERNAL_MCP_READ_TOOLS])
     const lan = lanAddress()
     if (!lan) {
       // No routable interface on this host; the loopback-guard property cannot be
@@ -389,19 +448,54 @@ describe('external MCP over a real Streamable HTTP client', () => {
     }
   })
 
-  it('discontinues the retired /mcp/v1?token= entry point', async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/mcp/v1?token=whatever`, { method: 'POST' })
-    expect(res.status).toBe(410)
-    await expect(res.json()).resolves.toMatchObject({ error: 'discontinued' })
+  it('leaves every former URL form unreachable', async () => {
+    const created = await mintKey('legacy-address', [...EXTERNAL_MCP_READ_TOOLS])
+    for (const path of [
+      `/mcp/${encodeURIComponent(created.key)}`,
+      '/mcp/v1?token=whatever',
+      '/mcp/',
+    ]) {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, { method: 'POST' })
+      expect(res.status, path).toBe(404)
+    }
+  })
+
+  it('refuses a credential that is not a bearer header', async () => {
+    const created = await mintKey('query-addressed', [...EXTERNAL_MCP_READ_TOOLS])
+    const viaQuery = await fetch(
+      `http://127.0.0.1:${port}${EXTERNAL_MCP_PATH}?token=${encodeURIComponent(created.key)}`,
+      { method: 'POST', headers: { 'x-c3-workspace': projectWs } },
+    )
+    expect(viaQuery.status).toBe(401)
+    const viaHeader = await fetch(`http://127.0.0.1:${port}${EXTERNAL_MCP_PATH}`, {
+      method: 'POST',
+      headers: { 'x-api-key': created.key, 'x-c3-workspace': projectWs },
+    })
+    expect(viaHeader.status).toBe(401)
+  })
+
+  it('refuses the whole surface while exposed with no administrator', async () => {
+    const created = await mintKey('during-outage', [...EXTERNAL_MCP_READ_TOOLS])
+    const settings = loadSettings()
+    saveSettings({ ...settings, auth: undefined })
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}${EXTERNAL_MCP_PATH}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${created.key}`,
+          'x-c3-workspace': projectWs,
+        },
+      })
+      expect(res.status).toBe(503)
+      const body = (await res.json()) as { message: string }
+      expect(body.message).toMatch(/administrator/)
+    } finally {
+      useAdminAccount()
+    }
   })
 
   it('stops the open session AND the next handshake once the key is revoked', async () => {
-    const created = await createMcpApiKey(
-      'doomed',
-      projectWs,
-      [...EXTERNAL_MCP_READ_TOOLS],
-      Date.now(),
-    )
+    const created = await mintKey('doomed', [...EXTERNAL_MCP_READ_TOOLS])
     const client = await connect('127.0.0.1', created.key)
     expect((await client.listTools()).tools).not.toHaveLength(0)
 

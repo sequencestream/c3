@@ -2,46 +2,83 @@
 
 `external-mcp` 域是 c3 对**自己没有拉起的 agent** 开放的唯一入口:独立的 Claude Code / Codex / Cursor 会话、CI 任务、监控脚本、局域网内的其它进程,凭长期 API key 通过 Streamable HTTP MCP 访问本部署的意图台账与讨论、投递事件,并在管理员授权下写回意图、提交审核结论、拉起会话。
 
-在此之前 c3 是数据孤岛:六条 MCP 路由全部挂在 `/internal/*-mcp/v1`,每条都有 loopback guard 与一次性 per-run token,binding 来自 c3 拉起的 run 闭包(workspace + runId)。外部工具链只能靠人工搬数据进出。
-
 ## 与内部路由的关系:并列,不是放宽
 
-|            | 内部 `/internal/*-mcp/v1`(6 条)            | 外部 `/mcp/<api-key>`                        |
-| ---------- | ------------------------------------------ | -------------------------------------------- |
-| 来源       | 必须回环(在 c3 自身 bind 之上的纵深防御)   | 不做 loopback 判断                           |
-| 身份       | c3 自己铸的一次性 per-run token            | 长期 API key,且 key **就是路径段**           |
-| 作用域来源 | run 闭包(workspace + runId + abort signal) | key 绑定的**单一工作区** + 该 key 的工具范围 |
-| 工具       | 各路由自己的全集(含写工具)                 | 该 key 勾选的子集(默认五个只读)              |
+|            | 内部 `/internal/*-mcp/v1`(6 条)            | 外部 `POST /mcp`                                    |
+| ---------- | ------------------------------------------ | --------------------------------------------------- |
+| 来源       | 必须回环(在 c3 自身 bind 之上的纵深防御)   | 不做 loopback 判断(trusted-local 模式除外)          |
+| 身份       | c3 自己铸的一次性 per-run token            | 长期 API key,走 `Authorization: Bearer`             |
+| 作用域来源 | run 闭包(workspace + runId + abort signal) | 三层求交:key 范围 × owner 管理员配置范围 × 工具授权 |
+| 工作区     | run 闭包给定                               | `X-C3-Workspace` 在 initialize 时选定               |
+| 工具       | 各路由自己的全集(含写工具)                 | 该 key 勾选的子集 ∩ 可外部授权目录(默认五个只读)    |
 
-内部六条路由的任何语义**都不受本域影响**。外部路由是独立模块,不复用 per-run token 机制——那套语义绑定 run,而外部 agent 没有 run。
+内部六条路由的任何语义**都不受本域影响**,它们的信任模型比账号求交更严格(ADR-0044 记为刻意排除)。
 
 ## 请求与授权链
 
-地址即凭据:`/mcp/<api-key>`,key 从 URL 的**单个路径段**解析并做 URL 解码与格式校验。接入方一行配置:
-
-```sh
-claude mcp add --transport http c3 "http://<host>:3000/mcp/<KEY>"
-```
+地址不含凭据。端点恒为裸 `POST /mcp`,凭据走 `Authorization: Bearer c3k_…`,工作区走 `X-C3-Workspace`。
 
 每次请求执行同一条链,顺序是安全属性的一部分:
 
 ```mermaid
 flowchart LR
-  A[请求 /mcp/<key>] --> B{解析并校验 key}
-  B -->|缺失/格式错/未知/已吊销| X[401]
-  B -->|v1 占位| V[410 已停用]
-  B -->|有效| C[读取绑定工作区与工具范围]
-  C -->|工作区不可用| Y[403]
-  C --> D[以授权子集创建 MCP transport]
-  D --> E{调用工具}
-  E -->|已授权| F[复用业务 handler]
-  E -->|未授权或未知| Z[MCP tool error: forbidden]
+  A[POST /mcp] --> E{暴露但无管理员?}
+  E -->|是| S[503 引导配置]
+  E -->|否| B{解析 Bearer / trusted-local}
+  B -->|缺失/格式错/未知/已吊销/owner 失效| X[401]
+  B -->|通过| W{X-C3-Workspace}
+  W -->|缺失/重复/超长| Q[400]
+  W --> C[authorizeCall 三层求交]
+  C -->|工作区不在有效集| Y[403]
+  C -->|通过| D[以冻结的 EffectiveScope 建 transport]
+  D --> F{调用工具}
+  F -->|在有效工具集| G[复用业务 handler]
+  F -->|不在| Z[MCP tool error: forbidden]
 ```
 
-- **凭据先于一切。** key 缺失、格式错、未知、哈希不符、已吊销一律 401,且**正文完全相同** —— 未认证的调用方连「key 是否合法」都学不到。key 从单个路径段提取,**拒绝空段、额外路径段与任何不能规范解析为一个 key 的值**;拒绝响应与日志**不回显 key 或完整 URL**。
-- **`/mcp/v1?token=…&workspace=…` 已停用**。旧 query 入口返回明确的停用响应(410),不做兼容鉴权——两套工作区与授权来源并存正是本变更要消除的漂移。README 与域文档只给新地址。
-- **会话一经 initialize 即钉死**在当时的 key id 与工具范围上。同一 `mcp-session-id` 换 key ⇒ 403;改范围或吊销 key 时服务端关闭该 key 的全部活动 transport,故下一次调用不能沿用旧权限,客户端重连后取得新 `tools/list`。更新持久状态先于清理连接:清理个别连接失败不得恢复旧权限。
-- **HTTP 状态与协议内错误分层。** 401/403/404 用于建立/维持 transport 前的身份与作用域拒绝;**协议内越权**(已认证但调用未勾选工具)返回稳定的 MCP tool error `forbidden`,不执行 handler,也不伪装成 HTTP 成功业务结果。
+### 三层求交
+
+`authorizeCall(auth, workspaceName, toolName)` 是**唯一**卡口,返回冻结的 `EffectiveScope`
+(keyId、ownerSubject、secretVersion、policyEpoch、workspaceName、注册表解析出的 workspacePath、有效工具集)。
+handler 只接受这个对象,永远拿不到调用方给的路径。
+
+- `effectiveWorkspaces = key 自身范围 ∩ owner 管理员配置范围`。本版 key 自身范围恒为全部已注册工作区,故 owner 的 [工作区范围配置](../auth/auth-overview.md#工作区范围-user_workspace_scopes) 是限制集。
+- `effectiveTools = key.tools ∩ 可外部授权工具目录`。目录外的名字与空工具集都授予零。
+- `tools/list` 与调用检查出自同一次求解,发现面与执行面不可能不一致。
+
+**默认拒绝是结构性的**:缺范围记录、无法解释的 mode、注册表已无的工作区名、名册不认识的 owner —— 每一种都产出空集,没有任何分支把「缺失」读成「全部」。
+
+### 凭据
+
+- **唯一来源是 `Authorization: Bearer`。** query 参数、`X-API-Key`、任何其它自定义凭据头**都不被解析**。key 缺失、格式错、未知、哈希不符、已吊销、owner 已不被本部署承认,一律 401 且**正文完全相同** —— 调用方连「key 是否合法」都学不到。
+- **「无凭据」只指请求上根本没有 `Authorization` 头。** 头存在但值为空或全空白(反代剥掉凭据后常见,Fetch 规范把两者都规范化为空串)算**已出示凭据**,按格式错处理 → 401,不进免凭据路径。
+- **凭据校验先于工作区解析**,未认证方无法探测工作区名。拒绝响应与日志**从不回显 key 或 `Authorization` 的值**。
+- **`/mcp/<任何东西>` 一律 404**,包括旧的 `/mcp/<api-key>` 与 `/mcp/v1`。它们不是兼容路由。
+
+### 工作区选择
+
+`X-C3-Workspace` 在 initialize 时必需,并就此钉死该会话。空、重复(重复头按 Fetch 规范逗号合并,而工作区名不含逗号)、超长一律 400;未知与越权返回同一个 403。后续请求带同一个值是正常的 —— 客户端的静态头会出现在每个请求上;带**不同**的值是 re-scope 尝试,403 且不动会话。
+
+该头是 **c3 自定义 HTTP 头,不是 MCP 协议字段**。Streamable HTTP 传输规范定义的是 `Mcp-Session-Id` 一类协议级头与基于 OAuth 的 `Authorization` 扩展,租户/工作区选择属应用层。已验证支持任意自定义头的客户端:Claude Code(`--header`)、Cursor(`headers`)、Codex CLI(`http_headers` / `env_http_headers`)。**不支持配置任意头的客户端用不了本端点**,且不提供 query/path/body/工具入参兜底。
+
+### 会话钉定
+
+会话一经 initialize 即钉在 `(keyId, secretVersion, workspaceName, policyEpoch)` 四元组上,每个请求重新认证后比对:
+
+- 未知会话 404;**换一把 key 用同一个会话 id 同答 404** —— 不泄露该 id 属于谁,也不让一把 key 毁掉另一把的 transport。
+- secretVersion 或 policyEpoch 变化:先清场该 transport,再 404,客户端重新 initialize。
+- 顺序恒为**先持久化后清连接**:策略/密钥写入与 epoch bump 同事务提交后才清理活动连接;清理失败由逐请求的四元组比对兜底,绝不恢复旧权限。
+
+`auth.policyEpoch` 是 `system_configs` 里的单调递增全局值,由工作区 ACL、账号名册、工作区注册表与每 key 工具授权的变更在同一事务内推进,因而一次策略编辑会断开全部外部会话 —— 换取一条可审计的新鲜度边界。
+
+### 无认证部署与暴露未配置
+
+- `auth.provider.kind='none'`(即没有管理员关卡)且 peer 为回环时,**统一端点默认拥有全部权限**:合成主体 `local`,keyId `local`、secretVersion `0`,`EffectiveScope` 恒为全部已注册工作区与全部可授权工具,无需 key。但**已出示的凭据必须校验通过** —— 一个打错的 bearer 绝不降级为全权;非回环 peer 无凭据一律 401。
+- 绑定**非回环地址且未配置管理员**时,`/mcp` 整面返回 503 + 引导文案(配置管理员,或改回回环绑定),回环请求也一样,不建立任何会话。
+
+### HTTP 状态与协议内错误分层
+
+401/403/404/400/503 用于建立或维持 transport 之前的拒绝;**协议内越权**(已认证、工作区已授权,但调用了不在有效工具集里的工具)返回稳定的 MCP tool error `forbidden`,不执行 handler,也不伪装成 HTTP 成功业务结果。
 
 ## 可外部授权工具目录
 
@@ -74,19 +111,21 @@ flowchart LR
 
 ## Key 生命周期与监听地址
 
-长期 key 的存储、哈希、生成/校验/吊销,以及 `--host` 显式监听,属系统设置域:见 [system-setting](../../settings/system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcpapikeys)。**生命周期管理在工作区设置**:见 [workspace-setting](../../settings/workspace-setting/workspace-setting-spec.md#外部-mcp-接入非配置独立即时指令)。
+长期 key 的存储、哈希、归属与版本、生成/校验/吊销,以及 `--host` 显式监听,属系统设置域:见 [system-setting](../../settings/system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcp_api_keys)。**生命周期管理在工作区设置**:见 [workspace-setting](../../settings/workspace-setting/workspace-setting-spec.md#外部-mcp-接入非配置独立即时指令)。
 
-要点回顾:明文只在生成响应里出现一次;磁盘上只有加盐 `scrypt` 哈希;每把 key 绑定单一工作区;吊销既让下一次请求失败,也关闭已建立的活动 transport。
+要点回顾:明文只在生成响应里出现一次;磁盘上只有加盐 `scrypt` 哈希;每把 key 有不可变的归属账号与正整数密钥版本;吊销既让下一次请求失败,也关闭已建立的活动 transport。
 
 ## 安全边界与本期取舍
 
-- **API key 是该路由唯一的访问凭据**。Web 登录会话、内部 per-run token 都不能替代它。
-- **key 本身即地址、走 URL 路径**,便于按 key 分发地址、消除 `workspace` 参数,但更容易进入代理访问日志——**c3 不记录完整请求 URL**,用户侧反代日志需自行处理。
+- **API key 是该路由唯一的访问凭据**,且只从 `Authorization: Bearer` 读取。Web 登录会话、内部 per-run token 都不能替代它。
+- **地址不含凭据**。端点对每把 key、每个工作区都是同一个,因此不会有 key 随 URL 进入代理访问日志、shell 历史或工单正文。c3 不记录 `Authorization` 的值。
 - **写权限会真实修改 c3 状态**:`save_intents` 可持久化意图,`submit_spec_review` 可提交审核结论,`start_session_for_intent` 可拉起 agent。这是安全边界的有意放宽:key 默认只读,写接口须显式勾选,key 可吊销。创建与编辑界面必须在写工具区持续展示该风险,保存含写权限的范围前有明确确认。
-- **本期不内建也不强制 HTTPS**。明文 HTTP 下同网络的人可嗅探到 key。远程暴露应通过用户自管的 TLS 反向代理,并避免记录完整路径。这是已知并接受的风险。
-- **不提供 `/mcp.md` 发现端点**(明确放弃),也不提供跨工作区 key、通配工作区、独立调用审计流、速率限制或 per-call 写操作二次确认。**不改变 `--host` 默认回环及显式开放监听的规则。**
+- **不内建也不强制 HTTPS**。明文 HTTP 下同网络的人可嗅探到 bearer。远程暴露应通过用户自管的 TLS 反向代理,并抑制日志中的敏感头。这是已知并接受的部署侧风险。
+- **`X-C3-Workspace` 依赖客户端的自定义头能力**。遇到不支持配置任意头的客户端时本端点不可用,且不做 fallback —— 这是已知限制。
+- **claude.ai 自定义连接器不受支持**:它要求服务端提供 OAuth 授权流程,而 c3 的静态 bearer key 不是 OAuth access token,c3 也不是 OAuth 授权服务器。
+- **不提供 `/mcp.md` 发现端点**(明确放弃),也不提供独立调用审计流、速率限制或 per-call 写操作二次确认。**不改变 `--host` 默认回环及显式开放监听的规则。**
 - 拒绝响应与成功调用**均不输出 key**。
 
 ## 接入信息展示
 
-工作区设置页的「外部 MCP 接入」页签承担 key 的生成、列示、工具范围编辑与吊销,并在一次性揭示区给出可复制的 `/mcp/<key>` 地址与一行式命令(见 workspace-setting 域文档)。明文 key 只在生成成功的那一次回包里出现,关闭揭示区后不可恢复。
+工作区设置页的「外部 MCP 接入」页签承担 key 的生成、列示、工具范围编辑与吊销,并在一次性揭示区给出可复制的明文 key、端点地址与一行式命令(见 workspace-setting 域文档)。一行式命令以环境变量间接引用 key,不把明文再拼进一条会进 shell 历史的命令。明文只在生成成功的那一次回包里出现,关闭揭示区后不可恢复。

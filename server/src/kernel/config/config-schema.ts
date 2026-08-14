@@ -59,6 +59,14 @@ export const MCP_KEY_RULES: ConfigRules = { secrets: ['hash'], json: ['tools'] }
 /** Prefix of the system-scope keys that hold former `state.json` globals. */
 export const STATE_PREFIX = 'state'
 
+/**
+ * The global authorization-policy freshness counter. It shares the `auth.*` key
+ * space with `SystemSettings.auth` but is NOT part of that object — it is derived
+ * policy state nobody edits by hand — so a whole-settings save must preserve it
+ * instead of deleting a row it never states.
+ */
+export const POLICY_EPOCH_KEY = 'auth.policyEpoch'
+
 export const STATE_KEYS = {
   activeSessionId: `${STATE_PREFIX}.activeSessionId`,
   skillSupport: `${STATE_PREFIX}.skillSupport`,

@@ -193,17 +193,25 @@ c3
 │   │   ├── 会话 token                            # 签发/校验 bearer token,TTL 默认 30 天
 │   │   ├── 连接门                                # 拒绝未认证的 WebSocket 握手(token 走握手 ?token=)
 │   │   ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)
-│   │   └── 多账号                                # 多账号目录,首个创建者为唯一管理员
+│   │   ├── 多账号                                # 多账号目录,首个创建者为唯一管理员
+│   │   ├── 主体求解                              # 已验证 subject 映射为自己;认证缺省/none/未配置管理员的 basic 空壳一律映射为合成主体 local;控制台与外部 MCP 共用
+│   │   ├── 工作区范围(默认拒绝)                 # user_workspace_scopes + 明细表:mode=all|selected,无记录=零权限,selected 零明细也是零;管理员与 local 恒为全部且不写行(不能自锁)
+│   │   ├── policy epoch                          # system_configs 的 auth.policyEpoch 全局单调值,ACL/账号名册/工作区注册表/每 key 工具授权变更同事务 bump;显示名与最后使用时间不 bump
+│   │   └── authorizeCall 唯一卡口                # key 范围 ∩ owner 范围 ∩ (key 工具 ∩ 可授权目录) → 冻结 EffectiveScope;先判 owner 再判工作区最后判工具
 │   │
 │   └── external-mcp 外部 MCP 接入                 # c3 未拉起的 agent(独立 Claude/Codex/Cursor 会话、CI、监控脚本)凭长期 key 访问本部署;与 /internal/*-mcp 并列而非放宽,后者语义不变
-│       ├── 公开路由 /mcp/<api-key>               # key 即路径段,Streamable HTTP,挂在 SPA catch-all 之前;不做 loopback 判断,key 是唯一凭据
-│       ├── 每请求重建作用域                      # 无 run 闭包:key 绑定的单一工作区 + 该 key 工具范围,每次请求重新解析
-│       ├── 鉴权链                                # 凭据先于一切(缺失/格式错/未知/吊销统一 401);工作区不可用 403;旧 /mcp/v1?token= 返回 410 停用
-│       ├── 会话作用域钉死                        # initialize 时绑定 key id + 工具范围,后续同 session 换 key 一律 403,不静默改作用域;改范围/吊销即断
+│       ├── 统一端点 POST /mcp                    # 裸路径不含凭据,Streamable HTTP,挂在 SPA catch-all 之前;/mcp/<任何东西> 一律 404(含旧 key 路径与 /mcp/v1)
+│       ├── Bearer 唯一凭据                       # 只读 Authorization: Bearer c3k_…;query 与 X-API-Key 等自定义凭据头一概不解析;日志不打印 Authorization 的值
+│       ├── X-C3-Workspace 选工作区               # c3 自定义头(非 MCP 协议字段),initialize 时钉定;空/重复/超长 400,未知与越权同一 403;不支持任意头的客户端不可用,无 fallback
+│       ├── 每请求重建作用域                      # 无 run 闭包:每次请求过 authorizeCall 三层求交,handler 只拿冻结的 EffectiveScope,永不接受调用方给的路径
+│       ├── 鉴权链                                # 凭据先于工作区解析(缺失/格式错/未知/吊销/owner 失效统一 401,正文相同);工作区越权 403
+│       ├── 会话四元组钉定                        # (keyId, secretVersion, workspaceName, policyEpoch);换 key 与未知会话同答 404;版本/epoch 变化先清场再 404;先持久化后清连接
+│       ├── trusted-local                         # 无管理员关卡 + 回环 peer 时无需 key,合成 local 主体拥有全部工作区与全部工具;已出示的 bearer 必须校验通过,绝不降级
+│       ├── 暴露未配置 503                        # 绑定非回环地址却无管理员时整面 503 + 引导文案,回环请求同样拒绝,不建立任何会话
 │       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event(新 key 默认勾选)+ find_deliveries/view_delivery(可授权但**默认不勾选**);写:save_intents/save_intent_directly/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选);目录不含按意图回填 PR 状态的工具,无法授权
 │       ├── 目录与默认集解耦                      # 「可被管理员勾选」与「新 key 自动获得」是两份名表:EXTERNAL_MCP_READ_TOOLS 是分级来源,EXTERNAL_MCP_DEFAULT_TOOLS 是建 key 时服务端强制写入的初值;编译期钉死默认集只能取读级工具
 │       ├── 越权拒绝                              # 未勾选工具不进 tools/list,绕过发现直接调用返回稳定 forbidden 且无副作用
-│       └── 事件归属                              # publish_event 的 envelope workspace 取自绑定工作区,sessionId 固定 external-mcp:<key-id>,调用方无法伪造
+│       └── 事件归属                              # publish_event 的 envelope workspace 取自会话选定的工作区,sessionId 固定 external-mcp:<key-id>,调用方无法伪造
 │
 ├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │
@@ -228,7 +236,7 @@ c3
 │   │   ├── 代理                                  # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境;服务端自身出网(版本检查/发行包下载)同样按此路由,回环与 NO_PROXY 直连
 │   │   ├── 会话清理                              # sessionCleanup 开关 + 保留天数(默认关、30 天),每日删除各 vendor 会话存储中超期的会话记录;按目录名约定识别(vendor 中立)、覆盖沙箱与宿主 home,不碰 Cursor 与 IDE 共写的 `~/.cursor/chats`
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图
-│   │   ├── 外部 MCP API Key 存储                # mcpApiKeys 长期 key 记录(唯一绑定工作区+工具范围+加盐 scrypt 哈希),是 SystemSettings 的兄弟键故 save_settings 既不携带也无法注入;生命周期管理在工作区设置
+│   │   ├── 外部 MCP API Key 存储                # mcp_api_keys 长期 key 记录(不可变 ownerSubject + 正整数 secretVersion + 工具范围 + 加盐 scrypt 哈希),独立表故 save_settings 既不携带也无法注入;缺归属/版本的历史记录启动时吊销;生命周期管理在工作区设置
 │   │   ├── 监听地址                              # --host 显式绑定接口,默认 127.0.0.1(收紧原「不传 hostname 即全网卡」的隐式行为),贯穿 CLI/daemon/OS service;日志打印实际监听地址且不含 key
 │   │   ├── socket 自动续跑                        # socketAutoResume 开关,断连后单次自动 resume(默认开)
 │   │   └── 环境诊断                              # 只读展示各 vendor host CLI/令牌探测结果
@@ -258,9 +266,9 @@ c3
 │       ├── 本机观测(只读)                       # park 后 24h 恢复率 + recovered/eligible/pending 样本数;不属于设置草稿,不参与保存/脏状态;查询失败显示「暂不可用」并可重试
 │       │   ├── 数据边界                          # 只在本机、滚动保留 90 天、无自由文本、不外传;页面无开启遥测/导出/上传/改保留期/清空控件
 │       │   └── 决策口径                          # 60% 正向信号、70% 强信号;上线 2–4 周复查,无提升则作废基于本批指引的全部 P1/P2 后续投入
-│       └── 外部 MCP 接入(非配置)                 # 本工作区 key 的生成/列示/工具范围编辑/吊销;一次性揭示区给明文 key + /mcp/<key> 地址 + 一行式 claude mcp add 命令;非配置,不参与保存/脏状态
+│       └── 外部 MCP 接入(非配置)                 # 本页管理的 key 的生成/列示/工具范围编辑/吊销(页面只是管理页,不授予本工作区访问权);一次性揭示区给明文 key + 无凭据端点 + 以环境变量间接引用 key 的 claude mcp add 命令;非配置,不参与保存/脏状态
 │           ├── 默认只读                          # 新 key 一律只读工具,写工具须创建后显式勾选(保存前危险确认)
-│           ├── 不可用态                          # 绑定工作区目录消失/注销的 key 只留吊销,不披露宿主路径
+│           ├── 不可用态                          # 归属账号已不被承认的 key(账号移除,或配置 basic 认证后的 local 归属)只留吊销,不披露宿主路径
 │           └── 缺失引导                          # baseUrl 未配置时明说未配置并跳系统设置(不猜浏览器 Host)
 │
 └── distribution 分发形态                        # 同一次发布产出两个渠道,共享同一个 ~/.c3(设置/凭据/工作区/DB/会话)

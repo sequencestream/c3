@@ -703,61 +703,6 @@
       },
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
-    },
-    "mcpApiKey": {
-      "title": {
-        "label": "External MCP API keys"
-      },
-      "hint": "Long-lived keys let an agent c3 did not start (an independent Claude Code / Codex session, a CI job, a monitoring script) read this deployment over MCP at /mcp/v1. Each key is granted a specific set of workspaces and can only read intents and discussions, plus publish events — it can never write.",
-      "security": {
-        "hint": "The key travels in the URL query string, so it can end up in proxy and access logs. Over plain HTTP anyone on the network can read it: put c3 behind your own HTTPS reverse proxy before exposing it beyond the local machine."
-      },
-      "empty": "No API keys yet.",
-      "meta": "Created {created} · last used {lastUsed}",
-      "lastUsed": {
-        "never": "never used"
-      },
-      "grant": {
-        "label": "Workspaces: {workspaces}",
-        "none": "none",
-        "stale": "No longer registered (unreachable): {paths}",
-        "edit": {
-          "label": "Edit workspaces"
-        },
-        "emptyWarning": "With no workspace selected this key can reach nothing."
-      },
-      "create": {
-        "open": {
-          "label": "Generate key"
-        },
-        "submit": {
-          "label": "Generate"
-        },
-        "name": {
-          "placeholder": "Name, e.g. release-bot"
-        },
-        "workspaces": {
-          "label": "Workspaces this key may read"
-        },
-        "noWorkspaces": "Add a workspace to c3 first — a key must be granted at least one."
-      },
-      "reveal": {
-        "title": "Key \"{name}\" generated",
-        "onceOnly": "This is the only time the key is shown. Copy it now — it cannot be recovered, only replaced.",
-        "dismiss": {
-          "label": "I've copied it"
-        }
-      },
-      "revoke": {
-        "label": "Revoke",
-        "confirm": {
-          "body": "Revoking takes effect immediately: the next request fails and any open MCP session is closed. This cannot be undone.",
-          "confirm": {
-            "label": "Revoke"
-          },
-          "title": "Revoke this API key?"
-        }
-      }
     }
   },
   "personalizedSetting": {
@@ -3231,9 +3176,9 @@
       "title": {
         "label": "External MCP access"
       },
-      "hint": "How an agent c3 did not start reaches THIS workspace over MCP. Keys are created, scoped and revoked here; every key is bound to this workspace only and lives at /mcp/[key].",
+      "hint": "How an agent c3 did not start reaches this deployment over MCP. Keys are created, scoped and revoked here; the endpoint is always /mcp, the credential rides Authorization: Bearer and the workspace rides the X-C3-Workspace header. Which workspaces a key reaches is decided by its owner's administrator-managed scope.",
       "security": {
-        "hint": "The key IS the address and rides the URL path, so it can reach proxy/access logs. Put c3 behind your own HTTPS reverse proxy before exposing it beyond this machine. Write tools really change c3 state — grant them only to processes you trust, and revoke the key when done."
+        "hint": "The address carries no credential: the key rides the Authorization: Bearer header. Make sure any proxy in front of c3 does not write that header to its access log, and remember that over plain HTTP anyone on the network can still read it — put c3 behind your own HTTPS reverse proxy before exposing it beyond this machine. Write tools really change c3 state — grant them only to processes you trust, and revoke the key when done."
       },
       "noBaseUrl": "No public base URL is configured, so a ready-to-copy address cannot be built. Set it in System Settings → General. Keys can still be minted here.",
       "goto": {
@@ -3263,7 +3208,7 @@
         "name": {
           "placeholder": "Display name"
         },
-        "defaultScope": "The new key is bound to this workspace and granted the read-only tools only. Add write tools after creation, where their risk is explained.",
+        "defaultScope": "The new key is administered from this workspace, but which workspaces it reaches is decided by its owner's administrator-managed scope. It is granted the read-only tools only; add write tools after creation, where their risk is explained.",
         "submit": {
           "label": "Create key"
         }
@@ -3299,7 +3244,7 @@
           }
         }
       },
-      "unavailable": "This key's workspace is no longer available. It can reach nothing — revoke it.",
+      "unavailable": "This key's owner is no longer an account this deployment recognizes. It can reach nothing — revoke it.",
       "meta": "Created {created} · Last used {lastUsed}",
       "lastUsed": {
         "never": "never"

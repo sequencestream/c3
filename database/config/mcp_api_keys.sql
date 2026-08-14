@@ -10,12 +10,16 @@
 -- `c3secretv1:` 密文), 与之配套的 `salt` 不是秘密, 保持可读。校验时按 id 定位记录, 只做
 -- 一次密钥派生, 再以常数时间比较。
 --
--- workspaceName 是密钥被授权的唯一工作区名称。服务端按名称解析已注册路径,工作区移除或
--- 目录消失后密钥不可达。
+-- ownerSubject 与 secretVersion 是可用记录的 NOT NULL 不变量, 且都是普通 config_key 行 ——
+-- EAV 形状让它们无需 ALTER TABLE。缺任一项的记录不是可用密钥: 没有归属就没有可求交的权限,
+-- 没有版本就无法把轮换前后的会话区分开; 这类记录由启动时的幂等清理直接删除。
+--
+-- workspaceName 只回答「哪个工作区设置页管理这把密钥」, **不授予任何访问权**。密钥能到达
+-- 哪些工作区由 ownerSubject 在 user_workspace_scopes 里的范围决定。
 
 CREATE TABLE IF NOT EXISTS mcp_api_keys (
   key_id       TEXT NOT NULL,     -- 密钥的非机密 id (16 位 hex)
-  config_key   TEXT NOT NULL,     -- label / workspaceName / tools / algo / hashVersion / salt / hash / createdAt / lastUsedAt
+  config_key   TEXT NOT NULL,     -- label / ownerSubject / secretVersion / workspaceName / tools / algo / hashVersion / salt / hash / createdAt / lastUsedAt
   config_value TEXT,
   config_type  TEXT NOT NULL,     -- string | number | boolean | json | secret
   updated_at   INTEGER NOT NULL,

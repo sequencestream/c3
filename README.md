@@ -131,29 +131,72 @@ c3 uninstall # removes the current platform's registration and is idempotent. It
 ### External MCP access
 
 Point an agent c3 did not start — an independent Claude Code / Codex session, a
-CI job, a monitoring script — at this deployment over MCP:
+CI job, a monitoring script — at this deployment over MCP. The endpoint carries no
+credential: the key rides `Authorization: Bearer`, the workspace rides
+`X-C3-Workspace`.
 
 ```bash
-claude mcp add --transport http c3 "http://<host>:3000/mcp/<KEY>"
+export C3_MCP_KEY='c3k_…'   # from the one-time reveal; keep it out of the command line
+
+# Claude Code
+claude mcp add --transport http c3 "http://<host>:3000/mcp" \
+  --header "Authorization: Bearer $C3_MCP_KEY" \
+  --header "X-C3-Workspace: <workspace-name>"
 ```
 
-1. **Generate a key** in _Workspace Settings → External MCP access_. It is bound to
-   that one workspace. The plaintext key is shown **once**, together with the full
-   `/mcp/<KEY>` address and a ready-made command — copy it there and then; it is
-   stored only as a salted `scrypt` hash and can never be recovered, only replaced.
+```toml
+# Codex CLI — ~/.codex/config.toml
+[mcp_servers.c3]
+url = "http://<host>:3000/mcp"
+bearer_token_env_var = "C3_MCP_KEY"
+env_http_headers = { "X-C3-Workspace" = "C3_MCP_WORKSPACE" }
+```
+
+```jsonc
+// Cursor — ~/.cursor/mcp.json
+{
+  "mcpServers": {
+    "c3": {
+      "url": "http://<host>:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${C3_MCP_KEY}",
+        "X-C3-Workspace": "<workspace-name>",
+      },
+    },
+  },
+}
+```
+
+1. **Generate a key** in _Workspace Settings → External MCP access_. That page
+   administers the key; it does not grant the workspace it lives on. Which
+   workspaces the key reaches is decided by its owner's administrator-managed
+   scope. The plaintext is shown **once** — it is stored only as a salted `scrypt`
+   hash and can never be recovered, only replaced.
 2. **Open the listener** with `--host` (above) if the client is on another machine.
-3. **Grant write tools explicitly if needed.** A new key can only read:
+   A non-loopback bind with no configured administrator makes `/mcp` answer 503
+   until you configure one.
+3. **Pick the workspace per session.** One key can serve every workspace its owner
+   is allowed into; `X-C3-Workspace` chooses which one at initialization. Switching
+   means starting a new session, not a new key.
+4. **Grant write tools explicitly if needed.** A new key can only read:
    `find_intents`, `view_intent`, `find_discussions`, `view_discussion`, plus
    `publish_event`. Anything that changes c3 state (`save_intents`,
    `submit_spec_review`, `start_session_for_intent`, …) must be ticked in the key's
    tool scope, behind a risk confirmation — it really does change c3 state.
-4. **Revoke when done.** Revoking a key in Workspace Settings takes effect on its
+5. **Revoke when done.** Revoking a key in Workspace Settings takes effect on its
    very next request and closes any MCP session it already had open.
 
-> **Security.** The key IS the address and rides the URL path, so it can end up in
-> proxy and access logs, and plain HTTP exposes it to anyone on the network. c3
+> **Security.** Plain HTTP exposes the bearer token to anyone on the network. c3
 > does not ship or require TLS: put it behind your own HTTPS reverse proxy before
-> exposing it beyond the local machine, and avoid logging full request paths.
+> exposing it beyond the local machine, and suppress sensitive headers in its logs.
+> c3 itself never logs the `Authorization` value.
+>
+> `X-C3-Workspace` is a c3 HTTP extension, not an MCP protocol field — MCP's
+> Streamable HTTP transport defines protocol headers such as `Mcp-Session-Id` and
+> leaves tenant selection to the application. Clients that cannot send arbitrary
+> headers cannot use this endpoint, and there is no fallback. Claude.ai custom
+> connectors need an OAuth-capable server, which c3 is not, so they are not
+> supported by this static-key endpoint.
 
 ## Documentation
 

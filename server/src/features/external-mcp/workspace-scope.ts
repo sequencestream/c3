@@ -3,7 +3,7 @@
  * "a workspace c3 actually serves".
  *
  * The workspace registry stores lexically-resolved absolute paths; an API key's
- * authorization set and a `/mcp/v1` request parameter are both canonicalized
+ * authorization set and an administrator-named workspace are both canonicalized
  * (symlinks followed, trailing separators and dot segments collapsed). Comparing
  * the two forms directly would let an equivalent spelling of a registered
  * workspace read as "unknown" — or worse, let two spellings disagree about
@@ -30,7 +30,7 @@ export function listRegisteredWorkspaceCanonicalPaths(): string[] {
 /**
  * The canonical path a registered workspace id points at, or `null` for an
  * unknown/forged id. This is how an administrator's id-addressed grant becomes
- * the path form the `/mcp/v1` authorization check compares.
+ * the path form an authorization check compares.
  */
 export function workspaceNameToCanonicalPath(id: string): string | null {
   const path = resolveWorkspaceRoot(id)

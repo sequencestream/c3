@@ -16,6 +16,7 @@
  */
 import { basename, resolve } from 'node:path'
 import { configDb, configTx, requireConfigDb } from './config-store.js'
+import { bumpPolicyEpoch } from './policy-epoch.js'
 
 /** One workspace registration. `registered=false` ⇒ configuration-only, not listed. */
 export interface WorkspaceRow {
@@ -131,6 +132,9 @@ export function registerWorkspace(
         now,
         existing.name,
       )
+      // A re-registration widens every effective `all` scope, so it is an
+      // authorization change even though no policy row moved.
+      if (!existing.registered) bumpPolicyEpoch()
       return { ...existing, registered: true, lastAccessed: now }
     }
     const normalized = normalizeWorkspaceName(requestedName)
@@ -143,6 +147,7 @@ export function registerWorkspace(
       registered: true,
     }
     putWorkspaceRow(row, now)
+    bumpPolicyEpoch()
     return row
   })
 }
@@ -166,16 +171,22 @@ export function ensureWorkspaceName(path: string, now: number): string {
   return row.name
 }
 
-/** Remove a workspace from the list while keeping its name and configuration. */
+/**
+ * Remove a workspace from the list while keeping its name and configuration.
+ * Narrows every effective `all` scope, so the policy epoch advances with it —
+ * in the same transaction, so no session can observe the removal without also
+ * observing that its pinned authority is stale.
+ */
 export function unregisterWorkspace(name: string): void {
-  const d = configDb()
-  if (!d) return
-  d.run(
-    'UPDATE workspaces SET registered=0, updated_at=? WHERE name=? OR path=?',
-    Date.now(),
-    name,
-    resolve(name),
-  )
+  if (!configDb()) return
+  configTx((d) => {
+    // Read before writing: `run` reports no row count, and bumping unconditionally
+    // would evict every external session on a no-op removal.
+    const row = findWorkspaceByName(name) ?? findWorkspaceByPath(name)
+    if (!row?.registered) return
+    d.run('UPDATE workspaces SET registered=0, updated_at=? WHERE name=?', Date.now(), row.name)
+    bumpPolicyEpoch()
+  })
 }
 
 /** Bump the recent-access timestamp (re-sorts the sidebar). No-op for unknown paths. */

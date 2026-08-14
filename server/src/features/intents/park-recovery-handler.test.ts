@@ -34,12 +34,12 @@ vi.mock('./funnel-store.js', () => ({
 
 import { getParkRecoveryStatsHandler } from './park-recovery.js'
 
-function run(workspaceId: string): ServerToClient {
+function run(workspaceName: string): ServerToClient {
   const sent: ServerToClient[] = []
   const conn = { send: (m: ServerToClient) => sent.push(m) } as never
   getParkRecoveryStatsHandler({} as never, conn, {
     type: 'get_park_recovery_stats',
-    workspaceId,
+    workspaceName,
   })
   expect(sent).toHaveLength(1)
   return sent[0]
@@ -60,7 +60,7 @@ describe('getParkRecoveryStatsHandler', () => {
     const msg = run('ws-1')
     expect(msg).toEqual({
       type: 'park_recovery_stats',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       stats: { windowMs: 86_400_000, eligible: 4, recovered: 3, pending: 2, rate: 0.75 },
     })
   })

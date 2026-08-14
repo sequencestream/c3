@@ -33,10 +33,10 @@ const PROMPT =
  * 4 = done
  */
 let phase = 0
-let seedWorkspace = '' // seed workspace's opaque id (from `workspaces` after add_workspace)
+let seedWorkspace = '' // seed workspace's workspace name (from `workspaces` after add_workspace)
 let seedProjectPath = '' // seed workspace's temp dir path (for cleanup)
 let sandboxProject = '' // sandbox project's absolute path (only for add_workspace + cleanup)
-let sandboxProjectId = '' // sandbox project's opaque id (from `workspaces` after add)
+let sandboxProjectId = '' // sandbox project's workspace name (from `workspaces` after add)
 let sandboxDefName = ''
 let phase1Passed = false
 let phase2Passed = null
@@ -125,7 +125,7 @@ function onMessage(evt) {
     mkdirSync(seedProjectPath, { recursive: true })
     writeFileSync(join(seedProjectPath, 'README.md'), '# c3 e2e sandbox host\n')
     console.log(`[e2e-sandbox] ready → adding workspace ${seedProjectPath}`)
-    send({ type: 'add_workspace', path: seedProjectPath })
+    send({ type: 'add_workspace', name: seedProjectPath.split('/').pop(), path: seedProjectPath })
     // Stay in phase 0 — wait for `workspaces` response
     return
   }
@@ -151,9 +151,9 @@ function onMessage(evt) {
       const added =
         msg.workspaces?.find((w) => w.name === seedProjectPath.split('/').pop()) ??
         msg.workspaces?.[0]
-      seedWorkspace = added?.id ?? ''
+      seedWorkspace = added?.name ?? ''
       if (!seedWorkspace) {
-        console.error('[e2e-sandbox] no workspaceId after add_workspace seed')
+        console.error('[e2e-sandbox] no workspaceName after add_workspace seed')
         finish(5)
         return
       }
@@ -166,9 +166,9 @@ function onMessage(evt) {
     if (phase !== 1) return
     const added =
       msg.workspaces?.find((w) => w.name === sandboxProject.split('/').pop()) ?? msg.workspaces?.[0]
-    sandboxProjectId = added?.id ?? ''
+    sandboxProjectId = added?.name ?? ''
     if (!sandboxProjectId) {
-      console.error('[e2e-sandbox] no workspaceId after add_workspace')
+      console.error('[e2e-sandbox] no workspaceName after add_workspace')
       finish(5)
       return
     }
@@ -176,7 +176,7 @@ function onMessage(evt) {
     // Now save the workspace setting with sandbox enabled
     send({
       type: 'save_workspace_setting',
-      workspaceId: sandboxProjectId,
+      workspaceName: sandboxProjectId,
       config: { sandbox: { enabled: true, sandbox: sandboxDefName } },
     })
     return
@@ -278,7 +278,7 @@ function tryCreateSandboxProject() {
   console.log(`[e2e-sandbox] sandbox project: ${sandboxProject}`)
 
   // Add workspace, then save_project_config, then start phase 1
-  send({ type: 'add_workspace', path: sandboxProject })
+  send({ type: 'add_workspace', name: sandboxProject.split('/').pop(), path: sandboxProject })
 }
 
 // ─── Run phases ───────────────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ function startNonSandboxedRun() {
   phase = 2
   resetFlags()
   console.log('\n[e2e-sandbox] === Phase 1: Non-sandboxed run ===')
-  send({ type: 'create_session', workspaceId: seedWorkspace })
+  send({ type: 'create_session', workspaceName: seedWorkspace })
 }
 
 function onTurnEnd() {
@@ -304,7 +304,7 @@ function onTurnEnd() {
       phase = 3
       resetFlags()
       console.log('\n[e2e-sandbox] === Phase 2: Sandboxed run ===')
-      send({ type: 'create_session', workspaceId: sandboxProjectId })
+      send({ type: 'create_session', workspaceName: sandboxProjectId })
     } else {
       finishReport()
     }

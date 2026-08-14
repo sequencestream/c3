@@ -61,7 +61,7 @@ import type { IntentDevSessionExitCode } from '@ccc/shared/protocol'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
-import { pathToId, setSessionMode } from '../state.js'
+import { pathToName, setSessionMode } from '../state.js'
 import {
   getIntent,
   getIntentBySpecSessionId,
@@ -626,7 +626,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   eventBus.subscribe('event', (envelope) => {
     handlePrUpdateEvent(envelope, {
       getIntent,
-      pathToId,
+      pathToName,
       upsertIntentPr,
       safeInsertIntentLog,
       broadcastIntents,

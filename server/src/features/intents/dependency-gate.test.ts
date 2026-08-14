@@ -7,7 +7,7 @@ import type { Intent, SpecLaunchStage } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -50,7 +50,7 @@ const pullMock = vi.mocked(pullCurrentBranch)
 function dep(overrides: Partial<Intent> = {}): Intent {
   return {
     id: 'dep',
-    workspaceId: 'w',
+    workspaceName: 'w',
     title: 'Dependency',
     shortEnTitle: null,
     content: '',
@@ -241,7 +241,7 @@ describe('prepareSpecLaunch', () => {
     resetStateCacheForTests()
     resetSettingsCacheForTests()
     addWorkspace(dir, 1)
-    proj = resolveWorkspaceRoot(pathToId(dir)!)!
+    proj = resolveWorkspaceRoot(pathToName(dir)!)!
     syncMock.mockClear()
     pullMock.mockClear()
     pullMock.mockReturnValue({ ok: true, skipped: false })

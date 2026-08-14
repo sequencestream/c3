@@ -148,7 +148,7 @@ function makeCtx() {
   const syncDeliveryPr = vi.fn()
   // 「当前意图独立交付」 pending slot + the two actions its chain fires off
   // `create_delivery_result`.
-  const pendingStandaloneDelivery = ref<{ workspaceId: string; intentId: string } | null>(null)
+  const pendingStandaloneDelivery = ref<{ workspaceName: string; intentId: string } | null>(null)
   const linkIntentDelivery = vi.fn()
   const initDeliveryBranchFor = vi.fn()
   const intentGateEscape = ref<unknown>(null)
@@ -607,7 +607,7 @@ describe('automation save overlay message handler', () => {
 
     result.ctx.handleMessage({
       type: 'automations',
-      workspaceId: 'ws1',
+      workspaceName: 'ws1',
       items: [],
     } as unknown as ServerToClient)
 
@@ -676,7 +676,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const currentAgentIndexBySession = ref<Record<string, number>>({})
     const activity = ref({ phase: 'idle' } as { phase: string })
     const currentWorkspace = ref<string | null>(null)
-    const consoleSession = ref<{ workspacePath: string; sessionId: string } | null>(null)
+    const consoleSession = ref<{ workspaceName: string; sessionId: string } | null>(null)
     const activeSessionKind = ref<SessionPageKind>('work')
     const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
     const sessionPagingByWorkspace = ref<
@@ -770,7 +770,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'spec',
       sessions: [s('spec-1', 400)],
       page: { kind: 'first', hasMore: false },
@@ -788,7 +788,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'intent',
       sessions: [],
       page: { kind: 'first', hasMore: false },
@@ -807,7 +807,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     // List response for 'work' kind arrives while activeSessionKind is 'spec'.
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'work',
       sessions: [s('work-1', 400)],
       page: { kind: 'first', hasMore: false },
@@ -825,7 +825,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'work',
       sessions: [s('live-1', 500)],
       page: { kind: 'live', hasMore: false },
@@ -843,7 +843,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'work',
       sessions: [s('work-1', 400)],
       page: { kind: 'first', hasMore: false },
@@ -857,14 +857,14 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const r = makeSessionsCtx()
     r.currentWorkspace.value = WS
     r.activeSessionKind.value = 'spec'
-    r.consoleSession.value = { workspacePath: WS, sessionId: 'deep-spec' }
+    r.consoleSession.value = { workspaceName: WS, sessionId: 'deep-spec' }
     r.activeSession.value = 'deep-spec'
     r.activeTitle.value = 'Deep Spec'
     r.activeVendor.value = 'codex'
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'spec',
       sessions: [s('homepage-spec', 400)],
       page: { kind: 'first', hasMore: true },
@@ -888,13 +888,13 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const pendingId = `${PENDING_SESSION_PREFIX}new`
     r.currentWorkspace.value = WS
     r.activeSessionKind.value = 'work'
-    r.consoleSession.value = { workspacePath: WS, sessionId: pendingId }
+    r.consoleSession.value = { workspaceName: WS, sessionId: pendingId }
     r.activeSession.value = pendingId
     r.activeTitle.value = 'New session'
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'work',
       sessions: [s('history-1', 400)],
       page: { kind: 'first', hasMore: true },
@@ -909,7 +909,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const r = makeSessionsCtx()
     const pendingId = `${PENDING_SESSION_PREFIX}new`
     r.activeSession.value = pendingId
-    r.consoleSession.value = { workspacePath: WS, sessionId: pendingId }
+    r.consoleSession.value = { workspaceName: WS, sessionId: pendingId }
     r.sessionsByWorkspace.value = {
       [sessionCacheKey(WS, 'work')]: [s('history-1', 400), s(pendingId, 0)],
       [sessionCacheKey(WS, 'spec')]: [s(pendingId, 0), s('spec-1', 300)],
@@ -922,7 +922,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     } as unknown as ServerToClient)
 
     expect(r.activeSession.value).toBe('real-1')
-    expect(r.consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'real-1' })
+    expect(r.consoleSession.value).toEqual({ workspaceName: WS, sessionId: 'real-1' })
     expect(Object.values(r.sessionsByWorkspace.value).flat()).not.toContainEqual(
       expect.objectContaining({ sessionId: pendingId }),
     )
@@ -932,11 +932,11 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const r = makeSessionsCtx()
     r.currentWorkspace.value = WS
     r.activeSessionKind.value = 'spec'
-    r.consoleSession.value = { workspacePath: WS, sessionId: 'deep-spec' }
+    r.consoleSession.value = { workspaceName: WS, sessionId: 'deep-spec' }
 
     r.ctx.handleMessage({
       type: 'sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'work',
       sessions: [s('work-1', 400)],
       page: { kind: 'first', hasMore: false },
@@ -1352,11 +1352,13 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('consumes a session deep link with valid workspace → dispatches selectSession + skips maybeRestore*', () => {
     const r = makeDeepLinkCtx()
-    r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws1', id: 'sess-abc' }
+    r.pendingDeepLink.value = { kind: 'session', workspaceName: 'ws1', id: 'sess-abc' }
 
     r.ctx.handleMessage({
       type: 'ready',
-      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      workspaces: [
+        { name: 'ws1', path: '/ws1', lastAccessed: 0 },
+      ] as import('@ccc/shared/protocol').WorkspaceInfo[],
       isAdmin: true,
       subject: null,
       statuses: [],
@@ -1366,7 +1368,11 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.currentWorkspace.value).toBe('ws1')
     expect(r.selectSession).toHaveBeenCalledWith('ws1', 'sess-abc')
     // pending deep link is NOT cleared yet — it stays for fulfillment tracking
-    expect(r.pendingDeepLink.value).toEqual({ kind: 'session', workspaceId: 'ws1', id: 'sess-abc' })
+    expect(r.pendingDeepLink.value).toEqual({
+      kind: 'session',
+      workspaceName: 'ws1',
+      id: 'sess-abc',
+    })
     // maybeRestore* should NOT be called when deep link is consumed
     expect(r.maybeRestoreIntents).not.toHaveBeenCalled()
     expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
@@ -1377,11 +1383,13 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('consumes an intent deep link with valid workspace → dispatches openIntents + skipped maybeRestore*', () => {
     const r = makeDeepLinkCtx()
-    r.pendingDeepLink.value = { kind: 'intent', workspaceId: 'ws1', id: 'int-xyz' }
+    r.pendingDeepLink.value = { kind: 'intent', workspaceName: 'ws1', id: 'int-xyz' }
 
     r.ctx.handleMessage({
       type: 'ready',
-      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      workspaces: [
+        { name: 'ws1', path: '/ws1', lastAccessed: 0 },
+      ] as import('@ccc/shared/protocol').WorkspaceInfo[],
       isAdmin: true,
       subject: null,
       statuses: [],
@@ -1395,11 +1403,13 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('consumes a discussion deep link with valid workspace → dispatches openDiscussions + openDiscussion + skipped maybeRestore*', () => {
     const r = makeDeepLinkCtx()
-    r.pendingDeepLink.value = { kind: 'discussion', workspaceId: 'ws1', id: 'disc-456' }
+    r.pendingDeepLink.value = { kind: 'discussion', workspaceName: 'ws1', id: 'disc-456' }
 
     r.ctx.handleMessage({
       type: 'ready',
-      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      workspaces: [
+        { name: 'ws1', path: '/ws1', lastAccessed: 0 },
+      ] as import('@ccc/shared/protocol').WorkspaceInfo[],
       isAdmin: true,
       subject: null,
       statuses: [],
@@ -1414,11 +1424,13 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('workspace not found → shows toast, clears pending, falls through to maybeRestore*', () => {
     const r = makeDeepLinkCtx()
-    r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws-unknown', id: 'sess-abc' }
+    r.pendingDeepLink.value = { kind: 'session', workspaceName: 'ws-unknown', id: 'sess-abc' }
 
     r.ctx.handleMessage({
       type: 'ready',
-      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      workspaces: [
+        { name: 'ws1', path: '/ws1', lastAccessed: 0 },
+      ] as import('@ccc/shared/protocol').WorkspaceInfo[],
       isAdmin: true,
       subject: null,
       statuses: [],
@@ -1434,13 +1446,13 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('session_selected fulfills a session deep link', () => {
     const r = makeDeepLinkCtx()
-    r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws1', id: 'sess-target' }
+    r.pendingDeepLink.value = { kind: 'session', workspaceName: 'ws1', id: 'sess-target' }
     r.activeWorkspace.value = 'ws1'
     r.activeSession.value = 'sess-target'
 
     r.ctx.handleMessage({
       type: 'session_selected',
-      workspaceId: 'ws1',
+      workspaceName: 'ws1',
       sessionId: 'sess-target',
       title: 'Target Session',
       mode: 'default',
@@ -1458,7 +1470,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
     r.ctx.handleMessage({
       type: 'session_selected',
-      workspaceId: 'ws1',
+      workspaceName: 'ws1',
       sessionId: 'rev-1',
       title: 'Review',
       mode: 'default',
@@ -1475,7 +1487,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     // 换成规范撰写会话 → 真实 kind 随之更新(不会残留只读)。
     r.ctx.handleMessage({
       type: 'session_selected',
-      workspaceId: 'ws1',
+      workspaceName: 'ws1',
       sessionId: 'spec-1',
       title: 'Spec',
       mode: 'default',
@@ -1492,7 +1504,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('discussion_detail fulfills a discussion deep link', () => {
     const r = makeDeepLinkCtx()
-    r.pendingDeepLink.value = { kind: 'discussion', workspaceId: 'ws1', id: 'disc-target' }
+    r.pendingDeepLink.value = { kind: 'discussion', workspaceName: 'ws1', id: 'disc-target' }
 
     r.ctx.handleMessage({
       type: 'discussion_detail',
@@ -1510,7 +1522,9 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
     r.ctx.handleMessage({
       type: 'ready',
-      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      workspaces: [
+        { name: 'ws1', path: '/ws1', lastAccessed: 0 },
+      ] as import('@ccc/shared/protocol').WorkspaceInfo[],
       isAdmin: true,
       subject: null,
       statuses: [],
@@ -1539,10 +1553,10 @@ describe('automation workspace-gate snapshot (workspace_setting routing)', () =>
     } as import('@ccc/shared/protocol').WorkspaceSetting
   }
 
-  function wsSetting(workspaceId: string, automationEnabled: boolean): ServerToClient {
+  function wsSetting(workspaceName: string, automationEnabled: boolean): ServerToClient {
     return {
       type: 'workspace_setting',
-      workspaceId,
+      workspaceName,
       config: gateSetting(automationEnabled),
     } as unknown as ServerToClient
   }
@@ -1719,10 +1733,10 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
     return { ctx, currentWorkspace, sessionCounts, ownerRunningCounts, send }
   }
 
-  function countsMsg(workspaceId: string, owner: Record<string, number>): ServerToClient {
+  function countsMsg(workspaceName: string, owner: Record<string, number>): ServerToClient {
     return {
       type: 'session_counts',
-      workspaceId,
+      workspaceName,
       counts: { work: 1, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0 },
       ownerCounts: owner,
     } as unknown as ServerToClient
@@ -1749,14 +1763,14 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
       type: 'session_status',
       statuses: [{ sessionId: 's1', status: 'running' }],
     } as unknown as ServerToClient)
-    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceId: WS_A })
+    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceName: WS_A })
 
     r.send.mockClear()
     r.ctx.handleMessage({
       type: 'session_status',
       statuses: [{ sessionId: 's1', status: 'idle' }],
     } as unknown as ServerToClient)
-    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceId: WS_A })
+    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceName: WS_A })
   })
 
   it('同一运行快照重播不重复请求;无当前 workspace 时不请求', () => {
@@ -1898,10 +1912,10 @@ describe('delivery branch-init frames', () => {
     result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'pushing' }
     result.ctx.handleMessage({
       type: 'delivery_branch_init_result',
-      workspaceId: 'w1',
+      workspaceName: 'w1',
       delivery: {
         id: 'd1',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 3',
         description: '',
         status: 'planned',
@@ -1925,11 +1939,11 @@ describe('delivery branch-init frames', () => {
     const result = makeCtx()
     result.ctx.handleMessage({
       type: 'delivery_branch_init_result',
-      workspaceId: 'w1',
+      workspaceName: 'w1',
       warning: 'delivery.branchBehindMain',
       delivery: {
         id: 'd1',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 3',
         description: '',
         status: 'planned',
@@ -1963,7 +1977,7 @@ describe('delivery branch-init frames', () => {
       type: 'delivery_detail',
       delivery: {
         id: 'd1',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 3',
         description: '',
         status: 'integrating',
@@ -2013,7 +2027,7 @@ describe('delivery branch-init frames', () => {
       type: 'delivery_detail',
       delivery: {
         id: 'd1',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 3',
         description: '',
         status: 'integrating',
@@ -2054,7 +2068,7 @@ describe('delivery detail ahead facts + cross-delivery residue clearing', () => 
       type: 'delivery_detail',
       delivery: {
         id: 'd1',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 3',
         description: '',
         status: 'verified',
@@ -2101,10 +2115,10 @@ describe('delivery detail ahead facts + cross-delivery residue clearing', () => 
 
     result.ctx.handleMessage({
       type: 'create_delivery_result',
-      workspaceId: 'w1',
+      workspaceName: 'w1',
       delivery: {
         id: 'd2',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 4',
         description: '',
         status: 'planned',
@@ -2148,10 +2162,10 @@ describe('delivery detail ahead facts + cross-delivery residue clearing', () => 
 
     result.ctx.handleMessage({
       type: 'delivery_branch_init_result',
-      workspaceId: 'w1',
+      workspaceName: 'w1',
       delivery: {
         id: 'd1',
-        workspaceId: 'w1',
+        workspaceName: 'w1',
         title: 'Sprint 3',
         description: '',
         status: 'planned',
@@ -2173,10 +2187,10 @@ describe('delivery detail ahead facts + cross-delivery residue clearing', () => 
 })
 
 describe('create_intent_result — 精确落点与守卫释放', () => {
-  const created = (id: string, workspaceId: string, content = '') =>
+  const created = (id: string, workspaceName: string, content = '') =>
     ({
       type: 'create_intent_result',
-      workspaceId,
+      workspaceName,
       intent: { id, title: 'new intent', content, intentSessionId: null },
     }) as unknown as ServerToClient
 
@@ -2223,7 +2237,7 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
     // Mid-prepare broadcast: id present, still no intentSessionId — must NOT clear.
     h.ctx.handleMessage({
       type: 'intents',
-      workspaceId: '/ws',
+      workspaceName: '/ws',
       items: [{ id: 'i-late', status: 'draft', intentSessionId: null, content: 'contentful' }],
       sddEnabled: false,
     } as unknown as ServerToClient)
@@ -2241,7 +2255,7 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
 
     h.ctx.handleMessage({
       type: 'intents',
-      workspaceId: '/ws',
+      workspaceName: '/ws',
       items: [{ id: 'i-bound', status: 'draft', intentSessionId: 'sess-1', content: 'go' }],
       sddEnabled: false,
     } as unknown as ServerToClient)
@@ -2298,7 +2312,7 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
 
     h.ctx.handleMessage({
       type: 'intents',
-      workspaceId: '/ws',
+      workspaceName: '/ws',
       items: [{ id: 'i-42', status: 'draft', intentSessionId: null }],
       sddEnabled: false,
     } as unknown as ServerToClient)
@@ -2352,7 +2366,7 @@ describe('create_intent 进度遮罩路由', () => {
 
     h.ctx.handleMessage({
       type: 'create_intent_result',
-      workspaceId: '/ws',
+      workspaceName: '/ws',
       intent: { id: 'i-42', title: 'new intent' },
     } as unknown as ServerToClient)
 

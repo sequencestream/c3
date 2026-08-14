@@ -84,7 +84,7 @@ const DASHBOARD_REFRESH_TYPES = new Set<ServerToClient['type']>([
 
 /** Drop in-flight toggle flags for workspaces no longer present in the snapshot. */
 function pruneDashboardPending(ctx: AppCtx, rows: WorkspaceDashboardRow[]): void {
-  const ids = new Set(rows.map((row) => row.workspaceId))
+  const ids = new Set(rows.map((row) => row.workspaceName))
   ctx.dashboardPending.value = new Set([...ctx.dashboardPending.value].filter((id) => ids.has(id)))
 }
 
@@ -261,19 +261,19 @@ export function installMessageHandler(ctx: AppCtx): void {
   }
 
   function appendPinnedConsoleSessionIfMissing(input: {
-    workspaceId: string
+    workspaceName: string
     sessionKind: SessionPageKind
     sessions: SessionInfo[]
   }): SessionInfo[] {
     if (
       activeTab.value !== 'console' ||
-      input.workspaceId !== currentWorkspace.value ||
+      input.workspaceName !== currentWorkspace.value ||
       input.sessionKind !== ctx.activeSessionKind.value
     ) {
       return input.sessions
     }
     const pinned = ctx.consoleSession.value
-    if (!pinned || pinned.workspacePath !== input.workspaceId) return input.sessions
+    if (!pinned || pinned.workspaceName !== input.workspaceName) return input.sessions
     // Pending sessions already have a dedicated active row in WorkSessionList.
     // They are intentionally absent from list_sessions until their first run
     // binds a real vendor session id, so synthesizing another row here would
@@ -394,22 +394,22 @@ export function installMessageHandler(ctx: AppCtx): void {
         {
           const dl = pendingDeepLink.value
           if (dl) {
-            const wsExists = msg.workspaces.some((w) => w.id === dl.workspaceId)
+            const wsExists = msg.workspaces.some((w) => w.name === dl.workspaceName)
             if (wsExists) {
               deepLinkConsumed = true
               // Align the global workspace to the deep link's workspace.
-              currentWorkspace.value = dl.workspaceId
+              currentWorkspace.value = dl.workspaceName
               ctx.persistCurrentWorkspace()
               ctx.ensureSessions(currentWorkspace.value)
 
               // Dispatch by kind — each path marks fulfillment on the matching reply.
               if (dl.kind === 'session') {
-                ctx.selectSession(dl.workspaceId, dl.id)
+                ctx.selectSession(dl.workspaceName, dl.id)
               } else if (dl.kind === 'intent') {
-                ctx.openIntents(dl.workspaceId)
+                ctx.openIntents(dl.workspaceName)
                 ctx.requestedIntentId.value = dl.id
               } else if (dl.kind === 'discussion') {
-                ctx.openDiscussions(dl.workspaceId)
+                ctx.openDiscussions(dl.workspaceName)
                 ctx.openDiscussion(dl.id)
               }
 
@@ -485,12 +485,12 @@ export function installMessageHandler(ctx: AppCtx): void {
           runningSessionsFingerprint(sessionStatus.value)
         ctx.applyStatuses(msg.statuses)
         if (changed && currentWorkspace.value) {
-          send({ type: 'get_session_counts', workspaceId: currentWorkspace.value })
+          send({ type: 'get_session_counts', workspaceName: currentWorkspace.value })
         }
         break
       }
       case 'sessions': {
-        const path = msg.workspaceId
+        const path = msg.workspaceName
         const sessionKind = (msg.sessionKind ?? 'work') as SessionPageKind
         const cacheKey = sessionCacheKey(path, sessionKind)
         const kind = msg.page?.kind ?? 'first'
@@ -512,7 +512,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         // workspace — ignore it (the list loads on demand).
         if (merged) {
           const sessions = appendPinnedConsoleSessionIfMissing({
-            workspaceId: path,
+            workspaceName: path,
             sessionKind,
             sessions: merged.sessions,
           })
@@ -530,7 +530,7 @@ export function installMessageHandler(ctx: AppCtx): void {
             activeSessionTitleFromSessions({
               activeWorkspace: activeWorkspace.value,
               activeSession: activeSession.value,
-              workspacePath: path,
+              workspaceName: path,
               sessions: merged.sessions,
             }) ?? activeTitle.value
         }
@@ -560,7 +560,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'session_counts':
         // 切换 workspace 后到达的旧响应会带着上一个工作区的数字,直接丢弃 —— 角标只反映
         // 当前工作区。旧服务端不带 ownerCounts 时保留上一次快照,不从前端列表推算。
-        if (msg.workspaceId !== currentWorkspace.value) break
+        if (msg.workspaceName !== currentWorkspace.value) break
         sessionCounts.value = { ...sessionCounts.value, ...msg.counts }
         if (msg.ownerCounts) ownerRunningCounts.value = { ...msg.ownerCounts }
         break
@@ -572,7 +572,7 @@ export function installMessageHandler(ctx: AppCtx): void {
             now: Date.now(),
           })
         }
-        activeWorkspace.value = msg.workspaceId
+        activeWorkspace.value = msg.workspaceName
         activeSession.value = msg.sessionId
         activeTitle.value = msg.title
         // The resolved agent vendor for the title dot (absent on comm sessions).
@@ -606,7 +606,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Remember this as the console tab's own session ONLY when the selection
         // originated on the console tab.
         if (activeTab.value === 'console') {
-          ctx.consoleSession.value = { workspacePath: msg.workspaceId, sessionId: msg.sessionId }
+          ctx.consoleSession.value = { workspaceName: msg.workspaceName, sessionId: msg.sessionId }
         }
         messages.value = []
         counters.nextId = 1
@@ -735,9 +735,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         // late reply for a previous workspace never updates the current toggle.
         // The matching echo (initial load or the save round-trip) is the source of
         // truth: it reconciles the gate value and clears any pending-save flag.
-        if (msg.workspaceId === automationsProject.value) {
+        if (msg.workspaceName === automationsProject.value) {
           automationWorkspaceSetting.value = msg.config
-          automationWorkspaceSettingId.value = msg.workspaceId
+          automationWorkspaceSettingId.value = msg.workspaceName
           automationEnabledSaving.value = false
           automationSettingBeforeSave.value = null
         }
@@ -745,7 +745,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'park_recovery_stats':
         // Adopt only a reply for the workspace still on screen: a late answer for
         // one the user has left must be dropped, never shown under the new name.
-        if (msg.workspaceId === currentWorkspace.value) {
+        if (msg.workspaceName === currentWorkspace.value) {
           ctx.parkRecoveryLoading.value = false
           ctx.parkRecoveryStats.value = msg.stats ?? null
           ctx.parkRecoveryError.value = msg.error ?? null
@@ -793,7 +793,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'mcp_api_keys':
         // The roster is scoped to one workspace. A reply that raced with a
         // workspace switch must not clobber the page now showing another one.
-        if (msg.workspaceId !== currentWorkspace.value) break
+        if (msg.workspaceName !== currentWorkspace.value) break
         mcpApiKeys.value = msg.keys
         mcpApiKeyCatalog.value = msg.catalog
         // `created` rides only on a successful mint. A plain roster refresh must
@@ -819,14 +819,14 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'skill_link_status':
         // Only adopt statuses for the workspace currently being edited.
-        if (msg.workspaceId === currentWorkspace.value) {
+        if (msg.workspaceName === currentWorkspace.value) {
           skillLinkStatuses.value = msg.statuses
         }
         break
       case 'skill_install_result':
         // Clear the row's busy flag, then re-fetch link status.
         installingSkillIds.value = installingSkillIds.value.filter((id) => id !== msg.skillId)
-        if (msg.workspaceId === currentWorkspace.value) ctx.querySkillLinkStatus()
+        if (msg.workspaceName === currentWorkspace.value) ctx.querySkillLinkStatus()
         break
       case 'skill_load_approval_request':
         skillApprovalRequest.value = {
@@ -840,8 +840,8 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'intents': {
-        intents.value = { ...intents.value, [msg.workspaceId]: msg.items }
-        intentsSdd.value = { ...intentsSdd.value, [msg.workspaceId]: msg.sddEnabled }
+        intents.value = { ...intents.value, [msg.workspaceName]: msg.items }
+        intentsSdd.value = { ...intentsSdd.value, [msg.workspaceName]: msg.sddEnabled }
         // Success terminal for the startup overlay: the target intent flipping to
         // `in_progress` (via the resident `run:bound` subscription) means the dev
         // session bound — close the overlay (silently, no toast).
@@ -872,16 +872,16 @@ export function installMessageHandler(ctx: AppCtx): void {
         // the ONLY thing that closes the create dialog. A refusal leaves it open
         // with the typed content intact.
         createIntentDialogOpen.value = false
-        if (msg.workspaceId === intentsProject.value) {
+        if (msg.workspaceName === intentsProject.value) {
           // Merge the receipt into the local snapshot so Intents.vue can select
           // immediately — do not wait for a later `intents` broadcast (which often
           // arrives only after worktree / session bind). Later broadcasts remain
           // authoritative and overwrite this row (including intentSessionId).
-          const prev = intents.value[msg.workspaceId] ?? []
+          const prev = intents.value[msg.workspaceName] ?? []
           const idx = prev.findIndex((it) => it.id === msg.intent.id)
           const merged =
             idx >= 0 ? prev.map((it, i) => (i === idx ? msg.intent : it)) : [...prev, msg.intent]
-          intents.value = { ...intents.value, [msg.workspaceId]: merged }
+          intents.value = { ...intents.value, [msg.workspaceName]: merged }
           // Land on the created intent by its exact server id — never by list
           // position or title. The one-shot request is consumed by Intents.vue
           // once that id is in this workspace's snapshot (now true via the merge
@@ -955,13 +955,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         )
         break
       case 'intent_sessions':
-        intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }
+        intentSessions.value = { ...intentSessions.value, [msg.workspaceName]: msg.items }
         // Authoritatively reconcile the live run-state from the snapshot.
         if (msg.runStates) {
           intentSessionRunStates.value = msg.runStates
         }
         // Update the selected session id when the list changes.
-        if (msg.workspaceId === intentsProject.value && msg.items.length > 0) {
+        if (msg.workspaceName === intentsProject.value && msg.items.length > 0) {
           const active = msg.items.find((s) => s.sessionId === activeSession.value)
           if (active) {
             selectedIntentSessionId.value = active.sessionId
@@ -977,16 +977,16 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'workflow_status':
-        automation.value = { ...automation.value, [msg.status.workspaceId]: msg.status }
+        automation.value = { ...automation.value, [msg.status.workspaceName]: msg.status }
         break
       case 'queue_detail':
-        queueDetail.value = { ...queueDetail.value, [msg.detail.workspaceId]: msg.detail }
+        queueDetail.value = { ...queueDetail.value, [msg.detail.workspaceName]: msg.detail }
         break
       case 'deliveries':
-        deliveries.value = { ...deliveries.value, [msg.workspaceId]: msg.items }
+        deliveries.value = { ...deliveries.value, [msg.workspaceName]: msg.items }
         deliveriesNeedsAction.value = {
           ...deliveriesNeedsAction.value,
-          [msg.workspaceId]: msg.needsActionCount,
+          [msg.workspaceName]: msg.needsActionCount,
         }
         // Keep the open delivery's model in sync with the freshest list frame.
         if (activeDeliveryId.value) {
@@ -1019,9 +1019,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         const standalone = pendingStandaloneDelivery.value
         if (standalone) {
           pendingStandaloneDelivery.value = null
-          ctx.linkIntentDelivery(standalone.workspaceId, msg.delivery.id, standalone.intentId)
+          ctx.linkIntentDelivery(standalone.workspaceName, msg.delivery.id, standalone.intentId)
           ctx.initDeliveryBranchFor(
-            standalone.workspaceId,
+            standalone.workspaceName,
             msg.delivery.id,
             defaultDeliveryBranchName(msg.delivery.id, msg.delivery.title),
             'create',
@@ -1123,7 +1123,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'discussions': {
-        discussions.value = { ...discussions.value, [msg.workspaceId]: msg.items }
+        discussions.value = { ...discussions.value, [msg.workspaceName]: msg.items }
         // Authoritatively reconcile the live run-state for THIS list's discussions.
         discussionRunState.value = reconcileRunState(
           discussionRunState.value,
@@ -1144,14 +1144,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'automations':
-        automations.value = { ...automations.value, [msg.workspaceId]: msg.items }
+        automations.value = { ...automations.value, [msg.workspaceName]: msg.items }
         // A automation create/update round-trip completed — release the saving overlay.
         if (automationSaving.value) automationSaving.value = false
         // After a run completes the server re-broadcasts the list; refresh the open
         // automation's execution logs so history stays current.
         if (
           activeTab.value === 'automations' &&
-          automationsProject.value === msg.workspaceId &&
+          automationsProject.value === msg.workspaceName &&
           selectedAutomationId.value
         ) {
           send({ type: 'get_automation_detail', automationId: selectedAutomationId.value })
@@ -1617,7 +1617,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'workspaces_automation_result': {
         // Clear the in-flight flag for exactly the rows this reply settled (concurrent
         // per-row toggles each get their own reply; never wipe another row's pending).
-        const settled = new Set(msg.results.map((r) => r.workspaceId))
+        const settled = new Set(msg.results.map((r) => r.workspaceName))
         ctx.dashboardPending.value = new Set(
           [...ctx.dashboardPending.value].filter((id) => !settled.has(id)),
         )
@@ -1638,7 +1638,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'dir_listed': {
         // Adopt the listing only for the workspace currently being browsed.
-        if (msg.workspaceId !== codesProject.value) break
+        if (msg.workspaceName !== codesProject.value) break
         codesDirs.value = { ...codesDirs.value, [msg.rel]: msg.entries }
         if (codesLoadingDirs.value.has(msg.rel)) {
           const next = new Set(codesLoadingDirs.value)
@@ -1650,14 +1650,14 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'code_git_status': {
         // Authoritative workspace Git-status snapshot; the action guards workspace
         // isolation and the in-flight/merge bookkeeping.
-        ctx.applyCodeGitStatus(msg.workspaceId, msg.files)
+        ctx.applyCodeGitStatus(msg.workspaceName, msg.files)
         break
       }
       case 'file_read': {
         // Intent-detail `spec` tab: adopt the reply only for the rel we are
         // awaiting, so a concurrent codes read never overwrites the spec view.
         if (
-          msg.workspaceId === intentsProject.value &&
+          msg.workspaceName === intentsProject.value &&
           pendingSpecRel.value !== null &&
           msg.file.path === pendingSpecRel.value
         ) {
@@ -1666,7 +1666,7 @@ export function installMessageHandler(ctx: AppCtx): void {
           pendingSpecRel.value = null
         }
         // Codes page: fill the matching tab's content (opened optimistically).
-        if (msg.workspaceId === codesProject.value) {
+        if (msg.workspaceName === codesProject.value) {
           codesTabs.value = codesTabs.value.map((tab) =>
             tab.path === msg.file.path ? { ...tab, file: msg.file, loading: false } : tab,
           )
@@ -1674,7 +1674,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'codes_searched': {
-        if (msg.workspaceId !== codesProject.value) break
+        if (msg.workspaceName !== codesProject.value) break
         // Ignore a stale reply if the user switched modes mid-flight.
         if (msg.mode !== codesSearchMode.value) break
         codesSearchResult.value = {

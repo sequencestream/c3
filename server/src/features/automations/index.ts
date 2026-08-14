@@ -5,7 +5,7 @@
  * the write-approval queue. Broadcasts route through `ctx`; per-connection
  * replies through `conn`.
  */
-import { resolveWorkspaceRoot, pathToId } from '../../state.js'
+import { resolveWorkspaceRoot, pathToName } from '../../state.js'
 import {
   createAutomation,
   deleteAutomation as deleteAutomationStore,
@@ -109,7 +109,7 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
     ? clampName(importedName)
     : await generateAutomationName(msg.input)
   const created = createAutomation(msg.input, generatedName)
-  ctx.broadcastAutomations(resolveWorkspaceRoot(created.workspaceId)!)
+  ctx.broadcastAutomations(resolveWorkspaceRoot(created.workspaceName)!)
 }
 
 export const listAutomationsHandler: Handler<'list_automations'> = (_ctx, conn, msg) => {
@@ -117,9 +117,9 @@ export const listAutomationsHandler: Handler<'list_automations'> = (_ctx, conn, 
     conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
     return
   }
-  const proj = resolveWorkspaceRoot(msg.workspaceId)!
+  const proj = resolveWorkspaceRoot(msg.workspaceName)!
   const items = listAutomations(proj)
-  conn.send({ type: 'automations', workspaceId: pathToId(proj)!, items })
+  conn.send({ type: 'automations', workspaceName: pathToName(proj)!, items })
 }
 
 export const updateAutomationHandler: Handler<'update_automation'> = async (ctx, conn, msg) => {
@@ -182,7 +182,7 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
     }
   }
   updateAutomationStore(msg.automationId, msg.input, nameOverride)
-  ctx.broadcastAutomations(resolveWorkspaceRoot(existing.workspaceId)!)
+  ctx.broadcastAutomations(resolveWorkspaceRoot(existing.workspaceName)!)
 }
 
 export const deleteAutomationHandler: Handler<'delete_automation'> = (ctx, conn, msg) => {
@@ -202,7 +202,7 @@ export const deleteAutomationHandler: Handler<'delete_automation'> = (ctx, conn,
   // lifecycle event, so removing the row is itself the unbind.
   cancelInFlight(msg.automationId)
   deleteAutomationStore(msg.automationId)
-  ctx.broadcastAutomations(resolveWorkspaceRoot(existing.workspaceId)!)
+  ctx.broadcastAutomations(resolveWorkspaceRoot(existing.workspaceName)!)
 }
 
 export const getAutomationDetailHandler: Handler<'get_automation_detail'> = (_ctx, conn, msg) => {
@@ -251,7 +251,7 @@ export const automationRunNow: Handler<'automation_run_now'> = (ctx, conn, msg) 
   }
   void triggerRunNow(msg.automationId).then(() => {
     const s = getAutomation(msg.automationId)
-    if (s) ctx.broadcastAutomations(resolveWorkspaceRoot(s.workspaceId)!)
+    if (s) ctx.broadcastAutomations(resolveWorkspaceRoot(s.workspaceName)!)
   })
 }
 
@@ -260,9 +260,9 @@ export const getWorkspaceMcpConfig: Handler<'get_workspace_mcp_config'> = (_ctx,
     conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
     return
   }
-  const proj = resolveWorkspaceRoot(msg.workspaceId)!
+  const proj = resolveWorkspaceRoot(msg.workspaceName)!
   const config = storeGetWorkspaceMcpConfig(proj)
-  conn.send({ type: 'workspace_mcp_config', workspaceId: msg.workspaceId, config })
+  conn.send({ type: 'workspace_mcp_config', workspaceName: msg.workspaceName, config })
 }
 
 export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ctx, conn, msg) => {
@@ -272,11 +272,11 @@ export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ct
     conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
     return
   }
-  const proj2 = resolveWorkspaceRoot(msg.workspaceId)!
+  const proj2 = resolveWorkspaceRoot(msg.workspaceName)!
   storeSaveWorkspaceMcpConfig(proj2, msg.config)
   conn.send({
     type: 'workspace_mcp_config',
-    workspaceId: msg.workspaceId,
+    workspaceName: msg.workspaceName,
     config: storeGetWorkspaceMcpConfig(proj2),
   })
 }
@@ -300,7 +300,7 @@ export const getAutomationToolManifest: Handler<'get_automation_tool_manifest'> 
     conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
     return
   }
-  const proj3 = resolveWorkspaceRoot(msg.workspaceId)!
+  const proj3 = resolveWorkspaceRoot(msg.workspaceName)!
   const mcpConfig = storeGetWorkspaceMcpConfig(proj3)
   const hasMcp = Object.keys(mcpConfig.mcpServers).length > 0
   const mcpServers = hasMcp ? mcpConfig.mcpServers : undefined
@@ -308,13 +308,13 @@ export const getAutomationToolManifest: Handler<'get_automation_tool_manifest'> 
   let tools: ToolManifestEntry[]
   switch (msg.vendor) {
     case 'claude':
-      tools = createClaudeAdapter().listTools(msg.workspaceId, mcpServers)
+      tools = createClaudeAdapter().listTools(msg.workspaceName, mcpServers)
       break
     case 'codex':
-      tools = createCodexAdapter().listTools(msg.workspaceId, mcpServers)
+      tools = createCodexAdapter().listTools(msg.workspaceName, mcpServers)
       break
     case 'cursor':
-      tools = createCursorAdapter().listTools(msg.workspaceId, mcpServers)
+      tools = createCursorAdapter().listTools(msg.workspaceName, mcpServers)
       break
     default:
       // No silent fallback to another vendor's toolset: an unknown vendor

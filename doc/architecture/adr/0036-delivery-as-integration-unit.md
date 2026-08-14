@@ -35,7 +35,7 @@
 - 交付与意图生命周期**解耦**：取消交付不清理关联意图/远端资源；交付状态推进不依赖意图 `status`，只依赖「面向本交付的 PR 是否 merged」这一可复核事实。
 - `base_branch` 用快照而非实时配置：配置变更后新旧交付可能指向不同基线——这是避免旧交付被合入未曾基于分支所需的稳定性。
 - 一次性告知无法撤回已发送的 `pr:merge`：在语义可能扩展前提前暴露，不尝试用技术回退掩盖。
-- 后续阶段的交付分支、意图关联、PR 改投、合并能力将复用本表 `branch_name` / `branch_ready` / `base_branch` 与 `intent_prs.delivery_id` 接缝；`(workspace_path, branch_name)` 活动态部分唯一索引为复用历史分支名留了终态出口。
+- 后续阶段的交付分支、意图关联、PR 改投、合并能力将复用本表 `branch_name` / `branch_ready` / `base_branch` 与 `intent_prs.delivery_id` 接缝；`(workspace_name, branch_name)` 活动态部分唯一索引为复用历史分支名留了终态出口。
 - 本阶段角标（「需要用户处理」）因无人工可解决缺口、无分支/关联/合并动作，实际恒为 0；代码与状态机口径一致，后续接入对应动作即解锁。
 
 ## Compliance

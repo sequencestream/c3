@@ -199,7 +199,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     reason?: RunEndReason,
   ): void => {
     try {
-      const workspacePath = resolveWorkspaceRoot(discussion.workspaceId)
+      const workspacePath = resolveWorkspaceRoot(discussion.workspaceName)
       if (!workspacePath) return
       eventBus.publish('discussion:lifecycle', {
         workspacePath,
@@ -233,14 +233,14 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Publish discussion run lifecycle events (2026-06-08-010).
     eventBus.publish('run:started', {
       sessionId: discussion.id,
-      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceName)!,
       sessionKind: 'discussion',
       runKind: 'internal',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
       realId: discussion.id,
-      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceName)!,
     })
     // The domain boundary all three entries (MCP start, Web UI start, continue's
     // new round / dangling recovery) funnel through — one `discussion:start` per
@@ -284,7 +284,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       sessionManager,
       onMessage: (m) => broadcastDiscussionMessage(discussion.id, m),
       // Status/conclusion changes ride the refreshed list broadcast.
-      onStatusChange: () => broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceId)!),
+      onStatusChange: () => broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceName)!),
       onDispatchStatus: (s) => broadcastDiscussionDispatchStatus(discussion.id, s),
       gate: makeDiscussionGate(ctrl),
     })
@@ -297,7 +297,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         logRunFailure(
           {
             sessionId: discussion.id,
-            workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+            workspacePath: resolveWorkspaceRoot(discussion.workspaceName)!,
             sessionKind: 'discussion',
             runKind: 'internal',
           },
@@ -309,7 +309,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         if (abort.signal.aborted) settledReason = 'aborted'
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+          workspacePath: resolveWorkspaceRoot(discussion.workspaceName)!,
           reason: settledReason,
           sessionKind: 'discussion',
           runKind: 'internal',
@@ -351,7 +351,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     }
     const latest = getDiscussion(discussionId)
     if (!latest) return
-    broadcastDiscussions(resolveWorkspaceRoot(latest.workspaceId)!)
+    broadcastDiscussions(resolveWorkspaceRoot(latest.workspaceName)!)
     if (!ok) return
     if (canAutoStartDiscussion(latest, hasDiscussionRun(discussionId))) {
       startDiscussionRun(latest)
@@ -376,7 +376,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // right pane switches research → discussion in one batch; a failed research
   // broadcasts `ended` without auto-start, surfacing the manual Start fallback.
   const startResearchRun = (discussion: Discussion): void => {
-    const workspacePath = resolveWorkspaceRoot(discussion.workspaceId)!
+    const workspacePath = resolveWorkspaceRoot(discussion.workspaceName)!
     // The research executor, resolved ONCE up front — organizer-first with the
     // orchestration loop's criterion, and an explicit claude fallback (the loop
     // is claude-hardwired). This single result drives the first turn, the

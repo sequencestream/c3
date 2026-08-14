@@ -35,7 +35,7 @@ await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-ask-consensus-t
 const ws = new WebSocket(URL)
 
 let originalSettings = null
-let workspaceId = null // server-assigned opaque id, captured from `workspaces`
+let workspaceName = null // workspace name, captured from `workspaces`
 let workspaceAdded = false
 let sessionCreated = false
 let promptSent = false
@@ -91,7 +91,7 @@ ws.addEventListener('message', (evt) => {
       }
       if (!workspaceAdded) {
         workspaceAdded = true
-        send({ type: 'add_workspace', path: PROJECT_DIR })
+        send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       }
       break
     }
@@ -101,14 +101,14 @@ ws.addEventListener('message', (evt) => {
         const added =
           msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ??
           msg.workspaces?.[0]
-        workspaceId = added?.id ?? null
-        if (!workspaceId) {
-          console.error('[e2e] no workspaceId after add_workspace — aborting')
+        workspaceName = added?.name ?? null
+        if (!workspaceName) {
+          console.error('[e2e] no workspaceName after add_workspace — aborting')
           finish(5)
           return
         }
         sessionCreated = true
-        send({ type: 'create_session', workspaceId })
+        send({ type: 'create_session', workspaceName })
       }
       break
 

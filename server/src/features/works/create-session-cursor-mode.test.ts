@@ -18,7 +18,7 @@ vi.mock('../../runs.js', () => ({
 vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   resolveWorkspaceRoot: vi.fn((id: string) => id),
-  pathToId: vi.fn((p: string) => p),
+  pathToName: vi.fn((p: string) => p),
   touchWorkspace: vi.fn(),
 }))
 
@@ -98,7 +98,7 @@ describe('create_session Cursor defaultMode seeding', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
       type: 'create_session',
-      workspaceId: PROJ,
+      workspaceName: PROJ,
       agentId: 'cursor-a',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -123,7 +123,7 @@ describe('create_session Cursor defaultMode seeding', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     createSession({} as any, conn as any, {
       type: 'create_session',
-      workspaceId: PROJ,
+      workspaceName: PROJ,
       agentId: 'cursor-a',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')

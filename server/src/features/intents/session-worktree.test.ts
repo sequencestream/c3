@@ -20,7 +20,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests, getDb } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -49,7 +49,7 @@ import { getSpecsBase } from './specs-root.js'
 let dir: string
 let bare: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 function git(cwd: string, ...args: string[]): void {
@@ -110,8 +110,8 @@ beforeEach(() => {
   resetSpecReviewLink()
   resetUserInvolveStore()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   // SDD 关闭:这些用例钉的是目录,不是规范批准闸门 —— 否则开发会话会先撞
   // `intent.specNotApproved`,测不到 worktree 守卫。
   saveWorkspaceSetting(proj, {
@@ -216,7 +216,7 @@ describe('worktree 模式:意图/规范/评审会话都在意图 worktree 里跑
   it('意图沟通会话的 effectiveCwd 指向意图 worktree', async () => {
     const id = seedIntent()
     const { conn, sent } = fakeConn()
-    await refineIntent(ctx(), conn, { type: 'refine_intent', workspaceId, intentId: id })
+    await refineIntent(ctx(), conn, { type: 'refine_intent', workspaceName, intentId: id })
 
     const rt = getRuntime(selectedId(sent))!
     expect(rt.effectiveCwd).toBe(getWorktreePath(proj, id))
@@ -355,7 +355,7 @@ describe('基线失配:只提示不拦人,目录从不被自动改写', () => {
   it('意图沟通会话照常起,提示随回执一起到,且不是 error', async () => {
     const id = await seedMismatch()
     const { conn, sent } = fakeConn()
-    await refineIntent(ctx(), conn, { type: 'refine_intent', workspaceId, intentId: id })
+    await refineIntent(ctx(), conn, { type: 'refine_intent', workspaceName, intentId: id })
 
     expect(sent.some((m) => m.type === 'error')).toBe(false)
     expect(sent.some((m) => m.type === 'session_selected')).toBe(true)

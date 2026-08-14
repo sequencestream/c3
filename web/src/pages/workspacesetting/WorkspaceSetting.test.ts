@@ -1122,7 +1122,6 @@ describe('WorkspaceSetting.vue — dirty-tab switch confirmation', () => {
 
 describe('WorkspaceSetting.vue — header workspace identity', () => {
   const WS: WorkspaceInfo = {
-    id: 'ws-1',
     name: 'c3',
     path: '/Users/dev/workspace/github/very/long/path/c3',
     lastAccessed: 0,
@@ -1138,7 +1137,7 @@ describe('WorkspaceSetting.vue — header workspace identity', () => {
 
   it('exposes the full path via a title attribute (truncated display stays inspectable)', () => {
     const w = mountWs(null, { currentWorkspaceInfo: WS })
-    expect(w.find('[data-testid="project-config-workspace-path"]').attributes('title')).toBe(
+    expect(w.find('[data-testid="project-config-workspace-name"]').attributes('title')).toBe(
       WS.path,
     )
   })
@@ -1156,7 +1155,7 @@ describe('WorkspaceSetting.vue — header workspace identity', () => {
 
   it('updates with no residue when the resolved workspace changes', async () => {
     const w = mountWs(null, { currentWorkspaceInfo: WS })
-    const other: WorkspaceInfo = { id: 'ws-2', name: 'other', path: '/tmp/other', lastAccessed: 0 }
+    const other: WorkspaceInfo = { name: 'other', path: '/tmp/other', lastAccessed: 0 }
     await w.setProps({ currentWorkspaceInfo: other })
     const area = w.find('[data-testid="project-config-workspace"]')
     expect(area.text()).toContain('other')

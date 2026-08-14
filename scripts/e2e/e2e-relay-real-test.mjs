@@ -64,19 +64,25 @@ ws.addEventListener('message', (evt) => {
 
   if (msg.type === 'ready') {
     console.log(`[relay-e2e] ready → add_workspace ${PROJECT_DIR}`)
-    ws.send(JSON.stringify({ type: 'add_workspace', path: PROJECT_DIR }))
+    ws.send(
+      JSON.stringify({
+        type: 'add_workspace',
+        name: PROJECT_DIR.split('/').pop(),
+        path: PROJECT_DIR,
+      }),
+    )
   } else if (msg.type === 'workspaces') {
     if (sessionId) return
     const added =
       msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ?? msg.workspaces?.[0]
-    const ws0 = added?.id ?? null
+    const ws0 = added?.name ?? null
     if (!ws0) {
       console.error('[relay-e2e] no workspace after add_workspace')
       finish(5)
       return
     }
     console.log(`[relay-e2e] workspaces → create_session in ${ws0}`)
-    ws.send(JSON.stringify({ type: 'create_session', workspaceId: ws0 }))
+    ws.send(JSON.stringify({ type: 'create_session', workspaceName: ws0 }))
   } else if (msg.type === 'session_selected') {
     sessionId = msg.sessionId
     if (!agentSet) {

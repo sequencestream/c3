@@ -11,12 +11,12 @@ import {
   getActiveSessionId,
   getSessionMode,
   hasWorkspace,
-  hasWorkspaceId,
+  hasWorkspaceName,
   listWorkspaces,
   removeWorkspace,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
-  pathToId,
+  pathToName,
   setActiveSessionId,
   setSessionMode,
   touchWorkspace,
@@ -50,21 +50,19 @@ describe('workspace registry', () => {
     expect(listWorkspaces()[0].name).toBe(dir.split('/').pop())
   })
 
-  it('rejects forged workspace ids', () => {
+  it('rejects forged workspace names', () => {
     expect(resolveWorkspaceRoot('does-not-exist')).toBeNull()
-    expect(hasWorkspaceId('does-not-exist')).toBe(false)
+    expect(hasWorkspaceName('does-not-exist')).toBe(false)
   })
 
-  it('assigns and persists opaque ids', () => {
-    addWorkspace(dir, 1)
+  it('persists an explicit immutable workspace name', () => {
+    addWorkspace(dir, '研发 工作区', 1)
     const ws = listWorkspaces()
     expect(ws).toHaveLength(1)
-    expect(ws[0].id).toBeDefined()
-    expect(typeof ws[0].id).toBe('string')
-    expect(ws[0].id.length).toBeGreaterThan(10)
-    // path↔id round-trip
-    expect(pathToId(dir)).toBe(ws[0].id)
-    expect(resolveWorkspaceRoot(ws[0].id)).toBe(dir)
+    expect(ws[0].name).toBe('研发 工作区')
+    // path↔name round-trip
+    expect(pathToName(dir)).toBe(ws[0].name)
+    expect(resolveWorkspaceRoot(ws[0].name)).toBe(dir)
     // path is carried on the wire type for display (still not an identity field)
     expect(ws[0].path).toBe(dir)
   })
@@ -72,17 +70,17 @@ describe('workspace registry', () => {
   it('is idempotent and orders by most-recent access', () => {
     const a = mkdtempSync(join(tmpdir(), 'c3-a-'))
     const b = mkdtempSync(join(tmpdir(), 'c3-b-'))
-    const aId = addWorkspace(a, 10) && pathToId(a)!
+    const aName = addWorkspace(a, 10) && pathToName(a)!
     addWorkspace(b, 20)
-    expect(resolveWorkspaceRoot(listWorkspaces()[0].id)).toBe(b)
-    expect(resolveWorkspaceRoot(listWorkspaces()[1].id)).toBe(a)
+    expect(resolveWorkspaceRoot(listWorkspaces()[0].name)).toBe(b)
+    expect(resolveWorkspaceRoot(listWorkspaces()[1].name)).toBe(a)
     touchWorkspace(a, 30)
-    expect(resolveWorkspaceRoot(listWorkspaces()[0].id)).toBe(a)
-    expect(resolveWorkspaceRoot(listWorkspaces()[1].id)).toBe(b)
+    expect(resolveWorkspaceRoot(listWorkspaces()[0].name)).toBe(a)
+    expect(resolveWorkspaceRoot(listWorkspaces()[1].name)).toBe(b)
     addWorkspace(a, 40) // re-add bumps, does not duplicate
     expect(listWorkspaces()).toHaveLength(2)
-    // re-add does not change id
-    expect(pathToId(a)).toBe(aId)
+    // re-add does not change name
+    expect(pathToName(a)).toBe(aName)
     rmSync(a, { recursive: true, force: true })
     rmSync(b, { recursive: true, force: true })
   })

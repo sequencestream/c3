@@ -23,7 +23,7 @@ const IDS = ['system', 'gpt']
 
 const discussion: Discussion = {
   id: 'd1',
-  workspaceId: '/abs/proj',
+  workspaceName: '/abs/proj',
   title: 'Pick a cache',
   type: 'decision',
   goal: 'Choose a caching layer',

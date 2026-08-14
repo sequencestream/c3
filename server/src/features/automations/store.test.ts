@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
-// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
-// as identity — fixtures use the path itself as the id and round-trip cleanly.
+// In isolation these synthetic paths are unregistered, so use them as opaque names.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -53,7 +51,7 @@ describe('createAutomation next_run_at backfill', () => {
       type: 'command',
       config: { command: 'echo hi' },
       maxWallClockMs: 120_000,
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -69,7 +67,7 @@ describe('createAutomation next_run_at backfill', () => {
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -86,7 +84,7 @@ describe('createAutomation next_run_at backfill', () => {
     const sch = createAutomation({
       type: 'command',
       config: {},
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: 'not a cron',
       mode: 'read-only',
       vendor: 'claude',
@@ -99,7 +97,7 @@ describe('createAutomation next_run_at backfill', () => {
       {
         type: 'command',
         config: { command: 'echo hi', name: 'client name', description: 'should be dropped' },
-        workspaceId: proj,
+        workspaceName: proj,
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -116,7 +114,7 @@ describe('createAutomation next_run_at backfill', () => {
     const sch = createAutomation({
       type: 'command',
       config: { command: 'pnpm build' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -128,7 +126,7 @@ describe('createAutomation next_run_at backfill', () => {
     const sch = createAutomation({
       type: 'command',
       config: {},
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 0 1 1 *', // yearly, far away
       mode: 'read-only',
       vendor: 'claude',
@@ -147,7 +145,7 @@ describe('vendor field', () => {
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'codex',
@@ -163,7 +161,7 @@ describe('vendor field', () => {
       const sch = createAutomation({
         type: 'command',
         config: {},
-        workspaceId: proj,
+        workspaceName: proj,
         cronExpression: '* * * * *',
         mode: 'read-only',
         vendor: v,
@@ -176,7 +174,7 @@ describe('vendor field', () => {
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -194,7 +192,7 @@ describe('updateAutomation — display name management', () => {
       {
         type: 'command',
         config: { command: 'echo hi' },
-        workspaceId: proj,
+        workspaceName: proj,
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -291,7 +289,7 @@ describe('listExecutionLogs', () => {
     return createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -412,7 +410,7 @@ describe('deleteAutomation', () => {
     return createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -477,7 +475,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -493,7 +491,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -506,7 +504,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
       {
         type: 'command',
         config: { command: 'echo hi' },
-        workspaceId: proj,
+        workspaceName: proj,
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -523,7 +521,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
     const a = createAutomation({
       type: 'command',
       config: { command: 'echo a' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -531,7 +529,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
       initialName: 'Imported A',
     })
     expect(a.id).toBeTruthy()
-    expect(a.workspaceId).toBe(proj)
+    expect(a.workspaceName).toBe(proj)
     expect(a.status).toBe('paused')
   })
 
@@ -539,7 +537,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -564,7 +562,7 @@ describe('embedEventContext save boundary', () => {
     const s = createAutomation({
       type: 'llm',
       config: { prompt: 'go', embedEventContext: true },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -580,7 +578,7 @@ describe('embedEventContext save boundary', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo hi', embedEventContext: true },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -595,7 +593,7 @@ describe('embedEventContext save boundary', () => {
     const s = createAutomation({
       type: 'llm',
       config: { prompt: 'go', embedEventContext: true },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 8 * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -608,7 +606,7 @@ describe('embedEventContext save boundary', () => {
     const s = createAutomation({
       type: 'llm',
       config: { prompt: 'go', embedEventContext: 'yes' } as unknown as Record<string, unknown>,
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -624,7 +622,7 @@ describe('embedEventContext save boundary', () => {
     const s = createAutomation({
       type: 'llm',
       config: { prompt: 'go', embedEventContext: true },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -649,7 +647,7 @@ describe('runningSessionId derivation', () => {
     return createAutomation({
       type,
       config: type === 'llm' ? { prompt: 'review' } : { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -729,11 +727,11 @@ describe('runningSessionId derivation', () => {
 // 列表绿点(runningSessionId)与顶部角标(runningAutomationIdsForWorkspace)必须
 // 从同一份数据库快照派生同一批「进行中」自动化 —— 逐场景断言两者严格一致。
 describe('runningAutomationIdsForWorkspace mirrors runningSessionId', () => {
-  function makeAutomation(type: 'llm' | 'command', workspaceId = proj) {
+  function makeAutomation(type: 'llm' | 'command', workspaceName = proj) {
     return createAutomation({
       type,
       config: type === 'llm' ? { prompt: 'review' } : { command: 'echo hi' },
-      workspaceId,
+      workspaceName,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -797,7 +795,7 @@ describe('reconcileStuckRunningExecutions', () => {
     return createAutomation({
       type: 'llm',
       config: { prompt: 'review' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',

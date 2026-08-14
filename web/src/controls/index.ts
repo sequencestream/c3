@@ -93,24 +93,24 @@ export function useAppController(): AppCtx {
       onReopen: () => {
         // In the intent view, resume the comm session; otherwise re-select normally.
         if (ctx.activeTab.value === 'intents' && ctx.intentsProject.value) {
-          ctx.send({ type: 'load_workspace_setting', workspaceId: ctx.intentsProject.value })
-          ctx.send({ type: 'open_intent_session', workspaceId: ctx.intentsProject.value })
-          ctx.send({ type: 'list_intent_sessions', workspaceId: ctx.intentsProject.value })
+          ctx.send({ type: 'load_workspace_setting', workspaceName: ctx.intentsProject.value })
+          ctx.send({ type: 'open_intent_session', workspaceName: ctx.intentsProject.value })
+          ctx.send({ type: 'list_intent_sessions', workspaceName: ctx.intentsProject.value })
         } else if (ctx.activeTab.value === 'deliveries' && ctx.deliveriesProject.value) {
           // Re-fetch the workspace setting (the merge block gates on git-branch
           // mode), the list + badge count, and re-open the viewed delivery.
-          ctx.send({ type: 'load_workspace_setting', workspaceId: ctx.deliveriesProject.value })
-          ctx.send({ type: 'list_deliveries', workspaceId: ctx.deliveriesProject.value })
+          ctx.send({ type: 'load_workspace_setting', workspaceName: ctx.deliveriesProject.value })
+          ctx.send({ type: 'list_deliveries', workspaceName: ctx.deliveriesProject.value })
           if (ctx.activeDeliveryId.value)
             ctx.send({ type: 'get_delivery_detail', deliveryId: ctx.activeDeliveryId.value })
         } else if (ctx.activeTab.value === 'discussion' && ctx.discussionsProject.value) {
           // Re-fetch the list and re-open the viewed discussion (read path).
-          ctx.send({ type: 'list_discussions', workspaceId: ctx.discussionsProject.value })
+          ctx.send({ type: 'list_discussions', workspaceName: ctx.discussionsProject.value })
           if (ctx.activeDiscussionId.value)
             ctx.send({ type: 'open_discussion', discussionId: ctx.activeDiscussionId.value })
         } else if (ctx.activeTab.value === 'automations' && ctx.automationsProject.value) {
           // Re-fetch the automation list (read path) + settings (timezone preview).
-          ctx.send({ type: 'list_automations', workspaceId: ctx.automationsProject.value })
+          ctx.send({ type: 'list_automations', workspaceName: ctx.automationsProject.value })
           ctx.send({ type: 'get_settings' })
         } else if (ctx.activeTab.value === 'codes') {
           // The file tree/tabs are a stateless read path that survives the reconnect
@@ -119,7 +119,7 @@ export function useAppController(): AppCtx {
           if (ctx.activeWorkspace.value && ctx.activeSession.value) {
             ctx.send({
               type: 'select_session',
-              workspaceId: ctx.activeWorkspace.value,
+              workspaceName: ctx.activeWorkspace.value,
               sessionId: ctx.activeSession.value,
             })
           }
@@ -137,7 +137,7 @@ export function useAppController(): AppCtx {
         } else if (ctx.activeWorkspace.value && ctx.activeSession.value) {
           ctx.send({
             type: 'select_session',
-            workspaceId: ctx.activeWorkspace.value,
+            workspaceName: ctx.activeWorkspace.value,
             sessionId: ctx.activeSession.value,
           })
         }

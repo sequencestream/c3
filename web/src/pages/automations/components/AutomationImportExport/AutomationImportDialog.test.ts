@@ -10,7 +10,7 @@ const AGENTS = [
 
 function mountDialog(agents = AGENTS) {
   return mount(AutomationImportDialog, {
-    props: { open: true, agents, workspacePath: '/home/proj' },
+    props: { open: true, agents, workspaceName: '/home/proj' },
     attachTo: document.body,
   })
 }
@@ -61,7 +61,7 @@ describe('AutomationImportDialog.vue', () => {
     expect(inputs).toHaveLength(2)
     // Every mapped input is paused and owned by the current workspace.
     expect(inputs.every((i) => i.initialStatus === 'paused')).toBe(true)
-    expect(inputs.every((i) => i.workspaceId === '/home/proj')).toBe(true)
+    expect(inputs.every((i) => i.workspaceName === '/home/proj')).toBe(true)
     expect(inputs[0].initialName).toBe('A')
   })
 

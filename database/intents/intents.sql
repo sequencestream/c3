@@ -6,7 +6,7 @@
 
 CREATE TABLE IF NOT EXISTS intents (
   id                  TEXT PRIMARY KEY,              -- 意图唯一标识 (UUID v4)
-  workspace_path      TEXT NOT NULL,                 -- 所属工作区绝对路径 (resolve 后); v10→v11 由 project_path 改名
+  workspace_name      TEXT NOT NULL,                 -- 所属工作区绝对路径 (resolve 后); v10→v11 由 project_path 改名
   title               TEXT NOT NULL,                 -- 意图标题
   short_en_title      TEXT,                          -- 简短英文 ASCII 短标题, 派生分支/worktree 名的稳定来源 (v11→v12 新增; 文档标注 VARCHAR(128), SQLite 实为 TEXT, 写入侧截断到 128; 历史行为 NULL)
   content             TEXT NOT NULL,                 -- 意图详细描述
@@ -40,4 +40,4 @@ CREATE TABLE IF NOT EXISTS intents (
   updated_at          INTEGER NOT NULL,              -- 最后更新时间 (epoch ms)
   completed_at        INTEGER                        -- 完成时间 (epoch ms), status='done' 时打戳
 );
-CREATE INDEX IF NOT EXISTS idx_intent_workspace_status ON intents(workspace_path, status);
+CREATE INDEX IF NOT EXISTS idx_intent_workspace_status ON intents(workspace_name, status);

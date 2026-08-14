@@ -34,7 +34,7 @@ import {
 import { configTx, writeScope } from './config-store.js'
 import { decryptAgentApiKeys } from './encryption.js'
 import { legacySettingsFile, legacyStateFile } from './paths.js'
-import { ensureWorkspaceId, putWorkspaceRow } from './workspace-store.js'
+import { ensureWorkspaceName, putWorkspaceRow } from './workspace-store.js'
 
 const MARKER_WORKSPACES = 'config.import_workspaces.v1'
 const MARKER_SETTINGS = 'config.import_settings.v1'
@@ -98,11 +98,8 @@ function importUiState(d: Db, now: number): void {
       if (!rec || typeof rec.path !== 'string' || !rec.path) continue
       putWorkspaceRow(
         {
-          // Keep the id the wire already handed out; a fresh uuid would invalidate
-          // every workspace id a running console holds.
-          id: typeof rec.id === 'string' && rec.id ? rec.id : ensureWorkspaceId(rec.path, now),
+          name: ensureWorkspaceName(rec.path, now),
           path: rec.path,
-          name: typeof rec.name === 'string' && rec.name ? rec.name : rec.path,
           lastAccessed: typeof rec.lastAccessed === 'number' ? rec.lastAccessed : now,
           registered: true,
         },
@@ -171,8 +168,8 @@ function importSettings(d: Db, now: number): void {
       if (!rec) continue
       // A path that is not a registered workspace still gets its configuration —
       // under a row that stays out of the workspace list until the user adds it.
-      const workspaceId = ensureWorkspaceId(path, now)
-      writeScope({ kind: 'workspace', owner: workspaceId }, toEntries(rec, WORKSPACE_RULES))
+      const workspaceName = ensureWorkspaceName(path, now)
+      writeScope({ kind: 'workspace', owner: workspaceName }, toEntries(rec, WORKSPACE_RULES))
     }
 
     for (const [subject, prefs] of Object.entries(asRecord(personalizedSettings) ?? {})) {
@@ -186,6 +183,18 @@ function importSettings(d: Db, now: number): void {
         const rec = asRecord(key)
         if (!rec || typeof rec.id !== 'string' || !rec.id) continue
         const { id, ...fields } = rec
+        const legacyPaths =
+          typeof fields.workspace === 'string'
+            ? [fields.workspace]
+            : Array.isArray(fields.workspaces)
+              ? fields.workspaces.filter((value): value is string => typeof value === 'string')
+              : []
+        delete fields.workspace
+        delete fields.workspaces
+        if (typeof fields.workspaceName !== 'string') {
+          if (legacyPaths.length !== 1) continue
+          fields.workspaceName = ensureWorkspaceName(legacyPaths[0], now)
+        }
         writeScope({ kind: 'mcpKey', owner: id }, toEntries(fields, MCP_KEY_RULES))
       }
     }

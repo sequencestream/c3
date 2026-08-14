@@ -128,10 +128,10 @@ export function installSettingsActions(ctx: AppCtx): void {
     workspaceSettingOpen.value = true
     const id = currentWorkspace.value
     if (id) {
-      send({ type: 'load_workspace_setting', workspaceId: id })
+      send({ type: 'load_workspace_setting', workspaceName: id })
       // The external-MCP key roster is scoped to ONE workspace: ask for this one.
       // Metadata only, no plaintext, so non-administrators may see it too.
-      send({ type: 'list_mcp_api_keys', workspaceId: id })
+      send({ type: 'list_mcp_api_keys', workspaceName: id })
     }
     ctx.loadParkRecoveryStats()
   }
@@ -148,7 +148,7 @@ export function installSettingsActions(ctx: AppCtx): void {
     if (!path || !ctx.client) return
     ctx.parkRecoveryError.value = null
     ctx.parkRecoveryLoading.value = true
-    send({ type: 'get_park_recovery_stats', workspaceId: path })
+    send({ type: 'get_park_recovery_stats', workspaceName: path })
   }
 
   // Persist workspace settings. The panel now saves per-tab and stays open so the
@@ -157,13 +157,13 @@ export function installSettingsActions(ctx: AppCtx): void {
   // user's explicit close (handled elsewhere).
   ctx.saveWorkspaceSetting = (config: WorkspaceSettingType): void => {
     const path = currentWorkspace.value
-    if (path) send({ type: 'save_workspace_setting', workspaceId: path, config })
+    if (path) send({ type: 'save_workspace_setting', workspaceName: path, config })
   }
 
   // Fetch link status for every configured skill repo in the current workspace.
   ctx.querySkillLinkStatus = (): void => {
     const path = currentWorkspace.value
-    if (path) send({ type: 'get_skill_link_status', workspaceId: path })
+    if (path) send({ type: 'get_skill_link_status', workspaceName: path })
   }
 
   // Explicitly (re)install a configured skill repo; marks the row busy.
@@ -173,7 +173,7 @@ export function installSettingsActions(ctx: AppCtx): void {
     if (!installingSkillIds.value.includes(skillId)) {
       installingSkillIds.value = [...installingSkillIds.value, skillId]
     }
-    send({ type: 'install_skill', workspaceId: path, skillId })
+    send({ type: 'install_skill', workspaceName: path, skillId })
   }
 
   // Persist system settings. The panel now saves per-tab and stays open so the
@@ -209,13 +209,13 @@ export function installSettingsActions(ctx: AppCtx): void {
   // state optimistically: what the list shows is always what the server confirmed.
 
   /** Mint a key bound to one workspace. The reply is the only message that will ever carry its plaintext. */
-  ctx.createMcpApiKey = (payload: { workspaceId: string; name: string }): void => {
+  ctx.createMcpApiKey = (payload: { workspaceName: string; name: string }): void => {
     send({ type: 'create_mcp_api_key', ...payload })
   }
 
   /** Rename a key and/or replace its granted tool scope. */
   ctx.updateMcpApiKey = (payload: {
-    workspaceId: string
+    workspaceName: string
     id: string
     name?: string
     tools?: string[]
@@ -224,7 +224,7 @@ export function installSettingsActions(ctx: AppCtx): void {
   }
 
   /** Revoke a key. Takes effect on that key's very next request. */
-  ctx.revokeMcpApiKey = (payload: { workspaceId: string; id: string }): void => {
+  ctx.revokeMcpApiKey = (payload: { workspaceName: string; id: string }): void => {
     send({ type: 'revoke_mcp_api_key', ...payload })
   }
 

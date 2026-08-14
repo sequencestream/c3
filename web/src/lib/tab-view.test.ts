@@ -20,8 +20,8 @@ describe('consoleEntryTarget', () => {
   const list = [sess('a'), sess('b'), sess('c')]
 
   it('记住过会话 → 原样重选(独立于侧栏 currentWorkspace)', () => {
-    const remembered: SessionRef = { workspacePath: '/ws-x', sessionId: 'a' }
-    // currentWorkspace 与 remembered.workspacePath 不同也按 remembered 走
+    const remembered: SessionRef = { workspaceName: '/ws-x', sessionId: 'a' }
+    // currentWorkspace 与 remembered.workspaceName 不同也按 remembered 走
     expect(consoleEntryTarget(remembered, '/ws-y', list)).toEqual({
       kind: 'select',
       ref: remembered,
@@ -31,7 +31,7 @@ describe('consoleEntryTarget', () => {
   it('从未选过 → 回退当前工作区列表首个', () => {
     expect(consoleEntryTarget(null, '/ws', list)).toEqual({
       kind: 'select',
-      ref: { workspacePath: '/ws', sessionId: 'a' },
+      ref: { workspaceName: '/ws', sessionId: 'a' },
     })
   })
 
@@ -44,7 +44,7 @@ describe('consoleEntryTarget', () => {
   })
 
   it('记住的会话即使列表里已不存在,也仍按 remembered 走(删除由调用方清指针)', () => {
-    const remembered: SessionRef = { workspacePath: '/ws', sessionId: 'gone' }
+    const remembered: SessionRef = { workspaceName: '/ws', sessionId: 'gone' }
     expect(consoleEntryTarget(remembered, '/ws', list)).toEqual({
       kind: 'select',
       ref: remembered,

@@ -154,7 +154,7 @@ export interface Automation {
    */
   maxWallClockMs: number | null
   /** Owning workspace absolute path (resolved). */
-  workspaceId: string
+  workspaceName: string
   /** Vendor this automation belongs to; determines which agent runs it. */
   vendor: VendorId
   /** Explicit agent profile for an LLM automation; null for commands and legacy rows. */
@@ -237,7 +237,7 @@ export interface CreateAutomationInput {
   config: unknown
   /** Optional execution wall-clock limit; null selects the task-type default. */
   maxWallClockMs?: number | null
-  workspaceId: string
+  workspaceName: string
   /** Vendor this automation belongs to; determines which agent runs it. */
   vendor: VendorId
   /** Explicit LLM execution agent. Required by the server for new LLM automations. */
@@ -381,13 +381,13 @@ export interface WaitUserInvolveEvent {
   id: string
   /**
    * Owning workspace's **opaque id** (not a path). The store persists the absolute
-   * `workspace_path` but maps it through `pathToId` on read, so this matches the id
+   * `workspace_name`, so this matches the name
    * the web's `currentWorkspace` holds and every jump entry (`select_session` /
    * `open_intent_session` / `open_spec_session` / discussion / automation) expects. A row
    * whose workspace is no longer registered is dropped on read rather than emitting
    * a broken id the web could not route.
    */
-  workspaceId: string
+  workspaceName: string
   /**
    * The full {@link SessionKind} of the run that produced this event (work / intent /
    * discussion / automation / consensus / tool / spec). Stored verbatim — no longer
@@ -454,7 +454,7 @@ export interface WaitUserInvolveEvent {
 
 /** Fields the client may supply when listing events. */
 export interface ListWaitUserEventsInput {
-  workspaceId: string
+  workspaceName: string
   /** Optional status filter; absent = all. */
   status?: WaitUserInvolveStatus
   /** Page cursor: request events strictly older than this createdAt timestamp. */

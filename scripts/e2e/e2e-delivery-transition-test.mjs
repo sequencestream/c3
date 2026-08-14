@@ -85,7 +85,7 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 // ---- State ----
-let workspaceId = null
+let workspaceName = null
 let phase = 'boot'
 let deliveryId = null
 let detail = null
@@ -125,7 +125,7 @@ async function waitForDetail(predicate, label) {
  */
 async function attempt(to, confirmVerified = false) {
   const before = refusals.length
-  send({ type: 'transition_delivery', workspaceId, deliveryId, to, confirmVerified })
+  send({ type: 'transition_delivery', workspaceName, deliveryId, to, confirmVerified })
   for (let i = 0; i < POLL_TRIES && refusals.length === before; i++) await sleep(POLL_MS)
   return refusals[before] ?? null
 }
@@ -162,21 +162,21 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId) break
+      if (workspaceName) break
       const name = PROJECT_DIR.split('/').pop()
-      workspaceId =
-        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.id ?? null
-      if (!workspaceId) {
-        failures.push('no workspaceId after add_workspace')
+      workspaceName =
+        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.name ?? null
+      if (!workspaceName) {
+        failures.push('no workspaceName after add_workspace')
         finish()
         return
       }
       phase = 'create-delivery'
-      send({ type: 'create_delivery', workspaceId, title: 'Delivery transition e2e' })
+      send({ type: 'create_delivery', workspaceName, title: 'Delivery transition e2e' })
       void runAssertions()
       break
     }

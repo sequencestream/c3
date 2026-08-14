@@ -2,9 +2,9 @@
  * 最小 hash 深链解析:从 URL hash 提取会话/意图/讨论的定位目标。
  *
  * URL 契约(一次性、单向):
- *   #/session/<workspaceId>/<sessionId>
- *   #/intent/<workspaceId>/<intentId>
- *   #/discussion/<workspaceId>/<discussionId>
+ *   #/session/<workspaceName>/<sessionId>
+ *   #/intent/<workspaceName>/<intentId>
+ *   #/discussion/<workspaceName>/<discussionId>
  *
  * 合法 hash 返回对应结构;缺段、多段、未知 kind 或空 hash 返回 null。
  */
@@ -16,7 +16,7 @@ export type DeepLinkKind = (typeof DEEP_LINK_KINDS)[number]
 /** 解析后的深链目标。 */
 export interface DeepLinkTarget {
   kind: DeepLinkKind
-  workspaceId: string
+  workspaceName: string
   id: string
 }
 
@@ -34,14 +34,20 @@ export function parseDeepLink(hash: string): DeepLinkTarget | null {
   const trimmed = hash.startsWith('/') ? hash.slice(1) : hash
   const parts = trimmed.split('/')
 
-  // 必须恰好三段:kind / workspaceId / id
+  // 必须恰好三段:kind / workspaceName / id
   if (parts.length !== 3) return null
-  const [kind, workspaceId, id] = parts
-  if (!kind || !workspaceId || !id) return null
+  const [kind, encodedWorkspaceName, encodedId] = parts
+  if (!kind || !encodedWorkspaceName || !encodedId) return null
 
   // kind 必须命中白名单
   if (!(DEEP_LINK_KINDS as readonly string[]).includes(kind)) return null
 
-  // workspaceId 与 id 非空已在上面检查
-  return { kind: kind as DeepLinkKind, workspaceId, id }
+  try {
+    const workspaceName = decodeURIComponent(encodedWorkspaceName)
+    const id = decodeURIComponent(encodedId)
+    if (!workspaceName || !id) return null
+    return { kind: kind as DeepLinkKind, workspaceName, id }
+  } catch {
+    return null
+  }
 }

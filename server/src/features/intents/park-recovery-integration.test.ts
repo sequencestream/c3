@@ -21,6 +21,8 @@ const hoisted = vi.hoisted(() => ({ roots: new Map<string, string>() }))
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => hoisted.roots.get(id) ?? null,
+  pathToName: (path: string) =>
+    [...hoisted.roots.entries()].find(([, root]) => root === path)?.[0] ?? null,
 }))
 
 import { resetDbForTests } from '../../kernel/infra/db.js'
@@ -35,10 +37,10 @@ let dir: string
 const proj = '/abs/integration-project'
 const HOUR = 60 * 60 * 1000
 
-function run(workspaceId: string): ServerToClient {
+function run(workspaceName: string): ServerToClient {
   const sent: ServerToClient[] = []
   const conn = { send: (m: ServerToClient) => sent.push(m) } as never
-  getParkRecoveryStatsHandler({} as never, conn, { type: 'get_park_recovery_stats', workspaceId })
+  getParkRecoveryStatsHandler({} as never, conn, { type: 'get_park_recovery_stats', workspaceName })
   expect(sent).toHaveLength(1)
   return sent[0]
 }

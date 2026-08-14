@@ -10,12 +10,12 @@
  * a `<category>:*` row wildcards every action of that category.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
-// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// The store maps `workspace_name` <-> opaque `workspaceName` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToName
 // as identity — fixtures use the path itself as the id and round-trip cleanly.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -70,7 +70,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled', statuses: ['error', 'aborted'] }],
@@ -88,7 +88,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [
@@ -117,7 +117,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [
@@ -143,7 +143,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [
@@ -166,7 +166,7 @@ describe('store — event-trigger automation CRUD', () => {
     const settled = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -177,7 +177,7 @@ describe('store — event-trigger automation CRUD', () => {
     createAutomation({
       type: 'command',
       config: { command: 'b' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:started' }],
@@ -189,7 +189,7 @@ describe('store — event-trigger automation CRUD', () => {
     const cron = createAutomation({
       type: 'command',
       config: { command: 'c' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 8 * * *',
       mode: 'sandboxed',
       vendor: 'claude',
@@ -210,7 +210,7 @@ describe('store — event-trigger automation CRUD', () => {
     const wild = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'pr:*' }],
@@ -227,7 +227,7 @@ describe('store — event-trigger automation CRUD', () => {
     const multi = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }, { type: 'pr:merge' }],
@@ -244,7 +244,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -260,7 +260,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 8 * * *',
       mode: 'sandboxed',
       vendor: 'claude',
@@ -282,7 +282,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo pr' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [
@@ -307,7 +307,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [
@@ -323,7 +323,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'pr:create' }],
@@ -339,7 +339,7 @@ describe('store — event-trigger automation CRUD', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled', statuses: ['error'] }],
@@ -392,7 +392,7 @@ describe('scheduler — dispatchEventTriggers', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
@@ -692,7 +692,7 @@ describe('scheduler — triggerRunNow', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'manual' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'cron',
       cronExpression: '0 8 * * *',
       nextRunAt: 1_800_000_000_000,
@@ -787,7 +787,7 @@ describe('scheduler — stale cron trigger', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'cron',
       cronExpression: '0 * * * *',
       nextRunAt: Date.now() - 5 * 60 * 1000 - 1,
@@ -840,7 +840,7 @@ describe('scheduler — dispatchEventTriggers (pr:<operation>)', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
@@ -982,7 +982,7 @@ describe('scheduler — dispatchEventTriggers (intent:<phase>)', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
@@ -1072,7 +1072,7 @@ describe('scheduler — dispatchEventTriggers (discussion:<phase>)', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
@@ -1219,7 +1219,7 @@ describe('scheduler — dispatchEventTriggers (custom event type)', () => {
       type: 'command',
       config: { command: 'echo hi', name: 'x' },
       maxWallClockMs: null,
-      workspaceId: '/abs/ws-a',
+      workspaceName: '/abs/ws-a',
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,

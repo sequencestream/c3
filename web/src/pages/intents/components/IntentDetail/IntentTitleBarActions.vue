@@ -67,10 +67,10 @@ const emit = defineEmits<{
   /** 跳转已关联交付的详情(与元信息区同一条链路)。 */
   'open-delivery': [deliveryId: string]
   /** 打开候选弹窗:意图页从不主动拉交付列表,由控制层补发 list_deliveries。 */
-  'open-link-dialog': [workspaceId: string]
-  'link-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'open-link-dialog': [workspaceName: string]
+  'link-delivery': [workspaceName: string, deliveryId: string, intentId: string]
   'standalone-delivery': [
-    payload: { workspaceId: string; intentId: string; title: string; description: string },
+    payload: { workspaceName: string; intentId: string; title: string; description: string },
   ]
 }>()
 
@@ -135,13 +135,13 @@ const linkDialogOpen = ref(false)
 function openLinkDialog(): void {
   // 候选列表可能从未加载过(用户直接落在意图页),先请控制层补拉再开框;
   // 交付帧按工作区回填,列表到达后弹窗自动有值。
-  emit('open-link-dialog', props.intent.workspaceId)
+  emit('open-link-dialog', props.intent.workspaceName)
   linkDialogOpen.value = true
 }
 
 function confirmLink(deliveryId: string): void {
   linkDialogOpen.value = false
-  emit('link-delivery', props.intent.workspaceId, deliveryId, props.intent.id)
+  emit('link-delivery', props.intent.workspaceName, deliveryId, props.intent.id)
 }
 
 // 「当前意图独立交付」:标题=意图标题、描述=意图内容,日期由控制层按本地当天编码。
@@ -149,7 +149,7 @@ function confirmLink(deliveryId: string): void {
 // 关联成功后 linkedDeliveries 变为 1,下面的 watch 会收框并让入口切到已关联态。
 function requestStandaloneDelivery(): void {
   emit('standalone-delivery', {
-    workspaceId: props.intent.workspaceId,
+    workspaceName: props.intent.workspaceName,
     intentId: props.intent.id,
     title: props.intent.title,
     description: props.intent.content,

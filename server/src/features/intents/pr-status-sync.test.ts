@@ -20,7 +20,7 @@ vi.mock('../../kernel/config/index.js', async () => {
 import { getForgePrStatus } from '../../git.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -38,7 +38,7 @@ import { depsWithUnconfirmedPr, syncIntentPrStatus } from './pr-status-sync.js'
 
 let dir: string
 let prevClaudeConfigDir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -51,8 +51,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   vi.mocked(getForgePrStatus).mockReset()
 })
 

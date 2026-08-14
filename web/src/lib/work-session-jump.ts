@@ -19,13 +19,13 @@ import type { DevLaunchCloseReason } from './dev-launch-view'
 export const WORK_SESSION_JUMP_DELAY_MS = 1000
 
 export interface PendingWorkSessionSelectRequest {
-  workspacePath: string
+  workspaceName: string
   intentId: string
   sessionId: string | null
 }
 
 export interface PendingWorkSessionSelectContext {
-  workspacePath: string | null
+  workspaceName: string | null
   sessionKind: string
   intents: Intent[]
   sessions: SessionInfo[]
@@ -56,10 +56,10 @@ export function resolveJumpTargetSessionId(intentId: string, intents: Intent[]):
 }
 
 export function beginPendingWorkSessionSelect(
-  workspacePath: string,
+  workspaceName: string,
   intentId: string,
 ): PendingWorkSessionSelectRequest {
-  return { workspacePath, intentId, sessionId: null }
+  return { workspaceName, intentId, sessionId: null }
 }
 
 /**
@@ -72,7 +72,7 @@ export function resolvePendingWorkSessionSelect(
   context: PendingWorkSessionSelectContext,
 ): PendingWorkSessionSelectResult {
   if (!request) return { request: null, selectSessionId: null }
-  if (context.workspacePath !== request.workspacePath || context.sessionKind !== 'work') {
+  if (context.workspaceName !== request.workspaceName || context.sessionKind !== 'work') {
     return { request, selectSessionId: null }
   }
   const sessionId =

@@ -57,14 +57,14 @@ function deriveWaitUserActionDescriptor(
   intent: Pick<
     Intent,
     | 'id'
-    | 'workspaceId'
+    | 'workspaceName'
     | 'intentSessionId'
     | 'specSessionId'
     | 'specReviewSessionId'
     | 'lastWorkSessionId'
   >,
 ): ActionDescriptor | null {
-  const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
   if (!workspacePath) return null
   const event = findLatestTodoEventForSessionIds(workspacePath, sessionIdsForIntent(intent))
   if (!event || !event.requestId) return null
@@ -96,7 +96,7 @@ function deriveSpecReworkExhaustedActionDescriptor(
   intent: Pick<
     Intent,
     | 'id'
-    | 'workspaceId'
+    | 'workspaceName'
     | 'status'
     | 'specPath'
     | 'specStatus'
@@ -114,7 +114,7 @@ function deriveSpecReworkExhaustedActionDescriptor(
   // Rounds 1..CAP are reworked; only the conclusion after the last allowed rework
   // is the hand-over point — the same boundary the queue parks on.
   if (intent.specReviewReworkRounds <= MAX_SPEC_REVIEW_REWORK_ROUNDS) return null
-  const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
   if (!workspacePath || !getSddEnabled(workspacePath)) return null
   if (readSpecFingerprint(workspacePath, intent.specPath) !== intent.specReviewFingerprint) {
     return null
@@ -136,11 +136,11 @@ function deriveSpecReworkExhaustedActionDescriptor(
  * written yet.
  */
 function deriveSpecApprovalActionDescriptor(
-  intent: Pick<Intent, 'id' | 'workspaceId' | 'status' | 'specStatus'>,
+  intent: Pick<Intent, 'id' | 'workspaceName' | 'status' | 'specStatus'>,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo') return null
   if (intent.specStatus !== 'pending') return null
-  const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
   if (!workspacePath || !getSddEnabled(workspacePath)) return null
   return {
     labelCode: 'spec_awaiting_approval',
@@ -163,12 +163,12 @@ function deriveSpecApprovalActionDescriptor(
  * `intents` read model by the client, never copied into the descriptor.
  */
 function deriveDependencyActionDescriptor(
-  intent: Pick<Intent, 'workspaceId' | 'status' | 'dependsOn' | 'linkedDeliveries'>,
+  intent: Pick<Intent, 'workspaceName' | 'status' | 'dependsOn' | 'linkedDeliveries'>,
   loadWorkspaceIntents: WorkspaceIntentsLoader,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo' && intent.status !== 'in_progress') return null
   if (intent.dependsOn.length === 0) return null
-  const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
   if (!workspacePath) return null
   const blocking = findBlockingDependency({
     intent,

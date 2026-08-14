@@ -84,7 +84,7 @@ describe('funnel_event schema', () => {
       'intent_id',
       'reason_code',
       'stage',
-      'workspace_id',
+      'workspace_name',
     ])
   })
 })
@@ -160,7 +160,7 @@ describe('write boundary', () => {
       'intent_id',
       'reason_code',
       'stage',
-      'workspace_id',
+      'workspace_name',
     ])
     expect(row.stage).toBe('parked')
     expect(row.reason_code).toBe('max_attempts_reached')

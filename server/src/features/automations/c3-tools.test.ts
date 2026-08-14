@@ -20,7 +20,7 @@ import { join } from 'node:path'
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { resetDbForTests } from '../../kernel/infra/db.js'

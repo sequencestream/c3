@@ -13,13 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-// Stub the workspace registry: the store maps its `workspace_path` column to an
-// opaque `workspaceId` via `pathToId`. In isolation these synthetic paths are
-// unregistered, so mock `pathToId` as identity — the round-trip assertions then
-// hold against the resolved path the rows store. A path containing 'unregistered'
-// resolves to `null`, exercising the `toEvent` drop-on-unregistered-workspace path.
+// Stub the workspace registry with opaque names. A value containing 'unregistered'
+// cannot resolve to a root, exercising the event drop path.
 vi.mock('../../state.js', () => ({
-  pathToId: (p: string) => (p.includes('unregistered') ? null : p),
+  workspaceNameFor: (value: string) => resolve(value),
+  resolveWorkspaceRoot: (name: string) => (name.includes('unregistered') ? null : name),
 }))
 // Stub the intents store: `toEvent` reverse-looks-up the owning intent from an
 // event's `session_id`. Default to "no owning intent" so ordinary events derive
@@ -98,7 +96,7 @@ describe('events CRUD', () => {
 
     const got = getEvent(ev.id)
     expect(got?.id).toBe(ev.id)
-    expect(got?.workspaceId).toBe(resolve(proj))
+    expect(got?.workspaceName).toBe(resolve(proj))
   })
 
   it('honors all explicit fields and persists toolInput as JSON', () => {
@@ -399,7 +397,7 @@ describe('migration', () => {
     const raw = getDb()!
     // A pre-v5 table carrying the old column names + index, schema not yet ensured.
     raw.exec(`CREATE TABLE wait_user_involve_events (
-      id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, source TEXT NOT NULL, source_id TEXT,
+      id TEXT PRIMARY KEY, workspace_name TEXT NOT NULL, source TEXT NOT NULL, source_id TEXT,
       title TEXT, request_id TEXT, tool_name TEXT, tool_input TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL, outcome TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
@@ -407,7 +405,7 @@ describe('migration', () => {
     PRAGMA user_version=4;`)
     raw.run(
       `INSERT INTO wait_user_involve_events
-         (id, workspace_path, source, source_id, status, tool_input, created_at, updated_at)
+         (id, workspace_name, source, source_id, status, tool_input, created_at, updated_at)
        VALUES ('legacy-1', ?, 'spec', 'sess-legacy', 'todo', '', 1, 1)`,
       resolve(proj),
     )
@@ -439,8 +437,8 @@ describe('unregistered-workspace degradation', () => {
   it('omits an event whose workspace is no longer registered (no broken id emitted)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const unreg = '/abs/unregistered-ws'
-    // The row persists, but `pathToId` returns null for an unregistered workspace, so
-    // `toEvent` must drop it rather than emit `workspaceId: null as string`.
+    // The row persists, but `pathToName` returns null for an unregistered workspace, so
+    // `toEvent` must drop it rather than emit `workspaceName: null as string`.
     createEvent({ workspacePath: unreg, sessionKind: 'work' })
     expect(listEvents(unreg)).toEqual([])
     expect(warn).toHaveBeenCalled()

@@ -1,5 +1,5 @@
 /**
- * Auth + admin gate for the workspace-registry entry points (workspaceId-identity
+ * Auth + admin gate for the workspace-registry entry points (workspaceName-identity
  * hardening; WS-R* admin-only add/remove). `add_workspace` is the ONLY message
  * where an absolute path legitimately enters the system — it establishes a new
  * trust root — so it (and its `remove` counterpart) must be refused on an
@@ -23,7 +23,7 @@ vi.mock('../../state.js', () => ({
     return '/abs/proj'
   }),
   listWorkspaces: vi.fn(() => []),
-  pathToId: vi.fn(() => null),
+  pathToName: vi.fn(() => null),
   resolveWorkspaceRoot: vi.fn(() => '/abs/proj'),
   removeWorkspace: vi.fn(() => {
     h.removed++
@@ -85,7 +85,11 @@ describe('workspace registry auth gate', () => {
     h.added = 0
     h.auth = undefined
     const { conn, sent } = capture(false)
-    await addWorkspaceHandler(KCTX, conn, { type: 'add_workspace', path: '/abs/proj' })
+    await addWorkspaceHandler(KCTX, conn, {
+      type: 'add_workspace',
+      workspaceName: 'proj',
+      path: '/abs/proj',
+    })
     expect(sent[0]).toEqual({ type: 'unauthenticated', reason: 'missing' })
     expect(h.added).toBe(0) // never reached the registry
   })
@@ -94,7 +98,7 @@ describe('workspace registry auth gate', () => {
     h.removed = 0
     h.auth = undefined
     const { conn, sent } = capture(false)
-    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceId: 'ws-1' })
+    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceName: 'ws-1' })
     expect(sent[0]).toEqual({ type: 'unauthenticated', reason: 'missing' })
     expect(h.removed).toBe(0)
   })
@@ -103,7 +107,11 @@ describe('workspace registry auth gate', () => {
     h.added = 0
     h.auth = undefined // no admin gate applies ⇒ loopback trust
     const { conn, sent } = capture(true)
-    await addWorkspaceHandler(KCTX, conn, { type: 'add_workspace', path: '/abs/proj' })
+    await addWorkspaceHandler(KCTX, conn, {
+      type: 'add_workspace',
+      workspaceName: 'proj',
+      path: '/abs/proj',
+    })
     expect(sent.some((m) => m.type === 'unauthenticated')).toBe(false)
     expect(h.added).toBe(1)
   })
@@ -114,7 +122,11 @@ describe('workspace registry admin gate (WS-R*)', () => {
     h.added = 0
     h.auth = basicAuth('admin')
     const { conn, sent } = capture(true, 'admin')
-    await addWorkspaceHandler(KCTX, conn, { type: 'add_workspace', path: '/abs/proj' })
+    await addWorkspaceHandler(KCTX, conn, {
+      type: 'add_workspace',
+      workspaceName: 'proj',
+      path: '/abs/proj',
+    })
     expect(sent.some((m) => m.type === 'error')).toBe(false)
     expect(h.added).toBe(1)
   })
@@ -123,7 +135,7 @@ describe('workspace registry admin gate (WS-R*)', () => {
     h.removed = 0
     h.auth = basicAuth('admin')
     const { conn, sent } = capture(true, 'admin')
-    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceId: 'ws-1' })
+    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceName: 'ws-1' })
     expect(sent.some((m) => m.type === 'error')).toBe(false)
     expect(h.removed).toBe(1)
   })
@@ -132,7 +144,11 @@ describe('workspace registry admin gate (WS-R*)', () => {
     h.added = 0
     h.auth = basicAuth('admin')
     const { conn, sent } = capture(true, 'alice')
-    await addWorkspaceHandler(KCTX, conn, { type: 'add_workspace', path: '/abs/proj' })
+    await addWorkspaceHandler(KCTX, conn, {
+      type: 'add_workspace',
+      workspaceName: 'proj',
+      path: '/abs/proj',
+    })
     expect(sent[0]).toEqual({ type: 'error', error: { code: 'auth.adminOnly' } })
     expect(h.added).toBe(0) // never reached the registry
   })
@@ -141,7 +157,7 @@ describe('workspace registry admin gate (WS-R*)', () => {
     h.removed = 0
     h.auth = basicAuth('admin')
     const { conn, sent } = capture(true, 'alice')
-    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceId: 'ws-1' })
+    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceName: 'ws-1' })
     expect(sent[0]).toEqual({ type: 'error', error: { code: 'auth.adminOnly' } })
     expect(h.removed).toBe(0)
   })

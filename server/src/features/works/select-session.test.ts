@@ -29,10 +29,10 @@ vi.mock('../../state.js', () => ({
   getSessionMode: vi.fn(() => 'default'),
   getSessionCodexPolicy: vi.fn(() => null),
   hasWorkspace: vi.fn(() => true),
-  // Identity stubs: the test passes a path as the workspaceId, so resolve/pathToId
+  // Identity stubs: the test passes a path as the workspaceName, so resolve/pathToName
   // round-trip it back to the same value (the workspace is "registered").
   resolveWorkspaceRoot: vi.fn((id: string) => id),
-  pathToId: vi.fn((p: string) => p),
+  pathToName: vi.fn((p: string) => p),
   setActiveSessionId: vi.fn(),
   setSessionMode: vi.fn(),
   touchWorkspace: vi.fn(),
@@ -109,7 +109,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'claude-1',
     })
     expect(loadHistory).toHaveBeenCalledWith('/abs/proj', 'claude-1')
@@ -129,7 +129,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'codex-thread-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -171,7 +171,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'codex-thread-history',
     })
 
@@ -192,7 +192,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'codex-thread-2',
     })
     // Placeholder is not adopted ⇒ legacy lookup runs (returns its own value).
@@ -205,7 +205,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'dev-sess-1',
     })
     expect(findIntentIdBySessionId).toHaveBeenCalledWith('dev-sess-1')
@@ -219,7 +219,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'plain-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -237,7 +237,7 @@ describe('select_session', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'automation-session-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -256,7 +256,7 @@ describe('select_session — cold restore of a discussion research session', () 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'vsess-research',
     })
     expect(ensureRuntime).toHaveBeenCalledWith(
@@ -276,7 +276,7 @@ describe('select_session — cold restore of a discussion research session', () 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'plain-2',
     })
     expect(ensureRuntime).toHaveBeenCalledWith('plain-2', '/abs/proj', 'default', [], 'work')
@@ -298,7 +298,7 @@ describe('select_session — Cursor mode catalog coerce (title-bar empty fix)', 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'cursor-illegal-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -323,7 +323,7 @@ describe('select_session — Cursor mode catalog coerce (title-bar empty fix)', 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'cursor-warm-1',
     })
     expect(ensureRuntime).not.toHaveBeenCalled()
@@ -341,7 +341,7 @@ describe('select_session — Cursor mode catalog coerce (title-bar empty fix)', 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'cursor-legal-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
@@ -357,7 +357,7 @@ describe('select_session — Cursor mode catalog coerce (title-bar empty fix)', 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
-      workspaceId: '/abs/proj',
+      workspaceName: '/abs/proj',
       sessionId: 'claude-legal-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')

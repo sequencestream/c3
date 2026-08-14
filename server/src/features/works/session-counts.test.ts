@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { addWorkspace, pathToId, resetStateCacheForTests } from '../../state.js'
+import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
 import { ensureRuntime, removeRuntime } from '../../runs.js'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
@@ -20,7 +20,7 @@ import { resetSettingsCacheForTests, saveSettings } from '../../kernel/config/in
 
 let dir: string
 let proj: string
-let workspaceId: string
+let workspaceName: string
 let prevClaudeConfigDir: string | undefined
 let prevHome: string | undefined
 
@@ -39,7 +39,7 @@ beforeEach(() => {
   proj = join(dir, 'proj')
   mkdirSync(proj)
   addWorkspace(proj, 1)
-  workspaceId = pathToId(proj)!
+  workspaceName = pathToName(proj)!
 })
 
 afterEach(() => {
@@ -135,7 +135,7 @@ describe('getSessionCounts', () => {
     const automation = createAutomation({
       type: 'llm',
       config: { prompt: 'run' },
-      workspaceId,
+      workspaceName,
       vendor: 'claude',
       agentId: 'agent-automation',
       triggerType: 'cron',
@@ -215,12 +215,12 @@ describe('getSessionCounts', () => {
     }
 
     const { conn, sent } = fakeConn()
-    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceId })
+    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceName })
 
     expect(sent).toEqual([
       {
         type: 'session_counts',
-        workspaceId,
+        workspaceName,
         counts: {
           work: 1,
           intent: 1,
@@ -247,7 +247,7 @@ describe('getSessionCounts', () => {
       showToolSessions: true,
     })
     const again = fakeConn()
-    getSessionCounts({} as KernelContext, again.conn, { type: 'get_session_counts', workspaceId })
+    getSessionCounts({} as KernelContext, again.conn, { type: 'get_session_counts', workspaceName })
     expect(again.sent[0]).toMatchObject({
       type: 'session_counts',
       counts: { tool: 1 },
@@ -283,7 +283,7 @@ describe('getSessionCounts — 规范聚合', () => {
     startRun('review-b', proj, 'spec_review')
 
     const { conn, sent } = fakeConn()
-    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceId })
+    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceName })
 
     const counts = (sent[0] as Extract<ServerToClient, { type: 'session_counts' }>).counts
     // 1 个 spec + 2 个 spec_review,每个会话只算一次。
@@ -350,7 +350,7 @@ describe('countRunningOwners', () => {
     const automation = createAutomation({
       type: 'llm',
       config: { prompt: 'run' },
-      workspaceId,
+      workspaceName,
       vendor: 'claude',
       agentId: 'agent',
       triggerType: 'cron',
@@ -389,7 +389,7 @@ describe('countRunningOwners', () => {
     const automation = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId,
+      workspaceName,
       vendor: 'claude',
       triggerType: 'cron',
       cronExpression: '0 1 * * *',
@@ -434,7 +434,7 @@ describe('countRunningOwners', () => {
     const automation = createAutomation({
       type: 'llm',
       config: { prompt: 'run' },
-      workspaceId,
+      workspaceName,
       vendor: 'claude',
       agentId: 'agent',
       triggerType: 'cron',

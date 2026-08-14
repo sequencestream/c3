@@ -54,15 +54,15 @@ export interface DeliveryIntegration {
 }
 
 /**
- * One delivery — the Git lifecycle unit for a batch of intents. `workspaceId`
- * is the opaque workspace id (same convention as other domain models); the
+ * One delivery — the Git lifecycle unit for a batch of intents. `workspaceName`
+ * is the immutable workspace name (same convention as other domain models); the
  * wire carries the computed `integration` aggregate, never a persisted count.
  */
 export interface Delivery {
   /** Stable uuid. */
   id: string
   /** Owning workspace (opaque id). */
-  workspaceId: string
+  workspaceName: string
   title: string
   description: string
   status: DeliveryStatus

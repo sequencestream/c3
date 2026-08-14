@@ -96,7 +96,7 @@ async function tick(): Promise<void> {
     // re-open only waits for the next future trigger (no catch-up). A failed
     // re-arm logs a scheduler diagnostic only — never a business execution log —
     // and the gate stays short-circuited so a re-arm fault cannot run the task.
-    const workspacePath = resolveWorkspaceRoot(automation.workspaceId)
+    const workspacePath = resolveWorkspaceRoot(automation.workspaceName)
     if (workspacePath && !gateOpen(workspacePath)) {
       try {
         const next = computeNextRunAt(automation.cronExpression, now, getTimezone())

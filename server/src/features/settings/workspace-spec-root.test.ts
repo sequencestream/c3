@@ -21,7 +21,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -32,7 +32,7 @@ import { loadWorkspaceSettingHandler, saveWorkspaceSettingHandler } from './inde
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -45,8 +45,8 @@ beforeEach(() => {
   resetSettingsCacheForTests()
   resetStateCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -80,7 +80,7 @@ const ctx = {} as unknown as KernelContext
 describe('workspace setting — fixed centralized spec root (REQ-3)', () => {
   it('AC-3.3: load reply carries resolvedSpecRoot = getSpecsBase(proj)', () => {
     const { conn, sent } = fakeConn()
-    loadWorkspaceSettingHandler(ctx, conn, { type: 'load_workspace_setting', workspaceId })
+    loadWorkspaceSettingHandler(ctx, conn, { type: 'load_workspace_setting', workspaceName })
     const reply = sent.find((m) => m.type === 'workspace_setting')
     expect(reply && 'resolvedSpecRoot' in reply ? reply.resolvedSpecRoot : undefined).toBe(
       getSpecsBase(proj),
@@ -89,7 +89,7 @@ describe('workspace setting — fixed centralized spec root (REQ-3)', () => {
 
   it('load reply carries the workspace-scoped built-in sandbox allow set (sysExtraMounts)', () => {
     const { conn, sent } = fakeConn()
-    loadWorkspaceSettingHandler(ctx, conn, { type: 'load_workspace_setting', workspaceId })
+    loadWorkspaceSettingHandler(ctx, conn, { type: 'load_workspace_setting', workspaceName })
     const reply = sent.find((m) => m.type === 'workspace_setting')
     if (!reply || reply.type !== 'workspace_setting') throw new Error('no workspace_setting reply')
     // Same single source used at sandbox launch: project dir ro + specs root rw.
@@ -104,7 +104,7 @@ describe('workspace setting — fixed centralized spec root (REQ-3)', () => {
     const { conn, sent } = fakeConn()
     saveWorkspaceSettingHandler(ctx, conn, {
       type: 'save_workspace_setting',
-      workspaceId,
+      workspaceName,
       // Attempt to inject a custom spec directory via the protocol.
       config: { sddEnabled: true, specPath: 'evil/custom/specs' } as never,
     })

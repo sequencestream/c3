@@ -23,7 +23,7 @@ function key(over: Partial<McpApiKeyMeta> = {}): McpApiKeyMeta {
     name: 'release-bot',
     createdAt: 1,
     lastUsedAt: null,
-    workspaceId: WORKSPACE_ID,
+    workspaceName: WORKSPACE_ID,
     unavailable: false,
     tools: [...READ_ONLY],
     displayPrefix: 'c3k_key-1',
@@ -35,7 +35,7 @@ function render(props: Record<string, unknown> = {}) {
   return mount(ExternalMcpAccess, {
     props: {
       baseUrl: 'http://192.168.1.10:3000',
-      workspaceId: WORKSPACE_ID,
+      workspaceName: WORKSPACE_ID,
       mcpApiKeys: [key()],
       catalog: CATALOG,
       isAdmin: true,

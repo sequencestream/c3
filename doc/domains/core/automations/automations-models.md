@@ -8,7 +8,7 @@
 一个限时任务:在配置时间触发的 shell 命令或 LLM 提示。
 
 - **`id`**(text, UUID): 自动化的唯一标识符
-- **`workspaceId`**(text, UUID): FK → session-registry 工作区;创建后不可变(SCH-R1)
+- **`workspaceName`**(text, UUID): FK → session-registry 工作区;创建后不可变(SCH-R1)
 - **`name`**(text): 人类可读的显示名称。创建时**由服务端根据任务内容自动生成**(客户端提供的名称会被剥离)。**更新**时客户端可提供手动标题:非空值会被固化存储(`nameSource='user'`,自动命名永不覆盖它);空值则回退为自动派生的名称(SCH-R19)。
 - **`taskType`**(枚举 `command | llm_prompt`): 要执行的任务类型;创建后不可变(SCH-R2)
 - **`taskConfig`**(JSON,按 taskType 定型): 任务配置:`command` ⇒ `{ command: string }`;`llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode, embedEventContext?: boolean }`(`embedEventContext` 仅事件 + LLM 组合有效,见 SCH-R29)
@@ -28,7 +28,7 @@
 - **`createdAt`**(timestamp): 创建时间
 - **`updatedAt`**(timestamp): 最近修改时间
 
-关系:恰好属于一个 Workspace(通过 `workspaceId`)。拥有零个或多个 ExecutionLog。
+关系:恰好属于一个 Workspace(通过 `workspaceName`)。拥有零个或多个 ExecutionLog。
 工作区删除会级联到**归档**该自动化(而非删除它 — SCH-R1)。
 
 ### taskConfig 形状

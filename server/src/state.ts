@@ -8,7 +8,7 @@
  * Sessions themselves (existence, history, titles) live in the SDK's transcript
  * store and are read via `sessions.ts`; we never duplicate them here.
  *
- * Stored in `c3.db`: workspaces in their own table (the id a workspace's whole
+ * Stored in `c3.db`: workspaces in their own table (the name a workspace's whole
  * configuration hangs off), per-session values in `session_configs`, and the global
  * remainder under the `state.*` namespace of `system_configs`. Formerly
  * `${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`, imported once on first boot.
@@ -27,8 +27,9 @@ import {
   registerWorkspace,
   touchWorkspaceRow,
   unregisterWorkspace,
-  findWorkspaceById,
+  findWorkspaceByName,
   findWorkspaceByPath,
+  ensureWorkspaceName,
 } from './kernel/config/workspace-store.js'
 
 /**
@@ -148,46 +149,76 @@ export function isDirectory(path: string): boolean {
 export function listWorkspaces(): WorkspaceInfo[] {
   return listWorkspaceRows()
     .sort((a, b) => b.lastAccessed - a.lastAccessed)
-    .map((w) => ({ id: w.id, name: w.name, path: w.path, lastAccessed: w.lastAccessed }))
+    .map((w) => ({ name: w.name, path: w.path, lastAccessed: w.lastAccessed }))
 }
 
 export function hasWorkspace(path: string): boolean {
   return findWorkspaceByPath(path)?.registered === true
 }
 
-export function hasWorkspaceId(id: string): boolean {
-  return findWorkspaceById(id)?.registered === true
+export function hasWorkspaceName(name: string): boolean {
+  return findWorkspaceByName(name)?.registered === true
 }
 
 /**
- * Resolve an opaque workspace id to its resolved absolute path on disk.
- * Returns null when the id is unknown (not registered or forged).
+ * Resolve a workspace name to its absolute path on disk.
+ * Returns null when the name is unknown (not registered or forged).
  * This is the SINGLE entry point for all feature handlers to get the
- * filesystem root from a wire-level workspaceId.
+ * filesystem root from a wire-level workspaceName.
  */
-export function resolveWorkspaceRoot(id: string): string | null {
-  const row = findWorkspaceById(id)
-  return row?.registered ? row.path : null
+export function resolveWorkspaceRoot(name: string): string | null {
+  try {
+    const row = findWorkspaceByName(name)
+    return row?.registered ? row.path : null
+  } catch {
+    return null
+  }
 }
 
 /**
- * Reverse lookup: given an absolute path, return its opaque workspace id.
+ * Reverse lookup: given an absolute path, return its workspace name.
  * Returns null when the path is not a registered workspace.
  */
-export function pathToId(path: string): string | null {
-  const row = findWorkspaceByPath(path)
-  return row?.registered ? row.id : null
+export function pathToName(path: string): string | null {
+  try {
+    const row = findWorkspaceByPath(path)
+    return row?.registered ? row.name : null
+  } catch {
+    return null
+  }
 }
 
 /**
- * Register a directory as a workspace (idempotent). Reuses the id the directory
+ * Return the immutable persistence identity for either a workspace name or path.
+ * A path not yet in the registry receives a configuration-only workspace row, so
+ * domain tables never fall back to persisting filesystem paths as identities.
+ */
+export function workspaceNameFor(value: string): string {
+  try {
+    const named = findWorkspaceByName(value)
+    if (named) return named.name
+    const abs = resolve(value)
+    return findWorkspaceByPath(abs)?.name ?? ensureWorkspaceName(abs, Date.now())
+  } catch {
+    // Domain stores retain their established read-degradation/in-memory behavior
+    // while the unavailable database prevents this fallback from being persisted.
+    return value
+  }
+}
+
+/**
+ * Register a directory as a workspace (idempotent). Reuses the name the directory
  * already had — including one it kept while unregistered — so its configuration comes
  * back with it. Returns the absolute path, or null if it is not an existing directory.
  */
-export function addWorkspace(path: string, now: number): string | null {
+export function addWorkspace(
+  path: string,
+  workspaceNameOrNow: string | number,
+  maybeNow?: number,
+): string | null {
   const abs = resolve(path)
   if (!isDirectory(abs)) return null
-  registerWorkspace(abs, now)
+  registerWorkspace(abs, workspaceNameOrNow, maybeNow)
   return abs
 }
 
@@ -195,13 +226,13 @@ export function addWorkspace(path: string, now: number): string | null {
  * Remove a workspace from the list. Its id and configuration are kept (the row is
  * only unregistered), so re-adding the directory restores the settings it had.
  */
-export function removeWorkspace(path: string): void {
-  unregisterWorkspace(path)
+export function removeWorkspace(name: string): void {
+  unregisterWorkspace(name)
 }
 
 /** Bump a workspace's recent-access timestamp (re-sorts the sidebar). */
-export function touchWorkspace(path: string, now: number): void {
-  touchWorkspaceRow(path, now)
+export function touchWorkspace(name: string, now: number): void {
+  touchWorkspaceRow(name, now)
 }
 
 // ---------------------------------------------------------------------------

@@ -41,7 +41,7 @@ function parkedItem(over: Partial<QueueIntentDetail> = {}): QueueIntentDetail {
 }
 
 function detail(items: QueueIntentDetail[]): QueueDetail {
-  return { workspaceId: WS, state: 'running', tickId: 't-2', nextWakeupAt: null, items }
+  return { workspaceName: WS, state: 'running', tickId: 't-2', nextWakeupAt: null, items }
 }
 
 function makeCtx(opts: { project?: string | null } = {}) {
@@ -96,7 +96,7 @@ describe('queueControl — unpark 请求', () => {
     ctx.queueControl('unpark', 'A')
 
     expect(sent(send)).toEqual([
-      { type: 'queue_control', workspaceId: WS, action: 'unpark', intentId: 'A' },
+      { type: 'queue_control', workspaceName: WS, action: 'unpark', intentId: 'A' },
     ])
   })
 

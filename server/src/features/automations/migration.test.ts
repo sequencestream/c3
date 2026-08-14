@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
-// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// The store maps `workspace_name` <-> opaque `workspaceName` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToName
 // as identity — fixtures use the path itself as the id and round-trip cleanly.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -101,7 +101,7 @@ function seedLegacyNamedTables(d: Db): void {
       id              TEXT PRIMARY KEY,
       type            TEXT NOT NULL,
       config          TEXT NOT NULL DEFAULT '{}',
-      workspace_path  TEXT NOT NULL,
+      workspace_name  TEXT NOT NULL,
       cron_expression TEXT NOT NULL,
       next_run_at     INTEGER,
       status          TEXT NOT NULL,
@@ -123,7 +123,7 @@ function seedLegacyNamedTables(d: Db): void {
   `)
   d.run(
     `INSERT INTO schedules
-       (id, type, config, workspace_path, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
+       (id, type, config, workspace_name, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     'old-named',
     'command',
@@ -194,7 +194,7 @@ function seedOldAutomationsTable(d: Db): void {
       id              TEXT PRIMARY KEY,
       type            TEXT NOT NULL,
       config          TEXT NOT NULL DEFAULT '{}',
-      workspace_path  TEXT NOT NULL,
+      workspace_name  TEXT NOT NULL,
       cron_expression TEXT NOT NULL,
       next_run_at     INTEGER,
       status          TEXT NOT NULL,
@@ -207,7 +207,7 @@ function seedOldAutomationsTable(d: Db): void {
   `)
   d.run(
     `INSERT INTO automations
-       (id, type, config, workspace_path, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
+       (id, type, config, workspace_name, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     'legacy-cron',
     'command',
@@ -257,7 +257,7 @@ describe('automation store v5 (event-trigger) migration', () => {
     const ev = createAutomation({
       type: 'command',
       config: { command: 'echo done' },
-      workspaceId: '/abs/ws',
+      workspaceName: '/abs/ws',
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled', statuses: ['error'] }],
@@ -272,7 +272,7 @@ describe('automation store v5 (event-trigger) migration', () => {
     const pr = createAutomation({
       type: 'command',
       config: { command: 'echo pr' },
-      workspaceId: '/abs/ws',
+      workspaceName: '/abs/ws',
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'pr:merge', statuses: ['success'] }],
@@ -298,7 +298,7 @@ function seedV10AutomationsTable(d: Db): void {
       type                TEXT NOT NULL,
       config              TEXT NOT NULL DEFAULT '{}',
       max_wall_clock_ms   INTEGER,
-      workspace_path      TEXT NOT NULL,
+      workspace_name      TEXT NOT NULL,
       trigger_type        TEXT NOT NULL DEFAULT 'cron',
       cron_expression     TEXT NOT NULL,
       next_run_at         INTEGER,
@@ -319,7 +319,7 @@ function seedV10AutomationsTable(d: Db): void {
   // A legacy run-lifecycle event automation (pre-v11: no sessionKind filter column).
   d.run(
     `INSERT INTO automations
-       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, status, mode, created_at, updated_at)
+       (id, type, config, workspace_name, trigger_type, cron_expression, next_run_at, event_topic, status, mode, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     'legacy-evt',
     'command',
@@ -337,7 +337,7 @@ function seedV10AutomationsTable(d: Db): void {
   // A legacy cron row must NOT be backfilled with a sessionKind filter.
   d.run(
     `INSERT INTO automations
-       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, status, mode, created_at, updated_at)
+       (id, type, config, workspace_name, trigger_type, cron_expression, next_run_at, event_topic, status, mode, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     'legacy-cron2',
     'command',
@@ -397,7 +397,7 @@ function seedV11AutomationsTable(d: Db): void {
       type                      TEXT NOT NULL,
       config                    TEXT NOT NULL DEFAULT '{}',
       max_wall_clock_ms         INTEGER,
-      workspace_path            TEXT NOT NULL,
+      workspace_name            TEXT NOT NULL,
       trigger_type              TEXT NOT NULL DEFAULT 'cron',
       cron_expression           TEXT NOT NULL,
       next_run_at               INTEGER,
@@ -429,7 +429,7 @@ function seedV11AutomationsTable(d: Db): void {
   }): void => {
     d.run(
       `INSERT INTO automations
-         (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at,
+         (id, type, config, workspace_name, trigger_type, cron_expression, next_run_at,
           event_topic, event_reason_filter, event_pr_filter, event_intent_filter, event_metadata_filter,
           status, mode, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -562,7 +562,7 @@ function seedV12AutomationsTable(d: Db): void {
       type                      TEXT NOT NULL,
       config                    TEXT NOT NULL DEFAULT '{}',
       max_wall_clock_ms         INTEGER,
-      workspace_path            TEXT NOT NULL,
+      workspace_name            TEXT NOT NULL,
       trigger_type              TEXT NOT NULL DEFAULT 'cron',
       cron_expression           TEXT NOT NULL,
       next_run_at               INTEGER,
@@ -587,7 +587,7 @@ function seedV12AutomationsTable(d: Db): void {
   const insert = (id: string, filter: unknown): void => {
     d.run(
       `INSERT INTO automations
-         (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at,
+         (id, type, config, workspace_name, trigger_type, cron_expression, next_run_at,
           event_filter, status, mode, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,

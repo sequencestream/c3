@@ -66,7 +66,7 @@ const props = defineProps<{
   /** Non-null = edit an existing automation; null = create a new one. */
   automation: Automation | null
   /** Owning workspace for new automations. */
-  workspacePath: string
+  workspaceName: string
   /** System IANA time zone the cron next-run preview is computed in. */
   timezone: string
   /** Tool manifest per vendor (cached by App.vue). */
@@ -895,7 +895,7 @@ function save(): void {
       type: type.value,
       config,
       maxWallClockMs: maxWallClockMs.value,
-      workspaceId: props.workspacePath,
+      workspaceName: props.workspaceName,
       mode: serializeMode(),
       vendor: vendor.value,
       agentId: type.value === 'llm' ? agentId.value : null,

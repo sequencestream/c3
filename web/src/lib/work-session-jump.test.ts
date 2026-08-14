@@ -57,7 +57,7 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
   it('keeps waiting when lastWorkSessionId is not available yet', () => {
     expect(
       resolvePendingWorkSessionSelect(baseRequest, {
-        workspacePath: '/ws',
+        workspaceName: '/ws',
         sessionKind: 'work',
         intents: [intent('intent-1', null)],
         sessions,
@@ -68,13 +68,13 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
   it('resolves the target id from a later intent projection and waits for the row', () => {
     expect(
       resolvePendingWorkSessionSelect(baseRequest, {
-        workspacePath: '/ws',
+        workspaceName: '/ws',
         sessionKind: 'work',
         intents: [intent('intent-1', 's3')],
         sessions,
       }),
     ).toEqual({
-      request: { workspacePath: '/ws', intentId: 'intent-1', sessionId: 's3' },
+      request: { workspaceName: '/ws', intentId: 'intent-1', sessionId: 's3' },
       selectSessionId: null,
     })
   })
@@ -82,9 +82,9 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
   it('returns the requested id once it is in the list', () => {
     expect(
       resolvePendingWorkSessionSelect(
-        { workspacePath: '/ws', intentId: 'intent-1', sessionId: 's2' },
+        { workspaceName: '/ws', intentId: 'intent-1', sessionId: 's2' },
         {
-          workspacePath: '/ws',
+          workspaceName: '/ws',
           sessionKind: 'work',
           intents: [intent('intent-1', 's2')],
           sessions,
@@ -95,23 +95,23 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
   it('returns null while the target has not yet landed (keep waiting)', () => {
     expect(
       resolvePendingWorkSessionSelect(
-        { workspacePath: '/ws', intentId: 'intent-1', sessionId: 's3' },
+        { workspaceName: '/ws', intentId: 'intent-1', sessionId: 's3' },
         {
-          workspacePath: '/ws',
+          workspaceName: '/ws',
           sessionKind: 'work',
           intents: [intent('intent-1', 's3')],
           sessions,
         },
       ),
     ).toEqual({
-      request: { workspacePath: '/ws', intentId: 'intent-1', sessionId: 's3' },
+      request: { workspaceName: '/ws', intentId: 'intent-1', sessionId: 's3' },
       selectSessionId: null,
     })
   })
   it('returns null when no request is staged', () => {
     expect(
       resolvePendingWorkSessionSelect(null, {
-        workspacePath: '/ws',
+        workspaceName: '/ws',
         sessionKind: 'work',
         intents: [intent('intent-1', 's2')],
         sessions,
@@ -119,10 +119,10 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
     ).toEqual({ request: null, selectSessionId: null })
   })
   it('does not consume requests for another workspace or a non-work kind', () => {
-    const request = { workspacePath: '/ws', intentId: 'intent-1', sessionId: 's2' }
+    const request = { workspaceName: '/ws', intentId: 'intent-1', sessionId: 's2' }
     expect(
       resolvePendingWorkSessionSelect(request, {
-        workspacePath: '/other',
+        workspaceName: '/other',
         sessionKind: 'work',
         intents: [intent('intent-1', 's2')],
         sessions,
@@ -130,7 +130,7 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
     ).toEqual({ request, selectSessionId: null })
     expect(
       resolvePendingWorkSessionSelect(request, {
-        workspacePath: '/ws',
+        workspaceName: '/ws',
         sessionKind: 'spec',
         intents: [intent('intent-1', 's2')],
         sessions,
@@ -142,9 +142,9 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
     const target = session('dev-1')
     expect(
       resolvePendingWorkSessionSelect(
-        { workspacePath: '/ws', intentId: 'intent-1', sessionId: 'dev-1' },
+        { workspaceName: '/ws', intentId: 'intent-1', sessionId: 'dev-1' },
         {
-          workspacePath: '/ws',
+          workspaceName: '/ws',
           sessionKind: 'work',
           intents: [intent('intent-1', 'dev-1')],
           sessions: [...historical, target],

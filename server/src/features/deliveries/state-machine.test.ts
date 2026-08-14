@@ -213,7 +213,7 @@ describe('canTransitionDelivery — the four guard rungs, in order', () => {
 function delivery(status: DeliveryStatus, patch: Partial<Delivery> = {}): Delivery {
   return {
     id: 'd1',
-    workspaceId: 'w1',
+    workspaceName: 'w1',
     title: 'T',
     description: '',
     status,

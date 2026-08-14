@@ -20,7 +20,7 @@ import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -43,7 +43,7 @@ import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sess
 let dir: string
 let otherDir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let otherWorkspaceId: string
 let proj: string
 
@@ -64,9 +64,9 @@ beforeEach(() => {
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
   addWorkspace(otherDir, 2)
-  workspaceId = pathToId(dir)!
-  otherWorkspaceId = pathToId(otherDir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  otherWorkspaceId = pathToName(otherDir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   resetWorkflowForTests()
   // The unpark asks the kernel for a fresh pass; the queue here is never started,
   // so the pass is a no-op — the hooks only have to exist, not to do anything.
@@ -117,11 +117,11 @@ function fakeConn(): { conn: Conn; sent: ServerToClient[] } {
 }
 
 /** Run one unpark and return the single frame it answered with. */
-function unpark(opts: { workspaceId?: string; intentId?: string } = {}): ServerToClient {
+function unpark(opts: { workspaceName?: string; intentId?: string } = {}): ServerToClient {
   const { conn, sent } = fakeConn()
   queueControlHandler(fakeCtx(), conn, {
     type: 'queue_control',
-    workspaceId: opts.workspaceId ?? workspaceId,
+    workspaceName: opts.workspaceName ?? workspaceName,
     action: 'unpark',
     ...(opts.intentId === undefined ? {} : { intentId: opts.intentId }),
   })
@@ -175,7 +175,7 @@ describe('queueControlHandler — unpark 成功路径', () => {
     const msg = unpark({ intentId: r.id })
 
     const detail = detailOf(msg)
-    expect(detail.workspaceId).toBe(workspaceId)
+    expect(detail.workspaceName).toBe(workspaceName)
     const item = detail.items.find((i) => i.intentId === r.id)
     expect(item).toBeDefined()
     expect(item).toMatchObject({
@@ -240,7 +240,7 @@ describe('queueControlHandler — unpark 拒绝路径', () => {
   it('跨工作区目标:按不存在处理,park 保持原样', () => {
     const other = seedParked(resolveWorkspaceRoot(otherWorkspaceId)!)
 
-    const msg = unpark({ workspaceId, intentId: other.id })
+    const msg = unpark({ workspaceName, intentId: other.id })
 
     expect(errorCodeOf(msg)).toBe('intent.notFound')
     expect(getQueueIntentMetaById(other.id)).toMatchObject({ parked: true })
@@ -251,7 +251,7 @@ describe('queueControlHandler — unpark 拒绝路径', () => {
   })
 
   it('工作区无法解析:回 workspace.unknown', () => {
-    expect(errorCodeOf(unpark({ workspaceId: 'ws-does-not-exist', intentId: 'x' }))).toBe(
+    expect(errorCodeOf(unpark({ workspaceName: 'ws-does-not-exist', intentId: 'x' }))).toBe(
       'workspace.unknown',
     )
   })

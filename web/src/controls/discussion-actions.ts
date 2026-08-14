@@ -25,7 +25,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
     discussionMaxSeq.value = 0
     discussionInput.value = ''
     ctx.persistViewMode()
-    send({ type: 'list_discussions', workspaceId: path })
+    send({ type: 'list_discussions', workspaceName: path })
   }
 
   // Click a discussion in the list: pull its detail (discussion + full history).
@@ -64,7 +64,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
     if (!discussionsProject.value) return
     send({
       type: 'create_discussion',
-      workspaceId: discussionsProject.value,
+      workspaceName: discussionsProject.value,
       discussionType: payload.type,
       goal: payload.goal,
       context: payload.context,
@@ -113,7 +113,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
   // channel from there.
   ctx.openResearchSession = (sessionId: string): void => {
     if (!discussionsProject.value || !sessionId) return
-    send({ type: 'select_session', workspaceId: discussionsProject.value, sessionId })
+    send({ type: 'select_session', workspaceName: discussionsProject.value, sessionId })
   }
 
   // "Convert to Intent" in a completed discussion's title bar. The server creates
@@ -126,7 +126,7 @@ export function installDiscussionActions(ctx: AppCtx): void {
     if (!d || d.status !== 'completed') return
     // Landing on intents for a different create path discards any prior bind wait.
     ctx.awaitingIntentSessionBindId.value = null
-    intentsProject.value = d.workspaceId
+    intentsProject.value = d.workspaceName
     activeTab.value = 'intents'
     ctx.persistViewMode()
     send({ type: 'discussion_to_intent', discussionId: d.id })

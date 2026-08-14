@@ -9,7 +9,7 @@ import Intents from './Intents.vue'
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title: 'Intent',
     shortEnTitle: null,
     content: 'Do work',

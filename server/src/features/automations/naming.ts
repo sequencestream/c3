@@ -185,14 +185,14 @@ function buildNamingPrompt(type: AutomationType, config: unknown): string {
  * non-empty string; on any LLM failure it falls back to {@link fallbackName}.
  */
 export async function generateAutomationName(
-  input: Pick<CreateAutomationInput, 'type' | 'config'> & { workspaceId?: string },
+  input: Pick<CreateAutomationInput, 'type' | 'config'> & { workspaceName?: string },
   deps: GenerateNameDeps = {},
 ): Promise<string> {
   const invoke = deps.invokeLlm ?? defaultInvokeLlm
   try {
     const raw = await invoke(
       buildNamingPrompt(input.type, input.config),
-      input.workspaceId ? { workspacePath: input.workspaceId } : undefined,
+      input.workspaceName ? { workspacePath: input.workspaceName } : undefined,
     )
     const name = tidy(raw)
     if (name) return name

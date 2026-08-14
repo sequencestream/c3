@@ -19,7 +19,7 @@ describe('activeSessionTitleFromSessions', () => {
       activeSessionTitleFromSessions({
         activeWorkspace: '/repo',
         activeSession: 's1',
-        workspacePath: '/repo',
+        workspaceName: '/repo',
         sessions,
       }),
     ).toBe('Renamed session')
@@ -30,7 +30,7 @@ describe('activeSessionTitleFromSessions', () => {
       activeSessionTitleFromSessions({
         activeWorkspace: '/repo',
         activeSession: 's1',
-        workspacePath: '/other',
+        workspaceName: '/other',
         sessions,
       }),
     ).toBeNull()
@@ -41,7 +41,7 @@ describe('activeSessionTitleFromSessions', () => {
       activeSessionTitleFromSessions({
         activeWorkspace: '/repo',
         activeSession: 'missing',
-        workspacePath: '/repo',
+        workspaceName: '/repo',
         sessions,
       }),
     ).toBeNull()

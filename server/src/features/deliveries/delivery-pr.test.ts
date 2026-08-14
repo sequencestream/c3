@@ -29,7 +29,7 @@ import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { saveWorkspaceSetting } from '../../kernel/config/index.js'
-import { addWorkspace, pathToId, resetStateCacheForTests } from '../../state.js'
+import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
 import {
   createForgePr,
   deliveryMergeTrial,
@@ -88,7 +88,7 @@ const BRANCH = 'delivery/abc-sprint-3'
 
 let dir: string
 let bare: string
-let workspaceId: string
+let workspaceName: string
 
 function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: dir, encoding: 'utf-8' }).toString().trim()
@@ -119,7 +119,7 @@ beforeEach(() => {
   resetIntentStoreForTests()
   resetStateCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
+  workspaceName = pathToName(dir)!
   saveWorkspaceSetting(dir, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
   vi.clearAllMocks()
   // Every path that reaches the forge for a MERGED PR treats 「查不到」 as a
@@ -188,14 +188,14 @@ async function seedDelivery(
   const h = harness()
   createDeliveryHandler(h.ctx, h.conn, {
     type: 'create_delivery',
-    workspaceId,
+    workspaceName,
     title: 'Sprint 3',
     description: 'batch',
   })
   const id = listDeliveries(dir)[0].id
   await initDeliveryBranchHandler(h.ctx, h.conn, {
     type: 'init_delivery_branch',
-    workspaceId,
+    workspaceName,
     deliveryId: id,
     branchName: BRANCH,
     mode: 'create',
@@ -228,7 +228,7 @@ async function seedDelivery(
   const step = (to: 'integrating' | 'verifying' | 'verified'): void => {
     void transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to,
       confirmVerified: true,
@@ -250,7 +250,7 @@ describe('create_delivery_pr — gates', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(errorCodes(h.sent)).toEqual(['delivery.deliveryPrForbidden'])
@@ -263,7 +263,7 @@ describe('create_delivery_pr — gates', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(errorCodes(h.sent)).toEqual(['delivery.deliveryPrModeUnsupported'])
@@ -273,14 +273,14 @@ describe('create_delivery_pr — gates', () => {
     const h0 = harness()
     createDeliveryHandler(h0.ctx, h0.conn, {
       type: 'create_delivery',
-      workspaceId,
+      workspaceName,
       title: 'No branch',
     })
     const id = listDeliveries(dir)[0].id
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     // The branch gate is reached only after the status gate, so this delivery
@@ -307,7 +307,7 @@ describe('create_delivery_pr — gates', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(errorCodes(h.sent)).toEqual(['delivery.deliveryPrNoDiff'])
@@ -328,7 +328,7 @@ describe('create_delivery_pr — a branch already on mainline settles as deliver
     const h = harness('alice')
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
 
@@ -355,7 +355,7 @@ describe('create_delivery_pr — a branch already on mainline settles as deliver
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
 
@@ -375,7 +375,7 @@ describe('create_delivery_pr — a branch already on mainline settles as deliver
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(errorCodes(h.sent)).toEqual([])
@@ -395,7 +395,7 @@ describe('create_delivery_pr — forge-first idempotency', () => {
     const h = harness('alice')
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
 
@@ -432,7 +432,7 @@ describe('create_delivery_pr — forge-first idempotency', () => {
       prId: '77',
       prUrl: 'https://github.com/o/r/pull/77',
     })
-    const msg = { type: 'create_delivery_pr' as const, workspaceId, deliveryId: id }
+    const msg = { type: 'create_delivery_pr' as const, workspaceName, deliveryId: id }
     await createDeliveryPrHandler(harness().ctx, harness().conn, msg)
 
     // Second attempt: the forge now reports the PR the first attempt made.
@@ -457,7 +457,7 @@ describe('create_delivery_pr — forge-first idempotency', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(createForgePrMock).not.toHaveBeenCalled()
@@ -470,7 +470,7 @@ describe('create_delivery_pr — forge-first idempotency', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     // "Cannot answer" is never treated as "none" — that is how duplicates are born.
@@ -488,7 +488,7 @@ describe('create_delivery_pr — forge-first idempotency', () => {
     const h = harness(null)
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(errorCodes(h.sent)).toEqual([])
@@ -508,7 +508,7 @@ async function seedWithPr(): Promise<string> {
   const h = harness()
   await createDeliveryPrHandler(h.ctx, h.conn, {
     type: 'create_delivery_pr',
-    workspaceId,
+    workspaceName,
     deliveryId: id,
   })
   return id
@@ -516,7 +516,7 @@ async function seedWithPr(): Promise<string> {
 
 const syncMsg = (deliveryId: string) => ({
   type: 'sync_delivery_pr' as const,
-  workspaceId,
+  workspaceName,
   deliveryId,
 })
 
@@ -532,7 +532,7 @@ describe('delivery:* events on the PR paths', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
 
@@ -556,7 +556,7 @@ describe('delivery:* events on the PR paths', () => {
     const h = harness()
     await createDeliveryPrHandler(h.ctx, h.conn, {
       type: 'create_delivery_pr',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(createForgePrMock).not.toHaveBeenCalled()
@@ -849,7 +849,7 @@ describe('deliveryBranchAhead — fresh on the get/create reads only', () => {
     const h = harness()
     createDeliveryHandler(h.ctx, h.conn, {
       type: 'create_delivery',
-      workspaceId,
+      workspaceName,
       title: 'No branch',
       description: '',
     })
@@ -879,7 +879,7 @@ describe('badge — delivery-PR attention', () => {
 
   const list = (): ServerToClient[] => {
     const h = harness()
-    listDeliveriesHandler(h.ctx, h.conn, { type: 'list_deliveries', workspaceId })
+    listDeliveriesHandler(h.ctx, h.conn, { type: 'list_deliveries', workspaceName })
     return h.sent
   }
 

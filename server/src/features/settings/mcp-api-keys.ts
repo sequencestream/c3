@@ -14,7 +14,7 @@
  * the feature look absent rather than restricted.
  *
  * Two translations happen here and nowhere else:
- *  - the workspace: the console addresses it by opaque id (it must never
+ *  - the workspaceName: the console addresses it by opaque id (it must never
  *    construct a path), the store binds by canonical absolute path (that is what
  *    an incoming request resolves against). An id that does not resolve is
  *    REJECTED, so an administrator is never told a key was bound to something it
@@ -36,11 +36,7 @@ import {
   updateMcpApiKeyInWorkspace,
   type McpApiKeyInfo,
 } from '../../kernel/config/mcp-api-keys.js'
-import {
-  canonicalPathToWorkspaceId,
-  resolveRegisteredWorkspacePath,
-  workspaceIdToCanonicalPath,
-} from '../external-mcp/workspace-scope.js'
+import { isDirectory, resolveWorkspaceRoot } from '../../state.js'
 import { externalMcpToolDescriptors, normalizeExternalMcpToolScope } from '../external-mcp/tools.js'
 import type { Conn, Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
@@ -59,7 +55,7 @@ export function setExternalMcpSessionCloser(hook: ((keyId: string) => void) | nu
 
 /** Project the store's path-bound record onto the id-addressed wire shape. */
 function toMeta(info: McpApiKeyInfo): McpApiKeyMeta {
-  const workspaceId = canonicalPathToWorkspaceId(info.workspace)
+  const workspacePath = resolveWorkspaceRoot(info.workspaceName)
   return {
     id: info.id,
     name: info.name,
@@ -68,10 +64,10 @@ function toMeta(info: McpApiKeyInfo): McpApiKeyMeta {
     // `null` ⇒ the bound workspace is no longer registered. The path itself stays
     // server-side: the console needs to know the key is unusable, not where the
     // host keeps its directories.
-    workspaceId,
+    workspaceName: info.workspaceName,
     // Registered but directory gone (or deregistered entirely): the key reaches
     // nothing. The console marks it unavailable and offers only revocation.
-    unavailable: resolveRegisteredWorkspacePath(info.workspace) === null,
+    unavailable: !workspacePath || !isDirectory(workspacePath),
     tools: [...info.tools],
     displayPrefix: info.displayPrefix,
   }
@@ -79,20 +75,19 @@ function toMeta(info: McpApiKeyInfo): McpApiKeyMeta {
 
 /** The roster reply for ONE workspace; `created` rides along only on a successful mint. */
 function roster(
-  workspaceId: string,
-  canonicalPath: string,
+  workspaceName: string,
   created?: { meta: McpApiKeyMeta; key: string },
 ): {
   type: 'mcp_api_keys'
-  workspaceId: string
+  workspaceName: string
   keys: McpApiKeyMeta[]
   catalog: ReturnType<typeof externalMcpToolDescriptors>
   created?: { meta: McpApiKeyMeta; key: string }
 } {
   return {
     type: 'mcp_api_keys',
-    workspaceId,
-    keys: listMcpApiKeysForWorkspace(canonicalPath).map(toMeta),
+    workspaceName,
+    keys: listMcpApiKeysForWorkspace(workspaceName).map(toMeta),
     catalog: externalMcpToolDescriptors(),
     ...(created ? { created } : {}),
   }
@@ -103,16 +98,15 @@ function roster(
  * when it does not resolve. There is no fallback: a key that cannot name its one
  * workspace has no address to be reached at.
  */
-function resolveWorkspace(conn: Conn, workspaceId: string): string | null {
-  const path = workspaceIdToCanonicalPath(workspaceId)
-  if (!path) {
+function resolveWorkspace(conn: Conn, workspaceName: string): string | null {
+  if (!resolveWorkspaceRoot(workspaceName)) {
     conn.send({
       type: 'error',
-      error: { code: 'mcpApiKey.unknownWorkspace', params: { workspaceId } },
+      error: { code: 'mcpApiKey.unknownWorkspace', params: { workspaceName } },
     })
     return null
   }
-  return path
+  return workspaceName
 }
 
 function reportFailure(conn: Conn, err: unknown): void {
@@ -121,15 +115,15 @@ function reportFailure(conn: Conn, err: unknown): void {
 }
 
 export const listMcpApiKeysHandler: Handler<'list_mcp_api_keys'> = (_ctx, conn, msg) => {
-  const path = resolveWorkspace(conn, msg.workspaceId)
-  if (!path) return
-  conn.send(roster(msg.workspaceId, path))
+  const workspaceName = resolveWorkspace(conn, msg.workspaceName)
+  if (!workspaceName) return
+  conn.send(roster(msg.workspaceName))
 }
 
 export const createMcpApiKeyHandler: Handler<'create_mcp_api_key'> = async (_ctx, conn, msg) => {
   if (!requireAdmin(conn)) return
-  const path = resolveWorkspace(conn, msg.workspaceId)
-  if (!path) return
+  const workspaceName = resolveWorkspace(conn, msg.workspaceName)
+  if (!workspaceName) return
   try {
     // The initial scope is server-decided: the default set and not one write
     // tool, whatever the client proposed. That default is deliberately NARROWER
@@ -137,12 +131,12 @@ export const createMcpApiKeyHandler: Handler<'create_mcp_api_key'> = async (_ctx
     // Any grant beyond it is only ever the result of an explicit, confirmed edit.
     const { meta, key } = await createMcpApiKey(
       msg.name,
-      path,
+      msg.workspaceName,
       [...EXTERNAL_MCP_DEFAULT_TOOLS],
       Date.now(),
     )
     // The one and only appearance of the plaintext. Nothing logs it.
-    conn.send(roster(msg.workspaceId, path, { meta: toMeta(meta), key }))
+    conn.send(roster(msg.workspaceName, { meta: toMeta(meta), key }))
   } catch (err) {
     reportFailure(conn, err)
   }
@@ -150,8 +144,8 @@ export const createMcpApiKeyHandler: Handler<'create_mcp_api_key'> = async (_ctx
 
 export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn, msg) => {
   if (!requireAdmin(conn)) return
-  const path = resolveWorkspace(conn, msg.workspaceId)
-  if (!path) return
+  const workspaceName = resolveWorkspace(conn, msg.workspaceName)
+  if (!workspaceName) return
   try {
     let normalizedTools: string[] | undefined
     if (msg.tools !== undefined) {
@@ -173,7 +167,7 @@ export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn
     if (normalizedTools !== undefined) patch.tools = normalizedTools
 
     if (Object.keys(patch).length > 0) {
-      if (updateMcpApiKeyInWorkspace(msg.id, path, patch) === null) {
+      if (updateMcpApiKeyInWorkspace(msg.id, msg.workspaceName, patch) === null) {
         conn.send({ type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: msg.id } } })
         return
       }
@@ -184,7 +178,7 @@ export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn
         closeExternalSessions?.(msg.id)
       }
     }
-    conn.send(roster(msg.workspaceId, path))
+    conn.send(roster(msg.workspaceName))
   } catch (err) {
     reportFailure(conn, err)
   }
@@ -192,17 +186,17 @@ export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn
 
 export const revokeMcpApiKeyHandler: Handler<'revoke_mcp_api_key'> = (_ctx, conn, msg) => {
   if (!requireAdmin(conn)) return
-  const path = resolveWorkspace(conn, msg.workspaceId)
-  if (!path) return
+  const workspaceName = resolveWorkspace(conn, msg.workspaceName)
+  if (!workspaceName) return
   try {
-    if (!revokeMcpApiKeyInWorkspace(msg.id, path)) {
+    if (!revokeMcpApiKeyInWorkspace(msg.id, msg.workspaceName)) {
       conn.send({ type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: msg.id } } })
       return
     }
     // Storage is authoritative for the NEXT request; this kills the sessions that
     // are already open so the revoke is immediate in both directions.
     closeExternalSessions?.(msg.id)
-    conn.send(roster(msg.workspaceId, path))
+    conn.send(roster(msg.workspaceName))
   } catch (err) {
     reportFailure(conn, err)
   }

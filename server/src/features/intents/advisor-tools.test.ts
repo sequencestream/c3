@@ -15,7 +15,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { ensureRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -64,7 +64,7 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  proj = resolveWorkspaceRoot(pathToId(dir)!)!
+  proj = resolveWorkspaceRoot(pathToName(dir)!)!
   const [intent] = insertIntents(proj, [
     { title: '被顾问诊断的意图', shortEnTitle: 'advised', content: '内容', priority: 'P1' },
   ])

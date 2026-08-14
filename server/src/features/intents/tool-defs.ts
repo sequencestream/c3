@@ -209,7 +209,7 @@ export function runFind(workspacePath: string, args: FindArgs): IntentToolResult
 export function runView(workspacePath: string, args: ViewArgs): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,无法查看。'), isError: true }
   const req = getIntent(args.id)
-  if (!req || resolveWorkspaceRoot(req.workspaceId) !== resolve(workspacePath)) {
+  if (!req || resolveWorkspaceRoot(req.workspaceName) !== resolve(workspacePath)) {
     return { content: text(`未找到 id 为 ${args.id} 的意图(本项目)。`) }
   }
   return { content: text(JSON.stringify(req, null, 2)) }
@@ -312,7 +312,7 @@ export function runSaveIntentPrInfo(
 ): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,未保存。'), isError: true }
   const intent = getIntent(args.intentId)
-  if (!intent || resolveWorkspaceRoot(intent.workspaceId) !== resolve(workspacePath)) {
+  if (!intent || resolveWorkspaceRoot(intent.workspaceName) !== resolve(workspacePath)) {
     return { content: text(`未找到 id 为 ${args.intentId} 的意图(本项目)。`), isError: true }
   }
   if (intent.prs.length === 0) {

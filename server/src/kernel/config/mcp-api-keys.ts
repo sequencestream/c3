@@ -28,6 +28,11 @@ import { EXTERNAL_MCP_DEFAULT_TOOLS } from '@ccc/shared/protocol'
 import { fromEntries, toEntries } from './config-codec.js'
 import { MCP_KEY_RULES } from './config-schema.js'
 import { configTx, listScopeOwners, readAllScopes, writeScope } from './config-store.js'
+import {
+  findWorkspaceByName,
+  findWorkspaceByPath,
+  listAllWorkspaceRows,
+} from './workspace-store.js'
 
 /** Plaintext key prefix — a stable, greppable marker so a leaked key is recognisable. */
 const KEY_PREFIX = 'c3k'
@@ -60,7 +65,7 @@ export interface McpApiKeyInfo {
   createdAt: number
   lastUsedAt: number | null
   /** The ONE canonical absolute path this key is bound to. Never empty, never a wildcard. */
-  workspace: string
+  workspaceName: string
   /** The tool names this key may call. Empty ⇒ nothing, never "all". */
   tools: string[]
   /** The public, non-secret display prefix (`c3k_<id>`). */
@@ -73,7 +78,7 @@ interface McpApiKeyRecord {
   name: string
   createdAt: number
   lastUsedAt: number | null
-  workspace: string
+  workspaceName: string
   tools: string[]
   hashVersion: number
   algo: string
@@ -143,12 +148,21 @@ function readStored(): McpApiKeyRecord[] {
  * a key per workspace and re-points the client.
  */
 function migrateWorkspace(r: Record<string, unknown>): string | null {
-  if (typeof r.workspace === 'string') return canonicalizeWorkspacePath(r.workspace)
+  if (typeof r.workspaceName === 'string') return findWorkspaceByName(r.workspaceName)?.name ?? null
+  if (typeof r.workspace === 'string') {
+    const direct = findWorkspaceByPath(r.workspace)
+    if (direct) return direct.name
+    const canonical = canonicalizeWorkspacePath(r.workspace)
+    return canonical
+      ? (listAllWorkspaceRows().find((w) => canonicalizeWorkspacePath(w.path) === canonical)
+          ?.name ?? null)
+      : null
+  }
   if (!Array.isArray(r.workspaces)) return null
   const legacy = dedupe(
     r.workspaces
       .filter((w): w is string => typeof w === 'string')
-      .map((w) => canonicalizeWorkspacePath(w))
+      .map((w) => findWorkspaceByPath(w)?.name ?? null)
       .filter((w): w is string => w !== null),
   )
   return legacy.length === 1 ? legacy[0] : null
@@ -180,7 +194,7 @@ function normalizeRecord(raw: unknown): McpApiKeyRecord | null {
     name: typeof r.name === 'string' ? r.name : '',
     createdAt: num(r.createdAt, 0),
     lastUsedAt: typeof r.lastUsedAt === 'number' && r.lastUsedAt > 0 ? r.lastUsedAt : null,
-    workspace,
+    workspaceName: workspace,
     // A pre-scope record predates per-key tool authorization; it gets exactly the
     // default set it effectively had, never a write tool and never a read tool
     // that was not grantable back then.
@@ -282,7 +296,7 @@ function toMeta(rec: McpApiKeyRecord): McpApiKeyInfo {
     name: rec.name,
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
-    workspace: rec.workspace,
+    workspaceName: rec.workspaceName,
     tools: [...rec.tools],
     displayPrefix: displayPrefix(rec.id),
   }
@@ -319,10 +333,8 @@ export function listMcpApiKeys(): McpApiKeyInfo[] {
  * roster: a key belongs to exactly one workspace, and that workspace's settings
  * page is the only place it is administered.
  */
-export function listMcpApiKeysForWorkspace(canonicalWorkspace: string): McpApiKeyInfo[] {
-  const wanted = canonicalizeWorkspacePath(canonicalWorkspace)
-  if (!wanted) return []
-  return listMcpApiKeys().filter((k) => k.workspace === wanted)
+export function listMcpApiKeysForWorkspace(workspaceName: string): McpApiKeyInfo[] {
+  return listMcpApiKeys().filter((k) => k.workspaceName === workspaceName)
 }
 
 /** The result of a creation: the metadata plus the ONLY appearance of the plaintext. */
@@ -333,7 +345,7 @@ export interface CreatedMcpApiKey {
 }
 
 /**
- * Mint a key bound to ONE workspace: 256 bits of CSPRNG secret behind a
+ * Mint a key bound to ONE workspaceName: 256 bits of CSPRNG secret behind a
  * non-secret id, hashed with a fresh per-key salt. `workspace` must already be an
  * absolute path the caller has checked against the workspace registry; a path
  * that does not canonicalize throws rather than storing an unaddressable key.
@@ -344,12 +356,12 @@ export interface CreatedMcpApiKey {
  */
 export async function createMcpApiKey(
   name: string,
-  workspace: string,
+  workspaceName: string,
   tools: readonly string[],
   now: number,
 ): Promise<CreatedMcpApiKey> {
-  const canonical = canonicalizeWorkspacePath(workspace)
-  if (!canonical) throw new Error('external MCP key needs one absolute workspace path')
+  const workspace = findWorkspaceByName(workspaceName)
+  if (!workspace) throw new Error('external MCP key needs one known workspace name')
   const id = randomBytes(ID_HEX_LEN / 2).toString('hex')
   const secret = randomBytes(SECRET_BYTES).toString('base64url')
   const salt = randomBytes(16)
@@ -359,7 +371,7 @@ export async function createMcpApiKey(
     name: name.trim() || displayPrefix(id),
     createdAt: now,
     lastUsedAt: null,
-    workspace: canonical,
+    workspaceName: workspace.name,
     tools: dedupe([...tools]),
     hashVersion: HASH_VERSION,
     algo: 'scrypt',
@@ -384,7 +396,7 @@ function findRecordInWorkspace(
   id: string,
   canonicalWorkspace: string,
 ): McpApiKeyRecord | undefined {
-  return records.find((r) => r.id === id && r.workspace === canonicalWorkspace)
+  return records.find((r) => r.id === id && r.workspaceName === canonicalWorkspace)
 }
 
 /**
@@ -423,13 +435,11 @@ export function renameMcpApiKey(id: string, name: string): McpApiKeyInfo | null 
  */
 export function updateMcpApiKeyInWorkspace(
   id: string,
-  workspace: string,
+  workspaceName: string,
   patch: McpApiKeyPatch,
 ): McpApiKeyInfo | null {
-  const canonical = canonicalizeWorkspacePath(workspace)
-  if (!canonical) return null
   return mutate((records) => {
-    const rec = findRecordInWorkspace(records, id, canonical)
+    const rec = findRecordInWorkspace(records, id, workspaceName)
     if (!rec) return null
     if (patch.name !== undefined) {
       rec.name = patch.name.trim() || displayPrefix(rec.id)
@@ -455,11 +465,9 @@ export function revokeMcpApiKey(id: string): boolean {
  * Revoke (delete) a key bound to ONE workspace. Returns true when a record was
  * actually removed; `false` when the id is unknown in that workspace.
  */
-export function revokeMcpApiKeyInWorkspace(id: string, workspace: string): boolean {
-  const canonical = canonicalizeWorkspacePath(workspace)
-  if (!canonical) return false
+export function revokeMcpApiKeyInWorkspace(id: string, workspaceName: string): boolean {
   return mutate((records) => {
-    const idx = records.findIndex((r) => r.id === id && r.workspace === canonical)
+    const idx = records.findIndex((r) => r.id === id && r.workspaceName === workspaceName)
     if (idx < 0) return false
     records.splice(idx, 1)
     return true
@@ -470,7 +478,7 @@ export function revokeMcpApiKeyInWorkspace(id: string, workspace: string): boole
 export interface AuthenticatedMcpApiKey {
   id: string
   /** The canonicalized absolute path this key is bound to. */
-  workspace: string
+  workspaceName: string
   /** The tool names this key may call. Empty ⇒ nothing. */
   tools: string[]
 }
@@ -511,7 +519,7 @@ export async function verifyMcpApiKey(raw: string): Promise<AuthenticatedMcpApiK
     return null
   }
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null
-  return { id: rec.id, workspace: rec.workspace, tools: [...rec.tools] }
+  return { id: rec.id, workspaceName: rec.workspaceName, tools: [...rec.tools] }
 }
 
 /**

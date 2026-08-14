@@ -23,7 +23,7 @@
  *     honest thing the suite can assert about a non-merged PR: the workspace has
  *     no remote and no authenticated forge CLI, so the lookup genuinely fails.
  *  6. One intent holds ONE PR PER DELIVERY: linked to a second delivery and given
- *     a PR toward it, Alpha's projection carries two rows under two delivery ids
+ *     a PR toward it, Alpha's projection carries two rows under two delivery names
  *     off the SAME head branch (what the intent detail groups by delivery), and
  *     each delivery detail keeps showing the PR toward itself, never the other's.
  *  7. Cancelling the delivery does NOT drop the association edges (history stays
@@ -100,12 +100,12 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 // ---- State ----
-let workspaceId = null
+let workspaceName = null
 let phase = 'boot'
 let deliveryId = null
 /** Every delivery created by this run, in creation order. */
 const deliveries = []
-const ids = {}
+const names = {}
 let detail = null
 let intents = []
 const errors = []
@@ -143,7 +143,7 @@ async function waitForDetail(predicate, label, id = deliveryId) {
 /** Poll the intent list until `predicate` holds. */
 async function waitForIntents(predicate, label) {
   for (let i = 0; i < POLL_TRIES; i++) {
-    send({ type: 'list_intents', workspaceId })
+    send({ type: 'list_intents', workspaceName })
     await sleep(POLL_MS)
     if (intents.length && predicate()) return true
   }
@@ -228,16 +228,16 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId) break
+      if (workspaceName) break
       const name = PROJECT_DIR.split('/').pop()
-      workspaceId =
-        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.id ?? null
-      if (!workspaceId) {
-        failures.push('no workspaceId after add_workspace')
+      workspaceName =
+        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.name ?? null
+      if (!workspaceName) {
+        failures.push('no workspaceName after add_workspace')
         finish()
         return
       }
@@ -248,7 +248,7 @@ ws.addEventListener('message', (evt) => {
 
     case 'create_intent_result': {
       const label = LABELS[created]
-      ids[label] = msg.intent.id
+      names[label] = msg.intent.id
       created += 1
       send({
         type: 'update_intent_content',
@@ -285,11 +285,11 @@ let created = 0
 
 function seedNextIntent() {
   if (created < LABELS.length) {
-    send({ type: 'create_intent', workspaceId })
+    send({ type: 'create_intent', workspaceName })
     return
   }
   phase = 'create-delivery'
-  send({ type: 'create_delivery', workspaceId, title: 'Delivery link e2e' })
+  send({ type: 'create_delivery', workspaceName, title: 'Delivery link e2e' })
   void runAssertions()
 }
 
@@ -309,34 +309,34 @@ async function runAssertions() {
 
   // ---- 1. link both intents; both sides must see it ----
   phase = 'link'
-  send({ type: 'link_intent_to_delivery', workspaceId, deliveryId, intentId: ids.Alpha })
-  send({ type: 'link_intent_to_delivery', workspaceId, deliveryId, intentId: ids.Beta })
+  send({ type: 'link_intent_to_delivery', workspaceName, deliveryId, intentId: names.Alpha })
+  send({ type: 'link_intent_to_delivery', workspaceName, deliveryId, intentId: names.Beta })
   await waitForDetail(() => (detail?.associatedIntents?.length ?? 0) === 2, 'two intents linked')
   check(
     (detail?.associatedIntents?.length ?? 0) === 2,
     'the delivery detail lists both linked intents',
   )
-  check(rowFor(ids.Alpha)?.prStatus === null, 'a linked intent with no PR shows no PR status')
+  check(rowFor(names.Alpha)?.prStatus === null, 'a linked intent with no PR shows no PR status')
 
   await waitForIntents(
-    () => (intentFor(ids.Alpha)?.linkedDeliveries?.length ?? 0) === 1,
+    () => (intentFor(names.Alpha)?.linkedDeliveries?.length ?? 0) === 1,
     'the intent projection names the delivery',
   )
   check(
-    intentFor(ids.Alpha)?.linkedDeliveries?.[0]?.id === deliveryId,
+    intentFor(names.Alpha)?.linkedDeliveries?.[0]?.id === deliveryId,
     'the intent side names the delivery it is linked to (both sides see the edge)',
   )
 
   // ---- 2. the PR column is the PR TOWARD THIS DELIVERY ----
   phase = 'seed-pr'
-  seedPrRow(ids.Alpha, '101', 'merged')
-  await waitForDetail(() => rowFor(ids.Alpha)?.prStatus === 'merged', 'Alpha PR shows as merged')
+  seedPrRow(names.Alpha, '101', 'merged')
+  await waitForDetail(() => rowFor(names.Alpha)?.prStatus === 'merged', 'Alpha PR shows as merged')
   check(
-    rowFor(ids.Alpha)?.prStatus === 'merged',
+    rowFor(names.Alpha)?.prStatus === 'merged',
     "the list shows the intent's PR toward THIS delivery",
   )
   check(
-    rowFor(ids.Beta)?.prStatus === null,
+    rowFor(names.Beta)?.prStatus === null,
     'an intent without a PR toward this delivery shows none',
   )
   check(detail?.delivery?.integration?.merged === 1, 'the N/M aggregate counts the merged PR')
@@ -344,34 +344,34 @@ async function runAssertions() {
   // ---- 3. an intent with no PR unlinks cleanly ----
   phase = 'unlink-no-pr'
   let errorsBefore = errors.length
-  send({ type: 'unlink_intent_from_delivery', workspaceId, deliveryId, intentId: ids.Beta })
-  await waitForDetail(() => !rowFor(ids.Beta), 'Beta unlinked')
-  check(!rowFor(ids.Beta), 'an intent with no PR unlinks and leaves the list')
-  check(edgeExists(ids.Beta) === false, 'the association edge is gone from the ledger')
+  send({ type: 'unlink_intent_from_delivery', workspaceName, deliveryId, intentId: names.Beta })
+  await waitForDetail(() => !rowFor(names.Beta), 'Beta unlinked')
+  check(!rowFor(names.Beta), 'an intent with no PR unlinks and leaves the list')
+  check(edgeExists(names.Beta) === false, 'the association edge is gone from the ledger')
   check(errors.length === errorsBefore, 'a PR-less unlink reports no error')
 
   // ---- 4. a MERGED PR can never be unlinked ----
   phase = 'unlink-merged'
   errorsBefore = errors.length
-  send({ type: 'unlink_intent_from_delivery', workspaceId, deliveryId, intentId: ids.Alpha })
+  send({ type: 'unlink_intent_from_delivery', workspaceName, deliveryId, intentId: names.Alpha })
   await sleep(POLL_MS * 4)
   check(
     errors.slice(errorsBefore).includes('delivery.unlinkMergedPrDenied'),
     'unlinking a merged PR is refused with delivery.unlinkMergedPrDenied',
   )
-  check(edgeExists(ids.Alpha) === true, 'the refused unlink left the association edge in place')
+  check(edgeExists(names.Alpha) === true, 'the refused unlink left the association edge in place')
 
   // ---- 5. an unreadable forge state BLOCKS the unlink (never guessed) ----
   phase = 'unlink-status-check-failed'
-  setPrRowStatus(ids.Alpha, 'reviewing')
+  setPrRowStatus(names.Alpha, 'reviewing')
   errorsBefore = errors.length
-  send({ type: 'unlink_intent_from_delivery', workspaceId, deliveryId, intentId: ids.Alpha })
+  send({ type: 'unlink_intent_from_delivery', workspaceName, deliveryId, intentId: names.Alpha })
   await sleep(POLL_MS * 8)
   check(
     errors.slice(errorsBefore).includes('delivery.unlinkPrStatusCheckFailed'),
     'an unreadable forge status blocks the unlink instead of assuming "not merged"',
   )
-  check(edgeExists(ids.Alpha) === true, 'the blocked unlink left the association edge in place')
+  check(edgeExists(names.Alpha) === true, 'the blocked unlink left the association edge in place')
 
   // ---- 6. one intent, two deliveries, two PR rows (the pair is the key) ----
   // Alpha already holds a `reviewing` PR toward delivery #1 (section 5 put it
@@ -379,26 +379,31 @@ async function runAssertions() {
   // the shape the (intent_id, delivery_id) ledger key exists to allow — and what
   // the intent detail groups by delivery.
   phase = 'second-delivery'
-  send({ type: 'create_delivery', workspaceId, title: 'Delivery link e2e #2' })
+  send({ type: 'create_delivery', workspaceName, title: 'Delivery link e2e #2' })
   for (let i = 0; i < POLL_TRIES && deliveries.length < 2; i++) await sleep(POLL_MS)
   const second = deliveries[1] ?? null
   check(!!second, 'a second delivery was created')
   if (second) {
-    send({ type: 'link_intent_to_delivery', workspaceId, deliveryId: second, intentId: ids.Alpha })
+    send({
+      type: 'link_intent_to_delivery',
+      workspaceName,
+      deliveryId: second,
+      intentId: names.Alpha,
+    })
     await waitForDetail(
-      () => (detail?.associatedIntents ?? []).some((r) => r.id === ids.Alpha),
+      () => (detail?.associatedIntents ?? []).some((r) => r.id === names.Alpha),
       'Alpha linked to the second delivery',
       second,
     )
     // A different status from delivery #1's row, so "per-delivery, not global"
     // is observable rather than merely plausible.
-    seedPrRow(ids.Alpha, '202', 'merged', second)
+    seedPrRow(names.Alpha, '202', 'merged', second)
 
     await waitForIntents(
-      () => (intentFor(ids.Alpha)?.prs?.length ?? 0) === 2,
+      () => (intentFor(names.Alpha)?.prs?.length ?? 0) === 2,
       'the intent projection carries both PR rows',
     )
-    const prs = intentFor(ids.Alpha)?.prs ?? []
+    const prs = intentFor(names.Alpha)?.prs ?? []
     check(prs.length === 2, 'one intent holds a second PR row toward a second delivery')
     check(
       new Set(prs.map((p) => p.deliveryId)).size === 2,
@@ -409,30 +414,33 @@ async function runAssertions() {
       'the SAME head branch backs both rows — the pair, not the head, is the key',
     )
     check(
-      (intentFor(ids.Alpha)?.linkedDeliveries ?? []).length === 2,
+      (intentFor(names.Alpha)?.linkedDeliveries ?? []).length === 2,
       'the intent side names both deliveries it is linked to',
     )
 
-    await waitForDetail(() => rowFor(ids.Alpha)?.prStatus === 'merged', 'delivery #2 PR', second)
+    await waitForDetail(() => rowFor(names.Alpha)?.prStatus === 'merged', 'delivery #2 PR', second)
     check(
-      rowFor(ids.Alpha)?.prStatus === 'merged',
+      rowFor(names.Alpha)?.prStatus === 'merged',
       'the second delivery shows the PR toward ITSELF (merged)',
     )
-    await waitForDetail(() => rowFor(ids.Alpha)?.prStatus === 'reviewing', 'delivery #1 PR')
+    await waitForDetail(() => rowFor(names.Alpha)?.prStatus === 'reviewing', 'delivery #1 PR')
     check(
-      rowFor(ids.Alpha)?.prStatus === 'reviewing',
+      rowFor(names.Alpha)?.prStatus === 'reviewing',
       'the first delivery still shows its own PR (reviewing) — never the other one',
     )
   }
 
   // ---- 7. cancelling the delivery keeps the edges (history stays queryable) ----
   phase = 'cancel-delivery'
-  send({ type: 'cancel_delivery', workspaceId, deliveryId })
+  send({ type: 'cancel_delivery', workspaceName, deliveryId })
   await waitForDetail(() => detail?.delivery?.status === 'cancelled', 'delivery cancelled')
   check(detail?.delivery?.status === 'cancelled', 'the delivery reached the cancelled terminal')
-  check(edgeExists(ids.Alpha) === true, 'cancelling a delivery does NOT drop its association edges')
   check(
-    (detail?.associatedIntents ?? []).some((r) => r.id === ids.Alpha),
+    edgeExists(names.Alpha) === true,
+    'cancelling a delivery does NOT drop its association edges',
+  )
+  check(
+    (detail?.associatedIntents ?? []).some((r) => r.id === names.Alpha),
     'a cancelled delivery still lists its associated intents',
   )
 

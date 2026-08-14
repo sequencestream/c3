@@ -23,7 +23,7 @@ import {
 
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: 'proj',
+    workspaceName: 'proj',
     title: 'Intent',
     shortEnTitle: null,
     content: '',
@@ -289,7 +289,7 @@ describe('workflowIconState', () => {
       workflowIconState(item, {
         sddEnabled: true,
         automation: {
-          workspaceId: 'proj',
+          workspaceName: 'proj',
           state: 'developing',
           currentIntentId: 'done',
           currentSessionId: 's',
@@ -311,7 +311,7 @@ describe('workflowIconState', () => {
       workflowIconState(item, {
         sddEnabled: true,
         automation: {
-          workspaceId: 'proj',
+          workspaceName: 'proj',
           state: 'fixing',
           currentIntentId: 'run',
           currentSessionId: 's',
@@ -534,7 +534,7 @@ describe('formatDependsOn', () => {
   function makeReq(overrides: Partial<Intent>): Intent {
     return {
       id: 'r-default',
-      workspaceId: '/test',
+      workspaceName: '/test',
       title: '默认需求',
       shortEnTitle: null,
       content: '',

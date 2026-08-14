@@ -16,7 +16,7 @@ const SIGNAL = new AbortController().signal
 function makeReq(overrides: Partial<Intent> = {}): Intent {
   return {
     id: 'r-default',
-    workspaceId: 'abs-test-proj',
+    workspaceName: 'abs-test-proj',
     title: '测试需求',
     shortEnTitle: null,
     content: '实现某个功能',

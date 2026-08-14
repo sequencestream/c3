@@ -8,22 +8,20 @@ c3 不会立即询问用户，而是先询问*其他*已配置的智能体该工
 派生顾问查询；投票解析 / 计票 / 摘要是一个纯粹的、不依赖 SDK 的单元，因此可以
 被独立单元测试，与权限注册表如出一辙。
 
-### 配置来源: `workspacePath`，而非 worktree 的 `cwd`
+### 配置来源: `workspaceName`，而非 worktree 的 `cwd`
 
-共识配置——启用开关、投票者名单、多数决开关——是按 **`workspacePath`**(已注册
-的项目根目录)读取的，**从不**按运行的实际生效 `cwd` 读取。二者在 worktree
+共识配置——启用开关、投票者名单、多数决开关——是按 **`workspaceName`** 读取的，
+**从不**按运行的实际生效 `cwd` 读取。名称解析出的项目根目录与 `cwd` 在 worktree
 隔离运行中(`start_development` 意图 / automation worktree 模式)是不同的，
 此时 `cwd` 是分离的 worktree(`<c3-home>/worktrees/<project>/intent-<id>/`)，
-而 `workspacePath` 仍是项目根目录。`loadWorkspaceSetting` 按精确路径取键
-(不做上级目录遍历，也不做 worktree→root 归一化)，因此若按 worktree 的 `cwd`
-读取配置会完全错过 `projectConfigs[root]`——`enabled` 会回退为 `false`，
-投票被静默跳过。因此网关同时穿引这两者:`GatewaySpec.workspacePath`(配置 +
-WorkCenter 审计归属)与 `GatewaySpec.cwd`(顾问查询的启动目录，正确地是
+而 `workspaceName` 仍标识原工作区。`loadWorkspaceSetting` 按精确名称取键，
+因此若按 worktree 的 `cwd` 读取配置会完全错过该工作区配置——`enabled` 会回退为 `false`，
+投票被静默跳过。因此网关同时穿引这两者:`GatewaySpec.workspacePath`(项目根路径，
+在配置与审计边界转换为 `workspaceName`)与 `GatewaySpec.cwd`(顾问查询的启动目录，正确地是
 worktree)。`ConsensusParams` 镜像这一拆分——`isConsensusEnabled` /
-`getConsensusConfig` / `isConsensusMajorityEnabled` 读取 `workspacePath`；
+`getConsensusConfig` / `isConsensusMajorityEnabled` 通过根路径解析 `workspaceName`；
 一次性顾问 `askAgentOnce` 在 `cwd` 中运行。在当前分支模式下二者路径重合，
-所以行为不变。检查点共识(automation 编排器)已经是按 `workspacePath` 读取
-配置。
+所以行为不变。检查点共识(automation 编排器)同样按 `workspaceName` 读取配置。
 
 ### 多数决开关(配置基础)
 
@@ -358,7 +356,7 @@ driver 路径取运行的 `sessionKind`，claude 网控路径取 gate 派生（`
 不产生人工门控事件，前端 switch 兜底进控制台。不再折叠为可跳转子集，旧 `WaitUserInvolveSource`
 类型与 `sessionKindToWaitUserSource` 映射已移除。
 
-`workspaceId` 为不透明工作区 id：store 持久化绝对路径，读出时经 `pathToId` 映射为 id，
+`workspaceName` 为不透明工作区 id：store 持久化绝对路径，读出时经 `pathToId` 映射为 id，
 工作区已注销的行被丢弃而非下发破损 id；`list_wait_user_events` 读取端先经
 `resolveWorkspaceRoot` 把 id 解析回路径再查库（未注册 id 降级为空快照），避免把 id 当
 路径直接查询导致历史 / auto 标签 re-fetch 恒空。`sessionId`（真实会话 id）的含义与缺失

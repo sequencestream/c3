@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 
 // The claude path must never be reached: this stub records any call to it.
@@ -155,7 +155,7 @@ function cursorAutomation(over: Partial<Automation> = {}): Automation {
   return {
     id: 'auto-cursor',
     type: 'llm',
-    workspaceId: '/ws',
+    workspaceName: '/ws',
     agentId: 'agent-cursor',
     vendor: 'cursor',
     mode: 'agent',

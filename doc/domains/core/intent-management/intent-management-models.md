@@ -10,7 +10,7 @@
 一个限定在单个项目范围内的台账条目。
 
 - **`id`**(text, UUID): 稳定标识符;被依赖关系与开发反向链接引用
-- **`workspacePath`**(text, path): 解析后的绝对工作区路径;项目键(RM-R1, RM-R10)
+- **`workspaceName`**(text): 不可变且唯一的工作区名称;项目键(RM-R1, RM-R10)
 - **`title`**(text): 简短的意图标题
 - **`shortEnTitle`**(text | null): 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐
 - **`content`**(text): 完整的意图描述
@@ -31,7 +31,7 @@
 - **`baseBranch`**(text): 意图的**基准分支快照** —— 它建在哪个分支上;非空。PR 目标与 worktree 基线共读此值(见下)
 - **`baseBranchFallback`**(boolean): `baseBranch` 是否为读时派生的主分支回退(持久值缺失或不可用),而非记录下来的事实;界面据此标注,不把回退伪装成历史
 
-关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
+关系:属于一个项目(以 `workspaceName` 标识);拥有零个或多个 Intent
 Dependencies;拥有零个或多个 Intent PR;关联零个或多个 Delivery(关联边见
 [delivery-models.md](../delivery/delivery-models.md));可能引用一个开发 Session(一个普通会话,归
 session-registry 所有)。
@@ -181,7 +181,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 | 属性            | 类型         | 说明                                                                       |
 | --------------- | ------------ | -------------------------------------------------------------------------- |
 | `sessionId`     | text         | SDK 会话 id(在首次运行绑定之前,可能是一个 `pending:` id)                   |
-| `workspacePath` | text (path)  | 解析后的绝对工作区路径(RM-R10)                                             |
+| `workspaceName` | text         | 不可变且唯一的工作区名称(RM-R10)                                           |
 | `title`         | text \| null | 用户指定的标题;null 时 ⇒ 客户端回退到 "New Intent" 或首个提示词/时间戳派生 |
 | `isCurrent`     | boolean      | 默认打开指针 —— 每个项目最多一个当前会话(RM-R4)                            |
 | `updatedAt`     | timestamp    | 最近一次绑定/重命名/运行时间                                               |
@@ -208,7 +208,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 
 | 属性                 | 类型              | 说明                                                                        |
 | -------------------- | ----------------- | --------------------------------------------------------------------------- |
-| `workspacePath`      | text (path)       | 解析后的绝对工作区路径(RM-R10)                                              |
+| `workspaceName`      | text              | 不可变且唯一的工作区名称(RM-R10)                                            |
 | `state`              | enum              | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                            |
 | `currentIntentId`    | id \| null        | 当前正在开发的意图(未运行时为 null)                                         |
 | `currentSessionId`   | text \| null      | 当前意图的开发会话,用于反向链接                                             |
@@ -224,7 +224,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 `intents.completed_at` 列,v4 新增 `intents.automate` INTEGER NOT NULL DEFAULT 0,v6 把
 遗留的 requirement- 前缀表重命名为 intent- 前缀,v7 新增可空的 `intent_chats.title` 列,
 v8 新增 git 追踪字段,v9 新增 `intent_deps.dep_type` + `created_at`,v10 新增
-`intent_sessions` 审计表,v11 把工作区键列 `project_path` → `workspace_path` 原地重命名到
+`intent_sessions` 审计表,v11 把工作区键列 `project_path` → `workspace_name` 原地重命名到
 `intents` + `intent_chats` 上,并把复合索引重建为 `idx_intent_workspace_status`,v12 新增
 可空的 `intents.short_en_title` 列(派生分支/worktree 名称的稳定 ASCII 来源;历史行保持
 null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectConfigs` 协议键

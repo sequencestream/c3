@@ -82,7 +82,7 @@ describe('schema (F-12 column whitelist)', () => {
     expect([...columnWhitelist()].sort()).toEqual(
       [
         'c3_id',
-        'workspace_path',
+        'workspace_name',
         'vendor',
         'vendor_session_id',
         'agent_id',
@@ -123,7 +123,7 @@ describe('schema (F-12 column whitelist)', () => {
     d.exec(`
       CREATE TABLE work_session_metadata (
         c3_id TEXT PRIMARY KEY,
-        workspace_path TEXT NOT NULL,
+        workspace_name TEXT NOT NULL,
         vendor TEXT NOT NULL,
         vendor_session_id TEXT,
         agent_id TEXT NOT NULL,
@@ -136,7 +136,7 @@ describe('schema (F-12 column whitelist)', () => {
     `)
     d.run(
       `INSERT INTO work_session_metadata
-         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+         (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       'legacy-real',
@@ -152,7 +152,7 @@ describe('schema (F-12 column whitelist)', () => {
     )
     d.run(
       `INSERT INTO work_session_metadata
-         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+         (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       'legacy-pending',
@@ -193,7 +193,7 @@ describe('schema (F-12 column whitelist)', () => {
     d.exec(`
       CREATE TABLE session_metadata (
         c3_id TEXT PRIMARY KEY,
-        workspace_path TEXT NOT NULL,
+        workspace_name TEXT NOT NULL,
         vendor TEXT NOT NULL,
         vendor_session_id TEXT,
         agent_id TEXT NOT NULL,
@@ -206,7 +206,7 @@ describe('schema (F-12 column whitelist)', () => {
     `)
     d.run(
       `INSERT INTO session_metadata
-         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+         (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       'stray-row',
@@ -224,7 +224,7 @@ describe('schema (F-12 column whitelist)', () => {
     d.exec(`
       CREATE TABLE work_session_metadata (
         c3_id TEXT PRIMARY KEY,
-        workspace_path TEXT NOT NULL,
+        workspace_name TEXT NOT NULL,
         vendor TEXT NOT NULL,
         vendor_session_id TEXT,
         agent_id TEXT NOT NULL,
@@ -237,7 +237,7 @@ describe('schema (F-12 column whitelist)', () => {
     `)
     d.run(
       `INSERT INTO work_session_metadata
-         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+         (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       'promoted-row',
@@ -328,7 +328,7 @@ describe('automation execution projection rows', () => {
         type: 'llm',
         config: { name: 'Nightly review' },
         maxWallClockMs: null,
-        workspaceId: wsA,
+        workspaceName: wsA,
         vendor: 'claude',
         agentId: agent1,
         triggerType: 'cron',

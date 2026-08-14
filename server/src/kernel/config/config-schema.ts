@@ -33,7 +33,7 @@ export const SYSTEM_RULES: ConfigRules = {
   ],
 }
 
-/** Per-workspace settings (`WorkspaceSetting`), one scope per workspace id. */
+/** Per-workspace settings (`WorkspaceSetting`), one scope per workspace name. */
 export const WORKSPACE_RULES: ConfigRules = {
   recordArrays: { skillRepos: 'id' },
   json: ['consensus.agentIds', 'sandbox.extraMounts', 'sandbox.sandboxSessionKinds'],

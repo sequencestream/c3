@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Delivery } from '@ccc/shared/protocol'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
-import { saveWorkspaceSetting } from '../../kernel/config/index.js'
+import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { addWorkspace } from '../../state.js'
 import {
   adoptReadyDeliveryBranchAsIntentBase,
@@ -68,12 +68,14 @@ beforeEach(() => {
   createGitRepo(proj)
   addWorkspace(proj, 1)
   resetDbForTests()
+  resetSettingsCacheForTests()
   resetStoreForTests()
   resetDeliveryStoreForTests()
 })
 
 afterEach(() => {
   resetDbForTests()
+  resetSettingsCacheForTests()
   delete process.env.C3_DB_PATH
   delete process.env.C3_DIR
   rmSync(home, { recursive: true, force: true })

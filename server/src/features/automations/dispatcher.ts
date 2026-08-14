@@ -164,7 +164,7 @@ export async function execute(
 ): Promise<void> {
   // A workspace can be removed after a automation is persisted but before its
   // queued execution starts. Do not pass an undefined cwd/path into a runner.
-  if (!resolveWorkspaceRoot(automation.workspaceId)) {
+  if (!resolveWorkspaceRoot(automation.workspaceName)) {
     updateLog(executionLogId, {
       finishedAt: Date.now(),
       status: 'failed',
@@ -318,7 +318,7 @@ async function executeCommand(
     try {
       const result = await spawnWithTimeout(
         command,
-        resolveWorkspaceRoot(automation.workspaceId)!,
+        resolveWorkspaceRoot(automation.workspaceName)!,
         timeout,
       )
       lastExitCode = result.exitCode
@@ -489,7 +489,7 @@ function upsertAutomationSessionProjection(automation: Automation, sessionId: st
     upsertAutomationExecutionRow({
       automation,
       sessionId,
-      workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+      workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
     })
   } catch (err) {
     console.error('[c3:automations] failed to upsert automation session projection:', err)
@@ -513,7 +513,7 @@ function registerAutomationRuntime(
   sessionId: string,
   abortController: AbortController,
 ): void {
-  const workspacePath = resolveWorkspaceRoot(automation.workspaceId)!
+  const workspacePath = resolveWorkspaceRoot(automation.workspaceName)!
   const codexPolicy = typeof automation.mode === 'object' ? automation.mode : undefined
   const mode: ModeToken = typeof automation.mode === 'string' ? automation.mode : 'auto'
   const rt = ensureRuntime(
@@ -593,7 +593,7 @@ async function executeLlmPrompt(
   }
 
   console.log(
-    `[c3:automations] (${SESSION_KIND}) llm run ${automation.id} @ ${resolveWorkspaceRoot(automation.workspaceId)!}`,
+    `[c3:automations] (${SESSION_KIND}) llm run ${automation.id} @ ${resolveWorkspaceRoot(automation.workspaceName)!}`,
   )
 
   const maxWallClockMs = maxWallClockMsFor(automation)
@@ -664,7 +664,7 @@ async function executeLlmPrompt(
   const claudePath = findClaudeExecutable()
 
   // Resolve workspace-level MCP configuration and freeze the tool list.
-  const workspaceMcpConfig = getWorkspaceMcpConfig(resolveWorkspaceRoot(automation.workspaceId)!)
+  const workspaceMcpConfig = getWorkspaceMcpConfig(resolveWorkspaceRoot(automation.workspaceName)!)
   const frozenTools = freezeTools(
     automation.toolAllowlist ?? [],
     automation.toolDenylist ?? [],
@@ -672,7 +672,7 @@ async function executeLlmPrompt(
   )
   const permissionHandler = createPermissionHandler(
     automation.id,
-    resolveWorkspaceRoot(automation.workspaceId)!,
+    resolveWorkspaceRoot(automation.workspaceName)!,
     frozenTools,
     automation.vendor,
     automation.mode,
@@ -690,7 +690,7 @@ async function executeLlmPrompt(
   const c3Binding =
     selectedC3Mcp && automationHttpMcp
       ? automationHttpMcp.bind({
-          workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+          workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
           executionId: logId,
           metadata: automation.metadata,
         })
@@ -716,7 +716,7 @@ async function executeLlmPrompt(
     const q = query({
       prompt,
       options: {
-        cwd: resolveWorkspaceRoot(automation.workspaceId)!,
+        cwd: resolveWorkspaceRoot(automation.workspaceName)!,
         settingSources: ['user', 'project'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         disallowedTools: [],
@@ -842,7 +842,7 @@ function bindAutomationC3Mcp(
   if (!automationHttpMcp) return null
   if (!hasSelectedC3McpTool(automation.toolAllowlist ?? [])) return null
   return automationHttpMcp.bind({
-    workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+    workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
     executionId: logId,
     metadata: automation.metadata,
   })
@@ -962,7 +962,7 @@ async function executeCodexLlmPrompt(
   const c3Binding = bindAutomationC3Mcp(automation, logId)
   const startOptions: DriverStartOptions = {
     prompt,
-    cwd: resolveWorkspaceRoot(automation.workspaceId)!,
+    cwd: resolveWorkspaceRoot(automation.workspaceName)!,
     signal: abortController.signal,
     actionMode,
     toolGate,
@@ -1035,7 +1035,7 @@ async function executeCursorLlmPrompt(
   const c3Binding = bindAutomationC3Mcp(automation, logId)
   const startOptions: DriverStartOptions = {
     prompt,
-    cwd: resolveWorkspaceRoot(automation.workspaceId)!,
+    cwd: resolveWorkspaceRoot(automation.workspaceName)!,
     signal: abortController.signal,
     actionMode,
     toolGate,

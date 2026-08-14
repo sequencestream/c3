@@ -725,7 +725,7 @@ describe('resident domain subscriptions — discussion + automation', () => {
         id: 'intent-1',
         lastWorkSessionId: 'sess-m1',
         title: 'Test',
-        workspaceId: '/proj',
+        workspaceName: '/proj',
       } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({

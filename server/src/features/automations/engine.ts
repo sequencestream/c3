@@ -105,7 +105,7 @@ export function cancelInFlight(automationId: string): void {
 export function cancelAllForWorkspace(workspacePath: string): void {
   for (const [sid] of inFlight) {
     const s = store?.getAutomation(sid)
-    if (s && resolveWorkspaceRoot(s.workspaceId)! === workspacePath) {
+    if (s && resolveWorkspaceRoot(s.workspaceName)! === workspacePath) {
       inFlight.delete(sid)
     }
   }
@@ -161,7 +161,7 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
   const eventMetadata = automation.metadata ?? null
   eventBus?.publish('run:started', {
     sessionId: logId,
-    workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+    workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
     sessionKind: 'automation',
     runKind: 'headless',
     metadata: eventMetadata,
@@ -169,7 +169,7 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
   eventBus?.publish('run:bound', {
     prevId: logId,
     realId: logId,
-    workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+    workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
   })
 
   // Track execution outcome via the updateLog wrapper so we can set the
@@ -186,7 +186,7 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
     updateLog(id, patch)
     if (!sessionIdBroadcast && typeof patch.sessionId === 'string' && patch.sessionId) {
       sessionIdBroadcast = true
-      activeStore.broadcast?.(resolveWorkspaceRoot(automation.workspaceId)!)
+      activeStore.broadcast?.(resolveWorkspaceRoot(automation.workspaceName)!)
     }
   }
 
@@ -199,7 +199,7 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
       logRunFailure(
         {
           sessionId: logId,
-          workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+          workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
           sessionKind: 'automation',
           runKind: 'headless',
         },
@@ -209,7 +209,7 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
     })
     .finally(() => {
       inFlight.delete(automation.id)
-      const workspacePath = resolveWorkspaceRoot(automation.workspaceId)!
+      const workspacePath = resolveWorkspaceRoot(automation.workspaceName)!
       // After execution, update next_run_at
       try {
         const updated = activeStore.getAutomation(automation.id)

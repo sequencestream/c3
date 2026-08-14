@@ -33,7 +33,7 @@ const props = defineProps<{
   transcripts: Record<string, TranscriptItem[]>
   formOpen: boolean
   formTarget: Automation | null
-  workspacePath: string
+  workspaceName: string
   /** System IANA time zone the cron next-run preview is computed in. */
   timezone: string
   /**
@@ -141,7 +141,7 @@ function onImportConfirm(inputs: CreateAutomationInput[]): void {
   <AutomationForm
     :open="formOpen"
     :automation="formTarget"
-    :workspace-path="workspacePath"
+    :workspace-name="workspaceName"
     :timezone="timezone"
     :tool-manifest="toolManifest"
     :tool-manifest-loading="toolManifestLoading"
@@ -159,14 +159,14 @@ function onImportConfirm(inputs: CreateAutomationInput[]): void {
   <AutomationExportDialog
     :open="exportOpen"
     :automations="automations"
-    :workspace-path="workspacePath"
+    :workspace-name="workspaceName"
     @close="exportOpen = false"
   />
 
   <AutomationImportDialog
     :open="importOpen"
     :agents="agents"
-    :workspace-path="workspacePath"
+    :workspace-name="workspaceName"
     @close="importOpen = false"
     @confirm="onImportConfirm"
   />

@@ -1,7 +1,7 @@
 import type { AgentConfig, CreateAutomationInput } from '@ccc/shared/protocol'
 
 export interface AutomationTemplateBuildArgs {
-  workspaceId: string
+  workspaceName: string
   agentId: string
 }
 
@@ -41,11 +41,11 @@ const PR_STATUS_POLLER: AutomationTemplate = {
   id: 'pr-status-poller',
   titleKey: 'automation.list.templates.prPoller.title',
   descriptionKey: 'automation.list.templates.prPoller.description',
-  build: ({ workspaceId, agentId }) => ({
+  build: ({ workspaceName, agentId }) => ({
     type: 'llm',
     config: { prompt: PR_STATUS_POLLER_PROMPT },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     agentId,
     vendor: 'claude',
     triggerType: 'cron',
@@ -79,11 +79,11 @@ const WEEKLY_ARCH_REVIEW: AutomationTemplate = {
   id: 'weekly-arch-review',
   titleKey: 'automation.list.templates.archReview.title',
   descriptionKey: 'automation.list.templates.archReview.description',
-  build: ({ workspaceId, agentId }) => ({
+  build: ({ workspaceName, agentId }) => ({
     type: 'llm',
     config: { prompt: ARCH_REVIEW_PROMPT },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     agentId,
     vendor: 'claude',
     triggerType: 'cron',
@@ -116,11 +116,11 @@ const WEEKLY_VULN_ANALYSIS: AutomationTemplate = {
   id: 'weekly-vuln-analysis',
   titleKey: 'automation.list.templates.vulnAnalysis.title',
   descriptionKey: 'automation.list.templates.vulnAnalysis.description',
-  build: ({ workspaceId, agentId }) => ({
+  build: ({ workspaceName, agentId }) => ({
     type: 'llm',
     config: { prompt: WEEKLY_VULN_ANALYSIS_PROMPT },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     agentId,
     vendor: 'claude',
     triggerType: 'cron',
@@ -153,11 +153,11 @@ const WEEKLY_WORKTREE_CLEANUP: AutomationTemplate = {
   id: 'weekly-worktree-cleanup',
   titleKey: 'automation.list.templates.worktreeCleanup.title',
   descriptionKey: 'automation.list.templates.worktreeCleanup.description',
-  build: ({ workspaceId, agentId }) => ({
+  build: ({ workspaceName, agentId }) => ({
     type: 'llm',
     config: { prompt: WEEKLY_WORKTREE_CLEANUP_PROMPT },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     agentId,
     vendor: 'claude',
     triggerType: 'cron',
@@ -187,11 +187,11 @@ const PR_REVIEW_RUNNER: AutomationTemplate = {
   id: 'pr-review-runner',
   titleKey: 'automation.list.templates.prReviewRunner.title',
   descriptionKey: 'automation.list.templates.prReviewRunner.description',
-  build: ({ workspaceId, agentId }) => ({
+  build: ({ workspaceName, agentId }) => ({
     type: 'llm',
     config: { prompt: PR_REVIEW_RUNNER_PROMPT, embedEventContext: true },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     agentId,
     vendor: 'claude',
     triggerType: 'event',
@@ -222,11 +222,11 @@ const PR_REVIEW_FIX: AutomationTemplate = {
   id: 'pr-review-fix',
   titleKey: 'automation.list.templates.prReviewFix.title',
   descriptionKey: 'automation.list.templates.prReviewFix.description',
-  build: ({ workspaceId, agentId }) => ({
+  build: ({ workspaceName, agentId }) => ({
     type: 'llm',
     config: { prompt: PR_REVIEW_FIX_PROMPT, embedEventContext: true },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     agentId,
     vendor: 'claude',
     triggerType: 'event',
@@ -250,11 +250,11 @@ const CUSTOM_EVENT_ECHO: AutomationTemplate = {
   id: 'custom-event-echo',
   titleKey: 'automation.list.templates.customEventEcho.title',
   descriptionKey: 'automation.list.templates.customEventEcho.description',
-  build: ({ workspaceId }) => ({
+  build: ({ workspaceName }) => ({
     type: 'command',
     config: { command: 'echo hello' },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
-    workspaceId,
+    workspaceName,
     vendor: 'claude',
     triggerType: 'event',
     cronExpression: '',

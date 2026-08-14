@@ -10,7 +10,7 @@ import {
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title: 'T',
     shortEnTitle: null,
     content: 'Body',

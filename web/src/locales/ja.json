@@ -146,6 +146,9 @@
       "add": {
         "tooltip": "ワークスペースを追加",
         "prompt": "ワークスペースのディレクトリ(絶対パス):",
+        "pathLabel": "Workspace directory (absolute path)",
+        "nameLabel": "Workspace name",
+        "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
         "confirmLabel": "追加"
       },
@@ -2200,7 +2203,9 @@
       "saveFailed": "個人設定の保存に失敗しました。元に戻しました。"
     },
     "workspace": {
-      "unknown": "不明なワークスペース: {path}"
+      "unknown": "不明なワークスペース: {path}",
+      "nameInvalid": "Workspace name must contain 1–64 characters.",
+      "nameConflict": "That workspace name is already in use."
     },
     "path": {
       "notDirectory": "ディレクトリではありません: {path}"
@@ -2325,7 +2330,7 @@
     },
     "mcpApiKey": {
       "unknown": "この API キーは存在しません (id {id})。",
-      "unknownWorkspace": "不明なワークスペース ({workspaceId}) — キーは変更されていません。",
+      "unknownWorkspace": "不明なワークスペース ({workspaceName}) — キーは変更されていません。",
       "noWorkspace": "キーに少なくとも 1 つのワークスペースを選択してください。",
       "saveFailed": "API キーを保存できませんでした。",
       "unknownTool": "ツール「{tool}」は外部付与可能なカタログにありません。"

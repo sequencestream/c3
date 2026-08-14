@@ -169,7 +169,7 @@ export function runFindDiscussions(
 
 /** Whether a discussion belongs to the closure-bound workspace (id reads are global). */
 function belongsToWorkspace(discussion: Discussion, workspacePath: string): boolean {
-  return resolveWorkspaceRoot(discussion.workspaceId) === resolve(workspacePath)
+  return resolveWorkspaceRoot(discussion.workspaceName) === resolve(workspacePath)
 }
 
 /**
@@ -287,7 +287,7 @@ export function runContinueDiscussion(
     })
     deps.broadcastDiscussionMessage(discussion.id, message)
     updateDiscussionStatus(discussion.id, 'in_progress')
-    deps.broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceId)!)
+    deps.broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceName)!)
     deps.startDiscussionRun({ ...discussion, status: 'in_progress' })
     return ok(`已追加追问并开启新一轮讨论 ${discussion.id}。`)
   }

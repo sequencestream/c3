@@ -6,12 +6,12 @@
  * never spawns an LLM.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
-// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// The store maps `workspace_name` <-> opaque `workspaceName` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToName
 // as identity — fixtures use the path itself as the id and round-trip cleanly.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -73,7 +73,7 @@ function makeAutomation() {
     {
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -141,11 +141,11 @@ describe('run-lifecycle event trigger — sessionKind filter is optional', () =>
     const conn = fakeConn()
     await createAutomationHandler(ctx, conn, {
       type: 'create_automation',
-      workspaceId: proj,
+      workspaceName: proj,
       input: {
         type: 'command',
         config: { command: 'echo hi' },
-        workspaceId: proj,
+        workspaceName: proj,
         vendor: 'claude',
         triggerType: 'event',
         cronExpression: '',
@@ -188,7 +188,7 @@ describe('run-lifecycle event trigger — sessionKind filter is optional', () =>
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [{ type: 'run:settled' }],
@@ -265,7 +265,7 @@ describe('deleteAutomationHandler', () => {
 
 describe('createAutomationHandler — import path (initialStatus / initialName)', () => {
   function createMsg(input: Record<string, unknown>) {
-    return { type: 'create_automation', workspaceId: proj, input } as never
+    return { type: 'create_automation', workspaceName: proj, input } as never
   }
   // The naming mock is module-scoped and accumulates across the file, so assert on
   // call-count deltas rather than absolute called/not-called.
@@ -281,7 +281,7 @@ describe('createAutomationHandler — import path (initialStatus / initialName)'
       createMsg({
         type: 'command',
         config: { command: 'echo hi' },
-        workspaceId: proj,
+        workspaceName: proj,
         vendor: 'claude',
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
@@ -304,7 +304,7 @@ describe('createAutomationHandler — import path (initialStatus / initialName)'
       createMsg({
         type: 'command',
         config: { command: 'echo hi', name: 'ignored-config-name' },
-        workspaceId: proj,
+        workspaceName: proj,
         vendor: 'claude',
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
@@ -331,7 +331,7 @@ describe('createAutomationHandler — import path (initialStatus / initialName)'
       createMsg({
         type: 'command',
         config: { command: 'echo hi' },
-        workspaceId: proj,
+        workspaceName: proj,
         vendor: 'claude',
         cronExpression: '*/5 * * * *',
         mode: 'read-only',
@@ -356,7 +356,7 @@ describe('createAutomationHandler — import path (initialStatus / initialName)'
       createMsg({
         type: 'command',
         config: { command: 'echo hi' },
-        workspaceId: proj,
+        workspaceName: proj,
         vendor: 'claude',
         cronExpression: '*/5 * * * *',
         mode: 'read-only',

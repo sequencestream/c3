@@ -19,11 +19,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // Stub only the registry id↔path mapping (identity): synthetic test workspaces
-// are unregistered, so resolve/pathToId would otherwise return null.
+// are unregistered, so resolve/pathToName would otherwise return null.
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { z } from 'zod'
 import { resetDbForTests } from '../../kernel/infra/db.js'

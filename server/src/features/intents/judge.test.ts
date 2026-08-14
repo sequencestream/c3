@@ -41,7 +41,7 @@ const { JudgeUnavailableError, judgeCompletion } = await import('./judge.js')
 
 const req: Intent = {
   id: 'r1',
-  workspaceId: 'p',
+  workspaceName: 'p',
   title: '示例需求',
   shortEnTitle: null,
   content: '做点事',

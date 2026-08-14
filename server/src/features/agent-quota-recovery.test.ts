@@ -3,11 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // Stub only the registry id↔path mapping (identity): the test's synthetic
-// workspace is unregistered, so resolve/pathToId would otherwise return null.
+// workspace is unregistered, so resolve/pathToName would otherwise return null.
 vi.mock('../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'

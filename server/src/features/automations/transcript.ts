@@ -44,7 +44,7 @@ export async function readExecutionTranscript(
   const automation = getAutomation(log.automationId)
   if (!automation) return { sessionId, items: [] }
 
-  const workspacePath = resolveWorkspaceRoot(automation.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(automation.workspaceName)
   if (!workspacePath) return { sessionId, items: [] }
 
   try {

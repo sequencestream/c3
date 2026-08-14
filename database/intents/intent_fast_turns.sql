@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS intent_fast_turns (
   session_id     TEXT PRIMARY KEY,   -- 该 turn 的工作会话 id; 幂等键 (单 turn 内)
   intent_id      TEXT NOT NULL,      -- 归属意图 id (删除意图时随事务清理)
-  workspace_path TEXT NOT NULL,      -- 归属工作区 (resolve 后)
+  workspace_name TEXT NOT NULL,      -- 归属工作区 (resolve 后)
   baseline       TEXT NOT NULL,      -- JSON: repo 路径 → HEAD commit (单仓可空), turn 启动时捕获
   settled_at     INTEGER,            -- NULL 直到该 turn 的落定被处理 (幂等标记)
   outcome        TEXT,               -- NULL 直到处理完: 'no_change'|'small'|'over'|'failed'

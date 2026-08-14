@@ -78,7 +78,7 @@ describe('permissionResponse', () => {
   it('resolves the matching wait-user event to done and broadcasts (order unchanged)', () => {
     vi.mocked(getEventByRequestId).mockReturnValue({
       id: 'evt-1',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
     } as never)
     const { ctx, broadcast } = fakeCtx()
     permissionResponse(ctx, fakeConn('alice'), {

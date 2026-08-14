@@ -92,7 +92,7 @@ export function installChatActions(ctx: AppCtx): void {
     if (!ctx.activeWorkspace.value || !activeSession.value) return
     send({
       type: 'select_session',
-      workspaceId: ctx.activeWorkspace.value,
+      workspaceName: ctx.activeWorkspace.value,
       sessionId: activeSession.value,
     })
   }

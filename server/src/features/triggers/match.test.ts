@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 // 匹配是纯函数,不需要真的调度器/数据库。
 vi.mock('../automations/engine.js', () => ({
@@ -24,7 +24,7 @@ const WS = '/abs/ws'
 
 function automation(sessionKinds?: SessionKind[]): Automation {
   return {
-    workspaceId: WS,
+    workspaceName: WS,
     eventFilters: [{ type: 'run:settled' }],
     ...(sessionKinds ? { eventSessionKindFilter: sessionKinds } : {}),
   } as unknown as Automation
@@ -67,7 +67,7 @@ describe('run 生命周期事件的 sessionKind 维度', () => {
       event: { type: 'pr:create', status: 'success' },
     }
     const pr = {
-      workspaceId: WS,
+      workspaceName: WS,
       eventFilters: [{ type: 'pr:create' }],
     } as unknown as Automation
     expect(evaluateAutomationTriggerMatch(pr, view).matched).toBe(true)

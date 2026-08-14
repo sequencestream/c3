@@ -67,7 +67,7 @@ function decisionRow(overrides: Partial<QueueDecisionRow> = {}): QueueDecisionRo
   return {
     id: 'd-1',
     tickId: 't-1',
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     intentId: 'i-1',
     decidedAt: NOW,
     action: 'wait',
@@ -273,7 +273,7 @@ describe('deriveSilentTimeoutActionDescriptor — gathering', () => {
   const intent = (overrides: Partial<Intent> = {}): Intent =>
     ({
       id: 'i-1',
-      workspaceId: 'ws',
+      workspaceName: 'ws',
       title: 'T',
       status: 'in_progress',
       automate: true,
@@ -367,7 +367,7 @@ describe('deriveSilentTimeoutActionDescriptor — gathering', () => {
   })
 
   it('stays quiet for an unresolvable workspace', () => {
-    expect(deriveSilentTimeoutActionDescriptor(intent({ workspaceId: 'gone' }), NOW)).toBeNull()
+    expect(deriveSilentTimeoutActionDescriptor(intent({ workspaceName: 'gone' }), NOW)).toBeNull()
     expect(queueControl).not.toHaveBeenCalled()
   })
 

@@ -123,7 +123,7 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       specReviewAgentId: '',
       automationAgentId: '',
     } as SystemSettings)
-    expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
+    expect(loadSettings().projectConfigs?.a).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
   })
 
@@ -132,10 +132,10 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
     saveSettings({
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
-      projectConfigs: { '/proj/b': { devSkill: '/b' } },
+      projectConfigs: { b: { devSkill: '/b' } },
     } as unknown as SystemSettings)
     expect(getDevSkill('/proj/a')).toBe('/a') // sibling preserved
-    expect(getDevSkill('/proj/b')).toBe('/b') // explicit entry applied
+    expect(getDevSkill('b')).toBe('/b') // explicit name-keyed entry applied
   })
 
   it('anti-clobber: degradationChain / socketAutoResume preserved when omitted, updated when present', () => {
@@ -2133,7 +2133,7 @@ describe('legacy sandbox-only role keys are dropped on load and save', () => {
     expect(settings.specAgentId).toBe('a2')
     // The anti-clobber merge fields survive the rewrite.
     expect(settings.proxy).toMatchObject({ enabled: true, httpProxy: 'http://p:3128' })
-    expect(settings.projectConfigs).toMatchObject({ '/proj/a': { devSkill: '/a' } })
+    expect(settings.projectConfigs).toMatchObject({ a: { devSkill: '/a' } })
     expect(settings.degradationChain).toEqual(['a2'])
   })
 })

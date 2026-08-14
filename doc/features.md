@@ -28,7 +28,7 @@ c3
 │   │   └── 审计留痕                              # 记录谁在何时决定了什么,供回放与历史
 │   │
 │   ├── session-registry 会话与工作区目录         # 工作的档案柜与调度器
-│   │   ├── 工作区注册                            # 已知工作区(绝对路径→不透明 workspaceId)、默认工作区
+│   │   ├── 工作区注册                            # 唯一且不可变的 workspace name、磁盘路径、最近访问顺序
 │   │   ├── 会话目录                              # 按 sessionKind(work/intent/spec/spec_review/discussion/automation/tool)增删列
 │   │   │   └── 规范类合并入口                    # 会话页「规范」既是显示分类也是查询口径:spec 撰写与 spec_review 评审同列同角标(每会话只计一次,兼容字段不重复计入顶栏),行保留真实 kind 与 owner
 │   │   ├── 最近访问排序                          # 维护会话列表的 MRU 顺序

@@ -21,7 +21,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { ensureRuntime, getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -52,7 +52,7 @@ import {
 } from './spec-occupancy.js'
 
 let dir: string
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 const pending = (tag: string): string => `${PENDING_SESSION_PREFIX}${tag}`
@@ -77,8 +77,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {

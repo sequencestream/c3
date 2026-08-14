@@ -59,7 +59,7 @@ function derive(intent: Intent) {
 
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: 'ws',
+    workspaceName: 'ws',
     title: 'T',
     shortEnTitle: null,
     content: '',
@@ -106,7 +106,7 @@ function makeEvent(
   overrides: Partial<WaitUserInvolveEvent> & { id: string },
 ): WaitUserInvolveEvent {
   return {
-    workspaceId: 'ws',
+    workspaceName: 'ws',
     sessionKind: 'work',
     sessionId: 'sess-1',
     intentId: 'i-1',

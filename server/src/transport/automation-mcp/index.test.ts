@@ -20,7 +20,7 @@ import { join } from 'node:path'
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 
 // The sync tool reaches the forge through `getForgePrStatus`; the integration test

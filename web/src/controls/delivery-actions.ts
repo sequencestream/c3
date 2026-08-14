@@ -45,13 +45,13 @@ export function installDeliveryActions(ctx: AppCtx): void {
     // Re-fetch it here — this tab may be entered before the workspace setting
     // ever loaded, and a stale `current-branch` fallback would hide the merge
     // block for a worktree workspace.
-    send({ type: 'load_workspace_setting', workspaceId: path })
-    send({ type: 'list_deliveries', workspaceId: path })
+    send({ type: 'load_workspace_setting', workspaceName: path })
+    send({ type: 'list_deliveries', workspaceName: path })
     // The link picker chooses from this workspace's intents, which the intents
     // tab may never have loaded (the user can land straight on deliveries). The
     // reply is keyed by workspace, so it never disturbs the intents tab's own
     // selection.
-    send({ type: 'list_intents', workspaceId: path })
+    send({ type: 'list_intents', workspaceName: path })
   }
 
   // Click a delivery in the list: pull its detail (model + transition plan).
@@ -78,7 +78,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     if (!deliveriesProject.value) return
     send({
       type: 'create_delivery',
-      workspaceId: deliveriesProject.value,
+      workspaceName: deliveriesProject.value,
       title: payload.title,
       description: payload.description ?? '',
       startDate: payload.startDate ?? null,
@@ -94,12 +94,12 @@ export function installDeliveryActions(ctx: AppCtx): void {
     endDate?: number | null
   }): void => {
     if (!deliveriesProject.value) return
-    send({ type: 'update_delivery', workspaceId: deliveriesProject.value, ...payload })
+    send({ type: 'update_delivery', workspaceName: deliveriesProject.value, ...payload })
   }
 
   ctx.cancelDelivery = (deliveryId: string): void => {
     if (!deliveriesProject.value) return
-    send({ type: 'cancel_delivery', workspaceId: deliveriesProject.value, deliveryId })
+    send({ type: 'cancel_delivery', workspaceName: deliveriesProject.value, deliveryId })
   }
 
   // Mobile drill-down back from the detail pane to the delivery list.
@@ -123,7 +123,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     if (!id || !deliveriesProject.value) return
     send({
       type: 'transition_delivery',
-      workspaceId: deliveriesProject.value,
+      workspaceName: deliveriesProject.value,
       deliveryId: id,
       to,
       confirmVerified: confirmVerified === true,
@@ -143,7 +143,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryBranchInit.value = { deliveryId: id, phase: 'fetching' }
     send({
       type: 'init_delivery_branch',
-      workspaceId: deliveriesProject.value,
+      workspaceName: deliveriesProject.value,
       deliveryId: id,
       branchName,
       mode: payload.mode,
@@ -156,7 +156,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
   // exists to prevent. Conflicts come back as an error frame, verbatim.
   ctx.syncDeliveryMainline = (deliveryId: string): void => {
     if (!deliveriesProject.value) return
-    send({ type: 'sync_delivery_mainline', workspaceId: deliveriesProject.value, deliveryId })
+    send({ type: 'sync_delivery_mainline', workspaceName: deliveriesProject.value, deliveryId })
   }
 
   // Open the delivery PR (「交付分支 → 主线」). The server owns every gate and asks
@@ -165,7 +165,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
   ctx.createDeliveryPr = (deliveryId: string): void => {
     if (!deliveriesProject.value || activeDeliveryPrBusy.value) return
     activeDeliveryPrBusy.value = true
-    send({ type: 'create_delivery_pr', workspaceId: deliveriesProject.value, deliveryId })
+    send({ type: 'create_delivery_pr', workspaceName: deliveriesProject.value, deliveryId })
   }
 
   // Pull the delivery PR's live forge facts and let the server settle them. Used
@@ -174,7 +174,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
   ctx.syncDeliveryPr = (deliveryId: string): void => {
     if (!deliveriesProject.value || activeDeliveryPrBusy.value) return
     activeDeliveryPrBusy.value = true
-    send({ type: 'sync_delivery_pr', workspaceId: deliveriesProject.value, deliveryId })
+    send({ type: 'sync_delivery_pr', workspaceName: deliveriesProject.value, deliveryId })
   }
 
   // Manual cleanup of a TERMINAL delivery's local branch reference. The page
@@ -182,7 +182,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
   // deliveries anyway. Remote branches are never touched.
   ctx.cleanupDeliveryBranch = (deliveryId: string): void => {
     if (!deliveriesProject.value) return
-    send({ type: 'cleanup_delivery_branch', workspaceId: deliveriesProject.value, deliveryId })
+    send({ type: 'cleanup_delivery_branch', workspaceName: deliveriesProject.value, deliveryId })
   }
 
   // Link an intent to the OPEN delivery. The reply is the refreshed
@@ -193,7 +193,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     if (!id || !deliveriesProject.value) return
     send({
       type: 'link_intent_to_delivery',
-      workspaceId: deliveriesProject.value,
+      workspaceName: deliveriesProject.value,
       deliveryId: id,
       intentId,
     })
@@ -207,7 +207,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     if (!id || !deliveriesProject.value) return
     send({
       type: 'unlink_intent_from_delivery',
-      workspaceId: deliveriesProject.value,
+      workspaceName: deliveriesProject.value,
       deliveryId: id,
       intentId,
     })
@@ -224,20 +224,24 @@ export function installDeliveryActions(ctx: AppCtx): void {
   // Load a workspace's deliveries for the intent-side link picker. The intent
   // page never lists deliveries on its own, so the picker asks for them when it
   // opens; the reply is keyed by workspace and lands in the shared cache.
-  ctx.loadDeliveriesForLink = (workspaceId: string): void => {
-    send({ type: 'list_deliveries', workspaceId })
+  ctx.loadDeliveriesForLink = (workspaceName: string): void => {
+    send({ type: 'list_deliveries', workspaceName })
   }
 
-  ctx.linkIntentDelivery = (workspaceId: string, deliveryId: string, intentId: string): void => {
-    send({ type: 'link_intent_to_delivery', workspaceId, deliveryId, intentId })
+  ctx.linkIntentDelivery = (workspaceName: string, deliveryId: string, intentId: string): void => {
+    send({ type: 'link_intent_to_delivery', workspaceName, deliveryId, intentId })
   }
 
-  ctx.unlinkIntentDelivery = (workspaceId: string, deliveryId: string, intentId: string): void => {
-    send({ type: 'unlink_intent_from_delivery', workspaceId, deliveryId, intentId })
+  ctx.unlinkIntentDelivery = (
+    workspaceName: string,
+    deliveryId: string,
+    intentId: string,
+  ): void => {
+    send({ type: 'unlink_intent_from_delivery', workspaceName, deliveryId, intentId })
   }
 
   ctx.initDeliveryBranchFor = (
-    workspaceId: string,
+    workspaceName: string,
     deliveryId: string,
     branchName: string,
     mode: 'create' | 'bind',
@@ -247,7 +251,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     // Reuse the same in-flight state the delivery page seeds, so the existing
     // progress / result / error handling applies verbatim to this run too.
     activeDeliveryBranchInit.value = { deliveryId, phase: 'fetching' }
-    send({ type: 'init_delivery_branch', workspaceId, deliveryId, branchName: name, mode })
+    send({ type: 'init_delivery_branch', workspaceName, deliveryId, branchName: name, mode })
   }
 
   // 「当前意图独立交付」 — step one of three. Only the create is sent here; the
@@ -264,12 +268,12 @@ export function installDeliveryActions(ctx: AppCtx): void {
     // positive offset and render back as 「昨天」.
     const day = calendarDateToEpochMs(localCalendarDate(new Date()))
     pendingStandaloneDelivery.value = {
-      workspaceId: payload.workspaceId,
+      workspaceName: payload.workspaceName,
       intentId: payload.intentId,
     }
     send({
       type: 'create_delivery',
-      workspaceId: payload.workspaceId,
+      workspaceName: payload.workspaceName,
       title,
       description: payload.description,
       startDate: day,
@@ -281,8 +285,8 @@ export function installDeliveryActions(ctx: AppCtx): void {
   // `openDeliveries` first so the delivery tab is loaded for the SAME workspace
   // the intent belongs to — opening a detail without its list would leave the
   // page half-populated after a reload.
-  ctx.openDeliveryFromIntent = (workspacePath: string, deliveryId: string): void => {
-    ctx.openDeliveries(workspacePath)
+  ctx.openDeliveryFromIntent = (workspaceName: string, deliveryId: string): void => {
+    ctx.openDeliveries(workspaceName)
     ctx.openDelivery(deliveryId)
   }
 }

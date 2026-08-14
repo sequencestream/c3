@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -71,7 +71,7 @@ function makeEventLlm() {
   return createAutomation({
     type: 'llm',
     config: { prompt: 'Investigate.', embedEventContext: true },
-    workspaceId: proj,
+    workspaceName: proj,
     triggerType: 'event',
     cronExpression: '',
     eventFilters: [{ type: 'run:settled' }],
@@ -137,7 +137,7 @@ describe('trigger context plumbing', () => {
     const a = createAutomation({
       type: 'llm',
       config: { prompt: 'Nightly.' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 8 * * *',
       mode: 'read-only',
       vendor: 'claude',

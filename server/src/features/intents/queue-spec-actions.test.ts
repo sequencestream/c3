@@ -45,7 +45,7 @@ const WS = '/test/spec-ws'
 
 const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent =>
   ({
-    workspaceId: 'test-proj',
+    workspaceName: 'test-proj',
     title: 'Test',
     content: '',
     priority: 'P1',

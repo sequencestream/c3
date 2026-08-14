@@ -54,7 +54,7 @@ function seedLegacyIntents(
 ): void {
   raw.exec(`
     CREATE TABLE intents (
-      id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, title TEXT NOT NULL,
+      id TEXT PRIMARY KEY, workspace_name TEXT NOT NULL, title TEXT NOT NULL,
       short_en_title TEXT, content TEXT NOT NULL, priority TEXT NOT NULL,
       status TEXT NOT NULL, module TEXT NOT NULL DEFAULT '', last_work_session_id TEXT,
       automate INTEGER NOT NULL DEFAULT 0, branch_name TEXT, latest_commit_hash TEXT,
@@ -67,7 +67,7 @@ function seedLegacyIntents(
   for (const r of rows) {
     raw.run(
       `INSERT INTO intents
-         (id, workspace_path, title, content, priority, status, branch_name, pr_id, pr_url, pr_status, created_at, updated_at)
+         (id, workspace_name, title, content, priority, status, branch_name, pr_id, pr_url, pr_status, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       r.id,
       proj,

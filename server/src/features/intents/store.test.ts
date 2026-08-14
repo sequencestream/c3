@@ -48,6 +48,7 @@ import {
   upsertIntents,
 } from './store.js'
 import { emit, ensureRuntime, setOnEmit, removeRuntime } from '../../runs.js'
+import { workspaceNameFor } from '../../state.js'
 
 let dir: string
 const proj = '/abs/project-a'
@@ -160,7 +161,7 @@ describe('intents CRUD', () => {
     raw.exec(`
       CREATE TABLE intents (
         id              TEXT PRIMARY KEY,
-        workspace_path  TEXT NOT NULL,
+        workspace_name  TEXT NOT NULL,
         title           TEXT NOT NULL,
         short_en_title  TEXT,
         content         TEXT NOT NULL,
@@ -187,7 +188,7 @@ describe('intents CRUD', () => {
     `)
     raw.run(
       `INSERT INTO intents
-         (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, automate, created_at, updated_at, completed_at)
+         (id, workspace_name, title, short_en_title, content, priority, status, module, last_dev_session_id, automate, created_at, updated_at, completed_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       'legacy-work-link',
       proj,
@@ -231,7 +232,7 @@ describe('intents CRUD', () => {
     raw.exec(`
       CREATE TABLE intents (
         id              TEXT PRIMARY KEY,
-        workspace_path  TEXT NOT NULL,
+        workspace_name  TEXT NOT NULL,
         title           TEXT NOT NULL,
         short_en_title  TEXT,
         content         TEXT NOT NULL,
@@ -259,7 +260,7 @@ describe('intents CRUD', () => {
     `)
     raw.run(
       `INSERT INTO intents
-         (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, last_work_session_id, automate, created_at, updated_at, completed_at)
+         (id, workspace_name, title, short_en_title, content, priority, status, module, last_dev_session_id, last_work_session_id, automate, created_at, updated_at, completed_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       'partial-null-new',
       proj,
@@ -278,7 +279,7 @@ describe('intents CRUD', () => {
     )
     raw.run(
       `INSERT INTO intents
-         (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, last_work_session_id, automate, created_at, updated_at, completed_at)
+         (id, workspace_name, title, short_en_title, content, priority, status, module, last_dev_session_id, last_work_session_id, automate, created_at, updated_at, completed_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       'partial-new-wins',
       proj,
@@ -580,10 +581,10 @@ describe('intents short_en_title', () => {
     const raw = getDb()!
     raw.run(
       `INSERT INTO intents
-         (id, workspace_path, title, content, priority, status, module, created_at, updated_at)
+         (id, workspace_name, title, content, priority, status, module, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       'hist-1',
-      proj,
+      workspaceNameFor(proj),
       'Historic',
       'body',
       'P0',
@@ -662,7 +663,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     const raw = getDb()!
     raw.run(
       `INSERT INTO intents
-         (id, workspace_path, title, content, priority, status, module, created_at, updated_at)
+         (id, workspace_name, title, content, priority, status, module, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       'hist-v12',
       proj,

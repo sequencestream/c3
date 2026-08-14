@@ -1,0 +1,11 @@
+-- 工作区关联统一迁移到 workspace name。
+--
+-- 运行时迁移由 server/src/kernel/config/config-store.ts 执行，因为它需要同时检查多个惰性
+-- 建表领域并按实际存在的列迁移：
+-- - workspaces.id 主键替换为不可变、全局唯一、1–64 字符的 name 主键；
+-- - 同名历史数据按稳定顺序追加 -2、-3，后缀计入 64 字符上限；
+-- - workspace_configs.workspace_id 映射为 workspace_name；
+-- - 各业务表 workspace_path 与 funnel_event.workspace_id 映射为 workspace_name；
+-- - MCP API key 的 workspace 路径绑定映射为 workspaceName。
+--
+-- 全部转换和 schema_migrations 标记 config.workspace_name_identity.v1 在同一事务内提交。

@@ -21,7 +21,7 @@ import type {
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import type { Handler } from '../../transport/handler-registry.js'
-import { listWorkspaces, pathToId, resolveWorkspaceRoot } from '../../state.js'
+import { listWorkspaces, pathToName, resolveWorkspaceRoot } from '../../state.js'
 import { runningCountForWorkspace, runningRuntimeSessionIdsForWorkspace } from '../../runs.js'
 import { countByStatusInRange as countIntentsByStatus } from '../intents/store.js'
 import { countByStatusInRange as countDiscussionsByStatus } from '../discussions/store.js'
@@ -50,7 +50,7 @@ function projectStats(
   const discussions = countDiscussionsByStatus(workspacePath, startTime, endTime)
   const automations = countAutomationsInRange(workspacePath, startTime, endTime)
   return {
-    workspaceId: pathToId(workspacePath)!,
+    workspaceName: pathToName(workspacePath)!,
     projectName,
     workSessions: {
       total: countRealInRange(workspacePath, startTime, endTime),
@@ -75,7 +75,7 @@ function projectStats(
 
 export const getTimeRangeStatsHandler: Handler<'get_timerange_stats'> = (_ctx, conn, msg) => {
   const stats = listWorkspaces().map((ws) =>
-    projectStats(resolveWorkspaceRoot(ws.id)!, ws.name, msg.startTime, msg.endTime),
+    projectStats(resolveWorkspaceRoot(ws.name)!, ws.name, msg.startTime, msg.endTime),
   )
   conn.send({ type: 'timerange_stats', stats })
 }
@@ -102,10 +102,10 @@ function runningSessionCount(workspacePath: string): number {
 
 /** Aggregate one workspace's Dashboard row. Throws if its path cannot be resolved. */
 function dashboardRow(ws: WorkspaceInfo): WorkspaceDashboardRow {
-  const path = resolveWorkspaceRoot(ws.id)
-  if (!path) throw new Error(`workspace path unresolved for ${ws.id}`)
+  const path = resolveWorkspaceRoot(ws.name)
+  if (!path) throw new Error(`workspace path unresolved for ${ws.name}`)
   return {
-    workspaceId: ws.id,
+    workspaceName: ws.name,
     name: ws.name,
     path: ws.path,
     sessions: {
@@ -115,7 +115,7 @@ function dashboardRow(ws: WorkspaceInfo): WorkspaceDashboardRow {
     intents: { total: sumCounts(countIntentsByStatus(path)) },
     discussions: { total: sumCounts(countDiscussionsByStatus(path)) },
     automations: { total: countAutomationsInRange(path).total },
-    automationEnabled: getAutomationEnabled(path),
+    automationEnabled: getAutomationEnabled(ws.name),
   }
 }
 
@@ -146,24 +146,28 @@ export const setWorkspacesAutomationEnabledHandler: Handler<'set_workspaces_auto
   // Single admin gate for the whole batch, BEFORE any write: a non-admin never
   // mutates any workspace (requireAdmin sends the `auth.adminOnly` error frame).
   if (!requireAdmin(conn)) return
-  // De-dupe ids; an empty list is a no-op (never "all workspaces").
-  const ids = [...new Set(msg.workspaceIds)]
+  // De-dupe names; an empty list is a no-op (never "all workspaces").
+  const names = [...new Set(msg.workspaceNames)]
   const results: WorkspaceAutomationGateResult[] = []
-  for (const id of ids) {
-    const path = resolveWorkspaceRoot(id)
+  for (const name of names) {
+    const path = resolveWorkspaceRoot(name)
     if (!path) {
-      results.push({ workspaceId: id, ok: false, error: { code: 'dashboard.workspaceMissing' } })
+      results.push({
+        workspaceName: name,
+        ok: false,
+        error: { code: 'dashboard.workspaceMissing' },
+      })
       continue
     }
     try {
       // Read the LATEST full setting at execution time and replace only the gate,
       // so no other workspace-setting field (agents, discussion, MCP, …) is clobbered.
-      const current = loadWorkspaceSetting(path)
-      saveWorkspaceSetting(path, { ...current, automationEnabled: msg.enabled })
-      results.push({ workspaceId: id, ok: true })
+      const current = loadWorkspaceSetting(name)
+      saveWorkspaceSetting(name, { ...current, automationEnabled: msg.enabled })
+      results.push({ workspaceName: name, ok: true })
     } catch (err) {
-      console.error(`[c3:workcenter] automation gate save failed for ${id}:`, err)
-      results.push({ workspaceId: id, ok: false, error: { code: 'dashboard.gateSaveFailed' } })
+      console.error(`[c3:workcenter] automation gate save failed for ${name}:`, err)
+      results.push({ workspaceName: name, ok: false, error: { code: 'dashboard.gateSaveFailed' } })
     }
   }
   // Calibrate the client with the post-operation snapshot; if that fails the

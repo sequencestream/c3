@@ -38,7 +38,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -63,7 +63,7 @@ import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sess
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -79,8 +79,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   vi.mocked(createForgePr).mockReset()
   vi.mocked(commitAndPush).mockReset()
   vi.mocked(hasDiffAgainstBase).mockReset()
@@ -180,7 +180,7 @@ describe('createPrHandler — worktree gate success paths', () => {
       const { ctx, broadcast, publish } = fakeCtx()
       const { conn, sent } = fakeConn()
 
-      await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+      await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
       const worktreePath = getWorktreePath(proj, r.id)
       // Ordered: check changes → commit/push in the worktree → create the PR there.
@@ -232,7 +232,7 @@ describe('createPrHandler — worktree gate success paths', () => {
     const { ctx, publish } = fakeCtx()
     const { conn } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     const worktreePath = getWorktreePath(proj, r.id)
     // The resolved base — NOT a literal `main` — reaches every layer of the run,
@@ -273,7 +273,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
     expect(hasDiffAgainstBase).not.toHaveBeenCalled()
@@ -293,7 +293,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNotWorktree'])
     expect(hasDiffAgainstBase).not.toHaveBeenCalled()
@@ -311,7 +311,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoBranch'])
     expect(hasDiffAgainstBase).not.toHaveBeenCalled()
@@ -325,7 +325,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
     expect(commitAndPush).not.toHaveBeenCalled()
@@ -342,7 +342,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     // Rejected up front — the old pass-through would have let commit/push/forge run.
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
@@ -371,7 +371,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
     expect(createForgePr).not.toHaveBeenCalled()
@@ -386,7 +386,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
     expectNoSuccessSideEffects(r.id, publish)
@@ -421,7 +421,7 @@ describe('createPrHandler — staged progress frames', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
     // Every frame carries the requested intent, and the response is the terminal.
@@ -448,7 +448,7 @@ describe('createPrHandler — staged progress frames', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
   })
@@ -460,7 +460,7 @@ describe('createPrHandler — staged progress frames', () => {
     // Not worktree mode / blank branch, each on its own intent + connection.
     const { ctx } = fakeCtx()
     const a = fakeConn()
-    await createPrHandler(ctx, a.conn, { type: 'create_pr', workspaceId, intentId: withPr.id })
+    await createPrHandler(ctx, a.conn, { type: 'create_pr', workspaceName, intentId: withPr.id })
     expect(stagesOf(a.sent)).toEqual([])
 
     saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch' })
@@ -469,7 +469,7 @@ describe('createPrHandler — staged progress frames', () => {
     ])
     setBranchName(cb.id, 'intent/cb')
     const b = fakeConn()
-    await createPrHandler(ctx, b.conn, { type: 'create_pr', workspaceId, intentId: cb.id })
+    await createPrHandler(ctx, b.conn, { type: 'create_pr', workspaceName, intentId: cb.id })
     expect(stagesOf(b.sent)).toEqual([])
 
     saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
@@ -478,7 +478,7 @@ describe('createPrHandler — staged progress frames', () => {
     ])
     setBranchName(nb.id, '   ')
     const c = fakeConn()
-    await createPrHandler(ctx, c.conn, { type: 'create_pr', workspaceId, intentId: nb.id })
+    await createPrHandler(ctx, c.conn, { type: 'create_pr', workspaceName, intentId: nb.id })
     expect(stagesOf(c.sent)).toEqual([])
   })
 
@@ -488,7 +488,7 @@ describe('createPrHandler — staged progress frames', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes'])
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
@@ -504,7 +504,7 @@ describe('createPrHandler — staged progress frames', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing'])
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
@@ -517,7 +517,7 @@ describe('createPrHandler — staged progress frames', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing'])
     expect(createForgePr).not.toHaveBeenCalled()
@@ -532,7 +532,7 @@ describe('createPrHandler — staged progress frames', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
@@ -565,7 +565,7 @@ describe('createPrHandler — request correlation', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       requestId: 'req-1',
     })
@@ -586,7 +586,7 @@ describe('createPrHandler — request correlation', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       requestId: 'req-2',
     })
@@ -601,13 +601,13 @@ describe('createPrHandler — request correlation', () => {
     const unknown = fakeConn()
     await createPrHandler(ctx, unknown.conn, {
       type: 'create_pr',
-      workspaceId: 'no-such-workspace',
+      workspaceName: 'no-such-workspace',
       intentId: r.id,
       requestId: 'req-3',
     })
     expect(unknown.sent).toContainEqual({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: 'no-such-workspace' } },
+      error: { code: 'workspace.unknown', params: { workspaceName: 'no-such-workspace' } },
       requestId: 'req-3',
     })
   })
@@ -620,7 +620,7 @@ describe('createPrHandler — request correlation', () => {
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(sent.every((m) => !('requestId' in m))).toBe(true)
   })
@@ -652,7 +652,7 @@ describe('createPrHandler — failure guidance', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
     expect(guidanceOf(sent)).toEqual({
@@ -677,7 +677,7 @@ describe('createPrHandler — failure guidance', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(guidanceOf(sent)).toEqual({
       reason: 'forge_cli_unavailable',
@@ -695,7 +695,7 @@ describe('createPrHandler — failure guidance', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(guidanceOf(sent)).toEqual({
       reason: 'unknown',
@@ -713,7 +713,7 @@ describe('createPrHandler — failure guidance', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(guidanceOf(sent)).toEqual({
       reason: 'forge_create_rejected',
@@ -732,7 +732,7 @@ describe('createPrHandler — failure guidance', () => {
     const first = fakeConn()
     await createPrHandler(ctx, first.conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: noChanges.id,
     })
     expect(errorsOf(first.sent)).toEqual(['intent.prCreateNoChanges'])
@@ -745,7 +745,7 @@ describe('createPrHandler — failure guidance', () => {
     const second = fakeConn()
     await createPrHandler(ctx, second.conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: existing.id,
     })
     expect(errorsOf(second.sent)).toEqual(['intent.prCreateFailed'])
@@ -768,7 +768,7 @@ describe('createPrHandler — failure guidance', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       requestId: 'req-9',
     })
@@ -826,7 +826,7 @@ describe('createPrHandler — delivery target resolution', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     const worktreePath = getWorktreePath(proj, r.id)
     // ONE resolved base reaches every layer: diff gate, forge create, ledger row
@@ -866,7 +866,7 @@ describe('createPrHandler — delivery target resolution', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: b.id,
     })
@@ -882,7 +882,7 @@ describe('createPrHandler — delivery target resolution', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(hasDiffAgainstBase).toHaveBeenCalledWith(getWorktreePath(proj, r.id), 'main')
     expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
@@ -900,7 +900,7 @@ describe('createPrHandler — delivery target resolution', () => {
     const { ctx, broadcast, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['delivery.guard.branchNotReady'])
     // No git / forge work happened — the gate short-circuits before the diff check.
@@ -918,7 +918,7 @@ describe('createPrHandler — delivery target resolution', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: 'no-such-delivery',
     })
@@ -948,7 +948,7 @@ describe('createPrHandler — delivery target resolution', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: delivery.id,
     })
@@ -967,7 +967,7 @@ describe('createPrHandler — delivery target resolution', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: delivery.id,
     })
@@ -984,7 +984,7 @@ describe('createPrHandler — delivery target resolution', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['delivery.prCreateAmbiguous'])
     expect(hasDiffAgainstBase).not.toHaveBeenCalled()
@@ -1003,14 +1003,14 @@ describe('createPrHandler — (intent, delivery) idempotency key', () => {
     mockSuccessfulChain('42')
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: a.id,
     })
     mockSuccessfulChain('43')
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: b.id,
     })
@@ -1031,7 +1031,7 @@ describe('createPrHandler — (intent, delivery) idempotency key', () => {
     const { conn } = fakeConn()
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: delivery.id,
     })
@@ -1044,7 +1044,7 @@ describe('createPrHandler — (intent, delivery) idempotency key', () => {
 
     await createPrHandler(ctx2, conn2, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: delivery.id,
     })
@@ -1068,7 +1068,7 @@ describe('createPrHandler — (intent, delivery) idempotency key', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: delivery.id,
     })
@@ -1087,7 +1087,7 @@ describe('createPrHandler — (intent, delivery) idempotency key', () => {
 
     await createPrHandler(ctx, conn, {
       type: 'create_pr',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       deliveryId: delivery.id,
     })
@@ -1103,7 +1103,7 @@ describe('createPrHandler — (intent, delivery) idempotency key', () => {
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
-    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceName, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
     expect(hasDiffAgainstBase).toHaveBeenCalledWith(getWorktreePath(proj, r.id), 'delivery/x')

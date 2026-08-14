@@ -31,7 +31,7 @@ import type { ZodRawShape } from 'zod'
 import { z } from 'zod'
 import type { Intent } from '@ccc/shared/protocol'
 import { canonicalizeWorkspacePath } from '../../kernel/config/mcp-api-keys.js'
-import { workspaceIdToCanonicalPath } from './workspace-scope.js'
+import { workspaceNameToCanonicalPath } from './workspace-scope.js'
 import {
   findDesc,
   findSchema,
@@ -358,12 +358,12 @@ function stripSessionBackLinks(args: SaveArgs): SaveArgs {
 
 /**
  * True when the intent's owning project is the workspace the key is bound to.
- * The wire `Intent.workspaceId` is an opaque workspace id, so ownership is
+ * The wire `Intent.workspaceName` is the immutable workspace name, so ownership is
  * resolved back to a canonical path and compared with the canonicalized scope
  * path — the same equivalence the workspace registry itself uses.
  */
 function intentInWorkspace(workspacePath: string, intent: Intent): boolean {
-  const owned = workspaceIdToCanonicalPath(intent.workspaceId)
+  const owned = workspaceNameToCanonicalPath(intent.workspaceName)
   return owned !== null && owned === canonicalizeWorkspacePath(workspacePath)
 }
 

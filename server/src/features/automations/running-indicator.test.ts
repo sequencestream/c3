@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Identity workspace resolution: fixtures use the path itself as the id.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 
 vi.mock('../../kernel/config/index.js', () => ({
@@ -83,7 +83,7 @@ describe('automation list live-session indicator — one execution end to end', 
     const automation = createAutomation({
       type: 'llm',
       config: { prompt: 'review the diff' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',
@@ -145,7 +145,7 @@ describe('automation list live-session indicator — one execution end to end', 
     const automation = createAutomation({
       type: 'llm',
       config: { prompt: 'review the diff' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '*/5 * * * *',
       mode: 'read-only',
       vendor: 'claude',

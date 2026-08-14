@@ -21,7 +21,7 @@ import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
-import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
+import { isDirectory, listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
   reconcileLiveness,
@@ -72,7 +72,6 @@ import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-
 import { createSpecReviewMcp, SPEC_REVIEW_MCP_PATH } from './transport/spec-review-mcp/index.js'
 import { createExternalMcp, EXTERNAL_MCP_PATH_PREFIX } from './transport/external-mcp/index.js'
 import { buildExternalMcpCatalog } from './features/external-mcp/tools.js'
-import { resolveRegisteredWorkspacePath } from './features/external-mcp/workspace-scope.js'
 import { setExternalMcpSessionCloser } from './features/settings/mcp-api-keys.js'
 import { touchMcpApiKey, verifyMcpApiKey } from './kernel/config/mcp-api-keys.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
@@ -283,7 +282,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // projection is unavailable.
   setInterval(() => {
     try {
-      const workspaces = listWorkspaces().map((w) => resolveWorkspaceRoot(w.id)!)
+      const workspaces = listWorkspaces().map((w) => resolveWorkspaceRoot(w.name)!)
       void janitor({
         nativeList: async (vendor, ws) => {
           // Use the SessionAccessor to query native stores. The accessor
@@ -727,7 +726,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // identical behaviour; only the attribution differs.
   const externalMcp = createExternalMcp({
     authenticate: (key) => verifyMcpApiKey(key),
-    resolveRegisteredWorkspace: resolveRegisteredWorkspacePath,
+    resolveRegisteredWorkspace: (workspaceName) => {
+      const path = resolveWorkspaceRoot(workspaceName)
+      return path && isDirectory(path) ? path : null
+    },
     onAuthenticated: (keyId) => touchMcpApiKey(keyId, Date.now()),
     buildCatalog: (scope) =>
       buildExternalMcpCatalog(scope, {

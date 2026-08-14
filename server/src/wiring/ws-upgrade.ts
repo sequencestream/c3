@@ -21,7 +21,7 @@ import type { ServerToClient } from '@ccc/shared/protocol'
 import type WebSocket from 'ws'
 import { dispatch, type Broadcaster, type Conn, type HandlerRegistry } from '../transport/index.js'
 import type { KernelContext } from '../kernel/types.js'
-import { getActiveSessionId, listWorkspaces, pathToId } from '../state.js'
+import { getActiveSessionId, listWorkspaces, pathToName } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
 import { paginateSessions } from '../kernel/agent/session/paginate-sessions.js'
@@ -112,7 +112,7 @@ export function createWsHandler(deps: {
           const { sessions, kind, hasMore } = paginateSessions(all, query)
           send(sock, {
             type: 'sessions',
-            workspaceId: pathToId(workspacePath)!,
+            workspaceName: pathToName(workspacePath)!,
             sessionKind: query?.sessionKind ?? 'work',
             sessions,
             page: { kind, hasMore },

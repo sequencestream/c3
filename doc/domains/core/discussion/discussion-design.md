@@ -32,7 +32,7 @@ intent store 是同一数据库之上的**兄弟领域**，两者都不应依赖
 两张表，在讨论 store 首次访问时惰性确保存在（表和索引均为
 create-if-not-exists）：
 
-- discussions —— `id`（PK）、`workspace_path`、`title`、`type`、`goal`（text，非空，默认空），
+- discussions —— `id`（PK）、`workspace_name`、`title`、`type`、`goal`（text，非空，默认空），
   `context`（text，非空，默认空 —— 用户的原始输入，从不被
   调研覆盖）、`research_result`（text，非空，默认空 —— 只读调研智能体
   已完成的输出，与 `context` 分开存储；在调研得出非空结果之前为空）、
@@ -41,7 +41,7 @@ create-if-not-exists）：
   ⇒ 全部完成）、`conclusion`（可空）、`metadata`（text，非空，默认一个空 JSON 对象 ——
   调用方的扁平业务标注）、`research_session_id`（可空 —— 调研跑批自身的厂商 session id；
   NULL/`''` 表示该讨论没有调研会话）、`created_at`、`updated_at`、`completed_at`（可空）。按
-  `(workspace_path, status)` 建索引。
+  `(workspace_name, status)` 建索引。
 - discussion messages —— `id`（PK）、`discussion_id`、`seq`、`speaker_kind`、`speaker_agent_id`
   （可空）、`speaker_name`（可空）、`content`、`created_at`。按 `(discussion_id, seq)` 建索引——
   这是列出消息的自然读取路径。
@@ -57,7 +57,7 @@ create-if-not-exists）：
 新增了 `participant_agent_ids`；v4→v5 新增了 `organizer_agent_id`；v5→v6 新增了
 `metadata`（历史行经列默认值回填为空对象）；v6→v7 新增了 `research_session_id`
 （可空，历史行保持 NULL —— 历史调研跑批没有留下任何厂商会话，无从回填）；**v3→v4 原地将工作区键列 `project_path` 重命名为
-`workspace_path`**（复合索引重建），在 schema-ensure 步骤之前运行——
+`workspace_name`**（复合索引重建），在 schema-ensure 步骤之前运行——
 幂等，从不删表。这**有意地**与向后兼容的 `projectConfigs`
 协议键不同步（见 `database/migrate/2026/06/14/012`）。这个单一的共享版本计数器
 与 intent store **共享**，因此两者写入时会相互覆盖——这是有意为之且

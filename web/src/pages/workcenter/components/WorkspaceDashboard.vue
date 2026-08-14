@@ -21,7 +21,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'toggle', workspaceId: string, enabled: boolean): void
+  (e: 'toggle', workspaceName: string, enabled: boolean): void
   (e: 'refresh'): void
 }>()
 
@@ -57,7 +57,7 @@ const isEmpty = computed(() => !props.loading && props.rows.length === 0)
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in rows" :key="row.workspaceId">
+        <tr v-for="row in rows" :key="row.workspaceName">
           <td :data-label="t('dashboard.column.workspace')">
             <div class="dash-ws-name">{{ row.name }}</div>
             <div class="dash-ws-path">{{ row.path }}</div>
@@ -87,8 +87,8 @@ const isEmpty = computed(() => !props.loading && props.rows.length === 0)
               :aria-checked="row.automationEnabled"
               :aria-label="t('dashboard.toggle.ariaLabel', { name: row.name })"
               :title="row.automationEnabled ? t('dashboard.gate.on') : t('dashboard.gate.off')"
-              :disabled="pending.has(row.workspaceId)"
-              @click="emit('toggle', row.workspaceId, !row.automationEnabled)"
+              :disabled="pending.has(row.workspaceName)"
+              @click="emit('toggle', row.workspaceName, !row.automationEnabled)"
             >
               <span class="dash-gate-track" :class="{ on: row.automationEnabled }">
                 <span class="dash-gate-thumb"></span>

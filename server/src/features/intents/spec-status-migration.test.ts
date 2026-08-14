@@ -44,7 +44,7 @@ function userVersion(raw: Db): number {
 /** The full v17 intents schema — every column EXCEPT spec_status. */
 const V17_INTENTS = `
   CREATE TABLE intents (
-    id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, title TEXT NOT NULL,
+    id TEXT PRIMARY KEY, workspace_name TEXT NOT NULL, title TEXT NOT NULL,
     short_en_title TEXT, content TEXT NOT NULL, priority TEXT NOT NULL,
     status TEXT NOT NULL, module TEXT NOT NULL DEFAULT '', last_work_session_id TEXT,
     automate INTEGER NOT NULL DEFAULT 0, branch_name TEXT, latest_commit_hash TEXT,
@@ -61,7 +61,7 @@ const V17_INTENTS = `
 function seedRow(raw: Db, id: string, specPath: string | null, specApproved: number): void {
   raw.run(
     `INSERT INTO intents
-       (id, workspace_path, title, content, priority, status, module, spec_path, spec_approved, spec_approve_user, created_at, updated_at)
+       (id, workspace_name, title, content, priority, status, module, spec_path, spec_approved, spec_approve_user, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     proj,

@@ -9,7 +9,7 @@ import type { AppCtx } from './types'
 
 // Install Codes-tab actions (read-only file browser) onto the ctx.
 //
-// All requests carry the opaque `workspaceId` and a workspace-RELATIVE path —
+// All requests carry the opaque `workspaceName` and a workspace-RELATIVE path —
 // the client never constructs or reasons about absolute/escape paths; the
 // server guard is the sole boundary (see server/src/features/codes).
 export function installCodesActions(ctx: AppCtx): void {
@@ -60,10 +60,10 @@ export function installCodesActions(ctx: AppCtx): void {
 
   // Enter the Codes view for a workspace: reset on workspace change, lazy-load the
   // root listing once, then restore this workspace's embedded chat session.
-  ctx.openCodes = (workspaceId: string): void => {
+  ctx.openCodes = (workspaceName: string): void => {
     ctx.activeTab.value = 'codes'
-    if (codesProject.value !== workspaceId) {
-      codesProject.value = workspaceId
+    if (codesProject.value !== workspaceName) {
+      codesProject.value = workspaceName
       resetCodesState()
     }
     ctx.persistViewMode()
@@ -73,11 +73,11 @@ export function installCodesActions(ctx: AppCtx): void {
     // state the same as Works. When no id is persisted, leave the active session
     // untouched — the panel shows its empty state via the codes binding pointer
     // (the desktop three-column layout gates create-vs-reset on codesBoundSessionId).
-    const savedId = ctx.readCodesSessionId(workspaceId)
+    const savedId = ctx.readCodesSessionId(workspaceName)
     if (savedId) {
-      codesBoundSessionId.value = { ...codesBoundSessionId.value, [workspaceId]: savedId }
+      codesBoundSessionId.value = { ...codesBoundSessionId.value, [workspaceName]: savedId }
       if (activeSession.value !== savedId) {
-        send({ type: 'select_session', workspaceId, sessionId: savedId })
+        send({ type: 'select_session', workspaceName, sessionId: savedId })
       }
     }
   }
@@ -86,11 +86,11 @@ export function installCodesActions(ctx: AppCtx): void {
   // agent,不弹 NewSessionModal,与 Works「+」简化行为一致)。服务端回 session_selected
   // 时,下面的 watch 把新 id 写入 codesBoundSessionId + localStorage;失败经控制层
   // showToast 兜底(入站 error 分发)。
-  ctx.createCodesChatSession = (workspaceId: string): void => {
-    send({ type: 'create_session', workspaceId })
+  ctx.createCodesChatSession = (workspaceName: string): void => {
+    send({ type: 'create_session', workspaceName })
   }
-  ctx.resetCodesChatSession = (workspaceId: string): void => {
-    send({ type: 'create_session', workspaceId })
+  ctx.resetCodesChatSession = (workspaceName: string): void => {
+    send({ type: 'create_session', workspaceName })
   }
 
   // 绑定/持久化 Codes 内嵌会话指针:仅当停留在 codes tab 时,把活动会话记为当前
@@ -120,7 +120,7 @@ export function installCodesActions(ctx: AppCtx): void {
     const ws = codesProject.value
     if (!ws || codesLoadingDirs.value.has(rel)) return
     codesLoadingDirs.value = new Set(codesLoadingDirs.value).add(rel)
-    send({ type: 'list_dir', workspaceId: ws, rel })
+    send({ type: 'list_dir', workspaceName: ws, rel })
   }
 
   // Request the workspace Git-status snapshot (idempotent: coalesced while one is
@@ -134,15 +134,15 @@ export function installCodesActions(ctx: AppCtx): void {
       return
     }
     statusInFlight = true
-    send({ type: 'get_code_git_status', workspaceId: ws })
+    send({ type: 'get_code_git_status', workspaceName: ws })
   }
 
   // Adopt a `code_git_status` reply: authoritative wholesale replace, but only for
   // the workspace currently browsed (a stale reply for a switched-away workspace is
   // dropped). Fire the merged follow-up if a refresh arrived while in flight.
-  ctx.applyCodeGitStatus = (workspaceId: string, files: Record<string, CodeGitStatus>): void => {
+  ctx.applyCodeGitStatus = (workspaceName: string, files: Record<string, CodeGitStatus>): void => {
     statusInFlight = false
-    if (workspaceId === codesProject.value) codesGitStatus.value = files
+    if (workspaceName === codesProject.value) codesGitStatus.value = files
     if (statusQueued) {
       statusQueued = false
       ctx.requestCodesGitStatus()
@@ -208,7 +208,7 @@ export function installCodesActions(ctx: AppCtx): void {
     }
     codesTabs.value = [...codesTabs.value, { path, file: null, loading: true, focusLine: line }]
     codesActivePath.value = path
-    send({ type: 'read_file', workspaceId: ws, rel: path })
+    send({ type: 'read_file', workspaceName: ws, rel: path })
   }
 
   // Manually close one tab; focus shifts to the adjacent tab (pure logic in lib).
@@ -242,7 +242,7 @@ export function installCodesActions(ctx: AppCtx): void {
     }
     codesSearchLoading.value = true
     const pattern = codesSearchPattern.value.trim() || '*'
-    send({ type: 'search_codes', workspaceId: ws, query, mode: codesSearchMode.value, pattern })
+    send({ type: 'search_codes', workspaceName: ws, query, mode: codesSearchMode.value, pattern })
   }
 
   // Open a search hit: jump to the matched line for content hits.

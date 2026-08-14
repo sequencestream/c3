@@ -25,9 +25,9 @@
  * never collected.
  */
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
 import { QUEUE_REASON_CODES } from '../../kernel/queue/index.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { workspaceNameFor } from '../../state.js'
 
 /** The closed set of transitions worth observing. */
 export const FUNNEL_STAGES = ['parked', 'unparked'] as const
@@ -62,22 +62,21 @@ export const PARK_RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000
 const STAGE_SET: ReadonlySet<string> = new Set<string>(FUNNEL_STAGES)
 const PARK_REASON_SET: ReadonlySet<string> = new Set<string>(QUEUE_REASON_CODES)
 const UNPARK_REASON_SET: ReadonlySet<string> = new Set<string>(UNPARK_REASONS)
+const workspaceKey = workspaceNameFor
 
-// `workspace_id` holds the normalized (resolved) workspace path — the same value
-// the protocol's opaque `workspaceId` resolves to server-side. The column keeps
-// the protocol's name because this table is read back through one read-only
-// protocol reply and never joined against the queue tables.
+// `workspace_name` holds the immutable registry name. Callers may still operate on
+// filesystem paths internally; `workspaceKey` converts them at the persistence edge.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS funnel_event (
   id           TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
+  workspace_name TEXT NOT NULL,
   intent_id    TEXT NOT NULL,
   stage        TEXT NOT NULL,
   reason_code  TEXT NOT NULL,
   at           INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_funnel_event_workspace_stage_at ON funnel_event(workspace_id, stage, at);
-CREATE INDEX IF NOT EXISTS idx_funnel_event_pair ON funnel_event(workspace_id, intent_id, stage);
+CREATE INDEX IF NOT EXISTS idx_funnel_event_workspace_stage_at ON funnel_event(workspace_name, stage, at);
+CREATE INDEX IF NOT EXISTS idx_funnel_event_pair ON funnel_event(workspace_name, intent_id, stage);
 CREATE INDEX IF NOT EXISTS idx_funnel_event_at ON funnel_event(at);
 `
 
@@ -147,7 +146,7 @@ export function appendFunnelEvent(input: AppendFunnelEventInput): boolean {
     console.error('[c3:funnel] 拒绝非法漏斗事件:时间戳不是有限数值,已丢弃')
     return false
   }
-  const workspaceId = resolve(input.workspacePath)
+  const workspaceName = workspaceKey(input.workspacePath)
   try {
     // Inside the try on purpose: opening the db or materializing the schema can
     // throw too, and that must degrade to a lost observation like any other
@@ -155,10 +154,10 @@ export function appendFunnelEvent(input: AppendFunnelEventInput): boolean {
     const d = db()
     if (!d) return false
     d.run(
-      `INSERT INTO funnel_event (id, workspace_id, intent_id, stage, reason_code, at)
+      `INSERT INTO funnel_event (id, workspace_name, intent_id, stage, reason_code, at)
        VALUES (?,?,?,?,?,?)`,
       randomUUID(),
-      workspaceId,
+      workspaceName,
       input.intentId,
       input.stage,
       input.reasonCode,
@@ -219,19 +218,19 @@ export interface ParkRecoveryFigures {
 export function parkRecoveryFigures(workspacePath: string, now: number): ParkRecoveryFigures {
   const d = db()
   if (!d) throw new Error('park recovery statistics unavailable: local database is not open')
-  const workspaceId = resolve(workspacePath)
+  const workspaceName = workspaceKey(workspacePath)
   pruneExpired(d, now)
   const matured = now - PARK_RECOVERY_WINDOW_MS
   const eligible =
     d.get<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM funnel_event WHERE workspace_id=? AND stage='parked' AND at<=?",
-      workspaceId,
+      "SELECT COUNT(*) AS n FROM funnel_event WHERE workspace_name=? AND stage='parked' AND at<=?",
+      workspaceName,
       matured,
     )?.n ?? 0
   const pending =
     d.get<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM funnel_event WHERE workspace_id=? AND stage='parked' AND at>?",
-      workspaceId,
+      "SELECT COUNT(*) AS n FROM funnel_event WHERE workspace_name=? AND stage='parked' AND at>?",
+      workspaceName,
       matured,
     )?.n ?? 0
   // The correlated subquery yields the paired unpark's timestamp, or NULL when
@@ -239,12 +238,12 @@ export function parkRecoveryFigures(workspacePath: string, now: number): ParkRec
   const recovered =
     d.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM funnel_event p
-        WHERE p.workspace_id=? AND p.stage='parked' AND p.at<=?
+        WHERE p.workspace_name=? AND p.stage='parked' AND p.at<=?
           AND ((SELECT u.at FROM funnel_event u
-                 WHERE u.workspace_id=p.workspace_id AND u.intent_id=p.intent_id
+                 WHERE u.workspace_name=p.workspace_name AND u.intent_id=p.intent_id
                    AND u.stage='unparked' AND u.rowid>p.rowid
                  ORDER BY u.rowid ASC LIMIT 1) - p.at) BETWEEN 0 AND ?`,
-      workspaceId,
+      workspaceName,
       matured,
       PARK_RECOVERY_WINDOW_MS,
     )?.n ?? 0

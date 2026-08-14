@@ -90,19 +90,19 @@ describe('intent view restore after a hard refresh', () => {
     const ctx = makeIntentCtx()
     installPersistence(ctx)
 
-    ctx.maybeRestoreIntents([{ id: WS } as WorkspaceInfo])
+    ctx.maybeRestoreIntents([{ name: WS, path: '/ws', lastAccessed: 0 } as WorkspaceInfo])
 
     expect(ctx.intentsProject.value).toBe(WS)
-    expect(ctx.send).toHaveBeenCalledWith({ type: 'load_workspace_setting', workspaceId: WS })
-    expect(ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: WS })
-    expect(ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: WS })
+    expect(ctx.send).toHaveBeenCalledWith({ type: 'load_workspace_setting', workspaceName: WS })
+    expect(ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceName: WS })
+    expect(ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceName: WS })
   })
 
   it('does not load any workspace setting when the persisted workspace is gone', () => {
     const ctx = makeIntentCtx()
     installPersistence(ctx)
 
-    ctx.maybeRestoreIntents([{ id: '/other' } as WorkspaceInfo])
+    ctx.maybeRestoreIntents([{ name: '/other', path: '/other', lastAccessed: 0 } as WorkspaceInfo])
 
     expect(ctx.send).not.toHaveBeenCalled()
   })

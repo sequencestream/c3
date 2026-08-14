@@ -174,10 +174,10 @@ describe('intent view loading', () => {
 
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'load_workspace_setting',
-      workspaceId: WS,
+      workspaceName: WS,
     })
-    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: WS })
-    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: WS })
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceName: WS })
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceName: WS })
   })
 
   it('openIntents to another workspace clears awaiting session-bind flag', () => {
@@ -274,14 +274,14 @@ describe('post-Start-Dev jump wiring', () => {
 
   it('consumePendingWorkSessionSelect still selects a console-flow target once its row lands', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [] })
-    h.requestedWorkSessionId.value = { workspacePath: WS, intentId: 'i-1', sessionId: null }
+    h.requestedWorkSessionId.value = { workspaceName: WS, intentId: 'i-1', sessionId: null }
 
     // lastWorkSessionId resolved but the row is still missing → refresh, keep waiting.
     h.ctx.consumePendingWorkSessionSelect(true)
     expect(h.selectSession).not.toHaveBeenCalled()
     expect(h.refreshSessions).toHaveBeenCalledWith(WS)
     expect(h.requestedWorkSessionId.value).toEqual({
-      workspacePath: WS,
+      workspaceName: WS,
       intentId: 'i-1',
       sessionId: 'dev-1',
     })
@@ -294,11 +294,11 @@ describe('post-Start-Dev jump wiring', () => {
 
   it('consumePendingWorkSessionSelect keeps waiting while the target is absent', () => {
     const h = makeCtx({ sessions: [session('other')] })
-    h.requestedWorkSessionId.value = { workspacePath: WS, intentId: 'i-1', sessionId: 'dev-1' }
+    h.requestedWorkSessionId.value = { workspaceName: WS, intentId: 'i-1', sessionId: 'dev-1' }
     h.ctx.consumePendingWorkSessionSelect()
     expect(h.selectSession).not.toHaveBeenCalled()
     expect(h.requestedWorkSessionId.value).toEqual({
-      workspacePath: WS,
+      workspaceName: WS,
       intentId: 'i-1',
       sessionId: 'dev-1',
     })
@@ -377,7 +377,7 @@ describe('syncIntentPrStatus', () => {
     })
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'sync_intent_pr_status',
-      workspaceId: WS,
+      workspaceName: WS,
       intentId: 'i-1',
     })
   })
@@ -412,7 +412,7 @@ describe('createPr — progress overlay wiring', () => {
     expect(h.ctx.send).toHaveBeenCalledTimes(1)
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'create_pr',
-      workspaceId: WS,
+      workspaceName: WS,
       intentId: 'i-1',
       requestId: expect.any(String),
     })
@@ -426,7 +426,7 @@ describe('createPr — progress overlay wiring', () => {
 
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'create_pr',
-      workspaceId: WS,
+      workspaceName: WS,
       intentId: 'i-1',
       requestId: expect.any(String),
       deliveryId: 'delivery-a',
@@ -579,7 +579,7 @@ describe('createIntent — progress overlay wiring', () => {
     expect(h.createIntentPending.value).toBe(true)
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'create_intent',
-      workspaceId: WS,
+      workspaceName: WS,
       content: 'do the thing',
       base: { kind: 'branch', branch: 'main' },
     })
@@ -593,7 +593,7 @@ describe('createIntent — progress overlay wiring', () => {
     expect(h.createIntentProgress.value).toBeNull()
     expect(h.createIntentTimers.stage).toBeNull()
     expect(h.createIntentTimers.safety).toBeNull()
-    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'create_intent', workspaceId: WS })
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'create_intent', workspaceName: WS })
   })
 
   it('narrates one step per cadence tick and parks on the last one', () => {
@@ -715,7 +715,7 @@ describe('retryIntentAction — re-enters the original entry point', () => {
     expect(h.ctx.send).toHaveBeenCalledTimes(1)
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'start_development',
-      workspaceId: WS,
+      workspaceName: WS,
       intentId: 'i-1',
     })
     // The same startup overlay the button arms — a retry is not a silent re-send.
@@ -734,7 +734,7 @@ describe('retryIntentAction — re-enters the original entry point', () => {
     expect(h.ctx.send).toHaveBeenCalledTimes(1)
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'create_pr',
-      workspaceId: WS,
+      workspaceName: WS,
       intentId: 'i-2',
       requestId: expect.any(String),
     })
@@ -787,7 +787,7 @@ describe('新增意图弹窗 — 入口与创建请求', () => {
 
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'create_intent',
-      workspaceId: WS,
+      workspaceName: WS,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'develop' },
     })
@@ -801,7 +801,7 @@ describe('新增意图弹窗 — 入口与创建请求', () => {
 
     expect(h.ctx.send).toHaveBeenCalledWith({
       type: 'create_intent',
-      workspaceId: WS,
+      workspaceName: WS,
       content: 'CONTENT_ABC',
       base: { kind: 'delivery', deliveryId: 'd1' },
     })
@@ -812,7 +812,7 @@ describe('新增意图弹窗 — 入口与创建请求', () => {
 
     h.ctx.createIntent()
 
-    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'create_intent', workspaceId: WS })
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'create_intent', workspaceName: WS })
   })
 
   it('在途期间重复提交被挡住,不会创建出第二条', () => {

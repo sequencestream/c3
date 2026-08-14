@@ -790,8 +790,8 @@ const parkRecoveryRateText = computed(() => {
         >
           <span class="project-config-head-workspace-name">{{ currentWorkspaceInfo.name }}</span>
           <span
-            class="project-config-head-workspace-path"
-            data-testid="project-config-workspace-path"
+            class="project-config-head-workspace-name"
+            data-testid="project-config-workspace-name"
             :title="currentWorkspaceInfo.path"
             >{{ currentWorkspaceInfo.path }}</span
           >
@@ -1650,7 +1650,7 @@ const parkRecoveryRateText = computed(() => {
   flex-shrink: 0;
 }
 
-.project-config-head-workspace-path {
+.project-config-head-workspace-name {
   font-size: 12px;
   color: var(--c-text-muted);
   white-space: nowrap;

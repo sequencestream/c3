@@ -37,7 +37,7 @@ function initRepo(path: string): void {
 function makeIntent(overrides: Partial<Intent> = {}): Intent {
   return {
     id: 'i-1',
-    workspaceId: 'proj',
+    workspaceName: 'proj',
     title: 'Test intent',
     shortEnTitle: 'test-intent',
     content: 'do something',

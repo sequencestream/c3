@@ -40,8 +40,8 @@ import {
   writeScope,
 } from './config-store.js'
 import {
-  ensureWorkspaceId,
-  findWorkspaceById,
+  ensureWorkspaceName,
+  findWorkspaceByName,
   findWorkspaceByPath,
   listAllWorkspaceRows,
 } from './workspace-store.js'
@@ -914,7 +914,16 @@ function normalizeDefaultMode(raw: unknown): Record<VendorId, ModeToken | CodexP
  */
 export function loadWorkspaceSetting(workspacePath: string): WorkspaceSetting {
   const settings = loadSettings()
-  const existing = settings.projectConfigs?.[workspacePath]
+  let workspaceName = workspacePath
+  try {
+    workspaceName =
+      findWorkspaceByName(workspacePath)?.name ??
+      findWorkspaceByPath(workspacePath)?.name ??
+      workspacePath
+  } catch {
+    // A read-only or unavailable registry degrades to the supplied name.
+  }
+  const existing = settings.projectConfigs?.[workspaceName]
   if (existing) return normalizeWorkspaceSetting(existing, settings.agents)
 
   // Migration window: seed from legacy global values (one-shot).
@@ -922,9 +931,8 @@ export function loadWorkspaceSetting(workspacePath: string): WorkspaceSetting {
   if (seed) {
     legacyProjectSeed = null // clear — one shot only
     const merged = normalizeWorkspaceSetting(seed, settings.agents)
-    // Persist the seeded config so the next read finds it.
-    const configs = { ...(settings.projectConfigs ?? {}), [workspacePath]: merged }
-    saveSettings({ ...settings, projectConfigs: configs })
+    // Persist through the canonical name boundary so the next read finds the same key.
+    saveWorkspaceSetting(workspaceName, merged)
     return merged
   }
 
@@ -943,12 +951,16 @@ export function saveWorkspaceSetting(
   cfg: WorkspaceSetting,
 ): WorkspaceSetting {
   const normalized = normalizeWorkspaceSetting(cfg, loadSettings().agents)
+  const workspaceName =
+    findWorkspaceByName(workspacePath)?.name ??
+    findWorkspaceByPath(workspacePath)?.name ??
+    ensureWorkspaceName(workspacePath, Date.now())
   try {
-    writeWorkspaceScope(workspacePath, normalized)
+    writeWorkspaceScope(workspaceName, normalized)
     if (settingsCache) {
       settingsCache = {
         ...settingsCache,
-        projectConfigs: { ...(settingsCache.projectConfigs ?? {}), [workspacePath]: normalized },
+        projectConfigs: { ...(settingsCache.projectConfigs ?? {}), [workspaceName]: normalized },
       }
     }
   } catch (err) {
@@ -1021,16 +1033,12 @@ function readSettingsFromDb(): Partial<SystemSettings> {
   return raw
 }
 
-/** Every workspace's stored configuration, keyed by workspace path. */
+/** Every workspace's stored configuration, keyed by immutable workspace name. */
 function readProjectConfigsFromDb(): Record<string, WorkspaceSetting> {
-  const byId = new Map(listAllWorkspaceRows().map((w) => [w.id, w.path]))
   const out: Record<string, WorkspaceSetting> = {}
-  for (const [workspaceId, entries] of readAllScopes('workspace')) {
-    const path = byId.get(workspaceId)
-    // A scope whose workspace row is gone can no longer be addressed by path; it is
-    // left in place (harmless, and the row may come back) rather than surfaced.
-    if (!path || entries.length === 0) continue
-    out[path] = fromEntries(entries, WORKSPACE_RULES) as WorkspaceSetting
+  for (const [workspaceName, entries] of readAllScopes('workspace')) {
+    if (entries.length === 0) continue
+    out[workspaceName] = fromEntries(entries, WORKSPACE_RULES) as WorkspaceSetting
   }
   return out
 }
@@ -1097,7 +1105,8 @@ export function saveSettings(next: SystemSettings): SystemSettings {
         writeWorkspaceScope(path, cfg)
       }
     })
-    settingsCache = normalized
+    // Workspace scopes may have canonicalized legacy path keys to immutable names.
+    settingsCache = normalize(readSettingsFromDb())
   } catch (err) {
     console.error('[c3] failed to persist settings:', err)
   }
@@ -1106,8 +1115,11 @@ export function saveSettings(next: SystemSettings): SystemSettings {
 
 /** Write one workspace's configuration rows, creating its id row when needed. */
 function writeWorkspaceScope(workspacePath: string, cfg: WorkspaceSetting): void {
-  const workspaceId = ensureWorkspaceId(workspacePath, Date.now())
-  writeScope({ kind: 'workspace', owner: workspaceId }, toEntries(cfg, WORKSPACE_RULES))
+  const workspaceName =
+    findWorkspaceByName(workspacePath)?.name ??
+    findWorkspaceByPath(workspacePath)?.name ??
+    ensureWorkspaceName(workspacePath, Date.now())
+  writeScope({ kind: 'workspace', owner: workspaceName }, toEntries(cfg, WORKSPACE_RULES))
 }
 
 export function getVendorCliVersions(): Partial<Record<VendorId, string>> {

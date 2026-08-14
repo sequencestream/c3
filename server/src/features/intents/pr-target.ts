@@ -20,7 +20,7 @@
  */
 import type { Intent } from '@ccc/shared/protocol'
 import { getDelivery } from '../deliveries/store.js'
-import { pathToId } from '../../state.js'
+import { pathToName } from '../../state.js'
 import { normalizeBranchName } from './dependency-gate.js'
 
 /**
@@ -80,7 +80,7 @@ export function resolvePrTarget(
   }
 
   const delivery = getDelivery(deliveryId)
-  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
+  if (!delivery || delivery.workspaceName !== pathToName(workspacePath)) {
     return { ok: false, code: 'delivery.prCreateDeliveryUnknown' }
   }
   if (!linked.some((d) => d.id === deliveryId)) {

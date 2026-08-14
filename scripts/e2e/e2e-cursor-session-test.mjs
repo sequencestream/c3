@@ -68,7 +68,7 @@ await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-cursor-session-
 const ws = new WebSocket(URL)
 
 let originalSettings = null
-let workspaceId = null
+let workspaceName = null
 let pendingSessionId = null
 let boundSessionId = null
 let phase = 'init'
@@ -141,20 +141,20 @@ ws.addEventListener('message', (evt) => {
         }
         send({ type: 'save_settings', settings: { ...msg.settings, agents } })
         log('注入 Cursor agent,添加工作区')
-        send({ type: 'add_workspace', path: PROJECT_DIR })
+        send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       }
       break
 
     case 'workspaces':
-      if (workspaceId) return
-      workspaceId =
-        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop())?.id ??
-        msg.workspaces?.[0]?.id ??
+      if (workspaceName) return
+      workspaceName =
+        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop())?.name ??
+        msg.workspaces?.[0]?.name ??
         null
-      if (!workspaceId) return fail('add_workspace 后没有工作区')
+      if (!workspaceName) return fail('add_workspace 后没有工作区')
       phase = 'turn1'
       log('创建 Cursor 会话')
-      send({ type: 'create_session', workspaceId, agentId: CURSOR_AGENT_ID })
+      send({ type: 'create_session', workspaceName, agentId: CURSOR_AGENT_ID })
       break
 
     case 'session_selected':
@@ -194,7 +194,7 @@ ws.addEventListener('message', (evt) => {
         if (!boundSessionId) return fail('第一轮未捕获原生 session id')
         log(`第一轮完成(text+tool_use),原生 id=${boundSessionId};检查会话列表`)
         phase = 'list'
-        send({ type: 'list_sessions', workspaceId, limit: 50 })
+        send({ type: 'list_sessions', workspaceName, limit: 50 })
       } else if (phase === 'turn2') {
         if (msg.reason !== 'complete') return fail(`第二轮 reason=${msg.reason}`)
         pass('第一轮 text+tool_use、会话入列、原生 id 续聊第二轮均成功')
@@ -209,7 +209,7 @@ ws.addEventListener('message', (evt) => {
       if (!listedSession) return fail('绑定后的会话未出现在会话列表中')
       log('会话已在列表中,选择它以续聊')
       phase = 'selecting'
-      send({ type: 'select_session', workspaceId, sessionId: boundSessionId })
+      send({ type: 'select_session', workspaceName, sessionId: boundSessionId })
       break
   }
 })

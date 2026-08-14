@@ -12,7 +12,7 @@
 import type { WorkflowStatus } from '@ccc/shared/protocol'
 import type { QueueDecision, QueueReconcileOutput } from '../../kernel/queue/index.js'
 import { emptyQueueIntentMeta } from '../../kernel/queue/index.js'
-import { pathToId } from '../../state.js'
+import { pathToName } from '../../state.js'
 import { isStoreAvailable, listIntents } from './store.js'
 import {
   getQueueControl,
@@ -27,7 +27,7 @@ import {
 
 export function idleStatus(workspacePath: string): WorkflowStatus {
   return {
-    workspaceId: pathToId(workspacePath)!,
+    workspaceName: pathToName(workspacePath)!,
     state: 'idle',
     currentIntentId: null,
     currentSessionId: null,

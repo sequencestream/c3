@@ -21,7 +21,7 @@ import type {
 import { fakeIntentPr } from './intent-pr-fixture.js'
 import { handlePrUpdateEvent, type PrUpdateConsumerDeps } from './pr-update-consumer.js'
 
-type FakeIntent = { id: string; workspaceId: string; prs: IntentPr[] }
+type FakeIntent = { id: string; workspaceName: string; prs: IntentPr[] }
 
 function makeDeps(intent: FakeIntent | null): {
   deps: PrUpdateConsumerDeps
@@ -35,7 +35,7 @@ function makeDeps(intent: FakeIntent | null): {
   const deps: PrUpdateConsumerDeps = {
     getIntent: (id) => (intent && intent.id === id ? intent : null),
     // Fake identity mapping: the workspace path IS its id for the test.
-    pathToId: (path) => (path ? `id:${path}` : null),
+    pathToName: (path) => (path ? `id:${path}` : null),
     upsertIntentPr,
     safeInsertIntentLog,
     broadcastIntents,
@@ -89,7 +89,7 @@ describe('handlePrUpdateEvent — resettable statuses', () => {
     (from) => {
       const { deps, upsertIntentPr, safeInsertIntentLog, broadcastIntents } = makeDeps({
         id: 'intent-1',
-        workspaceId: WS_ID,
+        workspaceName: WS_ID,
         prs: [fakeIntentPr(from, { intentId: 'intent-1', number: '1' })],
       })
 
@@ -117,7 +117,7 @@ describe('handlePrUpdateEvent — locating the target PR', () => {
   function twoPrIntent(mainline: IntentPrStatus, delivery: IntentPrStatus): FakeIntent {
     return {
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [
         fakeIntentPr(mainline, { intentId: 'intent-1', number: '1', deliveryId: null }),
         fakeIntentPr(delivery, { intentId: 'intent-1', number: '2', deliveryId: 'delivery-a' }),
@@ -226,7 +226,7 @@ describe('handlePrUpdateEvent — locating the target PR', () => {
     // by an event that says which row it means.
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('closed', { intentId: 'intent-1', number: '1' })],
     })
 
@@ -241,7 +241,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('does not reset a merged intent (terminal state)', () => {
     const { deps, upsertIntentPr, broadcastIntents } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('merged', { intentId: 'intent-1', number: '1' })],
     })
     // Located by number, so this exercises the terminal-status guard itself and
@@ -254,7 +254,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('does not reset an already-reviewing intent', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('reviewing', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
@@ -264,7 +264,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('does not reset when the intent owns no PR', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [],
     })
     const { changed } = captureRefusal(() => handlePrUpdateEvent(payload(), deps))
@@ -275,7 +275,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('ignores an event without an intentId', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ association: {} }), deps)).toBe(false)
@@ -291,7 +291,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('ignores a cross-workspace intentId (workspace mismatch)', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: 'id:/other-proj',
+      workspaceName: 'id:/other-proj',
       prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
@@ -301,7 +301,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('ignores a non-success result', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ result: 'failure' }), deps)).toBe(false)
@@ -311,7 +311,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('ignores a non-update operation', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ operation: 'review' }), deps)).toBe(false)
@@ -321,7 +321,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('ignores a non-pr:operation event type', () => {
     const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ type: 'other:event' }), deps)).toBe(false)
@@ -331,7 +331,7 @@ describe('handlePrUpdateEvent — ignored cases', () => {
   it('swallows a store error and returns false', () => {
     const { deps } = makeDeps({
       id: 'intent-1',
-      workspaceId: WS_ID,
+      workspaceName: WS_ID,
       prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     deps.upsertIntentPr = () => {

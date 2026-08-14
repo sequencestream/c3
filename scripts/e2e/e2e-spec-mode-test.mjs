@@ -130,9 +130,9 @@ async function waitFor(predicate, label) {
 }
 
 /** Poll a connection's intent list until `predicate` holds on the freshest frame. */
-async function pollIntents(conn, workspaceId, predicate, label) {
+async function pollIntents(conn, workspaceName, predicate, label) {
   for (let i = 0; i < POLL_TRIES; i++) {
-    conn.send({ type: 'list_intents', workspaceId })
+    conn.send({ type: 'list_intents', workspaceName })
     await sleep(POLL_MS)
     if (conn.intents.length && predicate(conn.intents)) return true
   }
@@ -142,20 +142,20 @@ async function pollIntents(conn, workspaceId, predicate, label) {
 
 const findIntent = (list, id) => list.find((i) => i.id === id) ?? null
 
-async function setSdd(conn, workspaceId, enabled) {
+async function setSdd(conn, workspaceName, enabled) {
   conn.setting = null
   conn.send({
     type: 'save_workspace_setting',
-    workspaceId,
+    workspaceName,
     config: { sddEnabled: enabled },
   })
   await waitFor(() => conn.setting !== null, `workspace_setting echo (sddEnabled=${enabled})`)
   await sleep(POLL_MS)
 }
 
-async function createIntent(conn, workspaceId) {
+async function createIntent(conn, workspaceName) {
   conn.created = null
-  conn.send({ type: 'create_intent', workspaceId })
+  conn.send({ type: 'create_intent', workspaceName })
   await waitFor(() => conn.created !== null, 'create_intent_result')
   return conn.created?.id ?? null
 }
@@ -176,21 +176,21 @@ async function run() {
   }
 
   phase = 'add-workspace'
-  main.send({ type: 'add_workspace', path: PROJECT_DIR })
+  main.send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
   const name = PROJECT_DIR.split('/').pop()
   if (!(await waitFor(() => main.workspaces?.some((w) => w.name === name), 'workspaces'))) {
     failures.push('workspace never registered')
     return
   }
-  const workspaceId = main.workspaces.find((w) => w.name === name).id
+  const workspaceName = main.workspaces.find((w) => w.name === name).name
 
   // SDD on: the baseline where the derived value is `sdd` and the switch has teeth.
   phase = 'sdd-on'
-  await setSdd(main, workspaceId, true)
+  await setSdd(main, workspaceName, true)
 
   phase = 'create-intents'
-  const unsetId = await createIntent(main, workspaceId)
-  const pinnedId = await createIntent(main, workspaceId)
+  const unsetId = await createIntent(main, workspaceName)
+  const pinnedId = await createIntent(main, workspaceName)
   if (!unsetId || !pinnedId) {
     failures.push('intents were never created')
     return
@@ -200,7 +200,7 @@ async function run() {
   phase = 'inherit'
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, unsetId) !== null,
     'the new intents land in the list',
   )
@@ -216,7 +216,7 @@ async function run() {
   main.send({ type: 'set_intent_spec_mode', intentId: pinnedId, mode: 'fast' })
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, pinnedId)?.specMode === 'fast',
     'explicit fast lands on the broadcast',
   )
@@ -236,7 +236,7 @@ async function run() {
   }
   await pollIntents(
     refresh,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, pinnedId) !== null,
     'refreshed list',
   )
@@ -248,10 +248,10 @@ async function run() {
 
   // ---- 4. the workspace switch moves the UNSET one only ----
   phase = 'workspace-toggle'
-  await setSdd(main, workspaceId, false)
+  await setSdd(main, workspaceName, false)
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, unsetId)?.effectiveSpecMode === 'fast',
     'unset intent follows sddEnabled=false',
   )
@@ -264,7 +264,7 @@ async function run() {
   main.send({ type: 'set_intent_spec_mode', intentId: pinnedId, mode: 'sdd' })
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, pinnedId)?.specMode === 'sdd',
     'explicit sdd lands while the workspace is off',
   )
@@ -274,10 +274,10 @@ async function run() {
     `an explicit sdd holds even with sddEnabled=false (${pinned?.effectiveSpecMode})`,
   )
 
-  await setSdd(main, workspaceId, true)
+  await setSdd(main, workspaceName, true)
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, unsetId)?.effectiveSpecMode === 'sdd',
     'unset intent follows sddEnabled=true again',
   )
@@ -291,7 +291,7 @@ async function run() {
   main.send({ type: 'set_intent_spec_mode', intentId: pinnedId, mode: null })
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, pinnedId)?.specMode === null,
     'the override is cleared',
   )
@@ -312,7 +312,7 @@ async function run() {
   main.send({ type: 'set_intent_spec_mode', intentId: pinnedId, mode: 'fast' })
   await pollIntents(
     main,
-    workspaceId,
+    workspaceName,
     (list) => findIntent(list, pinnedId)?.specMode === 'fast',
     'fast lands on the approved intent',
   )

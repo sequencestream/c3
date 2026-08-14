@@ -21,7 +21,7 @@ const { t } = useTypedI18n()
 const props = defineProps<{
   open: boolean
   agents: AgentConfig[]
-  workspacePath: string
+  workspaceName: string
 }>()
 
 const emit = defineEmits<{
@@ -81,7 +81,7 @@ async function onFileChange(event: Event): Promise<void> {
   }
   errorKey.value = null
   candidates.value = mapImportCandidates(result.automations, {
-    workspaceId: props.workspacePath,
+    workspaceName: props.workspaceName,
     agents: props.agents,
   })
   // Default-select every importable item.

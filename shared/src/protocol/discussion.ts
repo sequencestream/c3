@@ -28,7 +28,7 @@ export interface Discussion {
   /** Stable uuid. */
   id: string
   /** Owning project — the workspace absolute path (resolved). */
-  workspaceId: string
+  workspaceName: string
   title: string
   /** Free-form discussion type/category. */
   type: string

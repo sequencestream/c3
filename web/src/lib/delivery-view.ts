@@ -144,7 +144,7 @@ export function defaultDeliveryBranchName(deliveryId: string, title: string): st
  * one place instead of in every emitter.
  */
 export interface StandaloneDeliveryRequest {
-  workspaceId: string
+  workspaceName: string
   intentId: string
   /** The new delivery's title = the intent's title. */
   title: string

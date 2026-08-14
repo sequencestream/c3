@@ -1,8 +1,8 @@
 /**
  * Migration test for the discussion store's v3 → v4 in-place rename
- * `project_path` → `workspace_path` (`migrateProjectPathToWorkspacePath`). A legacy
+ * `project_path` → `workspace_name` (`migrateProjectPathToWorkspacePath`). A legacy
  * v3 db (project_path column, idx_disc_project_status) must converge on the
- * workspace_path terminal state with NO data loss and NO DROP TABLE, idempotently.
+ * workspace_name terminal state with NO data loss and NO DROP TABLE, idempotently.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -12,7 +12,7 @@ import { join } from 'node:path'
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import { getDiscussion, listDiscussions, resetStoreForTests } from './store.js'
@@ -72,7 +72,7 @@ function seedLegacyV3(raw: Db): void {
 }
 
 function expectTerminalSchema(raw: Db): void {
-  expect(cols(raw, 'discussions').has('workspace_path')).toBe(true)
+  expect(cols(raw, 'discussions').has('workspace_name')).toBe(true)
   expect(cols(raw, 'discussions').has('project_path')).toBe(false)
   const idx = indexes(raw)
   expect(idx.has('idx_disc_workspace_status')).toBe(true)
@@ -89,7 +89,7 @@ describe('discussion v3 → v4 rename: legacy project_path db migrates in place'
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('d1')
     expect(list[0].title).toBe('Legacy discussion')
-    expect(list[0].workspaceId).toBe(proj)
+    expect(list[0].workspaceName).toBe(proj)
     expect(getDiscussion('d1')?.status).toBe('active')
   })
 

@@ -2,7 +2,7 @@
  * The read side of the local park-recovery observation.
  *
  * One handler, one reply, no writes. It answers only for a workspace the
- * connection can already resolve — the request names an opaque workspace id and
+ * connection can already resolve — the request names an immutable workspace name and
  * the server turns it into a path through the same registry every other feature
  * uses, so a client cannot read a workspace it has no access to.
  *
@@ -19,22 +19,22 @@ export const getParkRecoveryStatsHandler: Handler<'get_park_recovery_stats'> = (
   conn,
   msg,
 ) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
   try {
     const figures = parkRecoveryFigures(proj, Date.now())
-    conn.send({ type: 'park_recovery_stats', workspaceId: msg.workspaceId, stats: figures })
+    conn.send({ type: 'park_recovery_stats', workspaceName: msg.workspaceName, stats: figures })
   } catch (err) {
     console.error('[c3:funnel] 读取 park 恢复统计失败:', err)
     conn.send({
       type: 'park_recovery_stats',
-      workspaceId: msg.workspaceId,
+      workspaceName: msg.workspaceName,
       error: { code: 'intent.parkStatsUnavailable' },
     })
   }

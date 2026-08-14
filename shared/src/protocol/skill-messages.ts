@@ -29,7 +29,7 @@ export type ClientSkillLoadApprovalResolve = {
  * `_c3_<id>` is a live symlink under each of the two shared public skill dirs
  * (`.claude/skills`, `.agents/skills`). Read-only, zero network.
  */
-export type ClientGetSkillLinkStatus = { type: 'get_skill_link_status'; workspaceId: string }
+export type ClientGetSkillLinkStatus = { type: 'get_skill_link_status'; workspaceName: string }
 
 /**
  * Explicitly install (or update) one configured skill repo (2026-06-12): clone/
@@ -38,7 +38,7 @@ export type ClientGetSkillLinkStatus = { type: 'get_skill_link_status'; workspac
  * `.gitignore` ack. Server replies with {@link skill_install_result}. This
  * replaces the removed launch-time auto-mount — installs happen on user action.
  */
-export type ClientInstallSkill = { type: 'install_skill'; workspaceId: string; skillId: string }
+export type ClientInstallSkill = { type: 'install_skill'; workspaceName: string; skillId: string }
 
 /**
  * A pre-launch skill-load gate awaiting a human decision (mount layer 2/3; the
@@ -68,7 +68,7 @@ export type ServerSkillLoadApprovalRequest = {
  */
 export type ServerSkillLinkStatus = {
   type: 'skill_link_status'
-  workspaceId: string
+  workspaceName: string
   statuses: SkillLinkStatus[]
 }
 
@@ -80,7 +80,7 @@ export type ServerSkillLinkStatus = {
  */
 export type ServerSkillInstallResult = {
   type: 'skill_install_result'
-  workspaceId: string
+  workspaceName: string
   skillId: string
   ok: boolean
   reason?: 'not-configured' | 'repo-error' | 'gitignore-cancelled'

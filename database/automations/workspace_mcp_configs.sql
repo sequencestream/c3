@@ -4,7 +4,7 @@
 
 
 CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
-  workspace_path TEXT PRIMARY KEY,                  -- workspace 绝对路径 (resolve 后), 作为主键
+  workspace_name TEXT PRIMARY KEY,                  -- workspace 绝对路径 (resolve 后), 作为主键
   config_json    TEXT NOT NULL DEFAULT '{}',        -- JSON: { mcpServers: {...}, denylist: [...] }
   updated_at     INTEGER NOT NULL                   -- 最后更新时间 (epoch ms)
 );

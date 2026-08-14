@@ -4,8 +4,7 @@
  * Owns the delivery schema (created lazily) and all delivery ledger operations.
  * Sibling to the intent / discussion stores: all ride the one `~/.c3/c3.db`
  * connection, each owning its own tables and a private `schemaReady` flag.
- * Every `workspacePath` is `resolve()`d so it matches the workspace registry
- * key, the runtime `workspacePath`, and the SDK `cwd`.
+ * Workspace names are persisted as identity; paths remain runtime inputs only.
  *
  * Degradation: when the db is unavailable, reads return empty/null and writes
  * throw (callers surface an error or skip), so c3 keeps running without the
@@ -20,7 +19,6 @@
  * aggregate.
  */
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
 import type {
   AssociatedIntent,
   Delivery,
@@ -34,7 +32,9 @@ import type {
 } from '@ccc/shared/protocol'
 import { DELIVERY_STATUSES } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
-import { pathToId } from '../../state.js'
+import { workspaceNameFor } from '../../state.js'
+
+const workspaceKey = workspaceNameFor
 
 /**
  * Delivery schema version. Independent of the other stores' versions — all
@@ -47,7 +47,7 @@ const SCHEMA_VERSION = 2
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS deliveries (
   id             TEXT PRIMARY KEY,
-  workspace_path TEXT NOT NULL,
+  workspace_name TEXT NOT NULL,
   title          TEXT NOT NULL,
   description    TEXT NOT NULL DEFAULT '',
   status         TEXT NOT NULL
@@ -60,11 +60,11 @@ CREATE TABLE IF NOT EXISTS deliveries (
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_delivery_workspace_status ON deliveries(workspace_path, status);
--- 活动状态 (非 delivered/cancelled) 下 (workspace_path, branch_name) 唯一;终态不占位,
+CREATE INDEX IF NOT EXISTS idx_delivery_workspace_status ON deliveries(workspace_name, status);
+-- 活动状态 (非 delivered/cancelled) 下 (workspace_name, branch_name) 唯一;终态不占位,
 -- 允许后续交付复用历史分支名。空分支名不参与冲突 (SQLite 唯一索引视 NULL 互不相等)。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_workspace_active_branch
-  ON deliveries(workspace_path, branch_name)
+  ON deliveries(workspace_name, branch_name)
   WHERE branch_name IS NOT NULL AND status NOT IN ('delivered','cancelled');
 
 -- 意图 ↔ 交付关联边。与 intent_prs.delivery_id 职责分离: 后者记录「这个意图对某个
@@ -181,7 +181,7 @@ function tx<T>(d: Db, fn: () => T): T {
 
 interface DeliveryRow {
   id: string
-  workspace_path: string
+  workspace_name: string
   title: string
   description: string
   status: string
@@ -221,7 +221,7 @@ export function integrationAggregate(deliveryId: string): DeliveryIntegration {
 function toDelivery(r: DeliveryRow): Delivery {
   return {
     id: r.id,
-    workspaceId: pathToId(r.workspace_path)!,
+    workspaceName: r.workspace_name,
     title: r.title,
     description: r.description,
     status: r.status as DeliveryStatus,
@@ -240,9 +240,9 @@ function toDelivery(r: DeliveryRow): Delivery {
 export function listDeliveries(workspacePath: string): Delivery[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(workspacePath)
+  const proj = workspaceKey(workspacePath)
   const rows = d.all<DeliveryRow>(
-    'SELECT * FROM deliveries WHERE workspace_path=? ORDER BY updated_at DESC, rowid DESC',
+    'SELECT * FROM deliveries WHERE workspace_name=? ORDER BY updated_at DESC, rowid DESC',
     proj,
   )
   return rows.map(toDelivery)
@@ -289,16 +289,16 @@ export function createDelivery(input: CreateDeliveryInput): CreateDeliveryResult
   const d = requireDb()
   const id = randomUUID()
   const now = Date.now()
-  const proj = resolve(input.workspacePath)
+  const proj = workspaceKey(input.workspacePath)
   return tx(d, () => {
     const existing = d.get<{ c: number }>(
-      'SELECT COUNT(*) AS c FROM deliveries WHERE workspace_path=?',
+      'SELECT COUNT(*) AS c FROM deliveries WHERE workspace_name=?',
       proj,
     )
     const prMergeNotice = (existing?.c ?? 0) === 0
     d.run(
       `INSERT INTO deliveries
-         (id, workspace_path, title, description, status, start_date, end_date,
+         (id, workspace_name, title, description, status, start_date, end_date,
           branch_name, base_branch, branch_ready, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
@@ -371,10 +371,10 @@ export function activeDeliveryHoldsBranch(
 ): boolean {
   const d = db()
   if (!d) return false
-  const proj = resolve(workspacePath)
+  const proj = workspaceKey(workspacePath)
   const row = d.get<{ c: number }>(
     `SELECT COUNT(*) AS c FROM deliveries
-     WHERE workspace_path=? AND branch_name=? AND id<>?
+     WHERE workspace_name=? AND branch_name=? AND id<>?
        AND status NOT IN ('delivered','cancelled')`,
     proj,
     branchName,

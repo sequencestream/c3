@@ -28,7 +28,11 @@ import type { PromptImage } from './session.js'
 import type { UiError } from '../ui-codes.js'
 
 /** List a project's intents (reply: `intents`), optionally filtered by status. */
-export type ClientListIntents = { type: 'list_intents'; workspaceId: string; status?: IntentStatus }
+export type ClientListIntents = {
+  type: 'list_intents'
+  workspaceName: string
+  status?: IntentStatus
+}
 
 /**
  * Create one draft intent and return its exact server-generated id.
@@ -43,7 +47,7 @@ export type ClientListIntents = { type: 'list_intents'; workspaceId: string; sta
  */
 export type ClientCreateIntent = {
   type: 'create_intent'
-  workspaceId: string
+  workspaceName: string
   /** First-turn input, also persisted as the intent's body. Empty/absent = no session. */
   content?: string
   base?: CreateIntentBase
@@ -52,7 +56,7 @@ export type ClientCreateIntent = {
 /** Create and bind an intent-owned communication session, then send its first turn. */
 export type ClientStartIntentSession = {
   type: 'start_intent_session'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   text: string
   images?: PromptImage[]
@@ -67,7 +71,7 @@ export type ClientStartIntentSession = {
  */
 export type ClientOpenIntentSession = {
   type: 'open_intent_session'
-  workspaceId: string
+  workspaceName: string
   sessionId?: string
 }
 
@@ -76,7 +80,7 @@ export type ClientOpenIntentSession = {
  * Each session carries id, title (nullable), and updatedAt. The response also
  * carries a `runStates` snapshot of which sessions have a live agent run.
  */
-export type ClientListIntentSessions = { type: 'list_intent_sessions'; workspaceId: string }
+export type ClientListIntentSessions = { type: 'list_intent_sessions'; workspaceName: string }
 
 /**
  * List one intent's lifecycle-log entries (reply: `intent_logs_list`,
@@ -91,7 +95,7 @@ export type ClientListIntentLogs = { type: 'list_intent_logs'; intentId: string 
  */
 export type ClientRenameIntentSession = {
   type: 'rename_intent_session'
-  workspaceId: string
+  workspaceName: string
   sessionId: string
   title: string
 }
@@ -104,12 +108,12 @@ export type ClientRenameIntentSession = {
  */
 export type ClientDeleteIntentSession = {
   type: 'delete_intent_session'
-  workspaceId: string
+  workspaceName: string
   sessionId: string
 }
 
 /** Permanently delete one intent and its c3-managed local resources. */
-export type ClientDeleteIntent = { type: 'delete_intent'; workspaceId: string; intentId: string }
+export type ClientDeleteIntent = { type: 'delete_intent'; workspaceName: string; intentId: string }
 
 /**
  * Start a brand-new communication session for a project: resets the previous
@@ -117,13 +121,13 @@ export type ClientDeleteIntent = { type: 'delete_intent'; workspaceId: string; i
  * replies with a `session_selected` (empty history) plus the `intents`
  * list. The "+" button in the intent list title bar triggers this.
  */
-export type ClientNewIntentSession = { type: 'new_intent_session'; workspaceId: string }
+export type ClientNewIntentSession = { type: 'new_intent_session'; workspaceName: string }
 
 /**
  * Restart the comm session as a fresh one seeded with a intent to refine;
  * the server injects the first prompt with the intent's id and content.
  */
-export type ClientRefineIntent = { type: 'refine_intent'; workspaceId: string; intentId: string }
+export type ClientRefineIntent = { type: 'refine_intent'; workspaceName: string; intentId: string }
 
 /**
  * Bridge a completed discussion's conclusion into the intent domain, using the
@@ -143,7 +147,7 @@ export type ClientDiscussionToIntent = { type: 'discussion_to_intent'; discussio
 /** Launch a background work session for a `todo` intent via the configurable development skill. */
 export type ClientStartDevelopment = {
   type: 'start_development'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   /**
    * The DELIVERY CONTEXT this session develops against — what decides its
@@ -183,7 +187,7 @@ export type ClientStartDevelopment = {
  */
 export type ClientRepairIntentWorktree = {
   type: 'repair_intent_worktree'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   mode: 'rebuild' | 'merge'
   /** The delivery whose branch is the baseline; omitted = the intent's single one. */
@@ -195,7 +199,7 @@ export type ClientRepairIntentWorktree = {
  * seed `spec.md`, and launch a write-confined spec session (writes limited to
  * the spec directory, the project read-only) on the configured spec agent.
  */
-export type ClientWriteSpec = { type: 'write_spec'; workspaceId: string; intentId: string }
+export type ClientWriteSpec = { type: 'write_spec'; workspaceName: string; intentId: string }
 
 /**
  * Approve an intent's authored spec — the human approval checkpoint that gates
@@ -205,7 +209,7 @@ export type ClientWriteSpec = { type: 'write_spec'; workspaceId: string; intentI
  * subject) in `spec_approve_user`. Single-person confirmation; no multi-sign.
  * Revocable via `revoke_spec_approval`.
  */
-export type ClientApproveSpec = { type: 'approve_spec'; workspaceId: string; intentId: string }
+export type ClientApproveSpec = { type: 'approve_spec'; workspaceName: string; intentId: string }
 
 /**
  * Revoke an intent's spec approval — the explicit undo for BOTH human and
@@ -222,7 +226,7 @@ export type ClientApproveSpec = { type: 'approve_spec'; workspaceId: string; int
  */
 export type ClientRevokeSpecApproval = {
   type: 'revoke_spec_approval'
-  workspaceId: string
+  workspaceName: string
   intentId: string
 }
 
@@ -235,7 +239,7 @@ export type ClientRevokeSpecApproval = {
  */
 export type ClientOpenSpecSession = {
   type: 'open_spec_session'
-  workspaceId: string
+  workspaceName: string
   intentId: string
 }
 
@@ -247,7 +251,7 @@ export type ClientOpenSpecSession = {
  */
 export type ClientOpenSpecReviewSession = {
   type: 'open_spec_review_session'
-  workspaceId: string
+  workspaceName: string
   intentId: string
 }
 
@@ -261,7 +265,7 @@ export type ClientOpenSpecReviewSession = {
  */
 export type ClientResetIntentSession = {
   type: 'reset_intent_session'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   userInput: string
 }
@@ -275,7 +279,7 @@ export type ClientResetIntentSession = {
  */
 export type ClientResetSpecSession = {
   type: 'reset_spec_session'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   userInput: string
 }
@@ -289,7 +293,7 @@ export type ClientResetSpecSession = {
  * specs root (fail-closed), and replies with a `file_read` whose `file.path`
  * is that absolute spec path.
  */
-export type ClientReadSpec = { type: 'read_spec'; workspaceId: string; intentId: string }
+export type ClientReadSpec = { type: 'read_spec'; workspaceName: string; intentId: string }
 
 /**
  * Directly overwrite an intent's centralized spec Markdown source (the human
@@ -304,7 +308,7 @@ export type ClientReadSpec = { type: 'read_spec'; workspaceId: string; intentId:
  */
 export type ClientUpdateSpecContent = {
   type: 'update_spec_content'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   content: string
 }
@@ -385,13 +389,13 @@ export type ClientSetIntentGitInfo = {
 }
 
 /** Start the project's automation queue (develops `automate` intents). */
-export type ClientStartWorkflow = { type: 'start_workflow'; workspaceId: string }
+export type ClientStartWorkflow = { type: 'start_workflow'; workspaceName: string }
 
 /** Stop the project's automation queue (aborts the current dev run). */
-export type ClientStopWorkflow = { type: 'stop_workflow'; workspaceId: string }
+export type ClientStopWorkflow = { type: 'stop_workflow'; workspaceName: string }
 
 /** Read the queue's per-intent detail (blocking reason, next wake-up, last decision). */
-export type ClientGetQueueDetail = { type: 'get_queue_detail'; workspaceId: string }
+export type ClientGetQueueDetail = { type: 'get_queue_detail'; workspaceName: string }
 
 /**
  * Read this workspace's local park→recovery observation (reply:
@@ -401,7 +405,7 @@ export type ClientGetQueueDetail = { type: 'get_queue_detail'; workspaceId: stri
  */
 export type ClientGetParkRecoveryStats = {
   type: 'get_park_recovery_stats'
-  workspaceId: string
+  workspaceName: string
 }
 
 /**
@@ -411,7 +415,7 @@ export type ClientGetParkRecoveryStats = {
  */
 export type ClientQueueControl = {
   type: 'queue_control'
-  workspaceId: string
+  workspaceName: string
   action: QueueControlAction
   intentId?: string
 }
@@ -433,7 +437,7 @@ export type ClientQueueControl = {
  */
 export type ClientCreatePr = {
   type: 'create_pr'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   requestId?: string
   /**
@@ -453,7 +457,7 @@ export type ClientCreatePr = {
  */
 export type ClientSyncIntentPrStatus = {
   type: 'sync_intent_pr_status'
-  workspaceId: string
+  workspaceName: string
   intentId: string
 }
 
@@ -465,7 +469,7 @@ export type ClientSyncIntentPrStatus = {
  */
 export type ServerIntents = {
   type: 'intents'
-  workspaceId: string
+  workspaceName: string
   items: Intent[]
   sddEnabled: boolean
 }
@@ -473,7 +477,7 @@ export type ServerIntents = {
 /** Exact result for `create_intent`; the regular `intents` snapshot follows. */
 export type ServerCreateIntentResult = {
   type: 'create_intent_result'
-  workspaceId: string
+  workspaceName: string
   intent: Intent
 }
 
@@ -545,7 +549,7 @@ export type ServerIntentWorktreeBaselineNotice = {
  */
 export type ServerIntentSessions = {
   type: 'intent_sessions'
-  workspaceId: string
+  workspaceName: string
   items: IntentSessionInfo[]
   runStates?: Record<string, 'running'>
 }
@@ -576,7 +580,7 @@ export type ServerWorkflowStatus = { type: 'workflow_status'; status: WorkflowSt
 export type ServerQueueDetail = { type: 'queue_detail'; detail: QueueDetail }
 
 /**
- * Reply to {@link ClientGetParkRecoveryStats}. `workspaceId` echoes the request so
+ * Reply to {@link ClientGetParkRecoveryStats}. `workspaceName` echoes the request so
  * a late reply for a workspace the user has since left is discardable instead of
  * being shown under the wrong one.
  *
@@ -587,7 +591,7 @@ export type ServerQueueDetail = { type: 'queue_detail'; detail: QueueDetail }
  */
 export type ServerParkRecoveryStats = {
   type: 'park_recovery_stats'
-  workspaceId: string
+  workspaceName: string
   stats?: ParkRecoveryStats
   error?: UiError
 }
@@ -636,7 +640,7 @@ export type ServerCreatePrProgress = {
  */
 export type ServerSyncIntentPrStatusResponse = {
   type: 'sync_intent_pr_status_response'
-  workspaceId: string
+  workspaceName: string
   intentId: string
   ok: boolean
   prStatus?: IntentPrStatus

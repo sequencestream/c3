@@ -1,10 +1,10 @@
 /**
  * `list_wait_user_events` handler — the READ side's workspace-id contract.
  *
- * The wire carries an opaque `workspaceId`; the store keys events by the resolved
+ * The wire carries an opaque `workspaceName`; the store keys events by the resolved
  * absolute path. These tests pin that the handler resolves the id → path FIRST
  * (so a real workspace returns its events) and degrades an unregistered id to an
- * explicit empty snapshot instead of querying `workspace_path = <id>` (the silent
+ * explicit empty snapshot instead of querying `workspace_name = <id>` (the silent
  * WorkCenter history / auto re-fetch bug this fixes).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,11 +68,11 @@ function capture(): { conn: Conn; sent: ServerToClient[] } {
 const KCTX = { broadcastWaitUserEvents } as never
 
 describe('listWaitUserEvents', () => {
-  it('resolves the opaque workspaceId to a path before querying the store', () => {
+  it('resolves the opaque workspaceName to a path before querying the store', () => {
     const events: WaitUserInvolveEvent[] = [
       {
         id: 'e1',
-        workspaceId: 'ws-1',
+        workspaceName: 'ws-1',
         sessionKind: 'work',
         sessionId: 's1',
         title: null,
@@ -87,7 +87,7 @@ describe('listWaitUserEvents', () => {
     h.listEventsPage.mockReturnValue({ items: events, hasMore: false })
     const { conn, sent } = capture()
 
-    listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceId: 'ws-1' })
+    listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceName: 'ws-1' })
 
     // Queried by the RESOLVED path, not the wire id.
     expect(h.listEventsPage).toHaveBeenCalledWith(
@@ -105,7 +105,7 @@ describe('listWaitUserEvents', () => {
     const { conn } = capture()
     listWaitUserEvents(KCTX, conn, {
       type: 'list_wait_user_events',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       status: 'auto',
       cursorTime: 123,
       cursorExcludeId: 'e1',
@@ -114,9 +114,9 @@ describe('listWaitUserEvents', () => {
     expect(h.listEventsPage).toHaveBeenCalledWith('/abs/project-a', 'auto', 123, 'e1', 20)
   })
 
-  it('degrades an unregistered workspaceId to an explicit empty snapshot (no id-as-path query)', () => {
+  it('degrades an unregistered workspaceName to an explicit empty snapshot (no id-as-path query)', () => {
     const { conn, sent } = capture()
-    listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceId: 'ghost' })
+    listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceName: 'ghost' })
     expect(h.listEventsPage).not.toHaveBeenCalled()
     expect(sent).toEqual([{ type: 'wait_user_events', items: [], hasMore: false }])
   })
@@ -124,7 +124,7 @@ describe('listWaitUserEvents', () => {
   it('reports an error when the store is unavailable', () => {
     h.storeAvailable = false
     const { conn, sent } = capture()
-    listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceId: 'ws-1' })
+    listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceName: 'ws-1' })
     expect(sent).toEqual([{ type: 'error', error: { code: 'waitUserInvolve.dbUnavailable' } }])
     expect(h.listEventsPage).not.toHaveBeenCalled()
   })
@@ -134,7 +134,7 @@ describe('updateWaitUserEvent', () => {
   it('marks a todo event done and broadcasts the refreshed todo list', () => {
     h.getEvent.mockReturnValue({
       id: 'e1',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       sessionKind: 'work',
       sessionId: 's1',
       title: null,
@@ -157,7 +157,7 @@ describe('updateWaitUserEvent', () => {
   it('rejects non-todo transitions', () => {
     h.getEvent.mockReturnValue({
       id: 'e1',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       sessionKind: 'work',
       sessionId: 's1',
       title: null,

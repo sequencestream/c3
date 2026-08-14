@@ -95,7 +95,7 @@ describe('buildResearchPrompt', () => {
 describe('canAutoStartDiscussion', () => {
   const draft: Discussion = {
     id: 'd1',
-    workspaceId: '/p',
+    workspaceName: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',
@@ -154,7 +154,7 @@ describe('DISCUSSION_RESEARCH_PROMPT', () => {
 describe('researchDiscussionContext', () => {
   const disc: Discussion = {
     id: 'd1',
-    workspaceId: '/p',
+    workspaceName: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',
@@ -233,7 +233,7 @@ describe('researchDiscussionContext', () => {
 describe('researchDiscussionContext — the run is a first-class session', () => {
   const disc: Discussion = {
     id: 'd1',
-    workspaceId: '/p',
+    workspaceName: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',
@@ -321,7 +321,7 @@ describe('researchDiscussionContext — the run is a first-class session', () =>
 describe('resolveResearchAgent — organizer-first, with an explicit claude fallback', () => {
   const discussionWith = (organizerAgentId: string | null): Discussion => ({
     id: 'd1',
-    workspaceId: '/p',
+    workspaceName: '/p',
     title: 'T',
     type: 'decision',
     goal: 'g',

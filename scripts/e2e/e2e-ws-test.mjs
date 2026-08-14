@@ -57,12 +57,18 @@ ws.addEventListener('message', (evt) => {
   if (msg.type === 'ready') {
     sawReady = true
     console.log(`[e2e] ready → adding workspace ${PROJECT_DIR}`)
-    ws.send(JSON.stringify({ type: 'add_workspace', path: PROJECT_DIR }))
+    ws.send(
+      JSON.stringify({
+        type: 'add_workspace',
+        name: PROJECT_DIR.split('/').pop(),
+        path: PROJECT_DIR,
+      }),
+    )
   } else if (msg.type === 'workspaces') {
     if (sessionCreated) return
     const added =
       msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ?? msg.workspaces?.[0]
-    const ws0 = added?.id ?? null
+    const ws0 = added?.name ?? null
     if (!ws0) {
       console.error('[e2e] no workspace after add_workspace')
       finish(5)
@@ -70,7 +76,7 @@ ws.addEventListener('message', (evt) => {
     }
     console.log(`[e2e] workspaces → creating session in ${ws0}`)
     sessionCreated = true
-    ws.send(JSON.stringify({ type: 'create_session', workspaceId: ws0 }))
+    ws.send(JSON.stringify({ type: 'create_session', workspaceName: ws0 }))
   } else if (msg.type === 'session_selected') {
     if (!promptSent) {
       promptSent = true

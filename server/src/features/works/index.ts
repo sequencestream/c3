@@ -25,7 +25,7 @@ import {
   deleteSessionCodexPolicy,
   getSessionCodexPolicy,
   getSessionMode,
-  pathToId,
+  pathToName,
   resolveWorkspaceRoot,
   setActiveSessionId,
   setSessionMode,
@@ -112,11 +112,11 @@ function projectionRowForSelection(vendor: VendorId, sessionId: string) {
 }
 
 export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) => {
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -189,11 +189,11 @@ export function countRunningOwners(workspacePath: string): Record<SessionOwnerKi
 }
 
 export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg) => {
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -221,7 +221,7 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
   }
   conn.send({
     type: 'session_counts',
-    workspaceId: pathToId(abs)!,
+    workspaceName: pathToName(abs)!,
     counts,
     ownerCounts: countRunningOwners(abs),
   })
@@ -245,11 +245,11 @@ export const listCommandsHandler: Handler<'list_commands'> = async (_ctx, conn) 
 }
 
 export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -292,7 +292,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   touchWorkspace(abs, Date.now())
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(abs)!,
+    workspaceName: pathToName(abs)!,
     sessionId: pendingId,
     title: 'New session',
     mode: defaultMode,
@@ -328,16 +328,16 @@ function coerceSessionModeForVendor(
 export const createWorkSession: Handler<'create_work_session'> = (ctx, conn, msg) =>
   createSession(ctx, conn, {
     type: 'create_session',
-    workspaceId: msg.workspaceId,
+    workspaceName: msg.workspaceName,
     agentId: msg.agentId,
   })
 
 export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) => {
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -388,7 +388,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     setActiveSessionId(msg.sessionId)
     conn.send({
       type: 'session_selected',
-      workspaceId: pathToId(abs)!,
+      workspaceName: pathToName(abs)!,
       sessionId: msg.sessionId,
       title,
       mode: rt.mode,
@@ -430,11 +430,11 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
 }
 
 export const deleteSession: Handler<'delete_session'> = async (ctx, conn, msg) => {
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -458,11 +458,11 @@ export const deleteSession: Handler<'delete_session'> = async (ctx, conn, msg) =
 }
 
 export const renameSession: Handler<'rename_session'> = async (_ctx, conn, msg) => {
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }

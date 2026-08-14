@@ -6,7 +6,7 @@
  * envelope. Import parses + validates the envelope, then maps each candidate to a
  * `CreateAutomationInput` fault-tolerantly: bad / unknown / missing fields fall
  * back to the same defaults the new-automation form and server apply, instance-only
- * fields (`id` / `workspaceId` / `status` / timestamps / `nextRunAt`) are ignored,
+ * fields (`id` / `workspaceName` / `status` / timestamps / `nextRunAt`) are ignored,
  * and the item is always created `paused` in the current workspace with a fresh id.
  *
  * DOM concerns (file download, file read) live in the dialog components; this
@@ -229,8 +229,8 @@ export function serializeExportFile(file: AutomationExportFile): string {
 }
 
 /** Sanitize a workspace path's last segment for use inside a filename. */
-function workspaceSlug(workspacePath: string): string {
-  const last = workspacePath.split(/[\\/]/).filter(Boolean).pop() ?? ''
+function workspaceSlug(workspaceName: string): string {
+  const last = workspaceName.split(/[\\/]/).filter(Boolean).pop() ?? ''
   const cleaned = last.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned || 'workspace'
 }
@@ -245,8 +245,8 @@ function utcStamp(date: Date): string {
 }
 
 /** Recognizable download filename, e.g. `c3-automations-<workspace>-20260712T052745Z.json`. */
-export function exportFilename(workspacePath: string, date: Date): string {
-  return `c3-automations-${workspaceSlug(workspacePath)}-${utcStamp(date)}.json`
+export function exportFilename(workspaceName: string, date: Date): string {
+  return `c3-automations-${workspaceSlug(workspaceName)}-${utcStamp(date)}.json`
 }
 
 /**
@@ -277,12 +277,12 @@ export function parseImportFile(text: string): ImportParseResult {
  * cron, a run-lifecycle trigger with no valid sessionKind filter stays
  * unrestricted = every session kind). An `event` trigger whose topic is missing / unknown demotes to the
  * cron default rather than producing a server-rejected request. The item is always
- * `paused`, owned by `workspaceId`, with `id` / `workspaceId` / `status` /
+ * `paused`, owned by `workspaceName`, with `id` / `workspaceName` / `status` /
  * timestamps / `nextRunAt` ignored.
  */
 export function mapToCreateInput(
   raw: Record<string, unknown>,
-  opts: { workspaceId: string; agents: readonly AgentConfig[] },
+  opts: { workspaceName: string; agents: readonly AgentConfig[] },
 ): ImportCandidate {
   const type = pickEnum<AutomationType>(raw.type, AUTOMATION_TYPES, 'command')
   const vendor = pickEnum<VendorId>(raw.vendor, VENDOR_IDS, 'claude')
@@ -306,7 +306,7 @@ export function mapToCreateInput(
     vendor,
     mode: pickMode(raw.mode),
     maxWallClockMs: isValidAutomationMaxWallClockMs(raw.maxWallClockMs) ? raw.maxWallClockMs : null,
-    workspaceId: opts.workspaceId,
+    workspaceName: opts.workspaceName,
     agentId: null,
     triggerType: isEvent ? 'event' : 'cron',
     cronExpression: isEvent
@@ -343,7 +343,7 @@ export function mapToCreateInput(
 /** Map every validated file member to a candidate, preserving order. */
 export function mapImportCandidates(
   members: readonly Record<string, unknown>[],
-  opts: { workspaceId: string; agents: readonly AgentConfig[] },
+  opts: { workspaceName: string; agents: readonly AgentConfig[] },
 ): ImportCandidate[] {
   return members.map((m) => mapToCreateInput(m, opts))
 }

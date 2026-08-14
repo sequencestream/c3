@@ -2,7 +2,7 @@ import type { SessionInfo } from '@ccc/shared/protocol'
 
 /** A pointer to a viewed session (its workspace + id). */
 export interface SessionRef {
-  workspacePath: string
+  workspaceName: string
   sessionId: string
 }
 
@@ -28,7 +28,7 @@ export function consoleEntryTarget(
   if (remembered) return { kind: 'select', ref: remembered }
   const first = sessions[0]
   if (first && currentWorkspace) {
-    return { kind: 'select', ref: { workspacePath: currentWorkspace, sessionId: first.sessionId } }
+    return { kind: 'select', ref: { workspaceName: currentWorkspace, sessionId: first.sessionId } }
   }
   return { kind: 'empty' }
 }

@@ -156,9 +156,9 @@ const emit = defineEmits<{
   /** 意图详情「关联交付」跳转:交付页是另一个一级 tab,由 App 切换。 */
   'open-delivery': [deliveryId: string]
   // ── 意图侧交付归属入口(与交付页入口并存,协议消息相同) ──
-  'open-link-dialog': [workspaceId: string]
-  'link-delivery': [workspaceId: string, deliveryId: string, intentId: string]
-  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'open-link-dialog': [workspaceName: string]
+  'link-delivery': [workspaceName: string, deliveryId: string, intentId: string]
+  'unlink-delivery': [workspaceName: string, deliveryId: string, intentId: string]
   'standalone-delivery': [payload: StandaloneDeliveryRequest]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   share: [intentId: string]

@@ -241,7 +241,7 @@ describe('automation save overlay', () => {
     const input: CreateAutomationInput = {
       type: 'command',
       config: {},
-      workspaceId: 'ws1',
+      workspaceName: 'ws1',
       vendor: 'claude',
       agentId: null,
       triggerType: 'cron',
@@ -253,7 +253,7 @@ describe('automation save overlay', () => {
     expect(c.send).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'create_automation',
-        workspaceId: 'ws1',
+        workspaceName: 'ws1',
         input,
       }),
     )
@@ -296,7 +296,7 @@ describe('automation save overlay', () => {
       {
         type: 'command',
         config: { command: 'a' },
-        workspaceId: 'ws1',
+        workspaceName: 'ws1',
         cronExpression: '* * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -305,7 +305,7 @@ describe('automation save overlay', () => {
       {
         type: 'command',
         config: { command: 'b' },
-        workspaceId: 'ws1',
+        workspaceName: 'ws1',
         cronExpression: '* * * * *',
         mode: 'read-only',
         vendor: 'claude',
@@ -341,7 +341,7 @@ describe('openAutomations — loads the workspace gate setting', () => {
       c.send.mock.calls.some(
         (call) =>
           (call[0] as ClientToServer).type === 'load_workspace_setting' &&
-          (call[0] as { workspaceId: string }).workspaceId === 'ws1',
+          (call[0] as { workspaceName: string }).workspaceName === 'ws1',
       ),
     ).toBe(true)
     // The prior workspace's snapshot is cleared so the toggle never shows it.
@@ -373,10 +373,10 @@ describe('setAutomationEnabled — workspace gate save', () => {
     )
     expect(saveCall).toBeDefined()
     const payload = saveCall![0] as {
-      workspaceId: string
+      workspaceName: string
       config: import('@ccc/shared/protocol').WorkspaceSetting
     }
-    expect(payload.workspaceId).toBe('ws1')
+    expect(payload.workspaceName).toBe('ws1')
     expect(payload.config.automationEnabled).toBe(false)
     // Sibling settings are preserved (full snapshot, not a gate-only object).
     expect(payload.config.devSkill).toBe('/keep-me')

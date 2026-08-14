@@ -19,7 +19,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -98,7 +98,7 @@ describe('buildDevPrompt — channel split (hide-session-system-instructions)', 
 
 describe('start_development SDD forced gate', () => {
   let dir: string
-  let workspaceId: string
+  let workspaceName: string
   let proj: string
 
   beforeEach(() => {
@@ -110,8 +110,8 @@ describe('start_development SDD forced gate', () => {
     resetStoreForTests()
     resetStateCacheForTests()
     addWorkspace(dir, 1)
-    workspaceId = pathToId(dir)!
-    proj = resolveWorkspaceRoot(workspaceId)!
+    workspaceName = pathToName(dir)!
+    proj = resolveWorkspaceRoot(workspaceName)!
     saveWorkspaceSetting(proj, {
       ...loadWorkspaceSetting(proj),
       sddEnabled: true,
@@ -153,7 +153,7 @@ describe('start_development SDD forced gate', () => {
     const ctx = { launchRun } as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    await startDevelopment(ctx, conn, { type: 'start_development', workspaceId, intentId: r.id })
+    await startDevelopment(ctx, conn, { type: 'start_development', workspaceName, intentId: r.id })
 
     expect(sent).toEqual([{ type: 'error', error: { code: 'intent.specNotApproved' } }])
     expect(launchRun).not.toHaveBeenCalled()
@@ -171,7 +171,7 @@ describe('start_development SDD forced gate', () => {
     const ctx = { launchRun } as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    await startDevelopment(ctx, conn, { type: 'start_development', workspaceId, intentId: r.id })
+    await startDevelopment(ctx, conn, { type: 'start_development', workspaceName, intentId: r.id })
 
     // No error on the success path (the launch emits only `dev_launch_progress`).
     expect(sent.filter((m) => m.type === 'error')).toEqual([])

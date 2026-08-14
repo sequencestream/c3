@@ -20,7 +20,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -42,7 +42,7 @@ import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -60,8 +60,8 @@ beforeEach(() => {
   resetSettingsCacheForTests()
   resetIntentLink()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -163,7 +163,7 @@ describe('discussion_to_intent', () => {
     // 3) The client gets the created intent (so it selects it and pins the
     //    intent-session tab) plus the session, and the run is launched once.
     expect(h.sent.find((m) => m.type === 'create_intent_result')).toMatchObject({
-      workspaceId,
+      workspaceName,
       intent: { id: intentId },
     })
     expect(h.conn.viewing).toBe(sid)
@@ -241,7 +241,7 @@ describe('discussion_to_intent', () => {
     // It stays an asset-free draft, so the ordinary delete path reclaims it.
     await deleteIntent(h.ctx, h.conn, {
       type: 'delete_intent',
-      workspaceId,
+      workspaceName,
       intentId: intents[0].id,
     })
     expect(getIntent(intents[0].id)).toBeNull()

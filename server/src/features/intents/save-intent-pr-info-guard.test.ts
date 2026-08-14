@@ -21,7 +21,7 @@ import { join } from 'node:path'
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { runSaveIntentPrInfo, saveIntentPrInfoDesc } from './tool-defs.js'

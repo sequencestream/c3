@@ -94,14 +94,14 @@ export function installSessionActions(ctx: AppCtx): void {
   }
 
   function appendWorkcenterSessionIfMissing(input: {
-    workspaceId: string
+    workspaceName: string
     sessionKind: SessionPageKind
     sourceKind: string | null | undefined
     sessionId: string
     title?: string | null
     updatedAt?: number | null
   }): void {
-    const key = keyFor(input.workspaceId, input.sessionKind)
+    const key = keyFor(input.workspaceName, input.sessionKind)
     const list = sessionsByWorkspace.value[key] ?? []
     if (list.some((s) => s.sessionId === input.sessionId)) return
     const placeholder: SessionInfo = {
@@ -125,11 +125,11 @@ export function installSessionActions(ctx: AppCtx): void {
   function requestFirstSessionPage(path: string, kind: SessionPageKind): void {
     send({
       type: 'list_sessions',
-      workspaceId: path,
+      workspaceName: path,
       sessionKind: kind,
       limit: SESSION_PAGE_SIZE,
     })
-    send({ type: 'get_session_counts', workspaceId: path })
+    send({ type: 'get_session_counts', workspaceName: path })
   }
 
   // Refresh a workspace's session list (SR-R14): when a window is already
@@ -145,19 +145,19 @@ export function installSessionActions(ctx: AppCtx): void {
       patchPaging(key, { pendingSince: since })
       send({
         type: 'list_sessions',
-        workspaceId: path,
+        workspaceName: path,
         sessionKind: activeSessionKind.value,
         since,
       })
     } else {
       send({
         type: 'list_sessions',
-        workspaceId: path,
+        workspaceName: path,
         sessionKind: activeSessionKind.value,
         limit: SESSION_PAGE_SIZE,
       })
     }
-    send({ type: 'get_session_counts', workspaceId: path })
+    send({ type: 'get_session_counts', workspaceName: path })
   }
 
   // Lazily fetch a workspace's first session page (once) for the sidebar.
@@ -165,11 +165,11 @@ export function installSessionActions(ctx: AppCtx): void {
     if (path && !sessionsByWorkspace.value[activeKey(path)]) {
       send({
         type: 'list_sessions',
-        workspaceId: path,
+        workspaceName: path,
         sessionKind: activeSessionKind.value,
         limit: SESSION_PAGE_SIZE,
       })
-      send({ type: 'get_session_counts', workspaceId: path })
+      send({ type: 'get_session_counts', workspaceName: path })
     }
   }
 
@@ -198,7 +198,7 @@ export function installSessionActions(ctx: AppCtx): void {
     patchPaging(key, { loadingMore: true })
     send({
       type: 'list_sessions',
-      workspaceId: path,
+      workspaceName: path,
       sessionKind: activeSessionKind.value,
       before: { lastModified: oldest.lastModified, sessionId: oldest.sessionId },
       limit: SESSION_PAGE_SIZE,
@@ -235,12 +235,12 @@ export function installSessionActions(ctx: AppCtx): void {
     if (fx.refreshSessions) ctx.refreshSessions(path)
   }
 
-  ctx.addWorkspace = (path: string): void => {
-    send({ type: 'add_workspace', path })
+  ctx.addWorkspace = (payload: { workspaceName: string; path: string }): void => {
+    send({ type: 'add_workspace', ...payload })
   }
 
-  ctx.removeWorkspace = (workspaceId: string): void => {
-    send({ type: 'remove_workspace', workspaceId })
+  ctx.removeWorkspace = (workspaceName: string): void => {
+    send({ type: 'remove_workspace', workspaceName })
   }
 
   // The "+" opens the agent picker instead of creating immediately.
@@ -258,7 +258,7 @@ export function installSessionActions(ctx: AppCtx): void {
     ctx.enterConsole()
     send({
       type: 'create_session',
-      workspaceId: path,
+      workspaceName: path,
       ...(agentId ? { agentId } : {}),
     })
   }
@@ -302,7 +302,7 @@ export function installSessionActions(ctx: AppCtx): void {
       }
       ctx.requestedWorkSessionId.value = null
       ctx.enterConsole()
-      consoleSession.value = { workspacePath: path, sessionId }
+      consoleSession.value = { workspaceName: path, sessionId }
       if (sessionId === activeSession.value) return
       ctx.openSpecReviewSession(projection.ownerId, path)
       return
@@ -310,13 +310,13 @@ export function installSessionActions(ctx: AppCtx): void {
     ctx.requestedWorkSessionId.value = null
     ctx.enterConsole()
     // Pin the console tab's pointer up front.
-    consoleSession.value = { workspacePath: path, sessionId }
+    consoleSession.value = { workspaceName: path, sessionId }
     if (sessionId === activeSession.value) return
-    send({ type: 'select_session', workspaceId: path, sessionId })
+    send({ type: 'select_session', workspaceName: path, sessionId })
   }
 
   ctx.openWorkcenterSession = (input): void => {
-    const path = input.workspaceId
+    const path = input.workspaceName
     const kind = sessionPageKindFromSource(input.sessionKind)
     currentWorkspace.value = path
     ctx.persistCurrentWorkspace()
@@ -330,16 +330,16 @@ export function installSessionActions(ctx: AppCtx): void {
       return
     }
     appendWorkcenterSessionIfMissing({
-      workspaceId: path,
+      workspaceName: path,
       sessionKind: kind,
       sourceKind: input.sessionKind,
       sessionId: input.sessionId,
       title: input.title,
       updatedAt: input.updatedAt,
     })
-    consoleSession.value = { workspacePath: path, sessionId: input.sessionId }
+    consoleSession.value = { workspaceName: path, sessionId: input.sessionId }
     if (input.sessionId === activeSession.value && path === activeWorkspace.value) return
-    send({ type: 'select_session', workspaceId: path, sessionId: input.sessionId })
+    send({ type: 'select_session', workspaceName: path, sessionId: input.sessionId })
   }
 
   // Open the page the given jump target points at (intent detail / intent
@@ -454,10 +454,10 @@ export function installSessionActions(ctx: AppCtx): void {
     }
     const ref = target.ref
     // Already viewing it — nothing to re-fetch.
-    if (activeSession.value === ref.sessionId && activeWorkspace.value === ref.workspacePath) return
+    if (activeSession.value === ref.sessionId && activeWorkspace.value === ref.workspaceName) return
     send({
       type: 'select_session',
-      workspaceId: ref.workspacePath,
+      workspaceName: ref.workspaceName,
       sessionId: ref.sessionId,
     })
   }
@@ -491,7 +491,7 @@ export function installSessionActions(ctx: AppCtx): void {
         [activeKey(path)]: list.filter((s) => s.sessionId !== sessionId),
       }
     }
-    send({ type: 'delete_session', workspaceId: path, sessionId })
+    send({ type: 'delete_session', workspaceName: path, sessionId })
   }
 
   ctx.renameSession = (path: string, sessionId: string, title: string): void => {
@@ -504,14 +504,14 @@ export function installSessionActions(ctx: AppCtx): void {
         [activeKey(path)]: list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
       }
     }
-    send({ type: 'rename_session', workspaceId: path, sessionId, title })
+    send({ type: 'rename_session', workspaceName: path, sessionId, title })
   }
 
   ctx.openDevSession = (sessionId: string): void => {
     if (!intentsProject.value) return
     ctx.enterConsole()
-    consoleSession.value = { workspacePath: intentsProject.value, sessionId }
-    send({ type: 'select_session', workspaceId: intentsProject.value, sessionId })
+    consoleSession.value = { workspaceName: intentsProject.value, sessionId }
+    send({ type: 'select_session', workspaceName: intentsProject.value, sessionId })
   }
 
   // Inline work-session select for IntentDetail's work-session tab: fill the global
@@ -520,6 +520,6 @@ export function installSessionActions(ctx: AppCtx): void {
   // jump-to-works behaviour for external entry points.
   ctx.selectWorkSession = (sessionId: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'select_session', workspaceId: intentsProject.value, sessionId })
+    send({ type: 'select_session', workspaceName: intentsProject.value, sessionId })
   }
 }

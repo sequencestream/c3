@@ -26,7 +26,7 @@ import {
   removeRuntime,
   removeViewer,
 } from '../../runs.js'
-import { hasWorkspace, resolveWorkspaceRoot, pathToId, touchWorkspace } from '../../state.js'
+import { hasWorkspace, resolveWorkspaceRoot, pathToName, touchWorkspace } from '../../state.js'
 import type { UiError } from '@ccc/shared'
 import { canEditIntentSpecMode } from '@ccc/shared'
 import {
@@ -318,7 +318,7 @@ async function bindAndLaunchIntentSession(
     addViewer(chatId, conn.deliver)
     conn.send({
       type: 'session_selected',
-      workspaceId: pathToId(proj)!,
+      workspaceName: pathToName(proj)!,
       sessionId: chatId,
       title,
       mode: 'default',
@@ -350,11 +350,11 @@ async function bindAndLaunchIntentSession(
 // ---- Handlers ----
 
 export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -364,7 +364,7 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
   }
   conn.send({
     type: 'intents',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj, msg.status)),
     sddEnabled: getSddEnabled(proj),
   })
@@ -392,7 +392,7 @@ function resolveCreateBaseBranch(
     return { ok: true, baseBranch: branch }
   }
   const delivery = getDelivery(base.deliveryId)
-  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
+  if (!delivery || delivery.workspaceName !== pathToName(workspacePath)) {
     return { ok: false, code: 'intent.deliveryContextUnknown' }
   }
   const branchName = normalizeBranchName(delivery.branchName)
@@ -425,11 +425,11 @@ function resolveCreateBaseBranch(
  * be exactly the corner state this removes.
  */
 export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj || !hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -483,7 +483,7 @@ export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => 
     // `link_intent_to_delivery` does.
     ctx.broadcastDeliveries(proj)
   }
-  conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
+  conn.send({ type: 'create_intent_result', workspaceName: pathToName(proj)!, intent })
   if (!content) {
     ctx.broadcastIntents(proj)
     return
@@ -501,9 +501,9 @@ export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => 
 }
 
 export const startIntentSession: Handler<'start_intent_session'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   const intent = getIntent(msg.intentId)
-  if (!proj || !intent || resolveWorkspaceRoot(intent.workspaceId) !== proj) {
+  if (!proj || !intent || resolveWorkspaceRoot(intent.workspaceName) !== proj) {
     conn.send({ type: 'error', error: { code: intent ? 'workspace.unknown' : 'intent.notFound' } })
     return
   }
@@ -522,18 +522,18 @@ export const startIntentSession: Handler<'start_intent_session'> = async (ctx, c
 }
 
 export const openIntentSession: Handler<'open_intent_session'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj || !hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
   if (!hasWorkspace(proj)) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -623,7 +623,7 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
   syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: realTitle })
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: chatId,
     title: realTitle,
     mode: 'default',
@@ -641,7 +641,7 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
   // the background below and re-broadcasts the refreshed list once it settles.
   conn.send({
     type: 'intents',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
@@ -704,11 +704,11 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
  * directory, and re-pin the spec agent. No intents list / reconcile side-effects.
  */
 export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -759,7 +759,7 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
   touchWorkspace(proj, Date.now())
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: chatId,
     title: intent.title,
     mode: rt.mode,
@@ -786,11 +786,11 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
   conn,
   msg,
 ) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -840,7 +840,7 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
   touchWorkspace(proj, Date.now())
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: chatId,
     title: intent.title,
     mode: rt.mode,
@@ -860,11 +860,11 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
 }
 
 export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -891,7 +891,7 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
   addViewer(chatId, conn.deliver)
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: chatId,
     title: 'New Intent',
     mode: 'default',
@@ -902,7 +902,7 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
   })
   conn.send({
     type: 'intents',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
@@ -910,11 +910,11 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
 }
 
 export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -955,7 +955,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   addViewer(chatId, conn.deliver)
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: chatId,
     title: req.title,
     mode: 'default',
@@ -966,7 +966,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   })
   conn.send({
     type: 'intents',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
@@ -993,11 +993,11 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
  * input ahead of the intent content.
  */
 export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1038,7 +1038,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   addViewer(chatId, conn.deliver)
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: chatId,
     title: req.title,
     mode: 'default',
@@ -1049,7 +1049,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   })
   conn.send({
     type: 'intents',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
@@ -1095,11 +1095,11 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     conn.send({ type: 'error', error: { code: 'discussion.notConcludable' } })
     return
   }
-  const proj = resolveWorkspaceRoot(discussion.workspaceId)
+  const proj = resolveWorkspaceRoot(discussion.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: discussion.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: discussion.workspaceName } },
     })
     return
   }
@@ -1116,7 +1116,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     })
     return
   }
-  conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
+  conn.send({ type: 'create_intent_result', workspaceName: pathToName(proj)!, intent })
   // Step 2 — bind an intent-owned comm session to it, seeded with the conclusion.
   // The session keeps the discussion title so it stays recognizable in the list.
   const userInput = `基于以下讨论结论拆分出可验证的需求条目。\n讨论:${discussion.title}\n结论:${discussion.conclusion}`
@@ -1131,11 +1131,11 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
 // ── Intent-communication-session CRUD (session-collection upgrade) ──
 
 export const listIntentSessions: Handler<'list_intent_sessions'> = (_ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1154,18 +1154,18 @@ export const listIntentSessions: Handler<'list_intent_sessions'> = (_ctx, conn, 
   }
   conn.send({
     type: 'intent_sessions',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items,
     runStates: found ? runStates : undefined,
   })
 }
 
 export const renameIntentSession: Handler<'rename_intent_session'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1186,11 +1186,11 @@ export const renameIntentSession: Handler<'rename_intent_session'> = (ctx, conn,
 }
 
 export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1264,11 +1264,11 @@ function fenceSessionCleanup(sessionId: string, step: string, run: () => void): 
 }
 
 export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1277,7 +1277,7 @@ export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => 
     return
   }
   const intent = getIntent(msg.intentId)
-  if (!intent || resolveWorkspaceRoot(intent.workspaceId) !== proj) {
+  if (!intent || resolveWorkspaceRoot(intent.workspaceName) !== proj) {
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
@@ -1325,11 +1325,11 @@ export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => 
 }
 
 export const startDevelopment: Handler<'start_development'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1368,7 +1368,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
 }
 
 export const updateIntentStatus: Handler<'update_intent_status'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(getIntent(msg.intentId)?.workspaceId ?? '')
+  const proj = resolveWorkspaceRoot(getIntent(msg.intentId)?.workspaceName ?? '')
   if (!isStoreAvailable() || !proj) {
     conn.send({
       type: 'error',
@@ -1421,7 +1421,7 @@ export const updateIntentContent: Handler<'update_intent_content'> = (ctx, conn,
   }
   updateIntent(msg.intentId, { content: msg.content })
   safeInsertIntentLog(msg.intentId, 'intent_updated', '更新意图正文', conn.subject ?? 'system')
-  const proj = resolveWorkspaceRoot(req.workspaceId)!
+  const proj = resolveWorkspaceRoot(req.workspaceName)!
   ctx.broadcastIntents(proj)
   // Refresh the per-intent changelog cache for a changelog tab that was already
   // opened before this edit (it would otherwise keep stale logs until reselected).
@@ -1443,7 +1443,7 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
     return
   }
   setAutomate(msg.intentId, msg.automate)
-  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
 }
 
 /**
@@ -1478,7 +1478,7 @@ export const setIntentSpecMode: Handler<'set_intent_spec_mode'> = (ctx, conn, ms
     return
   }
   setSpecMode(msg.intentId, msg.mode)
-  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
 }
 
 export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg) => {
@@ -1497,7 +1497,7 @@ export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg)
   // the three create paths, which know where the PR actually lives.
   if (msg.branchName !== undefined) setBranchName(msg.intentId, msg.branchName)
   if (msg.latestCommitHash !== undefined) setLatestCommitHash(msg.intentId, msg.latestCommitHash)
-  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
 }
 
 export const updateIntentDepsHandler: Handler<'update_intent_deps'> = (ctx, conn, msg) => {
@@ -1511,15 +1511,15 @@ export const updateIntentDepsHandler: Handler<'update_intent_deps'> = (ctx, conn
     return
   }
   updateIntentDeps(msg.intentId, msg.deps)
-  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
 }
 
 export const startWorkflowHandler: Handler<'start_workflow'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1531,11 +1531,11 @@ export const startWorkflowHandler: Handler<'start_workflow'> = (ctx, conn, msg) 
 }
 
 export const stopWorkflowHandler: Handler<'stop_workflow'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1543,13 +1543,13 @@ export const stopWorkflowHandler: Handler<'stop_workflow'> = (ctx, conn, msg) =>
 }
 
 /** Build the wire projection of a workspace queue's per-intent detail. */
-function queueDetailFrame(workspacePath: string, workspaceId: string): ServerToClient {
+function queueDetailFrame(workspacePath: string, workspaceName: string): ServerToClient {
   const detail = getQueueDetail(workspacePath)
   const byId = new Map(listIntents(workspacePath).map((r) => [r.id, r]))
   return {
     type: 'queue_detail',
     detail: {
-      workspaceId,
+      workspaceName,
       state: detail.state,
       tickId: detail.tickId,
       nextWakeupAt: detail.nextWakeupAt,
@@ -1566,11 +1566,11 @@ function queueDetailFrame(workspacePath: string, workspaceId: string): ServerToC
 }
 
 export const getQueueDetailHandler: Handler<'get_queue_detail'> = (_ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1578,7 +1578,7 @@ export const getQueueDetailHandler: Handler<'get_queue_detail'> = (_ctx, conn, m
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
-  conn.send(queueDetailFrame(proj, msg.workspaceId))
+  conn.send(queueDetailFrame(proj, msg.workspaceName))
 }
 
 /**
@@ -1588,11 +1588,11 @@ export const getQueueDetailHandler: Handler<'get_queue_detail'> = (_ctx, conn, m
  * reported — a control that silently did nothing would read as success.
  */
 export const queueControlHandler: Handler<'queue_control'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1613,7 +1613,7 @@ export const queueControlHandler: Handler<'queue_control'> = (ctx, conn, msg) =>
       return
     }
     const req = getIntent(msg.intentId)
-    if (!req || resolveWorkspaceRoot(req.workspaceId) !== proj) {
+    if (!req || resolveWorkspaceRoot(req.workspaceName) !== proj) {
       conn.send({ type: 'error', error: { code: 'intent.notFound' } })
       return
     }
@@ -1649,7 +1649,7 @@ export const queueControlHandler: Handler<'queue_control'> = (ctx, conn, msg) =>
       break
     }
   }
-  conn.send(queueDetailFrame(proj, msg.workspaceId))
+  conn.send(queueDetailFrame(proj, msg.workspaceName))
 }
 
 export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
@@ -1657,11 +1657,11 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
   // success and failure alike — so the caller can bind them to the run it started
   // and ignore frames belonging to an unrelated request or a superseded retry.
   const correlate = msg.requestId ? { requestId: msg.requestId } : {}
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
       ...correlate,
     })
     return
@@ -1737,11 +1737,11 @@ export const syncIntentPrStatusHandler: Handler<'sync_intent_pr_status'> = async
   conn,
   msg,
 ) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -1756,7 +1756,7 @@ export const syncIntentPrStatusHandler: Handler<'sync_intent_pr_status'> = async
   })
   conn.send({
     type: 'sync_intent_pr_status_response',
-    workspaceId: msg.workspaceId,
+    workspaceName: msg.workspaceName,
     intentId: msg.intentId,
     ok: result.ok,
     prStatus: result.prStatus,

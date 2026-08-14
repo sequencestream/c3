@@ -48,7 +48,7 @@ const SILENT: ActionDescriptor = {
 
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: 'ws',
+    workspaceName: 'ws',
     title: 'T',
     shortEnTitle: null,
     content: '',

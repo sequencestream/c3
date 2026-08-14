@@ -119,10 +119,14 @@ export function evaluateAutomationTriggerMatch(
     })
   }
 
-  const generic = genericEventFiltersMatch(resolveWorkspaceRoot(automation.workspaceId)!, filters, {
-    workspacePath: resolve(view.workspacePath),
-    event: view.event,
-  })
+  const generic = genericEventFiltersMatch(
+    resolveWorkspaceRoot(automation.workspaceName)!,
+    filters,
+    {
+      workspacePath: resolve(view.workspacePath),
+      event: view.event,
+    },
+  )
   breakdown.push(...generic.breakdown)
 
   return { matched: breakdown.every((b) => b.passed), breakdown }

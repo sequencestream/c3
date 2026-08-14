@@ -28,7 +28,7 @@ const props = withDefaults(
     /** 系统设置里的公开访问地址;未配置时为空。 */
     baseUrl?: string | null
     /** 当前工作区的 id —— key 绑定它,也是所有指令的作用域。 */
-    workspaceId?: string | null
+    workspaceName?: string | null
     /** 本工作区的 key 名册(仅元数据,永不含明文)。 */
     mcpApiKeys?: McpApiKeyMeta[]
     /** 生成成功回包里唯一一次出现的明文;未生成/已关闭为 null。 */
@@ -41,7 +41,7 @@ const props = withDefaults(
   {
     isAdmin: true,
     baseUrl: null,
-    workspaceId: null,
+    workspaceName: null,
     mcpApiKeys: () => [],
     created: null,
     catalog: () => [],
@@ -87,7 +87,7 @@ function startCreate(): void {
 }
 
 const canSubmitCreate = computed(
-  () => props.isAdmin && !!props.workspaceId && newName.value.trim().length > 0,
+  () => props.isAdmin && !!props.workspaceName && newName.value.trim().length > 0,
 )
 
 function submitCreate(): void {
@@ -393,7 +393,7 @@ function toolSummary(key: McpApiKeyMeta): string {
     <div v-else class="external-mcp-add-bar">
       <button
         class="agent-add"
-        :disabled="!isAdmin || !workspaceId"
+        :disabled="!isAdmin || !workspaceName"
         data-testid="workspace-external-mcp-create-open"
         @click="startCreate"
       >

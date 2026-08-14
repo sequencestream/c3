@@ -1,6 +1,6 @@
 /**
  * One-shot legacy import: the three JSON files land in the right tables with the
- * right shapes (workspace ids preserved, apiKeys re-encrypted from plaintext, unknown
+ * right shapes (workspace names preserved, apiKeys re-encrypted from plaintext, unknown
  * workspace paths kept out of the workspace list), the files are retired afterwards,
  * and a second run imports nothing — the db, not the file, is the source of truth
  * from the first import on.
@@ -21,8 +21,6 @@ import { findWorkspaceByPath, listWorkspaceRows } from './workspace-store.js'
 let home: string
 let claudeHome: string
 let settingsPath: string
-
-const WORKSPACE_ID = '11111111-2222-3333-4444-555555555555'
 
 function writeLegacyFiles(): void {
   writeFileSync(
@@ -45,7 +43,15 @@ function writeLegacyFiles(): void {
       },
       personalizedSettings: { alice: { uiLang: 'zh', theme: 'light' } },
       agentLang: 'zh',
-      mcpApiKeys: [{ id: 'k1', label: 'ci', secretHash: 'scrypt$abc', createdAt: 7 }],
+      mcpApiKeys: [
+        {
+          id: 'k1',
+          label: 'ci',
+          secretHash: 'scrypt$abc',
+          createdAt: 7,
+          workspace: '/tmp/registered-proj',
+        },
+      ],
     }),
   )
   writeFileSync(
@@ -62,7 +68,7 @@ function writeLegacyFiles(): void {
       version: 2,
       workspaces: [
         {
-          id: WORKSPACE_ID,
+          id: '11111111-2222-3333-4444-555555555555',
           path: '/tmp/registered-proj',
           name: 'registered-proj',
           lastAccessed: 5,
@@ -118,10 +124,10 @@ describe('ensureLegacyImport', () => {
     expect(raw?.value).toMatch(/^c3secretv1:/)
   })
 
-  it('preserves workspace ids and keeps unregistered paths out of the list', () => {
+  it('preserves workspace names and keeps unregistered paths out of the list', () => {
     ensureLegacyImport()
     expect(findWorkspaceByPath('/tmp/registered-proj')).toMatchObject({
-      id: WORKSPACE_ID,
+      name: 'registered-proj',
       registered: true,
     })
     const listed = listWorkspaceRows()
@@ -130,13 +136,13 @@ describe('ensureLegacyImport', () => {
     const gone = findWorkspaceByPath('/tmp/gone-proj')
     expect(gone?.registered).toBe(false)
     // …but its configuration is imported all the same.
-    expect(fromEntries(readScope({ kind: 'workspace', owner: gone!.id }), WORKSPACE_RULES)).toEqual(
-      {
-        sddEnabled: false,
-      },
-    )
     expect(
-      fromEntries(readScope({ kind: 'workspace', owner: WORKSPACE_ID }), WORKSPACE_RULES),
+      fromEntries(readScope({ kind: 'workspace', owner: gone!.name }), WORKSPACE_RULES),
+    ).toEqual({
+      sddEnabled: false,
+    })
+    expect(
+      fromEntries(readScope({ kind: 'workspace', owner: 'registered-proj' }), WORKSPACE_RULES),
     ).toEqual({ sddEnabled: true, maxRoundsPerStage: 9 })
   })
 
@@ -149,7 +155,12 @@ describe('ensureLegacyImport', () => {
       theme: 'light',
     })
     const key = fromEntries(readScope({ kind: 'mcpKey', owner: 'k1' })) as Record<string, unknown>
-    expect(key).toEqual({ label: 'ci', secretHash: 'scrypt$abc', createdAt: 7 })
+    expect(key).toEqual({
+      label: 'ci',
+      secretHash: 'scrypt$abc',
+      createdAt: 7,
+      workspaceName: 'registered-proj',
+    })
 
     const session = Object.fromEntries(
       readScope({ kind: 'session', owner: 'sess-1' }).map((e) => [e.key, e.value]),

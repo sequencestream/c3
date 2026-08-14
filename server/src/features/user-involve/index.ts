@@ -12,11 +12,11 @@ export const listWaitUserEvents: Handler<'list_wait_user_events'> = (_ctx, conn,
     conn.send({ type: 'error', error: { code: 'waitUserInvolve.dbUnavailable' } })
     return
   }
-  // `workspaceId` is an opaque id on the wire; the store keys events by the resolved
+  // `workspaceName` is an opaque id on the wire; the store keys events by the resolved
   // absolute path. Resolve here — passing the id straight to `listEvents` would query
-  // `workspace_path = <id>` and silently return nothing (the WorkCenter history / auto
+  // `workspace_name = <id>` and silently return nothing (the WorkCenter history / auto
   // re-fetch bug). An unregistered id degrades to an explicit empty snapshot.
-  const workspacePath = resolveWorkspaceRoot(msg.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(msg.workspaceName)
   if (!workspacePath) {
     conn.send({ type: 'wait_user_events', items: [], hasMore: false })
     return
@@ -42,6 +42,6 @@ export const updateWaitUserEvent: Handler<'update_wait_user_event'> = (ctx, conn
     return
   }
   updateStatus(msg.id, msg.status)
-  const workspacePath = resolveWorkspaceRoot(event.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(event.workspaceName)
   if (workspacePath) ctx.broadcastWaitUserEvents(workspacePath)
 }

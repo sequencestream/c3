@@ -111,8 +111,8 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 // ---- State ----
-let workspaceId = null
-let otherWorkspaceId = null
+let workspaceName = null
+let otherWorkspaceName = null
 let phase = 'boot'
 let intents = []
 /** Deliveries created by this run, by label. */
@@ -167,7 +167,7 @@ function intentCount(dir = PROJECT_DIR) {
   const db = new DatabaseSync(DB_PATH)
   try {
     db.exec('PRAGMA busy_timeout=5000;')
-    return db.prepare('SELECT COUNT(*) AS c FROM intents WHERE workspace_path=?').get(dir)?.c ?? 0
+    return db.prepare('SELECT COUNT(*) AS c FROM intents WHERE workspace_name=?').get(dir)?.c ?? 0
   } finally {
     db.close()
   }
@@ -197,7 +197,7 @@ function markBranchReady(deliveryId, branch) {
 async function createIntent(payload, label) {
   lastCreated = null
   const before = errors.length
-  send({ type: 'create_intent', workspaceId, ...payload })
+  send({ type: 'create_intent', workspaceName, ...payload })
   for (let i = 0; i < POLL_TRIES; i++) {
     await sleep(POLL_MS)
     if (lastCreated) return lastCreated.intent.id
@@ -210,7 +210,7 @@ async function createIntent(payload, label) {
 /** Poll the intent list until `predicate` holds. */
 async function waitForIntents(predicate, label) {
   for (let i = 0; i < POLL_TRIES; i++) {
-    send({ type: 'list_intents', workspaceId })
+    send({ type: 'list_intents', workspaceName })
     await sleep(POLL_MS)
     if (intents.length && predicate()) return true
   }
@@ -231,19 +231,20 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
-      send({ type: 'add_workspace', path: OTHER_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: OTHER_DIR.split('/').pop(), path: OTHER_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId && otherWorkspaceId) break
+      if (workspaceName && otherWorkspaceName) break
       const name = PROJECT_DIR.split('/').pop()
       const otherName = OTHER_DIR.split('/').pop()
-      workspaceId = msg.workspaces?.find((w) => w.name === name)?.id ?? workspaceId
-      otherWorkspaceId = msg.workspaces?.find((w) => w.name === otherName)?.id ?? otherWorkspaceId
-      if (!workspaceId || !otherWorkspaceId) break
+      workspaceName = msg.workspaces?.find((w) => w.name === name)?.name ?? workspaceName
+      otherWorkspaceName =
+        msg.workspaces?.find((w) => w.name === otherName)?.name ?? otherWorkspaceName
+      if (!workspaceName || !otherWorkspaceName) break
       phase = 'seed-deliveries'
-      send({ type: 'create_delivery', workspaceId, title: 'Ready delivery' })
+      send({ type: 'create_delivery', workspaceName, title: 'Ready delivery' })
       break
     }
 
@@ -252,11 +253,15 @@ ws.addEventListener('message', (evt) => {
         deliveries.ready = msg.delivery.id
         markBranchReady(msg.delivery.id, DELIVERY_BRANCH)
         // A second delivery that never gets a branch — the "not ready" refusal.
-        send({ type: 'create_delivery', workspaceId, title: 'Unready delivery' })
+        send({ type: 'create_delivery', workspaceName, title: 'Unready delivery' })
       } else if (!deliveries.unready) {
         deliveries.unready = msg.delivery.id
         // Third: one owned by the OTHER workspace — the cross-workspace refusal.
-        send({ type: 'create_delivery', workspaceId: otherWorkspaceId, title: 'Foreign delivery' })
+        send({
+          type: 'create_delivery',
+          workspaceName: otherWorkspaceName,
+          title: 'Foreign delivery',
+        })
       } else if (!deliveries.foreign) {
         deliveries.foreign = msg.delivery.id
         markBranchReady(msg.delivery.id, 'delivery/foreign-e2e')

@@ -10,7 +10,7 @@
 一个限定在单个项目范围内的目标导向对话。
 
 - **`id`**(text (UUID)): 稳定标识符；被消息引用
-- **`workspacePath`**(text (path)): 解析后的绝对工作区路径；工作区键（始终解析为绝对路径）
+- **`workspaceName`**(text): 不可变且唯一的工作区名称；工作区键
 - **`title`**(text): 简短的讨论标题
 - **`type`**(text): 自由形式的讨论类型/分类（例如 design、arch）；持久化层不做枚举约束
 - **`goal`**(text): 该讨论要达成的目标；未设置时为 `''`
@@ -36,7 +36,7 @@
 `metadata`。因为描述的是**一次编排尝试**而非唯一的状态转换，恢复与新一轮各自会产生
 新的一对事件。预研（research）阶段不属于正式编排，不产生这对事件。
 
-关系：属于一个项目（通过 `workspacePath`）；拥有零条或多条 Discussion Message。
+关系：属于一个项目（通过 `workspaceName`）；拥有零条或多条 Discussion Message。
 每个参与的智能体在 `discussion_agent_sessions` 中还可以有一条当前的厂商转录映射；
 该映射被投影到 `session_metadata` 中，供统一的
 Sessions 页以该讨论为所有者展示，但讨论消息仍是转录的唯一事实来源（SoT）。

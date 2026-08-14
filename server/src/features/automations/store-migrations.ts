@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS automations (
   type                TEXT NOT NULL,
   config              TEXT NOT NULL DEFAULT '{}',
   max_wall_clock_ms   INTEGER,
-  workspace_path      TEXT NOT NULL,
+  workspace_name      TEXT NOT NULL,
   trigger_type        TEXT NOT NULL DEFAULT 'cron',
   cron_expression     TEXT NOT NULL,
   next_run_at         INTEGER,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS automations (
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sch_workspace ON automations(workspace_path);
+CREATE INDEX IF NOT EXISTS idx_sch_workspace ON automations(workspace_name);
 
 CREATE TABLE IF NOT EXISTS automation_execution_logs (
   id            TEXT PRIMARY KEY,
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS automation_execution_logs (
 CREATE INDEX IF NOT EXISTS idx_sch_exec_schedule ON automation_execution_logs(automation_id);
 
 CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
-  workspace_path TEXT PRIMARY KEY,
+  workspace_name TEXT PRIMARY KEY,
   config_json    TEXT NOT NULL DEFAULT '{}',
   updated_at     INTEGER NOT NULL
 );
@@ -147,7 +147,7 @@ function runMigrations(d: Db): void {
   // this table (IF NOT EXISTS makes this a no-op otherwise).
   d.exec(`
     CREATE TABLE IF NOT EXISTS workspace_mcp_configs (
-      workspace_path TEXT PRIMARY KEY,
+      workspace_name TEXT PRIMARY KEY,
       config_json    TEXT NOT NULL DEFAULT '{}',
       updated_at     INTEGER NOT NULL
     );

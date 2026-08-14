@@ -27,7 +27,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -56,7 +56,7 @@ import { initTestGitRepo } from '../../../test/git-repo.js'
 let dir: string
 let other: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -77,8 +77,8 @@ beforeEach(() => {
   resetIntentLink()
   addWorkspace(dir, 1)
   addWorkspace(other, 2)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -140,7 +140,7 @@ describe('create_intent — 基准分支落库', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'delivery', deliveryId: delivery.id },
     })
@@ -164,7 +164,7 @@ describe('create_intent — 基准分支落库', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'feature/x' },
     })
@@ -188,7 +188,7 @@ describe('create_intent — 基准分支落库', () => {
     // 显式值,而不是服务端的隐式兜底。
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'develop' },
     })
@@ -206,7 +206,7 @@ describe('create_intent — 基准分支落库', () => {
     saveWorkspaceSetting(proj, { defaultMainBranch: 'develop' })
     const h = harness()
 
-    await createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceId })
+    await createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceName })
 
     expect(listIntents(proj)[0]).toMatchObject({
       title: 'new intent',
@@ -232,7 +232,7 @@ describe('create_intent — 选交付即自动关联交付', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'delivery', deliveryId: delivery.id },
     })
@@ -260,7 +260,7 @@ describe('create_intent — 选交付即自动关联交付', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       base: { kind: 'delivery', deliveryId: delivery.id },
     })
 
@@ -286,7 +286,7 @@ describe('create_intent — 基准拒绝路径(一条意图都不留)', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: makeBase(),
     })
@@ -308,7 +308,7 @@ describe('create_intent — 基准拒绝路径(一条意图都不留)', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'delivery', deliveryId: delivery.id },
     })
@@ -326,7 +326,7 @@ describe('create_intent — 基准拒绝路径(一条意图都不留)', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: '   ' },
     })
@@ -340,7 +340,7 @@ describe('create_intent — 基准拒绝路径(一条意图都不留)', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId: 'nope',
+      workspaceName: 'nope',
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'main' },
     })
@@ -356,7 +356,7 @@ describe('create_intent — 连续启动意图会话', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'main' },
     })
@@ -372,7 +372,7 @@ describe('create_intent — 连续启动意图会话', () => {
     ])
     // 客户端按返回的精确 id 落点,不按列表位置或标题推断。
     expect(h.sent.find((m) => m.type === 'create_intent_result')).toMatchObject({
-      workspaceId,
+      workspaceName,
       intent: { id: intentId },
     })
     expect(h.launchRun).toHaveBeenCalledTimes(1)
@@ -385,7 +385,7 @@ describe('create_intent — 连续启动意图会话', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'main' },
     })
@@ -405,7 +405,7 @@ describe('create_intent — 连续启动意图会话', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: '  CONTENT_ABC  ',
       base: { kind: 'branch', branch: 'main' },
     })
@@ -422,7 +422,7 @@ describe('create_intent — 连续启动意图会话', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: '   ',
       base: { kind: 'branch', branch: 'feature/x' },
     })
@@ -438,7 +438,7 @@ describe('create_intent — 连续启动意图会话', () => {
 
     await createIntent(h.ctx, h.conn, {
       type: 'create_intent',
-      workspaceId,
+      workspaceName,
       content: 'CONTENT_ABC',
       base: { kind: 'branch', branch: 'main' },
     })
@@ -464,10 +464,10 @@ describe('create_intent — 连续启动意图会话', () => {
 describe('create_intent 产出的意图 — 删除守卫', () => {
   it('仍是无下游资产的 draft 时,允许物理删除', async () => {
     const h = harness()
-    await createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceId })
+    await createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceName })
     const id = listIntents(proj)[0].id
 
-    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceName, intentId: id })
 
     expect(getIntent(id)).toBeNull()
     expect(listIntentLogs(id)).toEqual([])
@@ -475,12 +475,12 @@ describe('create_intent 产出的意图 — 删除守卫', () => {
 
   it('删除时指名另一个工作区 → 拒绝,意图留在原处', async () => {
     const h = harness()
-    await createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceId })
+    await createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceName })
     const id = listIntents(proj)[0].id
 
     await deleteIntent(h.ctx, h.conn, {
       type: 'delete_intent',
-      workspaceId: pathToId(other)!,
+      workspaceName: pathToName(other)!,
       intentId: id,
     })
 

@@ -39,7 +39,7 @@ describe('all templates', () => {
   it.each(ids)('%s exists and build() returns maxWallClockMs', (id) => {
     const template = getAutomationTemplate(id)
     expect(template).toBeDefined()
-    const input = template!.build({ workspaceId: '/ws', agentId: 'a1' })
+    const input = template!.build({ workspaceName: '/ws', agentId: 'a1' })
     expect(input.maxWallClockMs).toBe(TEMPLATE_MAX_WALL_CLOCK_MS)
   })
 
@@ -54,7 +54,7 @@ describe('all templates', () => {
 describe('PR status poller automation template', () => {
   it('builds the enabled Claude reconciliation configuration', () => {
     const input = getAutomationTemplate('pr-status-poller')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
     expect(input).toMatchObject({
@@ -82,7 +82,7 @@ describe('PR status poller automation template', () => {
     // have — a silent loss of the reconciliation it advertises. The allowlist and
     // the prompt are one fact and must move together.
     const input = getAutomationTemplate('pr-status-poller')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
     expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intent_pr_info')
@@ -107,7 +107,7 @@ describe('PR status poller automation template', () => {
 describe('weekly architecture review automation template', () => {
   it('builds the Friday claude review configuration', () => {
     const input = getAutomationTemplate('weekly-arch-review')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
     expect(input).toMatchObject({
@@ -147,7 +147,7 @@ describe('weekly architecture review automation template', () => {
 describe('weekly vulnerability analysis automation template', () => {
   it('builds the Monday claude weekly configuration', () => {
     const input = getAutomationTemplate('weekly-vuln-analysis')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
     expect(input).toMatchObject({
@@ -195,7 +195,7 @@ describe('weekly expired worktree cleanup automation template', () => {
   it('builds the Sunday claude cleanup configuration', () => {
     const template = getAutomationTemplate('weekly-worktree-cleanup')
     const input = template?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
 
@@ -254,7 +254,7 @@ describe('weekly expired worktree cleanup automation template', () => {
 describe('PR review runner automation template', () => {
   it('builds the event-claude review configuration', () => {
     const input = getAutomationTemplate('pr-review-runner')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
     expect(input).toMatchObject({
@@ -302,7 +302,7 @@ describe('PR review runner automation template', () => {
 describe('PR review fix automation template', () => {
   it('builds the event-claude fix configuration', () => {
     const input = getAutomationTemplate('pr-review-fix')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: 'a1',
     })
     expect(input).toMatchObject({
@@ -438,7 +438,7 @@ describe('PR template prompts match the real pr:* event shape', () => {
 describe('custom event echo automation template', () => {
   it('builds the command echo configuration', () => {
     const input = getAutomationTemplate('custom-event-echo')?.build({
-      workspaceId: '/workspace',
+      workspaceName: '/workspace',
       agentId: '',
     })
     expect(input).toMatchObject({
@@ -459,7 +459,7 @@ describe('custom event echo automation template', () => {
   it('does not carry LLM-specific tools', () => {
     const template = getAutomationTemplate('custom-event-echo')
     expect(template).toBeDefined()
-    const input = template!.build({ workspaceId: '/workspace' } as AutomationTemplateBuildArgs)
+    const input = template!.build({ workspaceName: '/workspace' } as AutomationTemplateBuildArgs)
     expect(input.toolAllowlist).toEqual([])
     expect(input.type).toBe('command')
     expect(input.config).not.toHaveProperty('prompt')

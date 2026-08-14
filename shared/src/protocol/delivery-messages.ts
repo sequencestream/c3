@@ -17,7 +17,7 @@ import type {
 } from './delivery.js'
 
 /** List a workspace's deliveries (reply/broadcast: `deliveries`). */
-export type ClientListDeliveries = { type: 'list_deliveries'; workspaceId: string }
+export type ClientListDeliveries = { type: 'list_deliveries'; workspaceName: string }
 
 /**
  * Create one delivery. Pure local data action — never touches git / forge.
@@ -27,7 +27,7 @@ export type ClientListDeliveries = { type: 'list_deliveries'; workspaceId: strin
  */
 export type ClientCreateDelivery = {
   type: 'create_delivery'
-  workspaceId: string
+  workspaceName: string
   title: string
   description?: string
   startDate?: number | null
@@ -43,7 +43,7 @@ export type ClientGetDeliveryDetail = { type: 'get_delivery_detail'; deliveryId:
  */
 export type ClientUpdateDelivery = {
   type: 'update_delivery'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
   title?: string
   description?: string
@@ -59,7 +59,7 @@ export type ClientUpdateDelivery = {
  */
 export type ClientCancelDelivery = {
   type: 'cancel_delivery'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
 }
 
@@ -74,7 +74,7 @@ export type ClientCancelDelivery = {
  */
 export type ClientTransitionDelivery = {
   type: 'transition_delivery'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
   to: DeliveryStatus
   confirmVerified?: boolean
@@ -96,7 +96,7 @@ export type ClientTransitionDelivery = {
  */
 export type ClientInitDeliveryBranch = {
   type: 'init_delivery_branch'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
   branchName: string
   mode: 'create' | 'bind'
@@ -109,7 +109,7 @@ export type ClientInitDeliveryBranch = {
  */
 export type ClientCleanupDeliveryBranch = {
   type: 'cleanup_delivery_branch'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
 }
 
@@ -127,7 +127,7 @@ export type ClientCleanupDeliveryBranch = {
  */
 export type ClientLinkIntentToDelivery = {
   type: 'link_intent_to_delivery'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
   intentId: string
 }
@@ -148,7 +148,7 @@ export type ClientLinkIntentToDelivery = {
  */
 export type ClientUnlinkIntentFromDelivery = {
   type: 'unlink_intent_from_delivery'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
   intentId: string
 }
@@ -169,7 +169,7 @@ export type ClientUnlinkIntentFromDelivery = {
  */
 export type ClientSyncDeliveryMainline = {
   type: 'sync_delivery_mainline'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
 }
 
@@ -199,7 +199,7 @@ export type ClientSyncDeliveryMainline = {
  */
 export type ClientCreateDeliveryPr = {
   type: 'create_delivery_pr'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
 }
 
@@ -231,7 +231,7 @@ export type ClientCreateDeliveryPr = {
  */
 export type ClientSyncDeliveryPr = {
   type: 'sync_delivery_pr'
-  workspaceId: string
+  workspaceName: string
   deliveryId: string
 }
 
@@ -246,7 +246,7 @@ export type ClientSyncDeliveryPr = {
  */
 export type ServerDeliveries = {
   type: 'deliveries'
-  workspaceId: string
+  workspaceName: string
   items: Delivery[]
   needsActionCount: number
 }
@@ -254,7 +254,7 @@ export type ServerDeliveries = {
 /** Exact result for `create_delivery`; the regular `deliveries` snapshot follows. */
 export type ServerCreateDeliveryResult = {
   type: 'create_delivery_result'
-  workspaceId: string
+  workspaceName: string
   delivery: Delivery
   /**
    * One-time `pr:merge` semantic-change notice. True ONLY on the first delivery
@@ -371,7 +371,7 @@ export type ServerDeliveryBranchInitProgress = {
  */
 export type ServerDeliveryBranchInitResult = {
   type: 'delivery_branch_init_result'
-  workspaceId: string
+  workspaceName: string
   delivery: Delivery
   warning?: 'delivery.branchBehindMain'
 }

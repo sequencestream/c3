@@ -464,7 +464,7 @@ export interface Intent {
   /** Stable uuid. */
   id: string
   /** Owning project — the workspace absolute path (resolved). */
-  workspaceId: string
+  workspaceName: string
   title: string
   /**
    * Short ASCII English title (≤128 chars persisted), the stable source for
@@ -783,7 +783,7 @@ export type WorkflowState =
 /** A project's workflow orchestrator status, broadcast to every connection. */
 export interface WorkflowStatus {
   /** Owning project — the workspace absolute path (resolved). */
-  workspaceId: string
+  workspaceName: string
   state: WorkflowState
   /** The intent currently being developed (null when not running). */
   currentIntentId: string | null
@@ -861,7 +861,7 @@ export interface QueueIntentDetail {
 
 /** A workspace queue's per-intent detail projection. */
 export interface QueueDetail {
-  workspaceId: string
+  workspaceName: string
   state: WorkflowState
   /** Id of the reconcile pass this projection came from; `''` before the first. */
   tickId: string

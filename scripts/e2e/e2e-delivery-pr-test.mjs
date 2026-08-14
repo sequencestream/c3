@@ -190,7 +190,7 @@ console.log('[e2e] private server is up')
 
 // ---- State ----
 const ws = new WebSocket(URL)
-let workspaceId = null
+let workspaceName = null
 let phase = 'boot'
 let deliveryId = null
 let intentId = null
@@ -296,16 +296,16 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId) break
+      if (workspaceName) break
       const name = PROJECT_DIR.split('/').pop()
-      workspaceId =
-        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.id ?? null
-      if (!workspaceId) {
-        failures.push('no workspaceId after add_workspace')
+      workspaceName =
+        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.name ?? null
+      if (!workspaceName) {
+        failures.push('no workspaceName after add_workspace')
         finish()
         return
       }
@@ -313,18 +313,18 @@ ws.addEventListener('message', (evt) => {
       // be auto-detected as GitLab and the server would look for `glab`.
       send({
         type: 'save_workspace_setting',
-        workspaceId,
+        workspaceName,
         config: { gitBranchMode: 'worktree', defaultMainBranch: 'main', forge: 'github' },
       })
       phase = 'seed-intent'
-      send({ type: 'create_intent', workspaceId })
+      send({ type: 'create_intent', workspaceName })
       break
     }
 
     case 'create_intent_result':
       intentId = msg.intent.id
       phase = 'create-delivery'
-      send({ type: 'create_delivery', workspaceId, title: 'Delivery PR e2e' })
+      send({ type: 'create_delivery', workspaceName, title: 'Delivery PR e2e' })
       break
 
     case 'create_delivery_result':
@@ -364,7 +364,7 @@ async function runAssertions() {
   // ---- 2. the status gate comes before the branch gate ----
   phase = 'gate-not-verified'
   let before = errors.length
-  send({ type: 'create_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'create_delivery_pr', workspaceName, deliveryId })
   check(
     await waitForError(before, 'delivery.deliveryPrForbidden'),
     'a delivery that is not verified cannot open a delivery PR (status gate first)',
@@ -375,7 +375,7 @@ async function runAssertions() {
   phase = 'to-verified'
   send({
     type: 'init_delivery_branch',
-    workspaceId,
+    workspaceName,
     deliveryId,
     branchName: BRANCH,
     mode: 'create',
@@ -386,7 +386,7 @@ async function runAssertions() {
     finish()
     return
   }
-  send({ type: 'link_intent_to_delivery', workspaceId, deliveryId, intentId })
+  send({ type: 'link_intent_to_delivery', workspaceName, deliveryId, intentId })
   await waitForDetail(() => (detail?.associatedIntents?.length ?? 0) === 1, 'intent linked')
   seedIntentPrRow()
   await waitForDetail(() => detail?.delivery?.integration?.merged === 1, 'N/M sees the merged PR')
@@ -395,12 +395,12 @@ async function runAssertions() {
   // branch already merged by hand ends up in. Asserted BEFORE the first commit.
   phase = 'gate-no-diff'
   for (const to of ['integrating', 'verifying', 'verified']) {
-    send({ type: 'transition_delivery', workspaceId, deliveryId, to, confirmVerified: true })
+    send({ type: 'transition_delivery', workspaceName, deliveryId, to, confirmVerified: true })
     await waitForDetail(() => detail?.delivery?.status === to, `status ${to}`)
   }
   check(detail?.delivery?.status === 'verified', 'the delivery reached verified')
   before = errors.length
-  send({ type: 'create_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'create_delivery_pr', workspaceName, deliveryId })
   check(
     await waitForError(before, 'delivery.deliveryPrNoDiff'),
     'a delivery branch with no commits beyond mainline cannot open a PR',
@@ -419,7 +419,7 @@ async function runAssertions() {
   setForge({ mode: 'ok', openPr: null, createNumber: '900' })
   const baseSha = git('rev-parse', 'origin/main')
   const headSha = git('rev-parse', `origin/${BRANCH}`)
-  send({ type: 'create_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'create_delivery_pr', workspaceName, deliveryId })
   const created = await waitForDetail(() => detail?.deliveryPr?.number === '900', 'delivery PR row')
   // This connection never logged in, so it is not an admin — reaching a created PR
   // is the proof that no c3-side permission gate stands in front of the forge.
@@ -453,7 +453,7 @@ async function runAssertions() {
   phase = 'create-retry'
   setForge({ mode: 'ok', openPr: { number: '900', url: 'https://github.com/o/r/pull/900' } })
   const createsBefore = countCalls('pr create')
-  send({ type: 'create_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'create_delivery_pr', workspaceName, deliveryId })
   await sleep(POLL_MS * 12)
   check(countCalls('pr create') === createsBefore, 'a retry never creates a second PR')
   check(deliveryPrRows().length === 1, 'the ledger still holds exactly one delivery PR row')
@@ -466,7 +466,7 @@ async function runAssertions() {
       c.prepare('SELECT COUNT(*) AS n FROM delivery_logs WHERE delivery_id=?').get(deliveryId).n,
   )
   before = errors.length
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   check(
     await waitForError(before, 'delivery.deliveryPrSyncFailed'),
     'an unreachable forge reports a retryable sync failure',
@@ -491,7 +491,7 @@ async function runAssertions() {
     openPr: { number: '900' },
     view: { state: 'OPEN', statusCheckRollup: [{ conclusion: 'FAILURE' }] },
   })
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   await waitForDetail(() => detail?.deliveryPr?.blockedReason === 'ci_failed', 'ci_failed recorded')
   check(
     deliveryPrRows()[0]?.blocked_reason === 'ci_failed',
@@ -508,7 +508,7 @@ async function runAssertions() {
     openPr: { number: '900' },
     view: { state: 'OPEN', reviewDecision: 'REVIEW_REQUIRED' },
   })
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   await waitForDetail(() => detail?.deliveryPr?.blockedReason === 'approval', 'approval recorded')
   check(
     deliveryPrRows()[0]?.blocked_reason === 'approval',
@@ -518,7 +518,7 @@ async function runAssertions() {
 
   phase = 'layer-unblocked'
   setForge({ mode: 'ok', openPr: { number: '900' }, view: { state: 'OPEN' } })
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   await waitForDetail(() => detail?.deliveryPr?.blockedReason === null, 'block cleared')
   check(
     deliveryPrRows()[0]?.blocked_reason === null,
@@ -538,7 +538,7 @@ async function runAssertions() {
     openPr: { number: '900' },
     view: { state: 'OPEN', mergeable: 'CONFLICTING' },
   })
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   const rolledBack = await waitForDetail(
     () => detail?.delivery?.status === 'verifying',
     'conflict rollback',
@@ -563,7 +563,7 @@ async function runAssertions() {
   git('checkout', '-q', 'main')
   send({
     type: 'transition_delivery',
-    workspaceId,
+    workspaceName,
     deliveryId,
     to: 'verified',
     confirmVerified: true,
@@ -580,7 +580,7 @@ async function runAssertions() {
     openPr: { number: '900' },
     view: { state: 'MERGED', mergedAt: '2026-08-07T00:00:00Z' },
   })
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   const delivered = await waitForDetail(() => detail?.delivery?.status === 'delivered', 'delivered')
   check(delivered, 'a merged delivery PR settles the delivery as delivered')
   check(deliveryPrRows()[0]?.status === 'merged', 'the PR row settles to merged in the same unit')
@@ -597,7 +597,7 @@ async function runAssertions() {
 
   // ---- 10. a repeat sync of a settled delivery is idempotent ----
   phase = 'delivered-repeat'
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   await sleep(POLL_MS * 12)
   check(deliveryStatus() === 'delivered', 'a repeat sync leaves the delivery delivered')
   check(
@@ -609,13 +609,13 @@ async function runAssertions() {
   phase = 'current-branch'
   send({
     type: 'save_workspace_setting',
-    workspaceId,
+    workspaceName,
     config: { gitBranchMode: 'current-branch', defaultMainBranch: 'main', forge: 'github' },
   })
   await sleep(POLL_MS * 4)
   before = errors.length
-  send({ type: 'create_delivery_pr', workspaceId, deliveryId })
-  send({ type: 'sync_delivery_pr', workspaceId, deliveryId })
+  send({ type: 'create_delivery_pr', workspaceName, deliveryId })
+  send({ type: 'sync_delivery_pr', workspaceName, deliveryId })
   await waitForError(before, 'delivery.deliveryPrModeUnsupported')
   await sleep(POLL_MS * 4)
   check(

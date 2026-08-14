@@ -16,17 +16,17 @@ import type {
 } from './code.js'
 
 /** List one workspace-relative directory. Server replies with `dir_listed`. */
-export type ClientListDir = { type: 'list_dir'; workspaceId: string; rel: string }
+export type ClientListDir = { type: 'list_dir'; workspaceName: string; rel: string }
 
 /** Read one workspace-relative file. Server replies with `file_read`. */
-export type ClientReadFile = { type: 'read_file'; workspaceId: string; rel: string }
+export type ClientReadFile = { type: 'read_file'; workspaceName: string; rel: string }
 
 /**
  * Request the workspace's read-only Git-status snapshot (decorates the file
- * tree). Carries only `workspaceId` — never a client path. Server replies with
+ * tree). Carries only `workspaceName` — never a client path. Server replies with
  * `code_git_status`; a non-git or unreadable workspace degrades to an empty map.
  */
-export type ClientGetCodeGitStatus = { type: 'get_code_git_status'; workspaceId: string }
+export type ClientGetCodeGitStatus = { type: 'get_code_git_status'; workspaceName: string }
 
 /**
  * Search code by filename or content. Server replies with `codes_searched`.
@@ -40,7 +40,7 @@ export type ClientGetCodeGitStatus = { type: 'get_code_git_status'; workspaceId:
  */
 export type ClientSearchCodes = {
   type: 'search_codes'
-  workspaceId: string
+  workspaceName: string
   query: string
   mode: CodeSearchMode
   pattern?: string
@@ -49,13 +49,13 @@ export type ClientSearchCodes = {
 /** Directory listing for one workspace-relative path. */
 export type ServerDirListed = {
   type: 'dir_listed'
-  workspaceId: string
+  workspaceName: string
   rel: string
   entries: CodeDirEntry[]
 }
 
 /** File metadata and optional text content for one workspace-relative path. */
-export type ServerFileRead = { type: 'file_read'; workspaceId: string; file: CodeFileRead }
+export type ServerFileRead = { type: 'file_read'; workspaceName: string; file: CodeFileRead }
 
 /**
  * Authoritative workspace Git-status snapshot: `files` maps every changed
@@ -65,14 +65,14 @@ export type ServerFileRead = { type: 'file_read'; workspaceId: string; file: Cod
  */
 export type ServerCodeGitStatus = {
   type: 'code_git_status'
-  workspaceId: string
+  workspaceName: string
   files: Record<string, CodeGitStatus>
 }
 
 /** Bounded code search result set. */
 export type ServerCodesSearched = {
   type: 'codes_searched'
-  workspaceId: string
+  workspaceName: string
   query: string
   mode: CodeSearchMode
   hits: CodeSearchHit[]

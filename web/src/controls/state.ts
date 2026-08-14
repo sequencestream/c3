@@ -105,7 +105,7 @@ export const CODES_PROJECT_KEY = 'c3.codesProject'
 export const CURRENT_WS_KEY = 'c3.currentWorkspace'
 export const WORK_SESSION_QUERY_START_TIME_KEY = 'work_session_query_start_time'
 // Codes 内嵌 ChatColumn 的 per-workspace 持久化键前缀。实际键为
-// `c3.codes.<workspaceId>.chatWidth` / `c3.codes.<workspaceId>.sessionId`
+// `c3.codes.<workspaceName>.chatWidth` / `c3.codes.<workspaceName>.sessionId`
 // (由 persistence.ts 的 codesKey 拼装),记住每个工作区最后一次的分隔条宽度与
 // 内嵌会话 id。
 export const CODES_CHAT_WIDTH_KEY = 'chatWidth'
@@ -129,8 +129,8 @@ export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
   'tool',
 ]
 
-export function sessionCacheKey(workspaceId: string, sessionKind: SessionPageKind): string {
-  return `${workspaceId}::${sessionKind}`
+export function sessionCacheKey(workspaceName: string, sessionKind: SessionPageKind): string {
+  return `${workspaceName}::${sessionKind}`
 }
 
 // 顶部「会话」tab 角标数值:当前工作区六类会话(work/intent/spec/discussion/
@@ -251,7 +251,7 @@ export function createState(deps: StateDeps) {
   const dashboardLoading = ref(false)
   // The whole snapshot failed to refresh; the last good rows are kept on screen.
   const dashboardError = ref<UiError | null>(null)
-  // Workspace ids whose per-row automation toggle is in flight (its switch is busy).
+  // Workspace names whose per-row automation toggle is in flight (its switch is busy).
   const dashboardPending = ref<Set<string>>(new Set())
   // A coalesced refresh was requested while a request was in flight — run once after.
   const dashboardRefreshPending = ref(false)
@@ -528,7 +528,7 @@ export function createState(deps: StateDeps) {
    * keeps a plain delivery-page create from being chained onto — and what makes
    * a second click a no-op while the first is still travelling.
    */
-  const pendingStandaloneDelivery = ref<{ workspaceId: string; intentId: string } | null>(null)
+  const pendingStandaloneDelivery = ref<{ workspaceName: string; intentId: string } | null>(null)
 
   // Per-workspace SDD master switch, rebroadcast with every intent list. Drives
   // the SDD-aware intent action button (Write Spec / Approve Spec / Start Work)
@@ -683,7 +683,7 @@ export function createState(deps: StateDeps) {
   const automationFormTarget = ref<Automation | null>(null)
 
   // ---- Codes view (read-only file browser) ----
-  // The workspace id whose tree/tabs are loaded. Reset when it changes.
+  // The workspace name whose tree/tabs are loaded. Reset when it changes.
   const codesProject = ref<string | null>(null)
   // Lazy directory cache: rel path ('' = root) → immediate children. Absent = not loaded yet.
   const codesDirs = ref<Record<string, CodeDirEntry[]>>({})
@@ -709,7 +709,7 @@ export function createState(deps: StateDeps) {
   const codesActiveTab = computed<CodeTab | null>(
     () => codesTabs.value.find((tab) => tab.path === codesActivePath.value) ?? null,
   )
-  // Codes 内嵌 ChatColumn 的「每工作区最后一次会话」指针(workspaceId → sessionId),
+  // Codes 内嵌 ChatColumn 的「每工作区最后一次会话」指针(workspaceName → sessionId),
   // 作为持久化到内存的运行时镜像:openCodes 恢复时优先读 localStorage,该 ref 供
   // create/reset 后即时判定 create-vs-reset 按钮态,避免反复读 localStorage。与 Works
   // 的 consoleSession 是两个独立指针,互不覆盖。

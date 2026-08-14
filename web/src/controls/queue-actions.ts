@@ -18,7 +18,7 @@ export function installQueueActions(ctx: AppCtx): void {
 
   const refresh = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'get_queue_detail', workspaceId: intentsProject.value })
+    send({ type: 'get_queue_detail', workspaceName: intentsProject.value })
   }
 
   ctx.refreshQueueDetail = refresh
@@ -36,7 +36,7 @@ export function installQueueActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'queue_control',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       action,
       ...(intentId ? { intentId } : {}),
     })

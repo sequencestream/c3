@@ -12,7 +12,7 @@ beforeEach(() => {
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title: 'Start me',
     shortEnTitle: null,
     content: 'Do work',

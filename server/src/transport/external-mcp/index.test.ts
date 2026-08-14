@@ -260,9 +260,13 @@ describe('readCredential', () => {
     ['a bare scheme', 'Bearer', { kind: 'unusable' }],
     ['an empty token', 'Bearer ', { kind: 'unusable' }],
     ['a second token', 'Bearer a b', { kind: 'unusable' }],
+    // Only a header that was never sent is credential-free. A header the proxy
+    // emptied still exists on the request — reading it as absent would answer it
+    // with the trusted-local principal instead of 401. Fetch normalises a
+    // whitespace-only value to `''`, so both spellings arrive the same way.
     ['no header', undefined, { kind: 'absent' }],
-    // A header the proxy emptied carries no credential to verify.
-    ['a blank header', '   ', { kind: 'absent' }],
+    ['an emptied header', '', { kind: 'unusable' }],
+    ['a blank header', '   ', { kind: 'unusable' }],
   ])('reads %s as %o', (_label, header, expected) => {
     expect(readCredential(header)).toEqual(expected)
   })
@@ -603,6 +607,10 @@ describe('trusted-local mode', () => {
     ['a bearer with a stray space', 'Bearer c3k_a b'],
     ['a bare scheme', 'Bearer'],
     ['a non-bearer scheme', 'Basic dXNlcjpwdw=='],
+    // The header a proxy stripped the value from: it is on the request, so it
+    // was presented. Whitespace-only arrives as this same empty value.
+    ['an emptied header', ''],
+    ['a blank header', '   '],
   ])('refuses %s rather than degrading to local', async (_label, authorization) => {
     world.trustedLocal = true
     const before = route.sessionCount()

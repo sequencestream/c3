@@ -93,6 +93,12 @@ export type Credential =
 /**
  * Read the credential out of the `Authorization` header.
  *
+ * Only a header that is not there at all is `absent`. A header that is there but
+ * carries nothing readable — including the empty value a proxy leaves behind
+ * when it strips `Authorization`, which the Fetch standard hands us as `""`
+ * whether the value was empty or only whitespace — is `unusable`, because the
+ * existence of the header is itself the caller presenting a credential.
+ *
  * Case-insensitive on the scheme (RFC 7235 says the scheme is case-insensitive)
  * but strict about everything else: no second credential, no empty token. A
  * `Basic` or `X-API-Key` credential is not read as a credential value — but its
@@ -100,7 +106,7 @@ export type Credential =
  * credential-free request.
  */
 export function readCredential(header: string | undefined | null): Credential {
-  if (typeof header !== 'string' || header.trim().length === 0) return { kind: 'absent' }
+  if (typeof header !== 'string') return { kind: 'absent' }
   const match = /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header.trim())
   return match ? { kind: 'bearer', token: match[1] } : { kind: 'unusable' }
 }

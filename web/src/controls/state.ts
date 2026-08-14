@@ -201,6 +201,9 @@ export function createState(deps: StateDeps) {
 
   // Sidebar / session state
   const workspaces = ref<WorkspaceInfo[]>([])
+  // 「新增工作区」弹框的受控开关:顶栏两处切换器(桌面 / 移动)共用同一个实例,
+  // 手动「+」与冷启动引导都写它,取消 / 确认清空。仅内存态,不持久化。
+  const addWorkspaceOpen = ref(false)
   const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
   const activeSessionKind = ref<SessionPageKind>('work')
   const sessionCounts = ref<Record<SessionPageKind, number>>({
@@ -1066,6 +1069,7 @@ export function createState(deps: StateDeps) {
     codexPolicy,
     taskModel,
     workspaces,
+    addWorkspaceOpen,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
     currentWorkspace,

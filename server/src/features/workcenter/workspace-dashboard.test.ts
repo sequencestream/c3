@@ -48,6 +48,8 @@ vi.mock('../../state.js', () => ({
       ? undefined
       : hoisted.workspaces.find((w) => w.name === name)?.path,
   pathToName: (path: string) => hoisted.workspaces.find((w) => w.path === path)?.name ?? path,
+  workspaceNameFor: (value: string) =>
+    hoisted.workspaces.find((w) => w.name === value || w.path === value)?.name ?? value,
 }))
 
 // `kernel/config` partially mocked: real exports kept (getTimezone etc.), only the

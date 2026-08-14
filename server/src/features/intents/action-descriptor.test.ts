@@ -35,6 +35,7 @@ vi.mock('../../kernel/config/index.js', () => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: vi.fn((id: string) => (id === 'ws' ? '/proj' : null)),
+  workspaceNameFor: vi.fn((value: string) => (value === '/proj' ? 'ws' : value)),
 }))
 
 const liveFingerprint = vi.fn<(workspacePath: string, specPath: string | null) => string | null>()

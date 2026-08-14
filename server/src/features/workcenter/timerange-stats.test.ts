@@ -37,6 +37,8 @@ vi.mock('../../state.js', () => ({
   listWorkspaces: () => hoisted.workspaces,
   resolveWorkspaceRoot: (name: string) => hoisted.workspaces.find((w) => w.name === name)?.path,
   pathToName: (path: string) => hoisted.workspaces.find((w) => w.path === path)?.name ?? path,
+  workspaceNameFor: (value: string) =>
+    hoisted.workspaces.find((w) => w.name === value || w.path === value)?.name ?? value,
 }))
 
 import { getTimeRangeStatsHandler } from './index.js'

@@ -33,6 +33,7 @@ vi.mock('../../state.js', () => ({
   // round-trip it back to the same value (the workspace is "registered").
   resolveWorkspaceRoot: vi.fn((id: string) => id),
   pathToName: vi.fn((p: string) => p),
+  workspaceNameFor: vi.fn((value: string) => value),
   setActiveSessionId: vi.fn(),
   setSessionMode: vi.fn(),
   touchWorkspace: vi.fn(),

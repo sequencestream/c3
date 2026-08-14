@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: () => (async function* () {})() }))

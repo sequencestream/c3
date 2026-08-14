@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
+import { workspaceNameFor } from '../../state.js'
 import {
   getChatSession,
   getIntent,
@@ -85,7 +86,7 @@ function seedLegacyV5(raw: Db): void {
        (id, project_path, title, content, priority, status, module, last_dev_session_id, automate, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     'r1',
-    proj,
+    workspaceNameFor(proj),
     'Legacy req',
     'body',
     'P0',
@@ -101,7 +102,7 @@ function seedLegacyV5(raw: Db): void {
   raw.run(
     'INSERT INTO requirement_chats (session_id, project_path, is_current, updated_at) VALUES (?,?,1,?)',
     'chat-1',
-    proj,
+    workspaceNameFor(proj),
     1,
   )
 }
@@ -215,7 +216,7 @@ describe('v5 → v6 rename: a partial-migration db re-enters and converges', () 
          (id, project_path, title, content, priority, status, module, last_dev_session_id, automate, created_at, updated_at, completed_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       'r1',
-      proj,
+      workspaceNameFor(proj),
       'Half-migrated',
       'body',
       'P0',
@@ -231,7 +232,7 @@ describe('v5 → v6 rename: a partial-migration db re-enters and converges', () 
     raw.run(
       'INSERT INTO requirement_chats (session_id, project_path, is_current, updated_at) VALUES (?,?,1,?)',
       'chat-1',
-      proj,
+      workspaceNameFor(proj),
       1,
     )
 

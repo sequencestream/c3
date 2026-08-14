@@ -38,6 +38,7 @@ import {
   resetStoreForTests as resetSessionMetadataStoreForTests,
 } from './features/sessions/session-metadata-store.js'
 import { mintC3SessionId } from './kernel/agent/session/accessor.js'
+import { workspaceNameFor } from './state.js'
 import { addToolSession, isToolSession, listWorkspaceSessions, removeSession } from './sessions.js'
 
 const proj = '/abs/tool-proj'
@@ -113,7 +114,8 @@ describe('listWorkspaceSessions tool-session filter', () => {
 
     const row = getByC3Id(mintC3SessionId({ vendor: 'claude', vendorSessionId: 'tool-abc' }))
     expect(row).toMatchObject({
-      workspacePath: proj,
+      // Unregistered synthetic workspace: the projection degrades to the name.
+      workspacePath: workspaceNameFor(proj),
       vendorSessionId: 'tool-abc',
       agentId: 'tool-agent',
       sessionKind: 'tool',

@@ -24,14 +24,19 @@ import type { GenericEventEnvelope } from '@ccc/shared'
 import { createExternalMcp, EXTERNAL_MCP_PATH_PREFIX, type ServedExternalMcp } from './index.js'
 import { buildExternalMcpCatalog, externalMcpSourceId } from '../../features/external-mcp/tools.js'
 import { EXTERNAL_MCP_READ_TOOLS } from '@ccc/shared/protocol'
-import { resolveRegisteredWorkspacePath } from '../../features/external-mcp/workspace-scope.js'
 import {
   createMcpApiKey,
   revokeMcpApiKey,
   verifyMcpApiKey,
 } from '../../kernel/config/mcp-api-keys.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
-import { addWorkspace, resetStateCacheForTests } from '../../state.js'
+import {
+  addWorkspace,
+  isDirectory,
+  pathToName,
+  resetStateCacheForTests,
+  resolveWorkspaceRoot,
+} from '../../state.js'
 import {
   getIntent,
   insertIntents,
@@ -46,6 +51,8 @@ import { initTestGitRepo } from '../../../test/git-repo.js'
 let home: string
 let projectDir: string
 let otherDir: string
+/** The registry name of `projectDir` — what a key is bound to. */
+let projectWs: string
 let server: ServerType
 let port: number
 let route: ServedExternalMcp
@@ -82,6 +89,7 @@ beforeAll(async () => {
   initTestGitRepo(projectDir)
   addWorkspace(projectDir, Date.now())
   addWorkspace(otherDir, Date.now())
+  projectWs = pathToName(projectDir)!
 
   // One intent per workspace, so a cross-workspace leak would be visible.
   insertIntents(projectDir, [
@@ -99,7 +107,11 @@ beforeAll(async () => {
   const normalizers = new EventNormalizerRegistry(normalizeGenericEventDefault)
   route = createExternalMcp({
     authenticate: (key) => verifyMcpApiKey(key),
-    resolveRegisteredWorkspace: resolveRegisteredWorkspacePath,
+    // Same name→path resolution the real server wires.
+    resolveRegisteredWorkspace: (workspaceName) => {
+      const path = resolveWorkspaceRoot(workspaceName)
+      return path && isDirectory(path) ? path : null
+    },
     buildCatalog: (scope) =>
       buildExternalMcpCatalog(scope, {
         normalizeEvent: (core) => normalizers.normalize(core),
@@ -154,7 +166,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('advertises exactly the granted scope — read-only by default, no write tool', async () => {
     const created = await createMcpApiKey(
       'default',
-      projectDir,
+      projectWs,
       [...EXTERNAL_MCP_READ_TOOLS],
       Date.now(),
     )
@@ -173,7 +185,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('reads only the workspace the key is bound to', async () => {
     const created = await createMcpApiKey(
       'reader',
-      projectDir,
+      projectWs,
       [...EXTERNAL_MCP_READ_TOOLS],
       Date.now(),
     )
@@ -192,7 +204,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('refuses an un-granted write tool with a forbidden error and no side effect', async () => {
     const created = await createMcpApiKey(
       'narrow',
-      projectDir,
+      projectWs,
       [...EXTERNAL_MCP_READ_TOOLS],
       Date.now(),
     )
@@ -217,7 +229,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('persists an intent through a key granted save_intents', async () => {
     const created = await createMcpApiKey(
       'writer',
-      projectDir,
+      projectWs,
       ['find_intents', 'view_intent', 'save_intents'],
       Date.now(),
     )
@@ -255,7 +267,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
 
     const created = await createMcpApiKey(
       'reviewer',
-      projectDir,
+      projectWs,
       ['find_intents', 'view_intent', 'submit_spec_review'],
       Date.now(),
     )
@@ -278,7 +290,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
     ])
     const created = await createMcpApiKey(
       'guarded-reviewer',
-      projectDir,
+      projectWs,
       ['submit_spec_review'],
       Date.now(),
     )
@@ -302,7 +314,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
     ])
     const created = await createMcpApiKey(
       'launcher',
-      projectDir,
+      projectWs,
       ['find_intents', 'view_intent', 'start_session_for_intent'],
       Date.now(),
     )
@@ -333,7 +345,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('attributes an external publish to the key, with the authorized workspace', async () => {
     const created = await createMcpApiKey(
       'publisher',
-      projectDir,
+      projectWs,
       [...EXTERNAL_MCP_READ_TOOLS],
       Date.now(),
     )
@@ -357,7 +369,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('accepts a connection from a non-loopback address — no loopback guard applies', async () => {
     const created = await createMcpApiKey(
       'lan',
-      projectDir,
+      projectWs,
       [...EXTERNAL_MCP_READ_TOOLS],
       Date.now(),
     )
@@ -386,7 +398,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
   it('stops the open session AND the next handshake once the key is revoked', async () => {
     const created = await createMcpApiKey(
       'doomed',
-      projectDir,
+      projectWs,
       [...EXTERNAL_MCP_READ_TOOLS],
       Date.now(),
     )

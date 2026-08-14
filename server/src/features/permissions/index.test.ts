@@ -8,7 +8,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../runs.js', () => ({ resolvePending: vi.fn() }))
-vi.mock('../../state.js', () => ({ resolveWorkspaceRoot: vi.fn(() => '/abs/proj') }))
+vi.mock('../../state.js', () => ({
+  resolveWorkspaceRoot: vi.fn(() => '/abs/proj'),
+  workspaceNameFor: vi.fn((value: string) => value),
+}))
 vi.mock('../user-involve/store.js', () => ({
   getEventByRequestId: vi.fn(() => null),
   updateStatus: vi.fn(),

@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../state.js', () => ({
   pathToName: (path: string) => path,
   resolveWorkspaceRoot: (name: string) => name,
+  workspaceNameFor: (value: string) => value,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -55,16 +55,16 @@ const HASH_VERSION = 1
 
 /**
  * The server-internal view of one key: everything except the verification
- * material. It carries a CANONICAL ABSOLUTE PATH because that is what an incoming
- * `/mcp/<api-key>` request resolves against. The wire-facing `McpApiKeyMeta`
- * addresses the workspace by opaque id instead; the settings handler translates.
+ * material. The workspace binding is a registry NAME — the identity every
+ * workspace-scoped operation uses — which an incoming `/mcp/<api-key>` request
+ * resolves to a path against the registry.
  */
 export interface McpApiKeyInfo {
   id: string
   name: string
   createdAt: number
   lastUsedAt: number | null
-  /** The ONE canonical absolute path this key is bound to. Never empty, never a wildcard. */
+  /** The ONE registered workspace name this key is bound to. Never empty, never a wildcard. */
   workspaceName: string
   /** The tool names this key may call. Empty ⇒ nothing, never "all". */
   tools: string[]
@@ -346,9 +346,9 @@ export interface CreatedMcpApiKey {
 
 /**
  * Mint a key bound to ONE workspaceName: 256 bits of CSPRNG secret behind a
- * non-secret id, hashed with a fresh per-key salt. `workspace` must already be an
- * absolute path the caller has checked against the workspace registry; a path
- * that does not canonicalize throws rather than storing an unaddressable key.
+ * non-secret id, hashed with a fresh per-key salt. `workspaceName` must be a name
+ * the workspace registry knows; an unknown one throws rather than storing an
+ * unaddressable key.
  *
  * `tools` is stored as given (de-duplicated). The CALLER decides the initial
  * scope — the settings handler forces the read-only set and ignores anything the
@@ -477,7 +477,7 @@ export function revokeMcpApiKeyInWorkspace(id: string, workspaceName: string): b
 /** A successful authentication: which key answered, and what it may reach. */
 export interface AuthenticatedMcpApiKey {
   id: string
-  /** The canonicalized absolute path this key is bound to. */
+  /** The registered workspace name this key is bound to. */
   workspaceName: string
   /** The tool names this key may call. Empty ⇒ nothing. */
   tools: string[]

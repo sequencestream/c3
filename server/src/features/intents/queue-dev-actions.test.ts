@@ -142,6 +142,7 @@ vi.mock('../../state.js', () => ({
   touchWorkspace: vi.fn(),
   resolveWorkspaceRoot: vi.fn(() => '/test/proj'),
   pathToName: vi.fn(() => 'test-proj'),
+  workspaceNameFor: vi.fn(() => 'test-proj'),
 }))
 
 vi.mock('../../git.js', () => ({

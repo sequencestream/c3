@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 
 // Drive the gate per-workspace; default open (true) mirrors normalize semantics.

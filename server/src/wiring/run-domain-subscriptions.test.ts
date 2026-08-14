@@ -25,7 +25,10 @@ import type { Intent, IntentDevSession } from '@ccc/shared/protocol'
 // (we only test the subscription dispatch, not the real state).
 // ---------------------------------------------------------------------------
 vi.mock('../runs.js', () => ({ getRuntime: vi.fn(() => undefined) }))
-vi.mock('../state.js', () => ({ setSessionMode: vi.fn() }))
+vi.mock('../state.js', () => ({
+  setSessionMode: vi.fn(),
+  workspaceNameFor: (value: string) => value,
+}))
 vi.mock('../features/intents/store.js', () => ({
   getIntent: vi.fn(),
   getIntentBySpecSessionId: vi.fn(() => null),

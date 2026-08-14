@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 
 // The claude path must never be reached: this stub records any call to it.

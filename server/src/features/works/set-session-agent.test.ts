@@ -26,6 +26,7 @@ vi.mock('../../state.js', () => ({
   getActiveSessionId: vi.fn(),
   getSessionMode: vi.fn(),
   hasWorkspace: vi.fn(() => true),
+  workspaceNameFor: vi.fn((value: string) => value),
   setActiveSessionId: vi.fn(),
   setSessionMode: vi.fn(),
   touchWorkspace: vi.fn(),

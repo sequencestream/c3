@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
   pathToName: vi.fn(() => 'ws-prurl-id'),
+  workspaceNameFor: vi.fn(() => 'ws-prurl-id'),
   resolveWorkspaceRoot: vi.fn(() => '/abs/workspace-prurl'),
 }))
 import { mkdtempSync, rmSync } from 'node:fs'

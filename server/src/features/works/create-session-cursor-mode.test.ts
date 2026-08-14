@@ -19,6 +19,7 @@ vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   resolveWorkspaceRoot: vi.fn((id: string) => id),
   pathToName: vi.fn((p: string) => p),
+  workspaceNameFor: vi.fn((value: string) => value),
   touchWorkspace: vi.fn(),
 }))
 

@@ -22,6 +22,7 @@ import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { runCommSave } from './save-comm.js'
 import { saveSchema } from './tool-defs.js'
 import type { IntentToolResult } from './tool-defs.js'
+import { workspaceNameFor } from '../../state.js'
 import {
   getIntent,
   insertIntents,
@@ -112,7 +113,7 @@ describe('module field — pre-v2 migration extensions (scenario 2)', () => {
            (id, project_path, title, content, priority, status, last_dev_session_id, created_at, updated_at)
          VALUES (?,?,?,?,?,?,?,?,?)`,
         r.id,
-        proj,
+        workspaceNameFor(proj),
         r.title,
         'body',
         'P1',

@@ -198,9 +198,9 @@ export interface McpApiKeyMeta {
   /** Last successful authentication (unix ms); `null` until the key is first used. */
   lastUsedAt: number | null
   /**
-   * The ONE registered workspace this key is bound to, as an opaque
-   * {@link WorkspaceInfo} id — the console addresses workspaces by id, never by
-   * path. `null` means the bound workspace is no longer registered (or its
+   * The ONE registered workspace this key is bound to, as its
+   * {@link WorkspaceInfo} name — the console addresses workspaces by name, never
+   * by path. `null` means the bound workspace is no longer registered (or its
    * directory is gone): the key is inert, the console marks it unavailable and
    * offers only revocation, and the host path is deliberately NOT disclosed.
    *

@@ -17,6 +17,7 @@ vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 import type { Discussion } from '@ccc/shared/protocol'
 import {

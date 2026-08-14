@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
+import { workspaceNameFor } from '../../state.js'
 import {
   JANITOR_INTERVAL_MS,
   LAZY_VALIDATE_MS,
@@ -283,7 +284,8 @@ describe('createSession pending row (F-11 replacement for setPendingIntent)', ()
     expect(row?.kind).toBe('pending')
     expect(row?.vendor).toBe('claude')
     expect(row?.agentId).toBe(agent1)
-    expect(row?.workspacePath).toBe(wsA)
+    // Unregistered synthetic workspace: the projection degrades to the name.
+    expect(row?.workspacePath).toBe(workspaceNameFor(wsA))
     expect(row?.vendorSessionId).toBeNull()
     expect(row?.lastModified).toBeNull()
     expect(row?.state).toBe('born')

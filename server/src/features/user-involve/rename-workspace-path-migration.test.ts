@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path'
 vi.mock('../../state.js', () => ({
   pathToName: (p: string) => p,
   resolveWorkspaceRoot: (name: string) => name,
+  workspaceNameFor: (value: string) => value,
 }))
 // `toEvent` reverse-looks-up the owning intent; isolate from the intents store.
 vi.mock('../intents/store.js', () => ({

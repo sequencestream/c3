@@ -23,6 +23,10 @@ vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => hoisted.roots.get(id) ?? null,
   pathToName: (path: string) =>
     [...hoisted.roots.entries()].find(([, root]) => root === path)?.[0] ?? null,
+  workspaceNameFor: (value: string) =>
+    hoisted.roots.has(value)
+      ? value
+      : ([...hoisted.roots.entries()].find(([, root]) => root === value)?.[0] ?? value),
 }))
 
 import { resetDbForTests } from '../../kernel/infra/db.js'

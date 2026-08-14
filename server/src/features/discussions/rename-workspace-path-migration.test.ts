@@ -13,6 +13,7 @@ vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import { getDiscussion, listDiscussions, resetStoreForTests } from './store.js'

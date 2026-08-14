@@ -251,6 +251,60 @@ describe('id ownership', () => {
     expect(getIntent(mine.id)?.title).toBe('Mine')
   })
 
+  it('refuses a foreign dependency through the create-only writer too', () => {
+    // `save_intent_directly` mints new rows, so it has no upsert target to own —
+    // but the edge it persists is the same one, and guarding only the other
+    // intent writer would leave the cross-workspace edge one tool name away.
+    const [foreign] = insertIntents(betaDir, [
+      { title: 'Foreign', shortEnTitle: 'foreign', content: '', priority: 'P2' },
+    ])
+    const args = {
+      intents: [
+        {
+          title: 'New here',
+          shortEnTitle: 'new-here',
+          content: '',
+          priority: 'P2' as const,
+          dependsOn: [foreign.id],
+        },
+      ],
+    }
+    const scope = scopeFor(NARROW, alpha)
+    expect(refusal('save_intent_directly', args, scope)).toBe(
+      `未找到 id 为 ${foreign.id} 的意图(本项目)。`,
+    )
+    // Word-for-word what a plainly non-existent id answers, so the refusal
+    // cannot be read as "that id exists in some other workspace".
+    const absent = '00000000-0000-4000-8000-000000000000'
+    expect(
+      refusal(
+        'save_intent_directly',
+        { intents: [{ ...args.intents[0], dependsOn: [absent] }] },
+        scope,
+      ),
+    ).toBe(`未找到 id 为 ${absent} 的意图(本项目)。`)
+    // And nothing was written on the way to finding out.
+    expect(findIntents(alphaDir, {})).toHaveLength(0)
+  })
+
+  it('accepts a create-only batch whose dependency is this workspace’s own', () => {
+    const [mine] = insertIntents(alphaDir, [
+      { title: 'Mine', shortEnTitle: 'mine', content: '', priority: 'P2' },
+    ])
+    const args = {
+      intents: [
+        {
+          title: 'Follows mine',
+          shortEnTitle: 'follows-mine',
+          content: '',
+          priority: 'P2' as const,
+          dependsOn: [mine.id],
+        },
+      ],
+    }
+    expect(refusal('save_intent_directly', args, scopeFor(NARROW, alpha))).toBeNull()
+  })
+
   it('leaves intra-batch index dependencies alone — they address this batch', () => {
     const args = {
       intents: [
@@ -283,20 +337,27 @@ describe('id ownership', () => {
     )
   })
 
-  it('refuses continue_discussion for a discussion owned by another workspace', () => {
-    const foreign = createDiscussion({ workspacePath: betaDir, title: 'Foreign', type: 'design' })
-    const scope = scopeFor(NARROW, alpha)
-    expect(refusal('continue_discussion', { discussionId: foreign.id }, scope)).toBe(
-      `未找到 id 为 ${foreign.id} 的讨论(本项目)。`,
-    )
-  })
+  // Both discussion writers are checked BEFORE their handler, so a mis-owned id
+  // is a `rejected` from either — never a `failure` from one and a `rejected`
+  // from the other for the same mistake.
+  it.each(['continue_discussion', 'start_discussion'])(
+    'refuses %s for a discussion owned by another workspace',
+    (name) => {
+      const foreign = createDiscussion({ workspacePath: betaDir, title: 'Foreign', type: 'design' })
+      const scope = scopeFor(NARROW, alpha)
+      expect(refusal(name, { discussionId: foreign.id }, scope)).toBe(
+        `未找到 id 为 ${foreign.id} 的讨论(本项目)。`,
+      )
+    },
+  )
 
-  it('accepts a discussion that belongs to the authorized workspace', () => {
-    const mine = createDiscussion({ workspacePath: alphaDir, title: 'Mine', type: 'design' })
-    expect(
-      refusal('continue_discussion', { discussionId: mine.id }, scopeFor(NARROW, alpha)),
-    ).toBeNull()
-  })
+  it.each(['continue_discussion', 'start_discussion'])(
+    'accepts a discussion that belongs to the authorized workspace (%s)',
+    (name) => {
+      const mine = createDiscussion({ workspacePath: alphaDir, title: 'Mine', type: 'design' })
+      expect(refusal(name, { discussionId: mine.id }, scopeFor(NARROW, alpha))).toBeNull()
+    },
+  )
 
   it('accepts a foreign id once the CALL is authorized for that workspace', () => {
     // The check is against the workspace the call was authorized for, not

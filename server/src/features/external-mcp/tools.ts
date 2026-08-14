@@ -346,7 +346,7 @@ function buildToolSpecs(deps: ExternalMcpToolDeps): ExternalMcpToolSpec[] {
       // references that get persisted as edges — must already belong to this
       // call's workspace. Checked as a whole before anything is written, so a
       // batch carrying one foreign id lands nothing at all.
-      validate: (args, scope) => validateIntentBatchOwnership(args as SaveArgs, scope),
+      validate: (args, scope) => validateIntentBatchOwnership(args, scope),
       // Interactively this tool is gated by the user's textual go-ahead in the
       // conversation. An unattended external caller has no conversation partner,
       // so the administrator's decision to tick this tool for this key IS the
@@ -362,6 +362,11 @@ function buildToolSpecs(deps: ExternalMcpToolDeps): ExternalMcpToolSpec[] {
       name: 'save_intent_directly',
       description: saveIntentDirectlyDesc,
       inputSchema: saveIntentDirectlySchema,
+      // Create-only, so there is no upsert target to own — but `dependsOn` is
+      // the same persisted edge `save_intents` guards, and an unguarded one here
+      // would be the whole cross-workspace write this rule exists to stop,
+      // reachable through the OTHER intent-writing tool.
+      validate: (args, scope) => validateIntentBatchOwnership(args, scope),
       handler: (args, scope) =>
         runSaveIntentDirectly(scope.workspacePath, args as SaveIntentDirectlyArgs, (path) =>
           deps.broadcastIntents(path),
@@ -414,6 +419,15 @@ function buildToolSpecs(deps: ExternalMcpToolDeps): ExternalMcpToolSpec[] {
       name: 'start_discussion',
       description: startDiscussionDesc,
       inputSchema: startDiscussionSchema,
+      // The core refuses a foreign discussion too, but only AFTER the call has
+      // entered it — which the audit trail would then record as a `failure`, the
+      // classification reserved for a handler that ran. An ownership mismatch is
+      // a `rejected`, here as in `continue_discussion`: one kind of refusal must
+      // not read as two depending on which tool the caller picked.
+      validate: (args, scope) => {
+        const id = (args as StartDiscussionArgs).discussionId
+        return discussionOwnedByScope(id, scope) ? null : discussionNotFound(id)
+      },
       handler: (args, scope) =>
         runStartDiscussion(scope.workspacePath, args as StartDiscussionArgs, runStarter),
     },
@@ -501,21 +515,33 @@ function discussionOwnedByScope(id: unknown, scope: ExternalMcpScope): boolean {
 }
 
 /**
- * Refuse a `save_intents` batch that names any intent this workspace does not
- * own — as an upsert target OR as a persisted `dependsOn` reference.
+ * The only part of an intent batch that carries a foreign-id risk, shared by
+ * `save_intents` (upsert + deps) and `save_intent_directly` (deps only). Kept
+ * structural rather than tied to either arg type so one validator covers both
+ * and a third intent writer cannot appear with the check silently missing.
+ */
+type IntentBatchOwnershipArgs = {
+  intents?: ReadonlyArray<{ id?: string; dependsOn?: readonly string[] }>
+}
+
+/**
+ * Refuse an intent batch that names any intent this workspace does not own — as
+ * an upsert target OR as a persisted `dependsOn` reference.
  *
  * Both are ownership questions, not just the obvious one: a dependency edge is
  * persisted, so accepting a foreign id would write a cross-workspace edge into
- * this workspace's graph without ever "updating" the foreign intent. Intra-batch
- * `dependsOnIndexes` are NOT checked here — they address siblings of this very
- * batch, which by construction land in this workspace.
+ * this workspace's graph without ever "updating" the foreign intent. That is why
+ * the create-only writer is guarded too — it mints new rows, but the edges those
+ * rows carry can still point anywhere. Intra-batch `dependsOnIndexes` are NOT
+ * checked here — they address siblings of this very batch, which by construction
+ * land in this workspace.
  *
  * The first offending id rejects the WHOLE batch, before any write: partial
  * application of a batch the caller submitted as one unit is not a state c3 will
  * produce.
  */
-function validateIntentBatchOwnership(args: SaveArgs, scope: ExternalMcpScope): string | null {
-  for (const intent of args?.intents ?? []) {
+function validateIntentBatchOwnership(args: unknown, scope: ExternalMcpScope): string | null {
+  for (const intent of (args as IntentBatchOwnershipArgs)?.intents ?? []) {
     if (intent.id !== undefined && !intentOwnedByScope(intent.id, scope)) {
       return intentNotFound(String(intent.id))
     }

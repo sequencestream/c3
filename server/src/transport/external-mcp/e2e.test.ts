@@ -60,6 +60,10 @@ import {
   resetStoreForTests,
   setSpecPath,
 } from '../../features/intents/store.js'
+import {
+  createDiscussion,
+  resetStoreForTests as resetDiscussionStoreForTests,
+} from '../../features/discussions/store.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { normalizeGenericEventDefault } from '../../features/events/default-normalizer.js'
@@ -96,6 +100,7 @@ beforeAll(async () => {
   resetStateCacheForTests()
   resetDbForTests()
   resetStoreForTests()
+  resetDiscussionStoreForTests()
   resetExternalMcpAuditStoreForTests()
 
   projectDir = join(home, 'project')

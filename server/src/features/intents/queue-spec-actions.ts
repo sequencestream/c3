@@ -31,6 +31,22 @@ import { readSpecFingerprint } from './spec-review.js'
 import { applySpecApproval } from './spec.js'
 
 /**
+ * Render a refused launch's parameters into the failure detail.
+ *
+ * The error code alone says a launch was refused, not why: the raw text of the
+ * Git command that actually failed travels in `params.message`, and dropping it
+ * forces an operator to reproduce the failure by hand to tell a path conflict
+ * from a full disk. So every entry is appended verbatim — no truncation, no
+ * per-code copy — and a failure with no parameters keeps the code-only wording
+ * byte-for-byte.
+ */
+function formatLaunchParams(params: Record<string, string> | undefined): string {
+  const entries = Object.entries(params ?? {})
+  if (entries.length === 0) return ''
+  return ` — ${entries.map(([key, value]) => `${key}=${value}`).join(', ')}`
+}
+
+/**
  * Run ONE spec-phase session (authoring or review) to its launch verdict.
  *
  * The cooldown IS shared with development — it is a per-intent self-excitation
@@ -67,7 +83,8 @@ export async function runSpecPhase(
       ctx,
       req.id,
       'launch_failed',
-      `${action.kind === 'launch_spec' ? 'spec 撰写' : 'spec 审核'}会话启动被拒绝(${result.code})`,
+      `${action.kind === 'launch_spec' ? 'spec 撰写' : 'spec 审核'}会话启动被拒绝(${result.code})` +
+        formatLaunchParams(result.params),
     )
     return
   }

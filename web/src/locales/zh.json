@@ -2669,6 +2669,9 @@
       "create": {
         "tooltip": "新建交付"
       },
+      "createTitle": {
+        "label": "新建交付"
+      },
       "edit": {
         "label": "编辑"
       },

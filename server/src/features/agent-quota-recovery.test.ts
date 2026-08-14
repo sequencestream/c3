@@ -203,4 +203,101 @@ describe('agent quota recovery', () => {
     expect(getAutomation(automationId)).toBeNull()
     expect(listAutomations(workspacePath)).toHaveLength(0)
   })
+
+  it('reuses a pending recovery automation for repeated quota errors of the same agent', () => {
+    const now = Date.UTC(2026, 5, 15, 13, 0)
+    const first = handleAgentQuotaError({
+      agentId: quotaAgent.id,
+      workspacePath,
+      error: "You've hit your session limit · resets 10:40pm (Asia/Shanghai)",
+      now,
+    })
+    expect(first.automationId).toEqual(expect.any(String))
+
+    // A repeat error may parse a different reset moment; the reused result must
+    // still report the first (authoritative) resetAt, not this new parse.
+    const second = handleAgentQuotaError({
+      agentId: quotaAgent.id,
+      workspacePath,
+      error: "You've hit your session limit · resets 11:40pm (Asia/Shanghai)",
+      now,
+    })
+    expect(second).toEqual({
+      handled: true,
+      resetAt: first.resetAt,
+      disabled: true,
+      automationId: first.automationId,
+    })
+
+    // No duplicate row: the agent still has exactly one pending recovery automation.
+    const automations = listAutomations(workspacePath)
+    expect(automations).toHaveLength(1)
+    expect(automations[0].id).toBe(first.automationId)
+    // The first resetAt stays authoritative.
+    expect(automations[0].nextRunAt).toBe(first.resetAt)
+  })
+
+  it('creates a fresh recovery automation after the previous one fired and self-deleted', async () => {
+    const now = Date.UTC(2026, 5, 15, 13, 0)
+    const error = "You've hit your session limit · resets 10:40pm (Asia/Shanghai)"
+    const first = handleAgentQuotaError({ agentId: quotaAgent.id, workspacePath, error, now })
+    expect(first.automationId).toEqual(expect.any(String))
+    const firstId = first.automationId!
+    updateNextRunAt(firstId, Date.now() - 10)
+
+    wireRealAutomationStore()
+    await triggerRunNow(firstId)
+    await waitForAutomationGone(firstId)
+    expect(getAutomation(firstId)).toBeNull()
+
+    const second = handleAgentQuotaError({ agentId: quotaAgent.id, workspacePath, error, now })
+    expect(second.automationId).toEqual(expect.any(String))
+    expect(second.automationId).not.toBe(firstId)
+    expect(listAutomations(workspacePath)).toHaveLength(1)
+  })
+
+  it('creates independent recovery automations for different agents', () => {
+    const secondAgent: AgentConfig = {
+      id: 'quota-agent-2',
+      vendor: 'claude',
+      configMode: 'custom',
+      displayName: 'Quota Agent 2',
+      enabled: true,
+      order_seq: 2,
+      config: { baseUrl: 'https://example.test', apiKey: 'k2', model: 'm2' },
+    }
+    saveSettings({
+      ...loadSettings(),
+      agents: [systemAgent, quotaAgent, secondAgent],
+    } as SystemSettings)
+
+    const now = Date.UTC(2026, 5, 15, 13, 0)
+    const error = "You've hit your session limit · resets 10:40pm (Asia/Shanghai)"
+    const first = handleAgentQuotaError({ agentId: quotaAgent.id, workspacePath, error, now })
+    const second = handleAgentQuotaError({ agentId: secondAgent.id, workspacePath, error, now })
+
+    expect(first.automationId).toEqual(expect.any(String))
+    expect(second.automationId).toEqual(expect.any(String))
+    expect(second.automationId).not.toBe(first.automationId)
+    expect(listAutomations(workspacePath)).toHaveLength(2)
+  })
+
+  it('creates independent recovery automations in different workspaces', () => {
+    const now = Date.UTC(2026, 5, 15, 13, 0)
+    const error = "You've hit your session limit · resets 10:40pm (Asia/Shanghai)"
+    const otherWorkspace = '/tmp/c3-agent-quota-recovery-workspace-2'
+    const first = handleAgentQuotaError({ agentId: quotaAgent.id, workspacePath, error, now })
+    const second = handleAgentQuotaError({
+      agentId: quotaAgent.id,
+      workspacePath: otherWorkspace,
+      error,
+      now,
+    })
+
+    expect(first.automationId).toEqual(expect.any(String))
+    expect(second.automationId).toEqual(expect.any(String))
+    expect(second.automationId).not.toBe(first.automationId)
+    expect(listAutomations(workspacePath)).toHaveLength(1)
+    expect(listAutomations(otherWorkspace)).toHaveLength(1)
+  })
 })

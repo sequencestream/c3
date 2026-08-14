@@ -6,9 +6,11 @@
  * 与本页其它页签的关键差别:这里每个操作都是即时生效的服务端指令,不进入 Tab 草稿、
  * 不参与「未保存」脏检查、也不会出现在任何 save 载荷里 —— 所以本页签永远不会脏。
  *
- * key 绑定单一工作区,地址即 `<baseUrl>/mcp/<明文 key>`。明文只在生成成功的那一次回包里
- * 出现:它经 `created` 传进来、只活在当前组件树的内存中,用户关闭揭示框或离开页面后即不可
- * 恢复 —— 这是服务端的承诺,组件绝不写入 localStorage,也不在别处回显。
+ * 地址里没有凭据:端点恒为 `<baseUrl>/mcp`,key 走 `Authorization: Bearer`,工作区走
+ * `X-C3-Workspace`。明文只在生成成功的那一次回包里出现:它经 `created` 传进来、只活在当前
+ * 组件树的内存中,用户关闭揭示框或离开页面后即不可恢复 —— 这是服务端的承诺,组件绝不写入
+ * localStorage,也不在别处回显。一行式命令因此用环境变量间接引用 key,而不是把它拼进一条
+ * 会进 shell 历史的命令。
  *
  * 工具范围来自服务端目录(`catalog`),前端不另存工具清单:服务端新增可授权工具即可直接
  * 勾选。写工具会真实改动 c3 状态,保存含写工具的范围前必须过一次风险确认。
@@ -20,8 +22,11 @@ import type { ExternalMcpToolDescriptor, McpApiKeyMeta } from '@ccc/shared/proto
 
 const { t, d } = useTypedI18n()
 
-/** 外部 MCP 的挂载前缀。与服务端 `EXTERNAL_MCP_PATH_PREFIX` 对应。 */
-const EXTERNAL_MCP_PATH_PREFIX = '/mcp'
+/** 外部 MCP 的公开端点路径。与服务端 `EXTERNAL_MCP_PATH` 对应。 */
+const EXTERNAL_MCP_PATH = '/mcp'
+
+/** 一行式命令里引用明文 key 的环境变量名。 */
+const KEY_ENV_VAR = 'C3_MCP_KEY'
 
 const props = withDefaults(
   defineProps<{
@@ -63,19 +68,26 @@ const writeTools = computed(() => (props.catalog ?? []).filter((tool) => tool.ac
 
 const baseUrlConfigured = computed(() => (props.baseUrl ?? '').trim().length > 0)
 
-/**
- * 一把 key 的完整对外地址。只有刚生成的那一次才拿得到明文,所以这是唯一能拼出可直接
- * 使用地址的时刻 —— 名册里的条目永远只能显示前缀。
- */
-function accessUrl(plaintextKey: string): string {
+/** 公开端点。同一个地址服务每一把 key 和每一个工作区,所以它不含任何凭据。 */
+const createdUrl = computed(() => {
   const base = (props.baseUrl ?? '').trim().replace(/\/+$/, '')
-  return `${base}${EXTERNAL_MCP_PATH_PREFIX}/${encodeURIComponent(plaintextKey)}`
-}
+  return base ? `${base}${EXTERNAL_MCP_PATH}` : ''
+})
 
-const createdUrl = computed(() => (props.created ? accessUrl(props.created.key) : ''))
-const createdCommand = computed(() =>
-  createdUrl.value ? `claude mcp add --transport http c3 "${createdUrl.value}"` : '',
-)
+/**
+ * 一行式接入命令。key 以环境变量间接引用:明文就在上一行等着复制,把它再拼进命令只会多
+ * 一份 shell 历史里的副本。
+ */
+const createdCommand = computed(() => {
+  const url = createdUrl.value
+  const workspaceName = (props.workspaceName ?? '').trim()
+  if (!url || !workspaceName) return ''
+  return (
+    `claude mcp add --transport http c3 "${url}"` +
+    ` --header "Authorization: Bearer $${KEY_ENV_VAR}"` +
+    ` --header "X-C3-Workspace: ${workspaceName}"`
+  )
+})
 
 // ---- 新建 ----
 const creating = ref(false)

@@ -75,7 +75,7 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 - **CLI 入口**: 命令行入口；`start` 是默认命令（`--port` 默认为 3000，`--host` 默认为 `127.0.0.1`——监听地址是显式选择，不再有"不传 hostname 即全网卡"的隐式行为；工作区通过 Web UI 管理）
 - **桌面壳（Tauri 2）**: `desktop/` 下的原生外壳：把同一份 c3 单二进制当 sidecar 拉起（`start --host 127.0.0.1 --port <空闲回环端口>`），就绪后在 WebView 中加载 **sidecar 自带的** SPA；托盘常驻、单实例、可选开机自启。壳内无业务逻辑，共享同一个 c3 home（ADR-0033）
 - **HTTP/WS 服务器**: 升级 `/ws`、提供静态资源、追踪每个连接观看的会话、分发消息并广播状态
-- **外部 MCP 路由**: 公开的 `/mcp/<api-key>`：key 即地址段,绑定单一工作区,按该 key 勾选的工具子集服务(默认五个只读工具,写工具须显式勾选)。与六条 `/internal/*-mcp/v1` 并列而非放宽——后者保留 loopback guard 与 per-run token。见 [external-mcp](../domains/core/external-mcp/external-mcp-spec.md)
+- **外部 MCP 端点**: 公开的 `POST /mcp`：凭据只走 `Authorization: Bearer`,工作区由 `X-C3-Workspace` 在 initialize 时选定,权限是「key 范围 × 归属账号范围 × 工具授权」三层求交。与六条 `/internal/*-mcp/v1` 并列而非放宽——后者保留 loopback guard 与 per-run token。见 [external-mcp](../domains/core/external-mcp/external-mcp-spec.md)
 - **Session-runtime 注册表**: 进程级注册表，记录每个会话的运行句柄、回放基线 + 缓冲区、观看者及状态（ADR 0006）
 - **Host-CLI launcher**: vendor 无关的宿主 CLI 探测：把 vendor 解析为绝对二进制路径或 none，为每个 vendor 携带安装提示，并运行健康检查；第一道能力关卡（ADR-0012）
 - **Kernel 事件总线**: 进程内的类型化发布/订阅总线：同步、错误隔离、静态类型化的 topic→payload map；承载 run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018

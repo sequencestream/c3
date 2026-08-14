@@ -57,14 +57,24 @@ beforeEach(() => {
 describe('the created-key reveal', () => {
   const created = { meta: key({ id: 'key-new', name: 'ci' }), key: 'c3k_key-new_TOP-SECRET' }
 
-  it('reveals the plaintext key once, alongside the full /mcp/<key> address', () => {
+  it('reveals the plaintext key once, alongside the credential-free endpoint', () => {
     const w = render({ created })
     expect(w.get('[data-testid="workspace-external-mcp-plaintext"]').text()).toBe(created.key)
     const url = w.get('[data-testid="workspace-external-mcp-url"]').text()
-    expect(url).toBe(`http://192.168.1.10:3000/mcp/${created.key}`)
+    expect(url).toBe('http://192.168.1.10:3000/mcp')
+    // The address is the same for every key: it carries no credential at all.
+    expect(url).not.toContain(created.key)
+  })
+
+  it('offers a one-line command that references the key indirectly', () => {
+    const w = render({ created })
     const cmd = w.get('[data-testid="workspace-external-mcp-command"]').text()
-    expect(cmd).toContain(`http://192.168.1.10:3000/mcp/${created.key}`)
     expect(cmd).toContain('claude mcp add')
+    expect(cmd).toContain('http://192.168.1.10:3000/mcp')
+    expect(cmd).toContain('Authorization: Bearer $C3_MCP_KEY')
+    expect(cmd).toContain(`X-C3-Workspace: ${WORKSPACE_ID}`)
+    // The plaintext is one copy button away; it does not also go into shell history.
+    expect(cmd).not.toContain(created.key)
   })
 
   it('copies the plaintext key and reports it', async () => {

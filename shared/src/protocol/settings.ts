@@ -132,6 +132,8 @@ export const EXTERNAL_MCP_READ_TOOLS = [
   'find_deliveries',
   'view_delivery',
   'publish_event',
+  'list_workspaces',
+  'whoami',
 ] as const
 
 /**
@@ -156,6 +158,16 @@ export type ExternalMcpToolName =
   (typeof EXTERNAL_MCP_READ_TOOLS)[number] | (typeof EXTERNAL_MCP_WRITE_TOOLS)[number]
 
 /**
+ * The whole externally-grantable catalog in its declared order (read tools, then
+ * write tools). This is the set an effective tool scope is intersected with, so a
+ * name a key still carries but the catalog no longer offers grants nothing.
+ */
+export const EXTERNAL_MCP_TOOL_NAMES = [
+  ...EXTERNAL_MCP_READ_TOOLS,
+  ...EXTERNAL_MCP_WRITE_TOOLS,
+] as const satisfies readonly ExternalMcpToolName[]
+
+/**
  * What a NEW key is granted. The server writes exactly this set on creation
  * regardless of what the client asked for, so a forged "default" cannot smuggle
  * an ungranted tool into a fresh key.
@@ -172,6 +184,8 @@ export const EXTERNAL_MCP_DEFAULT_TOOLS = [
   'find_discussions',
   'view_discussion',
   'publish_event',
+  'list_workspaces',
+  'whoami',
 ] as const satisfies readonly ExternalMcpToolName[]
 
 /**
@@ -198,26 +212,25 @@ export interface McpApiKeyMeta {
   /** Last successful authentication (unix ms); `null` until the key is first used. */
   lastUsedAt: number | null
   /**
-   * The ONE registered workspace this key is bound to, as its
-   * {@link WorkspaceInfo} name — the console addresses workspaces by name, never
-   * by path. `null` means the bound workspace is no longer registered (or its
-   * directory is gone): the key is inert, the console marks it unavailable and
-   * offers only revocation, and the host path is deliberately NOT disclosed.
-   *
-   * The binding is fixed at creation. There is no cross-workspace key and no
-   * wildcard; re-pointing a key means minting a new one.
+   * The workspace this key is FILED under, as its {@link WorkspaceInfo} name —
+   * the settings tab it is listed and administered on. It is NOT a grant: which
+   * workspaces the key reaches is its owner's administrator-managed scope,
+   * resolved per request. `null` means that filing workspace is no longer
+   * registered, which says nothing about what the key can reach.
    */
   workspaceName: string | null
   /**
-   * The tool names this key may call, a subset of the server catalog. `tools/list`
-   * on `/mcp/<api-key>` is exactly this set, and any other tool call is refused.
+   * The tool names this key may call. The effective set is this list intersected
+   * with the externally-grantable catalog, and `tools/list` on `POST /mcp` shows
+   * exactly that intersection; any other tool call is refused.
    */
   tools: string[]
   /**
-   * True when the bound workspace is no longer servable: it was deregistered, or
-   * its directory is gone. The key then reaches nothing (requests answer 403) and
-   * the console marks it unavailable, offering only revocation — never the host
-   * path, and never a fallback to some other workspace.
+   * True when the key's owner is no longer a principal this deployment
+   * recognizes — an account that was removed, or a `local` owner after basic auth
+   * was configured. The key then reaches nothing and the console marks it
+   * unavailable, offering only revocation. How much a VALID owner may reach is a
+   * separate, per-request question this flag does not answer.
    */
   unavailable: boolean
   /**

@@ -47,13 +47,21 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite')
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
 
-/** Configuration tables copied into a throwaway db. Session rows start empty. */
+/**
+ * Configuration and authorization tables copied into a throwaway db. Session rows
+ * start empty. The workspace-scope relations are copied too: they decide which
+ * workspaces an account may reach, so an isolated server that dropped them would
+ * answer differently from the real one for no reason the test asked for. A table
+ * the source database does not have is skipped.
+ */
 const CONFIG_TABLES = [
   'workspaces',
   'system_configs',
   'workspace_configs',
   'personalized_configs',
   'mcp_api_keys',
+  'user_workspace_scopes',
+  'user_workspace_scope_items',
 ]
 
 /** Import markers stamped into the seed so no isolated server touches legacy files. */

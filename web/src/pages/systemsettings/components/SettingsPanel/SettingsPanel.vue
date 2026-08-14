@@ -24,8 +24,10 @@ import type {
   SystemSettings,
   VendorHostStatus,
   VendorId,
+  UserWorkspaceAccessAccount,
   VendorRuntimeStatus,
   WorkspaceInfo,
+  WorkspaceScopeMode,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL, vendorRowTint } from '@/lib/vendor'
@@ -37,6 +39,7 @@ import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import TabNav from '@/components/TabNav/TabNav.vue'
 import EmojiPicker from './EmojiPicker.vue'
+import UserAccess from '../UserAccess/UserAccess.vue'
 
 const { t } = useTypedI18n()
 
@@ -72,6 +75,10 @@ const props = withDefaults(
     workspaces?: WorkspaceInfo[]
     /** 一次性定位目标:落到某个 Tab 并在其中定位一行配置。消费后由父组件清空。 */
     target?: SystemSettingsTarget | null
+    /** 账号 × 工作区名册;`null` = 尚未取到(或非管理员,服务端拒答)。 */
+    userAccessAccounts?: UserWorkspaceAccessAccount[] | null
+    /** 「用户与访问」勾选项的工作区来源 —— 由该名册回包携带,而非侧栏可见列表。 */
+    userAccessWorkspaces?: WorkspaceInfo[]
   }>(),
   {
     hostStatus: () => [],
@@ -80,6 +87,8 @@ const props = withDefaults(
     bindingStats: null,
     workspaces: () => [],
     target: null,
+    userAccessAccounts: null,
+    userAccessWorkspaces: () => [],
   },
 )
 
@@ -89,9 +98,15 @@ const props = withDefaults(
 // (transformed) onto the latest committed snapshot, so a tab's Save never carries
 // another tab's unsaved draft. Host diagnostics (Runtime) render read-only from
 // `hostStatus`, not from settings, so they are not listed here.
-type SettingsTab = 'agent' | 'runtime' | 'security' | 'general'
-const TABS: SettingsTab[] = ['agent', 'runtime', 'security', 'general']
+//
+// `access` is field-less: it edits authorization state (which account reaches
+// which workspace), which lives in its own store and is saved per account by its
+// own message. Listing it with no fields is what keeps it out of every
+// whole-object settings save — in both directions.
+type SettingsTab = 'agent' | 'runtime' | 'security' | 'general' | 'access'
+const TABS: SettingsTab[] = ['agent', 'runtime', 'security', 'general', 'access']
 const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
+  access: [],
   agent: [
     'agents',
     'defaultAgentId',
@@ -108,6 +123,13 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
 function tabLabel(tab: SettingsTab): string {
   return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
 }
+
+// The access tab is offered only to the administrator. This is presentation, not
+// the gate: the server refuses both access messages from anyone else regardless.
+// Hiding it here just avoids showing a tab whose every request would be refused.
+const visibleTabs = computed<SettingsTab[]>(() =>
+  TABS.filter((tab) => tab !== 'access' || isAdmin.value),
+)
 
 // Canonical vendor display order — the shared list, so a newly registered vendor
 // appears in every picker/panel here instead of being silently omitted.
@@ -197,6 +219,11 @@ const emit = defineEmits<{
   // The one-shot `target` was acted on (located, or resolved to its fallback);
   // the owner clears it so reopening the panel does not jump again.
   'target-consumed': []
+  // Re-read the account × workspace roster.
+  'reload-user-access': []
+  // Replace ONE account's workspace policy. Never part of `save`: authorization
+  // state and system configuration are saved by different messages on purpose.
+  'save-user-access': [payload: { subject: string; mode: WorkspaceScopeMode; workspaces: string[] }]
 }>()
 
 // A default, empty SystemSettings — the shape both `draft` and `committed` start
@@ -465,6 +492,17 @@ function locateNow(): void {
   fallback.querySelector<HTMLElement>('input, select, button')?.focus()
   highlight(exact ? target.agentId : null)
 }
+
+// The access roster is fetched when its tab is actually shown, not when the panel
+// opens: it is administrator-only, so asking for it up front would have every
+// ordinary account's panel open with a refusal it did not ask for.
+watch(
+  () => [props.open, activeTab.value, isAdmin.value] as const,
+  ([open, tab, admin]) => {
+    if (open && tab === 'access' && admin) emit('reload-user-access')
+  },
+  { immediate: true },
+)
 
 // Arm the locate when a target arrives, then request the Agent tab. `requestTab`
 // is the dirty guard: a clean tab switches immediately, a dirty one opens the
@@ -1416,7 +1454,7 @@ function selectAdmin(username: string) {
     <!-- Tab navigation (shared with the workspace-setting page). Requesting a switch
          away from a dirty tab opens the confirm dialog (see requestTab). -->
     <TabNav
-      :tabs="TABS"
+      :tabs="visibleTabs"
       :active-tab="activeTab"
       :dirty-map="tabDirtyMap"
       :tab-label="tabLabel"
@@ -2285,6 +2323,23 @@ function selectAdmin(username: string) {
           </label>
           <p class="settings-hint">{{ t('settings.display.showSessionsPage.hint') }}</p>
         </section>
+      </div>
+
+      <!-- ============ Users and access tab ============
+           Field-less: it edits authorization state, saved per account by its own
+           message, so there is no draft here and no Save button in the footer. -->
+      <div
+        v-show="activeTab === 'access'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-access"
+      >
+        <UserAccess
+          :workspaces="userAccessWorkspaces"
+          :accounts="userAccessAccounts"
+          @reload="emit('reload-user-access')"
+          @save="(p) => emit('save-user-access', p)"
+        />
       </div>
     </div>
 

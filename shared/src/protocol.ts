@@ -64,6 +64,10 @@ export type ClientToServer =
   | SettingsMsg.ClientCreateMcpApiKey
   | SettingsMsg.ClientUpdateMcpApiKey
   | SettingsMsg.ClientRevokeMcpApiKey
+  | SettingsMsg.ClientListMyMcpApiKeys
+  | SettingsMsg.ClientCreateMyMcpApiKey
+  | SettingsMsg.ClientResetMyMcpApiKey
+  | SettingsMsg.ClientRevokeMyMcpApiKey
   | SettingsMsg.ClientStartSelfUpdate
   | SettingsMsg.ClientApplySelfUpdate
   | SettingsMsg.ClientCancelSelfUpdate
@@ -72,6 +76,9 @@ export type ClientToServer =
   | AuthMsg.ClientSetAdminPassword
   | AuthMsg.ClientRemoveAccount
   | AuthMsg.ClientSetAdminAccount
+  | AuthMsg.ClientGetUserWorkspaceAccess
+  | AuthMsg.ClientSaveUserWorkspaceAccess
+  | WorkspaceMsg.ClientGetWorkspaceAccessors
   | WorkspaceMsg.ClientLoadWorkspaceSetting
   | WorkspaceMsg.ClientSaveWorkspaceSetting
   | IntentMsg.ClientListIntents
@@ -173,6 +180,9 @@ export type ServerToClient =
   | SettingsMsg.ServerSettings
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys
+  | SettingsMsg.ServerMyMcpApiKeys
+  | AuthMsg.ServerUserWorkspaceAccess
+  | WorkspaceMsg.ServerWorkspaceAccessors
   | WorkspaceMsg.ServerWorkspaceSetting
   | AuthMsg.ServerLoginResult
   | AuthMsg.ServerAdminPasswordResult

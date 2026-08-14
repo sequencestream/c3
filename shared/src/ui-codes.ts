@@ -380,6 +380,35 @@ export const UI_ERROR_CODES = {
   'mcpApiKey.unknownTool': { key: 'error.mcpApiKey.unknownTool', params: ['tool'] },
   // Persisting the key roster failed (settings.json unwritable / lock contention).
   'mcpApiKey.saveFailed': { key: 'error.mcpApiKey.saveFailed' },
+  // A self-service key operation arrived on a connection with no resolvable
+  // identity. There is no owner to file the key under, and picking one would be
+  // minting a credential nobody asked for — so it is refused rather than guessed.
+  'mcpApiKey.noIdentity': { key: 'error.mcpApiKey.noIdentity' },
+  // account × workspace access editor
+  // The subject named by a save is not a current non-admin account (removed since
+  // the roster loaded, or never existed).
+  'userAccess.unknownAccount': { key: 'error.userAccess.unknownAccount', params: ['subject'] },
+  // A selected workspace name is not in the live registry. The whole save is
+  // refused rather than silently dropping the name, so what was saved is always
+  // exactly what was submitted.
+  'userAccess.unknownWorkspace': {
+    key: 'error.userAccess.unknownWorkspace',
+    params: ['workspaceName'],
+  },
+  // A save named a scope mode c3 cannot interpret. Never guessed at: one guess
+  // would silently narrow the account's access, the other silently widen it.
+  'userAccess.invalidMode': { key: 'error.userAccess.invalidMode' },
+  // Refused to write a policy row for the configured administrator or the
+  // synthesized `local` identity: both hold an implicit `all` scope that exists as
+  // a resolver branch, and storing one would let an administrator lock themselves out.
+  'userAccess.immutableSubject': { key: 'error.userAccess.immutableSubject', params: ['subject'] },
+  // Persisting the policy failed. Neither the policy nor the epoch moved, and no
+  // session was closed.
+  'userAccess.saveFailed': { key: 'error.userAccess.saveFailed' },
+  // The accessor list was asked for a workspace the caller cannot reach — which
+  // covers "no such workspace" too, deliberately using ONE code so the read
+  // cannot be used to probe which workspace names exist.
+  'workspaceAccessors.forbidden': { key: 'error.workspaceAccessors.forbidden' },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

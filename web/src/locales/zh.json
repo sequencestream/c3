@@ -25,6 +25,12 @@
       },
       "copied": {
         "label": "已复制"
+      },
+      "refresh": {
+        "label": "刷新"
+      },
+      "edit": {
+        "label": "编辑"
       }
     },
     "async": {
@@ -236,6 +242,9 @@
           "confirm": "切换 Tab",
           "stay": "留在当前"
         }
+      },
+      "access": {
+        "label": "用户与访问"
       }
     },
     "agents": {
@@ -703,6 +712,50 @@
       },
       "hint": "此 c3 部署的对外基地址，用于拼接可分享的链接。例如 http://192.168.10.10:9000。明文存储（非敏感信息）。",
       "placeholder": "http://192.168.10.10:9000"
+    },
+    "userAccess": {
+      "title": {
+        "label": "用户与访问"
+      },
+      "hint": "每个账号能到哪些工作区。这是授权而不是偏好:只有你能改,并且按账号逐条保存。",
+      "newWorkspace": {
+        "hint": "新注册的工作区,对设为「全部工作区」的账号立即可见;对按清单选中的账号,则要你显式勾上才会加入。"
+      },
+      "loading": "正在读取账号……",
+      "empty": "没有匹配的账号。",
+      "search": {
+        "account": {
+          "placeholder": "搜索账号"
+        },
+        "workspace": {
+          "placeholder": "搜索工作区"
+        }
+      },
+      "admin": {
+        "badge": {
+          "label": "管理员"
+        }
+      },
+      "immutable": {
+        "hint": "这个身份按规则够到全部工作区,而不是靠库里的一行策略 —— 所以它改不掉,你也就锁不住自己。"
+      },
+      "policy": {
+        "implicitAll": "全部工作区(隐式)",
+        "none": "未配置 —— 什么都够不到",
+        "all": "全部工作区",
+        "selected": "已选 {count} 个"
+      },
+      "mode": {
+        "all": {
+          "label": "全部工作区,含以后新注册的"
+        },
+        "selected": {
+          "label": "仅下面勾选的工作区"
+        }
+      },
+      "hiddenSelected": {
+        "hint": "有 {count} 个已勾选的工作区被搜索隐藏,保存时仍会带上。"
+      }
     }
   },
   "personalizedSetting": {
@@ -733,6 +786,74 @@
       },
       "hint": "c3 网页控制台的字体大小,为内置字号的 70%–120%。更改无需刷新立即生效。已登录时保存到你的账户,否则保存在本浏览器中。",
       "percentage": "{value}%"
+    },
+    "mcpKeys": {
+      "title": {
+        "label": "外部 MCP key"
+      },
+      "hint": "你名下的长期 key,建议按设备或客户端各建一把。新建、重置、吊销都在这里;别人看不到,也重置不了。",
+      "scope": {
+        "hint": "key 借的是你的权限:它能到哪些工作区,取决于管理员维护的账号范围,每次请求现算。"
+      },
+      "noBaseUrl": "尚未配置公开访问地址,所以拼不出可直接复制的端点。key 本身照常可用。",
+      "goto": {
+        "label": "去系统设置里配置"
+      },
+      "reveal": {
+        "title": "「{name}」的 key",
+        "onceOnly": "只显示这一次。它不落任何存储,也无法找回 —— 请现在复制走。",
+        "dismiss": {
+          "label": "我已复制"
+        }
+      },
+      "key": {
+        "label": "key"
+      },
+      "url": {
+        "label": "端点"
+      },
+      "command": {
+        "label": "一行式接入",
+        "workspacePlaceholder": "你的工作区"
+      },
+      "empty": "你还没有外部 MCP key。",
+      "create": {
+        "open": {
+          "label": "新建 key"
+        },
+        "name": {
+          "placeholder": "用途(例如:办公笔记本)"
+        },
+        "defaultScope": "新 key 拿到的是服务端定的默认只读工具集。工具范围不在这里编辑。",
+        "submit": {
+          "label": "创建"
+        }
+      },
+      "reset": {
+        "label": "重置密钥",
+        "confirm": {
+          "title": "重置这把 key?",
+          "body": "将为「{name}」换一个新密钥。用旧密钥配好的一切立刻失效,没有宽限期,已建立的会话也会被切断。",
+          "confirm": {
+            "label": "重置"
+          }
+        }
+      },
+      "revoke": {
+        "label": "吊销",
+        "confirm": {
+          "title": "吊销这把 key?",
+          "body": "key 会被删除,已建立的会话同时切断。不可撤销。",
+          "confirm": {
+            "label": "吊销"
+          }
+        }
+      },
+      "unavailable": "这台 c3 已不再承认这把 key 所属的账号,它够不到任何东西,只剩吊销可做。",
+      "meta": "创建于 {created} · 最近使用 {lastUsed}",
+      "lastUsed": {
+        "never": "从未使用"
+      }
     }
   },
   "intent": {
@@ -2277,7 +2398,8 @@
       "unknownWorkspace": "工作区不存在({workspaceName}),未修改任何 key。",
       "noWorkspace": "请至少为该 key 选择一个工作区。",
       "saveFailed": "API key 保存失败。",
-      "unknownTool": "工具「{tool}」不在可外部授权的目录中。"
+      "unknownTool": "工具「{tool}」不在可外部授权的目录中。",
+      "noIdentity": "这条连接上认不出你的身份,因此不会创建或改动任何 key。"
     },
     "delivery": {
       "dbUnavailable": "交付功能不可用 (c3.db)。",
@@ -2308,6 +2430,16 @@
       "deliveryPrCreateFailed": "创建交付 PR 失败:{detail}",
       "deliveryPrNotFound": "该交付尚未创建交付 PR。",
       "deliveryPrSyncFailed": "无法从 forge 读取交付 PR 状态:{detail}"
+    },
+    "userAccess": {
+      "unknownAccount": "当前没有名为「{subject}」的账号,未保存任何改动。",
+      "unknownWorkspace": "没有名为「{workspaceName}」的已注册工作区,未保存任何改动。",
+      "invalidMode": "无法识别的访问模式,未保存任何改动。",
+      "immutableSubject": "「{subject}」按规则够到全部工作区,没有可编辑的策略。",
+      "saveFailed": "保存访问策略失败。没有任何改动生效,也没有会话被切断。"
+    },
+    "workspaceAccessors": {
+      "forbidden": "你无权查看本工作区的访问者名单。"
     }
   },
   "statusIndicator": {
@@ -2907,7 +3039,7 @@
         "label": "自动化"
       },
       "externalMcp": {
-        "label": "外部 MCP 接入"
+        "label": "访问"
       }
     },
     "defaultMode": {
@@ -3174,80 +3306,16 @@
     },
     "externalMcp": {
       "title": {
-        "label": "外部 MCP 接入"
+        "label": "谁能访问本工作区"
       },
-      "hint": "c3 没有拉起的 agent 如何通过 MCP 访问本部署。key 在这里创建、授权与吊销;端点恒为 /mcp,凭据走 Authorization: Bearer,工作区走 X-C3-Workspace 头。一把 key 能到达哪些工作区由它的归属账号的管理员配置决定。",
-      "security": {
-        "hint": "地址里不含凭据:key 走 Authorization: Bearer 头。请确认前置代理不把该请求头写进访问日志;明文 HTTP 下同网段仍能嗅探到它,对外暴露前请自行用 HTTPS 反向代理挡在前面。写工具会真实改动 c3 状态 —— 只授予你信任的进程,用完后吊销。"
-      },
-      "noBaseUrl": "尚未配置公开访问地址,无法生成可复制的链接。请到「系统设置 → 通用」填写。key 仍可在这里生成。",
+      "hint": "当前能够到本工作区的账号,含通过其名下外部 MCP key 到达的。只读:它与调用闸门用的是同一套解析规则。",
       "goto": {
-        "label": "打开系统设置"
+        "label": "打开「用户与访问」"
       },
-      "empty": "本工作区还没有 API key。在下方生成一把 —— 新 key 一律只有只读工具、不含写工具。",
-      "reveal": {
-        "title": "已创建 API key:{name}",
-        "onceOnly": "明文 key 只展示这一次。请立即复制 —— 关闭后无法找回。",
-        "dismiss": {
-          "label": "完成"
-        }
-      },
-      "key": {
-        "label": "明文 key"
-      },
-      "url": {
-        "label": "MCP 地址"
-      },
-      "command": {
-        "label": "一行式客户端配置"
-      },
-      "create": {
-        "open": {
-          "label": "新建 API key"
-        },
-        "name": {
-          "placeholder": "显示名称"
-        },
-        "defaultScope": "新 key 在本工作区管理,但它能到达哪些工作区由归属账号的管理员配置决定;默认只授予只读工具。写工具需在创建后另行勾选,勾选处会说明风险。",
-        "submit": {
-          "label": "创建 key"
-        }
-      },
-      "tools": {
-        "edit": {
-          "label": "工具范围"
-        },
-        "read": {
-          "label": "只读工具"
-        },
-        "write": {
-          "label": "写工具",
-          "risk": "这些会真实改动 c3 状态:落库意图、提交 spec 审核结论、拉起会话。",
-          "confirm": {
-            "title": "授予写权限?",
-            "body": "该 key 将通过以下工具真实改动 c3 状态:{tools}。继续?",
-            "confirm": {
-              "label": "授予"
-            }
-          }
-        },
-        "summary": "{total} 个工具 · {writes} 个写",
-        "none": "没有任何工具 —— 这把 key 什么也调不到。"
-      },
-      "revoke": {
-        "label": "吊销",
-        "confirm": {
-          "title": "吊销这把 key?",
-          "body": "key 在下一个请求即失效,已建立的会话会被关闭。此操作不可撤销。",
-          "confirm": {
-            "label": "吊销"
-          }
-        }
-      },
-      "unavailable": "这把 key 的归属账号已不被本部署承认,够不到任何东西 —— 请吊销它。",
-      "meta": "创建于 {created} · 最后使用 {lastUsed}",
-      "lastUsed": {
-        "never": "从未"
+      "empty": "当前没有账号能够到本工作区。",
+      "loading": "正在读取访问者名单……",
+      "manage": {
+        "hint": "账号的访问范围在「系统设置 → 用户与访问」里改;你自己的外部 MCP key 在个人化设置里管。"
       }
     }
   },

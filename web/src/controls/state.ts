@@ -75,6 +75,7 @@ import type {
   VendorId,
   VendorRuntimeStatus,
   WaitUserInvolveEvent,
+  UserWorkspaceAccessAccount,
   WorkspaceInfo,
   WorkspaceDashboardRow,
 } from '@ccc/shared/protocol'
@@ -738,16 +739,31 @@ export function createState(deps: StateDeps) {
   const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
   const vendorCapabilities = ref<Record<VendorId, Record<AdapterCapability, boolean>> | null>(null)
   const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
-  // ---- External MCP API keys (workspace settings) ----
-  // The roster is the CURRENT workspace's keys (metadata only, no plaintext).
-  // `mcpApiKeyCreated` holds the ONE reply that ever carries a plaintext key: it
+  // ---- External MCP API keys (personal settings) ----
+  // THIS identity's own keys, metadata only. A key is an owned credential, so the
+  // only roster the console holds is the signed-in identity's own: there is no
+  // per-workspace key list, because filing never decided what a key reaches.
+  // `myMcpApiKeyCreated` holds the ONE reply that ever carries a plaintext key: it
   // lives in memory for this page view so the user can copy it, and is cleared on
-  // dismiss / page close. Nothing writes it to storage, so a refresh loses it
-  // permanently — which is the promise the server makes. `mcpApiKeyCatalog` is the
-  // server's externally-grantable tool list, rendered into the scope pickers.
-  const mcpApiKeys = ref<McpApiKeyMeta[]>([])
-  const mcpApiKeyCatalog = ref<ExternalMcpToolDescriptor[]>([])
-  const mcpApiKeyCreated = ref<{ meta: McpApiKeyMeta; key: string } | null>(null)
+  // dismiss, page close, identity change and reconnect. Nothing writes it to
+  // storage, so a refresh loses it permanently — the promise the server makes.
+  const myMcpApiKeys = ref<McpApiKeyMeta[]>([])
+  const myMcpApiKeyCreated = ref<{ meta: McpApiKeyMeta; key: string } | null>(null)
+
+  // ---- Account × workspace access (system settings) ----
+  // The administrator's authorization editor. Held outside `serverSettings`
+  // because it is NOT part of the `SystemSettings` draft/save payload: a whole
+  // -object settings save must never be able to carry, or silently drop, an
+  // access policy.
+  const userWorkspaceAccess = ref<{
+    workspaces: WorkspaceInfo[]
+    accounts: UserWorkspaceAccessAccount[]
+  } | null>(null)
+
+  // ---- Workspace accessors (workspace settings, read-only) ----
+  // Who can reach the CURRENT workspace, derived server-side. `null` until the
+  // first answer arrives, so "not loaded yet" is distinguishable from "nobody".
+  const workspaceAccessors = ref<string[] | null>(null)
 
   const skillApprovalRequest = ref<ApprovalRequest | null>(null)
   const skillLinkStatuses = ref<SkillLinkStatus[]>([])
@@ -1162,9 +1178,10 @@ export function createState(deps: StateDeps) {
     vendorAvailability,
     sandboxStatus,
     bindingStats,
-    mcpApiKeys,
-    mcpApiKeyCatalog,
-    mcpApiKeyCreated,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     sessionCapabilities,
     skillSupport,
     vendorCapabilities,

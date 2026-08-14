@@ -3,6 +3,7 @@ import type {
   SystemSettings,
   UiLang,
   UiTheme,
+  WorkspaceScopeMode,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
 import { toSystemSettingsTarget } from '@/lib/action-descriptor'
@@ -106,6 +107,20 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openPersonalizedSetting = (): void => {
     personalizedSettingOpen.value = true
     ctx.fetchPersonalizedSettings()
+    // The key roster is per-identity and never cached across a page open: a
+    // signed-in account must not see the roster the previous identity loaded.
+    ctx.dismissMyMcpApiKeyReveal()
+    ctx.fetchMyMcpApiKeys()
+  }
+
+  /**
+   * Close the personalized-settings page, dropping any still-revealed plaintext
+   * key: leaving it in memory to reappear the next time the page opens would
+   * contradict the "shown once" promise.
+   */
+  ctx.closePersonalizedSetting = (): void => {
+    personalizedSettingOpen.value = false
+    ctx.dismissMyMcpApiKeyReveal()
   }
 
   /**
@@ -129,9 +144,9 @@ export function installSettingsActions(ctx: AppCtx): void {
     const id = currentWorkspace.value
     if (id) {
       send({ type: 'load_workspace_setting', workspaceName: id })
-      // The external-MCP key roster is scoped to ONE workspace: ask for this one.
-      // Metadata only, no plaintext, so non-administrators may see it too.
-      send({ type: 'list_mcp_api_keys', workspaceName: id })
+      // Who can reach THIS workspace — a derived, read-only answer. The page
+      // administers no credential, so it asks for no key roster.
+      send({ type: 'get_workspace_accessors', workspaceName: id })
     }
     ctx.loadParkRecoveryStats()
   }
@@ -204,47 +219,74 @@ export function installSettingsActions(ctx: AppCtx): void {
     send({ type: 'set_admin_account', ...payload })
   }
 
-  // ---- External MCP API keys (admin-gated; see features/settings/mcp-api-keys.ts)
-  // Every operation replies with the WHOLE roster, so none of these mutates local
-  // state optimistically: what the list shows is always what the server confirmed.
+  // ---- External MCP API keys, self-service (see features/settings/mcp-api-keys.ts)
+  // Every operation replies with the WHOLE roster of THIS identity's keys, so none
+  // of these mutates local state optimistically: what the list shows is always what
+  // the server confirmed. The owner is never sent — the server takes it from the
+  // verified connection.
 
-  /** Mint a key bound to one workspace. The reply is the only message that will ever carry its plaintext. */
-  ctx.createMcpApiKey = (payload: { workspaceName: string; name: string }): void => {
-    send({ type: 'create_mcp_api_key', ...payload })
+  /** Load this identity's own keys. Metadata only; no plaintext is ever re-sent. */
+  ctx.fetchMyMcpApiKeys = (): void => {
+    send({ type: 'list_my_mcp_api_keys' })
   }
 
-  /** Rename a key and/or replace its granted tool scope. */
-  ctx.updateMcpApiKey = (payload: {
-    workspaceName: string
-    id: string
-    name?: string
-    tools?: string[]
-  }): void => {
-    send({ type: 'update_mcp_api_key', ...payload })
+  /** Mint a key for this identity, labelled by device or client. The reply is the only message that will ever carry its plaintext. */
+  ctx.createMyMcpApiKey = (payload: { name: string }): void => {
+    send({ type: 'create_my_mcp_api_key', ...payload })
   }
 
-  /** Revoke a key. Takes effect on that key's very next request. */
-  ctx.revokeMcpApiKey = (payload: { workspaceName: string; id: string }): void => {
-    send({ type: 'revoke_mcp_api_key', ...payload })
+  /**
+   * Replace one of my keys' secrets in place. Same key, new secret: whatever was
+   * configured with the previous one stops working at once, with no grace period.
+   */
+  ctx.resetMyMcpApiKey = (payload: { id: string }): void => {
+    send({ type: 'reset_my_mcp_api_key', ...payload })
+  }
+
+  /** Revoke one of my keys. Takes effect on that key's very next request. */
+  ctx.revokeMyMcpApiKey = (payload: { id: string }): void => {
+    send({ type: 'revoke_my_mcp_api_key', ...payload })
   }
 
   /**
    * Drop the one-time plaintext from memory. Called when the user dismisses the
-   * reveal or closes the panel — after this the key is unrecoverable, which is
+   * reveal or closes the page — after this the key is unrecoverable, which is
    * exactly the guarantee the server makes.
    */
-  ctx.dismissMcpApiKeyReveal = (): void => {
-    ctx.mcpApiKeyCreated.value = null
+  ctx.dismissMyMcpApiKeyReveal = (): void => {
+    ctx.myMcpApiKeyCreated.value = null
+  }
+
+  // ---- Account × workspace access (administrator-only) ----
+
+  /** Load the account × workspace roster. Refused server-side for a non-admin. */
+  ctx.fetchUserWorkspaceAccess = (): void => {
+    send({ type: 'get_user_workspace_access' })
   }
 
   /**
-   * Close the system-settings panel. Closing also drops any still-revealed
-   * plaintext key: leaving it in memory to reappear the next time the panel opens
-   * would contradict the "shown once" promise.
+   * Replace ONE account's policy. `workspaces` is the complete selected set —
+   * never what a search box happens to be showing — so filtering the view cannot
+   * revoke a hidden selection.
    */
+  ctx.saveUserWorkspaceAccess = (payload: {
+    subject: string
+    mode: WorkspaceScopeMode
+    workspaces: string[]
+  }): void => {
+    send({ type: 'save_user_workspace_access', ...payload })
+  }
+
+  /** Refresh the read-only "who can reach this workspace" list. */
+  ctx.fetchWorkspaceAccessors = (): void => {
+    const id = currentWorkspace.value
+    if (!id) return
+    send({ type: 'get_workspace_accessors', workspaceName: id })
+  }
+
+  /** Close the system-settings panel. */
   ctx.closeSettings = (): void => {
     settingsOpen.value = false
-    ctx.dismissMcpApiKeyReveal()
   }
 
   /**
@@ -253,6 +295,16 @@ export function installSettingsActions(ctx: AppCtx): void {
    */
   ctx.openSettingsFromWorkspaceSetting = (): void => {
     workspaceSettingOpen.value = false
+    ctx.openSettings()
+  }
+
+  /**
+   * The personal key page's "go configure the public address" jump. Closes the
+   * page first so the two panels never stack — which also drops any revealed
+   * plaintext, exactly as an ordinary close does.
+   */
+  ctx.openSettingsFromPersonalizedSetting = (): void => {
+    ctx.closePersonalizedSetting()
     ctx.openSettings()
   }
 

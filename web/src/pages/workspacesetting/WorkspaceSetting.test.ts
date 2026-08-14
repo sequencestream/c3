@@ -876,7 +876,7 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly seven tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 外部 MCP', () => {
+  it('renders exactly seven tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 访问', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
@@ -890,7 +890,7 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
       'Skill repos',
       'Automation',
       'Local observation',
-      'External MCP',
+      'Access',
     ])
   })
 
@@ -1270,11 +1270,18 @@ describe('WorkspaceSetting.vue — external MCP access tab', () => {
     }
   })
 
-  it('forwards the jump to system settings', async () => {
-    const w = mountWs(cfg(), { baseUrl: '' })
+  it('forwards the jump to where access is actually edited', async () => {
+    const w = mountWs(cfg(), { baseUrl: '', isAdmin: true })
     await w.find('[data-testid="project-config-tab-btn-externalMcp"]').trigger('click')
-    await w.get('[data-testid="workspace-external-mcp-no-base-url"] button').trigger('click')
+    await w.get('[data-testid="workspace-external-mcp-goto"]').trigger('click')
     expect(w.emitted('gotoSystemSettings')).toHaveLength(1)
+  })
+
+  it('forwards a refresh of the derived accessor list instead of deriving one', async () => {
+    const w = mountWs(cfg(), { workspaceAccessors: ['root'] })
+    await w.find('[data-testid="project-config-tab-btn-externalMcp"]').trigger('click')
+    await w.get('[data-testid="workspace-external-mcp-reload"]').trigger('click')
+    expect(w.emitted('reloadWorkspaceAccessors')).toHaveLength(1)
   })
 })
 

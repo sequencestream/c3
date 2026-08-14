@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
-import type { ClientToServer, PersonalizedSettings } from '@ccc/shared/protocol'
+import type { ClientToServer, McpApiKeyMeta, PersonalizedSettings } from '@ccc/shared/protocol'
 import { installSettingsActions } from './settings-actions'
 import type { AppCtx } from './types'
 import { applyLocale, i18n } from '@/i18n'
@@ -28,6 +28,20 @@ function installDocument(): { dataset: Record<string, string>; style: Record<str
   return root
 }
 
+/** A minimal key roster entry — this file only cares that the plaintext is dropped. */
+function keyMeta(): McpApiKeyMeta {
+  return {
+    id: 'key-1',
+    name: 'laptop',
+    createdAt: 1,
+    lastUsedAt: null,
+    workspaceName: null,
+    unavailable: false,
+    tools: [],
+    displayPrefix: 'c3k_key-1',
+  }
+}
+
 function makeCtx(opts: { connected?: boolean } = {}) {
   const sent: ClientToServer[] = []
   const showToast = vi.fn()
@@ -38,6 +52,7 @@ function makeCtx(opts: { connected?: boolean } = {}) {
     showToast,
     settingsOpen: ref(false),
     personalizedSettingOpen: ref(false),
+    myMcpApiKeyCreated: ref<{ meta: McpApiKeyMeta; key: string } | null>(null),
     personalizedSettings: ref<PersonalizedSettings>({ uiLang: 'en', theme: 'dark' }),
     workspaceSettingOpen: ref(false),
     currentWorkspace: ref<string | null>(null),
@@ -104,11 +119,27 @@ describe('fetchPersonalizedSettings', () => {
 })
 
 describe('openPersonalizedSetting', () => {
-  it('opens the page and refreshes from the current identity', () => {
+  it('opens the page and refreshes both the preferences and this identity\u2019s key roster', () => {
     const { ctx, sent } = makeCtx()
     ctx.openPersonalizedSetting()
     expect(ctx.personalizedSettingOpen.value).toBe(true)
-    expect(sent.map((m) => m.type)).toEqual(['get_personalized_settings'])
+    expect(sent.map((m) => m.type)).toEqual(['get_personalized_settings', 'list_my_mcp_api_keys'])
+  })
+
+  it('drops a still-revealed plaintext key, so opening the page never re-shows one', () => {
+    const { ctx } = makeCtx()
+    ctx.myMcpApiKeyCreated.value = { meta: keyMeta(), key: 'c3k_x_SECRET' }
+    ctx.openPersonalizedSetting()
+    expect(ctx.myMcpApiKeyCreated.value).toBeNull()
+  })
+
+  it('closing the page also drops the plaintext', () => {
+    const { ctx } = makeCtx()
+    ctx.personalizedSettingOpen.value = true
+    ctx.myMcpApiKeyCreated.value = { meta: keyMeta(), key: 'c3k_x_SECRET' }
+    ctx.closePersonalizedSetting()
+    expect(ctx.personalizedSettingOpen.value).toBe(false)
+    expect(ctx.myMcpApiKeyCreated.value).toBeNull()
   })
 
   it('does not open the system-settings page (three independent entries)', () => {

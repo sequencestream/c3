@@ -133,9 +133,10 @@ export function installMessageHandler(ctx: AppCtx): void {
     vendorRuntime,
     sandboxStatus,
     bindingStats,
-    mcpApiKeys,
-    mcpApiKeyCatalog,
-    mcpApiKeyCreated,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     sessionCapabilities,
     vendorCapabilities,
     vendorModes,
@@ -413,6 +414,15 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.parkRecoveryStats.value = null
         ctx.parkRecoveryError.value = null
         ctx.parkRecoveryLoading.value = false
+        workspaceAccessors.value = null
+        // Every per-identity roster goes on a (re)connect, because `ready` is also
+        // where a login lands: keeping the previous identity's keys — let alone a
+        // still-revealed plaintext — on screen would attribute one account's
+        // credential to another. The plaintext is unrecoverable by design, so
+        // dropping it here costs nothing that was not already promised.
+        myMcpApiKeys.value = []
+        myMcpApiKeyCreated.value = null
+        userWorkspaceAccess.value = null
         ctx.applyStatuses(msg.statuses)
 
         // ---- Deep-link consumption (takes priority over localStorage restore) ----
@@ -824,14 +834,28 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'mcp_api_keys':
-        // The roster is scoped to one workspace. A reply that raced with a
-        // workspace switch must not clobber the page now showing another one.
+        // The workspace-addressed roster. Still on the wire for older clients,
+        // but no first-party page administers keys by workspace any more — a key
+        // belongs to its owner, so the console reads `my_mcp_api_keys` instead.
+        break
+      case 'my_mcp_api_keys':
+        // Authoritative for THIS identity: the reply replaces the snapshot whole,
+        // so a revoked key cannot linger in the list.
+        myMcpApiKeys.value = msg.keys
+        // `created` rides only on a successful create or reset. A plain roster
+        // refresh must NOT clear an open reveal — the user may still be copying —
+        // but a roster that arrives with no `created` after one did is the next
+        // operation's answer, so the previous plaintext goes.
+        myMcpApiKeyCreated.value = msg.created ?? null
+        break
+      case 'user_workspace_access':
+        userWorkspaceAccess.value = { workspaces: msg.workspaces, accounts: msg.accounts }
+        break
+      case 'workspace_accessors':
+        // Scoped to one workspace, like the key roster: a reply that raced with a
+        // workspace switch must not describe the page now showing another one.
         if (msg.workspaceName !== currentWorkspace.value) break
-        mcpApiKeys.value = msg.keys
-        mcpApiKeyCatalog.value = msg.catalog
-        // `created` rides only on a successful mint. A plain roster refresh must
-        // NOT clear an open reveal box — the user may still be copying the key.
-        if (msg.created) mcpApiKeyCreated.value = msg.created
+        workspaceAccessors.value = msg.subjects
         break
       case 'personalized_settings': {
         // The echo is authoritative for this identity: an account record beats what

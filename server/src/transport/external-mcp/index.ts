@@ -192,9 +192,17 @@ export interface ServedExternalMcp {
   handler: (c: Context) => Promise<Response>
   /**
    * Tear down every live MCP session belonging to a key. Called when the key is
-   * revoked, so an already-open transport cannot keep serving under it.
+   * revoked or its secret reset, so an already-open transport cannot keep serving
+   * under it.
    */
   closeSessionsForKey: (keyId: string) => void
+  /**
+   * Tear down every live MCP session belonging to an OWNER — every key it holds,
+   * across every workspace. Called after an administrator's workspace-policy edit
+   * commits: the authority the sessions opened under is the thing that changed,
+   * and it is not addressable by key id.
+   */
+  closeSessionsForOwner: (ownerSubject: string) => void
   /** Number of live MCP sessions. Test seam. */
   sessionCount: () => number
 }
@@ -206,6 +214,12 @@ interface Session {
   ready: Promise<void>
   /** The pinning tuple, fixed at initialize. */
   keyId: string
+  /**
+   * Whose authority the session opened under, fixed at initialize alongside the
+   * key. Indexed separately from `keyId` because a policy edit invalidates every
+   * key an owner holds, not one of them.
+   */
+  ownerSubject: string
   secretVersion: number
   workspaceName: string
   policyEpoch: number
@@ -258,6 +272,12 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
   const sessions = new Map<string, Session>()
   /** key id → its live session ids, so revocation is a lookup rather than a scan. */
   const byKey = new Map<string, Set<string>>()
+  /**
+   * owner subject → its live session ids. A second index rather than a filter over
+   * `sessions`: a committed policy change must close every session of one owner
+   * without scanning, and without depending on anything the UI supplied.
+   */
+  const byOwner = new Map<string, Set<string>>()
   const now = deps.now ?? (() => Date.now())
   // The catalog is scope-free, so ONE build serves every session. Built lazily
   // so constructing the route stays free of feature work.
@@ -288,22 +308,31 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
     }
   }
 
+  const index = (map: Map<string, Set<string>>, at: string, sessionId: string): void => {
+    const set = map.get(at) ?? new Set<string>()
+    set.add(sessionId)
+    map.set(at, set)
+  }
+
+  const deindex = (map: Map<string, Set<string>>, at: string, sessionId: string): void => {
+    const set = map.get(at)
+    if (!set) return
+    set.delete(sessionId)
+    if (set.size === 0) map.delete(at)
+  }
+
   const track = (sessionId: string, session: Session): void => {
     sessions.set(sessionId, session)
-    const set = byKey.get(session.keyId) ?? new Set<string>()
-    set.add(sessionId)
-    byKey.set(session.keyId, set)
+    index(byKey, session.keyId, sessionId)
+    index(byOwner, session.ownerSubject, sessionId)
   }
 
   const untrack = (sessionId: string): void => {
     const session = sessions.get(sessionId)
     if (!session) return
     sessions.delete(sessionId)
-    const set = byKey.get(session.keyId)
-    if (set) {
-      set.delete(sessionId)
-      if (set.size === 0) byKey.delete(session.keyId)
-    }
+    deindex(byKey, session.keyId, sessionId)
+    deindex(byOwner, session.ownerSubject, sessionId)
   }
 
   const closeSession = (session: Session): void => {
@@ -434,6 +463,7 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
       server,
       ready: Promise.resolve(),
       keyId: scope.keyId,
+      ownerSubject: scope.ownerSubject,
       secretVersion: scope.secretVersion,
       workspaceName: scope.workspaceName,
       policyEpoch: scope.policyEpoch,
@@ -555,6 +585,12 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
 
     closeSessionsForKey(keyId) {
       const ids = byKey.get(keyId)
+      if (!ids) return
+      for (const id of [...ids]) evict(id)
+    },
+
+    closeSessionsForOwner(ownerSubject) {
+      const ids = byOwner.get(ownerSubject)
       if (!ids) return
       for (const id of [...ids]) evict(id)
     },

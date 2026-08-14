@@ -26,6 +26,7 @@ import type {
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
   WorkspaceInfo,
+  WorkspaceScopeMode,
   WorkspaceSetting as WorkspaceSettingType,
   QueueControlAction,
 } from '@ccc/shared/protocol'
@@ -382,23 +383,34 @@ export interface AppMethods {
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void
-  /** Mint an external-MCP API key bound to ONE workspace; the reply carries its plaintext exactly once. */
-  createMcpApiKey(payload: { workspaceName: string; name: string }): void
-  /** Rename a key and/or replace its granted tool scope. The workspace pins which roster replies. */
-  updateMcpApiKey(payload: {
-    workspaceName: string
-    id: string
-    name?: string
-    tools?: string[]
-  }): void
-  /** Revoke a key — effective on that key's very next request. */
-  revokeMcpApiKey(payload: { workspaceName: string; id: string }): void
+  /** Load THIS identity's own external-MCP keys (metadata only). */
+  fetchMyMcpApiKeys(): void
+  /** Mint a key for this identity; the reply carries its plaintext exactly once. */
+  createMyMcpApiKey(payload: { name: string }): void
+  /** Replace one of my keys' secrets in place — same key, new secret, no grace period. */
+  resetMyMcpApiKey(payload: { id: string }): void
+  /** Revoke one of my keys — effective on that key's very next request. */
+  revokeMyMcpApiKey(payload: { id: string }): void
   /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
-  dismissMcpApiKeyReveal(): void
-  /** Close the system-settings panel, dropping any still-revealed plaintext key. */
+  dismissMyMcpApiKeyReveal(): void
+  /** Load the account × workspace access roster (administrator-only server-side). */
+  fetchUserWorkspaceAccess(): void
+  /** Replace ONE account's workspace policy with the complete submitted set. */
+  saveUserWorkspaceAccess(payload: {
+    subject: string
+    mode: WorkspaceScopeMode
+    workspaces: string[]
+  }): void
+  /** Refresh the current workspace's read-only effective-accessor list. */
+  fetchWorkspaceAccessors(): void
+  /** Close the system-settings panel. */
   closeSettings(): void
-  /** Jump from the workspace-setting page to system settings (baseUrl / API keys). */
+  /** Close the personalized-settings page, dropping any still-revealed plaintext key. */
+  closePersonalizedSetting(): void
+  /** Jump from the workspace-setting page to system settings (baseUrl). */
   openSettingsFromWorkspaceSetting(): void
+  /** Jump from the personal key page to system settings (baseUrl). */
+  openSettingsFromPersonalizedSetting(): void
   fetchPersonalizedSettings(): void
   setLocale(next: UiLang): void
   setTheme(next: UiTheme): void

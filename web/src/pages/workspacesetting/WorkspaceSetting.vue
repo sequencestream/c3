@@ -118,16 +118,12 @@ const props = defineProps<{
    */
   baseUrl?: string | null
   /**
-   * THIS workspace's external-MCP API key roster (metadata only, never a
-   * plaintext key). Not workspace config: it never enters a save payload, and the
-   * external-MCP tab is field-less for exactly that reason.
+   * Who can currently reach THIS workspace, derived server-side. Not workspace
+   * config: it never enters a save payload, and the external-MCP tab is
+   * field-less for exactly that reason. `null` ⇒ not fetched yet.
    */
-  mcpApiKeys?: McpApiKeyMeta[]
-  /** The one-time plaintext from a successful mint; null once dismissed. */
-  mcpApiKeyCreated?: { meta: McpApiKeyMeta; key: string } | null
-  /** The server's externally-grantable tool catalog, rendered into the scope pickers. */
-  mcpApiKeyCatalog?: ExternalMcpToolDescriptor[]
-  /** Non-admins see the roster read-only: buttons disabled, never hidden. */
+  workspaceAccessors?: string[] | null
+  /** Whether the viewer is the administrator — only decides whether the "go edit it" jump is offered. */
   isAdmin?: boolean
 }>()
 
@@ -140,16 +136,10 @@ const emit = defineEmits<{
   installSkill: [skillId: string]
   /** Retry the read-only park-recovery query after a failed one. */
   reloadParkRecovery: []
-  /** Jump to system settings (configure `baseUrl`). */
+  /** Jump to system settings (configure `baseUrl`, or edit account access). */
   gotoSystemSettings: []
-  /** Mint a key bound to this workspace; the reply carries its plaintext once. */
-  createMcpApiKey: [payload: { name: string }]
-  /** Replace one key's granted tool scope. */
-  updateMcpApiKeyTools: [payload: { id: string; tools: string[] }]
-  /** Revoke a key — effective on its very next request. */
-  revokeMcpApiKey: [id: string]
-  /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
-  dismissMcpApiKeyReveal: []
+  /** Re-read the effective accessor list. */
+  reloadWorkspaceAccessors: []
 }>()
 
 // ---- Tab grouping ----------------------------------------------------------
@@ -1509,16 +1499,10 @@ const parkRecoveryRateText = computed(() => {
         data-testid="project-config-tab-externalMcp"
       >
         <ExternalMcpAccess
-          :base-url="baseUrl"
-          :workspace-id="currentWorkspace"
-          :mcp-api-keys="mcpApiKeys"
-          :created="mcpApiKeyCreated"
-          :catalog="mcpApiKeyCatalog"
+          :workspace-name="currentWorkspace"
+          :accessors="workspaceAccessors"
           :is-admin="isAdmin"
-          @create="emit('createMcpApiKey', $event)"
-          @update-tools="emit('updateMcpApiKeyTools', $event)"
-          @revoke="emit('revokeMcpApiKey', $event)"
-          @dismiss-reveal="emit('dismissMcpApiKeyReveal')"
+          @reload="emit('reloadWorkspaceAccessors')"
           @goto-system-settings="emit('gotoSystemSettings')"
         />
       </div>

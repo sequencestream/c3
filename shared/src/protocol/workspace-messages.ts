@@ -158,3 +158,32 @@ export type ServerWorkspacesAutomationResult = {
   dashboard: WorkspaceDashboardRow[]
   dashboardError?: UiError
 }
+
+/**
+ * Ask who can currently reach ONE workspace (reply: `workspace_accessors`).
+ *
+ * Available to any authenticated connection whose own subject can reach that
+ * workspace — the read-only tab is part of a workspace the caller already sees,
+ * so it needs no administrator authority. It is NOT the administrator roster:
+ * an unknown workspace and one outside the caller's scope get the same refusal,
+ * so this cannot be used to probe which workspaces exist.
+ */
+export type ClientGetWorkspaceAccessors = {
+  type: 'get_workspace_accessors'
+  workspaceName: string
+}
+
+/**
+ * Who can currently reach one workspace — the EFFECTIVE answer, derived from the
+ * account roster and the same subject-aware resolver the console list and the
+ * external MCP gate use, so it cannot drift from real authorization.
+ *
+ * It describes workspace visibility only: not which key is connected, not what
+ * tools any key holds, not who reached it in the past.
+ */
+export type ServerWorkspaceAccessors = {
+  type: 'workspace_accessors'
+  workspaceName: string
+  /** The account identities with effective access, including implicit `all` holders. */
+  subjects: string[]
+}

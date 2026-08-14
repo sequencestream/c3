@@ -13,9 +13,13 @@
  *    to, so replacing a secret invalidates sessions opened under the old one
  *    rather than leaving them running against a credential that no longer exists.
  *
- * `workspaceName` survives as the record's ADMINISTERING page — which workspace
- * settings tab lists it — and is deliberately not an authorization input: page
- * context cannot confer access to the workspace whose page it is.
+ * `workspaceName` survives as the record's FILING state — which workspace settings
+ * tab historically listed it — and is deliberately not an authorization input:
+ * page context cannot confer access to the workspace whose page it is. It is
+ * nullable, and `null` is a real value rather than a defect: a key created from
+ * personal settings belongs to its owner and to no page at all. A record filed
+ * under a NAME the registry no longer has is a different situation — the name was
+ * meant to resolve and does not — so it stays fail-closed.
  *
  * The keys live under ONE top-level `settings.json` key, `mcpApiKeys`, a
  * **sibling of** `SystemSettings` rather than a field of it (the same ownership
@@ -82,8 +86,11 @@ export interface McpApiKeyInfo {
   ownerSubject: string
   /** Which generation of the secret is current. Starts at 1, positive integer. */
   secretVersion: number
-  /** The workspace settings page that administers this key. NOT an authorization. */
-  workspaceName: string
+  /**
+   * The workspace settings page this key is FILED under, or `null` when it is
+   * filed nowhere (every self-service key). NOT an authorization either way.
+   */
+  workspaceName: string | null
   /** The tool names this key may call. Empty ⇒ nothing, never "all". */
   tools: string[]
   /** The public, non-secret display prefix (`c3k_<id>`). */
@@ -98,7 +105,7 @@ interface McpApiKeyRecord {
   lastUsedAt: number | null
   ownerSubject: string
   secretVersion: number
-  workspaceName: string
+  workspaceName: string | null
   tools: string[]
   hashVersion: number
   algo: string
@@ -157,25 +164,36 @@ function readStored(): McpApiKeyRecord[] {
 }
 
 /**
- * Resolve the workspace whose settings page administers a record.
+ * Where a record is FILED, as three outcomes rather than two.
  *
- * A record that names no workspace c3 still has cannot be listed, re-scoped or
- * revoked from any page, so it is dropped rather than kept as an unreachable
- * roster entry. The registry keeps deregistered rows, so this only fires when the
- * workspace was erased outright.
+ * `unfiled` and "filed under a name that no longer resolves" look alike in a
+ * nullable field but are opposite facts, and collapsing them is how a fail-closed
+ * rule turns into a fail-open one. So:
+ *  - `{ filed: null }` — the record states no filing at all (absent, or the JSON
+ *    `null` every self-service key persists). A legitimate, supported shape.
+ *  - `{ filed: '<name>' }` — the record names a workspace the registry still has.
+ *  - `null` — the record NAMES a filing that does not resolve. It is dropped, the
+ *    behaviour that predates unfiled keys: a stated name that resolves to nothing
+ *    is corruption, not an intent to file nowhere.
  */
-function resolveAdministeringWorkspace(r: Record<string, unknown>): string | null {
-  if (typeof r.workspaceName === 'string') return findWorkspaceByName(r.workspaceName)?.name ?? null
+function resolveFiling(r: Record<string, unknown>): { filed: string | null } | null {
+  if (typeof r.workspaceName === 'string') {
+    const found = findWorkspaceByName(r.workspaceName)
+    return found ? { filed: found.name } : null
+  }
+  // An explicit stored `null` is the new intentional value and wins over any
+  // legacy field, which no writer emits alongside it.
+  if (r.workspaceName === null) return { filed: null }
   if (typeof r.workspace === 'string') {
     const direct = findWorkspaceByPath(r.workspace)
-    if (direct) return direct.name
+    if (direct) return { filed: direct.name }
     const canonical = canonicalizeWorkspacePath(r.workspace)
-    return canonical
-      ? (listAllWorkspaceRows().find((w) => canonicalizeWorkspacePath(w.path) === canonical)
-          ?.name ?? null)
-      : null
+    const match = canonical
+      ? listAllWorkspaceRows().find((w) => canonicalizeWorkspacePath(w.path) === canonical)
+      : undefined
+    return match ? { filed: match.name } : null
   }
-  return null
+  return { filed: null }
 }
 
 /** A non-empty owner subject, or `null` — the NOT NULL half of an owned key. */
@@ -211,8 +229,8 @@ function normalizeRecord(raw: unknown): McpApiKeyRecord | null {
     )
     return null
   }
-  const workspace = resolveAdministeringWorkspace(r)
-  if (!workspace) {
+  const filing = resolveFiling(r)
+  if (!filing) {
     console.warn(
       `[c3] external MCP key ${displayPrefix(id)} names no workspace that still exists — revoked.`,
     )
@@ -228,7 +246,7 @@ function normalizeRecord(raw: unknown): McpApiKeyRecord | null {
     lastUsedAt: typeof r.lastUsedAt === 'number' && r.lastUsedAt > 0 ? r.lastUsedAt : null,
     ownerSubject,
     secretVersion,
-    workspaceName: workspace,
+    workspaceName: filing.filed,
     // A pre-scope record predates per-key tool authorization; it gets exactly the
     // default set it effectively had, never a write tool and never a read tool
     // that was not grantable back then.
@@ -365,12 +383,28 @@ export function listMcpApiKeys(): McpApiKeyInfo[] {
 }
 
 /**
- * One workspace's keys, newest first. The console never asks for a host-wide
- * roster: a key belongs to exactly one workspace, and that workspace's settings
- * page is the only place it is administered.
+ * One workspace's FILED keys, newest first. An unfiled key (`workspaceName:
+ * null`) is in no workspace's roster by construction — the comparison is against
+ * a real name — so the legacy workspace-addressed operations cannot see, mutate
+ * or revoke a self-service key.
  */
 export function listMcpApiKeysForWorkspace(workspaceName: string): McpApiKeyInfo[] {
-  return listMcpApiKeys().filter((k) => k.workspaceName === workspaceName)
+  return listMcpApiKeys().filter(
+    (k) => k.workspaceName !== null && k.workspaceName === workspaceName,
+  )
+}
+
+/**
+ * One owner's keys, newest first — the roster personal settings renders.
+ *
+ * Filing is irrelevant here: a key belongs to whoever owns it, whether or not it
+ * was ever filed under a workspace page. An unrecognized/blank owner matches
+ * nothing rather than everything.
+ */
+export function listMcpApiKeysForOwner(ownerSubject: string): McpApiKeyInfo[] {
+  const owner = readOwnerSubject(ownerSubject)
+  if (!owner) return []
+  return listMcpApiKeys().filter((k) => k.ownerSubject === owner)
 }
 
 /** The result of a creation: the metadata plus the ONLY appearance of the plaintext. */
@@ -386,8 +420,9 @@ export interface CreatedMcpApiKey {
  *
  * `ownerSubject` is checked here and not only at the call site, so a bypassed
  * store cannot produce the one record shape the authorization gate has no way to
- * evaluate. `workspaceName` only decides which settings page administers the key
- * and must name a workspace the registry knows; it grants nothing.
+ * evaluate. `workspaceName` only decides which settings page files the key: a
+ * NAME must be one the registry knows, and `null` files it nowhere. Neither
+ * grants anything.
  *
  * `tools` is stored as given (de-duplicated). The CALLER decides the initial
  * scope — the settings handler forces the read-only set and ignores anything the
@@ -395,13 +430,17 @@ export interface CreatedMcpApiKey {
  */
 export async function createMcpApiKey(
   name: string,
-  workspaceName: string,
+  workspaceName: string | null,
   ownerSubject: string,
   tools: readonly string[],
   now: number,
 ): Promise<CreatedMcpApiKey> {
-  const workspace = findWorkspaceByName(workspaceName)
-  if (!workspace) throw new Error('external MCP key needs one known workspace name')
+  // `null` is "file it nowhere" and is persisted as such — never as an empty
+  // string, a reserved name, or a workspace row invented to hold it.
+  const filed = workspaceName === null ? null : (findWorkspaceByName(workspaceName)?.name ?? null)
+  if (workspaceName !== null && filed === null) {
+    throw new Error('external MCP key needs one known workspace name')
+  }
   const owner = readOwnerSubject(ownerSubject)
   if (!owner) throw new Error('external MCP key needs a non-empty owner subject')
   const id = randomBytes(ID_HEX_LEN / 2).toString('hex')
@@ -415,7 +454,7 @@ export async function createMcpApiKey(
     lastUsedAt: null,
     ownerSubject: owner,
     secretVersion: 1,
-    workspaceName: workspace.name,
+    workspaceName: filed,
     tools: dedupe([...tools]),
     hashVersion: HASH_VERSION,
     algo: 'scrypt',
@@ -498,6 +537,63 @@ export async function replaceMcpApiKeySecret(id: string): Promise<CreatedMcpApiK
     return toMeta(rec)
   })
   return meta ? { meta, key: `${KEY_PREFIX}_${id}_${secret}` } : null
+}
+
+/**
+ * Rotate ONE OWNER's key in place — the self-service reset.
+ *
+ * Same operation as {@link replaceMcpApiKeySecret} plus an owner predicate that is
+ * evaluated INSIDE the write transaction, not by listing first and mutating after.
+ * The gap between those two is exactly where a key could change hands, and a reset
+ * that lands on a record someone else now owns would hand them a secret the
+ * requester can read.
+ *
+ * A `null` result means "no key of yours with that id", whether the id is unknown
+ * or belongs to another owner. The two are indistinguishable on purpose: a caller
+ * must not be able to sweep ids to learn which ones exist.
+ */
+export async function replaceMcpApiKeySecretForOwner(
+  id: string,
+  ownerSubject: string,
+): Promise<CreatedMcpApiKey | null> {
+  const owner = readOwnerSubject(ownerSubject)
+  if (!owner) return null
+  // Cheap pre-check so an unknown id does not pay the derivation cost; the
+  // authoritative check is the one inside the transaction below.
+  if (!load().some((r) => r.id === id && r.ownerSubject === owner)) return null
+  const secret = randomBytes(SECRET_BYTES).toString('base64url')
+  const salt = randomBytes(16)
+  const hash = await deriveHash(secret, salt, SCRYPT_PARAMS)
+  const meta = mutate((records) => {
+    const rec = records.find((r) => r.id === id && r.ownerSubject === owner)
+    if (!rec) return null
+    // Everything except the verification material survives: same id, same owner,
+    // same name, same tools. A reset is a new secret, not a new key.
+    rec.secretVersion += 1
+    rec.hashVersion = HASH_VERSION
+    rec.algo = 'scrypt'
+    rec.params = { ...SCRYPT_PARAMS }
+    rec.salt = salt.toString('base64')
+    rec.hash = hash.toString('base64')
+    return toMeta(rec)
+  })
+  return meta ? { meta, key: `${KEY_PREFIX}_${id}_${secret}` } : null
+}
+
+/**
+ * Revoke (delete) ONE OWNER's key. Returns true only when a record the caller
+ * actually owns was removed; an unknown id and a foreign id both return false and
+ * mutate nothing.
+ */
+export function revokeMcpApiKeyForOwner(id: string, ownerSubject: string): boolean {
+  const owner = readOwnerSubject(ownerSubject)
+  if (!owner) return false
+  return mutate((records) => {
+    const idx = records.findIndex((r) => r.id === id && r.ownerSubject === owner)
+    if (idx < 0) return false
+    records.splice(idx, 1)
+    return true
+  })
 }
 
 /** Rename a key (display only). Returns the updated metadata, or `null` when unknown. */

@@ -12,7 +12,10 @@ import type {
   AdminPasswordResult,
   AuthLoginRequest,
   AuthLoginResult,
+  UserWorkspaceAccessAccount,
+  WorkspaceScopeMode,
 } from './auth.js'
+import type { WorkspaceInfo } from './workspace.js'
 
 /**
  * Authenticate this connection (ADR-0023). Carries an {@link AuthLoginRequest}
@@ -94,4 +97,49 @@ export type ServerAccountOpResult = { type: 'account_op_result'; result: Account
 export type ServerUnauthenticated = {
   type: 'unauthenticated'
   reason: 'missing' | 'expired' | 'invalid'
+}
+
+/**
+ * Fetch the whole account × workspace access roster (reply:
+ * `user_workspace_access`).
+ *
+ * ADMINISTRATOR-ONLY, and that is a confidentiality boundary rather than a UI
+ * convenience: the reply names every account this deployment has and every
+ * workspace it holds, which is exactly the inventory an ordinary account must not
+ * be able to enumerate. Hiding the tab in the client is not the enforcement.
+ */
+export type ClientGetUserWorkspaceAccess = { type: 'get_user_workspace_access' }
+
+/**
+ * Replace ONE account's workspace policy. Administrator-only.
+ *
+ * `workspaces` is the COMPLETE selected set, not a delta — a search box that
+ * hides rows must still submit the selections it is hiding, or filtering would
+ * silently revoke access. It is empty under `all`, which follows the registry and
+ * therefore names nothing.
+ *
+ * The server refuses the whole request rather than saving part of it: an unknown
+ * account, an unknown workspace name, or an attempt to write the immutable
+ * administrator / `local` identity changes neither policy nor policy epoch and
+ * closes no session. On success the reply is a fresh `user_workspace_access`.
+ */
+export type ClientSaveUserWorkspaceAccess = {
+  type: 'save_user_workspace_access'
+  subject: string
+  mode: WorkspaceScopeMode
+  workspaces: string[]
+}
+
+/**
+ * The account × workspace access roster, in reply to either access message.
+ *
+ * Always the full picture — every workspace the registry holds plus every
+ * account, each with its explicit policy state — so the editor never reconciles a
+ * delta. It carries no key metadata, no password material and no raw policy rows.
+ */
+export type ServerUserWorkspaceAccess = {
+  type: 'user_workspace_access'
+  /** The live workspace registry the checkboxes are rendered from. */
+  workspaces: WorkspaceInfo[]
+  accounts: UserWorkspaceAccessAccount[]
 }

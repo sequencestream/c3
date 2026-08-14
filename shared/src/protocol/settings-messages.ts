@@ -127,6 +127,55 @@ export type ServerMcpApiKeys = {
 }
 
 /**
+ * List the keys owned by THIS connection's identity (reply: `my_mcp_api_keys`).
+ *
+ * The owner is never a parameter: it is resolved from the verified connection, so
+ * there is no field a caller could aim at another account's roster. Needs no
+ * administrator authority — an account manages its own credentials, and being
+ * administrator confers no view of anyone else's.
+ */
+export type ClientListMyMcpApiKeys = { type: 'list_my_mcp_api_keys' }
+
+/**
+ * Mint a key owned by this connection's identity, labelled by device or client.
+ *
+ * An account-level credential, NOT a workspace grant: it is filed under no
+ * workspace, and what it reaches is its owner's administrator-managed scope
+ * resolved per request. The initial tool scope is server-decided (the default
+ * set, no write tool), so nothing the client proposes can widen a fresh key.
+ */
+export type ClientCreateMyMcpApiKey = { type: 'create_my_mcp_api_key'; name: string }
+
+/**
+ * Replace the secret of one of THIS owner's keys, in place.
+ *
+ * Same key id, same owner, same name, same tool scope — only the secret and its
+ * version change. There is no grace period: the previous secret and every session
+ * opened under it stop working immediately. The reply carries the new plaintext
+ * exactly once.
+ */
+export type ClientResetMyMcpApiKey = { type: 'reset_my_mcp_api_key'; id: string }
+
+/** Revoke (delete) one of THIS owner's keys. Takes effect on its very next request. */
+export type ClientRevokeMyMcpApiKey = { type: 'revoke_my_mcp_api_key'; id: string }
+
+/**
+ * The CURRENT OWNER's complete key roster, in reply to any of the four
+ * self-service operations. Never another owner's key, never `ownerSubject`, never
+ * hash or salt material.
+ *
+ * `created` rides along only on a successful create or reset and is the single
+ * point in the system where a plaintext key exists on the wire. It is not stored,
+ * not re-sent and not recoverable once the client discards it — there is no
+ * "show again" operation to ask for.
+ */
+export type ServerMyMcpApiKeys = {
+  type: 'my_mcp_api_keys'
+  keys: McpApiKeyMeta[]
+  created?: { meta: McpApiKeyMeta; key: string }
+}
+
+/**
  * Push the refreshed {@link UpdateStatus} snapshot to every connection after each
  * server-side update check. Fail-soft: a failed check keeps the last successful
  * snapshot, so this only ever moves toward "known" (never blanks a prior hit).

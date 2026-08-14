@@ -171,7 +171,9 @@
 
 ### `list_mcp_api_keys`
 
-获取**指定工作区**的外部 MCP API key 名册。服务器回复 `mcp_api_keys`。**不需要管理员权限**——名册只含元数据（名称、短前缀、时间、工具范围、不可用态），明文在生成之后永不可恢复；隐藏它只会让功能显得"不存在"而非受限。
+获取**指定工作区**的外部 MCP API key 名册（按归档位置寻址）。服务器回复 `mcp_api_keys`。**不需要管理员权限**——名册只含元数据（名称、短前缀、时间、工具范围、不可用态），明文在生成之后永不可恢复；隐藏它只会让功能显得"不存在"而非受限。
+
+自助创建的 key 归档在 `null`，因此不出现在任何工作区名册里，也无法经本组四条工作区寻址的消息改动。没有首方页面调用本组消息——key 生命周期走下面的 `*_my_mcp_api_key`——它们只为既有客户端保留线上兼容。
 
 **字段：** `workspaceName: string`
 
@@ -192,6 +194,50 @@
 吊销（删除）一把 key。下一次请求即失败，同时关闭该 key 已建立的活动 MCP 会话。回复 `mcp_api_keys`。**需要管理员权限。**
 
 **字段：** `workspaceName: string`, `id: string`
+
+### `list_my_mcp_api_keys`
+
+列出**本连接身份名下**的外部 MCP API key。归属不是参数，而是从已验证的连接解析出来的——没有任何字段可以指向别人的名册。回复 `my_mcp_api_keys`。**不需要管理员权限**：key 是自持凭据，持有者即其权威，身为管理员也看不到别人的。
+
+**字段：** 无
+
+### `create_my_mcp_api_key`
+
+为本连接身份生成一把长期 key，按设备或客户端命名。这是**账号级凭据而非工作区授权**：归档位置显式为 `null`，能到达哪些工作区由归属账号的管理员范围逐请求解析。初始工具范围由服务端强制为默认只读集。回复 `my_mcp_api_keys`，其 `created` 是明文唯一的落点。
+
+**字段：** `name: string`
+
+### `reset_my_mcp_api_key`
+
+就地更换**自己名下**某把 key 的密钥：key id、归属、名称、工具范围全部不变，只有密钥与其版本更新。**没有宽限期**——旧密钥及其开出的会话立即失效。回复 `my_mcp_api_keys`，`created` 携带新明文（仅此一次）。未知 id 与他人的 id 返回**同一个** `mcpApiKey.unknown`，且不产生任何变更，故无法用 id 试探他人。
+
+**字段：** `id: string`
+
+### `revoke_my_mcp_api_key`
+
+吊销（删除）**自己名下**的一把 key，下一次请求即失败并关闭其活动会话。未知 id 与他人的 id 同样返回 `mcpApiKey.unknown`。回复 `my_mcp_api_keys`。
+
+**字段：** `id: string`
+
+### `get_user_workspace_access`
+
+获取账号 × 工作区访问名册。**需要管理员权限**，且这是一道保密边界而非界面便利：回包列出本部署的全部账号与全部工作区，正是普通账号不应能枚举的清单——在客户端隐藏页签不构成防线。回复 `user_workspace_access`。
+
+**字段：** 无
+
+### `save_user_workspace_access`
+
+替换**单个账号**的工作区策略。**需要管理员权限。**`workspaces` 是**完整**的勾选集合而非增量——搜索框隐藏掉的选中项也必须一并提交，否则过滤会顺手撤销授权；`mode: 'all'` 跟随注册表，故不携带名称。
+
+服务端整笔拒绝而非部分保存：账号不存在（`userAccess.unknownAccount`）、工作区名不在注册表（`userAccess.unknownWorkspace`）、模式无法识别（`userAccess.invalidMode`）、或试图写入不可变身份（`userAccess.immutableSubject`，即配置的管理员与本机 `local`）时，策略与 policy epoch 都不动，也不关闭任何会话。成功时策略与 epoch 在同一事务内提交，随后立即清场该归属名下全部外部 MCP 会话，并回一份新的 `user_workspace_access`。
+
+**字段：** `subject: string`, `mode: 'all' | 'selected'`, `workspaces: string[]`
+
+### `get_workspace_accessors`
+
+查询**单个工作区**当前的有效访问者。开放给任何「自己就能到达该工作区」的已认证连接——只读页签本就属于调用方已经看得见的工作区，故**不需要管理员权限**。未认证、工作区不存在、或超出调用方范围，一律回同一个 `workspaceAccessors.forbidden`，因此这条读不能被用来试探工作区名是否存在。回复 `workspace_accessors`。
+
+**字段：** `workspaceName: string`
 
 ### `load_workspace_setting`
 
@@ -610,11 +656,35 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 外部 MCP API key 名册，回复上述四条 key 操作中的任意一条，作用域为**指定工作区**（`workspaceName`）。总是回该工作区的整份列表，故控制台无需对账增量；回包同时携带服务端可外部授权工具目录 `catalog`，供工具范围选择器渲染——前端不另存工具清单。
 
-每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceName, unavailable, tools, displayPrefix }`：`workspaceName` 是该 key 归档所在的工作区名称，不是它能到达的工作区集合；`unavailable` 表示归档工作区目录已消失或工作区已注销，控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
+每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceName, unavailable, tools, displayPrefix }`：`workspaceName` 是该 key 归档所在的工作区名称，不是它能到达的工作区集合，`null` 表示这把 key 不归档在任何工作区（自助创建的一律如此）；`unavailable` 表示归属账号已不被本部署承认，该 key 什么也够不到，控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。密钥版本是会话钉扎的内部输入，**不上线**。
 
 `created` **仅**出现在 `create_mcp_api_key` 成功的回复里，是明文 key 在整条链路上唯一的落点：不存储、不重发，客户端丢弃后即不可恢复。
 
 **字段：** `workspaceName: string`, `keys: McpApiKeyMeta[]`, `catalog: { name, access }[]`, `created?: { meta: McpApiKeyMeta; key: string }`
+
+### `my_mcp_api_keys`
+
+**当前身份自己**的完整 key 名册，回复上述四条自助操作中的任意一条。永不含他人的 key、`ownerSubject`、盐或哈希；也不带 `catalog`——自助面没有工具范围编辑器，附上可授权目录只会暗示存在一个并不存在的入口。
+
+`created` 仅在 create 与 reset 成功时随行，是明文在整条链路上唯一的落点。因此一份**不带** `created` 的名册就是下一次操作的答案：客户端据此把先前揭示的明文一并丢弃，而不是把它留在屏幕上配错 key。
+
+**字段：** `keys: McpApiKeyMeta[]`, `created?: { meta: McpApiKeyMeta; key: string }`
+
+### `user_workspace_access`
+
+账号 × 工作区访问名册，回复 `get_user_workspace_access` / `save_user_workspace_access`。总是完整快照——注册表全量加账号全量——故编辑器无需对账增量；不含任何 key 元数据、口令材料或原始策略行。
+
+每项 `UserWorkspaceAccessAccount` 为 `{ subject, isAdmin, editable, policy }`。`policy: null`（无人配置过）与 `{ mode: 'selected', workspaces: [] }`（管理员明确一个都不选）虽然当前都不放行，但**在线上保持可区分**：前者是未配置，后者是一次决定。`editable: false` 的两个隐式身份——配置的管理员与本机 `local`——其"全部工作区"是解析器分支而非库里的行，正因不可编辑，管理员才无法把自己锁在门外。
+
+**字段：** `workspaces: WorkspaceInfo[]`, `accounts: UserWorkspaceAccessAccount[]`
+
+### `workspace_accessors`
+
+单个工作区当前的**有效**访问者，由账号名册与 `listWorkspacesForSubject` 派生——和控制台工作区列表、外部 MCP 调用闸门读的是同一套解析规则，故不会与真实授权漂移。
+
+它只描述**工作区可见性**：不说谁正连着、哪把 key 有哪些工具、历史上谁来过。
+
+**字段：** `workspaceName: string`, `subjects: string[]`
 
 ### `personalized_settings`
 

@@ -1,18 +1,22 @@
 /**
- * `settings` feature handlers for the external-MCP API keys — the admin-facing
- * half of the credential `POST /mcp` authenticates with.
+ * `settings` feature handlers for the external-MCP API keys — the credential
+ * `POST /mcp` authenticates with.
  *
- * The operations are addressed by workspace because that is where a key is
- * ADMINISTERED: one settings tab lists the keys filed under it. That page context
- * confers nothing. What a key can reach is its owner's administrator-managed
- * workspace scope, resolved per request; a key created on workspace A's tab is
- * not thereby allowed into workspace A.
+ * TWO surfaces over one store, split by who the authority is:
  *
- * Mutations sit behind the administrator gate: minting a key hands out the
- * owner's access, and ticking a write tool hands out the ability to change what
- * it reaches. Listing is NOT gated — the roster carries no secret (names,
- * prefixes, timestamps, tool scope), and hiding it from non-administrators would
- * only make the feature look absent rather than restricted.
+ *  - SELF-SERVICE (`*_my_mcp_api_key`) — an account's own keys. No administrator
+ *    gate: a key is an owned capability, so its holder is its authority, and an
+ *    administrator gets no view of, and no power over, anyone else's. Every
+ *    operation resolves its owner from the verified connection and matches on it
+ *    inside the store operation.
+ *  - WORKSPACE-ADDRESSED (the four legacy operations) — the historical page that
+ *    administered keys FILED under one workspace. Kept wire-compatible; no
+ *    first-party page calls it, and a self-service key is filed nowhere and so
+ *    can never appear in or be mutated through it.
+ *
+ * Filing confers nothing either way. What a key can reach is its owner's
+ * administrator-managed workspace scope, resolved per request; a key created on
+ * workspace A's tab was never thereby allowed into workspace A.
  *
  * Two things are decided here and nowhere else:
  *  - the owner: the connection's VERIFIED subject, never a client-stated one and
@@ -31,7 +35,10 @@ import type { McpApiKeyMeta } from '@ccc/shared/protocol'
 import { EXTERNAL_MCP_DEFAULT_TOOLS } from '@ccc/shared/protocol'
 import {
   createMcpApiKey,
+  listMcpApiKeysForOwner,
   listMcpApiKeysForWorkspace,
+  replaceMcpApiKeySecretForOwner,
+  revokeMcpApiKeyForOwner,
   revokeMcpApiKeyInWorkspace,
   updateMcpApiKeyInWorkspace,
   type McpApiKeyInfo,
@@ -191,6 +198,121 @@ export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn
       }
     }
     conn.send(roster(msg.workspaceName))
+  } catch (err) {
+    reportFailure(conn, err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Self-service: an account manages its OWN keys.
+//
+// No administrator gate anywhere below, and that is the point: a key is an owned
+// credential, so its holder is the authority over it and being administrator
+// confers nothing over someone else's. The owner is resolved from the VERIFIED
+// connection on every single operation and is never a message field, so there is
+// no parameter a caller could aim at another account.
+//
+// An unknown key id and a key belonging to someone else produce the SAME
+// not-found result and mutate nothing, so ids cannot be swept to learn which ones
+// exist or who holds them.
+// ---------------------------------------------------------------------------
+
+/** The requesting connection's owner identity, or `null` when it has none. */
+function resolveOwner(conn: Conn): string | null {
+  const owner = resolveAuthSubject(conn.subject)
+  if (!owner) {
+    conn.send({ type: 'error', error: { code: 'mcpApiKey.noIdentity' } })
+    return null
+  }
+  return owner
+}
+
+/**
+ * ONE owner's roster. Deliberately carries no `catalog`: self-service has no
+ * tool-scope editor, so shipping the grantable catalog would only suggest one.
+ */
+function ownerRoster(
+  ownerSubject: string,
+  created?: { meta: McpApiKeyMeta; key: string },
+): {
+  type: 'my_mcp_api_keys'
+  keys: McpApiKeyMeta[]
+  created?: { meta: McpApiKeyMeta; key: string }
+} {
+  return {
+    type: 'my_mcp_api_keys',
+    keys: listMcpApiKeysForOwner(ownerSubject).map(toMeta),
+    ...(created ? { created } : {}),
+  }
+}
+
+/** The refusal an unknown id and a foreign id share. It is never told apart. */
+function notMyKey(conn: Conn, id: string): void {
+  conn.send({ type: 'error', error: { code: 'mcpApiKey.unknown', params: { id } } })
+}
+
+export const listMyMcpApiKeysHandler: Handler<'list_my_mcp_api_keys'> = (_ctx, conn) => {
+  const owner = resolveOwner(conn)
+  if (!owner) return
+  conn.send(ownerRoster(owner))
+}
+
+export const createMyMcpApiKeyHandler: Handler<'create_my_mcp_api_key'> = async (
+  _ctx,
+  conn,
+  msg,
+) => {
+  const owner = resolveOwner(conn)
+  if (!owner) return
+  try {
+    // Filed under NO workspace: this is an account-level credential labelled by
+    // device or client, not a grant on the page it was created from. The initial
+    // scope is the server's default set, exactly as on the administered path.
+    const { meta, key } = await createMcpApiKey(
+      msg.name,
+      null,
+      owner,
+      [...EXTERNAL_MCP_DEFAULT_TOOLS],
+      Date.now(),
+    )
+    // The one and only appearance of the plaintext. Nothing logs it.
+    conn.send(ownerRoster(owner, { meta: toMeta(meta), key }))
+  } catch (err) {
+    reportFailure(conn, err)
+  }
+}
+
+export const resetMyMcpApiKeyHandler: Handler<'reset_my_mcp_api_key'> = async (_ctx, conn, msg) => {
+  const owner = resolveOwner(conn)
+  if (!owner) return
+  try {
+    // Persist first: the new hash and the incremented version are on disk before
+    // anything is torn down, so a close that fails cannot resurrect the old secret.
+    const rotated = await replaceMcpApiKeySecretForOwner(msg.id, owner)
+    if (!rotated) {
+      notMyKey(conn, msg.id)
+      return
+    }
+    // Then close what is already open. There is no grace period: sessions pinned
+    // to the previous version would be rejected on their next request anyway, and
+    // this makes the reset immediate in both directions.
+    closeExternalSessions?.(msg.id)
+    conn.send(ownerRoster(owner, { meta: toMeta(rotated.meta), key: rotated.key }))
+  } catch (err) {
+    reportFailure(conn, err)
+  }
+}
+
+export const revokeMyMcpApiKeyHandler: Handler<'revoke_my_mcp_api_key'> = (_ctx, conn, msg) => {
+  const owner = resolveOwner(conn)
+  if (!owner) return
+  try {
+    if (!revokeMcpApiKeyForOwner(msg.id, owner)) {
+      notMyKey(conn, msg.id)
+      return
+    }
+    closeExternalSessions?.(msg.id)
+    conn.send(ownerRoster(owner))
   } catch (err) {
     reportFailure(conn, err)
   }

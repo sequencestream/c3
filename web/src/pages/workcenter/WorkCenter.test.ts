@@ -17,16 +17,14 @@ import EventDetail from './components/EventDetail.vue'
 import EventList from './components/EventList.vue'
 import type { AnyConsensusOutcome, WaitUserInvolveEvent, WorkspaceInfo } from '@ccc/shared/protocol'
 
-const WORKSPACES: WorkspaceInfo[] = [
-  { id: '/ws', name: 'my-workspace', path: '/ws', lastAccessed: 0 },
-]
+const WORKSPACES: WorkspaceInfo[] = [{ name: 'my-workspace', path: '/ws', lastAccessed: 0 }]
 
 let n = 1
 function ev(over: Partial<WaitUserInvolveEvent> = {}): WaitUserInvolveEvent {
   const id = `e${n++}`
   return {
     id,
-    workspaceId: '/ws',
+    workspaceName: 'my-workspace',
     sessionKind: 'work',
     sessionId: 's1',
     intentId: null,

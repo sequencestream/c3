@@ -20,7 +20,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -42,7 +42,7 @@ import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sess
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -58,8 +58,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -121,7 +121,7 @@ describe('update_spec_content — happy path', () => {
 
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# new spec body',
     })
@@ -154,7 +154,7 @@ describe('update_spec_content — happy path', () => {
     const { conn } = fakeConn({ subject: 'bob' })
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# revised spec',
     })
@@ -178,7 +178,7 @@ describe('update_spec_content — happy path', () => {
     const { conn } = fakeConn({ subject: null })
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# y',
     })
@@ -195,7 +195,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
     const { conn, sent } = fakeConn()
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: 'x',
     })
@@ -214,7 +214,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
     const { conn, sent } = fakeConn()
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# should not land',
     })
@@ -239,7 +239,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
     const { conn, sent } = fakeConn()
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# should not land',
     })
@@ -264,7 +264,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
     const { conn, sent } = fakeConn()
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# should not land',
     })
@@ -287,7 +287,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
     const { conn, sent } = fakeConn()
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       content: '# nope',
     })
@@ -308,7 +308,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
     const { conn, sent } = fakeConn()
     updateSpecContentHandler(ctx, conn, {
       type: 'update_spec_content',
-      workspaceId,
+      workspaceName,
       intentId: 'nope',
       content: 'x',
     })

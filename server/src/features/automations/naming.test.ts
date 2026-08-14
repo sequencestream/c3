@@ -129,7 +129,7 @@ describe('generateAutomationName', () => {
     const name = await generateAutomationName({
       type: 'command',
       config: { command: 'pnpm build' },
-      workspaceId: '/ws',
+      workspaceName: '/ws',
     })
     expect(name).toBe('Tool Named')
     expect(toolLaunchMock).toHaveBeenCalled()

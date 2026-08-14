@@ -22,14 +22,20 @@
  * unavailable (c3 must still boot); writes throw, because a silently dropped setting
  * is worse than a failed save.
  */
-import { getDb, isDbAvailable, type Db } from '../infra/db.js'
+import {
+  ensureMigrationsTable,
+  getDb,
+  hasMigration,
+  isDbAvailable,
+  markMigration,
+  type Db,
+} from '../infra/db.js'
 import type { ConfigEntry, ConfigType } from './config-codec.js'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS workspaces (
-  id            TEXT PRIMARY KEY,
+  name          TEXT PRIMARY KEY CHECK(length(name) BETWEEN 1 AND 64),
   path          TEXT NOT NULL UNIQUE,
-  name          TEXT NOT NULL,
   last_accessed INTEGER NOT NULL,
   registered    INTEGER NOT NULL DEFAULT 1,
   created_at    INTEGER NOT NULL,
@@ -42,12 +48,12 @@ CREATE TABLE IF NOT EXISTS system_configs (
   updated_at   INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS workspace_configs (
-  workspace_id TEXT NOT NULL,
+  workspace_name TEXT NOT NULL,
   config_key   TEXT NOT NULL,
   config_value TEXT,
   config_type  TEXT NOT NULL,
   updated_at   INTEGER NOT NULL,
-  PRIMARY KEY (workspace_id, config_key)
+  PRIMARY KEY (workspace_name, config_key)
 );
 CREATE TABLE IF NOT EXISTS personalized_configs (
   subject      TEXT NOT NULL,
@@ -81,7 +87,7 @@ export type ConfigScopeKind = 'system' | 'workspace' | 'personalized' | 'session
 /** A scope is a table plus (for everything but `system`) the row owner's id. */
 export interface ConfigScope {
   kind: ConfigScopeKind
-  /** Workspace id / subject / session id / key id. Absent for `system`. */
+  /** Workspace name / subject / session id / key id. Absent for `system`. */
   owner?: string
 }
 
@@ -93,7 +99,7 @@ interface ScopeTable {
 
 const SCOPE_TABLES: Record<ConfigScopeKind, ScopeTable> = {
   system: { table: 'system_configs', ownerCol: null },
-  workspace: { table: 'workspace_configs', ownerCol: 'workspace_id' },
+  workspace: { table: 'workspace_configs', ownerCol: 'workspace_name' },
   personalized: { table: 'personalized_configs', ownerCol: 'subject' },
   session: { table: 'session_configs', ownerCol: 'session_id' },
   mcpKey: { table: 'mcp_api_keys', ownerCol: 'key_id' },
@@ -103,6 +109,225 @@ const SCOPE_TABLES: Record<ConfigScopeKind, ScopeTable> = {
 // swaps the db (resetDbForTests) would otherwise inherit a "schema ready" flag that
 // describes a connection nobody holds anymore.
 let schemaReadyFor: Db | null = null
+
+const WORKSPACE_NAME_MIGRATION = 'config.workspace_name_identity.v1'
+const WORKSPACE_PATH_TABLES = [
+  'intents',
+  'intent_chats',
+  'intent_fast_turns',
+  'discussions',
+  'deliveries',
+  'automations',
+  'workspace_mcp_configs',
+  'queue_workspace_state',
+  'queue_intent_state',
+  'queue_decision_log',
+  'session_metadata',
+  'wait_user_involve_events',
+  'funnel_event',
+] as const
+
+function tableColumns(d: Db, table: string): Set<string> {
+  return new Set(d.all<{ name: string }>(`PRAGMA table_info(${table})`).map((r) => r.name))
+}
+
+function trimToChars(value: string, max: number): string {
+  return Array.from(value).slice(0, max).join('')
+}
+
+function allocateWorkspaceName(raw: string, used: Set<string>): string {
+  const base = trimToChars(raw.trim() || 'workspace', 64)
+  if (!used.has(base)) {
+    used.add(base)
+    return base
+  }
+  for (let n = 2; ; n += 1) {
+    const suffix = `-${n}`
+    const candidate = `${trimToChars(base, 64 - suffix.length)}${suffix}`
+    if (!used.has(candidate)) {
+      used.add(candidate)
+      return candidate
+    }
+  }
+}
+
+/** Convert every persisted workspace association to the immutable workspace name. */
+function ensureWorkspaceNameMigration(d: Db): void {
+  ensureMigrationsTable(d)
+  if (hasMigration(d, WORKSPACE_NAME_MIGRATION)) return
+
+  const workspaceCols = tableColumns(d, 'workspaces')
+  const hasLegacyAssociation =
+    WORKSPACE_PATH_TABLES.some((table) => {
+      const cols = tableColumns(d, table)
+      return cols.has('workspace_path') || (table === 'funnel_event' && cols.has('workspace_id'))
+    }) || tableColumns(d, 'workspace_configs').has('workspace_id')
+  if (!workspaceCols.has('id') && !hasLegacyAssociation) {
+    markMigration(d, WORKSPACE_NAME_MIGRATION)
+    return
+  }
+
+  d.exec('BEGIN IMMEDIATE')
+  try {
+    d.exec(`
+      CREATE TEMP TABLE workspace_identity_map (
+        legacy_id TEXT,
+        path TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL UNIQUE
+      );
+    `)
+
+    const legacy = d.all<{
+      id: string | null
+      path: string
+      name: string
+      last_accessed: number
+      registered: number
+      created_at: number
+      updated_at: number
+    }>(
+      `SELECT ${workspaceCols.has('id') ? 'id' : 'NULL AS id'}, path, name,
+              last_accessed, registered, created_at, updated_at
+       FROM workspaces
+       ORDER BY registered DESC, created_at ASC, path ASC`,
+    )
+    const knownPaths = new Set(legacy.map((row) => row.path))
+    for (const table of WORKSPACE_PATH_TABLES) {
+      const cols = tableColumns(d, table)
+      const column = cols.has('workspace_path')
+        ? 'workspace_path'
+        : table === 'funnel_event' && cols.has('workspace_id')
+          ? 'workspace_id'
+          : null
+      if (!column) continue
+      for (const row of d.all<{ path: string }>(
+        `SELECT DISTINCT ${column} AS path FROM ${table}`,
+      )) {
+        if (row.path) knownPaths.add(row.path)
+      }
+    }
+    if (tableColumns(d, 'mcp_api_keys').has('config_key')) {
+      for (const row of d.all<{ path: string }>(
+        `SELECT DISTINCT config_value AS path
+           FROM mcp_api_keys
+          WHERE config_key='workspace' AND config_value IS NOT NULL`,
+      )) {
+        if (row.path) knownPaths.add(row.path)
+      }
+    }
+
+    const used = new Set<string>()
+    const byPath = new Map<string, string>()
+    for (const row of legacy) {
+      const name = allocateWorkspaceName(row.name, used)
+      byPath.set(row.path, name)
+      d.run(
+        'INSERT INTO workspace_identity_map (legacy_id, path, name) VALUES (?,?,?)',
+        row.id,
+        row.path,
+        name,
+      )
+    }
+    for (const path of [...knownPaths].filter((path) => !byPath.has(path)).sort()) {
+      const basename =
+        path
+          .replace(/[\\/]+$/, '')
+          .split(/[\\/]/)
+          .pop() || 'workspace'
+      const name = allocateWorkspaceName(basename, used)
+      byPath.set(path, name)
+      d.run(
+        'INSERT INTO workspace_identity_map (legacy_id, path, name) VALUES (NULL,?,?)',
+        path,
+        name,
+      )
+    }
+
+    d.exec(`
+      CREATE TABLE workspaces_v2 (
+        name TEXT PRIMARY KEY CHECK(length(name) BETWEEN 1 AND 64),
+        path TEXT NOT NULL UNIQUE,
+        last_accessed INTEGER NOT NULL,
+        registered INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+    const now = Date.now()
+    for (const [path, name] of byPath) {
+      const row = legacy.find((item) => item.path === path)
+      d.run(
+        `INSERT INTO workspaces_v2
+           (name, path, last_accessed, registered, created_at, updated_at)
+         VALUES (?,?,?,?,?,?)`,
+        name,
+        path,
+        row?.last_accessed ?? 0,
+        row?.registered ?? 0,
+        row?.created_at ?? now,
+        row?.updated_at ?? now,
+      )
+    }
+
+    const configCols = tableColumns(d, 'workspace_configs')
+    if (configCols.has('workspace_id')) {
+      d.exec(`
+        CREATE TABLE workspace_configs_v2 (
+          workspace_name TEXT NOT NULL,
+          config_key TEXT NOT NULL,
+          config_value TEXT,
+          config_type TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (workspace_name, config_key)
+        );
+        INSERT INTO workspace_configs_v2
+          SELECT m.name, c.config_key, c.config_value, c.config_type, c.updated_at
+          FROM workspace_configs c
+          JOIN workspace_identity_map m ON m.legacy_id=c.workspace_id;
+        DROP TABLE workspace_configs;
+        ALTER TABLE workspace_configs_v2 RENAME TO workspace_configs;
+      `)
+    }
+
+    for (const table of WORKSPACE_PATH_TABLES) {
+      const cols = tableColumns(d, table)
+      if (!cols.has('workspace_path')) continue
+      d.exec(`ALTER TABLE ${table} RENAME COLUMN workspace_path TO workspace_name`)
+      d.run(
+        `UPDATE ${table}
+         SET workspace_name=(SELECT name FROM workspace_identity_map WHERE path=${table}.workspace_name)`,
+      )
+    }
+    const funnelCols = tableColumns(d, 'funnel_event')
+    if (funnelCols.has('workspace_id')) {
+      d.exec('ALTER TABLE funnel_event RENAME COLUMN workspace_id TO workspace_name')
+      d.run(
+        `UPDATE funnel_event
+         SET workspace_name=(SELECT name FROM workspace_identity_map WHERE path=funnel_event.workspace_name)`,
+      )
+    }
+
+    if (tableColumns(d, 'mcp_api_keys').has('config_key')) {
+      d.run(
+        `UPDATE mcp_api_keys
+         SET config_value=(SELECT name FROM workspace_identity_map WHERE path=mcp_api_keys.config_value),
+             config_key='workspaceName'
+         WHERE config_key='workspace'`,
+      )
+    }
+
+    d.exec('DROP TABLE workspaces; ALTER TABLE workspaces_v2 RENAME TO workspaces;')
+    markMigration(d, WORKSPACE_NAME_MIGRATION)
+    d.exec('COMMIT')
+  } catch (err) {
+    try {
+      d.exec('ROLLBACK')
+    } catch {
+      // Preserve the original migration failure.
+    }
+    throw err
+  }
+}
 
 /**
  * The shared connection with the config schema materialized, or null when the db
@@ -114,8 +339,13 @@ export function configDb(): Db | null {
   const d = getDb()
   if (!d) return null
   if (schemaReadyFor !== d) {
-    d.exec(SCHEMA)
-    schemaReadyFor = d
+    try {
+      d.exec(SCHEMA)
+      ensureWorkspaceNameMigration(d)
+      schemaReadyFor = d
+    } catch {
+      return null
+    }
   }
   return d
 }

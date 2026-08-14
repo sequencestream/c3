@@ -19,31 +19,34 @@ import type {
 } from './workspace.js'
 
 /** Register a project directory as a workspace. */
-export type ClientAddWorkspace = { type: 'add_workspace'; path: string }
+export type ClientAddWorkspace = { type: 'add_workspace'; workspaceName: string; path: string }
 
 /**
  * Remove a workspace from the sidebar (does not delete its sessions on disk).
- * Carries the opaque workspace id — the client never holds an absolute path.
+ * Carries the immutable workspace name — the client never supplies a path as identity.
  */
-export type ClientRemoveWorkspace = { type: 'remove_workspace'; workspaceId: string }
+export type ClientRemoveWorkspace = { type: 'remove_workspace'; workspaceName: string }
 
 /** Load a workspace's setting (reply: `workspace_setting`). */
-export type ClientLoadWorkspaceSetting = { type: 'load_workspace_setting'; workspaceId: string }
+export type ClientLoadWorkspaceSetting = { type: 'load_workspace_setting'; workspaceName: string }
 
 /** Save a workspace's setting. */
 export type ClientSaveWorkspaceSetting = {
   type: 'save_workspace_setting'
-  workspaceId: string
+  workspaceName: string
   config: WorkspaceSetting
 }
 
 /** Get workspace-level MCP server configuration. */
-export type ClientGetWorkspaceMcpConfig = { type: 'get_workspace_mcp_config'; workspaceId: string }
+export type ClientGetWorkspaceMcpConfig = {
+  type: 'get_workspace_mcp_config'
+  workspaceName: string
+}
 
 /** Save workspace-level MCP server configuration. */
 export type ClientSaveWorkspaceMcpConfig = {
   type: 'save_workspace_mcp_config'
-  workspaceId: string
+  workspaceName: string
   config: WorkspaceMcpConfig
 }
 
@@ -75,7 +78,7 @@ export type ClientGetWorkspaceDashboard = { type: 'get_workspace_dashboard' }
 /**
  * Bulk-set the workspace-level automation master gate for a set of workspaces
  * to a single boolean. Admin-only (rejected wholesale before any write for a
- * non-admin connection). `workspaceIds` is de-duplicated server-side; an empty
+ * non-admin connection). `workspaceNames` is de-duplicated server-side; an empty
  * list is a no-op (never interpreted as "all workspaces"). The batch is NOT
  * transactional — each workspace settles independently and the server reads the
  * latest full {@link WorkspaceSetting} per item, replacing only `automationEnabled`
@@ -85,7 +88,7 @@ export type ClientGetWorkspaceDashboard = { type: 'get_workspace_dashboard' }
  */
 export type ClientSetWorkspacesAutomationEnabled = {
   type: 'set_workspaces_automation_enabled'
-  workspaceIds: string[]
+  workspaceNames: string[]
   enabled: boolean
 }
 
@@ -109,7 +112,7 @@ export type ServerWorkspaces = { type: 'workspaces'; workspaces: WorkspaceInfo[]
  */
 export type ServerWorkspaceSetting = {
   type: 'workspace_setting'
-  workspaceId: string
+  workspaceName: string
   config: WorkspaceSetting
   detectedMainBranch?: string
   resolvedSpecRoot?: string
@@ -119,7 +122,7 @@ export type ServerWorkspaceSetting = {
 /** Workspace-level MCP server configuration (reply to `get_workspace_mcp_config`). */
 export type ServerWorkspaceMcpConfig = {
   type: 'workspace_mcp_config'
-  workspaceId: string
+  workspaceName: string
   config: WorkspaceMcpConfig
 }
 

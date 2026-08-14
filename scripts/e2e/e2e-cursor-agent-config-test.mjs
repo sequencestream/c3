@@ -58,7 +58,7 @@ await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-cursor-agent-co
 const ws = new WebSocket(URL)
 
 let originalSettings = null
-let workspaceId = null
+let workspaceName = null
 let phase = 'init'
 let sawText = false
 
@@ -179,22 +179,22 @@ ws.addEventListener('message', (evt) => {
           return pass('CLI 找不到:cursor 显式报不可用(host-cli-missing),配置仍可保存与查看')
         }
         phase = 'workspace'
-        send({ type: 'add_workspace', path: PROJECT_DIR })
+        send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       }
       break
     }
 
     case 'workspaces':
       if (phase !== 'workspace') return
-      workspaceId =
-        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop())?.id ??
-        msg.workspaces?.[0]?.id ??
+      workspaceName =
+        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop())?.name ??
+        msg.workspaces?.[0]?.name ??
         null
-      if (!workspaceId) return fail('add_workspace 后没有工作区')
+      if (!workspaceName) return fail('add_workspace 后没有工作区')
       phase = 'turn'
       // 不指定 agentId —— 走系统默认 agent,即刚建的 Cursor agent。
       log('以默认 agent(Cursor)创建会话')
-      send({ type: 'create_session', workspaceId })
+      send({ type: 'create_session', workspaceName })
       break
 
     case 'session_selected':

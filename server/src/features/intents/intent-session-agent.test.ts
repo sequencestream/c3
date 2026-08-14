@@ -24,7 +24,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -89,7 +89,7 @@ const CURSOR = 'cursor-1'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 /** Every session id a test opened, so the runtime registry is left clean. */
 let opened: string[]
@@ -112,8 +112,8 @@ beforeEach(() => {
   resetSettingsCacheForTests()
   resetIntentLink()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   opened = []
 })
 
@@ -234,7 +234,7 @@ describe('new intent comm sessions adopt the configured intent agent', () => {
 
     await startIntentSession(h.ctx, h.conn, {
       type: 'start_intent_session',
-      workspaceId,
+      workspaceName,
       intentId: intent.id,
       text: 'do it',
     })
@@ -249,7 +249,7 @@ describe('new intent comm sessions adopt the configured intent agent', () => {
     configure()
     const h = harness()
 
-    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceName })
 
     const sid = selected(h.sent).sessionId
     opened.push(sid)
@@ -260,7 +260,7 @@ describe('new intent comm sessions adopt the configured intent agent', () => {
     configure()
     const h = harness()
 
-    await openIntentSession(h.ctx, h.conn, { type: 'open_intent_session', workspaceId })
+    await openIntentSession(h.ctx, h.conn, { type: 'open_intent_session', workspaceName })
 
     const sid = selected(h.sent).sessionId
     opened.push(sid)
@@ -274,7 +274,7 @@ describe('new intent comm sessions adopt the configured intent agent', () => {
     ])
     const h = harness()
 
-    await refineIntent(h.ctx, h.conn, { type: 'refine_intent', workspaceId, intentId: intent.id })
+    await refineIntent(h.ctx, h.conn, { type: 'refine_intent', workspaceName, intentId: intent.id })
 
     const sid = selected(h.sent).sessionId
     opened.push(sid)
@@ -290,7 +290,7 @@ describe('new intent comm sessions adopt the configured intent agent', () => {
 
     await resetIntentSession(h.ctx, h.conn, {
       type: 'reset_intent_session',
-      workspaceId,
+      workspaceName,
       intentId: intent.id,
       userInput: 'again',
     })
@@ -323,7 +323,7 @@ describe('new intent comm sessions adopt the configured intent agent', () => {
     configure({ intentAgentId: '' })
     const h = harness()
 
-    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceName })
 
     const sid = selected(h.sent).sessionId
     opened.push(sid)
@@ -346,7 +346,7 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
 
     await openIntentSession(h.ctx, h.conn, {
       type: 'open_intent_session',
-      workspaceId,
+      workspaceName,
       sessionId: sid,
     })
     opened.push(sid)
@@ -364,7 +364,7 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
 
     await openIntentSession(h.ctx, h.conn, {
       type: 'open_intent_session',
-      workspaceId,
+      workspaceName,
       sessionId: sid,
     })
     opened.push(sid)
@@ -382,7 +382,7 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
 
     await resetIntentSession(h.ctx, h.conn, {
       type: 'reset_intent_session',
-      workspaceId,
+      workspaceName,
       intentId: intent.id,
       userInput: 'start over',
     })
@@ -400,7 +400,7 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
 
     await openIntentSession(h.ctx, h.conn, {
       type: 'open_intent_session',
-      workspaceId,
+      workspaceName,
       sessionId: sid,
     })
     opened.push(sid)
@@ -411,7 +411,7 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
   it('a pending session reopened after a runtime drop keeps the agent it was created with', async () => {
     configure()
     const h1 = harness()
-    newIntentSession(h1.ctx, h1.conn, { type: 'new_intent_session', workspaceId })
+    newIntentSession(h1.ctx, h1.conn, { type: 'new_intent_session', workspaceName })
     const sid = selected(h1.sent).sessionId
     opened.push(sid)
     // The runtime is gone (process restart / GC) and the config changed meanwhile.
@@ -419,7 +419,7 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
     configure({ intentAgentId: CLAUDE_B })
 
     const h2 = harness()
-    await openIntentSession(h2.ctx, h2.conn, { type: 'open_intent_session', workspaceId })
+    await openIntentSession(h2.ctx, h2.conn, { type: 'open_intent_session', workspaceName })
 
     expect(selected(h2.sent).sessionId).toBe(sid)
     expectAllLayersAgree(h2.sent, sid, CURSOR, 'cursor')
@@ -455,7 +455,7 @@ describe('a role pointing at a GROUP binds the group, runs its first member', ()
     configureGroup({ intentAgentId: GROUP })
     const h = harness()
 
-    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceName })
 
     const sid = selected(h.sent).sessionId
     opened.push(sid)
@@ -469,7 +469,7 @@ describe('a role pointing at a GROUP binds the group, runs its first member', ()
     configureGroup({ intentAgentId: '' })
     const h = harness()
 
-    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceName })
 
     const sid = selected(h.sent).sessionId
     opened.push(sid)
@@ -480,7 +480,7 @@ describe('a role pointing at a GROUP binds the group, runs its first member', ()
     configureGroup({ intentAgentId: GROUP })
     const h = harness()
 
-    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceName })
     const sid = selected(h.sent).sessionId
     opened.push(sid)
     expect(resolveAgent(getSessionAgentId(sid)).id).toBe(CLAUDE_A)
@@ -511,7 +511,7 @@ describe('a role pointing at a GROUP binds the group, runs its first member', ()
 
     await openSpecSession(h.ctx, h.conn, {
       type: 'open_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: intent.id,
     })
     opened.push(specId)
@@ -543,7 +543,7 @@ describe('other session kinds keep their own routing (non-goal)', () => {
 
     await openSpecSession(h.ctx, h.conn, {
       type: 'open_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: intent.id,
     })
     opened.push(specId)

@@ -447,7 +447,7 @@ const {
  *  工作区」(名称 + 绝对路径)。列表未到达或 id 无匹配(切换中)时为 null,
  *  设置页据此整块不渲染。身份仍是 id,path 只是展示数据。 */
 const currentWorkspaceInfo = computed(
-  () => workspaces.value.find((w) => w.id === currentWorkspace.value) ?? null,
+  () => workspaces.value.find((w) => w.name === currentWorkspace.value) ?? null,
 )
 
 /** 分享按钮处理:各页标题栏发 `share` 后,在此组装 `ShareTarget`(kind + 当前
@@ -459,7 +459,7 @@ function shareSession(): void {
   if (!ws || !id) return
   shareLink({
     kind: 'session',
-    workspaceId: ws,
+    workspaceName: ws,
     id,
     title: activeTitle.value,
     typeLabel: t('share.kind.session.label'),
@@ -471,7 +471,7 @@ function shareIntent(intentId: string): void {
   if (!ws || !it) return
   shareLink({
     kind: 'intent',
-    workspaceId: ws,
+    workspaceName: ws,
     id: it.id,
     title: it.title,
     typeLabel: t('share.kind.intent.label'),
@@ -528,7 +528,7 @@ function shareDiscussion(): void {
   if (!ws || !d) return
   shareLink({
     kind: 'discussion',
-    workspaceId: ws,
+    workspaceName: ws,
     id: d.id,
     title: d.title,
     typeLabel: t('share.kind.discussion.label'),
@@ -901,7 +901,7 @@ function onCodesChatWidth(px: number): void {
           :transcripts="executionTranscripts"
           :form-open="automationFormOpen"
           :form-target="automationFormTarget"
-          :workspace-path="automationsProject ?? ''"
+          :workspace-name="automationsProject ?? ''"
           :timezone="automationTimezone"
           :automation-enabled="automationEnabled"
           :automation-enabled-saving="automationEnabledSaving"
@@ -1102,13 +1102,13 @@ function onCodesChatWidth(px: number): void {
       @reload-park-recovery="loadParkRecoveryStats"
       @goto-system-settings="openSettingsFromWorkspaceSetting"
       @create-mcp-api-key="
-        (p) => currentWorkspace && createMcpApiKey({ workspaceId: currentWorkspace, ...p })
+        (p) => currentWorkspace && createMcpApiKey({ workspaceName: currentWorkspace, ...p })
       "
       @update-mcp-api-key-tools="
-        (p) => currentWorkspace && updateMcpApiKey({ workspaceId: currentWorkspace, ...p })
+        (p) => currentWorkspace && updateMcpApiKey({ workspaceName: currentWorkspace, ...p })
       "
       @revoke-mcp-api-key="
-        (id) => currentWorkspace && revokeMcpApiKey({ workspaceId: currentWorkspace, id })
+        (id) => currentWorkspace && revokeMcpApiKey({ workspaceName: currentWorkspace, id })
       "
       @dismiss-mcp-api-key-reveal="dismissMcpApiKeyReveal"
     />

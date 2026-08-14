@@ -48,7 +48,7 @@ const emit = defineEmits<{
   'select-dependency': [intentId: string]
   'sync-pr-status': [intentId: string]
   'open-delivery': [deliveryId: string]
-  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'unlink-delivery': [workspaceName: string, deliveryId: string, intentId: string]
 }>()
 
 // ── 关联交付:解除入口(自持确认框) ─────────────────────────────────────────
@@ -62,7 +62,7 @@ const unlinkDialogOpen = ref(false)
 function confirmUnlink(): void {
   const target = linkedDelivery.value
   unlinkDialogOpen.value = false
-  if (target) emit('unlink-delivery', props.intent.workspaceId, target.id, props.intent.id)
+  if (target) emit('unlink-delivery', props.intent.workspaceName, target.id, props.intent.id)
 }
 
 // 关联条数在确认框敞开期间被别处改掉(关联/解除的广播)时收框,避免对着已不成立的前提确认。

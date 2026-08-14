@@ -13,7 +13,7 @@ import { installMessageHandler } from './message-handler'
 
 function row(id: string, over: Partial<WorkspaceDashboardRow> = {}): WorkspaceDashboardRow {
   return {
-    workspaceId: id,
+    workspaceName: id,
     name: id,
     path: `/abs/${id}`,
     sessions: { running: 0, total: 0 },
@@ -106,7 +106,7 @@ describe('dashboard actions — per-row gate guards', () => {
     expect([...ctx.dashboardPending.value]).toEqual(['a'])
     expect(lastSent(send)).toEqual({
       type: 'set_workspaces_automation_enabled',
-      workspaceIds: ['a'],
+      workspaceNames: ['a'],
       enabled: false,
     })
   })
@@ -145,7 +145,7 @@ describe('dashboard message handling — snapshot', () => {
     ctx.handleMessage({ type: 'workspace_dashboard', rows: [row('a'), row('b')] })
     expect(ctx.dashboardLoading.value).toBe(false)
     expect(ctx.dashboardError.value).toBeNull()
-    expect(ctx.dashboardRows.value.map((r) => r.workspaceId)).toEqual(['a', 'b'])
+    expect(ctx.dashboardRows.value.map((r) => r.workspaceName)).toEqual(['a', 'b'])
     expect([...ctx.dashboardPending.value]).toEqual(['a']) // 'gone' pruned
   })
 
@@ -158,7 +158,7 @@ describe('dashboard message handling — snapshot', () => {
       rows: [],
       error: { code: 'dashboard.loadFailed' },
     })
-    expect(ctx.dashboardRows.value.map((r) => r.workspaceId)).toEqual(['a']) // kept
+    expect(ctx.dashboardRows.value.map((r) => r.workspaceName)).toEqual(['a']) // kept
     expect(ctx.dashboardError.value).toEqual({ code: 'dashboard.loadFailed' })
     expect(ctx.dashboardLoading.value).toBe(false)
   })
@@ -180,7 +180,7 @@ describe('dashboard message handling — per-row gate result', () => {
     ctx.dashboardPending.value = new Set(['a', 'b'])
     ctx.handleMessage({
       type: 'workspaces_automation_result',
-      results: [{ workspaceId: 'a', ok: true }],
+      results: [{ workspaceName: 'a', ok: true }],
       dashboard: [row('a', { automationEnabled: false }), row('b')],
     })
     expect([...ctx.dashboardPending.value]).toEqual(['b']) // only 'a' settled
@@ -193,7 +193,7 @@ describe('dashboard message handling — per-row gate result', () => {
     ctx.dashboardPending.value = new Set(['a'])
     ctx.handleMessage({
       type: 'workspaces_automation_result',
-      results: [{ workspaceId: 'a', ok: false, error: { code: 'dashboard.gateSaveFailed' } }],
+      results: [{ workspaceName: 'a', ok: false, error: { code: 'dashboard.gateSaveFailed' } }],
       dashboard: [row('a')],
     })
     expect(ctx.dashboardPending.value.size).toBe(0)
@@ -206,7 +206,7 @@ describe('dashboard message handling — per-row gate result', () => {
     send.mockClear()
     ctx.handleMessage({
       type: 'workspaces_automation_result',
-      results: [{ workspaceId: 'a', ok: true }],
+      results: [{ workspaceName: 'a', ok: true }],
       dashboard: [],
       dashboardError: { code: 'dashboard.loadFailed' },
     })

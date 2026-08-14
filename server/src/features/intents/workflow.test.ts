@@ -154,7 +154,7 @@ vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   touchWorkspace: vi.fn(),
   resolveWorkspaceRoot: vi.fn(() => '/test/proj'),
-  pathToId: vi.fn(() => 'test-proj'),
+  pathToName: vi.fn(() => 'test-proj'),
 }))
 
 vi.mock('../../git.js', () => ({
@@ -241,14 +241,14 @@ import {
 
 interface StartDevMsg {
   type: 'start_development'
-  workspaceId: string
+  workspaceName: string
   intentId: string
 }
 
 // ---- Factory ----
 
 const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
-  workspaceId: 'test-proj',
+  workspaceName: 'test-proj',
   title: 'Test',
   shortEnTitle: null,
   content: '',
@@ -508,7 +508,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -548,7 +548,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg1: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -577,7 +577,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     await startDevelopment(
       ctx as unknown as Parameters<typeof startDevelopment>[0],
       conn as unknown as Parameters<typeof startDevelopment>[1],
-      { type: 'start_development', workspaceId: 'test-proj', intentId: 'B' },
+      { type: 'start_development', workspaceName: 'test-proj', intentId: 'B' },
     )
 
     const pendingId = vi.mocked(ensureRuntime).mock.calls[0]?.[0]
@@ -608,7 +608,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     await startDevelopment(
       ctx as unknown as Parameters<typeof startDevelopment>[0],
       conn as unknown as Parameters<typeof startDevelopment>[1],
-      { type: 'start_development', workspaceId: 'test-proj', intentId: 'B' },
+      { type: 'start_development', workspaceName: 'test-proj', intentId: 'B' },
     )
 
     expect(upsertPendingRow).not.toHaveBeenCalled()
@@ -636,7 +636,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const msg2: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -666,7 +666,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
 
@@ -701,7 +701,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
 
@@ -734,7 +734,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
     await startDevelopment(
@@ -769,7 +769,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const ctx = makeCtx()
     const msg: StartDevMsg = {
       type: 'start_development',
-      workspaceId: 'test-proj',
+      workspaceName: 'test-proj',
       intentId: 'B',
     }
     const failed = makeConn()
@@ -827,7 +827,7 @@ describe('startDevelopment — startup progress events', () => {
       startDevelopment(
         ctx as unknown as Parameters<typeof startDevelopment>[0],
         conn as unknown as Parameters<typeof startDevelopment>[1],
-        { type: 'start_development', workspaceId: 'test-proj', intentId: 'B' },
+        { type: 'start_development', workspaceName: 'test-proj', intentId: 'B' },
       ),
     )
 

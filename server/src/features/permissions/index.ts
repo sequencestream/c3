@@ -30,5 +30,5 @@ export const permissionResponse: Handler<'permission_response'> = (ctx, conn, ms
 
   // Broadcast the refreshed 'todo' list so every connection's pending-items
   // panel updates in real time (WorkCenter tab, session tab, sidebar badge).
-  ctx.broadcastWaitUserEvents(resolveWorkspaceRoot(event.workspaceId)!)
+  ctx.broadcastWaitUserEvents(resolveWorkspaceRoot(event.workspaceName)!)
 }

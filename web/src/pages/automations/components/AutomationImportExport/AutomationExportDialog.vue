@@ -19,7 +19,7 @@ const { t } = useTypedI18n()
 const props = defineProps<{
   open: boolean
   automations: Automation[]
-  workspacePath: string
+  workspaceName: string
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -78,7 +78,7 @@ function download(filename: string, content: string): void {
 function confirmExport(): void {
   if (selected.value.size === 0) return
   const file = buildExportFile(props.automations, selected.value, new Date().toISOString())
-  download(exportFilename(props.workspacePath, new Date()), serializeExportFile(file))
+  download(exportFilename(props.workspaceName, new Date()), serializeExportFile(file))
   emit('close')
 }
 </script>

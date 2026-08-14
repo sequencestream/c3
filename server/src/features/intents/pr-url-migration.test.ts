@@ -11,7 +11,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
-  pathToId: vi.fn(() => 'ws-prurl-id'),
+  pathToName: vi.fn(() => 'ws-prurl-id'),
+  resolveWorkspaceRoot: vi.fn(() => '/abs/workspace-prurl'),
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -46,7 +47,7 @@ function userVersion(raw: Db): number {
 function seedLegacy(raw: Db): void {
   raw.exec(`
     CREATE TABLE intents (
-      id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, title TEXT NOT NULL,
+      id TEXT PRIMARY KEY, workspace_name TEXT NOT NULL, title TEXT NOT NULL,
       short_en_title TEXT, content TEXT NOT NULL, priority TEXT NOT NULL,
       status TEXT NOT NULL, module TEXT NOT NULL DEFAULT '', last_dev_session_id TEXT,
       automate INTEGER NOT NULL DEFAULT 0, branch_name TEXT, latest_commit_hash TEXT,
@@ -56,7 +57,7 @@ function seedLegacy(raw: Db): void {
     );
   `)
   raw.run(
-    `INSERT INTO intents (id, workspace_path, title, content, priority, status, pr_id, pr_status, created_at, updated_at)
+    `INSERT INTO intents (id, workspace_name, title, content, priority, status, pr_id, pr_status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
     'hist-1',
     proj,

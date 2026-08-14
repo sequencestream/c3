@@ -17,7 +17,7 @@
  *     dependency gate (`blocked_dependency`) and is never launched — parking
  *     isolates a failure, it never opens a path around one.
  *  3. A blocked queue never reports `done`. Reporting success while a chain is
- *     stuck is a misleading success, which the kernel forbids.
+ *     stuck is a misleading success, which the kernel forbnames.
  *  4. `force_skip` changes only this queue's selection: it never marks an intent
  *     `done` and never satisfies a dependency gate.
  *  5. `unpark` clears the park, and unparking something that is NOT parked is
@@ -76,9 +76,9 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 // ---- State ----
-let workspaceId = null
+let workspaceName = null
 let phase = 'boot'
-const ids = {}
+const names = {}
 let detail = null
 const errors = []
 const failures = []
@@ -94,7 +94,7 @@ const check = (ok, label) => {
   console.log(`[e2e] ${ok ? 'ok  ' : 'FAIL'} — ${label}`)
   if (!ok) failures.push(label)
 }
-const itemOf = (label) => detail?.items?.find((i) => i.intentId === ids[label]) ?? null
+const itemOf = (label) => detail?.items?.find((i) => i.intentId === names[label]) ?? null
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
@@ -104,7 +104,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  */
 async function waitFor(predicate, label) {
   for (let i = 0; i < POLL_TRIES; i++) {
-    send({ type: 'get_queue_detail', workspaceId })
+    send({ type: 'get_queue_detail', workspaceName })
     await sleep(POLL_MS)
     if (detail && predicate()) return true
   }
@@ -125,16 +125,16 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId) break
+      if (workspaceName) break
       const name = PROJECT_DIR.split('/').pop()
-      workspaceId =
-        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.id ?? null
-      if (!workspaceId) {
-        failures.push('no workspaceId after add_workspace')
+      workspaceName =
+        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.name ?? null
+      if (!workspaceName) {
+        failures.push('no workspaceName after add_workspace')
         finish()
         return
       }
@@ -145,7 +145,7 @@ ws.addEventListener('message', (evt) => {
 
     case 'create_intent_result': {
       const label = LABELS[created]
-      ids[label] = msg.intent.id
+      names[label] = msg.intent.id
       created += 1
       send({
         type: 'update_intent_content',
@@ -174,20 +174,20 @@ let created = 0
 
 function seedNextIntent() {
   if (created < LABELS.length) {
-    send({ type: 'create_intent', workspaceId })
+    send({ type: 'create_intent', workspaceName })
     return
   }
   // D depends on B — the gate the parked intent must keep shut.
   send({
     type: 'update_intent_deps',
-    intentId: ids.D,
-    deps: [{ dependsOnId: ids.B, depType: 'blocks' }],
+    intentId: names.D,
+    deps: [{ dependsOnId: names.B, depType: 'blocks' }],
   })
   // Arm every gate BEFORE the queue starts, so no dev turn can ever be launched.
-  send({ type: 'queue_control', workspaceId, action: 'force_skip', intentId: ids.A })
-  send({ type: 'queue_control', workspaceId, action: 'force_skip', intentId: ids.C })
-  send({ type: 'queue_control', workspaceId, action: 'override_block', intentId: ids.B })
-  send({ type: 'start_workflow', workspaceId })
+  send({ type: 'queue_control', workspaceName, action: 'force_skip', intentId: names.A })
+  send({ type: 'queue_control', workspaceName, action: 'force_skip', intentId: names.C })
+  send({ type: 'queue_control', workspaceName, action: 'override_block', intentId: names.B })
+  send({ type: 'start_workflow', workspaceName })
   void runAssertions()
 }
 
@@ -239,7 +239,7 @@ async function runAssertions() {
 
   // ---- pause: honoured, and the candidate set is preserved ----
   phase = 'pause'
-  send({ type: 'queue_control', workspaceId, action: 'pause' })
+  send({ type: 'queue_control', workspaceName, action: 'pause' })
   await waitFor(() => detail?.state === 'paused', 'queue paused')
   check(detail?.state === 'paused', 'pause is honoured and projected')
   check(
@@ -249,19 +249,19 @@ async function runAssertions() {
 
   // ---- unskip / unpark, applied while paused so nothing can launch ----
   phase = 'unskip'
-  send({ type: 'queue_control', workspaceId, action: 'unskip', intentId: ids.C })
+  send({ type: 'queue_control', workspaceName, action: 'unskip', intentId: names.C })
   await waitFor(() => itemOf('C')?.forceSkipped === false, 'C unskipped')
   check(itemOf('C')?.forceSkipped === false, 'unskip restores C to the selection')
 
   phase = 'unpark'
   const errorsBefore = errors.length
-  send({ type: 'queue_control', workspaceId, action: 'unpark', intentId: ids.B })
+  send({ type: 'queue_control', workspaceName, action: 'unpark', intentId: names.B })
   await waitFor(() => itemOf('B')?.parked === false, 'B unparked')
   check(itemOf('B')?.parked === false, 'unpark clears the park mark on B')
   check(errors.length === errorsBefore, 'a valid unpark reports no error')
 
   phase = 'unpark-invalid'
-  send({ type: 'queue_control', workspaceId, action: 'unpark', intentId: ids.B })
+  send({ type: 'queue_control', workspaceName, action: 'unpark', intentId: names.B })
   await waitFor(() => errors.includes('queue.notParked'), 'refusal for a non-parked unpark')
   check(
     errors.includes('queue.notParked'),
@@ -270,9 +270,9 @@ async function runAssertions() {
 
   // ---- re-arm every gate, THEN resume: no candidate may become eligible ----
   phase = 'resume'
-  send({ type: 'queue_control', workspaceId, action: 'force_skip', intentId: ids.C })
-  send({ type: 'queue_control', workspaceId, action: 'override_block', intentId: ids.B })
-  send({ type: 'queue_control', workspaceId, action: 'resume' })
+  send({ type: 'queue_control', workspaceName, action: 'force_skip', intentId: names.C })
+  send({ type: 'queue_control', workspaceName, action: 'override_block', intentId: names.B })
+  send({ type: 'queue_control', workspaceName, action: 'resume' })
   await waitFor(() => detail?.state !== 'paused', 'queue resumed')
   check(detail?.state !== 'paused', 'resume leaves the paused state')
   check(
@@ -281,7 +281,7 @@ async function runAssertions() {
   )
 
   phase = 'stop'
-  send({ type: 'stop_workflow', workspaceId })
+  send({ type: 'stop_workflow', workspaceName })
   await sleep(300)
   finish()
 }

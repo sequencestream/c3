@@ -1,7 +1,7 @@
 /**
  * Integration tests for the config tables over the shared c3.db adapter: schema
  * creation, scope isolation, replace-vs-patch write semantics, prefix deletion,
- * transaction rollback, and the workspace registry's id stability (the property the
+ * transaction rollback, and the workspace registry's name stability (the property the
  * whole per-workspace configuration hangs off).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -22,7 +22,7 @@ import {
   writeScope,
 } from './config-store.js'
 import {
-  ensureWorkspaceId,
+  ensureWorkspaceName,
   findWorkspaceByPath,
   listWorkspaceRows,
   registerWorkspace,
@@ -61,6 +61,100 @@ describe('schema', () => {
     ]) {
       expect(names).toContain(table)
     }
+  })
+
+  it('migrates legacy ids and path associations to deterministic workspace names', () => {
+    const raw = getDb()!
+    raw.exec(`
+      CREATE TABLE workspaces (
+        id TEXT PRIMARY KEY,
+        path TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        last_accessed INTEGER NOT NULL,
+        registered INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE workspace_configs (
+        workspace_id TEXT NOT NULL,
+        config_key TEXT NOT NULL,
+        config_value TEXT,
+        config_type TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (workspace_id, config_key)
+      );
+      CREATE TABLE intents (id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL);
+      CREATE TABLE funnel_event (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL);
+    `)
+    raw.run('INSERT INTO workspaces VALUES (?,?,?,?,?,?,?)', 'old-a', '/a/proj', 'proj', 1, 1, 1, 1)
+    raw.run('INSERT INTO workspaces VALUES (?,?,?,?,?,?,?)', 'old-b', '/b/proj', 'proj', 2, 1, 2, 2)
+    raw.run(
+      'INSERT INTO workspace_configs VALUES (?,?,?,?,?)',
+      'old-b',
+      'sddEnabled',
+      'true',
+      'boolean',
+      2,
+    )
+    raw.run('INSERT INTO intents VALUES (?,?)', 'intent-a', '/a/proj')
+    raw.run('INSERT INTO funnel_event VALUES (?,?)', 'event-b', '/b/proj')
+
+    expect(isConfigStoreAvailable()).toBe(true)
+    expect(
+      raw.all<{ name: string; path: string }>('SELECT name, path FROM workspaces ORDER BY path'),
+    ).toEqual([
+      { name: 'proj', path: '/a/proj' },
+      { name: 'proj-2', path: '/b/proj' },
+    ])
+    expect(raw.get<{ workspace_name: string }>('SELECT workspace_name FROM intents')).toEqual({
+      workspace_name: 'proj',
+    })
+    expect(raw.get<{ workspace_name: string }>('SELECT workspace_name FROM funnel_event')).toEqual({
+      workspace_name: 'proj-2',
+    })
+    expect(
+      raw.get<{ workspace_name: string }>('SELECT workspace_name FROM workspace_configs'),
+    ).toEqual({ workspace_name: 'proj-2' })
+  })
+
+  it('migrates path associations when upgrading a database from before the registry existed', () => {
+    const raw = getDb()!
+    raw.exec(`
+      CREATE TABLE discussions (id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL);
+      CREATE TABLE mcp_api_keys (
+        key_id TEXT NOT NULL,
+        config_key TEXT NOT NULL,
+        config_value TEXT,
+        config_type TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (key_id, config_key)
+      );
+    `)
+    raw.run('INSERT INTO discussions VALUES (?,?)', 'discussion-a', '/legacy/team')
+    raw.run(
+      'INSERT INTO mcp_api_keys VALUES (?,?,?,?,?)',
+      'key-a',
+      'workspace',
+      '/legacy/mcp-only',
+      'string',
+      1,
+    )
+
+    expect(isConfigStoreAvailable()).toBe(true)
+    expect(raw.get<{ workspace_name: string }>('SELECT workspace_name FROM discussions')).toEqual({
+      workspace_name: 'team',
+    })
+    expect(
+      raw.all<{ name: string; path: string }>('SELECT name, path FROM workspaces ORDER BY path'),
+    ).toEqual([
+      { name: 'mcp-only', path: '/legacy/mcp-only' },
+      { name: 'team', path: '/legacy/team' },
+    ])
+    expect(
+      raw.get<{ config_key: string; config_value: string }>(
+        "SELECT config_key, config_value FROM mcp_api_keys WHERE key_id='key-a'",
+      ),
+    ).toEqual({ config_key: 'workspaceName', config_value: 'mcp-only' })
   })
 })
 
@@ -150,26 +244,26 @@ describe('configTx', () => {
 })
 
 describe('workspace registry', () => {
-  it('keeps the id (and therefore the configuration) across unregister/re-register', () => {
+  it('keeps the name (and therefore the configuration) across unregister/re-register', () => {
     const first = registerWorkspace('/tmp/proj-a', 1_000)
-    writeScope({ kind: 'workspace', owner: first.id }, [
+    writeScope({ kind: 'workspace', owner: first.name }, [
       { key: 'sddEnabled', value: 'true', type: 'boolean' },
     ])
     unregisterWorkspace('/tmp/proj-a')
     expect(listWorkspaceRows()).toEqual([])
 
     const again = registerWorkspace('/tmp/proj-a', 2_000)
-    expect(again.id).toBe(first.id)
+    expect(again.name).toBe(first.name)
     expect(again.lastAccessed).toBe(2_000)
-    expect(readScope({ kind: 'workspace', owner: again.id })[0].value).toBe('true')
+    expect(readScope({ kind: 'workspace', owner: again.name })[0].value).toBe('true')
   })
 
   it('creates configuration-only rows that never reach the workspace list', () => {
-    const id = ensureWorkspaceId('/tmp/only-config', 1_000)
+    const name = ensureWorkspaceName('/tmp/only-config', 1_000)
     expect(listWorkspaceRows()).toEqual([])
-    expect(findWorkspaceByPath('/tmp/only-config')).toMatchObject({ id, registered: false })
-    // Registering later adopts the same id, so the imported configuration applies.
-    expect(registerWorkspace('/tmp/only-config', 2_000).id).toBe(id)
+    expect(findWorkspaceByPath('/tmp/only-config')).toMatchObject({ name, registered: false })
+    // Registering later adopts the same name, so the imported configuration applies.
+    expect(registerWorkspace('/tmp/only-config', 2_000).name).toBe(name)
     expect(listWorkspaceRows()).toHaveLength(1)
   })
 
@@ -179,6 +273,26 @@ describe('workspace registry', () => {
     expect(findWorkspaceByPath('/tmp/proj-b')?.lastAccessed).toBe(5_000)
     unregisterWorkspace('/tmp/proj-b')
     touchWorkspaceRow('/tmp/proj-b', 9_000)
-    expect(findWorkspaceByPath('/tmp/proj-b')).toMatchObject({ id: row.id, lastAccessed: 5_000 })
+    expect(findWorkspaceByPath('/tmp/proj-b')).toMatchObject({
+      name: row.name,
+      lastAccessed: 5_000,
+    })
+  })
+
+  it('trims names, enforces 64 Unicode characters, and rejects duplicates', () => {
+    expect(registerWorkspace('/tmp/named-a', '  研发 A  ', 1).name).toBe('研发 A')
+    expect(() => registerWorkspace('/tmp/named-b', '研发 A', 2)).toThrow('workspace.nameConflict')
+    expect(registerWorkspace('/tmp/named-c', '🚀'.repeat(64), 3).name).toBe('🚀'.repeat(64))
+    expect(() => registerWorkspace('/tmp/named-d', '🚀'.repeat(65), 4)).toThrow(
+      'workspace.nameInvalid',
+    )
+    expect(() => registerWorkspace('/tmp/named-e', '   ', 5)).toThrow('workspace.nameInvalid')
+  })
+
+  it('never changes the name once a path has an identity', () => {
+    expect(registerWorkspace('/tmp/immutable', 'original', 1).name).toBe('original')
+    unregisterWorkspace('original')
+    expect(registerWorkspace('/tmp/immutable', 'replacement', 2).name).toBe('original')
+    expect(findWorkspaceByPath('/tmp/immutable')?.name).toBe('original')
   })
 })

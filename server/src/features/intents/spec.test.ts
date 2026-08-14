@@ -14,7 +14,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -44,7 +44,7 @@ import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -61,8 +61,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -143,7 +143,7 @@ describe('writeSpecHandler dependency context', () => {
       conn,
       {
         type: 'write_spec',
-        workspaceId,
+        workspaceName,
         intentId: target.id,
       },
     )
@@ -178,7 +178,7 @@ describe('writeSpecHandler dependency context', () => {
     await writeSpecHandler(
       { launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext,
       conn,
-      { type: 'write_spec', workspaceId, intentId: target.id },
+      { type: 'write_spec', workspaceName, intentId: target.id },
     )
 
     expect(sent).toEqual([
@@ -202,7 +202,7 @@ describe('writeSpecHandler dependency context', () => {
     const { conn, sent } = fakeConn()
     writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
       type: 'write_spec',
-      workspaceId,
+      workspaceName,
       intentId: target.id,
     })
     expect(launchRun).toHaveBeenCalledTimes(1)
@@ -222,7 +222,7 @@ describe('writeSpecHandler dependency context', () => {
 
     writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
       type: 'write_spec',
-      workspaceId,
+      workspaceName,
       intentId: target.id,
     })
 
@@ -247,7 +247,7 @@ describe('writeSpecHandler dependency context', () => {
 
     writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
       type: 'write_spec',
-      workspaceId,
+      workspaceName,
       intentId: target.id,
     })
 
@@ -278,7 +278,7 @@ describe('approveSpecHandler', () => {
     const ctx = { broadcastIntents, eventBus } as unknown as KernelContext
     const { conn, sent } = fakeConn({ subject: 'bob' })
 
-    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceId, intentId: r.id })
+    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceName, intentId: r.id })
 
     const got = getIntent(r.id)
     expect(got?.specApproved).toBe(true)
@@ -300,7 +300,7 @@ describe('approveSpecHandler', () => {
     const ctx = { broadcastIntents } as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceId, intentId: r.id })
+    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceName, intentId: r.id })
 
     const got = getIntent(r.id)
     expect(got?.specApproved).toBe(false)
@@ -320,7 +320,7 @@ describe('approveSpecHandler', () => {
     const ctx = { broadcastIntents } as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceId, intentId: r.id })
+    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceName, intentId: r.id })
 
     expect(getIntent(r.id)?.specApproved).toBe(false)
     expect(broadcastIntents).not.toHaveBeenCalled()
@@ -332,7 +332,7 @@ describe('approveSpecHandler', () => {
     const ctx = { broadcastIntents } as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceId, intentId: 'nope' })
+    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceName, intentId: 'nope' })
 
     expect(broadcastIntents).not.toHaveBeenCalled()
     expect(sent).toEqual([{ type: 'error', error: { code: 'intent.notFound' } }])
@@ -352,12 +352,12 @@ describe('readSpecHandler (REQ-5: read the centralized spec)', () => {
     setSpecPath(r.id, fileAbs)
 
     const { conn, sent } = fakeConn()
-    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceId, intentId: r.id })
+    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceName, intentId: r.id })
 
     expect(sent).toEqual([
       {
         type: 'file_read',
-        workspaceId,
+        workspaceName,
         file: {
           path: fileAbs,
           size: Buffer.byteLength('# Centralized spec'),
@@ -374,7 +374,7 @@ describe('readSpecHandler (REQ-5: read the centralized spec)', () => {
       { title: 'No spec', shortEnTitle: 'nospec', content: '', priority: 'P2' },
     ])
     const { conn, sent } = fakeConn()
-    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceId, intentId: r.id })
+    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceName, intentId: r.id })
     expect(sent).toEqual([{ type: 'error', error: { code: 'intent.specNotWritten' } }])
   })
 
@@ -386,7 +386,7 @@ describe('readSpecHandler (REQ-5: read the centralized spec)', () => {
     // centralized root → rejected (Out-of-Scope: no migration / no recognition).
     setSpecPath(r.id, '.specs/2026/06/20/2026-06-20-001-legacy/spec.md')
     const { conn, sent } = fakeConn()
-    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceId, intentId: r.id })
+    readSpecHandler(ctx, conn, { type: 'read_spec', workspaceName, intentId: r.id })
     expect(sent).toEqual([
       {
         type: 'error',

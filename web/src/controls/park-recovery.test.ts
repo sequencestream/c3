@@ -61,7 +61,7 @@ describe('loadParkRecoveryStats', () => {
     ctx.loadParkRecoveryStats()
 
     expect(ctx.parkRecoveryLoading.value).toBe(true)
-    expect(send).toHaveBeenCalledWith({ type: 'get_park_recovery_stats', workspaceId: 'ws-1' })
+    expect(send).toHaveBeenCalledWith({ type: 'get_park_recovery_stats', workspaceName: 'ws-1' })
   })
 
   it('clears a previous failure as the retry goes out', () => {
@@ -98,7 +98,7 @@ describe('park_recovery_stats reply', () => {
   it('adopts the figures for the workspace on screen', () => {
     const { ctx } = makeCtx()
     ctx.loadParkRecoveryStats()
-    ctx.handleMessage({ type: 'park_recovery_stats', workspaceId: 'ws-1', stats: STATS })
+    ctx.handleMessage({ type: 'park_recovery_stats', workspaceName: 'ws-1', stats: STATS })
 
     expect(ctx.parkRecoveryStats.value).toEqual(STATS)
     expect(ctx.parkRecoveryError.value).toBe(null)
@@ -107,7 +107,7 @@ describe('park_recovery_stats reply', () => {
 
   it('drops a late reply for a workspace the user has left', () => {
     const { ctx } = makeCtx()
-    ctx.handleMessage({ type: 'park_recovery_stats', workspaceId: 'ws-other', stats: STATS })
+    ctx.handleMessage({ type: 'park_recovery_stats', workspaceName: 'ws-other', stats: STATS })
 
     expect(ctx.parkRecoveryStats.value).toBe(null)
   })
@@ -116,7 +116,7 @@ describe('park_recovery_stats reply', () => {
     const { ctx } = makeCtx()
     ctx.handleMessage({
       type: 'park_recovery_stats',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       error: { code: 'intent.parkStatsUnavailable' },
     })
 
@@ -128,10 +128,10 @@ describe('park_recovery_stats reply', () => {
     const { ctx } = makeCtx()
     ctx.handleMessage({
       type: 'park_recovery_stats',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       error: { code: 'intent.parkStatsUnavailable' },
     })
-    ctx.handleMessage({ type: 'park_recovery_stats', workspaceId: 'ws-1', stats: STATS })
+    ctx.handleMessage({ type: 'park_recovery_stats', workspaceName: 'ws-1', stats: STATS })
 
     expect(ctx.parkRecoveryError.value).toBe(null)
     expect(ctx.parkRecoveryStats.value).toEqual(STATS)

@@ -23,7 +23,7 @@ import {
 } from './run-controls.js'
 import type { ResearchMessage } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
-import { pathToId, resolveWorkspaceRoot } from '../../state.js'
+import { pathToName, resolveWorkspaceRoot } from '../../state.js'
 
 /**
  * Build the `discussion_detail` research transcript snapshot from the runtime
@@ -44,11 +44,11 @@ export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, m
     conn.send({ type: 'error', error: { code: 'discussion.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
@@ -56,7 +56,7 @@ export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, m
   const discItems = listDiscussions(proj, msg.status)
   conn.send({
     type: 'discussions',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     items: discItems,
     runStates: discussionRunSnapshot(discItems),
   })
@@ -74,11 +74,11 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
     })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
@@ -245,6 +245,6 @@ export const continueDiscussion: Handler<'continue_discussion'> = (ctx, conn, ms
   })
   ctx.broadcastDiscussionMessage(discussion.id, message)
   updateDiscussionStatus(discussion.id, 'in_progress')
-  ctx.broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceId)!)
+  ctx.broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceName)!)
   ctx.startDiscussionRun({ ...discussion, status: 'in_progress' })
 }

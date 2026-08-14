@@ -20,7 +20,7 @@ import { resetSettingsCacheForTests } from './index.js'
 import { resetLegacyImportForTests } from './import-legacy.js'
 import { resetMcpApiKeyCache } from './mcp-api-keys.js'
 import { resetPersonalizedCache } from './personalized.js'
-import { ensureWorkspaceId } from './workspace-store.js'
+import { ensureWorkspaceName } from './workspace-store.js'
 
 /**
  * Aim every config store at `<dir>/c3.db` and drop all caches — the state a freshly
@@ -69,8 +69,8 @@ export function seedSystemSettings(raw: Record<string, unknown>): void {
 
 /** Store one workspace's raw configuration. */
 export function seedWorkspaceSetting(workspacePath: string, cfg: unknown): void {
-  const workspaceId = ensureWorkspaceId(workspacePath, Date.now())
-  writeScope({ kind: 'workspace', owner: workspaceId }, toEntries(cfg, WORKSPACE_RULES))
+  const workspaceName = ensureWorkspaceName(workspacePath, Date.now())
+  writeScope({ kind: 'workspace', owner: workspaceName }, toEntries(cfg, WORKSPACE_RULES))
   resetSettingsCacheForTests()
 }
 
@@ -142,7 +142,7 @@ export function readStoredSystemSettings(): Record<string, unknown> {
 export function readStoredWorkspaceSetting(
   workspacePath: string,
 ): Record<string, unknown> | undefined {
-  const workspaceId = ensureWorkspaceId(workspacePath, Date.now())
-  const entries = readScope({ kind: 'workspace', owner: workspaceId })
+  const workspaceName = ensureWorkspaceName(workspacePath, Date.now())
+  const entries = readScope({ kind: 'workspace', owner: workspaceName })
   return entries.length > 0 ? fromEntries(entries, WORKSPACE_RULES) : undefined
 }

@@ -2,7 +2,7 @@
  * Integration tests for the delivery store over the shared c3.db adapter.
  *
  * Covers: schema creation + the two constraints (status CHECK, active
- * `(workspace_path, branch_name)` partial-unique), CRUD (create/list/get/
+ * `(workspace_name, branch_name)` partial-unique), CRUD (create/list/get/
  * update/status), the first-delivery `pr:merge` notice decided inside the create
  * transaction, and the real-time N/M aggregate derived from `intent_prs`
  * (`delivery_id` — the association surface the intent store already owns), plus
@@ -80,7 +80,7 @@ describe('deliveries store — schema + constraints', () => {
     expect(() =>
       getDb()!.run(
         `INSERT INTO deliveries
-           (id, workspace_path, title, description, status, start_date, end_date,
+           (id, workspace_name, title, description, status, start_date, end_date,
             branch_name, base_branch, branch_ready, created_at, updated_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         'x',

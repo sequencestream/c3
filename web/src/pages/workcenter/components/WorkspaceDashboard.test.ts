@@ -11,7 +11,7 @@ import type { WorkspaceDashboardRow } from '@ccc/shared/protocol'
 
 function row(id: string, over: Partial<WorkspaceDashboardRow> = {}): WorkspaceDashboardRow {
   return {
-    workspaceId: id,
+    workspaceName: id,
     name: id,
     path: `/abs/${id}`,
     sessions: { running: 1, total: 3 },
@@ -63,7 +63,7 @@ describe('Dashboard.vue', () => {
     expect(switches[1].find('.dash-gate-track').classes()).not.toContain('on')
   })
 
-  it('emits toggle(workspaceId, !enabled) when a row switch is clicked', async () => {
+  it('emits toggle(workspaceName, !enabled) when a row switch is clicked', async () => {
     const wrapper = mount(Dashboard, {
       props: props({
         rows: [row('a', { automationEnabled: true }), row('b', { automationEnabled: false })],

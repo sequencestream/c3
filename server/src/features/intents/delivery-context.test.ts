@@ -14,7 +14,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { ensureRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -77,7 +77,7 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  proj = resolveWorkspaceRoot(pathToId(dir)!)!
+  proj = resolveWorkspaceRoot(pathToName(dir)!)!
   // SDD off: this file is about the DELIVERY gates, and an unapproved spec would
   // stop every launch at the gate above them.
   saveWorkspaceSetting(proj, {

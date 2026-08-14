@@ -12,7 +12,7 @@
 - **状态机**: `state-machine.ts`:`canTransitionDelivery`(唯一写状态门)/`deliveryTargets`/`computeTransitionPlan`/`deliveryRequiresAction`/`countDeliveriesNeedingAction`
 - **分支生命周期**: `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入
 - **forge 交互**: `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`findMergedForgePr`(分支已在主线时补 PR 身份)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举)
-- **工作区隔离 + 广播**: handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标
+- **工作区隔离 + 广播**: handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceName` 归属;变更后 `broadcastDeliveries` 全量重读并带角标
 - **页面**: `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进 + 「…」溢出菜单)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`
 
 ## SQLite 层
@@ -26,9 +26,9 @@
 
 `deliveries` 表 + 索引(新库与迁移 `database/migrate/2026/08/06/032-deliveries.sql` 同构):
 
-- `id` PK / `workspace_path` NOT NULL / `title` NOT NULL / `description` DEFAULT '' / `status` NOT NULL CHECK 六态 / `start_date` / `end_date` / `branch_name` / `base_branch` NOT NULL / `branch_ready` DEFAULT 0 / `created_at` / `updated_at`
-- `idx_delivery_workspace_status(workspace_path, status)`
-- `idx_delivery_workspace_active_branch` 部分唯一:`ON (workspace_path, branch_name) WHERE branch_name IS NOT NULL AND status NOT IN ('delivered','cancelled')`
+- `id` PK / `workspace_name` NOT NULL / `title` NOT NULL / `description` DEFAULT '' / `status` NOT NULL CHECK 六态 / `start_date` / `end_date` / `branch_name` / `base_branch` NOT NULL / `branch_ready` DEFAULT 0 / `created_at` / `updated_at`
+- `idx_delivery_workspace_status(workspace_name, status)`
+- `idx_delivery_workspace_active_branch` 部分唯一:`ON (workspace_name, branch_name) WHERE branch_name IS NOT NULL AND status NOT IN ('delivered','cancelled')`
 
 `intent_deliveries` 关联边表(新库与迁移 `database/migrate/2026/08/06/033-intent_deliveries.sql` 同构):
 
@@ -94,7 +94,7 @@
 
 ## 交付只读 MCP 工具接线
 
-- `deliveries/tool-defs.ts` 是 framing-free 的核心(zod 形状 + 描述串 + `runFindDeliveries` / `runViewDelivery`),仿 `intents/tool-defs.ts` 的 find/view 模式,复用 store 的 `listDeliveries` / `getDelivery` / `listAssociatedIntents` / `getLatestDeliveryPr`;跨工作区读被 `resolveWorkspaceRoot(delivery.workspaceId) !== resolve(workspacePath)` 拦成友好的「未找到」。
+- `deliveries/tool-defs.ts` 是 framing-free 的核心(zod 形状 + 描述串 + `runFindDeliveries` / `runViewDelivery`),仿 `intents/tool-defs.ts` 的 find/view 模式,复用 store 的 `listDeliveries` / `getDelivery` / `listAssociatedIntents` / `getLatestDeliveryPr`;跨工作区读被 `resolveWorkspaceRoot(delivery.workspaceName) !== resolve(workspacePath)` 拦成友好的「未找到」。
 - 自动化面:进 `automations/mcp-freeze.ts` 的 `C3_MCP_TOOLS`(`isWrite: false`,`find_`/`view_` 前缀也会被 `classifyTool` 独立判成只读)与 `automations/c3-tools.ts` 的 `buildAutomationC3Tools`;`getAutomationToolManifest` 自动带出,表单可勾选。
 - 外部面:进 `external-mcp/tools.ts` 的目录与 `shared/src/protocol/settings.ts` 的 `EXTERNAL_MCP_READ_TOOLS`,分级 `read`;底部编译期目录钉死(built set == 名表)保持不变。
 - **「默认不勾选」的落法**:外部面把「可授权目录」与「新 key 默认集」拆成两份名表——`EXTERNAL_MCP_READ_TOOLS` 只作分级来源,`EXTERNAL_MCP_DEFAULT_TOOLS` 才是建 key 时服务端强制写入的初值,交付工具进前者不进后者;另有一条编译期断言钉死默认集只能取读级工具。自动化面靠「不进任何内置模板的默认 `toolAllowlist`」达成同一语义。

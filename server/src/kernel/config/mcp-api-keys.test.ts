@@ -26,6 +26,7 @@ import {
   seedMcpKey,
   useConfigDb,
 } from './config-fixture.js'
+import { findWorkspaceByName, registerWorkspace } from './workspace-store.js'
 
 // Run against a throwaway database so these tests never touch the developer's real
 // configuration.
@@ -45,8 +46,14 @@ function storedRecords(): Record<string, unknown>[] {
   return readStoredMcpKeys()
 }
 
-/** A workspace directory that actually exists, so canonicalization has something to resolve. */
+/** Register a real workspace directory and return its immutable name. */
 function makeWorkspace(name: string): string {
+  const p = join(dir, name)
+  mkdirSync(p, { recursive: true })
+  return registerWorkspace(p, name, Date.now()).name
+}
+
+function makeWorkspacePath(name: string): string {
   const p = join(dir, name)
   mkdirSync(p, { recursive: true })
   return canonicalizeWorkspacePath(p)!
@@ -88,10 +95,10 @@ describe('key format', () => {
     expect(a.key).not.toBe(b.key)
   })
 
-  it('binds exactly one canonicalized workspace and refuses a non-absolute path', async () => {
+  it('binds exactly one registered workspace name and refuses an unknown name', async () => {
     const ws = makeWorkspace('proj')
-    const { meta } = await createMcpApiKey('ci', `${ws}/`, READ_TOOLS, 1000)
-    expect(meta.workspace).toBe(ws)
+    const { meta } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
+    expect(meta.workspaceName).toBe(ws)
     await expect(createMcpApiKey('bad', 'relative/path', READ_TOOLS, 1000)).rejects.toThrow()
   })
 })
@@ -131,7 +138,7 @@ describe('persistence', () => {
       'lastUsedAt',
       'name',
       'tools',
-      'workspace',
+      'workspaceName',
     ])
     expect(JSON.stringify(meta)).not.toContain('salt')
   })
@@ -142,7 +149,7 @@ describe('persistence', () => {
     resetConfigCaches()
 
     const auth = await verifyMcpApiKey(key)
-    expect(auth).toEqual({ id: meta.id, workspace: ws, tools: ['find_intents'] })
+    expect(auth).toEqual({ id: meta.id, workspaceName: ws, tools: ['find_intents'] })
   })
 
   it('rejects a wrong secret under a real key id', async () => {
@@ -218,14 +225,17 @@ describe('legacy migration', () => {
     // A pre-scope record: `workspaces` array of one, no `tools`.
     const { key } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
     const [rec] = storedRecords()
-    const legacy: Record<string, unknown> = { ...rec, workspaces: [rec.workspace] }
-    delete legacy.workspace
+    const legacy: Record<string, unknown> = {
+      ...rec,
+      workspaces: [findWorkspaceByName(ws)!.path],
+    }
+    delete legacy.workspaceName
     delete legacy.tools
     seedMcpKey(rec.id as string, legacy)
 
     const auth = await verifyMcpApiKey(key)
     expect(auth).not.toBeNull()
-    expect(auth!.workspace).toBe(ws)
+    expect(auth!.workspaceName).toBe(ws)
     expect(auth!.tools).toEqual(READ_TOOLS)
   })
 
@@ -234,8 +244,11 @@ describe('legacy migration', () => {
     const b = makeWorkspace('b')
     const { key, meta } = await createMcpApiKey('multi', a, READ_TOOLS, 1000)
     const [rec] = storedRecords()
-    const legacy: Record<string, unknown> = { ...rec, workspaces: [a, b] }
-    delete legacy.workspace
+    const legacy: Record<string, unknown> = {
+      ...rec,
+      workspaces: [findWorkspaceByName(a)!.path, findWorkspaceByName(b)!.path],
+    }
+    delete legacy.workspaceName
     seedMcpKey(rec.id as string, legacy)
 
     // Dropped on load: gone from the roster, and the plaintext is now invalid.
@@ -249,7 +262,7 @@ describe('legacy migration', () => {
     const { key } = await createMcpApiKey('ghost', ws, READ_TOOLS, 1000)
     const [rec] = storedRecords()
     const legacy: Record<string, unknown> = { ...rec, workspaces: [] }
-    delete legacy.workspace
+    delete legacy.workspaceName
     seedMcpKey(rec.id as string, legacy)
 
     expect(listMcpApiKeys()).toHaveLength(0)
@@ -308,7 +321,7 @@ describe('lifecycle', () => {
     const { key, meta } = await createMcpApiKey('ci', a, READ_TOOLS, 1000)
     updateMcpApiKeyTools(meta.id, ['view_intent'])
     // The binding is immutable: the update changed tools, never the workspace.
-    expect((await verifyMcpApiKey(key))!.workspace).toBe(a)
+    expect((await verifyMcpApiKey(key))!.workspaceName).toBe(a)
     void b
   })
 
@@ -316,7 +329,7 @@ describe('lifecycle', () => {
     const ws = makeWorkspace('proj')
     const { key, meta } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
     expect(renameMcpApiKey(meta.id, ' release bot ')!.name).toBe('release bot')
-    expect((await verifyMcpApiKey(key))!.workspace).toBe(ws)
+    expect((await verifyMcpApiKey(key))!.workspaceName).toBe(ws)
   })
 
   it('records last use, coarsely, and never blanks it', async () => {
@@ -383,7 +396,7 @@ describe('canonicalizeWorkspacePath', () => {
   })
 
   it('collapses trailing separators and dot segments', () => {
-    const ws = makeWorkspace('proj')
+    const ws = makeWorkspacePath('proj')
     expect(canonicalizeWorkspacePath(`${ws}/`)).toBe(ws)
     expect(canonicalizeWorkspacePath(`${ws}/.`)).toBe(ws)
     expect(canonicalizeWorkspacePath(`${ws}/sub/..`)).toBe(ws)
@@ -391,7 +404,7 @@ describe('canonicalizeWorkspacePath', () => {
   })
 
   it('resolves a symlink to the same canonical path as its target', () => {
-    const ws = makeWorkspace('proj')
+    const ws = makeWorkspacePath('proj')
     const link = join(dir, 'link-to-proj')
     symlinkSync(ws, link)
     expect(canonicalizeWorkspacePath(link)).toBe(ws)

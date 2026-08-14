@@ -65,9 +65,9 @@ describe('queue control state', () => {
     resetQueueStoreForTests() // drop the in-memory mirror: read from disk only
 
     const active = listActiveQueueWorkspaces()
-    expect(active).toContain('/w/running')
-    expect(active).toContain('/w/paused')
-    expect(active).not.toContain('/w/stopped')
+    expect(active).toContain('running')
+    expect(active).toContain('paused')
+    expect(active).not.toContain('stopped')
   })
 
   it('upserts rather than duplicating a workspace row', () => {

@@ -17,7 +17,7 @@
 
 CREATE TABLE IF NOT EXISTS deliveries (
   id             TEXT PRIMARY KEY,              -- 交付唯一标识 (UUID v4)
-  workspace_path TEXT NOT NULL,                 -- 所属工作区绝对路径 (resolve 后)
+  workspace_name TEXT NOT NULL,                 -- 所属工作区绝对路径 (resolve 后)
   title          TEXT NOT NULL,                 -- 交付标题
   description    TEXT NOT NULL DEFAULT '',      -- 交付描述
   status         TEXT NOT NULL
@@ -32,9 +32,9 @@ CREATE TABLE IF NOT EXISTS deliveries (
   created_at     INTEGER NOT NULL,              -- 创建时间 (epoch ms)
   updated_at     INTEGER NOT NULL               -- 最后更新时间 (epoch ms)
 );
-CREATE INDEX IF NOT EXISTS idx_delivery_workspace_status ON deliveries(workspace_path, status);
--- 活动状态 (非 delivered/cancelled) 下 (workspace_path, branch_name) 唯一; 终态不占位,
+CREATE INDEX IF NOT EXISTS idx_delivery_workspace_status ON deliveries(workspace_name, status);
+-- 活动状态 (非 delivered/cancelled) 下 (workspace_name, branch_name) 唯一; 终态不占位,
 -- 允许后续交付复用历史分支名。空分支名不参与冲突 (SQLite 唯一索引视 NULL 互不相等)。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_workspace_active_branch
-  ON deliveries(workspace_path, branch_name)
+  ON deliveries(workspace_name, branch_name)
   WHERE branch_name IS NOT NULL AND status NOT IN ('delivered','cancelled');

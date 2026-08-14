@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: () => (async function* () {})() }))
@@ -117,7 +117,7 @@ function codexAutomation(over: Partial<Automation> = {}): Automation {
   return {
     id: 'auto-codex',
     type: 'llm',
-    workspaceId: '/ws',
+    workspaceName: '/ws',
     agentId: 'agent-codex',
     vendor: 'codex',
     mode: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },

@@ -17,7 +17,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -28,7 +28,7 @@ import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -42,8 +42,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -85,7 +85,7 @@ describe('openSpecReviewSession', () => {
     const { conn, sent } = fakeConn()
     await openSpecReviewSession(ctx, conn, {
       type: 'open_spec_review_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
     })
 
@@ -118,7 +118,7 @@ describe('openSpecReviewSession', () => {
     const { conn, sent } = fakeConn()
     await openSpecReviewSession(ctx, conn, {
       type: 'open_spec_review_session',
-      workspaceId,
+      workspaceName,
       intentId: b.id,
     })
 
@@ -137,7 +137,7 @@ describe('openSpecReviewSession', () => {
     const { conn, sent } = fakeConn()
     await openSpecReviewSession(ctx, conn, {
       type: 'open_spec_review_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
     })
 
@@ -152,7 +152,7 @@ describe('openSpecReviewSession', () => {
     const { conn, sent } = fakeConn()
     await openSpecReviewSession(ctx, conn, {
       type: 'open_spec_review_session',
-      workspaceId,
+      workspaceName,
       intentId: 'nope',
     })
 

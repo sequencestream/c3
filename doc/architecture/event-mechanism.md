@@ -321,7 +321,7 @@ GenericEventFilter = {
 
 **纯匹配器** `genericEventFilterMatches(automationWorkspacePath, filter, view)`（`server/src/kernel/events/event-match.ts`）只读取可信最小视图 `{ workspacePath, event: GenericEvent }`（`GenericEventEnvelope` 可直接满足），按固定顺序判断并给出 breakdown（维度名 `workspace`/`type`/`status`/`metadata`）：
 
-1. **workspace**：`automation.workspaceId == event.workspacePath`；
+1. **workspace**：`automation.workspaceName == event.workspacePath`；
 2. **type**：`eventTypeMatches(filter.type, event.type)`——精确相等或 filter 的 `<category>:*` 通配；
 3. **status**：`statuses` 缺省/空 = 任意；非空时事件必须携带**完全相等、区分大小写**的 status（事件无 status 则不命中）；
 4. **metadata**：缺省 = 不过滤；否则键值精确、区分大小写，`AND` 全真 / `OR` 任一真。

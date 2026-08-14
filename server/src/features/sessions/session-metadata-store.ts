@@ -27,6 +27,7 @@ import type { SessionKind, VendorId } from '@ccc/shared/protocol'
 import type { Automation } from '@ccc/shared/protocol'
 import { mintC3SessionId, type C3SessionId } from '../../kernel/agent/session/accessor.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
 
 // ---- Schema ----
 
@@ -48,7 +49,7 @@ export type SessionOwnerKind = 'intent' | 'discussion' | 'automation'
  */
 const COLUMNS = [
   'c3_id',
-  'workspace_path',
+  'workspace_name',
   'vendor',
   'vendor_session_id',
   'agent_id',
@@ -71,7 +72,7 @@ const PLACEHOLDER_TITLES = new Set([DEFAULT_TITLE, 'Untitled session'])
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS session_metadata (
   c3_id              TEXT PRIMARY KEY,
-  workspace_path     TEXT NOT NULL,
+  workspace_name     TEXT NOT NULL,
   vendor             TEXT NOT NULL,
   vendor_session_id  TEXT,
   agent_id           TEXT NOT NULL,
@@ -107,6 +108,7 @@ const VALID_STATES: readonly SessionMetadataState[] = [
 ]
 
 let schemaReady = false
+const workspaceKey = workspaceNameFor
 let nowFn: () => number = () => Date.now()
 
 /** Test-only: inject a clock (default `Date.now`). Pair with `resetStoreForTests`. */
@@ -175,7 +177,7 @@ function ensureSchema(d: Db): void {
     d.exec('ALTER TABLE work_session_metadata RENAME TO session_metadata')
   }
   d.exec(SCHEMA)
-  ensureColumn(d, 'session_metadata', 'workspace_path', 'TEXT NOT NULL DEFAULT ""')
+  ensureColumn(d, 'session_metadata', 'workspace_name', 'TEXT NOT NULL DEFAULT ""')
   ensureColumn(d, 'session_metadata', 'session_kind', "TEXT NOT NULL DEFAULT 'work'")
   ensureColumn(d, 'session_metadata', 'owner_kind', 'TEXT')
   ensureColumn(d, 'session_metadata', 'owner_id', 'TEXT')
@@ -193,9 +195,9 @@ function ensureSchema(d: Db): void {
   )
   d.exec(`
 CREATE INDEX IF NOT EXISTS idx_sm_workspace_kind_updated
-  ON session_metadata(workspace_path, session_kind, bound, last_modified DESC, state_updated_at DESC);
+  ON session_metadata(workspace_name, session_kind, bound, last_modified DESC, state_updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sm_workspace_vendor
-  ON session_metadata(workspace_path, vendor, vendor_session_id);
+  ON session_metadata(workspace_name, vendor, vendor_session_id);
 CREATE INDEX IF NOT EXISTS idx_sm_state_age
   ON session_metadata(state, state_updated_at);
 `)
@@ -278,7 +280,7 @@ export interface SessionMetadataRow {
 
 interface RawRow {
   c3_id: string
-  workspace_path: string
+  workspace_name: string
   vendor: string
   vendor_session_id: string | null
   agent_id: string
@@ -323,7 +325,7 @@ function narrowOwnerKind(k: string | null): SessionOwnerKind | null {
 function toRow(r: RawRow): SessionMetadataRow {
   return {
     c3Id: r.c3_id as C3SessionId,
-    workspacePath: r.workspace_path,
+    workspacePath: resolveWorkspaceRoot(r.workspace_name) ?? r.workspace_name,
     vendor: r.vendor as VendorId,
     vendorSessionId: r.vendor_session_id,
     agentId: r.agent_id,
@@ -387,11 +389,11 @@ export function upsertPendingRow(input: {
   const t = now()
   d.run(
     `INSERT OR REPLACE INTO session_metadata
-       (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+       (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
         last_modified, state, state_updated_at, kind, session_kind, owner_kind, owner_id, bound)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     input.pendingId,
-    input.workspacePath,
+    workspaceKey(input.workspacePath),
     input.vendor,
     null,
     input.agentId,
@@ -473,11 +475,11 @@ export function upsertForBind(input: {
     d.run('DELETE FROM session_metadata WHERE c3_id=? AND bound=?', input.pendingId, 0)
     d.run(
       `INSERT OR IGNORE INTO session_metadata
-         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+         (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind, session_kind, owner_kind, owner_id, bound)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       c3Id,
-      input.workspacePath,
+      workspaceKey(input.workspacePath),
       input.vendor,
       input.realId,
       input.agentId,
@@ -571,11 +573,11 @@ export function upsertBoundRow(input: {
   const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: input.sessionId })
   d.run(
     `INSERT INTO session_metadata
-       (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+       (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
         last_modified, state, state_updated_at, kind, session_kind, owner_kind, owner_id, bound)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(c3_id) DO UPDATE SET
-       workspace_path=excluded.workspace_path,
+       workspace_name=excluded.workspace_name,
        vendor=excluded.vendor,
        vendor_session_id=excluded.vendor_session_id,
        agent_id=excluded.agent_id,
@@ -588,7 +590,7 @@ export function upsertBoundRow(input: {
        owner_id=excluded.owner_id,
        bound=1`,
     c3Id,
-    input.workspacePath,
+    workspaceKey(input.workspacePath),
     input.vendor,
     input.sessionId,
     input.agentId,
@@ -744,7 +746,7 @@ export function getPendingIntent(pendingId: string): { agentId: string } | null 
 
 /**
  * The full table, sorted newest-first. The daily read path filters by
- * `workspace_path` at the SQL level (this returns everything for callers
+ * `workspace_name` at the SQL level (this returns everything for callers
  * that want the whole c3 — e.g. the rebuild path / debugging).
  */
 export function listAll(): SessionMetadataRow[] {
@@ -779,9 +781,9 @@ export function listForWorkspace(
   return d
     .all<RawRow>(
       `SELECT * FROM session_metadata
-         WHERE workspace_path=? AND session_kind IN (${placeholders}) AND bound=1
+         WHERE workspace_name=? AND session_kind IN (${placeholders}) AND bound=1
          ORDER BY (last_modified IS NULL), last_modified DESC, state_updated_at DESC`,
-      workspacePath,
+      workspaceKey(workspacePath),
       ...kinds,
     )
     .map(toRow)
@@ -800,9 +802,9 @@ export function listOwnedForWorkspace(workspacePath: string): SessionMetadataRow
   return d
     .all<RawRow>(
       `SELECT * FROM session_metadata
-         WHERE workspace_path=? AND bound=1
+         WHERE workspace_name=? AND bound=1
            AND owner_kind IS NOT NULL AND owner_id IS NOT NULL`,
-      workspacePath,
+      workspaceKey(workspacePath),
     )
     .map(toRow)
 }
@@ -821,8 +823,8 @@ export function countRealInRange(
 ): number {
   const d = db()
   if (!d) return 0
-  const where: string[] = ['workspace_path=?', 'bound=1', "session_kind='work'"]
-  const params: (string | number)[] = [workspacePath]
+  const where: string[] = ['workspace_name=?', 'bound=1', "session_kind='work'"]
+  const params: (string | number)[] = [workspaceKey(workspacePath)]
   if (startTime != null) {
     where.push('last_modified IS NOT NULL AND last_modified >= ?')
     params.push(startTime)
@@ -850,8 +852,8 @@ export function countBoundSessions(workspacePath: string): number {
   const d = db()
   if (!d) return 0
   const row = d.get<{ count: number }>(
-    'SELECT COUNT(*) AS count FROM session_metadata WHERE workspace_path=? AND bound=1',
-    workspacePath,
+    'SELECT COUNT(*) AS count FROM session_metadata WHERE workspace_name=? AND bound=1',
+    workspaceKey(workspacePath),
   )
   return row?.count ?? 0
 }
@@ -904,9 +906,9 @@ export async function validateLazy(input: {
   const t = now()
   const rows = d.all<RawRow>(
     `SELECT * FROM session_metadata
-       WHERE workspace_path=? AND bound=1
+       WHERE workspace_name=? AND bound=1
          AND (state_updated_at IS NULL OR ? - state_updated_at >= ?)`,
-    input.workspacePath,
+    workspaceKey(input.workspacePath),
     t,
     LAZY_VALIDATE_MS,
   )
@@ -1043,9 +1045,9 @@ export async function janitor(input: {
       continue
     }
     // Stale / orphaned / ghost: re-check.
-    const key = `${r.workspace_path}${r.vendor}`
+    const key = `${r.workspace_name}${r.vendor}`
     const b = buckets.get(key) ?? {
-      workspacePath: r.workspace_path,
+      workspacePath: resolveWorkspaceRoot(r.workspace_name) ?? r.workspace_name,
       vendor: r.vendor as VendorId,
       rowIds: [],
     }
@@ -1157,11 +1159,11 @@ export async function rebuildOne(input: {
     const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: s.vendorSessionId })
     d.run(
       `INSERT OR REPLACE INTO session_metadata
-         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+         (c3_id, workspace_name, vendor, vendor_session_id, agent_id, title,
           last_modified, state, state_updated_at, kind)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       c3Id,
-      input.workspacePath,
+      workspaceKey(input.workspacePath),
       input.vendor,
       s.vendorSessionId,
       agentId,

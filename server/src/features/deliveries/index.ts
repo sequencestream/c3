@@ -150,18 +150,18 @@ export const listDeliveriesHandler: Handler<'list_deliveries'> = (ctx, conn, msg
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
   const items = listDeliveries(abs)
   conn.send({
     type: 'deliveries',
-    workspaceId: msg.workspaceId,
+    workspaceName: msg.workspaceName,
     items,
     needsActionCount: countDeliveriesNeedingAction(items, (d) => deliveryMergeActionable(abs, d)),
   })
@@ -172,11 +172,11 @@ export const createDeliveryHandler: Handler<'create_delivery'> = (ctx, conn, msg
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
@@ -209,7 +209,7 @@ export const createDeliveryHandler: Handler<'create_delivery'> = (ctx, conn, msg
     })
     conn.send({
       type: 'create_delivery_result',
-      workspaceId: msg.workspaceId,
+      workspaceName: msg.workspaceName,
       delivery,
       prMergeNotice,
     })
@@ -237,7 +237,7 @@ export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = async (_
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  const workspacePath = resolveWorkspaceRoot(delivery.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(delivery.workspaceName)
   const ahead = workspacePath ? await readMainlineAhead(workspacePath, delivery) : null
   const branchAhead = workspacePath ? await readDeliveryBranchAhead(workspacePath, delivery) : null
   conn.send(detailFrame(delivery, undefined, ahead, branchAhead))
@@ -263,16 +263,16 @@ export const syncDeliveryMainlineHandler: Handler<'sync_delivery_mainline'> = as
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
   const delivery = getDelivery(msg.deliveryId)
-  if (!delivery || delivery.workspaceId !== msg.workspaceId) {
+  if (!delivery || delivery.workspaceName !== msg.workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
@@ -313,16 +313,16 @@ export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
   const delivery = getDelivery(msg.deliveryId)
-  if (!delivery || delivery.workspaceId !== msg.workspaceId) {
+  if (!delivery || delivery.workspaceName !== msg.workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
@@ -362,18 +362,21 @@ export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg
 function applyTransition(
   ctx: Parameters<Handler<'transition_delivery'>>[0],
   conn: Parameters<Handler<'transition_delivery'>>[1],
-  workspaceId: string,
+  workspaceName: string,
   deliveryId: string,
   to: DeliveryStatus,
   confirmVerified: boolean,
 ): void {
-  const abs = resolveWorkspaceRoot(workspaceId)
+  const abs = resolveWorkspaceRoot(workspaceName)
   if (!abs) {
-    conn.send({ type: 'error', error: { code: 'workspace.unknown', params: { id: workspaceId } } })
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { id: workspaceName } },
+    })
     return
   }
   const delivery = getDelivery(deliveryId)
-  if (!delivery || delivery.workspaceId !== workspaceId) {
+  if (!delivery || delivery.workspaceName !== workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
@@ -420,7 +423,14 @@ export const transitionDeliveryHandler: Handler<'transition_delivery'> = (ctx, c
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  applyTransition(ctx, conn, msg.workspaceId, msg.deliveryId, msg.to, msg.confirmVerified === true)
+  applyTransition(
+    ctx,
+    conn,
+    msg.workspaceName,
+    msg.deliveryId,
+    msg.to,
+    msg.confirmVerified === true,
+  )
 }
 
 export const cancelDeliveryHandler: Handler<'cancel_delivery'> = (ctx, conn, msg) => {
@@ -428,7 +438,7 @@ export const cancelDeliveryHandler: Handler<'cancel_delivery'> = (ctx, conn, msg
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  applyTransition(ctx, conn, msg.workspaceId, msg.deliveryId, 'cancelled', false)
+  applyTransition(ctx, conn, msg.workspaceName, msg.deliveryId, 'cancelled', false)
 }
 
 /**
@@ -464,16 +474,16 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
   const delivery = getDelivery(msg.deliveryId)
-  if (!delivery || delivery.workspaceId !== msg.workspaceId) {
+  if (!delivery || delivery.workspaceName !== msg.workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
@@ -527,7 +537,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
 
   // Idempotent shortcut: already bound to this exact branch → success, no git.
   if (delivery.branchReady && delivery.branchName === branchName) {
-    conn.send({ type: 'delivery_branch_init_result', workspaceId: msg.workspaceId, delivery })
+    conn.send({ type: 'delivery_branch_init_result', workspaceName: msg.workspaceName, delivery })
     return
   }
   if (delivery.branchReady && delivery.branchName !== branchName) {
@@ -589,7 +599,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
     const warning = existingHead === expectedHead ? undefined : 'delivery.branchBehindMain'
     conn.send({
       type: 'delivery_branch_init_result',
-      workspaceId: msg.workspaceId,
+      workspaceName: msg.workspaceName,
       delivery: updated,
       ...(warning ? { warning } : {}),
     })
@@ -612,7 +622,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
       adoptBranchAsIntentBase(updated)
       conn.send({
         type: 'delivery_branch_init_result',
-        workspaceId: msg.workspaceId,
+        workspaceName: msg.workspaceName,
         delivery: updated,
       })
       ctx.broadcastDeliveries(abs)
@@ -655,7 +665,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
   adoptBranchAsIntentBase(updated)
   conn.send({
     type: 'delivery_branch_init_result',
-    workspaceId: msg.workspaceId,
+    workspaceName: msg.workspaceName,
     delivery: updated,
   })
   ctx.broadcastDeliveries(abs)
@@ -679,16 +689,16 @@ export const cleanupDeliveryBranchHandler: Handler<'cleanup_delivery_branch'> = 
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceName } },
     })
     return
   }
   const delivery = getDelivery(msg.deliveryId)
-  if (!delivery || delivery.workspaceId !== msg.workspaceId) {
+  if (!delivery || delivery.workspaceName !== msg.workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
@@ -720,22 +730,25 @@ export const cleanupDeliveryBranchHandler: Handler<'cleanup_delivery_branch'> = 
  */
 function resolveAssociation(
   conn: Conn,
-  workspaceId: string,
+  workspaceName: string,
   deliveryId: string,
   intentId: string,
 ): { abs: string; delivery: Delivery; pr: IntentPr | null } | null {
-  const abs = resolveWorkspaceRoot(workspaceId)
+  const abs = resolveWorkspaceRoot(workspaceName)
   if (!abs) {
-    conn.send({ type: 'error', error: { code: 'workspace.unknown', params: { id: workspaceId } } })
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { id: workspaceName } },
+    })
     return null
   }
   const delivery = getDelivery(deliveryId)
-  if (!delivery || delivery.workspaceId !== workspaceId) {
+  if (!delivery || delivery.workspaceName !== workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return null
   }
   const intent = getIntent(intentId)
-  if (!intent || intent.workspaceId !== workspaceId) {
+  if (!intent || intent.workspaceName !== workspaceName) {
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return null
   }
@@ -766,7 +779,7 @@ export const linkIntentToDeliveryHandler: Handler<'link_intent_to_delivery'> = a
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const resolved = resolveAssociation(conn, msg.workspaceId, msg.deliveryId, msg.intentId)
+  const resolved = resolveAssociation(conn, msg.workspaceName, msg.deliveryId, msg.intentId)
   if (!resolved) return
   const { abs, delivery } = resolved
   const latestCommitHash = getIntent(msg.intentId)?.latestCommitHash ?? null
@@ -846,7 +859,7 @@ export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delive
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const resolved = resolveAssociation(conn, msg.workspaceId, msg.deliveryId, msg.intentId)
+  const resolved = resolveAssociation(conn, msg.workspaceName, msg.deliveryId, msg.intentId)
   if (!resolved) return
   const { abs, pr } = resolved
 
@@ -932,17 +945,20 @@ export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delive
  */
 function resolveDeliveryPrContext(
   conn: Conn,
-  workspaceId: string,
+  workspaceName: string,
   deliveryId: string,
   requireVerified: boolean,
 ): { abs: string; delivery: Delivery } | null {
-  const abs = resolveWorkspaceRoot(workspaceId)
+  const abs = resolveWorkspaceRoot(workspaceName)
   if (!abs) {
-    conn.send({ type: 'error', error: { code: 'workspace.unknown', params: { id: workspaceId } } })
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { id: workspaceName } },
+    })
     return null
   }
   const delivery = getDelivery(deliveryId)
-  if (!delivery || delivery.workspaceId !== workspaceId) {
+  if (!delivery || delivery.workspaceName !== workspaceName) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return null
   }
@@ -982,7 +998,7 @@ export const createDeliveryPrHandler: Handler<'create_delivery_pr'> = async (ctx
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const resolved = resolveDeliveryPrContext(conn, msg.workspaceId, msg.deliveryId, true)
+  const resolved = resolveDeliveryPrContext(conn, msg.workspaceName, msg.deliveryId, true)
   if (!resolved) return
   const { abs, delivery } = resolved
   const branchName = delivery.branchName!
@@ -1152,7 +1168,7 @@ export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, co
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
   }
-  const resolved = resolveDeliveryPrContext(conn, msg.workspaceId, msg.deliveryId, false)
+  const resolved = resolveDeliveryPrContext(conn, msg.workspaceName, msg.deliveryId, false)
   if (!resolved) return
   const { abs, delivery } = resolved
 

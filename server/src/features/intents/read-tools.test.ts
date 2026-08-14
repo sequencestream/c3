@@ -17,12 +17,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // Stub only the registry id↔path mapping (identity): synthetic test workspaces
-// are unregistered, so resolve/pathToId would otherwise return null. This makes
+// are unregistered, so resolve/pathToName would otherwise return null. This makes
 // `runView`'s cross-project guard resolve predictably.
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { runFind, runView } from './tool-defs.js'

@@ -68,14 +68,8 @@ const SESSION_HEADER = 'mcp-session-id'
 export interface ExternalMcpDeps {
   /** Verify a presented plaintext key against current storage. `null` ⇒ not authenticated. */
   authenticate: (key: string) => Promise<AuthenticatedMcpApiKey | null>
-  /**
-   * Map the key's bound canonical path onto the workspace path c3 itself uses, or
-   * `null` when no registered workspace matches (or its directory is gone).
-   * Returning the REGISTRY spelling (rather than a boolean) is deliberate: the
-   * canonical form is for equivalence checks only, while feature code must be
-   * handed the same path every internal caller uses.
-   */
-  resolveRegisteredWorkspace: (canonicalPath: string) => string | null
+  /** Resolve the key's bound workspace name to its registered path on disk. */
+  resolveRegisteredWorkspace: (workspaceName: string) => string | null
   /** Build the FULL externally-grantable catalog for one scope; this route filters it. */
   buildCatalog: (scope: ExternalMcpScope) => ExternalMcpTool[]
   /** Notified after each successful authentication (records "last used"). Best-effort. */
@@ -242,7 +236,7 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
       // 3. Target. A key whose workspace was unregistered (or whose directory is
       //    gone) reaches nothing — it never falls back to another workspace, and
       //    the response does not disclose the host path it was bound to.
-      const workspacePath = deps.resolveRegisteredWorkspace(auth.workspace)
+      const workspacePath = deps.resolveRegisteredWorkspace(auth.workspaceName)
       if (!workspacePath) return c.json(FORBIDDEN, 403)
 
       const scope: ExternalMcpScope = {

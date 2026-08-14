@@ -26,7 +26,7 @@ const WS = '/abs/ws'
 function makeIntent(over: Partial<Intent> = {}): Intent {
   return {
     id: 'I1',
-    workspaceId: 'ws-id',
+    workspaceName: 'ws-id',
     title: 'Add feature',
     shortEnTitle: 'add-feature',
     content: 'do the thing',

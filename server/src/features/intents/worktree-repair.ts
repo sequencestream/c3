@@ -26,11 +26,11 @@ import {
 } from './worktree.js'
 
 export const repairIntentWorktree: Handler<'repair_intent_worktree'> = (ctx, conn, msg) => {
-  const workspacePath = resolveWorkspaceRoot(msg.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(msg.workspaceName)
   if (!workspacePath) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }

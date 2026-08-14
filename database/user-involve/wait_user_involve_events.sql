@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,             -- 事件唯一标识 (UUID v4)
-  workspace_path TEXT NOT NULL,               -- 所属工作区绝对路径 (resolve 后); v1→v2 由 project_path 改名
+  workspace_name TEXT NOT NULL,               -- 所属工作区绝对路径 (resolve 后); v1→v2 由 project_path 改名
   session_kind  TEXT NOT NULL,               -- 产生会话的完整 SessionKind: 'work'|'intent'|'discussion'|'schedule'|'consensus'|'tool'|'spec'; 由调用方原样传入,驱动 WorkCenter 溯源跳转; v4→v5 由 source 改名(不再折叠为可跳转子集)
   session_id    TEXT,                         -- 产生会话的真实 id (work/intent/spec 会话 id、discussion id、schedule id); 读取端按此反查所属意图派生 intentId/intentTitle; v4→v5 由 source_id 改名; 历史行可能存意图对象 id(反查不到则降级)
   title         TEXT,                         -- 事件标题
@@ -17,5 +17,5 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   created_at    INTEGER NOT NULL,             -- 创建时间 (epoch ms)
   updated_at    INTEGER NOT NULL              -- 最后更新时间 (epoch ms)
 );
-CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_path, status);
+CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_name, status);
 CREATE INDEX IF NOT EXISTS idx_wui_session_status ON wait_user_involve_events(session_id, status);

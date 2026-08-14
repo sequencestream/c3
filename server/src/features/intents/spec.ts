@@ -19,7 +19,7 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { MACHINE_SPEC_APPROVER, PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, isRunning, removeViewer } from '../../runs.js'
-import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
+import { pathToName, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
 import { getDefaultMode } from '../../kernel/config/index.js'
 import { isInside } from '../../kernel/permission/tools.js'
 import { resolveSessionVendor, setSessionAgent } from '../../kernel/agent-config/index.js'
@@ -181,11 +181,11 @@ The current spec lives at \`${fileAbs}\`. Read it first to review what has alrea
 }
 
 export const writeSpecHandler: Handler<'write_spec'> = async (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -292,11 +292,11 @@ export function applySpecApproval(input: {
  * either; this is the defensive server guard, enforced transactionally in the store.
  */
 export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -346,11 +346,11 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
  * silently succeeding, so a double-click cannot manufacture a second audit row.
  */
 export const revokeSpecApprovalHandler: Handler<'revoke_spec_approval'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -404,11 +404,11 @@ export const revokeSpecApprovalHandler: Handler<'revoke_spec_approval'> = (ctx, 
  * ever written (`spec_path` null) — there is nothing to revise.
  */
 export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -495,7 +495,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   addViewer(specId, conn.deliver)
   conn.send({
     type: 'session_selected',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     sessionId: specId,
     title: intent.title,
     mode: rt.mode,
@@ -529,11 +529,11 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
  * `file_read` whose `file.path` echoes the absolute spec path the client awaits.
  */
 export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -564,7 +564,7 @@ export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
     const size = statSync(fileAbs).size
     conn.send({
       type: 'file_read',
-      workspaceId: msg.workspaceId,
+      workspaceName: msg.workspaceName,
       file: { path: intent.specPath, size, binary: false, truncated: false, content },
     })
   } catch (err) {
@@ -597,11 +597,11 @@ export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
  * `intent_logs_list` refresh keeps an already-open changelog tab current.
  */
 export const updateSpecContentHandler: Handler<'update_spec_content'> = (ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }

@@ -8,7 +8,7 @@ import type { MainAction } from './useSpecApprovalGate'
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title: 'Start me',
     shortEnTitle: null,
     content: 'Do work',
@@ -55,7 +55,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
 function fakeDelivery(id: string, title: string, status: DeliveryStatus): Delivery {
   return {
     id,
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title,
     description: '',
     status,
@@ -611,7 +611,7 @@ describe('IntentTitleBarActions.vue — 交付归属入口(三态)', () => {
     expect(w.emitted('standalone-delivery')).toEqual([
       [
         {
-          workspaceId: '/proj',
+          workspaceName: '/proj',
           intentId: 'i1',
           title: 'Fix login',
           description: 'Login breaks on retry',

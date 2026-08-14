@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 
 const queryImpl = vi.hoisted(() => ({ fn: (_opts: unknown): AsyncIterable<unknown> => emptyGen() }))
@@ -72,7 +72,7 @@ function claudeAutomation(over: Partial<Automation> = {}): Automation {
   return {
     id: 'auto-1',
     type: 'llm',
-    workspaceId: '/ws',
+    workspaceName: '/ws',
     agentId: 'agent-1',
     vendor: 'claude',
     mode: 'default',

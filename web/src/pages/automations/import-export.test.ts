@@ -15,7 +15,7 @@ function makeAutomation(over: Partial<Automation> = {}): Automation {
     type: 'command',
     config: { command: 'echo hi', name: 'Task One' },
     maxWallClockMs: null,
-    workspaceId: '/abs/ws',
+    workspaceName: '/abs/ws',
     vendor: 'claude',
     agentId: null,
     triggerType: 'cron',
@@ -130,12 +130,12 @@ describe('parseImportFile', () => {
 })
 
 describe('mapToCreateInput — fault-tolerant field mapping', () => {
-  const opts = { workspaceId: '/abs/current', agents: AGENTS }
+  const opts = { workspaceName: '/abs/current', agents: AGENTS }
 
   it('maps a full command automation and forces paused + current workspace + fresh instance state', () => {
     const raw = makeAutomation({
       id: 'exported-id',
-      workspaceId: '/abs/other',
+      workspaceName: '/abs/other',
       status: 'active',
       nextRunAt: 999,
       config: { command: 'echo hi', name: 'Kept Name' },
@@ -145,7 +145,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     const result = mapToCreateInput(raw, opts)
     expect(result.importable).toBe(true)
     if (!result.importable) return
-    expect(result.input.workspaceId).toBe('/abs/current')
+    expect(result.input.workspaceName).toBe('/abs/current')
     expect(result.input.initialStatus).toBe('paused')
     expect(result.input.initialName).toBe('Kept Name')
     expect(result.input.maxWallClockMs).toBe(5000)
@@ -333,7 +333,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     const result = mapToCreateInput(
       { type: 'llm', vendor: 'claude' },
       {
-        workspaceId: '/abs/current',
+        workspaceName: '/abs/current',
         agents: onlyDisabled,
       },
     )
@@ -346,7 +346,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     const result = mapToCreateInput(
       { type: 'llm', vendor: 'codex', agentId: 'x' },
       {
-        workspaceId: '/abs/current',
+        workspaceName: '/abs/current',
         agents: [],
       },
     )
@@ -358,7 +358,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
   it('a command item never needs an agent (agentId null)', () => {
     const result = mapToCreateInput(
       { type: 'command' },
-      { workspaceId: '/abs/current', agents: [] },
+      { workspaceName: '/abs/current', agents: [] },
     )
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.agentId).toBeNull()

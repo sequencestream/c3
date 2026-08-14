@@ -38,7 +38,7 @@ function ag(id: string, displayName: string, over: Partial<AgentConfig> = {}): A
 function disc(id: string, title: string, over: Partial<Discussion> = {}): Discussion {
   return {
     id,
-    workspaceId: '/home/proj-a',
+    workspaceName: '/home/proj-a',
     title,
     type: 'design',
     goal: '',

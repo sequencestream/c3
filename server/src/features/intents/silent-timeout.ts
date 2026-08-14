@@ -202,7 +202,7 @@ export function deriveSilentTimeoutActionDescriptor(
 ): ActionDescriptor | null {
   if (!intent.automate) return null
   if (intent.status !== 'todo' && intent.status !== 'in_progress') return null
-  const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
+  const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
   if (!workspacePath) return null
   const control = getQueueControl(workspacePath)
   if (control.state !== 'running') return null

@@ -35,6 +35,8 @@ export interface UiErrorDef {
 export const UI_ERROR_CODES = {
   // workspace / path / commands
   'workspace.unknown': { key: 'error.workspace.unknown', params: ['path'] },
+  'workspace.nameInvalid': { key: 'error.workspace.nameInvalid' },
+  'workspace.nameConflict': { key: 'error.workspace.nameConflict' },
   'path.notDirectory': { key: 'error.path.notDirectory', params: ['path'] },
   'command.listFailed': { key: 'error.command.listFailed', params: ['detail'] },
   // codes
@@ -211,7 +213,7 @@ export const UI_ERROR_CODES = {
   'delivery.createFailed': { key: 'error.delivery.createFailed', params: ['detail'] },
   'delivery.updateFailed': { key: 'error.delivery.updateFailed', params: ['detail'] },
   // A create/update would collide with an active delivery's branch name (the
-  // `(workspace_path, branch_name)` uniqueness; terminal deliveries don't hold
+  // `(workspace_name, branch_name)` uniqueness; terminal deliveries don't hold
   // it). Refused whole rather than silently overwriting. Also the orphan-defense
   // verdict: retrying an init whose remote branch head does NOT match the fetched
   // baseline is a conflict — the remote branch is never overwritten.
@@ -365,12 +367,12 @@ export const UI_ERROR_CODES = {
   // The key id named by an update/revoke no longer exists (already revoked, or
   // deleted by another administrator since the roster was loaded).
   'mcpApiKey.unknown': { key: 'error.mcpApiKey.unknown', params: ['id'] },
-  // A key was asked to bind a workspace id c3 does not have (or that no longer
+  // A key was asked to bind a workspace name c3 does not have (or that no longer
   // resolves). The binding is fixed at creation, so this is refused outright
   // rather than falling back to some other workspace.
   'mcpApiKey.unknownWorkspace': {
     key: 'error.mcpApiKey.unknownWorkspace',
-    params: ['workspaceId'],
+    params: ['workspaceName'],
   },
   // A tool scope named something outside the server's externally-grantable
   // catalog (or repeated a name). Rejected whole rather than partially applied,

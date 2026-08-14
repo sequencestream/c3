@@ -81,7 +81,7 @@ const ctx = {
 } as unknown as QueueActionContext
 
 interface EventRow {
-  workspace_id: string
+  workspace_name: string
   intent_id: string
   stage: string
   reason_code: string

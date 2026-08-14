@@ -32,15 +32,15 @@ export function installDashboardActions(ctx: AppCtx): void {
     ctx.loadDashboard()
   }
 
-  ctx.toggleWorkspaceAutomation = (workspaceId: string, enabled: boolean): void => {
+  ctx.toggleWorkspaceAutomation = (workspaceName: string, enabled: boolean): void => {
     // Non-admins never see the switch, but guard the write path too.
     if (!ctx.auth.isAdmin.value || !ctx.client) return
     // This row's toggle is already in flight ⇒ no re-entry (its switch is busy).
-    if (ctx.dashboardPending.value.has(workspaceId)) return
+    if (ctx.dashboardPending.value.has(workspaceName)) return
     const next = new Set(ctx.dashboardPending.value)
-    next.add(workspaceId)
+    next.add(workspaceName)
     ctx.dashboardPending.value = next
     // Reuse the batch gate message with a single-workspace list.
-    send({ type: 'set_workspaces_automation_enabled', workspaceIds: [workspaceId], enabled })
+    send({ type: 'set_workspaces_automation_enabled', workspaceNames: [workspaceName], enabled })
   }
 }

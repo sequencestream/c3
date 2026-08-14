@@ -17,9 +17,9 @@ import {
   WORK_SESSION_QUERY_START_TIME_KEY,
 } from './state'
 
-// Per-workspace Codes localStorage key: `c3.codes.<workspaceId>.<suffix>`.
-function codesKey(workspaceId: string, suffix: string): string {
-  return `c3.codes.${workspaceId}.${suffix}`
+// Per-workspace Codes localStorage key: `c3.codes.<workspaceName>.<suffix>`.
+function codesKey(workspaceName: string, suffix: string): string {
+  return `c3.codes.${workspaceName}.${suffix}`
 }
 
 // Install localStorage view-restore persistence + the post-`ready` restore
@@ -103,15 +103,15 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'intents' && saved.proj && list.some((w) => w.id === saved.proj)) {
+    if (saved.mode === 'intents' && saved.proj && list.some((w) => w.name === saved.proj)) {
       activeTab.value = 'intents'
       intentsProject.value = saved.proj
       // Same contract as the regular intent entry: the detail progress and PR
       // actions depend on the normalized workspace branch mode, so the restore
       // path must request it too instead of sitting on the default mode.
-      send({ type: 'load_workspace_setting', workspaceId: saved.proj })
-      send({ type: 'open_intent_session', workspaceId: saved.proj })
-      send({ type: 'list_intent_sessions', workspaceId: saved.proj })
+      send({ type: 'load_workspace_setting', workspaceName: saved.proj })
+      send({ type: 'open_intent_session', workspaceName: saved.proj })
+      send({ type: 'list_intent_sessions', workspaceName: saved.proj })
     }
   }
 
@@ -128,10 +128,10 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'discussion' && saved.proj && list.some((w) => w.id === saved.proj)) {
+    if (saved.mode === 'discussion' && saved.proj && list.some((w) => w.name === saved.proj)) {
       activeTab.value = 'discussion'
       discussionsProject.value = saved.proj
-      send({ type: 'list_discussions', workspaceId: saved.proj })
+      send({ type: 'list_discussions', workspaceName: saved.proj })
       if (saved.id) {
         activeDiscussionId.value = saved.id
         send({ type: 'open_discussion', discussionId: saved.id })
@@ -151,19 +151,19 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'automations' && saved.proj && list.some((w) => w.id === saved.proj)) {
+    if (saved.mode === 'automations' && saved.proj && list.some((w) => w.name === saved.proj)) {
       activeTab.value = 'automations'
       automationsProject.value = saved.proj
       selectedAutomationId.value = null
-      send({ type: 'list_automations', workspaceId: saved.proj })
+      send({ type: 'list_automations', workspaceName: saved.proj })
     }
   }
 
   // ---- Codes 内嵌 ChatColumn 持久化(per-workspace,只 localStorage,best-effort)----
   // 分隔条宽度(像素):缺失 / 解析失败 / 越界时回退默认 360,并夹到 [min, max]。
-  ctx.readCodesChatWidth = (workspaceId: string): number => {
+  ctx.readCodesChatWidth = (workspaceName: string): number => {
     try {
-      const raw = localStorage.getItem(codesKey(workspaceId, CODES_CHAT_WIDTH_KEY))
+      const raw = localStorage.getItem(codesKey(workspaceName, CODES_CHAT_WIDTH_KEY))
       const px = raw == null ? NaN : Number.parseInt(raw, 10)
       if (!Number.isFinite(px)) return CODES_CHAT_WIDTH_DEFAULT
       return Math.min(CODES_CHAT_WIDTH_MAX, Math.max(CODES_CHAT_WIDTH_MIN, px))
@@ -172,28 +172,28 @@ export function installPersistence(ctx: AppCtx): void {
     }
   }
 
-  ctx.persistCodesChatWidth = (workspaceId: string, px: number): void => {
+  ctx.persistCodesChatWidth = (workspaceName: string, px: number): void => {
     try {
-      localStorage.setItem(codesKey(workspaceId, CODES_CHAT_WIDTH_KEY), String(Math.round(px)))
+      localStorage.setItem(codesKey(workspaceName, CODES_CHAT_WIDTH_KEY), String(Math.round(px)))
     } catch {
       /* localStorage unavailable — degrade to no-memory */
     }
   }
 
   // 内嵌会话 id:缺失 / 空串回退 null。
-  ctx.readCodesSessionId = (workspaceId: string): string | null => {
+  ctx.readCodesSessionId = (workspaceName: string): string | null => {
     try {
-      const raw = localStorage.getItem(codesKey(workspaceId, CODES_CHAT_SESSION_KEY))
+      const raw = localStorage.getItem(codesKey(workspaceName, CODES_CHAT_SESSION_KEY))
       return raw && raw.length ? raw : null
     } catch {
       return null
     }
   }
 
-  ctx.persistCodesSessionId = (workspaceId: string, id: string | null): void => {
+  ctx.persistCodesSessionId = (workspaceName: string, id: string | null): void => {
     try {
-      if (id) localStorage.setItem(codesKey(workspaceId, CODES_CHAT_SESSION_KEY), id)
-      else localStorage.removeItem(codesKey(workspaceId, CODES_CHAT_SESSION_KEY))
+      if (id) localStorage.setItem(codesKey(workspaceName, CODES_CHAT_SESSION_KEY), id)
+      else localStorage.removeItem(codesKey(workspaceName, CODES_CHAT_SESSION_KEY))
     } catch {
       /* localStorage unavailable — degrade to no-memory */
     }
@@ -211,7 +211,7 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'codes' && saved.proj && list.some((w) => w.id === saved.proj)) {
+    if (saved.mode === 'codes' && saved.proj && list.some((w) => w.name === saved.proj)) {
       ctx.openCodes(saved.proj)
     }
   }

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -83,7 +83,7 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
     const a = createAutomation({
       type: 'command',
       config: { command: 'echo a' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 8 * * *',
       metadata: { pipeline: 'deploy', stage: '1' },
       mode: 'sandboxed',
@@ -92,7 +92,7 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
     const b = createAutomation({
       type: 'command',
       config: { command: 'echo b' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [
@@ -130,7 +130,7 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
     const a = createAutomation({
       type: 'command',
       config: { command: 'echo a' },
-      workspaceId: proj,
+      workspaceName: proj,
       cronExpression: '0 8 * * *',
       metadata: { pipeline: 'other' },
       mode: 'sandboxed',
@@ -139,7 +139,7 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
     const b = createAutomation({
       type: 'command',
       config: { command: 'echo b' },
-      workspaceId: proj,
+      workspaceName: proj,
       triggerType: 'event',
       cronExpression: '',
       eventFilters: [

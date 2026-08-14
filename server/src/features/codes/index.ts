@@ -1,7 +1,7 @@
 /**
  * `codes` feature handlers — read-only workspace code browsing.
  *
- * Every operation resolves the trust root from a registered workspace id and
+ * Every operation resolves the trust root from a registered workspace name and
  * accepts only workspace-relative paths. No handler writes to disk.
  */
 import { open, readdir, readFile, realpath, stat } from 'node:fs/promises'
@@ -111,9 +111,12 @@ async function safeRealpath(path: string): Promise<string | null> {
   }
 }
 
-export async function resolveCodePath(workspaceId: string, relInput: string): Promise<GuardResult> {
-  const registered = resolveWorkspaceRoot(workspaceId)
-  if (!registered) return { ok: false, error: { code: 'workspace.unknown', path: workspaceId } }
+export async function resolveCodePath(
+  workspaceName: string,
+  relInput: string,
+): Promise<GuardResult> {
+  const registered = resolveWorkspaceRoot(workspaceName)
+  if (!registered) return { ok: false, error: { code: 'workspace.unknown', path: workspaceName } }
 
   const rel = normalizeRel(relInput)
   if (rel.includes('\0') || isAbsolute(rel) || isWindowsAbsolute(rel) || hasForbiddenSegment(rel)) {
@@ -121,7 +124,7 @@ export async function resolveCodePath(workspaceId: string, relInput: string): Pr
   }
 
   const root = await safeRealpath(registered)
-  if (!root) return { ok: false, error: { code: 'workspace.unknown', path: workspaceId } }
+  if (!root) return { ok: false, error: { code: 'workspace.unknown', path: workspaceName } }
 
   const candidate = resolve(root, rel)
   const abs = await safeRealpath(candidate)
@@ -143,8 +146,8 @@ async function entryType(abs: string): Promise<CodeEntryType | null> {
   return null
 }
 
-async function listDir(workspaceId: string, rel: string): Promise<ServerToClient> {
-  const guarded = await resolveCodePath(workspaceId, rel)
+async function listDir(workspaceName: string, rel: string): Promise<ServerToClient> {
+  const guarded = await resolveCodePath(workspaceName, rel)
   if (!guarded.ok) return errorFrame(guarded.error)
   const type = await entryType(guarded.abs)
   if (type !== 'directory') return errorFrame({ code: 'codes.notDirectory', path: rel })
@@ -153,7 +156,7 @@ async function listDir(workspaceId: string, rel: string): Promise<ServerToClient
   for (const dirent of await readdir(guarded.abs, { withFileTypes: true })) {
     if (dirent.name === '.git') continue
     const childRel = guarded.rel ? `${guarded.rel}/${dirent.name}` : dirent.name
-    const child = await resolveCodePath(workspaceId, childRel)
+    const child = await resolveCodePath(workspaceName, childRel)
     if (!child.ok) continue
     const childType = await entryType(child.abs)
     if (!childType) continue
@@ -162,15 +165,15 @@ async function listDir(workspaceId: string, rel: string): Promise<ServerToClient
   entries.sort((a, b) =>
     a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1,
   )
-  return { type: 'dir_listed', workspaceId, rel: guarded.rel, entries }
+  return { type: 'dir_listed', workspaceName, rel: guarded.rel, entries }
 }
 
 function isBinary(buf: Buffer): boolean {
   return buf.includes(0)
 }
 
-async function readCodeFile(workspaceId: string, rel: string): Promise<ServerToClient> {
-  const guarded = await resolveCodePath(workspaceId, rel)
+async function readCodeFile(workspaceName: string, rel: string): Promise<ServerToClient> {
+  const guarded = await resolveCodePath(workspaceName, rel)
   if (!guarded.ok) return errorFrame(guarded.error)
   const s = await stat(guarded.abs)
   if (!s.isFile()) return errorFrame({ code: 'codes.notFile', path: rel })
@@ -193,7 +196,7 @@ async function readCodeFile(workspaceId: string, rel: string): Promise<ServerToC
     truncated,
   }
   if (!binary && !truncated) file.content = buf.toString('utf-8')
-  return { type: 'file_read', workspaceId, file }
+  return { type: 'file_read', workspaceName, file }
 }
 
 function shouldStopSearch(state: SearchState): boolean {
@@ -274,18 +277,18 @@ async function walkSearch(root: string, dirAbs: string, state: SearchState): Pro
 }
 
 async function searchCodes(
-  workspaceId: string,
+  workspaceName: string,
   query: string,
   mode: 'filename' | 'content',
   pattern: string,
 ): Promise<ServerToClient> {
-  const guarded = await resolveCodePath(workspaceId, '')
+  const guarded = await resolveCodePath(workspaceName, '')
   if (!guarded.ok) return errorFrame(guarded.error)
   const trimmed = query.trim()
   if (!trimmed) {
     return {
       type: 'codes_searched',
-      workspaceId,
+      workspaceName,
       query,
       mode,
       hits: [],
@@ -305,7 +308,7 @@ async function searchCodes(
   await walkSearch(guarded.root, guarded.root, state)
   return {
     type: 'codes_searched',
-    workspaceId,
+    workspaceName,
     query,
     mode,
     hits: state.hits,
@@ -316,7 +319,7 @@ async function searchCodes(
 
 export const listDirHandler: Handler<'list_dir'> = async (_ctx, conn, msg) => {
   try {
-    conn.send(await listDir(msg.workspaceId, msg.rel))
+    conn.send(await listDir(msg.workspaceName, msg.rel))
   } catch {
     conn.send(errorFrame({ code: 'codes.readFailed', path: msg.rel }))
   }
@@ -324,14 +327,14 @@ export const listDirHandler: Handler<'list_dir'> = async (_ctx, conn, msg) => {
 
 /**
  * Read-only workspace Git-status snapshot for the file tree. Resolves the trust
- * root from the registered workspace id (never a client path), then delegates to
+ * root from the registered workspace name (never a client path), then delegates to
  * the multi-repo-aware `collectGitStatus`. Any failure — unknown workspace,
  * non-git tree, git unavailable — degrades to an empty map rather than an error
  * frame, so a missing snapshot never breaks the tree. Always replies with
  * `code_git_status` so the client can clear a stale snapshot.
  */
-async function codeGitStatus(workspaceId: string): Promise<Record<string, CodeGitStatus>> {
-  const root = resolveWorkspaceRoot(workspaceId)
+async function codeGitStatus(workspaceName: string): Promise<Record<string, CodeGitStatus>> {
+  const root = resolveWorkspaceRoot(workspaceName)
   if (!root) return {}
   return collectGitStatus(root)
 }
@@ -339,16 +342,16 @@ async function codeGitStatus(workspaceId: string): Promise<Record<string, CodeGi
 export const getCodeGitStatusHandler: Handler<'get_code_git_status'> = async (_ctx, conn, msg) => {
   let files: Record<string, CodeGitStatus>
   try {
-    files = await codeGitStatus(msg.workspaceId)
+    files = await codeGitStatus(msg.workspaceName)
   } catch {
     files = {}
   }
-  conn.send({ type: 'code_git_status', workspaceId: msg.workspaceId, files })
+  conn.send({ type: 'code_git_status', workspaceName: msg.workspaceName, files })
 }
 
 export const readFileHandler: Handler<'read_file'> = async (_ctx, conn, msg) => {
   try {
-    conn.send(await readCodeFile(msg.workspaceId, msg.rel))
+    conn.send(await readCodeFile(msg.workspaceName, msg.rel))
   } catch {
     conn.send(errorFrame({ code: 'codes.readFailed', path: msg.rel }))
   }
@@ -356,7 +359,7 @@ export const readFileHandler: Handler<'read_file'> = async (_ctx, conn, msg) => 
 
 export const searchCodesHandler: Handler<'search_codes'> = async (_ctx, conn, msg) => {
   try {
-    conn.send(await searchCodes(msg.workspaceId, msg.query, msg.mode, msg.pattern ?? '*'))
+    conn.send(await searchCodes(msg.workspaceName, msg.query, msg.mode, msg.pattern ?? '*'))
   } catch {
     conn.send(errorFrame({ code: 'codes.searchFailed' }))
   }

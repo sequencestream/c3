@@ -125,10 +125,10 @@ function expectTerminalSchema(raw: Db): void {
   expect(idx.has('idx_intent_workspace_status')).toBe(true)
   expect(idx.has('idx_intent_project_status')).toBe(false)
   expect(idx.has('idx_req_project_status')).toBe(false)
-  // v10 → v11 column rename: intents/intent_chats key on workspace_path now.
-  expect(cols(raw, 'intents').has('workspace_path')).toBe(true)
+  // v10 → v11 column rename: intents/intent_chats key on workspace_name now.
+  expect(cols(raw, 'intents').has('workspace_name')).toBe(true)
   expect(cols(raw, 'intents').has('project_path')).toBe(false)
-  expect(cols(raw, 'intent_chats').has('workspace_path')).toBe(true)
+  expect(cols(raw, 'intent_chats').has('workspace_name')).toBe(true)
   expect(cols(raw, 'intent_chats').has('project_path')).toBe(false)
   // v8: git tracking columns are present.
   const ic = cols(raw, 'intents')

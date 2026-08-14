@@ -54,38 +54,38 @@
 请求工作区某一类会话列表。服务器从 `session_metadata` 投影读取 `bound=1`
 行并回复 `sessions`；缺省 `sessionKind` 为 `work`。
 
-**字段：** `workspaceId: string`, `sessionKind?: SessionKind`
+**字段：** `workspaceName: string`, `sessionKind?: SessionKind`
 
 ### `get_session_counts`
 
 请求工作区六类会话的运行中计数。服务器按 `session_metadata.session_kind`
 分组并与运行时状态交集，回复 `session_counts`。
 
-**字段：** `workspaceId: string`
+**字段：** `workspaceName: string`
 
 ### `list_dir`
 
-列出已注册工作区内某个相对目录的直接子项。只读。服务器必须通过 `workspaceId`
+列出已注册工作区内某个相对目录的直接子项。只读。服务器必须通过 `workspaceName`
 解析已注册工作区根,再解释 `rel`；绝不把 wire 上的任意路径当根。服务器回复
 `dir_listed` 或 `error`。
 
-**字段：** `workspaceId: string`, `rel: string`
+**字段：** `workspaceName: string`, `rel: string`
 
 ### `read_file`
 
 读取已注册工作区内某个相对文件。文本且未超限时返回内容；二进制或超大文件只返回元信息。
 服务器回复 `file_read` 或 `error`。
 
-**字段：** `workspaceId: string`, `rel: string`
+**字段：** `workspaceName: string`, `rel: string`
 
 ### `get_code_git_status`
 
-请求工作区的只读 Git 状态快照,用于装饰文件树。只携带 `workspaceId`,**绝不**携带客户端路径。
+请求工作区的只读 Git 状态快照,用于装饰文件树。只携带 `workspaceName`,**绝不**携带客户端路径。
 服务器基于 `git status --porcelain -z --untracked-files=all` 采集(单仓库工作区查该仓库,否则沿用
 子仓库发现规则逐仓库查询并加仓库相对前缀),始终回复 `code_git_status`(不回 `error`);非 Git、
 仓库不可读或 Git 不可用时降级为空快照,**不使 `list_dir` 失败**。严格只读,绝不修改索引或工作区。
 
-**字段：** `workspaceId: string`
+**字段：** `workspaceName: string`
 
 ### `search_codes`
 
@@ -94,38 +94,38 @@
 缩小被搜索的文件范围;目录恒被遍历,空/`*` 表示全部。搜索有结果上限和超时,并排除 `.git`。
 服务器回复 `codes_searched` 或 `error`。
 
-**字段：** `workspaceId: string`, `query: string`, `mode: 'filename' | 'content'`, `pattern?: string`
+**字段：** `workspaceName: string`, `query: string`, `mode: 'filename' | 'content'`, `pattern?: string`
 
 ### `create_session`
 
 在工作区中创建新的待处理（pending）会话并激活。可选的 `agentId` 记录为待处理会话的**意图**（ADR-0015）：其首次 run 使用该代理启动并冻结其供应商。缺失/为空 ⇒ **Auto**——不写入意图，run 回退到已配置的 `defaultAgentId`。
 
-**字段：** `workspacePath: string`, `agentId?: string`
+**字段：** `workspaceName: string`, `agentId?: string`
 
 ### `create_work_session`
 
 `create_session` 的会话页显式入口，语义固定为创建 `session_kind='work'`
 的工作会话。服务器回复同 `create_session`。
 
-**字段：** `workspaceId: string`, `agentId?: string`
+**字段：** `workspaceName: string`, `agentId?: string`
 
 ### `delete_session`
 
 删除会话及其磁盘上的转录记录。
 
-**字段：** `workspacePath: string`, `sessionId: string`
+**字段：** `workspaceName: string`, `sessionId: string`
 
 ### `select_session`
 
 激活一个会话；服务器回复 `session_selected`（历史记录 + 模式 + 状态）。
 
-**字段：** `workspacePath: string`, `sessionId: string`
+**字段：** `workspaceName: string`, `sessionId: string`
 
 ### `rename_session`
 
 重命名会话标题。
 
-**字段：** `workspacePath: string`, `sessionId: string`, `title: string`
+**字段：** `workspaceName: string`, `sessionId: string`, `title: string`
 
 ### `stop_run`
 
@@ -173,79 +173,79 @@
 
 获取**指定工作区**的外部 MCP API key 名册。服务器回复 `mcp_api_keys`。**不需要管理员权限**——名册只含元数据（名称、短前缀、时间、工具范围、不可用态），明文在生成之后永不可恢复；隐藏它只会让功能显得"不存在"而非受限。
 
-**字段：** `workspaceId: string`
+**字段：** `workspaceName: string`
 
 ### `create_mcp_api_key`
 
-生成一把长期外部 MCP API key，**只绑定 `workspaceId` 指定的这一个**已注册工作区（用不透明 id 寻址，客户端不构造路径）。id 无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`）。初始工具范围由服务端强制为全部只读工具，客户端不能通过伪造默认值取得写工具。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
+生成一把长期外部 MCP API key，**只绑定 `workspaceName` 指定的这一个**已注册工作区。名称无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`）。初始工具范围由服务端强制为全部只读工具，客户端不能通过伪造默认值取得写工具。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
 
-**字段：** `workspaceId: string`, `name: string`
+**字段：** `workspaceName: string`, `name: string`
 
 ### `update_mcp_api_key`
 
 改名和/或替换该 key 的工具范围；省略的字段不动。显式传空的 `tools` 表示"这把 key 什么也调不到"，**绝不解释为通配**；工具名必须在服务端目录内，未知或重复的名称使**整笔更新失败**（`mcpApiKey.unknownTool`）。无法重新签发或读出明文。工具范围变更后立即关闭该 key 已建立的活动 MCP 会话，下一次调用按新范围。回复 `mcp_api_keys`。**需要管理员权限。**
 
-**字段：** `workspaceId: string`, `id: string`, `name?: string`, `tools?: string[]`
+**字段：** `workspaceName: string`, `id: string`, `name?: string`, `tools?: string[]`
 
 ### `revoke_mcp_api_key`
 
 吊销（删除）一把 key。下一次请求即失败，同时关闭该 key 已建立的活动 MCP 会话。回复 `mcp_api_keys`。**需要管理员权限。**
 
-**字段：** `workspaceId: string`, `id: string`
+**字段：** `workspaceName: string`, `id: string`
 
 ### `load_workspace_setting`
 
 加载工作区设置。服务器回复 `workspace_setting`。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `save_workspace_setting`
 
 保存工作区设置。
 
-**字段：** `workspacePath: string`, `config: WorkspaceSetting`
+**字段：** `workspaceName: string`, `config: WorkspaceSetting`
 
 ### `list_intents`
 
 请求项目的 intent 列表，可按状态过滤。服务器回复 `intents`。如果账本不可用则返回 `error`。
 
-**字段：** `workspacePath: string`, `status?: IntentStatus`
+**字段：** `workspaceName: string`, `status?: IntentStatus`
 
 ### `open_intent_session`
 
 进入 intent 视图：打开或切换到通信会话。提供 `sessionId` 时打开该特定会话（并将其设为 `isCurrent`）；不提供时打开项目的 `is_current` 会话（若无则创建一个新的 `pending:` 会话）。回复 `session_selected` 加 `intents` 列表（intent-management RM-R4）。
 
-**字段：** `workspacePath: string`, `sessionId?: string`
+**字段：** `workspaceName: string`, `sessionId?: string`
 
 ### `list_intent_sessions`
 
 列出项目的 intent 通信会话。回复 `intent_sessions`。每个会话携带 `sessionId`、`title`（可为空）和 `updatedAt`。响应还携带活跃 agent run 会话的 `runStates` 快照。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `rename_intent_session`
 
 重命名 intent 通信会话。成功后服务器广播刷新后的 `intent_sessions` 列表。
 
-**字段：** `workspacePath: string`, `sessionId: string`, `title: string`
+**字段：** `workspaceName: string`, `sessionId: string`, `title: string`
 
 ### `delete_intent_session`
 
 删除 intent 通信会话：移除数据库行、移除运行时（中止任何活跃 run）、广播刷新后的列表。如果被删除的会话是 `isCurrent`，则最近的剩余会话成为新的默认。会话不存在时返回错误。
 
-**字段：** `workspacePath: string`, `sessionId: string`
+**字段：** `workspaceName: string`, `sessionId: string`
 
 ### `new_intent_session`
 
 启动全新的通信会话：将之前 `is_current` 的通信会话重置为 0，创建一个标记为当前的新会话，回复 `session_selected`（空历史记录）加 `intents` 列表。由 intent 标题栏中的 "+" 按钮触发（RM-R4）。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `refine_intent`
 
 重新启动通信会话，注入一个 intent 的内容作为种子，以进一步细化该 intent（RM-R7）。
 
-**字段：** `workspacePath: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `discussion_to_intent`
 
@@ -259,31 +259,31 @@
 
 为 `todo` 状态的 intent 启动后台工作会话，使用可配置的开发 skill（系统设置中的 `devSkill`；默认为空 ⇒ 不加 skill 前缀）。将其设为 `in_progress` 并记录 `lastWorkSessionId`（RM-R8）。worktree 模式下会先检查依赖是否已在主线可用；若依赖 intent 已 `done` 但关联 PR/MR 尚未确认合并，启动被拒绝并返回 `intent.dependencyNotMerged`，同时后台对这些依赖 PR/MR 做一次 best-effort 状态同步，完成后重新广播 intents。
 
-**字段：** `workspacePath: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `write_spec`
 
 为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/doc/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath` 并**同语句置 `spec_status='raw'`**(播种占位不算待批准),并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。真实内容落盘由编写运行结束时的内容指纹比对自动把 `raw` 提升为 `pending`（RM-R21）。
 
-**字段：** `workspaceId: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `read_spec`
 
 读取 intent 已撰写的 spec(供意图详情「spec」tab 渲染)。spec 位于工作区之外的集中根目录,工作区受限的 `read_file` 无法触达,故由本消息按 **intentId** 解析该 intent 存储的绝对 `specPath`,并**只在集中 spec 根目录内**读取(失败即拒,落在根目录之外的旧版工作区内 `.doc` 不被识别),回复 `read_file`(其 `file.path` 即该绝对 spec 路径)。
 
-**字段：** `workspaceId: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `approve_spec`
 
 人工审批检查点:批准 intent 的 spec，置 `spec_status='approved'`(兼容字段 `spec_approved=true` 同事务双写)并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)，`spec_status` 为 `raw`(仅播种占位)时同样拒绝(`intent.specNotWritten`)——只有 `pending` 可被批准。批准本身不开始工作，只让四态按钮推进到 `Start Work`（intent-management RM-R22）。
 
-**字段：** `workspaceId: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `open_spec_session`
 
 打开 intent 的 spec 撰写会话(`specSessionId`)供意图详情的「spec session」tab 查看。服务器解析该 intent 存储的 spec 会话 id;若其写入受限的 `'spec'` 运行时已被回收则按 `specPath` 重建(写入仍受限于 spec 目录、重新绑定 spec agent),回复 `session_selected`(历史 + 状态)。区别于 `open_intent_session`(打开的是另一类 `'intent'` 运行时的沟通/refine 会话);intent 的沟通会话 tab 仍走 `open_intent_session`。无 `specSessionId` 时拒绝(`error`)。
 
-**字段：** `workspaceId: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `update_intent_status`
 
@@ -295,7 +295,7 @@
 
 对一条 intent 的全部 `reviewing` PR/MR 行做一次手动状态同步（闸门是 PR 行本身，与 intent 自身状态无关）。服务器按 workspace 的 forge 规则逐条查询实时状态：GitHub 使用 `gh pr view <number> --json state,mergedAt,url`，GitLab 使用 `glab mr view <number> --output json`。仅当 forge 明确返回 merged/closed 时更新该行状态（聚合为 merged 会解除 worktree 依赖闸门，closed 不会被当作 merged）；无 PR 行、无 `reviewing` 行、CLI 缺失/未登录、查询失败均不写入 merged。回复 `sync_intent_pr_status_response`，其 `prStatus` 是同步后的聚合态、`changed` 表示任一行发生变化，前端据此展示同步中、成功、不可同步或失败反馈。
 
-**字段：** `workspaceId: string`, `intentId: string`
+**字段：** `workspaceName: string`, `intentId: string`
 
 ### `set_intent_automate`
 
@@ -313,19 +313,19 @@
 
 启动项目的自动化编排器（已在运行则为空操作）；回复 `automation_status`（RM-A2/A3）。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `stop_automation`
 
 停止编排器，中止当前开发 run；回复 `automation_status` → `idle`（RM-A7）。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `list_discussions`
 
 请求项目的 discussion 列表，可按状态过滤。服务器回复 `discussions`。如果 discussion 账本不可用则返回 `error`。
 
-**字段：** `workspacePath: string`, `status?: DiscussionStatus`
+**字段：** `workspaceName: string`, `status?: DiscussionStatus`
 
 ### `create_discussion`
 
@@ -333,7 +333,7 @@
 
 研究 run 是**可观察的**——每个回合作为 `research_message` 流式传输，其活跃状态作为 `research_run_status` 广播（`running` 然后完成/失败/进程死亡时 `ended`）——并在结算时再次推送 `discussions`。**研究成功后服务器自动启动编排**（守卫重新检查 `draft` + 无活跃 run；等同于自动 `start_discussion`）；研究失败则保持 `draft` 状态等待手动 **Start**。
 
-**字段：** `workspacePath: string`, `discussionType: string`, `goal: string`, `context?: string`
+**字段：** `workspaceName: string`, `discussionType: string`, `goal: string`, `context?: string`
 
 ### `open_discussion`
 
@@ -381,13 +381,13 @@
 
 在工作区创建 automation；服务器广播 `automations`。
 
-**字段：** `workspacePath: string`, `input: CreateAutomationInput`
+**字段：** `workspaceName: string`, `input: CreateAutomationInput`
 
 ### `list_automations`
 
 列出工作区的 automation；服务器回复 `automations`。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `update_automation`
 
@@ -423,19 +423,19 @@
 
 获取工作区级 MCP 服务器配置。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `save_workspace_mcp_config`
 
 保存工作区级 MCP 服务器配置。
 
-**字段：** `workspacePath: string`, `config: WorkspaceMcpConfig`
+**字段：** `workspaceName: string`, `config: WorkspaceMcpConfig`
 
 ### `list_pending_write_approvals`
 
 列出工作区的待处理写操作审批。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `approve_write_approval`
 
@@ -447,7 +447,7 @@
 
 请求供应商的工具清单，供 automation 表单中的工具选择使用。服务器回复 `automation_tool_manifest`。
 
-**字段：** `vendor: VendorId`, `workspacePath: string`
+**字段：** `vendor: VendorId`, `workspaceName: string`
 
 ### `skill_load_approval_resolve`
 
@@ -459,19 +459,19 @@
 
 查询某项目下每个已配置 skill repo 的安装链接状态（2026-06-12）。服务器回复 `skill_link_status`：按 `id` 返回 `_c3_<id>` 是否为两个共享公共 skill 目录（`.claude/skills`、`.agents/skills`）下的活跃软链。只读、零网络。外部 skill 已不在启动时挂载，改由设置面板显式安装。
 
-**字段：** `workspacePath: string`
+**字段：** `workspaceName: string`
 
 ### `install_skill`
 
 显式安装（或更新）某个已配置 skill repo（2026-06-12）：clone/pull 配置 ref 的最新 head，删除旧 `_c3_<id>` 软链/目录后重新建链到两个公共目录。保留一次性 `.gitignore` 追加确认。服务器回复 `skill_install_result`。替代已移除的启动时自动挂载——安装只由用户动作触发。
 
-**字段：** `workspacePath: string`, `skillId: string`
+**字段：** `workspaceName: string`, `skillId: string`
 
 ### `list_wait_user_events`
 
-请求工作区的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。列表走服务端时间游标分页：默认 `limit=20`，`cursorTime` 取上一页最后一条的 `createdAt`，`cursorExcludeId` 取上一页最后一条的 `id`；服务端按 `(created_at DESC, id DESC)` 查询严格早于该游标的下一页，因此同毫秒创建的事件不会重复或跳过。服务器回复 `wait_user_events`。`workspaceId` 是不透明工作区 id（与 `currentWorkspace` 一致）；服务端经 `resolveWorkspaceRoot` 解析为绝对路径后查库，未注册 id 降级为空快照——绝不把 id 当路径直接查询。
+请求工作区的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。列表走服务端时间游标分页：默认 `limit=20`，`cursorTime` 取上一页最后一条的 `createdAt`，`cursorExcludeId` 取上一页最后一条的 `id`；服务端按 `(created_at DESC, id DESC)` 查询严格早于该游标的下一页，因此同毫秒创建的事件不会重复或跳过。服务器回复 `wait_user_events`。`workspaceName` 是唯一工作区名称（与 `currentWorkspace` 一致）；服务端经 `resolveWorkspaceRoot` 解析为绝对路径后执行文件操作，业务表直接按名称查询，未注册名称降级为空快照。
 
-**字段：** `workspaceId: string`, `status?: WaitUserInvolveStatus`, `cursorTime?: number`, `cursorExcludeId?: string`, `limit?: number`
+**字段：** `workspaceName: string`, `status?: WaitUserInvolveStatus`, `cursorTime?: number`, `cursorExcludeId?: string`, `limit?: number`
 
 ### `update_wait_user_event`
 
@@ -509,13 +509,13 @@
 
 一个工作区某一 `sessionKind` 的会话列表，按最后修改降序排列。
 
-**字段：** `workspaceId: string`, `sessions: SessionInfo[]`, `sessionKind?: SessionKind`
+**字段：** `workspaceName: string`, `sessions: SessionInfo[]`, `sessionKind?: SessionKind`
 
 ### `session_counts`
 
 一个工作区六类会话的运行中计数,以及按业务条目去重的「进行中」条目数。
 
-**字段：** `workspaceId: string`, `counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>`, `ownerCounts: Record<'intent' | 'discussion' | 'automation', number>`
+**字段：** `workspaceName: string`, `counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>`, `ownerCounts: Record<'intent' | 'discussion' | 'automation', number>`
 
 `ownerCounts` 是顶部导航角标的权威口径:`intent`、`discussion` 由进程内会话状态(`session_status`)按
 owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一执行日志资格规则派生(所属自动化
@@ -527,7 +527,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 回复 `list_dir`。返回某个工作区相对目录的直接子项；每个子项路径仍为工作区相对路径。
 不返回 `.git`。
 
-**字段：** `workspaceId: string`, `rel: string`, `entries: CodeDirEntry[]`
+**字段：** `workspaceName: string`, `rel: string`, `entries: CodeDirEntry[]`
 
 ### `code_git_status`
 
@@ -536,21 +536,21 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 (折叠且从未加载的目录也能显示后代变化)。客户端只更新与当前 Codes 工作区匹配的快照,不触碰其他工作区。
 空映射表示干净/非 Git/查询失败。删除、重命名、复制、冲突不进入映射。
 
-**字段：** `workspaceId: string`, `files: Record<string, CodeGitStatus>`
+**字段：** `workspaceName: string`, `files: Record<string, CodeGitStatus>`
 
 ### `file_read`
 
 回复 `read_file`。返回文件元信息；当文件是文本且未超过大小上限时携带 `content`。二进制
 或超大文件只返回 `path` / `size` / `binary` / `truncated` 元信息。
 
-**字段：** `workspaceId: string`, `file: CodeFileRead`
+**字段：** `workspaceName: string`, `file: CodeFileRead`
 
 ### `codes_searched`
 
 回复 `search_codes`。返回至多服务器上限数量的命中；`truncated` 表示结果数触顶，
 `timedOut` 表示搜索达到运行时间上限。所有命中路径均为工作区相对路径且不包含 `.git`。
 
-**字段：** `workspaceId: string`, `query: string`, `mode: 'filename' | 'content'`, `hits: CodeSearchHit[]`, `truncated: boolean`, `timedOut: boolean`
+**字段：** `workspaceName: string`, `query: string`, `mode: 'filename' | 'content'`, `hits: CodeSearchHit[]`, `truncated: boolean`, `timedOut: boolean`
 
 ### `session_selected`
 
@@ -558,7 +558,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 **字段：**
 
-- `workspaceId: string`
+- `workspaceName: string`
 - `sessionId: string`
 - `title: string`
 - `mode: ModeToken` — 供应商原生 token，通过 `vendor` 的目录解析
@@ -608,13 +608,13 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `mcp_api_keys`
 
-外部 MCP API key 名册，回复上述四条 key 操作中的任意一条，作用域为**指定工作区**（`workspaceId`）。总是回该工作区的整份列表，故控制台无需对账增量；回包同时携带服务端可外部授权工具目录 `catalog`，供工具范围选择器渲染——前端不另存工具清单。
+外部 MCP API key 名册，回复上述四条 key 操作中的任意一条，作用域为**指定工作区**（`workspaceName`）。总是回该工作区的整份列表，故控制台无需对账增量；回包同时携带服务端可外部授权工具目录 `catalog`，供工具范围选择器渲染——前端不另存工具清单。
 
-每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceId, unavailable, tools, displayPrefix }`：`workspaceId` 是唯一绑定工作区的不透明 id，`null` 表示该工作区已注销（key 不可达）；`unavailable` 表示绑定工作区目录已消失/注销，key 够不到任何东西、控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
+每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceName, unavailable, tools, displayPrefix }`：`workspaceName` 是唯一绑定的工作区名称；`unavailable` 表示绑定工作区目录已消失或工作区已注销，key 够不到任何东西、控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
 
 `created` **仅**出现在 `create_mcp_api_key` 成功的回复里，是明文 key 在整条链路上唯一的落点：不存储、不重发，客户端丢弃后即不可恢复。
 
-**字段：** `workspaceId: string`, `keys: McpApiKeyMeta[]`, `catalog: { name, access }[]`, `created?: { meta: McpApiKeyMeta; key: string }`
+**字段：** `workspaceName: string`, `keys: McpApiKeyMeta[]`, `catalog: { name, access }[]`, `created?: { meta: McpApiKeyMeta; key: string }`
 
 ### `personalized_settings`
 
@@ -626,7 +626,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 工作区的标准化设置（回复 `load_workspace_setting` 或 `save_workspace_setting`）。`config` 含两个 git 分支模式字段：`gitBranchMode: 'current-branch' | 'worktree'`（缺省/未知值归一为 `worktree`）与 `defaultMainBranch?: string`（`worktree` 模式下新 worktree 的基准分支），并含 `sddEnabled?: boolean`（缺失/非布尔归一为 `true`，显式 `false` 保持关闭）。`detectedMainBranch?` 是服务端探测到的仓库默认分支（`origin/HEAD` → 当前 HEAD），仅在 `load` 回复时下发，表单用它预填 `defaultMainBranch`（已保存值优先于探测值）。
 
-**字段：** `workspacePath: string`, `config: WorkspaceSetting`, `detectedMainBranch?: string`
+**字段：** `workspaceName: string`, `config: WorkspaceSetting`, `detectedMainBranch?: string`
 
 ### `intents`
 
@@ -634,7 +634,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `create_intent` / `create_intent_result`
 
-`create_intent { workspaceId, content?, base? }` 是不经过智能体确认的登记入口。服务端在单个事务中创建一条 `title="new intent"`、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志，正文取 `content`（省略即空）。仅向请求连接回复 `create_intent_result { workspaceId, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端凭回执中的精确 id 即可选中并落点「意图会话」（可将回执意图乐观合并进本地快照，不要求先等广播），账本仍以后续 `intents` 快照为准；不得按标题或排序猜测。带内容创建成功后允许会话页内加载直至 `intentSessionId` 回填。
+`create_intent { workspaceName, content?, base? }` 是不经过智能体确认的登记入口。服务端在单个事务中创建一条 `title="new intent"`、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志，正文取 `content`（省略即空）。仅向请求连接回复 `create_intent_result { workspaceName, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端凭回执中的精确 id 即可选中并落点「意图会话」（可将回执意图乐观合并进本地快照，不要求先等广播），账本仍以后续 `intents` 快照为准；不得按标题或排序猜测。带内容创建成功后允许会话页内加载直至 `intentSessionId` 回填。
 
 `base` 是互斥的基准来源，决定落库的 `base_branch`：`{ kind: 'delivery', deliveryId }` 只交出交付 id，分支由服务端从本工作区交付记录读出（交付不存在/跨工作区回 `intent.deliveryContextUnknown`，分支未就绪或为空回 `delivery.guard.branchNotReady`）；`{ kind: 'branch', branch }` 交出分支名（空白回 `intent.baseBranchRequired`）。省略 `base` 走工作区主分支解析链。所有拒绝都发生在写库之前，被拒的创建不留任何意图。
 
@@ -642,13 +642,13 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `start_intent_session`
 
-`start_intent_session { workspaceId, intentId, text, images? }` 为尚无 `intentSessionId` 的指定意图创建 owner 沟通会话并发送首条消息。空文本且无图片不创建；已有绑定返回冲突。成功沿用 `session_selected`、运行事件和 `intents` 快照。owner 会话后续调用 `save_intents` 时，批次必须恰好一项携带 owner intent ID，落库前校验；拆分出的其他项省略 ID 并作为 `todo` 新建。
+`start_intent_session { workspaceName, intentId, text, images? }` 为尚无 `intentSessionId` 的指定意图创建 owner 沟通会话并发送首条消息。空文本且无图片不创建；已有绑定返回冲突。成功沿用 `session_selected`、运行事件和 `intents` 快照。owner 会话后续调用 `save_intents` 时，批次必须恰好一项携带 owner intent ID，落库前校验；拆分出的其他项省略 ID 并作为 `todo` 新建。
 
 ### `delete_intent`
 
-`delete_intent { workspaceId, intentId }` 永久删除意图及其 c3 管理的本地资源。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝）；随后停止并删除关联会话、删除确定性的本地 worktree 与已记录的 `intent/` 本地分支，并在事务中清除依赖边、会话关联、生命周期日志和意图记录。会话清理按会话真实供应商分派：只有会话存储支持删除的供应商（当前为 claude）才删除其 native transcript，codex 等仅回收 c3 侧引用；清理的异常边界落在每一步上，单步失败只记录告警，不跳过其后的步骤，也不阻断其余会话与本地资源、意图记录的清理。远端分支和 PR 不受影响。
+`delete_intent { workspaceName, intentId }` 永久删除意图及其 c3 管理的本地资源。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝）；随后停止并删除关联会话、删除确定性的本地 worktree 与已记录的 `intent/` 本地分支，并在事务中清除依赖边、会话关联、生命周期日志和意图记录。会话清理按会话真实供应商分派：只有会话存储支持删除的供应商（当前为 claude）才删除其 native transcript，codex 等仅回收 c3 侧引用；清理的异常边界落在每一步上，单步失败只记录告警，不跳过其后的步骤，也不阻断其余会话与本地资源、意图记录的清理。远端分支和 PR 不受影响。
 
-**字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
+**字段：** `workspaceName: string`, `items: Intent[]`, `sddEnabled: boolean`
 
 ### `dev_launch_progress`
 
@@ -660,7 +660,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 项目的 intent 通信会话列表（回复 `list_intent_sessions` 或在更改后推送）。`runStates` 是哪些列出的会话有活跃 agent run 的实时快照（id → `'running'`）——缺失条目表示没有活跃 run。每次列表发送都携带（首次获取 / 重连重新获取 / 状态变更推送），因此刷新或重连可权威地对账后台会话的 run 状态（与持久化 `status` 解耦）。
 
-**字段：** `workspacePath: string`, `items: IntentSessionInfo[]`, `runStates?: Record<string, 'running'>`
+**字段：** `workspaceName: string`, `items: IntentSessionInfo[]`, `runStates?: Record<string, 'running'>`
 
 ### `automation_status`
 
@@ -672,7 +672,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 项目的 discussion 列表（回复 `list_discussions`，或在更改后推送）。`runStates` 是哪些列出的 discussion 有活跃编排 run 的实时快照（id → `running`/`paused`）——仅活跃条目存在。`researchStates` 是只读研究阶段的伴生快照（id → `running`，仅活跃研究 run 的 discussion 存在）。两者每次列表发送都携带，因此刷新或重连可权威地重建右侧面板的研究阶段或编排 run 状态。
 
-**字段：** `workspacePath: string`, `items: Discussion[]`, `runStates?: Record<string, 'running' | 'paused'>`, `researchStates?: Record<string, 'running'>`
+**字段：** `workspaceName: string`, `items: Discussion[]`, `runStates?: Record<string, 'running' | 'paused'>`, `researchStates?: Record<string, 'running'>`
 
 ### `discussion_detail`
 
@@ -820,7 +820,7 @@ Socket 断连自动 resume 遥测（AS-R18，全部可选/正常回合不出现�
 
 工作区的 automation 列表（回复 `list_automations` 或在创建/更新/删除后广播）。
 
-**字段：** `workspacePath: string`, `items: Automation[]`
+**字段：** `workspaceName: string`, `items: Automation[]`
 
 ### `automation_detail`
 
@@ -844,7 +844,7 @@ automation 的执行日志。
 
 工作区级 MCP 服务器配置（回复 `get_workspace_mcp_config`）。
 
-**字段：** `workspacePath: string`, `config: WorkspaceMcpConfig`
+**字段：** `workspaceName: string`, `config: WorkspaceMcpConfig`
 
 ### `automation_write_approval_pending`
 
@@ -862,7 +862,7 @@ automation 的执行日志。
 
 工作区的待处理写操作审批列表（回复 `list_pending_write_approvals`）。
 
-**字段：** `workspacePath: string`, `items: PendingWriteApproval[]`
+**字段：** `workspaceName: string`, `items: PendingWriteApproval[]`
 
 ### `automation_tool_manifest`
 
@@ -878,7 +878,7 @@ automation 的执行日志。
 
 每条 `WaitUserInvolveEvent` 的溯源跳转契约（WorkCenter 据此跳回来源）：
 
-- `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_session` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
+- `workspaceName`：唯一且不可变的工作区名称（不是路径）。store 以 `workspace_name` 持久关联，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_session` / `open_spec_session` / 讨论 / 计划）一致。工作区已注销的行不再可路由。
 - `sessionKind`：产生事件的运行的完整 `SessionKind`（`work | intent | discussion | automation | consensus | tool | spec`），由调用方原样写入（不再折叠为可跳转子集）；driver 路径取运行的 `sessionKind`、agent 网控路径取 gate 派生。协议层类型为 `string`，前端 `jumpToSource` 据此 switch 路由，未识别取值兜底进控制台。
 - `sessionId`：产生事件的真实会话 id（work/intent/spec 会话 id、discussion id、automation id）。无归属事件的溯源跳转据 `sessionKind + sessionId` 路由；为 `null` 时降级到对应列表页且不选中。历史行可能携带意图对象 id（非会话 id），这类行反查不到意图、跳转降级，不回填。
 - `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_work_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。`intentId` 非空即为溯源跳转的分流条件（与 `intentLevel` 无关）：跳意图页并选中该意图，`sessionKind` 只决定意图详情子页签（`spec`→编写规范、`intent`→意图会话、`work`/`tool`→默认页签）。
@@ -895,13 +895,13 @@ automation 的执行日志。
 
 回复 `get_skill_link_status`（2026-06-12）：每个已配置 skill repo 一条 `SkillLinkStatus`，报告 `_c3_<id>` 在两个共享公共目录下的软链存在性。
 
-**字段：** `workspacePath: string`, `statuses: SkillLinkStatus[]`（`SkillLinkStatus = { id, claudeSkills, agentsSkills }`）
+**字段：** `workspaceName: string`, `statuses: SkillLinkStatus[]`（`SkillLinkStatus = { id, claudeSkills, agentsSkills }`）
 
 ### `skill_install_result`
 
 回复 `install_skill`（2026-06-12）。`ok` 表示该 skill 已 clone/pull 到 ref 最新 head 并重新链入两个公共目录。失败时 `reason` 为机器标记（`not-configured` / `repo-error` / `gitignore-cancelled`，UI 映射文案），`detail` 为英文调试文本（非 UI 文案）。
 
-**字段：** `workspacePath: string`, `skillId: string`, `ok: boolean`, `reason?: string`, `detail?: string`
+**字段：** `workspaceName: string`, `skillId: string`, `ok: boolean`, `reason?: string`, `detail?: string`
 
 ### `pong`
 
@@ -911,7 +911,7 @@ automation 的执行日志。
 
 ## 工作区和会话类型
 
-- **`WorkspaceInfo`** — `{ id, name, path, lastAccessed }`。已注册的项目目录；`id` 是服务器分配的不透明工作区身份，所有 workspace-scoped 操作只认 `id`。`path` 是解析后的绝对路径，仅供 WorkspaceSwitcher 下拉展示以区分同名工作区，不作身份、服务端也不接受它回流作 id。
+- **`WorkspaceInfo`** — `{ name, path, lastAccessed }`。已注册的项目目录；`name` 去除首尾空白后为 1–64 个 Unicode 字符，全局唯一、区分大小写、创建后不可修改，所有 workspace-scoped 操作只认名称。`path` 是解析后的绝对路径，仅供文件系统操作和 WorkspaceSwitcher 辅助展示，不作为关联身份。
 - **`SessionInfo`** — `{ sessionId, title, lastModified, mode, isToolSession, vendor, state?, sessionKind?, ownerKind?, ownerId?, bound? }`。工作区中的一个会话。`sessionId` 是线路上的会话句柄；`vendor` 是拥有供应商的标签，来自 `session_metadata` 投影/跨供应商 accessor（ADR-0013）——显示维度（侧边栏颜色点 / 过滤 / 同供应商代理切换候选项）。`mode` 是供应商原生 `ModeToken`，根据此行的 `vendor` 通过该供应商的 `VendorModeCatalog` 解释。`sessionKind` 是业务分类(work/intent/spec/discussion/automation/tool)，`ownerKind`/`ownerId` 是可空逻辑归属，供前端纯跳回规则使用；owner 为空表示不可跳回。`state` 是支持此线路条目的投影行生命周期状态（`session_metadata` 投影），驱动侧边栏新鲜度 UX：`born`/`alive` 为正常列表项；`stale` 显示 "Unvalidated" 标签；`orphaned` 灰显该行（原生 store 已清除会话）；`ghost` 显示 "Retry" 操作（原生 store 错误，不知该行是否真实）。
 - **`CodeDirEntry`** — `{ name, path, type, gitStatus? }`。`path` 为工作区相对路径；`type` 为 `file` 或 `directory`。`gitStatus` 可选,客户端由 `code_git_status` 快照合并填充,缺失等价于无 Git 状态(兼容非 Git 工作区及旧数据)。
 - **`CodeGitStatus`** — `{ modified, untracked, staged }`。文件工作树状态的**可组合标志**(非互斥枚举):`MM`/`AM` 同时为 `staged` 且 `modified`,`untracked` 不与另外两项组合。来自只读 `git status --porcelain`;删除、重命名、复制、冲突不产生此结构。
@@ -962,7 +962,7 @@ automation 的执行日志。
 
 - **`IntentPriority`** — `'P0' | 'P1' | 'P2' | 'P3'`（P0 最高）。
 - **`IntentStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`。
-- **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastWorkSessionId, automate, createdAt, updatedAt, completedAt, runStatus, sessionActive, actionDescriptor, intentSessionId, specSessionId }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态，仅描述 `in_progress` 工作会话。`sessionActive: boolean` 是发送时派生的瞬时活跃信号：`intentSessionId`、`specSessionId`、`lastWorkSessionId` 三者任一非空且被运行注册表 `isRunning` 判活即为 `true`，覆盖三类会话、不受意图 `status` 限制，可与 `runStatus='idle'/'dangling'` 共存；每次发送从注册表重新派生，不落库不缓存。`intentSessionId` 是 refine/沟通会话，`specSessionId` 是撰写/精炼 spec 会话，`lastWorkSessionId` 是最近一次由 intent 启动的工作会话回链，三者语义不同。`actionDescriptor: ActionDescriptor | null` 是发送时派生的「下一步」投影(见下),无阻塞时为 `null`。
+- **`Intent`** — `{ id, workspaceName, title, content, priority, module, status, dependsOn, lastWorkSessionId, automate, createdAt, updatedAt, completedAt, runStatus, sessionActive, actionDescriptor, intentSessionId, specSessionId }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态，仅描述 `in_progress` 工作会话。`sessionActive: boolean` 是发送时派生的瞬时活跃信号：`intentSessionId`、`specSessionId`、`lastWorkSessionId` 三者任一非空且被运行注册表 `isRunning` 判活即为 `true`，覆盖三类会话、不受意图 `status` 限制，可与 `runStatus='idle'/'dangling'` 共存；每次发送从注册表重新派生，不落库不缓存。`intentSessionId` 是 refine/沟通会话，`specSessionId` 是撰写/精炼 spec 会话，`lastWorkSessionId` 是最近一次由 intent 启动的工作会话回链，三者语义不同。`actionDescriptor: ActionDescriptor | null` 是发送时派生的「下一步」投影(见下),无阻塞时为 `null`。
 - **`ActionLabelCode`** — `'vendor_auth_invalid' | 'vendor_quota_exhausted' | 'spec_awaiting_approval' | 'spec_rework_exhausted' | 'permission_pending' | 'ask_user_question_pending' | 'dependency_blocked' | 'silent_timeout'`。阻塞态的稳定原因码,是**本地化码而非文案**:服务端只说是哪种情形,措辞由客户端拥有。闭集,只有确实需要独立「下一步」的阻塞态才新增一项。`silent_timeout` 是「队列在跑、却既无进展也无任何已知等待原因」的派生结论(见 intent-management RM-R38);阈值是**服务端单一常量**,客户端只展示结论、不自行计时。
 - **`ActionTarget`** — 以 `type` 判别的联合:**只承载导航**,不含 URL、命令或自由文本 payload。当前分支:
   - `{ type: 'system-settings-agent', vendor, agentId }` — 系统设置 Agent 页签并定位出错的那一行(`vendor` 亦是行已删除时的兜底锚点);
@@ -974,7 +974,7 @@ automation 的执行日志。
 - **`ActionDescriptor`** — `{ labelCode: ActionLabelCode, target: ActionTarget }`。一条派生的「下一步」:展示什么 + 跳到哪里,最小必要集。**运行时展示投影,不是业务状态**——每次发送(列表 / 刷新 / 广播)从已有事实按优先级重新派生(vendor 阻塞 → 待处理 wait-user 事件 → 规格返工触顶 → spec 待批准 → 依赖阻塞 → 静默超时),不落库、不缓存,也不改变意图 `status`、队列判定或任何闸门。依赖阻塞的目标只携带前序意图 id,标题与状态由客户端从同一批 `intents` 读模型解析,目标不在当前视野时提示语不声称标题。派生只暴露稳定原因码与导航所需身份,**绝不**携带凭据、供应商原始错误全文或响应体。
 - **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_session` 可解析）。`save_intent_directly`（automation 路径）的 schema 不含该字段。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
-- **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
+- **`AutomationStatus`** — `{ workspaceName, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
 
 参见 [intent-management 规范](../../domains/core/intent-management/intent-management-spec.md)。
 
@@ -982,7 +982,7 @@ automation 的执行日志。
 
 - **`DiscussionStatus`** — `'draft' | 'in_progress' | 'completed' | 'cancelled'`。
 - **`DiscussionSpeakerKind`** — `'organizer' | 'agent' | 'human'`。消息作者类别。
-- **`Discussion`** — `{ id, workspacePath, title, type, goal, context, researchResult, researchSessionId?, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`researchSessionId` 是研究 run 自身的 vendor session id：研究不是一次性调用而是**正式会话**（transcript 由 vendor 落盘、结束后仍可 resume、在会话页归入既有的 `discussion` 类）。研究上报 session id 时写入；本次改动之前创建的 discussion，以及在上报 id 之前就失败的 run，该字段**缺省**（忽略它的客户端行为与改动前完全一致）。研究会话的追问与停止**复用既有会话通道**（`select_session` / `user_prompt` / `stop_run`），不新增任何 client→server 消息类型；一轮结算时其最后一条助手文本会替换 `researchResult` 并推送刷新后的 `discussions`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
+- **`Discussion`** — `{ id, workspaceName, title, type, goal, context, researchResult, researchSessionId?, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`researchSessionId` 是研究 run 自身的 vendor session id：研究不是一次性调用而是**正式会话**（transcript 由 vendor 落盘、结束后仍可 resume、在会话页归入既有的 `discussion` 类）。研究上报 session id 时写入；本次改动之前创建的 discussion，以及在上报 id 之前就失败的 run，该字段**缺省**（忽略它的客户端行为与改动前完全一致）。研究会话的追问与停止**复用既有会话通道**（`select_session` / `user_prompt` / `stop_run`），不新增任何 client→server 消息类型；一轮结算时其最后一条助手文本会替换 `researchResult` 并推送刷新后的 `discussions`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
 - **`DiscussionMessage`** — `{ id, discussionId, seq, speakerKind, speakerAgentId, speakerName, content, createdAt }`。一条消息，按每个 discussion 单调递增的 `seq`（从 1 开始）排序。
 - **`ResearchMessage`** — `{ discussionId, seq, createdAt } & ({ kind: 'text', text } | { kind: 'tool_use', toolUseId, toolName, input } | { kind: 'tool_result', toolUseId, content, isError })`。研究 run 的流式项,变体镜像 agent 流以渲染标准转录(文本气泡 + 可折叠工具块)。仅运行时——不持久化到 DB,但服务器保留有界运行时副本经 `discussion_detail` 重放。
 
@@ -1000,15 +1000,15 @@ automation 的执行日志。
 - **`RunKind`** — `'interactive' | 'background' | 'headless' | 'internal'`。运行的**执行形态**分类（执行机制判断走它），与 `SessionKind` 正交。2026-06-26 收窄而来，目前仅作记录/审计字段。未被任何线协议消息引用。
 - **`AutomationStatus`** — `'active' | 'paused' | 'error'`。
 - **`McpMode`** — `'read-only' | 'sandboxed' | 'full-access'`。
-- **`Automation`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventFilter, eventSessionKindFilter, runningSessionId, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。`runningSessionId` 是服务端派生、客户端只读的字段（不落库，读时关联 `automation_execution_logs` 计算）：仅当 `type='llm'` 且存在 `status='running'` 且 `session_id` 非空的执行日志时为该会话 id，否则为 `null`；多条候选时取 `started_at` 最新的一条（同刻按日志 id 定序）。command 执行、尚未绑定真实会话 id 的 LLM 执行以及终态日志均为 `null`；不推断进程存活性。
+- **`Automation`** — `{ id, type, config, maxWallClockMs, workspaceName, vendor, triggerType, cronExpression, nextRunAt, eventFilter, eventSessionKindFilter, runningSessionId, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。`runningSessionId` 是服务端派生、客户端只读的字段（不落库，读时关联 `automation_execution_logs` 计算）：仅当 `type='llm'` 且存在 `status='running'` 且 `session_id` 非空的执行日志时为该会话 id，否则为 `null`；多条候选时取 `started_at` 最新的一条（同刻按日志 id 定序）。command 执行、尚未绑定真实会话 id 的 LLM 执行以及终态日志均为 `null`；不推断进程存活性。
 - **`AutomationExecutionLog`** — `{ id, automationId, startedAt, finishedAt, exitCode, output, error, status, sessionId }`。
-- **`PendingWriteApproval`** — `{ id, automationId, workspacePath, toolName, toolInput, diffPreview, createdAt, expiresAt, status, resolvedBy, resolvedAt }`。沙箱化 automation 执行的待处理写操作审批。
+- **`PendingWriteApproval`** — `{ id, automationId, workspaceName, toolName, toolInput, diffPreview, createdAt, expiresAt, status, resolvedBy, resolvedAt }`。沙箱化 automation 执行的待处理写操作审批。
 - **`ToolManifestEntry`** — `{ name, isWrite }`。供应商工具清单中的条目。
 
 ## 等待用户处理事件
 
 - **`WaitUserInvolveStatus`** — `'todo' | 'done' | 'canceled' | 'auto'`。`'auto'` = 多 Agent 共识自动决议、无人类参与的非阻塞审计记录（永不计入"待处理"徽章），其 `outcome` 携带做出该决议的共识结果，使自动决策可追溯。
-- **`WaitUserInvolveEvent`** — `{ id, workspaceId, sessionKind, sessionId, intentId?, intentTitle?, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。`sessionKind`（`string`，产生运行的完整 `SessionKind`）/ `sessionId`（真实会话 id）是溯源跳转键；`intentId` / `intentTitle` 为读时按 `sessionId` 反查所属意图派生（不落库，无归属为 null）。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。`done` / `canceled` / `auto` 事件按 `createdAt` 保留 7 天；服务端启动时清理一次，之后每 6 小时硬删除一次，`todo` 不参与保留期清理。
+- **`WaitUserInvolveEvent`** — `{ id, workspaceName, sessionKind, sessionId, intentId?, intentTitle?, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。`sessionKind`（`string`，产生运行的完整 `SessionKind`）/ `sessionId`（真实会话 id）是溯源跳转键；`intentId` / `intentTitle` 为读时按 `sessionId` 反查所属意图派生（不落库，无归属为 null）。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。`done` / `canceled` / `auto` 事件按 `createdAt` 保留 7 天；服务端启动时清理一次，之后每 6 小时硬删除一次，`todo` 不参与保留期清理。
 
 ## UI 错误码（`UiError`）
 

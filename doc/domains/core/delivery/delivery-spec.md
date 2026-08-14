@@ -68,7 +68,7 @@ flowchart LR
 - **DR-R1**: `deliveries.status` 只接受六态闭集,数据库 CHECK 与共享协议同一闭集;越界值在数据库层拒绝
 - **DR-R2**: `base_branch` 在建交付时快照工作区当前有效 `defaultMainBranch`(解析规则所得值,不可写空串);之后修改配置不回写历史交付
 - **DR-R3**: `branch_ready` 初始为假;创建/编辑均不触发分支探测或远端操作。它只由显式的 `init_delivery_branch`(成功或幂等绑定后)置为真,由 `cleanup_delivery_branch`(终态手动清理)置回假
-- **DR-R4**: 活动态 `(workspace_path, branch_name)` 唯一;`delivered`/`cancelled` 不占位,允许复用历史分支名;空分支名不参与冲突
+- **DR-R4**: 活动态 `(workspace_name, branch_name)` 唯一;`delivered`/`cancelled` 不占位,允许复用历史分支名;空分支名不参与冲突
 - **DR-R5**: 「集成就熟 N/M」实时由关联意图数 M 与其中面向本交付 PR 已 merged 数 N 聚合,不持久化计数;无关联显示 `0/0` 但不能据此通过集成守卫
 - **DR-R6**: 创建、编辑、取消、转移均为本地事务:任一步失败整体回滚,不留下半创建交付;分支初始化的 DB 写入发生在 git 动作成功之后,「push 成功但 DB 写失败」由下一次重试的孤儿分支防御幂等恢复
 - **DR-R7**: 首次在某工作区创建交付时,同一创建事务内判定「该工作区是否已有交付记录」;只有第一个响应携带 `pr:merge` 一次性告知标记(取消记录仍保留 → 重启/换客户端/再次创建均不重复提示)

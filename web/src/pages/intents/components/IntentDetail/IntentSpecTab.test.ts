@@ -16,7 +16,7 @@ const SPEC = '/home/u/.c3/specs/proj/2026/07/07/x/spec.md'
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title: 'T',
     shortEnTitle: null,
     content: 'B',

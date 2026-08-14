@@ -32,7 +32,7 @@ const INTENT_STATUSES: IntentStatus[] = [
 function delivery(over: Partial<Delivery> = {}): Delivery {
   return {
     id: 'd1',
-    workspaceId: 'w1',
+    workspaceName: 'w1',
     title: 'Sprint 3',
     description: '',
     status: 'integrating',

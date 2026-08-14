@@ -3,8 +3,7 @@ import { resolveCurrentWorkspace } from './current-workspace'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 
 const ws = (id: string): WorkspaceInfo => ({
-  id,
-  name: id.split('/').pop() ?? id,
+  name: id,
   path: id,
   lastAccessed: 0,
 })

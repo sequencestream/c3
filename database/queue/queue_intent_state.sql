@@ -9,7 +9,7 @@
 
 CREATE TABLE IF NOT EXISTS queue_intent_state (
   intent_id      TEXT PRIMARY KEY,          -- 意图 id (intents.id)
-  workspace_path TEXT NOT NULL,             -- 所属工作区绝对路径 (resolve 后)
+  workspace_name TEXT NOT NULL,             -- 所属工作区绝对路径 (resolve 后)
   failure_count  INTEGER NOT NULL DEFAULT 0,-- 自上次真实推进以来的连续失败次数; 达到 3 次进入 park
   backoff_count  INTEGER NOT NULL DEFAULT 0,-- 累计退避次数 (审计计数器, unpark 不清零)
   backoff_until  INTEGER,                   -- 退避截止 (epoch ms); NULL=不在退避中
@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS queue_intent_state (
   cooldown_until INTEGER,                   -- 防自激冷却截止 (epoch ms); 内核刚为该意图发起 run 后设置
   updated_at     INTEGER NOT NULL           -- 最后更新时间 (epoch ms)
 );
-CREATE INDEX IF NOT EXISTS idx_queue_intent_workspace ON queue_intent_state(workspace_path);
+CREATE INDEX IF NOT EXISTS idx_queue_intent_workspace ON queue_intent_state(workspace_name);

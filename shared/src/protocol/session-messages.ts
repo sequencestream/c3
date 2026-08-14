@@ -82,14 +82,14 @@ export type ClientSetSessionAgent = {
  */
 export type ClientListSessions = {
   type: 'list_sessions'
-  workspaceId: string
+  workspaceName: string
   sessionKind?: SessionKind
   before?: SessionListCursor
   since?: number
   limit?: number
 }
 
-export type ClientGetSessionCounts = { type: 'get_session_counts'; workspaceId: string }
+export type ClientGetSessionCounts = { type: 'get_session_counts'; workspaceName: string }
 
 /**
  * Create a new (pending) session in a workspace and make it active. The
@@ -99,24 +99,36 @@ export type ClientGetSessionCounts = { type: 'get_session_counts'; workspaceId: 
  * or empty ⇒ **Auto** — no intent is written and the run falls back to the
  * configured `defaultAgentId`.
  */
-export type ClientCreateSession = { type: 'create_session'; workspaceId: string; agentId?: string }
+export type ClientCreateSession = {
+  type: 'create_session'
+  workspaceName: string
+  agentId?: string
+}
 
 export type ClientCreateWorkSession = {
   type: 'create_work_session'
-  workspaceId: string
+  workspaceName: string
   agentId?: string
 }
 
 /** Delete a session from disk. */
-export type ClientDeleteSession = { type: 'delete_session'; workspaceId: string; sessionId: string }
+export type ClientDeleteSession = {
+  type: 'delete_session'
+  workspaceName: string
+  sessionId: string
+}
 
 /** Make a session active; server replies with `session_selected` (history + mode). */
-export type ClientSelectSession = { type: 'select_session'; workspaceId: string; sessionId: string }
+export type ClientSelectSession = {
+  type: 'select_session'
+  workspaceName: string
+  sessionId: string
+}
 
 /** Rename a session's title. */
 export type ClientRenameSession = {
   type: 'rename_session'
-  workspaceId: string
+  workspaceName: string
   sessionId: string
   title: string
 }
@@ -186,7 +198,7 @@ export type ServerSessionStatus = { type: 'session_status'; statuses: SessionRun
  */
 export type ServerSessions = {
   type: 'sessions'
-  workspaceId: string
+  workspaceName: string
   sessionKind?: SessionKind
   sessions: SessionInfo[]
   page?: SessionPageMeta
@@ -194,7 +206,7 @@ export type ServerSessions = {
 
 export type ServerSessionCounts = {
   type: 'session_counts'
-  workspaceId: string
+  workspaceName: string
   counts: Record<
     'work' | 'intent' | 'spec' | 'spec_review' | 'discussion' | 'automation' | 'tool',
     number
@@ -220,7 +232,7 @@ export type ServerSessionCounts = {
  */
 export type ServerSessionSelected = {
   type: 'session_selected'
-  workspaceId: string
+  workspaceName: string
   sessionId: string
   title: string
   /** Vendor-native {@link ModeToken}; interpret via `vendor`'s catalog (2026-06-07-012). */

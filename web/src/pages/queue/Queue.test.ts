@@ -78,7 +78,7 @@ function item(over: Partial<QueueIntentDetail> = {}): QueueIntentDetail {
 
 function detail(items: QueueIntentDetail[]): QueueDetail {
   return {
-    workspaceId: 'ws-1',
+    workspaceName: 'ws-1',
     state: 'running',
     tickId: 't-1',
     nextWakeupAt: null,

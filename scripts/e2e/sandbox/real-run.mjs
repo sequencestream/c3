@@ -41,9 +41,9 @@ const AGENT_ID = process.env.C3_SANDBOX_AGENT_ID
 const DEF_NAME = process.env.C3_SANDBOX_DEF || 'c3-e2e'
 const TIMEOUT_MS = 300_000
 
-// The server-assigned opaque workspace id (captured after add_workspace); paths
+// The immutable workspace name (captured after add_workspace); paths
 // never go back on the wire, so every later message addresses the workspace by id.
-let workspaceId = ''
+let workspaceName = ''
 
 if (!PROJ || !C3_HOME || !AGENT_ID) {
   console.log(
@@ -110,15 +110,15 @@ function onMessage(evt) {
   // turn frames (assistant_text / tool_use / turn_end / permission_request) — those
   // are viewer-scoped, so without selecting it we'd be blind to the in-container run.
   if (devWatch && (msg.type === 'session_status' || msg.type === 'sessions')) {
-    const ids =
+    const names =
       msg.type === 'sessions'
         ? (msg.sessions ?? []).map((s) => s.id ?? s.sessionId)
         : (msg.statuses ?? []).map((s) => s.sessionId)
-    for (const id of ids) {
+    for (const id of names) {
       if (id && id !== commSessionId && !selectedDev.has(id)) {
         selectedDev.add(id)
         console.log(`[real-run] selecting dev session ${String(id).slice(0, 24)}`)
-        send({ type: 'select_session', workspaceId, sessionId: id })
+        send({ type: 'select_session', workspaceName, sessionId: id })
       }
     }
   }
@@ -207,15 +207,15 @@ async function main() {
   }
 
   // Register workspace + enable sandbox in worktree mode with our agent pinned.
-  send({ type: 'add_workspace', path: PROJ })
+  send({ type: 'add_workspace', name: PROJ.split('/').pop(), path: PROJ })
   const wsAdded = await waitFor((m) => m.type === 'workspaces', 'workspaces')
-  workspaceId =
+  workspaceName =
     (wsAdded.workspaces?.find((w) => w.name === PROJ.split('/').pop()) ?? wsAdded.workspaces?.[0])
       ?.id ?? ''
-  if (!workspaceId) throw new Error('no workspaceId after add_workspace')
+  if (!workspaceName) throw new Error('no workspaceName after add_workspace')
   send({
     type: 'save_workspace_setting',
-    workspaceId,
+    workspaceName,
     config: {
       gitBranchMode: 'worktree',
       // bypassPermissions (never-ask): the in-container agent is isolated, so it
@@ -238,7 +238,7 @@ async function main() {
   }
 
   // Enter intent view → comm session + intent list.
-  send({ type: 'open_intent_session', workspaceId })
+  send({ type: 'open_intent_session', workspaceName })
   const commSel = await waitFor((m) => m.type === 'session_selected', 'comm session_selected')
   commSessionId = commSel.sessionId
   console.log(`[real-run] comm session ${commSessionId}`)
@@ -264,7 +264,7 @@ async function main() {
   // Trigger the real worktree intent-dev run (this launches the sandbox).
   console.log('[real-run] start_development → expect worktree + container launch …')
   devWatch = true
-  send({ type: 'start_development', workspaceId, intentId })
+  send({ type: 'start_development', workspaceName, intentId })
 
   // The pinned agent runs INSIDE the container; success = it wrote the proof file
   // into the bind-mounted worktree on the host.

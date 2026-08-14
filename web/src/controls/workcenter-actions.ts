@@ -34,7 +34,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     if (!workspace || !ctx.client) return
     ctx.workcenterLoading.value = true
     ctx.workcenterAppendNext.value = false
-    send({ type: 'list_wait_user_events', workspaceId: workspace, status, limit: 20 })
+    send({ type: 'list_wait_user_events', workspaceName: workspace, status, limit: 20 })
   }
 
   ctx.loadMoreWorkcenter = (
@@ -49,7 +49,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     ctx.workcenterAppendNext.value = true
     send({
       type: 'list_wait_user_events',
-      workspaceId: workspace,
+      workspaceName: workspace,
       status,
       cursorTime,
       cursorExcludeId,
@@ -71,10 +71,10 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   // session-jump mapping. Events with no owning intent (discussion, automation,
   // standalone sessions) keep landing in the unified session page, where
   // `sessionKind` only chooses the left-list kind.
-  // `event.workspaceId` is an opaque id (the store maps the path through
+  // `event.workspaceName` is an opaque id (the store maps the path through
   // `pathToId`), so it is interchangeable with `currentWorkspace`.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
-    const workspace = event.workspaceId || currentWorkspace.value
+    const workspace = event.workspaceName || currentWorkspace.value
     if (!workspace || !ctx.client) return
     ctx.setViewMode('workspace')
     if (event.intentId) {
@@ -91,7 +91,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
       return
     }
     ctx.openWorkcenterSession({
-      workspaceId: workspace,
+      workspaceName: workspace,
       sessionKind: event.sessionKind,
       sessionId: event.sessionId,
       title: event.intentTitle || event.title,

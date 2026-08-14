@@ -26,7 +26,7 @@ CREATE TABLE automations (
     id              TEXT PRIMARY KEY,
     type            TEXT NOT NULL,                           -- 'command' | 'llm'
     config          TEXT NOT NULL DEFAULT '{}',              -- JSON 字符串
-    workspace_path  TEXT NOT NULL,                           -- 解析后的绝对路径
+    workspace_name  TEXT NOT NULL,                           -- 解析后的绝对路径
     trigger_type        TEXT NOT NULL DEFAULT 'cron',         -- 'cron' | 'event' (v5, 2026-06-08)
     cron_expression     TEXT NOT NULL,                        -- event 触发时为 ''
     next_run_at         INTEGER,                              -- Unix ms;event 触发时为 null
@@ -40,12 +40,12 @@ CREATE TABLE automations (
     created_at      INTEGER NOT NULL,                        -- Unix ms
     updated_at      INTEGER NOT NULL                         -- Unix ms
 );
-CREATE INDEX idx_sch_workspace ON automations(workspace_path);
+CREATE INDEX idx_sch_workspace ON automations(workspace_name);
 ```
 
 设计说明:
 
-- `workspace_path` 是解析后的绝对路径(而非 UUID),与工作区注册表的键一致。
+- `workspace_name` 是解析后的绝对路径(而非 UUID),与工作区注册表的键一致。
 - 计时是**由 cron 驱动**的:一个 cron 表达式加上一个计算出的下次运行时刻(Unix ms)。
   调度器轮询下次运行时刻早于或等于当前时间的活跃行。每次执行后,下次运行时刻会根据 cron 表达式重新计算。
 - **时区:** cron 字段按**系统级 IANA 时区**(配置的系统时区,见 [system-setting](../../settings/system-setting/system-setting-spec.md))解释,
@@ -68,7 +68,7 @@ CREATE INDEX idx_sch_workspace ON automations(workspace_path);
   使该行成为一次性的。
 - 存储的 `type` 对应规格中的任务类型,但为简洁起见用 `'llm'` 而非 `'llm_prompt'`。
 - config 列是在应用层校验的 JSON 数据块。没有 check 约束 — 校验依赖类型,在创建/更新时进行。
-- workspace_path 没有外键约束 — 工作区是否存在在应用层于创建自动化时检查。当工作区被移除时,
+- workspace_name 没有外键约束 — 工作区是否存在在应用层于创建自动化时检查。当工作区被移除时,
   根据 SCH-R1,其自动化会被工作区归档步骤**暂停**(而非级联删除)。
 
 ### `automation_execution_logs`(已实现的模式)

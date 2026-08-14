@@ -29,7 +29,7 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 ## 核心实体
 
 - **Automation**: 一项任务:命令或 LLM prompt,由 cron 或任意通用事件触发
-  - 关键属性: `id`, `workspaceId`, `taskType`, `vendor`, `state`, `triggerType`, `metadata`, `cronExpression` / (`eventFilter{type,statuses?,metadata?}`, `eventSessionKindFilter`)
+  - 关键属性: `id`, `workspaceName`, `taskType`, `vendor`, `state`, `triggerType`, `metadata`, `cronExpression` / (`eventFilter{type,statuses?,metadata?}`, `eventSessionKindFilter`)
 - **ExecutionLog**: 单次自动化执行的记录
   - 关键属性: `id`, `automationId`, `status`, `startedAt`, `output`
 
@@ -96,7 +96,7 @@ SCH-R28):关闭时,该工作区下所有 cron 与 `event` 自动触发都在派�
 
 该总闸除了在工作区内单独设置外,还可经 **Workcenter Dashboard 批量设置**
 (`set_workspaces_automation_enabled`,见 web-console-spec):服务端做一次管理员校验后,
-对去重后的 `workspaceIds` 逐项读取最新完整 `WorkspaceSetting`、仅替换 `automationEnabled`
+对去重后的 `workspaceNames` 逐项读取最新完整 `WorkspaceSetting`、仅替换 `automationEnabled`
 并经既有持久化路径保存,返回每个工作区的成功 / 结构化失败结果。批量写非事务——某项失败不回滚
 已成功项;它同样只改总闸,不触碰任何单条自动化的 `active` / `paused` 状态、在途执行与手动运行。
 
@@ -308,7 +308,7 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 
 ## 工作区绑定
 
-每个自动化都有一个必填的 `workspaceId`,引用 session-registry 中的一个工作区。这个
+每个自动化都有一个必填的 `workspaceName`,引用 session-registry 中的一个工作区。这个
 绑定在**创建后不可变**——一个自动化不能被移动到另一个工作区。
 
 当一个工作区从 session-registry 中被移除时:
@@ -662,7 +662,7 @@ Wire 结构定义在[共享协议](../../../shared/api-conventions/websocket-pro
 **文件契约(version 1)**:固定信封 `{ version: 1, exportedAt: <ISO 8601>, automations: [...] }`。
 `version` 首个契约,当前实现只接受严格等于数字 `1`,不猜测或升级其他版本。`automations`
 中的每一项是导出时**整对象复制**的 `Automation`(不使用字段白名单,以免协议新增配置
-字段后静默丢失);实例态字段(`id` / `workspaceId` / `status` / `nextRunAt` / 时间戳 /
+字段后静默丢失);实例态字段(`id` / `workspaceName` / `status` / `nextRunAt` / 时间戳 /
 执行历史)一并写出以保真,但导入时不被采用。
 
 **导出**:弹窗列出当前工作区全部自动化,默认全选、可增减勾选,空列表给出提示;确认
@@ -690,12 +690,12 @@ i18n 错误,不打开确认态、不发送任何写消息;合法空数组进入�
 时将其作为 sticky 用户名(`config.nameSource === 'user'`)保留导出标题、跳过自动命名;两字段
 缺省时仍按现状写入 `active` 并自动命名。服务端拒绝除 `paused` 外的显式初始状态。导入器始终
 传 `paused`;普通创建与模板路径不传这两个字段。确认后仅对勾选且可导入项逐条发送创建消息,
-`workspaceId` 强制取当前工作区;允许同名和重复导入,不做查重。没有批量事务接口,合法文件
+`workspaceName` 强制取当前工作区;允许同名和重复导入,不做查重。没有批量事务接口,合法文件
 可能产生部分成功,不承诺原子回滚——已成功项不回滚,结果明确可见且不自动重发。
 
 ## 交互
 
-- **session-registry** —— 提供工作区存在性校验(`workspaceId`)与工作区
+- **session-registry** —— 提供工作区存在性校验(`workspaceName`)与工作区
   移除通知(触发归档)。
 - **agent-session** —— 执行 `llm_prompt` 自动化(把 prompt 提交给一个会话运行时)与
   `command` 自动化(在工作区上下文中生成 shell 进程)。同时**发布**
@@ -791,7 +791,7 @@ worktree。
 模板的 toolAllowlist 为 `Read` / `Grep` / `Glob` / `Bash` 加
 `mcp__c3__find_intents` / `mcp__c3__view_intent`;它不授予创建或保存意图的工具。
 
-- **工作区范围的唯一性:** 一个自动化由 `(workspaceId, id)` 唯一标识。
+- **工作区范围的唯一性:** 一个自动化由 `(workspaceName, id)` 唯一标识。
   删除工作区会归档自动化,永远不会使其成为孤儿。
 - **单一激活状态:** 一个自动化恰好处于 `active`、`paused` 或 `archived` 三者之一。
   `archived` 是终态(不能迁移回去)。

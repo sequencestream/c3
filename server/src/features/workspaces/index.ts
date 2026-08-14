@@ -20,7 +20,21 @@ export const addWorkspaceHandler: Handler<'add_workspace'> = async (_ctx, conn, 
   // Creating a trust root is an admin-only action (WS-R*; ADR-0023 authz). Inert
   // when no admin gate applies (auth disabled / unconfigured) — loopback trust.
   if (!requireAdmin(conn)) return
-  const abs = addWorkspace(msg.path, Date.now())
+  let abs: string | null
+  try {
+    abs = addWorkspace(msg.path, msg.workspaceName, Date.now())
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: {
+        code:
+          err instanceof Error && err.message === 'workspace.nameConflict'
+            ? 'workspace.nameConflict'
+            : 'workspace.nameInvalid',
+      },
+    })
+    return
+  }
   if (!abs) {
     conn.send({
       type: 'error',
@@ -40,9 +54,9 @@ export const removeWorkspaceHandler: Handler<'remove_workspace'> = (ctx, conn, m
   }
   // Tearing down a trust root is admin-only too (WS-R*; ADR-0023 authz).
   if (!requireAdmin(conn)) return
-  // The client holds only the opaque workspace id — resolve it to the on-disk
-  // root. An unknown/forged id resolves to null: nothing to remove, bail out.
-  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  // The client holds the workspace name — resolve it to the on-disk
+  // root. An unknown/forged name resolves to null: nothing to remove, bail out.
+  const abs = resolveWorkspaceRoot(msg.workspaceName)
   if (!abs) return
   // Tear down any background runs under this workspace.
   removeRuntimesForWorkspace(abs)
@@ -50,7 +64,7 @@ export const removeWorkspaceHandler: Handler<'remove_workspace'> = (ctx, conn, m
   if (isAutomationStoreAvailable()) {
     onWorkspaceRemoved(abs)
   }
-  removeWorkspace(abs)
+  removeWorkspace(msg.workspaceName)
   if (conn.viewing && getRuntime(conn.viewing) === undefined) conn.viewing = null
   conn.sendWorkspaces()
   ctx.broadcastStatuses()

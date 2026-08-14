@@ -6,7 +6,7 @@ import { translateUiError } from '@/i18n/errors'
 function ev(over: Partial<WaitUserInvolveEvent>): WaitUserInvolveEvent {
   return {
     id: 'e1',
-    workspaceId: '/ws',
+    workspaceName: '/ws',
     sessionKind: 'intent',
     sessionId: 'I1',
     title: null,

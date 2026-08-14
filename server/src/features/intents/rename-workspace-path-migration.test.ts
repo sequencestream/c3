@@ -1,7 +1,7 @@
 /**
- * Migration tests for the v10 → v11 in-place rename `project_path` → `workspace_path`
- * (`migrateProjectPathToWorkspacePath` in store.ts). A legacy v10 db (project_path
- * columns, idx_intent_project_status) must converge on the workspace_path terminal
+ * Migration tests for the v10 → v11 in-place rename `project_path` → `workspace_name`
+ * (`migrateProjectPathToWorkspaceName` in store.ts). A legacy v10 db (project_path
+ * columns, idx_intent_project_status) must converge on the workspace_name terminal
  * state with NO data loss and NO DROP TABLE, and the migration must be idempotent.
  *
  * This is the data-loss-level acceptance object: a user's existing ~/.c3/c3.db must
@@ -14,7 +14,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
-  pathToId: vi.fn(() => 'ws-mig-id'),
+  pathToName: (path: string) => path,
+  resolveWorkspaceRoot: (name: string) => name,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -116,12 +117,12 @@ function seedLegacyV10(raw: Db): void {
   )
 }
 
-/** Assert the workspace_path terminal state (columns + index + version). */
+/** Assert the workspace_name terminal state (columns + index + version). */
 function expectTerminalSchema(raw: Db): void {
   // Columns renamed on both tables.
-  expect(cols(raw, 'intents').has('workspace_path')).toBe(true)
+  expect(cols(raw, 'intents').has('workspace_name')).toBe(true)
   expect(cols(raw, 'intents').has('project_path')).toBe(false)
-  expect(cols(raw, 'intent_chats').has('workspace_path')).toBe(true)
+  expect(cols(raw, 'intent_chats').has('workspace_name')).toBe(true)
   expect(cols(raw, 'intent_chats').has('project_path')).toBe(false)
   // Composite index renamed.
   const idx = indexes(raw)
@@ -129,12 +130,12 @@ function expectTerminalSchema(raw: Db): void {
   expect(idx.has('idx_intent_project_status')).toBe(false)
   // Single-column index keeps its NAME but now references the renamed column.
   expect(idx.has('idx_chat_project')).toBe(true)
-  expect(indexCols(raw, 'idx_chat_project')).toEqual(['workspace_path'])
+  expect(indexCols(raw, 'idx_chat_project')).toEqual(['workspace_name'])
   expect(userVersion(raw)).toBe(22)
 }
 
-describe('v10 → v11 rename: fresh db is born at the workspace_path terminal state', () => {
-  it('a brand-new db has workspace_path columns and idx_intent_workspace_status', () => {
+describe('v10 → v11 rename: fresh db is born at the workspace_name terminal state', () => {
+  it('a brand-new db has workspace_name columns and idx_intent_workspace_status', () => {
     listIntents(proj) // touch store → SCHEMA + migration run on empty db
     expectTerminalSchema(getDb()!)
   })
@@ -147,15 +148,15 @@ describe('v10 → v11 rename: a legacy project_path db migrates in place (no dat
     const list = listIntents(proj)
 
     expectTerminalSchema(getDb()!)
-    // Row data survived the rename, fully hydrated by workspace_path.
+    // Row data survived the rename, fully hydrated by workspace_name.
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('i1')
     expect(list[0].title).toBe('Legacy intent')
     expect(list[0].module).toBe('认证')
-    expect(list[0].workspaceId).toBe('ws-mig-id')
+    expect(list[0].workspaceName).toBe(proj)
     expect(list[0].branchName).toBe('feat/x')
     expect(list[0].dependsOn).toEqual(['i0'])
-    // intent_chats carried over (current pointer + hidden set both key on workspace_path).
+    // intent_chats carried over (current pointer + hidden set both key on workspace_name).
     expect(getChatSession(proj)).toBe('chat-1')
     expect(isHiddenSession('chat-1')).toBe(true)
     expect(getIntent('i1')?.title).toBe('Legacy intent')

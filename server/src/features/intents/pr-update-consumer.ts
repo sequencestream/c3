@@ -91,9 +91,9 @@ function locateResetTarget(
 /** Injected intent-store + broadcast capabilities, so the handler stays unit-testable. */
 export interface PrUpdateConsumerDeps {
   /** Look up an intent by id; returns null when it does not exist. */
-  getIntent: (id: string) => { id: string; workspaceId: string; prs: IntentPr[] } | null
-  /** Stable workspace id for a workspace path (null when the path is unknown). */
-  pathToId: (path: string) => string | null
+  getIntent: (id: string) => { id: string; workspaceName: string; prs: IntentPr[] } | null
+  /** Stable workspace name for a workspace path (null when the path is unknown). */
+  pathToName: (path: string) => string | null
   /** Persist one PR row's new status through the store's single write entry point. */
   upsertIntentPr: (input: {
     intentId: string
@@ -140,7 +140,7 @@ export function handlePrUpdateEvent(
     if (!intent) return false
 
     // Reject a cross-workspace intentId: the event's workspace must own the intent.
-    if (intent.workspaceId !== deps.pathToId(envelope.workspacePath)) return false
+    if (intent.workspaceName !== deps.pathToName(envelope.workspacePath)) return false
 
     const located = locateResetTarget(intent.prs, pr.association?.deliveryId, pr.pr?.number)
     if (!located.ok) {

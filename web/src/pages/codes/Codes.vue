@@ -9,7 +9,7 @@
  * 移动端经 MobileStack 退化为 树 → 文件 两级 drill-down,不渲染 ChatColumn(屏幕宽度不足)。
  *
  * 所有状态由 App.vue 持有、经 props 注入,动作经 emit 上抛(controls/codes-actions 落地
- * 服务端往返)。前端仅持有并透传 workspace 相对路径 + 不透明 workspaceId;任何越界判断
+ * 服务端往返)。前端仅持有并透传 workspace 相对路径 + 不透明 workspaceName;任何越界判断
  * 由服务端 guard 决定,本页不存在构造绝对路径/越界路径的入口。
  */
 import { computed, onUnmounted, ref } from 'vue'

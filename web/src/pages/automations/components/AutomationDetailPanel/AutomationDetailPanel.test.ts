@@ -9,7 +9,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     type: 'command',
     config: { command: 'pnpm build', name: 'Build' },
     maxWallClockMs: null,
-    workspaceId: '/home/proj',
+    workspaceName: '/home/proj',
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,

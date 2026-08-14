@@ -19,7 +19,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -53,7 +53,7 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  proj = resolveWorkspaceRoot(pathToId(dir)!)!
+  proj = resolveWorkspaceRoot(pathToName(dir)!)!
 })
 
 afterEach(() => {

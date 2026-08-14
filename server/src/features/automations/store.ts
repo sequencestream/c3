@@ -4,16 +4,17 @@
  * Owns the automation schema (created lazily, versioned via `PRAGMA user_version`)
  * and all automation / execution-log operations. Sibling to intent and
  * discussion stores: all ride the one `~/.c3/c3.db` connection, each owning its
- * own tables and a private `schemaReady` flag. Every `workspacePath` arg is
- * `resolve()`d so it matches the workspace registry key.
+ * own tables and a private `schemaReady` flag. Workspace names are persisted as
+ * identity; paths remain runtime inputs only.
  *
  * Degradation: when the db is unavailable, reads return empty/null and writes
  * throw (callers surface an error or skip), so c3 keeps running without the
  * automation feature.
  */
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
-import { resolveWorkspaceRoot, pathToId } from '../../state.js'
+import { workspaceNameFor } from '../../state.js'
+
+const workspaceKey = workspaceNameFor
 import type {
   CodexPolicy,
   CreateAutomationInput,
@@ -139,7 +140,7 @@ interface AutomationRow {
   type: string
   config: string
   max_wall_clock_ms: number | null
-  workspace_path: string
+  workspace_name: string
   trigger_type: string | null
   cron_expression: string
   next_run_at: number | null
@@ -318,7 +319,7 @@ function toAutomation(r: AutomationRow, runningSessionId: string | null): Automa
     maxWallClockMs: isValidAutomationMaxWallClockMs(r.max_wall_clock_ms)
       ? r.max_wall_clock_ms
       : null,
-    workspaceId: pathToId(r.workspace_path)!,
+    workspaceName: r.workspace_name,
     triggerType: (r.trigger_type as ScheduleTriggerType | null) ?? 'cron',
     cronExpression: r.cron_expression,
     nextRunAt: r.next_run_at,
@@ -378,11 +379,11 @@ export function isAgentQuotaRecoveryAutomation(automation: Automation): boolean 
 export function listAutomations(workspacePath: string): Automation[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(workspacePath)
+  const proj = workspaceKey(workspacePath)
   return toAutomations(
     d,
     d.all<AutomationRow>(
-      'SELECT * FROM automations WHERE workspace_path=? ORDER BY updated_at DESC',
+      'SELECT * FROM automations WHERE workspace_name=? ORDER BY updated_at DESC',
       proj,
     ),
   )
@@ -415,8 +416,8 @@ export function countAutomationsInRange(
 ): { total: number; active: number } {
   const d = db()
   if (!d) return { total: 0, active: 0 }
-  const where: string[] = ['workspace_path=?']
-  const params: (string | number)[] = [resolve(workspacePath)]
+  const where: string[] = ['workspace_name=?']
+  const params: (string | number)[] = [workspaceKey(workspacePath)]
   if (startTime != null) {
     where.push('updated_at >= ?')
     params.push(startTime)
@@ -446,8 +447,8 @@ export function countRunningAutomations(workspacePath: string): number {
     `SELECT COUNT(DISTINCT s.id) AS count
        FROM automations s
        JOIN automation_execution_logs l ON l.automation_id = s.id
-      WHERE s.workspace_path=? AND l.status='running'`,
-    resolve(workspacePath),
+      WHERE s.workspace_name=? AND l.status='running'`,
+    workspaceKey(workspacePath),
   )
   return row?.count ?? 0
 }
@@ -470,9 +471,9 @@ export function runningAutomationIdsForWorkspace(workspacePath: string): string[
       `SELECT DISTINCT s.id AS id
          FROM automations s
          JOIN automation_execution_logs l ON l.automation_id = s.id
-        WHERE s.workspace_path=?
+        WHERE s.workspace_name=?
           AND ${RUNNING_ELIGIBILITY_SQL}`,
-      resolve(workspacePath),
+      workspaceKey(workspacePath),
     )
     .map((r) => r.id)
 }
@@ -494,12 +495,12 @@ export function runningAutomationSessionIdsForWorkspace(workspacePath: string): 
        JOIN automations s ON sm.owner_kind='automation' AND sm.owner_id=s.id
        JOIN automation_execution_logs l
          ON l.automation_id=s.id AND l.session_id=sm.vendor_session_id
-      WHERE sm.workspace_path=?
+      WHERE sm.workspace_name=?
         AND sm.session_kind='automation'
         AND sm.bound=1
         AND l.status='running'
         AND sm.vendor_session_id IS NOT NULL`,
-    resolve(workspacePath),
+    workspaceKey(workspacePath),
   )
   return rows.map((r) => r.vendor_session_id)
 }
@@ -558,13 +559,13 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
   const metadata = JSON.stringify(normalizeAutomationMetadata(input.metadata))
   d.run(
     `INSERT INTO automations
-       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_filters, event_session_kind_filter, metadata, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
+       (id, type, config, max_wall_clock_ms, workspace_name, trigger_type, cron_expression, next_run_at, event_filters, event_session_kind_filter, metadata, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
     maxWallClockMs,
-    resolveWorkspaceRoot(input.workspaceId)!,
+    workspaceKey(input.workspaceName),
     triggerType,
     cronExpression,
     nextRunAt,
@@ -608,7 +609,7 @@ export function createAgentQuotaRecoveryAutomation(input: {
         agentId: input.agentId,
         resetAt: input.resetAt,
       } satisfies AgentQuotaRecoveryConfig,
-      workspaceId: pathToId(input.workspacePath)!,
+      workspaceName: workspaceNameFor(input.workspacePath),
       cronExpression: `${byType.minute} ${byType.hour} ${byType.day} ${byType.month} *`,
       mode: 'read-only',
       vendor: 'claude',
@@ -830,9 +831,9 @@ export function updateNextRunAt(id: string, nextRunAt: number | null): void {
  */
 export function pauseAllForWorkspace(workspacePath: string): void {
   const d = requireDb()
-  const abs = resolve(workspacePath)
+  const abs = workspaceKey(workspacePath)
   d.run(
-    'UPDATE automations SET status=?, updated_at=? WHERE workspace_path=? AND status=?',
+    'UPDATE automations SET status=?, updated_at=? WHERE workspace_name=? AND status=?',
     'paused',
     Date.now(),
     abs,
@@ -980,7 +981,7 @@ export function listExecutionLogs(automationId: string): AutomationExecutionLog[
 // ---- Workspace MCP configs ----
 
 interface WorkspaceMcpConfigRow {
-  workspace_path: string
+  workspace_name: string
   config_json: string
   updated_at: number
 }
@@ -1007,9 +1008,9 @@ function toWorkspaceMcpConfig(r: WorkspaceMcpConfigRow): WorkspaceMcpConfig {
 export function getWorkspaceMcpConfig(workspacePath: string): WorkspaceMcpConfig {
   const d = db()
   if (!d) return { mcpServers: {}, denylist: [] }
-  const abs = resolve(workspacePath)
+  const abs = workspaceKey(workspacePath)
   const row = d.get<WorkspaceMcpConfigRow>(
-    'SELECT * FROM workspace_mcp_configs WHERE workspace_path=?',
+    'SELECT * FROM workspace_mcp_configs WHERE workspace_name=?',
     abs,
   )
   if (!row) return { mcpServers: {}, denylist: [] }
@@ -1019,16 +1020,16 @@ export function getWorkspaceMcpConfig(workspacePath: string): WorkspaceMcpConfig
 /** Save workspace-level MCP configuration (upsert). */
 export function saveWorkspaceMcpConfig(workspacePath: string, config: WorkspaceMcpConfig): void {
   const d = requireDb()
-  const abs = resolve(workspacePath)
+  const abs = workspaceKey(workspacePath)
   const now = Date.now()
   const json = JSON.stringify({
     mcpServers: config.mcpServers ?? {},
     denylist: config.denylist ?? [],
   })
   d.run(
-    `INSERT INTO workspace_mcp_configs (workspace_path, config_json, updated_at)
+    `INSERT INTO workspace_mcp_configs (workspace_name, config_json, updated_at)
      VALUES (?,?,?)
-     ON CONFLICT(workspace_path) DO UPDATE SET config_json=excluded.config_json, updated_at=excluded.updated_at`,
+     ON CONFLICT(workspace_name) DO UPDATE SET config_json=excluded.config_json, updated_at=excluded.updated_at`,
     abs,
     json,
     now,

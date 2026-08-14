@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS session_metadata (
   c3_id              TEXT PRIMARY KEY,
-  workspace_path     TEXT NOT NULL,
+  workspace_name     TEXT NOT NULL,
   vendor             TEXT NOT NULL,
   vendor_session_id  TEXT,
   agent_id           TEXT NOT NULL,
@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS session_metadata (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sm_workspace_kind_updated
-  ON session_metadata(workspace_path, session_kind, bound, last_modified DESC, state_updated_at DESC);
+  ON session_metadata(workspace_name, session_kind, bound, last_modified DESC, state_updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_sm_workspace_vendor
-  ON session_metadata(workspace_path, vendor, vendor_session_id);
+  ON session_metadata(workspace_name, vendor, vendor_session_id);
 
 CREATE INDEX IF NOT EXISTS idx_sm_state_age
   ON session_metadata(state, state_updated_at);

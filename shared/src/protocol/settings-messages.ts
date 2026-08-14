@@ -64,7 +64,7 @@ export type ClientSavePersonalizedSettings = {
  * reply. Scoped by workspace because a key is bound to exactly one: there is no
  * "all keys on this host" view to ask for.
  */
-export type ClientListMcpApiKeys = { type: 'list_mcp_api_keys'; workspaceId: string }
+export type ClientListMcpApiKeys = { type: 'list_mcp_api_keys'; workspaceName: string }
 
 /**
  * Mint a long-lived external-MCP API key bound to ONE registered workspace. The
@@ -75,7 +75,7 @@ export type ClientListMcpApiKeys = { type: 'list_mcp_api_keys'; workspaceId: str
  */
 export type ClientCreateMcpApiKey = {
   type: 'create_mcp_api_key'
-  workspaceId: string
+  workspaceName: string
   name: string
 }
 
@@ -91,7 +91,7 @@ export type ClientCreateMcpApiKey = {
 export type ClientUpdateMcpApiKey = {
   type: 'update_mcp_api_key'
   /** The workspace whose roster the reply should carry; the key's own binding is unchanged. */
-  workspaceId: string
+  workspaceName: string
   id: string
   name?: string
   tools?: string[]
@@ -101,7 +101,7 @@ export type ClientUpdateMcpApiKey = {
 export type ClientRevokeMcpApiKey = {
   type: 'revoke_mcp_api_key'
   /** The workspace whose roster the reply should carry. */
-  workspaceId: string
+  workspaceName: string
   id: string
 }
 
@@ -119,7 +119,7 @@ export type ClientRevokeMcpApiKey = {
 export type ServerMcpApiKeys = {
   type: 'mcp_api_keys'
   /** The workspace this roster belongs to; the console ignores a stale reply for another. */
-  workspaceId: string
+  workspaceName: string
   keys: McpApiKeyMeta[]
   /** Every tool that may be granted, with its read/write grading. */
   catalog: ExternalMcpToolDescriptor[]

@@ -16,7 +16,7 @@
  * against.
  */
 import type { Delivery, Intent } from '@ccc/shared/protocol'
-import { pathToId } from '../../state.js'
+import { pathToName } from '../../state.js'
 import { getDelivery, listDeliveries } from '../deliveries/store.js'
 
 /** Resolved context, or the rejection code the caller hands back. */
@@ -68,7 +68,7 @@ export function resolveSessionDeliveryContext(
   if (deliveryId === null) return { ok: true, delivery: null }
 
   const delivery = getDelivery(deliveryId)
-  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
+  if (!delivery || delivery.workspaceName !== pathToName(workspacePath)) {
     return { ok: false, code: 'intent.deliveryContextUnknown' }
   }
   if (!linked.some((d) => d.id === deliveryId)) {

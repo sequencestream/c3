@@ -44,10 +44,10 @@ export function installAutomationActions(ctx: AppCtx): void {
     ctx.automationEnabledSaving.value = false
     ctx.automationSettingBeforeSave.value = null
     ctx.persistViewMode()
-    send({ type: 'list_automations', workspaceId: path })
+    send({ type: 'list_automations', workspaceName: path })
     // Load the workspace setting alongside the list so the automation gate toggle
     // reflects the persisted `automationEnabled`.
-    send({ type: 'load_workspace_setting', workspaceId: path })
+    send({ type: 'load_workspace_setting', workspaceName: path })
     // Pull settings so the next-run preview uses the configured `timezone`.
     send({ type: 'get_settings' })
   }
@@ -69,7 +69,7 @@ export function installAutomationActions(ctx: AppCtx): void {
     ctx.automationEnabledSaving.value = true
     try {
       if (!ctx.client) throw new Error('no connection')
-      send({ type: 'save_workspace_setting', workspaceId: path, config: next })
+      send({ type: 'save_workspace_setting', workspaceName: path, config: next })
     } catch {
       // Lost connection before the send landed — restore and surface the failure.
       ctx.automationWorkspaceSetting.value = ctx.automationSettingBeforeSave.value
@@ -136,7 +136,7 @@ export function installAutomationActions(ctx: AppCtx): void {
 
   ctx.createAutomation = (input: CreateAutomationInput): void => {
     automationSaving.value = true
-    send({ type: 'create_automation', workspaceId: input.workspaceId, input })
+    send({ type: 'create_automation', workspaceName: input.workspaceName, input })
   }
 
   // Bulk import: dispatch one create per already-mapped input (each carries
@@ -147,7 +147,7 @@ export function installAutomationActions(ctx: AppCtx): void {
   ctx.importAutomations = (inputs: CreateAutomationInput[]): void => {
     if (inputs.length === 0) return
     for (const input of inputs) {
-      send({ type: 'create_automation', workspaceId: input.workspaceId, input })
+      send({ type: 'create_automation', workspaceName: input.workspaceName, input })
     }
     ctx.showToast(
       ctx.t('automation.importExport.import.summary', {
@@ -159,14 +159,14 @@ export function installAutomationActions(ctx: AppCtx): void {
 
   ctx.createAutomationFromTemplate = (templateId: string): void => {
     const template = getAutomationTemplate(templateId)
-    const workspaceId = automationsProject.value
-    if (!template || !workspaceId) return
+    const workspaceName = automationsProject.value
+    if (!template || !workspaceName) return
     const agent = findEnabledVendorAgent(ctx.serverSettings.value?.agents ?? [], 'claude')
     if (!agent) {
       ctx.showToast(ctx.t('automation.list.templates.noAgent'))
       return
     }
-    ctx.createAutomation(template.build({ workspaceId, agentId: agent.id }))
+    ctx.createAutomation(template.build({ workspaceName, agentId: agent.id }))
   }
 
   ctx.updateAutomation = (id: string, input: UpdateAutomationInput): void => {
@@ -193,7 +193,7 @@ export function installAutomationActions(ctx: AppCtx): void {
     send({
       type: 'get_automation_tool_manifest',
       vendor: vendor as VendorId,
-      workspaceId: automationsProject.value,
+      workspaceName: automationsProject.value,
     })
   }
 

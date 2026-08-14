@@ -144,7 +144,10 @@
       },
       "add": {
         "tooltip": "Add workspace",
-        "prompt": "Workspace directory (absolute path):",
+        "prompt": "Add workspace",
+        "pathLabel": "Workspace directory (absolute path)",
+        "nameLabel": "Workspace name",
+        "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
         "confirmLabel": "Add"
       },
@@ -2199,7 +2202,9 @@
       "saveFailed": "Failed to save personalized settings. Reverted."
     },
     "workspace": {
-      "unknown": "Unknown workspace: {path}"
+      "unknown": "Unknown workspace: {path}",
+      "nameInvalid": "Workspace name must contain 1–64 characters.",
+      "nameConflict": "That workspace name is already in use."
     },
     "path": {
       "notDirectory": "Not a directory: {path}"
@@ -2324,7 +2329,7 @@
     },
     "mcpApiKey": {
       "unknown": "This API key no longer exists (id {id}).",
-      "unknownWorkspace": "Unknown workspace ({workspaceId}) — no key was changed.",
+      "unknownWorkspace": "Unknown workspace ({workspaceName}) — no key was changed.",
       "noWorkspace": "Select at least one workspace for the key.",
       "saveFailed": "Could not save the API keys.",
       "unknownTool": "Tool \"{tool}\" is not in the externally-grantable catalog."

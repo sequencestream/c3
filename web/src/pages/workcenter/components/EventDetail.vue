@@ -35,7 +35,7 @@ const ASK_TOOL_LABEL = 'AskUserQuestion'
 
 const props = defineProps<{
   event: WaitUserInvolveEvent | null
-  /** Registry of known workspaces, to resolve an event's opaque `workspaceId` → name. */
+  /** Registry of known workspaces, to resolve an event's opaque `workspaceName` → name. */
   workspaces: WorkspaceInfo[]
 }>()
 
@@ -68,10 +68,10 @@ function sessionKindLabel(sessionKind: string): string {
   return t(`workcenter.sessionKind.${sessionKind}` as LocaleKey)
 }
 
-/** Resolve the event's opaque workspace id → its display name, or a placeholder when unknown. */
+/** Resolve the event's workspace name to its display name, or a placeholder when unknown. */
 const workspaceName = computed<string>(() => {
-  const id = props.event?.workspaceId
-  const hit = id ? props.workspaces.find((w) => w.id === id) : undefined
+  const id = props.event?.workspaceName
+  const hit = id ? props.workspaces.find((w) => w.name === id) : undefined
   return hit?.name ?? t('workcenter.attribute.workspaceUnknown')
 })
 

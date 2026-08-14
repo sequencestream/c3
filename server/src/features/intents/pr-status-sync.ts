@@ -3,7 +3,7 @@ import { deriveIntentPrAggregate } from '@ccc/shared'
 import type { KernelContext } from '../../kernel/types.js'
 import { getForgeOverride } from '../../kernel/config/index.js'
 import { getForgePrStatus } from '../../git.js'
-import { pathToId } from '../../state.js'
+import { pathToName } from '../../state.js'
 import {
   getIntent,
   listIntentPrs,
@@ -48,7 +48,7 @@ export async function syncIntentPrStatus(input: {
   if (!intent) {
     return { ok: false, intentId: input.intentId, changed: false, error: '意图不存在' }
   }
-  if (intent.workspaceId !== pathToId(input.workspacePath)) {
+  if (intent.workspaceName !== pathToName(input.workspacePath)) {
     return {
       ok: false,
       intentId: input.intentId,

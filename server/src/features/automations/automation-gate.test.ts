@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Identity workspace resolution: fixtures use the path itself as the id.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 
 // Drive the gate per-workspace; default open (true) mirrors normalize semantics.
@@ -47,7 +47,7 @@ function cronAutomation(over: Partial<Automation> = {}): Automation {
     type: 'command',
     config: { command: 'echo hi', name: 'x' },
     maxWallClockMs: null,
-    workspaceId: WS_CLOSED,
+    workspaceName: WS_CLOSED,
     triggerType: 'cron',
     cronExpression: '0 * * * *',
     nextRunAt: Date.now() - 60_000,
@@ -70,7 +70,7 @@ function eventAutomation(over: Partial<Automation> = {}): Automation {
     type: 'command',
     config: { command: 'echo hi', name: 'x' },
     maxWallClockMs: null,
-    workspaceId: WS_CLOSED,
+    workspaceName: WS_CLOSED,
     triggerType: 'event',
     cronExpression: '',
     nextRunAt: null,
@@ -148,7 +148,7 @@ describe('automation gate — cron tick', () => {
   it('open workspace: a due cron dispatches as normal', async () => {
     gate.map.set(WS_OPEN, true)
     install([
-      cronAutomation({ id: 'cron-open', workspaceId: WS_OPEN, nextRunAt: Date.now() - 1000 }),
+      cronAutomation({ id: 'cron-open', workspaceName: WS_OPEN, nextRunAt: Date.now() - 1000 }),
     ])
 
     startScheduler(1)
@@ -163,8 +163,8 @@ describe('automation gate — cron tick', () => {
     gate.map.set(WS_CLOSED, false)
     gate.map.set(WS_OPEN, true)
     install([
-      cronAutomation({ id: 'c-closed', workspaceId: WS_CLOSED, nextRunAt: Date.now() - 1000 }),
-      cronAutomation({ id: 'c-open', workspaceId: WS_OPEN, nextRunAt: Date.now() - 1000 }),
+      cronAutomation({ id: 'c-closed', workspaceName: WS_CLOSED, nextRunAt: Date.now() - 1000 }),
+      cronAutomation({ id: 'c-open', workspaceName: WS_OPEN, nextRunAt: Date.now() - 1000 }),
     ])
 
     startScheduler(1)
@@ -219,7 +219,7 @@ describe('automation gate — event dispatch', () => {
 
   it('closed workspace: a matching event does not dispatch and writes no log', () => {
     gate.map.set(WS_CLOSED, false)
-    install([eventAutomation({ id: 'e-closed', workspaceId: WS_CLOSED })])
+    install([eventAutomation({ id: 'e-closed', workspaceName: WS_CLOSED })])
     dispatchEventTriggers({
       workspacePath: WS_CLOSED,
       sessionKind: 'work',
@@ -231,7 +231,7 @@ describe('automation gate — event dispatch', () => {
 
   it('open workspace: the same event dispatches (re-open restores handling of new events)', () => {
     gate.map.set(WS_OPEN, true)
-    install([eventAutomation({ id: 'e-open', workspaceId: WS_OPEN })])
+    install([eventAutomation({ id: 'e-open', workspaceName: WS_OPEN })])
     dispatchEventTriggers({
       workspacePath: WS_OPEN,
       sessionKind: 'work',
@@ -246,7 +246,7 @@ describe('automation gate — event dispatch', () => {
     install([
       eventAutomation({
         id: 'e-pr',
-        workspaceId: WS_CLOSED,
+        workspaceName: WS_CLOSED,
         eventFilters: [{ type: 'pr:merge' }],
         eventSessionKindFilter: null,
       }),
@@ -296,7 +296,7 @@ describe('automation gate — triggerRunNow is unaffected', () => {
   it('runs an active automation once despite the closed gate, without changing its status', async () => {
     const active = cronAutomation({
       id: 'run-active',
-      workspaceId: WS_CLOSED,
+      workspaceName: WS_CLOSED,
       status: 'active',
       nextRunAt: 1_800_000_000_000,
     })
@@ -318,7 +318,7 @@ describe('automation gate — triggerRunNow is unaffected', () => {
   it('runs a paused automation once despite the closed gate', async () => {
     const paused = cronAutomation({
       id: 'run-paused',
-      workspaceId: WS_CLOSED,
+      workspaceName: WS_CLOSED,
       status: 'paused',
       nextRunAt: 1_800_000_000_000,
     })

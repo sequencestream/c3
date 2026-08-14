@@ -122,11 +122,11 @@ describe('codes handlers', () => {
     await writeFile(join(workspace, 'README.md'), 'hello')
     const { conn, sent } = capture()
 
-    await listDirHandler(KCTX, conn, { type: 'list_dir', workspaceId: 'ws-1', rel: '' })
+    await listDirHandler(KCTX, conn, { type: 'list_dir', workspaceName: 'ws-1', rel: '' })
 
     expect(sent[0]).toEqual({
       type: 'dir_listed',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       rel: '',
       entries: [
         { name: 'src', path: 'src', type: 'directory' },
@@ -139,11 +139,11 @@ describe('codes handlers', () => {
     await writeFile(join(workspace, 'a.ts'), 'const x = 1\n')
     const { conn, sent } = capture()
 
-    await readFileHandler(KCTX, conn, { type: 'read_file', workspaceId: 'ws-1', rel: 'a.ts' })
+    await readFileHandler(KCTX, conn, { type: 'read_file', workspaceName: 'ws-1', rel: 'a.ts' })
 
     expect(sent[0]).toEqual({
       type: 'file_read',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       file: { path: 'a.ts', size: 12, binary: false, truncated: false, content: 'const x = 1\n' },
     })
   })
@@ -153,17 +153,21 @@ describe('codes handlers', () => {
     await writeFile(join(workspace, 'large.txt'), 'x'.repeat(1024 * 1024 + 1))
     const { conn, sent } = capture()
 
-    await readFileHandler(KCTX, conn, { type: 'read_file', workspaceId: 'ws-1', rel: 'bin.dat' })
-    await readFileHandler(KCTX, conn, { type: 'read_file', workspaceId: 'ws-1', rel: 'large.txt' })
+    await readFileHandler(KCTX, conn, { type: 'read_file', workspaceName: 'ws-1', rel: 'bin.dat' })
+    await readFileHandler(KCTX, conn, {
+      type: 'read_file',
+      workspaceName: 'ws-1',
+      rel: 'large.txt',
+    })
 
     expect(sent[0]).toEqual({
       type: 'file_read',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       file: { path: 'bin.dat', size: 3, binary: true, truncated: false },
     })
     expect(sent[1]).toEqual({
       type: 'file_read',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       file: { path: 'large.txt', size: 1024 * 1024 + 1, binary: false, truncated: true },
     })
   })
@@ -177,13 +181,13 @@ describe('codes handlers', () => {
 
     await searchCodesHandler(KCTX, conn, {
       type: 'search_codes',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       query: 'target',
       mode: 'filename',
     })
     await searchCodesHandler(KCTX, conn, {
       type: 'search_codes',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       query: 'needle',
       mode: 'content',
     })
@@ -215,7 +219,7 @@ describe('codes handlers', () => {
       const { conn, sent } = capture()
       await searchCodesHandler(KCTX, conn, {
         type: 'search_codes',
-        workspaceId: 'ws-1',
+        workspaceName: 'ws-1',
         query,
         mode: 'filename',
         ...(pattern ? { pattern } : {}),
@@ -252,7 +256,7 @@ describe('codes handlers', () => {
     // filename mode: *.ts keeps only the .ts file
     await searchCodesHandler(KCTX, conn, {
       type: 'search_codes',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       query: 'target',
       mode: 'filename',
       pattern: '*.ts',
@@ -260,7 +264,7 @@ describe('codes handlers', () => {
     // content mode: multiple globs union (.ts + .js), markdown excluded
     await searchCodesHandler(KCTX, conn, {
       type: 'search_codes',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       query: 'needle',
       mode: 'content',
       pattern: '*.ts,*.js',
@@ -291,7 +295,7 @@ describe('codes handlers', () => {
 
     await searchCodesHandler(KCTX, conn, {
       type: 'search_codes',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       query: 'match',
       mode: 'filename',
     })
@@ -310,7 +314,7 @@ describe('codes handlers', () => {
 
     await searchCodesHandler(KCTX, conn, {
       type: 'search_codes',
-      workspaceId: 'ws-1',
+      workspaceName: 'ws-1',
       query: 'match',
       mode: 'filename',
     })
@@ -334,12 +338,15 @@ describe('get_code_git_status handler', () => {
     await writeFile(join(workspace, 'new.ts'), 'export const n = 1\n')
 
     const { conn, sent } = capture()
-    await getCodeGitStatusHandler(KCTX, conn, { type: 'get_code_git_status', workspaceId: 'ws-1' })
+    await getCodeGitStatusHandler(KCTX, conn, {
+      type: 'get_code_git_status',
+      workspaceName: 'ws-1',
+    })
 
     expect(sent).toHaveLength(1)
     const msg = sent[0] as Extract<ServerToClient, { type: 'code_git_status' }>
     expect(msg.type).toBe('code_git_status')
-    expect(msg.workspaceId).toBe('ws-1')
+    expect(msg.workspaceName).toBe('ws-1')
     expect(msg.files['new.ts']).toEqual<CodeGitStatus>({
       modified: false,
       untracked: true,
@@ -349,16 +356,19 @@ describe('get_code_git_status handler', () => {
 
   it('non-git workspace → empty snapshot, never an error frame', async () => {
     const { conn, sent } = capture()
-    await getCodeGitStatusHandler(KCTX, conn, { type: 'get_code_git_status', workspaceId: 'ws-1' })
-    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceId: 'ws-1', files: {} })
+    await getCodeGitStatusHandler(KCTX, conn, {
+      type: 'get_code_git_status',
+      workspaceName: 'ws-1',
+    })
+    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceName: 'ws-1', files: {} })
   })
 
   it('unknown workspace id → empty snapshot for that id (degrade, no throw)', async () => {
     const { conn, sent } = capture()
     await getCodeGitStatusHandler(KCTX, conn, {
       type: 'get_code_git_status',
-      workspaceId: 'ws-unknown',
+      workspaceName: 'ws-unknown',
     })
-    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceId: 'ws-unknown', files: {} })
+    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceName: 'ws-unknown', files: {} })
   })
 })

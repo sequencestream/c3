@@ -30,25 +30,29 @@ import {
 } from '../../runs.js'
 
 // `state.js` is mocked so the handler walks exactly the workspaces we set here.
-// `resolveWorkspaceRoot`/`pathToId` are identity stubs: the test uses the path as
-// the opaque id, so the handler resolves each id straight back to the same path.
 const hoisted = vi.hoisted(() => ({
-  workspaces: [] as { id: string; name: string; lastAccessed: number }[],
+  workspaces: [] as { name: string; path: string; lastAccessed: number }[],
 }))
 vi.mock('../../state.js', () => ({
   listWorkspaces: () => hoisted.workspaces,
-  resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  resolveWorkspaceRoot: (name: string) => hoisted.workspaces.find((w) => w.name === name)?.path,
+  pathToName: (path: string) => hoisted.workspaces.find((w) => w.path === path)?.name ?? path,
 }))
 
 import { getTimeRangeStatsHandler } from './index.js'
 
 const A = '/abs/proj-a'
 const B = '/abs/proj-b'
+const A_NAME = 'proj-a'
+const B_NAME = 'proj-b'
 let dir: string
 
 // A reference instant; ranges are built relative to it so filter boundaries are exact.
 const T = 1_700_000_000_000
+
+function workspaceKey(path: string): string {
+  return hoisted.workspaces.find((w) => w.path === path)?.name ?? path
+}
 
 function resetAllStores(): void {
   intentsStore.resetStoreForTests()
@@ -73,10 +77,10 @@ function d(): Db {
 
 function seedIntent(proj: string, status: string, updatedAt: number): void {
   d().run(
-    `INSERT INTO intents (id, workspace_path, title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at)
+    `INSERT INTO intents (id, workspace_name, title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
-    proj,
+    workspaceKey(proj),
     't',
     '',
     'medium',
@@ -91,10 +95,10 @@ function seedIntent(proj: string, status: string, updatedAt: number): void {
 
 function seedDiscussion(proj: string, status: string, updatedAt: number): void {
   d().run(
-    `INSERT INTO discussions (id, workspace_path, title, type, status, created_at, updated_at)
+    `INSERT INTO discussions (id, workspace_name, title, type, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?)`,
     randomUUID(),
-    proj,
+    workspaceKey(proj),
     't',
     'brainstorm',
     status,
@@ -106,11 +110,11 @@ function seedDiscussion(proj: string, status: string, updatedAt: number): void {
 function seedAutomation(proj: string, status: string, updatedAt: number): string {
   const id = randomUUID()
   d().run(
-    `INSERT INTO automations (id, type, workspace_path, cron_expression, status, created_at, updated_at)
+    `INSERT INTO automations (id, type, workspace_name, cron_expression, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?)`,
     id,
     'command',
-    proj,
+    workspaceKey(proj),
     '*/5 * * * *',
     status,
     updatedAt,
@@ -132,12 +136,12 @@ function seedExecLog(automationId: string, status: string): void {
 function seedSession(proj: string, lastModified: number | null): void {
   d().run(
     `INSERT INTO session_metadata (
-       c3_id, workspace_path, vendor, agent_id, title, last_modified, state, state_updated_at,
+       c3_id, workspace_name, vendor, agent_id, title, last_modified, state, state_updated_at,
        kind, session_kind, owner_kind, owner_id, bound
      )
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
-    proj,
+    workspaceKey(proj),
     'claude',
     'a',
     't',
@@ -318,6 +322,10 @@ describe('getTimeRangeStatsHandler', () => {
 
   it('aggregates every workspace into one entry each', () => {
     warmSchema()
+    hoisted.workspaces = [
+      { name: A_NAME, path: A, lastAccessed: 2 },
+      { name: B_NAME, path: B, lastAccessed: 1 },
+    ]
     // Project A: a full spread.
     seedIntent(A, 'todo', T)
     seedIntent(A, 'in_progress', T)
@@ -335,17 +343,12 @@ describe('getTimeRangeStatsHandler', () => {
     setStatus('s-a', 'running')
     ensureRuntime('s-a-idle', A, 'default', [])
     // Project B: empty.
-    hoisted.workspaces = [
-      { id: A, name: 'proj-a', lastAccessed: 2 },
-      { id: B, name: 'proj-b', lastAccessed: 1 },
-    ]
-
     const conn = fakeConn()
     getTimeRangeStatsHandler(fakeCtx(), conn, { type: 'get_timerange_stats' })
     const stats = sentStats(conn as never)
 
     expect(stats).toHaveLength(2)
-    const a = stats.find((s) => s.workspaceId === A)!
+    const a = stats.find((s) => s.workspaceName === A_NAME)!
     expect(a).toMatchObject({
       projectName: 'proj-a',
       workSessions: { total: 2, running: 1 },
@@ -353,7 +356,7 @@ describe('getTimeRangeStatsHandler', () => {
       discussions: { in_progress: 1, completed: 1 },
       automations: { total: 2, active: 1, running: 1 },
     })
-    const b = stats.find((s) => s.workspaceId === B)!
+    const b = stats.find((s) => s.workspaceName === B_NAME)!
     expect(b).toMatchObject({
       projectName: 'proj-b',
       workSessions: { total: 0, running: 0 },
@@ -365,14 +368,13 @@ describe('getTimeRangeStatsHandler', () => {
 
   it('passes the time range through to every surface', () => {
     warmSchema()
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
     seedIntent(A, 'todo', T - 10_000) // out of window
     seedIntent(A, 'todo', T) // in window
     seedDiscussion(A, 'completed', T)
     seedAutomation(A, 'active', T)
     seedSession(A, T)
     seedSession(A, T - 10_000) // out of window
-    hoisted.workspaces = [{ id: A, name: 'proj-a', lastAccessed: 1 }]
-
     const conn = fakeConn()
     getTimeRangeStatsHandler(fakeCtx(), conn, {
       type: 'get_timerange_stats',
@@ -393,7 +395,7 @@ describe('getTimeRangeStatsHandler', () => {
     // A live runtime still counts even with no db.
     ensureRuntime('s-a', A, 'default', [])
     setStatus('s-a', 'running')
-    hoisted.workspaces = [{ id: A, name: 'proj-a', lastAccessed: 1 }]
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
 
     const conn = fakeConn()
     getTimeRangeStatsHandler(fakeCtx(), conn, { type: 'get_timerange_stats' })

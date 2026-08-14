@@ -33,16 +33,21 @@ import { ensureRuntime, setStatus, removeRuntimesForWorkspace } from '../../runs
 
 const A = '/abs/proj-a'
 const B = '/abs/proj-b'
+const A_NAME = 'proj-a'
+const B_NAME = 'proj-b'
 
-// `state.js` mocked to a fixed set; ids are identity paths.
+// `state.js` mocked to a fixed name-to-path registry.
 const hoisted = vi.hoisted(() => ({
-  workspaces: [] as { id: string; name: string; path: string; lastAccessed: number }[],
+  workspaces: [] as { name: string; path: string; lastAccessed: number }[],
   unresolvable: new Set<string>(),
 }))
 vi.mock('../../state.js', () => ({
   listWorkspaces: () => hoisted.workspaces,
-  resolveWorkspaceRoot: (id: string) => (hoisted.unresolvable.has(id) ? undefined : id),
-  pathToId: (p: string) => p,
+  resolveWorkspaceRoot: (name: string) =>
+    hoisted.unresolvable.has(name)
+      ? undefined
+      : hoisted.workspaces.find((w) => w.name === name)?.path,
+  pathToName: (path: string) => hoisted.workspaces.find((w) => w.path === path)?.name ?? path,
 }))
 
 // `kernel/config` partially mocked: real exports kept (getTimezone etc.), only the
@@ -99,10 +104,10 @@ function warmSchema(): void {
 
 function seedIntent(proj: string, status: string): void {
   d().run(
-    `INSERT INTO intents (id, workspace_path, title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at)
+    `INSERT INTO intents (id, workspace_name, title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
-    proj,
+    proj === A ? A_NAME : proj === B ? B_NAME : proj,
     't',
     '',
     'medium',
@@ -117,10 +122,10 @@ function seedIntent(proj: string, status: string): void {
 
 function seedDiscussion(proj: string, status: string): void {
   d().run(
-    `INSERT INTO discussions (id, workspace_path, title, type, status, created_at, updated_at)
+    `INSERT INTO discussions (id, workspace_name, title, type, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?)`,
     randomUUID(),
-    proj,
+    proj === A ? A_NAME : proj === B ? B_NAME : proj,
     't',
     'brainstorm',
     status,
@@ -132,11 +137,11 @@ function seedDiscussion(proj: string, status: string): void {
 function seedAutomation(proj: string, status: string): string {
   const id = randomUUID()
   d().run(
-    `INSERT INTO automations (id, type, workspace_path, cron_expression, status, created_at, updated_at)
+    `INSERT INTO automations (id, type, workspace_name, cron_expression, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?)`,
     id,
     'command',
-    proj,
+    proj === A ? A_NAME : proj === B ? B_NAME : proj,
     '*/5 * * * *',
     status,
     T,
@@ -165,12 +170,12 @@ function seedSession(
 ): void {
   d().run(
     `INSERT INTO session_metadata (
-       c3_id, workspace_path, vendor, vendor_session_id, agent_id, title, last_modified, state,
+       c3_id, workspace_name, vendor, vendor_session_id, agent_id, title, last_modified, state,
        state_updated_at, kind, session_kind, owner_kind, owner_id, bound
      )
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
-    proj,
+    proj === A ? A_NAME : proj === B ? B_NAME : proj,
     'claude',
     opts.vendorSessionId ?? null,
     'a',
@@ -226,15 +231,15 @@ function runDashboard(): { rows: WorkspaceDashboardRow[]; error?: { code: string
 }
 
 describe('getWorkspaceDashboardHandler — aggregation', () => {
-  it('returns one row per registered workspace, in registry order, with opaque ids', () => {
+  it('returns one row per registered workspace, in registry order, keyed by name', () => {
     warmSchema()
     hoisted.workspaces = [
-      { id: A, name: 'proj-a', path: A, lastAccessed: 2 },
-      { id: B, name: 'proj-b', path: B, lastAccessed: 1 },
+      { name: A_NAME, path: A, lastAccessed: 2 },
+      { name: B_NAME, path: B, lastAccessed: 1 },
     ]
     const { rows, error } = runDashboard()
     expect(error).toBeUndefined()
-    expect(rows.map((r) => r.workspaceId)).toEqual([A, B])
+    expect(rows.map((r) => r.workspaceName)).toEqual([A_NAME, B_NAME])
     expect(rows[0]).toMatchObject({ name: 'proj-a', path: A })
   })
 
@@ -244,7 +249,7 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
       seedSession(A, k)
     }
     seedSession(A, 'work', { bound: 0 }) // pending placeholder — not counted
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
     const { rows } = runDashboard()
     expect(rows[0].sessions.total).toBe(6)
   })
@@ -282,7 +287,7 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
       ownerId: a3,
     })
     seedExecLog(a3, 'success', 'auto-3')
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
     const { rows } = runDashboard()
     // w1 + auto-1 (deduped) + auto-2 = 3
     expect(rows[0].sessions.running).toBe(3)
@@ -297,7 +302,7 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
     seedDiscussion(A, 'completed')
     seedAutomation(A, 'active')
     seedAutomation(A, 'paused')
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
     const { rows } = runDashboard()
     expect(rows[0]).toMatchObject({
       intents: { total: 3 },
@@ -308,14 +313,14 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
 
   it('normalizes the gate: unset ⇒ true; explicit false ⇒ closed', () => {
     warmSchema()
-    cfg.gate.set(B, false)
+    cfg.gate.set(B_NAME, false)
     hoisted.workspaces = [
-      { id: A, name: 'proj-a', path: A, lastAccessed: 2 },
-      { id: B, name: 'proj-b', path: B, lastAccessed: 1 },
+      { name: A_NAME, path: A, lastAccessed: 2 },
+      { name: B_NAME, path: B, lastAccessed: 1 },
     ]
     const { rows } = runDashboard()
-    expect(rows.find((r) => r.workspaceId === A)!.automationEnabled).toBe(true)
-    expect(rows.find((r) => r.workspaceId === B)!.automationEnabled).toBe(false)
+    expect(rows.find((r) => r.workspaceName === A_NAME)!.automationEnabled).toBe(true)
+    expect(rows.find((r) => r.workspaceName === B_NAME)!.automationEnabled).toBe(false)
   })
 
   it('empty registry ⇒ empty rows, not an error', () => {
@@ -329,7 +334,7 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
   it('db unavailable ⇒ structured error, not all-zero rows', () => {
     resetDbForTests()
     process.env.C3_DB_PATH = '/dev/null/broken/c3.db'
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
     const { rows, error } = runDashboard()
     expect(rows).toEqual([])
     expect(error).toEqual({ code: 'dashboard.loadFailed' })
@@ -337,10 +342,10 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
 
   it('a single workspace failing to resolve ⇒ whole-snapshot structured error', () => {
     warmSchema()
-    hoisted.unresolvable.add(B)
+    hoisted.unresolvable.add(B_NAME)
     hoisted.workspaces = [
-      { id: A, name: 'proj-a', path: A, lastAccessed: 2 },
-      { id: B, name: 'proj-b', path: B, lastAccessed: 1 },
+      { name: A_NAME, path: A, lastAccessed: 2 },
+      { name: B_NAME, path: B, lastAccessed: 1 },
     ]
     const { rows, error } = runDashboard()
     expect(rows).toEqual([])
@@ -349,7 +354,7 @@ describe('getWorkspaceDashboardHandler — aggregation', () => {
 })
 
 describe('setWorkspacesAutomationEnabledHandler — bulk gate', () => {
-  function run(msg: { workspaceIds: string[]; enabled: boolean }): {
+  function run(msg: { workspaceNames: string[]; enabled: boolean }): {
     results: WorkspaceAutomationGateResult[]
     dashboard: WorkspaceDashboardRow[]
     dashboardError?: { code: string }
@@ -369,28 +374,31 @@ describe('setWorkspacesAutomationEnabledHandler — bulk gate', () => {
 
   it('admin: all workspaces succeed and only automationEnabled changes', () => {
     warmSchema()
-    cfg.settings.set(A, { forge: 'github', devSkill: '/plan', automationEnabled: true })
-    cfg.settings.set(B, { maxRoundsPerStage: 12, automationEnabled: true })
+    cfg.settings.set(A_NAME, { forge: 'github', devSkill: '/plan', automationEnabled: true })
+    cfg.settings.set(B_NAME, { maxRoundsPerStage: 12, automationEnabled: true })
     // A real automation row to prove the gate write never touches automations.
     const autoId = seedAutomation(A, 'paused')
     hoisted.workspaces = [
-      { id: A, name: 'proj-a', path: A, lastAccessed: 2 },
-      { id: B, name: 'proj-b', path: B, lastAccessed: 1 },
+      { name: A_NAME, path: A, lastAccessed: 2 },
+      { name: B_NAME, path: B, lastAccessed: 1 },
     ]
-    const { results, dashboard, dashboardError } = run({ workspaceIds: [A, B], enabled: false })
+    const { results, dashboard, dashboardError } = run({
+      workspaceNames: [A_NAME, B_NAME],
+      enabled: false,
+    })
     expect(results).toEqual([
-      { workspaceId: A, ok: true },
-      { workspaceId: B, ok: true },
+      { workspaceName: A_NAME, ok: true },
+      { workspaceName: B_NAME, ok: true },
     ])
     expect(dashboardError).toBeUndefined()
     expect(dashboard).toHaveLength(2)
     // Only the gate flipped; sibling fields preserved.
-    expect(cfg.settings.get(A)).toEqual({
+    expect(cfg.settings.get(A_NAME)).toEqual({
       forge: 'github',
       devSkill: '/plan',
       automationEnabled: false,
     })
-    expect(cfg.settings.get(B)).toEqual({ maxRoundsPerStage: 12, automationEnabled: false })
+    expect(cfg.settings.get(B_NAME)).toEqual({ maxRoundsPerStage: 12, automationEnabled: false })
     // The automation row's own status is untouched.
     const row = d().get<{ status: string }>('SELECT status FROM automations WHERE id=?', autoId)
     expect(row?.status).toBe('paused')
@@ -399,9 +407,9 @@ describe('setWorkspacesAutomationEnabledHandler — bulk gate', () => {
   it('non-admin: whole batch rejected with an error frame, no writes', () => {
     warmSchema()
     authz.isAdmin = false
-    cfg.settings.set(A, { automationEnabled: true })
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
-    const { results, errorFrame } = run({ workspaceIds: [A], enabled: false })
+    cfg.settings.set(A_NAME, { automationEnabled: true })
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
+    const { results, errorFrame } = run({ workspaceNames: [A_NAME], enabled: false })
     expect(errorFrame).toEqual({ type: 'error', error: { code: 'auth.adminOnly' } })
     expect(results).toEqual([]) // no result frame at all
     expect(cfg.saved).toEqual([]) // nothing persisted
@@ -409,47 +417,47 @@ describe('setWorkspacesAutomationEnabledHandler — bulk gate', () => {
 
   it('empty selection is a no-op (never "all workspaces")', () => {
     warmSchema()
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
-    const { results } = run({ workspaceIds: [], enabled: false })
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
+    const { results } = run({ workspaceNames: [], enabled: false })
     expect(results).toEqual([])
     expect(cfg.saved).toEqual([])
   })
 
   it('de-duplicates repeated ids to a single write + single result', () => {
     warmSchema()
-    cfg.settings.set(A, { automationEnabled: true })
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
-    const { results } = run({ workspaceIds: [A, A, A], enabled: false })
-    expect(results).toEqual([{ workspaceId: A, ok: true }])
-    expect(cfg.saved.filter((s) => s.path === A)).toHaveLength(1)
+    cfg.settings.set(A_NAME, { automationEnabled: true })
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
+    const { results } = run({ workspaceNames: [A_NAME, A_NAME, A_NAME], enabled: false })
+    expect(results).toEqual([{ workspaceName: A_NAME, ok: true }])
+    expect(cfg.saved.filter((s) => s.path === A_NAME)).toHaveLength(1)
   })
 
   it('a workspace removed mid-batch is a structured per-item failure, others proceed', () => {
     warmSchema()
-    cfg.settings.set(A, { automationEnabled: true })
-    hoisted.unresolvable.add(B) // B was removed before the write
-    hoisted.workspaces = [{ id: A, name: 'proj-a', path: A, lastAccessed: 1 }]
-    const { results } = run({ workspaceIds: [A, B], enabled: false })
+    cfg.settings.set(A_NAME, { automationEnabled: true })
+    hoisted.unresolvable.add(B_NAME) // B was removed before the write
+    hoisted.workspaces = [{ name: A_NAME, path: A, lastAccessed: 1 }]
+    const { results } = run({ workspaceNames: [A_NAME, B_NAME], enabled: false })
     expect(results).toEqual([
-      { workspaceId: A, ok: true },
-      { workspaceId: B, ok: false, error: { code: 'dashboard.workspaceMissing' } },
+      { workspaceName: A_NAME, ok: true },
+      { workspaceName: B_NAME, ok: false, error: { code: 'dashboard.workspaceMissing' } },
     ])
   })
 
   it('a partial persistence failure keeps successes and reports the failed item', () => {
     warmSchema()
-    cfg.settings.set(A, { automationEnabled: true })
-    cfg.settings.set(B, { automationEnabled: true })
-    cfg.saveThrowsFor.add(B)
+    cfg.settings.set(A_NAME, { automationEnabled: true })
+    cfg.settings.set(B_NAME, { automationEnabled: true })
+    cfg.saveThrowsFor.add(B_NAME)
     hoisted.workspaces = [
-      { id: A, name: 'proj-a', path: A, lastAccessed: 2 },
-      { id: B, name: 'proj-b', path: B, lastAccessed: 1 },
+      { name: A_NAME, path: A, lastAccessed: 2 },
+      { name: B_NAME, path: B, lastAccessed: 1 },
     ]
-    const { results } = run({ workspaceIds: [A, B], enabled: false })
+    const { results } = run({ workspaceNames: [A_NAME, B_NAME], enabled: false })
     expect(results).toEqual([
-      { workspaceId: A, ok: true },
-      { workspaceId: B, ok: false, error: { code: 'dashboard.gateSaveFailed' } },
+      { workspaceName: A_NAME, ok: true },
+      { workspaceName: B_NAME, ok: false, error: { code: 'dashboard.gateSaveFailed' } },
     ])
-    expect(cfg.settings.get(A)!.automationEnabled).toBe(false) // A still committed
+    expect(cfg.settings.get(A_NAME)!.automationEnabled).toBe(false) // A still committed
   })
 })

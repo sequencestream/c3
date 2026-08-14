@@ -3,7 +3,7 @@
  *
  * Pins that an event carrying `intentId` lands on that intent's detail page with
  * `sessionKind` only choosing the sub-tab, while an event with no owning intent
- * lands on the unified session page using the event's opaque `workspaceId`,
+ * lands on the unified session page using the event's opaque `workspaceName`,
  * where `sessionKind` only chooses the left-list kind.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,7 @@ const WS = 'ws-1'
 function event(over: Partial<WaitUserInvolveEvent>): WaitUserInvolveEvent {
   return {
     id: 'e1',
-    workspaceId: WS,
+    workspaceName: WS,
     sessionKind: 'work',
     sessionId: null,
     title: null,
@@ -61,7 +61,7 @@ describe('WorkCenter list actions', () => {
     ctx.reloadWorkcenter()
     expect(send).toHaveBeenCalledWith({
       type: 'list_wait_user_events',
-      workspaceId: WS,
+      workspaceName: WS,
       status: undefined,
       limit: 20,
     })
@@ -72,7 +72,7 @@ describe('WorkCenter list actions', () => {
     ctx.loadMoreWorkcenter(undefined, 100, 'e1')
     expect(send).toHaveBeenCalledWith({
       type: 'list_wait_user_events',
-      workspaceId: WS,
+      workspaceName: WS,
       status: undefined,
       cursorTime: 100,
       cursorExcludeId: 'e1',
@@ -116,7 +116,7 @@ describe('jumpToSource', () => {
     const { ctx, openWorkcenterSession } = makeCtx()
     ctx.jumpToSource(event({ sessionKind, sessionId, title: 'Need review', updatedAt: 10 }))
     expect(openWorkcenterSession).toHaveBeenCalledWith({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind,
       sessionId,
       title: 'Need review',
@@ -128,7 +128,7 @@ describe('jumpToSource', () => {
     const { ctx, openWorkcenterSession } = makeCtx()
     ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: null }))
     expect(openWorkcenterSession).toHaveBeenCalledWith({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'intent',
       sessionId: null,
       title: null,
@@ -136,11 +136,11 @@ describe('jumpToSource', () => {
     })
   })
 
-  it('falls back to currentWorkspace when the event carries no workspaceId', () => {
+  it('falls back to currentWorkspace when the event carries no workspaceName', () => {
     const { ctx, openWorkcenterSession } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'work', sessionId: 's1', workspaceId: '' }))
+    ctx.jumpToSource(event({ sessionKind: 'work', sessionId: 's1', workspaceName: '' }))
     expect(openWorkcenterSession).toHaveBeenCalledWith({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'work',
       sessionId: 's1',
       title: null,
@@ -193,10 +193,10 @@ describe('jumpToSource', () => {
     expect(openWorkcenterSession).not.toHaveBeenCalled()
   })
 
-  it('intentId + no workspaceId → intent page in the fallback workspace', () => {
+  it('intentId + no workspaceName → intent page in the fallback workspace', () => {
     const { ctx, openIntents, requestedIntentId } = makeCtx()
     ctx.jumpToSource(
-      event({ sessionKind: 'spec', sessionId: 'spec-1', intentId: 'i-2', workspaceId: '' }),
+      event({ sessionKind: 'spec', sessionId: 'spec-1', intentId: 'i-2', workspaceName: '' }),
     )
     expect(openIntents).toHaveBeenCalledWith(WS)
     expect(requestedIntentId.value).toBe('i-2')
@@ -218,7 +218,7 @@ describe('jumpToSource', () => {
     const { ctx, openWorkcenterSession, openIntents, requestedIntentSubTab } = makeCtx()
     ctx.jumpToSource(event({ sessionKind, sessionId, intentId: null, title: 'x', updatedAt: 7 }))
     expect(openWorkcenterSession).toHaveBeenCalledWith({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind,
       sessionId,
       title: 'x',

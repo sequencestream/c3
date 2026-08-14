@@ -13,7 +13,7 @@ import type { TaskListModel } from '../../lib/task-list'
 function disc(over: Partial<Discussion> = {}): Discussion {
   return {
     id: 'd1',
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     title: 'T',
     type: 'design',
     goal: '',

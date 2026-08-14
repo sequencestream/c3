@@ -17,20 +17,18 @@ import {
   getAutomationConcurrency,
   saveWorkspaceSetting,
   loadWorkspaceSetting,
-  setSettingsPath,
-  resetSettingsCacheForTests,
 } from './index.js'
+import { releaseConfigDb, useConfigDb } from './config-fixture.js'
 
 const TEST_PROJ = '/test/project'
 
 let tmpDir: string
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'c3-automation-concurrency-'))
-  setSettingsPath(join(tmpDir, 'settings.json'))
-  resetSettingsCacheForTests()
+  useConfigDb(tmpDir)
 })
 afterEach(() => {
-  resetSettingsCacheForTests()
+  releaseConfigDb()
   rmSync(tmpDir, { recursive: true, force: true })
 })
 

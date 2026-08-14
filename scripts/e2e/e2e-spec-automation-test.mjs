@@ -79,7 +79,7 @@ console.log(`[e2e] connecting ${URL}`)
 const ws = new WebSocket(URL)
 
 // ---- State ----
-let workspaceId = null
+let workspaceName = null
 let phase = 'boot'
 let intentId = null
 let intents = []
@@ -112,8 +112,8 @@ const item = () => detail?.items?.find((i) => i.intentId === intentId) ?? null
 /** Poll the ledger + queue projection until `predicate` holds (or we run out). */
 async function waitFor(predicate, label, tries) {
   for (let i = 0; i < tries; i++) {
-    send({ type: 'list_intents', workspaceId })
-    send({ type: 'get_queue_detail', workspaceId })
+    send({ type: 'list_intents', workspaceName })
+    send({ type: 'get_queue_detail', workspaceName })
     await sleep(POLL_MS)
     if (predicate()) return true
     // The invariant under test in phase 1 must hold at EVERY sample, not merely
@@ -141,16 +141,16 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId) break
+      if (workspaceName) break
       const name = PROJECT_DIR.split('/').pop()
-      workspaceId =
-        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.id ?? null
-      if (!workspaceId) {
-        failures.push('no workspaceId after add_workspace')
+      workspaceName =
+        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.name ?? null
+      if (!workspaceName) {
+        failures.push('no workspaceName after add_workspace')
         finish()
         return
       }
@@ -159,7 +159,7 @@ ws.addEventListener('message', (evt) => {
       // workspace lands on, and phase 1's precondition.
       send({
         type: 'save_workspace_setting',
-        workspaceId,
+        workspaceName,
         config: { sddEnabled: true, specMachineApprovalEnabled: false },
       })
       break
@@ -169,7 +169,7 @@ ws.addEventListener('message', (evt) => {
       workspaceConfig = msg.config
       if (phase === 'configure-sdd') {
         phase = 'seed-intent'
-        send({ type: 'create_intent', workspaceId })
+        send({ type: 'create_intent', workspaceName })
       }
       break
 
@@ -189,7 +189,7 @@ ws.addEventListener('message', (evt) => {
       // Force-skip is NOT applied: the spec phase must run. Development is kept
       // out by the spec gate itself — an unapproved spec is never developed —
       // and the run is stopped before approval could ever release that gate.
-      send({ type: 'start_workflow', workspaceId })
+      send({ type: 'start_workflow', workspaceName })
       void runAssertions()
       break
 
@@ -298,7 +298,7 @@ async function runAssertions() {
   const approveClicksBefore = sentApproveSpec
   send({
     type: 'save_workspace_setting',
-    workspaceId,
+    workspaceName,
     config: { ...workspaceConfig, sddEnabled: true, specMachineApprovalEnabled: true },
   })
   console.log('[e2e] machine approval opted in; waiting for the queue to approve…')
@@ -316,7 +316,7 @@ async function runAssertions() {
 
   // ── Phase 3: revoke, and stay revoked ────────────────────────────────────
   phase = 'revoke'
-  send({ type: 'revoke_spec_approval', workspaceId, intentId })
+  send({ type: 'revoke_spec_approval', workspaceName, intentId })
   await waitFor(() => target()?.specApproved === false, 'the approval was revoked', 30)
   check(target()?.specApproved === false, 'revoke returns the intent to awaiting approval')
   check(target()?.specApproveUser === null, 'revoke clears the approver identity')
@@ -331,7 +331,7 @@ async function runAssertions() {
   )
 
   phase = 'stop'
-  send({ type: 'stop_workflow', workspaceId })
+  send({ type: 'stop_workflow', workspaceName })
   await sleep(500)
   finish()
 }

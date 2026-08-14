@@ -28,7 +28,7 @@ const WS = '/abs/proj-1'
 function fakeDelivery(over: Partial<Delivery> = {}): Delivery {
   return {
     id: 'd-new',
-    workspaceId: WS,
+    workspaceName: WS,
     title: 'Fix login',
     description: 'Login breaks on retry',
     status: 'planned',
@@ -47,7 +47,7 @@ function fakeDelivery(over: Partial<Delivery> = {}): Delivery {
 function makeCtx() {
   const send = vi.fn()
   const showToast = vi.fn()
-  const pendingStandaloneDelivery = ref<{ workspaceId: string; intentId: string } | null>(null)
+  const pendingStandaloneDelivery = ref<{ workspaceName: string; intentId: string } | null>(null)
   const activeDeliveryBranchInit = ref<{ deliveryId: string; phase: string } | null>(null)
   const activeDelivery = ref<Delivery | null>(null)
   const activeDeliveryId = ref<string | null>(null)
@@ -108,9 +108,14 @@ describe('意图侧显式参数动作', () => {
     ctx.loadDeliveriesForLink(WS)
 
     expect(sent(send)).toEqual([
-      { type: 'link_intent_to_delivery', workspaceId: WS, deliveryId: 'd-1', intentId: 'i-1' },
-      { type: 'unlink_intent_from_delivery', workspaceId: WS, deliveryId: 'd-1', intentId: 'i-1' },
-      { type: 'list_deliveries', workspaceId: WS },
+      { type: 'link_intent_to_delivery', workspaceName: WS, deliveryId: 'd-1', intentId: 'i-1' },
+      {
+        type: 'unlink_intent_from_delivery',
+        workspaceName: WS,
+        deliveryId: 'd-1',
+        intentId: 'i-1',
+      },
+      { type: 'list_deliveries', workspaceName: WS },
     ])
   })
 
@@ -122,7 +127,7 @@ describe('意图侧显式参数动作', () => {
     expect(sent(send)).toEqual([
       {
         type: 'init_delivery_branch',
-        workspaceId: WS,
+        workspaceName: WS,
         deliveryId: 'd-1',
         branchName: 'delivery/abc-x',
         mode: 'create',
@@ -133,7 +138,7 @@ describe('意图侧显式参数动作', () => {
 
 describe('「当前意图独立交付」三步编排', () => {
   const REQUEST = {
-    workspaceId: WS,
+    workspaceName: WS,
     intentId: 'i-1',
     title: 'Fix login',
     description: 'Login breaks on retry',
@@ -148,7 +153,7 @@ describe('「当前意图独立交付」三步编排', () => {
 
     ctx.handleMessage({
       type: 'create_delivery_result',
-      workspaceId: WS,
+      workspaceName: WS,
       delivery: fakeDelivery({ id: 'd-new', title: 'Fix login' }),
       prMergeNotice: false,
     } as ServerToClient)
@@ -157,7 +162,7 @@ describe('「当前意图独立交付」三步编排', () => {
     const day = calendarDateToEpochMs(localCalendarDate(new Date()))
     expect(messages[0]).toEqual({
       type: 'create_delivery',
-      workspaceId: WS,
+      workspaceName: WS,
       title: 'Fix login',
       description: 'Login breaks on retry',
       startDate: day,
@@ -172,13 +177,13 @@ describe('「当前意图独立交付」三步编排', () => {
     ])
     expect(messages[2]).toEqual({
       type: 'link_intent_to_delivery',
-      workspaceId: WS,
+      workspaceName: WS,
       deliveryId: 'd-new',
       intentId: 'i-1',
     })
     expect(messages[3]).toEqual({
       type: 'init_delivery_branch',
-      workspaceId: WS,
+      workspaceName: WS,
       deliveryId: 'd-new',
       branchName: defaultDeliveryBranchName('d-new', 'Fix login'),
       mode: 'create',
@@ -210,7 +215,7 @@ describe('「当前意图独立交付」三步编排', () => {
 
     ctx.handleMessage({
       type: 'create_delivery_result',
-      workspaceId: WS,
+      workspaceName: WS,
       delivery: fakeDelivery({ id: 'd-plain' }),
       prMergeNotice: false,
     } as ServerToClient)
@@ -223,7 +228,7 @@ describe('「当前意图独立交付」三步编排', () => {
     ctx.createStandaloneDelivery(REQUEST)
     const result = {
       type: 'create_delivery_result',
-      workspaceId: WS,
+      workspaceName: WS,
       delivery: fakeDelivery({ id: 'd-new' }),
       prMergeNotice: false,
     } as ServerToClient
@@ -284,7 +289,7 @@ describe('openDeliveries — git-branch-mode fetch + cross-delivery clearing (�
       'list_deliveries',
       'list_intents',
     ])
-    expect(sent(send)[0]).toMatchObject({ type: 'load_workspace_setting', workspaceId: WS })
+    expect(sent(send)[0]).toMatchObject({ type: 'load_workspace_setting', workspaceName: WS })
     expect(ctx.activeDeliveryPr.value).toBeNull()
     expect(ctx.activeDeliveryMainlineAhead.value).toBeNull()
     expect(ctx.activeDeliveryBranchAhead.value).toBeNull()

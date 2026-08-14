@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -33,7 +33,7 @@ beforeEach(() => {
   resetQueueStoreForTests()
   resetStateCacheForTests()
   addWorkspace(dir, 1)
-  proj = resolveWorkspaceRoot(pathToId(dir)!)!
+  proj = resolveWorkspaceRoot(pathToName(dir)!)!
   const [intent] = insertIntents(proj, [
     { title: '链深度', shortEnTitle: 'chain', content: '', priority: 'P1' },
   ])

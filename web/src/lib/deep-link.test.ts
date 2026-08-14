@@ -4,23 +4,23 @@ import { parseDeepLink, DEEP_LINK_KINDS } from './deep-link'
 describe('parseDeepLink', () => {
   it('解析合法的 session 深链 → 返回 kind=session', () => {
     const result = parseDeepLink('/session/ws1/sess-abc')
-    expect(result).toEqual({ kind: 'session', workspaceId: 'ws1', id: 'sess-abc' })
+    expect(result).toEqual({ kind: 'session', workspaceName: 'ws1', id: 'sess-abc' })
   })
 
   it('解析合法的 intent 深链 → 返回 kind=intent', () => {
     const result = parseDeepLink('/intent/ws1/int-xyz')
-    expect(result).toEqual({ kind: 'intent', workspaceId: 'ws1', id: 'int-xyz' })
+    expect(result).toEqual({ kind: 'intent', workspaceName: 'ws1', id: 'int-xyz' })
   })
 
   it('解析合法的 discussion 深链 → 返回 kind=discussion', () => {
     const result = parseDeepLink('/discussion/ws1/disc-456')
-    expect(result).toEqual({ kind: 'discussion', workspaceId: 'ws1', id: 'disc-456' })
+    expect(result).toEqual({ kind: 'discussion', workspaceName: 'ws1', id: 'disc-456' })
   })
 
   it('处理带前导 # 的输入(如 location.hash)需先 .slice(1)', () => {
     // parseDeepLink 不处理前导 #,调用方负责剥掉
     const result = parseDeepLink('/session/ws1/sid')
-    expect(result).toEqual({ kind: 'session', workspaceId: 'ws1', id: 'sid' })
+    expect(result).toEqual({ kind: 'session', workspaceName: 'ws1', id: 'sid' })
   })
 
   it('空 hash → 返回 null', () => {
@@ -44,6 +44,15 @@ describe('parseDeepLink', () => {
     // 以 / 开头但某段为空
     expect(parseDeepLink('/session//id1')).toBeNull()
     expect(parseDeepLink('//ws1/id1')).toBeNull()
+  })
+
+  it('解码包含空格、Unicode 与斜杠的 workspace name', () => {
+    expect(parseDeepLink('/session/%E5%BC%80%E5%8F%91%20%2F%20A/sid')).toEqual({
+      kind: 'session',
+      workspaceName: '开发 / A',
+      id: 'sid',
+    })
+    expect(parseDeepLink('/session/%E0%A4%A/sid')).toBeNull()
   })
 
   it('不含白名单外的 kind → 返回 null(验证 DEEP_LINK_KINDS 三方齐全)', () => {

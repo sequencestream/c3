@@ -19,7 +19,9 @@
  * durable copy catches up on the next successful write.
  */
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { workspaceNameFor } from '../../state.js'
+
+const workspaceKey = workspaceNameFor
 import type { QueueIntentMeta, QueueReasonCode, QueueRunState } from '../../kernel/queue/index.js'
 import { emptyQueueIntentMeta } from '../../kernel/queue/index.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
@@ -29,7 +31,7 @@ const DECISION_LOG_RETENTION = 2000
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS queue_workspace_state (
-  workspace_path TEXT PRIMARY KEY,
+  workspace_name TEXT PRIMARY KEY,
   state          TEXT NOT NULL,
   started_at     INTEGER,
   force_skipped  TEXT NOT NULL DEFAULT '[]',
@@ -37,7 +39,7 @@ CREATE TABLE IF NOT EXISTS queue_workspace_state (
 );
 CREATE TABLE IF NOT EXISTS queue_intent_state (
   intent_id      TEXT PRIMARY KEY,
-  workspace_path TEXT NOT NULL,
+  workspace_name TEXT NOT NULL,
   failure_count  INTEGER NOT NULL DEFAULT 0,
   backoff_count  INTEGER NOT NULL DEFAULT 0,
   backoff_until  INTEGER,
@@ -47,11 +49,11 @@ CREATE TABLE IF NOT EXISTS queue_intent_state (
   cooldown_until INTEGER,
   updated_at     INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_queue_intent_workspace ON queue_intent_state(workspace_path);
+CREATE INDEX IF NOT EXISTS idx_queue_intent_workspace ON queue_intent_state(workspace_name);
 CREATE TABLE IF NOT EXISTS queue_decision_log (
   id             TEXT PRIMARY KEY,
   tick_id        TEXT NOT NULL,
-  workspace_path TEXT NOT NULL,
+  workspace_name TEXT NOT NULL,
   intent_id      TEXT NOT NULL,
   decided_at     INTEGER NOT NULL,
   action         TEXT NOT NULL,
@@ -61,7 +63,7 @@ CREATE TABLE IF NOT EXISTS queue_decision_log (
   backoff_count  INTEGER NOT NULL DEFAULT 0,
   next_wakeup_at INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_queue_decision_workspace ON queue_decision_log(workspace_path, decided_at DESC);
+CREATE INDEX IF NOT EXISTS idx_queue_decision_workspace ON queue_decision_log(workspace_name, decided_at DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_decision_intent ON queue_decision_log(intent_id, decided_at DESC);
 `
 
@@ -122,13 +124,13 @@ interface ControlDbRow {
 
 /** Read a workspace's queue control state (idle when never started). */
 export function getQueueControl(workspacePath: string): QueueControlRow {
-  const key = resolve(workspacePath)
+  const key = workspaceKey(workspacePath)
   const cached = controlMirror.get(key)
   if (cached) return { ...cached, forceSkipped: [...cached.forceSkipped] }
   const d = db()
   if (!d) return { ...IDLE_CONTROL }
   const row = d.get<ControlDbRow>(
-    'SELECT state, started_at, force_skipped FROM queue_workspace_state WHERE workspace_path=?',
+    'SELECT state, started_at, force_skipped FROM queue_workspace_state WHERE workspace_name=?',
     key,
   )
   if (!row) return { ...IDLE_CONTROL }
@@ -143,15 +145,15 @@ export function getQueueControl(workspacePath: string): QueueControlRow {
 
 /** Persist a workspace's queue control state. Returns false when the db refused. */
 export function setQueueControl(workspacePath: string, next: QueueControlRow): boolean {
-  const key = resolve(workspacePath)
+  const key = workspaceKey(workspacePath)
   controlMirror.set(key, { ...next, forceSkipped: [...next.forceSkipped] })
   const d = db()
   if (!d) return false
   try {
     d.run(
-      `INSERT INTO queue_workspace_state (workspace_path, state, started_at, force_skipped, updated_at)
+      `INSERT INTO queue_workspace_state (workspace_name, state, started_at, force_skipped, updated_at)
        VALUES (?,?,?,?,?)
-       ON CONFLICT(workspace_path) DO UPDATE SET
+       ON CONFLICT(workspace_name) DO UPDATE SET
          state=excluded.state,
          started_at=excluded.started_at,
          force_skipped=excluded.force_skipped,
@@ -174,10 +176,10 @@ export function listActiveQueueWorkspaces(): string[] {
   const d = db()
   if (!d) return []
   try {
-    const rows = d.all<{ workspace_path: string }>(
-      "SELECT workspace_path FROM queue_workspace_state WHERE state IN ('running','paused')",
+    const rows = d.all<{ workspace_name: string }>(
+      "SELECT workspace_name FROM queue_workspace_state WHERE state IN ('running','paused')",
     )
-    return rows.map((r) => r.workspace_path)
+    return rows.map((r) => r.workspace_name)
   } catch (err) {
     console.error('[c3:queue] 读取活跃队列工作区失败:', err)
     return []
@@ -220,13 +222,13 @@ function toMeta(row: MetaDbRow): QueueIntentMeta {
  * backoff and no cooldown, which is exactly how historic intents behave.
  */
 export function getQueueIntentMeta(workspacePath: string): Record<string, QueueIntentMeta> {
-  const key = resolve(workspacePath)
+  const key = workspaceKey(workspacePath)
   const out: Record<string, QueueIntentMeta> = {}
   const d = db()
   if (d) {
     try {
       for (const row of d.all<MetaDbRow>(
-        'SELECT * FROM queue_intent_state WHERE workspace_path=?',
+        'SELECT * FROM queue_intent_state WHERE workspace_name=?',
         key,
       )) {
         out[row.intent_id] = toMeta(row)
@@ -260,18 +262,18 @@ export function getQueueIntentMetaById(intentId: string): QueueIntentMeta {
 
 /** Upsert one intent's scheduling metadata. Returns false when the db refused. */
 export function putQueueIntentMeta(workspacePath: string, meta: QueueIntentMeta): boolean {
-  const key = resolve(workspacePath)
+  const key = workspaceKey(workspacePath)
   metaMirror.set(meta.intentId, { workspacePath: key, meta })
   const d = db()
   if (!d) return false
   try {
     d.run(
       `INSERT INTO queue_intent_state
-         (intent_id, workspace_path, failure_count, backoff_count, backoff_until,
+         (intent_id, workspace_name, failure_count, backoff_count, backoff_until,
           parked, park_reason, park_detail, cooldown_until, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(intent_id) DO UPDATE SET
-         workspace_path=excluded.workspace_path,
+         workspace_name=excluded.workspace_name,
          failure_count=excluded.failure_count,
          backoff_count=excluded.backoff_count,
          backoff_until=excluded.backoff_until,
@@ -318,7 +320,7 @@ export function deleteQueueIntentMeta(intentId: string): void {
 export interface QueueDecisionRow {
   id: string
   tickId: string
-  workspaceId: string
+  workspaceName: string
   intentId: string
   decidedAt: number
   action: string
@@ -355,12 +357,12 @@ export function appendQueueDecisions(rows: readonly AppendDecisionInput[]): bool
     for (const r of rows) {
       d.run(
         `INSERT INTO queue_decision_log
-           (id, tick_id, workspace_path, intent_id, decided_at, action, blocked_gate,
+           (id, tick_id, workspace_name, intent_id, decided_at, action, blocked_gate,
             reject_reason, attempt_count, backoff_count, next_wakeup_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         randomUUID(),
         r.tickId,
-        resolve(r.workspacePath),
+        workspaceKey(r.workspacePath),
         r.intentId,
         r.decidedAt,
         r.action,
@@ -371,7 +373,7 @@ export function appendQueueDecisions(rows: readonly AppendDecisionInput[]): bool
         r.nextWakeupAt,
       )
     }
-    pruneDecisionLog(d, resolve(rows[0]!.workspacePath))
+    pruneDecisionLog(d, workspaceKey(rows[0]!.workspacePath))
     return true
   } catch (err) {
     console.error('[c3:queue] 决策日志写入失败(不放宽任何闸门,下轮 tick 继续对账):', err)
@@ -382,8 +384,8 @@ export function appendQueueDecisions(rows: readonly AppendDecisionInput[]): bool
 function pruneDecisionLog(d: Db, workspacePath: string): void {
   d.run(
     `DELETE FROM queue_decision_log
-      WHERE workspace_path=? AND id NOT IN (
-        SELECT id FROM queue_decision_log WHERE workspace_path=?
+      WHERE workspace_name=? AND id NOT IN (
+        SELECT id FROM queue_decision_log WHERE workspace_name=?
         ORDER BY decided_at DESC LIMIT ?
       )`,
     workspacePath,
@@ -395,7 +397,7 @@ function pruneDecisionLog(d: Db, workspacePath: string): void {
 function rowToDecision(r: {
   id: string
   tick_id: string
-  workspace_path: string
+  workspace_name: string
   intent_id: string
   decided_at: number
   action: string
@@ -408,7 +410,7 @@ function rowToDecision(r: {
   return {
     id: r.id,
     tickId: r.tick_id,
-    workspaceId: r.workspace_path,
+    workspaceName: r.workspace_name,
     intentId: r.intent_id,
     decidedAt: r.decided_at,
     action: r.action,
@@ -427,9 +429,9 @@ export function listQueueDecisions(workspacePath: string, limit = 200): QueueDec
   try {
     return d
       .all<Parameters<typeof rowToDecision>[0]>(
-        `SELECT * FROM queue_decision_log WHERE workspace_path=?
+        `SELECT * FROM queue_decision_log WHERE workspace_name=?
           ORDER BY decided_at DESC, rowid DESC LIMIT ?`,
-        resolve(workspacePath),
+        workspaceKey(workspacePath),
         limit,
       )
       .map(rowToDecision)

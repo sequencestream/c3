@@ -68,7 +68,7 @@ await assertIsolatedSettings(URL, { testScript: 'scripts/e2e/e2e-cursor-automati
 const ws = new WebSocket(URL)
 
 let originalSettings = null
-let workspaceId = null
+let workspaceName = null
 let automationId = null
 let phase = 'init'
 const failures = []
@@ -143,10 +143,10 @@ ws.addEventListener('message', (evt) => {
       last.detail = msg
       break
     case 'workspaces':
-      workspaceId =
-        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop())?.id ??
-        msg.workspaces?.[0]?.id ??
-        workspaceId
+      workspaceName =
+        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop())?.name ??
+        msg.workspaces?.[0]?.name ??
+        workspaceName
       break
     case 'error':
       // 保存/创建阶段的服务端拒绝必须显式暴露,不能被轮询默默吞掉。
@@ -203,9 +203,9 @@ async function runAssertions() {
   check(agent.vendor === 'cursor', 'cursor agent 已保存')
 
   phase = 'seed-workspace'
-  send({ type: 'add_workspace', path: PROJECT_DIR })
-  for (let i = 0; i < 20 && !workspaceId; i++) await sleep(200)
-  if (!workspaceId) {
+  send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
+  for (let i = 0; i < 20 && !workspaceName; i++) await sleep(200)
+  if (!workspaceName) {
     failures.push('add_workspace 后没有工作区')
     return finish()
   }
@@ -214,10 +214,10 @@ async function runAssertions() {
   last.automations = null
   send({
     type: 'create_automation',
-    workspaceId,
+    workspaceName,
     input: {
       type: 'llm',
-      workspaceId,
+      workspaceName,
       vendor: 'cursor',
       agentId: CURSOR_AGENT_ID,
       config: { prompt: PROMPT },
@@ -237,7 +237,7 @@ async function runAssertions() {
     automationId =
       (last.automations?.items ?? []).find((s) => s.vendor === 'cursor' && s.type === 'llm')?.id ??
       null
-    if (!automationId) send({ type: 'list_automations', workspaceId })
+    if (!automationId) send({ type: 'list_automations', workspaceName })
   }
   if (!automationId) {
     failures.push('cursor 自动化未能创建(服务端拒绝了 cursor 作为执行器?)')

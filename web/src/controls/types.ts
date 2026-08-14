@@ -64,10 +64,10 @@ export interface AppMethods {
   maybeRestoreAutomations(list: WorkspaceInfo[]): void
   maybeRestoreCodes(list: WorkspaceInfo[]): void
   // Codes 内嵌 ChatColumn 的 per-workspace localStorage 持久化(best-effort)。
-  readCodesChatWidth(workspaceId: string): number
-  persistCodesChatWidth(workspaceId: string, px: number): void
-  readCodesSessionId(workspaceId: string): string | null
-  persistCodesSessionId(workspaceId: string, id: string | null): void
+  readCodesChatWidth(workspaceName: string): number
+  persistCodesChatWidth(workspaceName: string, px: number): void
+  readCodesSessionId(workspaceName: string): string | null
+  persistCodesSessionId(workspaceName: string, id: string | null): void
 
   // message handler
   handleMessage(msg: ServerToClient): void
@@ -80,8 +80,8 @@ export interface AppMethods {
   ensureSessions(path: string | null): void
   loadMoreSessions(path: string | null): void
   selectWorkspace(path: string): void
-  addWorkspace(path: string): void
-  removeWorkspace(workspaceId: string): void
+  addWorkspace(payload: { workspaceName: string; path: string }): void
+  removeWorkspace(workspaceName: string): void
   openNewSession(path: string): void
   confirmNewSession(agentId: string | null): void
   openSettingsFromPicker(): void
@@ -95,7 +95,7 @@ export interface AppMethods {
    */
   selectSession(path: string, sessionId: string, row?: SessionInfo): void
   openWorkcenterSession(input: {
-    workspaceId: string
+    workspaceName: string
     sessionKind: string | null | undefined
     sessionId: string | null
     title?: string | null
@@ -136,10 +136,10 @@ export interface AppMethods {
   /**
    * Open an intent's spec-REVIEW session for read-only replay (detail review tab /
    * aggregated「规范」list row). Resolved server-side from the intent's own
-   * `specReviewSessionId`; never falls back to `select_session`. `workspaceId`
+   * `specReviewSessionId`; never falls back to `select_session`. `workspaceName`
    * defaults to the intents page's current workspace.
    */
-  openSpecReviewSession(intentId: string, workspaceId?: string): void
+  openSpecReviewSession(intentId: string, workspaceName?: string): void
   /**
    * Fetch the intent's `spec.md` for the detail's `spec` tab. Specs live OUTSIDE
    * the workspace under the centralized root, so this sends `read_spec` (keyed by
@@ -271,18 +271,18 @@ export interface AppMethods {
   /** Unlink an intent from the open delivery; the server closes its unmerged PR first. */
   unlinkIntentFromDelivery(intentId: string): void
   /** Open a delivery's detail from the intent page's "关联交付" link (switches tab). */
-  openDeliveryFromIntent(workspacePath: string, deliveryId: string): void
+  openDeliveryFromIntent(workspaceName: string, deliveryId: string): void
 
   // Intent-side delivery entries. Same wire messages as the delivery page's, but
   // every id is explicit: the intent page acts on ITS workspace and a delivery
   // the user just picked, not on the delivery tab's open delivery.
   /** Fetch a workspace's deliveries so the intent-side link picker has candidates. */
-  loadDeliveriesForLink(workspaceId: string): void
-  linkIntentDelivery(workspaceId: string, deliveryId: string, intentId: string): void
-  unlinkIntentDelivery(workspaceId: string, deliveryId: string, intentId: string): void
+  loadDeliveriesForLink(workspaceName: string): void
+  linkIntentDelivery(workspaceName: string, deliveryId: string, intentId: string): void
+  unlinkIntentDelivery(workspaceName: string, deliveryId: string, intentId: string): void
   /** Branch init for an explicitly named delivery (the standalone-delivery chain's last step). */
   initDeliveryBranchFor(
-    workspaceId: string,
+    workspaceName: string,
     deliveryId: string,
     branchName: string,
     mode: 'create' | 'bind',
@@ -332,13 +332,13 @@ export interface AppMethods {
   onLoadAutomationToolManifest(vendor: string): void
 
   // codes (read-only file browser)
-  openCodes(workspaceId: string): void
+  openCodes(workspaceName: string): void
   loadCodesDir(rel: string): void
   refreshCodesTree(): void
   /** Request the workspace Git-status snapshot (coalesced while one is in flight). */
   requestCodesGitStatus(): void
   /** Adopt a `code_git_status` reply (authoritative replace for the current workspace). */
-  applyCodeGitStatus(workspaceId: string, files: Record<string, CodeGitStatus>): void
+  applyCodeGitStatus(workspaceName: string, files: Record<string, CodeGitStatus>): void
   toggleCodesDir(rel: string): void
   openCodeFile(path: string, line?: number): void
   closeCodeTab(path: string): void
@@ -350,8 +350,8 @@ export interface AppMethods {
   navigateToCodeFile(path: string, line?: number): void
   // Codes 内嵌 ChatColumn:空态「+ 新建」/ 标题栏「↻ 重置」都创建一个普通 work
   // session(不弹 agent 选择弹窗,沿用 workspace 默认 agent)。
-  createCodesChatSession(workspaceId: string): void
-  resetCodesChatSession(workspaceId: string): void
+  createCodesChatSession(workspaceName: string): void
+  resetCodesChatSession(workspaceName: string): void
 
   // chat / queue
   onSubmit(text: string, images?: PromptImage[]): void
@@ -383,16 +383,16 @@ export interface AppMethods {
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void
   /** Mint an external-MCP API key bound to ONE workspace; the reply carries its plaintext exactly once. */
-  createMcpApiKey(payload: { workspaceId: string; name: string }): void
+  createMcpApiKey(payload: { workspaceName: string; name: string }): void
   /** Rename a key and/or replace its granted tool scope. The workspace pins which roster replies. */
   updateMcpApiKey(payload: {
-    workspaceId: string
+    workspaceName: string
     id: string
     name?: string
     tools?: string[]
   }): void
   /** Revoke a key — effective on that key's very next request. */
-  revokeMcpApiKey(payload: { workspaceId: string; id: string }): void
+  revokeMcpApiKey(payload: { workspaceName: string; id: string }): void
   /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
   dismissMcpApiKeyReveal(): void
   /** Close the system-settings panel, dropping any still-revealed plaintext key. */
@@ -442,7 +442,7 @@ export interface AppMethods {
   /** Refresh the Dashboard only when it is the active view (domain-broadcast hook). */
   maybeRefreshDashboard(): void
   /** Set one workspace row's automation gate directly from its switch (admin only). */
-  toggleWorkspaceAutomation(workspaceId: string, enabled: boolean): void
+  toggleWorkspaceAutomation(workspaceName: string, enabled: boolean): void
 }
 
 // The shared controller context: reactive state + runtime plumbing + all the

@@ -19,7 +19,7 @@ import { ensureRuntime, getRuntime, removeRuntimesForWorkspace } from '../../run
 import type { SessionRuntime } from '../../runs.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -65,7 +65,7 @@ import {
 import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -80,8 +80,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {

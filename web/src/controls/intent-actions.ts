@@ -170,7 +170,7 @@ export function installIntentActions(ctx: AppCtx): void {
     const workspace = ctx.currentWorkspace.value
     if (!req || !workspace) return
     const result = resolvePendingWorkSessionSelect(req, {
-      workspacePath: workspace,
+      workspaceName: workspace,
       sessionKind: ctx.activeSessionKind.value,
       intents: ctx.intents.value[workspace] ?? [],
       sessions: ctx.currentSessions.value,
@@ -193,11 +193,11 @@ export function installIntentActions(ctx: AppCtx): void {
     intentsProject.value = path
     ctx.persistViewMode()
     // The detail progress and PR actions depend on the normalized workspace branch mode.
-    send({ type: 'load_workspace_setting', workspaceId: path })
+    send({ type: 'load_workspace_setting', workspaceName: path })
     // The response carries both the comm `session_selected` and the list.
-    send({ type: 'open_intent_session', workspaceId: path })
+    send({ type: 'open_intent_session', workspaceName: path })
     // Populate the middle-column intent session list.
-    send({ type: 'list_intent_sessions', workspaceId: path })
+    send({ type: 'list_intent_sessions', workspaceName: path })
   }
 
   // Jump from a work session's title bar to its linked intent: navigate to the
@@ -214,7 +214,7 @@ export function installIntentActions(ctx: AppCtx): void {
   ctx.selectIntentSession = (sessionId: string): void => {
     if (!intentsProject.value) return
     selectedIntentSessionId.value = sessionId
-    send({ type: 'open_intent_session', workspaceId: intentsProject.value, sessionId })
+    send({ type: 'open_intent_session', workspaceName: intentsProject.value, sessionId })
   }
 
   // The 「+」 entry only OPENS the create dialog — nothing is registered until the
@@ -260,7 +260,7 @@ export function installIntentActions(ctx: AppCtx): void {
     }
     send({
       type: 'create_intent',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       ...(payload ? { content: payload.content, base: payload.base } : {}),
     })
   }
@@ -268,7 +268,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value || (!text.trim() && images.length === 0)) return
     send({
       type: 'start_intent_session',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
       text,
       images,
@@ -279,7 +279,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'list_intents',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       ...(status ? { status } : {}),
     })
   }
@@ -288,7 +288,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'refine_intent',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
     })
   }
@@ -297,7 +297,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'write_spec',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
     })
     ctx.clearSpecLaunchTimers()
@@ -312,7 +312,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'approve_spec',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
     })
   }
@@ -325,7 +325,7 @@ export function installIntentActions(ctx: AppCtx): void {
     if (!intentsProject.value) return
     send({
       type: 'revoke_spec_approval',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
     })
   }
@@ -335,7 +335,7 @@ export function installIntentActions(ctx: AppCtx): void {
   // session_selected; the chat column rebinds to it like any other session.
   ctx.openSpecSession = (intentId: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'open_spec_session', workspaceId: intentsProject.value, intentId })
+    send({ type: 'open_spec_session', workspaceName: intentsProject.value, intentId })
   }
 
   // Open an intent's spec-REVIEW session for read-only replay (the detail's review
@@ -344,19 +344,19 @@ export function installIntentActions(ctx: AppCtx): void {
   // `spec_review` runtime — the client never names the session id, so a stale or
   // forged row cannot get a review session opened, and there is no fallback to the
   // generic `select_session` (which would rebuild it as a writable work runtime).
-  // `workspaceId` is explicit because the session page can drive this from a
+  // `workspaceName` is explicit because the session page can drive this from a
   // workspace that is not the intents page's current one.
-  ctx.openSpecReviewSession = (intentId: string, workspaceId?: string): void => {
-    const path = workspaceId ?? intentsProject.value
+  ctx.openSpecReviewSession = (intentId: string, workspaceName?: string): void => {
+    const path = workspaceName ?? intentsProject.value
     if (!path) return
-    send({ type: 'open_spec_review_session', workspaceId: path, intentId })
+    send({ type: 'open_spec_review_session', workspaceName: path, intentId })
   }
 
   // Reset the intent's refine session: the server starts a fresh comm session
   // seeded with the new input + intent content, replacing intent_session_id.
   ctx.resetIntentSession = (intentId: string, userInput: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'reset_intent_session', workspaceId: intentsProject.value, intentId, userInput })
+    send({ type: 'reset_intent_session', workspaceName: intentsProject.value, intentId, userInput })
   }
 
   // Reset the intent's spec session: the server starts a fresh write-confined
@@ -364,7 +364,7 @@ export function installIntentActions(ctx: AppCtx): void {
   // spec_session_id.
   ctx.resetSpecSession = (intentId: string, userInput: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'reset_spec_session', workspaceId: intentsProject.value, intentId, userInput })
+    send({ type: 'reset_spec_session', workspaceName: intentsProject.value, intentId, userInput })
     ctx.clearSpecLaunchTimers()
     ctx.specLaunch.value = beginSpecLaunch(intentId, Date.now())
     ctx.specLaunchTimers.safety = setTimeout(
@@ -383,7 +383,7 @@ export function installIntentActions(ctx: AppCtx): void {
     ctx.pendingSpecRel.value = specPath
     ctx.intentSpecLoading.value = true
     ctx.intentSpecContent.value = null
-    send({ type: 'read_spec', workspaceId: intentsProject.value, intentId })
+    send({ type: 'read_spec', workspaceName: intentsProject.value, intentId })
   }
 
   // Fetch the selected intent's lifecycle-log entries for the detail's
@@ -410,7 +410,7 @@ export function installIntentActions(ctx: AppCtx): void {
     }, CREATE_PR_SAFETY_TIMEOUT_MS)
     send({
       type: 'create_pr',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
       requestId,
       ...(deliveryId ? { deliveryId } : {}),
@@ -443,7 +443,7 @@ export function installIntentActions(ctx: AppCtx): void {
     }
     send({
       type: 'sync_intent_pr_status',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
     })
   }
@@ -457,7 +457,7 @@ export function installIntentActions(ctx: AppCtx): void {
     void hasUnfinishedDeps
     send({
       type: 'start_development',
-      workspaceId: intentsProject.value,
+      workspaceName: intentsProject.value,
       intentId,
       // Both are decisions THIS click makes. Neither is remembered: the next
       // launch resolves its delivery context afresh and re-evaluates every gate.
@@ -480,7 +480,7 @@ export function installIntentActions(ctx: AppCtx): void {
   // one discards uncommitted work and the other rewrites the user's branch.
   ctx.repairIntentWorktree = (intentId: string, mode: 'rebuild' | 'merge'): void => {
     if (!intentsProject.value) return
-    send({ type: 'repair_intent_worktree', workspaceId: intentsProject.value, intentId, mode })
+    send({ type: 'repair_intent_worktree', workspaceName: intentsProject.value, intentId, mode })
   }
 
   ctx.setIntentStatus = (intentId: string, status: IntentStatus): void => {
@@ -489,7 +489,7 @@ export function installIntentActions(ctx: AppCtx): void {
 
   ctx.deleteIntent = (intentId: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'delete_intent', workspaceId: intentsProject.value, intentId })
+    send({ type: 'delete_intent', workspaceName: intentsProject.value, intentId })
   }
 
   // Directly edit an intent's markdown body. The server gates on status
@@ -508,7 +508,7 @@ export function installIntentActions(ctx: AppCtx): void {
   // the file untouched and bumps the intent-action error seq to release the guard.
   ctx.saveSpecContent = (intentId: string, content: string): void => {
     if (!intentsProject.value) return
-    send({ type: 'update_spec_content', workspaceId: intentsProject.value, intentId, content })
+    send({ type: 'update_spec_content', workspaceName: intentsProject.value, intentId, content })
   }
 
   ctx.setIntentAutomate = (intentId: string, automateOn: boolean): void => {
@@ -538,11 +538,11 @@ export function installIntentActions(ctx: AppCtx): void {
 
   ctx.startWorkflow = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'start_workflow', workspaceId: intentsProject.value })
+    send({ type: 'start_workflow', workspaceName: intentsProject.value })
   }
 
   ctx.stopWorkflow = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'stop_workflow', workspaceId: intentsProject.value })
+    send({ type: 'stop_workflow', workspaceName: intentsProject.value })
   }
 }

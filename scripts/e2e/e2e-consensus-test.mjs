@@ -56,7 +56,7 @@ const ws = new WebSocket(URL)
 let originalSettings = null // captured from get_settings, restored on exit
 let consensusEnabled = false
 let voterCount = 0
-let workspaceId = null // server-assigned opaque id, captured from `workspaces`
+let workspaceName = null // workspace name, captured from `workspaces`
 let workspaceAdded = false
 let consensusSaveSent = false
 let sessionCreated = false
@@ -122,7 +122,7 @@ ws.addEventListener('message', (evt) => {
         // workspace first, then enable consensus via save_workspace_setting.
         console.log('[e2e] adding workspace')
         workspaceAdded = true
-        send({ type: 'add_workspace', path: PROJECT_DIR })
+        send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       }
       break
     }
@@ -130,13 +130,13 @@ ws.addEventListener('message', (evt) => {
     case 'workspaces':
       if (workspaceAdded && !consensusSaveSent) {
         // The just-added workspace sorts first (its lastAccessed was bumped).
-        // Capture its server-assigned opaque id — paths never go back on the wire.
+        // Capture its workspace name — paths never go back on the wire.
         const added =
           msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ??
           msg.workspaces?.[0]
-        workspaceId = added?.id ?? null
-        if (!workspaceId) {
-          console.error('[e2e] no workspaceId after add_workspace — aborting')
+        workspaceName = added?.name ?? null
+        if (!workspaceName) {
+          console.error('[e2e] no workspaceName after add_workspace — aborting')
           finish(5)
           return
         }
@@ -145,7 +145,7 @@ ws.addEventListener('message', (evt) => {
         consensusSaveSent = true
         send({
           type: 'save_workspace_setting',
-          workspaceId,
+          workspaceName,
           config: { consensus: { enabled: true, majority: false } },
         })
       }
@@ -160,7 +160,7 @@ ws.addEventListener('message', (evt) => {
           console.error('[e2e] ⚠️ save_workspace_setting did not enable consensus')
         }
         sessionCreated = true
-        send({ type: 'create_session', workspaceId })
+        send({ type: 'create_session', workspaceName })
       }
       break
 

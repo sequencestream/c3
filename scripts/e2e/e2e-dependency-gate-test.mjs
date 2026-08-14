@@ -94,9 +94,9 @@ const RUN = String(Date.now() % 1_000_000)
 const ws = new WebSocket(URL)
 
 // ---- State ----
-let workspaceId = null
+let workspaceName = null
 let phase = 'boot'
-const ids = {}
+const names = {}
 const deliveries = {}
 let intents = []
 /** Errors keyed by arrival order; each assertion snapshots the length first. */
@@ -168,7 +168,7 @@ const setPrStatus = (intentId, status, delivery) =>
 /** Poll the intent list until `predicate` holds against the freshest frame. */
 async function waitForIntents(predicate, label) {
   for (let i = 0; i < POLL_TRIES; i++) {
-    send({ type: 'list_intents', workspaceId })
+    send({ type: 'list_intents', workspaceName })
     await sleep(POLL_MS)
     if (intents.length && predicate()) return true
   }
@@ -185,7 +185,7 @@ const intentFor = (id) => intents.find((i) => i.id === id) ?? null
  */
 async function launchError(intentId) {
   const before = errors.length
-  send({ type: 'start_development', workspaceId, intentId })
+  send({ type: 'start_development', workspaceName, intentId })
   for (let i = 0; i < POLL_TRIES; i++) {
     await sleep(POLL_MS)
     if (errors.length > before) return errors[errors.length - 1]
@@ -206,16 +206,16 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready':
       phase = 'add-workspace'
-      send({ type: 'add_workspace', path: PROJECT_DIR })
+      send({ type: 'add_workspace', name: PROJECT_DIR.split('/').pop(), path: PROJECT_DIR })
       break
 
     case 'workspaces': {
-      if (workspaceId) break
+      if (workspaceName) break
       const name = PROJECT_DIR.split('/').pop()
-      workspaceId =
-        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.id ?? null
-      if (!workspaceId) {
-        failures.push('no workspaceId after add_workspace')
+      workspaceName =
+        (msg.workspaces?.find((w) => w.name === name) ?? msg.workspaces?.[0])?.name ?? null
+      if (!workspaceName) {
+        failures.push('no workspaceName after add_workspace')
         finish()
         return
       }
@@ -224,7 +224,7 @@ ws.addEventListener('message', (evt) => {
       phase = 'workspace-setting'
       send({
         type: 'save_workspace_setting',
-        workspaceId,
+        workspaceName,
         config: { gitBranchMode: 'worktree', defaultMainBranch: 'main', sddEnabled: false },
       })
       phase = 'seed-intents'
@@ -234,7 +234,7 @@ ws.addEventListener('message', (evt) => {
 
     case 'create_intent_result': {
       const label = LABELS[created]
-      ids[label] = msg.intent.id
+      names[label] = msg.intent.id
       created += 1
       send({
         type: 'update_intent_content',
@@ -268,12 +268,12 @@ let created = 0
 
 function seedNextIntent() {
   if (created < LABELS.length) {
-    send({ type: 'create_intent', workspaceId })
+    send({ type: 'create_intent', workspaceName })
     return
   }
   phase = 'create-deliveries'
-  send({ type: 'create_delivery', workspaceId, title: 'X' })
-  send({ type: 'create_delivery', workspaceId, title: 'Y' })
+  send({ type: 'create_delivery', workspaceName, title: 'X' })
+  send({ type: 'create_delivery', workspaceName, title: 'Y' })
   void runAssertions()
 }
 
@@ -297,48 +297,48 @@ async function runAssertions() {
   // `done` is only reachable via `in_progress` (the 7-state graph), so the
   // promotion is two hops — not a shortcut the ledger would refuse.
   for (const label of ['DepSame', 'DepCross', 'DepPlain']) {
-    send({ type: 'update_intent_status', intentId: ids[label], status: 'in_progress' })
-    seedBranch(ids[label], `intent/${label.toLowerCase()}`)
+    send({ type: 'update_intent_status', intentId: names[label], status: 'in_progress' })
+    seedBranch(names[label], `intent/${label.toLowerCase()}`)
   }
   await sleep(POLL_MS * 2)
   for (const label of ['DepSame', 'DepCross', 'DepPlain']) {
-    send({ type: 'update_intent_status', intentId: ids[label], status: 'done' })
+    send({ type: 'update_intent_status', intentId: names[label], status: 'done' })
   }
   await sleep(POLL_MS * 2)
   send({
     type: 'link_intent_to_delivery',
-    workspaceId,
+    workspaceName,
     deliveryId: deliveries.X,
-    intentId: ids.Target,
+    intentId: names.Target,
   })
   send({
     type: 'link_intent_to_delivery',
-    workspaceId,
+    workspaceName,
     deliveryId: deliveries.X,
-    intentId: ids.DepSame,
+    intentId: names.DepSame,
   })
   send({
     type: 'link_intent_to_delivery',
-    workspaceId,
+    workspaceName,
     deliveryId: deliveries.Y,
-    intentId: ids.DepCross,
+    intentId: names.DepCross,
   })
-  seedPr(ids.DepSame, `${RUN}1`, 'reviewing', deliveries.X)
-  seedPr(ids.DepCross, `${RUN}2`, 'merged', deliveries.Y)
-  seedPr(ids.DepPlain, `${RUN}3`, 'reviewing', null)
+  seedPr(names.DepSame, `${RUN}1`, 'reviewing', deliveries.X)
+  seedPr(names.DepCross, `${RUN}2`, 'merged', deliveries.Y)
+  seedPr(names.DepPlain, `${RUN}3`, 'reviewing', null)
   await sleep(POLL_MS * 4)
 
   // ---- 1. SAME delivery: the PR toward MY delivery is not merged ----
   phase = 'same-delivery'
   send({
     type: 'update_intent_deps',
-    intentId: ids.Target,
-    deps: [{ dependsOnId: ids.DepSame, depType: 'blocks' }],
+    intentId: names.Target,
+    deps: [{ dependsOnId: names.DepSame, depType: 'blocks' }],
   })
-  await waitForIntents(() => blockedByDependency(ids.Target), 'Target blocked by DepSame')
-  check(blockedByDependency(ids.Target), 'same-delivery unmerged PR blocks the target')
+  await waitForIntents(() => blockedByDependency(names.Target), 'Target blocked by DepSame')
+  check(blockedByDependency(names.Target), 'same-delivery unmerged PR blocks the target')
 
-  let err = await launchError(ids.Target)
+  let err = await launchError(names.Target)
   check(
     err?.code === 'intent.dependencyPrUnmergedInDelivery',
     `same-delivery block explains itself as a delivery PR (${err?.code})`,
@@ -346,24 +346,24 @@ async function runAssertions() {
   check(err?.params?.deliveryId === deliveries.X, 'it names the delivery BOTH sides share')
 
   // …and opens when that PR merges.
-  setPrStatus(ids.DepSame, 'merged', deliveries.X)
-  await waitForIntents(() => !blockedByDependency(ids.Target), 'Target released by merge')
-  check(!blockedByDependency(ids.Target), 'the same-delivery block clears once the PR merges')
+  setPrStatus(names.DepSame, 'merged', deliveries.X)
+  await waitForIntents(() => !blockedByDependency(names.Target), 'Target released by merge')
+  check(!blockedByDependency(names.Target), 'the same-delivery block clears once the PR merges')
 
   // ---- 2. CROSS delivery: the dependency's delivery is not on mainline ----
   phase = 'cross-delivery'
   send({
     type: 'update_intent_deps',
-    intentId: ids.Target,
-    deps: [{ dependsOnId: ids.DepCross, depType: 'blocks' }],
+    intentId: names.Target,
+    deps: [{ dependsOnId: names.DepCross, depType: 'blocks' }],
   })
-  await waitForIntents(() => blockedByDependency(ids.Target), 'Target blocked by DepCross')
+  await waitForIntents(() => blockedByDependency(names.Target), 'Target blocked by DepCross')
   check(
-    blockedByDependency(ids.Target),
+    blockedByDependency(names.Target),
     'a dependency merged into ANOTHER delivery still blocks — merged ≠ on my base',
   )
 
-  err = await launchError(ids.Target)
+  err = await launchError(names.Target)
   check(
     err?.code === 'intent.dependencyDeliveryNotDelivered',
     `cross-delivery block explains itself as a delivery, not a PR (${err?.code})`,
@@ -375,9 +375,9 @@ async function runAssertions() {
 
   // …and opens only when that delivery reaches mainline.
   db((c) => c.prepare("UPDATE deliveries SET status='delivered' WHERE id=?").run(deliveries.Y))
-  await waitForIntents(() => !blockedByDependency(ids.Target), 'Target released by delivered')
+  await waitForIntents(() => !blockedByDependency(names.Target), 'Target released by delivered')
   check(
-    !blockedByDependency(ids.Target),
+    !blockedByDependency(names.Target),
     'the cross-delivery block clears only when that delivery is delivered',
   )
 
@@ -385,27 +385,27 @@ async function runAssertions() {
   phase = 'no-delivery'
   send({
     type: 'unlink_intent_from_delivery',
-    workspaceId,
+    workspaceName,
     deliveryId: deliveries.X,
-    intentId: ids.Target,
+    intentId: names.Target,
   })
   send({
     type: 'update_intent_deps',
-    intentId: ids.Target,
-    deps: [{ dependsOnId: ids.DepPlain, depType: 'blocks' }],
+    intentId: names.Target,
+    deps: [{ dependsOnId: names.DepPlain, depType: 'blocks' }],
   })
-  await waitForIntents(() => blockedByDependency(ids.Target), 'Target blocked by DepPlain')
-  check(blockedByDependency(ids.Target), 'a delivery-less unmerged dependency still blocks')
+  await waitForIntents(() => blockedByDependency(names.Target), 'Target blocked by DepPlain')
+  check(blockedByDependency(names.Target), 'a delivery-less unmerged dependency still blocks')
 
-  err = await launchError(ids.Target)
+  err = await launchError(names.Target)
   check(
     err?.code === 'intent.dependencyNotMerged',
     `the delivery-less path keeps its historic code (${err?.code})`,
   )
 
-  setPrStatus(ids.DepPlain, 'merged', null)
-  await waitForIntents(() => !blockedByDependency(ids.Target), 'Target released by plain merge')
-  check(!blockedByDependency(ids.Target), 'the delivery-less block clears once the PR merges')
+  setPrStatus(names.DepPlain, 'merged', null)
+  await waitForIntents(() => !blockedByDependency(names.Target), 'Target released by plain merge')
+  check(!blockedByDependency(names.Target), 'the delivery-less block clears once the PR merges')
 
   finish()
 }

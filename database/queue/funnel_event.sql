@@ -18,12 +18,12 @@
 
 CREATE TABLE IF NOT EXISTS funnel_event (
   id           TEXT PRIMARY KEY,          -- 事件唯一 id (uuid)
-  workspace_id TEXT NOT NULL,             -- 规范化 (resolve 后) 工作区路径, 即协议 workspaceId 解析所得; 按工作区隔离统计
+  workspace_name TEXT NOT NULL,             -- 规范化 (resolve 后) 工作区路径, 即协议 workspaceName 解析所得; 按工作区隔离统计
   intent_id    TEXT NOT NULL,             -- 发生跃迁的意图 id (intents.id); 意图删除后不清理本表
   stage        TEXT NOT NULL,             -- 封闭枚举: 'parked' | 'unparked'; 写入边界校验, 其他值一律拒绝
   reason_code  TEXT NOT NULL,             -- parked=QueueReasonCode; unparked=固定 'manual_unpark'; 写入边界校验, 不接受自由文本
   at           INTEGER NOT NULL           -- 跃迁写入时间 (epoch ms), 服务端时钟
 );
-CREATE INDEX IF NOT EXISTS idx_funnel_event_workspace_stage_at ON funnel_event(workspace_id, stage, at);
-CREATE INDEX IF NOT EXISTS idx_funnel_event_pair ON funnel_event(workspace_id, intent_id, stage);
+CREATE INDEX IF NOT EXISTS idx_funnel_event_workspace_stage_at ON funnel_event(workspace_name, stage, at);
+CREATE INDEX IF NOT EXISTS idx_funnel_event_pair ON funnel_event(workspace_name, intent_id, stage);
 CREATE INDEX IF NOT EXISTS idx_funnel_event_at ON funnel_event(at);

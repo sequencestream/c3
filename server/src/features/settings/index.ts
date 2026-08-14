@@ -28,7 +28,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import { vendorRuntimeStatuses } from '../../kernel/agent/vendor-runtime.js'
-import { resolveWorkspaceRoot, pathToId } from '../../state.js'
+import { resolveWorkspaceRoot, pathToName } from '../../state.js'
 import {
   getSessionBindingStats,
   loadSettings,
@@ -213,11 +213,11 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
 }
 
 export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_ctx, conn, msg) => {
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -227,7 +227,7 @@ export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_
   const detectedMainBranch = detectDefaultBranch(proj)
   conn.send({
     type: 'workspace_setting',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     config,
     detectedMainBranch,
     // Read-only display of the FIXED, centralized SDD spec root (REQ-3).
@@ -240,11 +240,11 @@ export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_
 export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_ctx, conn, msg) => {
   // Workspace configuration is admin-only too (ADR-0023 authz; full coverage).
   if (!requireAdmin(conn)) return
-  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
@@ -275,7 +275,7 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
   const config = saveWorkspaceSetting(proj, msg.config)
   conn.send({
     type: 'workspace_setting',
-    workspaceId: pathToId(proj)!,
+    workspaceName: pathToName(proj)!,
     config,
     resolvedSpecRoot: getSpecsBase(proj),
     sysExtraMounts: sysExtraMounts(proj),

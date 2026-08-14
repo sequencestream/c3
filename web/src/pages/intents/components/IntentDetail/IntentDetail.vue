@@ -162,9 +162,9 @@ const emit = defineEmits<{
   'open-delivery': [deliveryId: string]
   // ── 交付归属(意图侧入口;协议消息与交付页完全相同,只是 id 全部显式) ──
   /** 打开候选弹窗:意图页不自带交付列表,由控制层补发 list_deliveries。 */
-  'open-link-dialog': [workspaceId: string]
-  'link-delivery': [workspaceId: string, deliveryId: string, intentId: string]
-  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'open-link-dialog': [workspaceName: string]
+  'link-delivery': [workspaceName: string, deliveryId: string, intentId: string]
+  'unlink-delivery': [workspaceName: string, deliveryId: string, intentId: string]
   'standalone-delivery': [payload: StandaloneDeliveryRequest]
   // 分享:上抛意图 id,由 App 组装深链复制(workspace/typeLabel 在上层)。
   share: [intentId: string]

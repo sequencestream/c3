@@ -144,7 +144,10 @@
       },
       "add": {
         "tooltip": "添加工作区",
-        "prompt": "工作区目录(绝对路径):",
+        "prompt": "添加工作区",
+        "pathLabel": "工作区目录（绝对路径）",
+        "nameLabel": "工作区名称",
+        "namePlaceholder": "1–64 个字符",
         "placeholder": "/工作区/绝对路径",
         "confirmLabel": "添加"
       },
@@ -2199,7 +2202,9 @@
       "saveFailed": "保存个人化设置失败。已还原。"
     },
     "workspace": {
-      "unknown": "未知工作区:{path}"
+      "unknown": "未知工作区:{path}",
+      "nameInvalid": "工作区名称长度必须为 1–64 个字符。",
+      "nameConflict": "该工作区名称已被占用。"
     },
     "path": {
       "notDirectory": "不是目录:{path}"
@@ -2324,7 +2329,7 @@
     },
     "mcpApiKey": {
       "unknown": "该 API key 已不存在(id {id})。",
-      "unknownWorkspace": "工作区不存在({workspaceId}),未修改任何 key。",
+      "unknownWorkspace": "工作区不存在({workspaceName}),未修改任何 key。",
       "noWorkspace": "请至少为该 key 选择一个工作区。",
       "saveFailed": "API key 保存失败。",
       "unknownTool": "工具「{tool}」不在可外部授权的目录中。"

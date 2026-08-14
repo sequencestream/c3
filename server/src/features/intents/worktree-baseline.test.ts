@@ -28,7 +28,7 @@ vi.mock('./worktree.js', async (importOriginal) => ({
 const delivery = (over: Partial<Delivery> = {}): Delivery =>
   ({
     id: 'd1',
-    workspaceId: 'w',
+    workspaceName: 'w',
     title: '交付 X',
     description: '',
     status: 'integrating',

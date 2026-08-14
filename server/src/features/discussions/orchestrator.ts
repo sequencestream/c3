@@ -246,7 +246,7 @@ export async function runDiscussion(
   if (!initial) return
   console.log(`[c3:discussion] (${SESSION_KIND}) start「${initial.goal.slice(0, 60)}」(${id})`)
 
-  const cwd = resolveWorkspaceRoot(initial.workspaceId)!
+  const cwd = resolveWorkspaceRoot(initial.workspaceName)!
   const def = getDiscussionType(initial.type)
   // Per-discussion organizer override, resolved with the ONE shared criterion
   // (the research pass applies the identical rule): `organizerAgentId` in the

@@ -28,7 +28,7 @@ vi.mock('../../runs.js', () => ({
 vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   resolveWorkspaceRoot: vi.fn((id: string) => id),
-  pathToId: vi.fn((p: string) => p),
+  pathToName: vi.fn((p: string) => p),
   touchWorkspace: vi.fn(),
 }))
 
@@ -107,7 +107,7 @@ describe('create_session with a group agent', () => {
   it('Auto on a usable group binds the GROUP ref with its first member’s vendor', () => {
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    createSession({} as any, conn as any, { type: 'create_session', workspaceId: '/abs/proj' })
+    createSession({} as any, conn as any, { type: 'create_session', workspaceName: '/abs/proj' })
 
     const selected = conn.sent.find((m) => m.type === 'session_selected')
     const pendingId = selected?.sessionId as string
@@ -120,7 +120,7 @@ describe('create_session with a group agent', () => {
     available = new Set<VendorId>()
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    createSession({} as any, conn as any, { type: 'create_session', workspaceId: '/abs/proj' })
+    createSession({} as any, conn as any, { type: 'create_session', workspaceName: '/abs/proj' })
 
     expect(conn.sent).toEqual([
       { type: 'error', error: { code: 'agent.groupUnavailable', params: { group: GROUP } } },

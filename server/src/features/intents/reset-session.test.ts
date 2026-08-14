@@ -20,7 +20,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -51,7 +51,7 @@ import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -69,8 +69,8 @@ beforeEach(() => {
   resetIntentLink()
   resetSpecLink()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -209,7 +209,7 @@ describe('resetIntentSession', () => {
 
     await resetIntentSession(ctx, conn, {
       type: 'reset_intent_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       userInput: 'INPUT_TOKEN',
     })
@@ -239,7 +239,7 @@ describe('resetIntentSession', () => {
 
     await resetIntentSession(ctx, conn, {
       type: 'reset_intent_session',
-      workspaceId,
+      workspaceName,
       intentId: 'nope',
       userInput: 'x',
     })
@@ -264,7 +264,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler(ctx, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: target.id,
       userInput: 'x',
     })
@@ -300,7 +300,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler({ launchRun } as unknown as KernelContext, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: target.id,
       userInput: 'x',
     })
@@ -334,7 +334,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler(ctx, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       userInput: 'SPEC_INPUT',
     })
@@ -380,7 +380,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler(ctx, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       userInput: 'SPEC_INPUT',
     })
@@ -408,7 +408,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler(ctx, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       userInput: 'revise',
     })
@@ -433,7 +433,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler(ctx, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
       userInput: 'x',
     })
@@ -450,7 +450,7 @@ describe('resetSpecSessionHandler', () => {
 
     resetSpecSessionHandler(ctx, conn, {
       type: 'reset_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: 'nope',
       userInput: 'x',
     })

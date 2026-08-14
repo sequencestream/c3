@@ -11,15 +11,16 @@
  * throw (callers surface an error or skip).
  */
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
 import type {
   AnyConsensusOutcome,
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
-import { pathToId } from '../../state.js'
+import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
 import { findIntentIdByAnySessionId, getIntent } from '../intents/store.js'
+
+const workspaceKey = workspaceNameFor
 
 /**
  * Schema version — informational only, see discussion store comment.
@@ -34,7 +35,7 @@ const RETENTION_STATUSES: WaitUserInvolveStatus[] = ['done', 'canceled', 'auto']
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   id            TEXT PRIMARY KEY,
-  workspace_path  TEXT NOT NULL,
+  workspace_name  TEXT NOT NULL,
   session_kind  TEXT NOT NULL,
   session_id    TEXT,
   title         TEXT,
@@ -46,7 +47,7 @@ CREATE TABLE IF NOT EXISTS wait_user_involve_events (
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_path, status);
+CREATE INDEX IF NOT EXISTS idx_wui_workspace_status ON wait_user_involve_events(workspace_name, status);
 CREATE INDEX IF NOT EXISTS idx_wui_session_status ON wait_user_involve_events(session_id, status);
 `
 
@@ -74,7 +75,7 @@ function indexExists(d: Db, name: string): boolean {
 }
 
 /**
- * v1 → v2: rename the workspace-key column `project_path` → `workspace_path` IN PLACE
+ * v1 → v2: rename the workspace-key column `project_path` → `workspace_name` IN PLACE
  * on `wait_user_involve_events`, mirroring the intent store's v10→v11. MUST run BEFORE
  * `exec(SCHEMA)` (SCHEMA's `idx_wui_workspace_status` references the new column).
  * Idempotent + never drops a table; the composite index is dropped and rebuilt under
@@ -85,9 +86,9 @@ function migrateProjectPathToWorkspacePath(d: Db): void {
   if (
     tableExists(d, 'wait_user_involve_events') &&
     columnExists(d, 'wait_user_involve_events', 'project_path') &&
-    !columnExists(d, 'wait_user_involve_events', 'workspace_path')
+    !columnExists(d, 'wait_user_involve_events', 'workspace_name')
   ) {
-    d.exec('ALTER TABLE wait_user_involve_events RENAME COLUMN project_path TO workspace_path')
+    d.exec('ALTER TABLE wait_user_involve_events RENAME COLUMN project_path TO workspace_name')
   }
   if (indexExists(d, 'idx_wui_project_status')) {
     d.exec('DROP INDEX idx_wui_project_status')
@@ -130,7 +131,7 @@ function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
-    // v1 → v2 project_path → workspace_path; MUST precede SCHEMA (see docstring).
+    // v1 → v2 project_path → workspace_name; MUST precede SCHEMA (see docstring).
     migrateProjectPathToWorkspacePath(d)
     // v4 → v5 source/source_id → session_kind/session_id; MUST precede SCHEMA.
     migrateSourceColumnsToSession(d)
@@ -188,7 +189,7 @@ function _tx<T>(d: Db, fn: () => T): T {
 
 interface EventRow {
   id: string
-  workspace_path: string
+  workspace_name: string
   session_kind: string
   session_id: string | null
   title: string | null
@@ -203,13 +204,13 @@ interface EventRow {
 
 /**
  * Hydrate a row into a wire event, or `null` when its workspace is no longer
- * registered. The wire contract is an OPAQUE `workspaceId`, so a row whose path no
+ * registered. The wire contract is an OPAQUE `workspaceName`, so a row whose path no
  * longer resolves to an id is dropped (and warned) rather than emitting a broken
  * `null as string` id the web could never route a jump to.
  */
 function toEvent(r: EventRow): WaitUserInvolveEvent | null {
-  const workspaceId = pathToId(r.workspace_path)
-  if (!workspaceId) {
+  const workspaceName = r.workspace_name
+  if (!workspaceName || !resolveWorkspaceRoot(workspaceName)) {
     console.warn(
       `[c3] wait-user event ${r.id} references an unregistered workspace; omitting from results`,
     )
@@ -255,7 +256,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent | null {
     intentId === r.session_id
   return {
     id: r.id,
-    workspaceId,
+    workspaceName,
     sessionKind: r.session_kind,
     sessionId: r.session_id,
     intentId,
@@ -300,10 +301,10 @@ export function createEvent(input: CreateEventInput): WaitUserInvolveEvent {
   const outcome = input.outcome != null ? JSON.stringify(input.outcome) : null
   d.run(
     `INSERT INTO wait_user_involve_events
-       (id, workspace_path, session_kind, session_id, title, request_id, tool_name, tool_input, status, outcome, created_at, updated_at)
+       (id, workspace_name, session_kind, session_id, title, request_id, tool_name, tool_input, status, outcome, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
-    resolve(input.workspacePath),
+    workspaceKey(input.workspacePath),
     input.sessionKind,
     input.sessionId ?? null,
     input.title ?? null,
@@ -336,15 +337,15 @@ export function listEvents(
 ): WaitUserInvolveEvent[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(workspacePath)
+  const proj = workspaceKey(workspacePath)
   const rows = status
     ? d.all<EventRow>(
-        'SELECT * FROM wait_user_involve_events WHERE workspace_path=? AND status=? ORDER BY created_at DESC',
+        'SELECT * FROM wait_user_involve_events WHERE workspace_name=? AND status=? ORDER BY created_at DESC',
         proj,
         status,
       )
     : d.all<EventRow>(
-        'SELECT * FROM wait_user_involve_events WHERE workspace_path=? ORDER BY created_at DESC',
+        'SELECT * FROM wait_user_involve_events WHERE workspace_name=? ORDER BY created_at DESC',
         proj,
       )
   return rows.map(toEvent).filter((e): e is WaitUserInvolveEvent => e !== null)
@@ -376,9 +377,9 @@ export function listEventsPage(
   if (!d) return { items: [], hasMore: false }
   const pageLimit = normalizeLimit(limit)
   const queryLimit = pageLimit + 1
-  const workspace = resolve(workspacePath)
+  const workspace = workspaceKey(workspacePath)
   const params: Array<string | number> = [workspace]
-  const where = ['workspace_path=?']
+  const where = ['workspace_name=?']
   if (status) {
     where.push('status=?')
     params.push(status)
@@ -470,10 +471,10 @@ export function findLatestTodoEventForSessionIds(
   const placeholders = ids.map(() => '?').join(',')
   const row = d.get<EventRow>(
     `SELECT * FROM wait_user_involve_events
-       WHERE workspace_path=? AND status='todo' AND session_id IN (${placeholders})
+       WHERE workspace_name=? AND status='todo' AND session_id IN (${placeholders})
        ORDER BY created_at DESC, id DESC
        LIMIT 1`,
-    resolve(workspacePath),
+    workspaceKey(workspacePath),
     ...ids,
   )
   return row ? toEvent(row) : null

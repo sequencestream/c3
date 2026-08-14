@@ -22,12 +22,12 @@ import type { VendorId } from './vendor.js'
 /** Create a automation in a workspace; server broadcasts `automations`. */
 export type ClientCreateAutomation = {
   type: 'create_automation'
-  workspaceId: string
+  workspaceName: string
   input: CreateAutomationInput
 }
 
 /** List automations in a workspace; server replies with `automations`. */
-export type ClientListAutomations = { type: 'list_automations'; workspaceId: string }
+export type ClientListAutomations = { type: 'list_automations'; workspaceName: string }
 
 /** Partial update of a automation; server broadcasts `automations`. */
 export type ClientUpdateAutomation = {
@@ -62,7 +62,7 @@ export type ClientAutomationRunNow = { type: 'automation_run_now'; automationId:
 export type ClientGetAutomationToolManifest = {
   type: 'get_automation_tool_manifest'
   vendor: VendorId
-  workspaceId: string
+  workspaceName: string
 }
 
 /**
@@ -72,7 +72,7 @@ export type ClientGetAutomationToolManifest = {
  */
 export type ClientListWaitUserEvents = {
   type: 'list_wait_user_events'
-  workspaceId: string
+  workspaceName: string
   status?: WaitUserInvolveStatus
   cursorTime?: number
   cursorExcludeId?: string
@@ -87,7 +87,7 @@ export type ClientUpdateWaitUserEvent = {
 }
 
 /** A workspace's automation list (reply to `list_automations` or broadcast after create/update/delete). */
-export type ServerAutomations = { type: 'automations'; workspaceId: string; items: Automation[] }
+export type ServerAutomations = { type: 'automations'; workspaceName: string; items: Automation[] }
 
 /** Full automation detail with execution logs (reply to `get_automation_detail`). */
 export type ServerAutomationDetail = {

@@ -141,7 +141,7 @@ vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   touchWorkspace: vi.fn(),
   resolveWorkspaceRoot: vi.fn(() => '/test/proj'),
-  pathToId: vi.fn(() => 'test-proj'),
+  pathToName: vi.fn(() => 'test-proj'),
 }))
 
 vi.mock('../../git.js', () => ({
@@ -230,7 +230,7 @@ const prRegistry = new EventNormalizerRegistry()
 prRegistry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
 
 const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
-  workspaceId: 'test-proj',
+  workspaceName: 'test-proj',
   title: 'Test',
   shortEnTitle: null,
   content: '',
@@ -274,7 +274,7 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
 
 /** A delivery whose branch is ready — the target an automatic PR may reach. */
 const makeDelivery = (over: Partial<Delivery> & { id: string }): Delivery => ({
-  workspaceId: 'test-proj',
+  workspaceName: 'test-proj',
   title: 'Delivery α',
   description: '',
   status: 'integrating',

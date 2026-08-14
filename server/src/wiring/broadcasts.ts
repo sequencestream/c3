@@ -17,7 +17,7 @@
  */
 import type { WorkflowStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
 import { resolve } from 'node:path'
-import { pathToId } from '../state.js'
+import { pathToName } from '../state.js'
 import { getSddEnabled } from '../kernel/config/index.js'
 import type { Broadcaster } from '../transport/index.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
@@ -143,7 +143,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const items = enrichRunStatus(listIntents(proj))
     broadcaster.toAll({
       type: 'intents',
-      workspaceId: pathToId(proj)!,
+      workspaceName: pathToName(proj)!,
       items,
       sddEnabled: getSddEnabled(proj),
     })
@@ -173,7 +173,12 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const proj = resolve(workspacePath)
     const items = listChatSessions(proj)
     const runStates = intentSessionRunSnapshot(items)
-    broadcaster.toAll({ type: 'intent_sessions', workspaceId: pathToId(proj)!, items, runStates })
+    broadcaster.toAll({
+      type: 'intent_sessions',
+      workspaceName: pathToName(proj)!,
+      items,
+      runStates,
+    })
   }
 
   // Push a workspace's refreshed session list to every connection. Mirrors the
@@ -195,7 +200,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
         const { sessions } = paginateSessions(all)
         broadcaster.toAll({
           type: 'sessions',
-          workspaceId: pathToId(proj)!,
+          workspaceName: pathToName(proj)!,
           sessionKind: 'work',
           sessions,
           page: { kind: 'live', hasMore: false },
@@ -215,7 +220,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const items = listDeliveries(proj)
     broadcaster.toAll({
       type: 'deliveries',
-      workspaceId: pathToId(proj)!,
+      workspaceName: pathToName(proj)!,
       items,
       needsActionCount: countDeliveriesNeedingAction(items, (d) =>
         deliveryMergeActionable(proj, d),
@@ -234,7 +239,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     const researchStates = researchRunSnapshot(items)
     broadcaster.toAll({
       type: 'discussions',
-      workspaceId: pathToId(proj)!,
+      workspaceName: pathToName(proj)!,
       items,
       runStates,
       researchStates,
@@ -247,7 +252,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     if (!isAutomationStoreAvailable()) return
     const proj = resolve(workspacePath)
     const items = listAutomations(proj)
-    broadcaster.toAll({ type: 'automations', workspaceId: pathToId(proj)!, items })
+    broadcaster.toAll({ type: 'automations', workspaceName: pathToName(proj)!, items })
   }
 
   // Stream one freshly-appended discussion message to every connection (the
@@ -313,14 +318,14 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   const broadcastQueueDetail = (workspacePath: string): void => {
     if (!isStoreAvailable()) return
     const proj = resolve(workspacePath)
-    const workspaceId = pathToId(proj)
-    if (!workspaceId) return
+    const workspaceName = pathToName(proj)
+    if (!workspaceName) return
     const detail = getQueueDetail(proj)
     const byId = new Map(listIntents(proj).map((r) => [r.id, r]))
     broadcaster.toAll({
       type: 'queue_detail',
       detail: {
-        workspaceId,
+        workspaceName,
         state: detail.state,
         tickId: detail.tickId,
         nextWakeupAt: detail.nextWakeupAt,

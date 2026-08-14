@@ -10,7 +10,7 @@
 CREATE TABLE IF NOT EXISTS queue_decision_log (
   id             TEXT PRIMARY KEY,          -- 决策行唯一标识 (UUID v4)
   tick_id        TEXT NOT NULL,             -- 产生该决策的对账轮次 id (同一轮 tick 的所有行共享)
-  workspace_path TEXT NOT NULL,             -- 所属工作区绝对路径 (resolve 后)
+  workspace_name TEXT NOT NULL,             -- 所属工作区绝对路径 (resolve 后)
   intent_id      TEXT NOT NULL,             -- 意图 id; 空串 = 工作区级决策 (如快照不可读 fail closed)
   decided_at     INTEGER NOT NULL,          -- 决策时间 (epoch ms)
   action         TEXT NOT NULL,             -- 选择的动作: 'launch'|'resume'|'attach'|'wait'|'park'|'block'|'skip'
@@ -20,5 +20,5 @@ CREATE TABLE IF NOT EXISTS queue_decision_log (
   backoff_count  INTEGER NOT NULL DEFAULT 0,-- 决策时的累计退避次数
   next_wakeup_at INTEGER                    -- 下次唤醒时间 (epoch ms); NULL=下一次常规 tick
 );
-CREATE INDEX IF NOT EXISTS idx_queue_decision_workspace ON queue_decision_log(workspace_path, decided_at DESC);
+CREATE INDEX IF NOT EXISTS idx_queue_decision_workspace ON queue_decision_log(workspace_name, decided_at DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_decision_intent ON queue_decision_log(intent_id, decided_at DESC);

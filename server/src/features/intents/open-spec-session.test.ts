@@ -15,7 +15,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -27,7 +27,7 @@ import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -41,8 +41,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
 })
 
 afterEach(() => {
@@ -106,7 +106,7 @@ describe('openSpecSession', () => {
     const ctx = {} as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceId, intentId: r.id })
+    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceName, intentId: r.id })
 
     const selected = sent.find((m) => m.type === 'session_selected')
     expect(selected).toBeTruthy()
@@ -124,7 +124,7 @@ describe('openSpecSession', () => {
     const ctx = {} as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceId, intentId: r.id })
+    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceName, intentId: r.id })
 
     expect(sent.some((m) => m.type === 'session_selected')).toBe(false)
     expect(sent.find((m) => m.type === 'error')).toMatchObject({
@@ -146,7 +146,7 @@ describe('openSpecSession', () => {
     const ctx = {} as unknown as KernelContext
     const { conn, sent } = fakeConn()
 
-    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceId, intentId: r.id })
+    await openSpecSession(ctx, conn, { type: 'open_spec_session', workspaceName, intentId: r.id })
 
     expect(sent.some((m) => m.type === 'session_selected')).toBe(true)
     expect(resolveSessionVendor(specId)).toBe('codex')
@@ -161,7 +161,7 @@ describe('openSpecSession', () => {
 
     await openSpecSession(ctx, conn, {
       type: 'open_spec_session',
-      workspaceId,
+      workspaceName,
       intentId: 'nope',
     })
 

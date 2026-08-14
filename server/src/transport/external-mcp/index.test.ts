@@ -30,11 +30,15 @@ import type { ExternalMcpToolName } from '@ccc/shared/protocol'
 const KEYS = new Map<string, AuthenticatedMcpApiKey>([
   [
     'full',
-    { id: 'key-a', workspace: '/ws/alpha', tools: ['find_intents', 'view_intent', 'save_intents'] },
+    {
+      id: 'key-a',
+      workspaceName: '/ws/alpha',
+      tools: ['find_intents', 'view_intent', 'save_intents'],
+    },
   ],
-  ['readonly', { id: 'key-b', workspace: '/ws/alpha', tools: ['find_intents'] }],
-  ['stale', { id: 'key-c', workspace: '/ws/gone', tools: ['find_intents'] }],
-  ['empty', { id: 'key-d', workspace: '/ws/alpha', tools: [] }],
+  ['readonly', { id: 'key-b', workspaceName: '/ws/alpha', tools: ['find_intents'] }],
+  ['stale', { id: 'key-c', workspaceName: '/ws/gone', tools: ['find_intents'] }],
+  ['empty', { id: 'key-d', workspaceName: '/ws/alpha', tools: [] }],
 ])
 
 /** Only `/ws/alpha` is registered; `/ws/gone` was removed. */

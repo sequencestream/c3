@@ -7,7 +7,7 @@
 一个交付 = 一批意图的 Git 生命周期单元。按工作区隔离。
 
 - **`id`**(`string`(UUID)): 交付唯一标识
-- **`workspaceId`**(`string`): 所属工作区(不透明 id,与其它域一致)
+- **`workspaceName`**(`string`): 所属工作区(不透明 id,与其它域一致)
 - **`title`**(`string`): 交付标题(非空)
 - **`description`**(`string`): 交付描述
 - **`status`**(`DeliveryStatus`): 六态闭集,见下
@@ -140,4 +140,4 @@ fork = merge-base(主线, 意图 commit)      # 意图从主线离开的位置
 
 ## 持久化存储(c3.db)
 
-`deliveries` / `intent_deliveries` / `delivery_prs` / `delivery_logs` 表 + 索引见 [delivery-design.md](delivery-design.md) §Schema。`base_branch` 非空快照、`status` CHECK 闭集、活动态 `(workspace_path, branch_name)` 部分唯一索引(`delivered`/`cancelled` 不占位,允许复用历史分支名)。`intent_deliveries` 承载关联边,`(delivery_id, intent_id)` 唯一、两侧各有索引;该表由交付 store 与意图 store **双声明**(意图 store 需在删除意图的同一事务里清边,而一个从未打开过交付页的库里交付 store 尚未初始化)。`intent_prs.delivery_id` 是意图对该交付的 PR 落点(由 intent-management 域 031 迁移预置),与关联边职责分离。
+`deliveries` / `intent_deliveries` / `delivery_prs` / `delivery_logs` 表 + 索引见 [delivery-design.md](delivery-design.md) §Schema。`base_branch` 非空快照、`status` CHECK 闭集、活动态 `(workspace_name, branch_name)` 部分唯一索引(`delivered`/`cancelled` 不占位,允许复用历史分支名)。`intent_deliveries` 承载关联边,`(delivery_id, intent_id)` 唯一、两侧各有索引;该表由交付 store 与意图 store **双声明**(意图 store 需在删除意图的同一事务里清边,而一个从未打开过交付页的库里交付 store 尚未初始化)。`intent_prs.delivery_id` 是意图对该交付的 PR 落点(由 intent-management 域 031 迁移预置),与关联边职责分离。

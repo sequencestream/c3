@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
-// in isolation these synthetic paths are unregistered, so stub resolve/pathToId
+// The store maps `workspace_name` <-> opaque `workspaceName` through the registry;
+// in isolation these synthetic paths are unregistered, so stub resolve/pathToName
 // as identity — fixtures use the path itself as the id and round-trip cleanly.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
-  pathToId: (p: string) => p,
+  pathToName: (p: string) => p,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -54,7 +54,7 @@ function makeLlmAutomation(vendor: VendorId = 'claude') {
   return createAutomation({
     type: 'llm',
     config: { prompt: 'hi' },
-    workspaceId: proj,
+    workspaceName: proj,
     cronExpression: '* * * * *',
     mode: 'read-only',
     vendor,
@@ -97,7 +97,7 @@ describe('readExecutionTranscript', () => {
 
     expect(result).toEqual({ sessionId: 'sess-1', items })
     // resolves to the owning automation's workspace, resolved path.
-    expect(loadHistory).toHaveBeenCalledWith(sch.workspaceId, 'sess-1')
+    expect(loadHistory).toHaveBeenCalledWith(sch.workspaceName, 'sess-1')
   })
 
   it('returns empty items without loading history when the execution has no sessionId', async () => {

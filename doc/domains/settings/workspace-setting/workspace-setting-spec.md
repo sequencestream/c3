@@ -1,6 +1,6 @@
 # workspace-setting 工作区设置
 
-`workspace-setting` 域承载 `WorkspaceSetting`(见 [`shared/src/protocol/workspace.ts`](../../../../shared/src/protocol/workspace.ts))——**按工作区**独立的配置旋钮,存于 `SystemSettings.projectConfigs` 映射(键为解析后的工作区路径)。缺失或部分条目回退规范化默认值(`normalizeWorkspaceSetting`)。协议消息 `load_workspace_setting` / `save_workspace_setting` / `workspace_setting`。
+`workspace-setting` 域承载 `WorkspaceSetting`(见 [`shared/src/protocol/workspace.ts`](../../../../shared/src/protocol/workspace.ts))——**按工作区**独立的配置旋钮,以唯一 workspace name 作为持久化与协议关联键。缺失或部分条目回退规范化默认值(`normalizeWorkspaceSetting`)。协议消息 `load_workspace_setting` / `save_workspace_setting` / `workspace_setting`。
 
 配置持久化与组级共享上下文见 [settings 组概览](../settings-overview.md)。
 
@@ -77,7 +77,7 @@
 工作区设置页的第六个 Tab「本机观测」展示 park 恢复率,用于判断本批 park 指引是否有效、后续 P1/P2 是否值得投入。
 
 - **不是配置。** 派生统计**不进** `SystemSettings` / `WorkspaceSetting`,也不进任何保存负载;该 Tab 的字段白名单为空,因此永不脏、不参与切换确认、无 Save 按钮,`buildPayload` 对它返回 `null` 使程序化保存也发不出东西。避免设置保存把观测数据回写成配置。
-- **专用只读协议。** `get_park_recovery_stats`(workspaceId)→ `park_recovery_stats`(workspaceId + `{ windowMs, eligible, recovered, pending, rate }` 或结构化 `error`)。服务端沿用既有工作区解析与访问边界,无法解析的工作区一律拒绝;响应不暴露单条事件、intent id、原因码或任意文本。回包按 `workspaceId` 对齐当前工作区,切换后到达的迟到回包被丢弃而非改标。
+- **专用只读协议。** `get_park_recovery_stats`(workspaceName)→ `park_recovery_stats`(workspaceName + `{ windowMs, eligible, recovered, pending, rate }` 或结构化 `error`)。服务端沿用既有工作区解析与访问边界,无法解析的工作区一律拒绝;响应不暴露单条事件、intent id、原因码或任意文本。回包按 `workspaceName` 对齐当前工作区,切换后到达的迟到回包被丢弃而非改标。
 - **打开页面或切换工作区时**请求对应工作区统计;切换工作区与重连时清空已有数字,避免一个工作区的数据挂在另一个名下。
 - **呈现。** park 后 24h 恢复率(`rate` 为 `null` 时显示「暂无足够样本」,**不显示 0%**)、`recovered / eligible` 样本数、`pending` 未满窗数;**数据库不可用或查询失败**显示「本机统计暂不可用」并提供重试,失败态**优先于**任何仍在手上的旧数字。「暂无足够样本」只用于真正读到了空样本的情形,数据库打不开**不得**退化成它。
 - **文案必须写明**数据只在本机、滚动保留 90 天、不含自由文本、不外传,以及决策口径:恢复率达 60% 为正向信号、达 70% 为强信号;上线 2–4 周复查,若相对上线初期未见提升,则停止并作废基于本批指引规划的全部 P1/P2 后续投入。

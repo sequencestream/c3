@@ -58,7 +58,7 @@ function makeCtx(
   const activeTab = ref('intents')
   const activeSession = ref<string | null>(null)
   const activeWorkspace = ref<string | null>(null)
-  const consoleSession = ref<{ workspacePath: string; sessionId: string } | null>(null)
+  const consoleSession = ref<{ workspaceName: string; sessionId: string } | null>(null)
   const activeSessionSource = ref<ReturnType<typeof resolveSessionSourceAction>>(null)
   const openIntents = vi.fn()
   const openSpecSession = vi.fn()
@@ -185,7 +185,7 @@ describe('refreshSessions', () => {
     const { ctx, send } = makeCtx({})
     ctx.refreshSessions(WS)
     expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'list_sessions', workspaceId: WS }),
+      expect.objectContaining({ type: 'list_sessions', workspaceName: WS }),
     )
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.before).toBeUndefined()
@@ -213,7 +213,7 @@ describe('selectWorkspace', () => {
     const h = makeCtx({ wireIntents: true, activeKind: 'work' })
     h.ctx.currentWorkspace.value = WS
     h.activeTab.value = 'console'
-    h.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
+    h.consoleSession.value = { workspaceName: WS, sessionId: 'work-1' }
     h.workspaceSettingOpen.value = true
 
     h.ctx.selectWorkspace(OTHER)
@@ -228,11 +228,11 @@ describe('selectWorkspace', () => {
     expect(h.consoleSession.value).toBeNull()
     expect(h.ctx.flags.pendingConsoleBind).toBe(true)
     // Intents entry contract + the target workspace's forced session refresh.
-    expect(h.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: OTHER })
-    expect(h.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: OTHER })
-    expect(h.send).toHaveBeenCalledWith({ type: 'load_workspace_setting', workspaceId: OTHER })
+    expect(h.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceName: OTHER })
+    expect(h.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceName: OTHER })
+    expect(h.send).toHaveBeenCalledWith({ type: 'load_workspace_setting', workspaceName: OTHER })
     expect(h.send).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'list_sessions', workspaceId: OTHER }),
+      expect.objectContaining({ type: 'list_sessions', workspaceName: OTHER }),
     )
   })
 
@@ -251,13 +251,13 @@ describe('selectWorkspace', () => {
     const h = makeCtx({ wireIntents: true })
     h.ctx.currentWorkspace.value = WS
     h.activeTab.value = 'console'
-    h.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
+    h.consoleSession.value = { workspaceName: WS, sessionId: 'work-1' }
 
     h.ctx.selectWorkspace(WS)
 
     expect(h.activeTab.value).toBe('console')
     expect(h.intentsProject.value).toBeNull()
-    expect(h.consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'work-1' })
+    expect(h.consoleSession.value).toEqual({ workspaceName: WS, sessionId: 'work-1' })
     expect(h.ctx.flags.pendingConsoleBind).toBe(false)
     expect(h.persistCurrentWorkspace).not.toHaveBeenCalled()
     expect(h.persistViewMode).not.toHaveBeenCalled()
@@ -272,7 +272,7 @@ describe('selectSessionKind', () => {
     // Prime sessions for the old kind to confirm the list_sessions is for the new kind.
     ctx.sessionsByWorkspace.value[sessionCacheKey(WS, 'work')] = [s('work-1', 400)]
     // Simulate a previously-viewed session that must be dropped.
-    ctx.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
+    ctx.consoleSession.value = { workspaceName: WS, sessionId: 'work-1' }
 
     ctx.selectSessionKind('spec')
 
@@ -284,12 +284,12 @@ describe('selectSessionKind', () => {
     // Should send list_sessions for the NEW kind, not the old work sessions.
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.sessionKind).toBe('spec')
-    expect(msg.workspaceId).toBe(WS)
+    expect(msg.workspaceName).toBe(WS)
   })
 
   it('does not crash when currentWorkspace is null (no list to refresh)', () => {
     const { ctx } = makeCtx({ activeKind: 'work' })
-    ctx.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
+    ctx.consoleSession.value = { workspaceName: WS, sessionId: 'work-1' }
 
     // currentWorkspace is null, so refreshSessions returns early — should not throw.
     ctx.selectSessionKind('tool')
@@ -365,7 +365,7 @@ describe('optimistic delete / rename', () => {
     expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'work')].map((x) => x.sessionId)).toEqual([
       'b',
     ])
-    expect(send).toHaveBeenCalledWith({ type: 'delete_session', workspaceId: WS, sessionId: 'a' })
+    expect(send).toHaveBeenCalledWith({ type: 'delete_session', workspaceName: WS, sessionId: 'a' })
   })
 
   it('rename updates the title locally and sends rename_session', () => {
@@ -376,7 +376,7 @@ describe('optimistic delete / rename', () => {
     expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'work')][0].title).toBe('New Title')
     expect(send).toHaveBeenCalledWith({
       type: 'rename_session',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionId: 'a',
       title: 'New Title',
     })
@@ -418,10 +418,10 @@ describe('selectSession shows the session in the chat column', () => {
       ctx.selectSession(WS, `${kind}-1`)
 
       expect(activeTab.value).toBe('console')
-      expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: `${kind}-1` })
+      expect(consoleSession.value).toEqual({ workspaceName: WS, sessionId: `${kind}-1` })
       expect(send).toHaveBeenCalledWith({
         type: 'select_session',
-        workspaceId: WS,
+        workspaceName: WS,
         sessionId: `${kind}-1`,
       })
       expect(openIntents).not.toHaveBeenCalled()
@@ -441,7 +441,7 @@ describe('selectSession shows the session in the chat column', () => {
     ctx.selectSession(WS, 'spec-1')
 
     // Console pointer still pinned, but no redundant select_session round-trip.
-    expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'spec-1' })
+    expect(consoleSession.value).toEqual({ workspaceName: WS, sessionId: 'spec-1' })
     expect(send).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'select_session', sessionId: 'spec-1' }),
     )
@@ -456,7 +456,7 @@ describe('openWorkcenterSession', () => {
     })
 
     ctx.openWorkcenterSession({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'spec',
       sessionId: 'deep-spec',
       title: 'Spec gate',
@@ -468,7 +468,7 @@ describe('openWorkcenterSession', () => {
     expect(ctx.activeSessionKind.value).toBe('spec')
     expect(ctx.flags.pendingConsoleBind).toBe(false)
     expect(ctx.activeTab.value).toBe('console')
-    expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'deep-spec' })
+    expect(consoleSession.value).toEqual({ workspaceName: WS, sessionId: 'deep-spec' })
     expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'spec')].map((x) => x.sessionId)).toEqual([
       'visible-1',
       'deep-spec',
@@ -483,13 +483,13 @@ describe('openWorkcenterSession', () => {
     })
     expect(send).toHaveBeenCalledWith({
       type: 'list_sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'spec',
       limit: expect.any(Number),
     })
     expect(send).toHaveBeenCalledWith({
       type: 'select_session',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionId: 'deep-spec',
     })
   })
@@ -501,7 +501,7 @@ describe('openWorkcenterSession', () => {
     })
 
     ctx.openWorkcenterSession({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'intent',
       sessionId: 'intent-1',
       title: 'Ignored',
@@ -515,7 +515,7 @@ describe('openWorkcenterSession', () => {
     const { ctx, send, sessionsByWorkspace } = makeCtx({ activeKind: 'work' })
 
     ctx.openWorkcenterSession({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'consensus',
       sessionId: 'consensus-1',
       title: 'Consensus',
@@ -530,7 +530,7 @@ describe('openWorkcenterSession', () => {
     })
     expect(send).toHaveBeenCalledWith({
       type: 'list_sessions',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'tool',
       limit: expect.any(Number),
     })
@@ -542,7 +542,7 @@ describe('openWorkcenterSession', () => {
     ctx.activeWorkspace.value = WS
 
     ctx.openWorkcenterSession({
-      workspaceId: WS,
+      workspaceName: WS,
       sessionKind: 'discussion',
       sessionId: null,
     })
@@ -704,7 +704,7 @@ describe('selectSession — spec_review rows', () => {
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select_session' }))
     // 仍留在会话页并绑定右栏控制台指针。
     expect(activeTab.value).toBe('console')
-    expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'rev-1' })
+    expect(consoleSession.value).toEqual({ workspaceName: WS, sessionId: 'rev-1' })
   })
 
   it('routes by the row even when the caller passes only an id (deep link / pending select)', () => {
@@ -748,7 +748,7 @@ describe('selectSession — spec_review rows', () => {
     expect(openSpecReviewSession).not.toHaveBeenCalled()
     expect(send).toHaveBeenCalledWith({
       type: 'select_session',
-      workspaceId: WS,
+      workspaceName: WS,
       sessionId: 'spec-1',
     })
   })

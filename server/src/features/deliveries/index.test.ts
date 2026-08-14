@@ -22,7 +22,7 @@ import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { saveWorkspaceSetting } from '../../kernel/config/index.js'
-import { addWorkspace, pathToId, resetStateCacheForTests } from '../../state.js'
+import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
 import { closeForgePr, getForgePrStatus } from '../../git.js'
 import {
   cancelDeliveryHandler,
@@ -60,7 +60,7 @@ vi.mock('../../git.js', async (importOriginal) => ({
 }))
 
 let dir: string
-let workspaceId: string
+let workspaceName: string
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-delivery-feature-'))
@@ -72,7 +72,7 @@ beforeEach(() => {
   resetIntentStoreForTests()
   resetStateCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
+  workspaceName = pathToName(dir)!
 })
 
 afterEach(() => {
@@ -118,7 +118,7 @@ function publishedTypes(published: PublishedEvent[]): string[] {
 
 const createMsg = (overrides: Partial<{ title: string; description: string }> = {}) => ({
   type: 'create_delivery' as const,
-  workspaceId,
+  workspaceName,
   title: overrides.title ?? 'Sprint 3',
   description: overrides.description ?? '',
 })
@@ -132,7 +132,7 @@ describe('create_delivery', () => {
     expect(created).toMatchObject({ title: 'Sprint 3', status: 'planned', baseBranch: 'develop' })
     expect(h.sent[0]).toMatchObject({
       type: 'create_delivery_result',
-      workspaceId,
+      workspaceName,
       delivery: { id: created.id },
       prMergeNotice: true,
     })
@@ -156,7 +156,7 @@ describe('create_delivery', () => {
     const h = harness()
     createDeliveryHandler(h.ctx, h.conn, {
       type: 'create_delivery',
-      workspaceId: 'missing',
+      workspaceName: 'missing',
       title: 'X',
     })
     expect(listDeliveries(dir)).toEqual([])
@@ -173,7 +173,7 @@ describe('create_delivery', () => {
     const first = listDeliveries(dir)[1]
     cancelDeliveryHandler(h.ctx, h.conn, {
       type: 'cancel_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: first.id,
     })
     createDeliveryHandler(h.ctx, h.conn, createMsg({ title: 'C' }))
@@ -189,8 +189,8 @@ describe('list_deliveries — server-computed badge', () => {
     createDeliveryHandler(harness().ctx, harness().conn, createMsg())
     // A second workspace delivery keeps everything planned → no action.
     const h = harness()
-    listDeliveriesHandler(h.ctx, h.conn, { type: 'list_deliveries', workspaceId })
-    expect(h.sent[0]).toMatchObject({ type: 'deliveries', workspaceId, needsActionCount: 0 })
+    listDeliveriesHandler(h.ctx, h.conn, { type: 'list_deliveries', workspaceName })
+    expect(h.sent[0]).toMatchObject({ type: 'deliveries', workspaceName, needsActionCount: 0 })
   })
 })
 
@@ -233,7 +233,7 @@ describe('update_delivery', () => {
     const h = harness()
     updateDeliveryHandler(h.ctx, h.conn, {
       type: 'update_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       title: 'Renamed',
       startDate: 123,
@@ -249,12 +249,12 @@ describe('update_delivery', () => {
     const otherDir = mkdtempSync(join(tmpdir(), 'c3-delivery-other-'))
     try {
       addWorkspace(otherDir, 1)
-      const otherId = pathToId(otherDir)!
-      expect(otherId).not.toBe(workspaceId)
+      const otherId = pathToName(otherDir)!
+      expect(otherId).not.toBe(workspaceName)
       const h = harness()
       updateDeliveryHandler(h.ctx, h.conn, {
         type: 'update_delivery',
-        workspaceId: otherId,
+        workspaceName: otherId,
         deliveryId: id,
         title: 'X',
       })
@@ -274,7 +274,7 @@ describe('transition + cancel — the status write path', () => {
     const h = harness()
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'cancelled',
     })
@@ -291,7 +291,7 @@ describe('transition + cancel — the status write path', () => {
     const h = harness()
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'delivered', // planned → delivered is not in the graph
     })
@@ -312,7 +312,7 @@ describe('transition + cancel — the status write path', () => {
     const h = harness()
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'integrating',
     })
@@ -329,11 +329,11 @@ describe('transition + cancel — the status write path', () => {
     const otherDir = mkdtempSync(join(tmpdir(), 'c3-delivery-other-'))
     try {
       addWorkspace(otherDir, 1)
-      const otherId = pathToId(otherDir)!
+      const otherId = pathToName(otherDir)!
       const h = harness()
       transitionDeliveryHandler(h.ctx, h.conn, {
         type: 'transition_delivery',
-        workspaceId: otherId,
+        workspaceName: otherId,
         deliveryId: id,
         to: 'cancelled',
       })
@@ -355,14 +355,14 @@ describe('transition + cancel — the status write path', () => {
     const h = harness()
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'verifying',
     })
     expect(getDelivery(id)!.status).toBe('verifying')
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'verified',
       confirmVerified: true,
@@ -374,9 +374,13 @@ describe('transition + cancel — the status write path', () => {
     const h0 = harness()
     createDeliveryHandler(h0.ctx, h0.conn, createMsg())
     const id = listDeliveries(dir)[0].id
-    cancelDeliveryHandler(h0.ctx, h0.conn, { type: 'cancel_delivery', workspaceId, deliveryId: id })
+    cancelDeliveryHandler(h0.ctx, h0.conn, {
+      type: 'cancel_delivery',
+      workspaceName,
+      deliveryId: id,
+    })
     const h = harness()
-    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceId, deliveryId: id })
+    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceName, deliveryId: id })
     expect(h.sent[0]).toMatchObject({
       type: 'delivery_transition_failed',
       code: 'delivery.invalidStatusTransition',
@@ -410,7 +414,7 @@ describe('delivery:* lifecycle events', () => {
     const h = harness()
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'verifying',
     })
@@ -429,7 +433,7 @@ describe('delivery:* lifecycle events', () => {
     const id = listDeliveries(dir)[0].id
 
     const h = harness()
-    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceId, deliveryId: id })
+    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceName, deliveryId: id })
     expect(publishedTypes(h.published)).toEqual(['delivery:status_changed', 'delivery:cancelled'])
     expect(h.published[0].event.metadata).toMatchObject({ from: 'planned', to: 'cancelled' })
     expect(h.published[1].event.metadata).toMatchObject({ deliveryId: id, title: 'Sprint 3' })
@@ -442,7 +446,7 @@ describe('delivery:* lifecycle events', () => {
     const h = harness()
     transitionDeliveryHandler(h.ctx, h.conn, {
       type: 'transition_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       to: 'delivered',
     })
@@ -459,7 +463,7 @@ describe('delivery:* lifecycle events', () => {
       reason: 'test refusal',
     })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceId, deliveryId: id })
+    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceName, deliveryId: id })
 
     expect(getDelivery(id)!.status).toBe('cancelled')
     expect(h.published).toEqual([])
@@ -575,7 +579,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/abc-sprint-3',
       mode: 'create',
@@ -612,7 +616,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h1 = harness()
     await initDeliveryBranchHandler(h1.ctx, h1.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: idOf('Sprint orphan'),
       branchName: 'delivery/orphan',
       mode: 'create',
@@ -625,7 +629,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h2 = harness()
     await initDeliveryBranchHandler(h2.ctx, h2.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: idOf('Sprint bind'),
       branchName: 'delivery/bind-me',
       mode: 'bind',
@@ -638,7 +642,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h3 = harness()
     await initDeliveryBranchHandler(h3.ctx, h3.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: idOf('Sprint miss'),
       branchName: 'delivery/nope',
       mode: 'bind',
@@ -657,7 +661,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/orphan',
       mode: 'create',
@@ -680,7 +684,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/conflict',
       mode: 'create',
@@ -704,7 +708,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'release/2026-08',
       mode: 'bind',
@@ -724,7 +728,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'release/nope',
       mode: 'bind',
@@ -743,7 +747,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const a = seedDelivery('A')
     await initDeliveryBranchHandler(harness().ctx, harness().conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: a,
       branchName: 'release/x',
       mode: 'bind',
@@ -752,7 +756,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: b,
       branchName: 'release/x',
       mode: 'bind',
@@ -772,7 +776,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/x',
       mode: 'create',
@@ -789,7 +793,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const id = seedDelivery()
     await initDeliveryBranchHandler(harness().ctx, harness().conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/abc-sprint-3',
       mode: 'create',
@@ -797,7 +801,7 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     const h = harness()
     await initDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/abc-sprint-3',
       mode: 'create',
@@ -846,7 +850,7 @@ describe('cleanup_delivery_branch — terminal manual cleanup', () => {
     const id = seedDelivery()
     await initDeliveryBranchHandler(harness().ctx, harness().conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
       branchName: 'delivery/abc-sprint-3',
       mode: 'create',
@@ -857,7 +861,7 @@ describe('cleanup_delivery_branch — terminal manual cleanup', () => {
     const h = harness()
     await cleanupDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'cleanup_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(getDelivery(id)).toMatchObject({ branchName: null, branchReady: false })
@@ -877,7 +881,7 @@ describe('cleanup_delivery_branch — terminal manual cleanup', () => {
     const h = harness()
     await cleanupDeliveryBranchHandler(h.ctx, h.conn, {
       type: 'cleanup_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: id,
     })
     expect(h.sent[0]).toMatchObject({ type: 'error', error: { code: 'delivery.cleanupForbidden' } })
@@ -923,7 +927,7 @@ describe('link / unlink intent ↔ delivery', () => {
     const h = harness()
     await linkIntentToDeliveryHandler(h.ctx, h.conn, {
       type: 'link_intent_to_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId,
       intentId,
     })
@@ -934,7 +938,7 @@ describe('link / unlink intent ↔ delivery', () => {
     const h = harness()
     await unlinkIntentFromDeliveryHandler(h.ctx, h.conn, {
       type: 'unlink_intent_from_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId,
       intentId,
     })
@@ -1000,7 +1004,7 @@ describe('link / unlink intent ↔ delivery', () => {
     const hInit = harness()
     await initDeliveryBranchHandler(hInit.ctx, hInit.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: d,
       branchName: 'delivery/sprint-3',
       mode: 'create',
@@ -1034,7 +1038,7 @@ describe('link / unlink intent ↔ delivery', () => {
     const hInit = harness()
     await initDeliveryBranchHandler(hInit.ctx, hInit.conn, {
       type: 'init_delivery_branch',
-      workspaceId,
+      workspaceName,
       deliveryId: d,
       branchName: 'delivery/sprint-3',
       mode: 'create',
@@ -1247,7 +1251,7 @@ describe('link / unlink intent ↔ delivery', () => {
     const h = harness()
     cancelDeliveryHandler(h.ctx, h.conn, {
       type: 'cancel_delivery',
-      workspaceId,
+      workspaceName,
       deliveryId: dCancelled,
     })
     expect(getDelivery(dCancelled)?.status).toBe('cancelled')

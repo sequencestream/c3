@@ -32,7 +32,7 @@ export function listRegisteredWorkspaceCanonicalPaths(): string[] {
  * unknown/forged id. This is how an administrator's id-addressed grant becomes
  * the path form the `/mcp/v1` authorization check compares.
  */
-export function workspaceIdToCanonicalPath(id: string): string | null {
+export function workspaceNameToCanonicalPath(id: string): string | null {
   const path = resolveWorkspaceRoot(id)
   return path ? canonicalizeWorkspacePath(path) : null
 }
@@ -43,11 +43,11 @@ export function workspaceIdToCanonicalPath(id: string): string | null {
  * keeps the record so an administrator can see the stale entry, but nothing can
  * be reached through it.
  */
-export function canonicalPathToWorkspaceId(canonicalPath: string): string | null {
+export function canonicalPathToWorkspaceName(canonicalPath: string): string | null {
   const wanted = canonicalizeWorkspacePath(canonicalPath)
   if (!wanted) return null
   for (const ws of listWorkspaces()) {
-    if (canonicalizeWorkspacePath(ws.path) === wanted) return ws.id
+    if (canonicalizeWorkspacePath(ws.path) === wanted) return ws.name
   }
   return null
 }

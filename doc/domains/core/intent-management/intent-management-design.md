@@ -47,21 +47,21 @@
 
 ## Schema(`PRAGMA user_version` 迁移)
 
-- `intents` — 账本(`id`、`workspace_path`、`title`、`content`、`priority`、`status`、
+- `intents` — 账本(`id`、`workspace_name`、`title`、`content`、`priority`、`status`、
   `module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、`completed_at`,
   以及 spec 相关列 `spec_path`/`spec_status`/`spec_approved`/`spec_approve_user`/
-  `spec_session_id`/`spec_review_*`/`spec_mode`),按 `(workspace_path, status)` 建索引。
+  `spec_session_id`/`spec_review_*`/`spec_mode`),按 `(workspace_name, status)` 建索引。
   `module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为 `INTEGER NOT NULL DEFAULT 0`;
   `spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,RM-R43)。
 - `intent_deps` — `(intent_id, depends_on_id)` 边。
 - `intent_fast_turns` — fast 模式每 turn 反向补轨的结算记录(`session_id` 主键、`intent_id`、
-  `workspace_path`、`baseline` JSON、`settled_at`/`outcome`/`spec_path`、`created_at` +
+  `workspace_name`、`baseline` JSON、`settled_at`/`outcome`/`spec_path`、`created_at` +
   `idx_intent_fast_turn_intent`);`settled_at` 在落定处理前为 NULL,同时充当「启动 → 落定」
   握手,防重复 settled 事件或重启重复生成规格。resume 复用同一 session 重建 baseline 时,
   冲突分支一并清除 `settled_at`/`outcome`/`spec_path`,为同一会话的每个 turn 各自开启新的
   可结算周期,使第二个及后续 resume turn 同样能 claim 落定(RM-R43)。
 - `intent_chats` — 一张表身兼**按工作区的沟通会话集合**与**隐藏集**两职:`session_id`
-  (主键,可能是 `pending:` id)、`workspace_path`、
+  (主键,可能是 `pending:` id)、`workspace_name`、
   `title`(可空,客户端回退为「New Intent」或由首个提示词推导)、
   `is_current`(0/1,每个项目最多一条——默认打开指针)、
   `updated_at`。一个项目全部行的集合即为隐藏集;`is_current=1` 的那一行
@@ -72,7 +72,7 @@
 `completed_at`(可空),v4 `automate`(`INTEGER NOT NULL DEFAULT 0`),v6 旧的 `requirement*`
 → `intent*` 重命名,v7 `intent_chats.title`(`TEXT`),v8 git 追踪字段,v9 `intent_deps`
 (`dep_type` 与 `created_at`),v10 一张审计表,**v11 在 `intents` + `intent_chats` 上
-将工作区键列 `project_path` → `workspace_path` 原地重命名**(复合索引重建为
+将工作区键列 `project_path` → `workspace_name` 原地重命名**(复合索引重建为
 `idx_intent_workspace_status`;chat 的单列索引保留原名,其列引用
 随重命名自动更新)。v11 **有意与**协议上保持向后兼容的 `projectConfigs`
 键**分道而行**,后者沿用旧名(参见 2026-06-14 的 workspace-path 迁移记录)。该重命名
@@ -99,9 +99,8 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 
 ## Store
 
-- **路径归一化(RM-R10):** 每个 `workspacePath` 参数在读写前都会被解析为绝对路径,
-  以匹配工作区键 / 运行时工作目录 / 智能体工作目录。
-  否则查询会落空,隐藏过滤也会失效。
+- **名称边界(RM-R10):** 领域读写和隐藏过滤以 `workspaceName` 为键；仅运行时工作目录、
+  Git 与智能体 `cwd` 通过注册表解析为绝对路径。
 - Intents:list(带 `dependsOn` 聚合)、insert(事务性批量、uuid、状态 `todo`;
   将 `module` 持久化为 `it.module ?? ''`,`automate` 默认为 `0`)、upsert
   (`save_intents` 的写入路径——按每项 `id` 插入或原地更新,RM-R20;详见下文)、
@@ -658,7 +657,7 @@ Automation 分发与该 consumer 是**同一个**总线事件的两个独立副�
 
 该 handler 会在非 `operation === 'update' && result === 'success'` 或
 `association.intentId` 不存在时短路返回。之后它会 `getIntent(intentId)`,校验
-`intent.workspaceId === pathToId(payload.workspacePath)`(阻止跨工作区的 `intentId`),再定位
+`intent.workspaceName === workspaceNameFor(payload.workspacePath)`(阻止跨工作区的 `intentId`),再定位
 事件所指的 PR 行:携带 `data.pr.number` 即精确定位,不带则回退到该意图唯一的未合并行——有多条
 时无从判断是哪一条被重提,忽略并 warn,绝不批量复位。仅当该行状态 ∈ {rejected, failed, closed}
 时,调用 `upsertIntentPr(…, 'reviewing')`、`safeInsertIntentLog(id, 'pr_updated', …, 'automation')`,
@@ -733,7 +732,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 
 意图会话的广播遵循与讨论广播相同的模式:
 它读取会话列表,附加一份从即时检查派生出的运行状态快照,
-并把 `{ type: 'intent_sessions', workspacePath, items, runStates }` 扇出到
+并把 `{ type: 'intent_sessions', workspaceName, items, runStates }` 扇出到
 每个连接。它被接入共享的内核上下文,以便意图会话 handler
 和任何后台变更都能推送刷新后的列表。
 

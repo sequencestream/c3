@@ -6,7 +6,7 @@ import { resetWriteSpecGuards, useSpecApprovalGate, type MainAction } from './us
 
 function intent(id: string): Intent {
   return {
-    workspaceId: '/proj',
+    workspaceName: '/proj',
     id,
     title: 'T',
     shortEnTitle: null,

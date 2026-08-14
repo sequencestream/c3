@@ -48,7 +48,7 @@ const NOW = Date.UTC(2026, 0, 1, 0, 0, 0)
 
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
-    workspaceId: 'ws',
+    workspaceName: 'ws',
     title: 'T',
     shortEnTitle: null,
     content: '',

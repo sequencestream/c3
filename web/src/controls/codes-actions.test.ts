@@ -76,7 +76,7 @@ describe('codes-actions embedded chat', () => {
     ctx.openCodes(WS)
 
     const selects = sentOfType(send, 'select_session')
-    expect(selects).toEqual([{ type: 'select_session', workspaceId: WS, sessionId: 'sess-1' }])
+    expect(selects).toEqual([{ type: 'select_session', workspaceName: WS, sessionId: 'sess-1' }])
     expect(ctx.codesBoundSessionId.value[WS]).toBe('sess-1')
   })
 
@@ -96,7 +96,7 @@ describe('codes-actions embedded chat', () => {
 
     ctx.createCodesChatSession(WS)
     expect(sentOfType(send, 'create_session')).toEqual([
-      { type: 'create_session', workspaceId: WS },
+      { type: 'create_session', workspaceName: WS },
     ])
 
     // Simulate the server round-trip: session_selected sets the active session.
@@ -131,7 +131,7 @@ describe('codes-actions embedded chat', () => {
 
     ctx.resetCodesChatSession(WS)
     expect(sentOfType(send, 'create_session')).toEqual([
-      { type: 'create_session', workspaceId: WS },
+      { type: 'create_session', workspaceName: WS },
     ])
 
     ctx.activeSession.value = 'sess-fresh'
@@ -174,7 +174,7 @@ describe('codes-actions git status', () => {
     ctx.openCodes(WS)
     ctx.requestCodesGitStatus()
     expect(sentOfType(send, 'get_code_git_status')).toEqual([
-      { type: 'get_code_git_status', workspaceId: WS },
+      { type: 'get_code_git_status', workspaceName: WS },
     ])
   })
 

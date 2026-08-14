@@ -12,18 +12,12 @@ import type { CodexPolicy, ModeToken, VendorId } from './vendor.js'
 
 /** A project directory the user manages in the c3 sidebar. */
 export interface WorkspaceInfo {
-  /**
-   * Opaque identity token assigned at first registration. Never an absolute
-   * path: the server resolves `id → realpath` internally. The client MUST
-   * NOT construct or derive ids — only the server emits `WorkspaceInfo`.
-   */
-  id: string
-  /** Display name — the directory's basename. */
+  /** Immutable, globally unique workspace identity (1–64 Unicode characters). */
   name: string
   /**
    * Resolved absolute path on disk. Display-only: shown under the name in the
-   * WorkspaceSwitcher dropdown so same-named workspaces are distinguishable.
-   * NOT an identity field — every workspace-scoped operation uses `id`, and the
+   * WorkspaceSwitcher dropdown to make the filesystem location explicit.
+   * NOT an identity field — every workspace-scoped operation uses `name`, and the
    * server never accepts `path` back as identity.
    */
   path: string
@@ -152,7 +146,7 @@ export const GIT_BRANCH_MODES = ['current-branch', 'worktree'] as const
 export type GitBranchMode = (typeof GIT_BRANCH_MODES)[number]
 
 /**
- * Per-project (workspace) configuration, keyed by resolved project path in
+ * Per-project (workspace) configuration, keyed by immutable workspace name in
  * {@link SystemSettings.projectConfigs}. Each project holds its own copy of the
  * workspace-level knobs (including sandbox and git commit strategy) — independent
  * of every other project's values. Absent or partial entries fall back to the
@@ -294,8 +288,8 @@ export interface WorkspaceMcpConfig {
  * all other counts honour the request's `startTime`/`endTime`.
  */
 export interface TimeRangeProjectStats {
-  /** Absolute workspace path (the project key). */
-  workspaceId: string
+  /** Immutable workspace name (the project key). */
+  workspaceName: string
   /** Display name — the workspace directory's basename. */
   projectName: string
   /** Work sessions: `total` real projection rows in range; `running` live non-idle runtimes. */
@@ -316,8 +310,8 @@ export interface TimeRangeProjectStats {
  * `sessions.total` (not just work sessions).
  */
 export interface WorkspaceDashboardRow {
-  /** Opaque workspace id (never a path — the server resolves id → path internally). */
-  workspaceId: string
+  /** Immutable workspace name (never a path). */
+  workspaceName: string
   /** Display name — the workspace directory's basename. */
   name: string
   /** Resolved absolute path on disk. Display-only, for distinguishing same-named workspaces. */
@@ -350,7 +344,7 @@ export interface WorkspaceDashboardRow {
  */
 export interface WorkspaceAutomationGateResult {
   /** Opaque id of the workspace this outcome is for. */
-  workspaceId: string
+  workspaceName: string
   /** Whether the gate write for this workspace succeeded. */
   ok: boolean
   /** Structured, localizable failure reason when `ok` is false. */

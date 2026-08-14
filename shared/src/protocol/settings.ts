@@ -207,7 +207,7 @@ export interface McpApiKeyMeta {
    * The binding is fixed at creation. There is no cross-workspace key and no
    * wildcard; re-pointing a key means minting a new one.
    */
-  workspaceId: string | null
+  workspaceName: string | null
   /**
    * The tool names this key may call, a subset of the server catalog. `tools/list`
    * on `/mcp/<api-key>` is exactly this set, and any other tool call is refused.

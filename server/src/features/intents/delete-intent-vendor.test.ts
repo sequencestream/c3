@@ -61,7 +61,7 @@ vi.mock('./worktree.js', async (importOriginal) => {
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -91,7 +91,7 @@ const CODEX_AGENT = 'codex-a'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -106,8 +106,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   hoisted.runtimeFailureSessionId = null
   hoisted.chatFailureSessionId = null
   configureAgents()
@@ -197,7 +197,7 @@ describe('deleteIntent — vendor-dispatched session cleanup', () => {
 
     const h = harness()
     h.conn.viewing = 'codex-comm'
-    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceName, intentId: id })
 
     expect(removeSession).not.toHaveBeenCalled()
     expect(getIntent(id)).toBeNull()
@@ -220,7 +220,7 @@ describe('deleteIntent — vendor-dispatched session cleanup', () => {
     insertIntentSession(id, 'claude-comm', 'claude', CLAUDE_AGENT)
 
     const h = harness()
-    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceName, intentId: id })
 
     expect(removeSession).toHaveBeenCalledOnce()
     expect(removeSession).toHaveBeenCalledWith(proj, 'claude-comm')
@@ -239,7 +239,7 @@ describe('deleteIntent — vendor-dispatched session cleanup', () => {
     )
 
     const h = harness()
-    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceName, intentId: id })
 
     expect(listChatSessions(proj)).toEqual([])
     expect(listMetadataRows()).toEqual([])
@@ -259,7 +259,7 @@ describe('deleteIntent — vendor-dispatched session cleanup', () => {
     hoisted.runtimeFailureSessionId = 'boom'
 
     const h = harness()
-    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceName, intentId: id })
 
     expect(listChatSessions(proj)).toEqual([])
     expect(listMetadataRows()).toEqual([])
@@ -276,7 +276,7 @@ describe('deleteIntent — vendor-dispatched session cleanup', () => {
     hoisted.chatFailureSessionId = 'chat-boom'
 
     const h = harness()
-    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceName, intentId: id })
 
     // The chat row survives (its own delete threw) — proof the step really
     // failed — yet the projection delete behind it still ran.

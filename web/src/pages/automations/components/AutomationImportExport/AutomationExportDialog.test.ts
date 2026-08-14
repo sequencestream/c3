@@ -9,7 +9,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     type: 'command',
     config: { command: 'echo', name: 'Task' },
     maxWallClockMs: null,
-    workspaceId: '/home/proj',
+    workspaceName: '/home/proj',
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
@@ -45,7 +45,7 @@ afterEach(() => {
 
 function mountDialog(automations: Automation[], open = true) {
   return mount(AutomationExportDialog, {
-    props: { open, automations, workspacePath: '/home/my-proj' },
+    props: { open, automations, workspaceName: '/home/my-proj' },
     attachTo: document.body,
   })
 }

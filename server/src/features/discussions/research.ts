@@ -205,7 +205,7 @@ export async function researchDiscussionContext(
     {
       goal: discussion.goal,
       context: discussion.context,
-      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceName)!,
     },
     def,
     getAgentLangName(),
@@ -229,8 +229,8 @@ export async function researchDiscussionContext(
       prompt,
       // Discussion research runs at the workspace root (no worktree), so the
       // effective cwd and the config/audit root are the same path.
-      cwd: resolveWorkspaceRoot(discussion.workspaceId)!,
-      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+      cwd: resolveWorkspaceRoot(discussion.workspaceName)!,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceName)!,
       signal,
       // Pinned to `default` so the gateway's canUseTool always fires.
       permissionMode: 'default',

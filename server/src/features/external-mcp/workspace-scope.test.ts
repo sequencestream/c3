@@ -9,13 +9,13 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  canonicalPathToWorkspaceId,
+  canonicalPathToWorkspaceName,
   listRegisteredWorkspaceCanonicalPaths,
   resolveRegisteredWorkspacePath,
-  workspaceIdToCanonicalPath,
+  workspaceNameToCanonicalPath,
 } from './workspace-scope.js'
 import { canonicalizeWorkspacePath } from '../../kernel/config/mcp-api-keys.js'
-import { addWorkspace, pathToId, removeWorkspace, resetStateCacheForTests } from '../../state.js'
+import { addWorkspace, pathToName, removeWorkspace, resetStateCacheForTests } from '../../state.js'
 import { releaseConfigDb, useConfigDb } from '../../kernel/config/config-fixture.js'
 
 let home: string
@@ -87,22 +87,22 @@ describe('resolveRegisteredWorkspacePath', () => {
 describe('id ⇄ canonical path', () => {
   it('round-trips a registered workspace', () => {
     const p = register('alpha')
-    const id = pathToId(p)!
-    expect(workspaceIdToCanonicalPath(id)).toBe(canonicalizeWorkspacePath(p))
-    expect(canonicalPathToWorkspaceId(canonicalizeWorkspacePath(p)!)).toBe(id)
+    const id = pathToName(p)!
+    expect(workspaceNameToCanonicalPath(id)).toBe(canonicalizeWorkspacePath(p))
+    expect(canonicalPathToWorkspaceName(canonicalizeWorkspacePath(p)!)).toBe(id)
   })
 
   it('answers null for a forged or removed id', () => {
     const p = register('alpha')
-    const id = pathToId(p)!
+    const id = pathToName(p)!
     removeWorkspace(p)
-    expect(workspaceIdToCanonicalPath(id)).toBeNull()
-    expect(workspaceIdToCanonicalPath('made-up')).toBeNull()
+    expect(workspaceNameToCanonicalPath(id)).toBeNull()
+    expect(workspaceNameToCanonicalPath('made-up')).toBeNull()
   })
 
   it('answers null for a path no registered workspace covers — a stale grant', () => {
     register('alpha')
-    expect(canonicalPathToWorkspaceId(join(home, 'beta'))).toBeNull()
+    expect(canonicalPathToWorkspaceName(join(home, 'beta'))).toBeNull()
   })
 
   it('lists every registered workspace once, canonically', () => {

@@ -35,7 +35,7 @@ import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
   addWorkspace,
-  pathToId,
+  pathToName,
   resetStateCacheForTests,
   resolveWorkspaceRoot,
 } from '../../state.js'
@@ -61,7 +61,7 @@ import { initTestGitRepo } from '../../../test/git-repo.js'
 
 let dir: string
 let prevC3Dir: string | undefined
-let workspaceId: string
+let workspaceName: string
 let proj: string
 
 beforeEach(() => {
@@ -77,8 +77,8 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
-  workspaceId = pathToId(dir)!
-  proj = resolveWorkspaceRoot(workspaceId)!
+  workspaceName = pathToName(dir)!
+  proj = resolveWorkspaceRoot(workspaceName)!
   vi.mocked(createForgePr).mockReset()
   vi.mocked(getForgePrStatus).mockReset()
   vi.mocked(commitAndPush).mockReset()
@@ -216,7 +216,7 @@ describe('spec instrumentation', () => {
     const { conn } = fakeConn({ subject: 'carol' })
     writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
       type: 'write_spec',
-      workspaceId,
+      workspaceName,
       intentId: r.id,
     })
     expect(logsOf(r.id, 'spec_created')).toMatchObject([{ summary: '编写 spec', actor: 'carol' }])
@@ -230,7 +230,7 @@ describe('spec instrumentation', () => {
     // Real content landed → `pending`, the only state a human may approve.
     markSpecAuthored(r.id)
     const { conn } = fakeConn({ subject: 'dave' })
-    approveSpecHandler(fakeCtx(), conn, { type: 'approve_spec', workspaceId, intentId: r.id })
+    approveSpecHandler(fakeCtx(), conn, { type: 'approve_spec', workspaceName, intentId: r.id })
     expect(logsOf(r.id, 'spec_approved')).toMatchObject([{ summary: '批准 spec', actor: 'dave' }])
   })
 })
@@ -249,7 +249,7 @@ describe('PR instrumentation', () => {
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
     vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
     const { conn } = fakeConn({ subject: 'erin' })
-    await createPrHandler(fakeCtx(), conn, { type: 'create_pr', workspaceId, intentId: r.id })
+    await createPrHandler(fakeCtx(), conn, { type: 'create_pr', workspaceName, intentId: r.id })
     expect(logsOf(r.id, 'pr_created')).toMatchObject([{ summary: '创建 PR #42', actor: 'erin' }])
   })
 

@@ -125,7 +125,7 @@ const emit = defineEmits<{
   'open-settings': []
   'open-personalized-setting': []
   'open-workspace-setting': []
-  'add-workspace': [path: string]
+  'add-workspace': [payload: { workspaceName: string; path: string }]
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
@@ -323,7 +323,7 @@ function selectTab(tab: HeaderTab): void {
       <template v-if="viewMode === 'workspace'">
         <WorkspaceSwitcher
           :workspaces="workspaces"
-          :current-workspace-id="currentWorkspace"
+          :current-workspace-name="currentWorkspace"
           @add-workspace="emit('add-workspace', $event)"
           @select-workspace="emit('select-workspace', $event)"
           @remove-workspace="emit('remove-workspace', $event)"
@@ -571,7 +571,7 @@ function selectTab(tab: HeaderTab): void {
       <div v-if="viewMode === 'workspace'" class="mobile-workspace">
         <WorkspaceSwitcher
           :workspaces="workspaces"
-          :current-workspace-id="currentWorkspace"
+          :current-workspace-name="currentWorkspace"
           @add-workspace="emit('add-workspace', $event)"
           @select-workspace="emit('select-workspace', $event)"
           @remove-workspace="emit('remove-workspace', $event)"

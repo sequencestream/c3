@@ -1,15 +1,18 @@
 /**
  * Migration test for the user-involve store's v1 → v2 in-place rename
- * `project_path` → `workspace_path` (`migrateProjectPathToWorkspacePath`). A legacy
+ * `project_path` → `workspace_name` (`migrateProjectPathToWorkspacePath`). A legacy
  * v1 db (project_path column, idx_wui_project_status) must converge on the
- * workspace_path terminal state with NO data loss and NO DROP TABLE, idempotently.
+ * workspace_name terminal state with NO data loss and NO DROP TABLE, idempotently.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 // Identity-stub the workspace registry mapping (see store.test.ts).
-vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
+vi.mock('../../state.js', () => ({
+  pathToName: (p: string) => p,
+  resolveWorkspaceRoot: (name: string) => name,
+}))
 // `toEvent` reverse-looks-up the owning intent; isolate from the intents store.
 vi.mock('../intents/store.js', () => ({
   findIntentIdByAnySessionId: () => null,
@@ -78,7 +81,7 @@ function seedLegacyV1(raw: Db): void {
 
 function expectTerminalSchema(raw: Db): void {
   const c = cols(raw, 'wait_user_involve_events')
-  expect(c.has('workspace_path')).toBe(true)
+  expect(c.has('workspace_name')).toBe(true)
   expect(c.has('project_path')).toBe(false)
   // The v4→v5 source-column rename also runs on schema-ensure (both migrations land).
   expect(c.has('session_kind')).toBe(true)
@@ -102,7 +105,7 @@ describe('user-involve v1 → v2 rename: legacy project_path db migrates in plac
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('e1')
     expect(list[0].title).toBe('Approve write')
-    expect(list[0].workspaceId).toBe(resolve(proj))
+    expect(list[0].workspaceName).toBe(resolve(proj))
     expect(getEvent('e1')?.toolName).toBe('Write')
   })
 

@@ -10,13 +10,12 @@
 -- `c3secretv1:` 密文), 与之配套的 `salt` 不是秘密, 保持可读。校验时按 id 定位记录, 只做
 -- 一次密钥派生, 再以常数时间比较。
 --
--- workspace 是密钥被授权的唯一工作区 (canonical 绝对路径); 历史上的 `workspaces` 数组
--- 形态在读取时迁移: 恰好一个工作区的沿用, 多个或零个的一律吊销 —— `/mcp/<api-key>` 只有
--- 一个地址, 猜一个等于悄悄放大或缩小持有者被授予的范围。
+-- workspaceName 是密钥被授权的唯一工作区名称。服务端按名称解析已注册路径,工作区移除或
+-- 目录消失后密钥不可达。
 
 CREATE TABLE IF NOT EXISTS mcp_api_keys (
   key_id       TEXT NOT NULL,     -- 密钥的非机密 id (16 位 hex)
-  config_key   TEXT NOT NULL,     -- label / workspace / tools / algo / hashVersion / salt / hash / createdAt / lastUsedAt
+  config_key   TEXT NOT NULL,     -- label / workspaceName / tools / algo / hashVersion / salt / hash / createdAt / lastUsedAt
   config_value TEXT,
   config_type  TEXT NOT NULL,     -- string | number | boolean | json | secret
   updated_at   INTEGER NOT NULL,

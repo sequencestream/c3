@@ -10,10 +10,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AnyConsensusOutcome, ServerToClient } from '@ccc/shared/protocol'
-// The store maps `workspace_path` → opaque `workspaceId` via `pathToId`, dropping
+// The store maps `workspace_name` → opaque `workspaceName` via `pathToName`, dropping
 // rows whose workspace is unregistered. These synthetic test paths are unregistered,
-// so mock `pathToId` as identity (mirrors store.test.ts) — events stay listable.
-vi.mock('../../state.js', () => ({ pathToId: (p: string) => p }))
+// so mock `pathToName` as identity (mirrors store.test.ts) — events stay listable.
+vi.mock('../../state.js', () => ({
+  pathToName: (p: string) => p,
+  resolveWorkspaceRoot: (name: string) => name,
+}))
 // `toEvent` reverse-looks-up the owning intent; isolate from the intents store.
 vi.mock('../intents/store.js', () => ({
   findIntentIdByAnySessionId: () => null,

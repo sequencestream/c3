@@ -4,15 +4,14 @@
  * Owns the discussion schema (created lazily, versioned via `PRAGMA user_version`)
  * and all discussion / message operations. Sibling to the intent store: both
  * ride the one `~/.c3/c3.db` connection, each owning its own tables and a private
- * `schemaReady` flag. Every `workspacePath` arg is `resolve()`d so it matches the
- * workspace registry key, the runtime `workspacePath`, and the SDK `cwd`.
+ * `schemaReady` flag. Workspace names are persisted as identity; paths remain
+ * runtime inputs only.
  *
  * Degradation: when the db is unavailable, reads return empty/null and writes
  * throw (callers surface an error or skip), so c3 keeps running without the
  * discussion feature.
  */
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
 import type {
   Discussion,
   DiscussionMessage,
@@ -20,7 +19,9 @@ import type {
   DiscussionStatus,
 } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
-import { pathToId } from '../../state.js'
+import { workspaceNameFor } from '../../state.js'
+
+const workspaceKey = workspaceNameFor
 
 /**
  * Discussion schema version. Independent of the intent store's version —
@@ -33,7 +34,7 @@ const SCHEMA_VERSION = 7
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
   id            TEXT PRIMARY KEY,
-  workspace_path  TEXT NOT NULL,
+  workspace_name  TEXT NOT NULL,
   title         TEXT NOT NULL,
   type          TEXT NOT NULL,
   goal          TEXT NOT NULL DEFAULT '',
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   updated_at    INTEGER NOT NULL,
   completed_at  INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_disc_workspace_status ON discussions(workspace_path, status);
+CREATE INDEX IF NOT EXISTS idx_disc_workspace_status ON discussions(workspace_name, status);
 
 CREATE TABLE IF NOT EXISTS discussion_messages (
   id                TEXT PRIMARY KEY,
@@ -102,7 +103,7 @@ function indexExists(d: Db, name: string): boolean {
 }
 
 /**
- * v3 → v4: rename the workspace-key column `project_path` → `workspace_path` IN PLACE
+ * v3 → v4: rename the workspace-key column `project_path` → `workspace_name` IN PLACE
  * on `discussions`, mirroring the intent store's v10→v11. MUST run BEFORE `exec(SCHEMA)`
  * (SCHEMA's `idx_disc_workspace_status` references the new column). Idempotent + never
  * drops a table; the composite index is dropped and rebuilt under the new name by SCHEMA.
@@ -113,9 +114,9 @@ function migrateProjectPathToWorkspacePath(d: Db): void {
   if (
     tableExists(d, 'discussions') &&
     columnExists(d, 'discussions', 'project_path') &&
-    !columnExists(d, 'discussions', 'workspace_path')
+    !columnExists(d, 'discussions', 'workspace_name')
   ) {
-    d.exec('ALTER TABLE discussions RENAME COLUMN project_path TO workspace_path')
+    d.exec('ALTER TABLE discussions RENAME COLUMN project_path TO workspace_name')
   }
   if (indexExists(d, 'idx_disc_project_status')) {
     d.exec('DROP INDEX idx_disc_project_status')
@@ -127,7 +128,7 @@ function db(): Db | null {
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
-    // v3 → v4 project_path → workspace_path; MUST precede SCHEMA (see docstring).
+    // v3 → v4 project_path → workspace_name; MUST precede SCHEMA (see docstring).
     migrateProjectPathToWorkspacePath(d)
     d.exec(SCHEMA)
     // Defensive idempotent backfill: a `discussions` table created by an earlier
@@ -190,7 +191,7 @@ function tx<T>(d: Db, fn: () => T): T {
 
 interface DiscussionRow {
   id: string
-  workspace_path: string
+  workspace_name: string
   title: string
   type: string
   goal: string
@@ -246,7 +247,7 @@ function parseStringMap(raw: string | null): Record<string, string> {
 function toDiscussion(r: DiscussionRow): Discussion {
   return {
     id: r.id,
-    workspaceId: pathToId(r.workspace_path)!,
+    workspaceName: r.workspace_name,
     title: r.title,
     type: r.type,
     goal: r.goal,
@@ -290,15 +291,15 @@ export interface CreateDiscussionInput {
 export function listDiscussions(workspacePath: string, status?: DiscussionStatus): Discussion[] {
   const d = db()
   if (!d) return []
-  const proj = resolve(workspacePath)
+  const proj = workspaceKey(workspacePath)
   const rows = status
     ? d.all<DiscussionRow>(
-        'SELECT * FROM discussions WHERE workspace_path=? AND status=? ORDER BY updated_at DESC',
+        'SELECT * FROM discussions WHERE workspace_name=? AND status=? ORDER BY updated_at DESC',
         proj,
         status,
       )
     : d.all<DiscussionRow>(
-        'SELECT * FROM discussions WHERE workspace_path=? ORDER BY updated_at DESC',
+        'SELECT * FROM discussions WHERE workspace_name=? ORDER BY updated_at DESC',
         proj,
       )
   return rows.map(toDiscussion)
@@ -317,8 +318,8 @@ export function countByStatusInRange(
 ): Record<string, number> {
   const d = db()
   if (!d) return {}
-  const where: string[] = ['workspace_path=?']
-  const params: (string | number)[] = [resolve(workspacePath)]
+  const where: string[] = ['workspace_name=?']
+  const params: (string | number)[] = [workspaceKey(workspacePath)]
   if (startTime != null) {
     where.push('updated_at >= ?')
     params.push(startTime)
@@ -352,10 +353,10 @@ export function createDiscussion(input: CreateDiscussionInput): Discussion {
   const completedAt = status === 'completed' ? now : null
   d.run(
     `INSERT INTO discussions
-       (id, workspace_path, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, organizer_agent_id, conclusion, created_at, updated_at, completed_at)
+       (id, workspace_name, title, type, goal, context, status, agenda, agenda_index, participant_agent_ids, organizer_agent_id, conclusion, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
-    resolve(input.workspacePath),
+    workspaceKey(input.workspacePath),
     input.title,
     input.type,
     input.goal ?? '',

@@ -15,6 +15,6 @@ export function resolveCurrentWorkspace(
   stored: string | null,
   workspaces: WorkspaceInfo[],
 ): string | null {
-  if (stored && workspaces.some((w) => w.id === stored)) return stored
-  return workspaces[0]?.id ?? null
+  if (stored && workspaces.some((w) => w.name === stored)) return stored
+  return workspaces[0]?.name ?? null
 }

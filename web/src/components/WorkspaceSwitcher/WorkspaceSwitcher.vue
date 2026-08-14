@@ -11,7 +11,7 @@ import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
-import InputDialog from '@/components/InputDialog/InputDialog.vue'
+import AddWorkspaceDialog from '@/components/AddWorkspaceDialog/AddWorkspaceDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 
 const { t } = useTypedI18n()
@@ -22,13 +22,13 @@ const { isAdmin } = useAuth()
 
 const props = defineProps<{
   workspaces: WorkspaceInfo[]
-  currentWorkspaceId: string | null
+  currentWorkspaceName: string | null
 }>()
 
 const emit = defineEmits<{
   // `add-workspace` carries the absolute path the user typed — the ONLY entry
   // where a path legitimately enters the system. The others carry opaque ids.
-  'add-workspace': [path: string]
+  'add-workspace': [payload: { workspaceName: string; path: string }]
   'select-workspace': [id: string]
   'remove-workspace': [id: string]
 }>()
@@ -37,7 +37,7 @@ const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
 
 const currentName = computed(
-  () => props.workspaces.find((w) => w.id === props.currentWorkspaceId)?.name ?? '',
+  () => props.workspaces.find((w) => w.name === props.currentWorkspaceName)?.name ?? '',
 )
 
 function toggle() {
@@ -73,14 +73,13 @@ function addWorkspace() {
   addOpen.value = true
 }
 
-function onAddConfirm(path: string) {
-  const trimmed = path.trim()
-  if (trimmed) emit('add-workspace', trimmed)
+function onAddConfirm(payload: { workspaceName: string; path: string }) {
+  emit('add-workspace', payload)
   addOpen.value = false
 }
 
 function selectWorkspace(id: string) {
-  if (id !== props.currentWorkspaceId) emit('select-workspace', id)
+  if (id !== props.currentWorkspaceName) emit('select-workspace', id)
   close()
 }
 
@@ -92,7 +91,7 @@ function removeWorkspace(w: WorkspaceInfo) {
 }
 
 function onRemoveConfirm() {
-  if (removeTarget.value) emit('remove-workspace', removeTarget.value.id)
+  if (removeTarget.value) emit('remove-workspace', removeTarget.value.name)
   removeTarget.value = null
 }
 
@@ -108,7 +107,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       :aria-expanded="open"
       @click="toggle"
     >
-      <span v-if="currentWorkspaceId" class="ws-switcher-name">{{ currentName }}</span>
+      <span v-if="currentWorkspaceName" class="ws-switcher-name">{{ currentName }}</span>
       <span v-else class="ws-switcher-name empty">{{
         t('nav.workspace.trigger.empty.label')
       }}</span>
@@ -129,18 +128,18 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       </li>
       <li
         v-for="w in workspaces"
-        :key="w.id"
+        :key="w.name"
         class="ws-switcher-item"
-        :class="{ current: w.id === currentWorkspaceId }"
+        :class="{ current: w.name === currentWorkspaceName }"
         role="option"
-        :aria-selected="w.id === currentWorkspaceId"
-        @click="selectWorkspace(w.id)"
+        :aria-selected="w.name === currentWorkspaceName"
+        @click="selectWorkspace(w.name)"
       >
         <span class="ws-switcher-item-text">
           <span class="ws-switcher-item-name">{{ w.name }}</span>
           <span class="ws-switcher-item-path">{{ w.path }}</span>
         </span>
-        <span v-if="w.id === currentWorkspaceId" class="ws-switcher-check" aria-hidden="true"
+        <span v-if="w.name === currentWorkspaceName" class="ws-switcher-check" aria-hidden="true"
           >✓</span
         >
         <button
@@ -154,15 +153,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       </li>
     </ul>
 
-    <InputDialog
-      :open="addOpen"
-      :title="t('nav.workspace.add.prompt')"
-      :placeholder="t('nav.workspace.add.placeholder')"
-      :confirm-label="t('nav.workspace.add.confirmLabel')"
-      :cancel-label="t('common.action.cancel.label')"
-      @confirm="onAddConfirm"
-      @cancel="addOpen = false"
-    />
+    <AddWorkspaceDialog :open="addOpen" @confirm="onAddConfirm" @cancel="addOpen = false" />
 
     <ConfirmDialog
       :open="removeTarget !== null"

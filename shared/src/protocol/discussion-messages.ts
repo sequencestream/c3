@@ -17,7 +17,7 @@ import type {
 /** List a project's discussions (reply: `discussions`), optionally filtered by status. */
 export type ClientListDiscussions = {
   type: 'list_discussions'
-  workspaceId: string
+  workspaceName: string
   status?: DiscussionStatus
 }
 
@@ -35,7 +35,7 @@ export type ClientListDiscussions = {
  */
 export type ClientCreateDiscussion = {
   type: 'create_discussion'
-  workspaceId: string
+  workspaceName: string
   discussionType: string
   goal: string
   context?: string
@@ -119,7 +119,7 @@ export type ClientContinueDiscussion = {
  */
 export type ServerDiscussions = {
   type: 'discussions'
-  workspaceId: string
+  workspaceName: string
   items: Discussion[]
   runStates?: Record<string, 'running' | 'paused'>
   /**

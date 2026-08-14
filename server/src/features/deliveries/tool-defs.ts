@@ -119,7 +119,7 @@ export function runFindDeliveries(
 export function runViewDelivery(workspacePath: string, args: ViewDeliveryArgs): DeliveryToolResult {
   if (!isStoreAvailable()) return { content: text('交付库不可用,无法查看。'), isError: true }
   const delivery = getDelivery(args.id)
-  if (!delivery || resolveWorkspaceRoot(delivery.workspaceId) !== resolve(workspacePath)) {
+  if (!delivery || resolveWorkspaceRoot(delivery.workspaceName) !== resolve(workspacePath)) {
     return { content: text(`未找到 id 为 ${args.id} 的交付(本项目)。`) }
   }
   return {

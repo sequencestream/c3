@@ -29,13 +29,23 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { GenericEventEnvelope } from '@ccc/shared'
 import { createExternalMcp, EXTERNAL_MCP_PATH, type ServedExternalMcp } from './index.js'
 import { buildExternalMcpCatalog, externalMcpSourceId } from '../../features/external-mcp/tools.js'
-import { EXTERNAL_MCP_READ_TOOLS, type AuthConfig } from '@ccc/shared/protocol'
+import {
+  listExternalMcpWriteAudits,
+  recordExternalMcpWriteAudit,
+  resetExternalMcpAuditStoreForTests,
+} from '../../features/external-mcp/audit-store.js'
+import {
+  EXTERNAL_MCP_READ_TOOLS,
+  EXTERNAL_MCP_WRITE_TOOLS,
+  type AuthConfig,
+} from '@ccc/shared/protocol'
 import {
   createMcpApiKey,
   revokeMcpApiKey,
   verifyMcpApiKey,
 } from '../../kernel/config/mcp-api-keys.js'
 import { authorizeCall, localPrincipal } from '../../features/auth/authorization.js'
+import { putWorkspaceScope } from '../../features/auth/scope-store.js'
 import { configuredAdmin } from '../../features/auth/authz.js'
 import { hashPassword } from '../../features/auth/password.js'
 import {
@@ -50,6 +60,10 @@ import {
   resetStoreForTests,
   setSpecPath,
 } from '../../features/intents/store.js'
+import {
+  createDiscussion,
+  resetStoreForTests as resetDiscussionStoreForTests,
+} from '../../features/discussions/store.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { normalizeGenericEventDefault } from '../../features/events/default-normalizer.js'
@@ -86,6 +100,8 @@ beforeAll(async () => {
   resetStateCacheForTests()
   resetDbForTests()
   resetStoreForTests()
+  resetDiscussionStoreForTests()
+  resetExternalMcpAuditStoreForTests()
 
   projectDir = join(home, 'project')
   otherDir = join(home, 'other')
@@ -112,8 +128,10 @@ beforeAll(async () => {
   ])
 
   // A configured administrator: the deployment shape an all-interfaces bind
-  // requires, and the principal every key below is owned by.
+  // requires, and the principal most keys below are owned by. `AGENT` is the
+  // narrow one, granted the project workspace and nothing else.
   useAdminAccount()
+  putWorkspaceScope(AGENT, 'selected', [projectWs], Date.now())
 
   const normalizers = new EventNormalizerRegistry(normalizeGenericEventDefault)
   route = createExternalMcp({
@@ -135,8 +153,12 @@ beforeAll(async () => {
     // The real predicate for a server bound to every interface.
     exposedWithoutAdmin: () => configuredAdmin(loadSettings().auth) === null,
     remoteAddress: () => undefined,
-    buildCatalog: (scope) =>
-      buildExternalMcpCatalog(scope, {
+    // The REAL audit store, over the same temporary database.
+    recordWriteAudit: (entry) => {
+      recordExternalMcpWriteAudit(entry)
+    },
+    buildCatalog: () =>
+      buildExternalMcpCatalog({
         normalizeEvent: (core) => normalizers.normalize(core),
         publishEvent: (payload) => published.push(payload),
         broadcastIntents: () => undefined,
@@ -175,16 +197,25 @@ afterEach(() => {
   launches.length = 0
 })
 
-/** The administrator every key is owned by. */
+/** The administrator most keys are owned by; it reaches the whole registry. */
 const ADMIN = 'root'
+/**
+ * A NON-administrator account, scoped to the project workspace alone. It is what
+ * makes the injection scenario meaningful: an administrator-owned key reaching
+ * the neighbouring workspace is the feature working, not a leak.
+ */
+const AGENT = 'agent'
 
-/** Configure `basic` with one administrator account. */
+/** Configure `basic` with the administrator and the narrowly-scoped account. */
 function useAdminAccount(): void {
   const auth: AuthConfig = {
     enabled: true,
     provider: {
       kind: 'basic',
-      accounts: [{ username: ADMIN, passwordHash: hashPassword('correct horse') }],
+      accounts: [
+        { username: ADMIN, passwordHash: hashPassword('correct horse') },
+        { username: AGENT, passwordHash: hashPassword('battery staple') },
+      ],
       adminUsername: ADMIN,
     },
     session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
@@ -192,9 +223,13 @@ function useAdminAccount(): void {
   saveSettings({ ...loadSettings(), auth })
 }
 
-/** Mint a key owned by the administrator, filed under the project workspace. */
-function mintKey(name: string, tools: readonly string[]): ReturnType<typeof createMcpApiKey> {
-  return createMcpApiKey(name, projectWs, ADMIN, tools, Date.now())
+/** Mint a key filed under the project workspace, owned by the administrator by default. */
+function mintKey(
+  name: string,
+  tools: readonly string[],
+  owner: string = ADMIN,
+): ReturnType<typeof createMcpApiKey> {
+  return createMcpApiKey(name, projectWs, owner, tools, Date.now())
 }
 
 function mcpUrl(host: string): URL {
@@ -375,7 +410,7 @@ describe('external MCP over a real Streamable HTTP client', () => {
       expect(res.isError).toBeFalsy()
       expect(published).toHaveLength(1)
       expect(published[0].workspacePath).toBe(projectDir)
-      expect(published[0].sessionId).toBe(externalMcpSourceId(created.meta.id))
+      expect(published[0].sessionId).toBe(externalMcpSourceId(created.meta.id, projectWs))
       expect(published[0].event.type).toBe('custom:ping')
     } finally {
       await client.close()
@@ -443,6 +478,285 @@ describe('external MCP over a real Streamable HTTP client', () => {
     try {
       const names = (await client.listTools()).tools.map((t) => t.name).sort()
       expect(names).toEqual([...EXTERNAL_MCP_READ_TOOLS].sort())
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('leaves the neighbouring workspace untouched under a prompt-injected write', async () => {
+    // The scenario: something in the model's context told it to "write the
+    // result into the other project", handing it a plausible workspace name and
+    // an id it saw quoted elsewhere. Both are real — and neither is this key's.
+    const otherWs = pathToName(otherDir)!
+    const [foreign] = insertIntents(otherDir, [
+      { title: 'Injection target', shortEnTitle: 'injection-target', content: '', priority: 'P1' },
+    ])
+    // Owned by the narrowly-scoped account: `otherWs` is outside its reach, so
+    // naming it is a forbidden call rather than a legitimate cross-workspace
+    // write an administrator would be entitled to make.
+    const foreignDiscussion = createDiscussion({
+      workspacePath: otherDir,
+      title: 'Neighbour discussion',
+      type: 'design',
+    })
+    const created = await mintKey(
+      'injected',
+      [
+        'find_intents',
+        'save_intents',
+        'save_intent_directly',
+        'submit_spec_review',
+        'start_session_for_intent',
+        'start_discussion',
+      ],
+      AGENT,
+    )
+    const client = await connect('127.0.0.1', created.key, projectWs)
+    published.length = 0
+    const launchesBefore = launches.length
+    try {
+      // 1. Update an intent that lives in the other workspace.
+      const hijackUpsert = await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          intents: [
+            {
+              id: foreign.id,
+              title: 'Rewritten by injection',
+              shortEnTitle: 'rewritten',
+              content: 'x',
+              priority: 'P0',
+            },
+          ],
+        },
+      })
+      expect(hijackUpsert.isError).toBe(true)
+
+      // 2. Same, but "authorized" by naming the other workspace explicitly.
+      const hijackTarget = await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          workspaceName: otherWs,
+          intents: [
+            {
+              id: foreign.id,
+              title: 'Rewritten by injection',
+              shortEnTitle: 'rewritten',
+              content: 'x',
+              priority: 'P0',
+            },
+          ],
+        },
+      })
+      expect(hijackTarget.isError).toBe(true)
+      // Indistinguishable from an un-granted tool: the refusal says nothing
+      // about whether that workspace exists.
+      expect((hijackTarget.content as Array<{ text: string }>)[0].text).toBe(
+        'forbidden: tool "save_intents" is not authorized for this key',
+      )
+
+      // 3. A brand-new intent in THIS workspace that depends on a foreign id —
+      //    a cross-workspace edge smuggled in as a dependency.
+      const hijackDep = await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          intents: [
+            {
+              title: 'Innocent looking',
+              shortEnTitle: 'innocent',
+              content: '',
+              priority: 'P2',
+              dependsOn: [foreign.id],
+            },
+          ],
+        },
+      })
+      expect(hijackDep.isError).toBe(true)
+
+      // 4. Record a verdict on the foreign intent, and 5. launch a session for it.
+      const hijackReview = await client.callTool({
+        name: 'submit_spec_review',
+        arguments: { intentId: foreign.id, verdict: 'pass', reason: 'looks fine' },
+      })
+      expect(hijackReview.isError).toBe(true)
+      const hijackLaunch = await client.callTool({
+        name: 'start_session_for_intent',
+        arguments: { intentId: foreign.id, sessionType: 'work' },
+      })
+      expect(hijackLaunch.isError).toBe(true)
+
+      // 6. The same foreign dependency, smuggled through the OTHER intent
+      //    writer — create-only, so there is no upsert target to refuse, and the
+      //    edge would be the only thing crossing.
+      const hijackDirectDep = await client.callTool({
+        name: 'save_intent_directly',
+        arguments: {
+          intents: [
+            {
+              title: 'Innocent looking draft',
+              shortEnTitle: 'innocent-draft',
+              content: '',
+              priority: 'P2',
+              dependsOn: [foreign.id],
+            },
+          ],
+        },
+      })
+      expect(hijackDirectDep.isError).toBe(true)
+
+      // 7. Start the neighbour's discussion.
+      const hijackStart = await client.callTool({
+        name: 'start_discussion',
+        arguments: { discussionId: foreignDiscussion.id },
+      })
+      expect(hijackStart.isError).toBe(true)
+
+      // Nothing crossed: the foreign intent is byte-for-byte what it was, no
+      // event was published, no agent was launched, and this workspace grew no
+      // intent naming the foreign id.
+      const after = getIntent(foreign.id)!
+      expect(after.title).toBe(foreign.title)
+      expect(after.specReviewVerdict).toBeNull()
+      expect(published).toHaveLength(0)
+      expect(launches.length).toBe(launchesBefore)
+      const here = await client.callTool({ name: 'find_intents', arguments: {} })
+      expect(JSON.stringify(here.content)).not.toContain('Innocent looking')
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('leaves one audit row per attempted write, and no row for a read', async () => {
+    const created = await mintKey('audited', ['find_intents', 'save_intents'])
+    const before = listExternalMcpWriteAudits(1000).length
+    const client = await connect('127.0.0.1', created.key)
+    try {
+      await client.callTool({ name: 'find_intents', arguments: {} })
+      await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          intents: [{ title: 'Audited', shortEnTitle: 'audited', content: '', priority: 'P3' }],
+        },
+      })
+      await client.callTool({
+        name: 'save_intents',
+        arguments: { workspaceName: 'not-a-workspace' },
+      })
+    } finally {
+      await client.close()
+    }
+    const rows = listExternalMcpWriteAudits(1000)
+    expect(rows.length).toBe(before + 2)
+    const mine = rows.filter((r) => r.keyId === created.meta.id)
+    expect(mine.map((r) => r.result).sort()).toEqual(['rejected', 'success'])
+    for (const row of mine) {
+      expect(row.tool).toBe('save_intents')
+      expect(row.ownerSubject).toBe(ADMIN)
+      expect(row.occurredAt).toBeGreaterThan(0)
+      expect(JSON.stringify(row)).not.toContain(created.key)
+    }
+    expect(mine.find((r) => r.result === 'success')?.workspaceName).toBe(projectWs)
+    expect(mine.find((r) => r.result === 'rejected')?.workspaceName).toBe('not-a-workspace')
+  })
+
+  it('audits EVERY write tool in the catalog, granted or not', async () => {
+    // Granted nothing: each write call is refused before its handler, and each
+    // refusal must still be attributable — probing is exactly the behaviour that
+    // must not be the one that leaves no trace.
+    const created = await mintKey('audited-all', ['find_intents'])
+    const before = listExternalMcpWriteAudits(1000).length
+    const client = await connect('127.0.0.1', created.key)
+    try {
+      for (const name of EXTERNAL_MCP_WRITE_TOOLS) {
+        const res = await client.callTool({ name, arguments: {} })
+        expect(res.isError, name).toBe(true)
+      }
+    } finally {
+      await client.close()
+    }
+    const mine = listExternalMcpWriteAudits(1000).filter((r) => r.keyId === created.meta.id)
+    expect(listExternalMcpWriteAudits(1000).length).toBe(before + EXTERNAL_MCP_WRITE_TOOLS.length)
+    expect(mine.map((r) => r.tool).sort()).toEqual([...EXTERNAL_MCP_WRITE_TOOLS].sort())
+    expect(new Set(mine.map((r) => r.result))).toEqual(new Set(['rejected']))
+  })
+
+  it('classifies a granted write refused on id ownership as rejected, not failure', async () => {
+    // The distinction the audit trail rests on: `failure` means a handler ran
+    // and returned an error, `rejected` means the call never reached one. A
+    // foreign id is always the second — otherwise the same probe reads as two
+    // different events depending on which tool the caller aimed it at.
+    const [foreign] = insertIntents(otherDir, [
+      { title: 'Neighbour', shortEnTitle: 'neighbour-audit', content: '', priority: 'P2' },
+    ])
+    const foreignDiscussion = createDiscussion({
+      workspacePath: otherDir,
+      title: 'Neighbour discussion',
+      type: 'design',
+    })
+    const granted = ['save_intents', 'save_intent_directly', 'start_discussion'] as const
+    const created = await mintKey('audited-ownership', granted, AGENT)
+    const client = await connect('127.0.0.1', created.key)
+    try {
+      const dep = {
+        intents: [
+          {
+            title: 'Edge to elsewhere',
+            shortEnTitle: 'edge-elsewhere',
+            content: '',
+            priority: 'P2',
+            dependsOn: [foreign.id],
+          },
+        ],
+      }
+      for (const name of ['save_intents', 'save_intent_directly']) {
+        expect((await client.callTool({ name, arguments: dep })).isError, name).toBe(true)
+      }
+      expect(
+        (
+          await client.callTool({
+            name: 'start_discussion',
+            arguments: { discussionId: foreignDiscussion.id },
+          })
+        ).isError,
+      ).toBe(true)
+    } finally {
+      await client.close()
+    }
+    const mine = listExternalMcpWriteAudits(1000).filter((r) => r.keyId === created.meta.id)
+    expect(mine.map((r) => r.tool).sort()).toEqual([...granted].sort())
+    expect(new Set(mine.map((r) => r.result))).toEqual(new Set(['rejected']))
+  })
+
+  it('answers whoami and list_workspaces from the real effective scope', async () => {
+    const created = await mintKey('introspecting', ['list_workspaces', 'whoami'])
+    const client = await connect('127.0.0.1', created.key)
+    try {
+      const listed = await client.callTool({ name: 'list_workspaces', arguments: {} })
+      const workspaces = JSON.parse((listed.content as Array<{ text: string }>)[0].text) as {
+        workspaces: string[]
+      }
+      // The administrator reaches the whole registry — names only, never paths.
+      expect(workspaces.workspaces).toContain(projectWs)
+      expect(workspaces.workspaces).toContain(pathToName(otherDir)!)
+      expect(JSON.stringify(workspaces)).not.toContain(projectDir)
+
+      const who = await client.callTool({ name: 'whoami', arguments: {} })
+      const identity = JSON.parse((who.content as Array<{ text: string }>)[0].text) as {
+        keyId: string
+        owner: string
+        workspace: string
+        workspaces: string[]
+        tools: string[]
+      }
+      expect(identity).toMatchObject({
+        keyId: created.meta.id,
+        owner: ADMIN,
+        workspace: projectWs,
+        tools: ['list_workspaces', 'whoami'],
+      })
+      expect(identity.workspaces).toEqual(workspaces.workspaces)
+      expect(JSON.stringify(identity)).not.toContain(created.key)
+      expect(JSON.stringify(identity)).not.toContain(projectDir)
     } finally {
       await client.close()
     }

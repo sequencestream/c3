@@ -53,6 +53,23 @@ describe('external MCP catalog', () => {
   })
 })
 
+describe('the two discovery tools', () => {
+  it('are graded read — they answer about scope, they never change it', () => {
+    expect(externalMcpToolDescriptors()).toEqual(
+      expect.arrayContaining([
+        { name: 'list_workspaces', access: 'read' },
+        { name: 'whoami', access: 'read' },
+      ]),
+    )
+  })
+
+  it('ARE in the default set — a key that cannot see its own reach has to guess it', () => {
+    const defaults = [...EXTERNAL_MCP_DEFAULT_TOOLS] as string[]
+    expect(defaults).toContain('list_workspaces')
+    expect(defaults).toContain('whoami')
+  })
+})
+
 describe('the default scope of a new key', () => {
   it('is NARROWER than the read-graded catalog — grantable is not granted', () => {
     const defaults = [...EXTERNAL_MCP_DEFAULT_TOOLS] as string[]

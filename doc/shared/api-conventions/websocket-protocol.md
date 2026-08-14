@@ -177,7 +177,7 @@
 
 ### `create_mcp_api_key`
 
-生成一把长期外部 MCP API key，**只绑定 `workspaceName` 指定的这一个**已注册工作区。名称无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`）。初始工具范围由服务端强制为全部只读工具，客户端不能通过伪造默认值取得写工具。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
+生成一把长期外部 MCP API key，归档在 `workspaceName` 指定的已注册工作区下（名称无法解析则**整笔拒绝**，`mcpApiKey.unknownWorkspace`）。归档位置只决定它在哪个管理页列出；它实际能到达哪些工作区由归属账号的管理员范围决定。初始工具范围由服务端强制为默认只读集，客户端不能通过伪造默认值取得写工具。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
 
 **字段：** `workspaceName: string`, `name: string`
 
@@ -610,7 +610,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 外部 MCP API key 名册，回复上述四条 key 操作中的任意一条，作用域为**指定工作区**（`workspaceName`）。总是回该工作区的整份列表，故控制台无需对账增量；回包同时携带服务端可外部授权工具目录 `catalog`，供工具范围选择器渲染——前端不另存工具清单。
 
-每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceName, unavailable, tools, displayPrefix }`：`workspaceName` 是唯一绑定的工作区名称；`unavailable` 表示绑定工作区目录已消失或工作区已注销，key 够不到任何东西、控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
+每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceName, unavailable, tools, displayPrefix }`：`workspaceName` 是该 key 归档所在的工作区名称，不是它能到达的工作区集合；`unavailable` 表示归档工作区目录已消失或工作区已注销，控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
 
 `created` **仅**出现在 `create_mcp_api_key` 成功的回复里，是明文 key 在整条链路上唯一的落点：不存储、不重发，客户端丢弃后即不可恢复。
 

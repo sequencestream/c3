@@ -85,6 +85,10 @@ import { authorizeCall, localPrincipal } from './features/auth/authorization.js'
 import { configuredAdmin } from './features/auth/authz.js'
 import { ensureWorkspaceScopeSchema } from './features/auth/scope-store.js'
 import { buildExternalMcpCatalog } from './features/external-mcp/tools.js'
+import {
+  ensureExternalMcpWriteAuditSchema,
+  recordExternalMcpWriteAudit,
+} from './features/external-mcp/audit-store.js'
 import { setExternalMcpSessionCloser } from './features/settings/mcp-api-keys.js'
 import {
   revokeUnownedMcpApiKeys,
@@ -213,11 +217,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   initLogging()
 
   // ---- Authorization storage: materialize, then enforce the owner invariant ----
-  // Both are idempotent and both run before anything can serve a request. The
-  // revocation is not a one-shot migration: no code path can write an ownerless
-  // key any more, so a second pass finds nothing — running it every boot also
-  // catches a database hand-edited between runs.
+  // All three are idempotent and all three run before anything can serve a
+  // request — including the write-audit table, so the first external write does
+  // not pay for DDL and an unusable database is visible before it costs a trail.
+  // The revocation is not a one-shot migration: no code path can write an
+  // ownerless key any more, so a second pass finds nothing — running it every
+  // boot also catches a database hand-edited between runs.
   ensureWorkspaceScopeSchema()
+  ensureExternalMcpWriteAuditSchema()
   revokeUnownedMcpApiKeys()
 
   // ---- Wire the `session_metadata` projection hooks (kernel ↛ features) ----
@@ -773,8 +780,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     exposedWithoutAdmin: () => !boundToLoopback && configuredAdmin(loadSettings().auth) === null,
     remoteAddress: (c) => getConnInfo(c).remote.address,
     onAuthenticated: (keyId) => touchMcpApiKey(keyId, Date.now()),
-    buildCatalog: (scope) =>
-      buildExternalMcpCatalog(scope, {
+    // Every attempted write leaves one attributable row. The route awaits this
+    // before answering, and treats a throw as "coverage lost", not as a business
+    // failure.
+    recordWriteAudit: (entry) => {
+      recordExternalMcpWriteAudit(entry)
+    },
+    buildCatalog: () =>
+      buildExternalMcpCatalog({
         normalizeEvent,
         publishEvent,
         broadcastIntents: broadcasts.broadcastIntents,

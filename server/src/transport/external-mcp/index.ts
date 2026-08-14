@@ -37,6 +37,16 @@
  * is authoritative the instant it is written, so a transport that outlived its
  * teardown — a close that failed, a race — cannot keep serving the authority it
  * opened with.
+ *
+ * Every TOOL CALL is authorized again on its own terms. A write may name another
+ * workspace (`workspaceName`), which is a request for a different target, not a
+ * re-scope of the session: the gate runs with the current principal, that target
+ * and that tool name, and the handler then acts on the scope the gate produced.
+ * Nothing here trusts the workspace a session was built with, so a model that was
+ * talked into inventing a workspace name gets a forbidden, not a write.
+ *
+ * Every attempted call of a KNOWN WRITE tool is audited — granted or not, valid
+ * or not — and the audit insert is awaited before the tool response is sent.
  */
 import type { Context } from 'hono'
 import { z } from 'zod'
@@ -52,6 +62,10 @@ import type {
   EffectiveScope,
   ExternalMcpPrincipal,
 } from '../../features/auth/authorization.js'
+import type {
+  ExternalMcpAuditResult,
+  ExternalMcpWriteAuditInput,
+} from '../../features/external-mcp/audit-store.js'
 import type { ExternalMcpTool, ExternalToolResult } from '../../features/external-mcp/tools.js'
 
 /** The one public path. Not a prefix: nothing may follow it. */
@@ -154,8 +168,20 @@ export interface ExternalMcpDeps {
   exposedWithoutAdmin: () => boolean
   /** The peer's address, for the trusted-local guard. */
   remoteAddress: (c: Context) => string | undefined
-  /** Build the FULL externally-grantable catalog for one scope; this route filters it. */
-  buildCatalog: (scope: EffectiveScope) => ExternalMcpTool[]
+  /**
+   * Build the FULL externally-grantable catalog. It takes no scope: a handler is
+   * given the scope of the CALL, so one catalog serves every key and workspace.
+   * This route filters it down to what the caller was granted.
+   */
+  buildCatalog: () => ExternalMcpTool[]
+  /**
+   * Persist ONE audit row for an attempted write. Must reject (throw, or return
+   * a rejecting promise) when the row did not land — the dispatcher reports the
+   * gap rather than assuming coverage.
+   */
+  recordWriteAudit: (entry: ExternalMcpWriteAuditInput) => void | Promise<void>
+  /** The clock an audit row is stamped with. Injected so a test can pin the value. */
+  now?: () => number
   /** Notified after each successful authentication (records "last used"). Best-effort. */
   onAuthenticated?: (keyId: string) => void
 }
@@ -223,10 +249,44 @@ function forbiddenTool(name: string): ExternalToolResult {
   }
 }
 
+/** The refusal for arguments that do not fit the tool's schema. */
+function invalidArguments(detail: string): ExternalToolResult {
+  return { content: [{ type: 'text', text: `invalid arguments: ${detail}` }], isError: true }
+}
+
 export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
   const sessions = new Map<string, Session>()
   /** key id → its live session ids, so revocation is a lookup rather than a scan. */
   const byKey = new Map<string, Set<string>>()
+  const now = deps.now ?? (() => Date.now())
+  // The catalog is scope-free, so ONE build serves every session. Built lazily
+  // so constructing the route stays free of feature work.
+  let builtCatalog: Map<string, ExternalMcpTool> | null = null
+  const tools = (): Map<string, ExternalMcpTool> => {
+    if (!builtCatalog) builtCatalog = new Map(deps.buildCatalog().map((tool) => [tool.name, tool]))
+    return builtCatalog
+  }
+
+  /**
+   * Record one attempted write and WAIT for it, then let the caller answer.
+   *
+   * Fail-open on purpose: a database that cannot take the row must not turn a
+   * legitimate write into an error, because that would make the audit trail a
+   * second availability dependency of the business surface. It is not silent
+   * though — losing coverage is the thing an incident later depends on, so it is
+   * reported with the non-secret metadata of the call that went unrecorded.
+   */
+  const audit = async (entry: ExternalMcpWriteAuditInput): Promise<void> => {
+    try {
+      await deps.recordWriteAudit(entry)
+    } catch (err) {
+      console.error(
+        `[c3] external MCP write audit failed: key=${entry.keyId} owner=${entry.ownerSubject} ` +
+          `workspace=${entry.workspaceName} tool=${entry.tool} result=${entry.result}:`,
+        err instanceof Error ? err.message : String(err),
+      )
+    }
+  }
 
   const track = (sessionId: string, session: Session): void => {
     sessions.set(sessionId, session)
@@ -259,7 +319,11 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
   }
 
   /**
-   * Stand up one MCP server serving EXACTLY this scope's granted tools.
+   * Stand up one MCP server that advertises EXACTLY this scope's granted tools.
+   *
+   * It serves from the shared catalog and narrows by the scope re-read from the
+   * live session, so the tool map itself grants nothing — what a call may do is
+   * decided in the call handler below, per call.
    *
    * The dispatch is written out rather than delegated to the SDK's high-level
    * `McpServer` for one reason: this surface must answer an un-granted call with
@@ -267,8 +331,7 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
    * simply does not contain the tool cannot express.
    */
   const openSession = (scope: EffectiveScope, principal: ExternalMcpPrincipal): Session => {
-    const catalog = new Map<string, ExternalMcpTool>()
-    for (const tool of deps.buildCatalog(scope)) catalog.set(tool.name, tool)
+    const catalog = tools()
 
     const server = new Server({ name: 'c3', version: '1.0.0' }, { capabilities: { tools: {} } })
     // `tools/list` is the authorization surface: an un-granted tool is not
@@ -286,21 +349,75 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
         })),
     }))
     server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
-      // Discovery can be skipped; authorization cannot. The gate runs here — with
-      // the principal and workspace of the CURRENT request — rather than trusting
-      // the tool map the session was built from.
-      const decision = deps.authorize(session.principal, session.workspaceName, request.params.name)
-      if (!decision.ok) return forbiddenTool(request.params.name)
-      const tool = catalog.get(request.params.name)
-      if (!tool) return forbiddenTool(request.params.name)
-      const parsed = z.object(tool.inputSchema).safeParse(request.params.arguments ?? {})
-      if (!parsed.success) {
-        return {
-          content: [{ type: 'text', text: `invalid arguments: ${parsed.error.message}` }],
-          isError: true,
-        }
+      const name = request.params.name
+      const args = (request.params.arguments ?? {}) as Record<string, unknown>
+      // The catalog answers "is this a known external tool, and is it a write?"
+      // — a question about the tool, not about this key's grants. An unknown name
+      // is refused exactly like an un-granted one and is NOT audited: it names no
+      // capability, so there is nothing to attribute.
+      const tool = catalog.get(name)
+      if (!tool) return forbiddenTool(name)
+      const write = tool.access === 'write'
+
+      // A write may aim at another workspace; a read is always the pinned one.
+      // The target is only a REQUEST — the gate below decides whether it is the
+      // caller's to name, and nothing is substituted if it is not.
+      const target =
+        write && typeof args.workspaceName === 'string'
+          ? args.workspaceName.trim()
+          : session.workspaceName
+      const stamp = (result: ExternalMcpAuditResult): ExternalMcpWriteAuditInput => ({
+        occurredAt: now(),
+        keyId: session.principal.keyId,
+        ownerSubject: session.principal.ownerSubject,
+        workspaceName: target,
+        tool: name,
+        result,
+      })
+      /** Answer, but not before the attempt has been recorded. */
+      const answer = async (
+        result: ExternalMcpAuditResult,
+        payload: ExternalToolResult,
+      ): Promise<CallToolResult> => {
+        if (write) await audit(stamp(result))
+        return toCallResult(payload)
       }
-      return toCallResult(await tool.handler(parsed.data))
+
+      // Discovery can be skipped; authorization cannot. The gate runs here — with
+      // the principal, the TARGET workspace and the tool name of the CURRENT
+      // call — rather than trusting the tool map or the workspace the session was
+      // built from. An out-of-scope override is answered with the same wording as
+      // an un-granted tool, so neither can be used to probe for existence.
+      const decision = deps.authorize(session.principal, target, name)
+      if (!decision.ok) return answer('rejected', forbiddenTool(name))
+
+      // A read tool has no workspace parameter, so a caller sending one is either
+      // confused or probing; either way the call is refused rather than quietly
+      // executed against the pinned workspace.
+      if (!write && 'workspaceName' in args) {
+        return toCallResult(invalidArguments('workspaceName is not accepted by this tool'))
+      }
+
+      const parsed = z.object(tool.inputSchema).safeParse(args)
+      if (!parsed.success) {
+        return answer('rejected', invalidArguments(parsed.error.message))
+      }
+      // Every id the arguments name is checked against the AUTHORIZED workspace
+      // before the business core runs: an id that belongs elsewhere buys no
+      // mutation, no broadcast, no event and no launch.
+      const refusal = tool.validate?.(parsed.data, decision.scope)
+      if (refusal !== null && refusal !== undefined) {
+        return answer('rejected', { content: [{ type: 'text', text: refusal }], isError: true })
+      }
+      try {
+        const result = await tool.handler(parsed.data, decision.scope)
+        return answer(result.isError ? 'failure' : 'success', result)
+      } catch (err) {
+        // A thrown handler is still a handler that ran: audited as a failure,
+        // then re-thrown so the SDK reports it exactly as it did before.
+        if (write) await audit(stamp('failure'))
+        throw err
+      }
     })
 
     const transport = new WebStandardStreamableHTTPServerTransport({

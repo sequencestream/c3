@@ -132,6 +132,8 @@ export const EXTERNAL_MCP_READ_TOOLS = [
   'find_deliveries',
   'view_delivery',
   'publish_event',
+  'list_workspaces',
+  'whoami',
 ] as const
 
 /**
@@ -182,6 +184,8 @@ export const EXTERNAL_MCP_DEFAULT_TOOLS = [
   'find_discussions',
   'view_discussion',
   'publish_event',
+  'list_workspaces',
+  'whoami',
 ] as const satisfies readonly ExternalMcpToolName[]
 
 /**

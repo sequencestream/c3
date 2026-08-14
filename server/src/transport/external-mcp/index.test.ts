@@ -1,14 +1,16 @@
 /**
  * The public `POST /mcp` route. Covers the address (nothing may follow `/mcp`),
  * the bearer-only credential rule, workspace selection by header, the four-part
- * session pinning, the trusted-local exception and the unconfigured-exposure
- * refusal — all with an injected authorization gate, so this exercises the
- * transport's decisions without the key store or the policy database.
+ * session pinning, the per-call re-authorization a write override goes through,
+ * the write-audit contract, the trusted-local exception and the
+ * unconfigured-exposure refusal — all with an injected authorization gate, so
+ * this exercises the transport's decisions without the key store or the policy
+ * database.
  *
  * The gate itself is `features/auth/authorization.test.ts`; the end-to-end pass
  * (real key store, real catalog, real MCP client) is `e2e.test.ts`.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -28,6 +30,7 @@ import type {
   EffectiveScope,
   ExternalMcpPrincipal,
 } from '../../features/auth/authorization.js'
+import type { ExternalMcpWriteAuditInput } from '../../features/external-mcp/audit-store.js'
 import type { ExternalMcpTool } from '../../features/external-mcp/tools.js'
 import type { ExternalMcpToolName } from '@ccc/shared/protocol'
 
@@ -81,6 +84,15 @@ function resetWorld(): void {
 }
 
 const calls: { name: string; workspacePath: string; keyId: string }[] = []
+/** Every audit row the route asked for, in order. */
+const audits: ExternalMcpWriteAuditInput[] = []
+/** Flip to make the audit store refuse — the fail-open path. */
+let auditFails = false
+/** Args that make the fake write tool answer with an error / throw. */
+const FAIL_ARG = 'make-it-fail'
+const THROW_ARG = 'make-it-throw'
+/** An id the fake write tool's `validate` refuses, standing in for a foreign id. */
+const FOREIGN_ID = 'foreign-id'
 
 /** The same three-layer intersection the real gate performs, over `world`. */
 function authorize(
@@ -107,16 +119,37 @@ function authorize(
   return { ok: true, scope }
 }
 
-/** A small catalog mirroring the real read/write split, enough to assert subsets. */
-function fakeCatalog(scope: EffectiveScope): ExternalMcpTool[] {
+/**
+ * A small catalog mirroring the real read/write split, enough to assert subsets.
+ * It closes over NO scope — every handler is told which scope the gate produced
+ * for the call, which is the property that lets a write target another
+ * workspace without the session moving.
+ */
+function fakeCatalog(): ExternalMcpTool[] {
   const bound = (name: ExternalMcpToolName, access: 'read' | 'write'): ExternalMcpTool => ({
     name,
     access,
     description: name,
-    inputSchema: { q: z.string().optional() },
-    handler: () => {
+    inputSchema:
+      access === 'write'
+        ? {
+            q: z.string().optional(),
+            id: z.string().optional(),
+            workspaceName: z.string().optional(),
+          }
+        : { q: z.string().optional() },
+    validate:
+      access === 'write'
+        ? (args) => ((args as { id?: string }).id === FOREIGN_ID ? '未找到 id(本项目)。' : null)
+        : undefined,
+    handler: (args, scope) => {
       calls.push({ name, workspacePath: scope.workspacePath, keyId: scope.keyId })
-      return { content: [{ type: 'text' as const, text: `${name}@${scope.workspacePath}` }] }
+      const q = (args as { q?: string }).q
+      if (q === THROW_ARG) throw new Error('handler blew up')
+      return {
+        content: [{ type: 'text' as const, text: `${name}@${scope.workspacePath}` }],
+        ...(q === FAIL_ARG ? { isError: true } : {}),
+      }
     },
   })
   return [
@@ -136,6 +169,11 @@ const deps: ExternalMcpDeps = {
   exposedWithoutAdmin: () => world.exposedWithoutAdmin,
   remoteAddress: () => world.peer,
   buildCatalog: fakeCatalog,
+  recordWriteAudit: (entry) => {
+    if (auditFails) throw new Error('audit store unavailable')
+    audits.push(entry)
+  },
+  now: () => 1_700_000_000_000,
 }
 
 let server: ServerType
@@ -161,10 +199,12 @@ afterAll(() => {
 
 beforeEach(() => {
   resetWorld()
+  auditFails = false
 })
 
 afterEach(() => {
   calls.length = 0
+  audits.length = 0
 })
 
 function endpoint(): string {
@@ -451,6 +491,247 @@ describe('the effective tool set', () => {
       expect(res.isError).toBe(true)
     } finally {
       await client.close()
+    }
+  })
+})
+
+describe('the per-call workspace target', () => {
+  it('runs a write against an explicitly named workspace inside the effective scope', async () => {
+    world.ownerWorkspaces.set('alice', ['alpha', 'beta'])
+    const { client } = await connect('c3k_full', 'alpha')
+    try {
+      const res = await client.callTool({
+        name: 'save_intents',
+        arguments: { workspaceName: 'beta' },
+      })
+      expect(res.isError).toBeFalsy()
+      expect(calls).toEqual([{ name: 'save_intents', workspacePath: '/ws/beta', keyId: 'key-a' }])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('leaves the session pinned to its own workspace after an override', async () => {
+    world.ownerWorkspaces.set('alice', ['alpha', 'beta'])
+    const { client } = await connect('c3k_full', 'alpha')
+    try {
+      await client.callTool({ name: 'save_intents', arguments: { workspaceName: 'beta' } })
+      calls.length = 0
+      // The very next call, with no override, is back on the pinned workspace.
+      await client.callTool({ name: 'save_intents', arguments: {} })
+      expect(calls).toEqual([{ name: 'save_intents', workspacePath: '/ws/alpha', keyId: 'key-a' }])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it.each([
+    ['a workspace the owner may not reach', 'beta'],
+    ['a workspace that does not exist', 'never-registered'],
+    ['an empty name', ''],
+  ])('refuses %s with the un-granted-tool wording and runs nothing', async (_label, name) => {
+    const { client } = await connect('c3k_full', 'alpha')
+    try {
+      const res = await client.callTool({
+        name: 'save_intents',
+        arguments: { workspaceName: name },
+      })
+      expect(res.isError).toBe(true)
+      expect((res.content as Array<{ text: string }>)[0].text).toBe(
+        'forbidden: tool "save_intents" is not authorized for this key',
+      )
+      expect(calls).toEqual([])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('answers an out-of-scope workspace exactly like an un-granted tool', async () => {
+    const forbiddenWorkspace = await (async () => {
+      const { client } = await connect('c3k_full', 'alpha')
+      try {
+        return await client.callTool({
+          name: 'save_intents',
+          arguments: { workspaceName: 'beta' },
+        })
+      } finally {
+        await client.close()
+      }
+    })()
+    const ungrantedTool = await (async () => {
+      const { client } = await connect('c3k_read', 'alpha')
+      try {
+        return await client.callTool({ name: 'save_intents', arguments: {} })
+      } finally {
+        await client.close()
+      }
+    })()
+    expect(JSON.stringify(forbiddenWorkspace.content)).toBe(JSON.stringify(ungrantedTool.content))
+  })
+
+  it('does not accept a workspace parameter on a read tool', async () => {
+    world.ownerWorkspaces.set('alice', ['alpha', 'beta'])
+    const { client } = await connect('c3k_full', 'alpha')
+    try {
+      const res = await client.callTool({
+        name: 'find_intents',
+        arguments: { workspaceName: 'beta' },
+      })
+      expect(res.isError).toBe(true)
+      expect(JSON.stringify(res.content)).toContain('invalid arguments')
+      expect(calls).toEqual([])
+    } finally {
+      await client.close()
+    }
+  })
+})
+
+describe('the write audit', () => {
+  /** Call one tool on a fresh session and hand back its result. */
+  async function callTool(
+    key: string,
+    name: string,
+    args: Record<string, unknown> = {},
+    workspace = 'alpha',
+  ): Promise<{ isError?: boolean; content: unknown }> {
+    const { client } = await connect(key, workspace)
+    try {
+      const res = await client.callTool({ name, arguments: args })
+      return res as { isError?: boolean; content: unknown }
+    } finally {
+      await client.close()
+    }
+  }
+
+  it('records one row with the full attribution for a successful write', async () => {
+    await callTool('c3k_full', 'save_intents')
+    expect(audits).toEqual([
+      {
+        occurredAt: 1_700_000_000_000,
+        keyId: 'key-a',
+        ownerSubject: 'alice',
+        workspaceName: 'alpha',
+        tool: 'save_intents',
+        result: 'success',
+      },
+    ])
+  })
+
+  it('records a handler that returned an error as a failure', async () => {
+    await callTool('c3k_full', 'save_intents', { q: FAIL_ARG })
+    expect(audits.map((a) => a.result)).toEqual(['failure'])
+  })
+
+  it('records a handler that threw as a failure, and still reports the throw', async () => {
+    // A thrown handler surfaces as a JSON-RPC error, not an `isError` result —
+    // the audit must not depend on the tool being well-behaved on the way out.
+    await expect(callTool('c3k_full', 'save_intents', { q: THROW_ARG })).rejects.toThrow()
+    expect(audits.map((a) => a.result)).toEqual(['failure'])
+  })
+
+  it.each([
+    ['an un-granted write tool', 'c3k_read', {}],
+    ['an out-of-scope workspace override', 'c3k_full', { workspaceName: 'beta' }],
+    ['arguments that do not fit the schema', 'c3k_full', { q: 42 }],
+    ['an id owned by another workspace', 'c3k_full', { id: FOREIGN_ID }],
+  ])('records %s as rejected, with no handler run', async (_label, key, args) => {
+    await callTool(key, 'save_intents', args)
+    expect(audits.map((a) => a.result)).toEqual(['rejected'])
+    expect(calls).toEqual([])
+  })
+
+  it('records the ATTEMPTED workspace, so a refused override stays attributable', async () => {
+    await callTool('c3k_full', 'save_intents', { workspaceName: 'beta' })
+    expect(audits[0]).toMatchObject({ workspaceName: 'beta', result: 'rejected' })
+  })
+
+  it('never records arguments, output or anything credential-shaped', async () => {
+    await callTool('c3k_full', 'save_intents', { q: 'secret-argument-value' })
+    const serialized = JSON.stringify(audits)
+    expect(Object.keys(audits[0]).sort()).toEqual([
+      'keyId',
+      'occurredAt',
+      'ownerSubject',
+      'result',
+      'tool',
+      'workspaceName',
+    ])
+    expect(serialized).not.toContain('secret-argument-value')
+    expect(serialized).not.toContain('c3k_full')
+    expect(serialized.toLowerCase()).not.toContain('authorization')
+    expect(serialized.toLowerCase()).not.toContain('bearer')
+  })
+
+  it('audits no read call — read auditing is a documented gap, not a silent one', async () => {
+    await callTool('c3k_full', 'find_intents')
+    expect(audits).toEqual([])
+  })
+
+  it('audits no unknown tool name — it names no capability to attribute', async () => {
+    await callTool('c3k_full', 'no_such_tool')
+    expect(audits).toEqual([])
+  })
+
+  it('returns the business result unchanged when the audit insert fails, and says so once', async () => {
+    auditFails = true
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const res = await callTool('c3k_full', 'save_intents', { q: 'secret-argument-value' })
+      expect(res.isError).toBeFalsy()
+      expect(calls).toEqual([{ name: 'save_intents', workspacePath: '/ws/alpha', keyId: 'key-a' }])
+      expect(audits).toEqual([])
+      // Exactly one operational error, carrying the attribution and nothing else:
+      // a silent audit failure would defeat the whole point of the trail.
+      expect(reported).toHaveBeenCalledTimes(1)
+      const logged = reported.mock.calls[0].map(String).join(' ')
+      expect(logged).toContain('key-a')
+      expect(logged).toContain('save_intents')
+      expect(logged).toContain('alpha')
+      expect(logged).not.toContain('secret-argument-value')
+      expect(logged).not.toContain('c3k_full')
+      expect(logged.toLowerCase()).not.toContain('bearer')
+    } finally {
+      reported.mockRestore()
+    }
+  })
+
+  it('waits for the audit attempt before answering', async () => {
+    const order: string[] = []
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const slow = createExternalMcp({
+      ...deps,
+      recordWriteAudit: async (entry) => {
+        await gate
+        order.push(`audit:${entry.result}`)
+      },
+    })
+    const app = new Hono()
+    app.all(EXTERNAL_MCP_PATH, (c) => slow.handler(c))
+    const local = serve({ fetch: app.fetch, port: 0 })
+    try {
+      const address = local.address() as { port: number }
+      const client = new Client({ name: 'test', version: '1.0.0' })
+      await client.connect(
+        new StreamableHTTPClientTransport(
+          new URL(`http://127.0.0.1:${address.port}${EXTERNAL_MCP_PATH}`),
+          { requestInit: { headers: clientHeaders('c3k_full') } },
+        ),
+      )
+      const pending = client.callTool({ name: 'save_intents', arguments: {} }).then(() => {
+        order.push('response')
+      })
+      // The response cannot have been sent yet: the audit is still blocked.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(order).toEqual([])
+      release()
+      await pending
+      expect(order).toEqual(['audit:success', 'response'])
+      await client.close()
+    } finally {
+      local.close()
     }
   })
 })

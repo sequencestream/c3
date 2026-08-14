@@ -40,7 +40,8 @@ flowchart LR
 
 `authorizeCall(auth, workspaceName, toolName)` 是**唯一**卡口,返回冻结的 `EffectiveScope`
 (keyId、ownerSubject、secretVersion、policyEpoch、workspaceName、注册表解析出的 workspacePath、有效工具集)。
-handler 只接受这个对象,永远拿不到调用方给的路径。
+handler 只接受这个对象,永远拿不到调用方给的路径。**目录不闭包任何 scope**:scope 是 handler 的入参,
+因此一份目录服务全部 key、全部会话与全部工作区,不存在「建会话时的工作区」被闭包带进后续调用的可能。
 
 - `effectiveWorkspaces = key 自身范围 ∩ owner 管理员配置范围`。本版 key 自身范围恒为全部已注册工作区,故 owner 的 [工作区范围配置](../auth/auth-overview.md#工作区范围-user_workspace_scopes) 是限制集。
 - `effectiveTools = key.tools ∩ 可外部授权工具目录`。目录外的名字与空工具集都授予零。
@@ -58,6 +59,11 @@ handler 只接受这个对象,永远拿不到调用方给的路径。
 ### 工作区选择
 
 `X-C3-Workspace` 在 initialize 时必需,并就此钉死该会话。空、重复(重复头按 Fetch 规范逗号合并,而工作区名不含逗号)、超长一律 400;未知与越权返回同一个 403。后续请求带同一个值是正常的 —— 客户端的静态头会出现在每个请求上;带**不同**的值是 re-scope 尝试,403 且不动会话。
+
+**写工具可逐次指定目标工作区**:每个写工具都带可选入参 `workspaceName`,省略即用钉定的头工作区。
+它只改变**这一次调用**的目标,不改变会话作用域;取值必须落在 `list_workspaces` 返回的有效集内,
+否则在 handler 运行前被拒。读工具**不接受**该入参(含 `publish_event`),传了按参数非法拒绝。
+保持工具名稳定是刻意取舍:按工作区拆工具名会产生 N×M 的名称爆炸,并把授权判定从一个卡口散开。
 
 该头是 **c3 自定义 HTTP 头,不是 MCP 协议字段**。Streamable HTTP 传输规范定义的是 `Mcp-Session-Id` 一类协议级头与基于 OAuth 的 `Authorization` 扩展,租户/工作区选择属应用层。已验证支持任意自定义头的客户端:Claude Code(`--header`)、Cursor(`headers`)、Codex CLI(`http_headers` / `env_http_headers`)。**不支持配置任意头的客户端用不了本端点**,且不提供 query/path/body/工具入参兜底。
 
@@ -86,8 +92,14 @@ handler 只接受这个对象,永远拿不到调用方给的路径。
 
 分级按**真实效果**:`read` 不修改意图台账、讨论、spec 或会话生命周期;`write` 会。`publish_event` 属 `read`——它投递事实,envelope 的 workspace 与来源由 key 绑定生成,调用方不能伪造来源;订阅自动化可能因该事件异步执行,这是它本来的可观察语义。
 
-- **read**: `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event`(新 key 默认勾选)、`find_deliveries` `view_delivery`(可授权,但**默认不勾选**)
+- **read**: `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event` `list_workspaces` `whoami`(新 key 默认勾选)、`find_deliveries` `view_delivery`(可授权,但**默认不勾选**)
 - **write**: `save_intents` `save_intent_directly` `submit_spec_review` `start_session_for_intent` `start_discussion` `continue_discussion`(默认**不勾选**)
+
+`list_workspaces` 返回当前有效范围内的工作区**名称**(注册表顺序,永不含磁盘路径);`whoami` 回显
+keyId、归属账号、本会话工作区、可访问工作区名单与该 key 实际可调用的工具名,不返回任何密钥、哈希、
+认证头或路径。两者的答案都出自 `authorizeCall` 所用的同一批解析器,不从入参、也不从 key 归档所在的
+工作区重建。它们进默认集:一把看不到自己权限边界的 key 只能靠试错探测,而试错正是要消除的行为。
+`tools/list` 仍是会话可调用工具的发现面;MCP `listChanged` 通知只是体验优化,不构成授权或新鲜度边界。
 
 **目录与默认集是两份名表,刻意解耦**:「可被管理员勾选」与「新 key 自动获得」是两个不同的问题。
 `EXTERNAL_MCP_READ_TOOLS` 只作分级来源,`EXTERNAL_MCP_DEFAULT_TOOLS` 才是创建 key 时服务端强制
@@ -109,6 +121,67 @@ handler 只接受这个对象,永远拿不到调用方给的路径。
 
 明确**不注册**:其余任何当前或未来的内部写工具、资源/提示面。
 
+## 调用时校验:id 归属与逐次授权
+
+工具调用的顺序本身是安全属性:
+
+```mermaid
+flowchart TD
+  A[已知工具调用] --> B{写工具?}
+  B -->|否| R[用钉定的读作用域]
+  B -->|是| C[解析显式 workspaceName 或钉定值]
+  C --> D[以当次主体+工作区+工具名重跑 authorizeCall]
+  D -->|拒绝| X[forbidden;审计 rejected]
+  D -->|通过| E[参数校验 + id 归属校验]
+  E -->|拒绝| Y[tool error;审计 rejected]
+  E -->|通过| F[执行共享业务核心]
+  F -->|成功| S[审计 success]
+  F -->|报错/抛异常| T[审计 failure]
+  X --> Z[等审计写入尝试完成,再回响应]
+  Y --> Z
+  S --> Z
+  T --> Z
+```
+
+**id 是行的地址,不是工作区的地址**,因此带 id 的写必须先全库取回该记录、再用注册表的规范等价比对
+它不可变的 `workspaceName` 与本次已授权的工作区。校验发生在任何落库、广播、事件发布与会话拉起之前:
+
+- `save_intents`:每一条 upsert 目标 id 与每一个会被持久化的 `dependsOn` 引用都要校验(批内
+  `dependsOnIndexes` 引用的是本批兄弟,不在此列)。批仍是原子的,一处不符即整批拒绝。
+- `save_intent_directly`:create-only 没有 upsert 目标,但它落库的 `dependsOn` 边与上面同类,
+  同样逐个校验——否则同一条跨工作区依赖边换个工具名就能写进来。
+- `submit_spec_review`:读 spec、记结论之前校验 `intentId`。
+- `start_session_for_intent`:评估启动闸门、创建/恢复会话之前校验 `intentId`。
+- `start_discussion` / `continue_discussion`:写 metadata、追加消息、改状态、广播或起 run 之前
+  校验 `discussionId`。两者都在进 handler 之前拦,归属不符因而一律记为 `rejected`。
+
+服务端**绝不**把操作静默改到 id 真实归属的工作区,也不去那边重试。**错误语义统一**:范围内找不到该
+id 返回既有的「未找到(本项目)」文案;显式指定了有效范围外的工作区,返回与「工具未授权」**逐字相同**的
+`forbidden: tool "<name>" is not authorized for this key`。两者都不泄露该 id 或该工作区在别处是否存在。
+
+## 来源(provenance)由服务端派生
+
+外部调用方不能声明 c3 的来源:
+
+- `publish_event` 的 envelope 取校验后的工作区,`sessionId` 恒为 `external-mcp:<keyId>@<工作区名>`。
+  工作区名进来源 id,是为了让一把跨工作区使用的范围型 key 发出的事件仍可归因到具体工作区。
+- 事件体里出现的任何 workspace / session / source 字段只作为普通数据被归一化,**不被复制进** envelope。
+- `save_intents` 在校验与落库前剥掉调用方传入的 `intentSessionId`:外部调用没有 c3 自己的交互会话,
+  能诚实做的只有不写这条回链。
+
+## 写调用审计
+
+每一次**已知写工具**的调用尝试落一行 `external_mcp_write_audits`:审计 id、时间、非秘密 `keyId`、
+归属账号、做出授权判定的工作区名、稳定工具名与 `result`。三态按「停在哪一步」划分:`rejected` 未进
+业务 handler(授权、参数校验或 id 归属校验拒绝),`failure` 进了 handler 但报错/抛异常,`success` 正常完成。
+未授权、参数非法、越权工作区、id 归属不符**一律照记**——否则探测行为恰好是唯一不留痕的行为。
+未知工具名不算写工具,不在本契约内。
+
+行内**不含**入参、工具输出、bearer、密钥材料、哈希与认证头。派发器先定出业务结果,再**等待**恰好一次
+审计写入,然后才回响应。审计写入不进业务事务:落库失败保持原有成功/错误结果不变、不重试该工具调用,
+但必须发出一条只含非秘密元数据的脱敏运维错误——静默丢失审计正是事后归因唯一依赖的东西。
+表结构见 [database/tables.md](../../../../database/tables.md) 的 external-mcp 模块。
+
 ## Key 生命周期与监听地址
 
 长期 key 的存储、哈希、归属与版本、生成/校验/吊销,以及 `--host` 显式监听,属系统设置域:见 [system-setting](../../settings/system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcp_api_keys)。**生命周期管理在工作区设置**:见 [workspace-setting](../../settings/workspace-setting/workspace-setting-spec.md#外部-mcp-接入非配置独立即时指令)。
@@ -119,11 +192,13 @@ handler 只接受这个对象,永远拿不到调用方给的路径。
 
 - **API key 是该路由唯一的访问凭据**,且只从 `Authorization: Bearer` 读取。Web 登录会话、内部 per-run token 都不能替代它。
 - **地址不含凭据**。端点对每把 key、每个工作区都是同一个,因此不会有 key 随 URL 进入代理访问日志、shell 历史或工单正文。c3 不记录 `Authorization` 的值。
-- **写权限会真实修改 c3 状态**:`save_intents` 可持久化意图,`submit_spec_review` 可提交审核结论,`start_session_for_intent` 可拉起 agent。这是安全边界的有意放宽:key 默认只读,写接口须显式勾选,key 可吊销。创建与编辑界面必须在写工具区持续展示该风险,保存含写权限的范围前有明确确认。
+- **写权限会真实修改 c3 状态**:`save_intents` 可持久化意图,`submit_spec_review` 可提交审核结论,`start_session_for_intent` 可拉起 agent。这是安全边界的有意放宽:key 默认只读,写接口须显式勾选,key 可吊销,且每次写调用尝试都留下一条可归因的审计行。创建与编辑界面必须在写工具区持续展示该风险,保存含写权限的范围前有明确确认。
 - **不内建也不强制 HTTPS**。明文 HTTP 下同网络的人可嗅探到 bearer。远程暴露应通过用户自管的 TLS 反向代理,并抑制日志中的敏感头。这是已知并接受的部署侧风险。
 - **`X-C3-Workspace` 依赖客户端的自定义头能力**。遇到不支持配置任意头的客户端时本端点不可用,且不做 fallback —— 这是已知限制。
 - **claude.ai 自定义连接器不受支持**:它要求服务端提供 OAuth 授权流程,而 c3 的静态 bearer key 不是 OAuth access token,c3 也不是 OAuth 授权服务器。
-- **不提供 `/mcp.md` 发现端点**(明确放弃),也不提供独立调用审计流、速率限制或 per-call 写操作二次确认。**不改变 `--host` 默认回环及显式开放监听的规则。**
+- **不提供 `/mcp.md` 发现端点**(明确放弃),也不提供 per-call 写操作二次确认。**不改变 `--host` 默认回环及显式开放监听的规则。**
+- **已知缺口:无速率限制,读操作不入审计。** 统一端点既是单一故障域也是 DoS 面,一次凭据泄漏后的**读取**枚举既不受速率约束、也不会在审计里留痕。两者都是已知缺口,不是被隐含的保护。
+- **不提供审计查询界面**:审计只保证可靠落库,读取靠运维查询。
 - 拒绝响应与成功调用**均不输出 key**。
 
 ## 接入信息展示

@@ -179,10 +179,14 @@ env_http_headers = { "X-C3-Workspace" = "C3_MCP_WORKSPACE" }
    is allowed into; `X-C3-Workspace` chooses which one at initialization. Switching
    means starting a new session, not a new key.
 4. **Grant write tools explicitly if needed.** A new key can only read:
-   `find_intents`, `view_intent`, `find_discussions`, `view_discussion`, plus
-   `publish_event`. Anything that changes c3 state (`save_intents`,
-   `submit_spec_review`, `start_session_for_intent`, …) must be ticked in the key's
-   tool scope, behind a risk confirmation — it really does change c3 state.
+   `find_intents`, `view_intent`, `find_discussions`, `view_discussion`,
+   `publish_event`, plus `list_workspaces` / `whoami`, which report the key's own
+   reach so a client never has to probe for it. Anything that changes c3 state
+   (`save_intents`, `submit_spec_review`, `start_session_for_intent`, …) must be
+   ticked in the key's tool scope, behind a risk confirmation — it really does
+   change c3 state. A write may target another workspace in the key's reach with
+   an optional `workspaceName` argument; every attempt is authorized again for
+   that call and recorded in c3's write-audit trail.
 5. **Revoke when done.** Revoking a key in Workspace Settings takes effect on its
    very next request and closes any MCP session it already had open.
 

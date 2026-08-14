@@ -584,6 +584,35 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
   return getAutomation(id)!
 }
 
+/**
+ * Find a still-existing agent-quota-recovery automation for an agent in a
+ * workspace, or null. One-shot recovery automations delete their own row once
+ * they fire, so "still existing" is exactly "the row is present": a
+ * fired-and-deleted automation is invisible here and the next quota error can
+ * create a fresh one. When abnormal data leaves several rows for one agent
+ * (legacy duplicates), the earliest-created row wins, keeping the first
+ * resetAt authoritative.
+ */
+export function findAgentQuotaRecoveryAutomation(
+  workspacePath: string,
+  agentId: string,
+): Automation | null {
+  const d = db()
+  if (!d) return null
+  const rows = d.all<AutomationRow>(
+    "SELECT * FROM automations WHERE workspace_name=? AND type='command' ORDER BY created_at ASC",
+    workspaceKey(workspacePath),
+  )
+  for (const row of rows) {
+    const automation = toAutomation(row, null)
+    const config = automation.config
+    if (!isAgentQuotaRecoveryConfig(config)) continue
+    if (config.agentId !== agentId) continue
+    return automation
+  }
+  return null
+}
+
 export function createAgentQuotaRecoveryAutomation(input: {
   workspacePath: string
   agentId: string

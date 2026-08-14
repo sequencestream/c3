@@ -3,6 +3,7 @@ import { getTimezone } from '../kernel/config/index.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   createAgentQuotaRecoveryAutomation,
+  findAgentQuotaRecoveryAutomation,
   isStoreAvailable as isAutomationStoreAvailable,
 } from './automations/store.js'
 
@@ -41,6 +42,23 @@ export function handleAgentQuotaError(input: {
   }
 
   try {
+    // Dedup: concurrent quota errors for the same agent (parallel sessions each
+    // hitting a usage/session limit, or rapid repeats) would otherwise create one
+    // recovery automation per error — all pointing at the same reset moment, all
+    // doing the same re-enable. Reuse a still-existing recovery automation and
+    // keep the first resetAt; the row is gone once it fires and self-deletes, so
+    // the next error then creates a fresh one.
+    const existing = findAgentQuotaRecoveryAutomation(input.workspacePath, input.agentId)
+    if (existing) {
+      const agent = resolveAgent(input.agentId)
+      console.warn(
+        '[agent-quota-recovery] agent %s (%s) already has a pending recovery automation %s; reuse it',
+        agent.id,
+        agent.displayName,
+        existing.id,
+      )
+      return { handled: true, resetAt, disabled: true, automationId: existing.id }
+    }
     const automation = createAgentQuotaRecoveryAutomation({
       workspacePath: input.workspacePath,
       agentId: input.agentId,

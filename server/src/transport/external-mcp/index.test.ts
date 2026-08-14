@@ -18,7 +18,7 @@ import {
   createExternalMcp,
   EXTERNAL_MCP_PATH,
   isLoopbackAddress,
-  parseBearer,
+  readCredential,
   readWorkspaceHeader,
   type ExternalMcpDeps,
   type ServedExternalMcp,
@@ -249,18 +249,22 @@ async function onSession(
   return post({ ...clientHeaders(key, workspace), 'mcp-session-id': sessionId }, body)
 }
 
-describe('parseBearer', () => {
+describe('readCredential', () => {
   it.each([
-    ['a bearer credential', 'Bearer c3k_x', 'c3k_x'],
-    ['a lower-case scheme', 'bearer c3k_x', 'c3k_x'],
-    ['surrounding whitespace', '  Bearer   c3k_x  ', 'c3k_x'],
-    ['a basic credential', 'Basic dXNlcjpwdw==', null],
-    ['a bare scheme', 'Bearer', null],
-    ['an empty token', 'Bearer ', null],
-    ['a second token', 'Bearer a b', null],
-    ['no header', undefined, null],
-  ])('reads %s as %s', (_label, header, expected) => {
-    expect(parseBearer(header)).toBe(expected)
+    ['a bearer credential', 'Bearer c3k_x', { kind: 'bearer', token: 'c3k_x' }],
+    ['a lower-case scheme', 'bearer c3k_x', { kind: 'bearer', token: 'c3k_x' }],
+    ['surrounding whitespace', '  Bearer   c3k_x  ', { kind: 'bearer', token: 'c3k_x' }],
+    // Presented and unreadable — NOT the same as absent, or trusted-local mode
+    // would answer a typo with full access instead of 401.
+    ['a basic credential', 'Basic dXNlcjpwdw==', { kind: 'unusable' }],
+    ['a bare scheme', 'Bearer', { kind: 'unusable' }],
+    ['an empty token', 'Bearer ', { kind: 'unusable' }],
+    ['a second token', 'Bearer a b', { kind: 'unusable' }],
+    ['no header', undefined, { kind: 'absent' }],
+    // A header the proxy emptied carries no credential to verify.
+    ['a blank header', '   ', { kind: 'absent' }],
+  ])('reads %s as %o', (_label, header, expected) => {
+    expect(readCredential(header)).toEqual(expected)
   })
 })
 
@@ -588,6 +592,23 @@ describe('trusted-local mode', () => {
     world.trustedLocal = true
     const res = await post({ authorization: 'Bearer c3k_typo', 'x-c3-workspace': 'alpha' })
     expect(res.status).toBe(401)
+  })
+
+  // The header being unreadable is the same event as the key being wrong: the
+  // caller presented something. Reading it as "no credential" would answer a
+  // truncated `Bearer`, a stray space inside the key, or a `Basic` header with
+  // the whole catalog on every workspace.
+  it.each([
+    ['an empty bearer token', 'Bearer '],
+    ['a bearer with a stray space', 'Bearer c3k_a b'],
+    ['a bare scheme', 'Bearer'],
+    ['a non-bearer scheme', 'Basic dXNlcjpwdw=='],
+  ])('refuses %s rather than degrading to local', async (_label, authorization) => {
+    world.trustedLocal = true
+    const before = route.sessionCount()
+    const res = await post({ authorization, 'x-c3-workspace': 'alpha' })
+    expect(res.status).toBe(401)
+    expect(route.sessionCount()).toBe(before)
   })
 
   it('requires a credential once an administrator exists', async () => {

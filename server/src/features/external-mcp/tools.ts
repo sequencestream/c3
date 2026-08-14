@@ -1,6 +1,6 @@
 /**
  * The EXTERNALLY-GRANTABLE capability catalog — the closed set of c3 tools a
- * long-lived API key may ever be authorized to call on `/mcp/<api-key>`.
+ * long-lived API key may ever be authorized to call on `POST /mcp`.
  *
  * The catalog is an explicit ALLOWLIST, not "the internal tool universe minus a
  * denylist". That direction is the whole safety property: adding a new internal

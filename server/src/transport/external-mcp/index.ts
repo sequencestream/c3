@@ -80,16 +80,29 @@ export function isLoopbackAddress(address: string | undefined | null): boolean {
 }
 
 /**
- * The bearer value, or `null` when the header is absent or not a bearer.
+ * What an `Authorization` header amounts to. THREE states, not two, and the
+ * third one is the security-relevant one: a header that is present but yields no
+ * bearer is a credential the caller DID present, so it must be refused — folding
+ * it in with `absent` would let `Bearer ` (empty), `Bearer a b` or a `Basic`
+ * credential fall through to the trusted-local principal and turn a typo into
+ * full access.
+ */
+export type Credential =
+  { kind: 'absent' } | { kind: 'bearer'; token: string } | { kind: 'unusable' }
+
+/**
+ * Read the credential out of the `Authorization` header.
  *
  * Case-insensitive on the scheme (RFC 7235 says the scheme is case-insensitive)
  * but strict about everything else: no second credential, no empty token. A
- * `Basic` or `X-API-Key` credential is not "wrong", it is simply not read.
+ * `Basic` or `X-API-Key` credential is not read as a credential value — but its
+ * presence is still noticed, because "presented and unusable" is a 401 and not a
+ * credential-free request.
  */
-export function parseBearer(header: string | undefined | null): string | null {
-  if (typeof header !== 'string') return null
+export function readCredential(header: string | undefined | null): Credential {
+  if (typeof header !== 'string' || header.trim().length === 0) return { kind: 'absent' }
   const match = /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header.trim())
-  return match ? match[1] : null
+  return match ? { kind: 'bearer', token: match[1] } : { kind: 'unusable' }
 }
 
 /** A workspace header that is syntactically usable, or why it is not. */
@@ -312,21 +325,25 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
    * Resolve the caller. Returns the principal, or the response that refuses it.
    *
    * A presented credential must verify — an invalid bearer never falls back to
-   * the trusted-local principal, which would turn a typo into full access. The
-   * credential-free path exists only in trusted-local mode AND only for a
-   * loopback peer: defence in depth behind the loopback bind, for the case where
-   * something in front of c3 forwards a remote request onto localhost.
+   * the trusted-local principal, which would turn a typo into full access. That
+   * covers a credential that is unreadable as much as one that is merely wrong:
+   * a malformed `Authorization` header is answered 401, never treated as the
+   * credential-free request it is not. The credential-free path exists only in
+   * trusted-local mode AND only for a loopback peer: defence in depth behind the
+   * loopback bind, for the case where something in front of c3 forwards a remote
+   * request onto localhost.
    */
   const authenticate = async (
     c: Context,
   ): Promise<{ principal: ExternalMcpPrincipal } | { response: Response }> => {
-    const presented = parseBearer(c.req.header('authorization'))
-    if (presented !== null) {
-      const principal = await deps.authenticate(presented)
+    const credential = readCredential(c.req.header('authorization'))
+    if (credential.kind === 'bearer') {
+      const principal = await deps.authenticate(credential.token)
       if (!principal) return { response: c.json(UNAUTHORIZED, 401) }
       deps.onAuthenticated?.(principal.keyId)
       return { principal }
     }
+    if (credential.kind === 'unusable') return { response: c.json(UNAUTHORIZED, 401) }
     const local = deps.trustedLocalPrincipal()
     if (!local) return { response: c.json(UNAUTHORIZED, 401) }
     if (!isLoopbackAddress(deps.remoteAddress(c))) return { response: c.json(UNAUTHORIZED, 401) }

@@ -148,9 +148,12 @@ flowchart TD
 
 - `save_intents`:每一条 upsert 目标 id 与每一个会被持久化的 `dependsOn` 引用都要校验(批内
   `dependsOnIndexes` 引用的是本批兄弟,不在此列)。批仍是原子的,一处不符即整批拒绝。
+- `save_intent_directly`:create-only 没有 upsert 目标,但它落库的 `dependsOn` 边与上面同类,
+  同样逐个校验——否则同一条跨工作区依赖边换个工具名就能写进来。
 - `submit_spec_review`:读 spec、记结论之前校验 `intentId`。
 - `start_session_for_intent`:评估启动闸门、创建/恢复会话之前校验 `intentId`。
-- `continue_discussion`:追加消息、改状态、广播或起 run 之前校验 `discussionId`。
+- `start_discussion` / `continue_discussion`:写 metadata、追加消息、改状态、广播或起 run 之前
+  校验 `discussionId`。两者都在进 handler 之前拦,归属不符因而一律记为 `rejected`。
 
 服务端**绝不**把操作静默改到 id 真实归属的工作区,也不去那边重试。**错误语义统一**:范围内找不到该
 id 返回既有的「未找到(本项目)」文案;显式指定了有效范围外的工作区,返回与「工具未授权」**逐字相同**的

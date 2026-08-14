@@ -494,9 +494,21 @@ describe('external MCP over a real Streamable HTTP client', () => {
     // Owned by the narrowly-scoped account: `otherWs` is outside its reach, so
     // naming it is a forbidden call rather than a legitimate cross-workspace
     // write an administrator would be entitled to make.
+    const foreignDiscussion = createDiscussion({
+      workspacePath: otherDir,
+      title: 'Neighbour discussion',
+      type: 'design',
+    })
     const created = await mintKey(
       'injected',
-      ['find_intents', 'save_intents', 'submit_spec_review', 'start_session_for_intent'],
+      [
+        'find_intents',
+        'save_intents',
+        'save_intent_directly',
+        'submit_spec_review',
+        'start_session_for_intent',
+        'start_discussion',
+      ],
       AGENT,
     )
     const client = await connect('127.0.0.1', created.key, projectWs)
@@ -573,6 +585,32 @@ describe('external MCP over a real Streamable HTTP client', () => {
       })
       expect(hijackLaunch.isError).toBe(true)
 
+      // 6. The same foreign dependency, smuggled through the OTHER intent
+      //    writer — create-only, so there is no upsert target to refuse, and the
+      //    edge would be the only thing crossing.
+      const hijackDirectDep = await client.callTool({
+        name: 'save_intent_directly',
+        arguments: {
+          intents: [
+            {
+              title: 'Innocent looking draft',
+              shortEnTitle: 'innocent-draft',
+              content: '',
+              priority: 'P2',
+              dependsOn: [foreign.id],
+            },
+          ],
+        },
+      })
+      expect(hijackDirectDep.isError).toBe(true)
+
+      // 7. Start the neighbour's discussion.
+      const hijackStart = await client.callTool({
+        name: 'start_discussion',
+        arguments: { discussionId: foreignDiscussion.id },
+      })
+      expect(hijackStart.isError).toBe(true)
+
       // Nothing crossed: the foreign intent is byte-for-byte what it was, no
       // event was published, no agent was launched, and this workspace grew no
       // intent naming the foreign id.
@@ -639,6 +677,53 @@ describe('external MCP over a real Streamable HTTP client', () => {
     const mine = listExternalMcpWriteAudits(1000).filter((r) => r.keyId === created.meta.id)
     expect(listExternalMcpWriteAudits(1000).length).toBe(before + EXTERNAL_MCP_WRITE_TOOLS.length)
     expect(mine.map((r) => r.tool).sort()).toEqual([...EXTERNAL_MCP_WRITE_TOOLS].sort())
+    expect(new Set(mine.map((r) => r.result))).toEqual(new Set(['rejected']))
+  })
+
+  it('classifies a granted write refused on id ownership as rejected, not failure', async () => {
+    // The distinction the audit trail rests on: `failure` means a handler ran
+    // and returned an error, `rejected` means the call never reached one. A
+    // foreign id is always the second — otherwise the same probe reads as two
+    // different events depending on which tool the caller aimed it at.
+    const [foreign] = insertIntents(otherDir, [
+      { title: 'Neighbour', shortEnTitle: 'neighbour-audit', content: '', priority: 'P2' },
+    ])
+    const foreignDiscussion = createDiscussion({
+      workspacePath: otherDir,
+      title: 'Neighbour discussion',
+      type: 'design',
+    })
+    const granted = ['save_intents', 'save_intent_directly', 'start_discussion'] as const
+    const created = await mintKey('audited-ownership', granted, AGENT)
+    const client = await connect('127.0.0.1', created.key)
+    try {
+      const dep = {
+        intents: [
+          {
+            title: 'Edge to elsewhere',
+            shortEnTitle: 'edge-elsewhere',
+            content: '',
+            priority: 'P2',
+            dependsOn: [foreign.id],
+          },
+        ],
+      }
+      for (const name of ['save_intents', 'save_intent_directly']) {
+        expect((await client.callTool({ name, arguments: dep })).isError, name).toBe(true)
+      }
+      expect(
+        (
+          await client.callTool({
+            name: 'start_discussion',
+            arguments: { discussionId: foreignDiscussion.id },
+          })
+        ).isError,
+      ).toBe(true)
+    } finally {
+      await client.close()
+    }
+    const mine = listExternalMcpWriteAudits(1000).filter((r) => r.keyId === created.meta.id)
+    expect(mine.map((r) => r.tool).sort()).toEqual([...granted].sort())
     expect(new Set(mine.map((r) => r.result))).toEqual(new Set(['rejected']))
   })
 

@@ -2615,6 +2615,9 @@
       "create": {
         "tooltip": "새 납품"
       },
+      "createTitle": {
+        "label": "새 딜리버리"
+      },
       "edit": {
         "label": "편집"
       },

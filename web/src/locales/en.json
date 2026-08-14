@@ -2614,6 +2614,9 @@
       "create": {
         "tooltip": "New delivery"
       },
+      "createTitle": {
+        "label": "New delivery"
+      },
       "edit": {
         "label": "Edit"
       },

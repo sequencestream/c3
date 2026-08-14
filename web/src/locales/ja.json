@@ -2615,6 +2615,9 @@
       "create": {
         "tooltip": "新規納品"
       },
+      "createTitle": {
+        "label": "デリバリーを新規作成"
+      },
       "edit": {
         "label": "編集"
       },

@@ -2,15 +2,17 @@
 /*
  * DeliveryList.vue — 交付列表(左栏)。
  *
- * 头部最左「收缩/展开」按钮在两栏正常与窄条之间切换列宽;最右「+」按钮展开内联
- * 创建表单(标题/描述/起止日历日期,纯本地数据动作,不触网)。行 = 标题 + 状态
+ * 头部最左「收缩/展开」按钮在两栏正常与窄条之间切换列宽;最右「+」按钮打开新建交付
+ * 弹窗(DeliveryCreateDialog,标题/描述/起止日历日期,纯本地数据动作,不触网)——
+ * 列表本身不再承载创建表单,窄条与移动端下也就不被它占走空间。行 = 标题 + 状态
  * 徽标 + 集成就绪 N/M,点击 emit open 上抛。
  */
 import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type { Delivery, DeliveryStatus } from '@ccc/shared/protocol'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
-import { DELIVERY_STATUS_LABEL_KEYS, calendarDateToEpochMs } from '@/lib/delivery-view'
+import { DELIVERY_STATUS_LABEL_KEYS } from '@/lib/delivery-view'
+import DeliveryCreateDialog from './DeliveryCreateDialog.vue'
 
 const { t } = useTypedI18n()
 
@@ -49,27 +51,18 @@ function togglePanel(): void {
   collapsed.value = !collapsed.value
 }
 
-// ---- Inline create form ----
-const formOpen = ref(false)
-const formTitle = ref('')
-const formDescription = ref('')
-const formStart = ref('')
-const formEnd = ref('')
+// ---- 新建交付弹窗 ----
+// 列表只持 open 状态;字段、校验与日期编码都在弹窗里,确认后原样上抛 create。
+const createOpen = ref(false)
 
-function submitCreate(): void {
-  const title = formTitle.value.trim()
-  if (!title) return
-  emit('create', {
-    title,
-    description: formDescription.value.trim(),
-    startDate: formStart.value ? calendarDateToEpochMs(formStart.value) : null,
-    endDate: formEnd.value ? calendarDateToEpochMs(formEnd.value) : null,
-  })
-  formTitle.value = ''
-  formDescription.value = ''
-  formStart.value = ''
-  formEnd.value = ''
-  formOpen.value = false
+function onCreateConfirm(payload: {
+  title: string
+  description: string
+  startDate: number | null
+  endDate: number | null
+}): void {
+  emit('create', payload)
+  createOpen.value = false
 }
 </script>
 
@@ -95,55 +88,17 @@ function submitCreate(): void {
         data-testid="delivery-new-btn"
         :title="t('delivery.action.create.tooltip')"
         :aria-label="t('delivery.action.create.tooltip')"
-        @click="formOpen = !formOpen"
+        @click="createOpen = true"
       >
         +
       </button>
     </div>
 
-    <form
-      v-if="formOpen"
-      class="delivery-create-form"
-      data-testid="delivery-create-form"
-      @submit.prevent="submitCreate"
-    >
-      <label class="delivery-form-field">
-        <span>{{ t('delivery.action.form.titleLabel.label') }}</span>
-        <input
-          v-model="formTitle"
-          type="text"
-          data-testid="delivery-create-title"
-          :placeholder="t('delivery.action.form.titlePlaceholder.label')"
-        />
-      </label>
-      <label class="delivery-form-field">
-        <span>{{ t('delivery.action.form.descriptionLabel.label') }}</span>
-        <textarea
-          v-model="formDescription"
-          rows="2"
-          data-testid="delivery-create-desc"
-          :placeholder="t('delivery.action.form.descriptionPlaceholder.label')"
-        />
-      </label>
-      <div class="delivery-form-row">
-        <label class="delivery-form-field">
-          <span>{{ t('delivery.action.form.startDateLabel.label') }}</span>
-          <input v-model="formStart" type="date" data-testid="delivery-create-start" />
-        </label>
-        <label class="delivery-form-field">
-          <span>{{ t('delivery.action.form.endDateLabel.label') }}</span>
-          <input v-model="formEnd" type="date" data-testid="delivery-create-end" />
-        </label>
-      </div>
-      <button
-        type="submit"
-        class="delivery-create-submit"
-        :disabled="!formTitle.trim()"
-        data-testid="delivery-create-submit"
-      >
-        {{ t('delivery.action.form.submit.label') }}
-      </button>
-    </form>
+    <DeliveryCreateDialog
+      :open="createOpen"
+      @confirm="onCreateConfirm"
+      @cancel="createOpen = false"
+    />
 
     <p
       v-if="props.deliveries.length === 0"
@@ -282,52 +237,6 @@ function submitCreate(): void {
 .delivery-new-btn:hover {
   color: var(--c-text);
   border-color: var(--c-primary);
-}
-.delivery-create-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--c-border);
-  flex-shrink: 0;
-}
-.delivery-form-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-}
-.delivery-form-field input,
-.delivery-form-field textarea {
-  font: inherit;
-  font-size: var(--fs-body);
-  color: var(--c-text);
-  background: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-1) var(--sp-2);
-}
-.delivery-form-row {
-  display: flex;
-  gap: var(--sp-2);
-}
-.delivery-form-row .delivery-form-field {
-  flex: 1;
-}
-.delivery-create-submit {
-  align-self: flex-start;
-  padding: var(--sp-1) var(--sp-3);
-  font: inherit;
-  color: #fff;
-  background: var(--c-primary);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.delivery-create-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .delivery-list-empty {
   margin: 0;

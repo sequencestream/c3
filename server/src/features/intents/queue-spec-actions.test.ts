@@ -239,6 +239,54 @@ describe('runSpecPhase — authoring and read-only review', () => {
       'spec 审核会话启动被拒绝(intent.specNotWritten)',
     )
   })
+
+  it('a refused launch carries the failure parameters, not just the code', async () => {
+    const { ctx } = makeCtx()
+    // The raw text of the Git command that failed — the only thing that tells a
+    // path conflict apart from a full disk without reproducing the failure.
+    const message =
+      "fatal: '/w/intent-f' already exists\nhint: use 'git worktree add --force' to override"
+    vi.mocked(launchSpecReviewSession).mockResolvedValue({
+      success: false,
+      code: 'intent.worktreeCreateFailed',
+      params: { message },
+    })
+
+    await runSpecPhase(
+      ctx,
+      { kind: 'launch_spec_review', intentId: 'K', origin: 'queue-kernel', fingerprint: 'fp' },
+      makeIntent({ id: 'K' }),
+    )
+
+    expect(recordFailure).toHaveBeenCalledWith(
+      ctx,
+      'K',
+      'launch_failed',
+      `spec 审核会话启动被拒绝(intent.worktreeCreateFailed) — message=${message}`,
+    )
+  })
+
+  it('every failure parameter is rendered, and the authoring label is kept', async () => {
+    const { ctx } = makeCtx()
+    vi.mocked(launchSpecSession).mockResolvedValue({
+      success: false,
+      code: 'intent.dependencyNotMerged',
+      params: { title: '先落地登录', id: 'dep-1' },
+    })
+
+    await runSpecPhase(
+      ctx,
+      { kind: 'launch_spec', intentId: 'L', origin: 'queue-kernel', rework: false, reworkRound: 0 },
+      makeIntent({ id: 'L' }),
+    )
+
+    expect(recordFailure).toHaveBeenCalledWith(
+      ctx,
+      'L',
+      'launch_failed',
+      'spec 撰写会话启动被拒绝(intent.dependencyNotMerged) — title=先落地登录, id=dep-1',
+    )
+  })
 })
 
 describe('executeMachineApproveSpec — a conditional write, not a trusted one', () => {

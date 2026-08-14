@@ -75,6 +75,17 @@ function makeCtx() {
     null,
   )
   const currentWorkspaceSetting = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(null)
+  const currentWorkspace = ref<string | null>(null)
+  const myMcpApiKeys = ref<import('@ccc/shared/protocol').McpApiKeyMeta[]>([])
+  const myMcpApiKeyCreated = ref<{
+    meta: import('@ccc/shared/protocol').McpApiKeyMeta
+    key: string
+  } | null>(null)
+  const userWorkspaceAccess = ref<{
+    workspaces: import('@ccc/shared/protocol').WorkspaceInfo[]
+    accounts: import('@ccc/shared/protocol').UserWorkspaceAccessAccount[]
+  } | null>(null)
+  const workspaceAccessors = ref<string[] | null>(null)
   const detectedMainBranch = ref<string | null>(null)
   const resolvedSpecRoot = ref<string | null>(null)
   const sysExtraMounts = ref<import('@ccc/shared/protocol').SysExtraMount[]>([])
@@ -219,6 +230,11 @@ function makeCtx() {
     automationEnabledSaving,
     automationSettingBeforeSave,
     currentWorkspaceSetting,
+    currentWorkspace,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     detectedMainBranch,
     resolvedSpecRoot,
     sysExtraMounts,
@@ -288,6 +304,11 @@ function makeCtx() {
     automationWorkspaceSettingId,
     automationEnabledSaving,
     automationSettingBeforeSave,
+    currentWorkspace,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     researchMessages,
     researchMaxSeq,
     settingsOpen,
@@ -1228,6 +1249,10 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       parkRecoveryStats: ref(null),
       parkRecoveryError: ref(null),
       parkRecoveryLoading: ref(false),
+      myMcpApiKeys: ref([]),
+      myMcpApiKeyCreated: ref(null),
+      userWorkspaceAccess: ref(null),
+      workspaceAccessors: ref(null),
       readStoredWorkspace: vi.fn(() => null),
       flushIfReady: vi.fn(),
       notifyAwaitingPermission: vi.fn(),
@@ -1692,6 +1717,10 @@ function makeWorkspaceOnboardingCtx() {
     parkRecoveryStats: ref(null),
     parkRecoveryError: ref(null),
     parkRecoveryLoading: ref(false),
+    myMcpApiKeys: ref([]),
+    myMcpApiKeyCreated: ref(null),
+    userWorkspaceAccess: ref(null),
+    workspaceAccessors: ref(null),
     pendingDeepLink: ref(null),
     deepLinkFulfilled: ref(new Set<string>()),
     deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
@@ -2552,5 +2581,123 @@ describe('create_intent 进度遮罩路由', () => {
     expect(h.dispatchCreateIntent).not.toHaveBeenCalled()
     // 守卫也不释放:这条错误不是本次创建的答复。
     expect(h.createIntentPending.value).toBe(true)
+  })
+})
+
+/**
+ * The three rosters this change introduces. Each is authoritative and replaces
+ * its snapshot whole — the console never reconciles a delta, so a revoked key or
+ * a removed grant cannot linger.
+ */
+describe('external MCP access rosters', () => {
+  const meta = (id: string): import('@ccc/shared/protocol').McpApiKeyMeta => ({
+    id,
+    name: id,
+    createdAt: 1,
+    lastUsedAt: null,
+    workspaceName: null,
+    unavailable: false,
+    tools: [],
+    displayPrefix: `c3k_${id}`,
+  })
+
+  describe('my_mcp_api_keys', () => {
+    it('replaces the roster whole and keeps the one-time plaintext from a create/reset', () => {
+      const r = makeCtx()
+      r.ctx.handleMessage({
+        type: 'my_mcp_api_keys',
+        keys: [meta('a')],
+        created: { meta: meta('a'), key: 'c3k_a_PLAINTEXT' },
+      })
+      expect(r.myMcpApiKeys.value.map((k) => k.id)).toEqual(['a'])
+      expect(r.myMcpApiKeyCreated.value?.key).toBe('c3k_a_PLAINTEXT')
+    })
+
+    it('clears a stale plaintext when the next roster carries none', () => {
+      const r = makeCtx()
+      r.myMcpApiKeyCreated.value = { meta: meta('a'), key: 'c3k_a_PLAINTEXT' }
+      r.ctx.handleMessage({ type: 'my_mcp_api_keys', keys: [] })
+      // A roster with no `created` is a LATER operation's answer, so the previous
+      // secret is gone rather than left on screen next to the wrong key.
+      expect(r.myMcpApiKeyCreated.value).toBeNull()
+      expect(r.myMcpApiKeys.value).toEqual([])
+    })
+  })
+
+  describe('user_workspace_access', () => {
+    it('adopts the registry and the account roster together', () => {
+      const r = makeCtx()
+      r.ctx.handleMessage({
+        type: 'user_workspace_access',
+        workspaces: [{ name: 'alpha', path: '/ws/alpha', lastAccessed: 0 }],
+        accounts: [{ subject: 'alice', isAdmin: false, editable: true, policy: null }],
+      })
+      expect(r.userWorkspaceAccess.value?.workspaces.map((w) => w.name)).toEqual(['alpha'])
+      expect(r.userWorkspaceAccess.value?.accounts[0].subject).toBe('alice')
+    })
+  })
+
+  describe('workspace_accessors', () => {
+    it('adopts the list for the workspace on screen', () => {
+      const r = makeCtx()
+      r.currentWorkspace.value = 'alpha'
+      r.ctx.handleMessage({
+        type: 'workspace_accessors',
+        workspaceName: 'alpha',
+        subjects: ['root', 'alice'],
+      })
+      expect(r.workspaceAccessors.value).toEqual(['root', 'alice'])
+    })
+
+    it('ignores a reply that lost the race with a workspace switch', () => {
+      const r = makeCtx()
+      r.currentWorkspace.value = 'alpha'
+      r.workspaceAccessors.value = ['root']
+      r.ctx.handleMessage({
+        type: 'workspace_accessors',
+        workspaceName: 'beta',
+        subjects: ['someone-else'],
+      })
+      expect(r.workspaceAccessors.value).toEqual(['root'])
+    })
+  })
+})
+
+describe('identity change clears every per-identity roster', () => {
+  it('drops the key roster, any revealed plaintext and the access roster on `ready`', () => {
+    const { ctx } = makeWorkspaceOnboardingCtx()
+    const r = ctx as unknown as {
+      myMcpApiKeys: { value: import('@ccc/shared/protocol').McpApiKeyMeta[] }
+      myMcpApiKeyCreated: {
+        value: { meta: import('@ccc/shared/protocol').McpApiKeyMeta; key: string } | null
+      }
+      userWorkspaceAccess: { value: unknown }
+      workspaceAccessors: { value: string[] | null }
+    }
+    r.myMcpApiKeys.value = [
+      {
+        id: 'a',
+        name: 'a',
+        createdAt: 1,
+        lastUsedAt: null,
+        workspaceName: null,
+        unavailable: false,
+        tools: [],
+        displayPrefix: 'c3k_a',
+      },
+    ]
+    r.myMcpApiKeyCreated.value = { meta: r.myMcpApiKeys.value[0], key: 'c3k_a_PLAINTEXT' }
+    r.userWorkspaceAccess.value = { workspaces: [], accounts: [] }
+    r.workspaceAccessors.value = ['root']
+
+    // `ready` is where a login lands, so it is also where the previous identity's
+    // state has to go — a credential shown under the wrong account is worse than
+    // one the user has to re-open the page to see.
+    ctx.handleMessage(readyMsg(['alpha']))
+
+    expect(r.myMcpApiKeys.value).toEqual([])
+    expect(r.myMcpApiKeyCreated.value).toBeNull()
+    expect(r.userWorkspaceAccess.value).toBeNull()
+    expect(r.workspaceAccessors.value).toBeNull()
   })
 })

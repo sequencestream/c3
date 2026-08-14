@@ -404,13 +404,19 @@ const {
   setAdminPassword,
   removeAccount,
   setAdminAccount,
-  mcpApiKeys,
-  mcpApiKeyCatalog,
-  mcpApiKeyCreated,
-  createMcpApiKey,
-  updateMcpApiKey,
-  revokeMcpApiKey,
-  dismissMcpApiKeyReveal,
+  myMcpApiKeys,
+  myMcpApiKeyCreated,
+  createMyMcpApiKey,
+  resetMyMcpApiKey,
+  revokeMyMcpApiKey,
+  dismissMyMcpApiKeyReveal,
+  closePersonalizedSetting,
+  openSettingsFromPersonalizedSetting,
+  workspaceAccessors,
+  fetchWorkspaceAccessors,
+  userWorkspaceAccess,
+  fetchUserWorkspaceAccess,
+  saveUserWorkspaceAccess,
   openSettingsFromWorkspaceSetting,
   workspaceSettingOpen,
   currentWorkspaceSetting,
@@ -1058,22 +1064,34 @@ function onCodesChatWidth(px: number): void {
       :binding-stats="bindingStats"
       :workspaces="workspaces"
       :target="settingsTarget"
+      :user-access-accounts="userWorkspaceAccess?.accounts ?? null"
+      :user-access-workspaces="userWorkspaceAccess?.workspaces ?? []"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
       @save="saveSettings"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"
+      @reload-user-access="fetchUserWorkspaceAccess"
+      @save-user-access="saveUserWorkspaceAccess"
     />
 
     <PersonalizedSettingPage
       v-if="personalizedSettingOpen"
       :open="personalizedSettingOpen"
       :settings="personalizedSettings"
-      @close="personalizedSettingOpen = false"
+      :mcp-api-keys="myMcpApiKeys"
+      :mcp-api-key-created="myMcpApiKeyCreated"
+      :base-url="serverSettings?.baseUrl ?? null"
+      @close="closePersonalizedSetting"
       @set-ui-lang="setLocale"
       @set-theme="setTheme"
       @set-font-scale="setFontScale"
+      @create-mcp-api-key="createMyMcpApiKey"
+      @reset-mcp-api-key="(id: string) => resetMyMcpApiKey({ id })"
+      @revoke-mcp-api-key="(id: string) => revokeMyMcpApiKey({ id })"
+      @dismiss-mcp-api-key-reveal="dismissMyMcpApiKeyReveal"
+      @goto-system-settings="openSettingsFromPersonalizedSetting"
     />
 
     <WorkspaceSettingPage
@@ -1093,9 +1111,7 @@ function onCodesChatWidth(px: number): void {
       :park-recovery-error="parkRecoveryError"
       :park-recovery-loading="parkRecoveryLoading"
       :base-url="serverSettings?.baseUrl ?? null"
-      :mcp-api-keys="mcpApiKeys"
-      :mcp-api-key-created="mcpApiKeyCreated"
-      :mcp-api-key-catalog="mcpApiKeyCatalog"
+      :workspace-accessors="workspaceAccessors"
       :is-admin="auth.isAdmin.value"
       @close="workspaceSettingOpen = false"
       @save="saveWorkspaceSetting"
@@ -1103,16 +1119,7 @@ function onCodesChatWidth(px: number): void {
       @install-skill="installSkill"
       @reload-park-recovery="loadParkRecoveryStats"
       @goto-system-settings="openSettingsFromWorkspaceSetting"
-      @create-mcp-api-key="
-        (p) => currentWorkspace && createMcpApiKey({ workspaceName: currentWorkspace, ...p })
-      "
-      @update-mcp-api-key-tools="
-        (p) => currentWorkspace && updateMcpApiKey({ workspaceName: currentWorkspace, ...p })
-      "
-      @revoke-mcp-api-key="
-        (id) => currentWorkspace && revokeMcpApiKey({ workspaceName: currentWorkspace, id })
-      "
-      @dismiss-mcp-api-key-reveal="dismissMcpApiKeyReveal"
+      @reload-workspace-accessors="fetchWorkspaceAccessors"
     />
 
     <SkillApprovalModal

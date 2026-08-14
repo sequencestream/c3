@@ -8,11 +8,14 @@ import {
   canonicalizeWorkspacePath,
   createMcpApiKey,
   listMcpApiKeys,
+  listMcpApiKeysForOwner,
   listMcpApiKeysForWorkspace,
   parseMcpApiKey,
   renameMcpApiKey,
   replaceMcpApiKeySecret,
+  replaceMcpApiKeySecretForOwner,
   revokeMcpApiKey,
+  revokeMcpApiKeyForOwner,
   revokeMcpApiKeyInWorkspace,
   revokeUnownedMcpApiKeys,
   touchMcpApiKey,
@@ -487,5 +490,132 @@ describe('canonicalizeWorkspacePath', () => {
   it('keeps the lexically-resolved form when the path does not exist', () => {
     const missing = join(dir, 'not-there')
     expect(canonicalizeWorkspacePath(missing)).toBe(missing)
+  })
+})
+
+/**
+ * Unfiled keys — the record shape self-service produces. The distinction under
+ * test is that `null` filing is a supported value while a NAMED filing that no
+ * longer resolves stays fail-closed: a nullable column that swallowed both would
+ * quietly turn a corrupt record into a working credential.
+ */
+describe('unfiled keys', () => {
+  it('persists a null filing, survives a cache reset and a fresh read, and still authenticates', async () => {
+    const { key, meta } = await createMcpApiKey('laptop', null, OWNER, READ_TOOLS, 1000)
+    expect(meta.workspaceName).toBeNull()
+    // `null` reaches disk as null — not an empty string, not a reserved name.
+    expect(storedRecords()[0].workspaceName).toBeNull()
+
+    // Drop every in-memory mirror so the next read genuinely re-decodes the rows.
+    resetConfigCaches()
+    const reloaded = listMcpApiKeys()
+    expect(reloaded).toHaveLength(1)
+    expect(reloaded[0].workspaceName).toBeNull()
+    expect(reloaded[0].ownerSubject).toBe(OWNER)
+
+    const verified = await verifyMcpApiKey(key)
+    expect(verified?.id).toBe(meta.id)
+    expect(verified?.secretVersion).toBe(1)
+  })
+
+  it('is invisible to — and unmutable through — every workspace-addressed operation', async () => {
+    const ws = makeWorkspace('proj')
+    const filed = await createMcpApiKey('ci', ws, OWNER, READ_TOOLS, 1000)
+    const unfiled = await createMcpApiKey('laptop', null, OWNER, READ_TOOLS, 2000)
+
+    expect(listMcpApiKeysForWorkspace(ws).map((k) => k.id)).toEqual([filed.meta.id])
+    // A page cannot reach a key that is filed nowhere, in either direction.
+    expect(updateMcpApiKeyInWorkspace(unfiled.meta.id, ws, { name: 'x' })).toBeNull()
+    expect(revokeMcpApiKeyInWorkspace(unfiled.meta.id, ws)).toBe(false)
+    expect(listMcpApiKeys().map((k) => k.id)).toContain(unfiled.meta.id)
+  })
+
+  it('keeps an existing valid filing filed, and still drops a filing that names nothing', async () => {
+    const ws = makeWorkspace('proj')
+    await createMcpApiKey('ci', ws, OWNER, READ_TOOLS, 1000)
+    // A record whose stated filing the registry does not have is corruption, not
+    // an intent to file nowhere — the pre-existing fail-closed rule stands.
+    seedMcpKey('ghost', {
+      name: 'ghost',
+      createdAt: 1,
+      lastUsedAt: null,
+      ownerSubject: OWNER,
+      secretVersion: 1,
+      workspaceName: 'no-such-workspace',
+      tools: READ_TOOLS,
+      hashVersion: 1,
+      algo: 'scrypt',
+      params: { N: 16384, r: 8, p: 1, keylen: 32 },
+      salt: 'c2FsdA==',
+      hash: 'aGFzaA==',
+    })
+    resetConfigCaches()
+    const names = listMcpApiKeys()
+    expect(names.map((k) => k.workspaceName)).toEqual([ws])
+  })
+
+  it('refuses to create a key filed under a workspace name the registry does not have', async () => {
+    await expect(
+      createMcpApiKey('ci', 'no-such-workspace', OWNER, READ_TOOLS, 1000),
+    ).rejects.toThrow()
+  })
+})
+
+/**
+ * Owner-scoped operations. Owner matching happens inside the store operation, so
+ * a foreign id can never be reset or revoked — and cannot be told apart from an
+ * unknown one.
+ */
+describe('owner-scoped operations', () => {
+  it('lists only that owner’s keys, whatever they are filed under', async () => {
+    const ws = makeWorkspace('proj')
+    const mine = await createMcpApiKey('laptop', null, OWNER, READ_TOOLS, 1000)
+    const alsoMine = await createMcpApiKey('ci', ws, OWNER, READ_TOOLS, 2000)
+    const theirs = await createMcpApiKey('theirs', null, 'bob', READ_TOOLS, 3000)
+
+    const ids = listMcpApiKeysForOwner(OWNER).map((k) => k.id)
+    expect(ids).toHaveLength(2)
+    expect(ids).toEqual(expect.arrayContaining([mine.meta.id, alsoMine.meta.id]))
+    expect(ids).not.toContain(theirs.meta.id)
+    expect(listMcpApiKeysForOwner('')).toEqual([])
+  })
+
+  it('rotates in place: same id, same owner, same tools, next version, new plaintext', async () => {
+    const { key: first, meta } = await createMcpApiKey('laptop', null, OWNER, READ_TOOLS, 1000)
+    const rotated = await replaceMcpApiKeySecretForOwner(meta.id, OWNER)
+
+    expect(rotated).not.toBeNull()
+    expect(rotated!.meta.id).toBe(meta.id)
+    expect(rotated!.meta.ownerSubject).toBe(OWNER)
+    expect(rotated!.meta.tools).toEqual(meta.tools)
+    expect(rotated!.meta.workspaceName).toBeNull()
+    expect(rotated!.meta.secretVersion).toBe(2)
+    expect(rotated!.key).not.toBe(first)
+
+    // No grace period: the old secret is dead the instant the new one is written.
+    expect(await verifyMcpApiKey(first)).toBeNull()
+    const verified = await verifyMcpApiKey(rotated!.key)
+    expect(verified?.secretVersion).toBe(2)
+  })
+
+  it('refuses another owner’s id and an unknown id identically, changing nothing', async () => {
+    const { key, meta } = await createMcpApiKey('theirs', null, 'bob', READ_TOOLS, 1000)
+
+    expect(await replaceMcpApiKeySecretForOwner(meta.id, OWNER)).toBeNull()
+    expect(await replaceMcpApiKeySecretForOwner('deadbeefdeadbeef', OWNER)).toBeNull()
+    expect(revokeMcpApiKeyForOwner(meta.id, OWNER)).toBe(false)
+    expect(revokeMcpApiKeyForOwner('deadbeefdeadbeef', OWNER)).toBe(false)
+
+    // Bob's key is untouched: same secret, same version.
+    const verified = await verifyMcpApiKey(key)
+    expect(verified?.secretVersion).toBe(1)
+    expect(listMcpApiKeys()).toHaveLength(1)
+  })
+
+  it('revokes only an owned key, and the revoked key stops verifying', async () => {
+    const { key, meta } = await createMcpApiKey('laptop', null, OWNER, READ_TOOLS, 1000)
+    expect(revokeMcpApiKeyForOwner(meta.id, OWNER)).toBe(true)
+    expect(listMcpApiKeysForOwner(OWNER)).toEqual([])
+    expect(await verifyMcpApiKey(key)).toBeNull()
   })
 })

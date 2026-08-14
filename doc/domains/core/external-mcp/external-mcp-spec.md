@@ -203,4 +203,6 @@ id 返回既有的「未找到(本项目)」文案;显式指定了有效范围�
 
 ## 接入信息展示
 
-工作区设置页的「外部 MCP 接入」页签承担 key 的生成、列示、工具范围编辑与吊销,并在一次性揭示区给出可复制的明文 key、端点地址与一行式命令(见 workspace-setting 域文档)。一行式命令以环境变量间接引用 key,不把明文再拼进一条会进 shell 历史的命令。明文只在生成成功的那一次回包里出现,关闭揭示区后不可恢复。
+key 的生命周期由**持有者自助**完成:个人化设置的「外部 MCP key」区块承担新建、列示、重置密钥与吊销,并在一次性揭示区给出可复制的明文 key、端点地址与一行式命令(见 [personalized-setting](../../settings/personalized-setting/personalized-setting-spec.md))。一行式命令以环境变量间接引用 key,不把明文再拼进一条会进 shell 历史的命令。明文只在新建或重置成功的那一次回包里出现,关闭揭示区后不可恢复;不提供「再看一次」或找回入口,身为管理员也读不出别人的明文。
+
+自助 key 是**账号级凭据**,不归档在任何工作区。谁能到达哪些工作区由管理员在系统设置的「用户与访问」页维护(见 [system-setting](../../settings/system-setting/system-setting-spec.md#用户与访问));工作区设置的「访问」页签则只读展示求交后的结果(见 [workspace-setting](../../settings/workspace-setting/workspace-setting-spec.md))。三处读的是同一个 subject 感知解析器,故不会互相漂移。

@@ -197,3 +197,51 @@ export type AccountOpFailureCode = (typeof ACCOUNT_OP_FAILURE_CODES)[number]
  * frame follows); on failure a structured {@link AccountOpFailureCode} the UI localizes.
  */
 export type AccountOpResult = { ok: true } | { ok: false; code: AccountOpFailureCode }
+
+// ===========================================================================
+// Account → workspace access (the administrator-owned authorization policy)
+// ===========================================================================
+
+/**
+ * How an account's workspace access is expressed. `all` FOLLOWS the registry — a
+ * workspace registered later is included without an edit — while `selected` is a
+ * fixed name list that never auto-expands. The difference is the whole reason the
+ * mode is stored rather than derived from the list.
+ */
+export const WORKSPACE_SCOPE_MODES = ['all', 'selected'] as const
+export type WorkspaceScopeMode = (typeof WORKSPACE_SCOPE_MODES)[number]
+
+/**
+ * One account's stored workspace policy. `workspaces` is meaningful only under
+ * `selected` and is empty under `all` — an `all` scope names nothing because it
+ * follows the registry rather than a list.
+ */
+export interface UserWorkspaceScope {
+  mode: WorkspaceScopeMode
+  /** The selected workspace names. Possibly stale: a name the registry lost is inert, not fatal. */
+  workspaces: string[]
+}
+
+/**
+ * One row of the administrator's account × workspace editor.
+ *
+ * `policy: null` is NOT the same as `{ mode: 'selected', workspaces: [] }` even
+ * though both currently grant nothing: the first is an account nobody has
+ * configured, the second is a lockout an administrator typed. The editor shows
+ * them differently, so the wire keeps them apart.
+ */
+export interface UserWorkspaceAccessAccount {
+  /** The account identity this policy constrains. */
+  subject: string
+  /** Whether this is the configured administrator (or the synthesized local principal). */
+  isAdmin: boolean
+  /**
+   * Whether the administrator may write this row. False for the configured
+   * administrator and the synthesized `local` identity: both hold an implicit
+   * `all` scope that exists as a resolver branch and not as a stored row, which
+   * is what stops an administrator from editing away their own recovery access.
+   */
+  editable: boolean
+  /** The stored policy, or `null` when the account has none. */
+  policy: UserWorkspaceScope | null
+}

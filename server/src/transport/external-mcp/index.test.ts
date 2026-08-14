@@ -843,6 +843,36 @@ describe('revocation', () => {
   it('is a no-op for a key with no live sessions', () => {
     expect(() => route.closeSessionsForKey('key-with-nothing')).not.toThrow()
   })
+
+  it('tears down EVERY key of one owner, across workspaces, and leaves other owners alone', async () => {
+    // A workspace-policy edit invalidates an owner's authority, not one key of
+    // it — so both of alice's keys go and bob's session stays.
+    const first = await openSession('c3k_full')
+    const second = await openSession('c3k_read')
+    const otherOwner = await openSession('c3k_beta', 'beta')
+
+    route.closeSessionsForOwner('alice')
+
+    expect((await onSession(first, 'c3k_full', rpcBody(8, 'tools/list'))).status).toBe(404)
+    expect((await onSession(second, 'c3k_read', rpcBody(9, 'tools/list'))).status).toBe(404)
+    expect(
+      (await onSession(otherOwner, 'c3k_beta', rpcBody(10, 'tools/list'), 'beta')).status,
+    ).toBe(200)
+  })
+
+  it('is a no-op for an owner with no live sessions', () => {
+    expect(() => route.closeSessionsForOwner('nobody')).not.toThrow()
+  })
+
+  it('stops indexing an owner once its last session is closed', async () => {
+    const before = route.sessionCount()
+    const only = await openSession('c3k_full')
+    route.closeSessionsForOwner('alice')
+    expect((await onSession(only, 'c3k_full', rpcBody(11, 'tools/list'))).status).toBe(404)
+    // The index emptied with the session; a second sweep finds nothing to evict.
+    expect(() => route.closeSessionsForOwner('alice')).not.toThrow()
+    expect(route.sessionCount()).toBe(before)
+  })
 })
 
 describe('trusted-local mode', () => {

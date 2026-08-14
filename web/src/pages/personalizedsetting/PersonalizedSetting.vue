@@ -10,18 +10,28 @@
  * 桌面与移动端共用同一版面(单列卡片),入口见 AppHeader。
  */
 import { computed } from 'vue'
-import type { PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
+import type { McpApiKeyMeta, PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
+import McpApiKeys from './components/McpApiKeys/McpApiKeys.vue'
 import { UI_LANGS as ALL_UI_LANGS } from '@/lib/personalized-settings'
 import { DEFAULT_THEME, THEMES } from '@/lib/theme'
 import { DEFAULT_FONT_SCALE, FONT_SCALE_MAX, FONT_SCALE_MIN } from '@/lib/font-scale'
 
 const { t } = useTypedI18n()
 
-const props = defineProps<{
-  open: boolean
-  settings: PersonalizedSettings
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    settings: PersonalizedSettings
+    /** 我名下的外部 MCP key(仅元数据)。 */
+    mcpApiKeys?: McpApiKeyMeta[]
+    /** 新建/重置成功时唯一一次出现的明文。 */
+    mcpApiKeyCreated?: { meta: McpApiKeyMeta; key: string } | null
+    /** 系统设置里的公开访问地址,用于拼接可复制的接入命令。 */
+    baseUrl?: string | null
+  }>(),
+  { mcpApiKeys: () => [], mcpApiKeyCreated: null, baseUrl: null },
+)
 
 const emit = defineEmits<{
   close: []
@@ -31,6 +41,12 @@ const emit = defineEmits<{
   'set-theme': [theme: UiTheme]
   // 即时生效的字体大小调整(拖动即抛,无 Save)。
   'set-font-scale': [scale: number]
+  // 外部 MCP key 自助:同样即时生效,不进任何草稿。
+  'create-mcp-api-key': [payload: { name: string }]
+  'reset-mcp-api-key': [id: string]
+  'revoke-mcp-api-key': [id: string]
+  'dismiss-mcp-api-key-reveal': []
+  'goto-system-settings': []
 }>()
 
 // 可选显示语言。下放开关 = `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`,由各 locale
@@ -149,6 +165,17 @@ const fontScaleFill = computed<string>(
           </span>
         </div>
       </section>
+
+      <McpApiKeys
+        :base-url="baseUrl"
+        :mcp-api-keys="mcpApiKeys"
+        :created="mcpApiKeyCreated"
+        @create="(p) => emit('create-mcp-api-key', p)"
+        @reset="(id) => emit('reset-mcp-api-key', id)"
+        @revoke="(id) => emit('revoke-mcp-api-key', id)"
+        @dismiss-reveal="emit('dismiss-mcp-api-key-reveal')"
+        @goto-system-settings="emit('goto-system-settings')"
+      />
     </div>
 
     <div class="settings-foot">

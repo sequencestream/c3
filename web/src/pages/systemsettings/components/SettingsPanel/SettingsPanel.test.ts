@@ -1240,15 +1240,32 @@ describe('SettingsPanel.vue — non-admin is read-only (ADR-0023 authz)', () => 
 })
 
 describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
-  it('renders exactly four tabs in order: Agent, Runtime, Security, General', () => {
+  it('renders five tabs in order for an administrator, ending with Users and access', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const labels = w
       .findAll('[data-testid="settings-tabs"] .settings-tab span')
       .map((s) => s.text())
     // Each tab has a label span (and an optional dirty dot span); take the label texts.
     const tabButtons = w.findAll('[data-testid^="settings-tab-btn-"]')
-    expect(tabButtons).toHaveLength(4)
-    expect(labels.slice(0, 4)).toEqual(['Agent', 'Runtime', 'Security', 'General'])
+    expect(tabButtons).toHaveLength(5)
+    expect(labels.slice(0, 5)).toEqual([
+      'Agent',
+      'Runtime',
+      'Security',
+      'General',
+      'Users and access',
+    ])
+  })
+
+  it('hides the access tab from a non-admin, whose every access request the server would refuse', () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const labels = w
+      .findAll('[data-testid="settings-tabs"] .settings-tab span')
+      .map((s) => s.text())
+    expect(w.findAll('[data-testid^="settings-tab-btn-"]')).toHaveLength(4)
+    expect(labels).not.toContain('Users and access')
+    useAuth().setIsAdmin(true)
   })
 
   it('assigns every config block to exactly one tab panel', () => {

@@ -90,6 +90,7 @@ import {
   recordExternalMcpWriteAudit,
 } from './features/external-mcp/audit-store.js'
 import { setExternalMcpSessionCloser } from './features/settings/mcp-api-keys.js'
+import { setExternalMcpOwnerSessionCloser } from './features/auth/workspace-access.js'
 import {
   revokeUnownedMcpApiKeys,
   touchMcpApiKey,
@@ -803,6 +804,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // already opened, not just refuse the next handshake: the settings handler calls
   // back into the live route.
   setExternalMcpSessionCloser((keyId) => externalMcp.closeSessionsForKey(keyId))
+  // An administrator's workspace-policy edit invalidates every key one account
+  // holds, which is not addressable by key id — so the access handler gets its own
+  // callback into the same live route.
+  setExternalMcpOwnerSessionCloser((owner) => externalMcp.closeSessionsForOwner(owner))
 
   // The QUEUE ADVISOR c3 MCP over loopback HTTP — a route of its own, bound per
   // consultation (workspace + one intent + chain depth). Kept separate from the

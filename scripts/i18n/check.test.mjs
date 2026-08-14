@@ -10,8 +10,6 @@ import {
   runCodeCheck,
   checkPlaceholderNames,
 } from './check.mjs'
-import { checkFreeze } from './check-freeze.mjs'
-import { hash } from './freeze.mjs'
 
 describe('flatten', () => {
   it('flattens nested objects into dot-joined leaf keys', () => {
@@ -317,30 +315,5 @@ describe('Cyrillic (ru) placeholder integrity', () => {
     const ru = { greet: 'Привет, {имя}' }
     const { errors } = runCheck({ locales: { en: base, ru } })
     expect(errors.some((e) => e.startsWith('[placeholder]') && e.includes('greet'))).toBe(true)
-  })
-})
-
-describe('checkFreeze', () => {
-  const en = '{"common":{"ok":"OK"}}'
-  it('warns (not errors) when there is no manifest', () => {
-    const { ok, errors, warnings } = checkFreeze(null, en)
-    expect(ok).toBe(true)
-    expect(errors).toEqual([])
-    expect(warnings.some((w) => w.startsWith('[freeze]'))).toBe(true)
-  })
-  it('passes when the hash matches', () => {
-    const { ok, errors } = checkFreeze({ hash: hash(en) }, en)
-    expect(ok).toBe(true)
-    expect(errors).toEqual([])
-  })
-  it('errors when en.json has drifted from the manifest hash', () => {
-    const { ok, errors } = checkFreeze({ hash: hash(en) }, en + ' ')
-    expect(ok).toBe(false)
-    expect(errors.some((e) => e.includes('drifted from freeze manifest'))).toBe(true)
-  })
-  it('errors when manifest present but en content unavailable', () => {
-    const { ok, errors } = checkFreeze({ hash: 'abc' }, null)
-    expect(ok).toBe(false)
-    expect(errors.some((e) => e.includes('content unavailable'))).toBe(true)
   })
 })

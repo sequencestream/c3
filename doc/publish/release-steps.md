@@ -41,7 +41,7 @@ CI workflow:`.github/workflows/release.yml`。各目标在其原生 OS runner �
 ### Job 链(`needs:` 强制顺序)
 
 1. **setup** — 解析 `version`。
-2. **pregate** — 源码闸门:`typecheck → lint → test → i18n:check → i18n:check-freeze`。红了不进编译。
+2. **pregate** — 源码闸门:`typecheck → lint → test → i18n:check`。红了不进编译。
 3. **build-publish:<target>**(各跑在原生 OS)—— CLI 渠道:`build → smoke → checksum → postgate`,
    上传按目标分类的制品(包 + `.sha256` + `SHA256SUMS` + 该 job 自己的 `dist/manifest.json`)。
    3b. **build-desktop:<target>**(各跑在原生 OS)—— 桌面渠道:`release:desktop → checksum → postgate(channel=desktop)`,

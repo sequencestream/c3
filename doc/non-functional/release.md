@@ -94,7 +94,7 @@ bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 
 `pnpm release:github` 负责)。
 
 - **0 · pregate**(层级: 源码)
-  - 运行内容: `typecheck → lint → test → i18n:check → i18n:check-freeze`(严格顺序)
+  - 运行内容: `typecheck → lint → test → i18n:check`(严格顺序)
   - 遇红时: 在任何编译**之前**中止
 - **1 · 制品门禁**(层级: 产物)
   - 运行内容: 每个 host-runnable 目标:`c3 --version` + 无头冒烟测试
@@ -134,7 +134,7 @@ bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 
 | **release pregate + gates** | 整棵树 + 每个制品    | 切割一次发布      | 上面完整的门禁清单                         |
 
 husky/lint-staged 守护的是 **commit 级增量**;release 门禁守护的是**完整分发**。
-它们刻意不重叠——`test` 和 `i18n:check-freeze` 只在 release 时跑(对每次 commit
+它们刻意不重叠——`test` 只在 release 时跑(对每次 commit
 来说太重)。
 
 ## CI:GH Actions 原生矩阵(release 6/7)
@@ -150,7 +150,7 @@ GH Actions release workflow 在真实的 GH Actions runner 上执行三层门禁
 setup (ubuntu-latest)
   └─ 解析 version → outputs.version(目标固定,每次构建全部;无 targets 输入)
 pregate (ubuntu-latest)
-  └─ typecheck → lint → test → i18n:check → i18n:check-freeze
+  └─ typecheck → lint → test → i18n:check
 build-publish:linux-x64    (ubuntu-latest)     needs: [pregate, setup]
 build-publish:macos-arm64  (macos-14)          needs: [pregate, setup]
 build-publish:windows-x64  (windows-latest)    needs: [pregate, setup]   ⚠️experimental
@@ -611,7 +611,7 @@ pnpm release:desktop --skip-web                      # 复用已有 web/dist,迭
 pnpm release:desktop --require-signing               # 正式产物:签名未达当前档位要求即失败
 pnpm release:checksum                                    # SHA256SUMS + 每产物 .sha256(读取 manifest)
 pnpm release:notes                                   # 发布说明(版本 + CHANGELOG 顶部小节)
-pnpm release:gate                                    # pregate:typecheck→lint→test→i18n:check→check-freeze
+pnpm release:gate                                    # pregate:typecheck→lint→test→i18n:check
 pnpm release:smoke -- --file=<inner-binary>        # 对内层二进制文件做无头冒烟测试(CI 中先解压 tarball)
 pnpm release:smoke -- --manifest=<manifest>        # 或:通过 manifest 挑出内层二进制文件
 pnpm release:verify-dist                              # 发布终检:manifest↔SHA256SUMS↔磁盘 + P0 + schema + 无孤儿制品

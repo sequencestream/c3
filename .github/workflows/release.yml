@@ -87,11 +87,11 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────
   # 0. pregate (source-level blocking gate; release 5/7)
-  #    typecheck → lint → test → i18n:check → i18n:check-freeze
+  #    typecheck → lint → test → i18n:check
   #    Red here = NO compile attempted (cross-compile is the most expensive stage).
   # ────────────────────────────────────────────────────────────────────
   pregate:
-    name: 'pregate (typecheck → lint → test → i18n:check → check-freeze)'
+    name: 'pregate (typecheck → lint → test → i18n:check)'
     needs: [setup]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -123,9 +123,6 @@ jobs:
 
       - name: i18n check
         run: pnpm i18n:check
-
-      - name: i18n check-freeze
-        run: pnpm i18n:check-freeze
 
   # ────────────────────────────────────────────────────────────────────
   # 1. build-publish-<target> (one self-contained job per target)

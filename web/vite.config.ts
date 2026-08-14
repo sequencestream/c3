@@ -7,8 +7,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 const LOCALES_DIR = fileURLToPath(new URL('./src/locales', import.meta.url))
 
-/** 全部语言包文件(新增一门语言无需改本配置)。`.freeze-manifest.json` 等点开头的
- *  工具文件不是消息源,不参与打包。 */
+/** 全部语言包文件(新增一门语言无需改本配置)。点开头的工具文件不是消息源,不参与打包。 */
 const localeMessageFiles = readdirSync(LOCALES_DIR)
   .filter((f) => f.endsWith('.json') && !f.startsWith('.'))
   .map((f) => join(LOCALES_DIR, f))

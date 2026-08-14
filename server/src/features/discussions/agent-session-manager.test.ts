@@ -227,6 +227,16 @@ const codexAgent: AgentConfig = {
   displayName: 'Agent B',
 }
 
+const cursorAgent: AgentConfig = {
+  id: 'agent-c',
+  vendor: 'cursor',
+  configMode: 'system',
+  displayName: 'Agent C',
+  enabled: true,
+  config: { apiKey: '', model: '' },
+  icon: 'agent',
+}
+
 describe('AgentSessionManager', () => {
   // ── First call: create new session ──────────────────────────────────────
   describe('first call (no prior session)', () => {
@@ -620,6 +630,110 @@ describe('AgentSessionManager', () => {
       // lastSeq unchanged by resume (orchestrator owns advancement).
       const row = rows.get('disc-1::agent-b')!
       expect(row.lastSeq).toBe(2)
+    })
+  })
+
+  // ── Cross-vendor: cursor ────────────────────────────────────────────────
+  describe('cross-vendor cursor', () => {
+    const cursorAdapterFor = (driver: FakeDriver): VendorAdapter => ({
+      vendor: 'cursor',
+      capabilities: driver.capabilities,
+      driver,
+      approval: { onRequest: () => () => {} },
+      sessions: { list: async () => [], read: async () => [] },
+      skill: null!,
+      listTools: () => [],
+    })
+
+    it('resolves a registered cursor adapter and returns its reply', async () => {
+      const { store, rows } = createFakeStore()
+
+      const driver = new FakeDriver('cursor', ({ resume }) => {
+        expect(resume).toBeUndefined()
+        return {
+          run: new FakeRun('cursor-thread-1', [
+            msg({ vendor: 'cursor', blocks: [textBlock('Cursor reply')] }),
+          ]),
+          sessionId: 'cursor-thread-1',
+        }
+      })
+
+      const mgr = new AgentSessionManager({
+        getAdapter: (v) =>
+          v === 'cursor' ? cursorAdapterFor(driver) : (undefined as unknown as VendorAdapter),
+        store,
+      })
+
+      const result = await mgr.ask(
+        'disc-1',
+        cursorAgent,
+        'Cursor prompt',
+        '/cwd',
+        new AbortController().signal,
+      )
+      expect(result).toBe('Cursor reply')
+      expect(driver.startCalls).toHaveLength(1)
+      expect(rows.get('disc-1::agent-c')?.sessionId).toBe('cursor-thread-1')
+      expect(rows.get('disc-1::agent-c')?.vendor).toBe('cursor')
+    })
+
+    it('resumes a persisted cursor session', async () => {
+      const { store, rows } = createFakeStore()
+
+      rows.set('disc-1::agent-c', {
+        discussionId: 'disc-1',
+        agentId: 'agent-c',
+        sessionId: 'cursor-thread-1',
+        vendor: 'cursor',
+        lastSeq: 3,
+        createdAt: Date.now(),
+      })
+
+      const driver = new FakeDriver('cursor', ({ resume }) => {
+        expect(resume).toBe('cursor-thread-1')
+        return {
+          run: new FakeRun('cursor-thread-1', [
+            msg({ vendor: 'cursor', blocks: [textBlock('Cursor resumed')] }),
+          ]),
+          sessionId: 'cursor-thread-1',
+        }
+      })
+
+      const mgr = new AgentSessionManager({
+        getAdapter: (v) =>
+          v === 'cursor' ? cursorAdapterFor(driver) : (undefined as unknown as VendorAdapter),
+        store,
+      })
+
+      const result = await mgr.ask(
+        'disc-1',
+        cursorAgent,
+        'Cursor prompt',
+        '/cwd',
+        new AbortController().signal,
+      )
+      expect(result).toBe('Cursor resumed')
+      expect(rows.get('disc-1::agent-c')!.lastSeq).toBe(3)
+    })
+
+    // The null guard at the assembly boundary: no cursor CLI ⇒ no registration ⇒
+    // the lookup keeps failing exactly as it does today (no new error path).
+    it('keeps the unregistered-vendor failure when no cursor adapter exists', async () => {
+      const { store } = createFakeStore()
+
+      // Mirrors the server-side assembly: a null adapter is never registered.
+      const registry = new Map<VendorId, VendorAdapter>()
+      const cursorAdapter: VendorAdapter | null = null
+      if (cursorAdapter) registry.set('cursor', cursorAdapter)
+
+      const mgr = new AgentSessionManager({
+        getAdapter: (v) => registry.get(v) as unknown as VendorAdapter,
+        store,
+      })
+
+      await expect(
+        mgr.ask('disc-1', cursorAgent, 'prompt', '/cwd', new AbortController().signal),
+      ).rejects.toThrow(/no adapter registered for vendor "cursor"/)
     })
   })
 

@@ -81,11 +81,12 @@ jobs:
           echo "mac_arm=$MAC_ARM"     >> "$GITHUB_OUTPUT"
           echo "linux_x64=$LINUX_X64" >> "$GITHUB_OUTPUT"
 
+      # 用 deploy key(SSH)而非 PAT: 权限只限 homebrew-tap 单仓库,且不会过期。
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
         with:
           repository: sequencestream/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           path: homebrew-tap
 
       - name: Render formula

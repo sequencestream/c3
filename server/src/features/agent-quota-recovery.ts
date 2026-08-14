@@ -4,6 +4,7 @@ import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   createAgentQuotaRecoveryAutomation,
   findAgentQuotaRecoveryAutomation,
+  isAgentQuotaRecoveryConfig,
   isStoreAvailable as isAutomationStoreAvailable,
 } from './automations/store.js'
 
@@ -51,13 +52,23 @@ export function handleAgentQuotaError(input: {
     const existing = findAgentQuotaRecoveryAutomation(input.workspacePath, input.agentId)
     if (existing) {
       const agent = resolveAgent(input.agentId)
+      // The reused row already recorded the first authoritative resetAt; return
+      // that, not this parse (a repeat error may carry a different reset moment).
+      const authoritativeResetAt = isAgentQuotaRecoveryConfig(existing.config)
+        ? existing.config.resetAt
+        : resetAt
       console.warn(
         '[agent-quota-recovery] agent %s (%s) already has a pending recovery automation %s; reuse it',
         agent.id,
         agent.displayName,
         existing.id,
       )
-      return { handled: true, resetAt, disabled: true, automationId: existing.id }
+      return {
+        handled: true,
+        resetAt: authoritativeResetAt,
+        disabled: true,
+        automationId: existing.id,
+      }
     }
     const automation = createAgentQuotaRecoveryAutomation({
       workspacePath: input.workspacePath,

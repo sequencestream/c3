@@ -206,11 +206,22 @@ describe('agent quota recovery', () => {
 
   it('reuses a pending recovery automation for repeated quota errors of the same agent', () => {
     const now = Date.UTC(2026, 5, 15, 13, 0)
-    const error = "You've hit your session limit · resets 10:40pm (Asia/Shanghai)"
-    const first = handleAgentQuotaError({ agentId: quotaAgent.id, workspacePath, error, now })
+    const first = handleAgentQuotaError({
+      agentId: quotaAgent.id,
+      workspacePath,
+      error: "You've hit your session limit · resets 10:40pm (Asia/Shanghai)",
+      now,
+    })
     expect(first.automationId).toEqual(expect.any(String))
 
-    const second = handleAgentQuotaError({ agentId: quotaAgent.id, workspacePath, error, now })
+    // A repeat error may parse a different reset moment; the reused result must
+    // still report the first (authoritative) resetAt, not this new parse.
+    const second = handleAgentQuotaError({
+      agentId: quotaAgent.id,
+      workspacePath,
+      error: "You've hit your session limit · resets 11:40pm (Asia/Shanghai)",
+      now,
+    })
     expect(second).toEqual({
       handled: true,
       resetAt: first.resetAt,

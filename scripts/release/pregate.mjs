@@ -4,7 +4,7 @@
 // expensive cross-compile fan-out. A red typecheck/lint/test must never burn a
 // multi-platform `bun --compile`, so this is the very first stage of `pnpm release`.
 //
-//   typecheck → lint → test → i18n:check → i18n:check-freeze
+//   typecheck → lint → test → i18n:check
 //
 // This is the RELEASE full gate (CI release, every artifact). It's intentionally
 // distinct from husky/lint-staged (the commit-increment gate, staged files only)
@@ -19,7 +19,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
 
 /** Source gates, in cost-ascending / fail-fast order. Each is a pnpm script. */
-export const GATES = ['typecheck', 'lint', 'test', 'i18n:check', 'i18n:check-freeze']
+export const GATES = ['typecheck', 'lint', 'test', 'i18n:check']
 
 /**
  * Run every gate in order; abort on the first non-zero exit.

@@ -82,13 +82,13 @@ describe('loadParkRecoveryStats', () => {
 })
 
 describe('openWorkspaceSetting', () => {
-  it('fetches the observation alongside the setting and the key roster, as separate reads', () => {
+  it('fetches the observation alongside the setting and the accessor list, as separate reads', () => {
     const { ctx, send } = makeCtx()
     ctx.openWorkspaceSetting()
 
     expect(sentTypes(send)).toEqual([
       'load_workspace_setting',
-      'list_mcp_api_keys',
+      'get_workspace_accessors',
       'get_park_recovery_stats',
     ])
   })

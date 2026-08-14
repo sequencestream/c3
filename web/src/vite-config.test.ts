@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url'
 import config from '../vite.config'
 
 // 拆包配置里唯一有逻辑的一段:i18n-messages 这个 chunk 的成员是从 locales 目录扫出来
-// 的,不是手写清单。钉住扫描口径——新增一门语言必须自动进 chunk,而 `.freeze-manifest.json`
-// 这类点开头的工具文件不是消息源、绝不能被当成语言包打进去。
+// 的,不是手写清单。钉住扫描口径——新增一门语言必须自动进 chunk,而点开头的工具文件
+// 不是消息源、绝不能被当成语言包打进去。
 
 const LOCALES_DIR = fileURLToPath(new URL('../src/locales', import.meta.url))
 
@@ -26,9 +26,9 @@ describe('web/vite.config.ts 拆包配置', () => {
   })
 
   it('点开头的工具文件不进语言包 chunk', () => {
-    const dotFiles = readdirSync(LOCALES_DIR).filter((f) => f.startsWith('.'))
-    expect(dotFiles).toContain('.freeze-manifest.json')
     const bundled = manualChunks()['i18n-messages'].map((p) => basename(p))
+    expect(bundled.every((f) => !f.startsWith('.'))).toBe(true)
+    const dotFiles = readdirSync(LOCALES_DIR).filter((f) => f.startsWith('.'))
     for (const f of dotFiles) expect(bundled).not.toContain(f)
   })
 

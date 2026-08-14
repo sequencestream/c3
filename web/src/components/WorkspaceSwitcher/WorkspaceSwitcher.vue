@@ -6,12 +6,13 @@
  * 完整绝对路径为下方次级行(仅用于区分同名工作区);点选切换当前工作区;每行可移除
  * (二次确认)。所有动作经事件上抛,由 App 发往服务端。工作区身份仍是服务端分配的不透明
  * id,path 只是展示数据,前端不用它构造或判定身份。自带 popover(点击外部 / Esc 关闭)。
+ * 「+」只上抛新增诉求:AddWorkspaceDialog 由 AppHeader 单实例持有,桌面与移动端两处
+ * 切换器同时挂载,各自持有会叠出两层遮罩。
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
-import AddWorkspaceDialog from '@/components/AddWorkspaceDialog/AddWorkspaceDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 
 const { t } = useTypedI18n()
@@ -26,9 +27,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  // `add-workspace` carries the absolute path the user typed — the ONLY entry
-  // where a path legitimately enters the system. The others carry opaque ids.
-  'add-workspace': [payload: { workspaceName: string; path: string }]
+  // 「+」只表达「用户要新增工作区」;路径与名称在 AppHeader 持有的弹框里收集。
+  'request-add-workspace': []
   'select-workspace': [id: string]
   'remove-workspace': [id: string]
 }>()
@@ -64,18 +64,6 @@ function onKeydown(e: KeyboardEvent) {
     e.preventDefault()
     close()
   }
-}
-
-// 新增工作区:加号打开受控 InputDialog 收集绝对路径;确认携带非空路径才 emit。
-const addOpen = ref(false)
-
-function addWorkspace() {
-  addOpen.value = true
-}
-
-function onAddConfirm(payload: { workspaceName: string; path: string }) {
-  emit('add-workspace', payload)
-  addOpen.value = false
 }
 
 function selectWorkspace(id: string) {
@@ -117,7 +105,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       v-if="isAdmin"
       class="icon-btn ws-switcher-add"
       :title="t('nav.workspace.add.tooltip')"
-      @click="addWorkspace"
+      @click="emit('request-add-workspace')"
     >
       +
     </button>
@@ -152,8 +140,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
         </button>
       </li>
     </ul>
-
-    <AddWorkspaceDialog :open="addOpen" @confirm="onAddConfirm" @cancel="addOpen = false" />
 
     <ConfirmDialog
       :open="removeTarget !== null"

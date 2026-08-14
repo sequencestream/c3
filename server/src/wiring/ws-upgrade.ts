@@ -17,11 +17,11 @@
  */
 import type { Context, MiddlewareHandler } from 'hono'
 import type { WSEvents } from 'hono/ws'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { ServerToClient, WorkspaceInfo } from '@ccc/shared/protocol'
 import type WebSocket from 'ws'
 import { dispatch, type Broadcaster, type Conn, type HandlerRegistry } from '../transport/index.js'
 import type { KernelContext } from '../kernel/types.js'
-import { getActiveSessionId, listWorkspaces, pathToName } from '../state.js'
+import { getActiveSessionId, pathToName } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
 import { paginateSessions } from '../kernel/agent/session/paginate-sessions.js'
@@ -30,6 +30,7 @@ import { listStatuses, removeViewer } from '../runs.js'
 import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
 import { isAdminConn } from '../features/auth/authz.js'
+import { listWorkspacesForSubject, resolveAuthSubject } from '../features/auth/authorization.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
 import { currentSelfUpdateState } from '../features/updates/self-update.js'
 
@@ -81,6 +82,17 @@ export function createWsHandler(deps: {
     // Per-connection state (which session it watches + how to deliver) lives on
     // `conn`; shared run state lives in the module-level registry and `ctx`.
     let sock: { send: (d: string) => void } | null = null
+    /**
+     * The workspaces THIS connection may see. Resolved per send, not captured at
+     * open: an administrator can widen or narrow a scope while the socket is
+     * live, and the next refresh must reflect it.
+     *
+     * `conn.subject` stays nullable display state — the resolver maps a no-account
+     * deployment to the trusted `local` principal, so a default install still sees
+     * its whole registry without anyone storing a policy row for it.
+     */
+    const visibleWorkspaces = (): WorkspaceInfo[] =>
+      listWorkspacesForSubject(resolveAuthSubject(conn.subject))
     const conn: Conn = {
       send: (msg) => {
         if (sock) send(sock, msg)
@@ -94,7 +106,7 @@ export function createWsHandler(deps: {
         if (sock) send(sock, msg)
       },
       sendWorkspaces: () => {
-        if (sock) send(sock, { type: 'workspaces', workspaces: listWorkspaces() })
+        if (sock) send(sock, { type: 'workspaces', workspaces: visibleWorkspaces() })
       },
       sendSessions: async (workspacePath, query) => {
         if (!sock) return
@@ -160,7 +172,7 @@ export function createWsHandler(deps: {
         broadcaster.add(conn.deliver)
         send(ws, {
           type: 'ready',
-          workspaces: listWorkspaces(),
+          workspaces: visibleWorkspaces(),
           activeSessionId: getActiveSessionId(),
           statuses: listStatuses(),
           // Whether this connection is the unique admin (UX hint only; the server

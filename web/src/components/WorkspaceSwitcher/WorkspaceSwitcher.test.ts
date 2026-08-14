@@ -65,57 +65,13 @@ describe('WorkspaceSwitcher.vue', () => {
     expect(w.emitted('select-workspace')).toEqual([['proj-b']]) // 未新增
   })
 
-  it('+ 打开自定义输入弹框,输入路径并确认 → emit add-workspace(路径仅在此入口出现)', async () => {
-    const w = mount(WorkspaceSwitcher, {
-      props: { workspaces, currentWorkspaceName: 'proj-a' },
-    })
-    // 加号弹出 InputDialog(非 window.prompt)
-    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(false)
-    await w.find('.ws-switcher-add').trigger('click')
-    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(true)
-    // 输入路径(含前后空白)→ 确认 → emit trim 后的路径
-    await w.find('[data-testid="input-field"]').setValue('  /home/proj-c  ')
-    await w.find('[data-testid="input-accept"]').trigger('click')
-    expect(w.emitted('add-workspace')).toEqual([
-      [{ workspaceName: 'proj-c', path: '/home/proj-c' }],
-    ])
-    // 确认后弹框关闭
-    expect(w.find('[data-testid="input-overlay"]').exists()).toBe(false)
-  })
-
-  it('+ 空输入时确认按钮禁用,取消不 emit', async () => {
+  it('+ 只上抛新增诉求,自身不持有弹框(实例由顶栏单独持有)', async () => {
     const w = mount(WorkspaceSwitcher, {
       props: { workspaces, currentWorkspaceName: 'proj-a' },
     })
     await w.find('.ws-switcher-add').trigger('click')
-    // 空输入:确认按钮禁用
-    expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    // 取消 → 不 emit、弹框关闭
-    await w.find('[data-testid="input-cancel"]').trigger('click')
-    expect(w.emitted('add-workspace')).toBeUndefined()
+    expect(w.emitted('request-add-workspace')).toHaveLength(1)
     expect(w.find('[data-testid="input-overlay"]').exists()).toBe(false)
-  })
-
-  it('允许自定义 Unicode 名称并按字符数限制为 64', async () => {
-    const w = mount(WorkspaceSwitcher, {
-      props: { workspaces, currentWorkspaceName: 'proj-a' },
-    })
-    await w.find('.ws-switcher-add').trigger('click')
-    await w.find('[data-testid="input-field"]').setValue('/home/proj-c')
-    await w.find('[data-testid="workspace-name-field"]').setValue('研发 / C')
-    await w.find('[data-testid="input-accept"]').trigger('click')
-    expect(w.emitted('add-workspace')).toEqual([
-      [{ workspaceName: '研发 / C', path: '/home/proj-c' }],
-    ])
-
-    await w.find('.ws-switcher-add').trigger('click')
-    await w.find('[data-testid="input-field"]').setValue('/home/too-long')
-    await w.find('[data-testid="workspace-name-field"]').setValue('🚀'.repeat(65))
-    expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
-      true,
-    )
   })
 
   it('✕ 弹出 ConfirmDialog(danger),确认 → emit remove-workspace(name);取消 → 不 emit', async () => {

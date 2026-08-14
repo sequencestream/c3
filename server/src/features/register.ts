@@ -33,8 +33,12 @@ import {
 } from './settings/personalized.js'
 import {
   createMcpApiKeyHandler,
+  createMyMcpApiKeyHandler,
   listMcpApiKeysHandler,
+  listMyMcpApiKeysHandler,
+  resetMyMcpApiKeyHandler,
   revokeMcpApiKeyHandler,
+  revokeMyMcpApiKeyHandler,
   updateMcpApiKeyHandler,
 } from './settings/mcp-api-keys.js'
 import { permissionResponse } from './permissions/index.js'
@@ -132,6 +136,11 @@ import {
   updateAutomationHandler,
 } from './automations/index.js'
 import { login, logout, setAdminPassword, removeAccount, setAdminAccount } from './auth/index.js'
+import {
+  getUserWorkspaceAccessHandler,
+  getWorkspaceAccessorsHandler,
+  saveUserWorkspaceAccessHandler,
+} from './auth/workspace-access.js'
 import { listWaitUserEvents, updateWaitUserEvent } from './user-involve/index.js'
 import { startRetentionCleanup } from './user-involve/store.js'
 import {
@@ -166,6 +175,10 @@ export const handlerMap: HandlerMap = {
   create_mcp_api_key: createMcpApiKeyHandler,
   update_mcp_api_key: updateMcpApiKeyHandler,
   revoke_mcp_api_key: revokeMcpApiKeyHandler,
+  list_my_mcp_api_keys: listMyMcpApiKeysHandler,
+  create_my_mcp_api_key: createMyMcpApiKeyHandler,
+  reset_my_mcp_api_key: resetMyMcpApiKeyHandler,
+  revoke_my_mcp_api_key: revokeMyMcpApiKeyHandler,
   load_workspace_setting: loadWorkspaceSettingHandler,
   save_workspace_setting: saveWorkspaceSettingHandler,
   // updates
@@ -275,6 +288,9 @@ export const handlerMap: HandlerMap = {
   set_admin_password: setAdminPassword,
   remove_account: removeAccount,
   set_admin_account: setAdminAccount,
+  get_user_workspace_access: getUserWorkspaceAccessHandler,
+  save_user_workspace_access: saveUserWorkspaceAccessHandler,
+  get_workspace_accessors: getWorkspaceAccessorsHandler,
   // wait user involve
   list_wait_user_events: listWaitUserEvents,
   update_wait_user_event: updateWaitUserEvent,

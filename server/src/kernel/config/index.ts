@@ -25,6 +25,7 @@ import { c3HomeDir, setSettingsPath as setSettingsPathOverride } from './paths.j
 import { fromEntries, toEntries, type ConfigEntry } from './config-codec.js'
 import {
   AGENT_LANG_KEY,
+  POLICY_EPOCH_KEY,
   SESSION_KEYS,
   STATE_PREFIX,
   SYSTEM_RULES,
@@ -1019,13 +1020,17 @@ export function loadSettings(): SystemSettings {
  * (and the web console) see is exactly the one the single JSON document had — the
  * split into per-workspace scopes is a storage fact, not a contract change.
  *
- * The `state.*` namespace and `agentLang` share the system scope but are NOT part of
- * `SystemSettings`; they are dropped here and preserved on write.
+ * The `state.*` namespace, `agentLang` and the authorization policy epoch share the
+ * system scope but are NOT part of `SystemSettings`; they are dropped here and
+ * preserved on write.
  */
 function readSettingsFromDb(): Partial<SystemSettings> {
   const rows = readScope({ kind: 'system' }).filter(
     (e) =>
-      e.key !== AGENT_LANG_KEY && e.key !== STATE_PREFIX && !e.key.startsWith(`${STATE_PREFIX}.`),
+      e.key !== AGENT_LANG_KEY &&
+      e.key !== POLICY_EPOCH_KEY &&
+      e.key !== STATE_PREFIX &&
+      !e.key.startsWith(`${STATE_PREFIX}.`),
   )
   const raw = fromEntries(rows, SYSTEM_RULES) as Partial<SystemSettings>
   const projectConfigs = readProjectConfigsFromDb()
@@ -1099,7 +1104,7 @@ export function saveSettings(next: SystemSettings): SystemSettings {
       // reads the real key.
       const { projectConfigs, ...system } = normalized
       writeScope({ kind: 'system' }, toEntries(system, SYSTEM_RULES), {
-        preservePrefixes: [STATE_PREFIX, AGENT_LANG_KEY],
+        preservePrefixes: [STATE_PREFIX, AGENT_LANG_KEY, POLICY_EPOCH_KEY],
       })
       for (const [path, cfg] of Object.entries(projectConfigs ?? {})) {
         writeWorkspaceScope(path, cfg)

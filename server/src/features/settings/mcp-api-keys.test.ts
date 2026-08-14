@@ -7,23 +7,33 @@
  * appearance of the plaintext, and revocation/re-scoping reaching live sessions.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import { EXTERNAL_MCP_DEFAULT_TOOLS, type ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import type { McpApiKeyInfo } from '../../kernel/config/mcp-api-keys.js'
 
-const READ_TOOLS = [
-  'find_intents',
-  'view_intent',
-  'find_discussions',
-  'view_discussion',
-  'publish_event',
-]
+/**
+ * What the server forces onto a fresh key. Taken from the shared list rather
+ * than spelled out again: this file asserts that the handler ignores whatever
+ * the client asked for, not what the default set happens to contain today.
+ */
+const READ_TOOLS = [...EXTERNAL_MCP_DEFAULT_TOOLS]
 
 const h = vi.hoisted(() => ({
   admin: true,
   records: [] as McpApiKeyInfo[],
-  created: null as { name: string; workspaceName: string; tools: string[] } | null,
+  created: null as {
+    name: string
+    workspaceName: string | null
+    ownerSubject: string
+    tools: string[]
+  } | null,
+  /** Successful self-service resets, in order: `<id>@<owner>`. */
+  reset: [] as string[],
+  /** Next plaintext `replaceMcpApiKeySecretForOwner` hands back. */
+  resetSecret: 'c3k_key-1_ROTATED-PLAINTEXT',
+  /** Owners this deployment still recognizes; anything else is a dead key. */
+  validOwners: new Set<string>(['admin']),
   updatedTools: null as { id: string; tools: string[] } | null,
   renamed: null as { id: string; name: string } | null,
   revoked: [] as string[],
@@ -49,14 +59,40 @@ vi.mock('../auth/authz.js', () => ({
 vi.mock('../../kernel/config/mcp-api-keys.js', () => ({
   listMcpApiKeysForWorkspace: (workspaceName: string) =>
     h.records.filter((r) => r.workspaceName === workspaceName),
-  createMcpApiKey: async (name: string, workspaceName: string, tools: string[]) => {
+  listMcpApiKeysForOwner: (ownerSubject: string) =>
+    h.records.filter((r) => r.ownerSubject === ownerSubject),
+  // Owner matching lives INSIDE the store operation, so the mock refuses a
+  // foreign id exactly the way the real one does.
+  replaceMcpApiKeySecretForOwner: async (id: string, ownerSubject: string) => {
     if (h.throwOnWrite) throw new Error('disk full')
-    h.created = { name, workspaceName, tools: [...tools] }
+    const rec = h.records.find((r) => r.id === id && r.ownerSubject === ownerSubject)
+    if (!rec) return null
+    rec.secretVersion += 1
+    h.reset.push(`${id}@${ownerSubject}`)
+    return { meta: rec, key: h.resetSecret }
+  },
+  revokeMcpApiKeyForOwner: (id: string, ownerSubject: string) => {
+    const idx = h.records.findIndex((r) => r.id === id && r.ownerSubject === ownerSubject)
+    if (idx < 0) return false
+    h.revoked.push(id)
+    h.records = h.records.filter((r) => r.id !== id)
+    return true
+  },
+  createMcpApiKey: async (
+    name: string,
+    workspaceName: string | null,
+    ownerSubject: string,
+    tools: string[],
+  ) => {
+    if (h.throwOnWrite) throw new Error('disk full')
+    h.created = { name, workspaceName, ownerSubject, tools: [...tools] }
     const meta: McpApiKeyInfo = {
       id: 'key-new',
       name,
       createdAt: 10,
       lastUsedAt: null,
+      ownerSubject,
+      secretVersion: 1,
       workspaceName,
       tools: [...tools],
       displayPrefix: 'c3k_key-new',
@@ -103,6 +139,11 @@ vi.mock('../../state.js', () => ({
   isDirectory: (path: string) => !h.goneDirs.has(path),
 }))
 
+vi.mock('../auth/authorization.js', () => ({
+  resolveAuthSubject: (subject: string | null) => subject,
+  isValidOwner: (owner: string) => h.validOwners.has(owner),
+}))
+
 vi.mock('../external-mcp/tools.js', () => ({
   externalMcpToolDescriptors: () => [
     { name: 'find_intents', access: 'read' },
@@ -134,8 +175,12 @@ vi.mock('../external-mcp/tools.js', () => ({
 
 const {
   createMcpApiKeyHandler,
+  createMyMcpApiKeyHandler,
   listMcpApiKeysHandler,
+  listMyMcpApiKeysHandler,
+  resetMyMcpApiKeyHandler,
   revokeMcpApiKeyHandler,
+  revokeMyMcpApiKeyHandler,
   setExternalMcpSessionCloser,
   updateMcpApiKeyHandler,
 } = await import('./mcp-api-keys.js')
@@ -163,6 +208,8 @@ function key(over: Partial<McpApiKeyInfo> = {}): McpApiKeyInfo {
     name: 'ci',
     createdAt: 1,
     lastUsedAt: null,
+    ownerSubject: 'admin',
+    secretVersion: 1,
     workspaceName: 'ws-alpha',
     tools: [...READ_TOOLS],
     displayPrefix: 'c3k_key-1',
@@ -179,8 +226,11 @@ beforeEach(() => {
   h.renamed = null
   h.revoked = []
   h.closed = []
+  h.reset = []
+  h.resetSecret = 'c3k_key-1_ROTATED-PLAINTEXT'
   h.throwOnWrite = false
   h.goneDirs.clear()
+  h.validOwners = new Set(['admin'])
   setExternalMcpSessionCloser((id) => h.closed.push(id))
 })
 
@@ -255,15 +305,14 @@ describe('list_mcp_api_keys', () => {
     expect((msg as { created?: unknown }).created).toBeUndefined()
   })
 
-  it('marks a key unavailable when its workspace directory is gone, without disclosing the path', () => {
-    seed([key()])
-    h.goneDirs.add('/canon/alpha')
+  it('marks a key unavailable when its owner is no longer recognized, without disclosing the path', () => {
+    seed([key({ ownerSubject: 'departed' })])
     const { conn, sent } = makeConn()
     listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys', workspaceName: 'ws-alpha' })
     const msg = sent[0] as Extract<ServerToClient, { type: 'mcp_api_keys' }>
     expect(msg.keys[0].workspaceName).toBe('ws-alpha')
     expect(msg.keys[0].unavailable).toBe(true)
-    // The path stays server-side.
+    // The host path is never on the wire, whatever the key's state.
     expect(JSON.stringify(msg)).not.toContain('/canon/alpha')
   })
 
@@ -300,15 +349,34 @@ describe('create_mcp_api_key', () => {
     expect(JSON.stringify(again.sent)).not.toContain('THE-PLAINTEXT')
   })
 
-  it('binds the workspace name and forces the read-only scope', async () => {
+  it('files the key under the named workspace, owns it by the verified subject, and forces the read-only scope', async () => {
     const { conn } = makeConn()
     await createMcpApiKeyHandler(ctx, conn, {
       type: 'create_mcp_api_key',
       workspaceName: 'ws-beta',
       name: 'ci',
     })
-    // The handler decides the initial scope: full read-only set, no write tool.
-    expect(h.created).toEqual({ name: 'ci', workspaceName: 'ws-beta', tools: READ_TOOLS })
+    // The handler decides both: the owner is the connection's verified subject
+    // (never the page it was created from), and the initial scope is the full
+    // read-only set with no write tool.
+    expect(h.created).toEqual({
+      name: 'ci',
+      workspaceName: 'ws-beta',
+      ownerSubject: 'admin',
+      tools: READ_TOOLS,
+    })
+  })
+
+  it('refuses to mint a key when no subject can be resolved', async () => {
+    const { conn, sent } = makeConn()
+    ;(conn as { subject: string | null }).subject = null
+    await createMcpApiKeyHandler(ctx, conn, {
+      type: 'create_mcp_api_key',
+      workspaceName: 'ws-beta',
+      name: 'ci',
+    })
+    expect(h.created).toBeNull()
+    expect(sent).toEqual([{ type: 'error', error: { code: 'auth.adminOnly' } }])
   })
 
   it('rejects an unknown workspace id and mints nothing', async () => {
@@ -527,5 +595,206 @@ describe('revoke_mcp_api_key', () => {
     expect(h.revoked).toEqual([])
     expect(h.records).toHaveLength(1)
     expect(h.closed).toEqual([])
+  })
+})
+
+/**
+ * Self-service. The property under test throughout is that the OWNER is taken
+ * from the connection and never from the message — so an administrator has no
+ * more power over someone else's key than anyone else, and a forged id discloses
+ * nothing.
+ */
+describe('the self-service key surface', () => {
+  function connAs(subject: string | null): { conn: Conn; sent: ServerToClient[] } {
+    const c = makeConn()
+    ;(c.conn as { subject: string | null }).subject = subject
+    return c
+  }
+
+  describe('list_my_mcp_api_keys', () => {
+    it('returns only the caller’s own keys, with no owner, catalog or hash material', () => {
+      seed([
+        key({ id: 'mine-1', ownerSubject: 'alice', workspaceName: null }),
+        key({ id: 'mine-2', ownerSubject: 'alice', workspaceName: null }),
+        key({ id: 'theirs', ownerSubject: 'bob', workspaceName: null }),
+      ])
+      const { conn, sent } = connAs('alice')
+      listMyMcpApiKeysHandler(ctx, conn, { type: 'list_my_mcp_api_keys' })
+
+      const msg = sent[0] as Extract<ServerToClient, { type: 'my_mcp_api_keys' }>
+      expect(msg.type).toBe('my_mcp_api_keys')
+      expect(msg.keys.map((k) => k.id)).toEqual(['mine-1', 'mine-2'])
+      // Bob's key is not merely hidden in the UI — it never crosses the wire.
+      expect(JSON.stringify(msg)).not.toContain('theirs')
+      expect(JSON.stringify(msg)).not.toContain('ownerSubject')
+      expect(JSON.stringify(msg)).not.toContain('salt')
+      // No tool catalog: self-service has no scope editor, so shipping the
+      // grantable list would only advertise one that does not exist.
+      expect((msg as { catalog?: unknown }).catalog).toBeUndefined()
+    })
+
+    it('needs no administrator authority', () => {
+      h.admin = false
+      seed([key({ id: 'mine', ownerSubject: 'alice', workspaceName: null })])
+      const { conn, sent } = connAs('alice')
+      listMyMcpApiKeysHandler(ctx, conn, { type: 'list_my_mcp_api_keys' })
+      expect((sent[0] as { type: string }).type).toBe('my_mcp_api_keys')
+    })
+
+    it('refuses a connection with no resolvable identity', () => {
+      const { conn, sent } = connAs(null)
+      listMyMcpApiKeysHandler(ctx, conn, { type: 'list_my_mcp_api_keys' })
+      expect(sent).toEqual([{ type: 'error', error: { code: 'mcpApiKey.noIdentity' } }])
+    })
+  })
+
+  describe('create_my_mcp_api_key', () => {
+    it('files the key under NO workspace, owns it by the connection, and forces the default scope', async () => {
+      const { conn, sent } = connAs('alice')
+      await createMyMcpApiKeyHandler(ctx, conn, {
+        type: 'create_my_mcp_api_key',
+        name: 'laptop',
+      })
+      // `null` is the persisted filing state — not an empty string, not a
+      // synthesized workspace name.
+      expect(h.created).toEqual({
+        name: 'laptop',
+        workspaceName: null,
+        ownerSubject: 'alice',
+        tools: READ_TOOLS,
+      })
+      const msg = sent[0] as Extract<ServerToClient, { type: 'my_mcp_api_keys' }>
+      expect(msg.created?.key).toBe('c3k_key-new_THE-PLAINTEXT')
+      expect(msg.created?.meta.workspaceName).toBeNull()
+    })
+
+    it('needs no administrator authority, and the plaintext appears exactly once', async () => {
+      h.admin = false
+      const create = connAs('alice')
+      await createMyMcpApiKeyHandler(ctx, create.conn, {
+        type: 'create_my_mcp_api_key',
+        name: 'laptop',
+      })
+      expect(h.created?.ownerSubject).toBe('alice')
+
+      const again = connAs('alice')
+      listMyMcpApiKeysHandler(ctx, again.conn, { type: 'list_my_mcp_api_keys' })
+      expect(JSON.stringify(again.sent)).not.toContain('THE-PLAINTEXT')
+    })
+
+    it('mints nothing when no identity resolves', async () => {
+      const { conn, sent } = connAs(null)
+      await createMyMcpApiKeyHandler(ctx, conn, { type: 'create_my_mcp_api_key', name: 'x' })
+      expect(h.created).toBeNull()
+      expect(sent).toEqual([{ type: 'error', error: { code: 'mcpApiKey.noIdentity' } }])
+    })
+
+    it('reports a failed write instead of echoing a pseudo-success', async () => {
+      h.throwOnWrite = true
+      const { conn, sent } = connAs('alice')
+      await createMyMcpApiKeyHandler(ctx, conn, { type: 'create_my_mcp_api_key', name: 'x' })
+      expect(sent).toEqual([{ type: 'error', error: { code: 'mcpApiKey.saveFailed' } }])
+    })
+  })
+
+  describe('reset_my_mcp_api_key', () => {
+    it('keeps the id and bumps the secret version, returns a new plaintext once, and closes that key’s sessions', async () => {
+      seed([key({ id: 'mine', ownerSubject: 'alice', workspaceName: null })])
+      h.resetSecret = 'c3k_mine_SECOND-PLAINTEXT'
+      const { conn, sent } = connAs('alice')
+      await resetMyMcpApiKeyHandler(ctx, conn, { type: 'reset_my_mcp_api_key', id: 'mine' })
+
+      expect(h.reset).toEqual(['mine@alice'])
+      const msg = sent[0] as Extract<ServerToClient, { type: 'my_mcp_api_keys' }>
+      expect(msg.created?.key).toBe('c3k_mine_SECOND-PLAINTEXT')
+      // Same key, new secret: the id survives, the version moves.
+      expect(msg.created?.meta.id).toBe('mine')
+      expect(h.records[0].secretVersion).toBe(2)
+      // Persist-first, close-second: the teardown ran only after the store returned.
+      expect(h.closed).toEqual(['mine'])
+    })
+
+    it('refuses another owner’s id exactly like an unknown one, and mutates nothing', async () => {
+      seed([key({ id: 'theirs', ownerSubject: 'bob', workspaceName: null })])
+      const foreign = connAs('alice')
+      await resetMyMcpApiKeyHandler(ctx, foreign.conn, {
+        type: 'reset_my_mcp_api_key',
+        id: 'theirs',
+      })
+      const unknown = connAs('alice')
+      await resetMyMcpApiKeyHandler(ctx, unknown.conn, {
+        type: 'reset_my_mcp_api_key',
+        id: 'ghost',
+      })
+
+      // Identical refusals — an id cannot be swept to learn who holds it.
+      expect(foreign.sent).toEqual([
+        { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'theirs' } } },
+      ])
+      expect(unknown.sent).toEqual([
+        { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'ghost' } } },
+      ])
+      expect(h.reset).toEqual([])
+      expect(h.records[0].secretVersion).toBe(1)
+      expect(h.closed).toEqual([])
+    })
+
+    it('gives the administrator no power over another owner’s key', async () => {
+      h.admin = true
+      seed([key({ id: 'theirs', ownerSubject: 'bob', workspaceName: null })])
+      const { conn, sent } = connAs('admin')
+      await resetMyMcpApiKeyHandler(ctx, conn, { type: 'reset_my_mcp_api_key', id: 'theirs' })
+      expect(sent[0]).toMatchObject({ error: { code: 'mcpApiKey.unknown' } })
+      expect(h.reset).toEqual([])
+    })
+
+    it('still rotates when no route is wired (unit/embedded server)', async () => {
+      setExternalMcpSessionCloser(null)
+      seed([key({ id: 'mine', ownerSubject: 'alice', workspaceName: null })])
+      const { conn, sent } = connAs('alice')
+      await resetMyMcpApiKeyHandler(ctx, conn, { type: 'reset_my_mcp_api_key', id: 'mine' })
+      expect(h.reset).toEqual(['mine@alice'])
+      expect((sent[0] as { type: string }).type).toBe('my_mcp_api_keys')
+    })
+  })
+
+  describe('revoke_my_mcp_api_key', () => {
+    it('deletes only an owned key and tears down its live sessions', () => {
+      seed([
+        key({ id: 'mine', ownerSubject: 'alice', workspaceName: null }),
+        key({ id: 'other', ownerSubject: 'alice', workspaceName: null }),
+      ])
+      const { conn, sent } = connAs('alice')
+      revokeMyMcpApiKeyHandler(ctx, conn, { type: 'revoke_my_mcp_api_key', id: 'mine' })
+
+      expect(h.revoked).toEqual(['mine'])
+      expect(h.closed).toEqual(['mine'])
+      const msg = sent[0] as Extract<ServerToClient, { type: 'my_mcp_api_keys' }>
+      expect(msg.keys.map((k) => k.id)).toEqual(['other'])
+      expect(msg.created).toBeUndefined()
+    })
+
+    it('refuses another owner’s id, deleting nothing and closing nothing', () => {
+      seed([key({ id: 'theirs', ownerSubject: 'bob', workspaceName: null })])
+      const { conn, sent } = connAs('alice')
+      revokeMyMcpApiKeyHandler(ctx, conn, { type: 'revoke_my_mcp_api_key', id: 'theirs' })
+      expect(sent).toEqual([
+        { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'theirs' } } },
+      ])
+      expect(h.revoked).toEqual([])
+      expect(h.records).toHaveLength(1)
+      expect(h.closed).toEqual([])
+    })
+  })
+
+  it('keeps a self-service key out of every workspace-addressed roster', () => {
+    seed([
+      key({ id: 'unfiled', ownerSubject: 'alice', workspaceName: null }),
+      key({ id: 'filed', ownerSubject: 'admin', workspaceName: 'ws-alpha' }),
+    ])
+    const { conn, sent } = makeConn()
+    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys', workspaceName: 'ws-alpha' })
+    const msg = sent[0] as Extract<ServerToClient, { type: 'mcp_api_keys' }>
+    expect(msg.keys.map((k) => k.id)).toEqual(['filed'])
   })
 })

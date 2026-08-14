@@ -25,6 +25,12 @@
       },
       "copied": {
         "label": "Copied"
+      },
+      "refresh": {
+        "label": "Refresh"
+      },
+      "edit": {
+        "label": "Edit"
       }
     },
     "async": {
@@ -236,6 +242,9 @@
           "confirm": "Switch tab",
           "stay": "Stay"
         }
+      },
+      "access": {
+        "label": "Users and access"
       }
     },
     "agents": {
@@ -704,59 +713,48 @@
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
     },
-    "mcpApiKey": {
+    "userAccess": {
       "title": {
-        "label": "External MCP API keys"
+        "label": "Users and access"
       },
-      "hint": "Long-lived keys let an agent c3 did not start (an independent Claude Code / Codex session, a CI job, a monitoring script) read this deployment over MCP at /mcp/v1. Each key is granted a specific set of workspaces and can only read intents and discussions, plus publish events — it can never write.",
-      "security": {
-        "hint": "The key travels in the URL query string, so it can end up in proxy and access logs. Over plain HTTP anyone on the network can read it: put c3 behind your own HTTPS reverse proxy before exposing it beyond the local machine."
+      "hint": "Which workspaces each account may reach. This is authorization, not a preference: only you can change it, and it is saved one account at a time.",
+      "newWorkspace": {
+        "hint": "A newly registered workspace is visible immediately to accounts set to all workspaces, and is not added to a selected list until you select it."
       },
-      "empty": "No API keys yet.",
-      "meta": "Created {created} · last used {lastUsed}",
-      "lastUsed": {
-        "never": "never used"
-      },
-      "grant": {
-        "label": "Workspaces: {workspaces}",
-        "none": "none",
-        "stale": "No longer registered (unreachable): {paths}",
-        "edit": {
-          "label": "Edit workspaces"
+      "loading": "Loading accounts…",
+      "empty": "No account matches this search.",
+      "search": {
+        "account": {
+          "placeholder": "Search accounts"
         },
-        "emptyWarning": "With no workspace selected this key can reach nothing."
-      },
-      "create": {
-        "open": {
-          "label": "Generate key"
-        },
-        "submit": {
-          "label": "Generate"
-        },
-        "name": {
-          "placeholder": "Name, e.g. release-bot"
-        },
-        "workspaces": {
-          "label": "Workspaces this key may read"
-        },
-        "noWorkspaces": "Add a workspace to c3 first — a key must be granted at least one."
-      },
-      "reveal": {
-        "title": "Key \"{name}\" generated",
-        "onceOnly": "This is the only time the key is shown. Copy it now — it cannot be recovered, only replaced.",
-        "dismiss": {
-          "label": "I've copied it"
+        "workspace": {
+          "placeholder": "Search workspaces"
         }
       },
-      "revoke": {
-        "label": "Revoke",
-        "confirm": {
-          "body": "Revoking takes effect immediately: the next request fails and any open MCP session is closed. This cannot be undone.",
-          "confirm": {
-            "label": "Revoke"
-          },
-          "title": "Revoke this API key?"
+      "admin": {
+        "badge": {
+          "label": "Administrator"
         }
+      },
+      "immutable": {
+        "hint": "This identity reaches every workspace by rule, not by a stored policy — so it cannot be edited away, and you cannot lock yourself out."
+      },
+      "policy": {
+        "implicitAll": "All workspaces (implicit)",
+        "none": "No policy — reaches nothing",
+        "all": "All workspaces",
+        "selected": "Selected: {count}"
+      },
+      "mode": {
+        "all": {
+          "label": "All workspaces, including ones registered later"
+        },
+        "selected": {
+          "label": "Only the workspaces selected below"
+        }
+      },
+      "hiddenSelected": {
+        "hint": "{count} selected workspace(s) are hidden by the search and will still be saved."
       }
     }
   },
@@ -788,6 +786,74 @@
       },
       "hint": "The font size of the c3 web console, 70%–120% of the built-in size. Changes apply immediately without a reload. When you are signed in the choice is saved to your account; otherwise it is kept in this browser.",
       "percentage": "{value}%"
+    },
+    "mcpKeys": {
+      "title": {
+        "label": "External MCP keys"
+      },
+      "hint": "Long-lived keys you hold, one per device or client. Create, reset or revoke them here; nobody else can list or reset them.",
+      "scope": {
+        "hint": "A key borrows your access: which workspaces it reaches is your account scope, maintained by the administrator and resolved on every request."
+      },
+      "noBaseUrl": "No public address is configured, so the ready-to-copy endpoint cannot be shown. Keys still work.",
+      "goto": {
+        "label": "Configure it in System Settings"
+      },
+      "reveal": {
+        "title": "Key for “{name}”",
+        "onceOnly": "Shown once. It is not stored anywhere and cannot be recovered — copy it now.",
+        "dismiss": {
+          "label": "I have copied it"
+        }
+      },
+      "key": {
+        "label": "Key"
+      },
+      "url": {
+        "label": "Endpoint"
+      },
+      "command": {
+        "label": "One-line setup",
+        "workspacePlaceholder": "YOUR_WORKSPACE"
+      },
+      "empty": "You have no external MCP key yet.",
+      "create": {
+        "open": {
+          "label": "New key"
+        },
+        "name": {
+          "placeholder": "What is it for (e.g. work laptop)"
+        },
+        "defaultScope": "A new key gets the server’s default read-only tools. Tool scope is not editable here.",
+        "submit": {
+          "label": "Create"
+        }
+      },
+      "reset": {
+        "label": "Reset",
+        "confirm": {
+          "title": "Reset this key?",
+          "body": "A new secret replaces the current one for “{name}”. Anything configured with the old secret stops working at once, with no grace period, and open sessions are cut.",
+          "confirm": {
+            "label": "Reset"
+          }
+        }
+      },
+      "revoke": {
+        "label": "Revoke",
+        "confirm": {
+          "title": "Revoke this key?",
+          "body": "The key is deleted and open sessions are cut. This cannot be undone.",
+          "confirm": {
+            "label": "Revoke"
+          }
+        }
+      },
+      "unavailable": "This deployment no longer recognizes the account this key belongs to, so it reaches nothing. Only revoking it is left.",
+      "meta": "Created {created} · Last used {lastUsed}",
+      "lastUsed": {
+        "never": "never"
+      }
     }
   },
   "intent": {
@@ -2332,7 +2398,8 @@
       "unknownWorkspace": "Unknown workspace ({workspaceName}) — no key was changed.",
       "noWorkspace": "Select at least one workspace for the key.",
       "saveFailed": "Could not save the API keys.",
-      "unknownTool": "Tool \"{tool}\" is not in the externally-grantable catalog."
+      "unknownTool": "Tool \"{tool}\" is not in the externally-grantable catalog.",
+      "noIdentity": "c3 cannot tell who you are on this connection, so it will not create or change a key."
     },
     "delivery": {
       "dbUnavailable": "Deliveries feature unavailable (c3.db).",
@@ -2363,6 +2430,16 @@
       "deliveryPrCreateFailed": "Creating the delivery PR failed: {detail}",
       "deliveryPrNotFound": "This delivery has no delivery PR yet.",
       "deliveryPrSyncFailed": "Could not read the delivery PR from the forge: {detail}"
+    },
+    "userAccess": {
+      "unknownAccount": "No current account named “{subject}”. Nothing was saved.",
+      "unknownWorkspace": "No registered workspace named “{workspaceName}”. Nothing was saved.",
+      "invalidMode": "Unrecognized access mode. Nothing was saved.",
+      "immutableSubject": "“{subject}” reaches every workspace by rule and has no editable policy.",
+      "saveFailed": "Saving the access policy failed. Nothing changed and no session was closed."
+    },
+    "workspaceAccessors": {
+      "forbidden": "You cannot view the accessors of this workspace."
     }
   },
   "statusIndicator": {
@@ -2965,7 +3042,7 @@
         "label": "Automation"
       },
       "externalMcp": {
-        "label": "External MCP"
+        "label": "Access"
       }
     },
     "defaultMode": {
@@ -3232,80 +3309,16 @@
     },
     "externalMcp": {
       "title": {
-        "label": "External MCP access"
+        "label": "Who can access this workspace"
       },
-      "hint": "How an agent c3 did not start reaches THIS workspace over MCP. Keys are created, scoped and revoked here; every key is bound to this workspace only and lives at /mcp/[key].",
-      "security": {
-        "hint": "The key IS the address and rides the URL path, so it can reach proxy/access logs. Put c3 behind your own HTTPS reverse proxy before exposing it beyond this machine. Write tools really change c3 state — grant them only to processes you trust, and revoke the key when done."
-      },
-      "noBaseUrl": "No public base URL is configured, so a ready-to-copy address cannot be built. Set it in System Settings → General. Keys can still be minted here.",
+      "hint": "The accounts that can currently reach this workspace, including through an external MCP key they own. Read-only: it is derived from the same rules the call gate enforces.",
       "goto": {
-        "label": "Open System Settings"
+        "label": "Open Users and access"
       },
-      "empty": "No API key for this workspace yet. Mint one below — every new key starts with the read-only tools and no write tool.",
-      "reveal": {
-        "title": "API key created: {name}",
-        "onceOnly": "This plaintext key is shown exactly once. Copy it now — after closing it cannot be recovered.",
-        "dismiss": {
-          "label": "Done"
-        }
-      },
-      "key": {
-        "label": "Plaintext key"
-      },
-      "url": {
-        "label": "MCP URL"
-      },
-      "command": {
-        "label": "One-line client setup"
-      },
-      "create": {
-        "open": {
-          "label": "New API key"
-        },
-        "name": {
-          "placeholder": "Display name"
-        },
-        "defaultScope": "The new key is bound to this workspace and granted the read-only tools only. Add write tools after creation, where their risk is explained.",
-        "submit": {
-          "label": "Create key"
-        }
-      },
-      "tools": {
-        "edit": {
-          "label": "Tools"
-        },
-        "read": {
-          "label": "Read-only tools"
-        },
-        "write": {
-          "label": "Write tools",
-          "risk": "These change c3 state: persist intents, submit spec reviews, start sessions.",
-          "confirm": {
-            "title": "Grant write access?",
-            "body": "This key will be able to really change c3 state through: {tools}. Continue?",
-            "confirm": {
-              "label": "Grant"
-            }
-          }
-        },
-        "summary": "{total} tools · {writes} write",
-        "none": "No tools — this key can call nothing."
-      },
-      "revoke": {
-        "label": "Revoke",
-        "confirm": {
-          "title": "Revoke this key?",
-          "body": "The key stops working on its very next request and any open session is closed. This cannot be undone.",
-          "confirm": {
-            "label": "Revoke"
-          }
-        }
-      },
-      "unavailable": "This key's workspace is no longer available. It can reach nothing — revoke it.",
-      "meta": "Created {created} · Last used {lastUsed}",
-      "lastUsed": {
-        "never": "never"
+      "empty": "No account can reach this workspace right now.",
+      "loading": "Loading the accessor list…",
+      "manage": {
+        "hint": "Account access is edited in System Settings → Users and access. Your own external MCP keys are in Personal Settings."
       }
     }
   },

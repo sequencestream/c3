@@ -133,9 +133,10 @@ export function installMessageHandler(ctx: AppCtx): void {
     vendorRuntime,
     sandboxStatus,
     bindingStats,
-    mcpApiKeys,
-    mcpApiKeyCatalog,
-    mcpApiKeyCreated,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     sessionCapabilities,
     vendorCapabilities,
     vendorModes,
@@ -216,12 +217,37 @@ export function installMessageHandler(ctx: AppCtx): void {
     deepLinkFulfilled,
     deepLinkTimers,
     settingsOpen,
+    addWorkspaceOpen,
   } = ctx
 
   // 首屏引导的一次性守卫:只有本处理器收到的**第一条** settings 才参与判定。
   // 保存在客户端内存里,不持久化 —— 重连、切换工作空间、保存设置都不会再次弹窗,
   // 整页刷新则视为新会话重新判定一次。
   let firstSettingsEvaluated = false
+
+  // 工作区冷启动引导的两个输入:`ready` 给出权威工作区快照与本连接的管理员身份,
+  // 首条 `settings` 给出「是否已有真实 agent」。生产握手恒为 ready → settings;
+  // 判定按「两个输入都已知」触发,故测试里反序注入同样成立,但绝不等 `workspaces`
+  // 广播 —— 那是后续的增删播报,不是冷启动前提。
+  let coldStartWorkspacesEmpty: boolean | null = null
+  let coldStartIsAdmin = false
+  let coldStartAgentsConfigured: boolean | null = null
+  let workspaceOnboardingEvaluated = false
+
+  // 无工作区时的冷启动引导:agent 已配置好而注册表还空着,直接打开「新增工作区」,
+  // 把新用户带到唯一的创建入口。三种结果(弹出 / 已有工作区 / 无真实 agent)都消费
+  // 掉这次判定:此后的设置推送、workspaces 广播、重连 ready、工作区增删都不再判定,
+  // 用户关掉也不重弹;整页刷新是新的客户端会话,重新判定一次。
+  function evaluateWorkspaceOnboarding(): void {
+    if (workspaceOnboardingEvaluated) return
+    if (coldStartWorkspacesEmpty === null || coldStartAgentsConfigured === null) return
+    workspaceOnboardingEvaluated = true
+    // 非管理员既没有「+」入口,服务端也会拒绝 add_workspace(AUTH-R10),因此不为其
+    // 弹出一个注定被拒的弹框。
+    if (coldStartWorkspacesEmpty && coldStartAgentsConfigured && coldStartIsAdmin) {
+      addWorkspaceOpen.value = true
+    }
+  }
 
   // Find a loaded session-list row by id across all workspace/kind buckets. The
   // list rows carry reliable `sessionKind/ownerKind/ownerId` (unlike the
@@ -375,6 +401,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         // package waiting for a restart — is visible the moment the console loads.
         ctx.selfUpdate.value = msg.selfUpdate
         workspaces.value = msg.workspaces
+        // 冷启动引导的工作区侧输入:权威快照是否为空 + 本连接是否管理员。
+        coldStartWorkspacesEmpty = msg.workspaces.length === 0
+        coldStartIsAdmin = msg.isAdmin
+        evaluateWorkspaceOnboarding()
         // Close workspace setting on reconnect — workspace may have changed.
         workspaceSettingOpen.value = false
         currentWorkspaceSetting.value = null
@@ -384,6 +414,15 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.parkRecoveryStats.value = null
         ctx.parkRecoveryError.value = null
         ctx.parkRecoveryLoading.value = false
+        workspaceAccessors.value = null
+        // Every per-identity roster goes on a (re)connect, because `ready` is also
+        // where a login lands: keeping the previous identity's keys — let alone a
+        // still-revealed plaintext — on screen would attribute one account's
+        // credential to another. The plaintext is unrecoverable by design, so
+        // dropping it here costs nothing that was not already promised.
+        myMcpApiKeys.value = []
+        myMcpApiKeyCreated.value = null
+        userWorkspaceAccess.value = null
         ctx.applyStatuses(msg.statuses)
 
         // ---- Deep-link consumption (takes priority over localStorage restore) ----
@@ -788,17 +827,35 @@ export function installMessageHandler(ctx: AppCtx): void {
           firstSettingsEvaluated = true
           const configured = msg.settings.agents.some((agent) => agent.id !== SYSTEM_AGENT_ID)
           if (!configured) settingsOpen.value = true
+          // agent 未配置好时不排队、不叠加「新增工作区」:本次会话只留 agent 引导一个
+          // 模态,用户配好 agent 后走手动「+」或下一次整页加载的重新判定。
+          coldStartAgentsConfigured = configured
+          evaluateWorkspaceOnboarding()
         }
         break
       case 'mcp_api_keys':
-        // The roster is scoped to one workspace. A reply that raced with a
-        // workspace switch must not clobber the page now showing another one.
+        // The workspace-addressed roster. Still on the wire for older clients,
+        // but no first-party page administers keys by workspace any more — a key
+        // belongs to its owner, so the console reads `my_mcp_api_keys` instead.
+        break
+      case 'my_mcp_api_keys':
+        // Authoritative for THIS identity: the reply replaces the snapshot whole,
+        // so a revoked key cannot linger in the list.
+        myMcpApiKeys.value = msg.keys
+        // `created` rides only on a successful create or reset. A plain roster
+        // refresh must NOT clear an open reveal — the user may still be copying —
+        // but a roster that arrives with no `created` after one did is the next
+        // operation's answer, so the previous plaintext goes.
+        myMcpApiKeyCreated.value = msg.created ?? null
+        break
+      case 'user_workspace_access':
+        userWorkspaceAccess.value = { workspaces: msg.workspaces, accounts: msg.accounts }
+        break
+      case 'workspace_accessors':
+        // Scoped to one workspace, like the key roster: a reply that raced with a
+        // workspace switch must not describe the page now showing another one.
         if (msg.workspaceName !== currentWorkspace.value) break
-        mcpApiKeys.value = msg.keys
-        mcpApiKeyCatalog.value = msg.catalog
-        // `created` rides only on a successful mint. A plain roster refresh must
-        // NOT clear an open reveal box — the user may still be copying the key.
-        if (msg.created) mcpApiKeyCreated.value = msg.created
+        workspaceAccessors.value = msg.subjects
         break
       case 'personalized_settings': {
         // The echo is authoritative for this identity: an account record beats what

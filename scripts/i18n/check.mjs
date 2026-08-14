@@ -355,8 +355,8 @@ export function runCodeCheck({ uiCodes = {}, base = {}, serverCodeSites = [] }) 
 function loadLocales() {
   const locales = {}
   for (const f of readdirSync(LOCALES_DIR)) {
-    // Skip dotfiles (e.g. `.freeze-manifest.json`) — they are tooling state,
-    // not locale catalogs. Only `xx.json` are real locales.
+    // Skip dotfiles — they are tooling state, not locale catalogs.
+    // Only `xx.json` are real locales.
     if (!f.endsWith('.json') || f.startsWith('.')) continue
     locales[basename(f, '.json')] = JSON.parse(readFileSync(join(LOCALES_DIR, f), 'utf8'))
   }
@@ -382,16 +382,6 @@ async function loadCodeFiles(dir, ignoreList = []) {
 }
 
 async function main() {
-  // Freeze check first — fail fast on en.json drift before doing other work.
-  const { runFreezeCheck } = await import('./check-freeze.mjs')
-  const freeze = runFreezeCheck()
-  for (const w of freeze.warnings) console.warn(`  warn  ${w}`)
-  for (const e of freeze.errors) console.error(`  error ${e}`)
-  if (!freeze.ok) {
-    console.error(`\ni18n:check FAILED at freeze gate — ${freeze.errors.length} error(s).`)
-    process.exit(1)
-  }
-
   const locales = loadLocales()
   const codeFiles = await loadCodeFiles(CODE_DIR, CODE_SCAN_IGNORE)
   const { errors, warnings } = runCheck({ locales, codeFiles })

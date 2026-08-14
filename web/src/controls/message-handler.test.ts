@@ -75,6 +75,17 @@ function makeCtx() {
     null,
   )
   const currentWorkspaceSetting = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(null)
+  const currentWorkspace = ref<string | null>(null)
+  const myMcpApiKeys = ref<import('@ccc/shared/protocol').McpApiKeyMeta[]>([])
+  const myMcpApiKeyCreated = ref<{
+    meta: import('@ccc/shared/protocol').McpApiKeyMeta
+    key: string
+  } | null>(null)
+  const userWorkspaceAccess = ref<{
+    workspaces: import('@ccc/shared/protocol').WorkspaceInfo[]
+    accounts: import('@ccc/shared/protocol').UserWorkspaceAccessAccount[]
+  } | null>(null)
+  const workspaceAccessors = ref<string[] | null>(null)
   const detectedMainBranch = ref<string | null>(null)
   const resolvedSpecRoot = ref<string | null>(null)
   const sysExtraMounts = ref<import('@ccc/shared/protocol').SysExtraMount[]>([])
@@ -123,6 +134,7 @@ function makeCtx() {
   // `settings` 分支写入的其余快照 refs —— 测试只断言 settingsOpen,其余仅为避免
   // 处理器写入 undefined 而抛错。
   const settingsOpen = ref(false)
+  const addWorkspaceOpen = ref(false)
   const hostStatus = ref<unknown>(null)
   const vendorRuntime = ref<unknown>(null)
   const sandboxStatus = ref<unknown>(null)
@@ -160,6 +172,7 @@ function makeCtx() {
   })
   const ctx = {
     settingsOpen,
+    addWorkspaceOpen,
     hostStatus,
     vendorRuntime,
     sandboxStatus,
@@ -217,6 +230,11 @@ function makeCtx() {
     automationEnabledSaving,
     automationSettingBeforeSave,
     currentWorkspaceSetting,
+    currentWorkspace,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     detectedMainBranch,
     resolvedSpecRoot,
     sysExtraMounts,
@@ -286,6 +304,11 @@ function makeCtx() {
     automationWorkspaceSettingId,
     automationEnabledSaving,
     automationSettingBeforeSave,
+    currentWorkspace,
+    myMcpApiKeys,
+    myMcpApiKeyCreated,
+    userWorkspaceAccess,
+    workspaceAccessors,
     researchMessages,
     researchMaxSeq,
     settingsOpen,
@@ -1226,6 +1249,10 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       parkRecoveryStats: ref(null),
       parkRecoveryError: ref(null),
       parkRecoveryLoading: ref(false),
+      myMcpApiKeys: ref([]),
+      myMcpApiKeyCreated: ref(null),
+      userWorkspaceAccess: ref(null),
+      workspaceAccessors: ref(null),
       readStoredWorkspace: vi.fn(() => null),
       flushIfReady: vi.fn(),
       notifyAwaitingPermission: vi.fn(),
@@ -1653,6 +1680,166 @@ describe('auto-open settings when no agent is configured', () => {
     r.ctx.handleMessage(settingsMsg(['agent-1']))
     r.ctx.handleMessage(settingsMsg([]))
     expect(r.settingsOpen.value).toBe(false)
+  })
+})
+
+// 工作区冷启动引导:握手恒为 ready(权威工作区快照)→ settings(agent 是否配置好),
+// 两个输入到齐判定一次。这个 ctx 只需覆盖 ready / settings / workspaces 三条分支。
+function makeWorkspaceOnboardingCtx() {
+  const addWorkspaceOpen = ref(false)
+  const settingsOpen = ref(false)
+  const workspaces = ref<import('@ccc/shared/protocol').WorkspaceInfo[]>([])
+  const ctx = {
+    t: (key: string) => key,
+    add: vi.fn(),
+    send: vi.fn(),
+    showToast: vi.fn(),
+    addWorkspaceOpen,
+    settingsOpen,
+    workspaces,
+    currentWorkspace: ref<string | null>(null),
+    auth: { setIsAdmin: vi.fn(), setSubject: vi.fn() },
+    fetchPersonalizedSettings: vi.fn(),
+    updateStatus: ref({ available: false, latestVersion: null, checkedAt: null }),
+    selfUpdate: ref({
+      phase: 'idle',
+      capable: false,
+      currentVersion: '',
+      targetVersion: null,
+      downloadedBytes: 0,
+      totalBytes: 0,
+    }),
+    workspaceSettingOpen: ref(false),
+    currentWorkspaceSetting: ref(null),
+    detectedMainBranch: ref(null),
+    resolvedSpecRoot: ref(null),
+    sysExtraMounts: ref([]),
+    parkRecoveryStats: ref(null),
+    parkRecoveryError: ref(null),
+    parkRecoveryLoading: ref(false),
+    myMcpApiKeys: ref([]),
+    myMcpApiKeyCreated: ref(null),
+    userWorkspaceAccess: ref(null),
+    workspaceAccessors: ref(null),
+    pendingDeepLink: ref(null),
+    deepLinkFulfilled: ref(new Set<string>()),
+    deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
+    sessionStatus: ref({}),
+    activeSession: ref<string | null>(null),
+    teamSessions: ref(new Set<string>()),
+    flushIfReady: vi.fn(),
+    readStoredWorkspace: vi.fn(() => null),
+    persistCurrentWorkspace: vi.fn(),
+    ensureSessions: vi.fn(),
+    maybeRestoreIntents: vi.fn(),
+    maybeRestoreDiscussions: vi.fn(),
+    maybeRestoreAutomations: vi.fn(),
+    maybeRestoreCodes: vi.fn(),
+    openIntents: vi.fn(),
+    intentsProject: ref<string | null>(null),
+    activeTab: ref('intents'),
+    savedTab: ref('intents'),
+    onSelectTab: vi.fn(),
+    switchToConsoleTab: vi.fn(),
+    serverSettings: ref(null),
+    hostStatus: ref(null),
+    vendorRuntime: ref(null),
+    sandboxStatus: ref(null),
+    bindingStats: ref(null),
+    sessionCapabilities: ref(null),
+    vendorCapabilities: ref(null),
+    vendorModes: ref(null),
+    skillSupport: ref(null),
+    maybeRefreshDashboard: vi.fn(),
+  } as unknown as AppCtx
+  installMessageHandler(ctx)
+  return { ctx, addWorkspaceOpen, settingsOpen, workspaces }
+}
+
+function readyMsg(names: string[], isAdmin = true): ServerToClient {
+  return {
+    type: 'ready',
+    workspaces: names.map((name) => ({ name, path: `/ws/${name}`, lastAccessed: 0 })),
+    isAdmin,
+    subject: null,
+    statuses: [],
+    updateStatus: { available: false, latestVersion: null, checkedAt: null },
+  } as unknown as ServerToClient
+}
+
+function workspacesMsg(names: string[]): ServerToClient {
+  return {
+    type: 'workspaces',
+    workspaces: names.map((name) => ({ name, path: `/ws/${name}`, lastAccessed: 0 })),
+  } as unknown as ServerToClient
+}
+
+describe('auto-open add-workspace when the registry is empty', () => {
+  it('空工作区 + 已配置 agent → 自动打开新增工作区,且不打开系统设置', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(true)
+    expect(r.settingsOpen.value).toBe(false)
+  })
+
+  it('测试内颠倒注入顺序(settings 先于 ready)时,在 ready 落地后判定', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+    r.ctx.handleMessage(readyMsg([]))
+    expect(r.addWorkspaceOpen.value).toBe(true)
+  })
+
+  it('绝不等 workspaces 广播:没有 ready 时,settings + 空 workspaces 广播也不弹', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(workspacesMsg([]))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('已有工作区 → 不弹;同会话重连与后续 settings 同样不弹', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg(['proj-a']))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+    // 重连快照仍非空,判定也早已消费。
+    r.ctx.handleMessage(readyMsg(['proj-a']))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('agent 未配置 → 只留 agent 引导;本会话内配好 agent 也不补弹新增工作区', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.addWorkspaceOpen.value).toBe(false)
+    // 用户在设置里加了 agent 并关闭设置:不排队、不叠加。
+    r.settingsOpen.value = false
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('用户关闭后:重放 settings、工作区增删广播、重连 ready 都不再自动弹出', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(true)
+
+    r.addWorkspaceOpen.value = false
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(workspacesMsg(['proj-a']))
+    r.ctx.handleMessage(workspacesMsg([]))
+    r.ctx.handleMessage(readyMsg([]))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('非管理员 → 不弹(增删工作区受管理员门控)', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([], false))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
   })
 })
 
@@ -2394,5 +2581,123 @@ describe('create_intent 进度遮罩路由', () => {
     expect(h.dispatchCreateIntent).not.toHaveBeenCalled()
     // 守卫也不释放:这条错误不是本次创建的答复。
     expect(h.createIntentPending.value).toBe(true)
+  })
+})
+
+/**
+ * The three rosters this change introduces. Each is authoritative and replaces
+ * its snapshot whole — the console never reconciles a delta, so a revoked key or
+ * a removed grant cannot linger.
+ */
+describe('external MCP access rosters', () => {
+  const meta = (id: string): import('@ccc/shared/protocol').McpApiKeyMeta => ({
+    id,
+    name: id,
+    createdAt: 1,
+    lastUsedAt: null,
+    workspaceName: null,
+    unavailable: false,
+    tools: [],
+    displayPrefix: `c3k_${id}`,
+  })
+
+  describe('my_mcp_api_keys', () => {
+    it('replaces the roster whole and keeps the one-time plaintext from a create/reset', () => {
+      const r = makeCtx()
+      r.ctx.handleMessage({
+        type: 'my_mcp_api_keys',
+        keys: [meta('a')],
+        created: { meta: meta('a'), key: 'c3k_a_PLAINTEXT' },
+      })
+      expect(r.myMcpApiKeys.value.map((k) => k.id)).toEqual(['a'])
+      expect(r.myMcpApiKeyCreated.value?.key).toBe('c3k_a_PLAINTEXT')
+    })
+
+    it('clears a stale plaintext when the next roster carries none', () => {
+      const r = makeCtx()
+      r.myMcpApiKeyCreated.value = { meta: meta('a'), key: 'c3k_a_PLAINTEXT' }
+      r.ctx.handleMessage({ type: 'my_mcp_api_keys', keys: [] })
+      // A roster with no `created` is a LATER operation's answer, so the previous
+      // secret is gone rather than left on screen next to the wrong key.
+      expect(r.myMcpApiKeyCreated.value).toBeNull()
+      expect(r.myMcpApiKeys.value).toEqual([])
+    })
+  })
+
+  describe('user_workspace_access', () => {
+    it('adopts the registry and the account roster together', () => {
+      const r = makeCtx()
+      r.ctx.handleMessage({
+        type: 'user_workspace_access',
+        workspaces: [{ name: 'alpha', path: '/ws/alpha', lastAccessed: 0 }],
+        accounts: [{ subject: 'alice', isAdmin: false, editable: true, policy: null }],
+      })
+      expect(r.userWorkspaceAccess.value?.workspaces.map((w) => w.name)).toEqual(['alpha'])
+      expect(r.userWorkspaceAccess.value?.accounts[0].subject).toBe('alice')
+    })
+  })
+
+  describe('workspace_accessors', () => {
+    it('adopts the list for the workspace on screen', () => {
+      const r = makeCtx()
+      r.currentWorkspace.value = 'alpha'
+      r.ctx.handleMessage({
+        type: 'workspace_accessors',
+        workspaceName: 'alpha',
+        subjects: ['root', 'alice'],
+      })
+      expect(r.workspaceAccessors.value).toEqual(['root', 'alice'])
+    })
+
+    it('ignores a reply that lost the race with a workspace switch', () => {
+      const r = makeCtx()
+      r.currentWorkspace.value = 'alpha'
+      r.workspaceAccessors.value = ['root']
+      r.ctx.handleMessage({
+        type: 'workspace_accessors',
+        workspaceName: 'beta',
+        subjects: ['someone-else'],
+      })
+      expect(r.workspaceAccessors.value).toEqual(['root'])
+    })
+  })
+})
+
+describe('identity change clears every per-identity roster', () => {
+  it('drops the key roster, any revealed plaintext and the access roster on `ready`', () => {
+    const { ctx } = makeWorkspaceOnboardingCtx()
+    const r = ctx as unknown as {
+      myMcpApiKeys: { value: import('@ccc/shared/protocol').McpApiKeyMeta[] }
+      myMcpApiKeyCreated: {
+        value: { meta: import('@ccc/shared/protocol').McpApiKeyMeta; key: string } | null
+      }
+      userWorkspaceAccess: { value: unknown }
+      workspaceAccessors: { value: string[] | null }
+    }
+    r.myMcpApiKeys.value = [
+      {
+        id: 'a',
+        name: 'a',
+        createdAt: 1,
+        lastUsedAt: null,
+        workspaceName: null,
+        unavailable: false,
+        tools: [],
+        displayPrefix: 'c3k_a',
+      },
+    ]
+    r.myMcpApiKeyCreated.value = { meta: r.myMcpApiKeys.value[0], key: 'c3k_a_PLAINTEXT' }
+    r.userWorkspaceAccess.value = { workspaces: [], accounts: [] }
+    r.workspaceAccessors.value = ['root']
+
+    // `ready` is where a login lands, so it is also where the previous identity's
+    // state has to go — a credential shown under the wrong account is worse than
+    // one the user has to re-open the page to see.
+    ctx.handleMessage(readyMsg(['alpha']))
+
+    expect(r.myMcpApiKeys.value).toEqual([])
+    expect(r.myMcpApiKeyCreated.value).toBeNull()
+    expect(r.userWorkspaceAccess.value).toBeNull()
+    expect(r.workspaceAccessors.value).toBeNull()
   })
 })

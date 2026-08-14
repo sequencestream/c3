@@ -9,6 +9,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
+import { getConnInfo } from '@hono/node-server/conninfo'
 import { createNodeWebSocket } from '@hono/node-ws'
 import {
   INTENT_DISALLOWED_TOOLS,
@@ -21,7 +22,7 @@ import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
-import { isDirectory, listWorkspaces, resolveWorkspaceRoot } from './state.js'
+import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
   reconcileLiveness,
@@ -35,7 +36,12 @@ import {
   type SessionRuntime,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
-import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
+import {
+  getSessionAgentId,
+  getAgentLang,
+  loadSettings,
+  setOnPendingIntentLookup,
+} from './kernel/config/index.js'
 import {
   reconcileQueuesOnStartup,
   setWorkflowHooks,
@@ -70,10 +76,26 @@ import {
 import { createEventMcp, EVENT_MCP_PATH, type EventMcpTools } from './transport/event-mcp/index.js'
 import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-mcp/index.js'
 import { createSpecReviewMcp, SPEC_REVIEW_MCP_PATH } from './transport/spec-review-mcp/index.js'
-import { createExternalMcp, EXTERNAL_MCP_PATH_PREFIX } from './transport/external-mcp/index.js'
+import {
+  createExternalMcp,
+  EXTERNAL_MCP_PATH,
+  isLoopbackAddress,
+} from './transport/external-mcp/index.js'
+import { authorizeCall, localPrincipal } from './features/auth/authorization.js'
+import { configuredAdmin } from './features/auth/authz.js'
+import { ensureWorkspaceScopeSchema } from './features/auth/scope-store.js'
 import { buildExternalMcpCatalog } from './features/external-mcp/tools.js'
+import {
+  ensureExternalMcpWriteAuditSchema,
+  recordExternalMcpWriteAudit,
+} from './features/external-mcp/audit-store.js'
 import { setExternalMcpSessionCloser } from './features/settings/mcp-api-keys.js'
-import { touchMcpApiKey, verifyMcpApiKey } from './kernel/config/mcp-api-keys.js'
+import { setExternalMcpOwnerSessionCloser } from './features/auth/workspace-access.js'
+import {
+  revokeUnownedMcpApiKeys,
+  touchMcpApiKey,
+  verifyMcpApiKey,
+} from './kernel/config/mcp-api-keys.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,
@@ -194,6 +216,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Installed first so every subsequent startup line is also persisted. The c3
   // home dir is already resolved by this point (cli.ts called setSettingsPath).
   initLogging()
+
+  // ---- Authorization storage: materialize, then enforce the owner invariant ----
+  // All three are idempotent and all three run before anything can serve a
+  // request — including the write-audit table, so the first external write does
+  // not pay for DDL and an unusable database is visible before it costs a trail.
+  // The revocation is not a one-shot migration: no code path can write an
+  // ownerless key any more, so a second pass finds nothing — running it every
+  // boot also catches a database hand-edited between runs.
+  ensureWorkspaceScopeSchema()
+  ensureExternalMcpWriteAuditSchema()
+  revokeUnownedMcpApiKeys()
 
   // ---- Wire the `session_metadata` projection hooks (kernel ↛ features) ----
   // The kernel layer doesn't import the projection store directly (ADR-0009);
@@ -719,21 +752,44 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // The PUBLIC external MCP route. Unlike every route above it takes no origin
   // and mints no per-run token: an agent c3 did not start authenticates with a
-  // long-lived API key that IS the address, and the scope — one workspace, one
-  // ticked tool set — is rebuilt from that key on every request. Wired here, after
-  // the run launcher and discussion starters exist, because a key may be granted
-  // write tools that reach both. It shares the SAME event bus sink, intent store
-  // and session launcher as the internal surfaces, so an external caller observes
-  // identical behaviour; only the attribution differs.
+  // long-lived bearer key, and what that key may reach is decided per request by
+  // the auth domain's one gate. Wired here, after the run launcher and discussion
+  // starters exist, because a key may be granted write tools that reach both. It
+  // shares the SAME event bus sink, intent store and session launcher as the
+  // internal surfaces, so an external caller observes identical behaviour; only
+  // the attribution differs.
+  //
+  // `exposedWithoutAdmin` is computed from the ACTUAL bind address, not from the
+  // configured one: the running process is what a caller can reach.
+  const boundToLoopback = isLoopbackAddress(
+    (opts.host?.trim() || DEFAULT_HOST).replace(/^\[|]$/g, ''),
+  )
   const externalMcp = createExternalMcp({
-    authenticate: (key) => verifyMcpApiKey(key),
-    resolveRegisteredWorkspace: (workspaceName) => {
-      const path = resolveWorkspaceRoot(workspaceName)
-      return path && isDirectory(path) ? path : null
+    authenticate: async (key) => {
+      const verified = await verifyMcpApiKey(key)
+      return verified
+        ? {
+            keyId: verified.id,
+            ownerSubject: verified.ownerSubject,
+            secretVersion: verified.secretVersion,
+            tools: verified.tools,
+          }
+        : null
     },
+    trustedLocalPrincipal: () =>
+      configuredAdmin(loadSettings().auth) === null ? localPrincipal() : null,
+    authorize: authorizeCall,
+    exposedWithoutAdmin: () => !boundToLoopback && configuredAdmin(loadSettings().auth) === null,
+    remoteAddress: (c) => getConnInfo(c).remote.address,
     onAuthenticated: (keyId) => touchMcpApiKey(keyId, Date.now()),
-    buildCatalog: (scope) =>
-      buildExternalMcpCatalog(scope, {
+    // Every attempted write leaves one attributable row. The route awaits this
+    // before answering, and treats a throw as "coverage lost", not as a business
+    // failure.
+    recordWriteAudit: (entry) => {
+      recordExternalMcpWriteAudit(entry)
+    },
+    buildCatalog: () =>
+      buildExternalMcpCatalog({
         normalizeEvent,
         publishEvent,
         broadcastIntents: broadcasts.broadcastIntents,
@@ -748,6 +804,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // already opened, not just refuse the next handshake: the settings handler calls
   // back into the live route.
   setExternalMcpSessionCloser((keyId) => externalMcp.closeSessionsForKey(keyId))
+  // An administrator's workspace-policy edit invalidates every key one account
+  // holds, which is not addressable by key id — so the access handler gets its own
+  // callback into the same live route.
+  setExternalMcpOwnerSessionCloser((owner) => externalMcp.closeSessionsForOwner(owner))
 
   // The QUEUE ADVISOR c3 MCP over loopback HTTP — a route of its own, bound per
   // consultation (workspace + one intent + chain depth). Kept separate from the
@@ -860,14 +920,15 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // PUBLIC external MCP endpoint. Deliberately NOT under `/internal`: it carries
   // no loopback guard and no per-run token, because its callers are agents c3
-  // never launched. The API key in the PATH is the sole credential and the sole
-  // scope input — it decides the workspace and the tool set on every request.
-  // A wildcard, not `/mcp/:key`, so a malformed address (`/mcp`, `/mcp/`,
-  // `/mcp/<key>/extra`) is refused HERE rather than falling through to the SPA
-  // catch-all and answering an MCP client with a page of HTML.
-  // Registered before the SPA catch-all, same as every other MCP route.
-  app.all(EXTERNAL_MCP_PATH_PREFIX, (c) => externalMcp.handler(c))
-  app.all(`${EXTERNAL_MCP_PATH_PREFIX}/*`, (c) => externalMcp.handler(c))
+  // never launched. The credential is a bearer header and the workspace is a
+  // header too, so the address itself carries nothing.
+  //
+  // The wildcard is registered so `/mcp/<anything>` is answered by this handler
+  // (with a 404) rather than falling through to the SPA catch-all and serving an
+  // MCP client a page of HTML. Registered before the catch-all, like every other
+  // MCP route.
+  app.all(EXTERNAL_MCP_PATH, (c) => externalMcp.handler(c))
+  app.all(`${EXTERNAL_MCP_PATH}/*`, (c) => externalMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

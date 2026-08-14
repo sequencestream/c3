@@ -3,14 +3,9 @@
 c3 的认证。在连接被允许驱动智能体之前,先确立它**是谁**。认证是一项**可选**能力——是否启用认证、
 以及是否把 c3 暴露到网络,由使用者决定;暴露到网络时建议启用认证(ADR-0023)。
 
-> **状态:部分运行时(2026-06-16)。** 边界 + 契约(配置形状、线消息)之外,
-> 又加入了一个为 System Settings
-> auth 面板供电的 **`basic` 提供方运行时**:真实的密码哈希(scrypt PHC)、真实的 `login` 凭据校验、以及
-> **多账户且恰好一个管理员**(添加/改密/移除账户 + 指定
-> 唯一管理员)。第一片**请求级授权**
-> 也已落地:**只有管理员可以更改系统配置**(AUTH-R10)——对 `basic` 强制执行。**仍未完成的:** 令牌签发/校验、
-> 通用认证中间件,完整的会话生命周期 UI,以及
-> 设置文件加固。各剩余任务分别填补什么见 _Roadmap_。
+本域回答两个问题:**你是谁**(认证)与**你能碰哪些工作区**(工作区范围)。前者由 provider 抽象承载,
+`none` 与 `basic` 两种实现;后者由管理员配置的账号级范围承载,控制台与外部 MCP 共用同一个求解器。
+尚未落地的部分(令牌签发/校验、通用认证中间件、完整会话生命周期 UI、设置文件加固)见 _Roadmap_。
 
 ## Why
 
@@ -43,6 +38,13 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   默认值)一次性迁移到 30 天默认值。会话仍然只存在于进程内(无持久化存储,
   ADR-0006),因此服务端重启会使每个令牌失效,不论 TTL 如何,下次重连都会重新提示登录。
 - **AuthExposureConfig** —— `{ bindAddress? }`。网络暴露 / 绑定意图。
+- **AuthorizationSubject** —— 一次请求实际以谁的身份被授权。已验证的 basic subject 映射为它自己;
+  认证缺省 / `enabled:false` / `none` / 尚未配置管理员的 `basic` 空壳,一律映射为合成主体
+  **`local`**。控制台与外部 MCP 共用这一个 resolver,所以两条路径对同一个人给出同一个答案。
+- **UserWorkspaceScope** —— `{ subject, mode: 'all' | 'selected', workspaces[] }`。管理员配置的账号级
+  工作区授权,落在 `user_workspace_scopes` + `user_workspace_scope_items`(见下节)。
+- **EffectiveScope** —— 一次外部 MCP 授权的冻结结果:`{ keyId, ownerSubject, secretVersion,
+policyEpoch, workspaceName, workspacePath, tools }`。它同时是会话钉定的四元组来源。
 - **AuthSessionToken** —— `{ tokenId, subject, issuedAt, expiresAt }`。与 provider 无关的已签发令牌。
 - **Wire messages** —— `login` / `logout` / `set_admin_password` / `remove_account` / `set_admin_account`
   (client→server),`login_result` / `admin_password_result` / `account_op_result` / `unauthenticated`
@@ -55,6 +57,33 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   `remove_account { username }` / `set_admin_account { username }` 管理账户集合 + 管理员指定
   (`account_op_result`:`ok` | `{ code: 'not_found' | 'admin_must_reassign' | 'invalid' }`)。
   `unauthenticated` 是 HTTP 401 的 WS 对应物。
+
+## 工作区范围 `user_workspace_scopes`
+
+「这个账号能碰哪些工作区」是**管理员配置的授权状态**,不是用户偏好。它决定两件事:控制台工作区列表
+里出现哪些条目,以及一把外部 MCP key(借它归属账号的权限)能到达哪些工作区。
+
+- **两张表,不是一列名单。** `user_workspace_scopes` 存 subject 与 `mode`;`user_workspace_scope_items`
+  存 `selected` 模式下的明细。拆开是为了让「选定了,但一个都没选」成为可表达的状态 —— 单列名单会把它
+  和「压根没配」压成同一个空值,而前者是管理员打出来的决定,后者是待配置。
+- **默认拒绝。** 没有策略行 = 一个工作区也到不了。`selected` 且零明细同样是零。缺行、无法解释的
+  `mode`、注册表已无的明细名 —— 每一种都产出空集,没有任何分支把缺失读作全部。
+- **两个 subject 不进表。** 已配置的管理员恒为 `all`(否则他能编辑掉自己的恢复权限,把部署锁死);
+  无认证部署的合成主体 `local` 同样恒为全部。两者都是 resolver 里的显式分支,而不是存储里的行。
+- **`all` 跟随注册表,`selected` 不跟随。** 新注册一个工作区会自动进入每个 `all` 范围,但绝不会挤进
+  任何 `selected` 名单。因此注册表变更也推进 policy epoch。
+- **不复用 `personalized_configs`。** 判断标准正好相反:那张表是用户自管的偏好,本表是管理员管、被
+  约束者只读的授权。共用一张表就把「可以自己改」和「绝不能自己改」压在同一条写路径上。
+- **写入整体替换**,且与 policy epoch 同事务提交;失败一起回滚,一次没落地的写绝不吊销任何会话。
+
+### policy epoch
+
+`system_configs` 的 `auth.policyEpoch` 是一个单调递增的**全局**值,回答「自这个会话被钉定以来,有没有
+任何授权输入变过」。推进它的是:工作区 ACL 写入、账号名册与管理员指定的变更、工作区注册表变更、以及
+每 key 的工具授权变更 —— 全部在改数据的同一事务里 bump。显示名与最后使用时间不推进它。
+
+刻意是全局而不是按 owner:按 owner 要求每个变更点自行判断「动了谁的权限」,分类错一次就是一个保留了
+旧权限的会话。全局的代价是一次无关编辑会断开无关的外部客户端,它们重新 initialize 即可。
 
 ## Business rules
 
@@ -124,6 +153,20 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   不可见;连接级认证关卡照旧生效。见
   [personalized-setting](../../settings/personalized-setting/personalized-setting-spec.md)。
 
+- **AUTH-R11(工作区可见性按主体求解)** —— 工作区列表不是原始注册表,而是
+  `listWorkspacesForSubject(subject)` 的结果:控制台的 `ready.workspaces`、后续的 `workspaces` 刷新与
+  外部 MCP 的工作区解析共用同一个 resolver,保持注册表顺序、只做过滤。管理员与 `local` 看到全部;其余
+  账号看到其存储范围求解出的子集,无范围记录即为空。**内部系统任务**(调度、清理)仍可读未过滤的注册表,
+  但任何面向用户的界面与外部 MCP 路径都不得把原始注册表当作授权判据。
+  **已知边界**:控制台的列表是**可见性**过滤,不是逐消息的访问控制 —— 一个已认证连接仍可对未列出的
+  `workspaceName` 发起工作区内消息(与引入范围之前一致)。外部 MCP 侧有 `authorizeCall` 逐调用把关,
+  WebSocket 侧的逐消息强制留待后续意图。
+- **AUTH-R12(外部 MCP 三层求交)** —— 外部调用的权限 = key 自身范围 ∩ owner 的工作区范围 ∩
+  (key 工具 ∩ 可外部授权目录)。唯一卡口是 `authorizeCall`,它先判 owner、再判工作区、最后判工具,
+  返回冻结的 `EffectiveScope`。`local` 归属的 key 只在没有管理员关卡时有效;一旦配置 basic 认证,它
+  立即失效而不被改派给任何真实账号。链路细节见
+  [external-mcp](../external-mcp/external-mcp-spec.md#请求与授权链)。
+
 ## Roadmap(延后到之后的任务)
 
 1. **已完成** —— 抽象边界 + 契约。
@@ -149,14 +192,18 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   连接的 `subject` 在 WebSocket 握手时和 `login` 时绑定,`ready.isAdmin`
   标志把 UX 提示传给控制台。Basic provider 的保留、
   派生的 `basic.enabled`、旧版单账户迁移,以及跨字段不变式全都位于
-  服务端的配置校验层中。
+  服务端的配置校验层中。授权侧另有主体求解、工作区范围求解与 `authorizeCall`,
+  它们是控制台工作区列表与外部 MCP 的**同一个**判断来源。
 - **Config panel** —— System Settings 页面承载认证区域,并路由
-  账户管理消息及其结果。
-- 持久化在 `system_configs` 的 `auth.*` 键空间下,通过与其余
-  系统配置相同的单一并发安全写路径。
+  账户管理消息及其结果。工作区范围目前没有编辑界面,由后续意图交付。
+- 认证配置持久化在 `system_configs` 的 `auth.*` 键空间下(policy epoch 是同一键空间里的
+  `auth.policyEpoch`,但不属于 `SystemSettings`,整对象保存会保留它);工作区范围持久化在
+  `user_workspace_scopes` 与 `user_workspace_scope_items`。
 
 ## References
 
-- [ADR-0023](../../../architecture/adr/0023-auth-abstraction-network-exposure.md) —— 该决策 +
+- [ADR-0023](../../../architecture/adr/0023-auth-abstraction-network-exposure.md) —— 认证抽象决策 +
   完整的类型结构与不变式。
+- [ADR-0044](../../../architecture/adr/0044-external-mcp-owner-scope-and-unified-endpoint.md) ——
+  工作区范围的默认拒绝语义、policy epoch 与三层求交的边界决策。
 - [glossary](../../../glossary.md) —— Authentication / AuthProvider / AuthConfig / Session token 术语。

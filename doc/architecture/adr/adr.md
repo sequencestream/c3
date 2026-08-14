@@ -63,3 +63,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0041](0041-worktree-baseline-drift-as-notice.md) · accepted — worktree 基线不符是提示,不是闸门
 - [0042](0042-configuration-in-database.md) · accepted — 配置只有一处事实源 c3.db:一字段一行的细粒度 KV + `--db` 单一覆盖 + 旧 JSON 一次性导入后弃用
 - [0043](0043-console-self-update-and-relaunch.md) · accepted — 控制台自更新:服务端唯一状态机 + `ready` 前不碰已装二进制 + 按运行形态移交重启(systemd `--no-block` / launchd KeepAlive / 助手进程 / 前台就地派生)
+- [0044](0044-external-mcp-owner-scope-and-unified-endpoint.md) · accepted — 外部 MCP 归属账号求交的权限内核(user_workspace_scopes 默认拒绝 + 全局 policy epoch)+ 无凭据统一端点 `POST /mcp`(Bearer 唯一凭据、`X-C3-Workspace` 选工作区、四元组会话钉定)

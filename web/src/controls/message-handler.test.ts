@@ -123,6 +123,7 @@ function makeCtx() {
   // `settings` 分支写入的其余快照 refs —— 测试只断言 settingsOpen,其余仅为避免
   // 处理器写入 undefined 而抛错。
   const settingsOpen = ref(false)
+  const addWorkspaceOpen = ref(false)
   const hostStatus = ref<unknown>(null)
   const vendorRuntime = ref<unknown>(null)
   const sandboxStatus = ref<unknown>(null)
@@ -160,6 +161,7 @@ function makeCtx() {
   })
   const ctx = {
     settingsOpen,
+    addWorkspaceOpen,
     hostStatus,
     vendorRuntime,
     sandboxStatus,
@@ -1653,6 +1655,162 @@ describe('auto-open settings when no agent is configured', () => {
     r.ctx.handleMessage(settingsMsg(['agent-1']))
     r.ctx.handleMessage(settingsMsg([]))
     expect(r.settingsOpen.value).toBe(false)
+  })
+})
+
+// 工作区冷启动引导:握手恒为 ready(权威工作区快照)→ settings(agent 是否配置好),
+// 两个输入到齐判定一次。这个 ctx 只需覆盖 ready / settings / workspaces 三条分支。
+function makeWorkspaceOnboardingCtx() {
+  const addWorkspaceOpen = ref(false)
+  const settingsOpen = ref(false)
+  const workspaces = ref<import('@ccc/shared/protocol').WorkspaceInfo[]>([])
+  const ctx = {
+    t: (key: string) => key,
+    add: vi.fn(),
+    send: vi.fn(),
+    showToast: vi.fn(),
+    addWorkspaceOpen,
+    settingsOpen,
+    workspaces,
+    currentWorkspace: ref<string | null>(null),
+    auth: { setIsAdmin: vi.fn(), setSubject: vi.fn() },
+    fetchPersonalizedSettings: vi.fn(),
+    updateStatus: ref({ available: false, latestVersion: null, checkedAt: null }),
+    selfUpdate: ref({
+      phase: 'idle',
+      capable: false,
+      currentVersion: '',
+      targetVersion: null,
+      downloadedBytes: 0,
+      totalBytes: 0,
+    }),
+    workspaceSettingOpen: ref(false),
+    currentWorkspaceSetting: ref(null),
+    detectedMainBranch: ref(null),
+    resolvedSpecRoot: ref(null),
+    sysExtraMounts: ref([]),
+    parkRecoveryStats: ref(null),
+    parkRecoveryError: ref(null),
+    parkRecoveryLoading: ref(false),
+    pendingDeepLink: ref(null),
+    deepLinkFulfilled: ref(new Set<string>()),
+    deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
+    sessionStatus: ref({}),
+    activeSession: ref<string | null>(null),
+    teamSessions: ref(new Set<string>()),
+    flushIfReady: vi.fn(),
+    readStoredWorkspace: vi.fn(() => null),
+    persistCurrentWorkspace: vi.fn(),
+    ensureSessions: vi.fn(),
+    maybeRestoreIntents: vi.fn(),
+    maybeRestoreDiscussions: vi.fn(),
+    maybeRestoreAutomations: vi.fn(),
+    maybeRestoreCodes: vi.fn(),
+    openIntents: vi.fn(),
+    intentsProject: ref<string | null>(null),
+    activeTab: ref('intents'),
+    savedTab: ref('intents'),
+    onSelectTab: vi.fn(),
+    switchToConsoleTab: vi.fn(),
+    serverSettings: ref(null),
+    hostStatus: ref(null),
+    vendorRuntime: ref(null),
+    sandboxStatus: ref(null),
+    bindingStats: ref(null),
+    sessionCapabilities: ref(null),
+    vendorCapabilities: ref(null),
+    vendorModes: ref(null),
+    skillSupport: ref(null),
+    maybeRefreshDashboard: vi.fn(),
+  } as unknown as AppCtx
+  installMessageHandler(ctx)
+  return { ctx, addWorkspaceOpen, settingsOpen, workspaces }
+}
+
+function readyMsg(names: string[], isAdmin = true): ServerToClient {
+  return {
+    type: 'ready',
+    workspaces: names.map((name) => ({ name, path: `/ws/${name}`, lastAccessed: 0 })),
+    isAdmin,
+    subject: null,
+    statuses: [],
+    updateStatus: { available: false, latestVersion: null, checkedAt: null },
+  } as unknown as ServerToClient
+}
+
+function workspacesMsg(names: string[]): ServerToClient {
+  return {
+    type: 'workspaces',
+    workspaces: names.map((name) => ({ name, path: `/ws/${name}`, lastAccessed: 0 })),
+  } as unknown as ServerToClient
+}
+
+describe('auto-open add-workspace when the registry is empty', () => {
+  it('空工作区 + 已配置 agent → 自动打开新增工作区,且不打开系统设置', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(true)
+    expect(r.settingsOpen.value).toBe(false)
+  })
+
+  it('测试内颠倒注入顺序(settings 先于 ready)时,在 ready 落地后判定', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+    r.ctx.handleMessage(readyMsg([]))
+    expect(r.addWorkspaceOpen.value).toBe(true)
+  })
+
+  it('绝不等 workspaces 广播:没有 ready 时,settings + 空 workspaces 广播也不弹', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(workspacesMsg([]))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('已有工作区 → 不弹;同会话重连与后续 settings 同样不弹', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg(['proj-a']))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+    // 重连快照仍非空,判定也早已消费。
+    r.ctx.handleMessage(readyMsg(['proj-a']))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('agent 未配置 → 只留 agent 引导;本会话内配好 agent 也不补弹新增工作区', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.addWorkspaceOpen.value).toBe(false)
+    // 用户在设置里加了 agent 并关闭设置:不排队、不叠加。
+    r.settingsOpen.value = false
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('用户关闭后:重放 settings、工作区增删广播、重连 ready 都不再自动弹出', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(true)
+
+    r.addWorkspaceOpen.value = false
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(workspacesMsg(['proj-a']))
+    r.ctx.handleMessage(workspacesMsg([]))
+    r.ctx.handleMessage(readyMsg([]))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('非管理员 → 不弹(增删工作区受管理员门控)', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([], false))
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
   })
 })
 

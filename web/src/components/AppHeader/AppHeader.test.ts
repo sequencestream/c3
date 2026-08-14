@@ -489,6 +489,74 @@ describe('AppHeader.vue — 「用户通知」入口待处理数角标', () => {
   })
 })
 
+describe('AppHeader.vue — 受控的新增工作区弹框', () => {
+  it('受控开关为假 / 缺省 → 不渲染弹框', () => {
+    expect(
+      mount(AppHeader, { props: baseProps }).find('[data-testid="input-overlay"]').exists(),
+    ).toBe(false)
+    expect(
+      mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: false } })
+        .find('[data-testid="input-overlay"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('受控开关为真 → 桌面与移动端两处切换器共用一个弹框实例,不叠两层遮罩', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    expect(w.findAll('.ws-switcher')).toHaveLength(2)
+    expect(w.findAll('[data-testid="input-overlay"]')).toHaveLength(1)
+  })
+
+  it('点击桌面 / 移动端「+」→ 各 emit 一次 update:addWorkspaceOpen(true)', async () => {
+    const w = mount(AppHeader, { props: baseProps })
+    await w.find('.desktop-header-row .ws-switcher-add').trigger('click')
+    await w.find('.mobile-header-row .ws-switcher-add').trigger('click')
+    expect(w.emitted('update:addWorkspaceOpen')).toEqual([[true], [true]])
+  })
+
+  it('确认 → emit 一次不变的 add-workspace 载荷并关闭(路径 trim,名称随 basename 预填)', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    await w.find('[data-testid="input-field"]').setValue('  /home/proj-c  ')
+    await w.find('[data-testid="input-accept"]').trigger('click')
+    expect(w.emitted('add-workspace')).toEqual([
+      [{ workspaceName: 'proj-c', path: '/home/proj-c' }],
+    ])
+    expect(w.emitted('update:addWorkspaceOpen')).toEqual([[false]])
+  })
+
+  it('自定义 Unicode 名称照常提交,超过 64 个字符时确认禁用', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    await w.find('[data-testid="input-field"]').setValue('/home/proj-c')
+    await w.find('[data-testid="workspace-name-field"]').setValue('研发 / C')
+    await w.find('[data-testid="input-accept"]').trigger('click')
+    expect(w.emitted('add-workspace')).toEqual([
+      [{ workspaceName: '研发 / C', path: '/home/proj-c' }],
+    ])
+
+    await w.find('[data-testid="input-field"]').setValue('/home/too-long')
+    await w.find('[data-testid="workspace-name-field"]').setValue('🚀'.repeat(65))
+    expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
+
+  it('空输入确认禁用;取消只关闭,不产生 add-workspace', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    await w.find('[data-testid="input-cancel"]').trigger('click')
+    expect(w.emitted('add-workspace')).toBeUndefined()
+    expect(w.emitted('update:addWorkspaceOpen')).toEqual([[false]])
+  })
+
+  it('非管理员没有「+」入口,增删门控不因弹框上提而放宽', () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.ws-switcher-add').exists()).toBe(false)
+  })
+})
+
 describe('AppHeader.vue — 账户菜单(ADR-0023)', () => {
   it('未认证(showLogout 缺省)→ 桌面不渲染账户菜单触发器', () => {
     const w = mount(AppHeader, { props: baseProps })

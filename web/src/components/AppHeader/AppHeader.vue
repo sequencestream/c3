@@ -20,6 +20,7 @@
  * 故无障碍文案取各 tab 自带的 badgeAriaLabel。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
+import AddWorkspaceDialog from '../AddWorkspaceDialog/AddWorkspaceDialog.vue'
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.vue'
 import type { SelfUpdateState, UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
@@ -118,6 +119,8 @@ const props = defineProps<{
   updateStatus?: UpdateStatus | null
   /** Server-driven self-update pipeline; turns the hint into progress + a restart action. */
   selfUpdate?: SelfUpdateState | null
+  /** 「新增工作区」弹框的受控开关(两处切换器共用一个实例):手动「+」与冷启动引导共写。 */
+  addWorkspaceOpen?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -126,6 +129,7 @@ const emit = defineEmits<{
   'open-personalized-setting': []
   'open-workspace-setting': []
   'add-workspace': [payload: { workspaceName: string; path: string }]
+  'update:addWorkspaceOpen': [open: boolean]
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
@@ -134,6 +138,13 @@ const emit = defineEmits<{
   'apply-self-update': []
   logout: []
 }>()
+
+// 新增工作区弹框由顶栏单实例持有:确认上抛既有 `add-workspace` 载荷(路径唯一的合法
+// 入口)并关闭,取消只关闭;两处切换器的「+」与冷启动引导共用同一个开关。
+function onAddWorkspaceConfirm(payload: { workspaceName: string; path: string }): void {
+  emit('add-workspace', payload)
+  emit('update:addWorkspaceOpen', false)
+}
 
 // 新版本提示:仅当服务端判定"有更新"且已知最新版本号时为真;无更新 / 未知 / 检查失败
 // 都表现为 false(available=false 或 latestVersion 为空)。
@@ -324,7 +335,7 @@ function selectTab(tab: HeaderTab): void {
         <WorkspaceSwitcher
           :workspaces="workspaces"
           :current-workspace-name="currentWorkspace"
-          @add-workspace="emit('add-workspace', $event)"
+          @request-add-workspace="emit('update:addWorkspaceOpen', true)"
           @select-workspace="emit('select-workspace', $event)"
           @remove-workspace="emit('remove-workspace', $event)"
         />
@@ -572,7 +583,7 @@ function selectTab(tab: HeaderTab): void {
         <WorkspaceSwitcher
           :workspaces="workspaces"
           :current-workspace-name="currentWorkspace"
-          @add-workspace="emit('add-workspace', $event)"
+          @request-add-workspace="emit('update:addWorkspaceOpen', true)"
           @select-workspace="emit('select-workspace', $event)"
           @remove-workspace="emit('remove-workspace', $event)"
         />
@@ -685,6 +696,14 @@ function selectTab(tab: HeaderTab): void {
         </span>
       </button>
     </nav>
+
+    <!-- 新增工作区弹框:桌面与移动端两处切换器同时挂载,故弹框在顶栏只有这一个受控
+         实例,手动「+」与冷启动引导共用;路径与名称仍只在此收集。 -->
+    <AddWorkspaceDialog
+      :open="addWorkspaceOpen === true"
+      @confirm="onAddWorkspaceConfirm"
+      @cancel="emit('update:addWorkspaceOpen', false)"
+    />
 
     <!-- 重启生效的二次确认:重启会断开所有已连接会话,所以按危险操作处理。 -->
     <ConfirmDialog

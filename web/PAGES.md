@@ -29,8 +29,8 @@ web/src/
 │
 ├── components/                                      # 跨页面通用组件
 │   ├── ActionDescriptorBanner/ActionDescriptorBanner.vue  # 派生「下一步」提示条(唯一展示单元,意图列表行与意图详情头部共用):descriptor 为 null 时不渲染;非空时以最高层级危险语义渲染 role=alert 的高对比提示区(⚠ + 可读正文 + 原生 button,信息不依赖颜色),文案由 lib/action-descriptor 按 labelCode / target.type 映射 i18n key(少数 labelCode 覆盖按钮文案:规格返工触顶时按钮是「人工接管」);指向另一条意图的阻塞(依赖闸门)由调用方传入 targetIntent(按 target.intentId 从当前 intents 解析的标题+状态)插值进正文,解析不到时退回不声称标题的兜底文案、绝不显示裸 id;带卡点摘要的阻塞(规格返工触顶)在正文下方多渲一行 .ad-blocker——取 reviewReason(审核理由原文,pre-wrap 保留换行、按纯文本渲染),为空则用兜底文案;按钮始终只有一个,不提供任何重试入口;组件自身不导航,点击只 emit navigate(target)
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏与移动端底栏共用 HEADER_TABS;基础顺序=需求/讨论/自动化/代码,服务端 showSessionsPage=true 时才在代码后追加会话(含六类运行中数角标),未知/关闭时两端均不渲染会话入口。意图/讨论/自动化三个 tab 各带「进行中条目数」角标(按 owner 去重,0 不渲染,纯展示无点击交互,aria-label 取该 tab 的 badgeAriaLabel、缺省退回会话文案)。整行最左为 viewMode 工作区/工作台两图标切换器;工作台模式显示用户通知/总览入口(用户通知在前,为默认页)及待处理角标;右侧保留项目配置/个人化设置/系统设置/账户/连接状态、更新胶囊与许可状态菜单——更新胶囊按服务端自更新状态换形(不可自更新→外链发布页;下载/校验中→只读百分比;已就绪→管理员点「重启以更新」并二次确认、非管理员只告知;失败→管理员可重试),桌面与移动「⋯」菜单共用同一份状态——个人化设置(人形齿轮图标)恒定可见、不受 isAdmin 约束,系统设置(⚙)仅管理员可见;移动顶部使用同一模式切换和工作区/工作台入口,「⋯」操作菜单同样并列三个设置入口
-│   ├── AddWorkspaceDialog/AddWorkspaceDialog.vue    # 新增工作区弹框:输入磁盘路径与唯一 workspace name;名称随路径 basename 自动预填,用户编辑后停止跟随;提交前 trim 并校验名称 1–64 个 Unicode 字符
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏与移动端底栏共用 HEADER_TABS;基础顺序=需求/讨论/自动化/代码,服务端 showSessionsPage=true 时才在代码后追加会话(含六类运行中数角标),未知/关闭时两端均不渲染会话入口。意图/讨论/自动化三个 tab 各带「进行中条目数」角标(按 owner 去重,0 不渲染,纯展示无点击交互,aria-label 取该 tab 的 badgeAriaLabel、缺省退回会话文案)。整行最左为 viewMode 工作区/工作台两图标切换器;工作台模式显示用户通知/总览入口(用户通知在前,为默认页)及待处理角标;右侧保留项目配置/个人化设置/系统设置/账户/连接状态、更新胶囊与许可状态菜单——更新胶囊按服务端自更新状态换形(不可自更新→外链发布页;下载/校验中→只读百分比;已就绪→管理员点「重启以更新」并二次确认、非管理员只告知;失败→管理员可重试),桌面与移动「⋯」菜单共用同一份状态——个人化设置(人形齿轮图标)恒定可见、不受 isAdmin 约束,系统设置(⚙)仅管理员可见;移动顶部使用同一模式切换和工作区/工作台入口,「⋯」操作菜单同样并列三个设置入口。桌面与移动端两处 WorkspaceSwitcher 共用顶栏持有的**唯一** AddWorkspaceDialog 实例:两者的「+」与上层受控开关(v-model:add-workspace-open,冷启动引导亦写它)都指向它,确认上抛 add-workspace 载荷并关闭
+│   ├── AddWorkspaceDialog/AddWorkspaceDialog.vue    # 新增工作区弹框:输入磁盘路径与唯一 workspace name;名称随路径 basename 自动预填,用户编辑后停止跟随;提交前 trim 并校验名称 1–64 个 Unicode 字符。受控 :open,由 AppHeader 单实例持有
 │   ├── AsyncFallback/                               # 懒加载占位件(只服务 App.vue 的 defineAsyncComponent 装配,不含任何业务逻辑、无 props、不发消息)
 │   │   ├── AsyncViewLoading.vue                     # 页面级 loading:flex:1 占住内容区原本的位置(min-width/min-height:0),居中转圈,role=status + aria-busy,顶栏/底栏不因内容区暂空而位移
 │   │   ├── AsyncViewError.vue                       # 页面级失败兜底:同样占位的稳定容器 + 一句解释,role=alert;文案只引导整页刷新(页内无第二条恢复路径),失败也不影响顶栏切 tab 这条返回路径
@@ -63,7 +63,7 @@ web/src/
 │   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   ├── TabNav/TabNav.vue                            # 设置页 Tab 导航条(系统设置/工作区设置共用):纯展示,不持有草稿状态;按 prefix prop 复用各页既有 class 与 data-testid 家族(settings-* / project-config-*,nav 为组件根元素故仍受页面 scoped 样式作用,内部元素由页面以 :deep 定制);渲染 role=tablist/tab + aria-selected、脏 Tab 圆点(dirtyMap)与其 tooltip,点击仅 emit select,是否放行切换由页面的 requestTab(useTabbedDraftSave 脏守卫)决定;移动端横向滚动
 │   ├── TaskPanel/TaskPanel.vue                      # 实时任务面板:只读展示当前 session 任务列表,in_progress 置顶/pending 居中/completed 垫底
-│   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:触发区仅显示当前 workspace name;下拉路径仅辅助展示,以名称执行选择/移除;新增委托 AddWorkspaceDialog 输入路径和名称;内含 popover,增删入口受 isAdmin 门控
+│   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:触发区仅显示当前 workspace name;下拉路径仅辅助展示,以名称执行选择/移除;「+」只上抛 request-add-workspace(弹框在 AppHeader);内含 popover,增删入口受 isAdmin 门控
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页(顶层 view-mode;用户通知 / 总览 页面入口已上移到 AppHeader 顶栏,用户通知在前且为默认页,App.vue 持有 workcenterPage 态并据此仅渲染对应页面,内容区不再有页内二级导航)

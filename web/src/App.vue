@@ -121,6 +121,7 @@ const {
   openPersonalizedSetting,
   openWorkspaceSetting,
   addWorkspace,
+  addWorkspaceOpen,
   selectWorkspace,
   removeWorkspace,
   // ---- console (Works) ----
@@ -583,6 +584,7 @@ function onCodesChatWidth(px: number): void {
   <Login v-if="authStatus === 'login-required'" />
   <template v-else>
     <AppHeader
+      v-model:add-workspace-open="addWorkspaceOpen"
       :workspaces="workspaces"
       :current-workspace="currentWorkspace"
       :status="status"

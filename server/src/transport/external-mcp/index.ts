@@ -261,10 +261,10 @@ export function createExternalMcp(deps: ExternalMcpDeps): ServedExternalMcp {
   const now = deps.now ?? (() => Date.now())
   // The catalog is scope-free, so ONE build serves every session. Built lazily
   // so constructing the route stays free of feature work.
-  let catalog: Map<string, ExternalMcpTool> | null = null
+  let builtCatalog: Map<string, ExternalMcpTool> | null = null
   const tools = (): Map<string, ExternalMcpTool> => {
-    if (!catalog) catalog = new Map(deps.buildCatalog().map((tool) => [tool.name, tool]))
-    return catalog
+    if (!builtCatalog) builtCatalog = new Map(deps.buildCatalog().map((tool) => [tool.name, tool]))
+    return builtCatalog
   }
 
   /**

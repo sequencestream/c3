@@ -380,6 +380,8 @@ export interface AppMethods {
   querySkillLinkStatus(): void
   installSkill(skillId: string): void
   saveSettings(settings: SystemSettings): void
+  /** Probe runnable vendors and persist a system-mode agent for each without one. */
+  autoConfigureAgents(): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void

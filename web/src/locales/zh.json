@@ -444,7 +444,16 @@
       "groupPicker": {
         "label": "分组"
       },
-      "locateMissing": "原配置已不存在，已为你定位到该 vendor 的智能体配置。"
+      "locateMissing": "原配置已不存在，已为你定位到该 vendor 的智能体配置。",
+      "autoConfigure": {
+        "label": "一键自动配置",
+        "hint": "还没有配置智能体。探测本机已安装的 vendor CLI,为每个可用的 vendor 创建一个开箱即用的智能体。",
+        "result": {
+          "created": "已创建 {n} 个智能体。",
+          "noVendor": "未探测到可运行的 vendor CLI。请先安装或登录 CLI,再到「运行时」页签查看诊断。",
+          "alreadyConfigured": "每个可运行的 vendor 都已有智能体。"
+        }
+      }
     },
     "defaultMode": {
       "title": {

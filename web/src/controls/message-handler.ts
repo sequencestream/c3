@@ -833,6 +833,21 @@ export function installMessageHandler(ctx: AppCtx): void {
           evaluateWorkspaceOnboarding()
         }
         break
+      case 'auto_configure_agents_result': {
+        // The registry itself arrives on the `settings` echo that follows; this
+        // frame only explains the outcome. `created: 0` has two very different
+        // causes, so it is never reported as a bare "nothing happened": no
+        // runnable vendor points at the runtime diagnostics, while an already
+        // covered registry says so plainly.
+        if (msg.created > 0) {
+          ctx.showToast(t('settings.agents.autoConfigure.result.created', { n: msg.created }))
+        } else if (msg.availableVendors === 0) {
+          ctx.showToast(t('settings.agents.autoConfigure.result.noVendor'))
+        } else {
+          ctx.showToast(t('settings.agents.autoConfigure.result.alreadyConfigured'))
+        }
+        break
+      }
       case 'mcp_api_keys':
         // The workspace-addressed roster. Still on the wire for older clients,
         // but no first-party page administers keys by workspace any more — a key

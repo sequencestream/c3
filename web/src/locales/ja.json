@@ -445,7 +445,16 @@
       "groupPicker": {
         "label": "グループ"
       },
-      "locateMissing": "元の設定は存在しません。代わりにこのベンダーのエージェントを表示しています。"
+      "locateMissing": "元の設定は存在しません。代わりにこのベンダーのエージェントを表示しています。",
+      "autoConfigure": {
+        "label": "自動設定",
+        "hint": "エージェントが未設定です。このホストにインストールされている vendor CLI を検出し、それぞれにすぐ使えるエージェントを作成します。",
+        "result": {
+          "created": "{n} 個のエージェントを作成しました。",
+          "noVendor": "実行可能な vendor CLI が見つかりません。CLI をインストールまたはログインしてから、「ランタイム」タブで診断を確認してください。",
+          "alreadyConfigured": "実行可能なすべての vendor に既にエージェントがあります。"
+        }
+      }
     },
     "defaultMode": {
       "title": {

@@ -216,6 +216,11 @@ const emit = defineEmits<{
   'remove-account': [payload: { username: string }]
   // Designate which basic account is the single admin.
   'set-admin-account': [payload: { username: string }]
+  // Probe the runnable vendors and persist a system-mode agent for each that has
+  // none. Deliberately NOT part of `save`: it bypasses the tab draft entirely and
+  // lands server-side at once, so the cold-start user gets a usable agent from one
+  // click instead of a click plus a Save they have no reason to trust yet.
+  'auto-configure-agents': []
   // The one-shot `target` was acted on (located, or resolved to its fallback);
   // the owner clears it so reopening the panel does not jump again.
   'target-consumed': []
@@ -609,6 +614,23 @@ function configModeLabel(m: 'system' | 'custom'): string {
     ? t('settings.agents.configMode.system.label')
     : t('settings.agents.configMode.custom.label')
 }
+
+/**
+ * Whether the STORED registry still has nothing a user chose — empty, or holding
+ * only the synthesized fallback (`id === SYSTEM_AGENT_ID`, the record the server
+ * conjures so a session is never locked out). This is what gates the one-click
+ * bootstrap CTA.
+ *
+ * Judged against the server snapshot, NOT the draft, on purpose: the action
+ * bypasses the draft and writes server-side immediately, so the question it
+ * answers is "is anything actually configured?". Reading the draft would hide the
+ * CTA the moment someone added an unsaved blank row — leaving the registry as
+ * empty as it was, with the one affordance that would have fixed it now gone.
+ */
+const agentsUnconfigured = computed<boolean>(() => {
+  const agents = props.settings?.agents ?? []
+  return !agents.some((a) => a.id !== SYSTEM_AGENT_ID)
+})
 
 /** A fresh, vendor-correct {@link AgentConfig} preserving the shared shell fields.
  *  Switching vendor MUST rebuild `config` (discriminated union — a half-changed
@@ -1497,6 +1519,19 @@ function selectAdmin(username: string) {
           >
             {{ groupNotice }}
           </p>
+          <!-- Cold-start CTA: shown only while the stored registry holds nothing the
+               user configured. Persists immediately (no tab draft, no Save). -->
+          <div v-if="agentsUnconfigured" class="agent-autoconfig" data-testid="agent-autoconfig">
+            <p class="agent-autoconfig-hint">{{ t('settings.agents.autoConfigure.hint') }}</p>
+            <button
+              class="agent-autoconfig-btn"
+              data-testid="settings-auto-configure-agents"
+              :disabled="!isAdmin"
+              @click="emit('auto-configure-agents')"
+            >
+              {{ t('settings.agents.autoConfigure.label') }}
+            </button>
+          </div>
           <!-- Per-vendor sub-tabs: no "All" overview; list below shows only this vendor. -->
           <TabNav
             :tabs="VENDOR_ORDER"

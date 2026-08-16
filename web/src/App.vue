@@ -396,6 +396,7 @@ const {
   settingsTarget,
   bindingStats,
   saveSettings,
+  autoConfigureAgents,
   setLocale,
   setTheme,
   setFontScale,
@@ -1069,6 +1070,7 @@ function onCodesChatWidth(px: number): void {
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
       @save="saveSettings"
+      @auto-configure-agents="autoConfigureAgents"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"

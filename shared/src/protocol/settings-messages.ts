@@ -35,6 +35,42 @@ export type ClientGetSettings = { type: 'get_settings' }
 export type ClientSaveSettings = { type: 'save_settings'; settings: SystemSettings }
 
 /**
+ * One-click agent bootstrap for a deployment whose registry is still empty: probe
+ * which vendors can actually run here and persist a `configMode: 'system'` agent
+ * for each one that has none yet (reply: `auto_configure_agents_result`, followed
+ * by the usual `settings` echo).
+ *
+ * The caller names no vendor and proposes no agent: what is runnable is a runtime
+ * fact the server already answers for `vendorRuntime`, so letting a client pass a
+ * list would only let it ask for an agent that cannot start. Admin-only, like
+ * every other system-configuration mutation.
+ */
+export type ClientAutoConfigureAgents = { type: 'auto_configure_agents' }
+
+/**
+ * What the one-click bootstrap actually did — the counts a console needs to say
+ * something true instead of "done".
+ *
+ * `created` is the number of agents persisted, `availableVendors` how many vendors
+ * were runnable at all. Both are needed because `created: 0` has two very
+ * different causes: nothing is installed (`availableVendors: 0` ⇒ point the user
+ * at the runtime diagnostics) versus every runnable vendor already had a system
+ * agent (⇒ nothing to do). Reporting only a count would collapse the two.
+ *
+ * Rides alongside — not instead of — the `settings` echo: the registry itself
+ * still arrives through the one message every settings consumer already reads.
+ */
+export type ServerAutoConfigureAgentsResult = {
+  type: 'auto_configure_agents_result'
+  /** How many `configMode: 'system'` agents were newly persisted. */
+  created: number
+  /** How many vendors reported a runnable runtime at probe time. */
+  availableVendors: number
+  /** The vendors an agent was created for, in canonical order; empty when none. */
+  vendors: VendorId[]
+}
+
+/**
  * Fetch this connection's {@link PersonalizedSettings} (reply:
  * `personalized_settings`). `localFallback` carries the browser's own current
  * values so the server can seed a brand-new account record from them; it is a

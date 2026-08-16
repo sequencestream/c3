@@ -2701,3 +2701,36 @@ describe('identity change clears every per-identity roster', () => {
     expect(r.workspaceAccessors.value).toBeNull()
   })
 })
+
+describe('auto_configure_agents_result — the outcome is never silent', () => {
+  // `ctx.t` is a passthrough in these tests, so the toast text IS the i18n key —
+  // enough to pin WHICH branch ran, which is the whole point here.
+  const KEY = 'settings.agents.autoConfigure.result'
+
+  function fire(created: number, availableVendors: number) {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'auto_configure_agents_result',
+      created,
+      availableVendors,
+      vendors: [],
+    } as unknown as ServerToClient)
+    return result
+  }
+
+  it('reports how many agents were created', () => {
+    const r = fire(2, 2)
+    expect(r.toast.value).toBe(`${KEY}.created`)
+  })
+
+  it('points at the runtime diagnostics when nothing is runnable', () => {
+    const r = fire(0, 0)
+    expect(r.toast.value).toBe(`${KEY}.noVendor`)
+  })
+
+  it('distinguishes "already covered" from "nothing installed" — both are created: 0', () => {
+    const r = fire(0, 3)
+    expect(r.toast.value).toBe(`${KEY}.alreadyConfigured`)
+    expect(r.toast.value).not.toBe(`${KEY}.noVendor`)
+  })
+})

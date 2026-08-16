@@ -2263,3 +2263,80 @@ describe('SettingsPanel.vue — agent id minting (2026-08-07-007)', () => {
     expect(ids[0]).not.toMatch(/new|copy/i)
   })
 })
+
+describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
+  const CTA = '[data-testid="settings-auto-configure-agents"]'
+  const BLOCK = '[data-testid="agent-autoconfig"]'
+
+  afterEach(() => useAuth().setIsAdmin(true))
+
+  /** A registry holding only the synthesized fallback — the cold-start state. */
+  const onlyFallback: SystemSettings = { ...baseSettings }
+
+  const configured: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      ...baseSettings.agents,
+      {
+        id: 'codex-1',
+        vendor: 'codex',
+        configMode: 'system',
+        displayName: 'Codex',
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+      },
+    ],
+  }
+
+  it('offers the CTA while the registry holds only the synthesized fallback', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
+    expect(w.find(BLOCK).exists()).toBe(true)
+    expect(w.find(CTA).exists()).toBe(true)
+  })
+
+  it('offers the CTA when the registry is entirely empty', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, agents: [] } },
+    })
+    expect(w.find(CTA).exists()).toBe(true)
+  })
+
+  it('hides the CTA once any real agent exists', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: configured } })
+    expect(w.find(BLOCK).exists()).toBe(false)
+    expect(w.find(CTA).exists()).toBe(false)
+  })
+
+  it('emits auto-configure-agents on click — never a settings save', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
+    await w.find(CTA).trigger('click')
+    expect(w.emitted('auto-configure-agents')).toHaveLength(1)
+    // It persists server-side on its own; routing it through the tab draft would
+    // make the cold-start user save before they have an agent to save.
+    expect(w.emitted('save')).toBeUndefined()
+  })
+
+  it('stays visible after an unsaved blank row is added — the registry is still empty', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    expect(w.find(CTA).exists()).toBe(true)
+  })
+
+  it('disables the CTA for a non-admin (the server refuses it regardless)', () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
+    expect(w.find(CTA).attributes()).toHaveProperty('disabled')
+  })
+
+  it('ships matching English and Chinese copy for the CTA and its outcomes', () => {
+    const en = JSON.parse(readFileSync(resolve(__dirname, '../../../../locales/en.json'), 'utf8'))
+    const zh = JSON.parse(readFileSync(resolve(__dirname, '../../../../locales/zh.json'), 'utf8'))
+    expect(en.settings.agents.autoConfigure.label).toBe('Auto-configure')
+    expect(zh.settings.agents.autoConfigure.label).toBe('一键自动配置')
+    // The two zero-created cases must stay distinguishable in every locale.
+    for (const cat of [en, zh]) {
+      const r = cat.settings.agents.autoConfigure.result
+      expect(r.noVendor).not.toBe(r.alreadyConfigured)
+      expect(r.created).toContain('{n}')
+    }
+  })
+})

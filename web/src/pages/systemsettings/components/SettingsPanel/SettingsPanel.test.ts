@@ -2339,4 +2339,76 @@ describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
       expect(r.created).toContain('{n}')
     }
   })
+
+  // The echo after auto-configure mints agents server-side while bypassing the tab
+  // draft. A dirty Agent draft is normally protected from pushbacks — but keeping
+  // the stale registry would make the next Agent Save overwrite and DELETE the
+  // freshly minted agents (AC-R29). The echo must yield the draft when it grew.
+  it('resets a dirty Agent draft when the echo minted agents, so a later Save keeps them', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
+    // An unsaved blank row dirties the Agent tab.
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    // Click auto-configure: it persists server-side on its own (no settings save).
+    await w.find(CTA).trigger('click')
+    expect(w.emitted('auto-configure-agents')).toHaveLength(1)
+    expect(w.emitted('save')).toBeUndefined()
+    // Server echo: two new system agents minted (codex + cursor; claude is covered
+    // by the synthesized fallback, so AC-R29 idempotency skips it).
+    await w.setProps({
+      settings: {
+        ...baseSettings,
+        agents: [
+          ...baseSettings.agents,
+          {
+            id: 'minted-codex',
+            vendor: 'codex',
+            configMode: 'system',
+            displayName: 'Codex',
+            enabled: true,
+            config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+          },
+          {
+            id: 'minted-cursor',
+            vendor: 'cursor',
+            configMode: 'system',
+            displayName: 'Cursor',
+            enabled: true,
+            config: { apiKey: '', model: '' },
+          },
+        ],
+      },
+    })
+    // The stale blank row is gone from the draft; the claude sub-tab shows System only.
+    expect(
+      w.findAll('[data-testid="agent-card"]').map((c) => c.attributes('data-agent-id')),
+    ).toEqual([SYSTEM_AGENT_ID])
+    // The minted codex agent is on its own vendor sub-tab, not the claude one.
+    await w.find('[data-testid="agent-vendor-tab-btn-codex"]').trigger('click')
+    expect(
+      w.findAll('[data-testid="agent-card"]').map((c) => c.attributes('data-agent-id')),
+    ).toEqual(['minted-codex'])
+    // The Agent tab is clean again (the echo superseded the draft).
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
+    // The next Agent Save MUST carry the minted agents, not delete them via the old draft.
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.map((a) => a.id)).toEqual([
+      SYSTEM_AGENT_ID,
+      'minted-codex',
+      'minted-cursor',
+    ])
+  })
+
+  it('keeps a dirty Agent draft when the echo created nothing', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    await w.find(CTA).trigger('click')
+    // Echo with the same (empty) registry — no vendor was available, nothing created.
+    await w.setProps({ settings: { ...baseSettings } })
+    // The unsaved draft survives and stays dirty; the CTA remains.
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    expect(w.find(BLOCK).exists()).toBe(true)
+  })
 })

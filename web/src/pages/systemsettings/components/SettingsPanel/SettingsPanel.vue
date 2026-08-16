@@ -266,6 +266,7 @@ function emptySettings(): SystemSettings {
 // immediate-persist sync for a protected dirty tab.
 const {
   draft,
+  committed,
   activeTab,
   pendingTabSwitch,
   tabDirtyMap,
@@ -434,6 +435,16 @@ function syncImmediateFields(tab: SettingsTab, target: SystemSettings, src: Syst
   }
 }
 
+// 自动配置是绕过页签草稿的即时落库动作(AC-R29)。它下一次 settings 回推若确实
+// 新增了 agent,受保护(脏)的 agent 页草稿必须让位给服务端权威值——否则用户随后在
+// agent 页保存,会用旧草稿覆盖并删掉刚自动创建的智能体。仅当注册表实际增长时才
+// 重置;0 结果的回推(无可用 vendor)不动用户草稿。
+const pendingAgentReseed = ref(false)
+function onAutoConfigureAgents(): void {
+  pendingAgentReseed.value = true
+  emit('auto-configure-agents')
+}
+
 // Re-seed on open, then reconcile field-by-field on every later server pushback.
 // The shared layer owns the merge rules; the panel only supplies the canonical seed
 // and re-mirrors `proxyCfg`, whose form binding lives outside the draft.
@@ -445,8 +456,16 @@ watch(
     const prevOpen = prev?.[0] ?? false
     // First open (or reopen): whole-draft seed. Otherwise a pushback while open,
     // merged by field ownership so unsaved drafts survive.
-    if (!prevOpen) seedAll(seed)
-    else reconcile(seed)
+    if (!prevOpen) {
+      seedAll(seed)
+      pendingAgentReseed.value = false
+    } else {
+      // The auto-configure echo: only when the registry actually grew does the
+      // agent tab yield its draft (see `pendingAgentReseed` above).
+      const grew = pendingAgentReseed.value && seed.agents.length > committed.value.agents.length
+      reconcile(seed, grew ? new Set<SettingsTab>(['agent']) : undefined)
+      pendingAgentReseed.value = false
+    }
     syncProxyRef()
     syncCleanupRef()
   },
@@ -1527,7 +1546,7 @@ function selectAdmin(username: string) {
               class="agent-autoconfig-btn"
               data-testid="settings-auto-configure-agents"
               :disabled="!isAdmin"
-              @click="emit('auto-configure-agents')"
+              @click="onAutoConfigureAgents"
             >
               {{ t('settings.agents.autoConfigure.label') }}
             </button>

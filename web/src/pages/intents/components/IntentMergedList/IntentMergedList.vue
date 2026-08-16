@@ -49,6 +49,11 @@ const emit = defineEmits<{
 
 const mobileActionsOpen = ref(false)
 
+// ---- 空列表引导气泡 ----
+/** 空列表时引导点击「+」的气泡可见性。关闭仅本次进入期间生效:组件重挂载(刷新/重新进入)
+ *  或列表变非空后自动复位/消失,不做持久化记忆。 */
+const emptyGuideVisible = ref(true)
+
 // ---- 折叠态 ----
 const collapsed = usePersistentToggle('c3.intentMergedListCollapsed')
 const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
@@ -222,17 +227,37 @@ function setFilterFromMenu(value: string): void {
             </select>
           </div>
         </div>
-        <button
-          type="button"
-          class="req-new-btn"
-          :aria-label="t('intent.create.label')"
-          :title="t('intent.create.label')"
-          data-testid="intent-list-create-intent"
-          :disabled="createIntentPending"
-          @click="emit('new-intent')"
-        >
-          +
-        </button>
+        <div class="req-new-wrap">
+          <div
+            v-if="intents.length === 0 && emptyGuideVisible"
+            class="empty-guide"
+            role="status"
+            data-testid="intent-list-empty-guide"
+          >
+            <span class="empty-guide-text">{{ t('intent.list.emptyGuide') }}</span>
+            <button
+              type="button"
+              class="empty-guide-close"
+              data-testid="intent-list-empty-guide-close"
+              :aria-label="t('common.action.close.label')"
+              :title="t('common.action.close.label')"
+              @click="emptyGuideVisible = false"
+            >
+              ×
+            </button>
+          </div>
+          <button
+            type="button"
+            class="req-new-btn"
+            :aria-label="t('intent.create.label')"
+            :title="t('intent.create.label')"
+            data-testid="intent-list-create-intent"
+            :disabled="createIntentPending"
+            @click="emit('new-intent')"
+          >
+            +
+          </button>
+        </div>
       </div>
     </div>
 

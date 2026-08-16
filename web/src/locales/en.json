@@ -962,6 +962,7 @@
         "label": "New intent: start a new chat session"
       },
       "empty": "No intents yet. Chat with the assistant on the right and save them.",
+      "emptyGuide": "Click + to add your first intent",
       "loadMore": "Load more ↓",
       "allLoaded": "All loaded"
     },

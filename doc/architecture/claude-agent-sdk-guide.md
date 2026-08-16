@@ -3,7 +3,7 @@
 > 面向开发者与 AI：解释 c3 所依赖的 `@anthropic-ai/claude-agent-sdk`（TypeScript）
 > 是什么、如何与 Claude Code 协作、数据存在哪里、如何读取 Skill，以及最佳实践。
 >
-> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.220`（在 c3 依赖清单中锁定）。
+> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.233`（在 c3 依赖清单中锁定）。
 > - **历史名称**：该 SDK 前身为 “Claude Code SDK”，2025 年下半年更名为 “Claude Agent SDK”。
 > - **官方文档**：<https://code.claude.com/docs/en/agent-sdk/>
 > - **源码仓库**：<https://github.com/anthropics/claude-agent-sdk-typescript>
@@ -279,6 +279,19 @@ flowchart LR
 - `disallowedTools`：裸名（`"Bash"`）从上下文移除该工具；带作用域（`"Bash(rm *)"`）仅拦截匹配调用。
 - **切到 `bypassPermissions` 需要 `allowDangerouslySkipPermissions: true`**——c3 即便要在运行
   中切换权限模式也保留此开关，但仍由 c3 UI 把关。
+
+**工具面（tool surface）与权限是两件事。** `tools` 决定模型**看得见哪些**内建工具，`allowedTools`
+决定**哪些不必问就放行**，`disallowedTools` 是最高优先级的**硬切**（列进去就用不了，哪怕
+`allowedTools` 也列了它）。三者中只有 `tools` 是「基础集合」——它**替换**默认内建工具集，不是叠加。
+
+自 SDK `0.3.233` 起，task/todo 工具（`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet` /
+`TodoWrite`）在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上**不再属于默认工具面**，宿主须显式
+保留。c3 依赖这四个 task 工具的帧派生任务面板（Claude 无原生 task 推送事件，工具流就是数据源），
+因此在子进程 env 中设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`（`kernel/infra/child-env.ts` 的
+`TASK_TOOL_ENV_DEFAULTS`）。**不用 `tools`**——那会迫使 c3 永久枚举全部内建工具；**也不用
+`allowedTools`**——那会把这些工具预判在 `canUseTool` 之前，而 `canUseTool` 必须保持 c3 的唯一权限
+收口。取舍依据见
+[`sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md`](sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)。
 
 ### 流式 vs 一次性
 

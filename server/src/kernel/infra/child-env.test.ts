@@ -6,7 +6,12 @@
  * `sh`, so it must use `where`; POSIX uses the portable `command -v`.
  */
 import { describe, expect, it } from 'vitest'
-import { KEEPALIVE_ENV_DEFAULTS, buildChildEnv, claudeLookupCommand } from './child-env.js'
+import {
+  KEEPALIVE_ENV_DEFAULTS,
+  TASK_TOOL_ENV_DEFAULTS,
+  buildChildEnv,
+  claudeLookupCommand,
+} from './child-env.js'
 
 describe('claudeLookupCommand', () => {
   it('uses `where claude` on Windows (no `sh` there)', () => {
@@ -45,6 +50,34 @@ describe('child env under the SDK 0.3.218 default subagent policy', () => {
       // The only way a knob appears is if the host shell already set it; c3 adds none.
       expect(env[knob]).toBe(inherited[knob])
     }
+  })
+})
+
+describe('child env keeps the SDK 0.3.233 task-tool surface', () => {
+  // SDK 0.3.233 dropped TaskCreate/TaskList/TaskUpdate/TaskGet (+ TodoWrite) from the
+  // DEFAULT tool surface on Opus 4.8 / Sonnet 5 / Fable 5 / Mythos 5 and newer. c3's
+  // task panel is derived ONLY from those tools' wire frames, so every Claude child
+  // must be spawned with the surface restored — otherwise the panel silently empties
+  // on exactly the models c3 targets.
+  it('the defaults carry CLAUDE_CODE_ENABLE_TODO_TOOLS=1', () => {
+    expect(TASK_TOOL_ENV_DEFAULTS).toEqual({ CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' })
+  })
+
+  it('buildChildEnv hands the child the task-tool surface by default', () => {
+    const saved = process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
+    try {
+      delete process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
+      expect(buildChildEnv().CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
+      else process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS = saved
+    }
+  })
+
+  it('an agent override still wins (same precedence as the keepalive defaults)', () => {
+    expect(
+      buildChildEnv({ CLAUDE_CODE_ENABLE_TODO_TOOLS: '0' }).CLAUDE_CODE_ENABLE_TODO_TOOLS,
+    ).toBe('0')
   })
 })
 

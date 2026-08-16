@@ -913,7 +913,7 @@
     "devLaunch": {
       "title": "작업을 시작하는 중…",
       "step": {
-        "fetchRemoteMain": "원격 메인 브랜치 가져오기",
+        "fetchBaseBranch": "기준 브랜치 가져오기",
         "prepareWorktree": "worktree 준비",
         "launchSession": "작업 세션 시작",
         "enterSession": "세션 진입"

@@ -912,7 +912,7 @@
     "devLaunch": {
       "title": "正在启动工作…",
       "step": {
-        "fetchRemoteMain": "拉取远程主分支代码",
+        "fetchBaseBranch": "拉取基准分支代码",
         "prepareWorktree": "准备 worktree",
         "launchSession": "启动工作会话",
         "enterSession": "进入会话"

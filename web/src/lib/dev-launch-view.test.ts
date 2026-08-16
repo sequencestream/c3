@@ -15,7 +15,7 @@ describe('beginDevLaunch — immediate visibility', () => {
   it('creates an immediately visible model with its dwell origin at click time', () => {
     expect(beginDevLaunch('A', 1_000)).toMatchObject({
       intentId: 'A',
-      phase: 'fetching-remote-main',
+      phase: 'fetching-base-branch',
       startedAt: 1_000,
       visibleAt: 1_000,
       visible: true,
@@ -24,8 +24,8 @@ describe('beginDevLaunch — immediate visibility', () => {
 })
 
 describe('stepStatusesForPhase — stage advances steps', () => {
-  it('fetching-remote-main activates step 1, rest pending', () => {
-    expect(stepStatusesForPhase('fetching-remote-main')).toEqual([
+  it('fetching-base-branch activates step 1, rest pending', () => {
+    expect(stepStatusesForPhase('fetching-base-branch')).toEqual([
       'active',
       'pending',
       'pending',
@@ -60,7 +60,7 @@ describe('stepStatusesForPhase — stage advances steps', () => {
   it('ignores a stage for a different intent', () => {
     const m = beginDevLaunch('A', 0)
     const next = reduceDevLaunch(m, { kind: 'stage', intentId: 'B', stage: 'launching', now: 1 })
-    expect(next.model?.phase).toBe('fetching-remote-main')
+    expect(next.model?.phase).toBe('fetching-base-branch')
     expect(next.closedReason).toBeUndefined()
   })
 })
@@ -158,7 +158,7 @@ describe('reduceDevLaunch — minimum dwell terminal convergence', () => {
   it('isTerminalPhase recognizes ready / failed only', () => {
     expect(isTerminalPhase('ready')).toBe(true)
     expect(isTerminalPhase('failed')).toBe(true)
-    expect(isTerminalPhase('fetching-remote-main')).toBe(false)
+    expect(isTerminalPhase('fetching-base-branch')).toBe(false)
     expect(isTerminalPhase('preparing-worktree')).toBe(false)
     expect(isTerminalPhase('launching')).toBe(false)
   })

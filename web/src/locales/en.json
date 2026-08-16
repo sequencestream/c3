@@ -912,7 +912,7 @@
     "devLaunch": {
       "title": "Starting work…",
       "step": {
-        "fetchRemoteMain": "Fetch remote main branch",
+        "fetchBaseBranch": "Fetch base branch",
         "prepareWorktree": "Prepare worktree",
         "launchSession": "Launch work session",
         "enterSession": "Enter session"

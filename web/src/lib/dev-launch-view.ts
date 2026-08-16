@@ -30,7 +30,7 @@ export type DevLaunchPhase = DevLaunchStage | 'ready'
 
 /** The ordered, user-facing steps the overlay renders (labels live in i18n). */
 export const DEV_LAUNCH_STEPS = [
-  'fetch-remote-main',
+  'fetch-base-branch',
   'prepare-worktree',
   'launch-session',
   'enter-session',
@@ -77,7 +77,7 @@ export type DevLaunchEvent =
 
 /** Build the initial in-flight (visible) model for a just-clicked launch. */
 export function beginDevLaunch(intentId: string, now: number): DevLaunchModel {
-  return { intentId, phase: 'fetching-remote-main', startedAt: now, visibleAt: now, visible: true }
+  return { intentId, phase: 'fetching-base-branch', startedAt: now, visibleAt: now, visible: true }
 }
 
 /** Terminal phases stop progress (the overlay closes around these). */
@@ -119,7 +119,7 @@ function settleDevLaunch(
  */
 function activeStepIndex(phase: DevLaunchPhase): number {
   switch (phase) {
-    case 'fetching-remote-main':
+    case 'fetching-base-branch':
       return 0
     case 'preparing-worktree':
       return 1

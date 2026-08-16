@@ -153,6 +153,16 @@
         "tooltip": "ワークスペースを追加",
         "prompt": "ワークスペースのディレクトリ(絶対パス):",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "ディレクトリを選択…",
+          "pending": {
+            "label": "ディレクトリの選択を待機中…"
+          }
+        },
+        "manualPath": {
+          "label": "パスを手動で入力"
+        },
+        "pathEmpty": "ディレクトリが未選択です",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -445,7 +455,16 @@
       "groupPicker": {
         "label": "グループ"
       },
-      "locateMissing": "元の設定は存在しません。代わりにこのベンダーのエージェントを表示しています。"
+      "locateMissing": "元の設定は存在しません。代わりにこのベンダーのエージェントを表示しています。",
+      "autoConfigure": {
+        "label": "自動設定",
+        "hint": "エージェントが未設定です。このホストにインストールされている vendor CLI を検出し、それぞれにすぐ使えるエージェントを作成します。",
+        "result": {
+          "created": "{n} 個のエージェントを作成しました。",
+          "noVendor": "実行可能な vendor CLI が見つかりません。CLI をインストールまたはログインしてから、「ランタイム」タブで診断を確認してください。",
+          "alreadyConfigured": "実行可能なすべての vendor に既にエージェントがあります。"
+        }
+      }
     },
     "defaultMode": {
       "title": {
@@ -913,7 +932,7 @@
     "devLaunch": {
       "title": "作業を開始しています…",
       "step": {
-        "fetchRemoteMain": "リモートメインブランチを取得",
+        "fetchBaseBranch": "ベースブランチを取得",
         "prepareWorktree": "worktree を準備",
         "launchSession": "作業セッションを起動",
         "enterSession": "セッションに入る"
@@ -963,6 +982,7 @@
         "label": "新しい意図: 新しいチャットセッションを開始"
       },
       "empty": "まだ意図がありません。右側のアシスタントとチャットして保存してください。",
+      "emptyGuide": "+ をクリックして最初の意図を追加",
       "loadMore": "さらに読み込む ↓",
       "allLoaded": "すべて読み込み済み"
     },
@@ -2271,7 +2291,8 @@
     "workspace": {
       "unknown": "不明なワークスペース: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "c3 サーバーのホストでディレクトリ選択ダイアログを開けませんでした。パスを手動で入力してください。"
     },
     "path": {
       "notDirectory": "ディレクトリではありません: {path}"

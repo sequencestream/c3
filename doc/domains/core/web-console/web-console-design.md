@@ -154,6 +154,9 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 - **Add / remove workspace**
   - 前置条件: 切换器新增 / 行移除(二次确认)(WC-R8)
   - 发送: `add_workspace` / `remove_workspace`
+- **Pick workspace directory**
+  - 前置条件: 新增工作区弹框的「选择目录」;弹框关闭时对未决请求补发取消(WC-R8a)
+  - 发送: `select_workspace_directory` / `cancel_workspace_directory_selection`——服务端在自己所在主机弹原生对话框,以 `workspace_directory_selection` 按 requestId 回复选中 / 取消 / 调起失败
 - **Respond**
   - 前置条件: 已连接,提示可操作(⇒ 未决)(WC-R3)
   - 发送: `permission_response`;在本地设置决定

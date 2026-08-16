@@ -134,6 +134,30 @@ export function sessionCacheKey(workspaceName: string, sessionKind: SessionPageK
   return `${workspaceName}::${sessionKind}`
 }
 
+/**
+ * 「新增工作区」弹框里那次原生目录选择的全部状态。
+ *
+ * `requestId` 非空即表示有一次请求在飞行中,它同时是「哪条回复算数」的唯一判据。
+ * 取消不是失败:服务端回 `cancelled` 时只落 `pending`,`error` 与 `selection` 都
+ * 保持原样,弹框因此什么都不用做。
+ */
+export interface WorkspaceDirectoryPickerState {
+  /** 当前在飞行中的请求 id;null 表示没有未决请求。 */
+  requestId: string | null
+  pending: boolean
+  /** 调起失败的结构化原因;取消与成功都为 null。 */
+  error: UiError | null
+  /**
+   * 最近一次成功选中的目录。每次选中都是一个**新对象**,这样连续选中同一路径时
+   * 弹框侧的 watch 仍会触发回填。
+   */
+  selection: { path: string } | null
+}
+
+export function emptyDirectoryPicker(): WorkspaceDirectoryPickerState {
+  return { requestId: null, pending: false, error: null, selection: null }
+}
+
 // 顶部「会话」tab 角标数值:当前工作区六类会话(work/intent/spec/discussion/
 // automation/tool)进行中计数之和。与左侧列表六个 kind tab 角标同一数据源
 // (sessionCounts),不引入新口径。tool 类在 showToolSessions 关闭时服务端本就
@@ -205,6 +229,10 @@ export function createState(deps: StateDeps) {
   // 「新增工作区」弹框的受控开关:顶栏两处切换器(桌面 / 移动)共用同一个实例,
   // 手动「+」与冷启动引导都写它,取消 / 确认清空。仅内存态,不持久化。
   const addWorkspaceOpen = ref(false)
+  // 「选择目录」的当次请求。服务端在自己所在主机弹原生目录对话框,结果按
+  // requestId 关联回来;只有当前请求的回复才被采纳,弹框关闭或发起新请求都会
+  // 让旧 requestId 失效,迟到的回复直接丢弃。仅内存态。
+  const workspaceDirectoryPicker = ref<WorkspaceDirectoryPickerState>(emptyDirectoryPicker())
   const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
   const activeSessionKind = ref<SessionPageKind>('work')
   const sessionCounts = ref<Record<SessionPageKind, number>>({
@@ -1086,6 +1114,7 @@ export function createState(deps: StateDeps) {
     taskModel,
     workspaces,
     addWorkspaceOpen,
+    workspaceDirectoryPicker,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
     currentWorkspace,

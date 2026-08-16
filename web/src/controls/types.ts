@@ -82,6 +82,8 @@ export interface AppMethods {
   loadMoreSessions(path: string | null): void
   selectWorkspace(path: string): void
   addWorkspace(payload: { workspaceName: string; path: string }): void
+  /** 请服务端在自己所在主机弹一次原生目录对话框,结果落在 `workspaceDirectoryPicker`。 */
+  selectWorkspaceDirectory(): void
   removeWorkspace(workspaceName: string): void
   openNewSession(path: string): void
   confirmNewSession(agentId: string | null): void
@@ -380,6 +382,8 @@ export interface AppMethods {
   querySkillLinkStatus(): void
   installSkill(skillId: string): void
   saveSettings(settings: SystemSettings): void
+  /** Probe runnable vendors and persist a system-mode agent for each without one. */
+  autoConfigureAgents(): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void

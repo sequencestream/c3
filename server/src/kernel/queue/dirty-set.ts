@@ -46,9 +46,31 @@ export class CoalescingDirtySet<T> {
 }
 
 /**
+ * How many passes one `request()` may chain before the runner stops driving and
+ * leaves the rest to the next tick. A pass that re-requests itself is normal —
+ * that is how a launch settles into the pass which observes it — but a pass whose
+ * re-request is not backed by any progress would otherwise drive forever. The
+ * cap costs nothing legitimate: a workspace settles in a handful of passes, and
+ * whatever is left is re-derived on the fixed cadence anyway.
+ */
+const MAX_CHAINED_PASSES = 64
+
+/** Hand the event loop one full turn, so a chained pass cannot starve I/O. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve))
+}
+
+/**
  * Serialises an async pass and coalesces overlapping requests. A request made
  * while a pass is running schedules exactly ONE follow-up pass, no matter how
  * many arrive — the same "merge, never drop" rule the dirty set applies to keys.
+ *
+ * Follow-ups are separated by a macrotask turn and bounded in number. Both exist
+ * for the same failure: a pass that requests itself with nothing changed. Chained
+ * purely through promises it would keep the loop inside the microtask queue, and
+ * the event loop would never reach its poll phase again — the process burns a
+ * core while HTTP stops answering and even a termination signal never reaches its
+ * handler. Yielding keeps the process responsive; the cap keeps it from spinning.
  */
 export class CoalescingRunner {
   private running: Promise<void> | null = null
@@ -77,10 +99,20 @@ export class CoalescingRunner {
 
   private async drive(): Promise<void> {
     try {
-      do {
+      for (let chained = 1; ; chained++) {
         this.again = false
         await this.pass()
-      } while (this.again)
+        if (!this.again) return
+        if (chained >= MAX_CHAINED_PASSES) {
+          this.again = false
+          console.warn(
+            `[c3:queue] 一次请求已连续驱动 ${MAX_CHAINED_PASSES} 轮对账仍未收敛,` +
+              '本轮停止驱动,交由固定节拍继续',
+          )
+          return
+        }
+        await yieldToEventLoop()
+      }
     } finally {
       this.running = null
     }

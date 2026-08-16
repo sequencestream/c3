@@ -34,7 +34,11 @@ import {
   updateStatus,
   upsertIntentPr,
 } from './store.js'
-import { depsWithUnconfirmedPr, syncIntentPrStatus } from './pr-status-sync.js'
+import {
+  depsWithUnconfirmedPr,
+  syncIntentPrStatus,
+  syncUnconfirmedDependencyPrsInBackground,
+} from './pr-status-sync.js'
 
 let dir: string
 let prevClaudeConfigDir: string | undefined
@@ -184,5 +188,81 @@ describe('depsWithUnconfirmedPr', () => {
         [getIntent(merged.id)!, getIntent(reviewing.id)!, getIntent(noPr.id)!],
       ).map((intent) => intent.id),
     ).toEqual([reviewing.id])
+  })
+})
+
+describe('syncUnconfirmedDependencyPrsInBackground', () => {
+  /** Let the background promise chain settle. */
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 5; i += 1) await new Promise<void>((r) => setImmediate(r))
+  }
+
+  const withReviewingPr = (title: string, number: string): string => {
+    const [dep] = insertIntents(proj, [
+      { title, shortEnTitle: title.toLowerCase(), content: '', priority: 'P1' },
+    ])
+    updateStatus(dep.id, 'done')
+    upsertIntentPr({ intentId: dep.id, number, status: 'reviewing' })
+    return dep.id
+  }
+
+  it('stays silent when the forge still reports the dependency PR as unsettled', async () => {
+    const depId = withReviewingPr('Dep', '388')
+    // The forge answers, and the answer is "still open" — the exact state the
+    // queue gate reads as blocked. Waking the caller here would ask for the pass
+    // that produced this sync all over again, forever.
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'reviewing' })
+    const onComplete = vi.fn()
+    const broadcastIntents = vi.fn()
+
+    syncUnconfirmedDependencyPrsInBackground({
+      ctx: { broadcastIntents },
+      workspacePath: proj,
+      dependsOn: [depId],
+      onComplete,
+    })
+    await flush()
+
+    expect(getForgePrStatus).toHaveBeenCalled()
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(broadcastIntents).not.toHaveBeenCalled()
+  })
+
+  it('signals completion once the forge settles the dependency PR', async () => {
+    const depId = withReviewingPr('Dep', '389')
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+    const onComplete = vi.fn()
+    const broadcastIntents = vi.fn()
+
+    syncUnconfirmedDependencyPrsInBackground({
+      ctx: { broadcastIntents },
+      workspacePath: proj,
+      dependsOn: [depId],
+      onComplete,
+    })
+    await flush()
+
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(getIntent(depId)?.prs[0].status).toBe('merged')
+  })
+
+  it('does nothing at all when no dependency holds a reviewing PR', async () => {
+    const [dep] = insertIntents(proj, [
+      { title: 'Settled', shortEnTitle: 'settled', content: '', priority: 'P1' },
+    ])
+    updateStatus(dep.id, 'done')
+    upsertIntentPr({ intentId: dep.id, number: '390', status: 'merged' })
+    const onComplete = vi.fn()
+
+    syncUnconfirmedDependencyPrsInBackground({
+      ctx: { broadcastIntents: vi.fn() },
+      workspacePath: proj,
+      dependsOn: [dep.id],
+      onComplete,
+    })
+    await flush()
+
+    expect(getForgePrStatus).not.toHaveBeenCalled()
+    expect(onComplete).not.toHaveBeenCalled()
   })
 })

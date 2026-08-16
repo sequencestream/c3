@@ -157,6 +157,12 @@
 
 **字段：** `settings: SystemSettings`
 
+### `auto_configure_agents`
+
+探测本机可运行的厂商，为每个尚无 `configMode: 'system'` 智能体的厂商落库一条（AC-R29）。服务器先回 `auto_configure_agents_result`，再回常规的 `settings`。仅管理员——它写系统配置。调用方不指定厂商：能不能跑是服务端已经回答的运行时事实，让客户端传列表只会允许它请求一个必然起不来的智能体。
+
+**字段：** 无
+
 ### `get_personalized_settings`
 
 获取本连接的个人化设置。服务器回复 `personalized_settings`。不需要管理员权限。`localFallback` 是浏览器自己当前的值，仅作为该账户**首次**建档的种子：账户已有记录时以账户为准，客户端也无法指定读取哪个账户（服务端只用已验证的连接身份）。
@@ -640,7 +646,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `settings`
 
-（标准化后的）系统配置，回复 `get_settings` / `save_settings`。携带若干运行时派生的伴生数据，配置对象本身不包含（它们都不写入 `SystemSettings`，也不落库）：
+（标准化后的）系统配置，回复 `get_settings` / `save_settings` / `auto_configure_agents`。携带若干运行时派生的伴生数据，配置对象本身不包含（它们都不写入 `SystemSettings`，也不落库）：
 
 - `hostStatus: VendorHostStatus[]` — 每个供应商的主机 CLI 存在情况 + 已安装二进制的绝对路径 `path`（ADR-0012），驱动设置页 vendor CLI 版本面板与诊断面板的安装位置展示。它**只讲宿主 CLI**：每个 c3 启动的供应商都在其中，一个没有 CLI 的供应商不会被伪装成假二进制
 - `vendorRuntime?: Record<VendorId, VendorRuntimeStatus>` — 每个供应商的**运行时可用性**（2026-08-03-002），即"c3 现在能不能在这个供应商上起一轮"。这是控制台所有运行入口（agent 配置的 vendor 下拉、新建会话弹窗、自动化表单）唯一的门控依据，写法上零 `if (vendor === …)`。每项为 `{ vendor, available, runtime: 'host-cli', runtimeId?, origin?, location?, reason? }`；`reason` 是稳定原因码（`host-cli-missing`），由前端本地化成可行动说明，服务端内部异常文本不进 UI 契约。`origin`（`installed` / `host-path` / `override`）与绝对路径 `location` 只在可用时给出，供运行时诊断行回答"跑起来的是哪一份"；两者是纯诊断字段，不参与任何门控，也不扩展原因码。可用性一律取 CLI 探测结果（与服务端启动时构造 adapter 用的是同一条解析链）。旧服务端缺此字段时，前端从 `hostStatus` 推导 CLI 供应商，其余一律按不可用处理——只会挡住路径，不会放行必然失败的路径
@@ -651,6 +657,14 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 - `vendorModes?: Record<VendorId, VendorModeCatalog>` — 每个供应商的模式目录（2026-06-07-012），控制台的模式选择器按供应商渲染
 
 **字段：** `settings: SystemSettings`, `hostStatus: VendorHostStatus[]`, `vendorRuntime?: Record<VendorId, VendorRuntimeStatus>`, `bindingStats: SessionBindingStats`, `sessionCapabilities: Record<VendorId, SessionCapabilities>`, `vendorCapabilities?: Record<VendorId, Record<AdapterCapability, boolean>>`, `skillSupport?: Record<VendorId, SkillSupportState>`, `vendorModes?: Record<VendorId, VendorModeCatalog>`
+
+### `auto_configure_agents_result`
+
+一键自动配置的结果，回复 `auto_configure_agents`，随后紧跟一条 `settings`——注册表本身仍走每个消费方已经在读的那条消息，这条只解释结果。
+
+`created` 与 `availableVendors` 都必须给出：`created: 0` 有两种截然不同的成因——本机没有任何可运行的厂商（应指引到运行时诊断），与所有可运行厂商都已有智能体（无事可做）。只回一个计数会把两者压平成同一句"没有变化"。
+
+**字段：** `created: number`, `availableVendors: number`, `vendors: VendorId[]`
 
 ### `mcp_api_keys`
 
@@ -722,9 +736,9 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `dev_launch_progress`
 
-手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的工作启动进度遮罩。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `fetching-remote-main`（worktree 模式下尝试拉取远程主分支基底前）、`preparing-worktree`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起工作 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
+手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的工作启动进度遮罩。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `fetching-base-branch`（worktree 模式下尝试拉取意图落库的 base 分支基底前——不必然是 `main`）、`preparing-worktree`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起工作 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
 
-**字段：** `intentId: string`, `stage: DevLaunchStage`（`'fetching-remote-main' | 'preparing-worktree' | 'launching' | 'failed'`）
+**字段：** `intentId: string`, `stage: DevLaunchStage`（`'fetching-base-branch' | 'preparing-worktree' | 'launching' | 'failed'`）
 
 ### `intent_sessions`
 

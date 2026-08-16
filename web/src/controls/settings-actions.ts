@@ -198,6 +198,16 @@ export function installSettingsActions(ctx: AppCtx): void {
     send({ type: 'save_settings', settings })
   }
 
+  /**
+   * One-click agent bootstrap: ask the server to probe which vendors can run here
+   * and persist a system-mode agent for each that has none. Carries no payload —
+   * the vendor list is a runtime fact the server owns, and the result lands as a
+   * dedicated reply plus the ordinary `settings` echo that refreshes the panel.
+   */
+  ctx.autoConfigureAgents = (): void => {
+    send({ type: 'auto_configure_agents' })
+  }
+
   /** Set/change the admin password (ADR-0023). Plaintext is sent once and hashed
    *  server-side; the panel stays open so the result toast lands in context. */
   ctx.setAdminPassword = (payload: {

@@ -845,12 +845,15 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         }
       } else if (m.type === 'result') {
         // The run's turn finished — the session stays alive for the next prompt.
-        // The result message also carries `usage` / `total_cost_usd` / rate-limit
-        // info (the SDK 0.3.191 weekly per-model `model_scoped` + the 0.3.195
-        // `seven_day_overage_included` rate-limit type are additive). c3 has no
+        // The result message also carries `usage` / `modelUsage` / `total_cost_usd` /
+        // rate-limit info (the SDK 0.3.191 weekly per-model `model_scoped` + the
+        // 0.3.195 `seven_day_overage_included` rate-limit type are additive), plus
+        // `api_error_status` and `terminal_reason` on a failed turn. c3 has no
         // product surface for cost/usage today, so we deliberately do not read
         // them here; consumed via `unknown` narrowing, missing or new fields stay
-        // safe. Wire them into turn_end only when a UI needs them.
+        // safe. Wire them into turn_end only when a UI needs them — and when one
+        // does, cost must come off `modelUsage` (cumulative, covers every
+        // query-pipeline call), NOT `usage` (main-loop-only and per-turn).
         sawResult = true
         // A turn that thought but said nothing (end_turn with no text/tool) would
         // otherwise render as an empty gap — indistinguishable from a hang. Surface

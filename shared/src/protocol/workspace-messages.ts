@@ -13,6 +13,7 @@ import type {
   TimeRangeProjectStats,
   WorkspaceAutomationGateResult,
   WorkspaceDashboardRow,
+  WorkspaceDirectorySelectionResult,
   WorkspaceInfo,
   WorkspaceMcpConfig,
   WorkspaceSetting,
@@ -20,6 +21,34 @@ import type {
 
 /** Register a project directory as a workspace. */
 export type ClientAddWorkspace = { type: 'add_workspace'; workspaceName: string; path: string }
+
+/**
+ * Open ONE native directory chooser on the server host and reply with the chosen
+ * absolute path (reply: {@link workspace_directory_selection}, correlated by
+ * `requestId`). Admin-only under the same rules as {@link add_workspace} — the
+ * chooser feeds that trust-root entry.
+ *
+ * The chooser runs where the SERVER runs, not where the browser runs. A server
+ * with no reachable GUI answers `failed` and the client falls back to typing a
+ * path. The server keeps ONE active picker per connection: a second request
+ * aborts and replaces the first rather than being refused.
+ */
+export type ClientSelectWorkspaceDirectory = {
+  type: 'select_workspace_directory'
+  requestId: string
+}
+
+/**
+ * Drop a picker request the client no longer owns (its dialog closed). The
+ * server aborts the native chooser and frees the connection's picker slot; the
+ * correlated {@link workspace_directory_selection} is suppressed, so this has no
+ * reply. A `requestId` that does not own the active slot is a no-op — a late
+ * cancel can never abort a newer run.
+ */
+export type ClientCancelWorkspaceDirectorySelection = {
+  type: 'cancel_workspace_directory_selection'
+  requestId: string
+}
 
 /**
  * Remove a workspace from the sidebar (does not delete its sessions on disk).
@@ -94,6 +123,19 @@ export type ClientSetWorkspacesAutomationEnabled = {
 
 /** Full workspace list, sorted by recent access (desc). */
 export type ServerWorkspaces = { type: 'workspaces'; workspaces: WorkspaceInfo[] }
+
+/**
+ * Terminal reply to {@link select_workspace_directory}, correlated by
+ * `requestId`. Emitted at most once per request, and only while that request
+ * still owns its connection's picker slot: a cancelled or superseded run stays
+ * silent, so a late chooser can never answer a newer form. The client ignores a
+ * `requestId` it no longer holds.
+ */
+export type ServerWorkspaceDirectorySelection = {
+  type: 'workspace_directory_selection'
+  requestId: string
+  result: WorkspaceDirectorySelectionResult
+}
 
 /**
  * The normalized workspace setting (reply to `load_workspace_setting` or

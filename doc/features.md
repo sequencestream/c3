@@ -29,6 +29,7 @@ c3
 │   │
 │   ├── session-registry 会话与工作区目录         # 工作的档案柜与调度器
 │   │   ├── 工作区注册                            # 唯一且不可变的 workspace name、磁盘路径、最近访问顺序
+│   │   │   └── 目录点选                          # 新增工作区的路径由服务端主机的原生目录对话框点选(macOS/Windows/Linux 各自适配),弹框内只读展示;取消静默,调起失败才退回手动输入
 │   │   ├── 会话目录                              # 按 sessionKind(work/intent/spec/spec_review/discussion/automation/tool)增删列
 │   │   │   └── 规范类合并入口                    # 会话页「规范」既是显示分类也是查询口径:spec 撰写与 spec_review 评审同列同角标(每会话只计一次,兼容字段不重复计入顶栏),行保留真实 kind 与 owner
 │   │   ├── 最近访问排序                          # 维护会话列表的 MRU 顺序
@@ -224,6 +225,7 @@ c3
 │   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl;apiKey 可留空,回落 cursor-agent 登录态)
 │   │   ├── 分组容器编辑                          # agent 列表按分组容器渲染,group 为空的归入 default 容器;拖动跨容器移动、组内箭头调优先级(可见顺序即故障转移顺序),容器可重命名/解散;一个组只装一种 vendor,空容器不落盘
 │   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(统一的宿主 CLI 探测);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑
+│   │   ├── 一键自动配置                          # 注册表无真实 agent(空或仅合成兜底)时 agent 页出「自动配置」入口:按同一条运行时探测为每个可用且尚无 system 型 agent 的 vendor 建一条(displayName 取厂商名、数字自增 id、vendor 自身 config 形状),跳过页签草稿即时落库并走既有归一化;合成兜底计入幂等,零结果按「无可用 vendor」与「已覆盖」分别提示
 │   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId)
 │   │   ├── 专用 agent 路由                       # 工具/意图/规格/规格审核/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/specReview/automationAgentId);审核槽位唯一,无 sandbox 变体
 │   │   ├── 角色配组与故障转移                    # default/tool/intent/spec/specReview 可指向虚拟组 _c3_<vendor>_<group>;会话绑定保留组引用、代表成员(order_seq 首个 enabled)决定 vendor/展示,每次运行重解析;组无可用成员(全禁用或组 vendor 运行时缺失)时创建/绑定明确报错 agent.groupUnavailable,不回落 System

@@ -42,6 +42,8 @@ export type ClientToServer =
   | SessionMsg.ClientSetSessionAgent
   | WorkspaceMsg.ClientAddWorkspace
   | WorkspaceMsg.ClientRemoveWorkspace
+  | WorkspaceMsg.ClientSelectWorkspaceDirectory
+  | WorkspaceMsg.ClientCancelWorkspaceDirectorySelection
   | SessionMsg.ClientListSessions
   | SessionMsg.ClientGetSessionCounts
   | SessionMsg.ClientCreateSession
@@ -58,6 +60,7 @@ export type ClientToServer =
   | SessionMsg.ClientListCommands
   | SettingsMsg.ClientGetSettings
   | SettingsMsg.ClientSaveSettings
+  | SettingsMsg.ClientAutoConfigureAgents
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
   | SettingsMsg.ClientListMcpApiKeys
@@ -166,6 +169,7 @@ export type ServerToClient =
   | SettingsMsg.ServerUpdateStatus
   | SettingsMsg.ServerSelfUpdateState
   | WorkspaceMsg.ServerWorkspaces
+  | WorkspaceMsg.ServerWorkspaceDirectorySelection
   | SessionMsg.ServerSessions
   | SessionMsg.ServerSessionCounts
   | CodeMsg.ServerDirListed
@@ -178,6 +182,7 @@ export type ServerToClient =
   | SessionMsg.ServerModeChanged
   | SessionMsg.ServerCommands
   | SettingsMsg.ServerSettings
+  | SettingsMsg.ServerAutoConfigureAgentsResult
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys
   | SettingsMsg.ServerMyMcpApiKeys

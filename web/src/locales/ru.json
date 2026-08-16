@@ -153,6 +153,16 @@
         "tooltip": "Добавить рабочую область",
         "prompt": "Каталог рабочей области (абсолютный путь):",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "Выбрать каталог…",
+          "pending": {
+            "label": "Ожидание выбора каталога…"
+          }
+        },
+        "manualPath": {
+          "label": "Ввести путь вручную"
+        },
+        "pathEmpty": "Каталог ещё не выбран",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -445,7 +455,16 @@
       "groupPicker": {
         "label": "Группы"
       },
-      "locateMissing": "Эта конфигурация агента больше не существует. Показаны агенты этого вендора."
+      "locateMissing": "Эта конфигурация агента больше не существует. Показаны агенты этого вендора.",
+      "autoConfigure": {
+        "label": "Автонастройка",
+        "hint": "Агенты ещё не настроены. Определите установленные на этом хосте CLI вендоров и создайте для каждого готового к работе агента.",
+        "result": {
+          "created": "Создано агентов: {n}.",
+          "noVendor": "Работающий CLI вендора не найден. Установите CLI или войдите в него, затем откройте вкладку «Среда выполнения» для диагностики.",
+          "alreadyConfigured": "У каждого доступного вендора уже есть агент."
+        }
+      }
     },
     "defaultMode": {
       "title": {
@@ -913,7 +932,7 @@
     "devLaunch": {
       "title": "Запуск работы…",
       "step": {
-        "fetchRemoteMain": "Получение удалённой основной ветки",
+        "fetchBaseBranch": "Получение базовой ветки",
         "prepareWorktree": "Подготовка worktree",
         "launchSession": "Запуск рабочей сессии",
         "enterSession": "Вход в сессию"
@@ -963,6 +982,7 @@
         "label": "Новое намерение: начать новую сессию чата"
       },
       "empty": "Пока нет намерений. Пообщайтесь с ассистентом справа и сохраните их.",
+      "emptyGuide": "Нажмите +, чтобы добавить первое намерение",
       "loadMore": "Загрузить ещё ↓",
       "allLoaded": "Всё загружено"
     },
@@ -2271,7 +2291,8 @@
     "workspace": {
       "unknown": "Неизвестная рабочая область: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "Не удалось открыть диалог выбора каталога на хосте сервера c3. Введите путь вручную."
     },
     "path": {
       "notDirectory": "Не является каталогом: {path}"

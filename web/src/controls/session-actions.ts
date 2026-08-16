@@ -4,7 +4,11 @@ import { SESSION_PAGE_SIZE } from '@/lib/session-page'
 import { resolveSessionJumpTarget, type SessionJumpTarget } from '@/lib/session-jump'
 import type { SessionInfo, SessionKind } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
-import { sessionCacheKey, type SessionPageKind } from './state'
+import { emptyDirectoryPicker, sessionCacheKey, type SessionPageKind } from './state'
+import { watch } from 'vue'
+
+/** 目录选择请求 id 的单调后缀,保证同一毫秒内的两次点击也不撞号。 */
+let workspaceDirectorySeq = 0
 
 // Install workspace / session / top-bar-tab navigation actions onto the ctx.
 export function installSessionActions(ctx: AppCtx): void {
@@ -238,6 +242,29 @@ export function installSessionActions(ctx: AppCtx): void {
   ctx.addWorkspace = (payload: { workspaceName: string; path: string }): void => {
     send({ type: 'add_workspace', ...payload })
   }
+
+  // 让服务端在自己所在主机弹一次原生目录对话框。每次点击都换新的 requestId:
+  // 旧请求就此失效,迟到的回复由 message-handler 按 requestId 丢弃;服务端那边
+  // 也会中止上一次仍开着的对话框,所以重复点击不会被「上一个还开着」卡住。
+  ctx.selectWorkspaceDirectory = (): void => {
+    const requestId = `ws-dir-${Date.now()}-${++workspaceDirectorySeq}`
+    // 保留上次选中的路径:重新选择期间弹框里的内容不该被清空。
+    ctx.workspaceDirectoryPicker.value = {
+      requestId,
+      pending: true,
+      error: null,
+      selection: ctx.workspaceDirectoryPicker.value.selection,
+    }
+    send({ type: 'select_workspace_directory', requestId })
+  }
+
+  // 弹框开合都把这次选择归零。关闭时若还有未决请求,告知服务端可以中止那个原生
+  // 对话框并释放槽位 —— 否则用户在主机上不理它,下次打开就得等一个没人要的结果。
+  watch(ctx.addWorkspaceOpen, () => {
+    const { requestId } = ctx.workspaceDirectoryPicker.value
+    if (requestId) send({ type: 'cancel_workspace_directory_selection', requestId })
+    ctx.workspaceDirectoryPicker.value = emptyDirectoryPicker()
+  })
 
   ctx.removeWorkspace = (workspaceName: string): void => {
     send({ type: 'remove_workspace', workspaceName })

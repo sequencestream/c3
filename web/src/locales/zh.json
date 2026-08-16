@@ -152,6 +152,16 @@
         "tooltip": "添加工作区",
         "prompt": "添加工作区",
         "pathLabel": "工作区目录（绝对路径）",
+        "selectDirectory": {
+          "label": "选择目录…",
+          "pending": {
+            "label": "等待选择目录…"
+          }
+        },
+        "manualPath": {
+          "label": "手动输入路径"
+        },
+        "pathEmpty": "尚未选择目录",
         "nameLabel": "工作区名称",
         "namePlaceholder": "1–64 个字符",
         "placeholder": "/工作区/绝对路径",
@@ -444,7 +454,16 @@
       "groupPicker": {
         "label": "分组"
       },
-      "locateMissing": "原配置已不存在，已为你定位到该 vendor 的智能体配置。"
+      "locateMissing": "原配置已不存在，已为你定位到该 vendor 的智能体配置。",
+      "autoConfigure": {
+        "label": "一键自动配置",
+        "hint": "还没有配置智能体。探测本机已安装的 vendor CLI,为每个可用的 vendor 创建一个开箱即用的智能体。",
+        "result": {
+          "created": "已创建 {n} 个智能体。",
+          "noVendor": "未探测到可运行的 vendor CLI。请先安装或登录 CLI,再到「运行时」页签查看诊断。",
+          "alreadyConfigured": "每个可运行的 vendor 都已有智能体。"
+        }
+      }
     },
     "defaultMode": {
       "title": {
@@ -912,7 +931,7 @@
     "devLaunch": {
       "title": "正在启动工作…",
       "step": {
-        "fetchRemoteMain": "拉取远程主分支代码",
+        "fetchBaseBranch": "拉取基准分支代码",
         "prepareWorktree": "准备 worktree",
         "launchSession": "启动工作会话",
         "enterSession": "进入会话"
@@ -962,6 +981,7 @@
         "label": "新意图:开启一个新的对话会话"
       },
       "empty": "还没有意图。在右侧与助手对话并保存它们。",
+      "emptyGuide": "点击 + 添加第一个意图",
       "loadMore": "加载更多 ↓",
       "allLoaded": "已加载完"
     },
@@ -2270,7 +2290,8 @@
     "workspace": {
       "unknown": "未知工作区:{path}",
       "nameInvalid": "工作区名称长度必须为 1–64 个字符。",
-      "nameConflict": "该工作区名称已被占用。"
+      "nameConflict": "该工作区名称已被占用。",
+      "directoryPickerFailed": "无法在 c3 服务端主机上打开目录选择对话框,请改为手动输入路径。"
     },
     "path": {
       "notDirectory": "不是目录:{path}"

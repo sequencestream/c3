@@ -22,6 +22,7 @@ import {
   saveSettingsHandler,
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
+import { autoConfigureAgentsHandler } from './settings/auto-configure-agents.js'
 import {
   applySelfUpdateHandler,
   cancelSelfUpdateHandler,
@@ -43,6 +44,10 @@ import {
 } from './settings/mcp-api-keys.js'
 import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
+import {
+  cancelWorkspaceDirectorySelectionHandler,
+  selectWorkspaceDirectoryHandler,
+} from './workspaces/directory-picker.js'
 import {
   createSession,
   createWorkSession,
@@ -169,6 +174,7 @@ export const handlerMap: HandlerMap = {
   // settings
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
+  auto_configure_agents: autoConfigureAgentsHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,
   list_mcp_api_keys: listMcpApiKeysHandler,
@@ -190,6 +196,8 @@ export const handlerMap: HandlerMap = {
   // workspaces
   add_workspace: addWorkspaceHandler,
   remove_workspace: removeWorkspaceHandler,
+  select_workspace_directory: selectWorkspaceDirectoryHandler,
+  cancel_workspace_directory_selection: cancelWorkspaceDirectorySelectionHandler,
   // sessions
   list_sessions: listSessions,
   get_session_counts: getSessionCounts,

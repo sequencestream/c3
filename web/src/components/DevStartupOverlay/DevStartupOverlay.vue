@@ -25,14 +25,14 @@ const shown = computed(() => !!props.model && props.model.visible)
 
 // 步骤 → 文案 key(字面量,保证 typed t 编译期校验)。
 const STEP_LABEL_KEY: Record<DevLaunchStep, Parameters<typeof t>[0]> = {
-  'fetch-remote-main': 'intent.devLaunch.step.fetchRemoteMain',
+  'fetch-base-branch': 'intent.devLaunch.step.fetchBaseBranch',
   'prepare-worktree': 'intent.devLaunch.step.prepareWorktree',
   'launch-session': 'intent.devLaunch.step.launchSession',
   'enter-session': 'intent.devLaunch.step.enterSession',
 }
 
 const steps = computed<{ key: DevLaunchStep; label: string; status: StepStatus }[]>(() => {
-  const phase = props.model?.phase ?? 'fetching-remote-main'
+  const phase = props.model?.phase ?? 'fetching-base-branch'
   const statuses = stepStatusesForPhase(phase)
   return DEV_LAUNCH_STEPS.map((step, i) => ({
     key: step,

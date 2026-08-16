@@ -153,8 +153,13 @@ vi.mock('../../sessions.js', () => ({
 vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   touchWorkspace: vi.fn(),
-  resolveWorkspaceRoot: vi.fn(() => '/test/proj'),
-  pathToName: vi.fn(() => 'test-proj'),
+  // Mirrors production: resolveWorkspaceRoot looks up by *name* only. An absolute
+  // path must pass through unchanged so controllers stay keyed by the filesystem
+  // root handlers already resolved.
+  resolveWorkspaceRoot: vi.fn((ref: string) => (ref.startsWith('/') ? null : '/test/proj')),
+  pathToName: vi.fn((p: string) =>
+    typeof p === 'string' && p.startsWith('/') ? 'test-proj' : null,
+  ),
   workspaceNameFor: vi.fn(() => 'test-proj'),
 }))
 
@@ -203,6 +208,7 @@ import {
   isIntentDrivenByWorkflow,
   settleQueueForTests,
   resetWorkflowForTests,
+  queueWorkspaceRoot,
 } from './workflow.js'
 import type { WorkflowHooks, DevTurnResult, RunDevTurnInput } from './workflow.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
@@ -212,6 +218,7 @@ import { startDevelopment } from './index.js'
 const workflowPrRegistry = new EventNormalizerRegistry()
 workflowPrRegistry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
 import { listIntents, getIntent, updateStatus } from './store.js'
+import { resolveWorkspaceRoot } from '../../state.js'
 import {
   getDevSkill,
   getGitBranchMode,
@@ -846,7 +853,7 @@ describe('startDevelopment — startup progress events', () => {
     await run(ctx, conn)
 
     expect(progressStages(sent)).toEqual([
-      'fetching-remote-main',
+      'fetching-base-branch',
       'preparing-worktree',
       'launching',
     ])
@@ -866,7 +873,7 @@ describe('startDevelopment — startup progress events', () => {
     await run(ctx, conn)
 
     expect(progressStages(sent)).toEqual([
-      'fetching-remote-main',
+      'fetching-base-branch',
       'preparing-worktree',
       'launching',
     ])
@@ -887,7 +894,7 @@ describe('startDevelopment — startup progress events', () => {
     await flush()
 
     expect(progressStages(sent)).toEqual([
-      'fetching-remote-main',
+      'fetching-base-branch',
       'preparing-worktree',
       'launching',
       'failed',
@@ -1104,6 +1111,24 @@ describe('queue driver — manual control', () => {
     // No `notifyTurnSettled` is ever delivered — the pass alone must drive it.
     await settleQueueForTests(proj)
     expect(vi.mocked(updateStatus).mock.calls).toContainEqual(['A', 'done'])
+  })
+
+  it('workspace name and absolute path share one controller (tick must not git -C <name>)', () => {
+    const hooks = hooksBag()
+    const absRoot = '/test/proj'
+    // Production resolveWorkspaceRoot is name-only; a path is already the root.
+    vi.mocked(resolveWorkspaceRoot).mockImplementation((ref: string) =>
+      ref === 'c3' ? absRoot : null,
+    )
+    expect(queueWorkspaceRoot('c3')).toBe(absRoot)
+    expect(queueWorkspaceRoot(absRoot)).toBeNull()
+
+    // Manual start_workflow hands the absolute path; the 10s tick hands the
+    // bare name from sqlite. Both must hit the same Map entry — otherwise the
+    // name-keyed controller runs `git -C c3` and parks with an empty add error.
+    startWorkflow(absRoot, hooks, 1)
+    expect(getWorkflowStatus(absRoot).state).toBe(getWorkflowStatus('c3').state)
+    expect(getWorkflowStatus('c3').state).not.toBe('idle')
   })
 })
 

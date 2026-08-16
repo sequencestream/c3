@@ -122,6 +122,8 @@ const {
   openWorkspaceSetting,
   addWorkspace,
   addWorkspaceOpen,
+  workspaceDirectoryPicker,
+  selectWorkspaceDirectory,
   selectWorkspace,
   removeWorkspace,
   // ---- console (Works) ----
@@ -396,6 +398,7 @@ const {
   settingsTarget,
   bindingStats,
   saveSettings,
+  autoConfigureAgents,
   setLocale,
   setTheme,
   setFontScale,
@@ -591,6 +594,7 @@ function onCodesChatWidth(px: number): void {
   <template v-else>
     <AppHeader
       v-model:add-workspace-open="addWorkspaceOpen"
+      :workspace-directory-picker="workspaceDirectoryPicker"
       :workspaces="workspaces"
       :current-workspace="currentWorkspace"
       :status="status"
@@ -610,6 +614,7 @@ function onCodesChatWidth(px: number): void {
       @open-personalized-setting="openPersonalizedSetting"
       @open-workspace-setting="openWorkspaceSetting"
       @add-workspace="addWorkspace"
+      @select-workspace-directory="selectWorkspaceDirectory"
       @select-workspace="selectWorkspace"
       @remove-workspace="removeWorkspace"
       @start-self-update="startSelfUpdate"
@@ -1069,6 +1074,7 @@ function onCodesChatWidth(px: number): void {
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
       @save="saveSettings"
+      @auto-configure-agents="autoConfigureAgents"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"

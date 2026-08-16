@@ -516,6 +516,21 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'workspace_directory_selection': {
+        const picker = ctx.workspaceDirectoryPicker.value
+        // 只认当前请求:弹框已关闭(requestId 置空)或用户又点了一次「选择目录」
+        // 时,旧对话框迟到的结果不得回填到别的表单上。
+        if (picker.requestId !== msg.requestId) break
+        const result = msg.result
+        ctx.workspaceDirectoryPicker.value = {
+          requestId: null,
+          pending: false,
+          // 取消是正常结果:不报错、不清空已选路径,弹框保持原状。
+          error: result.kind === 'failed' ? result.error : null,
+          selection: result.kind === 'selected' ? { path: result.path } : picker.selection,
+        }
+        break
+      }
       case 'session_status': {
         // 运行集合真的变了(有会话开始/结束执行)才回一次权威计数,顶部三个条目角标
         // 与「会话」角标据此无刷新收敛;纯重播同一快照不触发请求。
@@ -833,6 +848,21 @@ export function installMessageHandler(ctx: AppCtx): void {
           evaluateWorkspaceOnboarding()
         }
         break
+      case 'auto_configure_agents_result': {
+        // The registry itself arrives on the `settings` echo that follows; this
+        // frame only explains the outcome. `created: 0` has two very different
+        // causes, so it is never reported as a bare "nothing happened": no
+        // runnable vendor points at the runtime diagnostics, while an already
+        // covered registry says so plainly.
+        if (msg.created > 0) {
+          ctx.showToast(t('settings.agents.autoConfigure.result.created', { n: msg.created }))
+        } else if (msg.availableVendors === 0) {
+          ctx.showToast(t('settings.agents.autoConfigure.result.noVendor'))
+        } else {
+          ctx.showToast(t('settings.agents.autoConfigure.result.alreadyConfigured'))
+        }
+        break
+      }
       case 'mcp_api_keys':
         // The workspace-addressed roster. Still on the wire for older clients,
         // but no first-party page administers keys by workspace any more — a key

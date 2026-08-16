@@ -305,6 +305,21 @@ describe('useTabbedDraftSave — pushback reconcile', () => {
     s.reconcile(demo({ beta: 5 }))
     expect(s.draft.value.beta).toBe(10)
   })
+
+  it('forceReseed resets a dirty tab from the snapshot, protecting the rest', () => {
+    const s = setup()
+    s.draft.value.alpha = 'edited' // tab a dirty
+    s.draft.value.beta = 42 // tab b dirty too
+    s.reconcile(demo({ alpha: 'server-a', beta: 9 }), new Set<DemoTab>(['a']))
+    // Tab a follows the server (its value changed through a bypass-the-draft path);
+    // tab b keeps its draft because it is not in the force set.
+    expect(s.draft.value.alpha).toBe('server-a')
+    expect(s.draft.value.beta).toBe(42)
+    expect(s.tabDirtyMap.value).toEqual({ a: false, b: true })
+    // committed follows the server wholesale, so a later save cannot clobber it.
+    expect(s.committed.value.alpha).toBe('server-a')
+    expect(s.committed.value.beta).toBe(9)
+  })
 })
 
 describe('useTabbedDraftSave — seeding', () => {

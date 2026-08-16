@@ -152,6 +152,16 @@
         "tooltip": "Add workspace",
         "prompt": "Add workspace",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "Choose directory…",
+          "pending": {
+            "label": "Waiting for the chooser…"
+          }
+        },
+        "manualPath": {
+          "label": "Enter the path manually"
+        },
+        "pathEmpty": "No directory chosen yet",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -444,7 +454,16 @@
       "groupPicker": {
         "label": "Groups"
       },
-      "locateMissing": "That agent configuration no longer exists. Showing this vendor’s agents instead."
+      "locateMissing": "That agent configuration no longer exists. Showing this vendor’s agents instead.",
+      "autoConfigure": {
+        "label": "Auto-configure",
+        "hint": "No agent configured yet. Detect the vendor CLIs installed on this host and create a ready-to-use agent for each.",
+        "result": {
+          "created": "Created {n} agent(s).",
+          "noVendor": "No runnable vendor CLI found. Install or log in to a CLI, then check the Runtime tab for diagnostics.",
+          "alreadyConfigured": "Every runnable vendor already has an agent."
+        }
+      }
     },
     "defaultMode": {
       "title": {
@@ -912,7 +931,7 @@
     "devLaunch": {
       "title": "Starting work…",
       "step": {
-        "fetchRemoteMain": "Fetch remote main branch",
+        "fetchBaseBranch": "Fetch base branch",
         "prepareWorktree": "Prepare worktree",
         "launchSession": "Launch work session",
         "enterSession": "Enter session"
@@ -962,6 +981,7 @@
         "label": "New intent: start a new chat session"
       },
       "empty": "No intents yet. Chat with the assistant on the right and save them.",
+      "emptyGuide": "Click + to add your first intent",
       "loadMore": "Load more ↓",
       "allLoaded": "All loaded"
     },
@@ -2270,7 +2290,8 @@
     "workspace": {
       "unknown": "Unknown workspace: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "Could not open the directory chooser on the c3 server host. Enter the path manually instead."
     },
     "path": {
       "notDirectory": "Not a directory: {path}"

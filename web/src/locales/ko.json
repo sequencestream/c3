@@ -153,6 +153,16 @@
         "tooltip": "작업 공간 추가",
         "prompt": "작업 공간 디렉터리 (절대 경로):",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "디렉터리 선택…",
+          "pending": {
+            "label": "디렉터리 선택을 기다리는 중…"
+          }
+        },
+        "manualPath": {
+          "label": "경로를 직접 입력"
+        },
+        "pathEmpty": "아직 선택된 디렉터리가 없습니다",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -445,7 +455,16 @@
       "groupPicker": {
         "label": "그룹"
       },
-      "locateMissing": "해당 설정이 더 이상 존재하지 않습니다. 대신 이 벤더의 에이전트를 표시합니다."
+      "locateMissing": "해당 설정이 더 이상 존재하지 않습니다. 대신 이 벤더의 에이전트를 표시합니다.",
+      "autoConfigure": {
+        "label": "자동 구성",
+        "hint": "아직 구성된 에이전트가 없습니다. 이 호스트에 설치된 vendor CLI를 탐지하여 각각에 바로 사용할 수 있는 에이전트를 만듭니다.",
+        "result": {
+          "created": "에이전트 {n}개를 만들었습니다.",
+          "noVendor": "실행 가능한 vendor CLI를 찾지 못했습니다. CLI를 설치하거나 로그인한 뒤 「런타임」 탭에서 진단을 확인하세요.",
+          "alreadyConfigured": "실행 가능한 모든 vendor에 이미 에이전트가 있습니다."
+        }
+      }
     },
     "defaultMode": {
       "title": {
@@ -913,7 +932,7 @@
     "devLaunch": {
       "title": "작업을 시작하는 중…",
       "step": {
-        "fetchRemoteMain": "원격 메인 브랜치 가져오기",
+        "fetchBaseBranch": "기준 브랜치 가져오기",
         "prepareWorktree": "worktree 준비",
         "launchSession": "작업 세션 시작",
         "enterSession": "세션 진입"
@@ -963,6 +982,7 @@
         "label": "새 의도: 새 채팅 세션 시작"
       },
       "empty": "아직 의도가 없습니다. 오른쪽 어시스턴트와 대화하고 저장하세요.",
+      "emptyGuide": "+를 클릭하여 첫 번째 의도를 추가하세요",
       "loadMore": "더 보기 ↓",
       "allLoaded": "모두 불러옴"
     },
@@ -2271,7 +2291,8 @@
     "workspace": {
       "unknown": "알 수 없는 작업 공간: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "c3 서버 호스트에서 디렉터리 선택 대화 상자를 열 수 없습니다. 경로를 직접 입력하세요."
     },
     "path": {
       "notDirectory": "디렉터리가 아닙니다: {path}"

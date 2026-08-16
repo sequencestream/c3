@@ -52,10 +52,13 @@ function execGit(cwd: string, args: string[]): GitResult {
     return { code: 0, stdout: result, stderr: '' }
   } catch (err: unknown) {
     const e = err as { status?: number; stdout?: string; stderr?: string; message?: string }
+    // When cwd is missing (or git itself is missing) Node throws ENOENT with
+    // empty stdout/stderr — keep `message` so callers do not report a blank
+    // "git worktree add 失败: ".
     return {
       code: e.status ?? 1,
       stdout: e.stdout ?? '',
-      stderr: e.stderr ?? '',
+      stderr: e.stderr || e.message || '',
     }
   }
 }

@@ -11,6 +11,7 @@ doc/architecture/sdk-upgrade/yyyy-mm-dd-<sdk>-upgrade-to-v<version>.md
 
 ## 记录
 
+- **2026-08-16** · `@anthropic-ai/claude-agent-sdk` `^0.3.220 → ^0.3.233` — [记录](2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)
 - **2026-08-02** · `@openai/codex-sdk` `0.145.0 → 0.146.0` — [记录](2026-08-02-codex-sdk-upgrade-to-v0.146.0.md)
 - **2026-08-02** · `@anthropic-ai/claude-agent-sdk` `^0.3.218 → ^0.3.220` — [记录](2026-08-02-claude-agent-sdk-upgrade-to-v0.3.220.md)
 - **2026-07-24** · `@openai/codex-sdk` `0.144.6 → 0.145.0` — [记录](2026-07-24-codex-sdk-upgrade-to-v0.145.0.md)

@@ -6,8 +6,11 @@
  * makes "events are only hints" safe — a burst costs one extra pass, and nothing
  * a caller asked for goes unanswered.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CoalescingDirtySet, CoalescingRunner } from './dirty-set.js'
+
+/** Let the event loop complete one full turn (timers and I/O included). */
+const tick = (): Promise<void> => new Promise<void>((r) => setImmediate(r))
 
 describe('CoalescingDirtySet', () => {
   it('merges repeat marks for the same key', () => {
@@ -57,13 +60,58 @@ describe('CoalescingRunner', () => {
     // Five requests arrive mid-pass; they must produce exactly ONE follow-up.
     const followers = [runner.request(), runner.request(), runner.request()]
     release!()
-    await Promise.resolve()
-    await Promise.resolve()
+    // The follow-up is deliberately one macrotask away: one turn settles the
+    // released pass, the next runs the follow-up.
+    await tick()
+    await tick()
     expect(passes).toBe(2)
     release!()
     await Promise.all([first, ...followers])
     expect(passes).toBe(2)
     expect(runner.isRunning).toBe(false)
+  })
+
+  it('yields the event loop between chained passes, so a self-requesting pass never starves I/O', async () => {
+    let passes = 0
+    // A macrotask queued before the first pass. Chained purely through promises,
+    // it cannot run until the whole chain is over.
+    let pendingWorkRan = false
+    setImmediate(() => {
+      pendingWorkRan = true
+    })
+    const observed: boolean[] = []
+    const runner = new CoalescingRunner(async () => {
+      passes += 1
+      observed.push(pendingWorkRan)
+      await Promise.resolve()
+      // The shape that used to wedge the process: a pass asking for another one
+      // with nothing behind the request but promises.
+      if (passes < 5) void runner.request()
+    })
+
+    await runner.request()
+
+    expect(passes).toBe(5)
+    // Every pass after the first sees the queued macrotask already served.
+    expect(observed).toEqual([false, true, true, true, true])
+  })
+
+  it('stops driving at the chained-pass cap instead of spinning forever', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let passes = 0
+    // Never converges: every pass re-requests itself and nothing ever changes.
+    const runner = new CoalescingRunner(async () => {
+      passes += 1
+      await Promise.resolve()
+      void runner.request()
+    })
+
+    await runner.request()
+
+    expect(passes).toBe(64)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(runner.isRunning).toBe(false)
+    warn.mockRestore()
   })
 
   it('a throwing pass does not wedge the runner', async () => {

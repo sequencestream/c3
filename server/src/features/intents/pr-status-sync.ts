@@ -163,7 +163,15 @@ export function syncUnconfirmedDependencyPrsInBackground(input: {
       }),
     ),
   )
-    .then(() => {
+    .then((results) => {
+      // Only a forge state that actually MOVED justifies waking the caller. A
+      // dependency PR the forge still reports as open re-derives the identical
+      // "unmerged" verdict on the next pass, which asks for the same sync again:
+      // signalling completion unconditionally turns that into a self-feeding
+      // loop that never yields to the tick. No change means no new fact, so the
+      // fixed cadence is the right place to look again.
+      const changed = results.some((r) => r.status === 'fulfilled' && r.value.changed)
+      if (!changed) return
       input.ctx.broadcastIntents?.(input.workspacePath)
       input.onComplete?.()
     })

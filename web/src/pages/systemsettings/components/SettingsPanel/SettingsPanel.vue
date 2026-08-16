@@ -216,6 +216,11 @@ const emit = defineEmits<{
   'remove-account': [payload: { username: string }]
   // Designate which basic account is the single admin.
   'set-admin-account': [payload: { username: string }]
+  // Probe the runnable vendors and persist a system-mode agent for each that has
+  // none. Deliberately NOT part of `save`: it bypasses the tab draft entirely and
+  // lands server-side at once, so the cold-start user gets a usable agent from one
+  // click instead of a click plus a Save they have no reason to trust yet.
+  'auto-configure-agents': []
   // The one-shot `target` was acted on (located, or resolved to its fallback);
   // the owner clears it so reopening the panel does not jump again.
   'target-consumed': []
@@ -261,6 +266,7 @@ function emptySettings(): SystemSettings {
 // immediate-persist sync for a protected dirty tab.
 const {
   draft,
+  committed,
   activeTab,
   pendingTabSwitch,
   tabDirtyMap,
@@ -429,6 +435,16 @@ function syncImmediateFields(tab: SettingsTab, target: SystemSettings, src: Syst
   }
 }
 
+// 自动配置是绕过页签草稿的即时落库动作。它下一次 settings 回推若确实
+// 新增了 agent,受保护(脏)的 agent 页草稿必须让位给服务端权威值——否则用户随后在
+// agent 页保存,会用旧草稿覆盖并删掉刚自动创建的智能体。仅当注册表实际增长时才
+// 重置;0 结果的回推(无可用 vendor)不动用户草稿。
+const pendingAgentReseed = ref(false)
+function onAutoConfigureAgents(): void {
+  pendingAgentReseed.value = true
+  emit('auto-configure-agents')
+}
+
 // Re-seed on open, then reconcile field-by-field on every later server pushback.
 // The shared layer owns the merge rules; the panel only supplies the canonical seed
 // and re-mirrors `proxyCfg`, whose form binding lives outside the draft.
@@ -440,8 +456,16 @@ watch(
     const prevOpen = prev?.[0] ?? false
     // First open (or reopen): whole-draft seed. Otherwise a pushback while open,
     // merged by field ownership so unsaved drafts survive.
-    if (!prevOpen) seedAll(seed)
-    else reconcile(seed)
+    if (!prevOpen) {
+      seedAll(seed)
+      pendingAgentReseed.value = false
+    } else {
+      // The auto-configure echo: only when the registry actually grew does the
+      // agent tab yield its draft (see `pendingAgentReseed` above).
+      const grew = pendingAgentReseed.value && seed.agents.length > committed.value.agents.length
+      reconcile(seed, grew ? new Set<SettingsTab>(['agent']) : undefined)
+      pendingAgentReseed.value = false
+    }
     syncProxyRef()
     syncCleanupRef()
   },
@@ -609,6 +633,23 @@ function configModeLabel(m: 'system' | 'custom'): string {
     ? t('settings.agents.configMode.system.label')
     : t('settings.agents.configMode.custom.label')
 }
+
+/**
+ * Whether the STORED registry still has nothing a user chose — empty, or holding
+ * only the synthesized fallback (`id === SYSTEM_AGENT_ID`, the record the server
+ * conjures so a session is never locked out). This is what gates the one-click
+ * bootstrap CTA.
+ *
+ * Judged against the server snapshot, NOT the draft, on purpose: the action
+ * bypasses the draft and writes server-side immediately, so the question it
+ * answers is "is anything actually configured?". Reading the draft would hide the
+ * CTA the moment someone added an unsaved blank row — leaving the registry as
+ * empty as it was, with the one affordance that would have fixed it now gone.
+ */
+const agentsUnconfigured = computed<boolean>(() => {
+  const agents = props.settings?.agents ?? []
+  return !agents.some((a) => a.id !== SYSTEM_AGENT_ID)
+})
 
 /** A fresh, vendor-correct {@link AgentConfig} preserving the shared shell fields.
  *  Switching vendor MUST rebuild `config` (discriminated union — a half-changed
@@ -1497,6 +1538,19 @@ function selectAdmin(username: string) {
           >
             {{ groupNotice }}
           </p>
+          <!-- Cold-start CTA: shown only while the stored registry holds nothing the
+               user configured. Persists immediately (no tab draft, no Save). -->
+          <div v-if="agentsUnconfigured" class="agent-autoconfig" data-testid="agent-autoconfig">
+            <p class="agent-autoconfig-hint">{{ t('settings.agents.autoConfigure.hint') }}</p>
+            <button
+              class="agent-autoconfig-btn"
+              data-testid="settings-auto-configure-agents"
+              :disabled="!isAdmin"
+              @click="onAutoConfigureAgents"
+            >
+              {{ t('settings.agents.autoConfigure.label') }}
+            </button>
+          </div>
           <!-- Per-vendor sub-tabs: no "All" overview; list below shows only this vendor. -->
           <TabNav
             :tabs="VENDOR_ORDER"

@@ -125,8 +125,15 @@ export interface TabbedDraftSave<Tab extends string, S extends object> {
   tabDirtyMap: ComputedRef<Record<Tab, boolean>>
   /** First open (or reopen): reset both snapshots wholesale from the server value. */
   seedAll: (seed: S) => void
-  /** A pushback while open: merge by field ownership so unsaved drafts survive. */
-  reconcile: (seed: S) => void
+  /**
+   * A pushback while open: merge by field ownership so unsaved drafts survive.
+   * Pass `forceReseed` to reseed those tabs from the snapshot regardless of dirty
+   * state — for a tab whose value a dedicated bypass-the-draft action (one that
+   * persists server-side without going through the tab Save) just changed; its
+   * stale draft would otherwise be written back by the next Save and clobber the
+   * fresh server value.
+   */
+  reconcile: (seed: S, forceReseed?: ReadonlySet<Tab>) => void
   requestTab: (tab: Tab) => void
   confirmTabSwitch: () => void
   cancelTabSwitch: () => void
@@ -178,8 +185,12 @@ export function useTabbedDraftSave<Tab extends string, S extends object>(
 
   // Dirty MUST be measured against the OLD committed snapshot: a tab counts as
   // protected because the user changed it since the last commit, not because the
-  // incoming server value differs from their draft.
-  function reconcile(seed: S): void {
+  // incoming server value differs from their draft. A tab in `forceReseed` is the
+  // exception: it is reseeded even while dirty, because its value changed on the
+  // server through a path that deliberately bypassed the tab Save — leaving the
+  // stale draft protected would make the next Save write it back over the fresh
+  // server value.
+  function reconcile(seed: S, forceReseed?: ReadonlySet<Tab>): void {
     const prev = committed.value
     const wasDirty = {} as Record<Tab, boolean>
     for (const tab of tabs) wasDirty[tab] = tabDirtyAgainst(tab, prev)
@@ -187,7 +198,7 @@ export function useTabbedDraftSave<Tab extends string, S extends object>(
     const saved = pendingSaveTab.value
     pendingSaveTab.value = null
     for (const tab of tabs) {
-      if (tab === saved || !wasDirty[tab]) reseed(tab, seed)
+      if (tab === saved || !wasDirty[tab] || forceReseed?.has(tab)) reseed(tab, seed)
       else options.syncProtectedTab?.(tab, draft.value, seed)
     }
   }

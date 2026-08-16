@@ -18,6 +18,7 @@
  */
 import type {
   AdapterCapability,
+  ServerToClient,
   SystemSettings,
   VendorHostStatus,
   SessionCapabilities,
@@ -171,10 +172,20 @@ export function preserveBasicProvider(next: SystemSettings): SystemSettings {
   return { ...next, auth: { ...next.auth, provider: { ...diskProvider } } }
 }
 
-export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
-  conn.send({
+/**
+ * The `settings` reply for a given configuration snapshot: the persisted object
+ * plus every runtime-derived companion, re-probed at send time.
+ *
+ * One builder rather than a literal per handler, so a companion added here
+ * reaches every reply at once — a snapshot that silently lacked `vendorRuntime`
+ * would leave the console gating on stale availability.
+ */
+export function settingsFrame(
+  settings: SystemSettings,
+): Extract<ServerToClient, { type: 'settings' }> {
+  return {
     type: 'settings',
-    settings: loadSettings(),
+    settings,
     hostStatus: hostStatus(),
     vendorRuntime: vendorRuntimeStatuses(),
     sandboxStatus: sandboxStatus(),
@@ -184,7 +195,11 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     skillSupport: skillSupport(),
     vendorModes: vendorModes(),
     dbPath: dbPath(),
-  })
+  }
+}
+
+export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
+  conn.send(settingsFrame(loadSettings()))
 }
 
 export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) => {
@@ -197,19 +212,7 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
   // subsequent session launches reflect the new priority. This never touches
   // settings.json — only the vendor manifest + probe cache.
   applyVendorCliChoices(saved.vendorCliVersions ?? {})
-  conn.send({
-    type: 'settings',
-    settings: saved,
-    hostStatus: hostStatus(),
-    vendorRuntime: vendorRuntimeStatuses(),
-    sandboxStatus: sandboxStatus(),
-    bindingStats: getSessionBindingStats(),
-    sessionCapabilities: sessionCapabilities(),
-    vendorCapabilities: vendorCapabilities(),
-    skillSupport: skillSupport(),
-    vendorModes: vendorModes(),
-    dbPath: dbPath(),
-  })
+  conn.send(settingsFrame(saved))
 }
 
 export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_ctx, conn, msg) => {

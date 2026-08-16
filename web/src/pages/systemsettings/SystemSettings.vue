@@ -38,6 +38,8 @@ defineProps<{
 defineEmits<{
   close: []
   save: [settings: SystemSettings]
+  /** 一键自动配置:探测可用 vendor 并即时落库 system 型 agent(不走草稿)。 */
+  'auto-configure-agents': []
   'set-password': [payload: { username: string; password: string; currentPassword?: string }]
   'remove-account': [payload: { username: string }]
   'set-admin-account': [payload: { username: string }]
@@ -62,6 +64,7 @@ defineEmits<{
     @close="$emit('close')"
     @target-consumed="$emit('target-consumed')"
     @save="(s: SystemSettings) => $emit('save', s)"
+    @auto-configure-agents="$emit('auto-configure-agents')"
     @set-password="(p) => $emit('set-password', p)"
     @remove-account="(p) => $emit('remove-account', p)"
     @set-admin-account="(p) => $emit('set-admin-account', p)"

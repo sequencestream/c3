@@ -22,6 +22,7 @@ import {
   saveSettingsHandler,
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
+import { autoConfigureAgentsHandler } from './settings/auto-configure-agents.js'
 import {
   applySelfUpdateHandler,
   cancelSelfUpdateHandler,
@@ -169,6 +170,7 @@ export const handlerMap: HandlerMap = {
   // settings
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
+  auto_configure_agents: autoConfigureAgentsHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,
   list_mcp_api_keys: listMcpApiKeysHandler,

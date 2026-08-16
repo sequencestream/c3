@@ -83,6 +83,13 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   - **容器按 `(vendor, group)` 唯一,不按组名**:不同 vendor 复用同一个组名是合法的(各成独立池,见 [models](./agent-config-models.md)),故两侧各渲染各的容器、各自只列本 vendor 的成员;对一侧的改名、解散、拖放**不得**触及另一侧的同名组。
   - **重命名与解散**:容器名可改,改名重写**该容器自己**成员的 `group`;空名、**同 vendor 下重名**、以保留前缀 `_c3_` 开头的名字被拒绝并回滚输入框显示值(异 vendor 同名不算重名)。解散容器只是把成员的 `group` 清空(回到 `default`),不删除任何智能体。
   - **空容器只活在草稿里**:组只通过成员的 `group` 字段存在,故新建的空容器保存时消失并就地提示;拖走最后一个成员的容器保留为空容器,不在光标下凭空消失。
+- **AC-R29** — **一键自动配置:把运行时探测结果直接变成可用配置**。注册表里没有任何用户配置的智能体(为空,或仅含合成兜底 AC-R3)时,agent 页显示「自动配置」入口;存在任一真实智能体即不显示。触发后服务端按 `auto_configure_agents` 执行:
+  - **探测口径是运行时可用性**,复用 AC-R26 那一条解析链(可用厂商集合),不校验登录态。冷启动用户常处在「CLI 已装、尚未登录」,更严的探测会把他们挡在门外;未登录厂商的鉴权错误留给运行期既有的厂商认证流程。
+  - **每个可用且尚无 `configMode: 'system'` 智能体的厂商各建一条**:`configMode: 'system'`、`enabled: true`、`displayName` 取厂商产品名、id 按 AC-R3 的数字铸造规则生成,`config` 必须是该厂商自己的分支形状(否则 zod 按 `vendor` 路由时整条被丢弃)。只建 system 型——`custom` 需要无法推断的 provider 三元组。
+  - **幂等由「该厂商已有 system 型智能体」判定**,合成兜底(`claude` + `system`)计入其中,故重复触发不产生第二条同厂商记录。新记录**追加**在既有智能体之后,随后走与 `save_settings` 完全相同的归一化链路:打 `order_seq`、逐条校验、按 AC-R2 重解析 `defaultAgentId`。
+  - **立即落库,不经页签草稿**:一次点击即生效,用户随后仍可在面板内编辑或删除。
+  - **零结果必须说明原因**:回包 `auto_configure_agents_result` 同时带 `created` 与 `availableVendors`,因为 `created: 0` 有两种成因——无可用厂商(指引到运行时页签诊断)与既有配置已覆盖。只回一个计数会把两者混为一谈。
+  - **与 `save_settings` 同一道管理员门**:它写系统配置。
 
 ## 用户场景
 
@@ -93,7 +100,13 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   (面板本身缺省落在 agent 页),把新用户直接带到配置入口。判定只在该首条快照上
   发生一次:此后的设置推送、重连、工作区切换、保存,以及用户关闭弹窗,都不会
   再次触发;整页刷新算作新会话,重新判定一次。守卫只存在于客户端内存,不持久化、
-  不改协议。
+  不改协议。用户落到的不是空白表单:该页此时显示「自动配置」入口,一次点击即按
+  AC-R29 把本机可运行的厂商变成可用智能体。
+- **一键配好后直接可跑:** 给定本机装有 claude 与 codex 且注册表只有合成兜底,当
+  用户点「自动配置」时,codex 得到一条新的 system 型智能体(claude 已由兜底覆盖,
+  AC-R29 幂等),`defaultAgentId` 按 AC-R2 落在首个已启用智能体上,`settings` 回包
+  刷新面板;再点一次不再新增。本机一个厂商 CLI 都没有时不创建任何记录,并明确
+  提示到运行时页签诊断,而不是静默无事发生。
 - **添加一个智能体:** 给定设置视图,当用户添加一个智能体,选择其**类型**时,
   它会以稳定 id 持久化,并可被选为默认(AC-R13)。Codex 不需要额外的
   sandbox/approval 输入——该闸门由 `defaultMode` 推导得出(AC-R14)。
@@ -149,7 +162,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 
 ## 领域事件(线上)
 
-消费 `get_settings`、`save_settings`、`load_workspace_setting`、`save_workspace_setting`。发出 `settings`、`workspace_setting`。见
+消费 `get_settings`、`save_settings`、`auto_configure_agents`、`load_workspace_setting`、`save_workspace_setting`。发出 `settings`、`auto_configure_agents_result`、`workspace_setting`。见
 [共享协议](../../../shared/api-conventions/websocket-protocol.md)。
 
 ## 交互

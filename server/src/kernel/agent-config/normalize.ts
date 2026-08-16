@@ -58,6 +58,37 @@ export function systemAgent(enabled = true, icon = ''): AgentConfig {
 }
 
 /**
+ * A `configMode: 'system'` agent for ANY vendor — the vendor CLI's own config /
+ * login, no provider overrides. {@link systemAgent} is the claude-shaped special
+ * case of this (the synthesized fallback); this one is what a caller uses to seed
+ * a real, user-owned agent for a vendor that can actually run here.
+ *
+ * The `config` sub-object MUST be the vendor's own arm, not a shared blank: the
+ * zod layer routes by the `vendor` tag and drops an agent whose config fails that
+ * arm, so a claude-shaped shell handed to codex would be silently discarded on
+ * save rather than rejected loudly. That is why this switches per vendor instead
+ * of reusing {@link defaultConfigFor}.
+ */
+export function systemAgentFor(
+  vendor: VendorId,
+  base: { id: string; displayName: string; order_seq?: number },
+): AgentConfig {
+  const shell = { ...base, configMode: 'system' as const, enabled: true, icon: '' }
+  switch (vendor) {
+    case 'claude':
+      return { ...shell, vendor, config: { baseUrl: '', apiKey: '', model: '' } }
+    case 'codex':
+      // `wireApi` is required on the codex arm; `chat` is the schema's own default
+      // and is inert in system mode (no provider override ⇒ codex connects direct).
+      return { ...shell, vendor, config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' } }
+    case 'cursor':
+      // Cursor carries no base URL — it cannot be pointed at another provider —
+      // and an empty key defers to `CURSOR_API_KEY` / the CLI's own login.
+      return { ...shell, vendor, config: { apiKey: '', model: '' } }
+  }
+}
+
+/**
  * One parsed agent paired with the `order_seq` it carried on disk (a finite
  * number) or `undefined` when the persisted record had none — the input to
  * {@link canonicalizeAgentOrder}. The raw presence is tracked separately from the

@@ -3052,6 +3052,39 @@ button.deny:hover:not(:disabled) {
   gap: var(--sp-2);
   flex-wrap: wrap;
 }
+/* Cold-start bootstrap CTA — shown only while nothing is configured, so it may
+ * lead the eye (soft primary wash) without competing with a populated list. */
+.agent-autoconfig {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--c-primary-soft);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.agent-autoconfig-hint {
+  flex: 1 1 220px;
+  margin: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-body-sm);
+}
+.agent-autoconfig-btn {
+  height: 36px;
+  padding: 0 var(--sp-4);
+  background: var(--c-primary);
+  color: var(--c-primary-text);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-code);
+  font-weight: 500;
+}
+.agent-autoconfig-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 /* Non-blocking reason a group edit was refused (vendor clash, duplicate name…). */
 .agent-group-notice {
   margin: 0 0 var(--sp-2);

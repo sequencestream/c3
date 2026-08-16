@@ -454,7 +454,16 @@
       "groupPicker": {
         "label": "Groups"
       },
-      "locateMissing": "That agent configuration no longer exists. Showing this vendor’s agents instead."
+      "locateMissing": "That agent configuration no longer exists. Showing this vendor’s agents instead.",
+      "autoConfigure": {
+        "label": "Auto-configure",
+        "hint": "No agent configured yet. Detect the vendor CLIs installed on this host and create a ready-to-use agent for each.",
+        "result": {
+          "created": "Created {n} agent(s).",
+          "noVendor": "No runnable vendor CLI found. Install or log in to a CLI, then check the Runtime tab for diagnostics.",
+          "alreadyConfigured": "Every runnable vendor already has an agent."
+        }
+      }
     },
     "defaultMode": {
       "title": {

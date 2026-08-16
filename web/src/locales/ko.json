@@ -455,7 +455,16 @@
       "groupPicker": {
         "label": "그룹"
       },
-      "locateMissing": "해당 설정이 더 이상 존재하지 않습니다. 대신 이 벤더의 에이전트를 표시합니다."
+      "locateMissing": "해당 설정이 더 이상 존재하지 않습니다. 대신 이 벤더의 에이전트를 표시합니다.",
+      "autoConfigure": {
+        "label": "자동 구성",
+        "hint": "아직 구성된 에이전트가 없습니다. 이 호스트에 설치된 vendor CLI를 탐지하여 각각에 바로 사용할 수 있는 에이전트를 만듭니다.",
+        "result": {
+          "created": "에이전트 {n}개를 만들었습니다.",
+          "noVendor": "실행 가능한 vendor CLI를 찾지 못했습니다. CLI를 설치하거나 로그인한 뒤 「런타임」 탭에서 진단을 확인하세요.",
+          "alreadyConfigured": "실행 가능한 모든 vendor에 이미 에이전트가 있습니다."
+        }
+      }
     },
     "defaultMode": {
       "title": {

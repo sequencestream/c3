@@ -60,6 +60,7 @@ export type ClientToServer =
   | SessionMsg.ClientListCommands
   | SettingsMsg.ClientGetSettings
   | SettingsMsg.ClientSaveSettings
+  | SettingsMsg.ClientAutoConfigureAgents
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
   | SettingsMsg.ClientListMcpApiKeys
@@ -181,6 +182,7 @@ export type ServerToClient =
   | SessionMsg.ServerModeChanged
   | SessionMsg.ServerCommands
   | SettingsMsg.ServerSettings
+  | SettingsMsg.ServerAutoConfigureAgentsResult
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys
   | SettingsMsg.ServerMyMcpApiKeys

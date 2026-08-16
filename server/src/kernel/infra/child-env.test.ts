@@ -48,6 +48,37 @@ describe('child env under the SDK 0.3.218 default subagent policy', () => {
   })
 })
 
+describe('child env under the SDK 0.3.233 default task-tool surface', () => {
+  // SDK 0.3.233 dropped TaskCreate/TaskList/TaskUpdate/TaskGet (+ TodoWrite) from the
+  // DEFAULT tool surface on Opus 4.8 / Sonnet 5 / Fable 5 / Mythos 5 and newer, and
+  // offers CLAUDE_CODE_ENABLE_TODO_TOOLS as the escape hatch. c3 accepts the SDK
+  // default and injects NOTHING: the tool surface a spawned agent gets is the
+  // vendor's own, not one c3 quietly rewrote. Whoever wants the tools back sets the
+  // variable themselves — in their shell, or on an agent's env overrides — and the
+  // precedence below lets that through untouched.
+  const TODO_TOOLS_KNOB = 'CLAUDE_CODE_ENABLE_TODO_TOOLS'
+
+  it('keepalive defaults do not carry the todo-tools override', () => {
+    expect(KEEPALIVE_ENV_DEFAULTS).not.toHaveProperty(TODO_TOOLS_KNOB)
+  })
+
+  it('buildChildEnv does not synthesize the todo-tools override', () => {
+    const saved = process.env[TODO_TOOLS_KNOB]
+    try {
+      delete process.env[TODO_TOOLS_KNOB]
+      // The ONLY way it appears is if the host shell or the agent set it; c3 adds none.
+      expect(buildChildEnv()[TODO_TOOLS_KNOB]).toBeUndefined()
+    } finally {
+      if (saved === undefined) delete process.env[TODO_TOOLS_KNOB]
+      else process.env[TODO_TOOLS_KNOB] = saved
+    }
+  })
+
+  it('passes a user/agent-supplied value straight through', () => {
+    expect(buildChildEnv({ [TODO_TOOLS_KNOB]: '1' })[TODO_TOOLS_KNOB]).toBe('1')
+  })
+})
+
 describe('child env loopback proxy bypass', () => {
   // A host that exports HTTP(S)_PROXY with no NO_PROXY made the claude CLI route
   // c3's OWN loopback MCP routes through that proxy; the proxy 502s, the MCP server

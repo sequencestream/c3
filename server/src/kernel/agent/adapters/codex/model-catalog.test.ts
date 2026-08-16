@@ -48,7 +48,7 @@ describe('writeModelCatalogFile', () => {
       expect(entry.display_name).toBe('deepseek-v4-flash')
       expect(entry.context_window).toBe(65536)
       expect(entry.max_output_tokens).toBe(8192)
-      // The serde-required scaffold that lets codex 0.146.0 parse the entry.
+      // The serde-required scaffold that lets codex 0.147.0 parse the entry.
       expect(entry.shell_type).toBe('shell_command')
       expect(entry.visibility).toBe('list')
       expect(entry.supported_in_api).toBe(true)

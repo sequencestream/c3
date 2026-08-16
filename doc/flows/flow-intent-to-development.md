@@ -244,13 +244,15 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
    Claude 的启动保持既有的会话标题路径。它运行标准的门控循环([prompt → gated
    run](flow-prompt-to-gated-run.md))。该运行在断连后仍存活(`AS-R8`)。
 5. **启动反馈(仅限手动启动)。** 因为上述步骤可能耗时数秒
-   (远程 main 拉取、worktree 创建/分支拉取,再到智能体生成 — 带 sandbox 时最慢),
+   (远程基准分支拉取、worktree 创建/分支拉取,再到智能体生成 — 带 sandbox 时最慢),
    服务端在同步校验通过后发出粗粒度的、面向连接的 `dev_launch_progress` 阶段:
-   `fetching-remote-main`(worktree 远程基点拉取之前)、`preparing-worktree`
+   `fetching-base-branch`(worktree 远程基点拉取之前)、`preparing-worktree`
    (git 分支阶段之前)、`launching`(生成之前);此前静默的异步启动失败
    现在也会发出 `failed`。web console 在点击时布防一个阻塞式启动遮罩,
    **立即显示,并在最短时长内保持可见以防闪烁**,按顺序步进一个
-   对齐这些阶段的有序列表:拉取远程主分支、准备 worktree、开始工作会话、进入会话。
+   对齐这些阶段的有序列表:拉取基准分支、准备 worktree、开始工作会话、进入会话。
+   第一步的文案保持通用的「基准分支」措辞而不写死 `main`:基点取的是意图落库的
+   base 分支(常常是某条交付的集成分支),遮罩不承载真实分支名。
    该遮罩在成功终态(目标意图在常规 `intents` 广播中翻转为
    `in_progress`)、`failed` / 一个 `intent.*` 动作错误,以及一个安全超时时关闭,
    这样一次丢失的信号就不会困住用户。同步校验失败会留在 `error` 通道上,

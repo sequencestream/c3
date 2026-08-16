@@ -913,7 +913,7 @@
     "devLaunch": {
       "title": "Запуск работы…",
       "step": {
-        "fetchRemoteMain": "Получение удалённой основной ветки",
+        "fetchBaseBranch": "Получение базовой ветки",
         "prepareWorktree": "Подготовка worktree",
         "launchSession": "Запуск рабочей сессии",
         "enterSession": "Вход в сессию"

@@ -578,7 +578,7 @@ export async function launchWorkSession(
   // ── Git branch strategy ──
   let effectiveCwd: string
   let baselineNotice: WorktreeBaselineNotice | null = null
-  progress?.('fetching-remote-main')
+  progress?.('fetching-base-branch')
 
   if (getGitBranchMode(workspacePath) === 'worktree') {
     // The baseline is the intent's persisted base branch. Resolving it also

@@ -846,7 +846,7 @@ describe('startDevelopment — startup progress events', () => {
     await run(ctx, conn)
 
     expect(progressStages(sent)).toEqual([
-      'fetching-remote-main',
+      'fetching-base-branch',
       'preparing-worktree',
       'launching',
     ])
@@ -866,7 +866,7 @@ describe('startDevelopment — startup progress events', () => {
     await run(ctx, conn)
 
     expect(progressStages(sent)).toEqual([
-      'fetching-remote-main',
+      'fetching-base-branch',
       'preparing-worktree',
       'launching',
     ])
@@ -887,7 +887,7 @@ describe('startDevelopment — startup progress events', () => {
     await flush()
 
     expect(progressStages(sent)).toEqual([
-      'fetching-remote-main',
+      'fetching-base-branch',
       'preparing-worktree',
       'launching',
       'failed',

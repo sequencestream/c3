@@ -49,6 +49,11 @@ const emit = defineEmits<{
 
 const mobileActionsOpen = ref(false)
 
+// ---- 空列表引导气泡 ----
+/** 空列表时引导点击「+」的气泡可见性。关闭仅本次进入期间生效:组件重挂载(刷新/重新进入)
+ *  或列表变非空后自动复位/消失,不做持久化记忆。 */
+const emptyGuideVisible = ref(true)
+
 // ---- 折叠态 ----
 const collapsed = usePersistentToggle('c3.intentMergedListCollapsed')
 const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
@@ -222,17 +227,37 @@ function setFilterFromMenu(value: string): void {
             </select>
           </div>
         </div>
-        <button
-          type="button"
-          class="req-new-btn"
-          :aria-label="t('intent.create.label')"
-          :title="t('intent.create.label')"
-          data-testid="intent-list-create-intent"
-          :disabled="createIntentPending"
-          @click="emit('new-intent')"
-        >
-          +
-        </button>
+        <div class="req-new-wrap">
+          <div
+            v-if="intents.length === 0 && emptyGuideVisible"
+            class="empty-guide"
+            role="status"
+            data-testid="intent-list-empty-guide"
+          >
+            <span class="empty-guide-text">{{ t('intent.list.emptyGuide') }}</span>
+            <button
+              type="button"
+              class="empty-guide-close"
+              data-testid="intent-list-empty-guide-close"
+              :aria-label="t('common.action.close.label')"
+              :title="t('common.action.close.label')"
+              @click="emptyGuideVisible = false"
+            >
+              ×
+            </button>
+          </div>
+          <button
+            type="button"
+            class="req-new-btn"
+            :aria-label="t('intent.create.label')"
+            :title="t('intent.create.label')"
+            data-testid="intent-list-create-intent"
+            :disabled="createIntentPending"
+            @click="emit('new-intent')"
+          >
+            +
+          </button>
+        </div>
       </div>
     </div>
 
@@ -283,6 +308,74 @@ function setFilterFromMenu(value: string): void {
   align-items: center;
   gap: var(--sp-2);
   flex-shrink: 0;
+}
+/* 「+」按钮容器:为空列表引导气泡提供绝对定位参照 */
+.req-new-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+/* 空列表引导气泡:悬在「+」正下方、箭头指向按钮。整体落在按钮下方,故不遮挡也不拦截
+   「+」的点击;仅在列表为空且本次未被关闭时渲染。 */
+.empty-guide {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  width: max-content;
+  max-width: 220px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  background: var(--c-card);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-mid);
+}
+/* 箭头:两层三角叠出带边框效果 —— 下层取边框色,上层取背景色内缩 1px 盖住 */
+.empty-guide::before,
+.empty-guide::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+}
+.empty-guide::before {
+  bottom: 100%;
+  border-bottom: 6px solid var(--c-primary);
+}
+.empty-guide::after {
+  bottom: calc(100% - 1px);
+  border-bottom: 6px solid var(--c-card);
+}
+.empty-guide-text {
+  font-size: var(--fs-caption);
+  line-height: 1.4;
+  color: var(--c-text);
+}
+.empty-guide-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: var(--fs-caption);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.empty-guide-close:hover {
+  color: var(--c-text);
+  background: var(--c-hover);
 }
 .merged-list-title {
   font-size: var(--fs-caption);

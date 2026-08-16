@@ -320,6 +320,12 @@ describe('createWorktree', () => {
     }
   })
 
+  it('includes spawn ENOENT detail when the project cwd does not exist', () => {
+    // A missing cwd yields empty stdout/stderr from Node; the helper must keep
+    // `error.message` so the queue does not park with a blank "git worktree add 失败: ".
+    expect(() => createWorktree('/no/such/c3-worktree-cwd', INTENT_ID, 'Test')).toThrow(/ENOENT/)
+  })
+
   it('re-uses existing worktree on idempotent call with different title', () => {
     const first = createWorktree(repoDir, INTENT_ID, 'First title')
     // Second call with different title — worktree already exists, so it

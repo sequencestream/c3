@@ -13,7 +13,7 @@ import { installClaudeSdkWarningFilter } from './adapters/claude/sdk-warning-fil
 installClaudeSdkWarningFilter()
 import { stringifyToolResult } from '../../format.js'
 import { addToolSession } from '../../sessions.js'
-import { buildChildEnv, findClaudeExecutable, TASK_TOOL_ENV_DEFAULTS } from '../infra/child-env.js'
+import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
 import { bindClaudeRelay, unbindRelay } from '../agent-config/index.js'
 import type { RelayCandidate } from '../relay/contract.js'
@@ -534,11 +534,7 @@ export async function runTaskTool(opts: {
       permissionMode: 'default',
       ...(opts.resume ? { resume: opts.resume } : {}),
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-      // Always set: the ONE tool this executor exists to drive is a task tool, and
-      // SDK 0.3.233 cut the task tools from the default surface on the newer models
-      // (TASK_TOOL_ENV_DEFAULTS restores it). `env` replaces the child environment
-      // wholesale, so `process.env` is spread back in; agent overrides still win.
-      env: { ...TASK_TOOL_ENV_DEFAULTS, ...process.env, ...opts.envOverrides },
+      ...(opts.envOverrides ? { env: { ...process.env, ...opts.envOverrides } } : {}),
       ...(opts.model ? { model: opts.model } : {}),
       // Mechanical task-list op — auto-allow the one driven tool (forcing its
       // input), deny anything else that slips past `disallowedTools`.

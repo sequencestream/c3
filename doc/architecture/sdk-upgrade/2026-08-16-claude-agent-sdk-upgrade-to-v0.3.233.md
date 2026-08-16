@@ -14,18 +14,23 @@
 
 ## 结论速览
 
-- **本轮有一项必须处理的默认行为变更**，是自 0.3.195 以来第一次：0.3.233 把
-  `TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`（及 `TodoWrite`）从 Opus 4.8、Sonnet 5、
-  Fable 5、Mythos 5 及更新模型的**默认工具面**中移除。c3 的任务面板完全由这四个工具的
-  `tool_use` / `tool_result` 帧派生（Claude 没有原生 task 推送事件，工具流**就是**数据源），
-  若不处理，面板会在 c3 主打的那批模型上**静默为空**，且 `ClaudeTaskStore` 会失去它驱动的工具。
-  结论：**显式保留工具面，不接受能力退化**——`capabilities.taskStore` 维持 `true`，ADR-0011
-  capability ledger 不变（见「task 工具面深评」）。
-- **保留方式选择 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`（子进程 env），而非 `tools` 或 `allowedTools`。**
-  三条逃生通道里只有它**单独**改工具面：`tools` 会**替换**整个内建工具集合（c3 从此要永久枚举
-  自己想要的每个内建工具），`allowedTools` 的语义是「auto-allowed without prompting」——会把这
-  四个工具**预判在 `canUseTool` 之前**，而 `canUseTool` 必须保持唯一权限收口（C-SEC）。
-- **其余 20 条上游变化一律未提升为 c3 公共能力**：不新增 wire frame、不扩展 `CanonicalMessage`、
+- **零生产代码行为改动。** `server/src/` 下唯一的非测试改动是 `kernel/agent/index.ts` 的一段注释
+  （记录成本核算应取 `modelUsage` 而非 `usage`）。新增的两份回归覆盖把本轮「兼容但不接入」的边界
+  钉在 `pnpm vitest run` 上。
+- **本轮唯一的默认行为变更是 0.3.233 的 task/todo 工具面收敛**：`TaskCreate` / `TaskList` /
+  `TaskUpdate` / `TaskGet`（及 `TodoWrite`）在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上
+  退出**默认工具面**。**结论：沿用 SDK 默认、不注入任何覆写**——不设
+  `CLAUDE_CODE_ENABLE_TODO_TOOLS`，不传 `tools`，不传 `allowedTools`。**c3 不改写 agent 的默认
+  设置**：一个 agent 拿到什么工具面，由 vendor 与用户自己的配置决定，不由 c3 在背后悄悄重写。
+- **代价已知并接受**：在上述模型上，模型不会被交付这四个 task 工具，因此**任务面板会保持为空**。
+  这是运行期、按模型而定的现象，**不是 vendor 能力缺失**——需要的用户可以自己在 shell 或 agent 的
+  env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`，`buildChildEnv` 的既有优先级会原样放行。
+  详见「task 工具面深评」。
+- **`capabilities.taskStore` 维持 `true`，ADR-0011 capability ledger 不变。** 该 flag 是 **vendor
+  级**声明（「这个 vendor 是否提供 task 工具面」），而 Claude 依然提供；且 web 用它**门控整个
+  TaskPanel**（`taskStoreAvailable`），翻成 `false` 会在**所有模型**上对 Claude 隐藏面板——包括
+  工具仍然可用的旧模型，比实际退化更糟。
+- **其余 21 条上游变化一律未提升为 c3 公共能力**：不新增 wire frame、不扩展 `CanonicalMessage`、
   不新增持久化字段、UI 状态或配置项。
 - vendor 中性适配器面（`adapters/types.ts` 与 ADR-0011 capability ledger）**未被触及**：8 个 boolean
   flags、neutral permission grid、`canFormTeam` 声明均不变。**ADR-0011 不更新。**
@@ -165,56 +170,69 @@
     会因此在 c3 托管的会话里也响起——这是与交互式 REPL **对齐**的行为，属期望内，不需要 c3 抑制。
     （留痕：本表）
 22. **（重点）task/todo 工具在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上不再属于默认
-    工具面** — **接入：显式保留工具面**。见下方深评。
+    工具面** — **沿用 SDK 默认、不注入覆写**。见下方深评。
 
-## task 工具面深评（0.3.233 第 22 项，本轮唯一必须处理项）
+## task 工具面深评（0.3.233 第 22 项，本轮唯一深评项）
 
 **SDK 变化：** `TaskCreate` / `TaskGet` / `TaskUpdate` / `TaskList` 与 `TodoWrite` 在 Opus 4.8、
 Sonnet 5、Fable 5、Mythos 5 及更新模型上退出**默认工具面**。要保留，须（a）在 `tools` 选项中点名，
 或（b）在 `allowedTools` 中引用，或（c）设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`。
 
-**c3 的依赖面（三处，全部会断）：**
+**c3 的依赖面（三处）：**
 
 - `kernel/agent/task-tracker.ts` 从 `emit()` 汇聚点观察 task 工具的 `tool_use`/`tool_result` 帧，
-  折叠成 `task_list` 快照下发。**Claude 没有原生 task 推送事件——工具流就是唯一数据源**，工具消失
-  ⇒ 任务面板静默为空，且没有任何错误可见；
-- `adapters/claude/task-store.ts`（`ClaudeTaskStore`）经 `runTaskTool` 驱动**单个** task 工具，工具
-  消失 ⇒ 整个 task store 失效，不只是展示层；
+  折叠成 `task_list` 快照下发。**Claude 没有原生 task 推送事件——工具流就是唯一数据源**；
+- `adapters/claude/task-store.ts`（`ClaudeTaskStore`）经 `runTaskTool` 驱动**单个** task 工具；
 - `features/automations/mcp-freeze.ts` 把四个工具列入 `SDK_READ_TOOLS` 读写分类；automation 执行经
   `dispatcher.ts` 的 `query()`，同样落在默认工具面上。
 
-而升级前 c3 调用 `query()` **只传 `disallowedTools`，不传 `tools` / `allowedTools`，也未设该环境
+升级前 c3 调用 `query()` **只传 `disallowedTools`，不传 `tools` / `allowedTools`，也未设该环境
 变量**——即完全依赖默认工具面。
 
-**方案选择：**
+**方案选择：三条逃生通道全部不采纳。**
 
-| 通道                              | 结论     | 依据                                                                                                                                                                                                                                                                                                             |
-| --------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tools: [...]`                    | **否决** | 该选项**替换**整个内建工具集合（`sdk.d.ts`：“Specify the base set of available built-in tools”）。采纳后 c3 必须永久枚举自己想要的每一个内建工具，每次 SDK 加工具都要跟着改，blast radius 与维护成本都不成比例。                                                                                                 |
-| `allowedTools: [...]`             | **否决** | 该选项语义是「auto-allowed **without prompting**」（`sdk.d.ts` 原文）。它会把这四个工具**预判在 `canUseTool` 之前**，而 `canUseTool` 是 c3 的**唯一权限收口**（C-SEC）。为了恢复一个工具面而在权限层开一个旁路，方向是错的。                                                                                     |
-| `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` | **采纳** | 三者中唯一**只改工具面、不碰权限语义**的通道：工具回到默认面后仍照常流经 `canUseTool`，也仍受各 gate 的 `disallowedTools` 硬切（`disallowedTools` 优先级更高，`sdk.d.ts`：“cannot be used, even if they would otherwise be allowed”），因此 intent / spec 等只读 gate 的封锁不受影响。行为与升级前**逐字一致**。 |
+| 通道                              | 结论     | 依据                                                                                                                                                                                                                                                                                                              |
+| --------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools: [...]`                    | **否决** | 该选项**替换**整个内建工具集合（`sdk.d.ts`：“Specify the base set of available built-in tools”）。采纳后 c3 必须永久枚举自己想要的每一个内建工具，每次 SDK 加工具都要跟着改，blast radius 与维护成本都不成比例。                                                                                                  |
+| `allowedTools: [...]`             | **否决** | 该选项语义是「auto-allowed **without prompting**」（`sdk.d.ts` 原文）。它会把这四个工具**预判在 `canUseTool` 之前**，而 `canUseTool` 是 c3 的**唯一权限收口**。为了恢复一个工具面而在权限层开一个旁路，方向是错的。                                                                                               |
+| `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` | **否决** | 技术上它确实只改工具面、不碰权限语义，是三者中副作用最小的。但它同样是**由 c3 单方面改写 agent 的默认设置**：用户在 c3 里跑一个 agent，拿到的工具面就不再是 vendor（与用户自己配置）决定的那一个，而是 c3 在背后加了一条覆写。**c3 是编排层，不是替用户改 vendor 默认值的层**——这条边界比一个面板的可用性更重要。 |
 
-**落地：**
+**因此：沿用 SDK 默认、零注入。** `runClaude` / `runTaskTool` / automation `dispatcher.ts` 三个
+`query()` 调用点均**不新增任何选项或环境变量**；`buildChildEnv` 不新增 key。回归用例正向断言这一点
+（发给 `query()` 的 options 里 `env.CLAUDE_CODE_ENABLE_TODO_TOOLS` 为 `undefined`，且无 `tools` /
+`allowedTools`），把「c3 不注入」本身钉成契约，而不是让它退化成一个没人守的默认值。
 
-- `kernel/infra/child-env.ts` 新增 `TASK_TOOL_ENV_DEFAULTS = { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' }`，
-  在 `buildChildEnv()` 中与 `KEEPALIVE_ENV_DEFAULTS` **同一最低优先级层**合并——用户 shell
-  （`process.env`）或 active agent（`envOverrides`）显式设的同名值仍然胜出，与 c3 既有的「用户优先」
-  env 约定一致。这一处即覆盖 `runClaude`（工作会话）与 automation `dispatcher.ts`（两者都用
-  `buildChildEnv`）；
-- `kernel/agent/index.ts` 的 `runTaskTool` 原先**仅在有 `envOverrides` 时**才下发 `env`，改为**总是**
-  下发 `{ ...TASK_TOOL_ENV_DEFAULTS, ...process.env, ...opts.envOverrides }`。它驱动的那一个工具**就是**
-  task 工具，没有兜底余地；`env` 会整体替换子进程环境，故 `process.env` 显式回填（`PATH` / `HOME`
-  等由回归用例钉住）；
-- `askOneShot` 与 automation `naming.ts` **不动**：前者的 `ONESHOT_DISALLOWED_TOOLS` 本就把四个 task
-  工具全部禁用（它是纯文本判官），后者是 tool-free 命名查询，都不依赖该工具面。
+**接受的代价（明确记录，不粉饰）：** 在 Opus 4.8 / Sonnet 5 / Fable 5 / Mythos 5 及更新模型上，模型
+不会被交付这四个 task 工具，因此：
 
-**能力台账结论：** `capabilities.taskStore` **维持 `true`**，不记为能力退化。该 flag 描述的是
-**vendor 是否具备 task store 能力**，而 Claude SDK 依然具备——只是默认工具面收敛，需要宿主显式声明。
-c3 已显式声明，行为与升级前一致，因此 ledger 无需变更。
+- **任务面板会保持为空**（面板本身仍渲染，见下方台账结论），且没有错误提示——这是一个静默的空态；
+- `ClaudeTaskStore` 在这些模型上驱动 task 工具会拿不到结果，落到它既有的 best-effort 降级
+  （`runTaskTool` 返回 `{ content: '', isError: true }`，`task-parse.ts` 的解析器返回 `null`/`[]`
+  而非抛错）——即链路不崩，只是无数据；
+- 旧模型不受影响，工具面照旧。
+
+**用户仍有出口，且出口在正确的位置：** 想要 task 工具的用户可以自己在 shell 里 export
+`CLAUDE_CODE_ENABLE_TODO_TOOLS=1`，或写进某个 agent 的 env 覆盖。`buildChildEnv` 的既有优先级
+（keepalive 默认 < `process.env` < `envOverrides`）会**原样放行**该值，无需 c3 改动——回归用例
+同时断言了这条放行路径。**决定权留在用户的配置里，而不是 c3 的默认值里。**
+
+**能力台账结论：`capabilities.taskStore` 维持 `true`，不记为能力退化。** 两条理由：
+
+1. **语义不符。** 该 flag 在 `adapters/types.ts` 的定义是「SDK-level task-tool surface … The flag
+   exists for future vendors that may not offer a native task API」——它描述的是**这个 vendor 是否
+   提供 task 工具面**。Claude 依然提供：工具存在、可调用，只是不再默认交付给新模型。这是**运行期、
+   按模型而定**的可用性，flag 没有这个粒度，而为它发明一个粒度属于独立的抽象设计，远超一次 SDK 升级。
+2. **翻成 `false` 会造成更大的实际损失。** web 用 `taskStoreAvailable`（读 `caps[vendor].taskStore`）
+   **门控整个 TaskPanel**（`App.vue` / `ChatColumn.vue` / `Intents.vue` / `Works.vue`）。翻成 `false`
+   会在**所有模型**上对 Claude 隐藏面板——包括工具仍然可用的旧模型，把一个「新模型上为空」的问题
+   放大成「所有模型上没有」。
 
 **ADR-0011 影响：** 无。8 个 boolean flags（`interrupt`、`setActionMode`、`streamingPush`、
 `inProcessMcp`、`forkSession`、`perToolApproval`、`taskStore`、`nativeUserInput`）不变，
 `sessions` 子台账不变，`adapters/types.ts` 零改动。
+
+**若将来要改善空态**（例如在新模型上给面板一个「该模型未提供 task 工具」的解释，而非静默空白），
+那需要一个**按模型的运行期可用性**概念，与本 flag 是两层东西，应由独立意图定义。
 
 ## resume 携带 settings 深评（0.3.222 第 3 项）
 
@@ -270,11 +288,13 @@ custom 保持隔离）。
 - 不产生 wire 内容帧，不生成 `CanonicalMessage` 转换。
 
 回归测试 `server/src/claude-sdk-0233-compat.test.ts`（驱动真实 `runClaude` / `runTaskTool` + mock SDK
-`query`，沿用 `claude-sdk-0220-compat.test.ts` 模式，8 个用例）把上述各条钉死，并额外覆盖第 22 项的
-正向断言：`env.CLAUDE_CODE_ENABLE_TODO_TOOLS === '1'`、options 不含 `tools` / `allowedTools`、
-`canUseTool` 仍在位，以及一次完整的 `TaskList` `tool_use`→`tool_result` 帧经共享模型
-（`applyTaskTool`，任务面板的单一 SoT）折叠出非空快照。`kernel/infra/child-env.test.ts` 另加 3 个用例
-覆盖 env 常量本身与其优先级。
+`query`，沿用 `claude-sdk-0220-compat.test.ts` 模式，7 个用例）把上述各条钉死，并覆盖第 22 项的
+「不注入」契约：发给 `query()` 的 options 中 `env.CLAUDE_CODE_ENABLE_TODO_TOOLS` 为 `undefined`、
+无 `tools` / `allowedTools`、`canUseTool` 仍在位；`runTaskTool` 在无 agent 覆盖时**根本不传 `env`**。
+另有一个用例证明**派生链路本身未被本次升级改动**：一次完整的 `TaskList` `tool_use`→`tool_result` 帧
+经共享模型（`applyTaskTool`，任务面板的单一 SoT）仍折叠出非空快照——变的只是模型有没有被交付工具。
+`kernel/infra/child-env.test.ts` 另加 3 个用例，覆盖 c3 不合成该 env key、以及用户/agent 自设的值
+被原样放行。
 
 ## ADR-0011 判断
 
@@ -288,9 +308,10 @@ custom 保持隔离）。
 4. SDK settings 新增各项（`crossSessionInbound`、`dialogExpiry`、archive 插件源、沙箱凭证掩码）与
    `skills` 校验、`resumeDropsTurn`：c3 不构造 `settings`、不传 `skills` / `resumeDropsTurn`，
    与 vendor 中性适配器面无交集；
-5. **task 工具面收敛：c3 显式保留了工具面，`capabilities.taskStore` 维持 `true`，行为与升级前一致
-   ⇒ 无能力退化可记。** 保留手段是 Claude 侧的子进程 env，属 vendor **实现细节**，不上升为中性
-   capability（其它 vendor 的 task store 有各自的可用性前提，`adapters/codex/task-store.ts` 亦然）。
+5. **task 工具面收敛：c3 沿用 SDK 默认、不注入覆写。** `capabilities.taskStore` 维持 `true`——该 flag
+   声明的是 vendor 是否提供 task 工具面（Claude 依然提供），而本次变化是**按模型的运行期可用性**，
+   flag 无此粒度；且翻成 `false` 会经 `taskStoreAvailable` 在所有模型上隐藏 TaskPanel，损失更大。
+   详见「task 工具面深评」的台账结论。
 
 capability ledger 的 8 个 boolean flags、`sessions` 子台账、neutral permission grid 与 `canFormTeam`
 声明均不受影响；`adapters/types.ts` 零改动。
@@ -308,10 +329,10 @@ capability ledger 的 8 个 boolean flags、`sessions` 子台账、neutral permi
   `claude-sdk-0233-compat.test.ts`），全部为预存项、与 SDK 无关。
   与上一份记录的 4 个相比数量上升，来自 2026-08-02 之后合入主线的其它改动（`deliveries`、
   `session-worktree`、`kernel/config`、web 交付面），**不是本次升级引入**。
-- `pnpm vitest run` 全量套件（项目默认 pool）：**445 个测试文件通过 / 1 跳过、7332 个用例通过 /
+- `pnpm vitest run` 全量套件（项目默认 pool）：**445 个测试文件通过 / 1 跳过、7331 个用例通过 /
   16 跳过、0 失败**，**无新增 skip**（1 文件 / 16 用例跳过与升级前基线一致）。新增
-  `claude-sdk-0233-compat.test.ts`（8 用例）与 `child-env.test.ts` 的 3 个新用例，共 11 条新断言，
-  覆盖 task 工具面保留、`system/permission_denied` fall-through、加性 result 字段、
+  `claude-sdk-0233-compat.test.ts`（7 用例）与 `child-env.test.ts` 的 3 个新用例，共 10 条新覆盖，
+  覆盖 task 工具面「c3 零注入」契约、`system/permission_denied` fall-through、加性 result 字段、
   `tool_use_result` 形状变化、以及 c3 不构造的四类 option 面。
 - `server/package.json`：仅 `@anthropic-ai/claude-agent-sdk` `^0.3.220 → ^0.3.233`。
 - `pnpm-lock.yaml`：diff 仅含 claude-agent-sdk 主包 specifier + 8 个平台子包的版本号/integrity 行
@@ -319,8 +340,8 @@ capability ledger 的 8 个 boolean flags、`sessions` 子台账、neutral permi
 - `pnpm-workspace.yaml`：零改动，未放宽 `minimumReleaseAge` 冷却策略。
 - 权限模式集合：对实际安装的 0.3.233 产物核对 `sdk.d.ts` 类型联合与 `sdk.mjs` 运行时校验数组，
   两者逐字一致且均完整包含 c3 五种 token。
-- 生产代码改动仅两处，都服务于第 22 项：`kernel/infra/child-env.ts`（新增 `TASK_TOOL_ENV_DEFAULTS`
-  并并入 `buildChildEnv`）与 `kernel/agent/index.ts`（`runTaskTool` 总是下发 env；`result` 分支注释
-  补 `modelUsage` 取值指引）。
+- 生产代码**零行为改动**：`server/src/` 下唯一的非测试改动是 `kernel/agent/index.ts` 中 `result`
+  分支的注释（补 `modelUsage` 取值指引，第 7 项留痕）。`child-env.ts` / `capabilities.ts` /
+  `adapters/types.ts` 均未改。
 - 文档留痕：本记录逐项覆盖 22 条上游变化；索引 `sdk-upgrade-records.md` 与指南
   `claude-agent-sdk-guide.md` 适用版本同步为 `^0.3.233`；明确「ADR-0011 不更新」及理由。

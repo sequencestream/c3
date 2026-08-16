@@ -285,12 +285,14 @@ flowchart LR
 `allowedTools` 也列了它）。三者中只有 `tools` 是「基础集合」——它**替换**默认内建工具集，不是叠加。
 
 自 SDK `0.3.233` 起，task/todo 工具（`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet` /
-`TodoWrite`）在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上**不再属于默认工具面**，宿主须显式
-保留。c3 依赖这四个 task 工具的帧派生任务面板（Claude 无原生 task 推送事件，工具流就是数据源），
-因此在子进程 env 中设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`（`kernel/infra/child-env.ts` 的
-`TASK_TOOL_ENV_DEFAULTS`）。**不用 `tools`**——那会迫使 c3 永久枚举全部内建工具；**也不用
-`allowedTools`**——那会把这些工具预判在 `canUseTool` 之前，而 `canUseTool` 必须保持 c3 的唯一权限
-收口。取舍依据见
+`TodoWrite`）在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上**不再属于默认工具面**：要保留，
+宿主须在 `tools` 中点名、在 `allowedTools` 中引用，或设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`。
+
+**c3 三者都不用，沿用 SDK 默认。** c3 是编排层，不替用户改写 vendor 的默认设置——一个 agent 拿到
+什么工具面，由 vendor 与用户自己的配置决定。代价是：在上述模型上模型拿不到 task 工具，**任务面板
+会保持为空**（`taskStore` 是 vendor 级 capability，仍为 `true`，面板照常渲染）。需要的用户自己在
+shell 或 agent 的 env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` 即可——`buildChildEnv` 的优先级
+会原样放行。取舍与代价的完整记录见
 [`sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md`](sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)。
 
 ### 流式 vs 一次性

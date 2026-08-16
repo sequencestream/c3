@@ -6,14 +6,15 @@
  * the stable config-construction and message-loop seams, what this upgrade window
  * changed for c3:
  *
- *  - **0.3.233 task/todo tool surface (the one behaviour change c3 had to act on).**
- *    `TaskCreate`/`TaskList`/`TaskUpdate`/`TaskGet` (+ `TodoWrite`) left the DEFAULT
- *    tool surface on Opus 4.8 / Sonnet 5 / Fable 5 / Mythos 5 and newer. c3's task
- *    panel is derived ONLY from those tools' wire frames, so the surface is restored
- *    via `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` on the child env — deliberately NOT via
- *    `tools` (which would replace the whole built-in set) or `allowedTools` (which
- *    means "auto-allowed without prompting" and would pre-decide these tools behind
- *    `canUseTool`, c3's single permission chokepoint).
+ *  - **0.3.233 task/todo tool surface.** `TaskCreate`/`TaskList`/`TaskUpdate`/`TaskGet`
+ *    (+ `TodoWrite`) left the DEFAULT tool surface on Opus 4.8 / Sonnet 5 / Fable 5 /
+ *    Mythos 5 and newer. c3 takes the SDK default and injects NO override of its own —
+ *    not `CLAUDE_CODE_ENABLE_TODO_TOOLS`, not `tools` (which would replace the whole
+ *    built-in set), not `allowedTools` (which means "auto-allowed without prompting"
+ *    and would pre-decide these tools behind `canUseTool`, c3's single permission
+ *    chokepoint). The accepted cost: on those models the model is not handed the task
+ *    tools, so the task panel stays empty. The derivation path itself is unchanged and
+ *    still asserted below — a user who wants the tools sets the env var themselves.
  *  - **0.3.223 `system/permission_denied` stream event.** Additive; falls through the
  *    `assistant`/`user`/`result` type switch with no wire frame and no turn close.
  *  - **0.3.223/0.3.228/0.3.229/0.3.232 additive result fields** (`api_error_status`,
@@ -95,33 +96,34 @@ beforeEach(() => {
   sdk.options = []
 })
 
-describe('SDK 0.3.233 task/todo tool surface — explicitly kept, not degraded', () => {
-  it('runClaude spawns the child with the task-tool surface restored', async () => {
-    sdk.streams.push([init(), assistantText('ok'), result()])
-    await runTurn()
+describe('SDK 0.3.233 task/todo tool surface — c3 stays on the SDK default', () => {
+  it('runClaude injects no tool-surface override of its own', async () => {
+    const savedKnob = process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
+    try {
+      delete process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
+      sdk.streams.push([init(), assistantText('ok'), result()])
+      await runTurn()
 
-    const env = sdk.options[0].env as Record<string, string>
-    // Without this the four task tools vanish from the model's tool set on the newer
-    // models and `task-tracker` — whose ONLY data source is their tool frames — would
-    // derive an empty panel with no error anywhere.
-    expect(env.CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
+      const opts = sdk.options[0]
+      // The three escape hatches 0.3.233 offers, all deliberately unused: whatever
+      // tool surface the vendor gives a model is the one the agent gets. c3 does not
+      // quietly rewrite it — a user who wants the task tools sets the env var in
+      // their own shell or on an agent's env overrides, and it passes straight through.
+      expect((opts.env as Record<string, string>).CLAUDE_CODE_ENABLE_TODO_TOOLS).toBeUndefined()
+      // `tools` REPLACES the base built-in surface — adopting it would force c3 to
+      // enumerate every built-in it wants forever.
+      expect(opts).not.toHaveProperty('tools')
+      // `allowedTools` means "auto-allowed without prompting": it would pre-decide the
+      // task tools BEHIND `canUseTool`, which must stay c3's single permission chokepoint.
+      expect(opts).not.toHaveProperty('allowedTools')
+      expect(opts.canUseTool).toBeTypeOf('function')
+    } finally {
+      if (savedKnob === undefined) delete process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
+      else process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS = savedKnob
+    }
   })
 
-  it('keeps them WITHOUT reaching for `tools` or `allowedTools`', async () => {
-    sdk.streams.push([init(), assistantText('ok'), result()])
-    await runTurn()
-
-    const opts = sdk.options[0]
-    // `tools` REPLACES the base built-in surface — adopting it would force c3 to
-    // enumerate every built-in it wants forever.
-    expect(opts).not.toHaveProperty('tools')
-    // `allowedTools` means "auto-allowed without prompting": it would pre-decide the
-    // task tools BEHIND `canUseTool`, which must stay c3's single permission chokepoint.
-    expect(opts).not.toHaveProperty('allowedTools')
-    expect(opts.canUseTool).toBeTypeOf('function')
-  })
-
-  it('runTaskTool (the ClaudeTaskStore executor) also gets the surface restored', async () => {
+  it('runTaskTool (the ClaudeTaskStore executor) likewise injects nothing', async () => {
     sdk.streams.push([init(), toolResult('tu-1', '{"tasks":[]}'), result()])
     await runTaskTool({
       toolName: 'TaskList',
@@ -131,17 +133,14 @@ describe('SDK 0.3.233 task/todo tool surface — explicitly kept, not degraded',
     })
 
     const opts = sdk.options[0]
-    const env = opts.env as Record<string, string>
-    // The executor exists to invoke ONE task tool; losing the surface would break the
-    // whole store, not just the panel. `env` replaces the child environment wholesale,
-    // so PATH/HOME must still be there.
-    expect(env.CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
-    expect(env.PATH).toBe(process.env.PATH)
+    // With no agent overrides the executor passes no `env` at all, so the child
+    // inherits `process.env` — the SDK default surface, unmodified by c3.
+    expect(opts).not.toHaveProperty('env')
     expect(opts).not.toHaveProperty('tools')
     expect(opts).not.toHaveProperty('allowedTools')
   })
 
-  it('a TaskList call still reaches the wire as the frames the task panel is derived from', async () => {
+  it('when the surface IS available the derivation path is unchanged', async () => {
     const listed = '{"tasks":[{"id":"1","subject":"ship it","status":"in_progress"}]}'
     sdk.streams.push([
       init(),
@@ -157,8 +156,10 @@ describe('SDK 0.3.233 task/todo tool surface — explicitly kept, not degraded',
     expect(res).toMatchObject({ type: 'tool_result', toolUseId: 'tu-list', isError: false })
 
     // The exact pair `observeTaskWire` correlates — folded through the shared model
-    // (the single SoT) it yields a non-empty snapshot, so the panel's data path is
-    // intact end to end.
+    // (the single SoT) it yields a non-empty snapshot. So the derivation path itself
+    // is untouched by this upgrade: on a model that still carries the task tools (or
+    // one the user re-enabled them for) the panel fills exactly as before. What the
+    // upgrade changes is only whether the model is HANDED the tools in the first place.
     expect(isTaskTool('TaskList')).toBe(true)
     const model = applyTaskTool(
       emptyTaskModel(),
@@ -279,8 +280,9 @@ describe('SDK 0.3.221–0.3.224 option surfaces c3 does not construct', () => {
     expect(opts).not.toHaveProperty('resumeSessionAt')
     // 0.3.222 fixed `query({ sessionStore, resume })` not carrying user settings.json
     // into the resumed subprocess. c3 uses the plain `resume` path with NO
-    // `sessionStore`, and always hands the child an EXPLICIT env, so that fix cannot
-    // change what this subprocess inherits.
+    // `sessionStore`, and `runClaude` hands the child an EXPLICIT env on every turn
+    // (first and resumed alike), so that fix cannot change what this subprocess
+    // inherits.
     expect(opts.resume).toBe('prior-session')
     expect(opts).not.toHaveProperty('sessionStore')
     expect(opts.env).toBeTypeOf('object')

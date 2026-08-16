@@ -53,33 +53,8 @@ export const KEEPALIVE_ENV_DEFAULTS: Record<string, string> = {
 }
 
 /**
- * Env that keeps the SDK task-tool surface (`TaskCreate` / `TaskList` /
- * `TaskUpdate` / `TaskGet`, plus `TodoWrite`) available to the model.
- *
- * SDK 0.3.233 dropped those tools from the DEFAULT tool surface on Opus 4.8,
- * Sonnet 5, Fable 5, Mythos 5 and newer models. c3 derives its task panel purely
- * from the task-tool stream — Claude emits no native task-push event, so the
- * `tool_use`/`tool_result` pair IS the source (see `kernel/agent/task-tracker.ts`)
- * — so without this the panel would silently go empty on exactly the models c3
- * targets, and the Claude task store would lose the tools it drives.
- *
- * The SDK offers three ways to keep them; this is the only one that touches the
- * tool surface ALONE. `tools` REPLACES the whole built-in set (c3 would have to
- * enumerate every tool it wants, forever), and `allowedTools` means "auto-allowed
- * without prompting" — it would pre-decide these tools behind `canUseTool`, c3's
- * single permission chokepoint.
- *
- * Merged at the same lowest-priority layer as {@link KEEPALIVE_ENV_DEFAULTS}: a
- * value the user's shell or the active agent sets explicitly still wins.
- */
-export const TASK_TOOL_ENV_DEFAULTS: Record<string, string> = {
-  CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-}
-
-/**
  * Build the env passed to a spawned Claude Code child. Precedence (low → high):
- * keepalive + task-tool defaults < `process.env` (user shell) < `envOverrides`
- * (active agent).
+ * keepalive defaults < `process.env` (user shell) < `envOverrides` (active agent).
  * So keepalive vars are always present yet never clobber a value the user/agent set
  * explicitly (user priority). `env` must carry the *full* environment, so we merge
  * over `process.env` rather than replace it.
@@ -98,7 +73,6 @@ export const TASK_TOOL_ENV_DEFAULTS: Record<string, string> = {
 export function buildChildEnv(envOverrides?: Record<string, string>): Record<string, string> {
   const merged: Record<string, string> = {
     ...KEEPALIVE_ENV_DEFAULTS,
-    ...TASK_TOOL_ENV_DEFAULTS,
     ...(process.env as Record<string, string>),
     ...(envOverrides ?? {}),
   }

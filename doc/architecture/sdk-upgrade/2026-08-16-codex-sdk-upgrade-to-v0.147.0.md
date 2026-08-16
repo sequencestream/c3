@@ -23,9 +23,10 @@
   捆绑依赖 `@openai/codex: 0.146.0 → 0.147.0`、新增 **devDependency**
   `@modelcontextprotocol/conformance`（github pin，devDependency 不进运行时、不入锁文件）。
   故**无 SDK API/类型面的 breaking change**，评估重心落在 CLI 行为面。
-- **`--full-auto` 移除对 c3 无影响：c3 从不产出该 flag。** 全仓 `git grep` 对 `--full-auto` /
-  `full_auto` / `fullAuto` 三种写法命中数均为 **0**（覆盖 `server/` `web/` `shared/` `scripts/`
-  `doc/` `database/` 全部已跟踪文件，含脚本、探针、文档与测试夹具；工作区无未跟踪文件）。c3 的 codex
+- **`--full-auto` 移除对 c3 无影响：c3 从不产出该 flag。** 对 c3 代码/脚本/夹具/既有文档做 `git grep`，
+  `--full-auto` / `full_auto` / `fullAuto` 三种写法命中数均为 **0**（覆盖 `server/` `web/` `shared/`
+  `scripts/` `database/` 及既有 `doc/` 全部已跟踪文件；工作区无未跟踪文件；本记录为叙述该 flag 的移除
+  而提及 flag 名，不属 c3 产物引用）。c3 的 codex
   参数构造在 `adapters/codex/driver.ts` 的 `codexExecArgs()` 单点收敛，产出的是
   `exec --experimental-json` + `--sandbox <mode>` + `--config approval_policy=...`，权限面走
   `--sandbox` 而非已废弃的 `--full-auto`，与上游推荐的替代形态本就一致。**无改动需要落地。**
@@ -133,9 +134,10 @@ TUI / 插件 / app-server / 安装 / 平台面，或 c3 不生产也不消费）
 
 ### 1. `--full-auto` 移除（潜在破坏项 → 无影响）
 
-核查范围为全部已跟踪文件（`git grep`，覆盖 `server/` `web/` `shared/` `scripts/` `doc/` `database/`，
-含脚本、探针、文档与测试夹具），另经 `git status --porcelain -uall` 确认工作区无未跟踪文件遗漏。
-`--full-auto` / `full_auto` / `fullAuto` 三种写法命中数均为 **0**。
+核查范围为 c3 代码/脚本/夹具/既有文档（`git grep`，覆盖 `server/` `web/` `shared/` `scripts/`
+`database/` 及既有 `doc/`，含脚本、探针、测试夹具），另经 `git status --porcelain -uall` 确认工作区
+无未跟踪文件遗漏。`--full-auto` / `full_auto` / `fullAuto` 三种写法命中数均为 **0**（本记录为叙述
+该 flag 的移除而提及 flag 名，不属 c3 产物引用）。
 
 c3 的 codex CLI 参数在 `server/src/kernel/agent/adapters/codex/driver.ts` 的 `codexExecArgs()`
 单点构造，产出形如：
@@ -269,9 +271,11 @@ alpha: 0.148.0-alpha.20 }`；`0.148.0` 线在 npm 上仅有 alpha.1 ~ alpha.20 �
   `server/node_modules/@openai/codex-sdk` 符号链接指向 `@openai+codex-sdk@0.147.0`，
   `pnpm why @openai/codex-sdk` 唯一解析 `@openai/codex-sdk@0.147.0`；锁文件 `specifier: 0.147.0`、
   `version: 0.147.0` 一致。
-- **`--full-auto` 全仓核查**：`git grep -n -- "full-auto"` 与 `git grep -nE "full_auto|fullAuto"`
-  命中数均为 **0**（退出码 1 = 无匹配），范围覆盖全部已跟踪文件；`git status --porcelain -uall` 确认
-  工作区无未跟踪文件。**c3 不产出该 flag，无残留。**
+- **`--full-auto` 全仓核查**：对 c3 代码/脚本/夹具/既有文档 `git grep -n -- "full-auto"` 与
+  `git grep -nE "full_auto|fullAuto"` 命中数均为 **0**（退出码 1 = 无匹配），范围覆盖 `server/`
+  `web/` `shared/` `scripts/` `database/` 及既有 `doc/`（本记录为叙述该 flag 的移除而提及 flag 名，
+  不属 c3 产物引用）；`git status --porcelain -uall` 确认工作区无未跟踪文件。**c3 不产出该 flag，
+  无残留。**
 - **二进制分发链路核查**：托管安装 `~/.c3/vendor/codex/0.147.0/package/node_modules/@openai/` 下为
   `codex-darwin-arm64`；`@openai/codex@0.147.0` 的 optionalDependencies 六个平台包在 npm 上齐备。
   链路为 npm packument → `dist.tarball` → SRI 校验 → `npm install --omit=dev`，**不取 GitHub release

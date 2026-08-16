@@ -2702,6 +2702,86 @@ describe('identity change clears every per-identity roster', () => {
   })
 })
 
+// 原生目录选择的回复:服务端在自己所在主机弹对话框,结果按 requestId 回来。
+// 只装这一条分支需要的 ctx —— 关联判定只读 `workspaceDirectoryPicker`。
+function makeDirectoryPickerCtx(requestId: string | null) {
+  const workspaceDirectoryPicker = ref({
+    requestId,
+    pending: requestId !== null,
+    error: null as import('@ccc/shared/ui-codes').UiError | null,
+    selection: null as { path: string } | null,
+  })
+  const ctx = makeWorkspaceOnboardingCtx().ctx
+  ctx.workspaceDirectoryPicker = workspaceDirectoryPicker
+  return { ctx, workspaceDirectoryPicker }
+}
+
+function selectionMsg(
+  requestId: string,
+  result: import('@ccc/shared/protocol').WorkspaceDirectorySelectionResult,
+): ServerToClient {
+  return { type: 'workspace_directory_selection', requestId, result }
+}
+
+describe('workspace_directory_selection', () => {
+  it('选中 → 落一个新的 selection 对象并结束 pending', () => {
+    const r = makeDirectoryPickerCtx('req-1')
+    r.ctx.handleMessage(selectionMsg('req-1', { kind: 'selected', path: '/abs/proj' }))
+    expect(r.workspaceDirectoryPicker.value).toEqual({
+      requestId: null,
+      pending: false,
+      error: null,
+      selection: { path: '/abs/proj' },
+    })
+  })
+
+  it('取消 → 只结束 pending,不报错、不动已选路径', () => {
+    const r = makeDirectoryPickerCtx('req-1')
+    r.workspaceDirectoryPicker.value.selection = { path: '/kept' }
+    r.ctx.handleMessage(selectionMsg('req-1', { kind: 'cancelled' }))
+    expect(r.workspaceDirectoryPicker.value).toEqual({
+      requestId: null,
+      pending: false,
+      error: null,
+      selection: { path: '/kept' },
+    })
+  })
+
+  it('调起失败 → 落结构化错误,已选路径保持不变', () => {
+    const r = makeDirectoryPickerCtx('req-1')
+    r.workspaceDirectoryPicker.value.selection = { path: '/kept' }
+    r.ctx.handleMessage(
+      selectionMsg('req-1', {
+        kind: 'failed',
+        error: { code: 'workspace.directoryPickerFailed' },
+      }),
+    )
+    expect(r.workspaceDirectoryPicker.value).toEqual({
+      requestId: null,
+      pending: false,
+      error: { code: 'workspace.directoryPickerFailed' },
+      selection: { path: '/kept' },
+    })
+  })
+
+  it('requestId 对不上的回复整条丢弃 —— 旧对话框不能回填到新表单', () => {
+    const r = makeDirectoryPickerCtx('req-2')
+    r.ctx.handleMessage(selectionMsg('req-1', { kind: 'selected', path: '/stale' }))
+    expect(r.workspaceDirectoryPicker.value).toEqual({
+      requestId: 'req-2',
+      pending: true,
+      error: null,
+      selection: null,
+    })
+  })
+
+  it('弹框已关闭(无未决请求)时,迟到的回复什么也不改', () => {
+    const r = makeDirectoryPickerCtx(null)
+    r.ctx.handleMessage(selectionMsg('req-1', { kind: 'selected', path: '/late' }))
+    expect(r.workspaceDirectoryPicker.value.selection).toBeNull()
+  })
+})
+
 describe('auto_configure_agents_result — the outcome is never silent', () => {
   // `ctx.t` is a passthrough in these tests, so the toast text IS the i18n key —
   // enough to pin WHICH branch ran, which is the whole point here.

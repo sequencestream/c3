@@ -152,6 +152,16 @@
         "tooltip": "添加工作区",
         "prompt": "添加工作区",
         "pathLabel": "工作区目录（绝对路径）",
+        "selectDirectory": {
+          "label": "选择目录…",
+          "pending": {
+            "label": "等待选择目录…"
+          }
+        },
+        "manualPath": {
+          "label": "手动输入路径"
+        },
+        "pathEmpty": "尚未选择目录",
         "nameLabel": "工作区名称",
         "namePlaceholder": "1–64 个字符",
         "placeholder": "/工作区/绝对路径",
@@ -2280,7 +2290,8 @@
     "workspace": {
       "unknown": "未知工作区:{path}",
       "nameInvalid": "工作区名称长度必须为 1–64 个字符。",
-      "nameConflict": "该工作区名称已被占用。"
+      "nameConflict": "该工作区名称已被占用。",
+      "directoryPickerFailed": "无法在 c3 服务端主机上打开目录选择对话框,请改为手动输入路径。"
     },
     "path": {
       "notDirectory": "不是目录:{path}"

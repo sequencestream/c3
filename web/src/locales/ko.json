@@ -153,6 +153,16 @@
         "tooltip": "작업 공간 추가",
         "prompt": "작업 공간 디렉터리 (절대 경로):",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "디렉터리 선택…",
+          "pending": {
+            "label": "디렉터리 선택을 기다리는 중…"
+          }
+        },
+        "manualPath": {
+          "label": "경로를 직접 입력"
+        },
+        "pathEmpty": "아직 선택된 디렉터리가 없습니다",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -2281,7 +2291,8 @@
     "workspace": {
       "unknown": "알 수 없는 작업 공간: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "c3 서버 호스트에서 디렉터리 선택 대화 상자를 열 수 없습니다. 경로를 직접 입력하세요."
     },
     "path": {
       "notDirectory": "디렉터리가 아닙니다: {path}"

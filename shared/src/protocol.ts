@@ -42,6 +42,8 @@ export type ClientToServer =
   | SessionMsg.ClientSetSessionAgent
   | WorkspaceMsg.ClientAddWorkspace
   | WorkspaceMsg.ClientRemoveWorkspace
+  | WorkspaceMsg.ClientSelectWorkspaceDirectory
+  | WorkspaceMsg.ClientCancelWorkspaceDirectorySelection
   | SessionMsg.ClientListSessions
   | SessionMsg.ClientGetSessionCounts
   | SessionMsg.ClientCreateSession
@@ -167,6 +169,7 @@ export type ServerToClient =
   | SettingsMsg.ServerUpdateStatus
   | SettingsMsg.ServerSelfUpdateState
   | WorkspaceMsg.ServerWorkspaces
+  | WorkspaceMsg.ServerWorkspaceDirectorySelection
   | SessionMsg.ServerSessions
   | SessionMsg.ServerSessionCounts
   | CodeMsg.ServerDirListed

@@ -31,6 +31,7 @@ import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
 import { isAdminConn } from '../features/auth/authz.js'
 import { listWorkspacesForSubject, resolveAuthSubject } from '../features/auth/authorization.js'
+import { releaseWorkspaceDirectoryPicker } from '../features/workspaces/directory-picker.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
 import { currentSelfUpdateState } from '../features/updates/self-update.js'
 
@@ -199,6 +200,9 @@ export function createWsHandler(deps: {
         // Keep runs alive in the background; just stop delivering to this view.
         if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
         broadcaster.remove(conn.deliver)
+        // A native directory chooser is owned by the connection that opened it:
+        // nobody is left to answer, so kill it and free the slot.
+        releaseWorkspaceDirectoryPicker(conn)
         sock = null
       },
     }

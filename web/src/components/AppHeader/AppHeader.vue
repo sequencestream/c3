@@ -24,7 +24,9 @@ import AddWorkspaceDialog from '../AddWorkspaceDialog/AddWorkspaceDialog.vue'
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.vue'
 import type { SelfUpdateState, UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
+import { translateUiError } from '@/i18n/errors'
 import { useAuth } from '@/composables/useAuth'
+import type { WorkspaceDirectoryPickerState } from '@/controls/state'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 const { t } = useTypedI18n()
@@ -121,6 +123,8 @@ const props = defineProps<{
   selfUpdate?: SelfUpdateState | null
   /** 「新增工作区」弹框的受控开关(两处切换器共用一个实例):手动「+」与冷启动引导共写。 */
   addWorkspaceOpen?: boolean
+  /** 新增工作区弹框里那次原生目录选择的状态,由控制器按 requestId 关联后给出。 */
+  workspaceDirectoryPicker?: WorkspaceDirectoryPickerState
 }>()
 
 const emit = defineEmits<{
@@ -129,6 +133,7 @@ const emit = defineEmits<{
   'open-personalized-setting': []
   'open-workspace-setting': []
   'add-workspace': [payload: { workspaceName: string; path: string }]
+  'select-workspace-directory': []
   'update:addWorkspaceOpen': [open: boolean]
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
@@ -145,6 +150,12 @@ function onAddWorkspaceConfirm(payload: { workspaceName: string; path: string })
   emit('add-workspace', payload)
   emit('update:addWorkspaceOpen', false)
 }
+
+// 目录选择失败是服务端给的结构化原因,在这里译成本地文案 —— 弹框只收已本地化的字符串。
+const workspaceDirectoryError = computed(() => {
+  const error = props.workspaceDirectoryPicker?.error
+  return error ? translateUiError(error) : null
+})
 
 // 新版本提示:仅当服务端判定"有更新"且已知最新版本号时为真;无更新 / 未知 / 检查失败
 // 都表现为 false(available=false 或 latestVersion 为空)。
@@ -701,8 +712,12 @@ function selectTab(tab: HeaderTab): void {
          实例,手动「+」与冷启动引导共用;路径与名称仍只在此收集。 -->
     <AddWorkspaceDialog
       :open="addWorkspaceOpen === true"
+      :picker-pending="workspaceDirectoryPicker?.pending === true"
+      :picker-error="workspaceDirectoryError"
+      :picker-selection="workspaceDirectoryPicker?.selection ?? null"
       @confirm="onAddWorkspaceConfirm"
       @cancel="emit('update:addWorkspaceOpen', false)"
+      @select-directory="emit('select-workspace-directory')"
     />
 
     <!-- 重启生效的二次确认:重启会断开所有已连接会话,所以按危险操作处理。 -->

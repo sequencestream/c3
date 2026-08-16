@@ -103,7 +103,7 @@ export function planAutoConfiguredAgents(
  * on the one message it already reads.
  */
 export const autoConfigureAgentsHandler: Handler<'auto_configure_agents'> = (_ctx, conn) => {
-  // System configuration is admin-only (ADR-0023 authz) — this writes agents, so
+  // System configuration is admin-only — this writes agents, so
   // it sits behind the same gate as `save_settings`.
   if (!requireAdmin(conn)) return
   const available = availableVendorSet()

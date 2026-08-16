@@ -261,7 +261,7 @@ describe('auto_configure_agents handler', () => {
   })
 })
 
-describe('auto_configure_agents admin gate (ADR-0023 authz)', () => {
+describe('auto_configure_agents admin gate (admin-only)', () => {
   const KCTX = {} as never
   const H = '$scrypt$ln=15,r=8,p=1$s$h'
 

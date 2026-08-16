@@ -435,7 +435,7 @@ function syncImmediateFields(tab: SettingsTab, target: SystemSettings, src: Syst
   }
 }
 
-// 自动配置是绕过页签草稿的即时落库动作(AC-R29)。它下一次 settings 回推若确实
+// 自动配置是绕过页签草稿的即时落库动作。它下一次 settings 回推若确实
 // 新增了 agent,受保护(脏)的 agent 页草稿必须让位给服务端权威值——否则用户随后在
 // agent 页保存,会用旧草稿覆盖并删掉刚自动创建的智能体。仅当注册表实际增长时才
 // 重置;0 结果的回推(无可用 vendor)不动用户草稿。

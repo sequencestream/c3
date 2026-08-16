@@ -2343,7 +2343,7 @@ describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
   // The echo after auto-configure mints agents server-side while bypassing the tab
   // draft. A dirty Agent draft is normally protected from pushbacks — but keeping
   // the stale registry would make the next Agent Save overwrite and DELETE the
-  // freshly minted agents (AC-R29). The echo must yield the draft when it grew.
+  // freshly minted agents. The echo must yield the draft when it grew.
   it('resets a dirty Agent draft when the echo minted agents, so a later Save keeps them', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: onlyFallback } })
     // An unsaved blank row dirties the Agent tab.
@@ -2354,7 +2354,7 @@ describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
     expect(w.emitted('auto-configure-agents')).toHaveLength(1)
     expect(w.emitted('save')).toBeUndefined()
     // Server echo: two new system agents minted (codex + cursor; claude is covered
-    // by the synthesized fallback, so AC-R29 idempotency skips it).
+    // by the synthesized fallback, so auto-configure idempotency skips it).
     await w.setProps({
       settings: {
         ...baseSettings,

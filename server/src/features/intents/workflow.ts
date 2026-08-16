@@ -42,6 +42,7 @@ import {
   QUEUE_TICK_MS,
   reconcileQueue,
 } from '../../kernel/queue/index.js'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { getIntent, isStoreAvailable, listIntents } from './store.js'
 import {
   getQueueControl,
@@ -480,7 +481,42 @@ class QueueController {
 
 const controllers = new Map<string, QueueController>()
 
-function controllerFor(workspacePath: string, hooks?: WorkflowHooks): QueueController {
+/**
+ * Absolute filesystem root the queue controller and every git call must use.
+ *
+ * The queue control row is keyed by workspace *name* in sqlite
+ * (`listActiveQueueWorkspaces`), while manual `start_workflow` already resolves
+ * the name to a path. Without this step, the 10s tick / startup reconcile would
+ * hand the bare name (e.g. `c3`) to `git -C`, which fails with an empty
+ * `spawnSync ENOENT` and surfaces as `worktree 准备失败:git worktree add 失败:`.
+ * A registered name and its absolute path must share one controller entry.
+ */
+export function queueWorkspaceRoot(workspaceRef: string): string | null {
+  return resolveWorkspaceRoot(workspaceRef)
+}
+
+/**
+ * Resolve active queue rows (workspace names) to absolute roots the controller
+ * and git can use. Unknown / unregistered names are skipped — a later tick
+ * retries once the registry is healthy again.
+ */
+function resolveActiveQueueRoots(): string[] {
+  const roots: string[] = []
+  for (const name of listActiveQueueWorkspaces()) {
+    const root = queueWorkspaceRoot(name)
+    if (root) {
+      roots.push(root)
+      continue
+    }
+    console.warn(`[c3:queue] 活跃队列工作区 '${name}' 无法解析为路径,跳过本轮`)
+  }
+  return roots
+}
+
+function controllerFor(workspaceRef: string, hooks?: WorkflowHooks): QueueController {
+  // Prefer the registered absolute path; fall back to the raw ref so unit tests
+  // that inject fake paths without a registry still get a controller.
+  const workspacePath = queueWorkspaceRoot(workspaceRef) ?? workspaceRef
   let c = controllers.get(workspacePath)
   if (!c) {
     c = new QueueController(workspacePath, hooks ?? getWorkflowHooks())
@@ -491,7 +527,8 @@ function controllerFor(workspacePath: string, hooks?: WorkflowHooks): QueueContr
 
 /** Current automation status for a project (idle when never started). */
 export function getWorkflowStatus(workspacePath: string): WorkflowStatus {
-  return controllers.get(workspacePath)?.status ?? idleStatus(workspacePath)
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  return controllers.get(root)?.status ?? idleStatus(root)
 }
 
 /**
@@ -522,10 +559,11 @@ export function startWorkflow(
 
 /** Stop the queue for a project (aborts the current dev run, returns to idle). */
 export function stopWorkflow(workspacePath: string): WorkflowStatus {
-  setQueueControl(workspacePath, { state: 'idle', startedAt: null, forceSkipped: [] })
-  const c = controllers.get(workspacePath)
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  setQueueControl(root, { state: 'idle', startedAt: null, forceSkipped: [] })
+  const c = controllers.get(root)
   if (c) c.stop()
-  return getWorkflowStatus(workspacePath)
+  return getWorkflowStatus(root)
 }
 
 /** Pause the queue: keep all facts and metadata, launch nothing. */
@@ -579,9 +617,10 @@ export function overrideIntentDecision(
   decision: 'continue' | 'block',
   actor: string,
 ): boolean {
-  const tickId = controllers.get(workspacePath)?.tickId || 'override'
-  if (!applyHumanOverride(workspacePath, intentId, decision, actor, tickId)) return false
-  void controllerFor(workspacePath).request()
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  const tickId = controllers.get(root)?.tickId || 'override'
+  if (!applyHumanOverride(root, intentId, decision, actor, tickId)) return false
+  void controllerFor(root).request()
   return true
 }
 
@@ -591,7 +630,8 @@ export function overrideIntentDecision(
  * manual Git/PR cleanup uses this to skip queue-owned sessions.
  */
 export function isIntentDrivenByWorkflow(workspacePath: string, intentId: string): boolean {
-  const c = controllers.get(workspacePath)
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  const c = controllers.get(root)
   return !!c && c.inFlightIntentIds.includes(intentId)
 }
 
@@ -601,7 +641,8 @@ export function isIntentDrivenByWorkflow(workspacePath: string, intentId: string
  * costs at most one tick of latency.
  */
 export function markQueueDirty(workspacePath: string): Promise<void> | undefined {
-  const c = controllers.get(workspacePath)
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  const c = controllers.get(root)
   if (!c) return undefined
   return c.request()
 }
@@ -627,9 +668,10 @@ export type { QueueIntentView } from './queue-projection.js'
 
 /** Build the queue detail projection for a workspace. */
 export function getQueueDetail(workspacePath: string): QueueDetailView {
-  const c = controllers.get(workspacePath)
-  return buildQueueDetail(workspacePath, {
-    state: getWorkflowStatus(workspacePath).state,
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  const c = controllers.get(root)
+  return buildQueueDetail(root, {
+    state: getWorkflowStatus(root).state,
     tickId: c?.tickId ?? '',
     nextWakeupAt: c?.wakeupAt ?? null,
     decisions: c?.lastDecisions ?? [],
@@ -650,7 +692,7 @@ let tickTimer: ReturnType<typeof setInterval> | null = null
 export function startQueueTickLoop(tickMs = QUEUE_TICK_MS): void {
   if (tickTimer !== null) return
   tickTimer = setInterval(() => {
-    for (const workspacePath of listActiveQueueWorkspaces()) {
+    for (const workspacePath of resolveActiveQueueRoots()) {
       void controllerFor(workspacePath)
         .request()
         .catch((err) => console.error('[c3:queue] tick 失败:', err))
@@ -675,7 +717,7 @@ export function stopQueueTickLoop(): void {
  */
 export async function reconcileQueuesOnStartup(hooks: WorkflowHooks): Promise<number> {
   if (!isQueueStoreAvailable()) return 0
-  const workspaces = listActiveQueueWorkspaces()
+  const workspaces = resolveActiveQueueRoots()
   for (const workspacePath of workspaces) {
     await controllerFor(workspacePath, hooks)
       .request()
@@ -690,7 +732,8 @@ export async function reconcileQueuesOnStartup(hooks: WorkflowHooks): Promise<nu
  * a timer.
  */
 export async function settleQueueForTests(workspacePath: string): Promise<void> {
-  const c = controllers.get(workspacePath)
+  const root = queueWorkspaceRoot(workspacePath) ?? workspacePath
+  const c = controllers.get(root)
   if (!c) return
   await c.request()
   await c.settleRuns()

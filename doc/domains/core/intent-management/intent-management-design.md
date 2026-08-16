@@ -449,7 +449,10 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
 
 一个按项目、内存中的状态机,完全由消息 handler 与一个内部 viewer 驱动
 ——无轮询,无 cron。每个项目一个控制器,存活在一个模块级 map 中;其自动化状态
-是唯一真相来源,在每次变化时广播。
+是唯一真相来源,在每次变化时广播。控制器的 map 键与所有 git / worktree 调用一律使用
+**已解析的工作区绝对路径**:sqlite 里队列控制行按工作区名持久化,10s tick 与启动对账
+读出名后必须先 `resolveWorkspaceRoot` 再进入控制器,绝不能把工作区名直接当作
+`git -C` 的 cwd(否则会以空的 `spawnSync ENOENT` 表现为「worktree 准备失败」)。
 
 - **接线分支。** `set_intent_automate` → 设置 automate 标志 + 广播
   `intents`(`set_intent_spec_mode` 同形:写 `spec_mode` + 广播,

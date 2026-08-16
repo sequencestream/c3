@@ -11,7 +11,7 @@ import { installSessionActions } from './session-actions'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
 import type { PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import type { AppCtx } from './types'
-import { sessionCacheKey, type SessionPageKind } from './state'
+import { emptyDirectoryPicker, sessionCacheKey, type SessionPageKind } from './state'
 
 function s(id: string, lastModified: number): SessionInfo {
   return {
@@ -93,6 +93,8 @@ function makeCtx(
   const availableCommands = ref<unknown[]>([])
   const activity = ref<{ phase: string }>({ phase: 'idle' })
   const taskModel = ref<unknown>(null)
+  const addWorkspaceOpen = ref(false)
+  const workspaceDirectoryPicker = ref(emptyDirectoryPicker())
   const ctx = {
     send,
     sessionsByWorkspace,
@@ -145,6 +147,8 @@ function makeCtx(
     parkRecoveryLoading,
     flags,
     currentSessions: ref([]),
+    addWorkspaceOpen,
+    workspaceDirectoryPicker,
   } as unknown as AppCtx
   installSessionActions(ctx)
   // The workspace switch lands on the intents tab through `openIntents`; wiring
@@ -153,6 +157,8 @@ function makeCtx(
   return {
     ctx,
     send,
+    addWorkspaceOpen,
+    workspaceDirectoryPicker,
     intentsProject,
     workspaceSettingOpen,
     persistViewMode,

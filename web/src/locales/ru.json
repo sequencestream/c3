@@ -153,6 +153,16 @@
         "tooltip": "Добавить рабочую область",
         "prompt": "Каталог рабочей области (абсолютный путь):",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "Выбрать каталог…",
+          "pending": {
+            "label": "Ожидание выбора каталога…"
+          }
+        },
+        "manualPath": {
+          "label": "Ввести путь вручную"
+        },
+        "pathEmpty": "Каталог ещё не выбран",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -2272,7 +2282,8 @@
     "workspace": {
       "unknown": "Неизвестная рабочая область: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "Не удалось открыть диалог выбора каталога на хосте сервера c3. Введите путь вручную."
     },
     "path": {
       "notDirectory": "Не является каталогом: {path}"

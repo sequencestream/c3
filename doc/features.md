@@ -29,6 +29,7 @@ c3
 │   │
 │   ├── session-registry 会话与工作区目录         # 工作的档案柜与调度器
 │   │   ├── 工作区注册                            # 唯一且不可变的 workspace name、磁盘路径、最近访问顺序
+│   │   │   └── 目录点选                          # 新增工作区的路径由服务端主机的原生目录对话框点选(macOS/Windows/Linux 各自适配),弹框内只读展示;取消静默,调起失败才退回手动输入
 │   │   ├── 会话目录                              # 按 sessionKind(work/intent/spec/spec_review/discussion/automation/tool)增删列
 │   │   │   └── 规范类合并入口                    # 会话页「规范」既是显示分类也是查询口径:spec 撰写与 spec_review 评审同列同角标(每会话只计一次,兼容字段不重复计入顶栏),行保留真实 kind 与 owner
 │   │   ├── 最近访问排序                          # 维护会话列表的 MRU 顺序

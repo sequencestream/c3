@@ -37,6 +37,10 @@ export const UI_ERROR_CODES = {
   'workspace.unknown': { key: 'error.workspace.unknown', params: ['path'] },
   'workspace.nameInvalid': { key: 'error.workspace.nameInvalid' },
   'workspace.nameConflict': { key: 'error.workspace.nameConflict' },
+  // No native directory chooser could run on the server host (unsupported
+  // platform, missing executable, no GUI, unusable output). Deliberately
+  // param-free: raw command output stays in the server log, never in the UI.
+  'workspace.directoryPickerFailed': { key: 'error.workspace.directoryPickerFailed' },
   'path.notDirectory': { key: 'error.path.notDirectory', params: ['path'] },
   'command.listFailed': { key: 'error.command.listFailed', params: ['detail'] },
   // codes

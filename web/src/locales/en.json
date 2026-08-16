@@ -152,6 +152,16 @@
         "tooltip": "Add workspace",
         "prompt": "Add workspace",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "Choose directory…",
+          "pending": {
+            "label": "Waiting for the chooser…"
+          }
+        },
+        "manualPath": {
+          "label": "Enter the path manually"
+        },
+        "pathEmpty": "No directory chosen yet",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -2271,7 +2281,8 @@
     "workspace": {
       "unknown": "Unknown workspace: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "Could not open the directory chooser on the c3 server host. Enter the path manually instead."
     },
     "path": {
       "notDirectory": "Not a directory: {path}"

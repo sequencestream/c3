@@ -3,6 +3,13 @@ import { mount } from '@vue/test-utils'
 import AppHeader from './AppHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { i18n } from '@/i18n'
+import { translateUiError } from '@/i18n/errors'
+import type { WorkspaceDirectoryPickerState } from '@/controls/state'
+
+/** 一次「已选中目录」的选择器状态,等价于服务端回了 `selected`。 */
+function pickerWith(selection: { path: string }): WorkspaceDirectoryPickerState {
+  return { requestId: null, pending: false, error: null, selection }
+}
 
 const TABS = [
   { key: 'console', label: 'Works' },
@@ -514,9 +521,15 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
     expect(w.emitted('update:addWorkspaceOpen')).toEqual([[true], [true]])
   })
 
-  it('确认 → emit 一次不变的 add-workspace 载荷并关闭(路径 trim,名称随 basename 预填)', async () => {
+  it('点击「选择目录」→ 上抛 select-workspace-directory,由控制器去请求服务端', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
-    await w.find('[data-testid="input-field"]').setValue('  /home/proj-c  ')
+    await w.find('[data-testid="select-directory"]').trigger('click')
+    expect(w.emitted('select-workspace-directory')).toHaveLength(1)
+  })
+
+  it('确认 → emit 一次不变的 add-workspace 载荷并关闭(名称随 basename 预填)', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    await w.setProps({ workspaceDirectoryPicker: pickerWith({ path: '/home/proj-c' }) })
     await w.find('[data-testid="input-accept"]').trigger('click')
     expect(w.emitted('add-workspace')).toEqual([
       [{ workspaceName: 'proj-c', path: '/home/proj-c' }],
@@ -526,18 +539,38 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
 
   it('自定义 Unicode 名称照常提交,超过 64 个字符时确认禁用', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
-    await w.find('[data-testid="input-field"]').setValue('/home/proj-c')
+    await w.setProps({ workspaceDirectoryPicker: pickerWith({ path: '/home/proj-c' }) })
     await w.find('[data-testid="workspace-name-field"]').setValue('研发 / C')
     await w.find('[data-testid="input-accept"]').trigger('click')
     expect(w.emitted('add-workspace')).toEqual([
       [{ workspaceName: '研发 / C', path: '/home/proj-c' }],
     ])
 
-    await w.find('[data-testid="input-field"]').setValue('/home/too-long')
     await w.find('[data-testid="workspace-name-field"]').setValue('🚀'.repeat(65))
     expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
       true,
     )
+  })
+
+  it('调起失败 → 弹框给出本地化说明,并可临时切回手动输入完成添加', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    await w.setProps({
+      workspaceDirectoryPicker: {
+        requestId: null,
+        pending: false,
+        error: { code: 'workspace.directoryPickerFailed' as const },
+        selection: null,
+      },
+    })
+    expect(w.find('[data-testid="picker-error"]').text()).toContain(
+      translateUiError({ code: 'workspace.directoryPickerFailed' }),
+    )
+    await w.find('[data-testid="use-manual-path"]').trigger('click')
+    await w.find('[data-testid="input-field"]').setValue('  /home/manual  ')
+    await w.find('[data-testid="input-accept"]').trigger('click')
+    expect(w.emitted('add-workspace')).toEqual([
+      [{ workspaceName: 'manual', path: '/home/manual' }],
+    ])
   })
 
   it('空输入确认禁用;取消只关闭,不产生 add-workspace', async () => {

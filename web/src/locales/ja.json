@@ -153,6 +153,16 @@
         "tooltip": "ワークスペースを追加",
         "prompt": "ワークスペースのディレクトリ(絶対パス):",
         "pathLabel": "Workspace directory (absolute path)",
+        "selectDirectory": {
+          "label": "ディレクトリを選択…",
+          "pending": {
+            "label": "ディレクトリの選択を待機中…"
+          }
+        },
+        "manualPath": {
+          "label": "パスを手動で入力"
+        },
+        "pathEmpty": "ディレクトリが未選択です",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",
@@ -2272,7 +2282,8 @@
     "workspace": {
       "unknown": "不明なワークスペース: {path}",
       "nameInvalid": "Workspace name must contain 1–64 characters.",
-      "nameConflict": "That workspace name is already in use."
+      "nameConflict": "That workspace name is already in use.",
+      "directoryPickerFailed": "c3 サーバーのホストでディレクトリ選択ダイアログを開けませんでした。パスを手動で入力してください。"
     },
     "path": {
       "notDirectory": "ディレクトリではありません: {path}"

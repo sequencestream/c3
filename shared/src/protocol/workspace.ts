@@ -350,3 +350,18 @@ export interface WorkspaceAutomationGateResult {
   /** Structured, localizable failure reason when `ok` is false. */
   error?: UiError
 }
+
+/**
+ * The terminal outcome of ONE native directory-chooser run on the server host
+ * ({@link select_workspace_directory}). Exactly one shape applies:
+ *
+ * - `selected` — the user picked a directory; `path` is the normalized absolute
+ *   path on the SERVER filesystem, ready to feed `add_workspace`.
+ * - `cancelled` — the user dismissed the native dialog. Not a failure: the
+ *   client keeps whatever it already had and shows nothing.
+ * - `failed` — no chooser could run (unsupported platform, missing executable,
+ *   no GUI/display, unexpected exit, unusable output). `error` is a structured
+ *   {@link UiError}; raw command output never reaches the browser.
+ */
+export type WorkspaceDirectorySelectionResult =
+  { kind: 'selected'; path: string } | { kind: 'cancelled' } | { kind: 'failed'; error: UiError }

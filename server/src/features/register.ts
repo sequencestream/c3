@@ -44,6 +44,10 @@ import {
 import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
 import {
+  cancelWorkspaceDirectorySelectionHandler,
+  selectWorkspaceDirectoryHandler,
+} from './workspaces/directory-picker.js'
+import {
   createSession,
   createWorkSession,
   deleteSession,
@@ -190,6 +194,8 @@ export const handlerMap: HandlerMap = {
   // workspaces
   add_workspace: addWorkspaceHandler,
   remove_workspace: removeWorkspaceHandler,
+  select_workspace_directory: selectWorkspaceDirectoryHandler,
+  cancel_workspace_directory_selection: cancelWorkspaceDirectorySelectionHandler,
   // sessions
   list_sessions: listSessions,
   get_session_counts: getSessionCounts,

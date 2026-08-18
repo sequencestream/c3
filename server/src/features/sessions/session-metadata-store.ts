@@ -200,6 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_sm_workspace_vendor
   ON session_metadata(workspace_name, vendor, vendor_session_id);
 CREATE INDEX IF NOT EXISTS idx_sm_state_age
   ON session_metadata(state, state_updated_at);
+CREATE INDEX IF NOT EXISTS idx_sm_vendor_session_id
+  ON session_metadata(vendor_session_id, bound);
 `)
 }
 
@@ -727,6 +729,28 @@ export function getByC3Id(c3Id: string): SessionMetadataRow | null {
   const d = db()
   if (!d) return null
   const row = d.get<RawRow>('SELECT * FROM session_metadata WHERE c3_id=?', c3Id)
+  return row ? toRow(row) : null
+}
+
+/**
+ * The bound (real) row for a native vendor session id, or null.
+ *
+ * The workspace-scoped index can't serve this lookup — the caller (the
+ * session→agent binding fallback) knows only the id the wire carries — so the
+ * table is probed on `vendor_session_id` directly (its own index). A native
+ * session id is vendor-unique in practice; the newest row wins if a legacy
+ * duplicate ever exists, so the answer stays deterministic.
+ */
+export function getBoundByVendorSessionId(vendorSessionId: string): SessionMetadataRow | null {
+  const d = db()
+  if (!d || !vendorSessionId) return null
+  const row = d.get<RawRow>(
+    `SELECT * FROM session_metadata
+      WHERE vendor_session_id=? AND bound=1
+      ORDER BY state_updated_at DESC
+      LIMIT 1`,
+    vendorSessionId,
+  )
   return row ? toRow(row) : null
 }
 

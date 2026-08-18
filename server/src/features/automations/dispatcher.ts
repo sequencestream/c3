@@ -34,6 +34,7 @@ import type { GenericEvent } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../../state.js'
 import {
   bindClaudeRelay,
+  freezeSessionAgent,
   launchForAgent,
   setAgentEnabled,
   unbindRelay,
@@ -484,15 +485,40 @@ function validateOutput(
   return { valid: true }
 }
 
-function upsertAutomationSessionProjection(automation: Automation, sessionId: string): void {
+/**
+ * Bind the automation's real agent session, BOTH halves of it:
+ *
+ *  - the `session_metadata` projection row the session list reads, and
+ *  - the session→agent fact every resolve/display path reads (vendor, agent
+ *    switcher, c3 id minting).
+ *
+ * Writing only the projection left the fact absent, so `resolveSessionVendor`
+ * fell through to the DEFAULT agent: a codex automation rendered as claude in the
+ * title bar and status bar while its list row said codex. The fact is frozen the
+ * same way a first interactive bind freezes one — an automation session has no
+ * pending phase, so the real id stands in for both ids — and the store scope is
+ * `host` because an automation run never relocates a vendor store.
+ *
+ * Order matters: the projection row (which carries `session_kind='automation'` +
+ * its owner) is written FIRST, so the bind hook's `INSERT OR IGNORE` behind
+ * `freezeSessionAgent` finds it already there and leaves it untouched instead of
+ * inserting a plain work row.
+ */
+function bindAutomationSession(automation: Automation, sessionId: string): void {
+  const workspacePath = resolveWorkspaceRoot(automation.workspaceName)!
   try {
-    upsertAutomationExecutionRow({
-      automation,
-      sessionId,
-      workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
-    })
+    upsertAutomationExecutionRow({ automation, sessionId, workspacePath })
   } catch (err) {
     console.error('[c3:automations] failed to upsert automation session projection:', err)
+  }
+  // An automation with no bound agent never reaches a run (dispatch fails it with
+  // `automation_agent_required`), so this is a defensive skip: freezing on an empty
+  // ref would resolve the DEFAULT agent and freeze the wrong vendor permanently.
+  if (!automation.agentId) return
+  try {
+    freezeSessionAgent(sessionId, sessionId, automation.agentId, workspacePath, 'host')
+  } catch (err) {
+    console.error('[c3:automations] failed to freeze automation session agent:', err)
   }
 }
 
@@ -745,7 +771,7 @@ async function executeLlmPrompt(
           sessionId = sid
           runningSessionId = sessionId
           updateLog(logId, { sessionId })
-          upsertAutomationSessionProjection(automation, sessionId)
+          bindAutomationSession(automation, sessionId)
           viewer.bind(sessionId)
         }
       }
@@ -885,7 +911,7 @@ async function runAutomationViaDriver(
     const sessionId = await run.sessionId()
     if (sessionId) {
       updateLog(logId, { sessionId })
-      upsertAutomationSessionProjection(automation, sessionId)
+      bindAutomationSession(automation, sessionId)
       runningSessionId = sessionId
       viewer.bind(sessionId)
     }

@@ -696,6 +696,18 @@ export function resolveSessionAgentBinding(sessionId: string | null): {
   vendor: VendorId
 } {
   const ref = sessionId ? getSessionAgentId(sessionId) : null
+  // No fact: a session that ran through a path which never froze one (historical
+  // automation sessions are the known case). Falling straight through to the
+  // DEFAULT agent would report SOMEBODY ELSE'S vendor — a codex automation
+  // rendering as claude — while the session list, reading the projection, shows the
+  // real one. So consult the projection first: its row was written by the run that
+  // owns this session, which makes it a weaker but still first-hand record of the
+  // same binding. The vendor comes from the ROW (authoritative even when the row
+  // carries no agent id); the agent id is resolved through the normal target rules.
+  if (!ref && sessionId && !sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+    const projected = onSessionBindingFallback?.(sessionId) ?? null
+    if (projected) return { agentId: projected.agentId, vendor: projected.vendor }
+  }
   const result = tryResolveAgentTarget(ref)
   if (result.ok) return { agentId: result.target.ref, vendor: result.target.agent.vendor }
   return {
@@ -856,8 +868,15 @@ export interface OnAgentSwapInput {
   agentId: string
 }
 
+/** The binding a projection row records for a real session (see the hook below). */
+export interface SessionBindingFallback {
+  agentId: string
+  vendor: VendorId
+}
+
 let onBind: ((input: OnBindInput) => void) | null = null
 let onAgentSwap: ((input: OnAgentSwapInput) => void) | null = null
+let onSessionBindingFallback: ((realId: string) => SessionBindingFallback | null) | null = null
 
 /** Register the bind hook (composition root only). */
 export function setOnBind(cb: ((input: OnBindInput) => void) | null): void {
@@ -867,6 +886,17 @@ export function setOnBind(cb: ((input: OnBindInput) => void) | null): void {
 /** Register the agent-swap hook (composition root only). */
 export function setOnAgentSwap(cb: ((input: OnAgentSwapInput) => void) | null): void {
   onAgentSwap = cb
+}
+
+/**
+ * Register the projection-backed binding fallback for factless real sessions
+ * (composition root only). Unwired (tests / scripts without the projection) the
+ * resolution keeps its previous default-agent behaviour.
+ */
+export function setOnSessionBindingFallback(
+  cb: ((realId: string) => SessionBindingFallback | null) | null,
+): void {
+  onSessionBindingFallback = cb
 }
 
 /**

@@ -36,6 +36,7 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   setAgentEnabled: () => true,
   bindClaudeRelay: () => null,
   unbindRelay: () => {},
+  freezeSessionAgent: () => undefined,
 }))
 vi.mock('../../kernel/infra/child-env.js', () => ({
   buildChildEnv: () => ({}),

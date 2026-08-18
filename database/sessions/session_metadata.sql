@@ -26,3 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_sm_workspace_vendor
 
 CREATE INDEX IF NOT EXISTS idx_sm_state_age
   ON session_metadata(state, state_updated_at);
+
+-- 按 vendor session id 反查绑定行 (无 session→agent 事实的历史会话回退读)。
+CREATE INDEX IF NOT EXISTS idx_sm_vendor_session_id
+  ON session_metadata(vendor_session_id, bound);

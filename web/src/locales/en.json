@@ -2381,7 +2381,8 @@
       "unknownType": "Unknown discussion type: {type}",
       "notConcludable": "Only a concluded discussion with an outcome can become a intent.",
       "alreadyStarted": "Discussion has ended; it cannot be started again.",
-      "notEndedForContinue": "Only an ended discussion can start a new round."
+      "notEndedForContinue": "Only an ended discussion can start a new round.",
+      "alreadyEnded": "Discussion has ended; it cannot be stopped."
     },
     "automation": {
       "dbUnavailable": "Automations feature unavailable (c3.db).",
@@ -2483,6 +2484,9 @@
       "resume": {
         "label": "Resume"
       },
+      "cancel": {
+        "label": "Stop"
+      },
       "convert": {
         "label": "Convert to Intent"
       }
@@ -2571,7 +2575,8 @@
       "draft": "Draft",
       "in_progress": "In progress",
       "completed": "Completed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "researching": "Researching…"
     },
     "meta": {
       "type": {
@@ -2644,6 +2649,10 @@
     },
     "research": {
       "toolActivity": "🔍 Researching with {tool}…"
+    },
+    "cancel": {
+      "title": "Stop discussion",
+      "confirm": "Stop “{title}”? The running orchestration and research will be terminated and the discussion marked cancelled. This cannot be undone — start a new discussion to continue."
     }
   },
   "delivery": {

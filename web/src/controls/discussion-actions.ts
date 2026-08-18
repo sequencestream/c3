@@ -93,6 +93,15 @@ export function installDiscussionActions(ctx: AppCtx): void {
     if (id) send({ type: 'resume_discussion', discussionId: id })
   }
 
+  // The title bar's Stop: terminate the open discussion as `cancelled`. The
+  // irreversible confirmation is the view's (ConfirmDialog); by the time this runs
+  // the user has already confirmed. Terminal discussions are rejected server-side,
+  // so a stale click can never rewrite a conclusion.
+  ctx.cancelDiscussion = (): void => {
+    const id = activeDiscussionId.value
+    if (id) send({ type: 'cancel_discussion', discussionId: id })
+  }
+
   // Submit the discussion composer.
   ctx.submitDiscussionInput = (): void => {
     const id = activeDiscussionId.value

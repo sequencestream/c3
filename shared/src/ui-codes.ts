@@ -210,6 +210,10 @@ export const UI_ERROR_CODES = {
   'discussion.notConcludable': { key: 'error.discussion.notConcludable' },
   'discussion.alreadyStarted': { key: 'error.discussion.alreadyStarted' },
   'discussion.notEndedForContinue': { key: 'error.discussion.notEndedForContinue' },
+  // `cancel_discussion` on a discussion that is already terminal (completed /
+  // cancelled): there is nothing left to stop, and flipping the status would
+  // rewrite a concluded record.
+  'discussion.alreadyEnded': { key: 'error.discussion.alreadyEnded' },
   // delivery (交付作为集成单元, ADR-0036)
   'delivery.dbUnavailable': { key: 'error.delivery.dbUnavailable' },
   'delivery.notFound': { key: 'error.delivery.notFound' },

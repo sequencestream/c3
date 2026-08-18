@@ -22,6 +22,7 @@ import {
   researchMessageToChat,
   resolveDiscussionSpeaker,
   rowVisibility,
+  canCancelDiscussion,
   discussionLaunchAction,
   statusLabel,
   type DiscussionDetailTabI18nKey,
@@ -365,13 +366,6 @@ describe('discussion-view — 异构圆桌 vendor 解析(2026-06-06-004)', () =>
 })
 
 describe('discussion-view — 列表面板视图纯函数', () => {
-  it('statusLabel 四态映射到英文标签', () => {
-    expect(statusLabel('draft')).toBe('Draft')
-    expect(statusLabel('in_progress')).toBe('In progress')
-    expect(statusLabel('completed')).toBe('Completed')
-    expect(statusLabel('cancelled')).toBe('Cancelled')
-  })
-
   it('panelToggleLabel:展开态提示 Collapse,收缩态提示 Expand', () => {
     const expanded = panelToggleLabel(false)
     expect(expanded.text).toBe('Collapse')
@@ -388,21 +382,37 @@ describe('discussion-view — 列表面板视图纯函数', () => {
     expect(rowVisibility(true)).toEqual({ showMeta: false })
   })
 
-  it('discussionRunLabel:draft 显示 Researching…(研究中/待自动启动)', () => {
-    expect(discussionRunLabel('draft', undefined)).toBe('Researching…')
-    // run-state 对 draft 无意义,始终是 Researching…
-    expect(discussionRunLabel('draft', 'running')).toBe('Researching…')
+  // 文案全部走 i18n:断言解析出的 key 而非可译文本。
+  const key = (k: string): string => k
+
+  it('discussionRunLabel:draft 落 researching key(研究中/待自动启动)', () => {
+    expect(discussionRunLabel('draft', undefined, key)).toBe('discussion.status.researching')
+    // run-state 对 draft 无意义,始终是 researching
+    expect(discussionRunLabel('draft', 'running', key)).toBe('discussion.status.researching')
   })
 
-  it('discussionRunLabel:in_progress 跟随 run-state(Running / Paused)', () => {
-    expect(discussionRunLabel('in_progress', 'running')).toBe('Running')
-    expect(discussionRunLabel('in_progress', undefined)).toBe('Running')
-    expect(discussionRunLabel('in_progress', 'paused')).toBe('Paused')
+  it('discussionRunLabel:in_progress 跟随 run-state(running / paused)', () => {
+    expect(discussionRunLabel('in_progress', 'running', key)).toBe(
+      'discussion.item.run.running.label',
+    )
+    expect(discussionRunLabel('in_progress', undefined, key)).toBe(
+      'discussion.item.run.running.label',
+    )
+    expect(discussionRunLabel('in_progress', 'paused', key)).toBe(
+      'discussion.item.run.paused.label',
+    )
   })
 
-  it('discussionRunLabel:终态映射到 Completed / Cancelled', () => {
-    expect(discussionRunLabel('completed', undefined)).toBe('Completed')
-    expect(discussionRunLabel('cancelled', undefined)).toBe('Cancelled')
+  it('discussionRunLabel:两个终态各有独立 key(completed / cancelled)', () => {
+    expect(discussionRunLabel('completed', undefined, key)).toBe('discussion.status.completed')
+    expect(discussionRunLabel('cancelled', undefined, key)).toBe('discussion.status.cancelled')
+  })
+
+  it('statusLabel:四个生命周期状态各自映射到自己的 key', () => {
+    expect(statusLabel('draft', key)).toBe('discussion.status.draft')
+    expect(statusLabel('in_progress', key)).toBe('discussion.status.in_progress')
+    expect(statusLabel('completed', key)).toBe('discussion.status.completed')
+    expect(statusLabel('cancelled', key)).toBe('discussion.status.cancelled')
   })
 })
 
@@ -776,6 +786,15 @@ describe('discussion-view — research phase', () => {
     // 终态一律不显示
     expect(discussionLaunchAction('completed', false, false)).toBeNull()
     expect(discussionLaunchAction('cancelled', false, false)).toBeNull()
+  })
+
+  it('canCancelDiscussion: 仅 draft / in_progress 两个非终态可停止', () => {
+    // 草稿(调研可能仍在跑)与进行中(存活 / 暂停 / 悬挂)都可停止 —— 与运行态无关。
+    expect(canCancelDiscussion('draft')).toBe(true)
+    expect(canCancelDiscussion('in_progress')).toBe(true)
+    // 终态没有可停止的东西,按钮消失。
+    expect(canCancelDiscussion('completed')).toBe(false)
+    expect(canCancelDiscussion('cancelled')).toBe(false)
   })
 
   it('researchMessageToChat: text → 研究员 assistant 气泡', () => {

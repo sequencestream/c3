@@ -67,6 +67,30 @@ export function deleteResearchRun(id: string): void {
 }
 
 /**
+ * Abort every live run bound to ONE discussion — its orchestration loop and/or its
+ * read-only research run — and report which were actually alive. The teardown entry
+ * for `cancel_discussion`: same abort path {@link abortAllRuns} uses for shutdown, so
+ * the settle rules that already key off `signal.aborted` apply unchanged (the
+ * orchestrator appends nothing more and writes no conclusion; the research run neither
+ * writes back its half-finished findings nor auto-starts an orchestration).
+ *
+ * A paused loop is woken too, so it observes the abort instead of parking on its gate.
+ * Idempotent: each run's own settle path removes its registry entry, so a second call
+ * reports `false` for both.
+ */
+export function abortDiscussionRuns(id: string): { discussion: boolean; research: boolean } {
+  const ctrl = discussionRuns.get(id)
+  if (ctrl) {
+    ctrl.abort.abort()
+    const waiters = ctrl.resumeWaiters.splice(0)
+    for (const wake of waiters) wake()
+  }
+  const research = researchRuns.get(id)
+  if (research) research.abort()
+  return { discussion: !!ctrl, research: !!research }
+}
+
+/**
  * Abort every live orchestration + research run. The graceful-shutdown path calls
  * this BEFORE it awaits anything: the vendor children die with this process, and a
  * run that settles with its abort flag unset looks exactly like a normal completion

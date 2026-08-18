@@ -2381,7 +2381,8 @@
       "unknownType": "未知讨论类型:{type}",
       "notConcludable": "仅已完成且有结论的讨论可转为意图。",
       "alreadyStarted": "讨论已结束,无法重新启动。",
-      "notEndedForContinue": "只有已结束的讨论可以追加新一轮。"
+      "notEndedForContinue": "只有已结束的讨论可以追加新一轮。",
+      "alreadyEnded": "讨论已结束,无法停止。"
     },
     "automation": {
       "dbUnavailable": "自动化功能不可用 (c3.db)。",
@@ -2483,6 +2484,9 @@
       "resume": {
         "label": "继续"
       },
+      "cancel": {
+        "label": "停止"
+      },
       "convert": {
         "label": "转为意图"
       }
@@ -2571,7 +2575,8 @@
       "draft": "草稿",
       "in_progress": "进行中",
       "completed": "已完成",
-      "cancelled": "已取消"
+      "cancelled": "已取消",
+      "researching": "研究中…"
     },
     "meta": {
       "type": {
@@ -2644,6 +2649,10 @@
     },
     "research": {
       "toolActivity": "🔍 正在用 {tool} 检索…"
+    },
+    "cancel": {
+      "title": "停止讨论",
+      "confirm": "确定停止「{title}」?正在进行的编排与调研会被终止,讨论标记为已取消。此操作不可撤销 —— 如需继续请新建讨论。"
     }
   },
   "delivery": {

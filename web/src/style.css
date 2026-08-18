@@ -439,8 +439,26 @@ header h1 {
 .session-title-bar .disc-status.completed {
   color: var(--c-success-text);
 }
+.session-title-bar .disc-status.cancelled {
+  color: var(--c-error-text);
+}
+/* Stop: 危险描边按钮(危险色对齐 ConfirmDialog 的 danger 确认钮),与 Start/Pause/Resume
+   同排,不抢主色。 */
+.session-title-bar .disc-stop-btn {
+  background: transparent;
+  border: 1px solid var(--c-error-text);
+  color: var(--c-error-text);
+}
+.session-title-bar .disc-stop-btn:hover:not(:disabled) {
+  background: var(--c-hover);
+  filter: none;
+}
 /* Pause/Resume button sits before the status label; keep them visually grouped. */
 .session-title-bar .disc-start-btn + .disc-status {
+  margin-left: var(--sp-2);
+}
+/* 同排的多个动作按钮:只有第一个吃 margin-left:auto 靠右,其余保持紧邻间距。 */
+.session-title-bar .disc-start-btn + .disc-start-btn {
   margin-left: var(--sp-2);
 }
 

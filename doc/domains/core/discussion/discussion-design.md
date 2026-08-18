@@ -320,10 +320,11 @@ Web UI 的启动，以及 `continue_discussion`（对已结束讨论开启新一
 
 ```
 draft ──start_discussion / 调研后自动启动──▶ in_progress ──(走完工作流各阶段)──▶ completed（结论已写入）
-                              │   ▲                                       │
-                  pause ──────┤   │ resume                                │ continue_discussion
-                  (闸停驻)    │   │                                       │ (追加 human 问题)
-                              └───┘                                       ▼
+   │                          │   ▲                                       │
+   │              pause ──────┤   │ resume                                │ continue_discussion
+   │              (闸停驻)    │   │                                       │ (追加 human 问题)
+   │                          └───┘                                       ▼
+   └──cancel_discussion──▶ cancelled ◀──cancel_discussion──┘（终态，不可恢复）
    discuss ──advance/议程完成──▶ summarize ──advance──▶ confirm ──advance──▶ conclude ──▶ conclude 步骤
       ▲  │ broadcast（发散式批量：N 个参与者并行回答该子话题 —— 仅 discuss）
       │  │ speak（单个参与者对当前子话题的一次轮次；summarize/confirm 中唯一的发言者动作）
@@ -335,7 +336,7 @@ draft ──start_discussion / 调研后自动启动──▶ in_progress ──
     在第一阶段重新进入 in_progress，产出一个新的结论。)
 ```
 
-**Human-in-the-loop（人机协同）。** 三个控制项叠加在该循环之上，且不触及其决策逻辑：
+**Human-in-the-loop（人机协同）。** 下列控制项叠加在该循环之上，且不触及其决策逻辑：
 
 - **暂停闸** —— 该闸在每一轮开始时被 await。暂停期间它会停驻（无组织者
   决策，无发言）；恢复或中止会唤醒它。因此暂停/恢复能够挂起引擎而**不
@@ -346,6 +347,17 @@ draft ──start_discussion / 调研后自动启动──▶ in_progress ──
   （以 `discussion_message` 流式推送），然后恢复；循环每一轮都会重新读取消息列表，因此
   组织者的下一个决策会看到它。当没有存活运行时（in_progress 但已停止），该消息只是
   被简单追加。
+- **停止**（`cancel_discussion`）—— 把一个不再想要的讨论终结为 `cancelled`。仅接受
+  `draft` 与 `in_progress` 两个非终态记录（`completed` / `cancelled` 被拒，
+  否则会改写一份已得出结论的记录）；处理顺序是「先拆卸、再落库」：复用与关停同一条
+  中止路径拆掉该讨论上一切存活的运行——编排循环（暂停中的循环会被唤醒，从而观察到中止
+  而不是停驻在闸上）与只读调研跑批——然后持久化 `status='cancelled'` 并推送刷新后的
+  `discussions` 列表。两个引擎的结算规则都以 `signal.aborted` 为准，因此不需要任何新的
+  收尾分支：编排器不再追加发言、不写结论；调研的失败/中止一轮既不回写半成品，也不
+  自动启动编排。`cancelled` 与 `completed` 一样是**终态**，没有恢复入口——想继续就新建讨论。
+  Web 端的入口在讨论标题栏，与 Start/Pause/Resume 并排，仅在 `draft`/`in_progress` 出现，
+  点击先经 danger 二次确认（不可逆）后才发消息；面向 automation 的 c3 MCP 取消工具与列表页
+  批量取消都不在范围内。
 - **新一轮**（`continue_discussion`）—— 在一个 `completed` 的讨论上，服务端将人类的
   后续问题追加为一条 `human` 消息，将 `completed → in_progress`，并在
   增长后的转录上重新运行引擎。引擎不需要任何改动：它在第一个工作流阶段重新进入，

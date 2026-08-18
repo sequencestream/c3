@@ -420,6 +420,12 @@
 
 **字段：** `discussionId: string`
 
+### `cancel_discussion`
+
+停止一个讨论：把它终结为终态 `cancelled`（标题栏 **Stop** 按钮，Web 端先经不可逆二次确认）。仅接受 `draft` / `in_progress`；`completed` / `cancelled` 已是终态，连同未知 id / store 不可用一并返回 `error`。服务器先复用与关停同一条中止路径拆掉该讨论上一切存活的 run（编排循环，暂停中的循环会被唤醒；以及只读研究 run），再持久化 `cancelled` 并推送刷新后的 `discussions`。被拆卸的编排不再追加任何消息、不写 `conclusion`；被拆卸的研究 run 既不回写半成品结果也不自动启动编排。没有「从 cancelled 恢复」——想继续请新建讨论。
+
+**字段：** `discussionId: string`
+
 ### `discussion_speak`
 
 人类插话（"我想发言"）：服务器暂停活跃 run，追加一条 `human` 消息（作为 `discussion_message` 流式传输），然后恢复——organizer 的下一轮可以看到它。没有活跃 run（`in_progress` 但已停止）时则仅追加消息。未知 / store 不可用时返回 `error`；空的 `text` 被忽略。

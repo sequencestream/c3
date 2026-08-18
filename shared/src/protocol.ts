@@ -142,6 +142,7 @@ export type ClientToServer =
   | DiscussionMsg.ClientStartDiscussion
   | DiscussionMsg.ClientPauseDiscussion
   | DiscussionMsg.ClientResumeDiscussion
+  | DiscussionMsg.ClientCancelDiscussion
   | DiscussionMsg.ClientDiscussionSpeak
   | DiscussionMsg.ClientContinueDiscussion
   | SessionMsg.ClientRequestSessionStatus

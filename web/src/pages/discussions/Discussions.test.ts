@@ -163,12 +163,14 @@ describe('Discussions.vue — right-pane phase switch', () => {
 describe('Discussions.vue — launch button visibility', () => {
   const empty: DispatchView = { pending: [], errors: [] }
 
+  // 断言启动按钮自身的变体 testid,而非共享的 .disc-start-btn 外观类 —— 标题栏同排还有
+  // Stop/Convert 复用同一基类。
   it("shows Start on launchAction 'start' (research ended/dead, discussion not started)", () => {
     const w = mountDiscussions(empty, disc({ status: 'draft' }), {
       phase: 'discussion',
       launchAction: 'start',
     })
-    expect(w.find('.disc-start-btn').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-launch-start"]').exists()).toBe(true)
   })
 
   it('hides the button while research is running (phase = research, launchAction null)', () => {
@@ -176,7 +178,7 @@ describe('Discussions.vue — launch button visibility', () => {
       phase: 'research',
       launchAction: null,
     })
-    expect(w.find('.disc-start-btn').exists()).toBe(false)
+    expect(w.find('[data-testid^="discussion-launch-"]').exists()).toBe(false)
   })
 
   it("marks the button as the restart variant on launchAction 'restart' (dangling in_progress)", () => {
@@ -195,8 +197,88 @@ describe('Discussions.vue — launch button visibility', () => {
       phase: 'discussion',
       launchAction: 'start',
     })
-    await w.find('.disc-start-btn').trigger('click')
+    await w.find('[data-testid="discussion-launch-start"]').trigger('click')
     expect(w.emitted('start')).toBeTruthy()
+  })
+})
+
+describe('Discussions.vue — Stop (terminate as cancelled)', () => {
+  const empty: DispatchView = { pending: [], errors: [] }
+
+  it.each(['draft', 'in_progress'] as const)(
+    'shows the Stop button for a %s discussion',
+    (status) => {
+      const w = mountDiscussions(empty, disc({ status }), { phase: 'discussion' })
+      expect(w.find('[data-testid="discussion-stop"]').exists()).toBe(true)
+    },
+  )
+
+  it.each(['completed', 'cancelled'] as const)(
+    'hides the Stop button for a %s discussion (terminal)',
+    (status) => {
+      const w = mountDiscussions(empty, disc({ status }), { phase: 'discussion' })
+      expect(w.find('[data-testid="discussion-stop"]').exists()).toBe(false)
+    },
+  )
+
+  it('shows Stop for a dangling in_progress discussion with no live run', () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), {
+      phase: 'discussion',
+      launchAction: 'restart',
+      activeRunState: undefined,
+    })
+    expect(w.find('[data-testid="discussion-stop"]').exists()).toBe(true)
+  })
+
+  it('opens the confirm dialog and emits nothing until it is confirmed', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+
+    await w.find('[data-testid="discussion-stop"]').trigger('click')
+
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+    expect(w.emitted('cancel')).toBeFalsy()
+  })
+
+  it('emits cancel once the dialog is confirmed, and closes it', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    await w.find('[data-testid="discussion-stop"]').trigger('click')
+
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+
+    expect(w.emitted('cancel')).toHaveLength(1)
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+  })
+
+  it('cancelling the dialog emits nothing and closes it', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    await w.find('[data-testid="discussion-stop"]').trigger('click')
+
+    await w.find('[data-testid="confirm-cancel"]').trigger('click')
+
+    expect(w.emitted('cancel')).toBeFalsy()
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+  })
+
+  it('closes an open dialog when the discussion reaches a terminal state on its own', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    await w.find('[data-testid="discussion-stop"]').trigger('click')
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+
+    // The engine concluded while the confirmation was open.
+    await w.setProps({ activeDiscussion: disc({ status: 'completed', conclusion: 'C' }) })
+
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    expect(w.emitted('cancel')).toBeFalsy()
+  })
+
+  it('closes an open dialog when a different discussion is opened', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    await w.find('[data-testid="discussion-stop"]').trigger('click')
+
+    await w.setProps({ activeDiscussion: disc({ id: 'd2', status: 'in_progress' }) })
+
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
   })
 })
 

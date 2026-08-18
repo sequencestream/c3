@@ -9,7 +9,8 @@ discussion/intent 数据库中。
 多智能体编排循环**（`start_discussion` 在后台将 `draft` 推进到 `conclusion`，
 组织者在已配置的智能体中提名发言者并驱动该类型的
 工作流，每一轮是一次一次性、禁用工具的智能体回复，每条消息都以 `discussion_message` 实时流式推送），以及**human-in-the-loop 控制**：暂停/恢复正在运行的引擎，人类
-在运行中插入一条 `human` 消息，以及在已结束的讨论上以一个
+在运行中插入一条 `human` 消息，把一个不再想要的讨论**停止**为终态 `cancelled`，
+以及在已结束的讨论上以一个
 后续问题重新驱动一个*新一轮*（见 [design §organizer-engine](discussion-design.md#organizer-engine)）。
 
 ## 范围（现状）
@@ -144,13 +145,16 @@ discussion/intent 数据库中。
   （组织者 == 唯一参与者）。
 - 复用共享的跨运行时数据库适配器（ADR 0007）以及 intent store 的软失败 +
   schema 版本号 + 幂等增量列迁移范式。
-- **Human-in-the-loop 控制**（`pause_discussion` / `resume_discussion` / `discussion_speak` /
-  `continue_discussion`）：引擎在每个轮次边界等待一个**暂停闸**（已暂停 ⇒ 不会产生新的
+- **Human-in-the-loop 控制**（`pause_discussion` / `resume_discussion` / `cancel_discussion` /
+  `discussion_speak` / `continue_discussion`）：引擎在每个轮次边界等待一个**暂停闸**（已暂停 ⇒ 不会产生新的
   组织者决策或智能体发言），因此可以暂停/恢复运行而不中止。人类
   可以**插话**（`discussion_speak` 暂停运行、追加一条 `human` 消息、恢复运行 —— 组织者
   会在下一轮拾取它），也可以在一个 `completed` 的讨论上**驱动新一轮**
   （`continue_discussion` 追加后续问题，将 `completed → in_progress`，并在完整转录上
-  重新运行引擎以得到一个全新的 `conclusion`）。实时运行状态（`running` /
+  重新运行引擎以得到一个全新的 `conclusion`）。人类还可以**停止**一个不想要的讨论
+  （`cancel_discussion`：仅接受 `draft` / `in_progress`，拆卸该讨论上一切存活的运行——编排
+  循环与只读调研跑批——随后持久化 `cancelled`；Web 端在标题栏以 danger 二次确认收口，因为
+  `cancelled` 与 `completed` 一样是终态、不可恢复）。实时运行状态（`running` /
   `paused` / `ended`）以 `discussion_run_status` 广播，**与**持久化的
   讨论状态**解耦**（暂停仅存在于运行时，不持久化）。左侧列表为每一行渲染**一个统一的
   状态指示器** —— `<icon> <agent>.<status>`（一个共享的状态→图标映射 + 智能体状态拼接，
@@ -199,6 +203,10 @@ discussion/intent 数据库中。
   [discussion-design §human-in-the-loop](discussion-design.md#organizer-engine)）。
 - 暂停仅在轮次边界生效：一个已在进行中的一次性 `askAgentOnce` 会执行完毕
   （因此暂停请求发出后仍可能落地一条消息）。
+- `cancelled` 不可恢复：它与 `completed` 同为终态，没有「从 cancelled 继续」的入口
+  （`start_discussion` / `continue_discussion` 均拒绝终态记录），想继续请新建讨论。
+- 停止只有 Web UI + WebSocket 一条路径：没有面向 automation 的 c3 MCP 取消工具，
+  也没有列表页的批量取消。
 
 ## 索引
 

@@ -301,6 +301,7 @@ const {
   startDiscussion,
   pauseDiscussion,
   resumeDiscussion,
+  cancelDiscussion,
   convertDiscussionToIntent,
   submitDiscussionInput,
   openResearchSession,
@@ -887,6 +888,7 @@ function onFilesChatWidth(px: number): void {
           @start="startDiscussion"
           @pause="pauseDiscussion"
           @resume="resumeDiscussion"
+          @cancel="cancelDiscussion"
           @convert="convertDiscussionToIntent"
           @share="shareDiscussion"
           @update:input="discussionInput = $event"

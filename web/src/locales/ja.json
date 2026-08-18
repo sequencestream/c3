@@ -2382,7 +2382,8 @@
       "unknownType": "不明なディスカッションの種類: {type}",
       "notConcludable": "結論と成果のあるディスカッションのみ意図に変換できます。",
       "alreadyStarted": "ディスカッションは終了しています。再開はできません。",
-      "notEndedForContinue": "終了したディスカッションのみ新しいラウンドを開始できます。"
+      "notEndedForContinue": "終了したディスカッションのみ新しいラウンドを開始できます。",
+      "alreadyEnded": "ディスカッションは終了しているため、停止できません。"
     },
     "automation": {
       "dbUnavailable": "自動化機能は利用できません(c3.db)。",
@@ -2484,6 +2485,9 @@
       "resume": {
         "label": "再開"
       },
+      "cancel": {
+        "label": "停止"
+      },
       "convert": {
         "label": "意図に変換"
       }
@@ -2572,7 +2576,8 @@
       "draft": "下書き",
       "in_progress": "進行中",
       "completed": "完了",
-      "cancelled": "キャンセル済み"
+      "cancelled": "キャンセル済み",
+      "researching": "リサーチ中…"
     },
     "meta": {
       "type": {
@@ -2645,6 +2650,10 @@
     },
     "research": {
       "toolActivity": "🔍 {tool} で調査中…"
+    },
+    "cancel": {
+      "title": "ディスカッションを停止",
+      "confirm": "「{title}」を停止しますか?実行中のオーケストレーションとリサーチが終了し、ディスカッションはキャンセル済みになります。この操作は取り消せません —— 続けるには新しいディスカッションを作成してください。"
     }
   },
   "delivery": {

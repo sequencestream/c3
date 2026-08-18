@@ -311,6 +311,8 @@ export interface AppMethods {
   startDiscussion(): void
   pauseDiscussion(): void
   resumeDiscussion(): void
+  /** Stop the open discussion for good (persisted `cancelled`); the view confirms first. */
+  cancelDiscussion(): void
   convertDiscussionToIntent(): void
   submitDiscussionInput(): void
   /** Bind the global active session to a discussion's research session (研究会话 tab). */

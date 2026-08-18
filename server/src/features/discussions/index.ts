@@ -2,7 +2,7 @@
  * `discussions` feature handlers — slice 1/3 (ADR-0009).
  *
  * Discussion list/detail + the orchestration lifecycle (start/pause/resume/
- * speak/continue). Live run controls live in `discussions/run-controls` (feature-
+ * cancel/speak/continue). Live run controls live in `discussions/run-controls` (feature-
  * private); the run starters live on `ctx`; per-connection delivery on `conn`.
  */
 import {
@@ -16,6 +16,7 @@ import {
 } from './store.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
 import {
+  abortDiscussionRuns,
   discussionRunSnapshot,
   getDiscussionRun,
   getResearchTranscript,
@@ -184,6 +185,36 @@ export const resumeDiscussion: Handler<'resume_discussion'> = (ctx, _conn, msg) 
   const waiters = ctrl.resumeWaiters.splice(0)
   for (const wake of waiters) wake()
   ctx.broadcastDiscussionRunStatus(msg.discussionId, 'running')
+}
+
+export const cancelDiscussion: Handler<'cancel_discussion'> = (ctx, conn, msg) => {
+  if (!isDiscussionStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'discussion.dbUnavailable' } })
+    return
+  }
+  const discussion = getDiscussion(msg.discussionId)
+  if (!discussion) {
+    conn.send({
+      type: 'error',
+      error: { code: 'discussion.unknown', params: { id: msg.discussionId } },
+    })
+    return
+  }
+  // `completed`/`cancelled` are terminal — there is nothing left to stop, and
+  // overwriting a conclusion's status would silently rewrite history.
+  if (discussion.status !== 'draft' && discussion.status !== 'in_progress') {
+    conn.send({ type: 'error', error: { code: 'discussion.alreadyEnded' } })
+    return
+  }
+  // Tear down whatever is still alive for this discussion (the orchestration loop
+  // and/or the read-only research run) through the shared abort path, THEN persist
+  // the terminal status. Both engines key their settle rules off `signal.aborted`,
+  // so nothing more is appended, no conclusion is written, and a dying research run
+  // neither writes back half-finished findings nor auto-starts an orchestration
+  // (its own settle broadcasts the list again, by then already `cancelled`).
+  abortDiscussionRuns(discussion.id)
+  updateDiscussionStatus(discussion.id, 'cancelled')
+  ctx.broadcastDiscussions(resolveWorkspaceRoot(discussion.workspaceName)!)
 }
 
 export const discussionSpeak: Handler<'discussion_speak'> = (ctx, conn, msg) => {

@@ -89,6 +89,20 @@ export type ClientPauseDiscussion = { type: 'pause_discussion'; discussionId: st
 export type ClientResumeDiscussion = { type: 'resume_discussion'; discussionId: string }
 
 /**
+ * Stop a discussion for good: terminate it as `cancelled`. Accepted only for a
+ * `draft` or `in_progress` discussion (a `completed`/`cancelled` one is already
+ * terminal and is rejected with an error) — the irreversible confirmation lives in
+ * the UI. The server tears down whatever is still alive for that discussion (the
+ * orchestration loop and/or the read-only research run) through the existing abort
+ * path, so no further speech is appended and a dying research run neither writes
+ * back its half-finished findings nor auto-starts an orchestration. It then
+ * persists `status = 'cancelled'` and pushes the refreshed `discussions` list.
+ * `cancelled` is terminal like `completed`: there is no resume — start a new
+ * discussion instead.
+ */
+export type ClientCancelDiscussion = { type: 'cancel_discussion'; discussionId: string }
+
+/**
  * Human interjection into a live discussion ("I want to speak"): the server
  * pauses the run, appends a `human` message, and resumes — so the organizer's
  * next round sees it. Requires a live run (running or paused); when the

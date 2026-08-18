@@ -114,33 +114,60 @@ export function discussionMessagesToChat(
  * are unit-tested in the DOM-less web test env.
  */
 
-/** Status label for the colored pill. The pill uses the status value as a CSS class for its semantic color. */
-export const STATUS_LABELS: Record<DiscussionStatus, string> = {
-  draft: 'Draft',
-  in_progress: 'In progress',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
+/**
+ * i18n keys the two status-label mappers below resolve. A narrow union (a subset
+ * of `LocaleKey`) so they can hand a key straight to the typed `t` while a typo
+ * still fails `vue-tsc` — same paradigm as `status-indicator`'s `StatusLabelKey`,
+ * and the same `discussion.status.*` keys the left list's row indicator uses, so
+ * a status reads identically in the list and in the right pane.
+ */
+export type DiscussionStatusI18nKey =
+  | 'discussion.status.draft'
+  | 'discussion.status.in_progress'
+  | 'discussion.status.completed'
+  | 'discussion.status.cancelled'
+  | 'discussion.status.researching'
+  | 'discussion.item.run.running.label'
+  | 'discussion.item.run.paused.label'
+
+/** i18n key for the lifecycle status pill (details tab). */
+export const STATUS_KEYS: Record<DiscussionStatus, DiscussionStatusI18nKey> = {
+  draft: 'discussion.status.draft',
+  in_progress: 'discussion.status.in_progress',
+  completed: 'discussion.status.completed',
+  cancelled: 'discussion.status.cancelled',
 }
 
-export function statusLabel(s: DiscussionStatus): string {
-  return STATUS_LABELS[s] ?? s
+export function statusLabel(
+  s: DiscussionStatus,
+  t: (key: DiscussionStatusI18nKey) => string,
+): string {
+  return t(STATUS_KEYS[s])
 }
 
 /**
  * Title-bar status text for the open discussion's right pane. A `draft` reads as
- * `Researching…` — after create the context-research agent runs and the server
+ * 「研究中…」 — after create the context-research agent runs and the server
  * auto-starts the orchestration on success, so a lingering draft means research
  * has not yet completed-and-auto-started (a manual Start stays as a fallback).
  * `in_progress` reflects the live run-state (paused vs running); terminal states
- * map to their label. Pure, so it is unit-tested DOM-free.
+ * — `completed` and `cancelled`, each with its own pill color — map to their
+ * lifecycle label. Pure (the caller injects `t`), so it is unit-tested DOM-free.
  */
 export function discussionRunLabel(
   status: DiscussionStatus,
   runState: 'running' | 'paused' | undefined,
+  t: (key: DiscussionStatusI18nKey) => string,
 ): string {
-  if (status === 'draft') return 'Researching…'
-  if (status === 'in_progress') return runState === 'paused' ? 'Paused' : 'Running'
-  return status === 'completed' ? 'Completed' : 'Cancelled'
+  if (status === 'draft') return t('discussion.status.researching')
+  if (status === 'in_progress') {
+    return t(
+      runState === 'paused'
+        ? 'discussion.item.run.paused.label'
+        : 'discussion.item.run.running.label',
+    )
+  }
+  return t(STATUS_KEYS[status])
 }
 
 /**
@@ -215,6 +242,24 @@ export function discussionLaunchAction(
   if (status === 'draft') return 'start'
   if (status === 'in_progress') return 'restart'
   return null
+}
+
+/**
+ * Whether the title bar offers 「停止」 for a discussion — true for the two
+ * non-terminal statuses only:
+ *
+ * - `draft` — nothing has concluded yet (research may still be running; stopping
+ *   tears it down too).
+ * - `in_progress` — a live orchestration, a paused one, or the dangling case with
+ *   no live run at all.
+ *
+ * `completed`/`cancelled` are terminal, so the button disappears — deliberately
+ * status-driven rather than run-state-driven: a dangling `in_progress` (engine
+ * error / server restart) has no live run and is exactly what most needs stopping.
+ * Pure.
+ */
+export function canCancelDiscussion(status: DiscussionStatus): boolean {
+  return status === 'draft' || status === 'in_progress'
 }
 
 /**

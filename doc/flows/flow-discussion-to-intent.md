@@ -68,7 +68,9 @@ flowchart TD
 引擎在每个轮次边界等待一个**暂停闸门**:`pause_discussion` / `resume_discussion`
 只暂停不中止;`discussion_speak` 插入一条 `human` 消息(暂停 → 追加 → 恢复);
 `continue_discussion` 在一个 `completed` 的讨论上重新驱动**新一轮**(把
-`completed → in_progress` 翻转,重新运行出一份新的 `conclusion`)。实时运行状态
+`completed → in_progress` 翻转,重新运行出一份新的 `conclusion`);`cancel_discussion`
+把一个 `draft` / `in_progress` 的讨论停止为终态 `cancelled`(先按同一条中止路径拆掉存活
+的编排 / 调研 run,再落库,因此不会再追加发言、不会回写半成品调研结果)。实时运行状态
 (`running` / `paused` / `ended`)以 `discussion_run_status` 广播,与持久化的
 `DiscussionStatus` **解耦**(暂停仅存在于运行时);每次列表发送的 `runStates`
 快照用于在重连时对齐。

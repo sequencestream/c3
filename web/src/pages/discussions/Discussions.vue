@@ -3,7 +3,7 @@
  * Discussions.vue — 讨论页容器。
  *
  * 桌面两栏容器:左侧纯讨论列表(选中) + 右侧「常驻标题栏 + Tab 面板」。标题栏
- * (讨论标题 + Start/Pause/Resume/Convert 动作 + 运行状态)跨 tab 不变;其下 Tab 栏
+ * (讨论标题 + Start/Pause/Resume/Stop/Convert 动作 + 运行状态)跨 tab 不变;其下 Tab 栏
  * 切换互斥内容区:
  *  - 目标 / 上下文 / 研究 / 结论:markdown 字段(空则该 tab 不渲染),经 MarkdownText 渲染;
  *  - 研究会话:讨论的研究跑批本身就是一个正式会话,此 tab 以复用的 ChatColumn 渲染其完整
@@ -23,8 +23,12 @@
  * `in_progress` 但没有存活运行(引擎报错 / 服务端重启打断)显示「重新运行」—— 两者都 emit
  * `start`,服务端据持久化转录/议程续跑,不追加任何消息。
  *
+ * 「停止」按钮只在 draft / in_progress 两个非终态出现(与 Pause/Resume 并列),点击先弹
+ * ConfirmDialog(danger)二次确认,确认后才 emit `cancel` —— 终止为 cancelled 不可撤销;
+ * 确认框敞开期间讨论自行走到终态则收框且不放行,切讨论同样收框。
+ *
  * 所有数据与运行态由 App.vue 持有,经 props 注入;用户动作(打开/创建/开始/暂停/恢复/
- * 转需求/发言)经 emit 上抛。tab 选中态是页面内部展示状态,不写回 App 或协议。
+ * 停止/转需求/发言)经 emit 上抛。tab 选中态是页面内部展示状态,不写回 App 或协议。
  *
  * 移动端退化为两级 drill-down 栈:讨论列表 → 右栏 tab 化详情逐级滑入/返回(MobileStack)。
  */
@@ -36,7 +40,9 @@ import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vu
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
 import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import MarkdownText from '../../components/MarkdownText/MarkdownText.vue'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import {
+  canCancelDiscussion,
   correctActiveTab,
   defaultDiscussionTab,
   discussionDetailTabs,
@@ -128,6 +134,7 @@ const emit = defineEmits<{
   start: []
   pause: []
   resume: []
+  cancel: []
   convert: []
   // 分享:由 App 组装深链复制(workspace/id/title/typeLabel 在上层)。
   share: []
@@ -163,7 +170,7 @@ const mobileActiveToken = computed(() => props.activeId ?? 'discussions')
 
 // Title-bar status label — pure display mapper (no state), same as App.vue used.
 function statusLabel(status: Discussion['status']): string {
-  return discussionRunLabel(status, props.activeRunState)
+  return discussionRunLabel(status, props.activeRunState, t)
 }
 
 // `<agent>` segment for the active discussion's run-state row indicator: the first
@@ -251,6 +258,32 @@ const TYPE_LABEL = new Map(listDiscussionTypes().map((ty) => [ty.id, ty.label]))
 function typeLabel(d: Discussion): string {
   return TYPE_LABEL.get(d.type) ?? d.type
 }
+
+// ---- Stop (terminate as cancelled) ----
+// Visible for the two non-terminal statuses only; the dialog owns the irreversible
+// confirmation, so `cancel` is emitted only after an explicit confirm. Reopening a
+// different discussion closes a stale dialog (the confirm would otherwise apply to
+// whatever is open now).
+const stopVisible = computed(
+  () => !!props.activeDiscussion && canCancelDiscussion(props.activeDiscussion.status),
+)
+const stopDialogOpen = ref(false)
+watch(
+  () => props.activeDiscussion?.id,
+  () => {
+    stopDialogOpen.value = false
+  },
+)
+// A discussion that reaches a terminal state while the dialog is open (it concluded
+// on its own) closes it — the same 「敞开期间动作已不可用则收框且不放行」 rule the
+// intent title bar follows.
+watch(stopVisible, (can) => {
+  if (!can) stopDialogOpen.value = false
+})
+function confirmStop(): void {
+  stopDialogOpen.value = false
+  emit('cancel')
+}
 </script>
 
 <template>
@@ -315,6 +348,19 @@ function typeLabel(d: Discussion): string {
                 @click="emit('resume')"
               >
                 {{ t('discussion.action.resume.label') }}
+              </button>
+              <!-- Stop: terminate a draft / in-progress discussion as `cancelled`. Shown
+               for those two statuses only (terminal ones hide it, including one that
+               concluded while the dialog was open), and only ever emits after the
+               ConfirmDialog below confirms — the action is irreversible. -->
+              <button
+                v-if="stopVisible"
+                type="button"
+                class="disc-start-btn disc-stop-btn"
+                data-testid="discussion-stop"
+                @click="stopDialogOpen = true"
+              >
+                {{ t('discussion.action.cancel.label') }}
               </button>
               <button
                 v-if="activeDiscussion.status === 'completed'"
@@ -506,7 +552,7 @@ function typeLabel(d: Discussion): string {
             </div>
             <div class="disc-meta-row" data-testid="disc-meta-status">
               <dt>{{ t('discussion.meta.status.label') }}</dt>
-              <dd>{{ discussionStatusLabel(activeDiscussion.status) }}</dd>
+              <dd>{{ discussionStatusLabel(activeDiscussion.status, t) }}</dd>
             </div>
             <div class="disc-meta-row" data-testid="disc-meta-created">
               <dt>{{ t('discussion.meta.created.label') }}</dt>
@@ -532,6 +578,19 @@ function typeLabel(d: Discussion): string {
               />
             </template>
           </div>
+
+          <!-- Stop confirmation: irreversible (cancelled is terminal like completed),
+           so it is a danger dialog and nothing is sent until it confirms. -->
+          <ConfirmDialog
+            :open="stopDialogOpen"
+            :title="t('discussion.cancel.title')"
+            :message="t('discussion.cancel.confirm', { title: activeDiscussion.title })"
+            :confirm-label="t('discussion.action.cancel.label')"
+            :cancel-label="t('common.action.cancel.label')"
+            danger
+            @confirm="confirmStop"
+            @cancel="stopDialogOpen = false"
+          />
         </template>
       </div>
     </template>

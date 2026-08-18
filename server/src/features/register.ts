@@ -104,6 +104,7 @@ import {
   writeSpecHandler,
 } from './intents/spec.js'
 import {
+  cancelDiscussion,
   continueDiscussion,
   createDiscussionHandler,
   discussionSpeak,
@@ -280,6 +281,7 @@ export const handlerMap: HandlerMap = {
   start_discussion: startDiscussion,
   pause_discussion: pauseDiscussion,
   resume_discussion: resumeDiscussion,
+  cancel_discussion: cancelDiscussion,
   discussion_speak: discussionSpeak,
   continue_discussion: continueDiscussion,
   // automations

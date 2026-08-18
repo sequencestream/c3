@@ -2265,7 +2265,8 @@
         },
         "networkAccess": {
           "label": "Allow network access",
-          "hint": "Codex only, workspace-write sandbox: lets shell commands (gh, curl…) reach the network. Off by default."
+          "hint": "Codex only, workspace-write sandbox: lets shell commands (gh, curl…) reach the network. Off by default.",
+          "readOnlyHint": "The read-only sandbox is network-denied unconditionally, so this switch has no effect — pick the read-write sandbox to let shell commands reach the network."
         },
         "loading": "Loading tools…",
         "empty": "No tools available",

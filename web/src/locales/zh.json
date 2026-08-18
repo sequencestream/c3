@@ -2030,7 +2030,8 @@
         },
         "networkAccess": {
           "label": "允许网络访问",
-          "hint": "仅 Codex、workspace-write 沙箱生效：允许 shell 命令（gh、curl 等）联网。默认关闭。"
+          "hint": "仅 Codex、workspace-write 沙箱生效：允许 shell 命令（gh、curl 等）联网。默认关闭。",
+          "readOnlyHint": "当前沙箱为「只读」，Codex 无条件禁网，此开关不生效；需要 shell 联网请切换到「读写」沙箱。"
         },
         "loading": "正在加载工具列表…",
         "empty": "没有可用工具",

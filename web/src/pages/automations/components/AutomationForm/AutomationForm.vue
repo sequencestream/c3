@@ -798,7 +798,16 @@ const networkAccessEnabled = computed(() =>
   toolAllowlist.value.includes(AUTOMATION_NETWORK_ACCESS_TOOL),
 )
 
+// A `read-only` codex sandbox is network-denied unconditionally — there is no
+// codex knob to open it, so the dispatcher drops the pseudo-entry instead of
+// passing it through. Mirror that here: the switch is disabled with a reason,
+// so the sandbox choice never silently swallows a ticked box.
+const networkAccessBlocked = computed(
+  () => vendor.value === 'codex' && codexSandboxMode.value === 'read-only',
+)
+
 function toggleNetworkAccess(): void {
+  if (networkAccessBlocked.value) return
   const i = toolAllowlist.value.indexOf(AUTOMATION_NETWORK_ACCESS_TOOL)
   if (i >= 0) toolAllowlist.value.splice(i, 1)
   else toolAllowlist.value.push(AUTOMATION_NETWORK_ACCESS_TOOL)
@@ -1606,11 +1615,12 @@ function save(): void {
               class="sf-field sf-field--stacked sf-field--network sf-item"
               data-testid="network-access"
             >
-              <label class="sf-tool-item">
+              <label class="sf-tool-item" :class="{ 'is-disabled': networkAccessBlocked }">
                 <input
                   type="checkbox"
                   data-testid="network-access-checkbox"
                   :checked="networkAccessEnabled"
+                  :disabled="networkAccessBlocked"
                   @change="toggleNetworkAccess"
                 />
                 <span class="sf-tool-name">{{
@@ -1618,6 +1628,13 @@ function save(): void {
                 }}</span>
               </label>
               <span class="sf-hint">{{ t('automation.form.tools.networkAccess.hint') }}</span>
+              <span
+                v-if="networkAccessBlocked"
+                class="sf-hint sf-hint--warn"
+                data-testid="network-access-readonly-hint"
+              >
+                {{ t('automation.form.tools.networkAccess.readOnlyHint') }}
+              </span>
             </div>
           </div>
         </div>
@@ -2071,6 +2088,13 @@ select.sf-input {
 }
 .sf-tool-item:hover {
   background: var(--c-hover);
+}
+.sf-tool-item.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.sf-tool-item.is-disabled:hover {
+  background: transparent;
 }
 .sf-tool-item input[type='checkbox'] {
   margin: 0;

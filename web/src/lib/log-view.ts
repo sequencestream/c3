@@ -70,15 +70,26 @@ export function applyLogChunk(
     : { lines: state.lines, partial: state.partial }
 
   const pieces = (base.partial + chunk.text).split('\n')
-  const partial = pieces.pop() ?? ''
+  let partial = pieces.pop() ?? ''
   const lines = pieces.length > 0 ? [...base.lines, ...pieces] : base.lines
 
   const capped = capLines(lines, limits)
+
+  // The partial line has no newline yet, so the line cap never applies to it;
+  // bound it by the char cap directly, or a single never-newline runaway line
+  // would grow the buffer without limit and defeat both caps. Keep the newest
+  // tail — this viewer shows the live tail, not an archive.
+  let dropped = state.dropped || capped.dropped
+  if (partial.length > limits.maxChars) {
+    partial = partial.slice(-limits.maxChars)
+    dropped = true
+  }
+
   return {
     lines: capped.lines,
     partial,
     nextOffset: chunk.nextOffset,
-    dropped: state.dropped || capped.dropped,
+    dropped,
     available: true,
   }
 }

@@ -90,6 +90,26 @@ describe('applyLogChunk', () => {
     expect(later.dropped).toBe(true)
   })
 
+  it('keeps the newest tail of an over-long partial and flags it', () => {
+    const limits = { maxLines: 100, maxChars: 5 }
+    const state = fold([chunk('abcdefgh', { reset: true })], limits)
+    expect(state.lines).toEqual([])
+    expect(state.partial).toBe('defgh')
+    expect(state.dropped).toBe(true)
+    expect(logViewText(state)).toBe('defgh')
+  })
+
+  it('bounds a partial that never hits a newline across many polls', () => {
+    const limits = { maxLines: 100, maxChars: 10 }
+    let state = createLogViewState()
+    for (let i = 0; i < 200; i++) {
+      state = applyLogChunk(state, chunk('x'), limits)
+    }
+    expect(state.lines).toHaveLength(0)
+    expect(state.partial).toHaveLength(10)
+    expect(state.dropped).toBe(true)
+  })
+
   it('empties the view when the server has no live log file', () => {
     const before = fold([chunk('a\n', { reset: true })])
     const after = applyLogChunk(before, chunk('', { available: false, reset: true }))

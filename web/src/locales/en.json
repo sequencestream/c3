@@ -176,6 +176,9 @@
       "list": {
         "empty": "No workspaces yet. Click + to add a directory."
       }
+    },
+    "logs": {
+      "tooltip": "View runtime log"
     }
   },
   "permission": {
@@ -3698,6 +3701,18 @@
       "judge_stuck": "Judged not really finished",
       "judge_unavailable": "Completion judge unavailable (tool agent config)",
       "pr_target_unavailable": "PR target unavailable — no PR created"
+    }
+  },
+  "logs": {
+    "title": "Runtime log",
+    "empty": "No log output yet.",
+    "unavailable": "File logging is off on the server, so there is nothing to show.",
+    "truncated": "Older lines were dropped to keep this tab bounded.",
+    "unauthenticated": "Sign in to the console first, then reopen this page.",
+    "connection": {
+      "connecting": "Connecting…",
+      "open": "Connected",
+      "closed": "Disconnected"
     }
   }
 }

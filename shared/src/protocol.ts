@@ -17,6 +17,7 @@ export * from './protocol/consensus.js'
 export * from './protocol/delivery.js'
 export * from './protocol/discussion.js'
 export * from './protocol/intent.js'
+export * from './protocol/log.js'
 export * from './protocol/session.js'
 export * from './protocol/settings.js'
 export * from './protocol/skill.js'
@@ -29,6 +30,7 @@ import type * as FileMsg from './protocol/file-messages.js'
 import type * as DeliveryMsg from './protocol/delivery-messages.js'
 import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
+import type * as LogMsg from './protocol/log-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
 import type * as SettingsMsg from './protocol/settings-messages.js'
 import type * as SkillMsg from './protocol/skill-messages.js'
@@ -55,6 +57,7 @@ export type ClientToServer =
   | FileMsg.ClientReadFile
   | FileMsg.ClientGetFileGitStatus
   | FileMsg.ClientSearchFiles
+  | LogMsg.ClientReadRuntimeLog
   | SessionMsg.ClientStopRun
   | SessionMsg.ClientRebindView
   | SessionMsg.ClientListCommands
@@ -176,6 +179,7 @@ export type ServerToClient =
   | FileMsg.ServerFileRead
   | FileMsg.ServerFileGitStatus
   | FileMsg.ServerFilesSearched
+  | LogMsg.ServerRuntimeLog
   | SessionMsg.ServerSessionSelected
   | SessionMsg.ServerSessionStarted
   | SessionMsg.ServerSessionAgentChanged

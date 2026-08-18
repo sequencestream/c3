@@ -199,13 +199,13 @@ export function installMessageHandler(ctx: AppCtx): void {
     automationToolManifestLoading,
     automationToolManifestError,
     executionTranscripts,
-    codesProject,
-    codesDirs,
-    codesLoadingDirs,
-    codesTabs,
-    codesSearchMode,
-    codesSearchResult,
-    codesSearchLoading,
+    filesProject,
+    filesDirs,
+    filesLoadingDirs,
+    filesTabs,
+    filesSearchMode,
+    filesSearchResult,
+    filesSearchLoading,
     activeTab,
     workcenterEvents,
     intentActionErrorSeq,
@@ -493,7 +493,7 @@ export function installMessageHandler(ctx: AppCtx): void {
           ctx.maybeRestoreIntents(msg.workspaces)
           ctx.maybeRestoreDiscussions(msg.workspaces)
           ctx.maybeRestoreAutomations(msg.workspaces)
-          ctx.maybeRestoreCodes(msg.workspaces)
+          ctx.maybeRestoreFiles(msg.workspaces)
           // No persisted restorable page: enter the safe default through the
           // normal action so project selection, requests, and persistence align.
           if (
@@ -1725,24 +1725,24 @@ export function installMessageHandler(ctx: AppCtx): void {
       }
       case 'dir_listed': {
         // Adopt the listing only for the workspace currently being browsed.
-        if (msg.workspaceName !== codesProject.value) break
-        codesDirs.value = { ...codesDirs.value, [msg.rel]: msg.entries }
-        if (codesLoadingDirs.value.has(msg.rel)) {
-          const next = new Set(codesLoadingDirs.value)
+        if (msg.workspaceName !== filesProject.value) break
+        filesDirs.value = { ...filesDirs.value, [msg.rel]: msg.entries }
+        if (filesLoadingDirs.value.has(msg.rel)) {
+          const next = new Set(filesLoadingDirs.value)
           next.delete(msg.rel)
-          codesLoadingDirs.value = next
+          filesLoadingDirs.value = next
         }
         break
       }
-      case 'code_git_status': {
+      case 'file_git_status': {
         // Authoritative workspace Git-status snapshot; the action guards workspace
         // isolation and the in-flight/merge bookkeeping.
-        ctx.applyCodeGitStatus(msg.workspaceName, msg.files)
+        ctx.applyFileGitStatus(msg.workspaceName, msg.files)
         break
       }
       case 'file_read': {
         // Intent-detail `spec` tab: adopt the reply only for the rel we are
-        // awaiting, so a concurrent codes read never overwrites the spec view.
+        // awaiting, so a concurrent files read never overwrites the spec view.
         if (
           msg.workspaceName === intentsProject.value &&
           pendingSpecRel.value !== null &&
@@ -1752,26 +1752,26 @@ export function installMessageHandler(ctx: AppCtx): void {
           intentSpecLoading.value = false
           pendingSpecRel.value = null
         }
-        // Codes page: fill the matching tab's content (opened optimistically).
-        if (msg.workspaceName === codesProject.value) {
-          codesTabs.value = codesTabs.value.map((tab) =>
+        // Files page: fill the matching tab's content (opened optimistically).
+        if (msg.workspaceName === filesProject.value) {
+          filesTabs.value = filesTabs.value.map((tab) =>
             tab.path === msg.file.path ? { ...tab, file: msg.file, loading: false } : tab,
           )
         }
         break
       }
-      case 'codes_searched': {
-        if (msg.workspaceName !== codesProject.value) break
+      case 'files_searched': {
+        if (msg.workspaceName !== filesProject.value) break
         // Ignore a stale reply if the user switched modes mid-flight.
-        if (msg.mode !== codesSearchMode.value) break
-        codesSearchResult.value = {
+        if (msg.mode !== filesSearchMode.value) break
+        filesSearchResult.value = {
           query: msg.query,
           mode: msg.mode,
           hits: msg.hits,
           truncated: msg.truncated,
           timedOut: msg.timedOut,
         }
-        codesSearchLoading.value = false
+        filesSearchLoading.value = false
         break
       }
       case 'update_status':

@@ -4,8 +4,8 @@ import type { PendingItem } from '@/lib/pending-queue'
 import type {
   ActionTarget,
   ClientToServer,
-  CodeGitStatus,
-  CodeSearchHit,
+  FileGitStatus,
+  FileSearchHit,
   CodexPolicy,
   CreateAutomationInput,
   CreateIntentBase,
@@ -63,12 +63,12 @@ export interface AppMethods {
   maybeRestoreIntents(list: WorkspaceInfo[]): void
   maybeRestoreDiscussions(list: WorkspaceInfo[]): void
   maybeRestoreAutomations(list: WorkspaceInfo[]): void
-  maybeRestoreCodes(list: WorkspaceInfo[]): void
-  // Codes 内嵌 ChatColumn 的 per-workspace localStorage 持久化(best-effort)。
-  readCodesChatWidth(workspaceName: string): number
-  persistCodesChatWidth(workspaceName: string, px: number): void
-  readCodesSessionId(workspaceName: string): string | null
-  persistCodesSessionId(workspaceName: string, id: string | null): void
+  maybeRestoreFiles(list: WorkspaceInfo[]): void
+  // Files 内嵌 ChatColumn 的 per-workspace localStorage 持久化(best-effort)。
+  readFilesChatWidth(workspaceName: string): number
+  persistFilesChatWidth(workspaceName: string, px: number): void
+  readFilesSessionId(workspaceName: string): string | null
+  persistFilesSessionId(workspaceName: string, id: string | null): void
 
   // message handler
   handleMessage(msg: ServerToClient): void
@@ -334,27 +334,27 @@ export interface AppMethods {
   deleteAutomation(id: string): void
   onLoadAutomationToolManifest(vendor: string): void
 
-  // codes (read-only file browser)
-  openCodes(workspaceName: string): void
-  loadCodesDir(rel: string): void
-  refreshCodesTree(): void
+  // files (read-only file browser)
+  openFiles(workspaceName: string): void
+  loadFilesDir(rel: string): void
+  refreshFilesTree(): void
   /** Request the workspace Git-status snapshot (coalesced while one is in flight). */
-  requestCodesGitStatus(): void
-  /** Adopt a `code_git_status` reply (authoritative replace for the current workspace). */
-  applyCodeGitStatus(workspaceName: string, files: Record<string, CodeGitStatus>): void
-  toggleCodesDir(rel: string): void
-  openCodeFile(path: string, line?: number): void
-  closeCodeTab(path: string): void
-  setCodesActiveTab(path: string): void
-  setCodesSearchMode(mode: 'filename' | 'content'): void
-  runCodeSearch(): void
-  openCodeSearchHit(hit: CodeSearchHit): void
-  /** Navigate to a file from a markdown code link: switch to codes tab, expand ancestors, open file. */
-  navigateToCodeFile(path: string, line?: number): void
-  // Codes 内嵌 ChatColumn:空态「+ 新建」/ 标题栏「↻ 重置」都创建一个普通 work
+  requestFilesGitStatus(): void
+  /** Adopt a `file_git_status` reply (authoritative replace for the current workspace). */
+  applyFileGitStatus(workspaceName: string, files: Record<string, FileGitStatus>): void
+  toggleFilesDir(rel: string): void
+  openFile(path: string, line?: number): void
+  closeFileTab(path: string): void
+  setFilesActiveTab(path: string): void
+  setFilesSearchMode(mode: 'filename' | 'content'): void
+  runFileSearch(): void
+  openFileSearchHit(hit: FileSearchHit): void
+  /** Navigate to a file from a markdown code link: switch to files tab, expand ancestors, open file. */
+  navigateToFile(path: string, line?: number): void
+  // Files 内嵌 ChatColumn:空态「+ 新建」/ 标题栏「↻ 重置」都创建一个普通 work
   // session(不弹 agent 选择弹窗,沿用 workspace 默认 agent)。
-  createCodesChatSession(workspaceName: string): void
-  resetCodesChatSession(workspaceName: string): void
+  createFilesChatSession(workspaceName: string): void
+  resetFilesChatSession(workspaceName: string): void
 
   // chat / queue
   onSubmit(text: string, images?: PromptImage[]): void

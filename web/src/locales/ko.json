@@ -96,8 +96,8 @@
       "workcenter": {
         "label": "워크센터"
       },
-      "codes": {
-        "label": "코드"
+      "files": {
+        "label": "파일"
       },
       "delivery": {
         "label": "납품",
@@ -2300,12 +2300,12 @@
     "command": {
       "listFailed": "명령 목록을 불러오지 못했습니다: {detail}"
     },
-    "codes": {
+    "files": {
       "invalidPath": "잘못된 워크스페이스 경로입니다: {path}",
       "notDirectory": "디렉터리가 아닙니다: {path}",
       "notFile": "파일이 아닙니다: {path}",
       "readFailed": "읽지 못했습니다: {path}",
-      "searchFailed": "코드 검색에 실패했습니다."
+      "searchFailed": "파일 검색에 실패했습니다."
     },
     "session": {
       "listFailed": "세션 목록을 불러오지 못했습니다: {detail}",
@@ -3495,7 +3495,7 @@
       "invalid": "세션이 더 이상 유효하지 않습니다. 다시 로그인해 주세요."
     }
   },
-  "codes": {
+  "files": {
     "tab": {
       "close": "탭 닫기"
     },

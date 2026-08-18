@@ -1,19 +1,19 @@
 <script setup lang="ts">
 /*
- * CodeTabs.vue — 右栏多 tab 容器。
+ * FileTabs.vue — 右栏多 tab 容器。
  *
  * 顶部 tab 条(每个可手动关闭),下方渲染当前激活 tab 的文件内容。无打开 tab 时空态。
- * tab 的打开/聚焦/关闭逻辑在 controls/codes-actions;本组件只展示 + 上抛点击。
+ * tab 的打开/聚焦/关闭逻辑在 controls/files-actions;本组件只展示 + 上抛点击。
  */
 import { reactive, watch } from 'vue'
-import { basename, type CodeTab, type CodeViewMode } from '@/lib/codes-view'
+import { basename, type FileTab, type FileViewMode } from '@/lib/files-view'
 import { useTypedI18n } from '@/i18n'
-import CodeFileView from '../CodeFileView/CodeFileView.vue'
+import FileView from '../FileView/FileView.vue'
 
 const props = defineProps<{
-  tabs: CodeTab[]
+  tabs: FileTab[]
   activePath: string | null
-  activeTab: CodeTab | null
+  activeTab: FileTab | null
 }>()
 
 const emit = defineEmits<{
@@ -24,14 +24,14 @@ const emit = defineEmits<{
 const { t } = useTypedI18n()
 
 // 每个已打开 tab 的视图模式(原文/预览),按 path 记忆。纯前端内存态,不落库、不进协议。
-// CodeFileView 用 :key="path" 逐 tab 重挂载,状态必须由本容器持有才能跨 tab 切换保留。
-const viewModes = reactive(new Map<string, CodeViewMode>())
+// FileView 用 :key="path" 逐 tab 重挂载,状态必须由本容器持有才能跨 tab 切换保留。
+const viewModes = reactive(new Map<string, FileViewMode>())
 
-function viewModeFor(path: string): CodeViewMode {
+function viewModeFor(path: string): FileViewMode {
   return viewModes.get(path) ?? 'preview'
 }
 
-function setViewMode(path: string, mode: CodeViewMode): void {
+function setViewMode(path: string, mode: FileViewMode): void {
   viewModes.set(path, mode)
 }
 
@@ -54,7 +54,7 @@ watch(
 </script>
 
 <template>
-  <div class="code-tabs">
+  <div class="file-tabs">
     <div v-if="tabs.length" class="tab-strip" role="tablist">
       <div
         v-for="tab in tabs"
@@ -69,8 +69,8 @@ watch(
         <span class="tab-name">{{ basename(tab.path) }}</span>
         <button
           class="tab-close"
-          :title="t('codes.tab.close')"
-          :aria-label="t('codes.tab.close')"
+          :title="t('files.tab.close')"
+          :aria-label="t('files.tab.close')"
           @click.stop="onClose(tab.path)"
         >
           ×
@@ -78,19 +78,19 @@ watch(
       </div>
     </div>
 
-    <CodeFileView
+    <FileView
       v-if="activeTab"
       :key="activeTab.path"
       :tab="activeTab"
       :view-mode="viewModeFor(activeTab.path)"
-      @update:view-mode="(mode: CodeViewMode) => setViewMode(activeTab!.path, mode)"
+      @update:view-mode="(mode: FileViewMode) => setViewMode(activeTab!.path, mode)"
     />
-    <div v-else class="tabs-empty">{{ t('codes.tabs.empty') }}</div>
+    <div v-else class="tabs-empty">{{ t('files.tabs.empty') }}</div>
   </div>
 </template>
 
 <style scoped>
-.code-tabs {
+.file-tabs {
   flex: 1;
   min-width: 0;
   min-height: 0;

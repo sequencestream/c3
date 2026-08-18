@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import CodeTree from './CodeTree.vue'
+import FileTree from './FileTree.vue'
 import { i18n } from '@/i18n'
-import type { CodeDirEntry } from '@ccc/shared/protocol'
+import type { FileEntry } from '@ccc/shared/protocol'
 
-const STORAGE_KEY = 'c3.codesTreeExpanded'
+const STORAGE_KEY = 'c3.filesTreeExpanded'
 
 // happy-dom here exposes no localStorage; install a minimal in-memory stub so the
 // usePersistentToggle persistence path actually runs (the composable reads the
@@ -28,27 +28,27 @@ function installLocalStorage(): void {
 // Resolve the active-locale tooltip from the real i18n instance so the assertions
 // hold regardless of which locale the test run starts in (en/zh both shipped).
 const t = i18n.global.t
-const expandTip = t('codes.tree.toggle.expand.tooltip')
-const collapseTip = t('codes.tree.toggle.collapse.tooltip')
-const chatShowTip = t('codes.chat.toggle.show.tooltip')
-const chatHideTip = t('codes.chat.toggle.hide.tooltip')
-const copyNameLabel = t('codes.tree.contextMenu.copyName')
-const copyRelPathLabel = t('codes.tree.contextMenu.copyRelPath')
-const gitModifiedLabel = t('codes.tree.git.modified')
-const gitUntrackedLabel = t('codes.tree.git.untracked')
-const gitStagedLabel = t('codes.tree.git.staged')
-const gitDirChangesLabel = t('codes.tree.git.dirChanges')
+const expandTip = t('files.tree.toggle.expand.tooltip')
+const collapseTip = t('files.tree.toggle.collapse.tooltip')
+const chatShowTip = t('files.chat.toggle.show.tooltip')
+const chatHideTip = t('files.chat.toggle.hide.tooltip')
+const copyNameLabel = t('files.tree.contextMenu.copyName')
+const copyRelPathLabel = t('files.tree.contextMenu.copyRelPath')
+const gitModifiedLabel = t('files.tree.git.modified')
+const gitUntrackedLabel = t('files.tree.git.untracked')
+const gitStagedLabel = t('files.tree.git.staged')
+const gitDirChangesLabel = t('files.tree.git.dirChanges')
 
-const rootFile: CodeDirEntry = { type: 'file', name: 'README.md', path: 'README.md' }
-const rootDir: CodeDirEntry = { type: 'directory', name: 'src', path: 'src' }
-const nestedFile: CodeDirEntry = { type: 'file', name: 'main.ts', path: 'src/main.ts' }
-const nestedDir: CodeDirEntry = { type: 'directory', name: 'components', path: 'src/components' }
+const rootFile: FileEntry = { type: 'file', name: 'README.md', path: 'README.md' }
+const rootDir: FileEntry = { type: 'directory', name: 'src', path: 'src' }
+const nestedFile: FileEntry = { type: 'file', name: 'main.ts', path: 'src/main.ts' }
+const nestedDir: FileEntry = { type: 'directory', name: 'components', path: 'src/components' }
 
 let originalClipboard: Clipboard | undefined
 let writeText: ReturnType<typeof vi.fn>
 
 function mountTree(overrides: Record<string, unknown> = {}) {
-  return mount(CodeTree, {
+  return mount(FileTree, {
     props: {
       rootEntries: [],
       dirs: {},
@@ -86,39 +86,39 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('CodeTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
-  it('默认渲染 Files 标题 + 切换按钮,.code-tree 无 expanded class', () => {
+describe('FileTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
+  it('默认渲染 Files 标题 + 切换按钮,.file-tree 无 expanded class', () => {
     const w = mountTree()
-    expect(w.find('.tree-title').text()).toBe(t('codes.tree.title.label'))
-    const btn = w.find('[data-testid="codes-tree-toggle"]')
+    expect(w.find('.tree-title').text()).toBe(t('files.tree.title.label'))
+    const btn = w.find('[data-testid="files-tree-toggle"]')
     expect(btn.exists()).toBe(true)
-    expect(w.find('.code-tree').classes()).not.toContain('expanded')
+    expect(w.find('.file-tree').classes()).not.toContain('expanded')
     expect(btn.attributes('aria-pressed')).toBe('false')
     expect(btn.text()).toBe('⇥')
   })
 
   it('点击切换 → 加 expanded class、aria-pressed=true、图标 ⇥→⇤', async () => {
     const w = mountTree()
-    const btn = w.find('[data-testid="codes-tree-toggle"]')
+    const btn = w.find('[data-testid="files-tree-toggle"]')
     await btn.trigger('click')
-    expect(w.find('.code-tree').classes()).toContain('expanded')
+    expect(w.find('.file-tree').classes()).toContain('expanded')
     expect(btn.attributes('aria-pressed')).toBe('true')
     expect(btn.text()).toBe('⇤')
   })
 
   it('再次点击 → 回到无 expanded class、aria-pressed=false、图标回 ⇥', async () => {
     const w = mountTree()
-    const btn = w.find('[data-testid="codes-tree-toggle"]')
+    const btn = w.find('[data-testid="files-tree-toggle"]')
     await btn.trigger('click')
     await btn.trigger('click')
-    expect(w.find('.code-tree').classes()).not.toContain('expanded')
+    expect(w.find('.file-tree').classes()).not.toContain('expanded')
     expect(btn.attributes('aria-pressed')).toBe('false')
     expect(btn.text()).toBe('⇥')
   })
 
   it('title / aria-label 在两态间切换 i18n tooltip', async () => {
     const w = mountTree()
-    const btn = w.find('[data-testid="codes-tree-toggle"]')
+    const btn = w.find('[data-testid="files-tree-toggle"]')
     expect(btn.attributes('title')).toBe(expandTip)
     expect(btn.attributes('aria-label')).toBe(expandTip)
     await btn.trigger('click')
@@ -128,7 +128,7 @@ describe('CodeTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
 
   it('切换写入 localStorage 字符串 true / false', async () => {
     const w = mountTree()
-    const btn = w.find('[data-testid="codes-tree-toggle"]')
+    const btn = w.find('[data-testid="files-tree-toggle"]')
     await btn.trigger('click')
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true')
     await btn.trigger('click')
@@ -136,10 +136,10 @@ describe('CodeTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
   })
 })
 
-describe('CodeTree.vue — 修改会话切换按钮', () => {
+describe('FileTree.vue — 修改会话切换按钮', () => {
   it('默认渲染:aria-pressed=false、空心图标(chat-off)、show tooltip', () => {
     const w = mountTree()
-    const btn = w.find('[data-testid="codes-chat-toggle"]')
+    const btn = w.find('[data-testid="files-chat-toggle"]')
     expect(btn.exists()).toBe(true)
     expect(btn.attributes('aria-pressed')).toBe('false')
     expect(btn.find('svg').attributes('data-icon')).toBe('chat-off')
@@ -149,7 +149,7 @@ describe('CodeTree.vue — 修改会话切换按钮', () => {
 
   it('showChat=true 渲染:aria-pressed=true、实心图标(chat-on)、hide tooltip', () => {
     const w = mountTree({ showChat: true })
-    const btn = w.find('[data-testid="codes-chat-toggle"]')
+    const btn = w.find('[data-testid="files-chat-toggle"]')
     expect(btn.attributes('aria-pressed')).toBe('true')
     expect(btn.find('svg').attributes('data-icon')).toBe('chat-on')
     expect(btn.attributes('title')).toBe(chatHideTip)
@@ -158,12 +158,12 @@ describe('CodeTree.vue — 修改会话切换按钮', () => {
 
   it('点击一次 emit toggle-chat', async () => {
     const w = mountTree()
-    await w.find('[data-testid="codes-chat-toggle"]').trigger('click')
+    await w.find('[data-testid="files-chat-toggle"]').trigger('click')
     expect(w.emitted('toggle-chat')).toHaveLength(1)
   })
 })
 
-describe('CodeTree.vue — 文件模式 glob 过滤框', () => {
+describe('FileTree.vue — 文件模式 glob 过滤框', () => {
   it('渲染独立的 pattern 输入框,初值取 searchPattern', () => {
     const w = mountTree()
     const pattern = w.find('input.search-pattern')
@@ -179,7 +179,7 @@ describe('CodeTree.vue — 文件模式 glob 过滤框', () => {
   })
 })
 
-describe('CodeTree.vue — 文件树节点右键复制', () => {
+describe('FileTree.vue — 文件树节点右键复制', () => {
   it('右键文件节点显示 copy name 与 copy relative path 菜单项', async () => {
     const w = mountTree({ rootEntries: [rootFile] })
     await w.find('.file-row').trigger('contextmenu', { clientX: 24, clientY: 32 })
@@ -210,7 +210,7 @@ describe('CodeTree.vue — 文件树节点右键复制', () => {
 
     expect(writeText).toHaveBeenCalledWith('main.ts')
     expect(w.emitted('toast')?.at(-1)).toEqual([
-      t('codes.tree.contextMenu.copySuccess', { value: 'main.ts' }),
+      t('files.tree.contextMenu.copySuccess', { value: 'main.ts' }),
     ])
   })
 
@@ -226,7 +226,7 @@ describe('CodeTree.vue — 文件树节点右键复制', () => {
 
     expect(writeText).toHaveBeenCalledWith('src/main.ts')
     expect(w.emitted('toast')?.at(-1)).toEqual([
-      t('codes.tree.contextMenu.copySuccess', { value: 'src/main.ts' }),
+      t('files.tree.contextMenu.copySuccess', { value: 'src/main.ts' }),
     ])
   })
 
@@ -264,7 +264,7 @@ describe('CodeTree.vue — 文件树节点右键复制', () => {
 
     expect(writeText).toHaveBeenCalledWith('README.md')
     expect(w.emitted('toast')?.at(-1)).toEqual([
-      t('codes.tree.contextMenu.copyFailed', { value: 'README.md' }),
+      t('files.tree.contextMenu.copyFailed', { value: 'README.md' }),
     ])
   })
 
@@ -295,7 +295,7 @@ describe('CodeTree.vue — 文件树节点右键复制', () => {
   })
 })
 
-describe('CodeTree.vue — 文件树 Git 状态标记', () => {
+describe('FileTree.vue — 文件树 Git 状态标记', () => {
   it('无 git 状态时文件行不渲染任何标记(视觉不变)', () => {
     const w = mountTree({ rootEntries: [rootFile] })
     expect(w.find('.file-row [data-testid="git-marks"]').exists()).toBe(false)

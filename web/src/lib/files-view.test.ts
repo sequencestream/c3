@@ -4,12 +4,12 @@ import {
   closeTab,
   formatFileSize,
   langFromPath,
-  normalizeCodePath,
+  normalizeFilePath,
   parseAncestors,
-  type CodeTab,
-} from './codes-view'
+  type FileTab,
+} from './files-view'
 
-function tab(path: string): CodeTab {
+function tab(path: string): FileTab {
   return { path, file: null, loading: false }
 }
 
@@ -73,29 +73,29 @@ describe('basename', () => {
   })
 })
 
-describe('normalizeCodePath', () => {
+describe('normalizeFilePath', () => {
   it('strips a leading ./', () => {
-    expect(normalizeCodePath('./web/src/App.vue')).toBe('web/src/App.vue')
+    expect(normalizeFilePath('./web/src/App.vue')).toBe('web/src/App.vue')
   })
 
   it('leaves an already-canonical path unchanged', () => {
-    expect(normalizeCodePath('web/src/App.vue')).toBe('web/src/App.vue')
+    expect(normalizeFilePath('web/src/App.vue')).toBe('web/src/App.vue')
   })
 
   it('collapses interior . and // segments', () => {
-    expect(normalizeCodePath('a/./b//c.ts')).toBe('a/b/c.ts')
+    expect(normalizeFilePath('a/./b//c.ts')).toBe('a/b/c.ts')
   })
 
   it('resolves interior .. segments', () => {
-    expect(normalizeCodePath('a/b/../c.ts')).toBe('a/c.ts')
+    expect(normalizeFilePath('a/b/../c.ts')).toBe('a/c.ts')
   })
 
   it('keeps a leading .. (escaping) for the server to reject', () => {
-    expect(normalizeCodePath('../outside.ts')).toBe('../outside.ts')
+    expect(normalizeFilePath('../outside.ts')).toBe('../outside.ts')
   })
 
   it('strips a trailing slash', () => {
-    expect(normalizeCodePath('a/b/')).toBe('a/b')
+    expect(normalizeFilePath('a/b/')).toBe('a/b')
   })
 })
 

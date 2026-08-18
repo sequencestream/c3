@@ -1045,7 +1045,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     const maybeRestoreIntents = vi.fn()
     const maybeRestoreDiscussions = vi.fn()
     const maybeRestoreAutomations = vi.fn()
-    const maybeRestoreCodes = vi.fn()
+    const maybeRestoreFiles = vi.fn()
     const persistCurrentWorkspace = vi.fn()
     const pendingDeepLink = ref<import('@/lib/deep-link').DeepLinkTarget | null>(null)
     const deepLinkFulfilled = ref<Set<string>>(new Set())
@@ -1113,17 +1113,17 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     >({})
     const automationToolManifestLoading = ref(false)
     const automationToolManifestError = ref<string | null>(null)
-    const codesProject = ref<string | null>(null)
-    const codesDirs = ref<Record<string, import('@ccc/shared/protocol').CodeDirEntry[]>>({})
-    const codesLoadingDirs = ref<Set<string>>(new Set())
-    const codesTabs = ref<import('@/lib/codes-view').CodeTab[]>([])
-    const codesSearchResult = ref<import('@/lib/codes-view').CodesSearchResultView | null>(null)
-    const codesSearchLoading = ref(false)
-    const codesSearchMode = ref<import('@ccc/shared/protocol').CodeSearchMode>('filename')
-    const codesActivePath = ref<string | null>(null)
-    const codesExpanded = ref<Set<string>>(new Set())
-    const codesSearchQuery = ref('')
-    const codesSearchPattern = ref('*')
+    const filesProject = ref<string | null>(null)
+    const filesDirs = ref<Record<string, import('@ccc/shared/protocol').FileEntry[]>>({})
+    const filesLoadingDirs = ref<Set<string>>(new Set())
+    const filesTabs = ref<import('@/lib/files-view').FileTab[]>([])
+    const filesSearchResult = ref<import('@/lib/files-view').FilesSearchResultView | null>(null)
+    const filesSearchLoading = ref(false)
+    const filesSearchMode = ref<import('@ccc/shared/protocol').FileSearchMode>('filename')
+    const filesActivePath = ref<string | null>(null)
+    const filesExpanded = ref<Set<string>>(new Set())
+    const filesSearchQuery = ref('')
+    const filesSearchPattern = ref('*')
     const intentActionErrorSeq = ref(0)
     const workcenterEvents = ref<import('@ccc/shared/protocol').WaitUserInvolveEvent[]>([])
     const notificationPermission = ref('default')
@@ -1154,7 +1154,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       maybeRestoreIntents,
       maybeRestoreDiscussions,
       maybeRestoreAutomations,
-      maybeRestoreCodes,
+      maybeRestoreFiles,
       persistCurrentWorkspace,
       pendingDeepLink,
       deepLinkFulfilled,
@@ -1206,17 +1206,17 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       automationToolManifest,
       automationToolManifestLoading,
       automationToolManifestError,
-      codesProject,
-      codesDirs,
-      codesLoadingDirs,
-      codesTabs,
-      codesSearchResult,
-      codesSearchLoading,
-      codesSearchMode,
-      codesActivePath,
-      codesExpanded,
-      codesSearchQuery,
-      codesSearchPattern,
+      filesProject,
+      filesDirs,
+      filesLoadingDirs,
+      filesTabs,
+      filesSearchResult,
+      filesSearchLoading,
+      filesSearchMode,
+      filesActivePath,
+      filesExpanded,
+      filesSearchQuery,
+      filesSearchPattern,
       intentActionErrorSeq,
       workcenterEvents,
       notificationPermission,
@@ -1335,7 +1335,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       maybeRestoreIntents,
       maybeRestoreDiscussions,
       maybeRestoreAutomations,
-      maybeRestoreCodes,
+      maybeRestoreFiles,
       persistCurrentWorkspace,
       pendingDeepLink,
       currentWorkspace,
@@ -1404,7 +1404,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.maybeRestoreIntents).not.toHaveBeenCalled()
     expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
     expect(r.maybeRestoreAutomations).not.toHaveBeenCalled()
-    expect(r.maybeRestoreCodes).not.toHaveBeenCalled()
+    expect(r.maybeRestoreFiles).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()
   })
 
@@ -1560,7 +1560,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.maybeRestoreIntents).toHaveBeenCalled()
     expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
     expect(r.maybeRestoreAutomations).toHaveBeenCalled()
-    expect(r.maybeRestoreCodes).toHaveBeenCalled()
+    expect(r.maybeRestoreFiles).toHaveBeenCalled()
     expect(r.openIntents).toHaveBeenCalledWith('ws1')
     expect(r.selectSession).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()
@@ -1734,7 +1734,7 @@ function makeWorkspaceOnboardingCtx() {
     maybeRestoreIntents: vi.fn(),
     maybeRestoreDiscussions: vi.fn(),
     maybeRestoreAutomations: vi.fn(),
-    maybeRestoreCodes: vi.fn(),
+    maybeRestoreFiles: vi.fn(),
     openIntents: vi.fn(),
     intentsProject: ref<string | null>(null),
     activeTab: ref('intents'),

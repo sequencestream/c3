@@ -1,25 +1,25 @@
 <script setup lang="ts">
 /*
- * CodeTreeNode.vue — 文件树单节点(递归)。
+ * FileTreeNode.vue — 文件树单节点(递归)。
  *
  * 目录:点击切换展开/折叠(展开时由父层懒加载 list_dir);展开后递归渲染子节点。
  * 文件:点击打开 tab。仅持有并上抛 workspace 相对路径(entry.path),不构造绝对路径。
  */
-import type { CodeDirEntry, CodeGitStatus } from '@ccc/shared/protocol'
+import type { FileEntry, FileGitStatus } from '@ccc/shared/protocol'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
-import { gitStatusKinds, type GitStatusKind } from '@/lib/codes-git-status'
+import { gitStatusKinds, type GitStatusKind } from '@/lib/files-git-status'
 
 const props = defineProps<{
-  entry: CodeDirEntry
-  dirs: Record<string, CodeDirEntry[]>
+  entry: FileEntry
+  dirs: Record<string, FileEntry[]>
   expanded: Set<string>
   loadingDirs: Set<string>
   activePath: string | null
   depth: number
   // Workspace Git-status snapshot (changed-file path → flags) + the set of
   // directory paths with any changed descendant, for the folder rollup indicator.
-  gitStatus: Record<string, CodeGitStatus>
+  gitStatus: Record<string, FileGitStatus>
   gitDirtyDirs: Set<string>
 }>()
 
@@ -53,11 +53,11 @@ const GIT_MARK_GLYPH: Record<GitStatusKind, string> = {
 function gitKindLabel(kind: GitStatusKind): string {
   switch (kind) {
     case 'staged':
-      return t('codes.tree.git.staged')
+      return t('files.tree.git.staged')
     case 'modified':
-      return t('codes.tree.git.modified')
+      return t('files.tree.git.modified')
     case 'untracked':
-      return t('codes.tree.git.untracked')
+      return t('files.tree.git.untracked')
   }
 }
 const fileStatusLabel = computed(() => fileStatusKinds.value.map(gitKindLabel).join(', '))
@@ -65,7 +65,7 @@ const fileStatusLabel = computed(() => fileStatusKinds.value.map(gitKindLabel).j
 const MENU_WIDTH = 180
 const MENU_HEIGHT = 72
 const MENU_GUTTER = 8
-const CLOSE_CONTEXT_MENU_EVENT = 'code-tree-close-context-menu'
+const CLOSE_CONTEXT_MENU_EVENT = 'file-tree-close-context-menu'
 
 const contextMenu = ref<{ x: number; y: number } | null>(null)
 
@@ -94,9 +94,9 @@ async function copyText(text: string): Promise<void> {
   closeContextMenu()
   try {
     await navigator.clipboard.writeText(text)
-    emit('toast', t('codes.tree.contextMenu.copySuccess', { value: text }))
+    emit('toast', t('files.tree.contextMenu.copySuccess', { value: text }))
   } catch {
-    emit('toast', t('codes.tree.contextMenu.copyFailed', { value: text }))
+    emit('toast', t('files.tree.contextMenu.copyFailed', { value: text }))
   }
 }
 
@@ -127,8 +127,8 @@ onBeforeUnmount(() => {
           v-if="dirHasChanges"
           class="dir-change-dot"
           data-testid="dir-change-dot"
-          :title="t('codes.tree.git.dirChanges')"
-          :aria-label="t('codes.tree.git.dirChanges')"
+          :title="t('files.tree.git.dirChanges')"
+          :aria-label="t('files.tree.git.dirChanges')"
           role="img"
           >●</span
         >
@@ -140,16 +140,16 @@ onBeforeUnmount(() => {
           class="row hint"
           :style="{ paddingLeft: `${(depth + 1) * 12 + 8}px` }"
         >
-          {{ t('codes.tree.loading') }}
+          {{ t('files.tree.loading') }}
         </div>
         <div
           v-else-if="dirs[entry.path] && dirs[entry.path].length === 0"
           class="row hint"
           :style="{ paddingLeft: `${(depth + 1) * 12 + 8}px` }"
         >
-          {{ t('codes.tree.emptyDir') }}
+          {{ t('files.tree.emptyDir') }}
         </div>
-        <CodeTreeNode
+        <FileTreeNode
           v-for="child in dirs[entry.path] ?? []"
           :key="child.path"
           :entry="child"
@@ -215,7 +215,7 @@ onBeforeUnmount(() => {
         data-testid="tree-context-copy-name"
         @click="copyText(props.entry.name)"
       >
-        {{ t('codes.tree.contextMenu.copyName') }}
+        {{ t('files.tree.contextMenu.copyName') }}
       </button>
       <button
         type="button"
@@ -224,7 +224,7 @@ onBeforeUnmount(() => {
         data-testid="tree-context-copy-relative-path"
         @click="copyText(props.entry.path)"
       >
-        {{ t('codes.tree.contextMenu.copyRelPath') }}
+        {{ t('files.tree.contextMenu.copyRelPath') }}
       </button>
     </div>
   </div>

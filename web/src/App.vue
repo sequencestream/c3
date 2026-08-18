@@ -22,7 +22,7 @@ import {
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
-import { CODES_CHAT_WIDTH_DEFAULT } from './controls/state'
+import { FILES_CHAT_WIDTH_DEFAULT } from './controls/state'
 
 // ── 懒加载装配约定 ─────────────────────────────────────────────────────────
 // App.vue 是唯一的装配边界:重量级业务页面与低频全局组件都由 defineAsyncComponent
@@ -55,7 +55,7 @@ const Intents = asyncView(() => import('./pages/intents/Intents.vue'))
 const Deliveries = asyncView(() => import('./pages/deliveries/Deliveries.vue'))
 const Discussions = asyncView(() => import('./pages/discussions/Discussions.vue'))
 const Automations = asyncView(() => import('./pages/automations/Automations.vue'))
-const Codes = asyncView(() => import('./pages/codes/Codes.vue'))
+const Files = asyncView(() => import('./pages/files/Files.vue'))
 const WorkCenter = asyncView(() => import('./pages/workcenter/WorkCenter.vue'))
 const Dashboard = asyncView(() => import('./pages/workcenter/components/WorkspaceDashboard.vue'))
 
@@ -340,34 +340,34 @@ const {
   updateAutomation,
   deleteAutomation,
   onLoadAutomationToolManifest,
-  // ---- codes ----
-  codesProject,
-  codesDirs,
-  codesExpanded,
-  codesLoadingDirs,
-  codesGitStatus,
-  codesTabs,
-  codesActivePath,
-  codesActiveTab,
-  codesSearchMode,
-  codesSearchQuery,
-  codesSearchPattern,
-  codesSearchResult,
-  codesSearchLoading,
-  toggleCodesDir,
-  refreshCodesTree,
-  openCodeFile,
-  openCodeSearchHit,
-  closeCodeTab,
-  setCodesActiveTab,
-  setCodesSearchMode,
-  runCodeSearch,
+  // ---- files ----
+  filesProject,
+  filesDirs,
+  filesExpanded,
+  filesLoadingDirs,
+  filesGitStatus,
+  filesTabs,
+  filesActivePath,
+  filesActiveTab,
+  filesSearchMode,
+  filesSearchQuery,
+  filesSearchPattern,
+  filesSearchResult,
+  filesSearchLoading,
+  toggleFilesDir,
+  refreshFilesTree,
+  openFile,
+  openFileSearchHit,
+  closeFileTab,
+  setFilesActiveTab,
+  setFilesSearchMode,
+  runFileSearch,
   showToast,
-  codesBoundSessionId,
-  readCodesChatWidth,
-  persistCodesChatWidth,
-  createCodesChatSession,
-  resetCodesChatSession,
+  filesBoundSessionId,
+  readFilesChatWidth,
+  persistFilesChatWidth,
+  createFilesChatSession,
+  resetFilesChatSession,
   // ---- workcenter ----
   workcenterEvents,
   workcenterHasMore,
@@ -560,13 +560,13 @@ function onQueueSelectIntent(intentId: string): void {
   requestedIntentId.value = intentId
 }
 
-/** Codes 内嵌 ChatColumn 的分隔条宽度(像素,per-workspace,仅 localStorage)。切换
+/** Files 内嵌 ChatColumn 的分隔条宽度(像素,per-workspace,仅 localStorage)。切换
  *  workspace 时从持久化读回;拖拽/键盘调节后写回。仅本地,不进服务端配置。 */
-const codesChatWidth = ref(CODES_CHAT_WIDTH_DEFAULT)
+const filesChatWidth = ref(FILES_CHAT_WIDTH_DEFAULT)
 watch(
-  codesProject,
+  filesProject,
   (ws) => {
-    if (ws) codesChatWidth.value = readCodesChatWidth(ws)
+    if (ws) filesChatWidth.value = readFilesChatWidth(ws)
   },
   { immediate: true },
 )
@@ -578,11 +578,11 @@ function onCloseSettings(): void {
   clearActionTarget()
 }
 
-function onCodesChatWidth(px: number): void {
-  const ws = codesProject.value
+function onFilesChatWidth(px: number): void {
+  const ws = filesProject.value
   if (!ws) return
-  codesChatWidth.value = px
-  persistCodesChatWidth(ws, px)
+  filesChatWidth.value = px
+  persistFilesChatWidth(ws, px)
 }
 </script>
 
@@ -944,25 +944,25 @@ function onCodesChatWidth(px: number): void {
           @load-tool-manifest="onLoadAutomationToolManifest"
         />
 
-        <Codes
-          v-else-if="activeTab === 'codes' && codesProject"
+        <Files
+          v-else-if="activeTab === 'files' && filesProject"
           ref="composer"
-          :dirs="codesDirs"
-          :expanded="codesExpanded"
-          :loading-dirs="codesLoadingDirs"
-          :git-status="codesGitStatus"
-          :tabs="codesTabs"
-          :active-path="codesActivePath"
-          :active-tab="codesActiveTab"
-          :search-mode="codesSearchMode"
-          :search-query="codesSearchQuery"
-          :search-pattern="codesSearchPattern"
-          :search-result="codesSearchResult"
-          :search-loading="codesSearchLoading"
-          :codes-bound-session-id="
-            codesProject ? (codesBoundSessionId[codesProject] ?? null) : null
+          :dirs="filesDirs"
+          :expanded="filesExpanded"
+          :loading-dirs="filesLoadingDirs"
+          :git-status="filesGitStatus"
+          :tabs="filesTabs"
+          :active-path="filesActivePath"
+          :active-tab="filesActiveTab"
+          :search-mode="filesSearchMode"
+          :search-query="filesSearchQuery"
+          :search-pattern="filesSearchPattern"
+          :search-result="filesSearchResult"
+          :search-loading="filesSearchLoading"
+          :files-bound-session-id="
+            filesProject ? (filesBoundSessionId[filesProject] ?? null) : null
           "
-          :codes-chat-width="codesChatWidth"
+          :files-chat-width="filesChatWidth"
           :active-session="activeSession"
           :active-title="activeTitle"
           :vendor="activeVendor"
@@ -984,20 +984,20 @@ function onCodesChatWidth(px: number): void {
           :queue="currentQueue"
           :available-commands="availableCommands"
           :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
-          @toggle-dir="toggleCodesDir"
-          @open-file="openCodeFile"
-          @open-hit="openCodeSearchHit"
-          @close-tab="closeCodeTab"
-          @select-tab="setCodesActiveTab"
-          @set-search-mode="setCodesSearchMode"
-          @update:search-query="codesSearchQuery = $event"
-          @update:search-pattern="codesSearchPattern = $event"
-          @run-search="runCodeSearch"
-          @refresh-tree="refreshCodesTree"
+          @toggle-dir="toggleFilesDir"
+          @open-file="openFile"
+          @open-hit="openFileSearchHit"
+          @close-tab="closeFileTab"
+          @select-tab="setFilesActiveTab"
+          @set-search-mode="setFilesSearchMode"
+          @update:search-query="filesSearchQuery = $event"
+          @update:search-pattern="filesSearchPattern = $event"
+          @run-search="runFileSearch"
+          @refresh-tree="refreshFilesTree"
           @toast="showToast"
-          @create-codes-chat="codesProject && createCodesChatSession(codesProject)"
-          @reset-codes-chat="codesProject && resetCodesChatSession(codesProject)"
-          @codes-chat-width="onCodesChatWidth"
+          @create-files-chat="filesProject && createFilesChatSession(filesProject)"
+          @reset-files-chat="filesProject && resetFilesChatSession(filesProject)"
+          @files-chat-width="onFilesChatWidth"
           @set-mode="setMode"
           @set-codex-policy="setCodexPolicy"
           @set-session-agent="onSetSessionAgent"

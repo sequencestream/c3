@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createCodesGitStatusPoller } from './codes-git-poller'
+import { createFilesGitStatusPoller } from './files-git-poller'
 
-describe('createCodesGitStatusPoller', () => {
+describe('createFilesGitStatusPoller', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
   function setup(activeInit = true) {
     let active = activeInit
     const request = vi.fn()
-    const poller = createCodesGitStatusPoller({
+    const poller = createFilesGitStatusPoller({
       intervalMs: 15_000,
       isActive: () => active,
       request,

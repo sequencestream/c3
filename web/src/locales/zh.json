@@ -95,8 +95,8 @@
       "workcenter": {
         "label": "工作台"
       },
-      "codes": {
-        "label": "代码"
+      "files": {
+        "label": "文件"
       },
       "delivery": {
         "label": "交付",
@@ -2299,12 +2299,12 @@
     "command": {
       "listFailed": "列出命令失败:{detail}"
     },
-    "codes": {
+    "files": {
       "invalidPath": "工作区路径无效:{path}",
       "notDirectory": "不是目录:{path}",
       "notFile": "不是文件:{path}",
       "readFailed": "读取失败:{path}",
-      "searchFailed": "代码搜索失败。"
+      "searchFailed": "文件搜索失败。"
     },
     "session": {
       "listFailed": "列出会话失败:{detail}",
@@ -3494,7 +3494,7 @@
       "invalid": "会话已失效，请重新登录。"
     }
   },
-  "codes": {
+  "files": {
     "tab": {
       "close": "关闭标签"
     },

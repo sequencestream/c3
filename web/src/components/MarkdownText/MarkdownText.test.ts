@@ -161,16 +161,16 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     return mount(MarkdownText, { props: { text, markdown: true } })
   }
 
-  it('相对路径文件链接获得 .code-file-link class 且无 target/rel', () => {
+  it('相对路径文件链接获得 .file-link class 且无 target/rel', () => {
     const w = mountMd('[src/main.ts](src/main.ts)')
-    const a = w.find('.md-body a.code-file-link')
+    const a = w.find('.md-body a.file-link')
     expect(a.exists()).toBe(true)
     expect(a.attributes('href')).toBe('src/main.ts')
     expect(a.attributes('target')).toBeUndefined()
     expect(a.attributes('rel')).toBeUndefined()
   })
 
-  it('文件链接点击 dispatch c3:code-file-click 事件含正确 path', () => {
+  it('文件链接点击 dispatch c3:file-click 事件含正确 path', () => {
     const w = mountMd('[src/main.ts](src/main.ts)')
     const a = w.find('.md-body a').element as HTMLAnchorElement
     const clickEvent = new MouseEvent('click', { cancelable: true, bubbles: true })
@@ -180,7 +180,7 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     expect(clickEvent.defaultPrevented).toBe(true)
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'c3:code-file-click',
+        type: 'c3:file-click',
         detail: { path: 'src/main.ts', line: undefined },
       }),
     )
@@ -194,7 +194,7 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     a.onclick?.(clickEvent)
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'c3:code-file-click',
+        type: 'c3:file-click',
         detail: { path: 'path/to/main.ts', line: 42 },
       }),
     )
@@ -205,7 +205,7 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
       props: {
         text: '[child](child.md) [sibling](../sibling.md#L7)',
         markdown: true,
-        codeLinkBasePath: 'doc/guides/index.md',
+        fileLinkBasePath: 'doc/guides/index.md',
       },
     })
     const links = w.findAll<HTMLAnchorElement>('.md-body a')
@@ -213,7 +213,7 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     links[0].element.onclick?.(new MouseEvent('click', { cancelable: true, bubbles: true }))
     expect(firstDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'c3:code-file-click',
+        type: 'c3:file-click',
         detail: { path: 'doc/guides/child.md', line: undefined },
       }),
     )
@@ -221,7 +221,7 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     links[1].element.onclick?.(new MouseEvent('click', { cancelable: true, bubbles: true }))
     expect(secondDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'c3:code-file-click',
+        type: 'c3:file-click',
         detail: { path: 'doc/guides/../sibling.md', line: 7 },
       }),
     )
@@ -235,23 +235,23 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     expect(clickEvent.defaultPrevented).toBe(true)
   })
 
-  it('外部链接保持 target=_blank 且不 dispatch c3:code-file-click', () => {
+  it('外部链接保持 target=_blank 且不 dispatch c3:file-click', () => {
     const w = mountMd('[external](https://example.com)')
     const a = w.find('.md-body a')
     expect(a.attributes('target')).toBe('_blank')
     expect(a.attributes('rel')).toBe('noopener noreferrer')
-    expect(a.classes()).not.toContain('code-file-link')
+    expect(a.classes()).not.toContain('file-link')
     const handler = vi.fn()
-    document.addEventListener('c3:code-file-click', handler)
+    document.addEventListener('c3:file-click', handler)
     a.trigger('click') // VTU trigger works for native click on external link
     expect(handler).not.toHaveBeenCalled()
-    document.removeEventListener('c3:code-file-click', handler)
+    document.removeEventListener('c3:file-click', handler)
   })
 
   it('锚点链接不被增强', () => {
     const w = mountMd('[section](#section)')
     const a = w.find('.md-body a')
-    expect(a.classes()).not.toContain('code-file-link')
+    expect(a.classes()).not.toContain('file-link')
     expect(a.attributes('target')).toBe('_blank')
     expect(a.attributes('rel')).toBe('noopener noreferrer')
   })
@@ -259,20 +259,20 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
   it('绝对路径不被增强', () => {
     const w = mountMd('[file](/absolute/path)')
     const a = w.find('.md-body a')
-    expect(a.classes()).not.toContain('code-file-link')
+    expect(a.classes()).not.toContain('file-link')
   })
 
   it('协议相对 URL(//)不被增强', () => {
     const w = mountMd('[link](//example.com)')
     const a = w.find('.md-body a')
-    expect(a.classes()).not.toContain('code-file-link')
+    expect(a.classes()).not.toContain('file-link')
     expect(a.attributes('target')).toBe('_blank')
   })
 
   it('非 L<N> 格式的 fragment 不被增强', () => {
     const w = mountMd('[file](src/main.ts#L42-L50)')
     const a = w.find('.md-body a')
-    expect(a.classes()).not.toContain('code-file-link')
+    expect(a.classes()).not.toContain('file-link')
   })
 
   it('data: 协议链接被 markdown-it validateLink 拦截(无 <a> 标签)', () => {
@@ -289,12 +289,12 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     a.onclick?.(new MouseEvent('click', { cancelable: true, bubbles: true }))
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'c3:code-file-click',
+        type: 'c3:file-click',
         detail: { path: 'old.ts', line: undefined },
       }),
     )
     dispatchSpy.mockRestore()
-    // 更新 text → 新 DOM,需额外 tick 等待 watch 内的 nextTick 执行 enhanceCodeFileLinks
+    // 更新 text → 新 DOM,需额外 tick 等待 watch 内的 nextTick 执行 enhanceFileLinks
     await w.setProps({ text: '[new.ts](new.ts)' })
     await new Promise((resolve) => setTimeout(resolve, 0))
     // 不再有 old 链接;new 链接应该可触发
@@ -306,7 +306,7 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     a.onclick?.(new MouseEvent('click', { cancelable: true, bubbles: true }))
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'c3:code-file-click',
+        type: 'c3:file-click',
         detail: { path: 'new.ts', line: undefined },
       }),
     )

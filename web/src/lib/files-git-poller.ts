@@ -1,8 +1,8 @@
 /*
- * codes-git-poller.ts — visibility/focus-gated polling for the Codes Git-status
+ * files-git-poller.ts — visibility/focus-gated polling for the Files Git-status
  * snapshot, extracted as an injectable controller so it is fake-timer testable.
  *
- * `isActive()` folds every gate the caller cares about (on the Codes view AND the
+ * `isActive()` folds every gate the caller cares about (on the Files view AND the
  * page visible AND the window focused). `sync()` reconciles the timer to that
  * predicate; call it whenever a gate might have flipped (tab change, visibility,
  * focus/blur). Activating requests immediately, then every `intervalMs`; going
@@ -10,20 +10,20 @@
  * flurry of events never stacks timers. Request de-duplication (at most one in
  * flight, merged follow-up) lives in the action `request` delegates to.
  */
-export const CODES_GIT_STATUS_INTERVAL_MS = 15_000
+export const FILES_GIT_STATUS_INTERVAL_MS = 15_000
 
-export interface CodesGitStatusPoller {
+export interface FilesGitStatusPoller {
   /** Reconcile the timer to `isActive()`. Idempotent while state is unchanged. */
   sync(): void
   /** Stop polling and clear the timer (idempotent). For teardown. */
   stop(): void
 }
 
-export function createCodesGitStatusPoller(opts: {
+export function createFilesGitStatusPoller(opts: {
   intervalMs: number
   isActive: () => boolean
   request: () => void
-}): CodesGitStatusPoller {
+}): FilesGitStatusPoller {
   let timer: ReturnType<typeof setInterval> | null = null
 
   function stop(): void {

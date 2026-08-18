@@ -1,35 +1,30 @@
 <script setup lang="ts">
 /*
- * CodeTree.vue — 左栏:顶部搜索框 + 懒加载文件树 / 搜索结果。
+ * FileTree.vue — 左栏:顶部搜索框 + 懒加载文件树 / 搜索结果。
  *
  * 搜索框 filename/content 两模式切换;有查询词时展示搜索结果(点结果打开对应文件,
  * content 命中带行号并定位),否则展示树。所有路径均为 workspace 相对路径。
  */
 import { computed, onBeforeUnmount, watch } from 'vue'
-import type {
-  CodeDirEntry,
-  CodeGitStatus,
-  CodeSearchHit,
-  CodeSearchMode,
-} from '@ccc/shared/protocol'
+import type { FileEntry, FileGitStatus, FileSearchHit, FileSearchMode } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
-import { computeGitDirtyDirs } from '@/lib/codes-git-status'
-import type { CodesSearchResultView } from '@/lib/codes-view'
-import CodeTreeNode from './CodeTreeNode.vue'
+import { computeGitDirtyDirs } from '@/lib/files-git-status'
+import type { FilesSearchResultView } from '@/lib/files-view'
+import FileTreeNode from './FileTreeNode.vue'
 
 const props = defineProps<{
-  rootEntries: CodeDirEntry[] | null
-  dirs: Record<string, CodeDirEntry[]>
+  rootEntries: FileEntry[] | null
+  dirs: Record<string, FileEntry[]>
   expanded: Set<string>
   loadingDirs: Set<string>
   activePath: string | null
   // Workspace Git-status snapshot (changed-file path → flags).
-  gitStatus: Record<string, CodeGitStatus>
-  searchMode: CodeSearchMode
+  gitStatus: Record<string, FileGitStatus>
+  searchMode: FileSearchMode
   searchQuery: string
   searchPattern: string
-  searchResult: CodesSearchResultView | null
+  searchResult: FilesSearchResultView | null
   searchLoading: boolean
   // 右侧修改会话是否可见,驱动标题栏切换按钮的图标/tooltip/aria 状态。
   showChat: boolean
@@ -38,8 +33,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'toggle-dir': [rel: string]
   'open-file': [path: string]
-  'open-hit': [hit: CodeSearchHit]
-  'set-search-mode': [mode: CodeSearchMode]
+  'open-hit': [hit: FileSearchHit]
+  'set-search-mode': [mode: FileSearchMode]
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
@@ -53,7 +48,7 @@ const { t } = useTypedI18n()
 // 侧栏展开态:持久化 UI 状态(镜像 WorkSessionList 折叠范式)。展开态把文件树宽度
 // 翻倍(280→560px),便于看清深层目录 / 长 workspace 路径下的文件名。跨刷新保持;
 // localStorage 不可用时由 composable 内置 try/catch 降级为纯内存 ref。
-const treeExpanded = usePersistentToggle('c3.codesTreeExpanded')
+const treeExpanded = usePersistentToggle('c3.filesTreeExpanded')
 
 function toggleExpand(): void {
   treeExpanded.value = !treeExpanded.value
@@ -64,7 +59,7 @@ function toggleExpand(): void {
 const gitDirtyDirs = computed(() => computeGitDirtyDirs(props.gitStatus))
 
 const searchActive = computed(() => props.searchQuery.trim().length > 0)
-const SEARCH_MODES: CodeSearchMode[] = ['filename', 'content']
+const SEARCH_MODES: FileSearchMode[] = ['filename', 'content']
 
 // Debounced live search: fire shortly after the user stops typing (Enter still
 // triggers immediately via the input handler). The server bounds every search by
@@ -88,7 +83,7 @@ function runNow(): void {
 </script>
 
 <template>
-  <div class="code-tree" :class="{ expanded: treeExpanded }">
+  <div class="file-tree" :class="{ expanded: treeExpanded }">
     <div class="tree-head">
       <div class="tree-head-left">
         <button
@@ -96,30 +91,30 @@ function runNow(): void {
           class="tree-collapse-btn"
           :title="
             treeExpanded
-              ? t('codes.tree.toggle.collapse.tooltip')
-              : t('codes.tree.toggle.expand.tooltip')
+              ? t('files.tree.toggle.collapse.tooltip')
+              : t('files.tree.toggle.expand.tooltip')
           "
           :aria-label="
             treeExpanded
-              ? t('codes.tree.toggle.collapse.tooltip')
-              : t('codes.tree.toggle.expand.tooltip')
+              ? t('files.tree.toggle.collapse.tooltip')
+              : t('files.tree.toggle.expand.tooltip')
           "
           :aria-pressed="treeExpanded"
-          data-testid="codes-tree-toggle"
+          data-testid="files-tree-toggle"
           @click="toggleExpand"
         >
           {{ treeExpanded ? '⇤' : '⇥' }}
         </button>
-        <span class="tree-title">{{ t('codes.tree.title.label') }}</span>
+        <span class="tree-title">{{ t('files.tree.title.label') }}</span>
       </div>
       <span class="tree-actions">
         <!-- 刷新文件树:重新拉取根目录 + 所有已展开目录,反映磁盘上新增/删除的文件。 -->
         <button
           type="button"
           class="tree-collapse-btn tree-refresh-btn"
-          :title="t('codes.tree.refresh.tooltip')"
-          :aria-label="t('codes.tree.refresh.tooltip')"
-          data-testid="codes-tree-refresh"
+          :title="t('files.tree.refresh.tooltip')"
+          :aria-label="t('files.tree.refresh.tooltip')"
+          data-testid="files-tree-refresh"
           @click="emit('refresh-tree')"
         >
           <svg
@@ -139,18 +134,18 @@ function runNow(): void {
           </svg>
         </button>
         <!-- 修改会话总开关:镜像左侧折叠按钮布局。图标反映当前态(空心=未显示 / 实心=已显示),
-             点击 emit toggle-chat,由 Codes.vue 翻转持久化开关。 -->
+             点击 emit toggle-chat,由 Files.vue 翻转持久化开关。 -->
         <button
           type="button"
           class="tree-collapse-btn tree-chat-toggle"
           :title="
-            showChat ? t('codes.chat.toggle.hide.tooltip') : t('codes.chat.toggle.show.tooltip')
+            showChat ? t('files.chat.toggle.hide.tooltip') : t('files.chat.toggle.show.tooltip')
           "
           :aria-label="
-            showChat ? t('codes.chat.toggle.hide.tooltip') : t('codes.chat.toggle.show.tooltip')
+            showChat ? t('files.chat.toggle.hide.tooltip') : t('files.chat.toggle.show.tooltip')
           "
           :aria-pressed="showChat"
-          data-testid="codes-chat-toggle"
+          data-testid="files-chat-toggle"
           @click="emit('toggle-chat')"
         >
           <svg
@@ -191,14 +186,14 @@ function runNow(): void {
           :class="{ active: m === searchMode }"
           @click="emit('set-search-mode', m)"
         >
-          {{ m === 'filename' ? t('codes.search.mode.filename') : t('codes.search.mode.content') }}
+          {{ m === 'filename' ? t('files.search.mode.filename') : t('files.search.mode.content') }}
         </button>
       </div>
       <input
         :value="searchQuery"
         class="search-input"
         type="search"
-        :placeholder="t('codes.search.placeholder')"
+        :placeholder="t('files.search.placeholder')"
         @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)"
         @keydown.enter="runNow"
       />
@@ -206,8 +201,8 @@ function runNow(): void {
         :value="searchPattern"
         class="search-input search-pattern"
         type="search"
-        :title="t('codes.search.pattern.tooltip')"
-        :placeholder="t('codes.search.pattern.placeholder')"
+        :title="t('files.search.pattern.tooltip')"
+        :placeholder="t('files.search.pattern.placeholder')"
         @input="emit('update:searchPattern', ($event.target as HTMLInputElement).value)"
         @keydown.enter="runNow"
       />
@@ -216,10 +211,10 @@ function runNow(): void {
     <div class="tree-scroll">
       <!-- Search results -->
       <template v-if="searchActive">
-        <div v-if="searchLoading" class="hint">{{ t('codes.search.searching') }}</div>
+        <div v-if="searchLoading" class="hint">{{ t('files.search.searching') }}</div>
         <template v-else-if="searchResult">
           <div v-if="searchResult.hits.length === 0" class="hint">
-            {{ t('codes.search.empty') }}
+            {{ t('files.search.empty') }}
           </div>
           <template v-else>
             <button
@@ -236,18 +231,18 @@ function runNow(): void {
               <span v-if="hit.lineText" class="hit-text">{{ hit.lineText.trim() }}</span>
             </button>
             <div v-if="searchResult.truncated" class="hint">
-              {{ t('codes.search.truncated', { count: searchResult.hits.length }) }}
+              {{ t('files.search.truncated', { count: searchResult.hits.length }) }}
             </div>
-            <div v-if="searchResult.timedOut" class="hint">{{ t('codes.search.timedOut') }}</div>
+            <div v-if="searchResult.timedOut" class="hint">{{ t('files.search.timedOut') }}</div>
           </template>
         </template>
       </template>
 
       <!-- File tree -->
       <template v-else>
-        <div v-if="!rootEntries" class="hint">{{ t('codes.tree.loading') }}</div>
-        <div v-else-if="rootEntries.length === 0" class="hint">{{ t('codes.tree.empty') }}</div>
-        <CodeTreeNode
+        <div v-if="!rootEntries" class="hint">{{ t('files.tree.loading') }}</div>
+        <div v-else-if="rootEntries.length === 0" class="hint">{{ t('files.tree.empty') }}</div>
+        <FileTreeNode
           v-for="entry in rootEntries ?? []"
           :key="entry.path"
           :entry="entry"
@@ -268,7 +263,7 @@ function runNow(): void {
 </template>
 
 <style scoped>
-.code-tree {
+.file-tree {
   width: 280px;
   flex-shrink: 0;
   display: flex;
@@ -280,13 +275,13 @@ function runNow(): void {
   transition: width 0.2s ease;
 }
 /* 展开态:宽度翻倍,便于看清深层目录 / 长路径下的文件名(镜像 .sidebar.expanded) */
-.code-tree.expanded {
+.file-tree.expanded {
   width: 560px;
 }
 /* 移动端 drill-down:文件树即当前单栏,撑满 pane 全宽(对齐 MobileStack 范式) */
 @media (max-width: 767px) {
-  .code-tree,
-  .code-tree.expanded {
+  .file-tree,
+  .file-tree.expanded {
     width: 100%;
     min-width: 0;
     border-right: 0;

@@ -4,12 +4,12 @@
  *
  * 从 Works.vue(console)与 Intents.vue(意图会话)抽出的同一段聊天界面,供会话页右栏、
  * 意图页独立会话聊天列、意图详情四类会话 tab(`intent session` / `spec session` /
- * 只读的 `spec review` / `work session`)、Codes 内嵌会话与讨论研究会话复用。所有状态/
+ * 只读的 `spec review` / `work session`)、Files 内嵌会话与讨论研究会话复用。所有状态/
  * 连接经 props 注入,用户动作经 emit 上抛;不持有任何会话状态——绑定哪个会话由上层
  * (App.vue 控制层)的单一活动会话决定。
  *
  * `sessionBound` 是「会话绑定」展示门控:false 表示期望会话尚未就绪/对齐(新建意图首轮、
- * 独立会话跳转窗口、Codes 未对齐),此时列内一律不渲染任何从旧会话派生的展示状态——
+ * 独立会话跳转窗口、Files 未对齐),此时列内一律不渲染任何从旧会话派生的展示状态——
  * 消息区、任务面板、状态栏、待发队列,以及标题栏的 vendor 点/标签、agent 切换器、
  * mode / codex-policy 下拉、source / share 按钮全部不渲染,只保留标题文本、
  * `title-action` 插槽与 MessageInput(其 has-active-session 由调用方显式控制,
@@ -89,7 +89,7 @@ const props = withDefaults(
     readonly?: boolean
     /**
      * Session-bound display gate: false ⇒ the expected session is not ready/aligned
-     * yet (fresh-intent first turn, standalone-chat jump window, codes not bound),
+     * yet (fresh-intent first turn, standalone-chat jump window, files not bound),
      * so NO display state may come from a previous session — messages, task panel,
      * status bar, pending queue, and the title bar's vendor/agent-switch/mode/
      * codex-policy/source/share controls are all suppressed, leaving only the title,
@@ -199,7 +199,7 @@ defineExpose({
       @open-source="emit('open-source')"
       @share="emit('share')"
     >
-      <!-- 标题栏动作插槽:Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮。 -->
+      <!-- 标题栏动作插槽:Files 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮。 -->
       <template #action><slot name="title-action" /></template>
     </SessionTitleBar>
     <ChatMessages

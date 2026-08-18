@@ -158,7 +158,7 @@ c3
 │   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ PR 状态同步(sync_intent_pr_status,只接受 intentId,触发服务端从 forge 派生终态落库)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
 │   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网
 │   │
-│   ├── codes 代码浏览                            # 浏览器里只读浏览 Git 仓库 + 代码域内嵌会话
+│   ├── files 文件浏览                            # 浏览器里只读浏览 Git 仓库 + 文件域内嵌会话
 │   │   ├── 仓库浏览                              # 列分支、提交、某 ref 下的文件树
 │   │   ├── 文件树 Git 状态                       # 文件三态(改动/未跟踪/暂存,可组合)+ 目录汇总圆点
 │   │   │                                        # 独立只读快照(git status --porcelain);手动刷新同拉,

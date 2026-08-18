@@ -108,7 +108,7 @@ describe('intent view restore after a hard refresh', () => {
   })
 })
 
-describe('codes embedded chat persistence', () => {
+describe('files embedded chat persistence', () => {
   const WS = '/ws'
 
   beforeEach(() => {
@@ -121,38 +121,38 @@ describe('codes embedded chat persistence', () => {
     globalWithStorage.localStorage = originalStorage
   })
 
-  it('readCodesChatWidth falls back to the default when absent or unparseable', () => {
-    const ctx = makeCtx('codes')
+  it('readFilesChatWidth falls back to the default when absent or unparseable', () => {
+    const ctx = makeCtx('files')
     installPersistence(ctx)
-    expect(ctx.readCodesChatWidth(WS)).toBe(360)
-    storage.setItem(`c3.codes.${WS}.chatWidth`, 'not-a-number')
-    expect(ctx.readCodesChatWidth(WS)).toBe(360)
+    expect(ctx.readFilesChatWidth(WS)).toBe(360)
+    storage.setItem(`c3.files.${WS}.chatWidth`, 'not-a-number')
+    expect(ctx.readFilesChatWidth(WS)).toBe(360)
   })
 
-  it('persistCodesChatWidth writes a clamped, rounded pixel value read back verbatim', () => {
-    const ctx = makeCtx('codes')
+  it('persistFilesChatWidth writes a clamped, rounded pixel value read back verbatim', () => {
+    const ctx = makeCtx('files')
     installPersistence(ctx)
-    ctx.persistCodesChatWidth(WS, 520.6)
-    expect(storage.getItem(`c3.codes.${WS}.chatWidth`)).toBe('521')
-    expect(ctx.readCodesChatWidth(WS)).toBe(521)
+    ctx.persistFilesChatWidth(WS, 520.6)
+    expect(storage.getItem(`c3.files.${WS}.chatWidth`)).toBe('521')
+    expect(ctx.readFilesChatWidth(WS)).toBe(521)
   })
 
-  it('readCodesChatWidth clamps out-of-range persisted values to [240, 720]', () => {
-    const ctx = makeCtx('codes')
+  it('readFilesChatWidth clamps out-of-range persisted values to [240, 720]', () => {
+    const ctx = makeCtx('files')
     installPersistence(ctx)
-    storage.setItem(`c3.codes.${WS}.chatWidth`, '9000')
-    expect(ctx.readCodesChatWidth(WS)).toBe(720)
-    storage.setItem(`c3.codes.${WS}.chatWidth`, '10')
-    expect(ctx.readCodesChatWidth(WS)).toBe(240)
+    storage.setItem(`c3.files.${WS}.chatWidth`, '9000')
+    expect(ctx.readFilesChatWidth(WS)).toBe(720)
+    storage.setItem(`c3.files.${WS}.chatWidth`, '10')
+    expect(ctx.readFilesChatWidth(WS)).toBe(240)
   })
 
-  it('readCodesSessionId returns null when absent and the id when set; persist clears on null', () => {
-    const ctx = makeCtx('codes')
+  it('readFilesSessionId returns null when absent and the id when set; persist clears on null', () => {
+    const ctx = makeCtx('files')
     installPersistence(ctx)
-    expect(ctx.readCodesSessionId(WS)).toBeNull()
-    ctx.persistCodesSessionId(WS, 'sess-1')
-    expect(ctx.readCodesSessionId(WS)).toBe('sess-1')
-    ctx.persistCodesSessionId(WS, null)
-    expect(ctx.readCodesSessionId(WS)).toBeNull()
+    expect(ctx.readFilesSessionId(WS)).toBeNull()
+    ctx.persistFilesSessionId(WS, 'sess-1')
+    expect(ctx.readFilesSessionId(WS)).toBe('sess-1')
+    ctx.persistFilesSessionId(WS, null)
+    expect(ctx.readFilesSessionId(WS)).toBeNull()
   })
 })

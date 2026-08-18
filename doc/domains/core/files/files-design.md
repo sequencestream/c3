@@ -1,6 +1,6 @@
-# codes — Design
+# files — Design
 
-实现[spec](codes-spec.md)。服务端 feature 以共享 WebSocket 协议作为其唯一
+实现[spec](files-spec.md)。服务端 feature 以共享 WebSocket 协议作为其唯一
 API。
 
 ## Data Model
@@ -17,7 +17,7 @@ API。
 
 - `list_dir` → `dir_listed`: 列出一个目录的直接子项,排除 `.git`。
 - `read_file` → `file_read`: 读取一个文件的元数据,以及在安全的情况下读取文本内容。
-- `search_codes` → `codes_searched`: 按文件名或文本内容搜索,带结果数上限与超时。文件名模式以查询词作基础名的不区分大小写子串匹配(见 Limits);一个可选的 `pattern` glob 过滤被搜索的文件基础名。
+- `search_files` → `files_searched`: 按文件名或文本内容搜索,带结果数上限与超时。文件名模式以查询词作基础名的不区分大小写子串匹配(见 Limits);一个可选的 `pattern` glob 过滤被搜索的文件基础名。
 
 失败使用既有的 `error` 线消息。路径与工作区拒绝错误可安全展示,
 且绝不能回显绝对文件系统路径。
@@ -53,7 +53,7 @@ API。
 ## Non-Functional Considerations
 
 - **Security:** 该守卫实现了 [SEC-11](../../../non-functional/security.md)。可接受的
-  `.env` 风险记录在 CODE-R8 中。
+  `.env` 风险记录在 FILE-R8 中。
 - **Performance:** `list_dir` 的目录遍历是惰性的;内容搜索同时受结果数量与
   耗时限制。
 - **Availability:** 错误是按请求级别的,不影响智能体会话或其他工作区

@@ -1,13 +1,13 @@
 /*
- * codes-git-status.ts — pure helpers for decorating the Codes file tree with the
- * workspace Git-status snapshot (`code_git_status`).
+ * files-git-status.ts — pure helpers for decorating the Files file tree with the
+ * workspace Git-status snapshot (`file_git_status`).
  *
- * The snapshot is a flat `path → CodeGitStatus` map of CHANGED files only. Files
+ * The snapshot is a flat `path → FileGitStatus` map of CHANGED files only. Files
  * match by exact path; directories show a rollup indicator when any descendant
  * changed. The rollup is computed from the snapshot's file paths (not the loaded
  * tree), so a collapsed / never-loaded directory still reveals descendant changes.
  */
-import type { CodeGitStatus } from '@ccc/shared/protocol'
+import type { FileGitStatus } from '@ccc/shared/protocol'
 
 /** Ordered kinds for a stable, deterministic marker sequence on a file row. */
 export type GitStatusKind = 'staged' | 'modified' | 'untracked'
@@ -16,7 +16,7 @@ export type GitStatusKind = 'staged' | 'modified' | 'untracked'
 export const GIT_STATUS_ORDER: GitStatusKind[] = ['staged', 'modified', 'untracked']
 
 /** The active flags of a status, in fixed order. Empty when all flags are false. */
-export function gitStatusKinds(status: CodeGitStatus | undefined): GitStatusKind[] {
+export function gitStatusKinds(status: FileGitStatus | undefined): GitStatusKind[] {
   if (!status) return []
   return GIT_STATUS_ORDER.filter((kind) => status[kind])
 }
@@ -31,7 +31,7 @@ export function gitStatusKinds(status: CodeGitStatus | undefined): GitStatusKind
  * marks `src-old`, never `src`). The root (`''`) is intentionally excluded: the
  * tree renders root entries directly, with no root node to decorate.
  */
-export function computeGitDirtyDirs(files: Record<string, CodeGitStatus>): Set<string> {
+export function computeGitDirtyDirs(files: Record<string, FileGitStatus>): Set<string> {
   const dirs = new Set<string>()
   for (const path of Object.keys(files)) {
     const segments = path.split('/')

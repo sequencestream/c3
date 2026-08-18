@@ -18,7 +18,7 @@ import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
 import { type SessionSourceAction } from '@/lib/session-jump'
 import { type PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
-import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
+import type { FileTab, FilesSearchResultView } from '@/lib/files-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
 import { deriveVendorAvailability } from '@/lib/vendor-runtime'
@@ -28,9 +28,9 @@ import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import type {
   WorkflowStatus,
   QueueDetail,
-  CodeDirEntry,
-  CodeGitStatus,
-  CodeSearchMode,
+  FileEntry,
+  FileGitStatus,
+  FileSearchMode,
   CodexPolicy,
   DepType,
   AssociatedIntent,
@@ -102,22 +102,22 @@ export const REQ_PROJECT_KEY = 'c3.intentsProject'
 export const DISC_PROJECT_KEY = 'c3.discussionsProject'
 export const DISC_ID_KEY = 'c3.discussionId'
 export const SCHED_PROJECT_KEY = 'c3.automationsProject'
-export const CODES_PROJECT_KEY = 'c3.codesProject'
+export const FILES_PROJECT_KEY = 'c3.filesProject'
 export const CURRENT_WS_KEY = 'c3.currentWorkspace'
 export const WORK_SESSION_QUERY_START_TIME_KEY = 'work_session_query_start_time'
-// Codes 内嵌 ChatColumn 的 per-workspace 持久化键前缀。实际键为
-// `c3.codes.<workspaceName>.chatWidth` / `c3.codes.<workspaceName>.sessionId`
-// (由 persistence.ts 的 codesKey 拼装),记住每个工作区最后一次的分隔条宽度与
+// Files 内嵌 ChatColumn 的 per-workspace 持久化键前缀。实际键为
+// `c3.files.<workspaceName>.chatWidth` / `c3.files.<workspaceName>.sessionId`
+// (由 persistence.ts 的 filesKey 拼装),记住每个工作区最后一次的分隔条宽度与
 // 内嵌会话 id。
-export const CODES_CHAT_WIDTH_KEY = 'chatWidth'
-export const CODES_CHAT_SESSION_KEY = 'sessionId'
+export const FILES_CHAT_WIDTH_KEY = 'chatWidth'
+export const FILES_CHAT_SESSION_KEY = 'sessionId'
 // 内嵌 ChatColumn 分隔条宽度(像素):默认 / 最小 / 最大。像素而非比例,窗口缩放时
 // 用户感知宽度更稳定。
-export const CODES_CHAT_WIDTH_DEFAULT = 360
-export const CODES_CHAT_WIDTH_MIN = 240
-export const CODES_CHAT_WIDTH_MAX = 720
+export const FILES_CHAT_WIDTH_DEFAULT = 360
+export const FILES_CHAT_WIDTH_MIN = 240
+export const FILES_CHAT_WIDTH_MAX = 720
 
-export type TabKey = 'console' | 'intents' | 'deliveries' | 'discussion' | 'automations' | 'codes'
+export type TabKey = 'console' | 'intents' | 'deliveries' | 'discussion' | 'automations' | 'files'
 export type SessionPageKind = Exclude<SessionKind, 'consensus'>
 
 export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
@@ -459,7 +459,7 @@ export function createState(deps: StateDeps) {
         badgeCount: owners.automation,
         badgeAriaLabel: t('nav.tab.automations.ariaLabel', { count: owners.automation }),
       },
-      { key: 'codes', label: t('nav.tab.codes.label') },
+      { key: 'files', label: t('nav.tab.files.label') },
     ]
     if (serverSettings.value?.showSessionsPage === true) {
       const running = sumSessionCounts(sessionCounts.value)
@@ -597,7 +597,7 @@ export function createState(deps: StateDeps) {
   // ---- Intent-detail spec document (the `spec` tab content) ----
   // Content of the selected intent's `spec.md`, fetched via `read_file` and
   // routed by the matching `file_read` reply. `pendingSpecRel` tracks the
-  // workspace-relative path we are awaiting so a stale codes `file_read` for a
+  // workspace-relative path we are awaiting so a stale files `file_read` for a
   // different file never overwrites it.
   const intentSpecContent = ref<string | null>(null)
   const intentSpecLoading = ref(false)
@@ -714,38 +714,38 @@ export function createState(deps: StateDeps) {
   const automationFormOpen = ref(false)
   const automationFormTarget = ref<Automation | null>(null)
 
-  // ---- Codes view (read-only file browser) ----
+  // ---- Files view (read-only file browser) ----
   // The workspace name whose tree/tabs are loaded. Reset when it changes.
-  const codesProject = ref<string | null>(null)
+  const filesProject = ref<string | null>(null)
   // Lazy directory cache: rel path ('' = root) → immediate children. Absent = not loaded yet.
-  const codesDirs = ref<Record<string, CodeDirEntry[]>>({})
+  const filesDirs = ref<Record<string, FileEntry[]>>({})
   // Expanded directory rel paths (reassigned on mutation so Vue tracks the Set).
-  const codesExpanded = ref<Set<string>>(new Set())
+  const filesExpanded = ref<Set<string>>(new Set())
   // Directories with an in-flight `list_dir`.
-  const codesLoadingDirs = ref<Set<string>>(new Set())
+  const filesLoadingDirs = ref<Set<string>>(new Set())
   // Authoritative workspace Git-status snapshot: changed-file path → flags.
-  // Replaced wholesale on each `code_git_status`; empty = clean / non-git / error.
-  const codesGitStatus = ref<Record<string, CodeGitStatus>>({})
+  // Replaced wholesale on each `file_git_status`; empty = clean / non-git / error.
+  const filesGitStatus = ref<Record<string, FileGitStatus>>({})
   // Open file tabs, in tab order. Refresh clears them (no persistence by design).
-  const codesTabs = ref<CodeTab[]>([])
+  const filesTabs = ref<FileTab[]>([])
   // The focused tab's path, or null when none are open.
-  const codesActivePath = ref<string | null>(null)
+  const filesActivePath = ref<string | null>(null)
   // Search box: mode toggle + query + glob filter + bounded result set
   // (null = no search yet). `pattern` defaults to `*` (all files).
-  const codesSearchMode = ref<CodeSearchMode>('filename')
-  const codesSearchQuery = ref('')
-  const codesSearchPattern = ref('*')
-  const codesSearchResult = ref<CodesSearchResultView | null>(null)
-  const codesSearchLoading = ref(false)
+  const filesSearchMode = ref<FileSearchMode>('filename')
+  const filesSearchQuery = ref('')
+  const filesSearchPattern = ref('*')
+  const filesSearchResult = ref<FilesSearchResultView | null>(null)
+  const filesSearchLoading = ref(false)
 
-  const codesActiveTab = computed<CodeTab | null>(
-    () => codesTabs.value.find((tab) => tab.path === codesActivePath.value) ?? null,
+  const filesActiveTab = computed<FileTab | null>(
+    () => filesTabs.value.find((tab) => tab.path === filesActivePath.value) ?? null,
   )
-  // Codes 内嵌 ChatColumn 的「每工作区最后一次会话」指针(workspaceName → sessionId),
-  // 作为持久化到内存的运行时镜像:openCodes 恢复时优先读 localStorage,该 ref 供
+  // Files 内嵌 ChatColumn 的「每工作区最后一次会话」指针(workspaceName → sessionId),
+  // 作为持久化到内存的运行时镜像:openFiles 恢复时优先读 localStorage,该 ref 供
   // create/reset 后即时判定 create-vs-reset 按钮态,避免反复读 localStorage。与 Works
   // 的 consoleSession 是两个独立指针,互不覆盖。
-  const codesBoundSessionId = ref<Record<string, string>>({})
+  const filesBoundSessionId = ref<Record<string, string>>({})
 
   // ---- System settings (agent config) ----
   const settingsOpen = ref(false)
@@ -1186,19 +1186,19 @@ export function createState(deps: StateDeps) {
     automationSaving,
     automationFormOpen,
     automationFormTarget,
-    codesProject,
-    codesDirs,
-    codesExpanded,
-    codesLoadingDirs,
-    codesGitStatus,
-    codesTabs,
-    codesActivePath,
-    codesSearchMode,
-    codesSearchQuery,
-    codesSearchPattern,
-    codesSearchResult,
-    codesSearchLoading,
-    codesBoundSessionId,
+    filesProject,
+    filesDirs,
+    filesExpanded,
+    filesLoadingDirs,
+    filesGitStatus,
+    filesTabs,
+    filesActivePath,
+    filesSearchMode,
+    filesSearchQuery,
+    filesSearchPattern,
+    filesSearchResult,
+    filesSearchLoading,
+    filesBoundSessionId,
     settingsOpen,
     settingsTarget,
     serverSettings,
@@ -1309,7 +1309,7 @@ export function createState(deps: StateDeps) {
     selectedAutomation,
     selectedAutomationLogs,
     selectedExecution,
-    codesActiveTab,
+    filesActiveTab,
     taskStoreAvailable,
     modeOptions,
     automationTimezone,

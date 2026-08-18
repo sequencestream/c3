@@ -62,14 +62,14 @@ describe('createState — HEADER_TABS sessions visibility', () => {
     return createState(deps)
   }
 
-  it('unknown and false omit console; true appends it after codes', () => {
+  it('unknown and false omit console; true appends it after files', () => {
     const s = makeState()
     expect(s.HEADER_TABS.value.map((tab) => tab.key)).toEqual([
       'intents',
       'deliveries',
       'discussion',
       'automations',
-      'codes',
+      'files',
     ])
     s.serverSettings.value = { showSessionsPage: false } as never
     expect(s.HEADER_TABS.value.some((tab) => tab.key === 'console')).toBe(false)
@@ -79,7 +79,7 @@ describe('createState — HEADER_TABS sessions visibility', () => {
       'deliveries',
       'discussion',
       'automations',
-      'codes',
+      'files',
       'console',
     ])
   })
@@ -102,7 +102,7 @@ describe('createState — HEADER_TABS sessions visibility', () => {
   it('「代码」tab 无 badgeCount;会话计数不外溢到条目角标', () => {
     const s = makeState()
     s.sessionCounts.value = counts({ work: 5 })
-    expect(s.HEADER_TABS.value.find((tab) => tab.key === 'codes')?.badgeCount).toBeUndefined()
+    expect(s.HEADER_TABS.value.find((tab) => tab.key === 'files')?.badgeCount).toBeUndefined()
     for (const key of ['intents', 'discussion', 'automations'] as const) {
       expect(s.HEADER_TABS.value.find((tab) => tab.key === key)?.badgeCount).toBe(0)
     }

@@ -156,11 +156,11 @@ import {
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
 import {
-  getCodeGitStatusHandler,
+  getFileGitStatusHandler,
   listDirHandler,
   readFileHandler,
-  searchCodesHandler,
-} from './codes/index.js'
+  searchFilesHandler,
+} from './files/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -203,8 +203,8 @@ export const handlerMap: HandlerMap = {
   get_session_counts: getSessionCounts,
   list_dir: listDirHandler,
   read_file: readFileHandler,
-  get_code_git_status: getCodeGitStatusHandler,
-  search_codes: searchCodesHandler,
+  get_file_git_status: getFileGitStatusHandler,
+  search_files: searchFilesHandler,
   list_commands: listCommandsHandler,
   create_session: createSession,
   create_work_session: createWorkSession,

@@ -1,7 +1,7 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { createWsClient } from '@/lib/ws'
 import { parseDeepLink } from '@/lib/deep-link'
-import { CODES_GIT_STATUS_INTERVAL_MS, createCodesGitStatusPoller } from '@/lib/codes-git-poller'
+import { FILES_GIT_STATUS_INTERVAL_MS, createFilesGitStatusPoller } from '@/lib/files-git-poller'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
@@ -14,7 +14,7 @@ import { installQueueActions } from './queue-actions'
 import { installDiscussionActions } from './discussion-actions'
 import { installDeliveryActions } from './delivery-actions'
 import { installAutomationActions } from './automation-actions'
-import { installCodesActions } from './codes-actions'
+import { installFilesActions } from './files-actions'
 import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
@@ -63,7 +63,7 @@ export function useAppController(): AppCtx {
   installDiscussionActions(ctx)
   installDeliveryActions(ctx)
   installAutomationActions(ctx)
-  installCodesActions(ctx)
+  installFilesActions(ctx)
   installChatActions(ctx)
   installSettingsActions(ctx)
   installWorkcenterActions(ctx)
@@ -112,7 +112,7 @@ export function useAppController(): AppCtx {
           // Re-fetch the automation list (read path) + settings (timezone preview).
           ctx.send({ type: 'list_automations', workspaceName: ctx.automationsProject.value })
           ctx.send({ type: 'get_settings' })
-        } else if (ctx.activeTab.value === 'codes') {
+        } else if (ctx.activeTab.value === 'files') {
           // The file tree/tabs are a stateless read path that survives the reconnect
           // (expanded dirs / open files re-fetch on demand). The embedded ChatColumn
           // is a real work session, so re-select it to replay its history + stream.
@@ -162,53 +162,53 @@ export function useAppController(): AppCtx {
       }
     }, 10_000)
 
-    // Codes Git-status auto-poll: only while ON the Codes view AND the page is
+    // Files Git-status auto-poll: only while ON the Files view AND the page is
     // visible AND the window is focused. Activating fetches immediately, then every
     // 15s; leaving/hiding/blurring pauses. Request coalescing lives in the action.
-    const codesGitPoller = createCodesGitStatusPoller({
-      intervalMs: CODES_GIT_STATUS_INTERVAL_MS,
+    const filesGitPoller = createFilesGitStatusPoller({
+      intervalMs: FILES_GIT_STATUS_INTERVAL_MS,
       isActive: () =>
-        ctx.activeTab.value === 'codes' &&
+        ctx.activeTab.value === 'files' &&
         document.visibilityState === 'visible' &&
         document.hasFocus(),
-      request: () => ctx.requestCodesGitStatus(),
+      request: () => ctx.requestFilesGitStatus(),
     })
-    const syncCodesGitPoller = (): void => codesGitPoller.sync()
+    const syncFilesGitPoller = (): void => filesGitPoller.sync()
     // React to every gate: view switch (watch), visibility, and window focus/blur.
-    const stopCodesTabWatch = watch(() => ctx.activeTab.value, syncCodesGitPoller)
-    window.addEventListener('focus', syncCodesGitPoller)
-    window.addEventListener('blur', syncCodesGitPoller)
+    const stopFilesTabWatch = watch(() => ctx.activeTab.value, syncFilesGitPoller)
+    window.addEventListener('focus', syncFilesGitPoller)
+    window.addEventListener('blur', syncFilesGitPoller)
     // Evaluate the current state once at mount, in case the app boots directly on
-    // the Codes view (the watch only fires on a subsequent change).
-    syncCodesGitPoller()
+    // the Files view (the watch only fires on a subsequent change).
+    syncFilesGitPoller()
 
     // Tab restored from background → fetch fresh status.
     const onVis = (): void => {
       if (document.visibilityState === 'visible') {
         ctx.send({ type: 'request_session_status' })
       }
-      syncCodesGitPoller()
+      syncFilesGitPoller()
     }
     document.addEventListener('visibilitychange', onVis)
 
-    // MarkdownText 代码文件链接导航事件:点击代码文件链接时切换到 codes 页并打开文件。
-    const onCodeFileClick = (e: Event): void => {
+    // MarkdownText 文件链接导航事件:点击文件链接时切换到 files 页并打开文件。
+    const onFileClick = (e: Event): void => {
       const detail = (e as CustomEvent).detail as { path?: unknown; line?: unknown } | undefined
       if (!detail || typeof detail.path !== 'string' || !detail.path) return
       if (detail.line != null && typeof detail.line !== 'number') return
-      ctx.navigateToCodeFile(detail.path, detail.line as number | undefined)
+      ctx.navigateToFile(detail.path, detail.line as number | undefined)
     }
-    document.addEventListener('c3:code-file-click', onCodeFileClick)
+    document.addEventListener('c3:file-click', onFileClick)
 
     onUnmounted(() => {
       clearInterval(hbTimer)
       clearInterval(sessionsTimer)
       document.removeEventListener('visibilitychange', onVis)
-      document.removeEventListener('c3:code-file-click', onCodeFileClick)
-      stopCodesTabWatch()
-      window.removeEventListener('focus', syncCodesGitPoller)
-      window.removeEventListener('blur', syncCodesGitPoller)
-      codesGitPoller.stop()
+      document.removeEventListener('c3:file-click', onFileClick)
+      stopFilesTabWatch()
+      window.removeEventListener('focus', syncFilesGitPoller)
+      window.removeEventListener('blur', syncFilesGitPoller)
+      filesGitPoller.stop()
     })
   })
 

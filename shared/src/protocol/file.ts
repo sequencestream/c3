@@ -4,7 +4,7 @@
  * Part of the `@ccc/shared/protocol` contract; re-exported by `../protocol.ts`.
  */
 
-export type CodeEntryType = 'file' | 'directory'
+export type FileEntryType = 'file' | 'directory'
 
 /**
  * A single file's working-tree Git state, as composable flags (not a mutually
@@ -13,7 +13,7 @@ export type CodeEntryType = 'file' | 'directory'
  * workspace, or older directory data). Derived read-only from `git status
  * --porcelain`; deletions, renames, copies and conflicts never produce one.
  */
-export interface CodeGitStatus {
+export interface FileGitStatus {
   /** Working-tree column is `M` (unstaged edit). */
   modified: boolean
   /** `??` — a new, untracked path. */
@@ -22,19 +22,19 @@ export interface CodeGitStatus {
   staged: boolean
 }
 
-export interface CodeDirEntry {
+export interface FileEntry {
   name: string
   path: string
-  type: CodeEntryType
+  type: FileEntryType
   /**
    * Optional Git state for this entry. Populated client-side by merging the
-   * workspace Git-status snapshot (`code_git_status`); absent ⇒ no state. Kept
+   * workspace Git-status snapshot (`file_git_status`); absent ⇒ no state. Kept
    * optional so `dir_listed` and non-git workspaces need not carry it.
    */
-  gitStatus?: CodeGitStatus
+  gitStatus?: FileGitStatus
 }
 
-export interface CodeFileRead {
+export interface FileRead {
   path: string
   size: number
   binary: boolean
@@ -42,11 +42,11 @@ export interface CodeFileRead {
   content?: string
 }
 
-export type CodeSearchMode = 'filename' | 'content'
+export type FileSearchMode = 'filename' | 'content'
 
-export interface CodeSearchHit {
+export interface FileSearchHit {
   path: string
-  type: CodeEntryType
+  type: FileEntryType
   line?: number
   lineText?: string
   match?: string

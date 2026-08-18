@@ -12,7 +12,7 @@
 export * from './protocol/agent-config.js'
 export * from './protocol/auth.js'
 export * from './protocol/automation.js'
-export * from './protocol/code.js'
+export * from './protocol/file.js'
 export * from './protocol/consensus.js'
 export * from './protocol/delivery.js'
 export * from './protocol/discussion.js'
@@ -25,7 +25,7 @@ export * from './protocol/workspace.js'
 
 import type * as AuthMsg from './protocol/auth-messages.js'
 import type * as AutomationMsg from './protocol/automation-messages.js'
-import type * as CodeMsg from './protocol/code-messages.js'
+import type * as FileMsg from './protocol/file-messages.js'
 import type * as DeliveryMsg from './protocol/delivery-messages.js'
 import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
@@ -51,10 +51,10 @@ export type ClientToServer =
   | SessionMsg.ClientDeleteSession
   | SessionMsg.ClientSelectSession
   | SessionMsg.ClientRenameSession
-  | CodeMsg.ClientListDir
-  | CodeMsg.ClientReadFile
-  | CodeMsg.ClientGetCodeGitStatus
-  | CodeMsg.ClientSearchCodes
+  | FileMsg.ClientListDir
+  | FileMsg.ClientReadFile
+  | FileMsg.ClientGetFileGitStatus
+  | FileMsg.ClientSearchFiles
   | SessionMsg.ClientStopRun
   | SessionMsg.ClientRebindView
   | SessionMsg.ClientListCommands
@@ -172,10 +172,10 @@ export type ServerToClient =
   | WorkspaceMsg.ServerWorkspaceDirectorySelection
   | SessionMsg.ServerSessions
   | SessionMsg.ServerSessionCounts
-  | CodeMsg.ServerDirListed
-  | CodeMsg.ServerFileRead
-  | CodeMsg.ServerCodeGitStatus
-  | CodeMsg.ServerCodesSearched
+  | FileMsg.ServerDirListed
+  | FileMsg.ServerFileRead
+  | FileMsg.ServerFileGitStatus
+  | FileMsg.ServerFilesSearched
   | SessionMsg.ServerSessionSelected
   | SessionMsg.ServerSessionStarted
   | SessionMsg.ServerSessionAgentChanged

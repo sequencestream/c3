@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { CodeGitStatus, ServerToClient } from '@ccc/shared/protocol'
+import type { FileGitStatus, ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 
 const h = vi.hoisted(() => ({
@@ -16,11 +16,11 @@ vi.mock('../../state.js', () => ({
 
 import {
   compilePatterns,
-  getCodeGitStatusHandler,
+  getFileGitStatusHandler,
   listDirHandler,
   readFileHandler,
-  resolveCodePath,
-  searchCodesHandler,
+  resolveFilePath,
+  searchFilesHandler,
   SEARCH_RESULT_LIMIT,
   SEARCH_TIMEOUT_MS,
 } from './index.js'
@@ -29,7 +29,7 @@ let tmpRoot: string
 let workspace: string
 
 beforeEach(async () => {
-  tmpRoot = await mkdtemp(join(tmpdir(), 'c3-codes-'))
+  tmpRoot = await mkdtemp(join(tmpdir(), 'c3-files-'))
   workspace = join(tmpRoot, 'workspace')
   await mkdir(workspace, { recursive: true })
   h.roots.clear()
@@ -61,9 +61,9 @@ function capture(): { conn: Conn; sent: ServerToClient[] } {
 
 const KCTX = {} as never
 
-describe('codes path guard', () => {
+describe('files path guard', () => {
   it('rejects unregistered workspace ids instead of treating them as roots', async () => {
-    const got = await resolveCodePath('/Users/example/.ssh', '')
+    const got = await resolveFilePath('/Users/example/.ssh', '')
     expect(got).toEqual({
       ok: false,
       error: { code: 'workspace.unknown', path: '/Users/example/.ssh' },
@@ -71,29 +71,29 @@ describe('codes path guard', () => {
   })
 
   it('rejects absolute, parent traversal, .git, and null-byte relative paths', async () => {
-    await expect(resolveCodePath('ws-1', '/etc/passwd')).resolves.toMatchObject({
+    await expect(resolveFilePath('ws-1', '/etc/passwd')).resolves.toMatchObject({
       ok: false,
-      error: { code: 'codes.invalidPath' },
+      error: { code: 'files.invalidPath' },
     })
-    await expect(resolveCodePath('ws-1', 'C:\\Users\\x')).resolves.toMatchObject({
+    await expect(resolveFilePath('ws-1', 'C:\\Users\\x')).resolves.toMatchObject({
       ok: false,
-      error: { code: 'codes.invalidPath' },
+      error: { code: 'files.invalidPath' },
     })
-    await expect(resolveCodePath('ws-1', '\\\\server\\share')).resolves.toMatchObject({
+    await expect(resolveFilePath('ws-1', '\\\\server\\share')).resolves.toMatchObject({
       ok: false,
-      error: { code: 'codes.invalidPath' },
+      error: { code: 'files.invalidPath' },
     })
-    await expect(resolveCodePath('ws-1', '../../etc/passwd')).resolves.toMatchObject({
+    await expect(resolveFilePath('ws-1', '../../etc/passwd')).resolves.toMatchObject({
       ok: false,
-      error: { code: 'codes.invalidPath' },
+      error: { code: 'files.invalidPath' },
     })
-    await expect(resolveCodePath('ws-1', '.git/config')).resolves.toMatchObject({
+    await expect(resolveFilePath('ws-1', '.git/config')).resolves.toMatchObject({
       ok: false,
-      error: { code: 'codes.invalidPath' },
+      error: { code: 'files.invalidPath' },
     })
-    await expect(resolveCodePath('ws-1', 'a\0b')).resolves.toMatchObject({
+    await expect(resolveFilePath('ws-1', 'a\0b')).resolves.toMatchObject({
       ok: false,
-      error: { code: 'codes.invalidPath' },
+      error: { code: 'files.invalidPath' },
     })
   })
 
@@ -103,19 +103,19 @@ describe('codes path guard', () => {
     await writeFile(join(evil, 'secret.txt'), 'secret')
     await symlink(evil, join(workspace, 'link-out'))
 
-    const got = await resolveCodePath('ws-1', 'link-out/secret.txt')
-    expect(got).toMatchObject({ ok: false, error: { code: 'codes.invalidPath' } })
+    const got = await resolveFilePath('ws-1', 'link-out/secret.txt')
+    expect(got).toMatchObject({ ok: false, error: { code: 'files.invalidPath' } })
   })
 
   it('accepts normal workspace-relative paths', async () => {
     await mkdir(join(workspace, 'src'))
     await writeFile(join(workspace, 'src', 'index.ts'), 'export {}\n')
-    const got = await resolveCodePath('ws-1', 'src/index.ts')
+    const got = await resolveFilePath('ws-1', 'src/index.ts')
     expect(got).toMatchObject({ ok: true, rel: 'src/index.ts' })
   })
 })
 
-describe('codes handlers', () => {
+describe('files handlers', () => {
   it('lists root and child directories, excluding .git', async () => {
     await mkdir(join(workspace, 'src'))
     await mkdir(join(workspace, '.git'))
@@ -179,27 +179,27 @@ describe('codes handlers', () => {
     await writeFile(join(workspace, '.git', 'target-secret'), 'needle hidden\n')
     const { conn, sent } = capture()
 
-    await searchCodesHandler(KCTX, conn, {
-      type: 'search_codes',
+    await searchFilesHandler(KCTX, conn, {
+      type: 'search_files',
       workspaceName: 'ws-1',
       query: 'target',
       mode: 'filename',
     })
-    await searchCodesHandler(KCTX, conn, {
-      type: 'search_codes',
+    await searchFilesHandler(KCTX, conn, {
+      type: 'search_files',
       workspaceName: 'ws-1',
       query: 'needle',
       mode: 'content',
     })
 
     expect(sent[0]).toMatchObject({
-      type: 'codes_searched',
+      type: 'files_searched',
       hits: [{ path: 'src/target.ts', type: 'file', match: 'target.ts' }],
       truncated: false,
       timedOut: false,
     })
     expect(sent[1]).toMatchObject({
-      type: 'codes_searched',
+      type: 'files_searched',
       hits: [{ path: 'src/target.ts', type: 'file', line: 1, lineText: 'needle here' }],
       truncated: false,
       timedOut: false,
@@ -217,14 +217,14 @@ describe('codes handlers', () => {
 
     async function search(query: string, pattern?: string) {
       const { conn, sent } = capture()
-      await searchCodesHandler(KCTX, conn, {
-        type: 'search_codes',
+      await searchFilesHandler(KCTX, conn, {
+        type: 'search_files',
         workspaceName: 'ws-1',
         query,
         mode: 'filename',
         ...(pattern ? { pattern } : {}),
       })
-      return (sent[0] as Extract<ServerToClient, { type: 'codes_searched' }>).hits
+      return (sent[0] as Extract<ServerToClient, { type: 'files_searched' }>).hits
     }
 
     // Leading fragment, mixed case, and a fragment straddling the hyphen all hit,
@@ -254,26 +254,26 @@ describe('codes handlers', () => {
     const { conn, sent } = capture()
 
     // filename mode: *.ts keeps only the .ts file
-    await searchCodesHandler(KCTX, conn, {
-      type: 'search_codes',
+    await searchFilesHandler(KCTX, conn, {
+      type: 'search_files',
       workspaceName: 'ws-1',
       query: 'target',
       mode: 'filename',
       pattern: '*.ts',
     })
     // content mode: multiple globs union (.ts + .js), markdown excluded
-    await searchCodesHandler(KCTX, conn, {
-      type: 'search_codes',
+    await searchFilesHandler(KCTX, conn, {
+      type: 'search_files',
       workspaceName: 'ws-1',
       query: 'needle',
       mode: 'content',
       pattern: '*.ts,*.js',
     })
 
-    const filenameHit = sent[0] as Extract<ServerToClient, { type: 'codes_searched' }>
+    const filenameHit = sent[0] as Extract<ServerToClient, { type: 'files_searched' }>
     expect(filenameHit.hits.map((hh) => hh.path)).toEqual(['src/target.ts'])
 
-    const contentHit = sent[1] as Extract<ServerToClient, { type: 'codes_searched' }>
+    const contentHit = sent[1] as Extract<ServerToClient, { type: 'files_searched' }>
     expect(contentHit.hits.map((hh) => hh.path).sort()).toEqual(['src/target.js', 'src/target.ts'])
   })
 
@@ -293,14 +293,14 @@ describe('codes handlers', () => {
     }
     const { conn, sent } = capture()
 
-    await searchCodesHandler(KCTX, conn, {
-      type: 'search_codes',
+    await searchFilesHandler(KCTX, conn, {
+      type: 'search_files',
       workspaceName: 'ws-1',
       query: 'match',
       mode: 'filename',
     })
 
-    const msg = sent[0] as Extract<ServerToClient, { type: 'codes_searched' }>
+    const msg = sent[0] as Extract<ServerToClient, { type: 'files_searched' }>
     expect(msg.hits).toHaveLength(SEARCH_RESULT_LIMIT)
     expect(msg.truncated).toBe(true)
   })
@@ -312,18 +312,18 @@ describe('codes handlers', () => {
       .mockReturnValueOnce(SEARCH_TIMEOUT_MS + 1)
     const { conn, sent } = capture()
 
-    await searchCodesHandler(KCTX, conn, {
-      type: 'search_codes',
+    await searchFilesHandler(KCTX, conn, {
+      type: 'search_files',
       workspaceName: 'ws-1',
       query: 'match',
       mode: 'filename',
     })
 
-    expect(sent[0]).toMatchObject({ type: 'codes_searched', hits: [], timedOut: true })
+    expect(sent[0]).toMatchObject({ type: 'files_searched', hits: [], timedOut: true })
   })
 })
 
-describe('get_code_git_status handler', () => {
+describe('get_file_git_status handler', () => {
   function initRepo(path: string): void {
     execFileSync('git', ['init', '-q'], { cwd: path })
     execFileSync('git', ['config', 'user.email', 't@t.dev'], { cwd: path })
@@ -338,16 +338,16 @@ describe('get_code_git_status handler', () => {
     await writeFile(join(workspace, 'new.ts'), 'export const n = 1\n')
 
     const { conn, sent } = capture()
-    await getCodeGitStatusHandler(KCTX, conn, {
-      type: 'get_code_git_status',
+    await getFileGitStatusHandler(KCTX, conn, {
+      type: 'get_file_git_status',
       workspaceName: 'ws-1',
     })
 
     expect(sent).toHaveLength(1)
-    const msg = sent[0] as Extract<ServerToClient, { type: 'code_git_status' }>
-    expect(msg.type).toBe('code_git_status')
+    const msg = sent[0] as Extract<ServerToClient, { type: 'file_git_status' }>
+    expect(msg.type).toBe('file_git_status')
     expect(msg.workspaceName).toBe('ws-1')
-    expect(msg.files['new.ts']).toEqual<CodeGitStatus>({
+    expect(msg.files['new.ts']).toEqual<FileGitStatus>({
       modified: false,
       untracked: true,
       staged: false,
@@ -356,19 +356,19 @@ describe('get_code_git_status handler', () => {
 
   it('non-git workspace → empty snapshot, never an error frame', async () => {
     const { conn, sent } = capture()
-    await getCodeGitStatusHandler(KCTX, conn, {
-      type: 'get_code_git_status',
+    await getFileGitStatusHandler(KCTX, conn, {
+      type: 'get_file_git_status',
       workspaceName: 'ws-1',
     })
-    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceName: 'ws-1', files: {} })
+    expect(sent[0]).toEqual({ type: 'file_git_status', workspaceName: 'ws-1', files: {} })
   })
 
   it('unknown workspace id → empty snapshot for that id (degrade, no throw)', async () => {
     const { conn, sent } = capture()
-    await getCodeGitStatusHandler(KCTX, conn, {
-      type: 'get_code_git_status',
+    await getFileGitStatusHandler(KCTX, conn, {
+      type: 'get_file_git_status',
       workspaceName: 'ws-unknown',
     })
-    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceName: 'ws-unknown', files: {} })
+    expect(sent[0]).toEqual({ type: 'file_git_status', workspaceName: 'ws-unknown', files: {} })
   })
 })

@@ -472,6 +472,9 @@ c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出�
   (→ `ThreadOptions.networkAccessEnabled` / `sandbox_workspace_write.network_access=true`)。一个
   `read-only` 沙盒无条件拒绝网络,而 claude vendor 没有 seatbelt 网络
   开关——即使历史记录或一次 vendor 切换让该值残留,它也会**静默忽略**该值。
+- **表单侧的同一条契约。** 自动化表单在 codex + `read-only` 沙盒下把该开关**置为禁用**并
+  给出原因提示,避免出现「勾了却被分发器丢弃」的静默落差;切回 `workspace-write` 后开关恢复
+  可用。禁用期间的点击不改变 `toolAllowlist`,已保存的历史值原样保留(服务端仍然忽略它)。
 - **安全默认值:关闭。** 新建的自动化不会选中它;它不属于「全选工具」的一部分,也
   永远不会因为一次全量工具选择或一次 vendor 切换而被隐式启用,因此网络边界只会
   在显式 opt-in 时才放宽。它是需要发起网络调用的自动化所需的——尤其是运行 `gh` 的 PR

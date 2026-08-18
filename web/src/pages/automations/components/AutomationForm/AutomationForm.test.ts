@@ -1107,6 +1107,44 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.toolAllowlist as string[]).not.toContain('network-access')
   })
 
+  it('只读沙箱:network-access 开关禁用并给出原因', () => {
+    const w = mountForm({
+      automation: sched({
+        vendor: 'codex',
+        mode: { sandboxMode: 'read-only', approvalPolicy: 'never' },
+        toolAllowlist: ['Read'],
+      }),
+      toolManifest: { codex: ALL_TOOLS },
+    })
+    const cb = w.find('[data-testid="network-access-checkbox"]')
+    expect((cb.element as HTMLInputElement).disabled).toBe(true)
+    expect(w.find('[data-testid="network-access-readonly-hint"]').exists()).toBe(true)
+  })
+
+  it('切到只读沙箱后 network-access 点击不再生效', async () => {
+    const w = mountForm({
+      automation: sched({
+        vendor: 'codex',
+        mode: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+        toolAllowlist: ['Read'],
+      }),
+      toolManifest: { codex: ALL_TOOLS },
+    })
+    // 读写沙箱:可用、无提示
+    expect(
+      (w.find('[data-testid="network-access-checkbox"]').element as HTMLInputElement).disabled,
+    ).toBe(false)
+    expect(w.find('[data-testid="network-access-readonly-hint"]').exists()).toBe(false)
+
+    // 切到只读沙箱(第 3 个 segmented 的第 2 个按钮)后点击 → 伪条目不会进 payload
+    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[1].trigger('click')
+    await w.find('[data-testid="network-access-checkbox"]').trigger('change')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.toolAllowlist as string[]).not.toContain('network-access')
+  })
+
   // ---- Permission mode per vendor -----------------------------------------
 
   it('create(codex):payload 携带 CodexPolicy 对象', async () => {

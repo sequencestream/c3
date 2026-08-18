@@ -157,7 +157,7 @@ c3
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
 │   │   ├── 执行 vendor                           # claude/codex/cursor 均有 dispatcher 执行路径(共享 AUTOMATION_VENDORS,表单灰显与分派门控同一份);cursor 走 cursor-agent CLI,mode 按 cursor 目录(plan/agent/full-access)解析,CLI 找不到/agent 无效在分派期即失败,不跨 vendor 回退
 │   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ PR 状态同步(sync_intent_pr_status,只接受 intentId,触发服务端从 forge 派生终态落库)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
-│   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网
+│   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网;read-only 沙箱下表单禁用该开关并提示原因
 │   │
 │   ├── files 文件浏览                            # 浏览器里只读浏览 Git 仓库 + 文件域内嵌会话
 │   │   ├── 仓库浏览                              # 列分支、提交、某 ref 下的文件树

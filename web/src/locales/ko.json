@@ -177,6 +177,9 @@
       "list": {
         "empty": "아직 작업 공간이 없습니다. +를 클릭하여 디렉터리를 추가하세요."
       }
+    },
+    "logs": {
+      "tooltip": "런타임 로그 보기"
     }
   },
   "permission": {
@@ -3696,6 +3699,18 @@
       "judge_stuck": "실제로 완료되지 않았다고 판정",
       "judge_unavailable": "완료 판정 불가(도구 agent 설정)",
       "pr_target_unavailable": "PR 대상 사용 불가 — PR 미생성"
+    }
+  },
+  "logs": {
+    "title": "런타임 로그",
+    "empty": "아직 로그 출력이 없습니다.",
+    "unavailable": "서버에서 파일 로깅이 꺼져 있어 표시할 내용이 없습니다.",
+    "truncated": "이 탭의 메모리를 제한하기 위해 오래된 줄을 삭제했습니다.",
+    "unauthenticated": "먼저 콘솔에 로그인한 다음 이 페이지를 다시 여세요.",
+    "connection": {
+      "connecting": "연결 중…",
+      "open": "연결됨",
+      "closed": "연결 끊김"
     }
   }
 }

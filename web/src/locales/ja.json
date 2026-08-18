@@ -177,6 +177,9 @@
       "list": {
         "empty": "まだワークスペースがありません。+ をクリックしてディレクトリを追加してください。"
       }
+    },
+    "logs": {
+      "tooltip": "実行ログを表示"
     }
   },
   "permission": {
@@ -3696,6 +3699,18 @@
       "judge_stuck": "実際には未完了と判定",
       "judge_unavailable": "完了判定が利用不可(ツール agent 設定)",
       "pr_target_unavailable": "PR のターゲットが利用不可 — PR 未作成"
+    }
+  },
+  "logs": {
+    "title": "実行ログ",
+    "empty": "ログ出力はまだありません。",
+    "unavailable": "サーバーのファイルログが無効なため、表示できる内容がありません。",
+    "truncated": "このタブのメモリを抑えるため、古い行を破棄しました。",
+    "unauthenticated": "先にコンソールにログインしてから、このページを開き直してください。",
+    "connection": {
+      "connecting": "接続中…",
+      "open": "接続済み",
+      "closed": "切断されました"
     }
   }
 }

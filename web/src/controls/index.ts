@@ -1,7 +1,8 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { createWsClient } from '@/lib/ws'
 import { parseDeepLink } from '@/lib/deep-link'
-import { FILES_GIT_STATUS_INTERVAL_MS, createFilesGitStatusPoller } from '@/lib/files-git-poller'
+import { FILES_GIT_STATUS_INTERVAL_MS } from '@/lib/files-git-poller'
+import { createGatedPoller } from '@/lib/poller'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
@@ -165,7 +166,7 @@ export function useAppController(): AppCtx {
     // Files Git-status auto-poll: only while ON the Files view AND the page is
     // visible AND the window is focused. Activating fetches immediately, then every
     // 15s; leaving/hiding/blurring pauses. Request coalescing lives in the action.
-    const filesGitPoller = createFilesGitStatusPoller({
+    const filesGitPoller = createGatedPoller({
       intervalMs: FILES_GIT_STATUS_INTERVAL_MS,
       isActive: () =>
         ctx.activeTab.value === 'files' &&

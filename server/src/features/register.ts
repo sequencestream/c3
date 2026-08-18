@@ -161,6 +161,7 @@ import {
   readFileHandler,
   searchFilesHandler,
 } from './files/index.js'
+import { readRuntimeLogHandler } from './logs/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -205,6 +206,8 @@ export const handlerMap: HandlerMap = {
   read_file: readFileHandler,
   get_file_git_status: getFileGitStatusHandler,
   search_files: searchFilesHandler,
+  // runtime log (read-only tail of the live c3.log)
+  read_runtime_log: readRuntimeLogHandler,
   list_commands: listCommandsHandler,
   create_session: createSession,
   create_work_session: createWorkSession,

@@ -176,6 +176,9 @@
       "list": {
         "empty": "还没有工作区。点击 + 添加一个目录。"
       }
+    },
+    "logs": {
+      "tooltip": "查看运行日志"
     }
   },
   "permission": {
@@ -3695,6 +3698,18 @@
       "judge_stuck": "判定未真实完成",
       "judge_unavailable": "完成判定不可用(工具 agent 配置)",
       "pr_target_unavailable": "PR 目标不可用,未创建 PR"
+    }
+  },
+  "logs": {
+    "title": "运行日志",
+    "empty": "暂无日志输出。",
+    "unavailable": "服务端未启用文件日志，无内容可显示。",
+    "truncated": "已丢弃较早的日志行，以控制本页内存占用。",
+    "unauthenticated": "请先在主界面登录，然后重新打开本页。",
+    "connection": {
+      "connecting": "连接中…",
+      "open": "已连接",
+      "closed": "已断开"
     }
   }
 }

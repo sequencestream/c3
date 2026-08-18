@@ -5,7 +5,7 @@ c3 前端（Vue 3）所有页面、组件、composable 与工具模块的树状�
 ```
 web/src/
 ├── App.vue                                          # 应用入口壳(瘦):装配页面/模态组件,解构 useAppController() 的共享 ctx 绑定到模板(登录门 + 顶栏 + 各视图 + 模态 + 全局 toast + intent 动作错误弹框);全部控制逻辑下沉到 controls/。**懒加载装配边界**:静态 import 只留 Login/AppHeader/Queue 与 AsyncFallback 占位件,其余 8 个业务页面(Works/Intents/Deliveries/Discussions/Automations/Files/WorkCenter/WorkspaceDashboard)经 asyncView()、12 个设置页与低频全局组件(SystemSettings/PersonalizedSetting/WorkspaceSetting/SkillApprovalModal/NewSessionModal/CreatePrOverlay/CreateIntentOverlay/DevStartupOverlay/SpecStartupOverlay/AutomationSaveOverlay/IntentActionErrorDialog/GateEscapeDialog)经 asyncOverlay() 包一层 defineAsyncComponent(() => import(...))。装配约定(挂载门、占位与失败兜底、新增页面沿用)见 `doc/domains/core/web-console/web-console-design.md`「非功能考量」;包一层不改各组件原有的 `:open`/`:model`/`:escape`/`:saving` 输入与关闭/取消协议
-├── main.ts                                          # 应用入口:创建 Vue 实例、安装 i18n、挂载 App
+├── main.ts                                          # 应用入口:创建 Vue 实例、安装 i18n、按 hash 路由挑根组件后挂载 —— `#/logs` 挂运行日志页(懒加载 chunk),其余一律挂 App
 │
 ├── controls/                                        # App 控制器:拆分自原 App.vue 的状态 + 消息路由 + 各域动作,经共享 ctx 对象晚绑定串联
 │   ├── index.ts                                     # useAppController():建 state、装 runtime(client/send/reconnect/t/auth)、依次 install 各域、管理 WebSocket 生命周期(onMounted 建连/心跳/可见性/onReopen 重选),返回 ctx 供 App.vue 解构
@@ -145,6 +145,9 @@ web/src/
 │   ├── login/                                       # 登录页
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流
 │   │
+│   ├── logs/                                        # 运行日志页(独立 hash 路由 `#/logs`,由顶栏连接状态链接在新标签页打开)
+│   │   └── LogsPage.vue                             # 服务端实时日志查看器,自成一体的根组件:自建 WebSocket(带本浏览器令牌)、按可见性门控轮询 read_runtime_log(首拉不带 offset 取尾部历史,之后带上一次 nextOffset 取增量)、经 applyLogChunk 折进有上限的缓冲区并按行渲染;默认跟随最新一行,用户上滚即停止跟随(复用 chat-scroll 的 isNearBottom);无日志/文件日志关闭/连接未登录各有空态说明;createClient prop 是传输层接缝(默认真连,测试注入假工厂)
+│   │
 │   ├── personalizedsetting/                         # 个人化设置页
 │   │   ├── components/McpApiKeys/
 │   │   │   └── McpApiKeys.vue                       # 「外部 MCP key」区块:本人名下 key 的新建/列示/重置密钥/吊销,即时服务端指令,不进草稿、无 Save。归属由服务端从已验证连接推导,组件永不发送 owner;不渲染工具范围选择器(能调什么不归持有者决定),也不渲染归档工作区(key 是账号级凭据)。一次性揭示区(created 进入后)给明文 key + baseUrl(去尾斜杠)+ /mcp 端点 + 一行式 `claude mcp add` 命令(以 $C3_MCP_KEY 间接引用明文,工作区名留占位符),各配复制按钮(navigator.clipboard 缺失时静默降级);组件不自留副本,owner 清空 created 后明文即从 DOM 消失。重置与吊销各走一次 ConfirmDialog 危险确认(重置无宽限期、立即切断已建会话;吊销不可撤销)。key.unavailable(归属账号已不被本部署承认)时提示只剩吊销。baseUrl 未配置时明说「未配置」+ 跳系统设置按钮(不猜浏览器 Host),key 仍可生成。emits:create/reset/revoke/dismissReveal/gotoSystemSettings
@@ -194,6 +197,9 @@ web/src/
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染
 │   ├── automation-refresh.ts                           # 运行中执行实时刷新的纯决策:isExecutionRunning 推断 + decideAutomationRefresh(running/tab/可见/上次running → shouldPoll/finalFetch) + 轮询间隔常量
 │   ├── format.ts                                    # 简单值格式化:JSON 美化打印、多行折叠为单行
+│   ├── log-view.ts                                  # 运行日志查看器的纯模型:applyLogChunk 把一次轮询的增量折进 { lines, partial, nextOffset, dropped, available }(reset 块整替缓冲区、跨轮拼接被切断的半行)、行数/字符数双上限超限丢最早的行、logViewText 拼出待渲染文本 + 轮询间隔常量
+│   ├── logs-route.ts                                # 运行日志页的独立路由:LOGS_ROUTE_HASH(`#/logs`)、isLogsRoute(hash) 供 main.ts 选根组件、logsUrl(location) 拼顶栏入口链接;形状与 deep-link.ts 的三段深链天然不重叠
+│   ├── poller.ts                                    # 全站唯一的门控轮询控制器 createGatedPoller({intervalMs,isActive,request}):激活即先拉一次再按节拍轮询,门控转假即停表,重复 sync 不叠计时器;Files Git 状态与运行日志页各自只给门控谓词与节拍
 │   ├── highlight.ts                                 # Shiki 按需代码高亮:白名单语言、语言别名、哨兵色转 CSS class、DOMPurify 过滤
 │   ├── mermaid.ts                                   # Mermaid 图表按需渲染:懒加载 mermaid、随主题定明暗、唯一图表 id、关闭 htmlLabels 出纯 SVG、DOMPurify(svg profile)过滤,语法错误/异常返回 null 由调用方降级
 │   ├── intent-list-view.ts                          # 需求列表纯展示逻辑:状态/运行态标签、面板展开规则、行内字段可见性、日期格式化

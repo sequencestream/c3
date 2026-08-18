@@ -1,6 +1,7 @@
-import { createApp } from 'vue'
+import { createApp, defineAsyncComponent } from 'vue'
 import App from './App.vue'
 import i18n from './i18n'
+import { isLogsRoute } from './lib/logs-route'
 import { applyStoredFontScale, applyStoredTheme } from './lib/personalized-settings'
 import './standard.css'
 import './style.css'
@@ -11,4 +12,11 @@ import './style.css'
 applyStoredTheme()
 applyStoredFontScale()
 
-createApp(App).use(i18n).mount('#app')
+// The runtime-log viewer is its own route, opened in its own browser tab: it
+// mounts alone, with its own socket and poll loop, and never boots the console.
+// Lazy, like every other page — the console's first load must not carry it.
+const root = isLogsRoute(location.hash)
+  ? defineAsyncComponent(() => import('./pages/logs/LogsPage.vue'))
+  : App
+
+createApp(root).use(i18n).mount('#app')

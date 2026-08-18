@@ -298,6 +298,14 @@ header h1 {
   color: var(--c-error-text);
   background: rgba(239, 68, 68, 0.12);
 }
+/* 状态胶囊即运行日志入口(链接形态):去掉下划线,悬停给出可点提示。 */
+.status-link {
+  text-decoration: none;
+  cursor: pointer;
+}
+.status-link:hover {
+  filter: brightness(1.15);
+}
 
 /* 会话标题行:聊天列(.content)顶部 —— 左侧会话标题 + 右侧权限模式下拉 */
 .session-title-bar {

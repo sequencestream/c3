@@ -78,6 +78,15 @@
 
 **字段：** `workspaceName: string`, `rel: string`
 
+### `read_runtime_log`
+
+按字节偏移增量读取服务端**实时**运行日志文件(`c3.log`；归档与 daemon 日志不在范围内)。
+省略 `offset` 取文件尾部的一段近期历史(新开的日志页据此一打开就有内容)；传上一次回复的
+`nextOffset` 则只取此后的新增内容。`maxBytes` 只能缩小单次回复,服务端另有硬上限。任何通过
+握手鉴权的连接均可读(不要求管理员)。服务器回复 `runtime_log`。
+
+**字段：** `offset?: number`, `maxBytes?: number`
+
 ### `get_file_git_status`
 
 请求工作区的只读 Git 状态快照,用于装饰文件树。只携带 `workspaceName`,**绝不**携带客户端路径。
@@ -603,6 +612,16 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 `timedOut` 表示搜索达到运行时间上限。所有命中路径均为工作区相对路径且不包含 `.git`。
 
 **字段：** `workspaceName: string`, `query: string`, `mode: 'filename' | 'content'`, `hits: FileSearchHit[]`, `truncated: boolean`, `timedOut: boolean`
+
+### `runtime_log`
+
+回复 `read_runtime_log`,携带一个 `RuntimeLogChunk`:`text` 为该切片的日志文本,`offset` 是它在
+文件中的起始字节位置,`nextOffset` 是下一次轮询应回传的位置,`size` 为文件当前大小。切断处一律
+对齐行边界、末尾不完整的 UTF-8 字节留到下次,故 `text` 永远是完整字符。`reset` 为真表示该切片
+**不接续**客户端请求的偏移(首次读取,或文件被归档/截断),客户端应整体替换已展示内容而非追加;
+`available` 为假表示服务端没有实时日志文件(文件日志已降级为关闭),此时文本为空。
+
+**字段：** `chunk: RuntimeLogChunk`
 
 ### `session_selected`
 

@@ -26,6 +26,7 @@ import type { SelfUpdateState, UpdateStatus, WorkspaceInfo } from '@ccc/shared/p
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { useAuth } from '@/composables/useAuth'
+import { logsUrl } from '@/lib/logs-route'
 import type { WorkspaceDirectoryPickerState } from '@/controls/state'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
@@ -34,6 +35,9 @@ const { t } = useTypedI18n()
 // 外链兜底:仅当这台机器不能自更新(dev 运行 / 桌面壳托管 / 包管理器安装 / 目录不可写)
 // 时出现,点击新标签页跳到发布页,由用户按自己的安装方式升级。
 const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
+// 连接状态同时是运行日志的入口:普通链接 + target=_blank,新标签页里打开独立的日志
+// 页面(自带 socket 与轮询),本页照常操作不受影响。
+const logsHref = logsUrl(window.location)
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 // 登录身份(basic 用户名),响应式来自每个 `ready`。供桌面账户菜单与
@@ -514,9 +518,17 @@ function selectTab(tab: HeaderTab): void {
             </button>
           </div>
         </details>
-        <span class="status" :class="status === 'open' ? 'ok' : 'err'">
+        <a
+          class="status status-link"
+          :class="status === 'open' ? 'ok' : 'err'"
+          :href="logsHref"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="t('nav.logs.tooltip')"
+          data-testid="nav-logs-link"
+        >
           {{ status }}
-        </span>
+        </a>
       </div>
     </div>
 
@@ -681,9 +693,17 @@ function selectTab(tab: HeaderTab): void {
           <button v-if="showLogout" class="mobile-action-item" @click="chooseLogout">
             {{ t('auth.logout.label') }}
           </button>
-          <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
+          <a
+            class="status status-link mobile-status"
+            :class="status === 'open' ? 'ok' : 'err'"
+            :href="logsHref"
+            target="_blank"
+            rel="noopener noreferrer"
+            :title="t('nav.logs.tooltip')"
+            data-testid="nav-logs-link-mobile"
+          >
             {{ status }}
-          </span>
+          </a>
         </div>
       </details>
     </div>

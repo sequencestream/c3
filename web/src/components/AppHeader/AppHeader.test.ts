@@ -800,3 +800,23 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
     expect(w.find('[data-testid="nav-update-link"]').exists()).toBe(true)
   })
 })
+
+describe('AppHeader.vue — 运行日志入口', () => {
+  it('连接状态即日志入口:桌面与移动端都指向独立路由并在新标签页打开', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    for (const testid of ['nav-logs-link', 'nav-logs-link-mobile']) {
+      const link = w.get(`[data-testid="${testid}"]`)
+      expect(link.attributes('href')?.endsWith('#/logs'), testid).toBe(true)
+      expect(link.attributes('target'), testid).toBe('_blank')
+      // 新标签页与本页彼此独立:不给 opener,主应用不受影响。
+      expect(link.attributes('rel'), testid).toContain('noopener')
+    }
+  })
+
+  it('入口保留原有的连接状态展示', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, status: 'closed' as const } })
+    const link = w.get('[data-testid="nav-logs-link"]')
+    expect(link.text()).toBe('closed')
+    expect(link.classes()).toContain('err')
+  })
+})

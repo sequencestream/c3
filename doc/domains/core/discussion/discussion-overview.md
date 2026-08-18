@@ -41,8 +41,9 @@ discussion/intent 数据库中。
   已展示的项目。**调研成功时服务端会自动启动编排**（等效于自动执行一次 `start_discussion`），
   通过一个纯粹的自动启动守卫、基于最新记录重新校验（状态仍为 `draft` 且没有存活的
   运行 —— 若人类在调研期间已手动 Start/取消则跳过）。调研例程返回其是否
-  成功以及调研结果（输出为空则结果为空 —— 绝不返回用户的上下文）；一次
-  **调研失败**会让讨论保持 `draft` 状态，回退到手动 **Start**，且不会自动启动。
+  成功以及调研结果（输出为空则结果为空 —— 绝不返回用户的上下文）；一次**失败或被中止**
+  的调研（含服务端关停打断）会让讨论保持 `draft` 状态：它当时吐出的片段既不回写为调研
+  结果、也不自动启动编排，回退到手动 **Start**。
 - **调研运行是一个正式会话（2026-07-30）**：调研跑批不再是一次性的黑盒调用。**执行 agent
   在 wiring 边界只解析一次**，口径与编排循环一致：讨论组织者（`organizerAgentId` → 启用池
   → 全局默认 agent）；组织者是 claude ⇒ 直接作为调研执行者（研究与编排共享同一执行身份），
@@ -191,13 +192,11 @@ discussion/intent 数据库中。
 
 ## 非范围（现状）
 
-- 服务端重启后，没有**前端**对孤立的 `in_progress` 讨论（没有存活运行）的自动恢复 ——
-  暂停状态仅存在于运行时且不会恢复，也没有任何 WebSocket 处理器去恢复它。
-  Automation 的 LLM 执行**现在可以**通过 `continue_discussion` 这个 c3 MCP 工具显式恢复恰好这种组合
-  （`in_progress` + 没有存活运行），该工具会在持久化的转录/议程上重新调用
-  编排器而不追加消息
-  （见 [automations-spec §c3 MCP tools](../automations/automations-spec.md)）。仍然没有
-  会自动扫描并重启所有孤立讨论的机制。
+- 孤立的 `in_progress` 讨论（没有存活运行）不会被**自动**恢复：服务端重启后没有任何扫描
+  会去重启它们，暂停状态也仅存在于运行时。恢复是显式动作——讨论标题栏的「重新运行」
+  （`start_discussion`）或 automation 的 c3 MCP `continue_discussion`，两者都在持久化的
+  转录/议程上重新调用编排器而不追加消息（见
+  [discussion-design §human-in-the-loop](discussion-design.md#organizer-engine)）。
 - 暂停仅在轮次边界生效：一个已在进行中的一次性 `askAgentOnce` 会执行完毕
   （因此暂停请求发出后仍可能落地一条消息）。
 

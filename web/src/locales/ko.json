@@ -2378,7 +2378,7 @@
       "unknown": "알 수 없는 토론: {id}",
       "unknownType": "알 수 없는 토론 유형: {type}",
       "notConcludable": "결과가 있는 종결된 토론만 의도로 전환할 수 있습니다.",
-      "alreadyStarted": "토론이 이미 시작되었거나 종료되었습니다. 다시 시작할 수 없습니다.",
+      "alreadyStarted": "토론이 이미 종료되었습니다. 다시 시작할 수 없습니다.",
       "notEndedForContinue": "종료된 토론만 새 라운드를 시작할 수 있습니다."
     },
     "automation": {
@@ -2471,6 +2471,9 @@
     "action": {
       "start": {
         "label": "시작"
+      },
+      "restart": {
+        "label": "다시 실행"
       },
       "pause": {
         "label": "일시 중지"

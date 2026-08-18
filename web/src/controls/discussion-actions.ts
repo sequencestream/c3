@@ -73,7 +73,10 @@ export function installDiscussionActions(ctx: AppCtx): void {
     })
   }
 
-  // "Start" in the discussion title bar (draft only): kick off the organizer engine.
+  // The title bar's launch button: kick off the organizer engine. Serves both the
+  // draft's manual Start and the restart of an `in_progress` discussion whose run
+  // died (engine error / server restart) — the server tells them apart by status and
+  // resumes the dangling one from its persisted transcript without appending anything.
   ctx.startDiscussion = (): void => {
     const id = activeDiscussionId.value
     if (!id) return

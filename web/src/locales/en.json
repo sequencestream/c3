@@ -2377,7 +2377,7 @@
       "unknown": "Unknown discussion: {id}",
       "unknownType": "Unknown discussion type: {type}",
       "notConcludable": "Only a concluded discussion with an outcome can become a intent.",
-      "alreadyStarted": "Discussion already started or ended; cannot start again.",
+      "alreadyStarted": "Discussion has ended; it cannot be started again.",
       "notEndedForContinue": "Only an ended discussion can start a new round."
     },
     "automation": {
@@ -2470,6 +2470,9 @@
     "action": {
       "start": {
         "label": "Start"
+      },
+      "restart": {
+        "label": "Restart"
       },
       "pause": {
         "label": "Pause"

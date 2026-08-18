@@ -265,8 +265,10 @@ Web UI 的启动，以及 `continue_discussion`（对已结束讨论开启新一
 存活状态也会被快照（每次 `discussions` 推送上的调研状态快照）。结算时
 服务端会**先**广播 `ended`，**再**自动启动编排，因此右侧面板能在一批操作内
 从调研流切换到讨论流；一次失败的调研广播 `ended` 而不自动启动，
-呈现手动 Start 兜底。前端阶段与 Start 可见性（状态为 `draft` 且
-调研与讨论运行均不存活）都是从快照重建的纯粹辅助函数，用于重连场景。
+呈现手动启动兜底。前端阶段与启动按钮都是从快照重建的纯粹辅助函数，用于重连场景：
+调研或编排任一存活即不显示按钮；都不存活时，`draft` 给出「开始」，`in_progress` 给出
+「重新运行」（即下文的悬挂恢复）。判定读的是**运行态快照**而非持久化状态——`in_progress`
+本身并不说明引擎还活着。
 
 调研智能体的输出写入 research-result 列（仅在非空时写入）；用户
 原始的 `context` **绝不**被覆盖。组织者引擎的提示语背景来源在
@@ -306,8 +308,11 @@ Web UI 的启动，以及 `continue_discussion`（对已结束讨论开启新一
   `select_session` 冷启动时按 `research_session_id` 反查，命中则以讨论 kind + 调研标记
   重建运行时；未命中的会话语义完全不变。
 - **结果回写只有一条规则**，首轮与追问共用：非空的最后一条助手文本整体替换
-  `researchResult`（空/失败的一轮保留原值）→ 推送刷新后的讨论列表 → 在**最新**记录上
-  重新评估自动启动守卫（失败的一轮跳过这一步）。首轮在自身的 `.then()` 里直接调用它；
+  `researchResult`（空的一轮保留原值）→ 推送刷新后的讨论列表 → 在**最新**记录上
+  重新评估自动启动守卫。**失败/中止的一轮只保留中间那一步**：它当时吐出的片段是半成品
+  而非结论，既不回写也不自动启动（关停中止见
+  [AVAIL-8](../../../non-functional/availability.md)），记录留在 `draft`，交给追问或
+  手动启动兜底。首轮在自身的 `.then()` 里直接调用它；
   追问由 `run:settled`（`sessionKind='discussion'`）的常驻订阅按 `research_session_id`
   反查后调用，文本取自该会话运行时缓冲区中**本轮**的最后一条 `assistant_text`
   （`user_text` 重置累加器，因此上一轮的结论不会漏进空的一轮）。首轮的 `run:settled`
@@ -346,15 +351,17 @@ draft ──start_discussion / 调研后自动启动──▶ in_progress ──
   增长后的转录上重新运行引擎。引擎不需要任何改动：它在第一个工作流阶段重新进入，
   之前的结论 + 新问题作为上下文，结论会被新的结果覆盖。一个
   重入守卫（该 id 已注册了一个存活运行）会在运行存活期间拒绝该请求。
-- **恢复**（仅限 automation 的 c3 MCP `continue_discussion`）—— 一个**没有
-  存活运行**的 `in_progress` 讨论（错误后/重启后的悬挂状态）是可重启的：面向 automation 的
-  `continue_discussion` 工具会在最新记录上重新调用 `startDiscussionRun`，**不**追加
+- **恢复**（悬挂重启）—— 一个**没有存活运行**的 `in_progress` 讨论（引擎报错后 /
+  服务端重启后的悬挂状态）是可重启的：在最新记录上重新调用 `startDiscussionRun`，**不**追加
   消息也不重置议程/结论/智能体会话状态，因此编排器会从
   持久化的转录 / 阶段 / 议程 / 逐智能体 `last_seq` 处恢复。这复用了可推导出的
-  `in_progress` + `!hasDiscussionRun` 组合——不引入新的 `DiscussionStatus`。WebSocket 的
-  `continue_discussion` 处理器仍然只接受 `completed`；恢复功能仅暴露给
-  automation 的 LLM 执行（见
-  [automations-spec §Discussion tools](../automations/automations-spec.md)）。
+  `in_progress` + `!hasDiscussionRun` 组合——不引入新的 `DiscussionStatus`。两个入口共用
+  这一语义：Web UI 的 `start_discussion`（标题栏的「重新运行」）与面向 automation 的
+  c3 MCP `continue_discussion`（见
+  [automations-spec §Discussion tools](../automations/automations-spec.md)）。因此
+  `start_discussion` 接受 `draft`（首次启动）与 `in_progress` 且无存活运行（恢复）两种记录，
+  终态记录被拒。WebSocket 的 `continue_discussion` 仍然只接受 `completed`——它是「追加人类
+  问题再开一轮」，与不追加任何消息的悬挂恢复是两件事。
 
 **持久化 + 流式推送。** 每条追加的消息都会被持久化（每讨论单调递增的序号）
 并通过消息钩子流式推送 → 服务端 `discussion_message` 广播。状态/结论变化——

@@ -177,6 +177,32 @@ describe('startDiscussionRun — the shared start boundary', () => {
     expect(events[0].metadata).toEqual({})
   })
 
+  it('Web UI start_discussion restarts a dangling in_progress discussion (no live run)', async () => {
+    const d = seed()
+    updateDiscussionStatus(d.id, 'in_progress')
+    const ctx = { startDiscussionRun: runs.startDiscussionRun } as unknown as KernelContext
+    const conn = { send: vi.fn() } as unknown as Conn
+    startDiscussionHandler(ctx, conn, { type: 'start_discussion', discussionId: d.id })
+    await flush()
+    expect(conn.send).not.toHaveBeenCalled()
+    expect(events.filter((e) => e.phase === 'start')).toHaveLength(1)
+    expect(vi.mocked(runDiscussion)).toHaveBeenCalledTimes(1)
+  })
+
+  it('Web UI start_discussion rejects a concluded discussion and starts nothing', async () => {
+    const d = seed()
+    updateDiscussionStatus(d.id, 'completed')
+    const ctx = { startDiscussionRun: runs.startDiscussionRun } as unknown as KernelContext
+    const conn = { send: vi.fn() } as unknown as Conn
+    startDiscussionHandler(ctx, conn, { type: 'start_discussion', discussionId: d.id })
+    await flush()
+    expect(conn.send).toHaveBeenCalledWith({
+      type: 'error',
+      error: { code: 'discussion.alreadyStarted' },
+    })
+    expect(events).toEqual([])
+  })
+
   it('continue_discussion new round → exactly one discussion:start with the ORIGINAL metadata', async () => {
     const d = seed({ team: 'infra' })
     updateDiscussionStatus(d.id, 'completed')
@@ -460,6 +486,20 @@ describe('settleResearchTurn — one write-back rule for both lifecycles', () =>
     runs.settleResearchTurn(d.id, 'FIRST PASS', true)
     events.length = 0
     runs.settleResearchTurn(d.id, '', false)
+    expect(getDiscussion(d.id)?.researchResult).toBe('FIRST PASS')
+    expect(events).toEqual([])
+  })
+
+  it('an aborted turn discards its partial output — no write-back, no auto-start', async () => {
+    const d = seed()
+    runs.settleResearchTurn(d.id, 'FIRST PASS', true)
+    // Auto-start would otherwise be refused for an unrelated reason — arm it so the
+    // assertion below can only be explained by the abort.
+    vi.mocked(canAutoStartDiscussion).mockReturnValue(true)
+    // What a shutdown/stop leaves behind: the researcher had emitted an opening
+    // sentence when its child died. That is a half-finished draft, not the findings.
+    runs.settleResearchTurn(d.id, "I'll research the project's current state", false)
+    await flush()
     expect(getDiscussion(d.id)?.researchResult).toBe('FIRST PASS')
     expect(events).toEqual([])
   })

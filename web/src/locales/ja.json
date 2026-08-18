@@ -2378,7 +2378,7 @@
       "unknown": "不明なディスカッション: {id}",
       "unknownType": "不明なディスカッションの種類: {type}",
       "notConcludable": "結論と成果のあるディスカッションのみ意図に変換できます。",
-      "alreadyStarted": "ディスカッションはすでに開始または終了しています。再開はできません。",
+      "alreadyStarted": "ディスカッションは終了しています。再開はできません。",
       "notEndedForContinue": "終了したディスカッションのみ新しいラウンドを開始できます。"
     },
     "automation": {
@@ -2471,6 +2471,9 @@
     "action": {
       "start": {
         "label": "開始"
+      },
+      "restart": {
+        "label": "再実行"
       },
       "pause": {
         "label": "一時停止"

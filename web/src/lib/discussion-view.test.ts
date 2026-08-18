@@ -22,7 +22,7 @@ import {
   researchMessageToChat,
   resolveDiscussionSpeaker,
   rowVisibility,
-  showDiscussionStart,
+  discussionLaunchAction,
   statusLabel,
   type DiscussionDetailTabI18nKey,
   type DispatchView,
@@ -762,16 +762,20 @@ describe('discussion-view — research phase', () => {
     expect(discussionPhase(false)).toBe('discussion')
   })
 
-  it('showDiscussionStart: 仅 draft 且研究结束/死亡且讨论未启动时为 true', () => {
+  it('discussionLaunchAction: draft → start,悬挂 in_progress → restart,有存活运行 → null', () => {
     // 研究进行中 → 不显示
-    expect(showDiscussionStart('draft', true, false)).toBe(false)
-    // 研究结束/死亡且讨论未启动 → 兜底显示
-    expect(showDiscussionStart('draft', false, false)).toBe(true)
-    // 讨论已启动 → 不显示
-    expect(showDiscussionStart('draft', false, true)).toBe(false)
-    // 非 draft 一律不显示
-    expect(showDiscussionStart('in_progress', false, false)).toBe(false)
-    expect(showDiscussionStart('completed', false, false)).toBe(false)
+    expect(discussionLaunchAction('draft', true, false)).toBeNull()
+    // 研究结束/死亡且编排未启动 → 兜底的「开始」
+    expect(discussionLaunchAction('draft', false, false)).toBe('start')
+    // 编排存活 → 不显示
+    expect(discussionLaunchAction('draft', false, true)).toBeNull()
+    // in_progress 但没有存活运行(引擎报错 / 服务端重启)→ 「重新运行」
+    expect(discussionLaunchAction('in_progress', false, false)).toBe('restart')
+    // in_progress 且运行存活(running / paused)→ 交给 Pause/Resume
+    expect(discussionLaunchAction('in_progress', false, true)).toBeNull()
+    // 终态一律不显示
+    expect(discussionLaunchAction('completed', false, false)).toBeNull()
+    expect(discussionLaunchAction('cancelled', false, false)).toBeNull()
   })
 
   it('researchMessageToChat: text → 研究员 assistant 气泡', () => {

@@ -9,18 +9,26 @@
  *   1. `devSkill` configured → it rides `userTurnPrefix` (a slash command must lead
  *      the model user turn to expand; SDD's work-session instruct is NOT stacked on
  *      top — devSkill wins). It is delivered to the model but never echoed.
- *   2. no `devSkill`, SDD on → the SDD work-session instruct rides
- *      `systemInstruction` (the vendor system channel), so a plain work session works
- *      the spec-driven, checkpoint-governed way without showing the contract.
- *   3. SDD off, no `devSkill` → no internal instruction; `visible` is the historic
- *      `title + content + deps`.
+ *   2. no `devSkill`, SDD on, this intent's effective spec mode is `sdd` → the SDD
+ *      work-session instruct rides `systemInstruction` (the vendor system channel), so
+ *      a plain work session works the spec-driven, checkpoint-governed way without
+ *      showing the contract.
+ *   3. SDD off, `fast` mode, or no applicable fragment → no internal instruction;
+ *      `visible` is the historic `title + content + deps`.
+ *
+ * The system channel is ASSEMBLED, not branched: every fragment in
+ * {@link SYSTEM_INSTRUCTION_FRAGMENTS} whose condition holds for THIS launch is
+ * concatenated, so a per-intent conditional instruct is added by listing one more
+ * fragment rather than by growing a hard-wired boolean.
  *
  * The intent body (title + content), the dependency note, and — when SDD is on — the
  * spec-path note are all VISIBLE business context: they make up `visible`, echoed to
- * the client unchanged.
+ * the client unchanged. The spec-path note follows the spec's EXISTENCE, not the
+ * mode: a `fast` intent whose spec was reverse-authored still gets pointed at it.
  *
  * This is a pure builder so the channel split is unit-testable without launching a run.
  */
+import type { IntentSpecMode } from '@ccc/shared/protocol'
 
 /**
  * The SDD work-session instruct — prefixed to a plain work session's first prompt
@@ -64,8 +72,55 @@ export interface DevPromptArgs {
   devSkill: string
   /** Whether spec-driven development is enabled for the workspace. */
   sddEnabled: boolean
+  /**
+   * This intent's resolved spec mode. `fast` skips the spec gate by design, so the
+   * SDD work-session instruct is NOT installed for it even when the workspace
+   * switch is on — telling a fast turn that "the approved spec is the single source
+   * of truth" contradicts the mode it was started in.
+   */
+  effectiveSpecMode: IntentSpecMode
   /** The intent's approved spec path (relative to the workspace); `null` when none. */
   specPath: string | null
+}
+
+/**
+ * One conditionally-assembled system-instruction fragment: a fixed text plus the
+ * condition under which THIS launch gets it. The system channel is the
+ * concatenation of every fragment whose condition holds, so a new per-intent
+ * conditional instruct is added by listing one more entry rather than by growing a
+ * hard-wired boolean expression.
+ */
+interface SystemInstructionFragment {
+  /** Stable identifier — for reading the list, not part of the wire output. */
+  id: string
+  /** Whether this fragment applies to this launch. */
+  applies: (args: DevPromptArgs) => boolean
+  /** The fragment text, emitted verbatim. */
+  text: string
+}
+
+/** Separator between two applying fragments. */
+const FRAGMENT_SEPARATOR = '\n\n'
+
+/**
+ * The system-instruction fragments, in delivery order. Today there is exactly one;
+ * the list exists so the next one is a new entry with its own condition.
+ */
+const SYSTEM_INSTRUCTION_FRAGMENTS: readonly SystemInstructionFragment[] = [
+  {
+    id: 'sdd-work-session',
+    // A configured devSkill wins outright (the two never stack), the workspace
+    // switch must be on, and the intent must not be in `fast` mode.
+    applies: (args) => !args.devSkill && args.sddEnabled && args.effectiveSpecMode !== 'fast',
+    text: SDD_WORK_SESSION_INSTRUCT,
+  },
+]
+
+/** Assemble the system channel from the fragments that apply to this launch. */
+function buildSystemInstruction(args: DevPromptArgs): string {
+  return SYSTEM_INSTRUCTION_FRAGMENTS.filter((f) => f.applies(args))
+    .map((f) => f.text)
+    .join(FRAGMENT_SEPARATOR)
 }
 
 /**
@@ -91,15 +146,16 @@ export interface DevPromptParts {
  */
 export function buildDevPrompt(args: DevPromptArgs): DevPromptParts {
   const depNote = args.dependsOn.length ? `\n\n依赖需求:${args.dependsOn.join(', ')}` : ''
-  // Prefix precedence: a configured devSkill wins; otherwise SDD's work-session
-  // instruct applies when SDD is on; otherwise neither. The two never stack.
-  // devSkill is a slash command → the model user turn (it must lead to expand);
-  // the SDD instruct is natural language → the system channel.
+  // Prefix precedence: a configured devSkill wins; the SDD work-session instruct is
+  // one of the system-channel fragments and carries that exclusion in its own
+  // condition. devSkill is a slash command → the model user turn (it must lead to
+  // expand); the instruct is natural language → the system channel.
   const userTurnPrefix = args.devSkill ? `${args.devSkill} ` : ''
-  const systemInstruction = !args.devSkill && args.sddEnabled ? SDD_WORK_SESSION_INSTRUCT : ''
+  const systemInstruction = buildSystemInstruction(args)
   // Spec-path note: appended at the end of the VISIBLE body whenever SDD is on and a
-  // spec exists, regardless of which prefix applies. It is business context, not an
-  // internal instruction, so it stays visible.
+  // spec exists, regardless of which prefix applies and of the spec mode — a fast
+  // intent with a reverse-authored spec still gets pointed at it. It is business
+  // context, not an internal instruction, so it stays visible.
   const specNote = args.sddEnabled && args.specPath ? `\n\n${buildDevSpecNote(args.specPath)}` : ''
   const visible = `${args.title}\n\n${args.content}${depNote}${specNote}`
   return { systemInstruction, userTurnPrefix, visible }

@@ -643,13 +643,16 @@ export async function launchWorkSession(
     }
   }
 
-  // Build dev prompt (split system / visible / prefix)
+  // Build dev prompt (split system / visible / prefix). The intent's own effective
+  // spec mode rides along: a `fast` turn skips the spec gate, so it must not be
+  // handed the SDD work-session contract either.
   const devParts = buildDevPrompt({
     title: req.title,
     content: req.content,
     dependsOn: req.dependsOn,
     devSkill: getDevSkill(workspacePath),
     sddEnabled: getSddEnabled(workspacePath),
+    effectiveSpecMode: req.effectiveSpecMode,
     specPath: req.specPath,
   })
 

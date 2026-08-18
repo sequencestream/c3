@@ -73,17 +73,21 @@ export function applyLogChunk(
   let partial = pieces.pop() ?? ''
   const lines = pieces.length > 0 ? [...base.lines, ...pieces] : base.lines
 
-  const capped = capLines(lines, limits)
-
-  // The partial line has no newline yet, so the line cap never applies to it;
-  // bound it by the char cap directly, or a single never-newline runaway line
-  // would grow the buffer without limit and defeat both caps. Keep the newest
-  // tail — this viewer shows the live tail, not an archive.
-  let dropped = state.dropped || capped.dropped
+  // The character budget is shared by the complete lines and the trailing
+  // partial, because `logViewText` paints both together — letting each spend
+  // the full `maxChars` would let the rendered text approach 2×maxChars.
+  // Bound the partial first (a never-newline runaway line would otherwise
+  // defeat both caps), then hand what remains — and the newline that will
+  // separate the partial from the lines — to `capLines`. Newest content always
+  // wins: the partial is newer than every complete line.
+  let dropped = state.dropped
   if (partial.length > limits.maxChars) {
-    partial = partial.slice(-limits.maxChars)
+    partial = partial.slice(Math.max(0, partial.length - limits.maxChars))
     dropped = true
   }
+  const lineBudget = Math.max(0, limits.maxChars - partial.length - (partial ? 1 : 0))
+  const capped = capLines(lines, { maxLines: limits.maxLines, maxChars: lineBudget })
+  dropped = dropped || capped.dropped
 
   return {
     lines: capped.lines,

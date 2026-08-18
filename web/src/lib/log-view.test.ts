@@ -110,6 +110,36 @@ describe('applyLogChunk', () => {
     expect(state.dropped).toBe(true)
   })
 
+  it('shares one char budget between complete lines and the partial', () => {
+    const limits = { maxLines: 1_000, maxChars: 10 }
+    // Nearly maxChars of complete lines followed by nearly maxChars of a
+    // not-yet-terminated line: the rendered text must stay within maxChars,
+    // not close to 2×maxChars.
+    const state = fold([chunk('123456789\nabcdefghij', { reset: true })], limits)
+    expect(logViewText(state).length).toBeLessThanOrEqual(limits.maxChars)
+    // The newest tail wins — the partial is newer than every complete line.
+    expect(state.lines).toEqual([])
+    expect(state.partial).toBe('abcdefghij')
+    expect(logViewText(state)).toBe('abcdefghij')
+  })
+
+  it('splits the shared budget when both lines and partial are present', () => {
+    const limits = { maxLines: 1_000, maxChars: 15 }
+    const state = fold([chunk('aaaaaa\nbbbbbb\ncccc', { reset: true })], limits)
+    expect(logViewText(state).length).toBeLessThanOrEqual(limits.maxChars)
+    expect(logViewText(state)).toBe('bbbbbb\ncccc')
+    expect(state.dropped).toBe(true)
+  })
+
+  it('keeps the rendered text within the budget across many polls', () => {
+    const limits = { maxLines: 1_000, maxChars: 100 }
+    let state = createLogViewState()
+    for (let i = 0; i < 300; i++) {
+      state = applyLogChunk(state, chunk(`${'x'.repeat(40)}\npartial-${i}`), limits)
+    }
+    expect(logViewText(state).length).toBeLessThanOrEqual(limits.maxChars)
+  })
+
   it('empties the view when the server has no live log file', () => {
     const before = fold([chunk('a\n', { reset: true })])
     const after = applyLogChunk(before, chunk('', { available: false, reset: true }))

@@ -21,7 +21,12 @@ import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
-import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
+import {
+  setOnAgentSwap,
+  setOnBind,
+  setOnSessionBindingFallback,
+  resolveSessionVendor,
+} from './kernel/agent-config/index.js'
 import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
@@ -132,6 +137,7 @@ import { registerHandlers } from './features/index.js'
 import { checkDbDriver } from './kernel/infra/db.js'
 import { ensureLegacyImport } from './kernel/config/import-legacy.js'
 import {
+  getBoundByVendorSessionId,
   getPendingIntent,
   JANITOR_INTERVAL_MS,
   janitor,
@@ -236,6 +242,20 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // db (any of these throws inside) is a logged-and-skipped no-op.
   setOnBind((input) => {
     upsertForBind(input)
+  })
+  // Factless real sessions (historical automation sessions, whose run wrote only
+  // the projection) resolve their binding from the projection row instead of
+  // falling through to the default agent — otherwise their vendor renders as
+  // whatever the default agent happens to be. Fail-soft: any store error leaves
+  // the previous default-agent behaviour in place.
+  setOnSessionBindingFallback((realId) => {
+    try {
+      const row = getBoundByVendorSessionId(realId)
+      return row ? { agentId: row.agentId, vendor: row.vendor } : null
+    } catch (err) {
+      console.error('[c3] session binding fallback lookup failed:', err)
+      return null
+    }
   })
   setOnAgentSwap((input) => {
     if (input.scope === 'pending') {

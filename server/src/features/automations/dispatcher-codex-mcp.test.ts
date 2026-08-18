@@ -26,9 +26,11 @@ vi.mock('../../kernel/config/index.js', () => ({
 const launchForAgentMock = vi.hoisted(() => ({
   fn: (_agent?: unknown) => ({ model: 'test-model', envOverrides: {} }),
 }))
+const freezeSessionAgentMock = vi.hoisted(() => ({ fn: vi.fn() }))
 vi.mock('../../kernel/agent-config/index.js', () => ({
   launchForAgent: (a: unknown) => launchForAgentMock.fn(a),
   setAgentEnabled: () => true,
+  freezeSessionAgent: (...args: unknown[]) => freezeSessionAgentMock.fn(...args),
 }))
 vi.mock('../../kernel/infra/child-env.js', () => ({
   buildChildEnv: () => ({}),
@@ -38,8 +40,9 @@ vi.mock('./store.js', () => ({
   getWorkspaceMcpConfig: () => ({ mcpServers: {}, denylist: [] }),
   isAgentQuotaRecoveryConfig: () => false,
 }))
+const upsertAutomationRowMock = vi.hoisted(() => ({ fn: vi.fn() }))
 vi.mock('../sessions/session-metadata-store.js', () => ({
-  upsertAutomationExecutionRow: () => undefined,
+  upsertAutomationExecutionRow: (input: unknown) => upsertAutomationRowMock.fn(input),
 }))
 
 const codexStart = vi.hoisted(() => ({
@@ -181,6 +184,40 @@ describe('codex automation MCP bridge — mount opt-in', () => {
     expect(mcpServers?.c3.url).toContain('token=')
     expect(mcpServers?.c3.enabledTools).toEqual(FULL_TOOLS)
     expect(disposeCalls()).toBe(1)
+  })
+})
+
+describe('codex automation session binding — projection AND session→agent fact', () => {
+  it("freezes the fact on the automation's own agent, after the projection row", async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    codexStart.fn = () => Promise.resolve(successfulRun())
+
+    await execute(codexAutomation(), 'log-bind-1', () => {})
+
+    // Projection row first (it carries session_kind='automation' + its owner), so the
+    // bind hook's INSERT OR IGNORE cannot replace it with a plain work row.
+    expect(upsertAutomationRowMock.fn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SID, workspacePath: '/ws' }),
+    )
+    expect(upsertAutomationRowMock.fn.mock.invocationCallOrder[0]).toBeLessThan(
+      freezeSessionAgentMock.fn.mock.invocationCallOrder[0],
+    )
+    // The fact is what `resolveSessionVendor` reads: without it a codex automation
+    // renders as the DEFAULT agent's vendor in the title bar / status bar.
+    expect(freezeSessionAgentMock.fn).toHaveBeenCalledWith(SID, SID, 'agent-codex', '/ws', 'host')
+  })
+
+  it('skips the freeze when the automation carries no agent id', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    codexStart.fn = () => Promise.resolve(successfulRun())
+
+    // No agentId ⇒ dispatch fails before any run; nothing is bound, and in particular
+    // no fact is frozen onto whatever the default agent happens to be.
+    await execute(codexAutomation({ agentId: undefined }), 'log-bind-2', () => {})
+
+    expect(freezeSessionAgentMock.fn).not.toHaveBeenCalled()
   })
 })
 

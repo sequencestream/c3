@@ -70,6 +70,9 @@ import {
   resolveFirstAgentOfVendor,
   resolveIntentAgent,
   resolveRoleAgentTarget,
+  resolveSessionAgentBinding,
+  resolveSessionVendor,
+  setOnSessionBindingFallback,
   resolveSpecAgent,
   resolveSpecReviewAgent,
   resolveToolAgent,
@@ -79,6 +82,7 @@ import {
 } from './index.js'
 import type { AgentRole } from './index.js'
 import type { AgentConfig } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 
 describe('group agents + candidate resolution (ADR-0029)', () => {
   // A custom claude agent factory for group tests.
@@ -575,5 +579,46 @@ describe('launchForAgent — codex wireApi rides the relay candidate (ADR-0029)'
     expect(launch.model).toBe('m')
     // provider connection stays custom-only ⇒ no relay candidate
     expect(launch.relayCandidates).toBeUndefined()
+  })
+})
+
+describe('resolveSessionAgentBinding — projection fallback for factless real sessions', () => {
+  afterEach(() => {
+    setOnSessionBindingFallback(null)
+  })
+
+  it('reads the projection instead of falling through to the default agent', () => {
+    // An automation session that ran before the fact was written on bind: the
+    // projection row is the only first-hand record of what it ran on. Without this
+    // fallback the binding degrades to `defaultAgentId` (claude), and a codex
+    // automation renders as claude in the title bar and status bar.
+    setOnSessionBindingFallback((realId) =>
+      realId === 'codex-automation-session' ? { agentId: 'codex-agent', vendor: 'codex' } : null,
+    )
+
+    expect(resolveSessionAgentBinding('codex-automation-session')).toEqual({
+      agentId: 'codex-agent',
+      vendor: 'codex',
+    })
+    expect(resolveSessionVendor('codex-automation-session')).toBe('codex')
+  })
+
+  it('keeps the default-agent behaviour when the projection has no row', () => {
+    setOnSessionBindingFallback(() => null)
+
+    expect(resolveSessionVendor('unknown-session')).toBe('claude')
+    expect(resolveSessionAgentBinding('unknown-session').agentId).toBe('claude-pro')
+  })
+
+  it('never consults the projection for a pending session (its intent has its own read-through)', () => {
+    const fallback = vi.fn(() => ({ agentId: 'codex-agent', vendor: 'codex' as const }))
+    setOnSessionBindingFallback(fallback)
+
+    expect(resolveSessionVendor(`${PENDING_SESSION_PREFIX}abc`)).toBe('claude')
+    expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('unwired (tests / scripts without the projection) resolves exactly as before', () => {
+    expect(resolveSessionVendor('codex-automation-session')).toBe('claude')
   })
 })

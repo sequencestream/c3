@@ -96,8 +96,8 @@
       "workcenter": {
         "label": "ワークセンター"
       },
-      "codes": {
-        "label": "コード"
+      "files": {
+        "label": "ファイル"
       },
       "delivery": {
         "label": "納品",
@@ -2300,12 +2300,12 @@
     "command": {
       "listFailed": "コマンドの一覧取得に失敗しました: {detail}"
     },
-    "codes": {
+    "files": {
       "invalidPath": "ワークスペースパスが無効です: {path}",
       "notDirectory": "ディレクトリではありません: {path}",
       "notFile": "ファイルではありません: {path}",
       "readFailed": "読み取りに失敗しました: {path}",
-      "searchFailed": "コード検索に失敗しました。"
+      "searchFailed": "ファイル検索に失敗しました。"
     },
     "session": {
       "listFailed": "セッションの一覧取得に失敗しました: {detail}",
@@ -3495,7 +3495,7 @@
       "invalid": "セッションが無効になりました。もう一度サインインしてください。"
     }
   },
-  "codes": {
+  "files": {
     "tab": {
       "close": "タブを閉じる"
     },

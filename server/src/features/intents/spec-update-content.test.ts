@@ -295,7 +295,7 @@ describe('update_spec_content — gates (server re-checks, intent untouched)', (
       {
         type: 'error',
         error: {
-          code: 'codes.invalidPath',
+          code: 'files.invalidPath',
           params: { path: '.specs/2026/07/07/2026-07-07-001-legacy/spec.md' },
         },
       },

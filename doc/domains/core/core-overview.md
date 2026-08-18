@@ -17,8 +17,8 @@
 - [session-registry](session-registry/session-registry-overview.md) — active
   - 职责: 管理工作区与会话;拥有每会话模式、最近访问顺序、历史回放
   - API: WebSocket `/ws`(见 shared protocol)
-- [codes](codes/codes-overview.md) — active
-  - 职责: 只读工作区代码浏览:仅根植于已注册的工作区 id,在其根目录下列目录、读文本文件、做有界搜索
+- [files](files/files-overview.md) — active
+  - 职责: 只读工作区文件浏览:仅根植于已注册的工作区 id,在其根目录下列目录、读文本文件、做有界搜索
   - API: WebSocket `/ws`(见 shared protocol)
 - [web-console](web-console/web-console-overview.md) — active
   - 职责: 浏览器 UI:侧边栏、prompt 输入、活动流、权限对话框、模式切换
@@ -62,7 +62,7 @@
 
 ```
 web-console ──(/ws)──► session-registry ──supplies cwd/mode/resume──► agent-session ──uses──► permission-gateway ──blocks──► SDK query()
-          └─(/ws)──► codes ──validates workspace id──► session-registry
+          └─(/ws)──► files ──validates workspace id──► session-registry
                                                                           ▲
                                                                           │ automations ──uses──► agent-session (execute llm_prompt / command)
 ```

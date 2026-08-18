@@ -42,7 +42,7 @@ describe('AppHeader.vue — top-bar tabs', () => {
       { key: 'intents', label: 'Intents' },
       { key: 'discussion', label: 'Discussions' },
       { key: 'automations', label: 'Automations' },
-      { key: 'codes', label: 'Codes' },
+      { key: 'files', label: 'Files' },
     ]
     const visible = [...hidden, { key: 'console', label: 'Sessions' }]
 

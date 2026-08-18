@@ -1,8 +1,8 @@
-# codes — Models
+# files — Models
 
 ## Code Workspace
 
-codes domain 所见的一个已注册工作区。浏览器通过服务端签发的工作区 id
+files domain 所见的一个已注册工作区。浏览器通过服务端签发的工作区 id
 识别它;文件系统根目录只在服务端解析。
 
 ## Relative Path

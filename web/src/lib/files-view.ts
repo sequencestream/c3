@@ -1,35 +1,35 @@
 /*
- * codes-view.ts — Codes(代码浏览)页的纯逻辑与视图类型。
+ * files-view.ts — Files(文件浏览)页的纯逻辑与视图类型。
  *
  * 无 DOM / 框架依赖,便于单测:open-tab 聚焦、关闭后聚焦相邻 tab、文件后缀 →
  * Shiki 语言推断、字节数人类可读化。状态与服务端往返在 controls/ 与组件里完成。
  */
-import type { CodeFileRead, CodeSearchHit, CodeSearchMode } from '@ccc/shared/protocol'
+import type { FileRead, FileSearchHit, FileSearchMode } from '@ccc/shared/protocol'
 
 /** 右栏一个已打开的文件 tab。`file` 为 null 表示内容仍在加载。 */
-export interface CodeTab {
+export interface FileTab {
   /** workspace 相对路径,既是显示标识也是 tab 唯一 key。 */
   path: string
   /** 已加载的文件元数据 + 内容;加载中为 null。 */
-  file: CodeFileRead | null
+  file: FileRead | null
   /** read_file 在途。 */
   loading: boolean
   /** 内容搜索命中时要滚动/高亮的行号(1-based);文件名命中或普通打开时为空。 */
   focusLine?: number
 }
 
-/** 一次代码搜索的结果视图(codes_searched 的客户端镜像)。 */
-export interface CodesSearchResultView {
+/** 一次文件搜索的结果视图(files_searched 的客户端镜像)。 */
+export interface FilesSearchResultView {
   query: string
-  mode: CodeSearchMode
-  hits: CodeSearchHit[]
+  mode: FileSearchMode
+  hits: FileSearchHit[]
   truncated: boolean
   timedOut: boolean
 }
 
 /** 关闭某 tab 后的下一组 tab 与应聚焦的 path(关闭非激活 tab 时保持激活不变)。 */
 export interface CloseTabResult {
-  tabs: CodeTab[]
+  tabs: FileTab[]
   activePath: string | null
 }
 
@@ -37,7 +37,7 @@ export interface CloseTabResult {
  * 关闭 `path` 这个 tab:从列表移除;若它是当前激活 tab,则聚焦其右邻(无右邻则左邻),
  * 都没有则置空。关闭非激活 tab 时,激活 tab 不变。
  */
-export function closeTab(tabs: CodeTab[], path: string, activePath: string | null): CloseTabResult {
+export function closeTab(tabs: FileTab[], path: string, activePath: string | null): CloseTabResult {
   const idx = tabs.findIndex((t) => t.path === path)
   if (idx < 0) return { tabs, activePath }
   const next = tabs.filter((t) => t.path !== path)
@@ -120,7 +120,7 @@ export function basename(path: string): string {
 
 /** Markdown 文件内容视图的两态:原文(Shiki/纯文本)或渲染预览。仅前端内存态。 */
 export const CODE_VIEW_MODES = ['source', 'preview'] as const
-export type CodeViewMode = (typeof CODE_VIEW_MODES)[number]
+export type FileViewMode = (typeof CODE_VIEW_MODES)[number]
 
 /** 是否对该路径提供 Markdown 预览开关:严格以 `.md` 结尾(不含 .markdown / 无扩展名 / MIME 猜测)。 */
 export function isMarkdownPath(path: string): boolean {
@@ -137,7 +137,7 @@ export function isMarkdownPath(path: string): boolean {
  * links are lexical. A path that escapes the root (leading `..`) is left as-is
  * for the server to reject.
  */
-export function normalizeCodePath(path: string): string {
+export function normalizeFilePath(path: string): string {
   const out: string[] = []
   for (const seg of path.split('/')) {
     if (seg === '' || seg === '.') continue

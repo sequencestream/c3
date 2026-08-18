@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 /*
- * 移动端代码窗口宽度收口回归。
+ * 移动端文件窗口宽度收口回归。
  *
  * happy-dom 无真实布局引擎,无法断言计算宽度;故以「结构性 + 源样式」收口属性为锚:
  * 长行(white-space:pre,不折行)的横向溢出必须由 .code-scroll(overflow:auto)就地
@@ -12,13 +12,13 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import CodeFileView from './CodeFileView.vue'
-import type { CodeTab } from '@/lib/codes-view'
+import FileView from './FileView.vue'
+import type { FileTab } from '@/lib/files-view'
 
 // 超长单行 + 未知后缀:后缀绕过 Shiki 高亮走纯文本兜底,把测试聚焦在收口结构,
 // 不牵扯异步高亮管线。
 const longLine = `const x = ${'a'.repeat(4000)}()`
-function makeTab(): CodeTab {
+function makeTab(): FileTab {
   return {
     path: 'sample.unknownext',
     loading: false,
@@ -35,7 +35,7 @@ function makeTab(): CodeTab {
 // Vitest 根即仓库根(见根 vitest.config.ts),按仓库相对路径读源样式更稳:
 // happy-dom 会把 import.meta.url 改写成非 file 协议,fileURLToPath 不可用。
 const componentSrc = readFileSync(
-  resolve(process.cwd(), 'web/src/pages/codes/components/CodeFileView/CodeFileView.vue'),
+  resolve(process.cwd(), 'web/src/pages/files/components/FileView/FileView.vue'),
   'utf8',
 )
 const globalCss = readFileSync(resolve(process.cwd(), 'web/src/style.css'), 'utf8')
@@ -45,9 +45,9 @@ function ruleBody(css: string, selector: string): string {
   return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
 }
 
-describe('CodeFileView 移动端宽度收口', () => {
+describe('FileView 移动端宽度收口', () => {
   it('承载长行的 .code-body 嵌套在 .code-scroll 滚动容器内部', () => {
-    const wrapper = mount(CodeFileView, { props: { tab: makeTab() } })
+    const wrapper = mount(FileView, { props: { tab: makeTab() } })
     const scroll = wrapper.find('.code-scroll')
     expect(scroll.exists()).toBe(true)
     // 横向溢出的所有权落在 .code-scroll,而非冒泡成整页横滚。
@@ -76,7 +76,7 @@ describe('CodeFileView 移动端宽度收口', () => {
 // Markdown 预览/原文两态开关
 // ————————————————————————————————————————————————————————————————
 
-function makeMdTab(path = 'README.md'): CodeTab {
+function makeMdTab(path = 'README.md'): FileTab {
   const content = '# Title\n\nsome **bold** text\n'
   return {
     path,
@@ -85,20 +85,20 @@ function makeMdTab(path = 'README.md'): CodeTab {
   }
 }
 
-describe('CodeFileView Markdown 视图开关', () => {
+describe('FileView Markdown 视图开关', () => {
   it('非 .md 文件不渲染开关,且保持原文视图结构', () => {
-    const wrapper = mount(CodeFileView, { props: { tab: makeTab() } })
-    expect(wrapper.find('.code-view-toggle').exists()).toBe(false)
+    const wrapper = mount(FileView, { props: { tab: makeTab() } })
+    expect(wrapper.find('.file-view-toggle').exists()).toBe(false)
     expect(wrapper.find('.code-scroll').exists()).toBe(true)
     expect(wrapper.find('.code-gutter').exists()).toBe(true)
     expect(wrapper.find('.code-preview').exists()).toBe(false)
   })
 
   it('.md 文件显示两态开关,默认预览(preview 激活)', () => {
-    const wrapper = mount(CodeFileView, { props: { tab: makeMdTab() } })
-    const toggle = wrapper.find('.code-view-toggle')
+    const wrapper = mount(FileView, { props: { tab: makeMdTab() } })
+    const toggle = wrapper.find('.file-view-toggle')
     expect(toggle.exists()).toBe(true)
-    const btns = toggle.findAll('.code-view-btn')
+    const btns = toggle.findAll('.file-view-btn')
     expect(btns).toHaveLength(2)
     expect(btns[0].classes()).not.toContain('active')
     expect(btns[1].classes()).toContain('active')
@@ -108,8 +108,8 @@ describe('CodeFileView Markdown 视图开关', () => {
   })
 
   it('点击原文按钮上抛 update:viewMode=source(受控,自身不切换)', async () => {
-    const wrapper = mount(CodeFileView, { props: { tab: makeMdTab() } })
-    const sourceBtn = wrapper.findAll('.code-view-btn')[0]
+    const wrapper = mount(FileView, { props: { tab: makeMdTab() } })
+    const sourceBtn = wrapper.findAll('.file-view-btn')[0]
     await sourceBtn.trigger('click')
     expect(wrapper.emitted('update:viewMode')).toEqual([['source']])
     // 受控组件:prop 未变前视图保持预览。
@@ -118,7 +118,7 @@ describe('CodeFileView Markdown 视图开关', () => {
   })
 
   it('viewMode=preview 渲染 MarkdownText(.md-body),无行号 gutter', () => {
-    const wrapper = mount(CodeFileView, {
+    const wrapper = mount(FileView, {
       props: { tab: makeMdTab(), viewMode: 'preview' },
     })
     expect(wrapper.find('.code-preview').exists()).toBe(true)
@@ -129,7 +129,7 @@ describe('CodeFileView Markdown 视图开关', () => {
 
   it('从 preview 切回 source 恢复 .code-scroll/.code-gutter 与原始内容', async () => {
     const tab = makeMdTab()
-    const wrapper = mount(CodeFileView, { props: { tab, viewMode: 'preview' } })
+    const wrapper = mount(FileView, { props: { tab, viewMode: 'preview' } })
     expect(wrapper.find('.code-preview').exists()).toBe(true)
     await wrapper.setProps({ viewMode: 'source' })
     expect(wrapper.find('.code-preview').exists()).toBe(false)
@@ -139,15 +139,15 @@ describe('CodeFileView Markdown 视图开关', () => {
   })
 
   it('空 .md 文件即使选 preview 也走空态文案,不进预览内容分支', () => {
-    const empty: CodeTab = {
+    const empty: FileTab = {
       path: 'empty.md',
       loading: false,
       file: { path: 'empty.md', size: 0, binary: false, truncated: false, content: '' },
     }
-    const wrapper = mount(CodeFileView, { props: { tab: empty, viewMode: 'preview' } })
+    const wrapper = mount(FileView, { props: { tab: empty, viewMode: 'preview' } })
     // 开关仍显示(是 .md),但内容区是空态,不是预览。
-    expect(wrapper.find('.code-view-toggle').exists()).toBe(true)
+    expect(wrapper.find('.file-view-toggle').exists()).toBe(true)
     expect(wrapper.find('.code-preview').exists()).toBe(false)
-    expect(wrapper.find('.code-file-status').exists()).toBe(true)
+    expect(wrapper.find('.file-status').exists()).toBe(true)
   })
 })

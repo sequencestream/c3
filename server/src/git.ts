@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
-import type { CodeGitStatus, IntentPrStatus } from '@ccc/shared/protocol'
+import type { FileGitStatus, IntentPrStatus } from '@ccc/shared/protocol'
 
 /**
  * Why a commit/push attempt failed, so the automation orchestrator can decide
@@ -264,12 +264,12 @@ function discoverSubRepos(root: string, maxDepth = 6): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Read-only working-tree status snapshot (decorates the Codes file tree)
+// Read-only working-tree status snapshot (decorates the Files file tree)
 // ---------------------------------------------------------------------------
 
 /**
  * Parse `git status --porcelain -z --untracked-files=all` output into a map of
- * repo-relative path → {@link CodeGitStatus}. NUL (`-z`) framing keeps spaces,
+ * repo-relative path → {@link FileGitStatus}. NUL (`-z`) framing keeps spaces,
  * quotes and non-ASCII bytes in paths intact (no C-quoting to undo).
  *
  * Status columns are `XY`: `X` the index, `Y` the working tree. `??` ⇒
@@ -278,8 +278,8 @@ function discoverSubRepos(root: string, maxDepth = 6): string[] {
  * old-path token we consume and drop. Deletions, renames, copies and conflicts
  * never enter the snapshot. Pure (string in, map out) so it is unit-testable.
  */
-export function parsePorcelainStatus(z: string): Record<string, CodeGitStatus> {
-  const out: Record<string, CodeGitStatus> = {}
+export function parsePorcelainStatus(z: string): Record<string, FileGitStatus> {
+  const out: Record<string, FileGitStatus> = {}
   const tokens = z.split('\0')
   for (let i = 0; i < tokens.length; i++) {
     const entry = tokens[i]
@@ -310,12 +310,12 @@ export function parsePorcelainStatus(z: string): Record<string, CodeGitStatus> {
 }
 
 /** Run the read-only porcelain status in one repo; `{}` on any git error. */
-async function statusForRepo(repo: string, prefix: string): Promise<Record<string, CodeGitStatus>> {
+async function statusForRepo(repo: string, prefix: string): Promise<Record<string, FileGitStatus>> {
   const res = await git(repo, ['-C', repo, 'status', '--porcelain', '-z', '--untracked-files=all'])
   if (res.code !== 0) return {}
   const parsed = parsePorcelainStatus(res.stdout)
   if (!prefix) return parsed
-  const out: Record<string, CodeGitStatus> = {}
+  const out: Record<string, FileGitStatus> = {}
   for (const [p, flags] of Object.entries(parsed)) out[`${prefix}/${p}`] = flags
   return out
 }
@@ -331,9 +331,9 @@ async function statusForRepo(repo: string, prefix: string): Promise<Record<strin
  */
 export async function collectGitStatus(
   workspacePath: string,
-): Promise<Record<string, CodeGitStatus>> {
+): Promise<Record<string, FileGitStatus>> {
   if (isGitRepo(workspacePath)) return statusForRepo(workspacePath, '')
-  const out: Record<string, CodeGitStatus> = {}
+  const out: Record<string, FileGitStatus> = {}
   for (const repo of discoverSubRepos(workspacePath)) {
     const prefix = relative(workspacePath, repo).split(sep).join('/')
     Object.assign(out, await statusForRepo(repo, prefix))

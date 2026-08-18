@@ -391,7 +391,7 @@ describe('readSpecHandler (REQ-5: read the centralized spec)', () => {
       {
         type: 'error',
         error: {
-          code: 'codes.readFailed',
+          code: 'files.readFailed',
           params: { path: '.specs/2026/06/20/2026-06-20-001-legacy/spec.md' },
         },
       },

@@ -555,7 +555,7 @@ export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
   if (!isInside(getSpecsBase(proj), fileAbs)) {
     conn.send({
       type: 'error',
-      error: { code: 'codes.readFailed', params: { path: intent.specPath } },
+      error: { code: 'files.readFailed', params: { path: intent.specPath } },
     })
     return
   }
@@ -571,7 +571,7 @@ export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
     console.warn(`[c3:intents] read_spec read failed: ${errMsg(err)}`)
     conn.send({
       type: 'error',
-      error: { code: 'codes.readFailed', params: { path: intent.specPath } },
+      error: { code: 'files.readFailed', params: { path: intent.specPath } },
     })
   }
 }
@@ -636,7 +636,7 @@ export const updateSpecContentHandler: Handler<'update_spec_content'> = (ctx, co
   if (!isInside(getSpecsBase(proj), fileAbs)) {
     conn.send({
       type: 'error',
-      error: { code: 'codes.invalidPath', params: { path: intent.specPath } },
+      error: { code: 'files.invalidPath', params: { path: intent.specPath } },
     })
     return
   }

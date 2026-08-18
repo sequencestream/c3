@@ -445,8 +445,8 @@ export function installSessionActions(ctx: AppCtx): void {
       if (currentWorkspace.value) ctx.openAutomations(currentWorkspace.value)
       return
     }
-    if (key === 'codes') {
-      if (currentWorkspace.value) ctx.openCodes(currentWorkspace.value)
+    if (key === 'files') {
+      if (currentWorkspace.value) ctx.openFiles(currentWorkspace.value)
       return
     }
     ctx.switchToConsoleTab()

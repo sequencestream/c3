@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * CodeFileView.vue — 单个文件 tab 的内容渲染。
+ * FileView.vue — 单个文件 tab 的内容渲染。
  *
  * 复用既有 Shiki 高亮管线(lib/highlight):按文件后缀推断语言,白名单外/二进制/超限
  * 优雅降级为纯文本 <pre>。左侧行号 gutter 与代码逐行对齐(white-space:pre 不换行,
@@ -16,16 +16,16 @@ import {
   isMarkdownPath,
   langFromPath,
   CODE_VIEW_MODES,
-  type CodeTab,
-  type CodeViewMode,
-} from '@/lib/codes-view'
+  type FileTab,
+  type FileViewMode,
+} from '@/lib/files-view'
 
-// viewMode 是受控 prop:状态由多 tab 容器(CodeTabs)按 path 记忆,因为本组件被
+// viewMode 是受控 prop:状态由多 tab 容器(FileTabs)按 path 记忆,因为本组件被
 // :key="tab.path" 逐 tab 重挂载,内部 ref 无法跨 tab 保留。默认 'preview'。
-const props = withDefaults(defineProps<{ tab: CodeTab; viewMode?: CodeViewMode }>(), {
+const props = withDefaults(defineProps<{ tab: FileTab; viewMode?: FileViewMode }>(), {
   viewMode: 'preview',
 })
-const emit = defineEmits<{ 'update:viewMode': [mode: CodeViewMode] }>()
+const emit = defineEmits<{ 'update:viewMode': [mode: FileViewMode] }>()
 const { t } = useTypedI18n()
 
 const file = computed(() => props.tab.file)
@@ -43,9 +43,9 @@ const showPreview = computed(
 )
 
 // computed 以随 locale 切换重新求值(t 是响应式的,直接用字面量对象会锁死首帧语言)。
-const viewModeLabels = computed<Record<CodeViewMode, string>>(() => ({
-  source: t('codes.file.view.source'),
-  preview: t('codes.file.view.preview'),
+const viewModeLabels = computed<Record<FileViewMode, string>>(() => ({
+  source: t('files.file.view.source'),
+  preview: t('files.file.view.preview'),
 }))
 
 const scrollEl = ref<HTMLElement | null>(null)
@@ -110,21 +110,21 @@ watch(
 </script>
 
 <template>
-  <div class="code-file">
-    <div class="code-file-meta">
-      <span class="code-file-name">{{ basename(tab.path) }}</span>
-      <span class="code-file-path">{{ tab.path }}</span>
+  <div class="file-view">
+    <div class="file-meta">
+      <span class="file-name">{{ basename(tab.path) }}</span>
+      <span class="file-path">{{ tab.path }}</span>
       <div
         v-if="isMarkdownFile"
-        class="code-view-toggle"
+        class="file-view-toggle"
         role="group"
-        :aria-label="t('codes.file.view.aria')"
+        :aria-label="t('files.file.view.aria')"
       >
         <button
           v-for="mode in CODE_VIEW_MODES"
           :key="mode"
           type="button"
-          class="code-view-btn"
+          class="file-view-btn"
           :class="{ active: viewMode === mode }"
           :aria-pressed="viewMode === mode"
           @click="emit('update:viewMode', mode)"
@@ -134,16 +134,16 @@ watch(
       </div>
     </div>
 
-    <div v-if="!file || tab.loading" class="code-file-status">{{ t('codes.file.loading') }}</div>
-    <div v-else-if="file.binary" class="code-file-status">{{ t('codes.file.binary') }}</div>
-    <div v-else-if="file.truncated" class="code-file-status">
-      {{ t('codes.file.tooLarge', { size: formatFileSize(file.size) }) }}
+    <div v-if="!file || tab.loading" class="file-status">{{ t('files.file.loading') }}</div>
+    <div v-else-if="file.binary" class="file-status">{{ t('files.file.binary') }}</div>
+    <div v-else-if="file.truncated" class="file-status">
+      {{ t('files.file.tooLarge', { size: formatFileSize(file.size) }) }}
     </div>
-    <div v-else-if="content.length === 0" class="code-file-status">{{ t('codes.file.empty') }}</div>
+    <div v-else-if="content.length === 0" class="file-status">{{ t('files.file.empty') }}</div>
 
     <!-- 预览模式:只读渲染,复用 MarkdownText 的安全管线;无行号/聚焦 marker。 -->
     <div v-else-if="showPreview" class="code-preview">
-      <MarkdownText :text="content" :code-link-base-path="tab.path" markdown />
+      <MarkdownText :text="content" :file-link-base-path="tab.path" markdown />
     </div>
 
     <div v-else ref="scrollEl" class="code-scroll">
@@ -174,7 +174,7 @@ watch(
 </template>
 
 <style scoped>
-.code-file {
+.file-view {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -183,7 +183,7 @@ watch(
   background: var(--c-bg);
 }
 
-.code-file-meta {
+.file-meta {
   flex-shrink: 0;
   display: flex;
   align-items: baseline;
@@ -192,12 +192,12 @@ watch(
   border-bottom: 1px solid var(--c-border);
   background: var(--c-panel);
 }
-.code-file-name {
+.file-name {
   font-size: var(--fs-caption);
   font-weight: 600;
   color: var(--c-text);
 }
-.code-file-path {
+.file-path {
   min-width: 0;
   font-size: var(--fs-micro, 11px);
   color: var(--c-text-muted);
@@ -207,7 +207,7 @@ watch(
 }
 
 /* meta 栏右侧的两态视图开关(仅 .md 文件渲染)。 */
-.code-view-toggle {
+.file-view-toggle {
   flex-shrink: 0;
   margin-left: auto;
   display: inline-flex;
@@ -216,7 +216,7 @@ watch(
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-.code-view-btn {
+.file-view-btn {
   padding: 2px var(--sp-2);
   border: 0;
   background: transparent;
@@ -225,14 +225,14 @@ watch(
   line-height: 1.5;
   cursor: pointer;
 }
-.code-view-btn + .code-view-btn {
+.file-view-btn + .file-view-btn {
   border-left: 1px solid var(--c-border);
 }
-.code-view-btn:hover {
+.file-view-btn:hover {
   background: var(--c-card);
   color: var(--c-text);
 }
-.code-view-btn.active {
+.file-view-btn.active {
   background: var(--c-primary);
   color: #fff;
 }
@@ -246,7 +246,7 @@ watch(
   background: var(--c-bg);
 }
 
-.code-file-status {
+.file-status {
   flex: 1;
   display: flex;
   align-items: center;

@@ -7,19 +7,19 @@ import {
   DISC_PROJECT_KEY,
   DISC_ID_KEY,
   SCHED_PROJECT_KEY,
-  CODES_PROJECT_KEY,
-  CODES_CHAT_WIDTH_KEY,
-  CODES_CHAT_SESSION_KEY,
-  CODES_CHAT_WIDTH_DEFAULT,
-  CODES_CHAT_WIDTH_MIN,
-  CODES_CHAT_WIDTH_MAX,
+  FILES_PROJECT_KEY,
+  FILES_CHAT_WIDTH_KEY,
+  FILES_CHAT_SESSION_KEY,
+  FILES_CHAT_WIDTH_DEFAULT,
+  FILES_CHAT_WIDTH_MIN,
+  FILES_CHAT_WIDTH_MAX,
   CURRENT_WS_KEY,
   WORK_SESSION_QUERY_START_TIME_KEY,
 } from './state'
 
-// Per-workspace Codes localStorage key: `c3.codes.<workspaceName>.<suffix>`.
-function codesKey(workspaceName: string, suffix: string): string {
-  return `c3.codes.${workspaceName}.${suffix}`
+// Per-workspace Files localStorage key: `c3.files.<workspaceName>.<suffix>`.
+function filesKey(workspaceName: string, suffix: string): string {
+  return `c3.files.${workspaceName}.${suffix}`
 }
 
 // Install localStorage view-restore persistence + the post-`ready` restore
@@ -34,7 +34,7 @@ export function installPersistence(ctx: AppCtx): void {
     activeDiscussionId,
     automationsProject,
     selectedAutomationId,
-    codesProject,
+    filesProject,
   } = ctx
   const send = ctx.send
 
@@ -85,8 +85,8 @@ export function installPersistence(ctx: AppCtx): void {
       if (automationsProject.value)
         localStorage.setItem(SCHED_PROJECT_KEY, automationsProject.value)
       else localStorage.removeItem(SCHED_PROJECT_KEY)
-      if (codesProject.value) localStorage.setItem(CODES_PROJECT_KEY, codesProject.value)
-      else localStorage.removeItem(CODES_PROJECT_KEY)
+      if (filesProject.value) localStorage.setItem(FILES_PROJECT_KEY, filesProject.value)
+      else localStorage.removeItem(FILES_PROJECT_KEY)
     } catch {
       /* localStorage unavailable — non-fatal */
     }
@@ -159,60 +159,60 @@ export function installPersistence(ctx: AppCtx): void {
     }
   }
 
-  // ---- Codes 内嵌 ChatColumn 持久化(per-workspace,只 localStorage,best-effort)----
+  // ---- Files 内嵌 ChatColumn 持久化(per-workspace,只 localStorage,best-effort)----
   // 分隔条宽度(像素):缺失 / 解析失败 / 越界时回退默认 360,并夹到 [min, max]。
-  ctx.readCodesChatWidth = (workspaceName: string): number => {
+  ctx.readFilesChatWidth = (workspaceName: string): number => {
     try {
-      const raw = localStorage.getItem(codesKey(workspaceName, CODES_CHAT_WIDTH_KEY))
+      const raw = localStorage.getItem(filesKey(workspaceName, FILES_CHAT_WIDTH_KEY))
       const px = raw == null ? NaN : Number.parseInt(raw, 10)
-      if (!Number.isFinite(px)) return CODES_CHAT_WIDTH_DEFAULT
-      return Math.min(CODES_CHAT_WIDTH_MAX, Math.max(CODES_CHAT_WIDTH_MIN, px))
+      if (!Number.isFinite(px)) return FILES_CHAT_WIDTH_DEFAULT
+      return Math.min(FILES_CHAT_WIDTH_MAX, Math.max(FILES_CHAT_WIDTH_MIN, px))
     } catch {
-      return CODES_CHAT_WIDTH_DEFAULT
+      return FILES_CHAT_WIDTH_DEFAULT
     }
   }
 
-  ctx.persistCodesChatWidth = (workspaceName: string, px: number): void => {
+  ctx.persistFilesChatWidth = (workspaceName: string, px: number): void => {
     try {
-      localStorage.setItem(codesKey(workspaceName, CODES_CHAT_WIDTH_KEY), String(Math.round(px)))
+      localStorage.setItem(filesKey(workspaceName, FILES_CHAT_WIDTH_KEY), String(Math.round(px)))
     } catch {
       /* localStorage unavailable — degrade to no-memory */
     }
   }
 
   // 内嵌会话 id:缺失 / 空串回退 null。
-  ctx.readCodesSessionId = (workspaceName: string): string | null => {
+  ctx.readFilesSessionId = (workspaceName: string): string | null => {
     try {
-      const raw = localStorage.getItem(codesKey(workspaceName, CODES_CHAT_SESSION_KEY))
+      const raw = localStorage.getItem(filesKey(workspaceName, FILES_CHAT_SESSION_KEY))
       return raw && raw.length ? raw : null
     } catch {
       return null
     }
   }
 
-  ctx.persistCodesSessionId = (workspaceName: string, id: string | null): void => {
+  ctx.persistFilesSessionId = (workspaceName: string, id: string | null): void => {
     try {
-      if (id) localStorage.setItem(codesKey(workspaceName, CODES_CHAT_SESSION_KEY), id)
-      else localStorage.removeItem(codesKey(workspaceName, CODES_CHAT_SESSION_KEY))
+      if (id) localStorage.setItem(filesKey(workspaceName, FILES_CHAT_SESSION_KEY), id)
+      else localStorage.removeItem(filesKey(workspaceName, FILES_CHAT_SESSION_KEY))
     } catch {
       /* localStorage unavailable — degrade to no-memory */
     }
   }
 
-  // After `ready`, re-enter the Codes view if a hard refresh left us there,
+  // After `ready`, re-enter the Files view if a hard refresh left us there,
   // re-loading the root listing (open tabs are intentionally not persisted).
-  ctx.maybeRestoreCodes = (list: WorkspaceInfo[]): void => {
+  ctx.maybeRestoreFiles = (list: WorkspaceInfo[]): void => {
     let saved: { mode: string | null; proj: string | null }
     try {
       saved = {
         mode: localStorage.getItem(VIEW_MODE_KEY),
-        proj: localStorage.getItem(CODES_PROJECT_KEY),
+        proj: localStorage.getItem(FILES_PROJECT_KEY),
       }
     } catch {
       return
     }
-    if (saved.mode === 'codes' && saved.proj && list.some((w) => w.name === saved.proj)) {
-      ctx.openCodes(saved.proj)
+    if (saved.mode === 'files' && saved.proj && list.some((w) => w.name === saved.proj)) {
+      ctx.openFiles(saved.proj)
     }
   }
 }

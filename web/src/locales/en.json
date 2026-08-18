@@ -92,8 +92,8 @@
         "label": "Automations",
         "ariaLabel": "Automations ({count} running)"
       },
-      "codes": {
-        "label": "Codes"
+      "files": {
+        "label": "Files"
       },
       "workcenter": {
         "label": "Workcenter"
@@ -2299,12 +2299,12 @@
     "command": {
       "listFailed": "Failed to list commands: {detail}"
     },
-    "codes": {
+    "files": {
       "invalidPath": "Invalid workspace path: {path}",
       "notDirectory": "Not a directory: {path}",
       "notFile": "Not a file: {path}",
       "readFailed": "Failed to read: {path}",
-      "searchFailed": "Code search failed."
+      "searchFailed": "File search failed."
     },
     "session": {
       "listFailed": "Failed to list sessions: {detail}",
@@ -3343,7 +3343,7 @@
       }
     }
   },
-  "codes": {
+  "files": {
     "tab": {
       "close": "Close tab"
     },

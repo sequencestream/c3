@@ -1,5 +1,5 @@
 /**
- * `codes` feature handlers — read-only workspace code browsing.
+ * `files` feature handlers — read-only workspace code browsing.
  *
  * Every operation resolves the trust root from a registered workspace name and
  * accepts only workspace-relative paths. No handler writes to disk.
@@ -7,11 +7,11 @@
 import { open, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type {
-  CodeDirEntry,
-  CodeEntryType,
-  CodeFileRead,
-  CodeGitStatus,
-  CodeSearchHit,
+  FileEntry,
+  FileEntryType,
+  FileRead,
+  FileGitStatus,
+  FileSearchHit,
   ServerToClient,
 } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
@@ -23,24 +23,24 @@ export const MAX_FILE_BYTES = 1024 * 1024
 export const SEARCH_RESULT_LIMIT = 100
 export const SEARCH_TIMEOUT_MS = 1500
 
-type CodesErrorCode =
+type FilesErrorCode =
   | Extract<UiErrorCode, 'workspace.unknown'>
   | Extract<
       UiErrorCode,
-      | 'codes.invalidPath'
-      | 'codes.notDirectory'
-      | 'codes.notFile'
-      | 'codes.readFailed'
-      | 'codes.searchFailed'
+      | 'files.invalidPath'
+      | 'files.notDirectory'
+      | 'files.notFile'
+      | 'files.readFailed'
+      | 'files.searchFailed'
     >
 
-interface CodesError {
-  code: CodesErrorCode
+interface FilesError {
+  code: FilesErrorCode
   path?: string
 }
 
 type GuardResult =
-  { ok: true; root: string; abs: string; rel: string } | { ok: false; error: CodesError }
+  { ok: true; root: string; abs: string; rel: string } | { ok: false; error: FilesError }
 
 interface SearchState {
   query: string
@@ -48,7 +48,7 @@ interface SearchState {
   /** Compiled basename glob filters; null ⇒ match every file (`*`/empty). */
   patterns: RegExp[] | null
   startedAt: number
-  hits: CodeSearchHit[]
+  hits: FileSearchHit[]
   truncated: boolean
   timedOut: boolean
 }
@@ -75,7 +75,7 @@ function matchesPattern(name: string, patterns: RegExp[] | null): boolean {
   return patterns === null || patterns.some((re) => re.test(name))
 }
 
-function errorFrame(error: CodesError): ServerToClient {
+function errorFrame(error: FilesError): ServerToClient {
   return {
     type: 'error',
     error: { code: error.code, params: error.path ? { path: error.path } : undefined },
@@ -111,7 +111,7 @@ async function safeRealpath(path: string): Promise<string | null> {
   }
 }
 
-export async function resolveCodePath(
+export async function resolveFilePath(
   workspaceName: string,
   relInput: string,
 ): Promise<GuardResult> {
@@ -120,7 +120,7 @@ export async function resolveCodePath(
 
   const rel = normalizeRel(relInput)
   if (rel.includes('\0') || isAbsolute(rel) || isWindowsAbsolute(rel) || hasForbiddenSegment(rel)) {
-    return { ok: false, error: { code: 'codes.invalidPath', path: relInput } }
+    return { ok: false, error: { code: 'files.invalidPath', path: relInput } }
   }
 
   const root = await safeRealpath(registered)
@@ -129,17 +129,17 @@ export async function resolveCodePath(
   const candidate = resolve(root, rel)
   const abs = await safeRealpath(candidate)
   if (!abs || !isInsideRoot(root, abs)) {
-    return { ok: false, error: { code: 'codes.invalidPath', path: relInput } }
+    return { ok: false, error: { code: 'files.invalidPath', path: relInput } }
   }
 
   const wireRel = toWireRel(root, abs)
   if (hasForbiddenSegment(wireRel)) {
-    return { ok: false, error: { code: 'codes.invalidPath', path: relInput } }
+    return { ok: false, error: { code: 'files.invalidPath', path: relInput } }
   }
   return { ok: true, root, abs, rel: wireRel }
 }
 
-async function entryType(abs: string): Promise<CodeEntryType | null> {
+async function entryType(abs: string): Promise<FileEntryType | null> {
   const s = await stat(abs)
   if (s.isDirectory()) return 'directory'
   if (s.isFile()) return 'file'
@@ -147,16 +147,16 @@ async function entryType(abs: string): Promise<CodeEntryType | null> {
 }
 
 async function listDir(workspaceName: string, rel: string): Promise<ServerToClient> {
-  const guarded = await resolveCodePath(workspaceName, rel)
+  const guarded = await resolveFilePath(workspaceName, rel)
   if (!guarded.ok) return errorFrame(guarded.error)
   const type = await entryType(guarded.abs)
-  if (type !== 'directory') return errorFrame({ code: 'codes.notDirectory', path: rel })
+  if (type !== 'directory') return errorFrame({ code: 'files.notDirectory', path: rel })
 
-  const entries: CodeDirEntry[] = []
+  const entries: FileEntry[] = []
   for (const dirent of await readdir(guarded.abs, { withFileTypes: true })) {
     if (dirent.name === '.git') continue
     const childRel = guarded.rel ? `${guarded.rel}/${dirent.name}` : dirent.name
-    const child = await resolveCodePath(workspaceName, childRel)
+    const child = await resolveFilePath(workspaceName, childRel)
     if (!child.ok) continue
     const childType = await entryType(child.abs)
     if (!childType) continue
@@ -172,11 +172,11 @@ function isBinary(buf: Buffer): boolean {
   return buf.includes(0)
 }
 
-async function readCodeFile(workspaceName: string, rel: string): Promise<ServerToClient> {
-  const guarded = await resolveCodePath(workspaceName, rel)
+async function readFileContent(workspaceName: string, rel: string): Promise<ServerToClient> {
+  const guarded = await resolveFilePath(workspaceName, rel)
   if (!guarded.ok) return errorFrame(guarded.error)
   const s = await stat(guarded.abs)
-  if (!s.isFile()) return errorFrame({ code: 'codes.notFile', path: rel })
+  if (!s.isFile()) return errorFrame({ code: 'files.notFile', path: rel })
 
   const truncated = s.size > MAX_FILE_BYTES
   const sampleSize = Math.min(s.size, truncated ? 8192 : MAX_FILE_BYTES)
@@ -189,7 +189,7 @@ async function readCodeFile(workspaceName: string, rel: string): Promise<ServerT
     await handle.close()
   }
   const binary = isBinary(buf.subarray(0, Math.min(buf.byteLength, 8192)))
-  const file: CodeFileRead = {
+  const file: FileRead = {
     path: guarded.rel,
     size: s.size,
     binary,
@@ -211,7 +211,7 @@ function shouldStopSearch(state: SearchState): boolean {
   return false
 }
 
-function addHit(state: SearchState, hit: CodeSearchHit): void {
+function addHit(state: SearchState, hit: FileSearchHit): void {
   if (state.hits.length >= SEARCH_RESULT_LIMIT) {
     state.truncated = true
     return
@@ -276,18 +276,18 @@ async function walkSearch(root: string, dirAbs: string, state: SearchState): Pro
   }
 }
 
-async function searchCodes(
+async function searchFiles(
   workspaceName: string,
   query: string,
   mode: 'filename' | 'content',
   pattern: string,
 ): Promise<ServerToClient> {
-  const guarded = await resolveCodePath(workspaceName, '')
+  const guarded = await resolveFilePath(workspaceName, '')
   if (!guarded.ok) return errorFrame(guarded.error)
   const trimmed = query.trim()
   if (!trimmed) {
     return {
-      type: 'codes_searched',
+      type: 'files_searched',
       workspaceName,
       query,
       mode,
@@ -307,7 +307,7 @@ async function searchCodes(
   }
   await walkSearch(guarded.root, guarded.root, state)
   return {
-    type: 'codes_searched',
+    type: 'files_searched',
     workspaceName,
     query,
     mode,
@@ -321,7 +321,7 @@ export const listDirHandler: Handler<'list_dir'> = async (_ctx, conn, msg) => {
   try {
     conn.send(await listDir(msg.workspaceName, msg.rel))
   } catch {
-    conn.send(errorFrame({ code: 'codes.readFailed', path: msg.rel }))
+    conn.send(errorFrame({ code: 'files.readFailed', path: msg.rel }))
   }
 }
 
@@ -331,36 +331,36 @@ export const listDirHandler: Handler<'list_dir'> = async (_ctx, conn, msg) => {
  * the multi-repo-aware `collectGitStatus`. Any failure — unknown workspace,
  * non-git tree, git unavailable — degrades to an empty map rather than an error
  * frame, so a missing snapshot never breaks the tree. Always replies with
- * `code_git_status` so the client can clear a stale snapshot.
+ * `file_git_status` so the client can clear a stale snapshot.
  */
-async function codeGitStatus(workspaceName: string): Promise<Record<string, CodeGitStatus>> {
+async function fileGitStatus(workspaceName: string): Promise<Record<string, FileGitStatus>> {
   const root = resolveWorkspaceRoot(workspaceName)
   if (!root) return {}
   return collectGitStatus(root)
 }
 
-export const getCodeGitStatusHandler: Handler<'get_code_git_status'> = async (_ctx, conn, msg) => {
-  let files: Record<string, CodeGitStatus>
+export const getFileGitStatusHandler: Handler<'get_file_git_status'> = async (_ctx, conn, msg) => {
+  let files: Record<string, FileGitStatus>
   try {
-    files = await codeGitStatus(msg.workspaceName)
+    files = await fileGitStatus(msg.workspaceName)
   } catch {
     files = {}
   }
-  conn.send({ type: 'code_git_status', workspaceName: msg.workspaceName, files })
+  conn.send({ type: 'file_git_status', workspaceName: msg.workspaceName, files })
 }
 
 export const readFileHandler: Handler<'read_file'> = async (_ctx, conn, msg) => {
   try {
-    conn.send(await readCodeFile(msg.workspaceName, msg.rel))
+    conn.send(await readFileContent(msg.workspaceName, msg.rel))
   } catch {
-    conn.send(errorFrame({ code: 'codes.readFailed', path: msg.rel }))
+    conn.send(errorFrame({ code: 'files.readFailed', path: msg.rel }))
   }
 }
 
-export const searchCodesHandler: Handler<'search_codes'> = async (_ctx, conn, msg) => {
+export const searchFilesHandler: Handler<'search_files'> = async (_ctx, conn, msg) => {
   try {
-    conn.send(await searchCodes(msg.workspaceName, msg.query, msg.mode, msg.pattern ?? '*'))
+    conn.send(await searchFiles(msg.workspaceName, msg.query, msg.mode, msg.pattern ?? '*'))
   } catch {
-    conn.send(errorFrame({ code: 'codes.searchFailed' }))
+    conn.send(errorFrame({ code: 'files.searchFailed' }))
   }
 }

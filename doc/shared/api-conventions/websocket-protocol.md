@@ -78,21 +78,21 @@
 
 **字段：** `workspaceName: string`, `rel: string`
 
-### `get_code_git_status`
+### `get_file_git_status`
 
 请求工作区的只读 Git 状态快照,用于装饰文件树。只携带 `workspaceName`,**绝不**携带客户端路径。
 服务器基于 `git status --porcelain -z --untracked-files=all` 采集(单仓库工作区查该仓库,否则沿用
-子仓库发现规则逐仓库查询并加仓库相对前缀),始终回复 `code_git_status`(不回 `error`);非 Git、
+子仓库发现规则逐仓库查询并加仓库相对前缀),始终回复 `file_git_status`(不回 `error`);非 Git、
 仓库不可读或 Git 不可用时降级为空快照,**不使 `list_dir` 失败**。严格只读,绝不修改索引或工作区。
 
 **字段：** `workspaceName: string`
 
-### `search_codes`
+### `search_files`
 
-在已注册工作区内搜索代码。`mode: 'filename'` 以查询词作不区分大小写子串,匹配每个条目的基础名(而非相对路径),连字符与扩展名不构成匹配边界,命中的 `match` 为完整基础名；`mode: 'content'`
+在已注册工作区内搜索文件。`mode: 'filename'` 以查询词作不区分大小写子串,匹配每个条目的基础名(而非相对路径),连字符与扩展名不构成匹配边界,命中的 `match` 为完整基础名；`mode: 'content'`
 返回命中文件和行。可选 `pattern` 为文件名 glob 过滤器(如 `*.ts`,逗号/空格分隔取并集),
 缩小被搜索的文件范围;目录恒被遍历,空/`*` 表示全部。搜索有结果上限和超时,并排除 `.git`。
-服务器回复 `codes_searched` 或 `error`。
+服务器回复 `files_searched` 或 `error`。
 
 **字段：** `workspaceName: string`, `query: string`, `mode: 'filename' | 'content'`, `pattern?: string`
 
@@ -579,30 +579,30 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 回复 `list_dir`。返回某个工作区相对目录的直接子项；每个子项路径仍为工作区相对路径。
 不返回 `.git`。
 
-**字段：** `workspaceName: string`, `rel: string`, `entries: CodeDirEntry[]`
+**字段：** `workspaceName: string`, `rel: string`, `entries: FileEntry[]`
 
-### `code_git_status`
+### `file_git_status`
 
-回复 `get_code_git_status`。`files` 是「工作区相对路径 → `CodeGitStatus`」的完整映射,只含发生变化的文件。
+回复 `get_file_git_status`。`files` 是「工作区相对路径 → `FileGitStatus`」的完整映射,只含发生变化的文件。
 客户端**权威整体替换**上一份快照(已消失的路径随之丢弃标记),并按文件路径的祖先前缀聚合出目录汇总
-(折叠且从未加载的目录也能显示后代变化)。客户端只更新与当前 Codes 工作区匹配的快照,不触碰其他工作区。
+(折叠且从未加载的目录也能显示后代变化)。客户端只更新与当前 Files 工作区匹配的快照,不触碰其他工作区。
 空映射表示干净/非 Git/查询失败。删除、重命名、复制、冲突不进入映射。
 
-**字段：** `workspaceName: string`, `files: Record<string, CodeGitStatus>`
+**字段：** `workspaceName: string`, `files: Record<string, FileGitStatus>`
 
 ### `file_read`
 
 回复 `read_file`。返回文件元信息；当文件是文本且未超过大小上限时携带 `content`。二进制
 或超大文件只返回 `path` / `size` / `binary` / `truncated` 元信息。
 
-**字段：** `workspaceName: string`, `file: CodeFileRead`
+**字段：** `workspaceName: string`, `file: FileRead`
 
-### `codes_searched`
+### `files_searched`
 
-回复 `search_codes`。返回至多服务器上限数量的命中；`truncated` 表示结果数触顶，
+回复 `search_files`。返回至多服务器上限数量的命中；`truncated` 表示结果数触顶，
 `timedOut` 表示搜索达到运行时间上限。所有命中路径均为工作区相对路径且不包含 `.git`。
 
-**字段：** `workspaceName: string`, `query: string`, `mode: 'filename' | 'content'`, `hits: CodeSearchHit[]`, `truncated: boolean`, `timedOut: boolean`
+**字段：** `workspaceName: string`, `query: string`, `mode: 'filename' | 'content'`, `hits: FileSearchHit[]`, `truncated: boolean`, `timedOut: boolean`
 
 ### `session_selected`
 
@@ -997,10 +997,10 @@ automation 的执行日志。
 
 - **`WorkspaceInfo`** — `{ name, path, lastAccessed }`。已注册的项目目录；`name` 去除首尾空白后为 1–64 个 Unicode 字符，全局唯一、区分大小写、创建后不可修改，所有 workspace-scoped 操作只认名称。`path` 是解析后的绝对路径，仅供文件系统操作和 WorkspaceSwitcher 辅助展示，不作为关联身份。
 - **`SessionInfo`** — `{ sessionId, title, lastModified, mode, isToolSession, vendor, state?, sessionKind?, ownerKind?, ownerId?, bound? }`。工作区中的一个会话。`sessionId` 是线路上的会话句柄；`vendor` 是拥有供应商的标签，来自 `session_metadata` 投影/跨供应商 accessor（ADR-0013）——显示维度（侧边栏颜色点 / 过滤 / 同供应商代理切换候选项）。`mode` 是供应商原生 `ModeToken`，根据此行的 `vendor` 通过该供应商的 `VendorModeCatalog` 解释。`sessionKind` 是业务分类(work/intent/spec/discussion/automation/tool)，`ownerKind`/`ownerId` 是可空逻辑归属，供前端纯跳回规则使用；owner 为空表示不可跳回。`state` 是支持此线路条目的投影行生命周期状态（`session_metadata` 投影），驱动侧边栏新鲜度 UX：`born`/`alive` 为正常列表项；`stale` 显示 "Unvalidated" 标签；`orphaned` 灰显该行（原生 store 已清除会话）；`ghost` 显示 "Retry" 操作（原生 store 错误，不知该行是否真实）。
-- **`CodeDirEntry`** — `{ name, path, type, gitStatus? }`。`path` 为工作区相对路径；`type` 为 `file` 或 `directory`。`gitStatus` 可选,客户端由 `code_git_status` 快照合并填充,缺失等价于无 Git 状态(兼容非 Git 工作区及旧数据)。
-- **`CodeGitStatus`** — `{ modified, untracked, staged }`。文件工作树状态的**可组合标志**(非互斥枚举):`MM`/`AM` 同时为 `staged` 且 `modified`,`untracked` 不与另外两项组合。来自只读 `git status --porcelain`;删除、重命名、复制、冲突不产生此结构。
-- **`CodeFileRead`** — `{ path, size, binary, truncated, content? }`。`content` 只在文本且未超限时出现。
-- **`CodeSearchHit`** — `{ path, type, line?, lineText?, match? }`。内容搜索命中带行号和行文本；文件名搜索命中可只带路径与匹配片段。
+- **`FileEntry`** — `{ name, path, type, gitStatus? }`。`path` 为工作区相对路径；`type` 为 `file` 或 `directory`。`gitStatus` 可选,客户端由 `file_git_status` 快照合并填充,缺失等价于无 Git 状态(兼容非 Git 工作区及旧数据)。
+- **`FileGitStatus`** — `{ modified, untracked, staged }`。文件工作树状态的**可组合标志**(非互斥枚举):`MM`/`AM` 同时为 `staged` 且 `modified`,`untracked` 不与另外两项组合。来自只读 `git status --porcelain`;删除、重命名、复制、冲突不产生此结构。
+- **`FileRead`** — `{ path, size, binary, truncated, content? }`。`content` 只在文本且未超限时出现。
+- **`FileSearchHit`** — `{ path, type, line?, lineText?, match? }`。内容搜索命中带行号和行文本；文件名搜索命中可只带路径与匹配片段。
 - **`SessionStatus`** — `'idle' | 'running' | 'awaiting_permission' | 'team' | 'reconnecting'`。会话的活跃 run 状态。`team` 是持久化 agent-team 会话：lead 进程在回合之间保持活跃，因此即使没有回合产生输出，run 仍在进行中（非 `idle`）；仅当用户显式停止时才结束。`reconnecting` 是瞬态保持：正常会话的回合遇到 socket 断连，在单次自动 `resume` 同一 run 之前进行退避（AS-R18）。
 - **`SessionRunStatus`** — `{ sessionId, status: SessionStatus }`。一个会话的状态，携带于 `ready.statuses` 和 `session_status` 中。
 - **`TranscriptItem`** — 重放的历史项：`user` / `assistant` / `tool_use` / `tool_result` / `notice`，镜像活跃渲染种类。

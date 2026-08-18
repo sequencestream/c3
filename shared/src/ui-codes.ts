@@ -43,12 +43,12 @@ export const UI_ERROR_CODES = {
   'workspace.directoryPickerFailed': { key: 'error.workspace.directoryPickerFailed' },
   'path.notDirectory': { key: 'error.path.notDirectory', params: ['path'] },
   'command.listFailed': { key: 'error.command.listFailed', params: ['detail'] },
-  // codes
-  'codes.invalidPath': { key: 'error.codes.invalidPath', params: ['path'] },
-  'codes.notDirectory': { key: 'error.codes.notDirectory', params: ['path'] },
-  'codes.notFile': { key: 'error.codes.notFile', params: ['path'] },
-  'codes.readFailed': { key: 'error.codes.readFailed', params: ['path'] },
-  'codes.searchFailed': { key: 'error.codes.searchFailed' },
+  // files
+  'files.invalidPath': { key: 'error.files.invalidPath', params: ['path'] },
+  'files.notDirectory': { key: 'error.files.notDirectory', params: ['path'] },
+  'files.notFile': { key: 'error.files.notFile', params: ['path'] },
+  'files.readFailed': { key: 'error.files.readFailed', params: ['path'] },
+  'files.searchFailed': { key: 'error.files.searchFailed' },
   // session
   'session.listFailed': { key: 'error.session.listFailed', params: ['detail'] },
   'session.openFailed': { key: 'error.session.openFailed', params: ['detail'] },

@@ -43,7 +43,7 @@ describe('protocol wire format', () => {
     { type: 'list_sessions', workspaceName: 'ws-1' },
     { type: 'list_dir', workspaceName: 'ws-1', rel: 'src' },
     { type: 'read_file', workspaceName: 'ws-1', rel: 'src/index.ts' },
-    { type: 'search_codes', workspaceName: 'ws-1', query: 'handler', mode: 'content' },
+    { type: 'search_files', workspaceName: 'ws-1', query: 'handler', mode: 'content' },
     { type: 'create_session', workspaceName: 'ws-1' },
     // With an explicit agent (recorded as the pending session's intent, ADR-0015).
     { type: 'create_session', workspaceName: 'ws-1', agentId: 'claude-b' },
@@ -117,7 +117,7 @@ describe('protocol wire format', () => {
       },
     },
     {
-      type: 'codes_searched',
+      type: 'files_searched',
       workspaceName: 'ws-1',
       query: 'handler',
       mode: 'content',

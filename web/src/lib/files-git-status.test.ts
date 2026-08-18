@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import type { CodeGitStatus } from '@ccc/shared/protocol'
-import { computeGitDirtyDirs, gitStatusKinds } from './codes-git-status'
+import type { FileGitStatus } from '@ccc/shared/protocol'
+import { computeGitDirtyDirs, gitStatusKinds } from './files-git-status'
 
-const M: CodeGitStatus = { modified: true, untracked: false, staged: false }
+const M: FileGitStatus = { modified: true, untracked: false, staged: false }
 
 describe('gitStatusKinds', () => {
   it('undefined / all-false → 空数组', () => {

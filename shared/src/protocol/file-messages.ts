@@ -7,13 +7,7 @@
  * `@ccc/shared/protocol` surface.
  */
 
-import type {
-  CodeDirEntry,
-  CodeFileRead,
-  CodeGitStatus,
-  CodeSearchHit,
-  CodeSearchMode,
-} from './code.js'
+import type { FileEntry, FileRead, FileGitStatus, FileSearchHit, FileSearchMode } from './file.js'
 
 /** List one workspace-relative directory. Server replies with `dir_listed`. */
 export type ClientListDir = { type: 'list_dir'; workspaceName: string; rel: string }
@@ -24,12 +18,12 @@ export type ClientReadFile = { type: 'read_file'; workspaceName: string; rel: st
 /**
  * Request the workspace's read-only Git-status snapshot (decorates the file
  * tree). Carries only `workspaceName` — never a client path. Server replies with
- * `code_git_status`; a non-git or unreadable workspace degrades to an empty map.
+ * `file_git_status`; a non-git or unreadable workspace degrades to an empty map.
  */
-export type ClientGetCodeGitStatus = { type: 'get_code_git_status'; workspaceName: string }
+export type ClientGetFileGitStatus = { type: 'get_file_git_status'; workspaceName: string }
 
 /**
- * Search code by filename or content. Server replies with `codes_searched`.
+ * Search code by filename or content. Server replies with `files_searched`.
  * `mode: 'filename'` matches `query` as a case-insensitive substring of each
  * entry's *basename* (not its relative path) — hyphens and the extension are
  * not match boundaries, so `sandbox` hits `sandbox-architecture.md` — and the
@@ -38,11 +32,11 @@ export type ClientGetCodeGitStatus = { type: 'get_code_git_status'; workspaceNam
  * It scopes which files are matched/searched in both modes — directories are
  * always traversed regardless.
  */
-export type ClientSearchCodes = {
-  type: 'search_codes'
+export type ClientSearchFiles = {
+  type: 'search_files'
   workspaceName: string
   query: string
-  mode: CodeSearchMode
+  mode: FileSearchMode
   pattern?: string
 }
 
@@ -51,31 +45,31 @@ export type ServerDirListed = {
   type: 'dir_listed'
   workspaceName: string
   rel: string
-  entries: CodeDirEntry[]
+  entries: FileEntry[]
 }
 
 /** File metadata and optional text content for one workspace-relative path. */
-export type ServerFileRead = { type: 'file_read'; workspaceName: string; file: CodeFileRead }
+export type ServerFileRead = { type: 'file_read'; workspaceName: string; file: FileRead }
 
 /**
  * Authoritative workspace Git-status snapshot: `files` maps every changed
- * workspace-relative file path to its `CodeGitStatus`. The client replaces its
+ * workspace-relative file path to its `FileGitStatus`. The client replaces its
  * prior snapshot wholesale (so cleared paths drop their markers) and aggregates
  * ancestor directories for the folder rollup. Empty ⇒ clean / non-git / error.
  */
-export type ServerCodeGitStatus = {
-  type: 'code_git_status'
+export type ServerFileGitStatus = {
+  type: 'file_git_status'
   workspaceName: string
-  files: Record<string, CodeGitStatus>
+  files: Record<string, FileGitStatus>
 }
 
 /** Bounded code search result set. */
-export type ServerCodesSearched = {
-  type: 'codes_searched'
+export type ServerFilesSearched = {
+  type: 'files_searched'
   workspaceName: string
   query: string
-  mode: CodeSearchMode
-  hits: CodeSearchHit[]
+  mode: FileSearchMode
+  hits: FileSearchHit[]
   truncated: boolean
   timedOut: boolean
 }

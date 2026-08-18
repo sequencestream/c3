@@ -1,36 +1,31 @@
 <script setup lang="ts">
 /*
- * Codes.vue — 代码浏览页容器。
+ * Files.vue — 文件浏览页容器。
  *
- * 桌面三栏:左 CodeTree(搜索框 + 懒加载树)/ 中 CodeTabs(多 tab 文件查看)/ 右
+ * 桌面三栏:左 FileTree(搜索框 + 懒加载树)/ 中 FileTabs(多 tab 文件查看)/ 右
  * 内嵌 ChatColumn(按需显示的修改会话,与 Works 共用控制层单一活动会话)。右侧会话栏
- * 由 CodeTree 标题栏的开关按钮控制显隐,状态经 `usePersistentToggle` 跨刷新保持,默认关闭。
- * 中右之间一根可拖拽垂直分隔条 `.codes-col-splitter` 调节会话栏宽度(像素,按 workspace 持久化)。
+ * 由 FileTree 标题栏的开关按钮控制显隐,状态经 `usePersistentToggle` 跨刷新保持,默认关闭。
+ * 中右之间一根可拖拽垂直分隔条 `.files-col-splitter` 调节会话栏宽度(像素,按 workspace 持久化)。
  * 移动端经 MobileStack 退化为 树 → 文件 两级 drill-down,不渲染 ChatColumn(屏幕宽度不足)。
  *
- * 所有状态由 App.vue 持有、经 props 注入,动作经 emit 上抛(controls/codes-actions 落地
+ * 所有状态由 App.vue 持有、经 props 注入,动作经 emit 上抛(controls/files-actions 落地
  * 服务端往返)。前端仅持有并透传 workspace 相对路径 + 不透明 workspaceName;任何越界判断
  * 由服务端 guard 决定,本页不存在构造绝对路径/越界路径的入口。
  */
 import { computed, onUnmounted, ref } from 'vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
-import CodeTree from './components/CodeTree/CodeTree.vue'
-import CodeTabs from './components/CodeTabs/CodeTabs.vue'
+import FileTree from './components/FileTree/FileTree.vue'
+import FileTabs from './components/FileTabs/FileTabs.vue'
 import { useIsMobile } from '../../composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { useTypedI18n } from '@/i18n'
 import {
-  CODES_CHAT_WIDTH_MIN,
-  CODES_CHAT_WIDTH_MAX,
-  CODES_CHAT_WIDTH_DEFAULT,
+  FILES_CHAT_WIDTH_MIN,
+  FILES_CHAT_WIDTH_MAX,
+  FILES_CHAT_WIDTH_DEFAULT,
 } from '../../controls/state'
-import type {
-  CodeDirEntry,
-  CodeGitStatus,
-  CodeSearchHit,
-  CodeSearchMode,
-} from '@ccc/shared/protocol'
+import type { FileEntry, FileGitStatus, FileSearchHit, FileSearchMode } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   ModeToken,
@@ -39,31 +34,31 @@ import type {
   SlashCommandInfo,
   VendorId,
 } from '@ccc/shared/protocol'
-import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
+import type { FileTab, FilesSearchResultView } from '@/lib/files-view'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 
 const props = defineProps<{
   // left/middle: file browser
-  dirs: Record<string, CodeDirEntry[]>
+  dirs: Record<string, FileEntry[]>
   expanded: Set<string>
   loadingDirs: Set<string>
   /** Workspace Git-status snapshot (changed-file path → flags) decorating the tree. */
-  gitStatus: Record<string, CodeGitStatus>
-  tabs: CodeTab[]
+  gitStatus: Record<string, FileGitStatus>
+  tabs: FileTab[]
   activePath: string | null
-  activeTab: CodeTab | null
-  searchMode: CodeSearchMode
+  activeTab: FileTab | null
+  searchMode: FileSearchMode
   searchQuery: string
   searchPattern: string
-  searchResult: CodesSearchResultView | null
+  searchResult: FilesSearchResultView | null
   searchLoading: boolean
   // right: embedded ChatColumn (desktop only)
   /** This workspace's bound embedded-chat session id, or null when none (empty state). */
-  codesBoundSessionId: string | null
+  filesBoundSessionId: string | null
   /** The persisted splitter width in pixels for this workspace. */
-  codesChatWidth: number
+  filesChatWidth: number
   /** The control layer's single active session id (global), for content gating. */
   activeSession: string | null
   activeTitle: string
@@ -93,19 +88,19 @@ const emit = defineEmits<{
   // file browser
   'toggle-dir': [rel: string]
   'open-file': [path: string]
-  'open-hit': [hit: CodeSearchHit]
+  'open-hit': [hit: FileSearchHit]
   'close-tab': [path: string]
   'select-tab': [path: string]
-  'set-search-mode': [mode: CodeSearchMode]
+  'set-search-mode': [mode: FileSearchMode]
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
   'refresh-tree': []
   toast: [message: string]
   // embedded chat lifecycle
-  'create-codes-chat': []
-  'reset-codes-chat': []
-  'codes-chat-width': [px: number]
+  'create-files-chat': []
+  'reset-files-chat': []
+  'files-chat-width': [px: number]
   // embedded chat passthrough (mirrors Works.vue → ChatColumn wiring)
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
@@ -124,7 +119,7 @@ const emit = defineEmits<{
 
 const { t } = useTypedI18n()
 
-const rootEntries = computed<CodeDirEntry[] | null>(() => props.dirs[''] ?? null)
+const rootEntries = computed<FileEntry[] | null>(() => props.dirs[''] ?? null)
 
 const mobilePanes = [
   { key: 'tree', title: 'Files' },
@@ -139,7 +134,7 @@ function openFile(path: string): void {
   mobileActiveKey.value = 'viewer'
   emit('open-file', path)
 }
-function openHit(hit: CodeSearchHit): void {
+function openHit(hit: FileSearchHit): void {
   if (hit.type === 'file') mobileActiveKey.value = 'viewer'
   emit('open-hit', hit)
 }
@@ -150,25 +145,25 @@ function handleMobileBack(targetKey: string): void {
 // ---- Embedded ChatColumn (desktop only) ----
 const isMobile = useIsMobile()
 
-// 右侧修改会话是否显示。默认关闭:纯浏览代码时不占用横向空间。跨刷新持久化到
+// 右侧修改会话是否显示。默认关闭:纯浏览文件时不占用横向空间。跨刷新持久化到
 // localStorage(localStorage 不可用时 composable 内置降级为内存 ref)。关闭仅隐藏容器,
-// 不清空会话绑定(codesBoundSessionId 等由控制层持有),再次打开直接复用既有会话。
-const codesChatVisible = usePersistentToggle('c3.codesChatVisible')
+// 不清空会话绑定(filesBoundSessionId 等由控制层持有),再次打开直接复用既有会话。
+const filesChatVisible = usePersistentToggle('c3.filesChatVisible')
 
 // Whether this workspace has an embedded chat bound (drives create-vs-reset button).
-const hasCodesSession = computed(() => props.codesBoundSessionId != null)
+const hasFilesSession = computed(() => props.filesBoundSessionId != null)
 // Whether the bound session is actually the live active session — false during the
 // brief select_session round-trip, so we never flash the previous session's content.
 const chatActive = computed(
-  () => hasCodesSession.value && props.activeSession === props.codesBoundSessionId,
+  () => hasFilesSession.value && props.activeSession === props.filesBoundSessionId,
 )
 
 // ---- Splitter drag / keyboard resize ----
 const dragWidth = ref<number | null>(null)
-const displayWidth = computed(() => dragWidth.value ?? props.codesChatWidth)
+const displayWidth = computed(() => dragWidth.value ?? props.filesChatWidth)
 
 function clampWidth(px: number): number {
-  return Math.min(CODES_CHAT_WIDTH_MAX, Math.max(CODES_CHAT_WIDTH_MIN, Math.round(px)))
+  return Math.min(FILES_CHAT_WIDTH_MAX, Math.max(FILES_CHAT_WIDTH_MIN, Math.round(px)))
 }
 
 let dragStartX = 0
@@ -202,9 +197,9 @@ function detachDragListeners(): void {
 }
 function finishDrag(): void {
   detachDragListeners()
-  const px = clampWidth(dragWidth.value ?? props.codesChatWidth)
+  const px = clampWidth(dragWidth.value ?? props.filesChatWidth)
   dragWidth.value = null
-  emit('codes-chat-width', px)
+  emit('files-chat-width', px)
 }
 
 // Keyboard resize on the focused separator: ←/→ ±16px, Home = min, End = default.
@@ -212,11 +207,11 @@ function onSplitterKey(e: KeyboardEvent): void {
   let px = displayWidth.value
   if (e.key === 'ArrowLeft') px += 16
   else if (e.key === 'ArrowRight') px -= 16
-  else if (e.key === 'Home') px = CODES_CHAT_WIDTH_MIN
-  else if (e.key === 'End') px = CODES_CHAT_WIDTH_DEFAULT
+  else if (e.key === 'Home') px = FILES_CHAT_WIDTH_MIN
+  else if (e.key === 'End') px = FILES_CHAT_WIDTH_DEFAULT
   else return
   e.preventDefault()
-  emit('codes-chat-width', clampWidth(px))
+  emit('files-chat-width', clampWidth(px))
 }
 
 onUnmounted(detachDragListeners)
@@ -238,7 +233,7 @@ defineExpose({
     @back="handleMobileBack"
   >
     <template #tree>
-      <CodeTree
+      <FileTree
         :root-entries="rootEntries"
         :dirs="dirs"
         :expanded="expanded"
@@ -250,22 +245,22 @@ defineExpose({
         :search-pattern="searchPattern"
         :search-result="searchResult"
         :search-loading="searchLoading"
-        :show-chat="codesChatVisible"
+        :show-chat="filesChatVisible"
         @toggle-dir="(rel: string) => emit('toggle-dir', rel)"
         @open-file="openFile"
         @open-hit="openHit"
-        @set-search-mode="(m: CodeSearchMode) => emit('set-search-mode', m)"
+        @set-search-mode="(m: FileSearchMode) => emit('set-search-mode', m)"
         @update:search-query="(v: string) => emit('update:searchQuery', v)"
         @update:search-pattern="(v: string) => emit('update:searchPattern', v)"
         @run-search="emit('run-search')"
         @refresh-tree="emit('refresh-tree')"
-        @toggle-chat="codesChatVisible = !codesChatVisible"
+        @toggle-chat="filesChatVisible = !filesChatVisible"
         @toast="(message: string) => emit('toast', message)"
       />
     </template>
 
     <template #viewer>
-      <CodeTabs
+      <FileTabs
         :tabs="tabs"
         :active-path="activePath"
         :active-tab="activeTab"
@@ -275,31 +270,31 @@ defineExpose({
     </template>
   </MobileStack>
 
-  <!-- 桌面独占且开关开启:CodeTabs 与内嵌修改会话之间的可拖拽分隔条 + 会话栏。
+  <!-- 桌面独占且开关开启:FileTabs 与内嵌修改会话之间的可拖拽分隔条 + 会话栏。
        移动端不渲染;开关关闭时也不渲染(仅隐藏容器,不清空会话绑定)。 -->
-  <template v-if="!isMobile && codesChatVisible">
+  <template v-if="!isMobile && filesChatVisible">
     <div
-      class="codes-col-splitter"
+      class="files-col-splitter"
       role="separator"
       aria-orientation="vertical"
       tabindex="0"
-      data-testid="codes-col-splitter"
-      :aria-label="t('codes.chat.splitter.aria')"
+      data-testid="files-col-splitter"
+      :aria-label="t('files.chat.splitter.aria')"
       :aria-valuenow="displayWidth"
-      :aria-valuemin="CODES_CHAT_WIDTH_MIN"
-      :aria-valuemax="CODES_CHAT_WIDTH_MAX"
+      :aria-valuemin="FILES_CHAT_WIDTH_MIN"
+      :aria-valuemax="FILES_CHAT_WIDTH_MAX"
       :class="{ dragging: dragWidth !== null }"
       @mousedown="onSplitterDown"
       @keydown="onSplitterKey"
     ></div>
     <div
-      class="codes-chat-pane"
+      class="files-chat-pane"
       :style="{ width: displayWidth + 'px' }"
-      data-testid="codes-chat-pane"
+      data-testid="files-chat-pane"
     >
       <ChatColumn
         ref="chat"
-        :active-title="chatActive ? activeTitle : t('codes.chat.empty.title')"
+        :active-title="chatActive ? activeTitle : t('files.chat.empty.title')"
         :vendor="vendor"
         :agent-switch="agentSwitch"
         :show-mode="chatActive"
@@ -341,26 +336,26 @@ defineExpose({
       >
         <template #title-action>
           <button
-            v-if="hasCodesSession"
+            v-if="hasFilesSession"
             type="button"
-            class="codes-chat-btn"
-            data-testid="codes-chat-reset"
-            :title="t('codes.chat.reset.tooltip')"
-            :aria-label="t('codes.chat.reset.tooltip')"
-            @click="emit('reset-codes-chat')"
+            class="files-chat-btn"
+            data-testid="files-chat-reset"
+            :title="t('files.chat.reset.tooltip')"
+            :aria-label="t('files.chat.reset.tooltip')"
+            @click="emit('reset-files-chat')"
           >
             ↻
           </button>
           <button
             v-else
             type="button"
-            class="codes-chat-btn codes-chat-create"
-            data-testid="codes-chat-create"
-            :title="t('codes.chat.create.tooltip')"
-            :aria-label="t('codes.chat.create.tooltip')"
-            @click="emit('create-codes-chat')"
+            class="files-chat-btn files-chat-create"
+            data-testid="files-chat-create"
+            :title="t('files.chat.create.tooltip')"
+            :aria-label="t('files.chat.create.tooltip')"
+            @click="emit('create-files-chat')"
           >
-            + {{ t('codes.chat.create.label') }}
+            + {{ t('files.chat.create.label') }}
           </button>
         </template>
       </ChatColumn>
@@ -369,23 +364,23 @@ defineExpose({
 </template>
 
 <style scoped>
-/* 中(CodeTabs)与右(ChatColumn)之间的可拖拽垂直分隔条。左栏 CodeTree 沿用自身
+/* 中(FileTabs)与右(ChatColumn)之间的可拖拽垂直分隔条。左栏 FileTree 沿用自身
    ⇤/⇥ 宽度切换,不新增分隔条。 */
-.codes-col-splitter {
+.files-col-splitter {
   flex: 0 0 6px;
   align-self: stretch;
   cursor: col-resize;
   background: var(--c-border);
   transition: background var(--dur-fast) var(--ease-standard);
 }
-.codes-col-splitter:hover,
-.codes-col-splitter.dragging,
-.codes-col-splitter:focus-visible {
+.files-col-splitter:hover,
+.files-col-splitter.dragging,
+.files-col-splitter:focus-visible {
   background: var(--c-accent, var(--c-text));
   outline: none;
 }
 
-.codes-chat-pane {
+.files-chat-pane {
   flex: none;
   min-width: 0;
   min-height: 0;
@@ -396,7 +391,7 @@ defineExpose({
 }
 
 /* 标题栏内嵌的会话动作按钮(+ 新建 / ↻ 重置)。 */
-.codes-chat-btn {
+.files-chat-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
@@ -409,11 +404,11 @@ defineExpose({
   line-height: 1;
   cursor: pointer;
 }
-.codes-chat-btn:active {
+.files-chat-btn:active {
   background: var(--c-card);
 }
 @media (hover: hover) and (pointer: fine) {
-  .codes-chat-btn:hover {
+  .files-chat-btn:hover {
     background: var(--c-card);
   }
 }

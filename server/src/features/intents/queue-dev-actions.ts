@@ -294,12 +294,15 @@ function buildFirstTurn(
   rt.effectiveCwd = effectiveCwd
   registerPendingDevLink(pendingId, req.id)
 
+  // Same channel split as the manual button, including the per-intent condition:
+  // a `fast` intent gets no SDD work-session instruct on the system channel.
   const devParts = buildDevPrompt({
     title: req.title,
     content: req.content,
     dependsOn: req.dependsOn,
     devSkill: getDevSkill(ctx.workspacePath),
     sddEnabled: getSddEnabled(ctx.workspacePath),
+    effectiveSpecMode: req.effectiveSpecMode,
     specPath: req.specPath,
   })
   return {

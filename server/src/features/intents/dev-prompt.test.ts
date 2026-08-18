@@ -35,10 +35,21 @@ import { buildDevPrompt, buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './d
 import { startDevelopment } from './index.js'
 
 describe('buildDevPrompt — channel split (hide-session-system-instructions)', () => {
-  const base = { title: 'Cache the endpoint', content: 'Add an LRU cache.', dependsOn: [] }
+  const base = {
+    title: 'Cache the endpoint',
+    content: 'Add an LRU cache.',
+    dependsOn: [],
+    effectiveSpecMode: 'sdd' as const,
+  }
 
   it('SDD off, no devSkill: visible is the historic bare shape; no internal channels', () => {
-    const p = buildDevPrompt({ ...base, devSkill: '', sddEnabled: false, specPath: null })
+    const p = buildDevPrompt({
+      ...base,
+      devSkill: '',
+      sddEnabled: false,
+      effectiveSpecMode: 'fast',
+      specPath: null,
+    })
     expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.')
     expect(p.systemInstruction).toBe('')
     expect(p.userTurnPrefix).toBe('')
@@ -50,6 +61,7 @@ describe('buildDevPrompt — channel split (hide-session-system-instructions)', 
       dependsOn: ['a', 'b'],
       devSkill: '',
       sddEnabled: false,
+      effectiveSpecMode: 'fast',
       specPath: null,
     })
     expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.\n\n依赖需求:a, b')
@@ -93,6 +105,49 @@ describe('buildDevPrompt — channel split (hide-session-system-instructions)', 
     const p = buildDevPrompt({ ...base, devSkill: '', sddEnabled: true, specPath: null })
     expect(p.systemInstruction).toBe(SDD_WORK_SESSION_INSTRUCT)
     expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.')
+  })
+
+  it('fast mode, SDD on, no devSkill: the SDD instruct is NOT assembled', () => {
+    // `fast` skips the spec gate by design — handing it "the approved spec is the
+    // single source of truth" would contradict the mode the turn was started in.
+    const p = buildDevPrompt({
+      ...base,
+      devSkill: '',
+      sddEnabled: true,
+      effectiveSpecMode: 'fast',
+      specPath: null,
+    })
+    expect(p.systemInstruction).toBe('')
+    expect(p.userTurnPrefix).toBe('')
+    expect(p.visible).toBe('Cache the endpoint\n\nAdd an LRU cache.')
+  })
+
+  it('fast mode with a devSkill: devSkill still wins the user turn, system stays empty', () => {
+    const p = buildDevPrompt({
+      ...base,
+      devSkill: '/dev',
+      sddEnabled: true,
+      effectiveSpecMode: 'fast',
+      specPath: null,
+    })
+    expect(p.userTurnPrefix).toBe('/dev ')
+    expect(p.systemInstruction).toBe('')
+    expect(p.visible).not.toContain('/dev')
+  })
+
+  it('fast mode with a specPath: the VISIBLE spec-path note is still shown', () => {
+    // A reverse-authored spec exists ⇒ the agent is still pointed at it. The note is
+    // business context and follows the spec's existence, not the mode.
+    const specPath = '.specs/2026/08/18/2026-08-18-001-cache/spec.md'
+    const p = buildDevPrompt({
+      ...base,
+      devSkill: '',
+      sddEnabled: true,
+      effectiveSpecMode: 'fast',
+      specPath,
+    })
+    expect(p.systemInstruction).toBe('')
+    expect(p.visible.endsWith(`\n\n${buildDevSpecNote(specPath)}`)).toBe(true)
   })
 })
 

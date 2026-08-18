@@ -184,6 +184,31 @@ describe('launchWorkSession', () => {
     expect(deps.launchRun).toHaveBeenCalledTimes(1)
   })
 
+  it('a fast-mode launch carries an EMPTY systemInstruction (no SDD work contract)', async () => {
+    // The SDD work-session instruct is a spec-driven contract; a `fast` intent skips
+    // the spec gate by design, so the system channel must stay empty end to end.
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const [intent] = insertIntents(proj, [
+      {
+        title: 'Fast no instruct',
+        shortEnTitle: 'fast-no-instruct',
+        content: 'Body text.',
+        priority: 'P1',
+        specMode: 'fast',
+      },
+    ])
+    const launchRun = vi
+      .fn()
+      .mockResolvedValue(undefined) as unknown as SessionLaunchDeps['launchRun']
+    const deps = mockDeps(launchRun)
+    asSuccess(await launchWorkSession(proj, intent.id, deps))
+    const call = vi.mocked(launchRun).mock.calls[0]
+    const [, visiblePrompt, , inject] = call
+    expect(inject?.systemInstruction).toBe('')
+    expect(visiblePrompt).toContain('Fast no instruct\n\nBody text.')
+    expect(visiblePrompt).not.toContain('Hard constraints')
+  })
+
   it('still rejects a fast-mode intent whose worktree dependency is not merged', async () => {
     // `fast` relaxes ONLY the spec-approval gate — every other gate stays closed.
     saveWorkspaceSetting(proj, {

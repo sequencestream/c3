@@ -6,7 +6,11 @@ import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import SessionStatusBar from '../../components/SessionStatusBar/SessionStatusBar.vue'
 import MessageInput from '../../components/MessageInput/MessageInput.vue'
-import type { DispatchView, DiscussionPhase } from '../../lib/discussion-view'
+import type {
+  DispatchView,
+  DiscussionPhase,
+  DiscussionLaunchAction,
+} from '../../lib/discussion-view'
 import type { ChatMsg, RunActivity } from '../../lib/chat-types'
 import type { TaskListModel } from '../../lib/task-list'
 
@@ -40,7 +44,7 @@ function mountDiscussions(
   activeDiscussion: Discussion | null = disc(),
   over: {
     phase?: DiscussionPhase
-    showStart?: boolean
+    launchAction?: DiscussionLaunchAction | null
     researchMessages?: ChatMsg[]
     activeRunState?: 'running' | 'paused' | undefined
     /** The globally active session — the research-session tab renders only on a match. */
@@ -61,7 +65,7 @@ function mountDiscussions(
       // Default to the discussion phase so the dispatch-strip tests below see the
       // discussion stream (research phase hides the strip).
       phase: over.phase ?? 'discussion',
-      showStart: over.showStart ?? false,
+      launchAction: over.launchAction ?? null,
       dispatch,
       input: '',
       agents: [],
@@ -156,29 +160,40 @@ describe('Discussions.vue — right-pane phase switch', () => {
   })
 })
 
-describe('Discussions.vue — Start button visibility', () => {
+describe('Discussions.vue — launch button visibility', () => {
   const empty: DispatchView = { pending: [], errors: [] }
 
-  it('shows Start only when showStart is true (research ended/dead, discussion not started)', () => {
+  it("shows Start on launchAction 'start' (research ended/dead, discussion not started)", () => {
     const w = mountDiscussions(empty, disc({ status: 'draft' }), {
       phase: 'discussion',
-      showStart: true,
+      launchAction: 'start',
     })
     expect(w.find('.disc-start-btn').exists()).toBe(true)
   })
 
-  it('hides Start while research is running (phase = research, showStart false)', () => {
+  it('hides the button while research is running (phase = research, launchAction null)', () => {
     const w = mountDiscussions(empty, disc({ status: 'draft' }), {
       phase: 'research',
-      showStart: false,
+      launchAction: null,
     })
     expect(w.find('.disc-start-btn').exists()).toBe(false)
   })
 
-  it('emits start when the Start button is clicked', async () => {
+  it("marks the button as the restart variant on launchAction 'restart' (dangling in_progress)", () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), {
+      phase: 'discussion',
+      launchAction: 'restart',
+      activeRunState: undefined,
+    })
+    // 断言结构(变体 testid)而非可见文案。
+    expect(w.find('[data-testid="discussion-launch-restart"]').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-launch-start"]').exists()).toBe(false)
+  })
+
+  it('emits start when the launch button is clicked', async () => {
     const w = mountDiscussions(empty, disc({ status: 'draft' }), {
       phase: 'discussion',
-      showStart: true,
+      launchAction: 'start',
     })
     await w.find('.disc-start-btn').trigger('click')
     expect(w.emitted('start')).toBeTruthy()

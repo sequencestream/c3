@@ -19,6 +19,10 @@
  * tab 尚不存在而短暂落「过程会话」(其中正展示实时研究流),tab 一出现即自动跟随过去;
  * 用户本讨论内亲手点过任一 tab 后不再自动跟随,切讨论复位。
  *
+ * 标题栏的启动按钮由 `launchAction` 单独驱动:draft 显示「开始」(研究未自动启动时的兜底),
+ * `in_progress` 但没有存活运行(引擎报错 / 服务端重启打断)显示「重新运行」—— 两者都 emit
+ * `start`,服务端据持久化转录/议程续跑,不追加任何消息。
+ *
  * 所有数据与运行态由 App.vue 持有,经 props 注入;用户动作(打开/创建/开始/暂停/恢复/
  * 转需求/发言)经 emit 上抛。tab 选中态是页面内部展示状态,不写回 App 或协议。
  *
@@ -38,6 +42,7 @@ import {
   discussionDetailTabs,
   discussionRunLabel,
   statusLabel as discussionStatusLabel,
+  type DiscussionLaunchAction,
   type DiscussionPhase,
   type DiscussionTabKind,
   type DispatchView,
@@ -73,9 +78,10 @@ const props = defineProps<{
   // discussion stream (agenda + transcript + dispatch + composer). Lives inside the
   // `process` tab.
   phase: DiscussionPhase
-  // Whether the manual Start fallback shows (a draft whose research ended/died and whose
-  // orchestration hasn't started). Replaces the old `status === 'draft'` rule.
-  showStart: boolean
+  // The manual launch action the title bar offers, or null for none: 'start' for a draft
+  // whose research ended/died without auto-starting, 'restart' for an `in_progress`
+  // discussion left dangling (engine error / server restart) with no live run.
+  launchAction: DiscussionLaunchAction | null
   // Transient in-flight (pending) / failed status of dispatched agents, rendered in
   // the chat tail. Runtime-only; never part of the persisted transcript.
   dispatch: DispatchView
@@ -278,9 +284,21 @@ function typeLabel(d: Discussion): string {
             <template #action>
               <!-- A draft auto-starts after research; Start is the manual fallback, shown
                only once research has ended/died and the orchestration hasn't started
-               (e.g. research failed) — never while research is still running. -->
-              <button v-if="showStart" type="button" class="disc-start-btn" @click="emit('start')">
-                {{ t('discussion.action.start.label') }}
+               (e.g. research failed) — never while research is still running. The same
+               button restarts a dangling `in_progress` discussion (engine error / server
+               restart killed its run) — the engine resumes from the persisted transcript. -->
+              <button
+                v-if="launchAction"
+                type="button"
+                class="disc-start-btn"
+                :data-testid="`discussion-launch-${launchAction}`"
+                @click="emit('start')"
+              >
+                {{
+                  launchAction === 'restart'
+                    ? t('discussion.action.restart.label')
+                    : t('discussion.action.start.label')
+                }}
               </button>
               <button
                 v-if="activeDiscussion.status === 'in_progress' && activeRunState === 'running'"

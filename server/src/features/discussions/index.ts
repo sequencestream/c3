@@ -151,9 +151,19 @@ export const startDiscussion: Handler<'start_discussion'> = (ctx, conn, msg) => 
     })
     return
   }
-  // Idempotent guards: only a `draft` can be started, and never twice.
+  // Idempotent guards: never twice (a live run always wins), and only a discussion
+  // that has not concluded can be (re)started. Two states qualify:
+  //  - `draft` — the first start (manual fallback for a research that never
+  //    auto-started).
+  //  - `in_progress` WITHOUT a live run — the dangling case an error or a server
+  //    restart leaves behind. Restarting re-invokes the engine on the latest record
+  //    and appends nothing: the orchestrator resumes from the persisted transcript /
+  //    stage / agenda / per-agent `last_seq`, exactly as the automation-facing
+  //    `continue_discussion` recovery does. Without this the discussion is stuck
+  //    forever — Start rejected it as already started, and the WS
+  //    `continue_discussion` only accepts `completed`.
   if (hasDiscussionRun(discussion.id)) return
-  if (discussion.status !== 'draft') {
+  if (discussion.status !== 'draft' && discussion.status !== 'in_progress') {
     conn.send({ type: 'error', error: { code: 'discussion.alreadyStarted' } })
     return
   }

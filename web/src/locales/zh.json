@@ -2377,7 +2377,7 @@
       "unknown": "未知讨论:{id}",
       "unknownType": "未知讨论类型:{type}",
       "notConcludable": "仅已完成且有结论的讨论可转为意图。",
-      "alreadyStarted": "讨论已开始或已结束,无法重复启动。",
+      "alreadyStarted": "讨论已结束,无法重新启动。",
       "notEndedForContinue": "只有已结束的讨论可以追加新一轮。"
     },
     "automation": {
@@ -2470,6 +2470,9 @@
     "action": {
       "start": {
         "label": "开始"
+      },
+      "restart": {
+        "label": "重新运行"
       },
       "pause": {
         "label": "暂停"

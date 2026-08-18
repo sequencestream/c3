@@ -327,9 +327,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
    * The ONE settle rule for a research session's turn — the first unattended pass
    * and every user follow-up go through this and nothing else:
    *
-   *  1. A non-empty final text REPLACES `researchResult`; an empty or failed turn
-   *     leaves the previous value untouched (a bad follow-up can never clobber good
-   *     findings).
+   *  1. A non-empty final text REPLACES `researchResult`; an empty turn leaves the
+   *     previous value untouched (a bad follow-up can never clobber good findings).
    *  2. The refreshed discussion list is pushed, so the 「研究」 markdown tab updates
    *     in place with no manual refresh.
    *  3. The auto-start guard is re-evaluated on the FRESHEST record — a still-draft
@@ -337,11 +336,14 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
    *     auto-start, lets a follow-up rescue a research that failed first time round,
    *     and cannot re-trigger on an already-running or finished discussion.
    *
-   * `ok=false` (the turn threw / was aborted) skips only step 3: a failed research
-   * never auto-starts, leaving the draft for the manual Start fallback.
+   * `ok=false` (the turn threw / was aborted — including the abort every shutdown
+   * fires) keeps ONLY step 2: whatever the researcher had emitted when it died is a
+   * half-finished draft, never the findings, so it must neither be written back nor
+   * be allowed to auto-start an orchestration on the way out. The record stays a
+   * `draft` for the follow-up prompt or the manual Start fallback.
    */
   const settleResearchTurn = (discussionId: string, researchResult: string, ok: boolean): void => {
-    const text = researchResult.trim()
+    const text = ok ? researchResult.trim() : ''
     if (text) {
       try {
         setDiscussionResearchResult(discussionId, text)

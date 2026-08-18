@@ -67,6 +67,30 @@ export function deleteResearchRun(id: string): void {
 }
 
 /**
+ * Abort every live orchestration + research run. The graceful-shutdown path calls
+ * this BEFORE it awaits anything: the vendor children die with this process, and a
+ * run that settles with its abort flag unset looks exactly like a normal completion
+ * — the research settle rule would then write a half-finished output back as the
+ * findings AND auto-start an orchestration that the very same shutdown is about to
+ * kill (leaving a dangling `in_progress` discussion with no messages).
+ *
+ * Paused loops are woken too, so a paused orchestration observes the abort instead
+ * of parking on its gate forever. Idempotent: each run's own settle path removes
+ * its entry, so a second call sees an empty map.
+ */
+export function abortAllRuns(): { discussions: number; research: number } {
+  const discussions = discussionRuns.size
+  for (const ctrl of discussionRuns.values()) {
+    ctrl.abort.abort()
+    const waiters = ctrl.resumeWaiters.splice(0)
+    for (const wake of waiters) wake()
+  }
+  const research = researchRuns.size
+  for (const abort of researchRuns.values()) abort.abort()
+  return { discussions, research }
+}
+
+/**
  * Bounded runtime transcript of a live research run's visible items, keyed by
  * discussion id. Holds the items broadcast so far so a reconnect/refresh
  * mid-research can replay them on the `discussion_detail` snapshot — the items

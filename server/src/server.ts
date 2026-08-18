@@ -54,6 +54,7 @@ import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
 import { buildSpecReviewAgentPrompt } from './features/intents/spec-review.js'
 import { DISCUSSION_RESEARCH_PROMPT } from './features/discussions/research.js'
+import { abortAllRuns as abortAllDiscussionRuns } from './features/discussions/run-controls.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { runCommSave } from './features/intents/save-comm.js'
 import { normalizeGenericEventDefault } from './features/events/default-normalizer.js'
@@ -978,6 +979,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // binds it. Connection close is bounded so a lingering WebSocket cannot wedge a
   // restart.
   const stopAndRelease = async (): Promise<void> => {
+    // Tear the live discussion/research runs down FIRST — before this function
+    // awaits anything. Their vendor children die with this process anyway, and a
+    // run that settles with its abort flag unset is indistinguishable from a normal
+    // completion: the research settle rule would write the half-finished output
+    // back as the findings and auto-start an orchestration that this very shutdown
+    // then kills, leaving a dangling `in_progress` discussion with no messages.
+    const abortedRuns = abortAllDiscussionRuns()
+    if (abortedRuns.discussions || abortedRuns.research) {
+      console.log(
+        `[c3:discussion] 关停中止运行:编排 ${abortedRuns.discussions} 个 / 调研 ${abortedRuns.research} 个`,
+      )
+    }
     stopUpdateCheckScheduler()
     stopSessionJanitor()
     stopQueueTickLoop()

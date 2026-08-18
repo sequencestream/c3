@@ -3,9 +3,10 @@ import { actionablePermissionId } from '@/lib/permission'
 import { type PendingItem } from '@/lib/pending-queue'
 import {
   discussionPhase,
-  showDiscussionStart,
+  discussionLaunchAction,
   type DispatchView,
   type DiscussionPhase,
+  type DiscussionLaunchAction,
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
 import { type CreateIntentModel } from '@/lib/create-intent-view'
@@ -644,15 +645,18 @@ export function createState(deps: StateDeps) {
   const activeDiscussionPhase = computed<DiscussionPhase>(() =>
     discussionPhase(activeResearchLive.value),
   )
-  // Manual Start fallback visibility.
-  const showStart = computed<boolean>(() => {
+  // The manual launch action the title bar offers: `start` for a draft whose
+  // research never auto-started, `restart` for an `in_progress` discussion left
+  // dangling by an engine error / server restart, `null` while anything is live.
+  // Liveness is the RUN-state snapshot, never the persisted status.
+  const discussionLaunch = computed<DiscussionLaunchAction | null>(() => {
     const d = activeDiscussion.value
-    if (!d) return false
-    const discussionLive =
-      activeDiscussionRunState.value !== undefined ||
-      d.status === 'in_progress' ||
-      d.status === 'completed'
-    return showDiscussionStart(d.status, activeResearchLive.value, discussionLive)
+    if (!d) return null
+    return discussionLaunchAction(
+      d.status,
+      activeResearchLive.value,
+      activeDiscussionRunState.value !== undefined,
+    )
   })
 
   // ---- Automations view (read path) ----
@@ -1304,7 +1308,7 @@ export function createState(deps: StateDeps) {
     activeDiscussionDispatch,
     activeResearchLive,
     activeDiscussionPhase,
-    showStart,
+    discussionLaunch,
     currentAutomations,
     selectedAutomation,
     selectedAutomationLogs,

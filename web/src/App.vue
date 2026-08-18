@@ -293,7 +293,7 @@ const {
   discussionMessages,
   researchMessages,
   activeDiscussionPhase,
-  showStart,
+  discussionLaunch,
   activeDiscussionDispatch,
   discussionInput,
   openDiscussion,
@@ -858,7 +858,7 @@ function onFilesChatWidth(px: number): void {
           :messages="discussionMessages"
           :research-messages="researchMessages"
           :phase="activeDiscussionPhase"
-          :show-start="showStart"
+          :launch-action="discussionLaunch"
           :dispatch="activeDiscussionDispatch"
           :input="discussionInput"
           :agents="serverSettings?.agents ?? []"

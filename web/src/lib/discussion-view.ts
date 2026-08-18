@@ -189,17 +189,32 @@ export function discussionPhase(researchLive: boolean): DiscussionPhase {
 }
 
 /**
- * Whether the manual Start fallback shows. Replaces the old `status === 'draft'` rule:
- * a draft auto-starts after research, so Start is only the fallback for a draft whose
- * research has ended/died (`!researchLive`) and whose orchestration has not started
- * (`!discussionLive`) — e.g. research failed and never auto-started. Pure.
+ * Which manual launch action the title bar offers, or `null` for none. Two cases —
+ * both require that nothing is live right now (`!researchLive && !runLive`):
+ *
+ * - `'start'` — a `draft`. A draft auto-starts after research, so this is only the
+ *   fallback for one whose research ended/died without auto-starting.
+ * - `'restart'` — an `in_progress` discussion with NO live run: the dangling state an
+ *   engine error or a server restart leaves behind. Restarting resumes the engine on
+ *   the persisted transcript/agenda and appends nothing. Without this the discussion
+ *   is unreachable from the UI (Start rejects it, Continue wants `completed`, and the
+ *   composer only appends a human message).
+ *
+ * `runLive` is the discussion's live run-state (`running`/`paused`), NOT its status —
+ * a persisted `in_progress` says nothing about whether an engine is actually running.
+ * Pure.
  */
-export function showDiscussionStart(
+export type DiscussionLaunchAction = 'start' | 'restart'
+
+export function discussionLaunchAction(
   status: DiscussionStatus,
   researchLive: boolean,
-  discussionLive: boolean,
-): boolean {
-  return status === 'draft' && !researchLive && !discussionLive
+  runLive: boolean,
+): DiscussionLaunchAction | null {
+  if (researchLive || runLive) return null
+  if (status === 'draft') return 'start'
+  if (status === 'in_progress') return 'restart'
+  return null
 }
 
 /**

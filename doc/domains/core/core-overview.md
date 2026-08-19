@@ -44,6 +44,9 @@
 - [auth](auth/auth-overview.md) — active
   - 职责: 认证抽象(可扩展的提供方联合类型、会话令牌模型、login/logout/401 消息)+ 授权:主体求解、管理员配置的账号级工作区范围(默认拒绝)、policy epoch 与外部 MCP 的唯一卡口 `authorizeCall`
   - API: WebSocket `/ws`(见 shared protocol);工作区范围与 epoch 无线消息,由控制台与外部 MCP 内部消费
+- [memory](memory/memory-overview.md) — active
+  - 职责: 工作区级长期记事本(SQLite 单表):用户偏好/已验证约束/事实/教训,经 work session 的两个 MCP 工具读写;结构化、有界、可撤销,规则型 janitor 清理
+  - API: 内部(无对外公开 API;模型侧暴露面是 work session 上的 `memory_search` / `memory_write`)
 - [external-mcp](external-mcp/external-mcp-spec.md) — active
   - 职责: 面向 c3 未拉起的 agent 的公开 MCP 入口:无凭据地址,bearer key 认证,`X-C3-Workspace` 选工作区,权限由 auth 域三层求交给出
   - API: Streamable HTTP `POST /mcp`

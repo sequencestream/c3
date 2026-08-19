@@ -140,13 +140,13 @@ export interface LaunchRunDeps {
    */
   researchProfile?: (workspacePath: string) => ResearchProfile
   /**
-   * Work-session base MCP profile (`publish_event`), injected at the
-   * composition root so the kernel launcher never imports `features/` (ADR-0009
-   * R1). Consulted ONLY for `rt.sessionKind === 'work'` runs — every new and resumed
-   * work session gets the publish tool. Absent ⇒ no work-session MCP (a plain run
-   * with no PR-event tool, the pre-2026-06-20 behaviour). Unlike intent/spec, a
-   * missing profile is NOT a hard error: the publish tool is a non-security
-   * capability, so its absence degrades gracefully rather than blocking the run.
+   * Work-session base MCP profile (`publish_event` + the two workspace-memory
+   * tools), injected at the composition root so the kernel launcher never imports
+   * `features/` (ADR-0009 R1). Consulted ONLY when `rt.sessionKind === 'work'` —
+   * a positive test, never "no other profile matched". Absent ⇒ no work-session
+   * MCP at all. Unlike intent/spec, a missing profile is NOT a hard error: these
+   * are non-security capabilities, so their absence degrades gracefully rather
+   * than blocking the run.
    */
   sessionProfile?: (workspacePath: string) => SessionMcpProfile
   /**
@@ -232,6 +232,11 @@ export async function launchRun(
   // The research marker, NOT `sessionKind === 'discussion'`: the orchestrator's
   // per-agent sessions share that kind and must never pick up the research profile.
   const isResearch = !!rt.researchDiscussionId
+  // The work-session tool profile is selected POSITIVELY. Deriving it from "none
+  // of the other profiles matched" would hand every future session kind the work
+  // tools by default — including the discussion agents whose synthesized opinions
+  // must never become persisted workspace facts.
+  const isWork = rt.sessionKind === 'work'
   // The model's user turn: a slash-command dev-skill prefix (when present) + the
   // visible body. The system instruction is delivered separately (claude's preset
   // system append for work runs), so it never appears in the user turn. The client
@@ -326,13 +331,11 @@ export async function launchRun(
       : undefined
   const resolvedResearchProfile =
     isResearch && deps.researchProfile ? deps.researchProfile(workspacePath) : undefined
-  // Resolve the work-session base MCP profile once (publish_event), for plain
-  // work sessions only — never for intent/spec/spec_review/research runs (those
-  // carry their own profiles). Both the claude path and the driver path consume it.
+  // Resolve the work-session base MCP profile once (publish_event + the two
+  // workspace-memory tools), for `work` sessions only. Both the claude path and
+  // the driver path consume it.
   const resolvedSessionProfile =
-    !isIntent && !isSpec && !isSpecReview && !isResearch && deps.sessionProfile
-      ? deps.sessionProfile(workspacePath)
-      : undefined
+    isWork && deps.sessionProfile ? deps.sessionProfile(workspacePath) : undefined
 
   // Sandbox launch (arapuca process-level isolation): the entry condition is the
   // workspace's `enabled` master switch AND this run's `sessionKind` being in
@@ -622,8 +625,9 @@ export async function launchRun(
                     // intent comm agent is excluded (different lifecycle). A work run's
                     // internal instruction (SDD work contract) rides claude's preset
                     // system append here, so it reaches the model without being echoed.
-                    // Work sessions also get the base MCP profile (publish_event)
-                    // over the loopback HTTP MCP route; the gate stays 'standard'.
+                    // Work sessions also get the base MCP profile (publish_event +
+                    // workspace memory) over the loopback HTTP MCP route; the gate
+                    // stays 'standard'.
                     {
                       ...(inject?.systemInstruction
                         ? { appendSystemPrompt: inject.systemInstruction }

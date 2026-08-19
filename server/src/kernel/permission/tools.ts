@@ -32,6 +32,35 @@ export const SUBMIT_SPEC_REVIEW_TOOL = 'mcp__c3__submit_spec_review'
  */
 export const PUBLISH_EVENT_TOOL = 'mcp__c3__publish_event'
 
+/** The c3 `memory_search` MCP tool's fully-qualified name. Read-only. */
+export const MEMORY_SEARCH_TOOL = 'mcp__c3__memory_search'
+
+/** The c3 `memory_write` MCP tool's fully-qualified name. Bounded and reversible. */
+export const MEMORY_WRITE_TOOL = 'mcp__c3__memory_write'
+
+/**
+ * The work-session c3 tools that carry NO human prompt in any gate.
+ *
+ * Each one is deliberate rather than convenient. `publish_event` only feeds the
+ * event bus — the side-effecting step is the automation it may trigger, governed
+ * by that automation's own execution identity. `memory_search` reads the bound
+ * workspace's notebook and nothing else. `memory_write` is bounded (closed field
+ * set, length ceiling, workspace capacity, credential and artifact rejection) and
+ * locally reversible (delete is a status change, a same-title write replaces in
+ * place, physical erasure waits 30 days); prompting for every deliberate memory
+ * maintenance call would train the user to approve without reading.
+ *
+ * Auto-allow is NOT what makes a tool available. These three are bound to `work`
+ * sessions only, so this set never widens the intent / spec / spec-review /
+ * discussion surfaces — those sessions are never offered the tools in the first
+ * place.
+ */
+export const AUTO_ALLOWED_C3_TOOLS = new Set([
+  PUBLISH_EVENT_TOOL,
+  MEMORY_SEARCH_TOOL,
+  MEMORY_WRITE_TOOL,
+])
+
 /**
  * The read-only c3 MCP query tools the intent agent may call without a
  * prompt. They only read the project's own ledger (project-bound in the tool

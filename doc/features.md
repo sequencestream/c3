@@ -202,6 +202,18 @@ c3
 │   │   ├── policy epoch                          # system_configs 的 auth.policyEpoch 全局单调值,ACL/账号名册/工作区注册表/每 key 工具授权变更同事务 bump;显示名与最后使用时间不 bump
 │   │   └── authorizeCall 唯一卡口                # key 范围 ∩ owner 范围 ∩ (key 工具 ∩ 可授权目录) → 冻结 EffectiveScope;先判 owner 再判工作区最后判工具
 │   │
+│   ├── memory 工作区记忆                          # work session 的跨 run 记事本:用户口头偏好/已验证约束/稳定事实/教训,仓库无法自证也不该进 CLAUDE.md 的那部分
+│   │   ├── 两个 MCP 工具                          # memory_search(无 query 出按 type 分组的 title 目录,有 query 做字面不区分大小写子串匹配并出详情)/ memory_write(create|update|delete);经既有 event-mcp 回环路由,不新增路由
+│   │   ├── work-only 工具面                       # 由 sessionKind === 'work' 正向选中(不是「其它 profile 没匹配」);intent/spec/spec_review/discussion(含调研与逐 agent 会话)一概不获得,避免合成观点被持久化为工作区事实
+│   │   ├── vendor 中立                            # claude/codex/cursor 消费同一份描述符,enabledTools 由已注册工具列表派生——codex 会静默禁用未列出的名字
+│   │   ├── 免确认                                 # 两个工具在标准权限门直接放行,无 permission_request、无用户介入记录、无共识;免确认不等于可用,可达性由工具面独立决定
+│   │   ├── 确定性身份                             # 身份=(workspace_name, 归一化 title);归一化=去首尾空白+折叠空白+Unicode 小写,同名原地覆盖(保 id 与 createdAt),这是本域唯一的自动语义判断
+│   │   ├── 矛盾不合并                             # 系统从不比较正文也不问 LLM;真正互斥的两条用不同 title(可共用 subject),两条都保持 active
+│   │   ├── 硬边界                                 # 单字段 ≤2000 Unicode 码点、单工作区 ≤500 物理行(计数与插入同事务);超限显式报错,绝不静默截断或淘汰已有记忆
+│   │   ├── 写入拒绝                               # 凭据形状(私钥块/bearer/各家访问令牌/JWT/凭据赋值)与产物形状(代码围栏/工具调用返回框架/角色转录行)一律拒写,拒绝信息不回显命中内容
+│   │   ├── 软删与回收期                           # delete 是状态变更;superseded/deleted 按各自 updated_at 满 30 天才物理删除,回收期内仍占容量
+│   │   └── 规则型 janitor                         # 独立定时器无 agent 绑定:同工作区同归一化 title 留 updated_at 最大者(平局按 id 确定性),其余标 superseded;失效行满 30 天物理删;active 的 preference 永不因龄清理
+│   │
 │   └── external-mcp 外部 MCP 接入                 # c3 未拉起的 agent(独立 Claude/Codex/Cursor 会话、CI、监控脚本)凭长期 key 访问本部署;与 /internal/*-mcp 并列而非放宽,后者语义不变
 │       ├── 统一端点 POST /mcp                    # 裸路径不含凭据,Streamable HTTP,挂在 SPA catch-all 之前;/mcp/<任何东西> 一律 404(含旧 key 路径与 /mcp/v1)
 │       ├── Bearer 唯一凭据                       # 只读 Authorization: Bearer c3k_…;query 与 X-API-Key 等自定义凭据头一概不解析;日志不打印 Authorization 的值

@@ -7,7 +7,7 @@
 //   2. **Tauri 自己产出的 bundle 文件名** —— 形如 `c3_0.9.6_aarch64.dmg`,由 Tauri
 //      决定,各平台各不相同,所以我们按扩展名去发现而不是去预测。
 //   3. **对外分发名** —— `c3-desktop-v{ver}-{target}.{ext}`。与 CLI 包
-//      (`c3-v{ver}-{target}.tar.gz`)刻意不同前缀,消费者一眼能分清 UI 版与 CLI 版。
+//      (`c3-cli-v{ver}-{target}.tar.gz`)刻意不同前缀,消费者一眼能分清 UI 版与 CLI 版。
 //
 // 纯 Node,无依赖。
 
@@ -158,7 +158,7 @@ export function desktopPackageExt(bundle) {
 
 /**
  * 对外分发名:`c3-desktop-v{ver}-{target}{ext}`。
- * 与 CLI 的 `c3-v{ver}-{target}.tar.gz` 前缀不同,是消费者区分 UI 版 / CLI 版的依据。
+ * 与 CLI 的 `c3-cli-v{ver}-{target}.tar.gz` 前缀不同,是消费者区分 UI 版 / CLI 版的依据。
  */
 export function desktopPackageName(version, target, bundle) {
   return `c3-desktop-v${normalizeVersion(version)}-${target}${desktopPackageExt(bundle)}`

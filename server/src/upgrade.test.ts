@@ -80,8 +80,8 @@ describe('hostTarget / packageNameFor', () => {
   })
 
   it('uses .zip for windows and .tar.gz elsewhere', () => {
-    expect(packageNameFor('1.0.0', 'windows-x64')).toBe('c3-v1.0.0-windows-x64.zip')
-    expect(packageNameFor('1.0.0', 'macos-arm64')).toBe('c3-v1.0.0-macos-arm64.tar.gz')
+    expect(packageNameFor('1.0.0', 'windows-x64')).toBe('c3-cli-v1.0.0-windows-x64.zip')
+    expect(packageNameFor('1.0.0', 'macos-arm64')).toBe('c3-cli-v1.0.0-macos-arm64.tar.gz')
   })
 })
 
@@ -89,20 +89,20 @@ describe('hostTarget / packageNameFor', () => {
 
 describe('selectAssets', () => {
   const assets: ReleaseAsset[] = [
-    { name: 'c3-v1.0.0-macos-arm64.tar.gz', url: 'u/pkg' },
-    { name: 'c3-v1.0.0-macos-arm64.tar.gz.sha256', url: 'u/sha' },
-    { name: 'c3-v1.0.0-linux-x64.tar.gz', url: 'u/other' },
+    { name: 'c3-cli-v1.0.0-macos-arm64.tar.gz', url: 'u/pkg' },
+    { name: 'c3-cli-v1.0.0-macos-arm64.tar.gz.sha256', url: 'u/sha' },
+    { name: 'c3-cli-v1.0.0-linux-x64.tar.gz', url: 'u/other' },
   ]
 
   it('selects the package and its sha256 sidecar by target', () => {
-    const sel = selectAssets(assets, 'c3-v1.0.0-macos-arm64.tar.gz')
+    const sel = selectAssets(assets, 'c3-cli-v1.0.0-macos-arm64.tar.gz')
     expect(sel.pkgUrl).toBe('u/pkg')
     expect(sel.sha256Url).toBe('u/sha')
   })
 
   it('throws noArtifact when no package matches this platform (e.g. linux-arm64)', () => {
     try {
-      selectAssets(assets, 'c3-v1.0.0-linux-arm64.tar.gz')
+      selectAssets(assets, 'c3-cli-v1.0.0-linux-arm64.tar.gz')
       throw new Error('should have thrown')
     } catch (e) {
       expect(e).toBeInstanceOf(UpgradeError)
@@ -112,8 +112,8 @@ describe('selectAssets', () => {
 
   it('tolerates a missing .sha256 at selection (checksum cross-check is skipped)', () => {
     const sel = selectAssets(
-      [{ name: 'c3-v1.0.0-macos-arm64.tar.gz', url: 'u/pkg' }],
-      'c3-v1.0.0-macos-arm64.tar.gz',
+      [{ name: 'c3-cli-v1.0.0-macos-arm64.tar.gz', url: 'u/pkg' }],
+      'c3-cli-v1.0.0-macos-arm64.tar.gz',
     )
     expect(sel.sha256Url).toBeUndefined()
   })
@@ -153,9 +153,9 @@ describe('buildDownloadUrls', () => {
     expect(sel.sha256Url).toBe(`${base}.sha256`)
   })
   it('uses the raw published tag (not the normalized version) in the download path', () => {
-    const sel = buildDownloadUrls('o/r', 'v1.0.0', 'c3-v1.0.0-linux-x64.tar.gz')
+    const sel = buildDownloadUrls('o/r', 'v1.0.0', 'c3-cli-v1.0.0-linux-x64.tar.gz')
     expect(sel.pkgUrl).toBe(
-      'https://github.com/o/r/releases/download/v1.0.0/c3-v1.0.0-linux-x64.tar.gz',
+      'https://github.com/o/r/releases/download/v1.0.0/c3-cli-v1.0.0-linux-x64.tar.gz',
     )
   })
 })
@@ -696,7 +696,7 @@ describe('runUpgrade (unpack + success)', () => {
 
   it('fails noArtifact when this platform has no published package', async () => {
     const fetchFn = vi.fn(async () =>
-      jsonResponse(releaseJson('2.0.0', 'c3-v2.0.0-macos-arm64.tar.gz')),
+      jsonResponse(releaseJson('2.0.0', 'c3-cli-v2.0.0-macos-arm64.tar.gz')),
     )
     const code = await runUpgrade(
       {},

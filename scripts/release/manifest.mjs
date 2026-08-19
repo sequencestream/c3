@@ -7,7 +7,7 @@
 //
 // Schema:
 //   v1.2  — binary→package split. `artifacts[].file` is the PACKAGE filename
-//           (`c3-v{ver}-{target}{.tar.gz|.zip}`); two extra fields describe the
+//           (`c3-cli-v{ver}-{target}{.tar.gz|.zip}`); two extra fields describe the
 //           in-package binary: `binary` (`c3` / `c3.exe`) and `binarySha256`
 //           (sha256 of the inner binary). `bytes` and `sha256` are the package's;
 //           `binarySha256` is the inner binary's. The postgate only checks `sha256`
@@ -64,7 +64,7 @@ export function sha256File(path) {
  *   preferred?: boolean,                 // the ONE updater-selected installer for its platform
  *   experimental?: boolean,
  * }>} o.artifacts
- *   file = absolute path to the PACKAGE (e.g. dist/c3-v0.2.0-macos-arm64.tar.gz).
+ *   file = absolute path to the PACKAGE (e.g. dist/c3-cli-v0.2.0-macos-arm64.tar.gz).
  *   The `binary` + `binarySha256` pair identify the in-package binary.
  *   `bytes` / `sha256` default to disk reads (caller can pass them to avoid an
  *   extra stat / hash — pack.mjs already computed them).

@@ -133,7 +133,7 @@ export async function smokeArtifact(file, { timeoutMs = 15000, log = () => {} } 
 /**
  * Where the executable for a manifest entry lives on disk.
  *
- * `artifacts[].file` is the PACKAGE (`c3-v{ver}-{target}.tar.gz`), not the binary —
+ * `artifacts[].file` is the PACKAGE (`c3-cli-v{ver}-{target}.tar.gz`), not the binary —
  * that split landed in manifest v1.2. The thing this gate can actually boot is the
  * binary in its per-target scratch dir, `dist/<target>/c3`, which is the same path
  * (and the same bytes) release:build's own Phase3 gate smokes.

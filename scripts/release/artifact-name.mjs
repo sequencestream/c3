@@ -6,10 +6,12 @@
 //      platform info do NOT live in the binary filename — the binary is the
 //      consumer's `c3`, period. Multiple platforms coexist in a multi-target
 //      build by being placed in per-target subdirs under `dist/<target>/c3`.
-//   2. The PACKAGE (`c3-v{ver}-{target}{.ext}`) is what gets uploaded to the
+//   2. The PACKAGE (`c3-cli-v{ver}-{target}{.ext}`) is what gets uploaded to the
 //      GitHub Release. It bundles the binary + its inner sidecar
 //      (`c3.sha256`) into a single distributable archive; the
-//      version and platform info live ONLY in the package filename.
+//      version and platform info live ONLY in the package filename. The
+//      `c3-cli-` prefix marks it as the CLI distribution, distinct from the
+//      desktop app's `c3-desktop-` packages.
 //
 // `pnpm binary` (self-use quickcut) keeps the un-versioned `dist/<target>/c3`
 // output of `buildTarget()` and does NOT use the package helper.
@@ -20,9 +22,12 @@
 //
 // Examples (version 0.2.0):
 //   binary:  dist/macos-arm64/c3
-//   package: c3-v0.2.0-macos-arm64.tar.gz
-//   package: c3-v0.2.0-windows-x64.zip
-//   inner:   c3-v0.2.0-macos-arm64.tar.gz → c3, c3.sha256
+//   package: c3-cli-v0.2.0-macos-arm64.tar.gz
+//   package: c3-cli-v0.2.0-windows-x64.zip
+//   inner:   c3-cli-v0.2.0-macos-arm64.tar.gz → c3, c3.sha256
+
+/** `c3-cli` — the package filename prefix (the binary inside stays `c3`). */
+export const PACKAGE_PREFIX = 'c3-cli'
 
 /** Normalize a version string: strip a single leading `v`. */
 export function normalizeVersion(version) {
@@ -40,11 +45,11 @@ export function packageExt(target) {
 }
 
 /**
- * `c3-v{ver}-{target}{.ext}` — the release:build / publish artifact basename
+ * `c3-cli-v{ver}-{target}{.ext}` — the release:build / publish artifact basename
  * (the PACKAGE, not the binary). Extension is platform-conventional.
  */
 export function packageName(version, target) {
-  return `c3-v${normalizeVersion(version)}-${target}${packageExt(target)}`
+  return `${PACKAGE_PREFIX}-v${normalizeVersion(version)}-${target}${packageExt(target)}`
 }
 
 // ── Back-compat shim ────────────────────────────────────────────────────────

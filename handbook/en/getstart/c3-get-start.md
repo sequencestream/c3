@@ -63,7 +63,7 @@ Manual download:
 Download the archive for your platform from the [releases page](https://github.com/sequencestream/c3/releases/), extract it, and run:
 
 ```bash
-tar -xzvf c3-v0.8.0-macos-arm64.tar.gz
+tar -xzvf c3-cli-v0.8.0-macos-arm64.tar.gz
 ./c3 --port 9000
 ```
 

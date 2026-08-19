@@ -105,9 +105,12 @@ export function packageExt(target: string): string {
   return target.startsWith('windows') ? '.zip' : '.tar.gz'
 }
 
-/** `c3-v{ver}-{target}{.ext}` — the release package basename (mirrors packageName). */
+/** `c3-cli` — the release package filename prefix (mirrors PACKAGE_PREFIX). */
+export const PACKAGE_PREFIX = 'c3-cli'
+
+/** `c3-cli-v{ver}-{target}{.ext}` — the release package basename (mirrors packageName). */
 export function packageNameFor(version: string, target: string): string {
-  return `c3-v${normalizeVersion(version)}-${target}${packageExt(target)}`
+  return `${PACKAGE_PREFIX}-v${normalizeVersion(version)}-${target}${packageExt(target)}`
 }
 
 // ── Runtime-form gate ───────────────────────────────────────────────────────
@@ -364,7 +367,7 @@ export async function stageRelease(
   }
 
   // Package contents are flat (`c3`, `c3.sha256`); their names don't collide with
-  // the downloaded package-level files (`c3-v…{.tar.gz,.sha256}`).
+  // the downloaded package-level files (`c3-cli-v…{.tar.gz,.sha256}`).
   io.unpack(pkgPath, dir, target)
   const binPath = join(dir, binaryNameFor(target))
   if (!io.exists(binPath)) {

@@ -350,7 +350,7 @@ describe('manifest desktop channel', () => {
       artifacts: [
         {
           target: 'linux-x64',
-          file: '/dist/c3-v0.9.6-linux-x64.tar.gz',
+          file: '/dist/c3-cli-v0.9.6-linux-x64.tar.gz',
           bytes: 10,
           sha256: 'b'.repeat(64),
         },
@@ -365,7 +365,7 @@ describe('manifest desktop channel', () => {
       artifacts: [
         {
           target: 'macos-arm64',
-          file: '/dist/c3-v0.9.6-macos-arm64.tar.gz',
+          file: '/dist/c3-cli-v0.9.6-macos-arm64.tar.gz',
           bytes: 1,
           sha256: 'c'.repeat(64),
         },
@@ -400,7 +400,7 @@ describe('carryForwardArtifacts — two channels, one manifest file', () => {
   const cliEntry = {
     target: 'macos-arm64',
     channel: 'cli',
-    file: 'c3-v0.9.6-macos-arm64.tar.gz',
+    file: 'c3-cli-v0.9.6-macos-arm64.tar.gz',
     sha256: 'a'.repeat(64),
   }
   const dmgEntry = {
@@ -457,21 +457,21 @@ describe('binaryPathFor — the smoke gate needs the binary, not the package', (
     // `artifacts[].file` has been the PACKAGE since manifest v1.2; feeding that to
     // the gate makes it try to execute a .tar.gz.
     expect(
-      binaryPathFor('/dist', { target: 'macos-arm64', file: 'c3-v1-macos-arm64.tar.gz' }),
+      binaryPathFor('/dist', { target: 'macos-arm64', file: 'c3-cli-v1-macos-arm64.tar.gz' }),
     ).toBe(join('/dist', 'macos-arm64', 'c3'))
   })
 
   it('keeps the .exe suffix on Windows', () => {
-    expect(binaryPathFor('/dist', { target: 'windows-x64', file: 'c3-v1-windows-x64.zip' })).toBe(
-      join('/dist', 'windows-x64', 'c3.exe'),
-    )
+    expect(
+      binaryPathFor('/dist', { target: 'windows-x64', file: 'c3-cli-v1-windows-x64.zip' }),
+    ).toBe(join('/dist', 'windows-x64', 'c3.exe'))
   })
 })
 
 describe('cliChannel — the smoke gate only boots executables', () => {
   it('accepts CLI packages, including pre-channel entries', () => {
-    expect(cliChannel({ file: 'c3-v0.9.6-macos-arm64.tar.gz', channel: 'cli' })).toBe(true)
-    expect(cliChannel({ file: 'c3-v0.9.6-macos-arm64.tar.gz' })).toBe(true)
+    expect(cliChannel({ file: 'c3-cli-v0.9.6-macos-arm64.tar.gz', channel: 'cli' })).toBe(true)
+    expect(cliChannel({ file: 'c3-cli-v0.9.6-macos-arm64.tar.gz' })).toBe(true)
   })
 
   it('rejects desktop installers', () => {

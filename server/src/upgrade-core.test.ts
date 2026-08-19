@@ -187,7 +187,7 @@ describe('selectDesktopArtifact', () => {
       platform: 'macos',
       arch: 'arm64',
       channel: 'cli',
-      file: 'c3-v0.2.0-macos-arm64.tar.gz',
+      file: 'c3-cli-v0.2.0-macos-arm64.tar.gz',
       bytes: 777,
       sha256: hex('cli'),
     })

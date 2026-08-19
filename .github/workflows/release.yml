@@ -32,7 +32,7 @@
 # (optional, e.g. v0.1.0 → C3_RELEASE_VERSION) and the shared batch subdirectory.
 #
 # Two CHANNELS ship from the same run and the same version:
-#   - `build-publish-<target>`  — the CLI single binary (`c3-v{ver}-{target}.tar.gz|zip`)
+#   - `build-publish-<target>`  — the CLI single binary (`c3-cli-v{ver}-{target}.tar.gz|zip`)
 #   - `build-desktop-<target>`  — the Tauri desktop app (`c3-desktop-v{ver}-{target}.{dmg|…}`),
 #     which embeds THAT SAME binary as its sidecar. Consumers pick one; both carry
 #     sha256 sidecars and a `channel` field in their manifest entry.
@@ -170,7 +170,7 @@ jobs:
 
       - name: Smoke (--version + headless)
         run: |
-          pkg=$(ls dist/c3-v*-linux-x64.tar.gz | head -1)
+          pkg=$(ls dist/c3-cli-v*-linux-x64.tar.gz | head -1)
           mkdir -p dist/smoke
           tar -xzf "$pkg" -C dist/smoke
           node scripts/release/smoke.mjs --file=dist/smoke/c3 --timeout=20000
@@ -188,8 +188,8 @@ jobs:
         with:
           name: c3-linux-x64
           path: |
-            dist/c3-v*-linux-x64.tar.gz
-            dist/c3-v*-linux-x64.zip
+            dist/c3-cli-v*-linux-x64.tar.gz
+            dist/c3-cli-v*-linux-x64.zip
             dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
@@ -237,7 +237,7 @@ jobs:
 
       - name: Smoke (--version + headless)
         run: |
-          pkg=$(ls dist/c3-v*-macos-arm64.tar.gz | head -1)
+          pkg=$(ls dist/c3-cli-v*-macos-arm64.tar.gz | head -1)
           mkdir -p dist/smoke
           tar -xzf "$pkg" -C dist/smoke
           node scripts/release/smoke.mjs --file=dist/smoke/c3 --timeout=20000
@@ -255,8 +255,8 @@ jobs:
         with:
           name: c3-macos-arm64
           path: |
-            dist/c3-v*-macos-arm64.tar.gz
-            dist/c3-v*-macos-arm64.zip
+            dist/c3-cli-v*-macos-arm64.tar.gz
+            dist/c3-cli-v*-macos-arm64.zip
             dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
@@ -309,9 +309,9 @@ jobs:
 
       - name: Smoke (--version + headless)
         run: |
-          $pkg = Get-ChildItem dist/c3-v*-windows-x64.zip | Select-Object -First 1
+          $pkg = Get-ChildItem dist/c3-cli-v*-windows-x64.zip | Select-Object -First 1
           if (-not $pkg) {
-            Write-Error "no dist/c3-v*-windows-x64.zip — the build step produced no package. See the Build step's log."
+            Write-Error "no dist/c3-cli-v*-windows-x64.zip — the build step produced no package. See the Build step's log."
             exit 1
           }
           New-Item -ItemType Directory -Force -Path dist/smoke | Out-Null
@@ -331,8 +331,8 @@ jobs:
         with:
           name: c3-windows-x64
           path: |
-            dist/c3-v*-windows-x64.tar.gz
-            dist/c3-v*-windows-x64.zip
+            dist/c3-cli-v*-windows-x64.tar.gz
+            dist/c3-cli-v*-windows-x64.zip
             dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*

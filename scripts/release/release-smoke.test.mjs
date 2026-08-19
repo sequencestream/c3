@@ -67,13 +67,13 @@ describe('targets', () => {
     expect(TARGETS['windows-x64']).toBe('bun-windows-x64')
 
     // Package (the distributable archive; the unit of `shasum` / `gh release`).
-    expect(artifactName('0.2.0', 'windows-x64')).toBe('c3-v0.2.0-windows-x64.zip')
-    expect(artifactName('0.2.0', 'linux-x64')).toBe('c3-v0.2.0-linux-x64.tar.gz')
-    expect(artifactName('0.2.0', 'macos-arm64')).toBe('c3-v0.2.0-macos-arm64.tar.gz')
+    expect(artifactName('0.2.0', 'windows-x64')).toBe('c3-cli-v0.2.0-windows-x64.zip')
+    expect(artifactName('0.2.0', 'linux-x64')).toBe('c3-cli-v0.2.0-linux-x64.tar.gz')
+    expect(artifactName('0.2.0', 'macos-arm64')).toBe('c3-cli-v0.2.0-macos-arm64.tar.gz')
     // Back-compat: `artifactName` is an alias of `packageName`.
     expect(artifactName).toBe(packageName)
     // `normalizeVersion`: a v-prefixed version is not doubled.
-    expect(packageName('v0.2.0', 'macos-arm64')).toBe('c3-v0.2.0-macos-arm64.tar.gz')
+    expect(packageName('v0.2.0', 'macos-arm64')).toBe('c3-cli-v0.2.0-macos-arm64.tar.gz')
 
     // Binary (always `c3` / `c3.exe`; the in-dist + in-package filename).
     expect(binaryName('macos-arm64')).toBe('c3')
@@ -103,8 +103,8 @@ describe('assertVersionOutput', () => {
 describe('parseSha256Sums', () => {
   it('parses `<hex>  <name>` lines into a name→hex map (release 8/7: name is the PACKAGE)', () => {
     const hex = 'a'.repeat(64)
-    const map = parseSha256Sums(`${hex}  c3-v0.1.0-macos-arm64.tar.gz\n# comment\n`)
-    expect(map.get('c3-v0.1.0-macos-arm64.tar.gz')).toBe(hex)
+    const map = parseSha256Sums(`${hex}  c3-cli-v0.1.0-macos-arm64.tar.gz\n# comment\n`)
+    expect(map.get('c3-cli-v0.1.0-macos-arm64.tar.gz')).toBe(hex)
     expect(map.size).toBe(1)
   })
 })

@@ -63,7 +63,7 @@ irm https://raw.githubusercontent.com/sequencestream/c3/main/install.ps1 | iex
 从 [releases 页面](https://github.com/sequencestream/c3/releases/) 下载对应平台的压缩包，解压后运行：
 
 ```bash
-tar -xzvf c3-v0.8.0-macos-arm64.tar.gz
+tar -xzvf c3-cli-v0.8.0-macos-arm64.tar.gz
 ./c3 --port 9000
 ```
 

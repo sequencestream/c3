@@ -52,8 +52,8 @@ jobs:
         run: |
           TAG="${{ steps.rel.outputs.tag }}"
           VERSION="${{ steps.rel.outputs.version }}"
-          MAC_SIDECAR="c3-v${VERSION}-macos-arm64.tar.gz.sha256"
-          LINUX_SIDECAR="c3-v${VERSION}-linux-x64.tar.gz.sha256"
+          MAC_SIDECAR="c3-cli-v${VERSION}-macos-arm64.tar.gz.sha256"
+          LINUX_SIDECAR="c3-cli-v${VERSION}-linux-x64.tar.gz.sha256"
           # release 不产出可靠的汇总 SHA256SUMS(各 target job 会互相覆盖),
           # 因此读每个产物独立的 `.sha256` 附属文件。
           # Release 发布与资产上传之间可能有短暂窗口,轮询等待附属文件就绪。
@@ -105,14 +105,14 @@ jobs:
 
             on_macos do
               on_arm do
-                url "${BASE}/c3-v${VERSION}-macos-arm64.tar.gz"
+                url "${BASE}/c3-cli-v${VERSION}-macos-arm64.tar.gz"
                 sha256 "${MAC_ARM}"
               end
             end
 
             on_linux do
               on_intel do
-                url "${BASE}/c3-v${VERSION}-linux-x64.tar.gz"
+                url "${BASE}/c3-cli-v${VERSION}-linux-x64.tar.gz"
                 sha256 "${LINUX_X64}"
               end
             end

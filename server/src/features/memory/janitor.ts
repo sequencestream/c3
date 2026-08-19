@@ -1,0 +1,173 @@
+/**
+ * The memory janitor: a deterministic, process-local repair and cleanup sweep.
+ *
+ * It is rule-based on purpose. Nothing here reads a memory's prose, ranks it, or
+ * asks a model whether it still matters — a cleanup that can form an opinion is a
+ * cleanup that can silently discard something the user said. Two rules, both
+ * decidable from the table alone:
+ *
+ *  - **Duplicate repair.** Within one workspace and one normalized title, the row
+ *    with the greatest `updated_at` is retained (ties broken by id) and every
+ *    other non-superseded row becomes `superseded`, pointing at the survivor.
+ *    Ordinary writes already deduplicate; this exists for the databases writes did
+ *    not produce alone — a partially written table, an externally inspected file.
+ *  - **Delayed physical removal.** A `superseded` or `deleted` row is erased once
+ *    its own `updated_at` has reached the recovery boundary. Until then it is
+ *    recoverable and still occupies workspace capacity, which is the deliberate
+ *    trade: the store refuses a new row rather than shortening recoverability.
+ *
+ * An `active` row is never removed for being old. A preference stated a year ago
+ * is exactly the kind of thing this capability exists to keep.
+ *
+ * The sweep runs on its own timer with no agent involved, is idempotent, takes an
+ * injectable clock, and never throws — a crashed sweep leaves inactive rows around
+ * for another day, which is strictly safer than deleting early.
+ */
+import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { ensureMemorySchema } from './store.js'
+
+/** How long an inactive row stays recoverable before it is physically erased. */
+export const MEMORY_RECOVERY_DAYS = 30
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Delay before the first sweep so the server can settle on boot (ms). */
+const INITIAL_DELAY_MS = 90_000
+
+/** Fixed sweep cadence once running: once a day (ms). */
+const SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000
+
+/** What one sweep changed. Both counts are zero on an already-clean table. */
+export interface MemorySweepResult {
+  /** Duplicate rows demoted to `superseded` this sweep. */
+  superseded: number
+  /** Inactive rows physically erased this sweep. */
+  removed: number
+}
+
+interface DupRow {
+  id: string
+  workspace_name: string
+  title_key: string
+  updated_at: number
+}
+
+/**
+ * Run one sweep. Never throws; an unavailable database is a no-op.
+ *
+ * The two rules run in that order within a single transaction, so a row demoted
+ * here starts its recovery window now rather than being erased in the same pass.
+ */
+export function runMemorySweepOnce(opts: { now?: number } = {}): MemorySweepResult {
+  const empty: MemorySweepResult = { superseded: 0, removed: 0 }
+  try {
+    if (!isDbAvailable() || !ensureMemorySchema()) return empty
+    const d = getDb()
+    if (!d) return empty
+    const now = opts.now ?? Date.now()
+    const result = sweep(d, now)
+    if (result.superseded > 0 || result.removed > 0) {
+      console.log(
+        `[c3:memory-janitor] superseded ${result.superseded} duplicate memory row(s), ` +
+          `removed ${result.removed} expired inactive row(s)`,
+      )
+    }
+    return result
+  } catch (err) {
+    console.warn('[c3:memory-janitor] sweep failed (non-fatal):', err)
+    return empty
+  }
+}
+
+function sweep(d: Db, now: number): MemorySweepResult {
+  d.exec('BEGIN')
+  try {
+    const superseded = supersedeDuplicates(d, now)
+    const removed = removeExpired(d, now)
+    d.exec('COMMIT')
+    return { superseded, removed }
+  } catch (err) {
+    try {
+      d.exec('ROLLBACK')
+    } catch {
+      /* noop */
+    }
+    throw err
+  }
+}
+
+/**
+ * Demote every non-superseded row that shares a workspace and normalized title
+ * with a newer sibling. The survivor is the greatest `updated_at`; a tie is
+ * broken by the greater id so two sweeps of the same table always agree.
+ */
+function supersedeDuplicates(d: Db, now: number): number {
+  const rows = d.all<DupRow>(
+    `SELECT id, workspace_name, title_key, updated_at FROM workspace_memories
+      WHERE status <> 'superseded'
+      ORDER BY workspace_name ASC, title_key ASC, updated_at DESC, id DESC`,
+  )
+  let count = 0
+  let group = ''
+  let keeper = ''
+  for (const r of rows) {
+    const key = `${r.workspace_name}\u0000${r.title_key}`
+    if (key !== group) {
+      group = key
+      keeper = r.id
+      continue
+    }
+    d.run(
+      "UPDATE workspace_memories SET status = 'superseded', superseded_by = ?, updated_at = ? WHERE id = ?",
+      keeper,
+      now,
+      r.id,
+    )
+    count += 1
+  }
+  return count
+}
+
+/** Erase inactive rows that have reached the recovery boundary. */
+function removeExpired(d: Db, now: number): number {
+  const cutoff = now - MEMORY_RECOVERY_DAYS * DAY_MS
+  const doomed = d.all<{ id: string }>(
+    `SELECT id FROM workspace_memories
+      WHERE status IN ('superseded','deleted') AND updated_at <= ?`,
+    cutoff,
+  )
+  for (const r of doomed) d.run('DELETE FROM workspace_memories WHERE id = ?', r.id)
+  // A survivor pointing at an erased replacement would carry a dangling id. The
+  // pointer is a recovery hint, not a foreign key, so clearing it is correct.
+  d.run(
+    `UPDATE workspace_memories SET superseded_by = NULL
+      WHERE superseded_by IS NOT NULL
+        AND superseded_by NOT IN (SELECT id FROM workspace_memories)`,
+  )
+  return doomed.length
+}
+
+let timer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * Start the process-local memory sweep loop: a brief settling delay, then a fixed
+ * daily cadence. Idempotent — a prior loop is stopped first. Fail-soft.
+ */
+export function startMemoryJanitor(): void {
+  stopMemoryJanitor()
+  const tick = (): void => {
+    runMemorySweepOnce()
+    timer = setTimeout(tick, SWEEP_INTERVAL_MS)
+    timer.unref?.()
+  }
+  timer = setTimeout(tick, INITIAL_DELAY_MS)
+  timer.unref?.()
+}
+
+/** Stop the memory sweep loop (called on shutdown). */
+export function stopMemoryJanitor(): void {
+  if (timer) {
+    clearTimeout(timer)
+    timer = undefined
+  }
+}

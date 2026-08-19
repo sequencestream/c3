@@ -33,7 +33,7 @@ import {
   INTENT_QUERY_TOOLS,
   INTENT_READ_TOOLS,
   isInside,
-  PUBLISH_EVENT_TOOL,
+  AUTO_ALLOWED_C3_TOOLS,
   SUBMIT_SPEC_REVIEW_TOOL,
   withAnswers,
   WRITE_TOOLS,
@@ -191,14 +191,11 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
   return async (toolName, input): Promise<PermissionDecision> => {
     const requestId = randomUUID()
 
-    // The work-session event publish tool is ALWAYS auto-allowed with no human
-    // prompt, in every gate. Publishing a vendor-neutral generic event is
-    // non-destructive — it only feeds the event bus; the gated, side-effecting
-    // step is the automation the event may trigger (governed by that automation's
-    // own execution identity + the three-tier MCP security model). It is only ever
-    // bound to standard work sessions, so this never widens the intent / spec /
-    // discussion gates' read-only surface in practice.
-    if (toolName === PUBLISH_EVENT_TOOL) {
+    // The work-session c3 tools are ALWAYS auto-allowed with no human prompt, in
+    // every gate — see AUTO_ALLOWED_C3_TOOLS for why each one qualifies. They are
+    // only ever bound to standard work sessions, so this never widens the intent /
+    // spec / discussion gates' read-only surface in practice.
+    if (AUTO_ALLOWED_C3_TOOLS.has(toolName)) {
       return allow(input)
     }
 

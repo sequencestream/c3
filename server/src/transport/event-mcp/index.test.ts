@@ -1,14 +1,19 @@
 /**
- * Event MCP HTTP route, the codex twin of the in-process publish tool. Covers:
+ * The work-session MCP HTTP route — the ONE transport every vendor consumes.
+ * Covers:
  *  - the loopback predicate (non-local peers rejected; defence in depth);
  *  - unknown-token rejection (404) at the route;
- *  - a REAL MCP client over streamable-HTTP listing + calling `publish_event`
- *    (the codex integration path; AC1/AC2 codex + vendor-neutral parity with
- *    claude).
- * The publish behavior is injected, so this exercises the transport plumbing
- * end-to-end without codex's binary.
+ *  - a REAL MCP client over streamable-HTTP listing and calling all three tools
+ *    (`publish_event` + the two memory tools);
+ *  - the bound descriptor's `enabledTools` covering EXACTLY the registered tools,
+ *    which is what stops a Codex-only silent disabling of an omitted name.
+ * Tool behavior is injected, so this exercises the transport plumbing end-to-end
+ * without any vendor binary.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -17,6 +22,7 @@ import type { GenericEventEnvelope } from '@ccc/shared'
 import {
   createEventMcp,
   EVENT_MCP_PATH,
+  EVENT_MCP_TOOL_NAMES,
   isLoopback,
   type EventMcpTools,
   type ServedEventMcp,
@@ -29,6 +35,13 @@ import {
   projectPrOperationEvent,
 } from '../../features/pr-events/tool-defs.js'
 import { runPublishEvent } from '../../features/events/tool-defs.js'
+import {
+  runMemorySearch,
+  runMemoryWrite,
+  type MemoryScope,
+} from '../../features/memory/tool-defs.js'
+import { resetDbForTests } from '../../kernel/infra/db.js'
+import { resetMemoryStoreForTests } from '../../features/memory/store.js'
 
 describe('isLoopback', () => {
   it.each([
@@ -48,8 +61,15 @@ describe('event MCP HTTP route', () => {
   const registry = new EventNormalizerRegistry()
   for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
   registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
+  // The composition root's own scope derivation: workspace from the binding's
+  // path, session from the live run id. Nothing here is caller-supplied.
+  const scope = (binding: { workspacePath: string; getRunId: () => string }): MemoryScope => ({
+    workspaceName: binding.workspacePath,
+    sessionId: binding.getRunId(),
+  })
   const tools: EventMcpTools = {
-    // Use the real core so the route exercises validation + normalization + publish.
+    // Use the real cores so the route exercises validation + normalization +
+    // publish, and real persistence for the memory pair.
     publish: (binding, args) =>
       runPublishEvent(
         args,
@@ -61,6 +81,8 @@ describe('event MCP HTTP route', () => {
             event,
           }),
       ),
+    memorySearch: (binding, args) => runMemorySearch(scope(binding), args),
+    memoryWrite: (binding, args) => runMemoryWrite(scope(binding), args),
   }
 
   let server: ServerType
@@ -68,8 +90,13 @@ describe('event MCP HTTP route', () => {
   let eventMcp: ServedEventMcp
 
   let tokCounter = 0
+  let home: string
 
   beforeAll(async () => {
+    home = mkdtempSync(join(tmpdir(), 'c3-event-mcp-'))
+    process.env.C3_DB_PATH = join(home, 'c3.db')
+    resetDbForTests()
+    resetMemoryStoreForTests()
     eventMcp = createEventMcp('http://127.0.0.1', tools, () => `tok-${++tokCounter}`)
     const app = new Hono()
     app.all(EVENT_MCP_PATH, (c) => eventMcp.handler(c))
@@ -83,6 +110,10 @@ describe('event MCP HTTP route', () => {
 
   afterAll(() => {
     server?.close()
+    resetDbForTests()
+    delete process.env.C3_DB_PATH
+    resetMemoryStoreForTests()
+    rmSync(home, { recursive: true, force: true })
   })
 
   const routeUrl = (token: string): URL =>
@@ -112,7 +143,11 @@ describe('event MCP HTTP route', () => {
     await client.connect(transport)
     try {
       const list = await client.listTools()
-      expect(list.tools.map((t) => t.name)).toContain('publish_event')
+      // The descriptor must cover EXACTLY what is registered: Codex marks each
+      // enabled name required/approved and silently disables anything omitted, so
+      // a drift here would break one vendor and look like nothing happened.
+      expect(list.tools.map((t) => t.name)).toEqual([...EVENT_MCP_TOOL_NAMES])
+      expect(bound.servers.c3.enabledTools).toEqual(list.tools.map((t) => t.name))
 
       const res = (await client.callTool({
         name: 'publish_event',
@@ -177,5 +212,150 @@ describe('event MCP HTTP route', () => {
       await transport.close()
       bound.dispose()
     }
+  })
+})
+
+describe('the memory tools over the same route', () => {
+  const tools: EventMcpTools = {
+    publish: () => ({ content: [{ type: 'text', text: 'unused' }] }),
+    memorySearch: (binding, args) =>
+      runMemorySearch(
+        { workspaceName: binding.workspacePath, sessionId: binding.getRunId() },
+        args,
+      ),
+    memoryWrite: (binding, args) =>
+      runMemoryWrite({ workspaceName: binding.workspacePath, sessionId: binding.getRunId() }, args),
+  }
+
+  let server: ServerType
+  let port: number
+  let eventMcp: ServedEventMcp
+  let home: string
+  let tokCounter = 0
+
+  beforeAll(async () => {
+    home = mkdtempSync(join(tmpdir(), 'c3-event-mcp-memory-'))
+    process.env.C3_DB_PATH = join(home, 'c3.db')
+    resetDbForTests()
+    resetMemoryStoreForTests()
+    eventMcp = createEventMcp('http://127.0.0.1', tools, () => `mtok-${++tokCounter}`)
+    const app = new Hono()
+    app.all(EVENT_MCP_PATH, (c) => eventMcp.handler(c))
+    await new Promise<void>((resolve) => {
+      server = serve({ fetch: app.fetch, port: 0 }, (info) => {
+        port = info.port
+        resolve()
+      })
+    })
+  })
+
+  afterAll(() => {
+    server?.close()
+    resetDbForTests()
+    delete process.env.C3_DB_PATH
+    resetMemoryStoreForTests()
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  /** Bind one run and drive it with a real MCP client, exactly as a vendor does. */
+  async function withClient<T>(
+    workspacePath: string,
+    runId: string,
+    fn: (c: Client, enabled: readonly string[] | undefined) => Promise<T>,
+  ): Promise<T> {
+    const bound = eventMcp.bind({
+      workspacePath,
+      getRunId: () => runId,
+      signal: new AbortController().signal,
+    })
+    const token = new URL(bound.servers.c3.url).searchParams.get('token')!
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}${EVENT_MCP_PATH}?token=${token}`),
+    )
+    await client.connect(transport)
+    try {
+      return await fn(client, bound.servers.c3.enabledTools)
+    } finally {
+      await transport.close()
+      bound.dispose()
+    }
+  }
+
+  const call = async (
+    c: Client,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> => {
+    const res = (await c.callTool({ name, arguments: args })) as {
+      isError?: boolean
+      content: Array<{ text: string }>
+    }
+    expect(res.isError).toBeFalsy()
+    return JSON.parse(res.content[0].text) as Record<string, unknown>
+  }
+
+  // Every vendor consumes THIS descriptor from THIS route — claude over its SDK
+  // loop, codex and cursor over the driver path. Running the same assertions per
+  // vendor label pins that none of them can end up with a narrower tool face.
+  it.each(['claude', 'codex', 'cursor'])(
+    'a %s work session lists all three tools and can call both memory tools',
+    async (vendor) => {
+      await withClient(`/ws-${vendor}`, `run-${vendor}`, async (client, enabled) => {
+        const names = (await client.listTools()).tools.map((t) => t.name)
+        expect(names).toEqual([...EVENT_MCP_TOOL_NAMES])
+        expect(names).toContain('memory_search')
+        expect(names).toContain('memory_write')
+        expect(enabled).toEqual(names)
+
+        const saved = await call(client, 'memory_write', {
+          op: 'create',
+          type: 'preference',
+          title: `${vendor} 的偏好`,
+          content: `用户对 ${vendor} 会话说过的偏好。`,
+        })
+        expect(saved).toMatchObject({ ok: true, title: `${vendor} 的偏好` })
+
+        const dir = await call(client, 'memory_search', {})
+        expect(dir).toMatchObject({ mode: 'directory', total: 1 })
+
+        const hit = await call(client, 'memory_search', { query: vendor })
+        expect((hit.memories as Array<{ sourceSessionId: string }>)[0].sourceSessionId).toBe(
+          `run-${vendor}`,
+        )
+      })
+    },
+  )
+
+  it('one run binding cannot reach another workspace memory', async () => {
+    await withClient('/ws-a', 'run-a', async (client) => {
+      await call(client, 'memory_write', {
+        op: 'create',
+        type: 'fact',
+        title: 'A 的事实',
+        content: '只属于 A。',
+      })
+    })
+    await withClient('/ws-b', 'run-b', async (client) => {
+      expect(await call(client, 'memory_search', {})).toMatchObject({ total: 0 })
+      expect(await call(client, 'memory_search', { query: 'A 的事实' })).toMatchObject({ total: 0 })
+    })
+  })
+
+  it('reports a refused write as an MCP error rather than a receipt', async () => {
+    await withClient('/ws-c', 'run-c', async (client) => {
+      const res = (await client.callTool({
+        name: 'memory_write',
+        arguments: {
+          op: 'create',
+          type: 'fact',
+          title: '密钥',
+          content: 'api_key=8f3c1a9d7e2b4056af11',
+        },
+      })) as { isError?: boolean; content: Array<{ text: string }> }
+      expect(res.isError).toBe(true)
+      expect(res.content[0].text).not.toContain('8f3c1a9d7e2b4056af11')
+      expect(await call(client, 'memory_search', {})).toMatchObject({ total: 0 })
+    })
   })
 })

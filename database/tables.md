@@ -6,7 +6,7 @@
 
 所有工作区关联统一使用 `workspace_name`，其值引用 `workspaces.name`；绝对路径只保存在注册表并用于文件系统操作。迁移 `039-workspace-name-identity.sql` 由配置 store 在单事务内把历史 workspace UUID 和各业务表路径映射为名称。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 34 张表，12 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 35 张表，13 个模块。
 
 ## 基础设施
 
@@ -54,6 +54,7 @@
 | 32  | auth         | `user_workspace_scopes`      | [auth/user_workspace_scopes.sql](auth/user_workspace_scopes.sql)                         | `server/src/features/auth/scope-store.ts`                   | 账号可访问哪些工作区 (管理员配置, 默认拒绝)              |
 | 33  | auth         | `user_workspace_scope_items` | [auth/user_workspace_scope_items.sql](auth/user_workspace_scope_items.sql)               | `server/src/features/auth/scope-store.ts`                   | mode='selected' 的选定工作区明细                         |
 | 34  | external-mcp | `external_mcp_write_audits`  | [external-mcp/external_mcp_write_audits.sql](external-mcp/external_mcp_write_audits.sql) | `server/src/features/external-mcp/audit-store.ts`           | 外部 MCP 写调用的只增审计轨迹                            |
+| 35  | memory       | `workspace_memories`         | [memory/workspace_memories.sql](memory/workspace_memories.sql)                           | `server/src/features/memory/store.ts`                       | 工作区长期记忆 (偏好/约束/事实/教训)                     |
 
 ## 模块说明
 
@@ -190,6 +191,23 @@ state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数
 `key_id` 对 `mcp_api_keys` 不设外键，key 吊销后历史仍须可读。写入不进业务事务：落库失败保持业务
 结果不变，但必须发出脱敏的运维错误，让审计缺口可观测。读操作不入表 (见 security.md SEC-14 的已知
 缺口)。
+
+### memory
+
+工作区长期记忆域。`workspace_memories` 承载仓库无法自证、也不适合写进 `CLAUDE.md` 的东西：用户口头
+表达过的偏好、验证过一次的项目约束、稳定事实、踩过的坑。它是**结论**的存储，不是转录的存储——刻意
+没有代码片段、命令、提示词、工具输入输出与对话原文的位置，写入时按集中的拒绝规则挡掉凭据形状与
+代码/工具/转录框架 (记忆不是密钥库：形状检测挡得住常见凭据，挡不住任意散文)。
+
+身份是 `(workspace_name, title_key)`。`title_key` 是 `title` 的归一化派生键 (去首尾空白、折叠内部
+空白、Unicode 小写)，只为让去重与清理成为索引点查，不属于领域模型。同名写入原地覆盖，是本能力唯一
+的自动语义判断——系统从不比较正文，也不问 LLM 两句话是否矛盾，因此真正互斥的两条必须用不同 `title`
+(可共用 `subject` 让分歧可发现)，两条都保持 `active`。
+
+`active` 是普通检索唯一可见的状态。`superseded` (去重的败者，`superseded_by` 指向留下的那条) 与
+`deleted` (软删) 按各自的 `updated_at` 满 30 天才被物理删除，回收期内仍占容量——容量满时拒绝新条目，
+而不是缩短可恢复性或淘汰另一条记忆；`active` 的 `preference` 永不因年龄被清理。硬边界为单条 `content`
+≤ 2000 个 Unicode 码点、单工作区 ≤ 500 物理行，计数与插入同事务，超限一律显式报错。
 
 ## 数据库设计约定
 

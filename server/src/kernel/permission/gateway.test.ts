@@ -86,19 +86,38 @@ describe('intent gate — read-only, deny-by-default', () => {
   })
 })
 
-describe('publish_event — auto-allowed with no prompt', () => {
-  it('auto-allows in the standard gate and emits NO permission_request', async () => {
-    const sent: ServerToClient[] = []
-    const gate = createCanUseTool(spec({ gate: 'standard', send: (m) => sent.push(m) }))
-    const out = await gate(
+describe('the work-session c3 tools — auto-allowed with no prompt', () => {
+  // These three are bound to `work` sessions ONLY (pinned in
+  // kernel/run/session-mcp-profile.test.ts). Auto-allow decides that a bound tool
+  // needs no dialog; it is never what makes a tool reachable.
+  const calls: Array<[string, Record<string, unknown>]> = [
+    [
       'mcp__c3__publish_event',
       { type: 'pr:operation', status: 'success', metadata: { operation: 'merge' } },
-      {} as never,
+    ],
+    ['mcp__c3__memory_search', { query: '部署' }],
+    ['mcp__c3__memory_write', { op: 'create', type: 'preference', title: 't', content: 'c' }],
+  ]
+
+  it.each(calls)('%s auto-allows in the standard gate with no wire event', async (tool, input) => {
+    const sent: ServerToClient[] = []
+    const onPermissionRequest = vi.fn()
+    const onConsensusResolved = vi.fn()
+    const gate = createCanUseTool(
+      spec({
+        gate: 'standard',
+        send: (m) => sent.push(m),
+        onPermissionRequest,
+        onConsensusResolved,
+      }),
     )
-    expect(out).toMatchObject({ behavior: 'allow' })
+    expect(await gate(tool, input, {} as never)).toMatchObject({ behavior: 'allow' })
+    // No dialog on the wire, no user-involvement record, no consensus call.
     expect(sent.find((m) => m.type === 'permission_request')).toBeUndefined()
-    // The non-destructive publish never runs consensus either.
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(onConsensusResolved).not.toHaveBeenCalled()
     expect(vi.mocked(runConsensusVote)).not.toHaveBeenCalled()
+    expect(vi.mocked(runAskConsensus)).not.toHaveBeenCalled()
   })
 })
 

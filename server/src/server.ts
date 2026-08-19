@@ -27,7 +27,7 @@ import {
   setOnSessionBindingFallback,
   resolveSessionVendor,
 } from './kernel/agent-config/index.js'
-import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
+import { listWorkspaces, resolveWorkspaceRoot, workspaceNameFor } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
   reconcileLiveness,
@@ -129,6 +129,8 @@ import {
   startSessionJanitor,
   stopSessionJanitor,
 } from './features/session-cleanup/session-janitor.js'
+import { startMemoryJanitor, stopMemoryJanitor } from './features/memory/janitor.js'
+import { runMemorySearch, runMemoryWrite, type MemoryScope } from './features/memory/tool-defs.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -588,6 +590,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // codex localhost HTTP route here). The route is mounted before the SPA catch-all.
   const publishEvent = (payload: import('@ccc/shared').GenericEventEnvelope): void =>
     eventBus.publish('event', payload)
+  // The memory tools' scope is derived here, never accepted from the model: the
+  // run binding's workspace path becomes the workspace's persistence identity and
+  // the live run id becomes the source session. A model cannot name either, which
+  // is what makes workspace isolation structural.
+  const memoryScope = (binding: {
+    workspacePath: string
+    getRunId: () => string
+  }): MemoryScope => ({
+    workspaceName: workspaceNameFor(binding.workspacePath),
+    sessionId: binding.getRunId(),
+  })
   const eventMcpTools: EventMcpTools = {
     publish: (binding, args) =>
       runPublishEvent(args, normalizeEvent, (event) =>
@@ -597,6 +610,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           event,
         }),
       ),
+    memorySearch: (binding, args) => runMemorySearch(memoryScope(binding), args),
+    memoryWrite: (binding, args) => runMemoryWrite(memoryScope(binding), args),
   }
   const eventMcp = createEventMcp(`http://127.0.0.1:${opts.port}`, eventMcpTools)
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
@@ -677,10 +692,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       gate: 'discussion-research' as const,
     }),
     // Work-session base MCP profile: every new and resumed work session gets
-    // `publish_event` so the model can publish a vendor-neutral generic event
-    // after acting with its own tools. No gate override, no disallowed-tools lock
-    // — the run keeps its standard surface. Every vendor binds the same
-    // loopback HTTP MCP route.
+    // `publish_event` (publish a vendor-neutral generic event after acting with
+    // its own tools) plus `memory_search` / `memory_write` (the workspace's
+    // durable notebook). No gate override, no disallowed-tools lock — the run
+    // keeps its standard surface. Every vendor binds the same loopback HTTP MCP
+    // route, and the run lifecycle offers this profile to `work` sessions only.
     sessionProfile: () => ({
       bindMcp: (binding) => eventMcp.bind(binding),
     }),
@@ -1013,6 +1029,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
     stopUpdateCheckScheduler()
     stopSessionJanitor()
+    stopMemoryJanitor()
     stopQueueTickLoop()
     await stopSchedulerWiring(30_000)
     await new Promise<void>((resolve) => {
@@ -1072,6 +1089,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // session transcripts older than the retention window from every reachable
   // vendor session store. Fail-soft, daily cadence.
   startSessionJanitor()
+
+  // Start the memory janitor: repair duplicate memory titles and erase inactive
+  // memory rows past their recovery window. Rule-based, no agent, fail-soft,
+  // daily cadence.
+  startMemoryJanitor()
 
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {

@@ -206,6 +206,7 @@ c3
 │   │
 │   ├── memory 工作区记忆                          # work session 的跨 run 记事本:用户口头偏好/已验证约束/稳定事实/教训,仓库无法自证也不该进 CLAUDE.md 的那部分
 │   │   ├── 两个 MCP 工具                          # memory_search(无 query 出按 type 分组的 title 目录,有 query 做字面不区分大小写子串匹配并出详情)/ memory_write(create|update|delete);经既有 event-mcp 回环路由,不新增路由
+│   │   ├── 设置页记忆 Tab                         # 工作区设置页只读列出本工作区 active 记忆(title/type/status/更新时间,按 type 固定顺序分组、不含正文)并逐条软删(ConfirmDialog 二次确认,服务端确认后行才消失);不提供新建/编辑/搜索——写入路径只有 agent,这条通道的意义正是不依赖 agent
 │   │   ├── work-only 工具面                       # 由 sessionKind === 'work' 正向选中(不是「其它 profile 没匹配」);intent/spec/spec_review/discussion(含调研与逐 agent 会话)一概不获得,避免合成观点被持久化为工作区事实
 │   │   ├── vendor 中立                            # claude/codex/cursor 消费同一份描述符,enabledTools 由已注册工具列表派生——codex 会静默禁用未列出的名字
 │   │   ├── 免确认                                 # 两个工具在标准权限门直接放行,无 permission_request、无用户介入记录、无共识;免确认不等于可用,可达性由工具面独立决定

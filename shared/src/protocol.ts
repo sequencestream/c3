@@ -18,6 +18,7 @@ export * from './protocol/delivery.js'
 export * from './protocol/discussion.js'
 export * from './protocol/intent.js'
 export * from './protocol/log.js'
+export * from './protocol/memory.js'
 export * from './protocol/session.js'
 export * from './protocol/settings.js'
 export * from './protocol/skill.js'
@@ -31,6 +32,7 @@ import type * as DeliveryMsg from './protocol/delivery-messages.js'
 import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
 import type * as LogMsg from './protocol/log-messages.js'
+import type * as MemoryMsg from './protocol/memory-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
 import type * as SettingsMsg from './protocol/settings-messages.js'
 import type * as SkillMsg from './protocol/skill-messages.js'
@@ -85,6 +87,8 @@ export type ClientToServer =
   | AuthMsg.ClientGetUserWorkspaceAccess
   | AuthMsg.ClientSaveUserWorkspaceAccess
   | WorkspaceMsg.ClientGetWorkspaceAccessors
+  | MemoryMsg.ClientListWorkspaceMemories
+  | MemoryMsg.ClientDeleteWorkspaceMemory
   | WorkspaceMsg.ClientLoadWorkspaceSetting
   | WorkspaceMsg.ClientSaveWorkspaceSetting
   | IntentMsg.ClientListIntents
@@ -194,6 +198,8 @@ export type ServerToClient =
   | SettingsMsg.ServerMyMcpApiKeys
   | AuthMsg.ServerUserWorkspaceAccess
   | WorkspaceMsg.ServerWorkspaceAccessors
+  | MemoryMsg.ServerWorkspaceMemories
+  | MemoryMsg.ServerWorkspaceMemoryDeleted
   | WorkspaceMsg.ServerWorkspaceSetting
   | AuthMsg.ServerLoginResult
   | AuthMsg.ServerAdminPasswordResult

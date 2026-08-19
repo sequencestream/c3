@@ -3,7 +3,11 @@
 以领域术语给出的实体定义;物理接线(SQLite 驱动、schema 收敛、索引)见
 [memory-design.md](memory-design.md);表的列级语义见
 [`database/memory/workspace_memories.sql`](../../../../database/memory/workspace_memories.sql)。
-本域不上线协议,没有 wire 形状。
+
+本域有一个**只读 + 删除**的 wire 面(设置页的记忆 Tab,见 [memory-spec.md](memory-spec.md#设置页管理)),
+其数据模型即下面的 `WorkspaceMemoryListItem`;`WorkspaceMemory` 本体不上线,正文永不出现在协议上。
+`MemoryType` 与 `MemoryStatus` 两个闭集是协议分区与存储层共用的单一数据源,一处定义同时服务
+SQL 的 CHECK 约束、工具层校验与前端分组,三者不会各自漂移。
 
 ## WorkspaceMemory
 
@@ -42,6 +46,25 @@
 后被物理删除。
 
 三个状态之间没有「归档」态:一条记忆要么现在成立,要么被另一条取代,要么被显式删除。
+
+## WorkspaceMemoryListItem
+
+设置页记忆 Tab 的列表项,是 `WorkspaceMemory` 的**摘要投影**,不是它本身。
+
+| 属性        | 类型           | 说明                                          |
+| ----------- | -------------- | --------------------------------------------- |
+| `id`        | `string`       | 目标记忆的 id;删除请求携带的唯一句柄          |
+| `title`     | `string`       | 原样标题(它同时是这条记忆的身份)              |
+| `type`      | `MemoryType`   | 决定列表分组                                  |
+| `status`    | `MemoryStatus` | 当前列表只取 `active` 行,故恒为 `active`      |
+| `updatedAt` | `number`       | 最近一次写入或状态变更(epoch ms),列表按它倒序 |
+
+**刻意缺席的字段**:`content`、`subject`、`sourceSessionId`、`createdAt`、`supersededBy`。设置页回答的是
+「这里都记了些什么、把这条删掉」,不是记忆的阅读器——正文的读取属于 work session 里的 `memory_search`,
+把正文摆到设置页上就等于给编辑表单开了一半的口子。
+
+`status` 在当前 scope 下恒为 `active`,仍然出现在 wire 上:它让线形状与领域模型对齐,日后若放宽列表
+scope(例如展示回收期内的 `deleted` 行)不必改列定义。
 
 ## 归一化 title(身份判据)
 

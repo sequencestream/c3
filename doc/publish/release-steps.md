@@ -60,7 +60,7 @@ CI workflow:`.github/workflows/release.yml`。各目标在其原生 OS runner �
 发布完成后,从 GitHub Release 下载某产物及其 `.sha256`,本地校验:
 
 ```bash
-shasum -a 256 -c c3-vX.Y.Z-macos-arm64.tar.gz.sha256   # 或对照 SHA256SUMS
+shasum -a 256 -c c3-cli-vX.Y.Z-macos-arm64.tar.gz.sha256   # 或对照 SHA256SUMS
 ```
 
 ---

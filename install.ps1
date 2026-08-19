@@ -39,7 +39,7 @@ if (-not $version) {
 Info "Installing c3 $version ($platform)"
 
 # --- download & verify ----------------------------------------------------
-$asset = "c3-$version-$platform.zip"
+$asset = "c3-cli-$version-$platform.zip"
 $base  = "https://github.com/$Repo/releases/download/$version"
 $tmp   = Join-Path ([System.IO.Path]::GetTempPath()) ("c3-" + [System.Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null

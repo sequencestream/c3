@@ -50,7 +50,7 @@ function facts(over: Partial<SelfUpdateRuntime> = {}): SelfUpdateRuntime {
 
 /** A release fixture: a fake package plus the sha256 sidecar that matches it. */
 function release(version: string) {
-  const pkgName = `c3-v${version}-macos-arm64.tar.gz`
+  const pkgName = `c3-cli-v${version}-macos-arm64.tar.gz`
   const pkgBytes = Buffer.from(`PKG:${version}`.repeat(64))
   const sha256Line = `${createHash('sha256').update(pkgBytes).digest('hex')}  ${pkgName}\n`
   return { version, pkgName, pkgBytes, sha256Line }

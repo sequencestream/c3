@@ -13,7 +13,7 @@
 >   (4/7),**GH Actions 原生矩阵** — 用 `needs:` 链物理强制
 >   门禁顺序,macOS ad-hoc 代码签名真实运行在 darwin runner 上,通过 OIDC 无密钥方式的 SLSA 溯源 — 以及
 >   **二进制文件与包拆分(8/7)** — 二进制文件始终命名为 `c3`(Windows 上为 `c3.exe`);版本 + 平台信息只存在于包文件名中
->   (`c3-v{version}-{target}{.tar.gz|.zip}`);manifest `v1.2` 为每个制品新增 `binary` + `binarySha256`
+>   (`c3-cli-v{version}-{target}{.tar.gz|.zip}`);manifest `v1.2` 为每个制品新增 `binary` + `binarySha256`
 >   字段 — 均已上线。macOS Developer ID + 公证与 Windows Authenticode 的代码路径
 >   已就位,但都需要 GitHub Secrets 中的真实证书;证书缺席时 macOS 退到 ad-hoc
 >   签名,Windows 产出未签名安装器。
@@ -66,7 +66,7 @@
   - 产出: 每个目标各自 scratch 区域中的 `c3` 二进制文件(相对 Phase1 快照只读)
 - **Phase2.5 · pack**
   - 基数: 每个目标一次,Phase2 之后**串行**
-  - 产出: 可分发的包 `c3-v{ver}-{target}{.tar.gz|.zip}`,连同二进制文件内部的 sha256 sidecar 一起打包
+  - 产出: 可分发的包 `c3-cli-v{ver}-{target}{.tar.gz|.zip}`,连同二进制文件内部的 sha256 sidecar 一起打包
 
 可嵌入的快照保存在**已提交源码树之外**:源码里携带一个永久性的空占位符,供日常
 bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 重定向到 Phase1
@@ -283,7 +283,7 @@ GH Actions release workflow 接入(`smoke:windows-x64` 任务,`runs-on: windows-
 
 | 渠道      | 产物                                            | 入口            |
 | --------- | ----------------------------------------------- | --------------- |
-| `cli`     | `c3-v{ver}-{target}.{tar.gz\|zip}`              | 终端运行 `./c3` |
+| `cli`     | `c3-cli-v{ver}-{target}.{tar.gz\|zip}`          | 终端运行 `./c3` |
 | `desktop` | `c3-desktop-v{ver}-{target}.{dmg\|msi\|deb\|…}` | 安装后双击      |
 
 桌面包里的 sidecar **就是** CLI 那个二进制:`release:desktop` 复用
@@ -378,7 +378,7 @@ SQLite 与会话与 CLI 版**同源**。安装、升级、卸载桌面 App 都�
   文件就是消费者拿到的 `c3`,仅此而已。各目标的 scratch 区域是内部的(每个原生
   目标一个,以便多平台在一次多目标构建中共存)。
 - **包**是 GitHub Release 发布的可分发归档文件:POSIX 上是
-  `c3-v{version}-{target}.tar.gz`,Windows 上是 `c3-v{version}-{target}.zip`。
+  `c3-cli-v{version}-{target}.tar.gz`,Windows 上是 `c3-cli-v{version}-{target}.zip`。
   归档内部的顶层文件只有 `c3` 与 `c3.sha256`(平铺,没有外层目录),
   所以 `tar -xzf … && ./c3 --version` 开箱即用,二进制也可以单独移动。
 
@@ -393,7 +393,9 @@ host-target `c3`,不产出包。
 命名规则(由单一真源统一支配):
 
 - 包内的二进制文件名是 `c3` / `c3.exe`;
-- 包文件名是 `c3-v{ver}-{target}{.tar.gz|.zip}`;
+- 包文件名是 `c3-cli-v{ver}-{target}{.tar.gz|.zip}`;
+- 包文件名前缀 `c3-cli-` 标明这是 CLI 渠道,与桌面渠道的 `c3-desktop-` 区分,
+  前缀只作用于包文件名,包内二进制仍然叫 `c3`;
 - 包扩展名在 Windows 上是 `.zip`,其他平台是 `.tar.gz`。
 
 ## 版本单一真源(release 2/7)
@@ -450,7 +452,7 @@ bundle 会拿到版本 `define`,但不会被 minify。
       "platform": "macos",
       "arch": "arm64",
       "channel": "cli",
-      "file": "c3-v0.1.0-macos-arm64.tar.gz",
+      "file": "c3-cli-v0.1.0-macos-arm64.tar.gz",
       "binary": "c3",
       "binarySha256": "9b74c989…bac",
       "bytes": 25100384,
@@ -488,7 +490,7 @@ bundle 会拿到版本 `define`,但不会被 minify。
 - `binarySha256` 是**内层二进制文件**的十六进制哈希,与解压后对
   `c3` 执行 `shasum -a 256` 的结果一致。
 
-消费者可以对 `c3-v{ver}-{target}{.tar.gz|.zip}` 执行 `shasum -a 256` 并与
+消费者可以对 `c3-cli-v{ver}-{target}{.tar.gz|.zip}` 执行 `shasum -a 256` 并与
 `artifacts[].sha256` 比对;内层二进制文件的 `binarySha256` 与在解压出的
 二进制文件上执行 `shasum -a 256 -c c3.sha256` 得到的结果一致。这份 manifest 是一份
 **多制品**分发记录;`pnpm binary`(单个自用二进制文件)不会产出它。一个

@@ -100,8 +100,8 @@ brew upgrade sequencestream/tap/c3   # update to the latest release
 Release binaries are published on **GitHub Releases**.
 
 ```bash
-shasum -a 256 -c c3-v0.18.0-macos-arm64.sha256
-# c3-v0.18.0-macos-arm64: OK
+shasum -a 256 -c c3-cli-v0.18.0-macos-arm64.tar.gz.sha256
+# c3-cli-v0.18.0-macos-arm64.tar.gz: OK
 # or check every artifact at once:
 shasum -a 256 -c SHA256SUMS
 ```

@@ -10,7 +10,7 @@
 // Flow:
 //   1. version   — prompt (or --version); normalized to X.Y.Z and validated
 //   2. gate      — source pregate (typecheck/lint/test/…); --skip-gate to bypass
-//   3. build     — release-build.mjs --targets=<three>  (dist/c3-v<ver>-<target>.{tar.gz,zip})
+//   3. build     — release-build.mjs --targets=<three>  (dist/c3-cli-v<ver>-<target>.{tar.gz,zip})
 //   4. checksum  — SHA256SUMS + per-package .sha256
 //   5. collect   — copy the package set + sidecars + manifest.json into
 //                  dist/release-artifacts/v<ver>/

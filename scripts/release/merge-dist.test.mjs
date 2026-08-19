@@ -96,16 +96,20 @@ describe('merge-dist', () => {
 
   it('merges per-target manifests + flattens packages + writes SHA256SUMS', () => {
     const p0 = [
-      { artifactName: 'c3-linux-x64', target: 'linux-x64', pkgFile: 'c3-v0.1.0-linux-x64.tar.gz' },
+      {
+        artifactName: 'c3-linux-x64',
+        target: 'linux-x64',
+        pkgFile: 'c3-cli-v0.1.0-linux-x64.tar.gz',
+      },
       {
         artifactName: 'c3-macos-arm64',
         target: 'macos-arm64',
-        pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
+        pkgFile: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
       },
       {
         artifactName: 'c3-windows-x64',
         target: 'windows-x64',
-        pkgFile: 'c3-v0.1.0-windows-x64.zip',
+        pkgFile: 'c3-cli-v0.1.0-windows-x64.zip',
       },
     ]
     const written = p0.map((t) => writeTargetSubdir(root, t))
@@ -134,11 +138,15 @@ describe('merge-dist', () => {
 
   it('produces a dist that passes postgate (manifest ↔ SHA256SUMS ↔ on-disk)', () => {
     ;[
-      { artifactName: 'c3-linux-x64', target: 'linux-x64', pkgFile: 'c3-v0.1.0-linux-x64.tar.gz' },
+      {
+        artifactName: 'c3-linux-x64',
+        target: 'linux-x64',
+        pkgFile: 'c3-cli-v0.1.0-linux-x64.tar.gz',
+      },
       {
         artifactName: 'c3-macos-arm64',
         target: 'macos-arm64',
-        pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
+        pkgFile: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
       },
     ].forEach((t) => writeTargetSubdir(root, t))
 
@@ -151,13 +159,13 @@ describe('merge-dist', () => {
     writeTargetSubdir(root, {
       artifactName: 'c3-linux-x64',
       target: 'linux-x64',
-      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+      pkgFile: 'c3-cli-v0.1.0-linux-x64.tar.gz',
     })
     // Hand-write a second subdir with a divergent commit.
     const dir = join(root, 'c3-macos-arm64')
     mkdirSync(dir, { recursive: true })
     const bytes = Buffer.from('other')
-    writeFileSync(join(dir, 'c3-v0.1.0-macos-arm64.tar.gz'), bytes)
+    writeFileSync(join(dir, 'c3-cli-v0.1.0-macos-arm64.tar.gz'), bytes)
     writeFileSync(
       join(dir, 'manifest.json'),
       JSON.stringify({
@@ -168,7 +176,7 @@ describe('merge-dist', () => {
         artifacts: [
           {
             target: 'macos-arm64',
-            file: 'c3-v0.1.0-macos-arm64.tar.gz',
+            file: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
             bytes: bytes.length,
             sha256: sha256(bytes),
           },
@@ -196,7 +204,7 @@ describe('merge-dist', () => {
           platform: 'macos',
           arch: 'arm64',
           channel: 'cli',
-          file: 'c3-v0.1.0-macos-arm64.tar.gz',
+          file: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
           binary: 'c3',
         },
       ],
@@ -228,9 +236,9 @@ describe('merge-dist', () => {
 
     expect(merged.artifacts).toHaveLength(3)
     expect(merged.artifacts.map((a) => a.file).sort()).toEqual([
+      'c3-cli-v0.1.0-macos-arm64.tar.gz',
       'c3-desktop-v0.1.0-macos-arm64.app.tar.gz',
       'c3-desktop-v0.1.0-macos-arm64.dmg',
-      'c3-v0.1.0-macos-arm64.tar.gz',
     ])
     // Both channels survive for the SAME target.
     expect(merged.artifacts.filter((a) => a.channel === 'cli')).toHaveLength(1)
@@ -332,7 +340,7 @@ describe('merge-dist', () => {
         arch: 'x64',
         channel: 'cli',
         kind: 'tarball',
-        file: 'c3-v0.1.0-linux-x64.tar.gz',
+        file: 'c3-cli-v0.1.0-linux-x64.tar.gz',
         binary: 'c3',
       },
     ])
@@ -343,7 +351,7 @@ describe('merge-dist', () => {
         arch: 'arm64',
         channel: 'cli',
         kind: 'tarball',
-        file: 'c3-v0.1.0-macos-arm64.tar.gz',
+        file: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
         binary: 'c3',
       },
     ])
@@ -354,7 +362,7 @@ describe('merge-dist', () => {
         arch: 'x64',
         channel: 'cli',
         kind: 'zip',
-        file: 'c3-v0.1.0-windows-x64.zip',
+        file: 'c3-cli-v0.1.0-windows-x64.zip',
         binary: 'c3.exe',
       },
     ])
@@ -448,17 +456,17 @@ describe('merge-dist', () => {
     writeTargetSubdir(root, {
       artifactName: 'c3-linux-x64',
       target: 'linux-x64',
-      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+      pkgFile: 'c3-cli-v0.1.0-linux-x64.tar.gz',
     })
     writeTargetSubdir(root, {
       artifactName: 'c3-macos-arm64',
       target: 'macos-arm64',
-      pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
+      pkgFile: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
     })
     writeTargetSubdir(root, {
       artifactName: 'c3-windows-x64',
       target: 'windows-x64',
-      pkgFile: 'c3-v0.1.0-windows-x64.zip',
+      pkgFile: 'c3-cli-v0.1.0-windows-x64.zip',
     })
     writeJobSubdir(root, {
       artifactName: 'c3-desktop-macos-arm64',
@@ -511,7 +519,7 @@ describe('merge-dist', () => {
     writeTargetSubdir(root, {
       artifactName: 'c3-linux-x64',
       target: 'linux-x64',
-      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+      pkgFile: 'c3-cli-v0.1.0-linux-x64.tar.gz',
     })
     const { manifestPath } = mergeDist({ distDir: root })
     expect(() => verifyDist({ manifestPath })).toThrow(/required cli target\(s\) missing/)
@@ -521,12 +529,12 @@ describe('merge-dist', () => {
     writeTargetSubdir(root, {
       artifactName: 'c3-linux-x64',
       target: 'linux-x64',
-      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+      pkgFile: 'c3-cli-v0.1.0-linux-x64.tar.gz',
     })
     writeTargetSubdir(root, {
       artifactName: 'c3-macos-arm64',
       target: 'macos-arm64',
-      pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
+      pkgFile: 'c3-cli-v0.1.0-macos-arm64.tar.gz',
     })
     const { manifestPath } = mergeDist({ distDir: root })
     // Plant a stray package no manifest describes: it would be uploaded to the

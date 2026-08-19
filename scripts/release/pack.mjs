@@ -1,5 +1,5 @@
 // Package a built `dist/<target>/c3` (+ inner sidecars) into a distributable
-// archive: `dist/c3-v{ver}-{target}.tar.gz` (POSIX) or `.zip` (Windows).
+// archive: `dist/c3-cli-v{ver}-{target}.tar.gz` (POSIX) or `.zip` (Windows).
 //
 // The binary is ALWAYS named `c3` (or `c3.exe` on Windows) — never the version
 // or the platform. The version + platform info lives ONLY in the package
@@ -90,7 +90,7 @@ function zipDir(srcDir, outFile) {
 /**
  * Package one target. Side-effects:
  *   - writes `dist/<target>/c3.sha256` (inner sidecar)
- *   - writes `dist/c3-v{ver}-{target}{.tar.gz|.zip}` (the distributable package)
+ *   - writes `dist/c3-cli-v{ver}-{target}{.tar.gz|.zip}` (the distributable package)
  * @param {object} o
  * @param {string} o.target
  * @param {string} o.version

@@ -92,7 +92,7 @@ Pushing a `v*` tag (or running the workflow manually) publishes.
 > yet), so first launch is blocked by quarantine. After verifying the checksum, clear it:
 >
 > ```bash
-> xattr -dr com.apple.quarantine ./c3-v0.2.0-macos-arm64
+> xattr -dr com.apple.quarantine ./c3
 > ```
 
 ## Desktop app (Tauri 2)

@@ -19,7 +19,7 @@
 //                                 whose tree is incomplete is dropped rather than
 //                                 shipped claiming support it lacks.
 //   Phase2.5 pack               — wrap each dist/<target>/c3 (+ inner sidecars) into
-//                                 dist/c3-v{ver}-{target}.{tar.gz|zip}. The package
+//                                 dist/c3-cli-v{ver}-{target}.{tar.gz|zip}. The package
 //                                 is the unit of distribution; its name is the only
 //                                 place the version + platform info lives.
 //
@@ -137,7 +137,7 @@ console.log('[release:build] plan:')
 console.log(`  version  ${versionInfo.version} (commit ${versionInfo.commit})`)
 console.log(`  manifest write → ${manifestPath}`)
 console.log(
-  `  pack     ${emitPack ? `dist/c3-v{ver}-{target}{.tar.gz|.zip}` : 'skipped (--skip-pack)'}`,
+  `  pack     ${emitPack ? `dist/c3-cli-v{ver}-{target}{.tar.gz|.zip}` : 'skipped (--skip-pack)'}`,
 )
 console.log(`  Phase0  web build${args['skip-web'] ? ' (skipped)' : ''}`)
 console.log('  Phase1  generate-static-embed → dist/static-embed.generated.ts')
@@ -148,7 +148,7 @@ for (const p of plan)
   )
 console.log()
 console.log(
-  `  Phase2.5 pack${args['skip-pack'] ? ' (skipped)' : ''} → dist/c3-v${versionInfo.version}-{target}{.tar.gz|.zip}`,
+  `  Phase2.5 pack${args['skip-pack'] ? ' (skipped)' : ''} → dist/c3-cli-v${versionInfo.version}-{target}{.tar.gz|.zip}`,
 )
 console.log(
   `  Phase3  artifact gate (--version + headless smoke)${args['skip-smoke'] ? ' (skipped)' : ', host-runnable targets only'}`,
@@ -233,11 +233,11 @@ for (const p of builtPlan) {
 }
 
 // Phase2.5 — pack (release: package each built target's binary + inner sidecars
-// into a distributable archive: dist/c3-v{ver}-{target}{.tar.gz|.zip}). Skipped
+// into a distributable archive: dist/c3-cli-v{ver}-{target}{.tar.gz|.zip}). Skipped
 // when `--skip-pack` is set.
 let packages = []
 if (emitPack) {
-  console.log('\n[release:build] Phase2.5 — pack (dist/c3-v{ver}-{target}.{tar.gz|zip})')
+  console.log('\n[release:build] Phase2.5 — pack (dist/c3-cli-v{ver}-{target}.{tar.gz|zip})')
   for (const p of builtPlan) {
     try {
       const pk = packOne({
@@ -249,7 +249,7 @@ if (emitPack) {
       packages.push({
         target: p.target,
         experimental: p.experimental,
-        // `pk.package` is the bare package FILENAME (c3-v{ver}-{target}.{tar.gz|zip}).
+        // `pk.package` is the bare package FILENAME (c3-cli-v{ver}-{target}.{tar.gz|zip}).
         // Resolve it to an absolute path here so the manifest's disk fallback
         // (statSync/sha256File on a.file) can't ENOENT against a cwd-relative name —
         // buildManifest still stores basename(file), so the on-disk manifest is unchanged.

@@ -286,7 +286,7 @@ c3
 │           └── 只说工作区可见性                  # 不说谁正连着、哪把 key 有哪些工具、历史上谁来过;编辑入口在系统设置「用户与访问」与个人化设置「外部 MCP key」
 │
 └── distribution 分发形态                        # 同一次发布产出两个渠道,共享同一个 ~/.c3(设置/凭据/工作区/DB/会话)
-    ├── CLI 单二进制                              # 每平台一个原生可执行文件(c3-v{ver}-{target}.tar.gz|zip),终端启动 + 浏览器访问;c3 upgrade 换二进制、c3 restart 让它生效
+    ├── CLI 单二进制                              # 每平台一个原生可执行文件(c3-cli-v{ver}-{target}.tar.gz|zip),终端启动 + 浏览器访问;c3 upgrade 换二进制、c3 restart 让它生效
     ├── 桌面 App(Tauri 2)                        # 安装包双击即用(dmg/msi/exe/deb/AppImage),壳把同一份二进制当 sidecar 拉起,原生 WebView 渲染其自带 SPA
     ├── sidecar 回环绑定                          # 壳固定给 sidecar 传 --host 127.0.0.1 + 本次选中的可用端口,不读也不放宽 exposure.bindAddress
     ├── 托盘常驻与开机自启                        # 关窗只隐藏、后端继续跑;托盘「打开 c3 / 开机自启 / 退出」,自启默认关且与 c3 install 系统服务互不相干

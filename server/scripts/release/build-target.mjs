@@ -48,7 +48,7 @@ export function defaultOutfile(friendly) {
   // Binary is always named `c3` (or `c3.exe` on Windows). The per-target
   // subdir carries the platform info so parallel builds don't clobber each
   // other; the subdir is internal scratch and never uploaded (the release
-  // pipeline packages it into `dist/c3-v{ver}-{target}.{tar.gz|zip}`).
+  // pipeline packages it into `dist/c3-cli-v{ver}-{target}.{tar.gz|zip}`).
   const name = friendly.startsWith('windows') ? 'c3.exe' : 'c3'
   return resolve(repoRoot, 'dist', friendly, name)
 }

@@ -61,7 +61,7 @@ fi
 info "Installing c3 $version ($platform)"
 
 # --- download & verify ----------------------------------------------------
-asset="c3-$version-$platform.tar.gz"
+asset="c3-cli-$version-$platform.tar.gz"
 base="https://github.com/$REPO/releases/download/$version"
 
 tmp="$(mktemp -d)"

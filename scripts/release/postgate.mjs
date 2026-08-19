@@ -150,7 +150,7 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   //    Only top-level files matching the release naming pattern count; `.sha256`
   //    sidecars ride along (the manifest describes the package, not the sidecar).
   const packagePattern =
-    /^c3-(?:desktop-)?v.*\.(?:tar\.gz|zip|dmg|msi|exe|deb|AppImage|app\.tar\.gz)$/
+    /^c3-(?:cli|desktop)-v.*\.(?:tar\.gz|zip|dmg|msi|exe|deb|AppImage|app\.tar\.gz)$/
   for (const name of readdirSync(distDir)) {
     const file = resolve(distDir, name)
     if (statSync(file).isDirectory()) continue

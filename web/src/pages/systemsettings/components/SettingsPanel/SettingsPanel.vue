@@ -31,7 +31,11 @@ import type {
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL, vendorRowTint } from '@/lib/vendor'
-import { vendorRuntimeOriginKey, vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
+import {
+  vendorCliDegradationKey,
+  vendorRuntimeOriginKey,
+  vendorUnavailableReasonKey,
+} from '@/lib/vendor-runtime'
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
 import { deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
@@ -183,6 +187,17 @@ const vendorCliRows = computed(() => {
     (h): h is VendorHostStatus => h !== undefined,
   )
 })
+// 固定版本用不了、但 c3 成功回退到另一个版本时的提示。服务端只给原因码与两个版本号,
+// 措辞在这里本地化 —— 提示里的固定版本绝不能叫「当前生效」,那是上面那个字段的含义
+// (实际运行的版本),同一个词指两件事正是这条提示要修掉的歧义。
+function vendorCliDegradationNotice(h: VendorHostStatus): string {
+  const key = vendorCliDegradationKey(h.degradation)
+  if (!key || !h.degradation) return ''
+  return t(key, {
+    pinnedVersion: h.degradation.pinnedVersion,
+    resolvedVersion: h.degradation.resolvedVersion,
+  })
+}
 // The draft's effective-version choice per vendor ('' ⇒ auto latest).
 function activeVersionChoice(vendor: VendorId): string {
   return draft.value.vendorCliVersions?.[vendor] ?? ''
@@ -2066,7 +2081,14 @@ function selectAdmin(username: string) {
               </span>
             </div>
             <p
-              v-if="h.lastError"
+              v-if="h.degradation"
+              class="settings-hint vendor-cli-error"
+              :data-testid="`vendor-cli-degraded-${h.vendor}`"
+            >
+              {{ vendorCliDegradationNotice(h) }}
+            </p>
+            <p
+              v-else-if="h.lastError"
               class="settings-hint vendor-cli-error"
               :data-testid="`vendor-cli-error-${h.vendor}`"
             >

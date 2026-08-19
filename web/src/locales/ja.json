@@ -606,7 +606,10 @@
         "label": "自動(最新)"
       },
       "none": "—",
-      "empty": "インストール済みの管理バージョンはまだありません。"
+      "empty": "インストール済みの管理バージョンはまだありません。",
+      "degraded": {
+        "pinnedVersionUnavailable": "固定バージョン {pinnedVersion} は利用できないため、{resolvedVersion} を使用しています。"
+      }
     },
     "skillRepos": {
       "title": {

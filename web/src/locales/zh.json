@@ -605,7 +605,10 @@
         "label": "自动(最新)"
       },
       "none": "—",
-      "empty": "尚无已安装的自管版本。"
+      "empty": "尚无已安装的自管版本。",
+      "degraded": {
+        "pinnedVersionUnavailable": "固定版本 {pinnedVersion} 不可用,已回退使用 {resolvedVersion}。"
+      }
     },
     "skillRepos": {
       "title": {

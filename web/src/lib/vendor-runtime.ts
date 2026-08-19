@@ -8,6 +8,8 @@
  */
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type {
+  VendorCliDegradation,
+  VendorCliDegradationReason,
   VendorHostStatus,
   VendorId,
   VendorRuntimeOrigin,
@@ -83,4 +85,23 @@ export const VENDOR_RUNTIME_ORIGIN_KEY = {
 export function vendorRuntimeOriginKey(status: VendorAvailability | undefined): LocaleKey | null {
   if (!status || !status.available || !status.origin) return null
   return VENDOR_RUNTIME_ORIGIN_KEY[status.origin]
+}
+
+/**
+ * 降级原因码 → i18n key。与不可用原因码、来源码同一套约定:服务端只说「固定版本
+ * 用不了、实际跑的是另一个」,措辞由前端本地化。
+ *
+ * 文案里不得把固定版本称作「当前生效 / Active / 激活」——面板的「当前生效」字段
+ * 指的是实际运行版本,同一个词指两件事正是这条提示要修掉的歧义。
+ */
+export const VENDOR_CLI_DEGRADATION_KEY = {
+  'pinned-version-unavailable': 'settings.vendorCli.degraded.pinnedVersionUnavailable',
+} as const satisfies Record<VendorCliDegradationReason, LocaleKey>
+
+/** 取降级提示的 i18n key;没有结构化降级诊断时返回 null,调用方不渲染该行。 */
+export function vendorCliDegradationKey(
+  degradation: VendorCliDegradation | undefined,
+): LocaleKey | null {
+  if (!degradation) return null
+  return VENDOR_CLI_DEGRADATION_KEY[degradation.reason]
 }

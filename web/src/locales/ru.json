@@ -606,7 +606,10 @@
         "label": "Авто (последняя)"
       },
       "none": "—",
-      "empty": "Установленных управляемых версий пока нет."
+      "empty": "Установленных управляемых версий пока нет.",
+      "degraded": {
+        "pinnedVersionUnavailable": "Закреплённая версия {pinnedVersion} недоступна; вместо неё используется {resolvedVersion}."
+      }
     },
     "skillRepos": {
       "title": {

@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import { c3HomeDir, getVendorCliVersions } from '../../config/index.js'
 import { readJsonFile, withFileLock, writeAtomic } from '../../config/store.js'
+import type { VendorCliDegradation } from '@ccc/shared/protocol'
 import type { VendorId } from '../adapters/types.js'
 
 export type VendorCliSource =
@@ -172,6 +173,13 @@ interface VendorStateEntry {
   lastCheckedAt?: string
   lastRemoteCheckAt?: string
   lastError?: string
+  /**
+   * Structured record of a pinned-version fallback (see the wire type). Kept in
+   * the manifest next to `lastError` — not folded into it — so the panel can
+   * word the situation in the operator's own language instead of rendering a
+   * server-built English sentence.
+   */
+  degradation?: VendorCliDegradation
   versionHistory: VendorVersionHistoryEntry[]
 }
 
@@ -517,10 +525,10 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
   const choice = pins[vendor] || undefined
   // Managed resolution degrades in a fixed order: the user's effective-version
   // choice (from settings) → the last sync's latest-compatible download target →
-  // the manifest's recorded selectedVersion → host PATH fallback. Each managed
-  // candidate that is missing/incompatible records a visible `lastError` but does
-  // NOT rewrite `vendorCliVersions` (the user's choice is preserved so the panel
-  // can show "selected but currently unavailable").
+  // the manifest's recorded selectedVersion → host PATH fallback. Falling past
+  // the pinned choice records a structured `degradation` but does NOT rewrite
+  // `vendorCliVersions` (the user's choice is preserved so the panel can show
+  // "pinned but currently unavailable").
   const candidates = [choice, entry?.latestCompatibleVersion, entry?.selectedVersion].filter(
     (v): v is string => Boolean(v),
   )
@@ -531,10 +539,18 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
     tried.add(candidate)
     try {
       const probe = probeManaged(vendor, candidate, deps)
-      const degraded = choice && candidate !== choice
-      const managedError = degraded
-        ? `active ${choice} unavailable, degraded to ${candidate}`
-        : undefined
+      // Resolving past the pin is stated as data, never as a sentence: the panel
+      // owns the wording, so no language is frozen into the manifest or the wire.
+      // `resolvedVersion` is the version actually launched — the same value the
+      // panel's "Active" field shows — so the two can never contradict.
+      const degradation: VendorCliDegradation | undefined =
+        choice && candidate !== choice
+          ? {
+              reason: 'pinned-version-unavailable',
+              pinnedVersion: choice,
+              resolvedVersion: candidate,
+            }
+          : undefined
       cache.set(vendor, probe)
       recordState(
         vendor,
@@ -542,7 +558,10 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
           source: 'managed',
           selectedVersion: candidate,
           path: probe.path ?? undefined,
-          ...(managedError ? { lastError: managedError } : { lastError: undefined }),
+          // A healthy resolution clears both diagnoses; a degraded one carries
+          // the structured record and no free text.
+          lastError: undefined,
+          degradation,
           versionHistory: [
             {
               version: candidate,
@@ -565,7 +584,14 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
     errors.length > 0 ? `managed ${vendor} ${errors.join('; ')}` : 'managed CLI not installed yet'
   const probe = fallbackProbe(vendor, managedError, deps)
   cache.set(vendor, probe)
-  recordState(vendor, { source: probe.source, lastError: managedError }, deps)
+  // Nothing managed resolved, so there is no `resolvedVersion` to name: report
+  // the failure as free text and drop any stale fallback record rather than
+  // claiming a degradation that did not happen.
+  recordState(
+    vendor,
+    { source: probe.source, lastError: managedError, degradation: undefined },
+    deps,
+  )
   return probe
 }
 
@@ -967,6 +993,10 @@ export function cleanManagedHistory(vendor: VendorId, inUse: readonly string[] =
  *   so the panel shows the selection), record lastError. The choice is NOT
  *   cleared so the user can see and re-pick.
  * - choice empty ⇒ selectedVersion = latestCompatibleVersion (auto-follow).
+ *
+ * No branch here can claim a fallback: this runs before the probe re-resolves,
+ * so there is no resolved version to name yet. It clears any prior structured
+ * degradation and leaves the next `resolveExecutable()` to state the outcome.
  */
 export function applyVendorCliChoices(
   choices: Partial<Record<VendorId, string>>,
@@ -979,19 +1009,30 @@ export function applyVendorCliChoices(
     if (!choice) {
       const target = entry?.latestCompatibleVersion
       if (target) {
-        recordState(vendor, { selectedVersion: target, lastError: undefined }, deps)
+        recordState(
+          vendor,
+          { selectedVersion: target, lastError: undefined, degradation: undefined },
+          deps,
+        )
       }
       continue
     }
     const path = managedBinPath(vendor, choice)
     if (existsSync(path) && satisfiesRange(choice, spec.compatibleRange)) {
-      recordState(vendor, { selectedVersion: choice, lastError: undefined }, deps)
+      recordState(
+        vendor,
+        { selectedVersion: choice, lastError: undefined, degradation: undefined },
+        deps,
+      )
     } else {
       recordState(
         vendor,
         {
           selectedVersion: choice,
-          lastError: `active ${choice} not installed/incompatible`,
+          // "pinned", not "active": the panel's Active field names the version
+          // c3 actually runs, so calling the pin active contradicts it.
+          lastError: `pinned ${choice} not installed/incompatible`,
+          degradation: undefined,
         },
         deps,
       )
@@ -1017,6 +1058,7 @@ export interface VendorCliStatus {
   lastCheckedAt?: string
   lastRemoteCheckAt?: string
   lastError?: string
+  degradation?: VendorCliDegradation
 }
 
 /**
@@ -1047,6 +1089,7 @@ export function readVendorCliStatus(vendor: VendorId): VendorCliStatus {
     ...(entry.lastCheckedAt ? { lastCheckedAt: entry.lastCheckedAt } : {}),
     ...(entry.lastRemoteCheckAt ? { lastRemoteCheckAt: entry.lastRemoteCheckAt } : {}),
     ...(entry.lastError ? { lastError: entry.lastError } : {}),
+    ...(entry.degradation ? { degradation: entry.degradation } : {}),
   }
 }
 

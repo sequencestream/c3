@@ -3,6 +3,7 @@ import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type { VendorHostStatus, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import {
   deriveVendorAvailability,
+  vendorCliDegradationKey,
   vendorRuntimeOriginKey,
   vendorUnavailableReasonKey,
 } from './vendor-runtime'
@@ -128,5 +129,21 @@ describe('vendorRuntimeOriginKey', () => {
       vendorRuntimeOriginKey({ vendor: 'claude', available: true, runtime: 'host-cli' }),
     ).toBeNull()
     expect(vendorRuntimeOriginKey(undefined)).toBeNull()
+  })
+})
+
+describe('vendorCliDegradationKey', () => {
+  it('maps the pinned-version fallback reason to its i18n key', () => {
+    expect(
+      vendorCliDegradationKey({
+        reason: 'pinned-version-unavailable',
+        pinnedVersion: '1.0.0',
+        resolvedVersion: '2.1.234',
+      }),
+    ).toBe('settings.vendorCli.degraded.pinnedVersionUnavailable')
+  })
+
+  it('returns null when there is no degradation to explain', () => {
+    expect(vendorCliDegradationKey(undefined)).toBeNull()
   })
 })

@@ -23,16 +23,32 @@ vi.mock('../../kernel/config/index.js', () => ({
 // readVendorCliStatus returns the manifest summary the panel renders.
 const lz = vi.hoisted(() => ({
   applied: null as unknown,
-  status: {
+  status: {} as Record<string, unknown>,
+}))
+
+/** The manifest summary each test starts from (reset per test, since two cases
+ *  swap codex's row to exercise the structured vs free-form diagnoses). */
+function baseStatus(): Record<string, unknown> {
+  return {
     claude: {
       installedVersions: [{ version: '1.0.0', status: 'installed' as const }],
       activeVersion: '1.0.0',
       downloadTargetVersion: '1.3.0',
       lastRemoteCheckAt: '2026-07-09T00:00:00.000Z',
     },
-    codex: { installedVersions: [] },
-  },
-}))
+    codex: {
+      installedVersions: [{ version: '0.5.0', status: 'installed' as const }],
+      // A pinned version that could not be used, with the version c3 actually
+      // resolved instead — stated structurally, so no English reaches the wire.
+      activeVersion: '0.5.0',
+      degradation: {
+        reason: 'pinned-version-unavailable' as const,
+        pinnedVersion: '0.4.0',
+        resolvedVersion: '0.5.0',
+      },
+    },
+  }
+}
 vi.mock('../../kernel/agent/process/launcher.js', () => ({
   probeAll: () =>
     [
@@ -60,7 +76,7 @@ vi.mock('../../kernel/agent/process/launcher.js', () => ({
   applyVendorCliChoices: (choices: unknown) => {
     lz.applied = choices
   },
-  readVendorCliStatus: (vendor: string) => (lz.status as never)[vendor as 'claude'],
+  readVendorCliStatus: (vendor: string) => lz.status[vendor] as never,
   // The vendors c3 launches as a host CLI — what splits `vendorRuntime` between
   // the CLI probe and the embedded-runtime probes.
   isManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
@@ -96,6 +112,7 @@ function connFor(subject: string | null): { conn: Conn; sent: ServerToClient[] }
 beforeEach(() => {
   cfg.saved = { ...base }
   lz.applied = null
+  lz.status = baseStatus()
 })
 
 describe('save_settings vendor CLI sync (multi-version)', () => {
@@ -118,6 +135,43 @@ describe('save_settings vendor CLI sync (multi-version)', () => {
     expect(claude?.downloadTargetVersion).toBe('1.3.0')
     expect(claude?.installedVersions?.map((v) => v.version)).toEqual(['1.0.0'])
     expect(claude?.lastRemoteCheckAt).toBe('2026-07-09T00:00:00.000Z')
+    // A vendor whose pin resolved fine carries no degradation at all.
+    expect(claude?.degradation).toBeUndefined()
+  })
+
+  it('passes the structured pinned-version degradation through to the settings reply', () => {
+    const { conn, sent } = connFor('admin')
+    const draft: SystemSettings = { ...base, vendorCliVersions: { codex: '0.4.0' } }
+    saveSettingsHandler(KCTX, conn, { type: 'save_settings', settings: draft })
+
+    const reply = sent.find((m) => m.type === 'settings') as
+      { hostStatus: VendorHostStatus[] } | undefined
+    const codex = reply!.hostStatus.find((h) => h.vendor === 'codex')
+    expect(codex?.degradation).toEqual({
+      reason: 'pinned-version-unavailable',
+      pinnedVersion: '0.4.0',
+      resolvedVersion: '0.5.0',
+    })
+    // `activeVersion` keeps meaning "the version actually running" and agrees
+    // with `resolvedVersion`; the pin is only ever named by the diagnosis.
+    expect(codex?.activeVersion).toBe('0.5.0')
+    // The degraded case no longer ships a server-built sentence.
+    expect(codex?.lastError).toBeUndefined()
+  })
+
+  it('still passes free-form lastError through for the unstructured failures', () => {
+    const { conn, sent } = connFor('admin')
+    lz.status.codex = {
+      installedVersions: [],
+      lastError: 'managed codex 0.4.0 unusable: not executable',
+    }
+    saveSettingsHandler(KCTX, conn, { type: 'save_settings', settings: { ...base } })
+
+    const reply = sent.find((m) => m.type === 'settings') as
+      { hostStatus: VendorHostStatus[] } | undefined
+    const codex = reply!.hostStatus.find((h) => h.vendor === 'codex')
+    expect(codex?.lastError).toContain('not executable')
+    expect(codex?.degradation).toBeUndefined()
   })
 
   it('passes an empty choices object when vendorCliVersions is absent', () => {

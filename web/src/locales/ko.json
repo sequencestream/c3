@@ -606,7 +606,10 @@
         "label": "자동(최신)"
       },
       "none": "—",
-      "empty": "설치된 관리 버전이 아직 없습니다."
+      "empty": "설치된 관리 버전이 아직 없습니다.",
+      "degraded": {
+        "pinnedVersionUnavailable": "고정된 버전 {pinnedVersion}을(를) 사용할 수 없어 {resolvedVersion}(으)로 대체했습니다."
+      }
     },
     "skillRepos": {
       "title": {

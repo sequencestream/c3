@@ -483,7 +483,7 @@ describe('resolveExecutable effective-version priority chain', () => {
     expect(result.path).toBe(managedBinPath('claude', '1.0.0', dir))
   })
 
-  it('degrades to latestCompatibleVersion when the choice is missing and records lastError', () => {
+  it('degrades to latestCompatibleVersion when the pin is missing and records it structurally', () => {
     // Choice 1.0.0 dir does NOT exist (uninstalled); latest 1.3.0 is installed.
     fakeBin(managedBinPath('claude', '1.3.0', dir), 'claude 1.3.0')
     pinVendorCliVersion('claude', '1.0.0')
@@ -505,8 +505,18 @@ describe('resolveExecutable effective-version priority chain', () => {
 
     expect(result.source).toBe('managed')
     expect(result.expectedVersion).toBe('1.3.0')
-    // lastError surfaces the degradation reason via the manifest status read.
-    expect(readVendorCliStatus('claude').lastError).toContain('active 1.0.0')
+    const status = readVendorCliStatus('claude')
+    // The fallback is stated as structured data, not as an English sentence: the
+    // pin and the version actually running are named separately, and
+    // `resolvedVersion` agrees with the `activeVersion` the panel shows.
+    expect(status.degradation).toEqual({
+      reason: 'pinned-version-unavailable',
+      pinnedVersion: '1.0.0',
+      resolvedVersion: '1.3.0',
+    })
+    expect(status.activeVersion).toBe('1.3.0')
+    // No server-built wording survives — least of all one calling the pin "active".
+    expect(status.lastError).toBeUndefined()
     // The user's vendorCliVersions choice must NOT be rewritten.
     expect(getVendorCliVersions().claude).toBe('1.0.0')
   })
@@ -531,6 +541,37 @@ describe('resolveExecutable effective-version priority chain', () => {
 
     expect(result.source).toBe('managed')
     expect(result.expectedVersion).toBe('1.3.0')
+    // Auto-follow is not a degradation: nothing was pinned, so nothing fell back.
+    expect(readVendorCliStatus('claude').degradation).toBeUndefined()
+  })
+
+  it('clears a stale degradation once the pinned version resolves again', () => {
+    fakeBin(managedBinPath('claude', '1.0.0', dir), 'claude 1.0.0')
+    pinVendorCliVersion('claude', '1.0.0')
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          selectedVersion: '1.3.0',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: vendorCompatibilityLabel('claude'),
+          degradation: {
+            reason: 'pinned-version-unavailable',
+            pinnedVersion: '1.0.0',
+            resolvedVersion: '1.3.0',
+          },
+          versionHistory: [{ version: '1.0.0', status: 'installed' }],
+        },
+      },
+    })
+
+    resolveExecutable('claude')
+
+    const status = readVendorCliStatus('claude')
+    expect(status.activeVersion).toBe('1.0.0')
+    expect(status.degradation).toBeUndefined()
   })
 })
 
@@ -618,6 +659,10 @@ describe('applyVendorCliChoices (save_settings manifest sync)', () => {
     const status = readVendorCliStatus('claude')
     expect(status.activeVersion).toBe('9.9.9')
     expect(status.lastError).toContain('9.9.9')
+    // Nothing has been resolved at this point, so no fallback may be claimed —
+    // and the free text must not call the pin "active" either.
+    expect(status.degradation).toBeUndefined()
+    expect(status.lastError).not.toContain('active')
   })
 
   it('auto-follows latestCompatibleVersion when choice is empty', () => {

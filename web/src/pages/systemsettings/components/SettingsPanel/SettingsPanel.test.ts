@@ -7,7 +7,18 @@ import SettingsPanel from './SettingsPanel.vue'
 import { SYSTEM_AGENT_ID, VENDOR_IDS } from '@ccc/shared/protocol'
 import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import { useAuth } from '@/composables/useAuth'
+import { applyLocale } from '@/i18n'
 import { VENDOR_COLOR } from '@/lib/vendor'
+
+/** Read a shipped locale catalog — the copy assertions live here, not on rendered
+ *  text, so translating a string never turns a component test red (i18n-spec §4.1). */
+function localeMessages(locale: string) {
+  return JSON.parse(
+    readFileSync(resolve(__dirname, `../../../../locales/${locale}.json`), 'utf8'),
+  ) as {
+    settings: { vendorCli: { degraded: { pinnedVersionUnavailable: string } } }
+  }
+}
 
 const baseSettings: SystemSettings = {
   agents: [
@@ -854,6 +865,10 @@ describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {
 })
 
 describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
+  // One case switches the UI language to prove the notice re-renders; restore it
+  // so later tests keep the default locale.
+  afterEach(() => applyLocale('en'))
+
   const hostStatus = [
     {
       vendor: 'claude' as const,
@@ -876,7 +891,27 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
       binary: 'codex',
       path: null,
       installHint: 'install codex',
-      lastError: 'active 0.140.0 not installed/incompatible',
+      lastError: 'managed codex 0.140.0 unusable: not executable',
+    },
+  ]
+
+  // A vendor whose pinned version could not be used: `activeVersion` is the
+  // version actually running, the pin only appears inside `degradation`.
+  const degradedStatus = [
+    {
+      vendor: 'claude' as const,
+      present: true,
+      binary: 'claude',
+      path: '/usr/local/bin/claude',
+      source: 'managed',
+      installHint: '',
+      activeVersion: '2.1.234',
+      degradation: {
+        reason: 'pinned-version-unavailable' as const,
+        pinnedVersion: '1.0.0',
+        resolvedVersion: '2.1.234',
+      },
+      installedVersions: [{ version: '2.1.234', status: 'installed' as const }],
     },
   ]
 
@@ -896,6 +931,63 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
     expect(w.get('[data-testid="vendor-cli-active-claude"]').text()).toBe('1.0.0')
     expect(w.get('[data-testid="vendor-cli-target-claude"]').text()).toBe('1.3.0')
     expect(w.get('[data-testid="vendor-cli-error-codex"]').text()).toContain('0.140.0')
+  })
+
+  it('renders the pinned-version fallback as a localized notice, not the raw lastError', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: degradedStatus },
+    })
+    // "Active" keeps meaning the version actually running…
+    expect(w.get('[data-testid="vendor-cli-active-claude"]').text()).toBe('2.1.234')
+    // …and the notice is its own node, naming BOTH versions from the structured
+    // diagnosis. The free-form error node stays out of the way.
+    const notice = w.get('[data-testid="vendor-cli-degraded-claude"]')
+    expect(notice.text()).toContain('1.0.0')
+    expect(notice.text()).toContain('2.1.234')
+    expect(w.find('[data-testid="vendor-cli-error-claude"]').exists()).toBe(false)
+  })
+
+  it('re-renders the notice in the active UI language', async () => {
+    const zh = localeMessages('zh')
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: degradedStatus },
+    })
+    applyLocale('zh')
+    await nextTick()
+    // Compared against the catalog message (placeholders filled), never against a
+    // copy of the translation frozen into the test — see i18n-spec §4.1.
+    expect(w.get('[data-testid="vendor-cli-degraded-claude"]').text()).toBe(
+      zh.settings.vendorCli.degraded.pinnedVersionUnavailable
+        .replace('{pinnedVersion}', '1.0.0')
+        .replace('{resolvedVersion}', '2.1.234'),
+    )
+  })
+
+  it('keeps rendering free-form lastError for the failures that have no structured form', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings, hostStatus } })
+    expect(w.get('[data-testid="vendor-cli-error-codex"]').text()).toContain('not executable')
+    expect(w.find('[data-testid="vendor-cli-degraded-codex"]').exists()).toBe(false)
+  })
+
+  it('never calls the pinned version "active" in any shipped locale', () => {
+    // The defect this notice fixes: the panel's own Active/当前生效 field names the
+    // version c3 runs, so no locale may reuse that word for the pin.
+    const FORBIDDEN = ['active', '生效', '激活', '有効', '활성', 'активн']
+    const en = localeMessages('en')
+    const zhCopy = localeMessages('zh')
+    expect(en.settings.vendorCli.degraded.pinnedVersionUnavailable).toBe(
+      'Pinned version {pinnedVersion} is unavailable; using {resolvedVersion} instead.',
+    )
+    expect(zhCopy.settings.vendorCli.degraded.pinnedVersionUnavailable).toBe(
+      '固定版本 {pinnedVersion} 不可用,已回退使用 {resolvedVersion}。',
+    )
+    for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
+      const msg: string =
+        localeMessages(locale).settings.vendorCli.degraded.pinnedVersionUnavailable
+      expect(msg).toContain('{pinnedVersion}')
+      expect(msg).toContain('{resolvedVersion}')
+      for (const word of FORBIDDEN) expect(msg.toLowerCase()).not.toContain(word)
+    }
   })
 
   it('selecting an installed version emits save with the new vendorCliVersions and no sync message', async () => {

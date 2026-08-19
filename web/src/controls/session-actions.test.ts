@@ -84,6 +84,10 @@ function makeCtx(
   const parkRecoveryStats = ref<import('@ccc/shared/protocol').ParkRecoveryStats | null>(null)
   const parkRecoveryError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
   const parkRecoveryLoading = ref(false)
+  const workspaceMemories = ref(null)
+  const workspaceMemoriesError = ref(null)
+  const workspaceMemoriesLoading = ref(false)
+  const deletingMemoryIds = ref<string[]>([])
   const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
   const activeTitle = ref('')
   const activeVendor = ref<string | null>(null)
@@ -145,6 +149,10 @@ function makeCtx(
     parkRecoveryStats,
     parkRecoveryError,
     parkRecoveryLoading,
+    workspaceMemories,
+    workspaceMemoriesError,
+    workspaceMemoriesLoading,
+    deletingMemoryIds,
     flags,
     currentSessions: ref([]),
     addWorkspaceOpen,

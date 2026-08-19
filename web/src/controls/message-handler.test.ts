@@ -93,6 +93,13 @@ function makeCtx() {
   const parkRecoveryStats = ref<import('@ccc/shared/protocol').ParkRecoveryStats | null>(null)
   const parkRecoveryError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
   const parkRecoveryLoading = ref(false)
+  // The memory tab's listing refs — cleared by the same reconnect path.
+  const workspaceMemories = ref<import('@ccc/shared/protocol').WorkspaceMemoryListItem[] | null>(
+    null,
+  )
+  const workspaceMemoriesError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
+  const workspaceMemoriesLoading = ref(false)
+  const deletingMemoryIds = ref<string[]>([])
   const activeTab = ref<string>('console')
   const savedTab = ref<string>('console')
   const selectedAutomationId = ref<string | null>(null)
@@ -241,6 +248,10 @@ function makeCtx() {
     parkRecoveryStats,
     parkRecoveryError,
     parkRecoveryLoading,
+    workspaceMemories,
+    workspaceMemoriesError,
+    workspaceMemoriesLoading,
+    deletingMemoryIds,
     activeTab,
     savedTab,
     selectedAutomationId,
@@ -1249,6 +1260,10 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       parkRecoveryStats: ref(null),
       parkRecoveryError: ref(null),
       parkRecoveryLoading: ref(false),
+      workspaceMemories: ref(null),
+      workspaceMemoriesError: ref(null),
+      workspaceMemoriesLoading: ref(false),
+      deletingMemoryIds: ref<string[]>([]),
       myMcpApiKeys: ref([]),
       myMcpApiKeyCreated: ref(null),
       userWorkspaceAccess: ref(null),
@@ -1717,6 +1732,10 @@ function makeWorkspaceOnboardingCtx() {
     parkRecoveryStats: ref(null),
     parkRecoveryError: ref(null),
     parkRecoveryLoading: ref(false),
+    workspaceMemories: ref(null),
+    workspaceMemoriesError: ref(null),
+    workspaceMemoriesLoading: ref(false),
+    deletingMemoryIds: ref<string[]>([]),
     myMcpApiKeys: ref([]),
     myMcpApiKeyCreated: ref(null),
     userWorkspaceAccess: ref(null),

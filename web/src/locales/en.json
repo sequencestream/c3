@@ -2466,6 +2466,11 @@
     },
     "workspaceAccessors": {
       "forbidden": "You cannot view the accessors of this workspace."
+    },
+    "memory": {
+      "notFound": "That memory is no longer in this workspace. Nothing was changed.",
+      "unavailable": "The memory store is unavailable, so nothing was deleted.",
+      "deleteFailed": "The memory could not be deleted: {detail}"
     }
   },
   "statusIndicator": {
@@ -3080,6 +3085,9 @@
       },
       "externalMcp": {
         "label": "Access"
+      },
+      "memories": {
+        "label": "Memories"
       }
     },
     "defaultMode": {
@@ -3356,6 +3364,44 @@
       "loading": "Loading the accessor list…",
       "manage": {
         "hint": "Account access is edited in System Settings → Users and access. Your own external MCP keys are in Personal Settings."
+      }
+    },
+    "memories": {
+      "title": {
+        "label": "Workspace memories"
+      },
+      "hint": "What agents have written down while working in this workspace. Read-only here: memories are created and updated by an agent during a work session, so this page only shows them and lets you remove one.",
+      "softDelete": {
+        "hint": "Deleting hides a memory from agents right away, but the row stays recoverable for 30 days and still counts towards this workspace's capacity."
+      },
+      "loading": "Loading memories…",
+      "empty": "Nothing has been remembered in this workspace yet.",
+      "unavailable": "The memory list could not be read.",
+      "retry": {
+        "label": "Retry"
+      },
+      "type": {
+        "preference": "Preference",
+        "constraint": "Constraint",
+        "fact": "Fact",
+        "lesson": "Lesson"
+      },
+      "status": {
+        "active": "Active",
+        "superseded": "Superseded",
+        "deleted": "Deleted"
+      },
+      "delete": {
+        "ariaLabel": "Delete the memory {title}",
+        "confirm": {
+          "title": "Delete this memory?",
+          "body": "“{title}” will stop being visible to agents in this workspace. It stays recoverable for 30 days, and saving the same title again brings it back.",
+          "confirm": "Delete",
+          "cancel": "Cancel"
+        }
+      },
+      "deleted": {
+        "toast": "Deleted the memory “{title}”."
       }
     }
   },

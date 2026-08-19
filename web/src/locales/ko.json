@@ -2467,6 +2467,11 @@
     },
     "workspaceAccessors": {
       "forbidden": "이 워크스페이스의 접근자 목록을 볼 권한이 없습니다."
+    },
+    "memory": {
+      "notFound": "해당 메모리는 이 워크스페이스에 더 이상 없습니다. 변경된 것은 없습니다.",
+      "unavailable": "메모리 저장소를 사용할 수 없어 아무것도 삭제되지 않았습니다.",
+      "deleteFailed": "메모리를 삭제하지 못했습니다: {detail}"
     }
   },
   "statusIndicator": {
@@ -3081,6 +3086,9 @@
       },
       "externalMcp": {
         "label": "접근"
+      },
+      "memories": {
+        "label": "메모리"
       }
     },
     "defaultMode": {
@@ -3357,6 +3365,44 @@
       "loading": "접근자 목록을 불러오는 중…",
       "manage": {
         "hint": "계정 접근 범위는 시스템 설정 → 사용자 및 접근에서 변경합니다. 본인의 외부 MCP 키는 개인 설정에 있습니다."
+      }
+    },
+    "memories": {
+      "title": {
+        "label": "워크스페이스 메모리"
+      },
+      "hint": "이 워크스페이스의 work session에서 agent가 적어 둔 내용입니다. 여기서는 읽기 전용입니다. 메모리는 대화 중 agent가 작성하고 갱신하므로, 이 페이지는 조회와 삭제만 제공합니다.",
+      "softDelete": {
+        "hint": "삭제하면 agent에게는 즉시 보이지 않지만, 해당 행은 30일간 복구 가능한 상태로 남으며 그동안 이 워크스페이스의 용량을 계속 차지합니다."
+      },
+      "loading": "메모리를 불러오는 중…",
+      "empty": "이 워크스페이스에는 아직 기억된 내용이 없습니다.",
+      "unavailable": "메모리 목록을 읽지 못했습니다.",
+      "retry": {
+        "label": "다시 시도"
+      },
+      "type": {
+        "preference": "선호",
+        "constraint": "제약",
+        "fact": "사실",
+        "lesson": "교훈"
+      },
+      "status": {
+        "active": "활성",
+        "superseded": "대체됨",
+        "deleted": "삭제됨"
+      },
+      "delete": {
+        "ariaLabel": "메모리 '{title}' 삭제",
+        "confirm": {
+          "title": "이 메모리를 삭제할까요?",
+          "body": "'{title}'은(는) 이 워크스페이스의 agent에게 더 이상 보이지 않습니다. 30일간 복구할 수 있으며, 같은 제목으로 다시 저장하면 되살아납니다.",
+          "confirm": "삭제",
+          "cancel": "취소"
+        }
+      },
+      "deleted": {
+        "toast": "메모리 '{title}'을(를) 삭제했습니다."
       }
     }
   },

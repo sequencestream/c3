@@ -433,8 +433,14 @@ const {
   parkRecoveryStats,
   parkRecoveryError,
   parkRecoveryLoading,
+  workspaceMemories,
+  workspaceMemoriesError,
+  workspaceMemoriesLoading,
+  deletingMemoryIds,
   saveWorkspaceSetting,
   loadParkRecoveryStats,
+  loadWorkspaceMemories,
+  deleteWorkspaceMemory,
   querySkillLinkStatus,
   installSkill,
   skillApprovalRequest,
@@ -1120,6 +1126,10 @@ function onFilesChatWidth(px: number): void {
       :park-recovery-loading="parkRecoveryLoading"
       :base-url="serverSettings?.baseUrl ?? null"
       :workspace-accessors="workspaceAccessors"
+      :workspace-memories="workspaceMemories"
+      :workspace-memories-error="workspaceMemoriesError"
+      :workspace-memories-loading="workspaceMemoriesLoading"
+      :deleting-memory-ids="deletingMemoryIds"
       :is-admin="auth.isAdmin.value"
       @close="workspaceSettingOpen = false"
       @save="saveWorkspaceSetting"
@@ -1128,6 +1138,8 @@ function onFilesChatWidth(px: number): void {
       @reload-park-recovery="loadParkRecoveryStats"
       @goto-system-settings="openSettingsFromWorkspaceSetting"
       @reload-workspace-accessors="fetchWorkspaceAccessors"
+      @reload-memories="loadWorkspaceMemories"
+      @delete-memory="deleteWorkspaceMemory"
     />
 
     <SkillApprovalModal

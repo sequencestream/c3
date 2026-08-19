@@ -149,6 +149,11 @@ export function installSettingsActions(ctx: AppCtx): void {
       send({ type: 'get_workspace_accessors', workspaceName: id })
     }
     ctx.loadParkRecoveryStats()
+    // Drop the previous workspace's titles before asking for this one's: the page
+    // may be reopening on a different workspace, and memories are content — showing
+    // one workspace's list under another's name, even for one frame, would be wrong.
+    ctx.workspaceMemories.value = null
+    ctx.loadWorkspaceMemories()
   }
 
   /**
@@ -164,6 +169,36 @@ export function installSettingsActions(ctx: AppCtx): void {
     ctx.parkRecoveryError.value = null
     ctx.parkRecoveryLoading.value = true
     send({ type: 'get_park_recovery_stats', workspaceName: path })
+  }
+
+  /**
+   * Fetch the current workspace's memory listing. Stands beside the setting load
+   * exactly like the observation counts: memories are what an agent wrote down,
+   * not configuration, so they never enter the settings draft. Also the tab's
+   * refresh/retry — the previous error is cleared as the new request goes out so a
+   * stale failure cannot outlive it.
+   */
+  ctx.loadWorkspaceMemories = (): void => {
+    const path = currentWorkspace.value
+    if (!path || !ctx.client) return
+    ctx.workspaceMemoriesError.value = null
+    ctx.workspaceMemoriesLoading.value = true
+    send({ type: 'list_workspace_memories', workspaceName: path })
+  }
+
+  /**
+   * Soft-delete one memory. Deliberately NOT optimistic: the row leaves the list
+   * only when the server confirms which title it removed, so a refused delete can
+   * never look like it worked. The id is marked in flight meanwhile, which is also
+   * what the failure path clears.
+   */
+  ctx.deleteWorkspaceMemory = (id: string): void => {
+    const path = currentWorkspace.value
+    if (!path) return
+    if (!ctx.deletingMemoryIds.value.includes(id)) {
+      ctx.deletingMemoryIds.value = [...ctx.deletingMemoryIds.value, id]
+    }
+    send({ type: 'delete_workspace_memory', workspaceName: path, id })
   }
 
   // Persist workspace settings. The panel now saves per-tab and stays open so the

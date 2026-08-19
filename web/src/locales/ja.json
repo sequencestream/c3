@@ -2467,6 +2467,11 @@
     },
     "workspaceAccessors": {
       "forbidden": "このワークスペースのアクセス者一覧を閲覧する権限がありません。"
+    },
+    "memory": {
+      "notFound": "そのメモリはこのワークスペースにはもうありません。変更は行われていません。",
+      "unavailable": "メモリストアが利用できないため、削除は行われませんでした。",
+      "deleteFailed": "メモリを削除できませんでした: {detail}"
     }
   },
   "statusIndicator": {
@@ -3081,6 +3086,9 @@
       },
       "externalMcp": {
         "label": "アクセス"
+      },
+      "memories": {
+        "label": "メモリ"
       }
     },
     "defaultMode": {
@@ -3357,6 +3365,44 @@
       "loading": "アクセス者一覧を読み込み中…",
       "manage": {
         "hint": "アカウントのアクセス範囲は「システム設定 → ユーザーとアクセス」で変更します。自分の外部 MCP キーは個人設定にあります。"
+      }
+    },
+    "memories": {
+      "title": {
+        "label": "ワークスペースのメモリ"
+      },
+      "hint": "このワークスペースの work session で agent が書き留めた内容です。ここでは読み取り専用です。メモリの作成と更新は会話中の agent が行うため、本ページでは閲覧と削除のみを行います。",
+      "softDelete": {
+        "hint": "削除するとメモリは直ちに agent から見えなくなりますが、行は 30 日間は復元可能な状態で残り、その間もこのワークスペースの容量を消費します。"
+      },
+      "loading": "メモリを読み込んでいます…",
+      "empty": "このワークスペースにはまだ何も記録されていません。",
+      "unavailable": "メモリ一覧を読み取れませんでした。",
+      "retry": {
+        "label": "再試行"
+      },
+      "type": {
+        "preference": "好み",
+        "constraint": "制約",
+        "fact": "事実",
+        "lesson": "教訓"
+      },
+      "status": {
+        "active": "有効",
+        "superseded": "置き換え済み",
+        "deleted": "削除済み"
+      },
+      "delete": {
+        "ariaLabel": "メモリ「{title}」を削除",
+        "confirm": {
+          "title": "このメモリを削除しますか?",
+          "body": "「{title}」はこのワークスペースの agent から見えなくなります。30 日間は復元可能で、同じタイトルで書き直せば元に戻ります。",
+          "confirm": "削除",
+          "cancel": "キャンセル"
+        }
+      },
+      "deleted": {
+        "toast": "メモリ「{title}」を削除しました。"
       }
     }
   },

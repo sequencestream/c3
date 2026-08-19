@@ -381,6 +381,10 @@ export interface AppMethods {
   saveWorkspaceSetting(config: WorkspaceSettingType): void
   /** Read-only refresh of the workspace-setting page's local observation section. */
   loadParkRecoveryStats(): void
+  /** (Re)read the current workspace's memory listing — the memory tab's load and retry. */
+  loadWorkspaceMemories(): void
+  /** Soft-delete ONE memory of the current workspace. Writing one back stays the agent's job. */
+  deleteWorkspaceMemory(id: string): void
   querySkillLinkStatus(): void
   installSkill(skillId: string): void
   saveSettings(settings: SystemSettings): void

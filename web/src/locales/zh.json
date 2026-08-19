@@ -2466,6 +2466,11 @@
     },
     "workspaceAccessors": {
       "forbidden": "你无权查看本工作区的访问者名单。"
+    },
+    "memory": {
+      "notFound": "这条记忆已不在本工作区,未做任何修改。",
+      "unavailable": "记忆库不可用,本次删除未生效。",
+      "deleteFailed": "删除记忆失败:{detail}"
     }
   },
   "statusIndicator": {
@@ -3080,6 +3085,9 @@
       },
       "externalMcp": {
         "label": "访问"
+      },
+      "memories": {
+        "label": "记忆"
       }
     },
     "defaultMode": {
@@ -3356,6 +3364,44 @@
       "loading": "正在读取访问者名单……",
       "manage": {
         "hint": "账号的访问范围在「系统设置 → 用户与访问」里改;你自己的外部 MCP key 在个人化设置里管。"
+      }
+    },
+    "memories": {
+      "title": {
+        "label": "工作区记忆"
+      },
+      "hint": "agent 在本工作区的 work session 中记下的内容。此处只读:记忆由 agent 在会话中写入与更新,本页只负责查看与删除。",
+      "softDelete": {
+        "hint": "删除后 agent 立刻看不到这条记忆,但该行会保留 30 天可恢复期,期间仍占用本工作区的容量。"
+      },
+      "loading": "正在读取记忆…",
+      "empty": "本工作区还没有记下任何内容。",
+      "unavailable": "记忆列表读取失败。",
+      "retry": {
+        "label": "重试"
+      },
+      "type": {
+        "preference": "偏好",
+        "constraint": "约束",
+        "fact": "事实",
+        "lesson": "教训"
+      },
+      "status": {
+        "active": "生效中",
+        "superseded": "已被取代",
+        "deleted": "已删除"
+      },
+      "delete": {
+        "ariaLabel": "删除记忆「{title}」",
+        "confirm": {
+          "title": "删除这条记忆?",
+          "body": "「{title}」将不再对本工作区的 agent 可见。它保留 30 天可恢复期,期间用同一个标题重新写入即可恢复。",
+          "confirm": "删除",
+          "cancel": "取消"
+        }
+      },
+      "deleted": {
+        "toast": "已删除记忆「{title}」。"
       }
     }
   },

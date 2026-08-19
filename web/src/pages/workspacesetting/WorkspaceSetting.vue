@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /*
- * WorkspaceSetting.vue — 工作区配置页:配置按 默认模式 / Git 与沙箱 / 协作 / 技能仓库 四个 Tab 分组。
+ * WorkspaceSetting.vue — 工作区配置页:配置按 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 分 Tab 分组,
+ * 另有三个无字段的只读/非配置 Tab:本机观测、访问、记忆。
  *
  * 每个 Tab 维护独立草稿脏状态并提供独立保存按钮:保存时只用当前 Tab 白名单字段(经其转换)
  * 覆盖「最新已提交快照」构造完整 WorkspaceSetting 上抛,不携带其它 Tab 草稿(见 TAB_FIELDS)。
@@ -27,12 +28,14 @@ import type {
   McpApiKeyMeta,
   ExternalMcpToolDescriptor,
   ParkRecoveryStats,
+  WorkspaceMemoryListItem,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import { VENDOR_IDS, GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import ExternalMcpAccess from './components/ExternalMcpAccess/ExternalMcpAccess.vue'
+import WorkspaceMemories from './components/WorkspaceMemories/WorkspaceMemories.vue'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { applyTabFields, deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -125,6 +128,18 @@ const props = defineProps<{
   workspaceAccessors?: string[] | null
   /** Whether the viewer is the administrator — only decides whether the "go edit it" jump is offered. */
   isAdmin?: boolean
+  /**
+   * The current workspace's active memories, summary form. Read-only content an
+   * agent wrote, held apart from `workspaceSetting` for the same reason the
+   * observation counts are: it is not configuration, so it must never reach a
+   * draft, a dirty check or a save payload. `null` ⇒ not loaded yet.
+   */
+  workspaceMemories?: WorkspaceMemoryListItem[] | null
+  /** Set when the listing could not be read — shown instead of an empty list. */
+  workspaceMemoriesError?: UiError | null
+  workspaceMemoriesLoading?: boolean
+  /** Memory ids whose soft delete is in flight — drives per-row disabled state. */
+  deletingMemoryIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -140,6 +155,10 @@ const emit = defineEmits<{
   gotoSystemSettings: []
   /** Re-read the effective accessor list. */
   reloadWorkspaceAccessors: []
+  /** (Re)read the workspace's memory listing (tab open refresh / failed-read retry). */
+  reloadMemories: []
+  /** Soft-delete ONE memory by id. The row leaves the list only on the server's confirmation. */
+  deleteMemory: [id: string]
 }>()
 
 // ---- Tab grouping ----------------------------------------------------------
@@ -160,6 +179,9 @@ const emit = defineEmits<{
 // to REACH this workspace from outside, which is derived from system settings and
 // the workspace's own path — never workspace configuration. An empty whitelist is
 // what keeps it out of the draft, the dirty check and every save payload.
+// `memories` is field-less too: it lists what an agent wrote into the workspace
+// notebook and offers a delete. Content, not configuration — and the delete takes
+// effect the moment it is confirmed, so there is nothing a Save could carry.
 type WsTab =
   | 'defaultMode'
   | 'gitSandbox'
@@ -168,6 +190,7 @@ type WsTab =
   | 'automation'
   | 'observability'
   | 'externalMcp'
+  | 'memories'
 const TABS: WsTab[] = [
   'defaultMode',
   'gitSandbox',
@@ -176,6 +199,7 @@ const TABS: WsTab[] = [
   'automation',
   'observability',
   'externalMcp',
+  'memories',
 ]
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   defaultMode: ['defaultMode', 'devSkill'],
@@ -193,6 +217,7 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   automation: ['automationEnabled', 'automationConcurrency'],
   observability: [],
   externalMcp: [],
+  memories: [],
 }
 function tabLabel(tab: WsTab): string {
   return t(`workspaceSetting.tabs.${tab}.label` as 'workspaceSetting.tabs.defaultMode.label')
@@ -680,10 +705,11 @@ function buildTabPayload(
   src: WorkspaceSetting,
 ): WorkspaceSetting | null {
   switch (tab) {
-    // The observation tab has no Save button; returning null means that even a
-    // programmatic save would emit nothing, so measurements can never be written
-    // back as settings.
+    // Neither tab has a Save button; returning null means that even a programmatic
+    // save would emit nothing, so measurements — and memories an agent wrote —
+    // can never be written back as settings.
     case 'observability':
+    case 'memories':
       return null
     case 'defaultMode': {
       // The Codex dual-policy object is already embedded in the draft's defaultMode
@@ -1504,6 +1530,24 @@ const parkRecoveryRateText = computed(() => {
           :is-admin="isAdmin"
           @reload="emit('reloadWorkspaceAccessors')"
           @goto-system-settings="emit('gotoSystemSettings')"
+        />
+      </div>
+
+      <!-- ============ Workspace memory tab (read-only listing + delete) ============ -->
+      <div
+        v-show="activeTab === 'memories'"
+        class="project-config-tab-panel"
+        role="tabpanel"
+        data-testid="project-config-tab-memories"
+      >
+        <WorkspaceMemories
+          :workspace-name="currentWorkspace"
+          :memories="workspaceMemories"
+          :loading="workspaceMemoriesLoading"
+          :error="workspaceMemoriesError"
+          :deleting-ids="deletingMemoryIds"
+          @reload="emit('reloadMemories')"
+          @delete="(id: string) => emit('deleteMemory', id)"
         />
       </div>
     </div>

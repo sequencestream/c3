@@ -80,6 +80,10 @@ function makeCtx(opts: { project?: string | null } = {}) {
     syncDeliveryPr: vi.fn(),
     activeDelivery: ref(null),
     activeDeliveryId: ref(null),
+    // Memory-tab refs the same error branch walks past; a no-op here.
+    workspaceMemoriesLoading: ref(false),
+    workspaceMemoriesError: ref(null),
+    deletingMemoryIds: ref<string[]>([]),
   } as unknown as AppCtx
   installQueueActions(ctx)
   installMessageHandler(ctx)

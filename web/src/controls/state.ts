@@ -68,6 +68,7 @@ import type {
   SkillLinkStatus,
   SkillSupportState,
   ParkRecoveryStats,
+  WorkspaceMemoryListItem,
   SlashCommandInfo,
   SysExtraMount,
   SystemSettings,
@@ -830,6 +831,19 @@ export function createState(deps: StateDeps) {
   const parkRecoveryError = ref<UiError | null>(null)
   const parkRecoveryLoading = ref(false)
 
+  // ---- Workspace memories (workspace settings, read + delete) ----
+  // The summary listing behind the memory tab. Held outside `currentWorkspaceSetting`
+  // for the same reason the observation counts are: memories are content the agent
+  // wrote, not configuration, so they must never join a settings draft or a save
+  // payload. `null` = never loaded / cleared on reconnect, which is what tells
+  // "not fetched yet" apart from "this workspace remembers nothing".
+  const workspaceMemories = ref<WorkspaceMemoryListItem[] | null>(null)
+  const workspaceMemoriesError = ref<UiError | null>(null)
+  const workspaceMemoriesLoading = ref(false)
+  // Ids whose soft delete is in flight — the row stays visible but its button is
+  // disabled, so a second click cannot fire while the first is unanswered.
+  const deletingMemoryIds = ref<string[]>([])
+
   // ---- New-session agent picker (the "+" modal) ----
   const newSessionOpen = ref(false)
   const newSessionWorkspace = ref<string | null>(null)
@@ -1232,6 +1246,10 @@ export function createState(deps: StateDeps) {
     parkRecoveryStats,
     parkRecoveryError,
     parkRecoveryLoading,
+    workspaceMemories,
+    workspaceMemoriesError,
+    workspaceMemoriesLoading,
+    deletingMemoryIds,
     newSessionOpen,
     newSessionWorkspace,
     activeVendor,

@@ -417,6 +417,16 @@ export const UI_ERROR_CODES = {
   // covers "no such workspace" too, deliberately using ONE code so the read
   // cannot be used to probe which workspace names exist.
   'workspaceAccessors.forbidden': { key: 'error.workspaceAccessors.forbidden' },
+  // workspace memory (the console's read-and-remove surface)
+  // The memory named by a delete is not in this workspace — already removed, or
+  // an id belonging to another workspace. Either way nothing changed.
+  'memory.notFound': { key: 'error.memory.notFound' },
+  // The memory store could not be opened, so the delete was refused outright. A
+  // write that did not happen is never reported as one.
+  'memory.unavailable': { key: 'error.memory.unavailable' },
+  // The delete failed for a reason the store does not model (disk, lock). Carries
+  // the technical detail for the log-less user; the row stays on screen.
+  'memory.deleteFailed': { key: 'error.memory.deleteFailed', params: ['detail'] },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

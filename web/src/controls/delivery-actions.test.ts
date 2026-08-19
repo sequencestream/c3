@@ -88,6 +88,9 @@ function makeCtx() {
     dispatchSpecLaunch: vi.fn(),
     devLaunch: ref(null),
     specLaunch: ref(null),
+    workspaceMemoriesLoading: ref(false),
+    workspaceMemoriesError: ref(null),
+    deletingMemoryIds: ref<string[]>([]),
   } as unknown as AppCtx
   installDeliveryActions(ctx)
   installMessageHandler(ctx)

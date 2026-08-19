@@ -605,7 +605,10 @@
         "label": "Auto (latest)"
       },
       "none": "—",
-      "empty": "No installed managed versions yet."
+      "empty": "No installed managed versions yet.",
+      "degraded": {
+        "pinnedVersionUnavailable": "Pinned version {pinnedVersion} is unavailable; using {resolvedVersion} instead."
+      }
     },
     "skillRepos": {
       "title": {

@@ -182,6 +182,40 @@ export interface VendorModeCatalog {
 }
 
 /**
+ * Why a managed vendor CLI is running a version other than the pinned one — a
+ * **stable code**, not a message, on the same contract as
+ * {@link VendorUnavailableReason}: the server states the situation, the console
+ * words it.
+ *  - `pinned-version-unavailable` — the version pinned in `vendorCliVersions`
+ *    is not installed or not compatible, and resolution fell through to another
+ *    runnable managed version. The pin is preserved, never silently cleared.
+ */
+export type VendorCliDegradationReason = 'pinned-version-unavailable'
+
+/**
+ * A managed-CLI resolution that succeeded on a version other than the pinned
+ * one — the structured form of what used to be a hardcoded English sentence.
+ *
+ * The two versions are named for what they *are*, never for what the panel
+ * labels them: `pinnedVersion` is the user's choice in `vendorCliVersions`,
+ * `resolvedVersion` is what c3 actually launches and equals
+ * {@link VendorHostStatus.activeVersion}. Keeping them apart is the whole point
+ * — the old wording called the pin "active", contradicting the panel's own
+ * "Active" field, which shows the resolved version.
+ *
+ * Present only when resolution actually succeeded: a vendor with no runnable
+ * version at all reports its failure through `lastError`, never as a fake
+ * "degraded to" claim.
+ */
+export interface VendorCliDegradation {
+  reason: VendorCliDegradationReason
+  /** The version pinned in `vendorCliVersions` that could not be used. */
+  pinnedVersion: string
+  /** The version actually resolved and launched instead. */
+  resolvedVersion: string
+}
+
+/**
  * One vendor's host-CLI presence (ADR-0012), surfaced to the web so the
  * new-session agent picker can grey out an agent whose binary is not on PATH and
  * the settings diagnostics panel can list what is/isn't installed — together with
@@ -189,7 +223,8 @@ export interface VendorModeCatalog {
  * exactly which executable c3 will launch.
  *
  * The optional multi-version fields (`installedVersions`/`activeVersion`/
- * `downloadTargetVersion`/`lastCheckedAt`/`lastRemoteCheckAt`/`lastError`) are a
+ * `downloadTargetVersion`/`lastCheckedAt`/`lastRemoteCheckAt`/`lastError`/
+ * `degradation`) are a
  * backward-compatible extension: they carry the manifest-derived multi-version
  * state for the vendor CLI settings panel. Older clients ignore them; the
  * classic `present`/`path`/`version` fields keep their original semantics for
@@ -222,8 +257,15 @@ export interface VendorHostStatus {
   lastCheckedAt?: string
   /** Last remote (npm packument) check timestamp (ISO). */
   lastRemoteCheckAt?: string
-  /** Last sync/install or resolution-degradation error (absent when healthy). */
+  /** Last sync/install or resolution error (absent when healthy). */
   lastError?: string
+  /**
+   * Structured diagnosis of a pinned-version fallback, when one happened. The
+   * console localizes it; `lastError` stays free-form text for the failures that
+   * have no structured form yet (install failed, override invalid, nothing
+   * resolvable at all).
+   */
+  degradation?: VendorCliDegradation
 }
 
 /**

@@ -969,6 +969,18 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
     expect(w.find('[data-testid="vendor-cli-degraded-codex"]').exists()).toBe(false)
   })
 
+  it('shows both diagnoses when a fallback and a separate failure are true at once', () => {
+    // A pinned-version fallback is durable state; a sync/install failure can land
+    // on top of it later. Neither may hide the other, or the newer failure stays
+    // invisible for as long as the fallback lasts.
+    const both = [{ ...degradedStatus[0], lastError: 'managed claude install failed: HTTP 500' }]
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: both },
+    })
+    expect(w.get('[data-testid="vendor-cli-degraded-claude"]').text()).toContain('1.0.0')
+    expect(w.get('[data-testid="vendor-cli-error-claude"]').text()).toContain('HTTP 500')
+  })
+
   it('never calls the pinned version "active" in any shipped locale', () => {
     // The defect this notice fixes: the panel's own Active/当前生效 field names the
     // version c3 runs, so no locale may reuse that word for the pin.

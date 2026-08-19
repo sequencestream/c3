@@ -2087,8 +2087,10 @@ function selectAdmin(username: string) {
             >
               {{ vendorCliDegradationNotice(h) }}
             </p>
+            <!-- 降级诊断与 lastError 是两件互不排斥的事(例如固定版本回退成功、随后同步/
+                 安装又失败),同时成立时两条都要显示,否则后发生的失败会被先记录的降级永久盖住。 -->
             <p
-              v-else-if="h.lastError"
+              v-if="h.lastError"
               class="settings-hint vendor-cli-error"
               :data-testid="`vendor-cli-error-${h.vendor}`"
             >

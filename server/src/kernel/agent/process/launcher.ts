@@ -473,9 +473,17 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
         installHint: spec.installHint,
       }
       cache.set(vendor, probe)
+      // An explicit override outranks the pin entirely, so no managed fallback is
+      // in play: drop any prior degradation record rather than leave the panel
+      // claiming a fallback that is no longer happening.
       recordState(
         vendor,
-        { source: 'env-override', path: override, selectedVersion: version },
+        {
+          source: 'env-override',
+          path: override,
+          selectedVersion: version,
+          degradation: undefined,
+        },
         deps,
       )
       return probe
@@ -491,9 +499,16 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
         error: `${spec.pathEnv} invalid: ${(err as Error).message}`,
       }
       cache.set(vendor, probe)
+      // Same here — and doubly so: nothing resolved at all, so a stale degradation
+      // would both misstate the running version and hide this error in the panel.
       recordState(
         vendor,
-        { source: 'override-invalid', path: override, lastError: probe.error },
+        {
+          source: 'override-invalid',
+          path: override,
+          lastError: probe.error,
+          degradation: undefined,
+        },
         deps,
       )
       return probe

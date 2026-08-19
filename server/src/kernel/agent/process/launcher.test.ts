@@ -43,6 +43,28 @@ function writeManifest(data: unknown): void {
   writeAtomic(path, data)
 }
 
+/** A manifest already carrying a pinned-version fallback, for the cases that must drop it. */
+function writeStaleDegradationManifest(): void {
+  writeManifest({
+    version: 1,
+    vendors: {
+      claude: {
+        vendor: 'claude',
+        source: 'managed',
+        selectedVersion: '1.3.0',
+        latestCompatibleVersion: '1.3.0',
+        compatibleRange: vendorCompatibilityLabel('claude'),
+        degradation: {
+          reason: 'pinned-version-unavailable',
+          pinnedVersion: '1.0.0',
+          resolvedVersion: '1.3.0',
+        },
+        versionHistory: [{ version: '1.3.0', status: 'installed' }],
+      },
+    },
+  })
+}
+
 beforeEach(() => {
   dir = join(tmpdir(), `c3-launcher-${process.pid}-${Date.now()}-${Math.random()}`)
   mkdirSync(dir, { recursive: true })
@@ -572,6 +594,30 @@ describe('resolveExecutable effective-version priority chain', () => {
     const status = readVendorCliStatus('claude')
     expect(status.activeVersion).toBe('1.0.0')
     expect(status.degradation).toBeUndefined()
+  })
+
+  it('clears a stale degradation when an env override takes over resolution', () => {
+    // The pin is not in play at all once an override wins, so a leftover fallback
+    // record would name a version c3 is no longer running.
+    const override = join(dir, 'custom', 'claude')
+    fakeBin(override, 'claude 1.2.3')
+    process.env.CLAUDE_PATH = override
+    writeStaleDegradationManifest()
+
+    expect(resolveExecutable('claude').source).toBe('env-override')
+    expect(readVendorCliStatus('claude').degradation).toBeUndefined()
+  })
+
+  it('clears a stale degradation when an invalid env override leaves nothing resolved', () => {
+    // Worst case: the manifest would keep claiming a healthy fallback while nothing
+    // runs, and the panel would render that claim instead of this error.
+    process.env.CLAUDE_PATH = join(dir, 'missing', 'claude')
+    writeStaleDegradationManifest()
+
+    expect(resolveExecutable('claude').source).toBe('override-invalid')
+    const status = readVendorCliStatus('claude')
+    expect(status.degradation).toBeUndefined()
+    expect(status.lastError).toContain('invalid')
   })
 })
 

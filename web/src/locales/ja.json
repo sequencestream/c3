@@ -2445,6 +2445,7 @@
       "prCreateNotLinked": "この意図はその配信に関連付けられていません。先に関連付けてから PR を作成してください。",
       "prCreateAmbiguous": "この意図は複数の配信に関連付けられているため、PR の対象を特定できません。関連付けを 1 つに絞るか、配信を明示的に指定してください。",
       "intentAlreadyLinked": "このインテントはすでにこの配信に紐付けられています。",
+      "linkFailed": "意図の関連付けに失敗しました: {detail}。",
       "unlinkMergedPrDenied": "このインテントのこの配信向け PR はすでにマージ済みのため、紐付けを解除できません。取り消すにはまず revert してください。",
       "unlinkClosePrFailed": "紐付け解除を中断しました — PR をクローズできません: {detail}。",
       "unlinkPrStatusCheckFailed": "紐付け解除を中断しました — フォージから PR の状態を取得できません: {detail}。",
@@ -2694,6 +2695,9 @@
         },
         "intents": {
           "label": "関連意図"
+        },
+        "logs": {
+          "label": "ログ"
         }
       },
       "meta": {
@@ -2770,6 +2774,26 @@
         "pr": {
           "label": "PR #{number}"
         }
+      }
+    },
+    "log": {
+      "loading": {
+        "label": "交付ログを読み込み中…"
+      },
+      "empty": {
+        "label": "この交付にはまだ操作ログがありません。"
+      },
+      "operationType": {
+        "created": "交付を作成",
+        "updated": "交付を編集",
+        "statusChanged": "状態変更",
+        "verificationConfirmed": "検証を確認",
+        "cancelled": "交付をキャンセル",
+        "delivered": "リリース済み",
+        "mergeConflict": "マージ競合",
+        "intentLinked": "意図を関連付け",
+        "intentUnlinked": "意図の関連付けを解除",
+        "deliveryPrOpened": "交付 PR を作成"
       }
     },
     "list": {

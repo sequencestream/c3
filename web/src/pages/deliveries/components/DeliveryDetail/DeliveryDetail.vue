@@ -5,8 +5,8 @@
  * 常驻标题栏是状态的唯一去处:标题 → 紧贴的状态徽标(六态分别配色、纯展示) →
  * 弹性空隙 → 动作组(集成就绪 N/M 小字 + 可达目标推进按钮 + 「…」溢出菜单)。推进区
  * 只渲染此刻真的能点的目标——被守卫挡住的、系统专属的目标根本不渲染;「为何推不动」由
- * 标题栏下方的缺口异常框回答。其下仅两个 Tab:概览(交付分支/合并/元信息,不含任何
- * 状态内容)与关联意图。不设 PR/设置/分支独立 Tab。
+ * 标题栏下方的缺口异常框回答。其下三个 Tab:概览(交付分支/合并/元信息,不含任何
+ * 状态内容)、关联意图、日志(只读生命周期轨迹,懒加载)。不设 PR/设置/分支独立 Tab。
  *
  * 推进按钮说的是「按下去会发生什么」(开始集成 / 开始验证 / 确认验证 / 返工),不是
  * 目标状态名——状态名归徽标;两套文案键因此分家(见 deliveryAdvanceLabelKey)。
@@ -26,6 +26,7 @@ import { useTypedI18n } from '@/i18n'
 import type {
   AssociatedIntent,
   Delivery,
+  DeliveryLog,
   DeliveryPr,
   DeliveryStatus,
   DeliveryTargetTransition,
@@ -45,6 +46,7 @@ import {
 } from '@/lib/delivery-view'
 import DeliveryOverviewTab from './DeliveryOverviewTab.vue'
 import DeliveryIntentsTab from './DeliveryIntentsTab.vue'
+import DeliveryLogsTab from './DeliveryLogsTab.vue'
 
 const { t } = useTypedI18n()
 
@@ -67,6 +69,10 @@ const props = defineProps<{
   deliveryPr: DeliveryPr | null
   /** Whether a delivery-PR create / sync round trip is in flight. */
   deliveryPrBusy: boolean
+  /** This delivery's lifecycle logs (newest first); `null` = not fetched / invalidated. */
+  logs: DeliveryLog[] | null
+  /** Whether THIS delivery's log fetch is in flight. */
+  logsLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -90,11 +96,13 @@ const emit = defineEmits<{
   'unlink-intent': [intentId: string]
   'open-intent': [intentId: string]
   'open-workspace-settings': []
+  'list-logs': [deliveryId: string]
 }>()
 
 const TAB_OVERVIEW = 'overview' as const
 const TAB_INTENTS = 'intents' as const
-type DeliveryTabKind = typeof TAB_OVERVIEW | typeof TAB_INTENTS
+const TAB_LOGS = 'logs' as const
+type DeliveryTabKind = typeof TAB_OVERVIEW | typeof TAB_INTENTS | typeof TAB_LOGS
 
 // Tab 选中态是页面内部展示状态,不写回 App/协议。概览 → 关联意图的缺口跳转由此切换。
 const activeTab = ref<DeliveryTabKind>(TAB_OVERVIEW)
@@ -133,6 +141,15 @@ onUnmounted(() => {
 watch(showMore, (visible) => {
   if (!visible) closeMore()
 })
+
+// 换交付即回到概览:Tab 选中态是页面状态而非交付属性,停在上一条交付的日志页上
+// 会让「这些日志属于谁」在切换的那一帧变得含混。
+watch(
+  () => props.delivery.id,
+  () => {
+    activeTab.value = TAB_OVERVIEW
+  },
+)
 
 function openCancelFromMenu(): void {
   closeMore()
@@ -325,6 +342,16 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
       >
         {{ t('delivery.page.tab.intents.label') }}
       </button>
+      <button
+        type="button"
+        class="delivery-pane-tab"
+        :class="{ active: activeTab === TAB_LOGS }"
+        :data-testid="`delivery-pane-tab-${TAB_LOGS}`"
+        :aria-pressed="activeTab === TAB_LOGS"
+        @click="activeTab = TAB_LOGS"
+      >
+        {{ t('delivery.page.tab.logs.label') }}
+      </button>
     </nav>
 
     <DeliveryOverviewTab
@@ -346,13 +373,20 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
       @sync-delivery-pr="(id: string) => emit('sync-delivery-pr', id)"
     />
     <DeliveryIntentsTab
-      v-else
+      v-else-if="activeTab === TAB_INTENTS"
       :delivery="props.delivery"
       :associated-intents="props.associatedIntents"
       :intents="props.intents"
       @link="(id: string) => emit('link-intent', id)"
       @unlink="(id: string) => emit('unlink-intent', id)"
       @open-intent="(id: string) => emit('open-intent', id)"
+    />
+    <DeliveryLogsTab
+      v-else
+      :logs="props.logs"
+      :loading="props.logsLoading"
+      :delivery-id="props.delivery.id"
+      @list-logs="(id: string) => emit('list-logs', id)"
     />
 
     <ConfirmDialog

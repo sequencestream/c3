@@ -2444,6 +2444,7 @@
       "prCreateNotLinked": "该意图未关联此交付,请先建立关联再创建 PR。",
       "prCreateAmbiguous": "该意图关联了多个交付,无法确定 PR 的目标。请只保留一个关联,或显式指定交付。",
       "intentAlreadyLinked": "该意图已关联到本交付。",
+      "linkFailed": "关联意图失败: {detail}。",
       "unlinkMergedPrDenied": "该意图对本交付的 PR 已合并,无法解除关联;如需撤回请先 revert。",
       "unlinkClosePrFailed": "解除关联被阻塞——关闭 PR 失败:{detail}。",
       "unlinkPrStatusCheckFailed": "解除关联被阻塞——无法从代码托管平台读取 PR 状态:{detail}。",
@@ -2693,6 +2694,9 @@
         },
         "intents": {
           "label": "关联意图"
+        },
+        "logs": {
+          "label": "日志"
         }
       },
       "meta": {
@@ -2769,6 +2773,26 @@
         "pr": {
           "label": "PR #{number}"
         }
+      }
+    },
+    "log": {
+      "loading": {
+        "label": "加载交付日志中…"
+      },
+      "empty": {
+        "label": "该交付暂无操作日志。"
+      },
+      "operationType": {
+        "created": "创建交付",
+        "updated": "编辑交付",
+        "statusChanged": "状态变更",
+        "verificationConfirmed": "确认验证通过",
+        "cancelled": "取消交付",
+        "delivered": "已发布",
+        "mergeConflict": "合并冲突",
+        "intentLinked": "关联意图",
+        "intentUnlinked": "解除关联意图",
+        "deliveryPrOpened": "创建交付 PR"
       }
     },
     "list": {

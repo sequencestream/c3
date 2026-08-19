@@ -118,6 +118,7 @@ function harness(launchRun = vi.fn().mockResolvedValue(undefined)) {
 /** 一条本工作区的交付;给了 `branch` 就同时标记分支就绪。 */
 function seedDelivery(title: string, branch?: string, workspacePath = proj) {
   const { delivery } = createDelivery({
+    actor: 'tester',
     workspacePath,
     title,
     description: '',

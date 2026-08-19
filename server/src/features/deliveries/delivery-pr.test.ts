@@ -63,6 +63,17 @@ import {
 } from '../intents/store.js'
 import { insertIntentDelivery, listAssociatedIntents } from './store.js'
 
+/**
+ * The audit lines the delivery ledger primitives require alongside the business
+ * fact. These tests assert the fact, not the wording, so one fixed line per kind
+ * is enough — the log CONTENT is asserted by the dedicated log tests.
+ */
+const LINK_LOG = {
+  operationType: 'intent_linked',
+  summary: '关联意图',
+  actor: 'tester',
+} as const
+
 vi.mock('../../git.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../git.js')>()),
   findOpenForgePr: vi.fn(),
@@ -216,7 +227,7 @@ async function seedDelivery(
   const [intent] = insertIntents(dir, [
     { title: 'Intent A', shortEnTitle: 'intent-a', content: '', priority: 'P2', module: '' },
   ])
-  insertIntentDelivery(id, intent.id, BRANCH)
+  insertIntentDelivery(id, intent.id, BRANCH, LINK_LOG)
   upsertIntentPr({
     intentId: intent.id,
     deliveryId: id,
@@ -295,7 +306,7 @@ describe('create_delivery_pr — gates', () => {
     const [extra] = insertIntents(dir, [
       { title: 'Intent B', shortEnTitle: 'intent-b', content: '', priority: 'P2', module: '' },
     ])
-    insertIntentDelivery(id, extra.id, BRANCH)
+    insertIntentDelivery(id, extra.id, BRANCH, LINK_LOG)
     upsertIntentPr({
       intentId: extra.id,
       deliveryId: id,
@@ -635,7 +646,10 @@ describe('sync_delivery_pr — layered settlement', () => {
       status: 'reviewing',
       blockedReason: null,
     })
-    expect(listDeliveryLogs(id).some((l) => l.operationType === 'merge_conflict')).toBe(true)
+    const conflictLog = listDeliveryLogs(id).find((l) => l.operationType === 'merge_conflict')!
+    // The line names BOTH ends of the edge it recorded, plus the cause.
+    expect(conflictLog.summary).toContain('verified → verifying')
+    expect(conflictLog.summary).toContain('冲突')
     expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)
   })
 
@@ -710,6 +724,7 @@ describe('sync_delivery_pr — layered settlement', () => {
     expect(getLatestDeliveryPr(id)!.status).toBe('closed')
     expect(detailOf(h.sent).notice).toBe('delivery.autoDelivered')
     const log = listDeliveryLogs(id).find((l) => l.operationType === 'delivered')!
+    expect(log.summary).toContain('verified → delivered')
     expect(log.summary).toContain(BRANCH)
     expect(h.published.map((p) => p.event.type)).toEqual([
       'delivery:status_changed',
@@ -743,6 +758,7 @@ describe('sync_delivery_pr — delivered atomic write and its chained actions', 
     expect(getLatestDeliveryPr(id)).toMatchObject({ status: 'merged', blockedReason: null })
     const log = listDeliveryLogs(id).find((l) => l.operationType === 'delivered')
     expect(log).toMatchObject({ actor: 'system' })
+    expect(log!.summary).toContain('verified → delivered')
     expect(log!.summary).toContain('#77')
     expect(detailOf(h.sent).delivery.status).toBe('delivered')
   })

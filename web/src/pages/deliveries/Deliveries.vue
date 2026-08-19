@@ -11,6 +11,7 @@ import { useTypedI18n } from '@/i18n'
 import type {
   AssociatedIntent,
   Delivery,
+  DeliveryLog,
   DeliveryPr,
   DeliveryStatus,
   DeliveryTransitionPlan,
@@ -40,6 +41,10 @@ const props = defineProps<{
   deliveryPr: DeliveryPr | null
   /** Whether a delivery-PR create / sync round trip is in flight. */
   deliveryPrBusy: boolean
+  /** Delivery lifecycle logs cached per delivery id; a missing key = not fetched. */
+  deliveryLogsById: Record<string, DeliveryLog[]>
+  /** The delivery id whose log fetch is in flight; null = idle. */
+  deliveryLogsLoadingId: string | null
 }>()
 
 const emit = defineEmits<{
@@ -72,8 +77,19 @@ const emit = defineEmits<{
   'unlink-intent': [intentId: string]
   'open-intent': [intentId: string]
   'open-workspace-settings': []
+  'list-logs': [deliveryId: string]
   'mobile-back': [targetKey: string]
 }>()
+
+// 日志按交付 id 取:缓存里没有这条交付的键 = 没拉过 / 已失效,详情 Tab 据此懒加载。
+// 迟到的另一条交付的回包落在它自己的键上,永远不会被当作当前交付的轨迹渲染。
+const activeDeliveryLogs = computed<DeliveryLog[] | null>(() =>
+  props.activeId ? (props.deliveryLogsById[props.activeId] ?? null) : null,
+)
+// 加载态按 id 判定,不是全局开关:换交付后上一条的在途请求不该让新交付显示加载中。
+const activeDeliveryLogsLoading = computed(
+  () => props.activeId !== null && props.deliveryLogsLoadingId === props.activeId,
+)
 
 const mobilePanes = computed(() => [
   { key: 'deliveries', title: t('delivery.page.title.label') },
@@ -114,6 +130,8 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         :sync-phase="syncPhase"
         :delivery-pr="deliveryPr"
         :delivery-pr-busy="deliveryPrBusy"
+        :logs="activeDeliveryLogs"
+        :logs-loading="activeDeliveryLogsLoading"
         @update="(payload) => emit('update', payload)"
         @cancel="(id: string) => emit('cancel', id)"
         @transition="(to, confirm) => emit('transition', to, confirm)"
@@ -126,6 +144,7 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         @unlink-intent="(id: string) => emit('unlink-intent', id)"
         @open-intent="(id: string) => emit('open-intent', id)"
         @open-workspace-settings="emit('open-workspace-settings')"
+        @list-logs="(id: string) => emit('list-logs', id)"
       />
     </template>
   </MobileStack>

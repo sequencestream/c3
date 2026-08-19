@@ -210,3 +210,66 @@ export interface DeliveryTargetTransition {
 export interface DeliveryTransitionPlan {
   targets: DeliveryTargetTransition[]
 }
+
+/**
+ * Delivery lifecycle-log operation kinds — the auditable moments of a delivery's
+ * life, as a closed set.
+ *
+ * Status movement is recorded by ACTION SEMANTICS, not by one generic kind: a
+ * human confirmation, an abandonment and the two system-observed edges each get
+ * their own operation, so the timeline never shows one action twice and every
+ * legal edge still leaves a trace.
+ * - `delivery_created` / `delivery_updated` — the local data writes.
+ * - `status_changed` — the plain human edges (`planned → integrating`,
+ *   `integrating → verifying`, and the `verifying → integrating` rework).
+ * - `verification_confirmed` — the human `verifying → verified` confirmation.
+ * - `cancelled` — any non-terminal `→ cancelled`.
+ * - `delivered` — the system-observed `verified → delivered` landing.
+ * - `merge_conflict` — the system `verified → verifying` rollback.
+ * - `intent_linked` / `intent_unlinked` — the association edge's two ends.
+ * - `delivery_pr_opened` — a delivery PR created on, or adopted from, the forge.
+ */
+export const DELIVERY_LOG_OPERATIONS = [
+  'delivery_created',
+  'delivery_updated',
+  'status_changed',
+  'verification_confirmed',
+  'cancelled',
+  'delivered',
+  'merge_conflict',
+  'intent_linked',
+  'intent_unlinked',
+  'delivery_pr_opened',
+] as const
+
+export type DeliveryLogOperation = (typeof DELIVERY_LOG_OPERATIONS)[number]
+
+/**
+ * One delivery lifecycle-log entry (who did what, when). Append-only audit
+ * trail, same shape and rules as the intent domain's `IntentLog`: a row is written only inside
+ * the transaction that lands the business fact it describes, and is never edited
+ * or deleted afterwards.
+ *
+ * There is deliberately no backfill for actions that happened before a write
+ * point existed — an empty stretch of history is a truthful gap, while a
+ * reconstructed row would be an invented fact.
+ */
+export interface DeliveryLog {
+  /** Row id (uuid). */
+  id: string
+  /** Owning delivery id (uuid). */
+  deliveryId: string
+  /** What happened. */
+  operationType: DeliveryLogOperation
+  /**
+   * Human-readable one-line summary of the fact that landed (e.g.
+   * `状态变更: verifying → verified`). Persisted as written — never rewritten,
+   * and never a machine-parsed contract; the localized label is the operation
+   * type, not this text.
+   */
+  summary: string
+  /** Who did it: a login subject, or `'system'` for a forge-derived fact. */
+  actor: string
+  /** When it happened (epoch ms). */
+  createdAt: number
+}

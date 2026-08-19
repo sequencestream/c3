@@ -153,6 +153,8 @@ export function installMessageHandler(ctx: AppCtx): void {
     pendingSpecRel,
     intentLogsById,
     intentLogsLoading,
+    deliveryLogsById,
+    deliveryLogsLoading,
     intentsProject,
     requestedIntentId,
     requestedIntentSubTab,
@@ -1116,9 +1118,21 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'delivery_logs_list':
+        // Cache per DELIVERY id — a reply that arrives after the user moved on
+        // lands under its own key and is never rendered as the open delivery's
+        // trail. The loading flag only clears for the delivery it belongs to.
+        deliveryLogsById.value = { ...deliveryLogsById.value, [msg.deliveryId]: msg.items }
+        if (deliveryLogsLoading.value === msg.deliveryId) deliveryLogsLoading.value = null
+        break
       case 'delivery_detail':
         activeDelivery.value = msg.delivery
         activeDeliveryId.value = msg.delivery.id
+        // This frame is the reply to EVERY delivery write, so the trail this page
+        // holds for the delivery may now be one action short. Dropping the cache
+        // makes an open 「日志」 tab re-fetch at once and a closed one re-fetch when
+        // it is next opened — the tab, not this handler, decides which.
+        ctx.invalidateDeliveryLogs(msg.delivery.id)
         activeDeliveryPlan.value = msg.transitionPlan
         activeDeliveryIntents.value = msg.associatedIntents
         activeDeliveryMainlineAhead.value = msg.mainlineAhead

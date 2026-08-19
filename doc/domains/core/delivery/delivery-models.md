@@ -118,7 +118,30 @@ fork = merge-base(主线, 意图 commit)      # 意图从主线离开的位置
 
 ## DeliveryLog(交付操作日志)
 
-`id` / `deliveryId` / `operationType` / `summary` / `actor` / `createdAt`,只增不改不删(仿 `IntentLog`)。`delivered` 的状态写与它的日志行在同一事务内落定,因此「代码已进主线但台账无痕」不可能出现;事件发布、跨交付闸门重算与广播都在事务提交之后,它们失败不回滚已落定的 `delivered`。
+`id` / `deliveryId` / `operationType` / `summary` / `actor` / `createdAt`,只增不改不删(仿 `IntentLog`)。一次落定的业务动作追加**恰好一行**;校验失败、守卫拒绝、重复关联、无事实变化的编辑与任何未落定的外部操作都不写。
+
+`operationType` 是闭集,按**动作语义**而非「状态列动了」划分,使一次确认、取消或系统回退不会在时间线上重复出现:
+
+| `operationType`          | 业务事实                                                                | `summary` 含                |
+| ------------------------ | ----------------------------------------------------------------------- | --------------------------- |
+| `delivery_created`       | 创建交付                                                                | 交付标题                    |
+| `delivery_updated`       | 标题/描述/起止日期发生变化                                              | 实际变化的字段名            |
+| `status_changed`         | `planned→integrating`、`integrating→verifying`、`verifying→integrating` | 原状态与目标状态            |
+| `verification_confirmed` | 人工确认 `verifying→verified`                                           | 原状态与目标状态            |
+| `cancelled`              | 任一非终态 `→cancelled`                                                 | 原状态与目标状态            |
+| `delivered`              | 系统确认 `verified→delivered`                                           | 状态边 + 可得的 PR/主线原因 |
+| `merge_conflict`         | 合并冲突触发 `verified→verifying`                                       | 状态边 + 可得的冲突原因     |
+| `intent_linked`          | 关联意图                                                                | 意图标题,空标题回落意图 id  |
+| `intent_unlinked`        | 解除关联意图                                                            | 意图标题,空标题回落意图 id  |
+| `delivery_pr_opened`     | 创建或收养交付 PR                                                       | PR 编号与分支方向           |
+
+`summary` 是已落事实的一行摘要,状态一律写线上的原始状态码(`verified → delivered`),不写中文状态名——它是历史记录,文案改动不该让旧行读不懂;本地化只作用于操作类型标签。
+
+`actor` 取已认证主体,无用户上下文时写 `system`;由 forge 事实派生的 `delivered` 与 `merge_conflict` 恒为 `system`。
+
+业务事实与它的日志行在同一 SQLite 事务内落定,因此「状态动了但台账无痕」与「台账有痕但状态没动」都不可能出现;事件发布、跨交付闸门重算与广播都在事务提交之后,它们失败不回滚已落定的状态。日志写失败沿操作自身的错误通道返回,不伪装成完整成功。
+
+无存量回填:建表前发生的动作不补录——无法可靠还原 actor、时间与转移原因时,补一行等于制造审计事实,空历史是合法结果。
 
 ## DeliveryGuardReason
 

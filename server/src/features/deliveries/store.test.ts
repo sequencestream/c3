@@ -40,6 +40,27 @@ import {
   updateDelivery,
 } from './store.js'
 
+/**
+ * The audit lines the delivery ledger primitives require alongside the business
+ * fact. These tests assert the fact, not the wording, so one fixed line per kind
+ * is enough — the log CONTENT is asserted by the dedicated log tests.
+ */
+const LINK_LOG = {
+  operationType: 'intent_linked',
+  summary: '关联意图',
+  actor: 'tester',
+} as const
+const UNLINK_LOG = {
+  operationType: 'intent_unlinked',
+  summary: '解除关联意图',
+  actor: 'tester',
+} as const
+const STATUS_LOG = {
+  operationType: 'status_changed',
+  summary: '状态变更',
+  actor: 'tester',
+} as const
+
 let dir: string
 const projA = '/abs/project-a'
 const projB = '/abs/project-b'
@@ -60,6 +81,7 @@ afterEach(() => {
 
 function seed(workspacePath: string, title = 'T', baseBranch = 'main') {
   return createDelivery({
+    actor: 'tester',
     workspacePath,
     title,
     description: '',
@@ -149,7 +171,7 @@ describe('deliveries store — CRUD', () => {
     expect(seed(projA).prMergeNotice).toBe(true)
     expect(seed(projA, 'B').prMergeNotice).toBe(false)
     // Cancelling does NOT free the "not first" fact: a re-create never re-notices.
-    setDeliveryStatus(seed(projA, 'C').delivery.id, 'cancelled')
+    setDeliveryStatus(seed(projA, 'C').delivery.id, 'cancelled', STATUS_LOG)
     expect(seed(projA, 'D').prMergeNotice).toBe(false)
   })
 
@@ -164,6 +186,7 @@ describe('deliveries store — CRUD', () => {
 
   it('normalizes the workspace path on write and read', () => {
     const { delivery } = createDelivery({
+      actor: 'tester',
       workspacePath: '/abs/project-a/', // trailing slash
       title: 'T',
       description: '',
@@ -177,24 +200,24 @@ describe('deliveries store — CRUD', () => {
 
   it('updates data fields and bumps updated_at', () => {
     const { delivery } = seed(projA)
-    const updated = updateDelivery(delivery.id, { title: 'New', startDate: 123 })
+    const updated = updateDelivery(delivery.id, { title: 'New', startDate: 123 }, 'tester')
     expect(updated).toMatchObject({ title: 'New', startDate: 123, endDate: null })
     expect(updated!.updatedAt).toBeGreaterThanOrEqual(delivery.updatedAt)
     // Untouched fields keep their values.
     expect(updated!.baseBranch).toBe('main')
     expect(updated!.status).toBe('planned')
     // Null explicitly clears a date.
-    expect(updateDelivery(delivery.id, { startDate: null })!.startDate).toBeNull()
+    expect(updateDelivery(delivery.id, { startDate: null }, 'tester')!.startDate).toBeNull()
   })
 
   it('update / status write on an unknown id returns null', () => {
-    expect(updateDelivery('missing', { title: 'X' })).toBeNull()
-    expect(setDeliveryStatus('missing', 'cancelled')).toBeNull()
+    expect(updateDelivery('missing', { title: 'X' }, 'tester')).toBeNull()
+    expect(setDeliveryStatus('missing', 'cancelled', STATUS_LOG)).toBeNull()
   })
 
   it('applies a status write (the caller owns the state-machine gate)', () => {
     const { delivery } = seed(projA)
-    const updated = setDeliveryStatus(delivery.id, 'integrating')
+    const updated = setDeliveryStatus(delivery.id, 'integrating', STATUS_LOG)
     expect(updated!.status).toBe('integrating')
     expect(getDelivery(delivery.id)!.status).toBe('integrating')
   })
@@ -268,7 +291,7 @@ describe('deliveries store — branch lifecycle writes', () => {
     expect(activeDeliveryHoldsBranch(projA, 'feature/x', b.id)).toBe(true) // other active holds it
 
     // A terminal holder frees the slot.
-    setDeliveryStatus(a.id, 'delivered')
+    setDeliveryStatus(a.id, 'delivered', STATUS_LOG)
     expect(activeDeliveryHoldsBranch(projA, 'feature/x', b.id)).toBe(false)
     // Different workspace never conflicts.
     const c = seed(projB, 'C').delivery
@@ -279,7 +302,7 @@ describe('deliveries store — branch lifecycle writes', () => {
   it('clearDeliveryBranch releases the name + readiness of a terminal delivery', () => {
     const { delivery } = seed(projA)
     setDeliveryBranch(delivery.id, 'delivery/old', true)
-    setDeliveryStatus(delivery.id, 'delivered')
+    setDeliveryStatus(delivery.id, 'delivered', STATUS_LOG)
 
     const cleared = clearDeliveryBranch(delivery.id)
     expect(cleared).toMatchObject({ branchName: null, branchReady: false, status: 'delivered' })
@@ -307,19 +330,19 @@ describe('intent_deliveries — the association edge', () => {
     const i = seedIntent(projA, 'Alpha')
 
     expect(isIntentLinked(d.id, i)).toBe(false)
-    expect(insertIntentDelivery(d.id, i, null)).toBe(true)
+    expect(insertIntentDelivery(d.id, i, null, LINK_LOG)).toBe(true)
     expect(isIntentLinked(d.id, i)).toBe(true)
-    expect(deleteIntentDelivery(d.id, i, 'main')).toBe(true)
+    expect(deleteIntentDelivery(d.id, i, 'main', UNLINK_LOG)).toBe(true)
     expect(isIntentLinked(d.id, i)).toBe(false)
     // Deleting what is not there is a no-op verdict, never a throw.
-    expect(deleteIntentDelivery(d.id, i, 'main')).toBe(false)
+    expect(deleteIntentDelivery(d.id, i, 'main', UNLINK_LOG)).toBe(false)
   })
 
   it('refuses a duplicate (delivery, intent) pair without creating a second row', () => {
     const d = seed(projA).delivery
     const i = seedIntent(projA, 'Alpha')
-    expect(insertIntentDelivery(d.id, i, null)).toBe(true)
-    expect(insertIntentDelivery(d.id, i, null)).toBe(false)
+    expect(insertIntentDelivery(d.id, i, null, LINK_LOG)).toBe(true)
+    expect(insertIntentDelivery(d.id, i, null, LINK_LOG)).toBe(false)
     const rows = getDb()!.all<{ c: number }>(
       'SELECT COUNT(*) AS c FROM intent_deliveries WHERE delivery_id=? AND intent_id=?',
       d.id,
@@ -332,8 +355,8 @@ describe('intent_deliveries — the association edge', () => {
     const d1 = seed(projA).delivery
     const d2 = seed(projA, 'other').delivery
     const i = seedIntent(projA, 'Alpha')
-    expect(insertIntentDelivery(d1.id, i, null)).toBe(true)
-    expect(insertIntentDelivery(d2.id, i, null)).toBe(true)
+    expect(insertIntentDelivery(d1.id, i, null, LINK_LOG)).toBe(true)
+    expect(insertIntentDelivery(d2.id, i, null, LINK_LOG)).toBe(true)
     expect(listAssociatedIntents(d1.id).map((r) => r.id)).toEqual([i])
     expect(listAssociatedIntents(d2.id).map((r) => r.id)).toEqual([i])
   })
@@ -342,8 +365,8 @@ describe('intent_deliveries — the association edge', () => {
     const d = seed(projA).delivery
     const beta = seedIntent(projA, 'Beta')
     const alpha = seedIntent(projA, 'Alpha')
-    insertIntentDelivery(d.id, beta, null)
-    insertIntentDelivery(d.id, alpha, null)
+    insertIntentDelivery(d.id, beta, null, LINK_LOG)
+    insertIntentDelivery(d.id, alpha, null, LINK_LOG)
 
     expect(listAssociatedIntents(d.id)).toEqual([
       {
@@ -371,8 +394,8 @@ describe('intent_deliveries — the association edge', () => {
     const d1 = seed(projA).delivery
     const d2 = seed(projA, 'other').delivery
     const i = seedIntent(projA, 'Alpha')
-    insertIntentDelivery(d1.id, i, null)
-    insertIntentDelivery(d2.id, i, null)
+    insertIntentDelivery(d1.id, i, null, LINK_LOG)
+    insertIntentDelivery(d2.id, i, null, LINK_LOG)
     // Two PR rows for ONE intent, one per delivery, with different states + heads.
     // The second one carries no URL — the page has to tell "linkable" from "not".
     upsertIntentPr({

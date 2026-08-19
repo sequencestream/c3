@@ -19,7 +19,13 @@
  * recomputed on every read and write.
  */
 import { randomUUID } from 'node:crypto'
-import type { Delivery, DeliveryStatus, IntentPr, ServerToClient } from '@ccc/shared/protocol'
+import type {
+  Delivery,
+  DeliveryLogOperation,
+  DeliveryStatus,
+  IntentPr,
+  ServerToClient,
+} from '@ccc/shared/protocol'
 import {
   closeForgePr,
   countCommitsAhead,
@@ -64,14 +70,15 @@ import {
   commitDeliveryMergeConflict,
   createDelivery,
   deleteIntentDelivery,
-  deleteIntentPr,
   getDelivery,
   getLatestDeliveryPr,
   insertDeliveryLog,
   insertIntentDelivery,
+  isIntentLinked,
   isStoreAvailable,
   listAssociatedIntents,
   listDeliveries,
+  listDeliveryLogs,
   setDeliveryBranch,
   setDeliveryStatus,
   updateDelivery,
@@ -206,6 +213,7 @@ export const createDeliveryHandler: Handler<'create_delivery'> = (ctx, conn, msg
       startDate: msg.startDate ?? null,
       endDate: msg.endDate ?? null,
       baseBranch,
+      actor: conn.subject ?? 'system',
     })
     conn.send({
       type: 'create_delivery_result',
@@ -241,6 +249,33 @@ export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = async (_
   const ahead = workspacePath ? await readMainlineAhead(workspacePath, delivery) : null
   const branchAhead = workspacePath ? await readDeliveryBranchAhead(workspacePath, delivery) : null
   conn.send(detailFrame(delivery, undefined, ahead, branchAhead))
+}
+
+/**
+ * One delivery's lifecycle-log entries, newest first — the 「日志」 tab's whole
+ * read path. Deliberately its own message rather than a field on
+ * `delivery_detail`: every delivery write already replies with a detail frame,
+ * and hanging the full trail off it would make the page's main read grow with a
+ * delivery's age whether or not anyone opens the tab.
+ *
+ * The delivery must exist (`delivery.notFound` otherwise) and the query is
+ * scoped to its id, so a caller can never read another delivery's trail through
+ * this. No pagination, no filtering — the same shape as the intent changelog.
+ */
+export const listDeliveryLogsHandler: Handler<'list_delivery_logs'> = (_ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
+    return
+  }
+  if (!getDelivery(msg.deliveryId)) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return
+  }
+  conn.send({
+    type: 'delivery_logs_list',
+    deliveryId: msg.deliveryId,
+    items: listDeliveryLogs(msg.deliveryId),
+  })
 }
 
 /**
@@ -336,7 +371,7 @@ export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg
   if (msg.startDate !== undefined) input.startDate = msg.startDate
   if (msg.endDate !== undefined) input.endDate = msg.endDate
   try {
-    const updated = updateDelivery(msg.deliveryId, input)
+    const updated = updateDelivery(msg.deliveryId, input, conn.subject ?? 'system')
     if (!updated) {
       conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
       return
@@ -349,6 +384,34 @@ export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg
       error: { code: 'delivery.updateFailed', params: { detail: String(err) } },
     })
   }
+}
+
+/**
+ * One status edge, as the audit trail names it.
+ *
+ * The trail records what the ACTOR DID, not merely that a column moved: a human
+ * confirming a verification and a human abandoning a delivery are different
+ * events even though both are "status changed". Splitting them here is also what
+ * keeps a single action from appearing twice on the timeline — each committed
+ * edge writes exactly one line, under exactly one of these kinds.
+ */
+function transitionLogOperation(from: DeliveryStatus, to: DeliveryStatus): DeliveryLogOperation {
+  if (to === 'cancelled') return 'cancelled'
+  if (from === 'verifying' && to === 'verified') return 'verification_confirmed'
+  return 'status_changed'
+}
+
+/**
+ * The persisted one-line summary of a status edge, always naming both ends.
+ *
+ * The RAW status codes are used, not their Chinese labels: the summary is a
+ * historical record that must stay readable after any copy change, and the wire
+ * codes are what the rest of the ledger, the events and the logs already speak.
+ * `detail` appends the cause when the caller has one (a PR number, a conflict).
+ */
+function transitionSummary(from: DeliveryStatus, to: DeliveryStatus, detail?: string): string {
+  const edge = `状态变更: ${from} → ${to}`
+  return detail ? `${edge};${detail}` : edge
 }
 
 /**
@@ -400,7 +463,11 @@ function applyTransition(
     return
   }
   const from = delivery.status
-  const updated = setDeliveryStatus(deliveryId, to)
+  const updated = setDeliveryStatus(deliveryId, to, {
+    operationType: transitionLogOperation(from, to),
+    summary: transitionSummary(from, to),
+    actor: conn.subject ?? 'system',
+  })
   if (!updated) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
@@ -757,6 +824,16 @@ function resolveAssociation(
 }
 
 /**
+ * How an intent is named in the delivery's audit trail: its title, or its id
+ * when the title is empty (a blank intent created straight into a delivery has
+ * one). A row that says which intent it was about is the whole point — falling
+ * back to the id keeps that true without inventing a name.
+ */
+function intentLabel(title: string | undefined, intentId: string): string {
+  return title?.trim() ? title.trim() : intentId
+}
+
+/**
  * Link an intent to a delivery: insert the association edge, then warn (never
  * refuse) when the intent's commits would make the resulting PR's diff bloated.
  *
@@ -782,18 +859,31 @@ export const linkIntentToDeliveryHandler: Handler<'link_intent_to_delivery'> = a
   const resolved = resolveAssociation(conn, msg.workspaceName, msg.deliveryId, msg.intentId)
   if (!resolved) return
   const { abs, delivery } = resolved
-  const latestCommitHash = getIntent(msg.intentId)?.latestCommitHash ?? null
+  const intent = getIntent(msg.intentId)
+  const latestCommitHash = intent?.latestCommitHash ?? null
 
   const readyBranch = delivery.branchReady ? (delivery.branchName?.trim() ?? null) : null
 
   let inserted: boolean
   try {
-    inserted = insertIntentDelivery(msg.deliveryId, msg.intentId, readyBranch)
+    inserted = insertIntentDelivery(msg.deliveryId, msg.intentId, readyBranch, {
+      operationType: 'intent_linked',
+      summary: `关联意图: ${intentLabel(intent?.title, msg.intentId)}`,
+      actor: conn.subject ?? 'system',
+    })
   } catch (err) {
-    // The unique index fired on a concurrent link — same user-visible verdict as
-    // losing the in-transaction check.
+    // Two very different causes reach here, and the ledger itself separates them:
+    // if the edge EXISTS, the unique index fired on a concurrent link and the
+    // user's verdict is the same as losing the in-transaction check. If it does
+    // NOT exist, the transaction rolled back (e.g. the audit write failed) and
+    // calling that 「已关联」 would be a plain lie about what the ledger holds.
     console.warn(`[delivery] link_intent_to_delivery 插入失败: ${String(err)}`)
-    conn.send({ type: 'error', error: { code: 'delivery.intentAlreadyLinked' } })
+    conn.send({
+      type: 'error',
+      error: isIntentLinked(msg.deliveryId, msg.intentId)
+        ? { code: 'delivery.intentAlreadyLinked' }
+        : { code: 'delivery.linkFailed', params: { detail: String(err) } },
+    })
     return
   }
   if (!inserted) {
@@ -908,10 +998,22 @@ export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delive
       })
       return
     }
-    deleteIntentPr(msg.intentId, msg.deliveryId)
   }
 
-  deleteIntentDelivery(msg.deliveryId, msg.intentId, resolveWorkspaceBaseBranch(abs))
+  // The PR row, the edge, the base-branch snapshot and the audit line drop
+  // TOGETHER — every forge round trip is already behind us, so what is left is
+  // purely local and has no excuse to land in pieces.
+  deleteIntentDelivery(
+    msg.deliveryId,
+    msg.intentId,
+    resolveWorkspaceBaseBranch(abs),
+    {
+      operationType: 'intent_unlinked',
+      summary: `解除关联意图: ${intentLabel(getIntent(msg.intentId)?.title, msg.intentId)}`,
+      actor: conn.subject ?? 'system',
+    },
+    pr !== null,
+  )
 
   const fresh = getDelivery(msg.deliveryId)
   if (!fresh) {
@@ -1266,9 +1368,13 @@ export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, co
     const updated = commitDeliveryMergeConflict(
       delivery.id,
       prFacts,
-      trial.conflictFiles.length > 0
-        ? `交付 PR #${pr.number} 合并冲突,冲突文件 ${trial.conflictFiles.length} 个`
-        : `交付 PR #${pr.number} 合并冲突`,
+      transitionSummary(
+        delivery.status,
+        'verifying',
+        trial.conflictFiles.length > 0
+          ? `交付 PR #${pr.number} 合并冲突,冲突文件 ${trial.conflictFiles.length} 个`
+          : `交付 PR #${pr.number} 合并冲突`,
+      ),
       'system',
     )
     if (!updated) {
@@ -1446,9 +1552,13 @@ async function settleDeliveryDelivered(
   }
   const updated = commitDeliveryDelivered(
     delivery.id,
-    prNumber
-      ? `交付 PR #${prNumber} 已合入 ${delivery.baseBranch}`
-      : `交付分支 ${delivery.branchName ?? ''} 的产出已在 ${delivery.baseBranch} 上`,
+    transitionSummary(
+      delivery.status,
+      'delivered',
+      prNumber
+        ? `交付 PR #${prNumber} 已合入 ${delivery.baseBranch}`
+        : `交付分支 ${delivery.branchName ?? ''} 的产出已在 ${delivery.baseBranch} 上`,
+    ),
     'system',
     markPrMerged,
   )

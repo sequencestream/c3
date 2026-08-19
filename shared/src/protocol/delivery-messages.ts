@@ -11,6 +11,7 @@ import type {
   AssociatedIntent,
   Delivery,
   DeliveryGuardReason,
+  DeliveryLog,
   DeliveryPr,
   DeliveryStatus,
   DeliveryTransitionPlan,
@@ -33,6 +34,16 @@ export type ClientCreateDelivery = {
   startDate?: number | null
   endDate?: number | null
 }
+
+/**
+ * List one delivery's lifecycle-log entries (reply: `delivery_logs_list`,
+ * newest-first, full set — no pagination, no filtering). Sent lazily when the
+ * detail's 「日志」 tab is first opened for that delivery, and again after an
+ * action that appends to the trail; deliberately NOT folded into
+ * `delivery_detail`, which every write already replies with — the main read
+ * stays light and the tab pays for itself only when it is looked at.
+ */
+export type ClientListDeliveryLogs = { type: 'list_delivery_logs'; deliveryId: string }
 
 /** Open one delivery's detail (reply: `delivery_detail` with its transition plan). */
 export type ClientGetDeliveryDetail = { type: 'get_delivery_detail'; deliveryId: string }
@@ -374,6 +385,19 @@ export type ServerDeliveryBranchInitResult = {
   workspaceName: string
   delivery: Delivery
   warning?: 'delivery.branchBehindMain'
+}
+
+/**
+ * One delivery's lifecycle-log entries (reply to `list_delivery_logs`), newest
+ * first. Single-delivery single-shot full fetch — no incremental pushes; the
+ * client re-requests when it needs a refresh. `deliveryId` is echoed so a late
+ * reply for a delivery the user has already navigated away from can be
+ * discarded rather than rendered under the wrong delivery.
+ */
+export type ServerDeliveryLogsList = {
+  type: 'delivery_logs_list'
+  deliveryId: string
+  items: DeliveryLog[]
 }
 
 /** Coarse progress of a `sync_delivery_mainline` run, to the requesting connection. */

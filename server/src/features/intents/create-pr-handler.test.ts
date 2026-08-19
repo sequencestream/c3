@@ -61,6 +61,17 @@ import {
 } from '../deliveries/store.js'
 import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sessions/session-metadata-store.js'
 
+/**
+ * The audit lines the delivery ledger primitives require alongside the business
+ * fact. These tests assert the fact, not the wording, so one fixed line per kind
+ * is enough — the log CONTENT is asserted by the dedicated log tests.
+ */
+const LINK_LOG = {
+  operationType: 'intent_linked',
+  summary: '关联意图',
+  actor: 'tester',
+} as const
+
 let dir: string
 let prevC3Dir: string | undefined
 let workspaceName: string
@@ -795,6 +806,7 @@ function seedDelivery(
   opts: { title?: string; branch?: string | null; link?: boolean } = {},
 ) {
   const { delivery } = createDelivery({
+    actor: 'tester',
     workspacePath: proj,
     title: opts.title ?? 'Sprint 3',
     description: '',
@@ -803,7 +815,8 @@ function seedDelivery(
     baseBranch: 'main',
   })
   if (opts.branch) setDeliveryBranch(delivery.id, opts.branch, true)
-  if (opts.link !== false) insertIntentDelivery(delivery.id, intentId, opts.branch ?? null)
+  if (opts.link !== false)
+    insertIntentDelivery(delivery.id, intentId, opts.branch ?? null, LINK_LOG)
   return delivery
 }
 
@@ -933,6 +946,7 @@ describe('createPrHandler — delivery target resolution', () => {
     const otherDir = mkdtempSync(join(tmpdir(), 'c3-create-pr-other-'))
     addWorkspace(otherDir, 2)
     const { delivery } = createDelivery({
+      actor: 'tester',
       workspacePath: otherDir,
       title: 'Foreign',
       description: '',
@@ -942,7 +956,7 @@ describe('createPrHandler — delivery target resolution', () => {
     })
     setDeliveryBranch(delivery.id, 'delivery/foreign', true)
     // Even a linked edge does not make a foreign delivery a legal target.
-    insertIntentDelivery(delivery.id, r.id, 'delivery/foreign')
+    insertIntentDelivery(delivery.id, r.id, 'delivery/foreign', LINK_LOG)
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 

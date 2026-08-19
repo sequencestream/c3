@@ -303,6 +303,10 @@ export const UI_ERROR_CODES = {
   // Intent ↔ delivery association.
   // The pair is already linked (in-transaction check, unique index as backstop).
   'delivery.intentAlreadyLinked': { key: 'error.delivery.intentAlreadyLinked' },
+  // The link transaction rolled back and the edge is NOT there — a different
+  // failure from 「已关联」, and reported as such rather than misattributed to a
+  // duplicate the ledger does not actually hold.
+  'delivery.linkFailed': { key: 'error.delivery.linkFailed', params: ['detail'] },
   // Unlink refused because the intent's PR toward this delivery is MERGED —
   // locally, or live on the forge. Dropping the edge would leave the code on the
   // delivery branch with no association pointing at it; only a revert could undo

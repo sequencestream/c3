@@ -36,6 +36,7 @@ import type {
   DepType,
   AssociatedIntent,
   Delivery,
+  DeliveryLog,
   DeliveryPr,
   DeliveryTransitionPlan,
   Discussion,
@@ -533,6 +534,24 @@ export function createState(deps: StateDeps) {
    * progress frames, cleared on the result frame or an init error.
    */
   const activeDeliveryBranchInit = ref<DeliveryBranchInitState | null>(null)
+  /**
+   * Delivery lifecycle logs, cached per DELIVERY id — the 「日志」 tab's content.
+   * A missing key means "never fetched, or invalidated", which is exactly what
+   * makes the tab lazy AND refreshable: every `delivery_detail` frame (the reply
+   * to every delivery write) drops the key, so an open tab re-fetches at once and
+   * a closed one re-fetches the next time it is opened.
+   *
+   * Keyed rather than flat so a reply that arrives after the user moved to
+   * another delivery lands under ITS own id and can never be rendered as the open
+   * delivery's trail.
+   */
+  const deliveryLogsById = ref<Record<string, DeliveryLog[]>>({})
+  /**
+   * The delivery id whose log fetch is in flight, or `null`. Deliberately an id
+   * and not a boolean: a bare flag set by one delivery would render as 「加载中」
+   * on the delivery the user switched to.
+   */
+  const deliveryLogsLoading = ref<string | null>(null)
 
   const currentIntents = computed<Intent[]>(() =>
     intentsProject.value ? (intents.value[intentsProject.value] ?? []) : [],
@@ -1299,6 +1318,8 @@ export function createState(deps: StateDeps) {
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
     activeDeliveryBranchInit,
+    deliveryLogsById,
+    deliveryLogsLoading,
     deliveryLinkIntents,
     intentLinkDeliveries,
     pendingStandaloneDelivery,

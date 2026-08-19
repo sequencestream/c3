@@ -48,6 +48,8 @@ describe('Deliveries', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        deliveryLogsById: {},
+        deliveryLogsLoadingId: null,
         associatedIntents: [],
         intents: [],
       },
@@ -71,13 +73,51 @@ describe('Deliveries', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        deliveryLogsById: {},
+        deliveryLogsLoadingId: null,
         associatedIntents: [],
         intents: [],
       },
     })
-    // current-branch note + the two detail tabs are reachable through the detail.
+    // current-branch note + the three detail tabs are reachable through the detail.
     expect(w.find('[data-testid="delivery-current-branch-note"]').exists()).toBe(true)
-    expect(w.findAll('[data-testid^="delivery-pane-tab-"]').length).toBe(2)
+    expect(w.findAll('[data-testid^="delivery-pane-tab-"]').length).toBe(3)
+  })
+
+  it('routes logs by delivery id — another delivery s cached trail is never rendered here', async () => {
+    const other = {
+      id: 'l-other',
+      deliveryId: 'd9',
+      operationType: 'delivery_created' as const,
+      summary: '创建交付: 另一条交付',
+      actor: 'alice',
+      createdAt: 1,
+    }
+    const w = mount(Deliveries, {
+      props: {
+        deliveries: [delivery()],
+        activeId: 'd1',
+        activeDelivery: delivery(),
+        activePlan: PLAN,
+        branchInit: null,
+        workspaceGitBranchMode: 'worktree',
+        mainlineAhead: null,
+        deliveryBranchAhead: null,
+        syncPhase: null,
+        deliveryPr: null,
+        deliveryPrBusy: false,
+        // Only ANOTHER delivery's trail is cached, and its fetch is the one in
+        // flight — neither may leak into the open delivery's tab.
+        deliveryLogsById: { d9: [other] },
+        deliveryLogsLoadingId: 'd9',
+        associatedIntents: [],
+        intents: [],
+      },
+    })
+    await w.find('[data-testid="delivery-pane-tab-logs"]').trigger('click')
+    expect(w.find('[data-testid="delivery-logs-list"]').exists()).toBe(false)
+    // Not "loading" either: that flag belongs to d9, not to the open delivery.
+    expect(w.emitted('list-logs')).toEqual([['d1']])
   })
 
   it('forwards transition through the detail', async () => {
@@ -97,6 +137,8 @@ describe('Deliveries', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        deliveryLogsById: {},
+        deliveryLogsLoadingId: null,
         associatedIntents: [],
         intents: [],
       },
@@ -119,6 +161,8 @@ describe('Deliveries', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        deliveryLogsById: {},
+        deliveryLogsLoadingId: null,
         associatedIntents: [
           {
             id: 'i1',

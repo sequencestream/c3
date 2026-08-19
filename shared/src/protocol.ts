@@ -126,6 +126,7 @@ export type ClientToServer =
   | DeliveryMsg.ClientListDeliveries
   | DeliveryMsg.ClientCreateDelivery
   | DeliveryMsg.ClientGetDeliveryDetail
+  | DeliveryMsg.ClientListDeliveryLogs
   | DeliveryMsg.ClientUpdateDelivery
   | DeliveryMsg.ClientCancelDelivery
   | DeliveryMsg.ClientTransitionDelivery
@@ -215,6 +216,7 @@ export type ServerToClient =
   | DeliveryMsg.ServerDeliveries
   | DeliveryMsg.ServerCreateDeliveryResult
   | DeliveryMsg.ServerDeliveryDetail
+  | DeliveryMsg.ServerDeliveryLogsList
   | DeliveryMsg.ServerDeliveryTransitionFailed
   | DeliveryMsg.ServerDeliveryBranchInitProgress
   | DeliveryMsg.ServerDeliveryBranchInitResult

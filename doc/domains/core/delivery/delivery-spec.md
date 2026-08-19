@@ -4,7 +4,7 @@
 
 交付域把「一批意图共同集成并最终进入主线」建模为 Git 生命周期单元,提供本地台账、受控状态机、一级页面,以及一条真实存在的**交付分支**承接所有关联意图的 PR。「创建交付」与「初始化分支」是两个独立动作:前者是纯本地数据动作(不触网、失败可重建),后者是可重试的显式 Git 动作(fetch 基线 → 建分支/绑定已有 → 写 `branch_ready`)。分支就绪后成为状态机、意图关联与建 PR 的共同闸门;终态后分支不自动删除,仅提供需二次确认的手动清理。合入主线走一条「交付分支 → 主线」的**交付 PR**,由人在 forge 上合并;c3 只建 PR、同步事实并在感知到 merged 时落定 `delivered`。多仓工作区(根非 repo 且有子仓)全程拒绝,因为单列 `branch_name` 无法表达多仓中「部分仓已推送、部分仓未推送」的状态。
 
-- **范围:** deliveries 台账 CRUD + 取消、六态状态机与守卫、按工作区计算的「需要用户处理」角标、交付一级页面(列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进) + 缺口异常框 + 合并区)、`pr:merge` 一次性知情告知、交付分支生命周期(create/bind 初始化 + 孤儿分支防御 + 多仓拒绝 + 终态手动清理)、意图↔交付关联/解除(merged 禁解 + 解除时关闭未合并 PR + 关联时 diff 膨胀提示;交付页与意图详情标题栏两处入口并存,后者另有「当前意图独立交付」一键编排)、交付 PR 生命周期(先查 forge 事实的幂等创建 + 三类失败分层 + `delivered` 原子写 + 跨交付闸门重算)。
+- **范围:** deliveries 台账 CRUD + 取消、六态状态机与守卫、按工作区计算的「需要用户处理」角标、交付一级页面(列表 + 详情三 Tab + 标题栏状态区(徽标 + 可达目标推进) + 缺口异常框 + 合并区)、`pr:merge` 一次性知情告知、交付分支生命周期(create/bind 初始化 + 孤儿分支防御 + 多仓拒绝 + 终态手动清理)、意图↔交付关联/解除(merged 禁解 + 解除时关闭未合并 PR + 关联时 diff 膨胀提示;交付页与意图详情标题栏两处入口并存,后者另有「当前意图独立交付」一键编排)、交付 PR 生命周期(先查 forge 事实的幂等创建 + 三类失败分层 + `delivered` 原子写 + 跨交付闸门重算)。
 - **边界:** 不做 Epic / 里程碑语义(目标、度量、审批)、不自动删除远端分支、不支持多仓交付、不做 PR 改投(关联只建立边,不改已有 PR 的 base)、**不在 c3 内合并交付 PR**、不后台轮询 forge、不自动关闭旧交付 PR、不增加冗余就绪计数列、不做甘特/时间轴/统计卡/独立提交时间线/重复 PR 卡片/自定义字段/多维筛选。
 
 ## 核心实体
@@ -18,6 +18,7 @@
 | DeliveryTransitionPlan | 服务端计算的可达性 + 缺口(页面只消费) |
 | IntentDelivery         | 意图↔交付关联边(见 models)            |
 | AssociatedIntent       | 交付详情的关联意图行(见 models)       |
+| DeliveryLog            | 交付生命周期操作日志(见 models)       |
 
 ## 状态与转移
 
@@ -109,6 +110,7 @@ flowchart LR
 - **DR-R42**: 交付详情镜像展示「交付分支领先 N 个提交」(DR-R29 的镜像),N 同样由本地 remote-tracking ref 计算(`origin/<base_branch>` 相对 `origin/<分支>`),不触网;无分支或 ref 不可解析时为 `null`。它只在 `get_delivery_detail` 与 `create_delivery_pr` 的回复中为新鲜值,其他 `delivery_detail` 帧(含 `sync_delivery_pr` 落定、`settleDeliveryDelivered`)一律为 `null`——生命周期与 `mainlineAhead` 完全一致。合并区渲染而「创建交付 PR」按钮未显示时,合并区内逐行列出五条门控事实诊断(git 分支模式 / 交付状态 / 分支就绪+分支名 / 当前交付 PR 行 / 交付分支领先),文案走 `delivery.deliveryPr.diagnosis.*` i18n;诊断块只在 `current-branch` 模式外的合并区出现,是纯读事实说明,不构成第二个建 PR 入口、不自动建 PR、不轮询
 - **DR-R43**: 交付分支相对主线**无差异**有两种成因,处置相反:分支承载过产出(台账中关联意图 PR 全 merged 且至少一条)而现在都在主线上,说明有人在 c3 之外合了,系统直接落 `delivered`(与 DR-R33 同一条落定路径);分支从未承载产出才拒 `delivery.deliveryPrNoDiff`。git 分不出这两者——没写过的交付分支就停在分叉点上,与「产出已被合走」在提交图上完全一样。不自动落定就是死结:没有 PR 可建,而 `delivered` 是系统专属边,人工也推不动
 - **DR-R44**: 自动落定的 `delivered` 尽力向 forge 查同 (head, base) 的**已合并** PR 以补 PR 身份,查不到或查询失败都不阻断落定——git 已证明代码在主线上,不知道 PR 号不会让合并变得不真实。无 PR 身份时交付日志记交付分支、`delivery:delivered` 不带 `prNumber`。交付 PR 已 `closed` 而代码另行进了主线时同样自动落定,但 PR 行保持 `closed`:把关闭的 PR 改写成 `merged` 是伪造一次没发生过的合并
+- **DR-R46**: 交付本地台账的每一次落定写入(创建、字段编辑、六态状态机每条合法边、关联与解除关联、开出交付 PR)在**同一事务**内追加一行交付日志,日志的操作类型按动作语义划分而非状态列是否变动(见 models 的 `DeliveryLog`)。未落定的动作——校验失败、守卫拒绝、重复关联、无事实变化的编辑、外部操作失败——一律不写。日志只记录事实,不作为任何守卫的输入,也不替代业务状态;不提供筛选、搜索、导出、分页、编辑与删除,也不记录页面浏览、失败尝试、分支初始化/清理与同步主线
 - **DR-R45**: 服务端自主决定的状态变更必须在回包里说明理由:`delivery_detail` 的 `notice: 'delivery.autoDelivered'` 表示「分支已在主线,交付已自动置为已交付」,页面以 toast 呈现。用户要的是一条 PR,拿到的是终态,不说理由等于让人对着结果猜
 
 ## 用户场景
@@ -138,9 +140,9 @@ flowchart LR
 
 ## 领域事件(线协议)
 
-- 消费:`list_deliveries` / `create_delivery` / `get_delivery_detail` / `update_delivery` / `cancel_delivery` / `transition_delivery` / `init_delivery_branch` / `sync_delivery_mainline` / `cleanup_delivery_branch` / `link_intent_to_delivery` / `unlink_intent_from_delivery` / `create_delivery_pr` / `sync_delivery_pr`
-- 发出:`deliveries`(含 `needsActionCount`)/ `create_delivery_result`(含 `prMergeNotice`)/ `delivery_detail`(含 `transitionPlan`、`associatedIntents`、`mainlineAhead`、`deliveryBranchAhead`、`deliveryPr`,以及关联时可能出现的 `linkWarning`;`deliveryBranchAhead` 只在 `get_delivery_detail` 与 `create_delivery_pr` 回复中为新鲜值,其他帧为 `null`,见 DR-R42)/ `delivery_transition_failed`(含结构化缺口)/ `delivery_branch_init_progress`(阶段)/ `delivery_branch_init_result`(含可选 `warning` 落后提示)/ `delivery_sync_mainline_progress` / `delivery_sync_mainline_result`。关联/解除不发 `delivery:intent_linked/unlinked` 事件(噪声大、无消费场景);交付生命周期发六类通用事件,见 DR-R36。`pr:merge` 仍表达「某个自动化合并了一条 PR」这一操作事实,不用于表达交付上主线
-- 错误码:见 `@ccc/shared` 的 `UI_ERROR_CODES.delivery.*`(含 `delivery.multiRepoUnsupported` / `delivery.branchNotFound` / `delivery.initFailed` / `delivery.cleanupForbidden` / `delivery.intentAlreadyLinked` / `delivery.unlinkMergedPrDenied` / `delivery.unlinkClosePrFailed` / `delivery.unlinkPrStatusCheckFailed` / 建 PR 目标解析的 `delivery.prCreateDeliveryUnknown` / `delivery.prCreateNotLinked` / `delivery.prCreateAmbiguous` / 交付 PR 的 `delivery.deliveryPrForbidden` / `delivery.deliveryPrModeUnsupported` / `delivery.deliveryPrNoDiff` / `delivery.deliveryPrCreateFailed` / `delivery.deliveryPrNotFound` / `delivery.deliveryPrSyncFailed`);守卫缺口走 `delivery.guard.*` locale 叶子。
+- 消费:`list_deliveries` / `create_delivery` / `get_delivery_detail` / `update_delivery` / `cancel_delivery` / `transition_delivery` / `init_delivery_branch` / `sync_delivery_mainline` / `cleanup_delivery_branch` / `link_intent_to_delivery` / `unlink_intent_from_delivery` / `create_delivery_pr` / `sync_delivery_pr` / `list_delivery_logs`
+- 发出:`deliveries`(含 `needsActionCount`)/ `create_delivery_result`(含 `prMergeNotice`)/ `delivery_detail`(含 `transitionPlan`、`associatedIntents`、`mainlineAhead`、`deliveryBranchAhead`、`deliveryPr`,以及关联时可能出现的 `linkWarning`;`deliveryBranchAhead` 只在 `get_delivery_detail` 与 `create_delivery_pr` 回复中为新鲜值,其他帧为 `null`,见 DR-R42)/ `delivery_transition_failed`(含结构化缺口)/ `delivery_branch_init_progress`(阶段)/ `delivery_branch_init_result`(含可选 `warning` 落后提示)/ `delivery_sync_mainline_progress` / `delivery_sync_mainline_result` / `delivery_logs_list`(单交付全量倒序日志,不并入 `delivery_detail`,由详情「日志」Tab 按需拉取)。关联/解除不发 `delivery:intent_linked/unlinked` 事件(噪声大、无消费场景);交付生命周期发六类通用事件,见 DR-R36。`pr:merge` 仍表达「某个自动化合并了一条 PR」这一操作事实,不用于表达交付上主线
+- 错误码:见 `@ccc/shared` 的 `UI_ERROR_CODES.delivery.*`(含 `delivery.multiRepoUnsupported` / `delivery.branchNotFound` / `delivery.initFailed` / `delivery.cleanupForbidden` / `delivery.intentAlreadyLinked` / `delivery.linkFailed` / `delivery.unlinkMergedPrDenied` / `delivery.unlinkClosePrFailed` / `delivery.unlinkPrStatusCheckFailed` / 建 PR 目标解析的 `delivery.prCreateDeliveryUnknown` / `delivery.prCreateNotLinked` / `delivery.prCreateAmbiguous` / 交付 PR 的 `delivery.deliveryPrForbidden` / `delivery.deliveryPrModeUnsupported` / `delivery.deliveryPrNoDiff` / `delivery.deliveryPrCreateFailed` / `delivery.deliveryPrNotFound` / `delivery.deliveryPrSyncFailed`);守卫缺口走 `delivery.guard.*` locale 叶子。
 
 ## 数据字典
 

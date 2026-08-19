@@ -262,6 +262,9 @@ const {
   activeDeliverySyncPhase,
   activeDeliveryPr,
   activeDeliveryPrBusy,
+  deliveryLogsById,
+  deliveryLogsLoading,
+  listDeliveryLogs,
   syncDeliveryMainline,
   createDeliveryPr,
   syncDeliveryPr,
@@ -823,6 +826,8 @@ function onFilesChatWidth(px: number): void {
           :sync-phase="activeDeliverySyncPhase"
           :delivery-pr="activeDeliveryPr"
           :delivery-pr-busy="activeDeliveryPrBusy"
+          :delivery-logs-by-id="deliveryLogsById"
+          :delivery-logs-loading-id="deliveryLogsLoading"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (deliveriesProject
@@ -846,6 +851,7 @@ function onFilesChatWidth(px: number): void {
             (id: string) => deliveriesProject && openLinkedIntent(deliveriesProject, id)
           "
           @open-workspace-settings="openWorkspaceSetting"
+          @list-logs="listDeliveryLogs"
           @mobile-back="onDeliveryMobileBack"
         />
 

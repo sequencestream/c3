@@ -876,14 +876,14 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly seven tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 访问', () => {
+  it('renders exactly eight tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 访问 / 记忆', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
       .map((s) => s.text())
     const tabButtons = w.findAll('[data-testid^="project-config-tab-btn-"]')
-    expect(tabButtons).toHaveLength(7)
-    expect(labels.slice(0, 7)).toEqual([
+    expect(tabButtons).toHaveLength(8)
+    expect(labels.slice(0, 8)).toEqual([
       'Default mode',
       'Git & Sandbox',
       'Collaboration',
@@ -891,6 +891,7 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
       'Automation',
       'Local observation',
       'Access',
+      'Memories',
     ])
   })
 

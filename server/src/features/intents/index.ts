@@ -462,7 +462,11 @@ export const createIntent: Handler<'create_intent'> = async (ctx, conn, msg) => 
       // — so the primitive's "already linked" verdict is unreachable here and
       // there is nothing for this caller to report about it. The branch handed
       // over is the one the ledger itself resolved above, never the client's.
-      insertIntentDelivery(msg.base.deliveryId, intent.id, base.baseBranch ?? null)
+      insertIntentDelivery(msg.base.deliveryId, intent.id, base.baseBranch ?? null, {
+        operationType: 'intent_linked',
+        summary: `关联意图: ${intent.title.trim() || intent.id}`,
+        actor: conn.subject ?? 'system',
+      })
     } catch (err) {
       conn.send({
         type: 'error',

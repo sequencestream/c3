@@ -606,7 +606,10 @@
         "label": "自動(最新)"
       },
       "none": "—",
-      "empty": "インストール済みの管理バージョンはまだありません。"
+      "empty": "インストール済みの管理バージョンはまだありません。",
+      "degraded": {
+        "pinnedVersionUnavailable": "固定バージョン {pinnedVersion} は利用できないため、{resolvedVersion} を使用しています。"
+      }
     },
     "skillRepos": {
       "title": {
@@ -2448,6 +2451,7 @@
       "prCreateNotLinked": "この意図はその配信に関連付けられていません。先に関連付けてから PR を作成してください。",
       "prCreateAmbiguous": "この意図は複数の配信に関連付けられているため、PR の対象を特定できません。関連付けを 1 つに絞るか、配信を明示的に指定してください。",
       "intentAlreadyLinked": "このインテントはすでにこの配信に紐付けられています。",
+      "linkFailed": "意図の関連付けに失敗しました: {detail}。",
       "unlinkMergedPrDenied": "このインテントのこの配信向け PR はすでにマージ済みのため、紐付けを解除できません。取り消すにはまず revert してください。",
       "unlinkClosePrFailed": "紐付け解除を中断しました — PR をクローズできません: {detail}。",
       "unlinkPrStatusCheckFailed": "紐付け解除を中断しました — フォージから PR の状態を取得できません: {detail}。",
@@ -2470,6 +2474,11 @@
     },
     "workspaceAccessors": {
       "forbidden": "このワークスペースのアクセス者一覧を閲覧する権限がありません。"
+    },
+    "memory": {
+      "notFound": "そのメモリはこのワークスペースにはもうありません。変更は行われていません。",
+      "unavailable": "メモリストアが利用できないため、削除は行われませんでした。",
+      "deleteFailed": "メモリを削除できませんでした: {detail}"
     },
     "robot": {
       "dbUnavailable": "ロボットストアが利用できません。",
@@ -2707,6 +2716,9 @@
         },
         "intents": {
           "label": "関連意図"
+        },
+        "logs": {
+          "label": "ログ"
         }
       },
       "meta": {
@@ -2783,6 +2795,26 @@
         "pr": {
           "label": "PR #{number}"
         }
+      }
+    },
+    "log": {
+      "loading": {
+        "label": "交付ログを読み込み中…"
+      },
+      "empty": {
+        "label": "この交付にはまだ操作ログがありません。"
+      },
+      "operationType": {
+        "created": "交付を作成",
+        "updated": "交付を編集",
+        "statusChanged": "状態変更",
+        "verificationConfirmed": "検証を確認",
+        "cancelled": "交付をキャンセル",
+        "delivered": "リリース済み",
+        "mergeConflict": "マージ競合",
+        "intentLinked": "意図を関連付け",
+        "intentUnlinked": "意図の関連付けを解除",
+        "deliveryPrOpened": "交付 PR を作成"
       }
     },
     "list": {
@@ -3094,6 +3126,9 @@
       },
       "externalMcp": {
         "label": "アクセス"
+      },
+      "memories": {
+        "label": "メモリ"
       }
     },
     "defaultMode": {
@@ -3370,6 +3405,44 @@
       "loading": "アクセス者一覧を読み込み中…",
       "manage": {
         "hint": "アカウントのアクセス範囲は「システム設定 → ユーザーとアクセス」で変更します。自分の外部 MCP キーは個人設定にあります。"
+      }
+    },
+    "memories": {
+      "title": {
+        "label": "ワークスペースのメモリ"
+      },
+      "hint": "このワークスペースの work session で agent が書き留めた内容です。ここでは読み取り専用です。メモリの作成と更新は会話中の agent が行うため、本ページでは閲覧と削除のみを行います。",
+      "softDelete": {
+        "hint": "削除するとメモリは直ちに agent から見えなくなりますが、行は 30 日間は復元可能な状態で残り、その間もこのワークスペースの容量を消費します。"
+      },
+      "loading": "メモリを読み込んでいます…",
+      "empty": "このワークスペースにはまだ何も記録されていません。",
+      "unavailable": "メモリ一覧を読み取れませんでした。",
+      "retry": {
+        "label": "再試行"
+      },
+      "type": {
+        "preference": "好み",
+        "constraint": "制約",
+        "fact": "事実",
+        "lesson": "教訓"
+      },
+      "status": {
+        "active": "有効",
+        "superseded": "置き換え済み",
+        "deleted": "削除済み"
+      },
+      "delete": {
+        "ariaLabel": "メモリ「{title}」を削除",
+        "confirm": {
+          "title": "このメモリを削除しますか?",
+          "body": "「{title}」はこのワークスペースの agent から見えなくなります。30 日間は復元可能で、同じタイトルで書き直せば元に戻ります。",
+          "confirm": "削除",
+          "cancel": "キャンセル"
+        }
+      },
+      "deleted": {
+        "toast": "メモリ「{title}」を削除しました。"
       }
     }
   },

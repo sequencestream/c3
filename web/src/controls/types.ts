@@ -169,6 +169,10 @@ export interface AppMethods {
   ): void
   /** Execute one of the two explicit exits from a worktree baseline mismatch. */
   repairIntentWorktree(intentId: string, mode: 'rebuild' | 'merge'): void
+  /** Fetch one delivery's lifecycle-log entries for the detail's 「日志」 tab. */
+  listDeliveryLogs(deliveryId: string): void
+  /** Drop one delivery's cached logs so the next read comes from the server. */
+  invalidateDeliveryLogs(deliveryId: string): void
   /** 「同步主线」— merge `origin/<base_branch>` into an integrating delivery's branch. */
   syncDeliveryMainline(deliveryId: string): void
   /** Fold one dev-launch overlay event through the reducer + handle close side-effects. */
@@ -383,6 +387,10 @@ export interface AppMethods {
   saveWorkspaceSetting(config: WorkspaceSettingType): void
   /** Read-only refresh of the workspace-setting page's local observation section. */
   loadParkRecoveryStats(): void
+  /** (Re)read the current workspace's memory listing — the memory tab's load and retry. */
+  loadWorkspaceMemories(): void
+  /** Soft-delete ONE memory of the current workspace. Writing one back stays the agent's job. */
+  deleteWorkspaceMemory(id: string): void
   querySkillLinkStatus(): void
   installSkill(skillId: string): void
   saveSettings(settings: SystemSettings): void

@@ -27,6 +27,17 @@ import {
   upsertDeliveryPr,
 } from './store.js'
 
+/**
+ * The audit lines the delivery ledger primitives require alongside the business
+ * fact. These tests assert the fact, not the wording, so one fixed line per kind
+ * is enough — the log CONTENT is asserted by the dedicated log tests.
+ */
+const STATUS_LOG = {
+  operationType: 'status_changed',
+  summary: '状态变更',
+  actor: 'tester',
+} as const
+
 let dir: string
 let proj: string
 let other: string
@@ -49,6 +60,7 @@ afterEach(() => {
 
 function seed(workspacePath: string, title: string, description = ''): string {
   return createDelivery({
+    actor: 'tester',
     workspacePath,
     title,
     description,
@@ -95,7 +107,7 @@ describe('runFindDeliveries', () => {
   it('filters by status', () => {
     const done = seed(proj, 'Shipped')
     seed(proj, 'Fresh')
-    setDeliveryStatus(done, 'cancelled')
+    setDeliveryStatus(done, 'cancelled', STATUS_LOG)
     const res = runFindDeliveries(proj, { status: 'cancelled' })
     expect(payload(res.content[0].text)).toMatchObject([{ id: done, status: 'cancelled' }])
   })

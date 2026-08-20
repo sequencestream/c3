@@ -605,7 +605,10 @@
         "label": "自动(最新)"
       },
       "none": "—",
-      "empty": "尚无已安装的自管版本。"
+      "empty": "尚无已安装的自管版本。",
+      "degraded": {
+        "pinnedVersionUnavailable": "固定版本 {pinnedVersion} 不可用,已回退使用 {resolvedVersion}。"
+      }
     },
     "skillRepos": {
       "title": {
@@ -2447,6 +2450,7 @@
       "prCreateNotLinked": "该意图未关联此交付,请先建立关联再创建 PR。",
       "prCreateAmbiguous": "该意图关联了多个交付,无法确定 PR 的目标。请只保留一个关联,或显式指定交付。",
       "intentAlreadyLinked": "该意图已关联到本交付。",
+      "linkFailed": "关联意图失败: {detail}。",
       "unlinkMergedPrDenied": "该意图对本交付的 PR 已合并,无法解除关联;如需撤回请先 revert。",
       "unlinkClosePrFailed": "解除关联被阻塞——关闭 PR 失败:{detail}。",
       "unlinkPrStatusCheckFailed": "解除关联被阻塞——无法从代码托管平台读取 PR 状态:{detail}。",
@@ -2469,6 +2473,11 @@
     },
     "workspaceAccessors": {
       "forbidden": "你无权查看本工作区的访问者名单。"
+    },
+    "memory": {
+      "notFound": "这条记忆已不在本工作区,未做任何修改。",
+      "unavailable": "记忆库不可用,本次删除未生效。",
+      "deleteFailed": "删除记忆失败:{detail}"
     },
     "robot": {
       "dbUnavailable": "机器人库不可用。",
@@ -2706,6 +2715,9 @@
         },
         "intents": {
           "label": "关联意图"
+        },
+        "logs": {
+          "label": "日志"
         }
       },
       "meta": {
@@ -2782,6 +2794,26 @@
         "pr": {
           "label": "PR #{number}"
         }
+      }
+    },
+    "log": {
+      "loading": {
+        "label": "加载交付日志中…"
+      },
+      "empty": {
+        "label": "该交付暂无操作日志。"
+      },
+      "operationType": {
+        "created": "创建交付",
+        "updated": "编辑交付",
+        "statusChanged": "状态变更",
+        "verificationConfirmed": "确认验证通过",
+        "cancelled": "取消交付",
+        "delivered": "已发布",
+        "mergeConflict": "合并冲突",
+        "intentLinked": "关联意图",
+        "intentUnlinked": "解除关联意图",
+        "deliveryPrOpened": "创建交付 PR"
       }
     },
     "list": {
@@ -3093,6 +3125,9 @@
       },
       "externalMcp": {
         "label": "访问"
+      },
+      "memories": {
+        "label": "记忆"
       }
     },
     "defaultMode": {
@@ -3369,6 +3404,44 @@
       "loading": "正在读取访问者名单……",
       "manage": {
         "hint": "账号的访问范围在「系统设置 → 用户与访问」里改;你自己的外部 MCP key 在个人化设置里管。"
+      }
+    },
+    "memories": {
+      "title": {
+        "label": "工作区记忆"
+      },
+      "hint": "agent 在本工作区的 work session 中记下的内容。此处只读:记忆由 agent 在会话中写入与更新,本页只负责查看与删除。",
+      "softDelete": {
+        "hint": "删除后 agent 立刻看不到这条记忆,但该行会保留 30 天可恢复期,期间仍占用本工作区的容量。"
+      },
+      "loading": "正在读取记忆…",
+      "empty": "本工作区还没有记下任何内容。",
+      "unavailable": "记忆列表读取失败。",
+      "retry": {
+        "label": "重试"
+      },
+      "type": {
+        "preference": "偏好",
+        "constraint": "约束",
+        "fact": "事实",
+        "lesson": "教训"
+      },
+      "status": {
+        "active": "生效中",
+        "superseded": "已被取代",
+        "deleted": "已删除"
+      },
+      "delete": {
+        "ariaLabel": "删除记忆「{title}」",
+        "confirm": {
+          "title": "删除这条记忆?",
+          "body": "「{title}」将不再对本工作区的 agent 可见。它保留 30 天可恢复期,期间用同一个标题重新写入即可恢复。",
+          "confirm": "删除",
+          "cancel": "取消"
+        }
+      },
+      "deleted": {
+        "toast": "已删除记忆「{title}」。"
       }
     }
   },

@@ -46,6 +46,10 @@ function makeCtx(workspace: string | null = 'ws-1') {
     parkRecoveryStats: ref<ParkRecoveryStats | null>(null),
     parkRecoveryError: ref<UiError | null>(null),
     parkRecoveryLoading: ref(false),
+    workspaceMemories: ref(null),
+    workspaceMemoriesError: ref<UiError | null>(null),
+    workspaceMemoriesLoading: ref(false),
+    deletingMemoryIds: ref<string[]>([]),
   } as unknown as AppCtx
   installSettingsActions(ctx)
   installMessageHandler(ctx)
@@ -82,7 +86,7 @@ describe('loadParkRecoveryStats', () => {
 })
 
 describe('openWorkspaceSetting', () => {
-  it('fetches the observation alongside the setting and the accessor list, as separate reads', () => {
+  it('fetches the observation alongside the setting, accessors and memories, as separate reads', () => {
     const { ctx, send } = makeCtx()
     ctx.openWorkspaceSetting()
 
@@ -90,6 +94,7 @@ describe('openWorkspaceSetting', () => {
       'load_workspace_setting',
       'get_workspace_accessors',
       'get_park_recovery_stats',
+      'list_workspace_memories',
     ])
   })
 })

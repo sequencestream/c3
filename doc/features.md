@@ -124,12 +124,14 @@ c3
 │   │   ├── 解除即关 PR                           # 确认未合并后关闭 PR(已关闭视为成功)、删该 PR 行再删边;关闭失败整个解除阻塞,边与 PR 行都不动
 │   │   ├── diff 膨胀提示                         # 关联时按分叉点判据检测「意图基于主线而非交付分支」,只提示不阻塞;检测失败静默
 │   │   ├── 终态分支清理                          # delivered/cancelled 后不自动删分支;手动清理需 danger 二次确认,仅删本地引用不删远端
-│   │   ├── 一级页面                              # 顶栏「交付」tab 置于「需求」后;角标只计服务端计算的「需要用户处理」交付(含交付 PR 待创建/合并受阻,纯等待不计);详情仅概览/关联意图两 Tab,概览含分支初始化区与合并区
+│   │   ├── 一级页面                              # 顶栏「交付」tab 置于「需求」后;角标只计服务端计算的「需要用户处理」交付(含交付 PR 待创建/合并受阻,纯等待不计);详情三 Tab 概览/关联意图/日志,概览含分支初始化区与合并区
 │   │   ├── 交付 PR(交付分支→主线)               # verified 后建一条交付 PR 由人在 forge 合并,c3 从不代合;闸门 worktree→verified→分支就绪→相对主线有差异(无差异见「已在主线即自动交付」)
 │   │   ├── 先查 forge 事实的幂等                 # 重试必须先按 (head, base) 查 forge 开放 PR,命中即复用、查不到才建、问不出来即中止;落账按 PR 身份刷新 SHA,(delivery_id, base_sha, head_sha) 唯一索引兜底
 │   │   ├── 三类失败分层                          # 冲突→回退 verifying 并落冲突文件+SHA(代码要改);CI 失败/审批不足→状态不动、落 blocked_reason 展示「合并受阻」(代码没问题);查询失败→不改状态可重试
 │   │   ├── 已在主线即自动交付                    # 建 PR 时无差异按成因分流:台账证明分支承载过产出(关联意图 PR 全 merged)即判定已被 c3 外合走,直接落 delivered 并回 notice=delivery.autoDelivered 让页面说明理由;从未承载产出才拒 deliveryPrNoDiff。PR 已 closed 而代码另行进主线时同步也这样落定,但 PR 行保持 closed;尽力查 forge 已合并 PR 补身份,查不到不阻断
 │   │   ├── delivered 原子写 + 连锁               # PR 变 merged 或产出已在主线即在同事务写状态+交付日志;提交后不改写关联意图状态、触发跨交付闸门重算、发 delivery:delivered、广播;事件/重算失败不回滚
+│   │   ├── 生命周期操作日志                      # 创建/编辑/六态每条合法边/人工确认验证/关联/解除/开交付 PR 各追加一行 delivery_logs,与业务事实同事务;操作类型按动作语义划分(确认验证、取消各自成类,不与普通状态变更混同),摘要写原始状态码不写中文状态名;未落定的动作(守卫拒绝、重复关联、无变化编辑、外部失败)一律不写;不回填历史,不做筛选/搜索/导出/分页/编辑/删除
+│   │   ├── 详情日志 Tab                          # 概览/关联意图之后的第三 Tab,按 deliveryId 懒加载全量倒序日志(list_delivery_logs,不并入 delivery_detail);每次交付写入的回包丢弃该交付缓存,Tab 开着即刻重取、没开下次进入再取;未知操作类型降级显示原值
 │   │   ├── 感知窗口期                            # forge 已合并到 c3 感知之间展示「等待确认」,进页自动同步一次 + 手动同步入口;不做后台轮询
 │   │   ├── current-branch 降级                   # 该模式交付为纯聚合视图:分支/PR/合并动作不渲染并给说明文案,纯数据操作不受限
 │   │   ├── pr:merge 知情告知                     # 工作区首次创建交付时一次性提示「pr:merge 的 base 可能是交付分支」,请检查自动化订阅;pr:merge 事件的 ref 带 baseBranch(合并目标分支名)+ baseTarget(mainline / delivery-branch),订阅方据此区分产出落在交付分支还是主线(可选字段,只带 head/base 的形态同样合法)
@@ -204,6 +206,7 @@ c3
 │   │
 │   ├── memory 工作区记忆                          # work session 的跨 run 记事本:用户口头偏好/已验证约束/稳定事实/教训,仓库无法自证也不该进 CLAUDE.md 的那部分
 │   │   ├── 两个 MCP 工具                          # memory_search(无 query 出按 type 分组的 title 目录,有 query 做字面不区分大小写子串匹配并出详情)/ memory_write(create|update|delete);经既有 event-mcp 回环路由,不新增路由
+│   │   ├── 设置页记忆 Tab                         # 工作区设置页只读列出本工作区 active 记忆(title/type/status/更新时间,按 type 固定顺序分组、不含正文)并逐条软删(ConfirmDialog 二次确认,服务端确认后行才消失);不提供新建/编辑/搜索——写入路径只有 agent,这条通道的意义正是不依赖 agent
 │   │   ├── work-only 工具面                       # 由 sessionKind === 'work' 正向选中(不是「其它 profile 没匹配」);intent/spec/spec_review/discussion(含调研与逐 agent 会话)一概不获得,避免合成观点被持久化为工作区事实
 │   │   ├── vendor 中立                            # claude/codex/cursor 消费同一份描述符,enabledTools 由已注册工具列表派生——codex 会静默禁用未列出的名字
 │   │   ├── 免确认                                 # 两个工具在标准权限门直接放行,无 permission_request、无用户介入记录、无共识;免确认不等于可用,可达性由工具面独立决定

@@ -40,6 +40,22 @@ import { impliedDeliveryContextId, resolveSessionDeliveryContext } from './deliv
 import { launchWorkSession, type SessionLaunchDeps } from './session-launcher.js'
 import { initTestGitRepo } from '../../../test/git-repo.js'
 
+/**
+ * The audit lines the delivery ledger primitives require alongside the business
+ * fact. These tests assert the fact, not the wording, so one fixed line per kind
+ * is enough — the log CONTENT is asserted by the dedicated log tests.
+ */
+const LINK_LOG = {
+  operationType: 'intent_linked',
+  summary: '关联意图',
+  actor: 'tester',
+} as const
+const STATUS_LOG = {
+  operationType: 'status_changed',
+  summary: '状态变更',
+  actor: 'tester',
+} as const
+
 // 依赖闸门阻塞时的后台 PR 刷新是 fire-and-forget 的 forge 调用,这里只关心闸门本身。
 vi.mock('./pr-status-sync.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./pr-status-sync.js')>()),
@@ -105,6 +121,7 @@ function seedIntent(title: string): Intent {
 
 function seedDelivery(title: string, intentId?: string): { id: string; title: string } {
   const { delivery } = createDelivery({
+    actor: 'tester',
     workspacePath: proj,
     title,
     description: '',
@@ -112,7 +129,7 @@ function seedDelivery(title: string, intentId?: string): { id: string; title: st
     endDate: null,
     baseBranch: 'main',
   })
-  if (intentId) insertIntentDelivery(delivery.id, intentId, null)
+  if (intentId) insertIntentDelivery(delivery.id, intentId, null, LINK_LOG)
   return { id: delivery.id, title: delivery.title }
 }
 
@@ -196,7 +213,7 @@ describe('launchWorkSession —— 交付相关的准入闸门', () => {
   it('交付处于 verifying 时拒绝新的写入会话', async () => {
     const r = seedIntent('T')
     const d = seedDelivery('A', r.id)
-    setDeliveryStatus(d.id, 'verifying')
+    setDeliveryStatus(d.id, 'verifying', STATUS_LOG)
     const out = await launchWorkSession(proj, r.id, deps)
     expect(out).toMatchObject({ success: false, code: 'intent.deliveryNotWritable' })
   })
@@ -204,7 +221,7 @@ describe('launchWorkSession —— 交付相关的准入闸门', () => {
   it('交付处于 integrating 时该闸门不拦截(拒绝原因不再是交付状态)', async () => {
     const r = seedIntent('T')
     const d = seedDelivery('A', r.id)
-    setDeliveryStatus(d.id, 'integrating')
+    setDeliveryStatus(d.id, 'integrating', STATUS_LOG)
     const out = await launchWorkSession(proj, r.id, deps)
     expect(out.success === false && out.code).not.toBe('intent.deliveryNotWritable')
   })

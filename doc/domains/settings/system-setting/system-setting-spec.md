@@ -21,7 +21,17 @@
 
 ## vendor CLI 生效版本 `vendorCliVersions`
 
-`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。只有受管厂商在此列:`cursor-agent` 不由 c3 分发,没有可选版本,不出现在该字段与面板里。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,记录可见 `lastError`,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
+`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。只有受管厂商在此列:`cursor-agent` 不由 c3 分发,没有可选版本,不出现在该字段与面板里。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,固定值仍保留,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
+
+### 固定版本、实际生效版本与降级提示
+
+面板的「当前生效 / Active」只表示**实际运行的版本**(`VendorHostStatus.activeVersion`),与 `vendorCliVersions` 里的**固定版本**是两件事,两者允许不同。
+
+固定版本用不了、但解析成功落到另一个可运行版本时,服务端下发结构化诊断 `VendorHostStatus.degradation`:`reason` 为 `pinned-version-unavailable`,并带 `pinnedVersion`(固定值)与 `resolvedVersion`(实际运行值,恒等于 `activeVersion`)。该场景不再下发英文 `lastError`——措辞由前端按原因码经 vue-i18n 本地化,任何语言都不得把固定版本称作「当前生效 / Active / 激活」,否则与面板同屏的「当前生效」字段自相矛盾。
+
+边界:只有确实解析出 `resolvedVersion` 才生成该诊断;所有候选与 host PATH 全部失败时,按既有自由文本 `lastError` 报告失败,不伪造「已回退」。健康解析清除旧诊断。env override 生效或无效时同样清除旧诊断——override 优先级最高,受管固定值根本没参与解析,此时留着诊断既谎报运行版本又会遮住 override 的报错。安装失败、override 无效、完全无法解析等仍走自由文本 `lastError`,未纳入结构化与本地化。字段为可选,旧客户端可忽略,无需迁移。
+
+`degradation` 与 `lastError` 互不排斥:固定版本回退成功后,同步/安装可以再失败,两者同时成立。面板必须两条都渲染,不得让其一遮蔽另一条——否则先记录的降级会永久盖住之后发生的失败。
 
 ## 系统沙箱定义 `sandboxes`
 

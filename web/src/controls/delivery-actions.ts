@@ -23,6 +23,8 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryMainlineAhead,
     activeDeliveryBranchAhead,
     autoSyncedDeliveryPrs,
+    deliveryLogsById,
+    deliveryLogsLoading,
     pendingStandaloneDelivery,
     activeTab,
   } = ctx
@@ -100,6 +102,26 @@ export function installDeliveryActions(ctx: AppCtx): void {
   ctx.cancelDelivery = (deliveryId: string): void => {
     if (!deliveriesProject.value) return
     send({ type: 'cancel_delivery', workspaceName: deliveriesProject.value, deliveryId })
+  }
+
+  // Fetch one delivery's lifecycle logs for the detail's 「日志」 tab. Sent lazily
+  // by the tab itself — on first open, and again whenever the cache entry was
+  // dropped by a write. `deliveryLogsLoading` holds the id being fetched, so a
+  // request for another delivery never makes THIS one look like it is loading.
+  ctx.listDeliveryLogs = (deliveryId: string): void => {
+    deliveryLogsLoading.value = deliveryId
+    send({ type: 'list_delivery_logs', deliveryId })
+  }
+
+  // Drop one delivery's cached logs. Called on every `delivery_detail` frame —
+  // the reply to every delivery write — so an open tab re-fetches immediately
+  // and a closed one re-fetches the next time it is opened. Never rewrites the
+  // list in place: the server owns the trail, the page only displays it.
+  ctx.invalidateDeliveryLogs = (deliveryId: string): void => {
+    if (!(deliveryId in deliveryLogsById.value)) return
+    const next = { ...deliveryLogsById.value }
+    delete next[deliveryId]
+    deliveryLogsById.value = next
   }
 
   // Mobile drill-down back from the detail pane to the delivery list.

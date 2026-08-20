@@ -121,6 +121,7 @@ import {
   createDeliveryPrHandler,
   getDeliveryDetailHandler,
   initDeliveryBranchHandler,
+  listDeliveryLogsHandler,
   syncDeliveryMainlineHandler,
   syncDeliveryPrHandler,
   listDeliveriesHandler,
@@ -163,6 +164,7 @@ import {
   searchFilesHandler,
 } from './files/index.js'
 import { readRuntimeLogHandler } from './logs/index.js'
+import { deleteWorkspaceMemoryHandler, listWorkspaceMemoriesHandler } from './memory/handlers.js'
 import {
   acknowledgeRobotOutboundHandler,
   createRobotHandler,
@@ -270,6 +272,7 @@ export const handlerMap: HandlerMap = {
   list_deliveries: listDeliveriesHandler,
   create_delivery: createDeliveryHandler,
   get_delivery_detail: getDeliveryDetailHandler,
+  list_delivery_logs: listDeliveryLogsHandler,
   update_delivery: updateDeliveryHandler,
   cancel_delivery: cancelDeliveryHandler,
   transition_delivery: transitionDeliveryHandler,
@@ -313,6 +316,9 @@ export const handlerMap: HandlerMap = {
   get_user_workspace_access: getUserWorkspaceAccessHandler,
   save_user_workspace_access: saveUserWorkspaceAccessHandler,
   get_workspace_accessors: getWorkspaceAccessorsHandler,
+  // workspace memory (read-only listing + soft delete; writes stay on the MCP tools)
+  list_workspace_memories: listWorkspaceMemoriesHandler,
+  delete_workspace_memory: deleteWorkspaceMemoryHandler,
   // wait user involve
   list_wait_user_events: listWaitUserEvents,
   update_wait_user_event: updateWaitUserEvent,

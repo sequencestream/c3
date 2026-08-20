@@ -38,6 +38,22 @@ import {
 import { resolveWorktreeBaseline } from './worktree-baseline.js'
 import { fetchRemoteBase } from './worktree.js'
 
+/**
+ * The audit lines the delivery ledger primitives require alongside the business
+ * fact. These tests assert the fact, not the wording, so one fixed line per kind
+ * is enough — the log CONTENT is asserted by the dedicated log tests.
+ */
+const LINK_LOG = {
+  operationType: 'intent_linked',
+  summary: '关联意图',
+  actor: 'tester',
+} as const
+const UNLINK_LOG = {
+  operationType: 'intent_unlinked',
+  summary: '解除关联意图',
+  actor: 'tester',
+} as const
+
 vi.mock('./worktree.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./worktree.js')>()),
   fetchRemoteBase: vi.fn(() => null),
@@ -88,6 +104,7 @@ const seedIntent = (title = 'T'): string =>
 /** A delivery in THIS workspace; `branch` also marks it ready when given. */
 function seedDelivery(title: string, branch?: string): Delivery {
   const { delivery } = createDelivery({
+    actor: 'tester',
     workspacePath: proj,
     title,
     description: '',
@@ -105,6 +122,7 @@ function link(delivery: Delivery, intentId: string): void {
     fresh.id,
     intentId,
     fresh.branchReady ? (fresh.branchName?.trim() ?? null) : null,
+    LINK_LOG,
   )
 }
 
@@ -218,7 +236,7 @@ describe('交付关联生命周期', () => {
     const id = seedIntent()
     const d = seedDelivery('D1')
     link(d, id)
-    deleteIntentDelivery(d.id, id, 'main')
+    deleteIntentDelivery(d.id, id, 'main', UNLINK_LOG)
     setDeliveryBranch(d.id, 'delivery/alpha', true)
 
     expect(adoptReadyDeliveryBranchAsIntentBase(d.id, 'delivery/alpha')).toEqual([])
@@ -249,7 +267,7 @@ describe('交付关联生命周期', () => {
     const d = seedDelivery('D1', 'delivery/alpha')
     link(d, id)
 
-    deleteIntentDelivery(d.id, id, resolveWorkspaceBaseBranch(proj))
+    deleteIntentDelivery(d.id, id, resolveWorkspaceBaseBranch(proj), UNLINK_LOG)
     expect(getIntent(id)!.baseBranch).toBe('develop')
   })
 
@@ -260,7 +278,7 @@ describe('交付关联生命周期', () => {
     link(d1, id)
     link(d2, id)
 
-    deleteIntentDelivery(d2.id, id, 'main')
+    deleteIntentDelivery(d2.id, id, 'main', UNLINK_LOG)
     expect(getIntent(id)!.baseBranch).toBe('delivery/alpha')
   })
 
@@ -269,7 +287,7 @@ describe('交付关联生命周期', () => {
     const d1 = seedDelivery('D1', 'delivery/alpha')
     link(d1, id)
     // 同一条边再插一次:被拒,且不得把快照重写成任何东西。
-    expect(insertIntentDelivery(d1.id, id, 'delivery/other')).toBe(false)
+    expect(insertIntentDelivery(d1.id, id, 'delivery/other', LINK_LOG)).toBe(false)
     expect(getIntent(id)!.baseBranch).toBe('delivery/alpha')
   })
 })

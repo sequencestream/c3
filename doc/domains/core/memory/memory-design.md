@@ -4,36 +4,48 @@
 
 ## 分层
 
+两个入口通向同一个 store:模型走 MCP 读写,人走 WebSocket 看与删。
+
 ```
-work session (claude / codex / cursor)
-        │  MCP over loopback HTTP
-        ▼
-transport/event-mcp        ── 传输框架:per-run token、回环守卫、工具注册、enabledTools 派生
-        │  注入的 tools 回调
-        ▼
-features/memory/tool-defs  ── 框架无关:zod 入参、工具描述、两个核心 handler
-        │
-        ▼
+work session (claude / codex / cursor)      浏览器 (工作区设置 · 记忆 Tab)
+        │  MCP over loopback HTTP                   │  WebSocket
+        ▼                                           ▼
+transport/event-mcp                         features/memory/handlers
+  per-run token、回环守卫、工具注册            工作区解析、摘要投影、拒绝映射为 UiError
+  enabledTools 派生                                 │
+        │  注入的 tools 回调                        │
+        ▼                                           │
+features/memory/tool-defs                           │
+  zod 入参、工具描述、两个核心 handler              │
+        │                                           │
+        └───────────────┬───────────────────────────┘
+                        ▼
 features/memory/store      ── 隔离、校验、去重、生命周期、SQLite 可用性降级
         │                        └─ features/memory/content-guard ── 集中的拒绝规则
         ▼
 kernel/infra/db            ── 单文件 SQLite ~/.c3/c3.db
 ```
 
-`features/memory/janitor` 挂在 store 旁边,由自己的进程内定时器驱动,不经过工具层。
+`features/memory/janitor` 挂在 store 旁边,由自己的进程内定时器驱动,不经过上面任何一条入口。
+
+浏览器一侧只用到 `listActiveMemories` 与 `deleteMemory`,不新增任何存储语义:删除按钮触发的就是
+`memory_write { op:'delete' }` 走的那一个函数。
 
 ## 文件
 
-| 文件                                          | 职责                                                           |
-| --------------------------------------------- | -------------------------------------------------------------- |
-| `server/src/features/memory/store.ts`         | 表与索引的惰性收敛、校验、归一化去重、生命周期写入、检索       |
-| `server/src/features/memory/content-guard.ts` | 凭据形状与产物形状的集中拒绝规则 + 安全的拒绝文案              |
-| `server/src/features/memory/tool-defs.ts`     | 两个工具的 zod 入参、描述与核心 handler(框架无关)              |
-| `server/src/features/memory/janitor.ts`       | 规则型清理:重复修复 + 失效行延迟物理删除;独立定时器,可注入时钟 |
-| `server/src/transport/event-mcp/index.ts`     | work session 工具表(三个工具)、注册与 `enabledTools` 派生      |
-| `server/src/kernel/permission/tools.ts`       | 两个工具的全限定名 + 免确认集合 `AUTO_ALLOWED_C3_TOOLS`        |
-| `server/src/kernel/run/run-lifecycle.ts`      | `sessionKind === 'work'` 正向选中 work session MCP profile     |
-| `server/src/server.ts`                        | 组合根:作用域派生、工具注入、janitor 启停                      |
+| 文件                                          | 职责                                                                    |
+| --------------------------------------------- | ----------------------------------------------------------------------- |
+| `server/src/features/memory/store.ts`         | 表与索引的惰性收敛、校验、归一化去重、生命周期写入、检索                |
+| `server/src/features/memory/content-guard.ts` | 凭据形状与产物形状的集中拒绝规则 + 安全的拒绝文案                       |
+| `server/src/features/memory/tool-defs.ts`     | 两个工具的 zod 入参、描述与核心 handler(框架无关)                       |
+| `server/src/features/memory/handlers.ts`      | 设置页两条消息的 handler:工作区解析、摘要投影、store 拒绝映射为 UiError |
+| `shared/src/protocol/memory.ts`               | 公共模型:两个闭集与 `WorkspaceMemoryListItem`(闭集的单一数据源)         |
+| `shared/src/protocol/memory-messages.ts`      | 设置页四条消息的 arm 类型(不进公共导出面)                               |
+| `server/src/features/memory/janitor.ts`       | 规则型清理:重复修复 + 失效行延迟物理删除;独立定时器,可注入时钟          |
+| `server/src/transport/event-mcp/index.ts`     | work session 工具表(三个工具)、注册与 `enabledTools` 派生               |
+| `server/src/kernel/permission/tools.ts`       | 两个工具的全限定名 + 免确认集合 `AUTO_ALLOWED_C3_TOOLS`                 |
+| `server/src/kernel/run/run-lifecycle.ts`      | `sessionKind === 'work'` 正向选中 work session MCP profile              |
+| `server/src/server.ts`                        | 组合根:作用域派生、工具注入、janitor 启停                               |
 
 ## SQLite 层
 

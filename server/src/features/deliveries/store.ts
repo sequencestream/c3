@@ -23,6 +23,8 @@ import type {
   AssociatedIntent,
   Delivery,
   DeliveryIntegration,
+  DeliveryLog,
+  DeliveryLogOperation,
   DeliveryPr,
   DeliveryPrBlockedReason,
   DeliveryStatus,
@@ -267,6 +269,8 @@ export interface CreateDeliveryInput {
    * existing delivery at a branch it was never based on.
    */
   baseBranch: string
+  /** Who created it — a login subject, or `'system'` when there is no user context. */
+  actor: string
 }
 
 export interface CreateDeliveryResult {
@@ -283,7 +287,8 @@ export interface CreateDeliveryResult {
 /**
  * Insert a delivery (status `planned`, `branch_ready` false) and return it with
  * the first-delivery notice flag. Pure local data action — no git / forge /
- * network. Insert + first-check share one transaction.
+ * network. Insert + first-check + the `delivery_created` audit line share one
+ * transaction.
  */
 export function createDelivery(input: CreateDeliveryInput): CreateDeliveryResult {
   const d = requireDb()
@@ -314,6 +319,7 @@ export function createDelivery(input: CreateDeliveryInput): CreateDeliveryResult
       now,
       now,
     )
+    insertDeliveryLog(id, 'delivery_created', `创建交付: ${input.title}`, input.actor)
     return { delivery: getDelivery(id)!, prMergeNotice }
   })
 }
@@ -325,37 +331,89 @@ export interface UpdateDeliveryInput {
   endDate?: number | null
 }
 
-/** Edit a delivery's data fields (status untouched). Returns null if unknown. */
-export function updateDelivery(id: string, input: UpdateDeliveryInput): Delivery | null {
-  const d = requireDb()
-  const existing = d.get<DeliveryRow>('SELECT * FROM deliveries WHERE id=?', id)
-  if (!existing) return null
-  d.run(
-    `UPDATE deliveries SET title=?, description=?, start_date=?, end_date=?, updated_at=?
-     WHERE id=?`,
-    input.title ?? existing.title,
-    input.description ?? existing.description,
-    input.startDate !== undefined ? input.startDate : existing.start_date,
-    input.endDate !== undefined ? input.endDate : existing.end_date,
-    Date.now(),
-    id,
-  )
-  return getDelivery(id)
+/**
+ * Which of the four editable fields this input actually CHANGES, by their
+ * user-facing Chinese names — the material for the audit summary, and the test
+ * for whether there is anything to audit at all.
+ *
+ * An absent key is "not addressed by this edit", never "cleared"; a key present
+ * with the value the row already holds is a no-op, because a form that submits
+ * every field would otherwise report an edit on every save.
+ */
+function changedDeliveryFields(existing: DeliveryRow, input: UpdateDeliveryInput): string[] {
+  const changed: string[] = []
+  if (input.title !== undefined && input.title !== existing.title) changed.push('标题')
+  if (input.description !== undefined && input.description !== existing.description)
+    changed.push('描述')
+  if (input.startDate !== undefined && input.startDate !== existing.start_date)
+    changed.push('开始日期')
+  if (input.endDate !== undefined && input.endDate !== existing.end_date) changed.push('结束日期')
+  return changed
 }
 
 /**
- * Apply a status write. The caller MUST have already passed
- * `canTransitionDelivery` — this store never re-derives the state machine (the
- * single gate is the feature's transition handler). Returns null if unknown.
+ * Edit a delivery's data fields (status untouched). Returns null if unknown.
+ *
+ * The row write and its `delivery_updated` line share one transaction. An edit
+ * that changes NOTHING writes no log line: the trail records facts that changed,
+ * and a row saying 「更新交付:」 with no field would be noise no reader can act on.
  */
-export function setDeliveryStatus(id: string, status: DeliveryStatus): Delivery | null {
+export function updateDelivery(
+  id: string,
+  input: UpdateDeliveryInput,
+  actor: string,
+): Delivery | null {
+  const d = requireDb()
+  const existing = d.get<DeliveryRow>('SELECT * FROM deliveries WHERE id=?', id)
+  if (!existing) return null
+  const changed = changedDeliveryFields(existing, input)
+  return tx(d, () => {
+    d.run(
+      `UPDATE deliveries SET title=?, description=?, start_date=?, end_date=?, updated_at=?
+       WHERE id=?`,
+      input.title ?? existing.title,
+      input.description ?? existing.description,
+      input.startDate !== undefined ? input.startDate : existing.start_date,
+      input.endDate !== undefined ? input.endDate : existing.end_date,
+      Date.now(),
+      id,
+    )
+    if (changed.length > 0) {
+      insertDeliveryLog(id, 'delivery_updated', `更新交付: ${changed.join('、')}`, actor)
+    }
+    return getDelivery(id)
+  })
+}
+
+/**
+ * Apply a status write together with its audit line, in one transaction. The
+ * caller MUST have already passed `canTransitionDelivery` — this store never
+ * re-derives the state machine (the single gate is the feature's transition
+ * handler). Returns null if unknown.
+ *
+ * `log` carries the ACTION the caller is performing, not a generic label: which
+ * of `status_changed` / `verification_confirmed` / `cancelled` an edge is, is a
+ * semantic call the handler makes, and the store must not re-derive it from the
+ * (from, to) pair.
+ *
+ * A write to the status the delivery already holds touches nothing and logs
+ * nothing — a no-op edge is not an event, and the state machine refuses the
+ * self-edges anyway.
+ */
+export function setDeliveryStatus(
+  id: string,
+  status: DeliveryStatus,
+  log: DeliveryLogInput,
+): Delivery | null {
   const d = requireDb()
   const prior = d.get<{ status: string }>('SELECT status FROM deliveries WHERE id=?', id)
   if (!prior) return null
-  if (prior.status !== status) {
+  if (prior.status === status) return getDelivery(id)
+  return tx(d, () => {
     d.run('UPDATE deliveries SET status=?, updated_at=? WHERE id=?', status, Date.now(), id)
-  }
-  return getDelivery(id)
+    insertDeliveryLog(id, log.operationType, log.summary, log.actor)
+    return getDelivery(id)
+  })
 }
 
 /**
@@ -485,11 +543,15 @@ function writeIntentBaseBranch(d: Db, intentId: string, branch: string): void {
  * the first. An unready delivery keeps the previous mainline snapshot — an
  * unborn branch is not something to build on — and gets picked up when its
  * branch becomes ready.
+ *
+ * `log` lands in the same transaction as the edge; a DUPLICATE link writes
+ * neither, because nothing about the delivery changed.
  */
 export function insertIntentDelivery(
   deliveryId: string,
   intentId: string,
   deliveryBranch: string | null,
+  log: DeliveryLogInput,
 ): boolean {
   const d = requireDb()
   return tx(d, () => {
@@ -503,29 +565,41 @@ export function insertIntentDelivery(
     )
     const branch = deliveryBranch?.trim()
     if (branch && countIntentLinks(d, intentId) === 1) writeIntentBaseBranch(d, intentId, branch)
+    insertDeliveryLog(deliveryId, log.operationType, log.summary, log.actor)
     return true
   })
 }
 
 /**
- * Drop the association edge. Returns false when there was nothing to drop.
+ * Drop the association edge — and, when `dropPr` is set, this intent's PR row
+ * toward this delivery with it. Returns false when there was nothing to drop.
  *
  * Losing the LAST link returns the intent's base-branch snapshot to
  * `mainlineBranch` in the same transaction — an intent that belongs to no
  * delivery is built on the workspace mainline again. While other links remain
  * the snapshot is kept: which of them it should point at is not something the
  * removal of a different edge can answer.
+ *
+ * The PR-row deletion belongs to THIS transaction rather than to a separate call
+ * before it: the caller has already confirmed on the forge that the PR is closed,
+ * and the ledger must not be able to end up with the row gone and the edge (or
+ * the trail) still there. Everything the forge side does — the merged-PR denial,
+ * the close — stays OUTSIDE, because a network round trip cannot be transactional.
  */
 export function deleteIntentDelivery(
   deliveryId: string,
   intentId: string,
   mainlineBranch: string,
+  log: DeliveryLogInput,
+  dropPr = false,
 ): boolean {
   const d = requireDb()
   return tx(d, () => {
     if (!isIntentLinked(deliveryId, intentId)) return false
+    if (dropPr) deleteIntentPr(intentId, deliveryId)
     d.run('DELETE FROM intent_deliveries WHERE delivery_id=? AND intent_id=?', deliveryId, intentId)
     if (countIntentLinks(d, intentId) === 0) writeIntentBaseBranch(d, intentId, mainlineBranch)
+    insertDeliveryLog(deliveryId, log.operationType, log.summary, log.actor)
     return true
   })
 }
@@ -851,7 +925,7 @@ export function updateDeliveryPrFacts(
 /** Append one delivery log line (append-only; never updated, never deleted). */
 export function insertDeliveryLog(
   deliveryId: string,
-  operationType: string,
+  operationType: DeliveryLogOperation,
   summary: string,
   actor: string,
 ): void {
@@ -867,24 +941,33 @@ export function insertDeliveryLog(
   )
 }
 
-/** One delivery's log lines, newest first. */
-export function listDeliveryLogs(deliveryId: string): DeliveryLogEntry[] {
+/**
+ * One delivery's log lines, newest first.
+ *
+ * `created_at DESC, rowid DESC` — the timestamp alone is not a stable order:
+ * two rows written inside the same transaction share the millisecond, and the
+ * insertion `rowid` is the only thing that still tells them apart.
+ */
+export function listDeliveryLogs(deliveryId: string): DeliveryLog[] {
   const d = db()
   if (!d) return []
-  return d.all<DeliveryLogEntry & { delivery_id: string }>(
-    `SELECT id, operation_type AS operationType, summary, actor, created_at AS createdAt
+  return d.all<DeliveryLog>(
+    `SELECT id, delivery_id AS deliveryId, operation_type AS operationType,
+            summary, actor, created_at AS createdAt
        FROM delivery_logs WHERE delivery_id=? ORDER BY created_at DESC, rowid DESC`,
     deliveryId,
   )
 }
 
-/** One `delivery_logs` row, as readers consume it. */
-export interface DeliveryLogEntry {
-  id: string
-  operationType: string
+/**
+ * The audit line a ledger write must land together with its business fact. Every
+ * store write that takes one appends it INSIDE its own transaction, so a delivery
+ * can never hold a fact its trail does not mention (nor the reverse).
+ */
+export interface DeliveryLogInput {
+  operationType: DeliveryLogOperation
   summary: string
   actor: string
-  createdAt: number
 }
 
 /**

@@ -29,21 +29,23 @@
  * never come back as a receipt.
  */
 import { randomUUID } from 'node:crypto'
+import {
+  MEMORY_STATUSES,
+  MEMORY_TYPES,
+  type MemoryStatus,
+  type MemoryType,
+} from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { detectMemoryGuardViolation, memoryGuardMessage } from './content-guard.js'
 
 // ---- Model ----
 
-/** The four kinds of statement a memory may be. A closed set, checked in SQL. */
-export const MEMORY_TYPES = ['preference', 'constraint', 'fact', 'lesson'] as const
-export type MemoryType = (typeof MEMORY_TYPES)[number]
-
-/**
- * Lifecycle state. `active` is the only state normal search returns; the other
- * two are a recovery and cleanup concern, not model context.
- */
-export const MEMORY_STATUSES = ['active', 'superseded', 'deleted'] as const
-export type MemoryStatus = (typeof MEMORY_STATUSES)[number]
+// The two closed sets live in the protocol partition now that the console lists
+// memories over the wire: one definition serves the SQL check constraint, the
+// tool layer's validation and the browser's grouping, so none of the three can
+// drift. Re-exported here so store callers keep importing them from the store.
+export { MEMORY_STATUSES, MEMORY_TYPES }
+export type { MemoryStatus, MemoryType }
 
 /** One memory as the store hands it back. */
 export interface WorkspaceMemory {

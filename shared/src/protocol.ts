@@ -18,6 +18,7 @@ export * from './protocol/delivery.js'
 export * from './protocol/discussion.js'
 export * from './protocol/intent.js'
 export * from './protocol/log.js'
+export * from './protocol/memory.js'
 export * from './protocol/robot.js'
 export * from './protocol/session.js'
 export * from './protocol/settings.js'
@@ -32,6 +33,7 @@ import type * as DeliveryMsg from './protocol/delivery-messages.js'
 import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
 import type * as LogMsg from './protocol/log-messages.js'
+import type * as MemoryMsg from './protocol/memory-messages.js'
 import type * as RobotMsg from './protocol/robot-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
 import type * as SettingsMsg from './protocol/settings-messages.js'
@@ -87,6 +89,8 @@ export type ClientToServer =
   | AuthMsg.ClientGetUserWorkspaceAccess
   | AuthMsg.ClientSaveUserWorkspaceAccess
   | WorkspaceMsg.ClientGetWorkspaceAccessors
+  | MemoryMsg.ClientListWorkspaceMemories
+  | MemoryMsg.ClientDeleteWorkspaceMemory
   | WorkspaceMsg.ClientLoadWorkspaceSetting
   | WorkspaceMsg.ClientSaveWorkspaceSetting
   | IntentMsg.ClientListIntents
@@ -128,6 +132,7 @@ export type ClientToServer =
   | DeliveryMsg.ClientListDeliveries
   | DeliveryMsg.ClientCreateDelivery
   | DeliveryMsg.ClientGetDeliveryDetail
+  | DeliveryMsg.ClientListDeliveryLogs
   | DeliveryMsg.ClientUpdateDelivery
   | DeliveryMsg.ClientCancelDelivery
   | DeliveryMsg.ClientTransitionDelivery
@@ -202,6 +207,8 @@ export type ServerToClient =
   | SettingsMsg.ServerMyMcpApiKeys
   | AuthMsg.ServerUserWorkspaceAccess
   | WorkspaceMsg.ServerWorkspaceAccessors
+  | MemoryMsg.ServerWorkspaceMemories
+  | MemoryMsg.ServerWorkspaceMemoryDeleted
   | WorkspaceMsg.ServerWorkspaceSetting
   | AuthMsg.ServerLoginResult
   | AuthMsg.ServerAdminPasswordResult
@@ -224,6 +231,7 @@ export type ServerToClient =
   | DeliveryMsg.ServerDeliveries
   | DeliveryMsg.ServerCreateDeliveryResult
   | DeliveryMsg.ServerDeliveryDetail
+  | DeliveryMsg.ServerDeliveryLogsList
   | DeliveryMsg.ServerDeliveryTransitionFailed
   | DeliveryMsg.ServerDeliveryBranchInitProgress
   | DeliveryMsg.ServerDeliveryBranchInitResult

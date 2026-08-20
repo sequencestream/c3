@@ -78,6 +78,7 @@ function hostStatus(): VendorHostStatus[] {
       ...(status.lastCheckedAt ? { lastCheckedAt: status.lastCheckedAt } : {}),
       ...(status.lastRemoteCheckAt ? { lastRemoteCheckAt: status.lastRemoteCheckAt } : {}),
       ...(status.lastError ? { lastError: status.lastError } : {}),
+      ...(status.degradation ? { degradation: status.degradation } : {}),
     }
   })
 }

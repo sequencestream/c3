@@ -7,13 +7,14 @@
 ## 职责
 
 - **台账读写**: `store.ts`:`listDeliveries`/`getDelivery`/`createDelivery`/`updateDelivery`/`setDeliveryStatus`/`integrationAggregate`/`setDeliveryBranch`/`clearDeliveryBranch`/`activeDeliveryHoldsBranch`
-- **交付 PR + 日志**: `store.ts`:`getLatestDeliveryPr`/`upsertDeliveryPr`/`updateDeliveryPrFacts`/`insertDeliveryLog`/`listDeliveryLogs`/`commitDeliveryDelivered`/`commitDeliveryMergeConflict`;handler 端 `createDeliveryPrHandler` / `syncDeliveryPrHandler`
-- **关联边**: `store.ts`:`insertIntentDelivery`/`deleteIntentDelivery`/`isIntentLinked`/`listAssociatedIntents`/`deleteIntentPr`;handler 端 `linkIntentToDeliveryHandler` / `unlinkIntentFromDeliveryHandler`
+- **交付 PR**: `store.ts`:`getLatestDeliveryPr`/`upsertDeliveryPr`/`updateDeliveryPrFacts`/`commitDeliveryDelivered`/`commitDeliveryMergeConflict`;handler 端 `createDeliveryPrHandler` / `syncDeliveryPrHandler`
+- **操作日志**: `store.ts`:`insertDeliveryLog`/`listDeliveryLogs`,以及承接 `DeliveryLogInput` 的各写入原语;handler 端只读 `listDeliveryLogsHandler`
+- **关联边**: `store.ts`:`insertIntentDelivery`/`deleteIntentDelivery`(可选连带删 PR 行)/`isIntentLinked`/`listAssociatedIntents`/`deleteIntentPr`;handler 端 `linkIntentToDeliveryHandler` / `unlinkIntentFromDeliveryHandler`
 - **状态机**: `state-machine.ts`:`canTransitionDelivery`(唯一写状态门)/`deliveryTargets`/`computeTransitionPlan`/`deliveryRequiresAction`/`countDeliveriesNeedingAction`
 - **分支生命周期**: `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入
 - **forge 交互**: `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`findMergedForgePr`(分支已在主线时补 PR 身份)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举)
 - **工作区隔离 + 广播**: handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceName` 归属;变更后 `broadcastDeliveries` 全量重读并带角标
-- **页面**: `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进 + 「…」溢出菜单)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`
+- **页面**: `web/src/pages/deliveries/`:列表 + 详情三 Tab(概览 / 关联意图 / 日志)+ 标题栏状态区(徽标 + 可达目标推进 + 「…」溢出菜单)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`
 
 ## SQLite 层
 
@@ -51,7 +52,9 @@
 
 ## Store
 
-`createDelivery` 在单事务内:先 `COUNT(*)` 该工作区已有交付行判定首次 → `INSERT` → 返回 `{ delivery, prMergeNotice }`。`toDelivery` 每次读取附加 `integrationAggregate`(实时派生,永不落库)。`setDeliveryStatus` 只写库,**不做状态机校验**——调用方(handler)必须先过 `canTransitionDelivery`,该门在 feature 层唯一。
+`createDelivery` 在单事务内:先 `COUNT(*)` 该工作区已有交付行判定首次 → `INSERT` → 追加 `delivery_created` 日志 → 返回 `{ delivery, prMergeNotice }`。`toDelivery` 每次读取附加 `integrationAggregate`(实时派生,永不落库)。`setDeliveryStatus` 只写库,**不做状态机校验**——调用方(handler)必须先过 `canTransitionDelivery`,该门在 feature 层唯一;写的状态与当前一致时既不改库也不写日志。
+
+承接日志的写入原语(`createDelivery`/`updateDelivery`/`setDeliveryStatus`/`insertIntentDelivery`/`deleteIntentDelivery`)一律在自己的事务内 `insertDeliveryLog`,调用方以 `DeliveryLogInput`(`operationType`+`summary`+`actor`)传入。**操作类型由 handler 决定而非 store 从 (from,to) 反推**:「人工确认验证通过」与「取消交付」都是状态列变动,却是两件不同的事,反推会把语义交给不掌握语义的那一层。`updateDelivery` 自行比对四个可编辑字段得出实际变化项,无变化则不写日志。
 
 分支生命周期写入:`setDeliveryBranch(id, branchName, ready)` 一次性写 `branch_name` + `branch_ready`(仅 git 侧成功后调用);`clearDeliveryBranch(id)` 清空两者(仅终态手动清理);`activeDeliveryHoldsBranch(workspacePath, branchName, excludeId)` 供 `bind` 的占用检测(`excludeId` 排除自身重试),DB 层 `idx_delivery_workspace_active_branch` 部分唯一索引兜底。
 
@@ -71,8 +74,8 @@
 
 - **消息归 delivery 域**(`shared/src/protocol/delivery-messages.ts` 的 `ClientLinkIntentToDelivery` / `ClientUnlinkIntentFromDelivery`,不 re-export):关联边的生命周期与交付守卫紧密耦合(merged 禁解、集成聚合),放 intent 域会造成跨域反向依赖。回包是 `delivery_detail`(携 `associatedIntents`,以及仅在关联时可能出现的 `linkWarning`)+ `deliveries` 广播,无专用回复类型;**不发** `delivery:intent_linked/unlinked` 事件。
 - **`detailFrame` 是唯一装配点**:每一条携带交付详情的回包都经它,保证 `transitionPlan` 与 `associatedIntents` 不会来自两次不同的读。
-- **关联** `linkIntentToDeliveryHandler`:校验 workspace/delivery/intent 归属 → 事务内判重后插边(唯一索引兜底,冲突报 `delivery.intentAlreadyLinked`)→ diff 膨胀检测(纯观测,失败静默)→ 回 `delivery_detail` + 广播 `deliveries` **与 `intents`**(意图侧要看到 `linkedDeliveries`)。**不改投**已有的无交付归属 PR:关联只建立边,改一条开着的 PR 的 base 不该由一次关联点击代劳。
-- **解除** `unlinkIntentFromDeliveryHandler`:取该意图**对本交付**的 PR 行 → 本地 `merged` 直接拒 → 否则向 forge 查实时状态(查不到即 `delivery.unlinkPrStatusCheckFailed` 阻塞;forge 说 merged 则同步本地状态后拒)→ 确认未合并才 `closeForgePr` → 关闭成功后删 PR 行、再删边 → 回包 + 双广播。关闭失败报 `delivery.unlinkClosePrFailed`,边与 PR 行都不动。守卫理由与「为什么删行而非留 `closed`」见 [delivery-models.md](delivery-models.md)。
+- **关联** `linkIntentToDeliveryHandler`:校验 workspace/delivery/intent 归属 → 事务内判重后插边并写 `intent_linked` 日志(唯一索引兜底;插入抛错时按边是否真的存在分流:存在报 `delivery.intentAlreadyLinked`,不存在说明事务已回滚,报 `delivery.linkFailed`)→ diff 膨胀检测(纯观测,失败静默)→ 回 `delivery_detail` + 广播 `deliveries` **与 `intents`**(意图侧要看到 `linkedDeliveries`)。**不改投**已有的无交付归属 PR:关联只建立边,改一条开着的 PR 的 base 不该由一次关联点击代劳。
+- **解除** `unlinkIntentFromDeliveryHandler`:取该意图**对本交付**的 PR 行 → 本地 `merged` 直接拒 → 否则向 forge 查实时状态(查不到即 `delivery.unlinkPrStatusCheckFailed` 阻塞;forge 说 merged 则同步本地状态后拒)→ 确认未合并才 `closeForgePr` → 关闭成功后**在一个本地事务内**删 PR 行、删边、写基准分支回退与 `intent_unlinked` 日志 → 回包 + 双广播。forge 往返全部在事务之外——网络调用无法事务化,而其后的部分纯属本地,没有理由分几次落地。关闭失败报 `delivery.unlinkClosePrFailed`,边与 PR 行都不动。守卫理由与「为什么删行而非留 `closed`」见 [delivery-models.md](delivery-models.md)。
 - **git.ts 侧**:`closeGhPr`/`closeGlabMr` 把「已关闭 / not open」类输出识别为**成功**(子串匹配,与既有 `GH_NOT_LOGGED_IN_MARKERS` 同风格),但显式排除含 `merged` 的输出——merged 是必须拒绝的另一种状态,绝不吞掉。`detectDeliveryDiffBloat` 实现分叉点判据(见 models),对无交付分支/ref 缺失/非仓库一律返回 `false`。
 - **清理**:`deleteIntentRecords` 同事务追加 `DELETE FROM intent_deliveries`(远端 PR 不动);`cancel_delivery` 不碰关联边。
 
@@ -91,6 +94,12 @@
 - 每一处都在状态写提交、`conn.send` 与 `broadcastDeliveries` **之后**调用;`publishDeliveryEvent` 内部把归一化失败收敛成一行 warn 日志,调用方不检查返回值——事件发布不是状态写的一部分(DR-R38)。
 - 没有专用归一化器:`delivery:*` 落在注册表的**默认**归一化器上(结构化脱敏 + 截断),与 `delivery:delivered` 既有路径完全一致。订阅侧同样零改动——事件总线的 `eventFilters[]` 多行 OR 与 `<category>:*` 大类通配本就覆盖 `delivery:*`。
 - 唯一的代码事实源是 `shared/src/event-catalog.ts` 的 `delivery` 类别(六个 action,均无 status 维度),自动化表单的级联选择器直接读它。
+
+## 操作日志接线
+
+- **写点在 store 的事务内,类型在 handler 决定**:`applyTransition` 经 `transitionLogOperation(from,to)` 把边映射到 `cancelled` / `verification_confirmed` / `status_changed`,`transitionSummary(from,to,detail)` 拼出带原始状态码的摘要,`settleDeliveryDelivered` 与冲突回退复用同一个摘要拼装再交给 `commitDeliveryDelivered` / `commitDeliveryMergeConflict`。
+- **意图侧建交付上下文的意图**(`create_intent` 带 `base.kind==='delivery'`)走同一个 `insertIntentDelivery`,因此也留下 `intent_linked` 行——它确实是一次关联,来源不同不该让轨迹缺一段。
+- **只读消息** `list_delivery_logs` → `delivery_logs_list`:handler 先确认库可用与交付存在(否则 `delivery.dbUnavailable` / `delivery.notFound`),再直接返回 store 的 `created_at DESC, rowid DESC` 结果。不分页、不筛选、不并入 `delivery_detail`——详情是每次写入都要回的帧,把随交付年龄增长的全量轨迹挂上去会让主读取越来越重。`rowid` 兜底不是可选的:同事务写入的两行共享同一毫秒。
 
 ## 交付只读 MCP 工具接线
 
@@ -115,6 +124,8 @@
 推进按钮是主色实底的真按钮,文案按边取动作用语(`deliveryAdvanceLabelKey`:开始集成 / 开始验证 / 确认验证 / 返工),与徽标的状态名分属两套 i18n 键。`verifying → verified` 点击先弹 ConfirmDialog 显式人工确认后才发 `confirmVerified: true`。
 
 「取消交付」不在标题栏直排,收在非终态才渲染的「…」溢出菜单里(点击弹 danger ConfirmDialog),终态整个入口不渲染;菜单以 document click 与 Esc 收起,交付转终态时随入口一并收起。
+
+**日志 Tab**(第三个,排在关联意图之后):`DeliveryLogsTab.vue` 呈现与 `IntentChangelogTab.vue` 对齐(操作类型本地化标签 + 摘要 + 操作人 + locale 时间,倒序由服务端保证,页面不重排),未知 `operationType` 降级显示原值。日志按 **deliveryId 缓存**在 `deliveryLogsById`,缺键即「没拉过或已失效」;组件只认这一个信号,由它同时产生首次进入拉取、失效后重取与换交付重取,在途期间(`deliveryLogsLoading` 存的是 id 而非布尔)不重发。缓存的失效点是 `delivery_detail` 帧——它是每一次交付写入的回包,丢键即可让打开着的 Tab 立刻重取、没打开的下次进入再取。换交付时详情容器把 Tab 复位到概览,迟到的另一条交付的回包落在它自己的键上,永远不会被渲染成当前交付的轨迹。
 
 **分支初始化区**(概览 tab,`worktree` 模式):未就绪时显示 create/bind 切换 + 分支名输入框(默认 `delivery/<short-id>-<slug>`,由 `defaultDeliveryBranchName` 生成)+「初始化分支」按钮 + 进度行(`delivery_branch_init_progress` 相位文案);就绪后显示分支名;终态且持有分支时显示「清理分支」入口(danger ConfirmDialog 二次确认)。`branchNotReady` 缺口跳转 `branch` 会切到概览并聚焦该区。`message-handler` 处理 `delivery_branch_init_progress`/`delivery_branch_init_result`(成功清 in-flight + 采纳模型 + 重取详情 + 落后警告 toast),并在 init 错误码时清 in-flight + toast。
 

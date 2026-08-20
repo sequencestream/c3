@@ -93,6 +93,13 @@ function makeCtx() {
   const parkRecoveryStats = ref<import('@ccc/shared/protocol').ParkRecoveryStats | null>(null)
   const parkRecoveryError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
   const parkRecoveryLoading = ref(false)
+  // The memory tab's listing refs — cleared by the same reconnect path.
+  const workspaceMemories = ref<import('@ccc/shared/protocol').WorkspaceMemoryListItem[] | null>(
+    null,
+  )
+  const workspaceMemoriesError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
+  const workspaceMemoriesLoading = ref(false)
+  const deletingMemoryIds = ref<string[]>([])
   const activeTab = ref<string>('console')
   const savedTab = ref<string>('console')
   const selectedAutomationId = ref<string | null>(null)
@@ -158,6 +165,16 @@ function makeCtx() {
   const activeDeliveryPrBusy = ref(false)
   const autoSyncedDeliveryPrs = ref<Set<string>>(new Set())
   const syncDeliveryPr = vi.fn()
+  const deliveryLogsById = ref<Record<string, import('@ccc/shared/protocol').DeliveryLog[]>>({})
+  const deliveryLogsLoading = ref<string | null>(null)
+  // Every `delivery_detail` frame drops the delivery's cached trail — the frame
+  // is the reply to every delivery write, so the tab must re-ask rather than
+  // keep showing a trail that is one action short.
+  const invalidateDeliveryLogs = vi.fn((deliveryId: string) => {
+    const next = { ...deliveryLogsById.value }
+    delete next[deliveryId]
+    deliveryLogsById.value = next
+  })
   // 「当前意图独立交付」 pending slot + the two actions its chain fires off
   // `create_delivery_result`.
   const pendingStandaloneDelivery = ref<{ workspaceName: string; intentId: string } | null>(null)
@@ -193,6 +210,9 @@ function makeCtx() {
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
     syncDeliveryPr,
+    deliveryLogsById,
+    deliveryLogsLoading,
+    invalidateDeliveryLogs,
     pendingStandaloneDelivery,
     linkIntentDelivery,
     initDeliveryBranchFor,
@@ -241,6 +261,10 @@ function makeCtx() {
     parkRecoveryStats,
     parkRecoveryError,
     parkRecoveryLoading,
+    workspaceMemories,
+    workspaceMemoriesError,
+    workspaceMemoriesLoading,
+    deletingMemoryIds,
     activeTab,
     savedTab,
     selectedAutomationId,
@@ -328,6 +352,9 @@ function makeCtx() {
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
     syncDeliveryPr,
+    deliveryLogsById,
+    deliveryLogsLoading,
+    invalidateDeliveryLogs,
     pendingStandaloneDelivery,
     linkIntentDelivery,
     initDeliveryBranchFor,
@@ -1249,6 +1276,10 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       parkRecoveryStats: ref(null),
       parkRecoveryError: ref(null),
       parkRecoveryLoading: ref(false),
+      workspaceMemories: ref(null),
+      workspaceMemoriesError: ref(null),
+      workspaceMemoriesLoading: ref(false),
+      deletingMemoryIds: ref<string[]>([]),
       myMcpApiKeys: ref([]),
       myMcpApiKeyCreated: ref(null),
       userWorkspaceAccess: ref(null),
@@ -1717,6 +1748,10 @@ function makeWorkspaceOnboardingCtx() {
     parkRecoveryStats: ref(null),
     parkRecoveryError: ref(null),
     parkRecoveryLoading: ref(false),
+    workspaceMemories: ref(null),
+    workspaceMemoriesError: ref(null),
+    workspaceMemoriesLoading: ref(false),
+    deletingMemoryIds: ref<string[]>([]),
     myMcpApiKeys: ref([]),
     myMcpApiKeyCreated: ref(null),
     userWorkspaceAccess: ref(null),
@@ -2245,6 +2280,76 @@ describe('delivery branch-init frames', () => {
     result.ctx.handleMessage(error('intent.prCreateFailed'))
 
     expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'fetching' })
+  })
+})
+
+describe('delivery log frames', () => {
+  const detailFrame = (id: string) =>
+    ({
+      type: 'delivery_detail',
+      delivery: {
+        id,
+        workspaceName: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: null,
+        baseBranch: 'main',
+        branchReady: false,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      transitionPlan: { targets: [] },
+      mainlineAhead: null,
+      deliveryBranchAhead: null,
+      deliveryPr: null,
+      associatedIntents: [],
+    }) as ServerToClient
+
+  const logsFrame = (deliveryId: string, ids: string[]) =>
+    ({
+      type: 'delivery_logs_list',
+      deliveryId,
+      items: ids.map((id) => ({
+        id,
+        deliveryId,
+        operationType: 'delivery_created' as const,
+        summary: '创建交付: Sprint 3',
+        actor: 'alice',
+        createdAt: 1,
+      })),
+    }) as ServerToClient
+
+  it('caches the reply under ITS OWN delivery id and clears only that fetch flag', () => {
+    const result = makeCtx()
+    result.deliveryLogsLoading.value = 'd1'
+    result.ctx.handleMessage(logsFrame('d1', ['l1']))
+    expect(result.deliveryLogsById.value.d1.map((l: { id: string }) => l.id)).toEqual(['l1'])
+    expect(result.deliveryLogsLoading.value).toBeNull()
+  })
+
+  it('a reply for ANOTHER delivery neither lands under the open one nor clears its fetch flag', () => {
+    const result = makeCtx()
+    result.deliveryLogsLoading.value = 'd1'
+    result.ctx.handleMessage(logsFrame('d2', ['l2']))
+    expect(result.deliveryLogsById.value.d1).toBeUndefined()
+    expect(result.deliveryLogsById.value.d2).toBeDefined()
+    // Still waiting on d1 — a late d2 reply is not an answer to that question.
+    expect(result.deliveryLogsLoading.value).toBe('d1')
+  })
+
+  it('every delivery_detail frame drops that delivery s cached trail, and only that one', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage(logsFrame('d1', ['l1']))
+    result.ctx.handleMessage(logsFrame('d2', ['l2']))
+    // A detail frame is the reply to every delivery write: the trail it holds may
+    // now be one action short, so it goes.
+    result.ctx.handleMessage(detailFrame('d1'))
+    expect(result.deliveryLogsById.value.d1).toBeUndefined()
+    expect(result.deliveryLogsById.value.d2).toBeDefined()
   })
 })
 

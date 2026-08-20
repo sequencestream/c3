@@ -153,6 +153,8 @@ export function installMessageHandler(ctx: AppCtx): void {
     pendingSpecRel,
     intentLogsById,
     intentLogsLoading,
+    deliveryLogsById,
+    deliveryLogsLoading,
     intentsProject,
     requestedIntentId,
     requestedIntentSubTab,
@@ -417,6 +419,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.parkRecoveryStats.value = null
         ctx.parkRecoveryError.value = null
         ctx.parkRecoveryLoading.value = false
+        ctx.workspaceMemories.value = null
+        ctx.workspaceMemoriesError.value = null
+        ctx.workspaceMemoriesLoading.value = false
+        ctx.deletingMemoryIds.value = []
         workspaceAccessors.value = null
         // Every per-identity roster goes on a (re)connect, because `ready` is also
         // where a login lands: keeping the previous identity's keys — let alone a
@@ -808,6 +814,26 @@ export function installMessageHandler(ctx: AppCtx): void {
           ctx.parkRecoveryError.value = msg.error ?? null
         }
         break
+      case 'workspace_memories':
+        // Scoped to one workspace: a late answer for one the user has left must be
+        // dropped, never shown under the workspace now on screen.
+        if (msg.workspaceName === currentWorkspace.value) {
+          ctx.workspaceMemoriesLoading.value = false
+          ctx.workspaceMemoriesError.value = null
+          ctx.workspaceMemories.value = msg.items
+        }
+        break
+      case 'workspace_memory_deleted':
+        if (msg.workspaceName === currentWorkspace.value) {
+          ctx.deletingMemoryIds.value = ctx.deletingMemoryIds.value.filter((id) => id !== msg.id)
+          // Drop the confirmed row locally instead of re-reading the whole list:
+          // the server told us exactly which id is gone, and a refetch would make
+          // an unrelated concurrent write look like part of this delete.
+          ctx.workspaceMemories.value =
+            ctx.workspaceMemories.value?.filter((m) => m.id !== msg.id) ?? null
+          ctx.showToast(t('workspaceSetting.memories.deleted.toast', { title: msg.title }))
+        }
+        break
       case 'settings':
         var firstSettingsReply = serverSettings.value === null // eslint-disable-line no-var
         serverSettings.value = msg.settings
@@ -1119,9 +1145,21 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'delivery_logs_list':
+        // Cache per DELIVERY id — a reply that arrives after the user moved on
+        // lands under its own key and is never rendered as the open delivery's
+        // trail. The loading flag only clears for the delivery it belongs to.
+        deliveryLogsById.value = { ...deliveryLogsById.value, [msg.deliveryId]: msg.items }
+        if (deliveryLogsLoading.value === msg.deliveryId) deliveryLogsLoading.value = null
+        break
       case 'delivery_detail':
         activeDelivery.value = msg.delivery
         activeDeliveryId.value = msg.delivery.id
+        // This frame is the reply to EVERY delivery write, so the trail this page
+        // holds for the delivery may now be one action short. Dropping the cache
+        // makes an open 「日志」 tab re-fetch at once and a closed one re-fetch when
+        // it is next opened — the tab, not this handler, decides which.
+        ctx.invalidateDeliveryLogs(msg.delivery.id)
         activeDeliveryPlan.value = msg.transitionPlan
         activeDeliveryIntents.value = msg.associatedIntents
         activeDeliveryMainlineAhead.value = msg.mainlineAhead
@@ -1666,6 +1704,22 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (msg.error.code.startsWith('queue.')) {
           ctx.showToast(translateUiError(msg.error))
           break
+        }
+        // A refused memory delete has to be visible where it was clicked: the
+        // workspace-setting page is a full-screen overlay that never renders the
+        // chat stream, so a refusal landing only there would read as "the button
+        // did nothing". The row stays — nothing was removed.
+        if (msg.error.code.startsWith('memory.')) {
+          ctx.deletingMemoryIds.value = []
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
+        // The memory listing has exactly one refusal: a workspace the server
+        // cannot resolve. Release the in-flight read so the tab shows the failure
+        // (with its retry) instead of spinning forever.
+        if (ctx.workspaceMemoriesLoading.value && msg.error.code === 'workspace.unknown') {
+          ctx.workspaceMemoriesLoading.value = false
+          ctx.workspaceMemoriesError.value = msg.error
         }
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break

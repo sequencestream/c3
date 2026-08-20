@@ -60,6 +60,8 @@ function mountDetail(
       syncPhase: null,
       deliveryPr: over.deliveryPr ?? null,
       deliveryPrBusy: false,
+      logs: null,
+      logsLoading: false,
       associatedIntents: [],
       intents: [],
     },
@@ -67,12 +69,13 @@ function mountDetail(
 }
 
 describe('DeliveryDetail', () => {
-  it('renders exactly two tabs: overview / associated intents', () => {
+  it('renders exactly three tabs, in order: overview / associated intents / logs', () => {
     const w = mountDetail()
     const tabs = w.findAll('[data-testid^="delivery-pane-tab-"]')
     expect(tabs.map((t) => t.attributes('data-testid'))).toEqual([
       'delivery-pane-tab-overview',
       'delivery-pane-tab-intents',
+      'delivery-pane-tab-logs',
     ])
     // 无 PR / 设置 / 分支 独立 Tab。
     for (const forbidden of ['pr', 'settings', 'branch']) {
@@ -128,6 +131,48 @@ describe('DeliveryDetail', () => {
     expect(ready.text()).toContain('1')
     expect(ready.text()).toContain('2')
     expect(w.find('[data-testid="delivery-progress"]').exists()).toBe(false)
+  })
+
+  it('opens on overview and only mounts the logs tab once it is selected', async () => {
+    const w = mountDetail()
+    expect(w.find('[data-testid="tab-delivery-logs"]').exists()).toBe(false)
+    // Lazily: nothing is requested for a tab the user never opened.
+    expect(w.emitted('list-logs')).toBeFalsy()
+    await w.find('[data-testid="delivery-pane-tab-logs"]').trigger('click')
+    expect(w.find('[data-testid="tab-delivery-logs"]').exists()).toBe(true)
+    // First open with no cache → exactly one fetch, keyed by THIS delivery.
+    expect(w.emitted('list-logs')).toEqual([['d1']])
+  })
+
+  it('returns to overview when the open delivery changes, so no tab shows another delivery s content', async () => {
+    const w = mountDetail()
+    await w.find('[data-testid="delivery-pane-tab-logs"]').trigger('click')
+    expect(w.find('[data-testid="tab-delivery-logs"]').exists()).toBe(true)
+    await w.setProps({ delivery: delivery({ id: 'd2' }) })
+    expect(w.find('[data-testid="tab-delivery-logs"]').exists()).toBe(false)
+    expect(w.find('[data-testid="delivery-overview"]').exists()).toBe(true)
+  })
+
+  it('re-fetches the logs when a write drops the cache while the logs tab is open', async () => {
+    const w = mountDetail()
+    await w.find('[data-testid="delivery-pane-tab-logs"]').trigger('click')
+    await w.setProps({
+      logs: [
+        {
+          id: 'l1',
+          deliveryId: 'd1',
+          operationType: 'delivery_created',
+          summary: '创建交付: Sprint 3',
+          actor: 'alice',
+          createdAt: 1,
+        },
+      ],
+    })
+    expect(w.emitted('list-logs')).toHaveLength(1)
+    // A delivery write replies with a fresh detail frame, which invalidates the
+    // cache; an OPEN tab must ask again rather than keep showing the short trail.
+    await w.setProps({ logs: null })
+    expect(w.emitted('list-logs')).toEqual([['d1'], ['d1']])
   })
 
   it('keeps the gap banner visible after switching to the associated-intents tab', async () => {
@@ -193,6 +238,8 @@ describe('DeliveryDetail', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        logs: null,
+        logsLoading: false,
         associatedIntents: [],
         intents: [],
       },
@@ -378,6 +425,8 @@ describe('DeliveryDetail', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        logs: null,
+        logsLoading: false,
         associatedIntents: [
           {
             id: 'i1',
@@ -452,6 +501,8 @@ describe('DeliveryDetail — 标题栏「…」溢出菜单', () => {
         syncPhase: null,
         deliveryPr: null,
         deliveryPrBusy: false,
+        logs: null,
+        logsLoading: false,
         deliveryBranchAhead: null,
         associatedIntents: [],
         intents: [],

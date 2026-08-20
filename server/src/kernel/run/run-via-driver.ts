@@ -143,14 +143,33 @@ export interface SpecReviewProfile {
  *
  * `allowedTools` is the robot's frozen write/exec allowlist; an empty set — the
  * default a robot is created with — leaves it read-only (ADR-0046). Read-class
- * tools are not listed: they pass on the gate's own read set. A robot has no c3
- * MCP tools, so unlike intent/spec there is no `bindMcp`.
+ * tools are not listed: they pass on the gate's own read set. The
+ * `network-access` pseudo-entry never reaches this set.
+ *
+ * `writeEnabled` records whether the allowlist selects a LOCAL write/exec tool
+ * of the robot's own vendor — the ONLY thing that may open a writable native
+ * sandbox (Codex `shell`/`apply_patch`). It is derived here (features layer)
+ * so the driver path never imports the vendor tool manifest.
+ *
+ * `bindMcp`, when present, binds exactly the c3 MCP tools the robot's allowlist
+ * selected over the loopback HTTP MCP route — the same uniform binding shape
+ * every other profile uses. Absent when nothing was selected.
  */
 export interface RobotProfile {
   appendSystemPrompt: string
   disallowedTools: string[]
   gate: 'robot'
   allowedTools: ReadonlySet<string>
+  /** Whether the allowlist selects a local write/exec tool of the robot's vendor. */
+  writeEnabled: boolean
+  /** The operator's `network-access` opt-in (a pseudo-entry). Inert unless Codex
+   *  workspace-write is confirmed at the driver. */
+  networkAccess: boolean
+  /** Bind the robot turn's selected c3 MCP tools over the loopback HTTP MCP route. */
+  bindMcp?: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
+    servers: Record<string, RemoteMcpServer>
+    dispose: () => void
+  }
 }
 
 /**
@@ -498,9 +517,11 @@ export async function runViaDriver(
         ? specDriverModeForVendor(adapter.vendor)
         : robotProfile
           ? // A robot turn is unattended: its grid comes from the robot's own
-            // configuration (read-only unless deliberately widened), never from
-            // the session's stored mode.
-            robotDriverModeForVendor(adapter.vendor, robotProfile.allowedTools.size > 0)
+            // configuration, never from the session's stored mode. Only a LOCAL
+            // write/exec tool selection opens a writable native sandbox — c3 MCP
+            // write tools and `network-access` never do (spec §4), so the mode
+            // keys off `writeEnabled`, not the allowlist size.
+            robotDriverModeForVendor(adapter.vendor, robotProfile.writeEnabled)
           : adapter.vendor === 'codex' && rt.codexPolicy
             ? codexPolicyToGrid(rt.codexPolicy)
             : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
@@ -596,18 +617,21 @@ export async function runViaDriver(
   // c3 tools over the loopback streamable-HTTP MCP route — the SINGLE transport
   // every vendor consumes (no vendor branch selects the c3 transport).
   // The active profile's `bindMcp` mints a per-run token, stands up the private MCP
-  // server for this run's tool face (intent find/view/save, spec find/view, or work
-  // `publish_event`), and returns the neutral descriptors + a `dispose` evicted in
-  // `finally`. `getRunId` reads the live `runId` so a pending→real rebind routes the
-  // save gate's `permission_request` to the bound session, not the stale pending id.
-  // A run is exactly one of intent / session / spec, so at most one binder fires.
+  // server for this run's tool face (intent find/view/save, spec find/view, work
+  // `publish_event`, or the robot's selected c3 subset), and returns the neutral
+  // descriptors + a `dispose` evicted in `finally`. `getRunId` reads the live
+  // `runId` so a pending→real rebind routes the save gate's `permission_request`
+  // to the bound session, not the stale pending id.
+  // A run is exactly one of intent / session / spec / robot, so at most one
+  // binder fires.
   let disposeDriverMcp: () => void = () => {}
   let driverMcpServers: Record<string, RemoteMcpServer> | undefined
   const activeMcpBinder =
     intentProfile?.bindMcp ??
     sessionProfile?.bindMcp ??
     specProfile?.bindMcp ??
-    specReviewProfile?.bindMcp
+    specReviewProfile?.bindMcp ??
+    robotProfile?.bindMcp
   if (activeMcpBinder) {
     const bound = activeMcpBinder({
       workspacePath: workspacePath,
@@ -652,7 +676,16 @@ export async function runViaDriver(
       // Codex denies both by default; claude ignores these flags and governs
       // network via their tool allowlist (2026-06-15). Scheduled runs do NOT pass
       // through here — they stay config-gated by toolAllowlist (dispatcher.ts).
-      networkAccess: true,
+      //
+      // A robot turn is different: its network opt-in comes from the robot's own
+      // profile and means something ONLY when the Codex native sandbox is
+      // workspace-write (spec §4 matrix). The profile's opt-in is re-checked here
+      // against vendor + action mode so a stale `network-access` marker in a
+      // read-only or non-codex runtime is inert — and every other robot turn is an
+      // explicit `false`, overriding the unconditional `true` above.
+      networkAccess: robotProfile
+        ? adapter.vendor === 'codex' && actionMode === 'build' && robotProfile.networkAccess
+        : true,
       webSearch: true,
       // A pending session starts fresh; a real id resumes that native session.
       ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),

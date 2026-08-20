@@ -14,7 +14,8 @@
   永不回传明文。
 - **执行身份** —— `vendor` 与 `agentId`。后者可以是真实 agent id,也可以是一个组引用;组的故障转移
   按轮次重新解析,因此这里存的是引用而非解析结果。
-- **预设权限** —— `mode` 与 `toolAllowlist`。白名单为空即只读,这是创建时的取值。
+- **预设权限** —— `mode` 与 `toolAllowlist`。白名单由权限网格勾选而来:真实工具名,外加一个可选的
+  `network-access` 伪条目(能力开关,见规格);为空即只读,这是创建时的取值。
 - **响应面与限额** —— `requireMention`(默认真)、`chatAllowlist`(空即不限群)、`dmMode`(默认不响应
   单聊)、`dmAllowlist`、`maxTurnMs`(空即用默认值)。
 

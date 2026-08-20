@@ -1313,6 +1313,12 @@ const componentSrc = readFileSync(
   resolve(process.cwd(), 'web/src/pages/automations/components/AutomationForm/AutomationForm.vue'),
   'utf8',
 )
+// 工具清单/网络开关的样式契约已随共享组件移出表单(表单只留调用方语义),
+// 工具网格样式断言改读 ToolPermissionGrid 源码。
+const gridSrc = readFileSync(
+  resolve(process.cwd(), 'web/src/components/ToolPermissionGrid/ToolPermissionGrid.vue'),
+  'utf8',
+)
 
 function ruleBody(css: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -1339,7 +1345,7 @@ describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', ()
 
   it('工具区无固定高度/强制拉伸:.sf-tools-scroll / .sf-tools-group / .sf-tools-grid 高度随内容', () => {
     for (const sel of ['.sf-tools-scroll', '.sf-tools-group', '.sf-tools-grid']) {
-      const block = ruleBody(componentSrc, sel)
+      const block = ruleBody(gridSrc, sel)
       expect(block).not.toMatch(/(?:^|[;{])\s*height:/)
       expect(block).not.toMatch(/min-height:/)
       expect(block).not.toMatch(/max-height:/)
@@ -1348,7 +1354,7 @@ describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', ()
   })
 
   it('工具网格用 auto-fit 折叠空轨道,避免少量工具时的右侧空白', () => {
-    expect(ruleBody(componentSrc, '.sf-tools-grid')).toMatch(
+    expect(ruleBody(gridSrc, '.sf-tools-grid')).toMatch(
       /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(240px,\s*1fr\)\)/,
     )
   })

@@ -19,7 +19,6 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
-  AUTOMATION_NETWORK_ACCESS_TOOL,
   MAX_AUTOMATION_MAX_WALL_CLOCK_MS,
   MIN_AUTOMATION_MAX_WALL_CLOCK_MS,
 } from '@ccc/shared/protocol'
@@ -56,6 +55,7 @@ import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
 import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/BaseDropdown.vue'
 import AutomationCronEditor from '../AutomationDetail/AutomationCronEditor.vue'
+import ToolPermissionGrid from '@/components/ToolPermissionGrid/ToolPermissionGrid.vue'
 import { resolveAutomationDefaultAgent } from './resolveAutomationDefaultAgent'
 
 // `d` 别名为 `fmtDateTime`:模板里 `v-for="d in WEEKDAYS"` 已占用 `d`,避免 shadow。
@@ -775,56 +775,20 @@ function buildEventFilters(): GenericEventFilter[] | null {
 }
 
 // ---- Tool manifest helpers -------------------------------------------------
+// The shared ToolPermissionGrid renders the grid, select-all/clear-all, and the
+// codex network switch. What stays here is the caller-owned meaning: the current
+// vendor's manifest, the sandbox-dependent network block state, and the default
+// seeding (an automation reads an empty list as "all tools" and pre-checks the
+// read-only set — a robot deliberately seeds nothing).
 const currentTools = computed<ToolManifestEntry[]>(() => props.toolManifest[vendor.value] ?? [])
-
-const readTools = computed<ToolManifestEntry[]>(() => currentTools.value.filter((t) => !t.isWrite))
-
-const writeTools = computed<ToolManifestEntry[]>(() => currentTools.value.filter((t) => t.isWrite))
-
-function toggleTool(name: string): void {
-  const i = toolAllowlist.value.indexOf(name)
-  if (i >= 0) toolAllowlist.value.splice(i, 1)
-  else toolAllowlist.value.push(name)
-}
-
-function toolChecked(name: string): boolean {
-  return toolAllowlist.value.includes(name)
-}
-
-// Network access is a codex-only pseudo-entry stored alongside real tools in
-// `toolAllowlist`. It is deliberately kept OUT of the read/write grid, the
-// default seeding, and select-all/clear-all so toggling every tool never
-// implicitly widens the sandbox's network boundary (and vice-versa).
-const networkAccessEnabled = computed(() =>
-  toolAllowlist.value.includes(AUTOMATION_NETWORK_ACCESS_TOOL),
-)
 
 // A `read-only` codex sandbox is network-denied unconditionally — there is no
 // codex knob to open it, so the dispatcher drops the pseudo-entry instead of
-// passing it through. Mirror that here: the switch is disabled with a reason,
-// so the sandbox choice never silently swallows a ticked box.
+// passing it through. Mirror that here: the shared grid disables the switch with
+// a reason, so the sandbox choice never silently swallows a ticked box.
 const networkAccessBlocked = computed(
   () => vendor.value === 'codex' && codexSandboxMode.value === 'read-only',
 )
-
-function toggleNetworkAccess(): void {
-  if (networkAccessBlocked.value) return
-  const i = toolAllowlist.value.indexOf(AUTOMATION_NETWORK_ACCESS_TOOL)
-  if (i >= 0) toolAllowlist.value.splice(i, 1)
-  else toolAllowlist.value.push(AUTOMATION_NETWORK_ACCESS_TOOL)
-}
-
-function selectAll(): void {
-  const names = currentTools.value.map((t) => t.name)
-  // Preserve the network-access flag: select-all governs real tools only.
-  if (networkAccessEnabled.value) names.push(AUTOMATION_NETWORK_ACCESS_TOOL)
-  toolAllowlist.value = names
-}
-
-function clearAll(): void {
-  // Clear real tools but leave the network-access flag untouched.
-  toolAllowlist.value = networkAccessEnabled.value ? [AUTOMATION_NETWORK_ACCESS_TOOL] : []
-}
 
 // Derive default selections when a fresh manifest arrives and there's no saved
 // allowlist yet. Read tools checked by default, write tools unchecked.
@@ -1541,102 +1505,20 @@ function save(): void {
         <div class="sf-section" data-testid="section-tools">
           <span class="sf-section-title">{{ t('automation.form.section.tools') }}</span>
           <div class="sf-section-body">
-            <!-- Tool checklist -->
-            <div class="sf-field sf-field--stacked sf-field--tools sf-item">
-              <div class="sf-tools-labelrow">
-                <span class="sf-label">{{ t('automation.form.tools.label') }}</span>
-                <!-- Select/clear stay on the label row for quick access. -->
-                <div v-if="currentTools.length" class="sf-tools-actions">
-                  <button type="button" class="sf-tools-btn" @click="selectAll">
-                    {{ t('automation.form.tools.selectAll.label') }}
-                  </button>
-                  <button type="button" class="sf-tools-btn" @click="clearAll">
-                    {{ t('automation.form.tools.clearAll.label') }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Loading -->
-              <span v-if="props.toolManifestLoading" class="sf-hint">{{
-                t('automation.form.tools.loading')
-              }}</span>
-
-              <!-- Error -->
-              <span v-else-if="props.toolManifestError" class="sf-warn">{{
-                props.toolManifestError
-              }}</span>
-
-              <!-- The list grows with its content; the form body owns the only vertical
-               scroll area in this dialog. -->
-              <div v-else-if="currentTools.length" class="sf-tools-scroll">
-                <!-- Read-only tools -->
-                <div class="sf-tools-group">
-                  <span class="sf-tools-subtitle">{{
-                    t('automation.form.tools.readOnly.label')
-                  }}</span>
-                  <div class="sf-tools-grid">
-                    <label v-for="_t in readTools" :key="_t.name" class="sf-tool-item">
-                      <input
-                        type="checkbox"
-                        :checked="toolChecked(_t.name)"
-                        @change="toggleTool(_t.name)"
-                      />
-                      <span class="sf-tool-name">{{ _t.name }}</span>
-                    </label>
-                  </div>
-                </div>
-
-                <!-- Write tools -->
-                <div class="sf-tools-group">
-                  <span class="sf-tools-subtitle">{{
-                    t('automation.form.tools.write.label')
-                  }}</span>
-                  <div class="sf-tools-grid">
-                    <label v-for="_t in writeTools" :key="_t.name" class="sf-tool-item">
-                      <input
-                        type="checkbox"
-                        :checked="toolChecked(_t.name)"
-                        @change="toggleTool(_t.name)"
-                      />
-                      <span class="sf-tool-name">{{ _t.name }}</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Empty (no tools returned) -->
-              <span v-else class="sf-hint">{{ t('automation.form.tools.empty') }}</span>
-            </div>
-
-            <!-- Network access: a codex-only capability switch, kept separate from
-             the tool checklist. Claude has no seatbelt sandbox network knob, so
-             the toggle is hidden there (a stray value is ignored server-side). -->
-            <div
-              v-if="vendor === 'codex'"
-              class="sf-field sf-field--stacked sf-field--network sf-item"
-              data-testid="network-access"
-            >
-              <label class="sf-tool-item" :class="{ 'is-disabled': networkAccessBlocked }">
-                <input
-                  type="checkbox"
-                  data-testid="network-access-checkbox"
-                  :checked="networkAccessEnabled"
-                  :disabled="networkAccessBlocked"
-                  @change="toggleNetworkAccess"
-                />
-                <span class="sf-tool-name">{{
-                  t('automation.form.tools.networkAccess.label')
-                }}</span>
-              </label>
-              <span class="sf-hint">{{ t('automation.form.tools.networkAccess.hint') }}</span>
-              <span
-                v-if="networkAccessBlocked"
-                class="sf-hint sf-hint--warn"
-                data-testid="network-access-readonly-hint"
-              >
-                {{ t('automation.form.tools.networkAccess.readOnlyHint') }}
-              </span>
-            </div>
+            <!-- The shared permission grid renders the read/write checklist, the
+             select-all/clear-all actions, and the codex-only network switch. The
+             form keeps the caller-owned pieces: the vendor's manifest, the
+             loading/error state, the sandbox-derived network block, and the
+             default-seeding watch above. -->
+            <ToolPermissionGrid
+              :tools="currentTools"
+              :model-value="toolAllowlist"
+              :loading="toolManifestLoading"
+              :error="toolManifestError"
+              :show-network-access="vendor === 'codex'"
+              :network-access-blocked="networkAccessBlocked"
+              @update:model-value="toolAllowlist = $event"
+            />
           </div>
         </div>
       </div>
@@ -1761,15 +1643,6 @@ function save(): void {
 .sf-field--stacked {
   flex-direction: column;
   align-items: stretch;
-}
-/* 工具字段用普通块流而非 flex 列:嵌套的 auto-fit grid 在 flex 列做固有高度
-   测量时会坍缩成单列、把 flex 子项撑到超高(内容之下留大片空白),块流按真实
-   可用宽度测量,区块高度贴合内容。间距由块流 margin 补(flex gap 不生效)。 */
-.sf-field--tools {
-  display: block;
-}
-.sf-field--tools > * + * {
-  margin-top: var(--sp-2);
 }
 .sf-label {
   font-size: var(--fs-caption);
@@ -2028,56 +1901,11 @@ select.sf-input {
   max-width: 200px;
 }
 
-/* Tool checklist */
 .sf-select {
   max-width: 280px;
 }
-.sf-tools-labelrow {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-.sf-tools-actions {
-  display: flex;
-  gap: var(--sp-2);
-  margin-left: auto;
-}
-/* Keep the tool list in the form's single scroll area. */
-.sf-tools-scroll {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.sf-tools-btn {
-  background: var(--c-card);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  color: var(--c-text-muted);
-  font-size: var(--fs-caption);
-  padding: 3px 10px;
-  cursor: pointer;
-}
-.sf-tools-btn:hover {
-  color: var(--c-text);
-  background: var(--c-hover);
-}
-.sf-tools-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-.sf-tools-subtitle {
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-}
-/* auto-fit（非 auto-fill）折叠空轨道：工具少时铺满整行不留右侧空白，工具多时
-   自然多列换行，高度只随实际行数增长。 */
-.sf-tools-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--sp-1);
-}
+/* Inline checkbox items (embed-event-context) — the shared ToolPermissionGrid
+   carries its own copies of these classes scoped to itself. */
 .sf-tool-item {
   display: flex;
   align-items: center;
@@ -2089,13 +1917,6 @@ select.sf-input {
 }
 .sf-tool-item:hover {
   background: var(--c-hover);
-}
-.sf-tool-item.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-.sf-tool-item.is-disabled:hover {
-  background: transparent;
 }
 .sf-tool-item input[type='checkbox'] {
   margin: 0;
@@ -2200,24 +2021,6 @@ select.sf-input {
 
   .sf-colon {
     display: none;
-  }
-
-  .sf-tools-labelrow,
-  .sf-tools-actions {
-    align-items: stretch;
-  }
-
-  .sf-tools-actions {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .sf-tools-btn {
-    flex: 1;
-  }
-
-  .sf-tools-grid {
-    grid-template-columns: 1fr;
   }
 
   .sf-foot {

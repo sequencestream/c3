@@ -23,16 +23,9 @@ import { clampName, generateAutomationName } from './naming.js'
 import type { AutomationNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
-import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { isValidAutomationMaxWallClockMs, normalizeGenericEventFilters } from '@ccc/shared'
-import { C3_MCP_TOOLS } from './mcp-freeze.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
-// Static tool listing (no I/O needed) — the only adapter path that can create
-// lightweight instances without a supervisor or registry probe.
-import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
-import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
-import { createCursorAdapter } from '../../kernel/agent/adapters/cursor/index.js'
 
 /**
  * Read a client-supplied `config.name`. Returns:
@@ -279,54 +272,4 @@ export const saveWorkspaceMcpConfig: Handler<'save_workspace_mcp_config'> = (_ct
     workspaceName: msg.workspaceName,
     config: storeGetWorkspaceMcpConfig(proj2),
   })
-}
-
-/**
- * Return a vendor's tool manifest: SDK built-in tools + (for Claude) workspace
- * MCP namespace prefixes. Used by the automation form to let the user select which
- * tools a automation's execution may use.
- *
- * The tools are a **static** pre-judged list — not a runtime MCP server probe —
- * following the same classification convention as `freezeTools()` in the
- * dispatcher. This is intentionally lightweight: the handlers create temporary
- * adapter instances for listing because the method requires no I/O.
- */
-export const getAutomationToolManifest: Handler<'get_automation_tool_manifest'> = (
-  _ctx,
-  conn,
-  msg,
-) => {
-  if (!isAutomationStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
-    return
-  }
-  const proj3 = resolveWorkspaceRoot(msg.workspaceName)!
-  const mcpConfig = storeGetWorkspaceMcpConfig(proj3)
-  const hasMcp = Object.keys(mcpConfig.mcpServers).length > 0
-  const mcpServers = hasMcp ? mcpConfig.mcpServers : undefined
-
-  let tools: ToolManifestEntry[]
-  switch (msg.vendor) {
-    case 'claude':
-      tools = createClaudeAdapter().listTools(msg.workspaceName, mcpServers)
-      break
-    case 'codex':
-      tools = createCodexAdapter().listTools(msg.workspaceName, mcpServers)
-      break
-    case 'cursor':
-      tools = createCursorAdapter().listTools(msg.workspaceName, mcpServers)
-      break
-    default:
-      // No silent fallback to another vendor's toolset: an unknown vendor
-      // advertises no tools rather than borrowing Claude's.
-      tools = []
-  }
-
-  // Always append c3 MCP tools so the user can select them regardless of vendor
-  // or workspace MCP config. These live outside the workspace MCP config (c3's own
-  // tools, served over the loopback HTTP MCP route), so the vendor adapter's
-  // listTools() never includes them.
-  tools.push(...C3_MCP_TOOLS)
-
-  conn.send({ type: 'automation_tool_manifest', vendor: msg.vendor, tools })
 }

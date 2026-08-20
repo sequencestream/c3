@@ -135,13 +135,13 @@ import {
   deleteAutomationHandler,
   getExecutionTranscript,
   getAutomationDetailHandler,
-  getAutomationToolManifest,
   getWorkspaceMcpConfig,
   listAutomationsHandler,
   saveWorkspaceMcpConfig,
   automationRunNow,
   updateAutomationHandler,
 } from './automations/index.js'
+import { getToolManifest } from './tool-manifest/index.js'
 import { login, logout, setAdminPassword, removeAccount, setAdminAccount } from './auth/index.js'
 import {
   getUserWorkspaceAccessHandler,
@@ -306,7 +306,7 @@ export const handlerMap: HandlerMap = {
   automation_run_now: automationRunNow,
   get_workspace_mcp_config: getWorkspaceMcpConfig,
   save_workspace_mcp_config: saveWorkspaceMcpConfig,
-  get_automation_tool_manifest: getAutomationToolManifest,
+  get_tool_manifest: getToolManifest,
   // auth (ADR-0023 runtime slice: basic login + multi-account / unique admin)
   login,
   logout,

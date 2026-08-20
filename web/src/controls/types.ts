@@ -473,6 +473,8 @@ export interface AppMethods {
   deleteRobot(robotId: string): void
   setRobotEnabled(robotId: string, enabled: boolean): void
   acknowledgeAndEnableRobot(robotId: string): void
+  /** Fetch one vendor's tool manifest for the robot form (no workspace scope). */
+  onLoadRobotToolManifest(vendor: string): void
   /** (Re)fetch the cross-workspace Dashboard snapshot; coalesces while one is in flight. */
   loadDashboard(): void
   /** Refresh the Dashboard only when it is the active view (domain-broadcast hook). */

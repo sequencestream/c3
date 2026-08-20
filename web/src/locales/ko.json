@@ -2019,27 +2019,7 @@
         "groupLabel": "그룹"
       },
       "tools": {
-        "label": "허용된 도구",
-        "readOnly": {
-          "label": "읽기 전용"
-        },
-        "write": {
-          "label": "쓰기"
-        },
-        "selectAll": {
-          "label": "전체 선택"
-        },
-        "clearAll": {
-          "label": "전체 해제"
-        },
-        "networkAccess": {
-          "label": "네트워크 액세스 허용",
-          "hint": "Codex 및 workspace-write 샌드박스에서만 적용: 셸 명령(gh, curl 등)의 네트워크 접근을 허용합니다. 기본값은 꺼짐.",
-          "readOnlyHint": "「읽기 전용」 샌드박스는 네트워크가 무조건 차단되므로 이 스위치는 적용되지 않습니다. 셸 명령의 네트워크 접근이 필요하면 「읽기/쓰기」 샌드박스로 전환하세요."
-        },
-        "loading": "도구 목록을 불러오는 중…",
-        "empty": "사용 가능한 도구가 없습니다",
-        "error": "도구 목록을 불러오지 못했습니다"
+        "label": "허용된 도구"
       },
       "weekday": {
         "sun": "일",
@@ -2287,6 +2267,30 @@
       "event": {
         "started": "실행 시작 시",
         "settled": "실행 종료 시"
+      }
+    }
+  },
+  "tools": {
+    "grid": {
+      "label": "허용된 도구",
+      "selectAll": {
+        "label": "전체 선택"
+      },
+      "clearAll": {
+        "label": "전체 해제"
+      },
+      "loading": "도구 목록을 불러오는 중…",
+      "readOnly": {
+        "label": "읽기 전용"
+      },
+      "write": {
+        "label": "쓰기"
+      },
+      "empty": "사용 가능한 도구가 없습니다",
+      "networkAccess": {
+        "label": "네트워크 액세스 허용",
+        "hint": "Codex 및 workspace-write 샌드박스에서만 적용: 셸 명령(gh, curl 등)의 네트워크 접근을 허용합니다. 기본값은 꺼짐.",
+        "readOnlyHint": "「읽기 전용」 샌드박스는 네트워크가 무조건 차단되므로 이 스위치는 적용되지 않습니다. 셸 명령의 네트워크 접근이 필요하면 「읽기/쓰기」 샌드박스로 전환하세요."
       }
     }
   },
@@ -3924,10 +3928,6 @@
       },
       "agent": {
         "label": "에이전트"
-      },
-      "tools": {
-        "label": "허용된 쓰기 도구",
-        "hint": "비워 두면 읽기 전용입니다. 여기 나열된 도구는 확인 없이 실행됩니다."
       },
       "requireMention": {
         "label": "언급된 경우에만 응답"

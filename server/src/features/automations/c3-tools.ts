@@ -120,10 +120,15 @@ export interface AutomationC3Tool {
  * guarded with `?.` on every branch). The handlers close over `workspacePath` /
  * `executionId` so the model can neither read nor write another workspace's data,
  * and the tool args never accept a workspace or session override.
+ *
+ * `executionId` accepts a getter (the robot-turn binder passes the live run id
+ * so a pending→real rebind attributes `publish_event` to the bound session);
+ * automations keep passing a fixed execution id — the getter form is only
+ * resolved where the id is actually read, so a string call site is unchanged.
  */
 export function buildAutomationC3Tools(
   workspacePath: string,
-  executionId: string,
+  executionId: string | (() => string),
   deps: AutomationMcpDeps | null,
   automationMetadata?: Record<string, string>,
 ): AutomationC3Tool[] {
@@ -218,7 +223,12 @@ export function buildAutomationC3Tools(
                 ok: false,
                 reason: 'automation event deps not wired',
               },
-            (event) => deps?.publishEvent({ workspacePath, sessionId: executionId, event }),
+            (event) =>
+              deps?.publishEvent({
+                workspacePath,
+                sessionId: typeof executionId === 'function' ? executionId() : executionId,
+                event,
+              }),
           ),
         }
       },

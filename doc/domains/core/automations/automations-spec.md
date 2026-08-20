@@ -421,9 +421,12 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
   加上工作区 MCP 服务器的命名空间前缀(`mcp__<server>__`)。MCP 命名空间被分类
   为写(保守起见)。
 
-该工具清单由前端通过 `get_automation_tool_manifest { vendor, workspacePath }` 获取,并以
-`automation_tool_manifest { vendor, tools }` 返回。前端用它在自动化表单中渲染工具
-选择 UI。
+该工具清单由前端通过 `get_tool_manifest { vendor, workspaceName?, scope? }` 获取,并以
+`tool_manifest { vendor, tools, scope? }` 返回。这对消息**不是自动化独有**:同一张权限网格
+也服务聊天机器人表单,`scope`(`automation` / `robot`)标明提问的是哪一张,由服务器原样回显,
+前端据此把回复路由到对应缓存。自动化侧总是带 `workspaceName`,清单因而并入该工作区已配置
+MCP 服务器的 `mcp__<server>__` 命名空间前缀;省略它(机器人不绑定工作区)时清单只有 vendor
+内建工具与 c3 自己的 MCP 工具。前端用它在自动化表单中渲染工具选择 UI。
 
 c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出现。它们
 永远不会仅仅因为一个自动化是 LLM 任务或有一个空的允许列表就被挂载:选中至少
@@ -583,19 +586,19 @@ cursor 的自动化与 claude 的自动化看到的是同一份 c3 MCP 服务契
 
 被 automations 领域消费:
 
-| 事件                           | 负载                        | 说明                              |
-| ------------------------------ | --------------------------- | --------------------------------- |
-| `automation_create`            | AutomationFields            | 提议一个新自动化(→ 待处理变更)    |
-| `automation_update`            | `{ id, fields }`            | 提议对一个已有自动化的编辑        |
-| `automation_pause`             | `{ id }`                    | 提议暂停(SCH-R5)                  |
-| `automation_resume`            | `{ id }`                    | 提议恢复(SCH-R5)                  |
-| `automation_archive`           | `{ id }`                    | 立即归档(SCH-R14)                 |
-| `automation_delete`            | `{ id }`                    | 立即删除(级联日志)                |
-| `automation_confirm_queue`     | `—`                         | 原子性地确认所有待处理变更        |
-| `automation_discard_queue`     | `—`                         | 丢弃所有待处理变更                |
-| `automation_run_now`           | `{ id }`                    | 手动触发:在常规自动化时序之外执行 |
-| `automation_cancel_execution`  | `{ executionId }`           | 取消一次在途执行                  |
-| `get_automation_tool_manifest` | `{ vendor, workspacePath }` | 获取一个 vendor 的静态工具清单    |
+| 事件                          | 负载                                 | 说明                                                    |
+| ----------------------------- | ------------------------------------ | ------------------------------------------------------- |
+| `automation_create`           | AutomationFields                     | 提议一个新自动化(→ 待处理变更)                          |
+| `automation_update`           | `{ id, fields }`                     | 提议对一个已有自动化的编辑                              |
+| `automation_pause`            | `{ id }`                             | 提议暂停(SCH-R5)                                        |
+| `automation_resume`           | `{ id }`                             | 提议恢复(SCH-R5)                                        |
+| `automation_archive`          | `{ id }`                             | 立即归档(SCH-R14)                                       |
+| `automation_delete`           | `{ id }`                             | 立即删除(级联日志)                                      |
+| `automation_confirm_queue`    | `—`                                  | 原子性地确认所有待处理变更                              |
+| `automation_discard_queue`    | `—`                                  | 丢弃所有待处理变更                                      |
+| `automation_run_now`          | `{ id }`                             | 手动触发:在常规自动化时序之外执行                       |
+| `automation_cancel_execution` | `{ executionId }`                    | 取消一次在途执行                                        |
+| `get_tool_manifest`           | `{ vendor, workspaceName?, scope? }` | 获取一个 vendor 的静态工具清单(共享消息,机器人表单也发) |
 
 除了上述 wire 事件之外,该领域还在组合根中订阅了**内核
 事件总线**的生命周期事件(`run:started` / `run:settled`,ADR-0018)以及 `pr:operation` 事件,
@@ -607,20 +610,20 @@ automation / 手动 create_pr),后者在成功创建
 
 由 automations 领域发出:
 
-| 事件                          | 负载                 | 说明                                     |
-| ----------------------------- | -------------------- | ---------------------------------------- |
-| `automation_created`          | AutomationFull       | 自动化已持久化并激活                     |
-| `automation_updated`          | AutomationFull       | 自动化字段已变更                         |
-| `automation_paused`           | `{ id }`             | 状态 → `paused`                          |
-| `automation_resumed`          | `{ id }`             | 状态 → `active`                          |
-| `automation_archived`         | `{ id }`             | 状态 → `archived`                        |
-| `automation_deleted`          | `{ id }`             | 自动化已移除 + 日志已级联                |
-| `automation_pending_changes`  | `PendingChange[]`    | 当前的待处理变更(连接时同步)             |
-| `automation_queue_confirmed`  | `—`                  | 待处理变更已应用                         |
-| `automation_queue_discarded`  | `—`                  | 待处理变更已丢弃                         |
-| `automation_execution_log`    | ExecutionLog         | 新的或已更新的执行日志条目               |
-| `automation_execution_stream` | ExecutionStreamEvent | 执行期间的实时流式事件                   |
-| `automation_tool_manifest`    | `{ vendor, tools }`  | 对 `get_automation_tool_manifest` 的回复 |
+| 事件                          | 负载                        | 说明                                                              |
+| ----------------------------- | --------------------------- | ----------------------------------------------------------------- |
+| `automation_created`          | AutomationFull              | 自动化已持久化并激活                                              |
+| `automation_updated`          | AutomationFull              | 自动化字段已变更                                                  |
+| `automation_paused`           | `{ id }`                    | 状态 → `paused`                                                   |
+| `automation_resumed`          | `{ id }`                    | 状态 → `active`                                                   |
+| `automation_archived`         | `{ id }`                    | 状态 → `archived`                                                 |
+| `automation_deleted`          | `{ id }`                    | 自动化已移除 + 日志已级联                                         |
+| `automation_pending_changes`  | `PendingChange[]`           | 当前的待处理变更(连接时同步)                                      |
+| `automation_queue_confirmed`  | `—`                         | 待处理变更已应用                                                  |
+| `automation_queue_discarded`  | `—`                         | 待处理变更已丢弃                                                  |
+| `automation_execution_log`    | ExecutionLog                | 新的或已更新的执行日志条目                                        |
+| `automation_execution_stream` | ExecutionStreamEvent        | 执行期间的实时流式事件                                            |
+| `tool_manifest`               | `{ vendor, tools, scope? }` | 对 `get_tool_manifest` 的回复(共享消息,由 tool-manifest 模块应答) |
 
 Wire 结构定义在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中。
 

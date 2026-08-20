@@ -13,7 +13,7 @@ automations 领域为 c3 增加了**任务执行**能力。一个 **Automation**
 自动化是**工作区范围**的:每个自动化都绑定到一个工作区(注册目录,通过
 [session-registry](../session-registry/session-registry-spec.md)),同时是**厂商范围**的:自动化声明所属厂商,
 执行时解析为该厂商第一个已启用的智能体。厂商的工具清单 — SDK 内置工具加上(对 Claude 而言)工作区 MCP 命名空间前缀 —
-在自动化创建时通过 `get_automation_tool_manifest` 列出,供用户选择该自动化可使用的工具。
+在自动化创建时通过 `get_tool_manifest`(与聊天机器人表单共用的工具清单消息)列出,供用户选择该自动化可使用的工具。
 
 调度引擎运行在服务端进程内,通过 [agent-session](../agent-session/agent-session-spec.md) 所拥有的同一套运行时基础设施驱动执行。
 

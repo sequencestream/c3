@@ -200,6 +200,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     automationToolManifest,
     automationToolManifestLoading,
     automationToolManifestError,
+    robotToolManifest,
+    robotToolManifestLoading,
+    robotToolManifestError,
     executionTranscripts,
     filesProject,
     filesDirs,
@@ -1288,10 +1291,23 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'automation_detail':
         automationLogs.value = { ...automationLogs.value, [msg.automation.id]: msg.logs }
         break
-      case 'automation_tool_manifest':
-        automationToolManifest.value = { ...automationToolManifest.value, [msg.vendor]: msg.tools }
-        automationToolManifestLoading.value = false
-        automationToolManifestError.value = null
+      case 'tool_manifest':
+        // The asking grid tags its request with a `scope`, which the server echoes;
+        // route to that form's cache so a reply that lands after the other form
+        // opened cannot pollute the wrong manifest (a robot has no workspace MCP
+        // namespaces; an automation's does).
+        if (msg.scope === 'robot') {
+          robotToolManifest.value = { ...robotToolManifest.value, [msg.vendor]: msg.tools }
+          robotToolManifestLoading.value = false
+          robotToolManifestError.value = null
+        } else {
+          automationToolManifest.value = {
+            ...automationToolManifest.value,
+            [msg.vendor]: msg.tools,
+          }
+          automationToolManifestLoading.value = false
+          automationToolManifestError.value = null
+        }
         break
       case 'execution_transcript':
         executionTranscripts.value = {

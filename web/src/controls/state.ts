@@ -298,6 +298,13 @@ export function createState(deps: StateDeps) {
   const selectedRobotId = ref<string | null>(null)
   const robotTurns = ref<ImRobotTurnLog[]>([])
 
+  // Robot-form tool manifest: cached per vendor, like the automation form's, but
+  // with no workspace attached — a robot is not scoped to one, so the manifest is
+  // the vendor's built-ins plus c3's own MCP tools (no `mcp__<server>__` namespaces).
+  const robotToolManifest = ref<Record<string, ToolManifestEntry[] | null>>({})
+  const robotToolManifestLoading = ref(false)
+  const robotToolManifestError = ref<string | null>(null)
+
   // Workcenter Dashboard: the cross-workspace snapshot + its per-row gate feedback.
   const dashboardRows = ref<WorkspaceDashboardRow[]>([])
   const dashboardLoading = ref(false)
@@ -1184,6 +1191,9 @@ export function createState(deps: StateDeps) {
     robotsLoading,
     selectedRobotId,
     robotTurns,
+    robotToolManifest,
+    robotToolManifestLoading,
+    robotToolManifestError,
     dashboardRows,
     dashboardLoading,
     dashboardError,

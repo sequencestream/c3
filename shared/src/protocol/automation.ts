@@ -330,23 +330,10 @@ export interface AutomationExecutionLog {
 
 // ---- Automation MCP Security ----
 
-/** One entry in a vendor's tool manifest: tool name + read/write classification. */
-export interface ToolManifestEntry {
-  /** Tool name as the SDK knows it (e.g. 'Read', 'mcp__c3__find_intents'). */
-  name: string
-  /** Whether this tool is classified as a write operation. */
-  isWrite: boolean
-}
-
-/**
- * Reserved pseudo-entry an automation may carry in its `toolAllowlist` to toggle
- * raw network access for a codex `workspace-write` sandbox (which denies network
- * by default). It is NOT a real tool: it never enters `freezeTools()` or the
- * permission grid, is stripped before the real tool allowlist is computed, and is
- * silently ignored for the claude vendor. Shared so server (strip + passthrough)
- * and web (form toggle) agree on the exact marker.
- */
-export const AUTOMATION_NETWORK_ACCESS_TOOL = 'network-access'
+// The tool manifest entry and the `network-access` pseudo-entry used to live
+// here. Both are shared verbatim with the chat-robot permission grid, so they
+// now live in `./tool-manifest.ts` — see `ToolManifestEntry` /
+// `NETWORK_ACCESS_TOOL`, re-exported from the same `@ccc/shared/protocol` entry.
 
 // ---- Wait User Involve Events ----
 

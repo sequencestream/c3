@@ -2256,27 +2256,7 @@
         "groupLabel": "Groups"
       },
       "tools": {
-        "label": "Allowed tools",
-        "readOnly": {
-          "label": "Read-only"
-        },
-        "write": {
-          "label": "Write"
-        },
-        "selectAll": {
-          "label": "Select all"
-        },
-        "clearAll": {
-          "label": "Clear all"
-        },
-        "networkAccess": {
-          "label": "Allow network access",
-          "hint": "Codex only, workspace-write sandbox: lets shell commands (gh, curl…) reach the network. Off by default.",
-          "readOnlyHint": "The read-only sandbox is network-denied unconditionally, so this switch has no effect — pick the read-write sandbox to let shell commands reach the network."
-        },
-        "loading": "Loading tools…",
-        "empty": "No tools available",
-        "error": "Failed to load tools"
+        "label": "Allowed tools"
       },
       "weekday": {
         "sun": "Sun",
@@ -2286,6 +2266,30 @@
         "thu": "Thu",
         "fri": "Fri",
         "sat": "Sat"
+      }
+    }
+  },
+  "tools": {
+    "grid": {
+      "label": "Allowed tools",
+      "selectAll": {
+        "label": "Select all"
+      },
+      "clearAll": {
+        "label": "Clear all"
+      },
+      "loading": "Loading tools…",
+      "readOnly": {
+        "label": "Read-only"
+      },
+      "write": {
+        "label": "Write"
+      },
+      "empty": "No tools available",
+      "networkAccess": {
+        "label": "Allow network access",
+        "hint": "Codex only, workspace-write sandbox: lets shell commands (gh, curl…) reach the network. Off by default.",
+        "readOnlyHint": "The read-only sandbox is network-denied unconditionally, so this switch has no effect — pick the read-write sandbox to let shell commands reach the network."
       }
     }
   },
@@ -3923,10 +3927,6 @@
       },
       "agent": {
         "label": "Agent"
-      },
-      "tools": {
-        "label": "Allowed write tools",
-        "hint": "Empty means read-only. Each tool listed here is one the robot may run without asking."
       },
       "requireMention": {
         "label": "Only answer when mentioned"

@@ -191,9 +191,10 @@ export function installAutomationActions(ctx: AppCtx): void {
     automationToolManifestLoading.value = true
     automationToolManifestError.value = null
     send({
-      type: 'get_automation_tool_manifest',
+      type: 'get_tool_manifest',
       vendor: vendor as VendorId,
       workspaceName: automationsProject.value,
+      scope: 'automation',
     })
   }
 

@@ -22,6 +22,7 @@ import type {
   ImRobot,
   ImRobotTurnLog,
   RobotConfigInput,
+  ToolManifestEntry,
 } from '@ccc/shared/protocol'
 
 const props = defineProps<{
@@ -30,6 +31,10 @@ const props = defineProps<{
   selectedId: string | null
   agents: AgentConfig[]
   isAdmin: boolean
+  /** Tool manifest per vendor for the robot form (no workspace scope). */
+  toolManifest: Record<string, ToolManifestEntry[] | null>
+  toolManifestLoading: boolean
+  toolManifestError: string | null
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +44,7 @@ const emit = defineEmits<{
   (e: 'delete', robotId: string): void
   (e: 'enable', robotId: string): void
   (e: 'disable', robotId: string): void
+  (e: 'load-tool-manifest', vendor: string): void
 }>()
 
 const { t } = useTypedI18n()
@@ -139,9 +145,13 @@ function submitUpdate(robotId: string, config: RobotConfigInput): void {
     :open="formOpen"
     :robot="editing"
     :agents="agents"
+    :tool-manifest="toolManifest"
+    :tool-manifest-loading="toolManifestLoading"
+    :tool-manifest-error="toolManifestError"
     @create="submitCreate"
     @update="submitUpdate"
     @cancel="formOpen = false"
+    @load-tool-manifest="emit('load-tool-manifest', $event)"
   />
 </template>
 

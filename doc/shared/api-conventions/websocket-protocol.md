@@ -510,11 +510,13 @@
 
 **字段：** `approvalId: string`, `decision: 'approve' | 'reject'`
 
-### `get_automation_tool_manifest`
+### `get_tool_manifest`
 
-请求供应商的工具清单，供 automation 表单中的工具选择使用。服务器回复 `automation_tool_manifest`。
+请求供应商的工具清单，供权限网格中的工具选择使用——automation 表单与聊天机器人表单共用同一张网格，因而共用这一对消息。服务器回复 `tool_manifest`。
 
-**字段：** `vendor: VendorId`, `workspaceName: string`
+`workspaceName` 把清单收窄到某个工作区已配置的 MCP 服务器（其 `mcp__<server>__` 命名空间前缀并入清单）；省略它——聊天机器人场景，机器人刻意不绑定任何工作区——清单只含供应商内建工具与 c3 自己的 MCP 工具，不含工作区命名空间。`scope` 标明提问的是哪张网格，服务器原样回显：回复可能在提问的表单关闭之后才到达，客户端据此路由到对应缓存而不是靠猜。
+
+**字段：** `vendor: VendorId`, `workspaceName?: string`, `scope?: 'automation' | 'robot'`
 
 ### `skill_load_approval_resolve`
 
@@ -973,11 +975,11 @@ automation 的执行日志。
 
 **字段：** `workspaceName: string`, `items: PendingWriteApproval[]`
 
-### `automation_tool_manifest`
+### `tool_manifest`
 
-供应商的工具清单（回复 `get_automation_tool_manifest`）。
+供应商的工具清单（回复 `get_tool_manifest`）。`scope` 回显发问的网格。
 
-**字段：** `vendor: VendorId`, `tools: ToolManifestEntry[]`
+**字段：** `vendor: VendorId`, `tools: ToolManifestEntry[]`, `scope?: 'automation' | 'robot'`
 
 ### `wait_user_events`
 

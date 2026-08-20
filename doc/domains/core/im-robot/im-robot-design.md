@@ -76,6 +76,10 @@ _即使已经显式提供了 agent_。导出了代理变量的机器因此完全
 厂商 SDK 内建工具 + c3 自己的 13 个 MCP 工具。机器人没有工作区维度,因此清单不含任何
 `mcp__<server>__` 工作区命名空间。
 
+线路上是同一对消息 `get_tool_manifest { vendor, workspaceName?, scope? }` → `tool_manifest
+{ vendor, tools, scope? }`:机器人侧发 `scope: 'robot'` 且不带 `workspaceName`,服务器原样回显
+`scope`,前端据此把回复落到机器人缓存而不是自动化缓存——回复可能在提问的表单关闭之后才到。
+
 网格组件只负责渲染、分组、全选/全清、网络开关与 loading/error/empty 状态;创建默认只读、编辑保持原样、
 切换厂商清空勾选这些调用方语义留在机器人表单——两种表单对「哪些工具能写」不会静默地产生两份回答。
 

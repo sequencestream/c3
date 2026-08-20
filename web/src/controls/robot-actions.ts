@@ -1,4 +1,4 @@
-import type { ImPlatform, RobotConfigInput } from '@ccc/shared/protocol'
+import type { ImPlatform, RobotConfigInput, VendorId } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 
 /**
@@ -40,6 +40,21 @@ export function installRobotActions(ctx: AppCtx): void {
 
   ctx.setRobotEnabled = (robotId: string, enabled: boolean): void => {
     send({ type: 'set_robot_enabled', robotId, enabled })
+  }
+
+  // A robot has no workspace, so the manifest is the vendor's built-ins plus c3's
+  // own MCP tools — request it without a `workspaceName`. Cached per vendor like
+  // the automation form's; the reply routes by `scope: 'robot'`.
+  ctx.onLoadRobotToolManifest = (vendor: string): void => {
+    if (!vendor) return
+    if (ctx.robotToolManifest.value[vendor]) {
+      ctx.robotToolManifestLoading.value = false
+      ctx.robotToolManifestError.value = null
+      return
+    }
+    ctx.robotToolManifestLoading.value = true
+    ctx.robotToolManifestError.value = null
+    send({ type: 'get_tool_manifest', vendor: vendor as VendorId, scope: 'robot' })
   }
 
   // Enabling is refused until this is recorded, so the two are sent together

@@ -649,12 +649,17 @@ export async function launchRun(
                 : isRobot
                   ? // The IM chat-robot profile (gate + disallowed-tools lock + the
                     // robot prompt). `allowedTools` is renamed to `robotAllowedTools`
-                    // here because the SDK-facing options carry gate-scoped names.
+                    // here because the SDK-facing options carry gate-scoped names;
+                    // `bindMcp` binds exactly the selected c3 MCP tools over the
+                    // loopback HTTP MCP route (absent when nothing was selected).
                     {
                       appendSystemPrompt: resolvedRobotProfile!.appendSystemPrompt,
                       disallowedTools: resolvedRobotProfile!.disallowedTools,
                       gate: resolvedRobotProfile!.gate,
                       robotAllowedTools: resolvedRobotProfile!.allowedTools,
+                      ...(resolvedRobotProfile!.bindMcp
+                        ? { bindMcp: resolvedRobotProfile!.bindMcp }
+                        : {}),
                     }
                   : isResearch
                     ? // The discussion-research read-only profile (gate + disallowed-tools

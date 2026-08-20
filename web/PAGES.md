@@ -63,6 +63,7 @@ web/src/
 │   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   ├── TabNav/TabNav.vue                            # 设置页 Tab 导航条(系统设置/工作区设置共用):纯展示,不持有草稿状态;按 prefix prop 复用各页既有 class 与 data-testid 家族(settings-* / project-config-*,nav 为组件根元素故仍受页面 scoped 样式作用,内部元素由页面以 :deep 定制);渲染 role=tablist/tab + aria-selected、脏 Tab 圆点(dirtyMap)与其 tooltip,点击仅 emit select,是否放行切换由页面的 requestTab(useTabbedDraftSave 脏守卫)决定;移动端横向滚动
 │   ├── TaskPanel/TaskPanel.vue                      # 实时任务面板:只读展示当前 session 任务列表,in_progress 置顶/pending 居中/completed 垫底
+│   ├── ToolPermissionGrid/ToolPermissionGrid.vue    # 工具权限网格(automation 表单与聊天机器人表单共享):只读/写入两组 + 全选/全清 + 可选的 network-access 开关;只渲染清单、分组、勾选与 loading/error/empty 状态,不持有调用方语义——创建默认只读、编辑保持原样、空清单含义、载荷归宿都留在各自的表单
 │   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:触发区仅显示当前 workspace name;下拉路径仅辅助展示,以名称执行选择/移除;「+」只上抛 request-add-workspace(弹框在 AppHeader);内含 popover,增删入口受 isAdmin 门控
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
@@ -76,7 +77,7 @@ web/src/
 │   │       └── robots/                              # 「聊天机器人」页的私有组件(RobotConsole.vue 的子单元)
 │   │           ├── RobotList.vue                    # 左栏全局名册(机器人不属于任何工作区,故无 workspace 维度):每行名称/平台/连接态;停用的机器人显示「已停用」而非连接态——「没连上」与「刻意关着」是两个不同的回答;「新建机器人」仅管理员可见;点击 emit select
 │   │           ├── RobotDetail.vue                  # 右栏详情:执行身份(vendor·agent)/预设权限(工具白名单为空即「只读」)/响应范围/工作目录 + 最近回合审计表(时间/结局/外发字符数,只有元数据没有正文);启用按钮不直接翻转,先开 ConfirmDialog 逐条说明会发往第三方云的内容范围(确认后由控制层连发 acknowledge + enable,服务端无该确认即拒绝启用);删除走 danger ConfirmDialog
-│   │           └── RobotForm.vue                    # 新建/编辑弹窗(范式对齐 automation 表单的「vendor + agent(或 agent group) + 预设权限」):name 与 platform 仅创建时可编辑(name 同时是工作目录名,改名会让线程历史失去归属);appSecret 只写不读,编辑时留空即保持已存密钥;agent 下拉含真实 agent 与虚拟组引用;工具白名单/群白名单/单聊白名单为逐行文本;移动端全屏 sheet
+│   │           └── RobotForm.vue                    # 新建/编辑弹窗(范式对齐 automation 表单的「vendor + agent(或 agent group) + 预设权限」):name 与 platform 仅创建时可编辑(name 同时是工作目录名,改名会让线程历史失去归属);appSecret 只写不读,编辑时留空即保持已存密钥;agent 下拉含真实 agent 与虚拟组引用;工具区为共享权限网格(ToolPermissionGrid)——创建默认只读、编辑保持原样(清单失败不清空)、切换 vendor 清空勾选、仅 codex 显示 network-access 开关且只读沙箱下置灰;群白名单/单聊白名单为逐行文本;桌面宽 50vw(半页);移动端全屏 sheet
 │   ├── works/                                    # 会话页(历史目录名 works)
 │   │   ├── Works.vue                             # 会话聚合页组件始终保留,仅主导航入口受 showSessionsPage 控制;桌面左侧聚合工作/意图/spec(含 spec_review 评审)/讨论/automation/工具六类会话(工具类另受独立 showToolSessions 门控)+右侧 ChatColumn(readonlySession 按活动会话的真实 kind 而非左栏显示分类启用只读门),移动端列表↔聊天 drill-down;深链与业务内跳转仍可直接进入
 │   │   └── components/

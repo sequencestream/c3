@@ -11,8 +11,20 @@
  * `disallowedTools` cuts the write and execution tools at the SDK level, and the
  * gate refuses them again. The allowlist re-admits exactly what an administrator
  * listed, so widening is one deliberate act rather than a mode.
+ *
+ * The allowlist is split into three surfaces at profile time (spec: 机器人回合在
+ * 启动画像解析阶段把当前 `toolAllowlist` 分成 SDK 工具、c3 MCP 工具和 `network-access`
+ * 伪条目):
+ *  - **SDK + c3 MCP tool names** → `allowedTools`, the frozen set the `robot` gate
+ *    checks. The `network-access` pseudo-entry never lands here.
+ *  - **c3 MCP tools the robot ticked** → handed to the per-turn MCP binder, which
+ *    registers exactly that subset over the loopback HTTP MCP route.
+ *  - **`network-access`** → a boolean opt-in, effective only when the driver path
+ *    later confirms Codex `workspace-write`. Absent means offline.
  */
 import type { RobotProfile } from '../../kernel/run/run-via-driver.js'
+import { NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
+import { selectedC3McpToolNames, selectsLocalWriteTool } from '../tool-manifest/index.js'
 import { getRobot } from './robot-store.js'
 
 /**
@@ -46,16 +58,37 @@ function systemPrompt(robotName: string): string {
 }
 
 /**
- * The profile for one robot. Unknown robot ⇒ a read-only profile with no
- * widening, which is the safe direction for a lookup that failed.
+ * The binder factory the composition root supplies. `bindC3Tools` returns the
+ * per-turn MCP binder for exactly the c3 tools the robot's allowlist selected,
+ * or `undefined` when nothing was selected (the route is then simply not bound).
  */
-export function robotLaunchProfile(robotId: string): RobotProfile {
+export interface RobotMcpBinder {
+  bindC3Tools: (selected: readonly string[]) => RobotProfile['bindMcp'] | undefined
+}
+
+/**
+ * The profile for one robot. Unknown robot ⇒ a read-only, offline profile with
+ * no widening, which is the safe direction for a lookup that failed.
+ */
+export function robotLaunchProfile(robotId: string, mcp: RobotMcpBinder): RobotProfile {
   const robot = getRobot(robotId)
-  const allowed = new Set(robot?.toolAllowlist ?? [])
+  // `network-access` is a pseudo-entry: it records a network opt-in and never
+  // reaches the gate / allowlist (spec: 伪条目本身永不进入 `allowedTools` 或工具 gate).
+  const allowlist = robot?.toolAllowlist ?? []
+  const real = allowlist.filter((t) => t !== NETWORK_ACCESS_TOOL)
+  const allowed = new Set(real)
+  const selected = selectedC3McpToolNames(real)
   return {
     appendSystemPrompt: systemPrompt(robot?.name ?? 'robot'),
     disallowedTools: ROBOT_BASE_DISALLOWED_TOOLS.filter((t) => !allowed.has(t)),
     gate: 'robot',
     allowedTools: allowed,
+    // Only a selected LOCAL write/exec tool of the robot's own vendor may open a
+    // writable native sandbox — c3 MCP write tools and `network-access` never do.
+    writeEnabled: selectsLocalWriteTool(robot?.vendor ?? '', real),
+    // The operator's opt-in; the driver path re-checks vendor + Codex action mode
+    // before it means anything, so a stale marker in an inapplicable env is inert.
+    networkAccess: allowlist.includes(NETWORK_ACCESS_TOOL),
+    bindMcp: selected.length > 0 ? mcp.bindC3Tools(selected) : undefined,
   }
 }

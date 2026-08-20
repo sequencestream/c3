@@ -2018,27 +2018,7 @@
         "groupLabel": "分组"
       },
       "tools": {
-        "label": "允许的工具",
-        "readOnly": {
-          "label": "只读"
-        },
-        "write": {
-          "label": "写入"
-        },
-        "selectAll": {
-          "label": "全选"
-        },
-        "clearAll": {
-          "label": "全清"
-        },
-        "networkAccess": {
-          "label": "允许网络访问",
-          "hint": "仅 Codex、workspace-write 沙箱生效：允许 shell 命令（gh、curl 等）联网。默认关闭。",
-          "readOnlyHint": "当前沙箱为「只读」，Codex 无条件禁网，此开关不生效；需要 shell 联网请切换到「读写」沙箱。"
-        },
-        "loading": "正在加载工具列表…",
-        "empty": "没有可用工具",
-        "error": "加载工具列表失败"
+        "label": "允许的工具"
       },
       "weekday": {
         "sun": "周日",
@@ -2286,6 +2266,30 @@
       "event": {
         "started": "运行开始时",
         "settled": "运行结束时"
+      }
+    }
+  },
+  "tools": {
+    "grid": {
+      "label": "允许的工具",
+      "selectAll": {
+        "label": "全选"
+      },
+      "clearAll": {
+        "label": "全清"
+      },
+      "loading": "正在加载工具列表…",
+      "readOnly": {
+        "label": "只读"
+      },
+      "write": {
+        "label": "写入"
+      },
+      "empty": "没有可用工具",
+      "networkAccess": {
+        "label": "允许网络访问",
+        "hint": "仅 Codex、workspace-write 沙箱生效：允许 shell 命令（gh、curl 等）联网。默认关闭。",
+        "readOnlyHint": "当前沙箱为「只读」，Codex 无条件禁网，此开关不生效；需要 shell 联网请切换到「读写」沙箱。"
       }
     }
   },
@@ -3923,10 +3927,6 @@
       },
       "agent": {
         "label": "Agent"
-      },
-      "tools": {
-        "label": "放开的写工具",
-        "hint": "留空即只读。列在这里的工具,机器人无需询问即可使用。"
       },
       "requireMention": {
         "label": "仅在被提及时响应"

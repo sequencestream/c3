@@ -65,7 +65,7 @@ vi.mock('../../kernel/agent/adapters/codex/gh-token.js', () => ({
 }))
 
 import type { Automation } from '@ccc/shared/protocol'
-import { AUTOMATION_NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
+import { NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
 import type {
   AutomationMcpBinding,
   ServedAutomationMcp,
@@ -234,7 +234,7 @@ describe('codex automation — network-access pseudo-entry passthrough', () => {
     await execute(
       codexAutomation({
         mode: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
-        toolAllowlist: ['Read', AUTOMATION_NETWORK_ACCESS_TOOL],
+        toolAllowlist: ['Read', NETWORK_ACCESS_TOOL],
       }),
       'log-net-1',
       () => {},
@@ -276,7 +276,7 @@ describe('codex automation — network-access pseudo-entry passthrough', () => {
     await execute(
       codexAutomation({
         mode: { sandboxMode: 'read-only', approvalPolicy: 'never' },
-        toolAllowlist: [AUTOMATION_NETWORK_ACCESS_TOOL],
+        toolAllowlist: [NETWORK_ACCESS_TOOL],
       }),
       'log-net-3',
       () => {},

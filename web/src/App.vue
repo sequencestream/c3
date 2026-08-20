@@ -394,6 +394,9 @@ const {
   robots,
   selectedRobotId,
   robotTurns,
+  robotToolManifest,
+  robotToolManifestLoading,
+  robotToolManifestError,
   loadRobots,
   selectRobot,
   createRobot,
@@ -401,6 +404,7 @@ const {
   deleteRobot,
   setRobotEnabled,
   acknowledgeAndEnableRobot,
+  onLoadRobotToolManifest,
   loadDashboard,
   toggleWorkspaceAutomation,
   // ---- modals ----
@@ -1048,12 +1052,16 @@ function onFilesChatWidth(px: number): void {
           :selected-id="selectedRobotId"
           :agents="serverSettings?.agents ?? []"
           :is-admin="auth.isAdmin.value"
+          :tool-manifest="robotToolManifest"
+          :tool-manifest-loading="robotToolManifestLoading"
+          :tool-manifest-error="robotToolManifestError"
           @select="selectRobot"
           @create="createRobot"
           @update="updateRobot"
           @delete="deleteRobot"
           @enable="acknowledgeAndEnableRobot"
           @disable="(id: string) => setRobotEnabled(id, false)"
+          @load-tool-manifest="onLoadRobotToolManifest"
         />
 
         <Dashboard

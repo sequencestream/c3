@@ -69,6 +69,40 @@ _即使已经显式提供了 agent_。导出了代理变量的机器因此完全
 机器人身份挂在运行时上(与规格评审挂载被评审意图同理),其启动画像由该身份解析而来;缺身份或缺画像
 时启动器抛错而非退化,因为没有配置可约束的回合没有安全的默认值。
 
+## 工具清单与权限网格
+
+表单的工具区是一个与自动化表单**共享**的权限网格(只读/写入两组 + 全选/全清 + 可选的网络开关)。
+工具清单按厂商静态声明(`ToolManifestEntry { name, isWrite }`),由服务端一次下发给两个表单:
+厂商 SDK 内建工具 + c3 自己的 13 个 MCP 工具。机器人没有工作区维度,因此清单不含任何
+`mcp__<server>__` 工作区命名空间。
+
+网格组件只负责渲染、分组、全选/全清、网络开关与 loading/error/empty 状态;创建默认只读、编辑保持原样、
+切换厂商清空勾选这些调用方语义留在机器人表单——两种表单对「哪些工具能写」不会静默地产生两份回答。
+
+## 启动画像与沙箱推导
+
+`robotLaunchProfile` 从机器人的 `toolAllowlist` 计算三件事,挂在 `RobotProfile` 上由运行启动器消费
+(kernel 不 import features,故结果值在 features 层算好、随画像传递):
+
+- `writeEnabled` —— 是否勾了该厂商的**本地写/执行**工具(codex 为 `shell`/`apply_patch`,排除 `mcp__`
+  前缀)。它**独一**决定 codex 原生沙箱模式:workspace-write 对应 actionMode 'build'、只读对应 'plan',
+  再经厂商策略映射到 codex 的 sandboxMode;`sessionKind` 保持 `'robot'`,不改动既有
+  sandboxEligible 与默认会话种类。
+- `networkAccess` —— allowlist 里是否含 `network-access` 伪条目;仅当 codex + workspace-write 才生效,
+  其余情况静默忽略。
+- `bindMcp` —— 勾了 c3 MCP 工具时的绑定器,把勾选的裸工具名交给传输层;一个 c3 工具都没勾时没有绑定。
+
+## c3 MCP 回环绑定
+
+机器人回合与自动化共用同一套框架无关的工具构造器(`buildAutomationC3Tools`);差异在绑定方式。
+自动化在每次执行时经 `transport/automation-mcp` 绑定;机器人经 `transport/robot-mcp`——同一回环
+流式 HTTP 路径(`/internal/robot-mcp/v1`),每次绑定颁发一次性令牌,回环外源被拒,
+`enabledTools` 精确等于勾选子集,dispose 时先吊销令牌再关连接,URL 随即 404。
+
+启动依赖的构造顺序里存在一个「launchDeps ↔ robotMcp」环,靠惰性取值器解开:robotMcp 先于 launchDeps
+创建,工具处理器经 `() => c3McpDeps` 在回合真正运行时才解析依赖。运行 id 也按取值器延迟解析——
+回合尚在 pending 阶段最终 id 未定,publish_event 用活着的会话 id 归因。
+
 ## 会话续接
 
 线程的下一条消息带着上次绑定的会话 id 进入,厂商据此续接同一段对话,IM 线程因而读起来是一段连续

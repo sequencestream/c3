@@ -13,7 +13,10 @@
  */
 
 import type { WorkspaceMcpConfig } from '@ccc/shared/protocol'
-import { AUTOMATION_NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
+import { NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
+// The c3 MCP catalogue is domain-neutral (the chat-robot grid reads the same
+// list), so it is declared once in `features/tool-manifest` and consumed here.
+import { C3_MCP_TOOLS } from '../tool-manifest/index.js'
 
 // ---------------------------------------------------------------------------
 // Read/write classification
@@ -60,59 +63,13 @@ const READ_MCP_PREFIXES = [
 ]
 
 /**
- * c3 MCP tools shown in the automation allowlist UI. They are attached to an
- * execution (Claude or Codex) only when that automation explicitly selects one.
- *
- * Every vendor reaches these over the loopback HTTP MCP route (`transport/automation-mcp`,
- * from the shared `c3-tools.ts` builder). They live outside the workspace MCP config
- * (they're c3's own tools, not user-configured), so they're explicitly registered
- * both here in `freezeTools()` and in the automation form's tool manifest handler.
- *
- * Fully-qualified names: `mcp__c3__find_intents`, `mcp__c3__view_intent`,
- * `mcp__c3__save_intents`.
- *
- * Being listed here only makes a tool SELECTABLE. Nothing is attached to an
- * execution that did not tick it, and no built-in automation template ticks the
- * delivery tools — 「默认不勾选」 in this surface means exactly that.
- */
-export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
-  { name: 'mcp__c3__find_intents', isWrite: false },
-  { name: 'mcp__c3__view_intent', isWrite: false },
-  { name: 'mcp__c3__save_intents', isWrite: true },
-  { name: 'mcp__c3__save_intent_directly', isWrite: true },
-  // PR-status sync triggers server-side forge derivation and persists terminal
-  // PR states — a write, not a read. It replaces the deprecated save_intent_pr_info
-  // (the model supplies no status value; only the forge verdict lands in the ledger).
-  { name: 'mcp__c3__sync_intent_pr_status', isWrite: true },
-  { name: 'mcp__c3__publish_event', isWrite: true },
-  // Delivery tools: READ-ONLY on purpose. A delivery status write funnels through
-  // the state machine and its guards, so there is no delivery write tool to select
-  // here — an automation observes deliveries, a human (or a forge fact) moves them.
-  { name: 'mcp__c3__find_deliveries', isWrite: false },
-  { name: 'mcp__c3__view_delivery', isWrite: false },
-  // Discussion tools (automation LLM execution): find/view are read-only;
-  // start/continue drive an orchestration run and are writes.
-  { name: 'mcp__c3__find_discussions', isWrite: false },
-  { name: 'mcp__c3__view_discussion', isWrite: false },
-  { name: 'mcp__c3__start_discussion', isWrite: true },
-  { name: 'mcp__c3__continue_discussion', isWrite: true },
-  // Session launcher tool: starts spec or work sessions — a write operation.
-  { name: 'mcp__c3__start_session_for_intent', isWrite: true },
-]
-
-/** Whether a automation explicitly selected any in-process c3 MCP capability. */
-export function hasSelectedC3McpTool(toolAllowlist: readonly string[]): boolean {
-  return C3_MCP_TOOLS.some((tool) => toolAllowlist.includes(tool.name))
-}
-
-/**
- * Whether a automation selected the `network-access` pseudo-entry. Orthogonal to
+ * Whether an automation selected the `network-access` pseudo-entry. Orthogonal to
  * the real tool set: the dispatcher reads this to decide the codex sandbox's raw
  * network flag, while {@link freezeTools} strips the same marker so it never
  * participates in read/write classification or the permission grid.
  */
 export function hasSelectedNetworkAccess(toolAllowlist: readonly string[]): boolean {
-  return toolAllowlist.includes(AUTOMATION_NETWORK_ACCESS_TOOL)
+  return toolAllowlist.includes(NETWORK_ACCESS_TOOL)
 }
 
 // ---------------------------------------------------------------------------
@@ -206,9 +163,7 @@ export function freezeTools(
   // they are capability flags, not tools, so they must not restrict the real set.
   // Without this, an allowlist of only `network-access` would read as "non-empty"
   // and collapse the frozen set to empty instead of the intended "no restriction".
-  const realAllowlist = automationAllowlist.filter(
-    (item) => item !== AUTOMATION_NETWORK_ACCESS_TOOL,
-  )
+  const realAllowlist = automationAllowlist.filter((item) => item !== NETWORK_ACCESS_TOOL)
 
   // Apply allowlist (intersection) — empty = no restriction
   const hasAllowlist = realAllowlist.length > 0

@@ -56,11 +56,11 @@ import type {
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import {
   freezeTools,
-  hasSelectedC3McpTool,
   hasSelectedNetworkAccess,
   matchesFrozenTool,
   isWriteTool,
 } from './mcp-freeze.js'
+import { hasSelectedC3McpTool } from '../tool-manifest/index.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { remoteMcpToClaudeConfig } from '../../kernel/agent/adapters/claude/mcp.js'
 import { buildAutomationPrompt, readEmbedEventContext } from './event-prompt.js'

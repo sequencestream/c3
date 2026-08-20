@@ -1,5 +1,5 @@
 /**
- * Automation, MCP manifest and wait-user-involve wire messages.
+ * Automation and wait-user-involve wire messages.
  *
  * Each type is one arm of `ClientToServer` / `ServerToClient`; the unions are
  * assembled in `../protocol.ts`, which is their only definition site. These arm
@@ -11,13 +11,11 @@ import type {
   Automation,
   AutomationExecutionLog,
   CreateAutomationInput,
-  ToolManifestEntry,
   UpdateAutomationInput,
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
 } from './automation.js'
 import type { TranscriptItem } from './session.js'
-import type { VendorId } from './vendor.js'
 
 /** Create a automation in a workspace; server broadcasts `automations`. */
 export type ClientCreateAutomation = {
@@ -54,16 +52,6 @@ export type ClientGetExecutionTranscript = {
 
 /** Manual trigger: execute a automation immediately (outside normal tick). */
 export type ClientAutomationRunNow = { type: 'automation_run_now'; automationId: string }
-
-/**
- * Request a vendor's tool manifest for automation form tool selection.
- * Server replies with `automation_tool_manifest`.
- */
-export type ClientGetAutomationToolManifest = {
-  type: 'get_automation_tool_manifest'
-  vendor: VendorId
-  workspaceName: string
-}
 
 /**
  * Request the project's wait-user-involve events — the server replies with
@@ -113,13 +101,6 @@ export type ServerAutomationExecutionLogs = {
   type: 'automation_execution_logs'
   automationId: string
   items: AutomationExecutionLog[]
-}
-
-/** A vendor's tool manifest (reply to `get_automation_tool_manifest`). */
-export type ServerAutomationToolManifest = {
-  type: 'automation_tool_manifest'
-  vendor: VendorId
-  tools: ToolManifestEntry[]
 }
 
 /**

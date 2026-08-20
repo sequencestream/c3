@@ -23,6 +23,7 @@ export * from './protocol/robot.js'
 export * from './protocol/session.js'
 export * from './protocol/settings.js'
 export * from './protocol/skill.js'
+export * from './protocol/tool-manifest.js'
 export * from './protocol/vendor.js'
 export * from './protocol/workspace.js'
 
@@ -38,6 +39,7 @@ import type * as RobotMsg from './protocol/robot-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
 import type * as SettingsMsg from './protocol/settings-messages.js'
 import type * as SkillMsg from './protocol/skill-messages.js'
+import type * as ToolManifestMsg from './protocol/tool-manifest-messages.js'
 import type * as WorkspaceMsg from './protocol/workspace-messages.js'
 
 // Client → Server
@@ -162,7 +164,7 @@ export type ClientToServer =
   | AutomationMsg.ClientAutomationRunNow
   | WorkspaceMsg.ClientGetWorkspaceMcpConfig
   | WorkspaceMsg.ClientSaveWorkspaceMcpConfig
-  | AutomationMsg.ClientGetAutomationToolManifest
+  | ToolManifestMsg.ClientGetToolManifest
   | SkillMsg.ClientSkillLoadApprovalResolve
   | SkillMsg.ClientGetSkillLinkStatus
   | SkillMsg.ClientInstallSkill
@@ -265,7 +267,7 @@ export type ServerToClient =
   | AutomationMsg.ServerExecutionTranscript
   | AutomationMsg.ServerAutomationExecutionLogs
   | WorkspaceMsg.ServerWorkspaceMcpConfig
-  | AutomationMsg.ServerAutomationToolManifest
+  | ToolManifestMsg.ServerToolManifest
   | AutomationMsg.ServerWaitUserEvents
   | SkillMsg.ServerSkillLoadApprovalRequest
   | WorkspaceMsg.ServerTimerangeStats

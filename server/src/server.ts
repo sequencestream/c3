@@ -72,6 +72,7 @@ import { runPublishEvent } from './features/events/tool-defs.js'
 import type { AutomationMcpDeps } from './features/automations/c3-tools.js'
 import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
 import { createAutomationMcp, AUTOMATION_MCP_PATH } from './transport/automation-mcp/index.js'
+import { createRobotMcp, ROBOT_MCP_PATH } from './transport/robot-mcp/index.js'
 import { createAdvisorMcp, ADVISOR_MCP_PATH } from './transport/advisor-mcp/index.js'
 import { createAdvisorApproval } from './features/intents/advisor-approval.js'
 import {
@@ -620,6 +621,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
   const specReviewMcp = createSpecReviewMcp(`http://127.0.0.1:${opts.port}`)
 
+  // Robot c3 MCP route. The tool deps (`AutomationMcpDeps`) close over
+  // `launchDeps`, which is constructed below, so this route reads them through a
+  // lazy getter that is filled once the full deps object exists — the handlers
+  // only run during a robot turn, well after startup. Bound per turn with only
+  // the tools the robot's allowlist selected (wired via `robotProfile` below).
+  let c3McpDeps: AutomationMcpDeps | null = null
+  const robotMcp = createRobotMcp(`http://127.0.0.1:${opts.port}`, () => c3McpDeps)
+
   // ── Sandbox wiring (arapuca process-level isolation) ───────────────────────
   // Probe arapuca once at startup for the "sandbox available?" signal (log only;
   // the run-lifecycle gate only fires when a project actually enables sandbox, and
@@ -698,7 +707,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // system prompt), resolved per turn from that robot's stored configuration —
     // which is the whole of what constrains an externally-driven run. A lookup
     // miss yields the narrowest profile, never a permissive default (ADR-0046).
-    robotProfile: (_workspacePath, robotId) => robotLaunchProfile(robotId),
+    // The binder freezes exactly the c3 MCP tools the robot's allowlist ticked
+    // onto the per-turn loopback route (scoped to the robot's run root, which the
+    // launch path supplies as `workspacePath`).
+    robotProfile: (_workspacePath, robotId) =>
+      robotLaunchProfile(robotId, {
+        bindC3Tools: (selected) => (binding) =>
+          robotMcp.bind({
+            workspacePath: binding.workspacePath,
+            getRunId: binding.getRunId,
+            selectedTools: selected,
+          }),
+      }),
     // Work-session base MCP profile: every new and resumed work session gets
     // `publish_event` (publish a vendor-neutral generic event after acting with
     // its own tools) plus `memory_search` / `memory_write` (the workspace's
@@ -789,6 +809,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     startDiscussionRun: discussionRuns.startDiscussionRun,
     launchRun: (rt, prompt, images, inject) => launchRun(rt, prompt, launchDeps, images, inject),
   }
+  // The robot route resolves the SAME deps object through its lazy getter — both
+  // surfaces run identical tool behaviors from one definition.
+  c3McpDeps = automationMcpDeps
   // The automation c3 MCP over loopback HTTP: the dispatcher binds it per execution
   // (Claude and Codex both) when the automation selects a c3 tool. Mounted before
   // the SPA catch-all, same as the intent / event / relay routes.
@@ -957,6 +980,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // per-execution by the dispatcher. Loopback-guarded + per-execution token inside
   // the handler. Before the SPA catch-all, same as the other MCP routes.
   app.all(AUTOMATION_MCP_PATH, (c) => automationMcp.handler(c))
+
+  // Robot MCP loopback endpoint — the chat-robot c3 tool subset. Bound per turn
+  // with only the tools the robot's allowlist selected. Loopback-guarded +
+  // per-turn token inside the handler. Before the SPA catch-all, same as the
+  // other MCP routes.
+  app.all(ROBOT_MCP_PATH, (c) => robotMcp.handler(c))
 
   // Advisor MCP loopback endpoint — the queue advisor's dedicated tool group.
   // Bound per consultation; loopback-guarded + per-consultation token inside the

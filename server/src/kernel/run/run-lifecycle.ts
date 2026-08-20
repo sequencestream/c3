@@ -26,6 +26,7 @@ import {
   type SessionMcpProfile,
   type SpecProfile,
   type SpecReviewProfile,
+  type RobotProfile,
 } from './run-via-driver.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
@@ -130,6 +131,16 @@ export interface LaunchRunDeps {
     fingerprint: string,
   ) => SpecReviewProfile
   /**
+   * IM chat-robot launch profile (the `robot` gate + disallowed-tools lock + the
+   * robot's system prompt + its frozen write allowlist), injected at the
+   * composition root so the kernel launcher never imports `features/` (ADR-0009
+   * R1). Consulted ONLY for `rt.sessionKind === 'robot'` runtimes. A robot
+   * runtime launched without it throws: a missing wiring is a bug, never a
+   * silent downgrade of an externally-driven turn into a write-capable run
+   * carrying the work session's tool face (ADR-0046).
+   */
+  robotProfile?: (workspacePath: string, robotId: string) => RobotProfile
+  /**
    * Discussion-research launch profile (read-only `discussion-research` gate +
    * disallowed-tools lock + research system prompt), injected at the composition
    * root so the kernel launcher never imports `features/` (ADR-0009 R1). Consulted
@@ -229,6 +240,7 @@ export async function launchRun(
   const isIntent = rt.sessionKind === 'intent'
   const isSpec = rt.sessionKind === 'spec'
   const isSpecReview = rt.sessionKind === 'spec_review'
+  const isRobot = rt.sessionKind === 'robot'
   // The research marker, NOT `sessionKind === 'discussion'`: the orchestrator's
   // per-agent sessions share that kind and must never pick up the research profile.
   const isResearch = !!rt.researchDiscussionId
@@ -279,6 +291,21 @@ export async function launchRun(
     throw new Error(
       '[c3] launchRun: a research runtime requires deps.researchProfile (composition-root wiring missing)',
     )
+  }
+  // Same loud-throw for a robot runtime. Launching one without its profile would
+  // fall through to the standard gate — an inbound group message would then drive
+  // a write-capable run that can also stall on a permission prompt nobody can
+  // answer. Both halves of that are exactly what ADR-0046 forbids.
+  if (isRobot && !deps.robotProfile) {
+    throw new Error(
+      '[c3] launchRun: a robot runtime requires deps.robotProfile (composition-root wiring missing)',
+    )
+  }
+  // The robot's identity is what its profile is resolved from; without it there
+  // is no configuration to constrain the turn, so there is nothing safe to fall
+  // back to.
+  if (isRobot && !rt.robotId) {
+    throw new Error('[c3] launchRun: a robot runtime requires rt.robotId')
   }
 
   // 本次 run 的日志身份。`runId` 会在 pending→real 绑定后改写,所以每次取用都重新
@@ -331,6 +358,8 @@ export async function launchRun(
       : undefined
   const resolvedResearchProfile =
     isResearch && deps.researchProfile ? deps.researchProfile(workspacePath) : undefined
+  const resolvedRobotProfile =
+    isRobot && deps.robotProfile ? deps.robotProfile(workspacePath, rt.robotId!) : undefined
   // Resolve the work-session base MCP profile once (publish_event + the two
   // workspace-memory tools), for `work` sessions only. Both the claude path and
   // the driver path consume it.
@@ -440,6 +469,7 @@ export async function launchRun(
           resolvedSessionProfile,
           resolvedSpecProfile,
           resolvedSpecReviewProfile,
+          resolvedRobotProfile,
         )
       const unavailable = `${vendor} is unavailable (its host CLI is missing or incompatible — install it to use a ${vendor} agent).`
       logRunFailure(runLogIdentity(), `vendor-unavailable:${vendor}`, unavailable)
@@ -616,29 +646,39 @@ export async function launchRun(
                   // + review prompt + the reviewer's bound submit tool). No
                   // `specDir`: a reviewer has no writable location to confine.
                   resolvedSpecReviewProfile!
-                : isResearch
-                  ? // The discussion-research read-only profile (gate + disallowed-tools
-                    // lock + research prompt), re-applied on every follow-up turn so a
-                    // resumed research session can still only read.
-                    resolvedResearchProfile!
-                  : // Socket auto-resume is for ordinary user sessions only — the
-                    // intent comm agent is excluded (different lifecycle). A work run's
-                    // internal instruction (SDD work contract) rides claude's preset
-                    // system append here, so it reaches the model without being echoed.
-                    // Work sessions also get the base MCP profile (publish_event +
-                    // workspace memory) over the loopback HTTP MCP route; the gate
-                    // stays 'standard'.
+                : isRobot
+                  ? // The IM chat-robot profile (gate + disallowed-tools lock + the
+                    // robot prompt). `allowedTools` is renamed to `robotAllowedTools`
+                    // here because the SDK-facing options carry gate-scoped names.
                     {
-                      ...(inject?.systemInstruction
-                        ? { appendSystemPrompt: inject.systemInstruction }
-                        : {}),
-                      ...(resolvedSessionProfile
-                        ? { bindMcp: resolvedSessionProfile.bindMcp }
-                        : {}),
-                      onSocketDisconnect: (info) => {
-                        socketInfo = info
-                      },
-                    }),
+                      appendSystemPrompt: resolvedRobotProfile!.appendSystemPrompt,
+                      disallowedTools: resolvedRobotProfile!.disallowedTools,
+                      gate: resolvedRobotProfile!.gate,
+                      robotAllowedTools: resolvedRobotProfile!.allowedTools,
+                    }
+                  : isResearch
+                    ? // The discussion-research read-only profile (gate + disallowed-tools
+                      // lock + research prompt), re-applied on every follow-up turn so a
+                      // resumed research session can still only read.
+                      resolvedResearchProfile!
+                    : // Socket auto-resume is for ordinary user sessions only — the
+                      // intent comm agent is excluded (different lifecycle). A work run's
+                      // internal instruction (SDD work contract) rides claude's preset
+                      // system append here, so it reaches the model without being echoed.
+                      // Work sessions also get the base MCP profile (publish_event +
+                      // workspace memory) over the loopback HTTP MCP route; the gate
+                      // stays 'standard'.
+                      {
+                        ...(inject?.systemInstruction
+                          ? { appendSystemPrompt: inject.systemInstruction }
+                          : {}),
+                        ...(resolvedSessionProfile
+                          ? { bindMcp: resolvedSessionProfile.bindMcp }
+                          : {}),
+                        onSocketDisconnect: (info) => {
+                          socketInfo = info
+                        },
+                      }),
           send: (m) => emit(runId, m),
           // Permission-event hook: the session id is a getter because `runId`
           // changes on pending→real bind (onSessionId reassigns it).

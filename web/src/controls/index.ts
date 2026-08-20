@@ -20,6 +20,7 @@ import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
 import { installDashboardActions } from './dashboard-actions'
+import { installRobotActions } from './robot-actions'
 import { installShareActions } from './share-actions'
 import { installUpdateActions } from './update-actions'
 import type { AppCtx } from './types'
@@ -69,6 +70,7 @@ export function useAppController(): AppCtx {
   installSettingsActions(ctx)
   installWorkcenterActions(ctx)
   installDashboardActions(ctx)
+  installRobotActions(ctx)
   installShareActions(ctx)
   installUpdateActions(ctx)
 

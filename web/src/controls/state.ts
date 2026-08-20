@@ -79,6 +79,8 @@ import type {
   UserWorkspaceAccessAccount,
   WorkspaceInfo,
   WorkspaceDashboardRow,
+  ImRobot,
+  ImRobotTurnLog,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import { useTypedI18n } from '@/i18n'
@@ -119,7 +121,15 @@ export const FILES_CHAT_WIDTH_MIN = 240
 export const FILES_CHAT_WIDTH_MAX = 720
 
 export type TabKey = 'console' | 'intents' | 'deliveries' | 'discussion' | 'automations' | 'files'
-export type SessionPageKind = Exclude<SessionKind, 'consensus'>
+/**
+ * The session kinds the session page can address. `consensus` has no session of
+ * its own; `robot` sessions belong to an IM chat robot, are not reachable from
+ * any workspace, and so never appear here.
+ */
+/** The pages the workcenter view can show, in top-bar order. */
+export type WorkcenterPage = 'notifications' | 'dashboard' | 'robots'
+
+export type SessionPageKind = Exclude<SessionKind, 'consensus' | 'robot'>
 
 export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
   'work',
@@ -277,7 +287,14 @@ export function createState(deps: StateDeps) {
   )
 
   // Workcenter page-internal nav: which page the workcenter view is showing.
-  const workcenterPage = ref<'dashboard' | 'notifications'>('notifications')
+  const workcenterPage = ref<WorkcenterPage>('notifications')
+
+  // Chat robots: the global roster (robots are not scoped to a workspace) plus
+  // the audit rows of whichever robot is selected.
+  const robots = ref<ImRobot[]>([])
+  const robotsLoading = ref(false)
+  const selectedRobotId = ref<string | null>(null)
+  const robotTurns = ref<ImRobotTurnLog[]>([])
 
   // Workcenter Dashboard: the cross-workspace snapshot + its per-row gate feedback.
   const dashboardRows = ref<WorkspaceDashboardRow[]>([])
@@ -1130,6 +1147,10 @@ export function createState(deps: StateDeps) {
     workcenterLoading,
     workcenterAppendNext,
     workcenterPage,
+    robots,
+    robotsLoading,
+    selectedRobotId,
+    robotTurns,
     dashboardRows,
     dashboardLoading,
     dashboardError,

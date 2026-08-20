@@ -5,6 +5,8 @@ import type {
   ActionTarget,
   ClientToServer,
   FileGitStatus,
+  ImPlatform,
+  RobotConfigInput,
   FileSearchHit,
   CodexPolicy,
   CreateAutomationInput,
@@ -30,7 +32,7 @@ import type {
   WorkspaceSetting as WorkspaceSettingType,
   QueueControlAction,
 } from '@ccc/shared/protocol'
-import type { AppState, AuthApi, DepType, TypedT } from './state'
+import type { AppState, AuthApi, DepType, TypedT, WorkcenterPage } from './state'
 import type { CreateIntentEvent } from '@/lib/create-intent-view'
 import type { CreatePrEvent } from '@/lib/create-pr-view'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
@@ -454,7 +456,15 @@ export interface AppMethods {
   markDoneWorkcenter(eventId: string): void
   // workcenter dashboard
   /** Switch the Workcenter page-internal nav; loads the newly-active page. */
-  setWorkcenterPage(page: 'dashboard' | 'notifications'): void
+  setWorkcenterPage(page: WorkcenterPage): void
+  // Chat robots (global; no workspace parameter anywhere).
+  loadRobots(): void
+  selectRobot(robotId: string | null): void
+  createRobot(name: string, platform: ImPlatform, config: RobotConfigInput): void
+  updateRobot(robotId: string, config: RobotConfigInput): void
+  deleteRobot(robotId: string): void
+  setRobotEnabled(robotId: string, enabled: boolean): void
+  acknowledgeAndEnableRobot(robotId: string): void
   /** (Re)fetch the cross-workspace Dashboard snapshot; coalesces while one is in flight. */
   loadDashboard(): void
   /** Refresh the Dashboard only when it is the active view (domain-broadcast hook). */

@@ -20,5 +20,6 @@ export {
 export { createWsHandler } from './ws-upgrade.js'
 export { mountStaticAssets, mountDevPlaceholder } from './static-assets.js'
 export { startSchedulerWiring, stopSchedulerWiring } from './scheduler-startup.js'
+export { startImRobotsWiring, stopImRobotsWiring } from './im-startup.js'
 export { registerRunDomainSubscriptions } from './run-domain-subscriptions.js'
 export { registerRunLifecycleLogging } from './run-lifecycle-logging.js'

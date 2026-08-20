@@ -48,7 +48,9 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
                 ? 'spec_review'
                 : base.gate === 'discussion-research'
                   ? 'discussion'
-                  : 'work',
+                  : base.gate === 'robot'
+                    ? 'robot'
+                    : 'work',
       }
 }
 
@@ -593,5 +595,84 @@ describe('spec_review gate — strictly read-only, deny-by-default', () => {
     await g()('Bash', { command: 'ls' }, {} as never)
     expect(vi.mocked(runConsensusVote)).not.toHaveBeenCalled()
     expect(vi.mocked(runAskConsensus)).not.toHaveBeenCalled()
+  })
+})
+
+describe('robot gate — unattended, never stalls, deny-by-default (ADR-0046)', () => {
+  const g = (allowed?: ReadonlySet<string>) =>
+    createCanUseTool(spec({ gate: 'robot', cwd: '/robots/helper', robotAllowedTools: allowed }))
+
+  it('allows read-class tools', async () => {
+    for (const [tool, input] of [
+      ['Read', { file_path: '/robots/helper/notes.md' }],
+      ['Grep', { pattern: 'x' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['mcp__c3__find_intents', { keyword: 'login' }],
+    ] as const) {
+      expect(await g()(tool, input, {} as never)).toMatchObject({ behavior: 'allow' })
+    }
+  })
+
+  it('DENIES the human-facing tools outright — nobody is in the chat to answer', async () => {
+    // This is the load-bearing assertion of the gate. If either of these ever
+    // reached the prompt path, an inbound group message would produce a run that
+    // hangs until its wall clock kills it, and the person in the chat would just
+    // see silence. The denial — not a timeout — is what makes it not stall.
+    for (const tool of ['AskUserQuestion', 'ExitPlanMode'] as const) {
+      expect(await g()(tool, {}, {} as never)).toMatchObject({ behavior: 'deny' })
+    }
+  })
+
+  it('never raises a permission_request, for any tool class', async () => {
+    const onPermissionRequest = vi.fn()
+    const send = vi.fn()
+    const gate = createCanUseTool(
+      spec({ gate: 'robot', cwd: '/robots/helper', onPermissionRequest, send }),
+    )
+    for (const [tool, input] of [
+      ['Read', { file_path: '/robots/helper/a.md' }],
+      ['Write', { file_path: '/robots/helper/a.md' }],
+      ['Bash', { command: 'ls' }],
+      ['AskUserQuestion', {}],
+      ['SomethingUnrecognised', {}],
+    ] as const) {
+      await gate(tool, input, {} as never)
+    }
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('DENIES write/exec tools when the robot has no allowlist (the default)', async () => {
+    for (const [tool, input] of [
+      ['Write', { file_path: '/robots/helper/a.md' }],
+      ['Edit', { file_path: '/robots/helper/a.md' }],
+      ['Bash', { command: 'rm -rf /' }],
+      ['Task', {}],
+    ] as const) {
+      expect(await g()(tool, input, {} as never)).toMatchObject({ behavior: 'deny' })
+    }
+  })
+
+  it('allows exactly the write/exec tools the robot froze into its allowlist', async () => {
+    const allowed = new Set(['Write'])
+    expect(
+      await g(allowed)('Write', { file_path: '/robots/helper/a.md' }, {} as never),
+    ).toMatchObject({ behavior: 'allow' })
+    // Widening one tool must not widen its neighbours.
+    expect(await g(allowed)('Bash', { command: 'ls' }, {} as never)).toMatchObject({
+      behavior: 'deny',
+    })
+  })
+
+  it('an allowlist can never re-open the human-facing tools', async () => {
+    // Even a misconfigured allowlist must not be able to reintroduce a stall.
+    const allowed = new Set(['AskUserQuestion', 'ExitPlanMode'])
+    for (const tool of ['AskUserQuestion', 'ExitPlanMode'] as const) {
+      expect(await g(allowed)(tool, {}, {} as never)).toMatchObject({ behavior: 'deny' })
+    }
+  })
+
+  it('DENIES an unrecognised tool (default-deny is structural)', async () => {
+    expect(await g()('TotallyUnknownTool', {}, {} as never)).toMatchObject({ behavior: 'deny' })
   })
 })

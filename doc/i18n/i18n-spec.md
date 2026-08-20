@@ -27,7 +27,7 @@ key 段结构:
 
 全小写;段内多词用 `camelCase`,段间用 `.` 分隔。
 
-### 2.1 namespace(第一段,冻结十个)
+### 2.1 namespace(第一段,冻结十一个)
 
 | namespace    | 用途                                 | 示例                               |
 | ------------ | ------------------------------------ | ---------------------------------- |
@@ -41,6 +41,7 @@ key 段结构:
 | `delivery`   | 交付                                 | `delivery.status.planned.label`    |
 | `intent`     | 需求                                 | `intent.detail.empty`              |
 | `error`      | 错误 / 异常文案                      | `error.network.timeout`            |
+| `robot`      | IM 聊天机器人                        | `robot.form.name.label`            |
 
 - 通用词进 `common`,业务词归各自域;错误文案统一进 `error`。
 - 需要新 namespace 时,**先在本表登记再加 key**。

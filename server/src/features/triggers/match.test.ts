@@ -55,6 +55,19 @@ describe('run 生命周期事件的 sessionKind 维度', () => {
     )
   })
 
+  it('空过滤器不匹配机器人回合', () => {
+    // 一条外部群消息不该唤醒一个为本机开发流程写的自动化。
+    const result = evaluateAutomationTriggerMatch(automation(), settledView('robot'))
+    expect(result.matched).toBe(false)
+    expect(result.breakdown).toContainEqual({ name: 'sessionKind', passed: false })
+  })
+
+  it('显式点名后机器人回合才参与匹配', () => {
+    expect(
+      evaluateAutomationTriggerMatch(automation(['robot']), settledView('robot')).matched,
+    ).toBe(true)
+  })
+
   it('非空白名单仍是精确白名单,未列入的场景不匹配', () => {
     expect(
       evaluateAutomationTriggerMatch(automation(['work']), settledView('intent')).matched,

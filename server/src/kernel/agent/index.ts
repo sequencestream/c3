@@ -239,7 +239,13 @@ export interface RunOptions {
    * confirmation happens in the conversation), and everything else is denied by
    * default (a second line of defence behind `disallowedTools`).
    */
-  gate?: 'standard' | 'intent' | 'discussion-research' | 'spec' | 'spec_review'
+  gate?: 'standard' | 'intent' | 'discussion-research' | 'spec' | 'spec_review' | 'robot'
+  /**
+   * Only with `gate === 'robot'`: the write/exec-class tools this robot's
+   * configuration deliberately widened to. Absent means read-only, which is what
+   * a robot is created with (ADR-0046).
+   */
+  robotAllowedTools?: ReadonlySet<string>
   /**
    * Only with `gate === 'spec'`: the absolute spec directory this run's writes
    * are confined to. Forwarded to {@link createCanUseTool}; write-class tools
@@ -585,6 +591,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     bindMcp,
     gate = 'standard',
     specDir,
+    robotAllowedTools,
     skillWriteGuard,
     send,
     onStart,
@@ -709,6 +716,8 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         gate,
         // Only meaningful for the spec gate: confines write-class tools to this dir.
         specDir,
+        // Only meaningful for the robot gate: the robot's frozen write allowlist.
+        robotAllowedTools,
         // The producing run's SessionKind, mapped from THIS run's gate (the agent path
         // carries the gate, not a SessionKind): intent comm agent → 'intent', spec
         // write gate → 'spec', spec review → 'spec_review', discussion-research →
@@ -724,7 +733,9 @@ export async function runClaude(opts: RunOptions): Promise<void> {
                 ? 'spec_review'
                 : gate === 'discussion-research'
                   ? 'discussion'
-                  : 'work',
+                  : gate === 'robot'
+                    ? 'robot'
+                    : 'work',
         send,
         signal,
         currentAgentId: currentAgentId ?? null,

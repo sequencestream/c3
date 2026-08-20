@@ -54,6 +54,11 @@ await build({
     '@ccc/shared/cron': resolve(import.meta.dirname, '../shared/src/cron.ts'),
     '@ccc/shared/nl-cron': resolve(import.meta.dirname, '../shared/src/nl-cron.ts'),
   },
+  // Prefer each dependency's ESM entry so esbuild can tree-shake it. The Feishu
+  // SDK is the reason this matters: its CJS entry drags the entire OpenAPI client
+  // in (about +5.7 MB) even though only the WebSocket half is imported, while its
+  // ESM entry lets the unused surface fall away.
+  mainFields: ['module', 'main'],
   logLevel: 'info',
   // Any bare `import.meta` (without `.url`) still resolves to `{}` in CJS; that's
   // fine for our remaining dead branches, so keep the warning silenced.

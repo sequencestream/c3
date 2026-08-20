@@ -25,7 +25,7 @@
 - **`title`**(text): 厂商自定义标题 / 摘要 / 首条提示
 - **`lastModified`**(timestamp): 厂商最后修改时间;工作区内的排序键(SR-R4)
 - **`mode`**(permission mode): c3 跟踪的每会话权限模式;默认 `default`(SR-R5)
-- **`sessionKind`**(enum): work / intent / spec / spec_review / discussion / automation / tool
+- **`sessionKind`**(enum): work / intent / spec / spec_review / discussion / automation / tool / robot
 - **`ownerKind`**(enum | null): 用于跳回的逻辑所有者类别;无所有者会话为 null
 - **`ownerId`**(text | null): 逻辑所有者 id;null 表示该会话无法跳回某个所有者
 - **`bound`**(boolean): 真实行为 true;仅当为 work 待处理占位符时为 false
@@ -37,6 +37,8 @@
 规格评审会话是**独立的一种真实 kind**(`sessionKind=spec_review`,同样以 intent 为所有者),由 `intents.spec_review_session_id` 拥有;
 它在会话页与 `spec` 合并为一个**显示分类**(SR-R15),但投影行的真实 kind 与所有者绝不因此被改写——
 选择与跳回都依赖真实 kind 才能落到只读恢复入口而不是通用会话恢复。
+一条 robot 会话行使用 `sessionKind=robot` 且**没有所有者** —— 机器人不属于任何工作区,其线程与会话的
+对应关系由机器人域自己的线程表持有,不经这份投影;它也不进会话页的任何显示分类。
 一条 tool 会话行使用 `sessionKind=tool`;当触发的业务来源已知时,它复用 `ownerKind` / `ownerId` 实现跳回,
 当来源未知或为历史数据时,两者都留空,使该行仅用于展示。
 

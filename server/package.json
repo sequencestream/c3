@@ -20,6 +20,7 @@
     "@ccc/shared": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "@hono/node-ws": "^1.0.4",
+    "@larksuiteoapi/node-sdk": "^1.73.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/codex-sdk": "0.147.0",
     "commander": "^12.1.0",

@@ -65,3 +65,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0043](0043-console-self-update-and-relaunch.md) · accepted — 控制台自更新:服务端唯一状态机 + `ready` 前不碰已装二进制 + 按运行形态移交重启(systemd `--no-block` / launchd KeepAlive / 助手进程 / 前台就地派生)
 - [0044](0044-external-mcp-owner-scope-and-unified-endpoint.md) · accepted — 外部 MCP 归属账号求交的权限内核(user_workspace_scopes 默认拒绝 + 全局 policy epoch)+ 无凭据统一端点 `POST /mcp`(Bearer 唯一凭据、`X-C3-Workspace` 选工作区、四元组会话钉定)
 - [0045](0045-workspace-memory-as-allowed-local-persistence.md) · accepted — 工作区记忆是被允许的本地持久化类别(结构化字段 + 工作区绑定 + 输入上限 + 凭据/产物拒绝 + 软删与 30 天延迟清理),work session 的两个记忆工具免确认,工具面由 `sessionKind === 'work'` 正向选中
+- [0046](0046-im-robot-outbound-authorization.md) · accepted — IM 聊天机器人:进程内出站长连接 + 外发授权四重表达(默认关闭、启用前确认、仅管理员、逐次审计)+ 只发最终文本 + 无人值守会话不得挂起

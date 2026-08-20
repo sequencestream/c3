@@ -402,7 +402,7 @@ describe('AppHeader.vue — 工作台切换图标待处理角标', () => {
   })
 })
 
-describe('AppHeader.vue — 工作台页面入口(总览 / 用户通知)', () => {
+describe('AppHeader.vue — 工作台页面入口(用户通知 / 总览 / 聊天机器人)', () => {
   // 角标计为 0 以便断言纯标签文本;角标显隐单独在下方 describe 覆盖。
   const wcProps = {
     ...baseProps,
@@ -411,10 +411,10 @@ describe('AppHeader.vue — 工作台页面入口(总览 / 用户通知)', () =>
     workcenterBadgeCount: 0,
   }
 
-  it('工作台模式:桌面顶栏渲染两个页面入口且不出现「工作台」文字标题', () => {
+  it('工作台模式:桌面顶栏渲染三个页面入口且不出现「工作台」文字标题', () => {
     const w = mount(AppHeader, { props: wcProps })
     const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard'])
+    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard', 'Chat robots'])
     expect(w.text()).not.toContain('Workcenter')
   })
 
@@ -450,10 +450,10 @@ describe('AppHeader.vue — 工作台页面入口(总览 / 用户通知)', () =>
     expect(w.emitted('select-workcenter-page')).toEqual([['notifications']])
   })
 
-  it('移动端顶栏同样渲染两个页面入口', () => {
+  it('移动端顶栏同样渲染三个页面入口', () => {
     const w = mount(AppHeader, { props: wcProps })
     const tabs = w.findAll('.mobile-header-row .wc-page-nav .header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard'])
+    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard', 'Chat robots'])
   })
 
   it('移动端点击入口 → emit select-workcenter-page(key)', async () => {

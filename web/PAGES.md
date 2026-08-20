@@ -4,7 +4,7 @@ c3 前端（Vue 3）所有页面、组件、composable 与工具模块的树状�
 
 ```
 web/src/
-├── App.vue                                          # 应用入口壳(瘦):装配页面/模态组件,解构 useAppController() 的共享 ctx 绑定到模板(登录门 + 顶栏 + 各视图 + 模态 + 全局 toast + intent 动作错误弹框);全部控制逻辑下沉到 controls/。**懒加载装配边界**:静态 import 只留 Login/AppHeader/Queue 与 AsyncFallback 占位件,其余 8 个业务页面(Works/Intents/Deliveries/Discussions/Automations/Files/WorkCenter/WorkspaceDashboard)经 asyncView()、12 个设置页与低频全局组件(SystemSettings/PersonalizedSetting/WorkspaceSetting/SkillApprovalModal/NewSessionModal/CreatePrOverlay/CreateIntentOverlay/DevStartupOverlay/SpecStartupOverlay/AutomationSaveOverlay/IntentActionErrorDialog/GateEscapeDialog)经 asyncOverlay() 包一层 defineAsyncComponent(() => import(...))。装配约定(挂载门、占位与失败兜底、新增页面沿用)见 `doc/domains/core/web-console/web-console-design.md`「非功能考量」;包一层不改各组件原有的 `:open`/`:model`/`:escape`/`:saving` 输入与关闭/取消协议
+├── App.vue                                          # 应用入口壳(瘦):装配页面/模态组件,解构 useAppController() 的共享 ctx 绑定到模板(登录门 + 顶栏 + 各视图 + 模态 + 全局 toast + intent 动作错误弹框);全部控制逻辑下沉到 controls/。**懒加载装配边界**:静态 import 只留 Login/AppHeader/Queue 与 AsyncFallback 占位件,其余 9 个业务页面(Works/Intents/Deliveries/Discussions/Automations/Files/WorkCenter/WorkspaceDashboard/RobotConsole)经 asyncView()、12 个设置页与低频全局组件(SystemSettings/PersonalizedSetting/WorkspaceSetting/SkillApprovalModal/NewSessionModal/CreatePrOverlay/CreateIntentOverlay/DevStartupOverlay/SpecStartupOverlay/AutomationSaveOverlay/IntentActionErrorDialog/GateEscapeDialog)经 asyncOverlay() 包一层 defineAsyncComponent(() => import(...))。装配约定(挂载门、占位与失败兜底、新增页面沿用)见 `doc/domains/core/web-console/web-console-design.md`「非功能考量」;包一层不改各组件原有的 `:open`/`:model`/`:escape`/`:saving` 输入与关闭/取消协议
 ├── main.ts                                          # 应用入口:创建 Vue 实例、安装 i18n、按 hash 路由挑根组件后挂载 —— `#/logs` 挂运行日志页(懒加载 chunk),其余一律挂 App
 │
 ├── controls/                                        # App 控制器:拆分自原 App.vue 的状态 + 消息路由 + 各域动作,经共享 ctx 对象晚绑定串联
@@ -66,12 +66,17 @@ web/src/
 │   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:触发区仅显示当前 workspace name;下拉路径仅辅助展示,以名称执行选择/移除;「+」只上抛 request-add-workspace(弹框在 AppHeader);内含 popover,增删入口受 isAdmin 门控
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
-│   ├── workcenter/                                  # 工作台页(顶层 view-mode;用户通知 / 总览 页面入口已上移到 AppHeader 顶栏,用户通知在前且为默认页,App.vue 持有 workcenterPage 态并据此仅渲染对应页面,内容区不再有页内二级导航)
+│   ├── workcenter/                                  # 工作台页(顶层 view-mode;用户通知 / 总览 / 聊天机器人 三个页面入口在 AppHeader 顶栏,用户通知在前且为默认页,App.vue 持有 workcenterPage 态并据此仅渲染对应页面,内容区不再有页内二级导航)
 │   │   ├── WorkCenter.vue                           # 「用户通知」页:左栏“用户通知消息”标题 + 状态下拉(all/todo/done/canceled/auto,默认 all)/列表 + 详情两栏,切换筛选重置 20 条分页并按最后一行时间游标加载更多,查看纯通知 todo 自动完成;接受一次性 requestedEventId(action-descriptor workcenter-event 深链),事件出现在列表后选中并 emit requested-event-consumed(加载结束后仍找不到也消费,避免请求粘滞);移动端经 MobileStack 退化为 列表→详情 两级 drill-down(点事件行整屏切详情、顶部工具栏返回回列表,返回保留选中高亮/筛选值;mobileActiveKey 显式态,select 置 detail、back/筛选变更置 list,active-token 用事件 id)
+│   │   ├── RobotConsole.vue                         # 「聊天机器人」页:左名册 + 右详情两栏,移动端经 MobileStack 退化为 列表→详情 drill-down;纯展示容器,名册与所有服务端往返都在控制层;持有新建/编辑弹窗的开关与被编辑对象
 │   │   └── components/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       ├── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
-│   │       └── WorkspaceDashboard.vue              # 「Dashboard」页(纯展示):全 workspace 运行总览表——每行 workspace 名/绝对路径 + 运行中 session 数/session 总数/intent 总数/讨论总数/自动化总数 + 自动化总闸;管理员每行有一个可访问滑动开关(role=switch)直接开/关该 workspace 自动化(该行在途时 disabled),非管理员只读(渲染 on/off 徽标);刷新失败显示 banner + 重试;窄屏(≤720px)表格降级为逐行 data-label 卡片。经 props 接 rows/loading/refreshFailed/pending/isAdmin,emit toggle(workspaceName, enabled)/refresh
+│   │       ├── WorkspaceDashboard.vue              # 「Dashboard」页(纯展示):全 workspace 运行总览表——每行 workspace 名/绝对路径 + 运行中 session 数/session 总数/intent 总数/讨论总数/自动化总数 + 自动化总闸;管理员每行有一个可访问滑动开关(role=switch)直接开/关该 workspace 自动化(该行在途时 disabled),非管理员只读(渲染 on/off 徽标);刷新失败显示 banner + 重试;窄屏(≤720px)表格降级为逐行 data-label 卡片。经 props 接 rows/loading/refreshFailed/pending/isAdmin,emit toggle(workspaceName, enabled)/refresh
+│   │       └── robots/                              # 「聊天机器人」页的私有组件(RobotConsole.vue 的子单元)
+│   │           ├── RobotList.vue                    # 左栏全局名册(机器人不属于任何工作区,故无 workspace 维度):每行名称/平台/连接态;停用的机器人显示「已停用」而非连接态——「没连上」与「刻意关着」是两个不同的回答;「新建机器人」仅管理员可见;点击 emit select
+│   │           ├── RobotDetail.vue                  # 右栏详情:执行身份(vendor·agent)/预设权限(工具白名单为空即「只读」)/响应范围/工作目录 + 最近回合审计表(时间/结局/外发字符数,只有元数据没有正文);启用按钮不直接翻转,先开 ConfirmDialog 逐条说明会发往第三方云的内容范围(确认后由控制层连发 acknowledge + enable,服务端无该确认即拒绝启用);删除走 danger ConfirmDialog
+│   │           └── RobotForm.vue                    # 新建/编辑弹窗(范式对齐 automation 表单的「vendor + agent(或 agent group) + 预设权限」):name 与 platform 仅创建时可编辑(name 同时是工作目录名,改名会让线程历史失去归属);appSecret 只写不读,编辑时留空即保持已存密钥;agent 下拉含真实 agent 与虚拟组引用;工具白名单/群白名单/单聊白名单为逐行文本;移动端全屏 sheet
 │   ├── works/                                    # 会话页(历史目录名 works)
 │   │   ├── Works.vue                             # 会话聚合页组件始终保留,仅主导航入口受 showSessionsPage 控制;桌面左侧聚合工作/意图/spec(含 spec_review 评审)/讨论/automation/工具六类会话(工具类另受独立 showToolSessions 门控)+右侧 ChatColumn(readonlySession 按活动会话的真实 kind 而非左栏显示分类启用只读门),移动端列表↔聊天 drill-down;深链与业务内跳转仍可直接进入
 │   │   └── components/

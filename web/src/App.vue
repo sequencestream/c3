@@ -58,6 +58,7 @@ const Automations = asyncView(() => import('./pages/automations/Automations.vue'
 const Files = asyncView(() => import('./pages/files/Files.vue'))
 const WorkCenter = asyncView(() => import('./pages/workcenter/WorkCenter.vue'))
 const Dashboard = asyncView(() => import('./pages/workcenter/components/WorkspaceDashboard.vue'))
+const RobotConsole = asyncView(() => import('./pages/workcenter/RobotConsole.vue'))
 
 // 设置页与低频全局组件:首次打开(门控条件转 true)时加载。
 const SystemSettingsPage = asyncOverlay(() => import('./pages/systemsettings/SystemSettings.vue'))
@@ -386,6 +387,17 @@ const {
   dashboardError,
   dashboardPending,
   setWorkcenterPage,
+  // ---- chat robots (global; not scoped to a workspace) ----
+  robots,
+  selectedRobotId,
+  robotTurns,
+  loadRobots,
+  selectRobot,
+  createRobot,
+  updateRobot,
+  deleteRobot,
+  setRobotEnabled,
+  acknowledgeAndEnableRobot,
   loadDashboard,
   toggleWorkspaceAutomation,
   // ---- modals ----
@@ -1017,8 +1029,23 @@ function onFilesChatWidth(px: number): void {
       </template>
 
       <div v-else class="workcenter-view">
+        <RobotConsole
+          v-if="workcenterPage === 'robots'"
+          :robots="robots"
+          :turns="robotTurns"
+          :selected-id="selectedRobotId"
+          :agents="serverSettings?.agents ?? []"
+          :is-admin="auth.isAdmin.value"
+          @select="selectRobot"
+          @create="createRobot"
+          @update="updateRobot"
+          @delete="deleteRobot"
+          @enable="acknowledgeAndEnableRobot"
+          @disable="(id: string) => setRobotEnabled(id, false)"
+        />
+
         <Dashboard
-          v-if="workcenterPage === 'dashboard'"
+          v-else-if="workcenterPage === 'dashboard'"
           :rows="dashboardRows"
           :loading="dashboardLoading"
           :refresh-failed="dashboardError !== null"

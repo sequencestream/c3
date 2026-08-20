@@ -84,6 +84,10 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 - **权限注册表**: 待审批 map，带等待/解析决策与超时处理
 - **结果格式化**: 把工具结果内容摊平为展示字符串
 - **Intent ledger**: SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）
+- **IM 聊天机器人**: 出站长连接接入办公 IM（当前为飞书）。与工作区解耦——机器人按名称拥有目录
+  `~/.c3/robots/<name>/`。平台特有的部分收在 provider 里，响应策略、去重、单线程串行、出站守卫与
+  审计在中性层。外发受四重授权约束，只发回合的最终文本。见
+  [im-robot](../domains/core/im-robot/im-robot-spec.md)，选型与授权模型见 ADR-0046
 - **静态内嵌**: 生成并内联的 web bundle
 - **Wire 协议**: client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现。领域契约按域分区在 `shared/src/protocol/`，`shared/src/protocol.ts` 收敛为 barrel 与两个联合的唯一装配点
 - **共享领域 helper**: `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出
@@ -116,8 +120,9 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   功能会降级，但 c3 仍能启动并服务正常会话。intent-communication agent 复用运行时注册表与权限
   gateway，以只读的 `intent` 类型运行。
 - **Session metadata 投影是一个统一的读缓存。** c3.db 中的 `session_metadata` 是
-  `work_session_metadata` 改名/泛化后的继任者。它为六种会话类型（work / intent / spec /
-  discussion / automation / tool）携带寻址与生命周期元数据，包括用于跳回的可选逻辑归属字段。
+  `work_session_metadata` 改名/泛化后的继任者。它为各会话类型（work / intent / spec /
+  spec_review / discussion / automation / tool / robot）携带寻址与生命周期元数据，包括用于跳回的
+  可选逻辑归属字段。
   它是可重建的，且刻意做到无内容：转录、prompt、工具调用或工具结果都不属于这里。目前写入
   覆盖的是 work + intent；其他类型在各自领域的写入方接入之前，先用同一份契约作为占位。
 - **DB 迁移必须幂等、绝不删表、只能向前修正（硬性规则）。** 每一次 c3.db 的 schema 变更都要

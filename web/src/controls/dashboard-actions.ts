@@ -1,4 +1,5 @@
 import type { AppCtx } from './types'
+import type { WorkcenterPage } from './state'
 
 // Install Workcenter Dashboard actions (cross-workspace snapshot + bulk automation
 // gate) onto the ctx. The snapshot is a single server aggregation; loads are
@@ -7,10 +8,11 @@ import type { AppCtx } from './types'
 export function installDashboardActions(ctx: AppCtx): void {
   const send = ctx.send
 
-  ctx.setWorkcenterPage = (page: 'dashboard' | 'notifications'): void => {
+  ctx.setWorkcenterPage = (page: WorkcenterPage): void => {
     if (ctx.workcenterPage.value === page) return
     ctx.workcenterPage.value = page
     if (page === 'dashboard') ctx.loadDashboard()
+    else if (page === 'robots') ctx.loadRobots()
     else ctx.reloadWorkcenter()
   }
 

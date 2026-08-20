@@ -137,6 +137,23 @@ export interface SpecReviewProfile {
 }
 
 /**
+ * The IM chat-robot launch profile (the `robot` gate + disallowed-tools lock +
+ * the robot's system prompt). Resolved before the vendor fork in `launchRun`,
+ * so both the claude path and the driver path apply the identical lock.
+ *
+ * `allowedTools` is the robot's frozen write/exec allowlist; an empty set — the
+ * default a robot is created with — leaves it read-only (ADR-0046). Read-class
+ * tools are not listed: they pass on the gate's own read set. A robot has no c3
+ * MCP tools, so unlike intent/spec there is no `bindMcp`.
+ */
+export interface RobotProfile {
+  appendSystemPrompt: string
+  disallowedTools: string[]
+  gate: 'robot'
+  allowedTools: ReadonlySet<string>
+}
+
+/**
  * The discussion-research launch profile (read-only `discussion-research` gate +
  * disallowed-tools lock + the research system prompt), resolved before the vendor
  * fork in `launchRun`. Present ONLY for a runtime carrying the research marker
@@ -214,6 +231,26 @@ export function specDriverModeForVendor(vendor: VendorId): {
 } {
   return {
     actionMode: 'build',
+    toolGate: forcedToolGate(vendor),
+  }
+}
+
+/**
+ * Forced permission grid for IM chat-robot turns on the driver path. A robot is
+ * read-only unless its configuration deliberately widened it, which is what
+ * `writeEnabled` carries (ADR-0046). The tool gate is forced exactly as for the
+ * other unattended kinds: a vendor with no per-tool approval channel must never
+ * be left sitting on an approval bridge that nobody in the chat will answer.
+ */
+export function robotDriverModeForVendor(
+  vendor: VendorId,
+  writeEnabled: boolean,
+): {
+  actionMode: import('@ccc/shared/protocol').ActionMode
+  toolGate: import('@ccc/shared/protocol').ToolGate
+} {
+  return {
+    actionMode: writeEnabled ? 'build' : 'plan',
     toolGate: forcedToolGate(vendor),
   }
 }
@@ -384,6 +421,11 @@ export async function runViaDriver(
    * Mutually exclusive with every other profile.
    */
   specReviewProfile?: SpecReviewProfile,
+  /**
+   * The IM chat-robot profile, present for `rt.sessionKind === 'robot'` runs.
+   * Mutually exclusive with every other profile.
+   */
+  robotProfile?: RobotProfile,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -398,6 +440,7 @@ export async function runViaDriver(
     intentProfile?.appendSystemPrompt ??
     specProfile?.appendSystemPrompt ??
     specReviewProfile?.appendSystemPrompt ??
+    robotProfile?.appendSystemPrompt ??
     inject?.systemInstruction
   const userTurn = modelUserTurn(prompt, inject)
 
@@ -453,9 +496,14 @@ export async function runViaDriver(
       ? intentDriverModeForVendor(adapter.vendor)
       : specProfile
         ? specDriverModeForVendor(adapter.vendor)
-        : adapter.vendor === 'codex' && rt.codexPolicy
-          ? codexPolicyToGrid(rt.codexPolicy)
-          : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
+        : robotProfile
+          ? // A robot turn is unattended: its grid comes from the robot's own
+            // configuration (read-only unless deliberately widened), never from
+            // the session's stored mode.
+            robotDriverModeForVendor(adapter.vendor, robotProfile.allowedTools.size > 0)
+          : adapter.vendor === 'codex' && rt.codexPolicy
+            ? codexPolicyToGrid(rt.codexPolicy)
+            : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
   const { actionMode, toolGate } = mode
 
   // Resolve the session agent's launch overrides (provider connection only). The

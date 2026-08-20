@@ -130,7 +130,7 @@ export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) =>
   })
 }
 
-const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
+const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus' | 'robot'>[] = [
   'work',
   'intent',
   'spec',
@@ -145,12 +145,17 @@ const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
  * category of its own — its sessions are listed and counted under `spec`
  * ({@link sessionKindsForCategory}) — so it is not iterated here; its wire count
  * field stays at 0 so neither an old nor a new client can turn it into a second
- * visible badge or double-count it in the top-bar total.
+ * visible badge or double-count it in the top-bar total. `robot` is excluded one
+ * level up ({@link SESSION_PAGE_KINDS}): an IM robot's sessions are not addressed
+ * from any workspace, so the page has nowhere to show them.
  */
-const SESSION_PAGE_CATEGORIES: readonly Exclude<SessionKind, 'consensus' | 'spec_review'>[] =
-  SESSION_PAGE_KINDS.filter(
-    (kind): kind is Exclude<SessionKind, 'consensus' | 'spec_review'> => kind !== 'spec_review',
-  )
+const SESSION_PAGE_CATEGORIES: readonly Exclude<
+  SessionKind,
+  'consensus' | 'spec_review' | 'robot'
+>[] = SESSION_PAGE_KINDS.filter(
+  (kind): kind is Exclude<SessionKind, 'consensus' | 'spec_review' | 'robot'> =>
+    kind !== 'spec_review',
+)
 
 /**
  * Running **business item** counts of a workspace, deduplicated by owner: an

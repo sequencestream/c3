@@ -77,6 +77,8 @@ function sessionKindLabel(kind: SessionKind): string {
       return t('automation.form.event.sessionKind.spec.label')
     case 'spec_review':
       return t('automation.form.event.sessionKind.specReview.label')
+    case 'robot':
+      return t('automation.form.event.sessionKind.robot.label')
   }
 }
 

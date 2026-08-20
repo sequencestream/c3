@@ -285,7 +285,10 @@ export function installMessageHandler(ctx: AppCtx): void {
   ): SessionPageKind {
     if (activeSession.value !== pinnedSessionId) return displayKind
     const real = ctx.activeSessionRealKind.value
-    return real && real !== 'consensus' ? real : displayKind
+    // `consensus` and `robot` have no session-page category to pin into — the
+    // former owns no session, the latter belongs to an IM robot rather than a
+    // workspace — so both fall back to the display category.
+    return real && real !== 'consensus' && real !== 'robot' ? real : displayKind
   }
 
   function appendPinnedConsoleSessionIfMissing(input: {
@@ -1738,6 +1741,24 @@ export function installMessageHandler(ctx: AppCtx): void {
           ctx.workcenterHasMore.value = msg.hasMore
           ctx.workcenterLoading.value = false
         }
+        break
+      case 'robots': {
+        ctx.robotsLoading.value = false
+        ctx.robots.value = msg.robots
+        // A selection that no longer exists (deleted elsewhere) is dropped rather
+        // than left pointing at nothing.
+        if (
+          ctx.selectedRobotId.value &&
+          !msg.robots.some((r) => r.id === ctx.selectedRobotId.value)
+        ) {
+          ctx.selectedRobotId.value = null
+          ctx.robotTurns.value = []
+        }
+        break
+      }
+      case 'robot_turns':
+        // Ignore a reply for a robot the user has since navigated away from.
+        if (msg.robotId === ctx.selectedRobotId.value) ctx.robotTurns.value = msg.turns
         break
       case 'workspace_dashboard':
         ctx.dashboardLoading.value = false

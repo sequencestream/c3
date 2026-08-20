@@ -34,7 +34,9 @@ export interface SessionRunStatus {
  * The business entities a session can belong to. A session's `(ownerKind,
  * ownerId)` pair is the identity the top-nav badges deduplicate by, so one
  * intent / discussion / automation counts once no matter how many of its
- * sessions run at the same time.
+ * sessions run at the same time. An IM chat robot is deliberately NOT an owner
+ * kind: a robot's sessions never reach the session page or a badge, and the
+ * robot↔session mapping is owned by the robot domain's own thread table.
  */
 export const SESSION_OWNER_KINDS = ['intent', 'discussion', 'automation'] as const
 export type SessionOwnerKind = (typeof SESSION_OWNER_KINDS)[number]
@@ -230,13 +232,26 @@ export interface SlashCommandInfo {
  *   through one narrow submit tool. It deliberately does NOT reuse `spec`, which
  *   would silently grant the spec directory's write permission — a reviewer never
  *   edits the document it reviews.
+ * - `robot`       — an IM chat-robot turn: driven by an inbound group message, not
+ *   by any browser. Nobody is present to answer a permission prompt, so its gate
+ *   denies the human-facing tools outright rather than letting a run hang. It is
+ *   deliberately NOT `work`: `work` positively selects the workspace-memory tool
+ *   face (ADR-0045), which an externally-driven session must not inherit.
  *
  * Migration (2026-06-26): split out of the old `RunKind`, whose 7 business values
  * moved here verbatim with `'session' → 'work'`. Business-source judgements (which
  * scenario may trigger a automation, which security gate applies) read `sessionKind`.
  */
 export type SessionKind =
-  'work' | 'intent' | 'discussion' | 'automation' | 'consensus' | 'tool' | 'spec' | 'spec_review'
+  | 'work'
+  | 'intent'
+  | 'discussion'
+  | 'automation'
+  | 'consensus'
+  | 'tool'
+  | 'spec'
+  | 'spec_review'
+  | 'robot'
 
 /**
  * All {@link SessionKind} values, for runtime validation and UI iteration (kept in
@@ -252,6 +267,7 @@ export const SESSION_KINDS = [
   'tool',
   'spec',
   'spec_review',
+  'robot',
 ] as const satisfies readonly SessionKind[]
 
 /**

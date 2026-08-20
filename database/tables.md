@@ -6,7 +6,7 @@
 
 所有工作区关联统一使用 `workspace_name`，其值引用 `workspaces.name`；绝对路径只保存在注册表并用于文件系统操作。迁移 `039-workspace-name-identity.sql` 由配置 store 在单事务内把历史 workspace UUID 和各业务表路径映射为名称。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 35 张表，13 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 38 张表，14 个模块。
 
 ## 基础设施
 
@@ -55,6 +55,9 @@
 | 33  | auth         | `user_workspace_scope_items` | [auth/user_workspace_scope_items.sql](auth/user_workspace_scope_items.sql)               | `server/src/features/auth/scope-store.ts`                   | mode='selected' 的选定工作区明细                         |
 | 34  | external-mcp | `external_mcp_write_audits`  | [external-mcp/external_mcp_write_audits.sql](external-mcp/external_mcp_write_audits.sql) | `server/src/features/external-mcp/audit-store.ts`           | 外部 MCP 写调用的只增审计轨迹                            |
 | 35  | memory       | `workspace_memories`         | [memory/workspace_memories.sql](memory/workspace_memories.sql)                           | `server/src/features/memory/store.ts`                       | 工作区长期记忆 (偏好/约束/事实/教训)                     |
+| 36  | robots       | `im_robots`                  | [robots/im_robots.sql](robots/im_robots.sql)                                             | `server/src/features/im/robot-store.ts`                     | IM 聊天机器人配置 (执行身份/预设权限/外发授权)           |
+| 37  | robots       | `im_robot_threads`           | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                               | `server/src/features/im/robot-store.ts`                     | IM 线程 ↔ agent 会话映射 (一条线程即一次持续对话)        |
+| 38  | robots       | `im_robot_turns`             | [robots/im_robot_turns.sql](robots/im_robot_turns.sql)                                   | `server/src/features/im/robot-store.ts`                     | 机器人回合外发审计 (只记元数据, 不记正文)                |
 
 ## 模块说明
 
@@ -208,6 +211,28 @@ state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数
 `deleted` (软删) 按各自的 `updated_at` 满 30 天才被物理删除，回收期内仍占容量——容量满时拒绝新条目，
 而不是缩短可恢复性或淘汰另一条记忆；`active` 的 `preference` 永不因年龄被清理。硬边界为单条 `content`
 ≤ 2000 个 Unicode 码点、单工作区 ≤ 500 物理行，计数与插入同事务，超限一律显式报错。
+
+### robots
+
+IM 聊天机器人域。三张表把「群里 @机器人 提问、c3 跑一轮会话、把答案发回群里」这条链路的三件事分开
+持有：`im_robots` 是配置与授权，`im_robot_threads` 是线程与会话的对应关系，`im_robot_turns` 是外发
+审计。它是 c3 唯一一条主动把 agent 产出送往第三方云的路径，授权模型由 ADR-0046 裁定。
+
+**不绑工作区**是本域的结构性特征：`im_robots` 刻意没有 `workspace_name` 列。机器人按 `name` 拥有独立
+工作目录 `~/.c3/robots/<name>/`，那里是它能触及的全部范围，因此 `name` 同时是显示名、目录名与身份，
+受路径安全约束且创建后不可改。该目录不进工作区注册表，机器人的会话也不出现在会话页。
+
+ADR-0046 的四条授权凭据里有三条落在这里：`enabled` 默认 `0` 且没有「创建并启用」的一步操作；
+`outbound_ack_at` 记录用户确认外发范围的时刻，服务端在启用时校验它；每一次外发在 `im_robot_turns`
+留一行。审计**只记元数据**——`outbound_chars` 是长度而非内容，因为一份外发正文副本正是 ADR-0045
+禁止落盘的那类数据。没发出去的结局同样留痕 (`guard_refused` / `blocked` / `timeout`)。
+
+权限在配置时冻结而非现场询问：群里没有人能回答权限对话框，所以 `tool_allowlist` 为空 (创建时的默认)
+即只读，写/执行能力必须由管理员显式列举。响应面同样默认收敛：`require_mention` 默认 `1`，
+`dm_mode` 默认 `disabled`。
+
+连接状态不在库里。连上没有、重连第几次、上次为何失败都是进程内的运行时事实，由 supervisor 持有并
+随查询回传——落库只会产生一份必然过期的快照。
 
 ## 数据库设计约定
 

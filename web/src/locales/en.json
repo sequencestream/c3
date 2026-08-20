@@ -2110,6 +2110,9 @@
           },
           "specReview": {
             "label": "Spec review"
+          },
+          "robot": {
+            "label": "Chat robot"
           }
         },
         "metadataFilter": {
@@ -2475,6 +2478,16 @@
       "notFound": "That memory is no longer in this workspace. Nothing was changed.",
       "unavailable": "The memory store is unavailable, so nothing was deleted.",
       "deleteFailed": "The memory could not be deleted: {detail}"
+    },
+    "robot": {
+      "dbUnavailable": "The robot store is unavailable.",
+      "notFound": "Robot not found.",
+      "nameInvalid": "Use lowercase letters, digits, - and _, starting with a letter or digit, up to 32 characters.",
+      "nameConflict": "A robot with that name already exists.",
+      "platformUnsupported": "This build does not support that platform.",
+      "secretRequired": "Configure the app secret before enabling.",
+      "outboundNotAcknowledged": "Acknowledge what is sent off this machine before enabling.",
+      "agentRequired": "Choose a vendor and an agent."
     }
   },
   "statusIndicator": {
@@ -3539,7 +3552,8 @@
       "ariaLabel": "Workcenter pages",
       "dashboard": "Dashboard",
       "notifications": "Notifications",
-      "notificationsBadgeAriaLabel": "Pending notifications: {count}"
+      "notificationsBadgeAriaLabel": "Pending notifications: {count}",
+      "robots": "Chat robots"
     },
     "column": {
       "workspace": "Workspace",
@@ -3796,6 +3810,170 @@
       "connecting": "Connecting…",
       "open": "Connected",
       "closed": "Disconnected"
+    }
+  },
+  "robot": {
+    "nav": {
+      "title": "Chat robots"
+    },
+    "list": {
+      "title": "Chat robots",
+      "empty": "No chat robots yet.",
+      "create": {
+        "label": "New robot"
+      },
+      "disabled": {
+        "label": "Disabled"
+      },
+      "state": {
+        "idle": {
+          "label": "Idle"
+        },
+        "connecting": {
+          "label": "Connecting"
+        },
+        "connected": {
+          "label": "Connected"
+        },
+        "reconnecting": {
+          "label": "Reconnecting"
+        },
+        "failed": {
+          "label": "Failed"
+        }
+      }
+    },
+    "detail": {
+      "empty": "Select a robot to see its configuration.",
+      "enable": {
+        "label": "Enable"
+      },
+      "disable": {
+        "label": "Disable"
+      },
+      "edit": {
+        "label": "Edit"
+      },
+      "delete": {
+        "label": "Delete"
+      },
+      "workdir": {
+        "label": "Working directory"
+      },
+      "agent": {
+        "label": "Runs as"
+      },
+      "permission": {
+        "label": "Preset permission"
+      },
+      "readonly": {
+        "label": "Read-only"
+      },
+      "reach": {
+        "label": "Responds to"
+      },
+      "mentionOnly": "Group messages that mention it",
+      "anyGroup": "Any group message",
+      "turns": {
+        "title": "Recent turns",
+        "empty": "No turns yet.",
+        "outcome": {
+          "complete": {
+            "label": "Answered"
+          },
+          "error": {
+            "label": "Error"
+          },
+          "blocked": {
+            "label": "Needed authorization"
+          },
+          "timeout": {
+            "label": "Timed out"
+          },
+          "guard_refused": {
+            "label": "Held back"
+          }
+        }
+      }
+    },
+    "form": {
+      "create": {
+        "title": "New chat robot"
+      },
+      "edit": {
+        "title": "Edit chat robot"
+      },
+      "name": {
+        "label": "Name",
+        "hint": "Lowercase letters, digits, - and _. Also the working directory name, and fixed after creation."
+      },
+      "platform": {
+        "label": "Platform"
+      },
+      "appId": {
+        "label": "App ID"
+      },
+      "appSecret": {
+        "label": "App secret",
+        "placeholder": "Leave empty to keep the stored secret",
+        "hint": "Stored encrypted and never sent back to the browser."
+      },
+      "vendor": {
+        "label": "Vendor"
+      },
+      "agent": {
+        "label": "Agent"
+      },
+      "tools": {
+        "label": "Allowed write tools",
+        "hint": "Empty means read-only. Each tool listed here is one the robot may run without asking."
+      },
+      "requireMention": {
+        "label": "Only answer when mentioned"
+      },
+      "chatAllowlist": {
+        "label": "Group allowlist",
+        "hint": "One group id per line. Empty means every group."
+      },
+      "dmMode": {
+        "label": "Direct messages",
+        "disabled": {
+          "label": "Do not answer"
+        },
+        "allowlist": {
+          "label": "Allowlisted users only"
+        },
+        "open": {
+          "label": "Answer anyone"
+        }
+      },
+      "dmAllowlist": {
+        "label": "User allowlist",
+        "hint": "One user id per line."
+      },
+      "maxTurnMs": {
+        "label": "Turn time limit (ms)",
+        "hint": "Empty uses the default of 300000."
+      },
+      "save": {
+        "label": "Save"
+      }
+    },
+    "enable": {
+      "confirm": {
+        "title": "Enable this robot?",
+        "message": "Once enabled, this robot connects to the platform and can send answers out of this machine.",
+        "scope": "Only the final answer of a turn is sent. Tool calls, tool results, intermediate reasoning and file contents are never sent.",
+        "confirm": {
+          "label": "I understand, enable"
+        }
+      }
+    },
+    "delete": {
+      "confirm": {
+        "title": "Delete this robot?",
+        "message": "Its threads and audit records are deleted with it. This cannot be undone."
+      }
     }
   }
 }

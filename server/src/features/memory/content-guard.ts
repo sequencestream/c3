@@ -55,6 +55,21 @@ const ARTIFACT_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
+ * Whether the text carries something shaped like a credential.
+ *
+ * Split out from {@link detectMemoryGuardViolation} because the two rule sets
+ * answer different questions and not every caller wants both. The artifact rules
+ * ask "is this a transcript rather than a conclusion", which is a memory
+ * concern; the credential rules ask "would sending this leak a secret", which
+ * applies anywhere text leaves the machine — the IM outbound path uses these
+ * alone, since an answer legitimately containing a code fence must still be
+ * deliverable.
+ */
+export function detectCredentialShape(value: string): boolean {
+  return CREDENTIAL_PATTERNS.some((p) => p.test(value))
+}
+
+/**
  * Inspect one user-supplied field. Returns the category that refused it, or
  * `null` when the text is acceptable. Never returns the matched substring.
  */

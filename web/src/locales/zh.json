@@ -2211,6 +2211,9 @@
           },
           "specReview": {
             "label": "规范审核"
+          },
+          "robot": {
+            "label": "聊天机器人"
           }
         },
         "metadataFilter": {
@@ -2475,6 +2478,16 @@
       "notFound": "这条记忆已不在本工作区,未做任何修改。",
       "unavailable": "记忆库不可用,本次删除未生效。",
       "deleteFailed": "删除记忆失败:{detail}"
+    },
+    "robot": {
+      "dbUnavailable": "机器人库不可用。",
+      "notFound": "机器人不存在。",
+      "nameInvalid": "只能使用小写字母、数字、- 和 _,以字母或数字开头,最长 32 个字符。",
+      "nameConflict": "已有同名机器人。",
+      "platformUnsupported": "当前版本不支持该平台。",
+      "secretRequired": "启用前请先配置应用密钥。",
+      "outboundNotAcknowledged": "启用前请先确认发往本机之外的内容范围。",
+      "agentRequired": "请选择厂商与 agent。"
     }
   },
   "statusIndicator": {
@@ -3451,7 +3464,8 @@
       "ariaLabel": "工作台页面",
       "dashboard": "总览",
       "notifications": "用户通知",
-      "notificationsBadgeAriaLabel": "待处理通知 {count} 条"
+      "notificationsBadgeAriaLabel": "待处理通知 {count} 条",
+      "robots": "聊天机器人"
     },
     "column": {
       "workspace": "工作区",
@@ -3796,6 +3810,170 @@
       "connecting": "连接中…",
       "open": "已连接",
       "closed": "已断开"
+    }
+  },
+  "robot": {
+    "nav": {
+      "title": "聊天机器人"
+    },
+    "list": {
+      "title": "聊天机器人",
+      "empty": "还没有聊天机器人。",
+      "create": {
+        "label": "新建机器人"
+      },
+      "disabled": {
+        "label": "已停用"
+      },
+      "state": {
+        "idle": {
+          "label": "未连接"
+        },
+        "connecting": {
+          "label": "连接中"
+        },
+        "connected": {
+          "label": "已连接"
+        },
+        "reconnecting": {
+          "label": "重连中"
+        },
+        "failed": {
+          "label": "连接失败"
+        }
+      }
+    },
+    "detail": {
+      "empty": "选择一个机器人查看配置。",
+      "enable": {
+        "label": "启用"
+      },
+      "disable": {
+        "label": "停用"
+      },
+      "edit": {
+        "label": "编辑"
+      },
+      "delete": {
+        "label": "删除"
+      },
+      "workdir": {
+        "label": "工作目录"
+      },
+      "agent": {
+        "label": "执行身份"
+      },
+      "permission": {
+        "label": "预设权限"
+      },
+      "readonly": {
+        "label": "只读"
+      },
+      "reach": {
+        "label": "响应范围"
+      },
+      "mentionOnly": "群里提及它的消息",
+      "anyGroup": "群里的任意消息",
+      "turns": {
+        "title": "最近回合",
+        "empty": "还没有回合记录。",
+        "outcome": {
+          "complete": {
+            "label": "已回答"
+          },
+          "error": {
+            "label": "出错"
+          },
+          "blocked": {
+            "label": "需要人工授权"
+          },
+          "timeout": {
+            "label": "超时"
+          },
+          "guard_refused": {
+            "label": "已拦下未发送"
+          }
+        }
+      }
+    },
+    "form": {
+      "create": {
+        "title": "新建聊天机器人"
+      },
+      "edit": {
+        "title": "编辑聊天机器人"
+      },
+      "name": {
+        "label": "名称",
+        "hint": "小写字母、数字、- 和 _。同时是工作目录名,创建后不可修改。"
+      },
+      "platform": {
+        "label": "平台"
+      },
+      "appId": {
+        "label": "应用 ID"
+      },
+      "appSecret": {
+        "label": "应用密钥",
+        "placeholder": "留空则保持已保存的密钥",
+        "hint": "加密存储,永不回传浏览器。"
+      },
+      "vendor": {
+        "label": "厂商"
+      },
+      "agent": {
+        "label": "Agent"
+      },
+      "tools": {
+        "label": "放开的写工具",
+        "hint": "留空即只读。列在这里的工具,机器人无需询问即可使用。"
+      },
+      "requireMention": {
+        "label": "仅在被提及时响应"
+      },
+      "chatAllowlist": {
+        "label": "群白名单",
+        "hint": "每行一个群 id。留空表示不限群。"
+      },
+      "dmMode": {
+        "label": "单聊",
+        "disabled": {
+          "label": "不响应"
+        },
+        "allowlist": {
+          "label": "仅白名单用户"
+        },
+        "open": {
+          "label": "响应任何人"
+        }
+      },
+      "dmAllowlist": {
+        "label": "用户白名单",
+        "hint": "每行一个用户 id。"
+      },
+      "maxTurnMs": {
+        "label": "单回合时限 (ms)",
+        "hint": "留空使用默认值 300000。"
+      },
+      "save": {
+        "label": "保存"
+      }
+    },
+    "enable": {
+      "confirm": {
+        "title": "启用这个机器人?",
+        "message": "启用后,它会连接到平台,并可以把回答发送到本机之外。",
+        "scope": "只有一轮回合的最终回答会被发出。工具调用、工具结果、中间推理与文件内容都不会发出。",
+        "confirm": {
+          "label": "我已知晓,启用"
+        }
+      }
+    },
+    "delete": {
+      "confirm": {
+        "title": "删除这个机器人?",
+        "message": "它的会话线程与审计记录会一并删除,此操作不可撤销。"
+      }
     }
   }
 }

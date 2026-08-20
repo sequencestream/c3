@@ -68,8 +68,11 @@ export interface TriggerMatchResult {
  * 触发自动化的那种「run」。若让它们落进「空过滤器 = 所有场景」的默认语义,一个既
  * 有的 `run:settled` 订阅会突然被每一次投票唤醒。因此这类场景反过来:必须由
  * `eventSessionKindFilter` 点名,才会参与匹配。
+ *
+ * 机器人回合同理,且理由更强:它由外部群消息驱动,节奏不由本机决定,也不属于任何
+ * 工作区。一条群消息不该唤醒一个为本机开发流程写的自动化。
  */
-const OPT_IN_ONLY_SESSION_KINDS: readonly SessionKind[] = ['tool']
+const OPT_IN_ONLY_SESSION_KINDS: readonly SessionKind[] = ['tool', 'robot']
 
 /**
  * Pure evaluator: does `view` match any of `automation`'s subscription rows? When

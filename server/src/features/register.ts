@@ -165,6 +165,15 @@ import {
 } from './files/index.js'
 import { readRuntimeLogHandler } from './logs/index.js'
 import { deleteWorkspaceMemoryHandler, listWorkspaceMemoriesHandler } from './memory/handlers.js'
+import {
+  acknowledgeRobotOutboundHandler,
+  createRobotHandler,
+  deleteRobotHandler,
+  listRobotTurnsHandler,
+  listRobotsHandler,
+  setRobotEnabledHandler,
+  updateRobotHandler,
+} from './im/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -324,6 +333,14 @@ export const handlerMap: HandlerMap = {
   // external skill install + link status (2026-06-12)
   get_skill_link_status: getSkillLinkStatus,
   install_skill: installSkillHandler,
+  // im chat robots
+  list_robots: listRobotsHandler,
+  create_robot: createRobotHandler,
+  update_robot: updateRobotHandler,
+  delete_robot: deleteRobotHandler,
+  acknowledge_robot_outbound: acknowledgeRobotOutboundHandler,
+  set_robot_enabled: setRobotEnabledHandler,
+  list_robot_turns: listRobotTurnsHandler,
 }
 
 /** Assemble the startup handler registry from the exhaustive map. */

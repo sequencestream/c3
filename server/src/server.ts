@@ -181,9 +181,12 @@ import {
   mountStaticAssets,
   registerRunDomainSubscriptions,
   registerRunLifecycleLogging,
+  startImRobotsWiring,
   startSchedulerWiring,
+  stopImRobotsWiring,
   stopSchedulerWiring,
 } from './wiring/index.js'
+import { robotLaunchProfile } from './features/im/profile.js'
 
 export interface ServerOptions {
   port: number
@@ -691,6 +694,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       gate: 'discussion-research' as const,
     }),
+    // IM chat-robot profile (the `robot` gate + a write/exec lock + the robot's
+    // system prompt), resolved per turn from that robot's stored configuration —
+    // which is the whole of what constrains an externally-driven run. A lookup
+    // miss yields the narrowest profile, never a permissive default (ADR-0046).
+    robotProfile: (_workspacePath, robotId) => robotLaunchProfile(robotId),
     // Work-session base MCP profile: every new and resumed work session gets
     // `publish_event` (publish a vendor-neutral generic event after acting with
     // its own tools) plus `memory_search` / `memory_write` (the workspace's
@@ -991,6 +999,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Start the automation scheduler after the server is ready.
   startSchedulerWiring({ broadcasts, eventBus })
 
+  // Dial out to every enabled chat robot's platform. A robot that cannot connect
+  // is a visible, recoverable state; it never blocks startup or the others.
+  startImRobotsWiring({ launchDeps })
+
   // Recover every queue that was running before this process started, then arm
   // the fixed reconcile cadence. The startup pass runs BEFORE the tick loop so
   // recovery is derived from persisted facts once, deterministically, instead of
@@ -1031,6 +1043,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     stopSessionJanitor()
     stopMemoryJanitor()
     stopQueueTickLoop()
+    // Chat robots first: their links feed inbound work into everything below.
+    await stopImRobotsWiring(30_000)
     await stopSchedulerWiring(30_000)
     await new Promise<void>((resolve) => {
       const done = setTimeout(resolve, 5000)

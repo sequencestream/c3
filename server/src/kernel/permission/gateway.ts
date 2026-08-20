@@ -10,6 +10,9 @@
  *  - `spec_review` — the spec reviewer: reads pass, the one narrow submit tool
  *    passes, every write is denied outright (it owns no writable location);
  *  - `discussion-research` — the unattended read-only research agent (read tools pass, else deny);
+ *  - `robot` — an IM chat-robot turn: reads pass, the human-facing tools are denied
+ *    outright (nobody is in the chat to answer them), writes only via the robot's
+ *    frozen allowlist (ADR-0046);
  *  - `standard` — the normal flow (multi-agent consensus → human prompt).
  *
  * EVERY return is a branded {@link PermissionDecision} minted by `allow`/`deny`,
@@ -82,7 +85,15 @@ export interface ConsensusAutoCtx {
 /** Everything the gateway needs from the run it guards (all caller-resolved). */
 export interface GatewaySpec {
   /** Which gate policy applies (default `standard`). */
-  gate: 'standard' | 'intent' | 'discussion-research' | 'spec' | 'spec_review'
+  gate: 'standard' | 'intent' | 'discussion-research' | 'spec' | 'spec_review' | 'robot'
+  /**
+   * Only meaningful when `gate === 'robot'`: the write/exec-class tools this
+   * robot's configuration deliberately widened to. Absent or empty means the
+   * robot is read-only, which is the default a robot is created with — widening
+   * is an explicit act by an administrator (ADR-0046). Read-class tools are not
+   * listed here; they pass on their own.
+   */
+  robotAllowedTools?: ReadonlySet<string>
   /**
    * Only set when `gate === 'spec'`: the absolute directory writes are confined
    * to. Write-class tools targeting a path outside it are denied; reads pass
@@ -164,7 +175,7 @@ export interface GatewaySpec {
  * forces a branded verdict on every branch.
  */
 export function createCanUseTool(spec: GatewaySpec): CanUseTool {
-  const { gate, send, signal, currentAgentId, cwd, recentContext } = spec
+  const { gate, send, signal, currentAgentId, cwd, recentContext, robotAllowedTools } = spec
 
   // The SDK's third `options` arg now (0.3.186) carries `agentID` — the id of the
   // sub-agent that raised the prompt when a background/team agent is the requester.
@@ -324,6 +335,32 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       }
       console.warn(`[c3] discussion-research gate denied tool: ${toolName}`)
       return deny('Discussion research is read-only; this tool is blocked.')
+    }
+
+    // IM chat-robot gate (ADR-0046). The turn is driven by an inbound group
+    // message and NOBODY is watching this run: a prompt raised here would hang
+    // until the turn's wall clock kills it, and the person in the chat would
+    // just see silence. Denying the human-facing tools outright is what makes
+    // "a robot turn never stalls" a structural property rather than a race
+    // against a timeout — the same reasoning as the spec_review gate above.
+    //
+    // Reads pass. Write/exec-class tools pass ONLY when this robot's own
+    // configuration froze them into an allowlist; a freshly created robot has
+    // none, so it is read-only until an administrator deliberately widens it.
+    // Everything unrecognised falls through to the deny-by-default at the end.
+    if (gate === 'robot') {
+      if (USER_INTERACTION_TOOLS.has(toolName)) {
+        console.warn(`[c3] robot gate denied user-interaction tool: ${toolName}`)
+        return deny('No one is present in a chat-robot turn, so this tool cannot be answered.')
+      }
+      if (INTENT_READ_TOOLS.has(toolName) || INTENT_QUERY_TOOLS.has(toolName)) {
+        return allow(input)
+      }
+      if (robotAllowedTools?.has(toolName)) {
+        return allow(input)
+      }
+      console.warn(`[c3] robot gate denied tool: ${toolName}`)
+      return deny('This tool is outside the allowed set for this chat robot.')
     }
 
     // AskUserQuestion is not an allow/deny tool — it needs an ANSWER per

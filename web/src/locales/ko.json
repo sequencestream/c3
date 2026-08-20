@@ -2213,6 +2213,9 @@
           },
           "specReview": {
             "label": "사양 검토"
+          },
+          "robot": {
+            "label": "채팅 로봇"
           }
         },
         "metadataFilter": {
@@ -2476,6 +2479,16 @@
       "notFound": "해당 메모리는 이 워크스페이스에 더 이상 없습니다. 변경된 것은 없습니다.",
       "unavailable": "메모리 저장소를 사용할 수 없어 아무것도 삭제되지 않았습니다.",
       "deleteFailed": "메모리를 삭제하지 못했습니다: {detail}"
+    },
+    "robot": {
+      "dbUnavailable": "로봇 저장소를 사용할 수 없습니다.",
+      "notFound": "로봇을 찾을 수 없습니다.",
+      "nameInvalid": "소문자, 숫자, - 및 _만 사용하며 영숫자로 시작하고 최대 32자입니다.",
+      "nameConflict": "같은 이름의 로봇이 이미 있습니다.",
+      "platformUnsupported": "이 빌드는 해당 플랫폼을 지원하지 않습니다.",
+      "secretRequired": "활성화하기 전에 앱 시크릿을 설정하세요.",
+      "outboundNotAcknowledged": "활성화하기 전에 외부로 전송되는 내용을 확인하세요.",
+      "agentRequired": "벤더와 에이전트를 선택하세요."
     }
   },
   "statusIndicator": {
@@ -3452,7 +3465,8 @@
       "ariaLabel": "워크센터 페이지",
       "dashboard": "대시보드",
       "notifications": "알림",
-      "notificationsBadgeAriaLabel": "처리 대기 알림 {count}개"
+      "notificationsBadgeAriaLabel": "처리 대기 알림 {count}개",
+      "robots": "채팅 로봇"
     },
     "column": {
       "workspace": "워크스페이스",
@@ -3797,6 +3811,170 @@
       "connecting": "연결 중…",
       "open": "연결됨",
       "closed": "연결 끊김"
+    }
+  },
+  "robot": {
+    "nav": {
+      "title": "채팅 로봇"
+    },
+    "list": {
+      "title": "채팅 로봇",
+      "empty": "아직 채팅 로봇이 없습니다.",
+      "create": {
+        "label": "새 로봇"
+      },
+      "disabled": {
+        "label": "비활성"
+      },
+      "state": {
+        "idle": {
+          "label": "연결 안 됨"
+        },
+        "connecting": {
+          "label": "연결 중"
+        },
+        "connected": {
+          "label": "연결됨"
+        },
+        "reconnecting": {
+          "label": "재연결 중"
+        },
+        "failed": {
+          "label": "연결 실패"
+        }
+      }
+    },
+    "detail": {
+      "empty": "로봇을 선택하면 설정이 표시됩니다.",
+      "enable": {
+        "label": "활성화"
+      },
+      "disable": {
+        "label": "비활성화"
+      },
+      "edit": {
+        "label": "편집"
+      },
+      "delete": {
+        "label": "삭제"
+      },
+      "workdir": {
+        "label": "작업 디렉터리"
+      },
+      "agent": {
+        "label": "실행 주체"
+      },
+      "permission": {
+        "label": "사전 설정 권한"
+      },
+      "readonly": {
+        "label": "읽기 전용"
+      },
+      "reach": {
+        "label": "응답 범위"
+      },
+      "mentionOnly": "그룹에서 언급된 메시지",
+      "anyGroup": "그룹의 모든 메시지",
+      "turns": {
+        "title": "최근 턴",
+        "empty": "아직 턴 기록이 없습니다.",
+        "outcome": {
+          "complete": {
+            "label": "답변함"
+          },
+          "error": {
+            "label": "오류"
+          },
+          "blocked": {
+            "label": "승인 필요"
+          },
+          "timeout": {
+            "label": "시간 초과"
+          },
+          "guard_refused": {
+            "label": "전송 보류"
+          }
+        }
+      }
+    },
+    "form": {
+      "create": {
+        "title": "채팅 로봇 만들기"
+      },
+      "edit": {
+        "title": "채팅 로봇 편집"
+      },
+      "name": {
+        "label": "이름",
+        "hint": "소문자, 숫자, - 및 _. 작업 디렉터리 이름이기도 하며 생성 후 변경할 수 없습니다."
+      },
+      "platform": {
+        "label": "플랫폼"
+      },
+      "appId": {
+        "label": "앱 ID"
+      },
+      "appSecret": {
+        "label": "앱 시크릿",
+        "placeholder": "비워 두면 저장된 시크릿 유지",
+        "hint": "암호화되어 저장되며 브라우저로 반환되지 않습니다."
+      },
+      "vendor": {
+        "label": "벤더"
+      },
+      "agent": {
+        "label": "에이전트"
+      },
+      "tools": {
+        "label": "허용된 쓰기 도구",
+        "hint": "비워 두면 읽기 전용입니다. 여기 나열된 도구는 확인 없이 실행됩니다."
+      },
+      "requireMention": {
+        "label": "언급된 경우에만 응답"
+      },
+      "chatAllowlist": {
+        "label": "그룹 허용 목록",
+        "hint": "한 줄에 그룹 ID 하나. 비우면 모든 그룹."
+      },
+      "dmMode": {
+        "label": "다이렉트 메시지",
+        "disabled": {
+          "label": "응답 안 함"
+        },
+        "allowlist": {
+          "label": "허용된 사용자만"
+        },
+        "open": {
+          "label": "누구에게나 응답"
+        }
+      },
+      "dmAllowlist": {
+        "label": "사용자 허용 목록",
+        "hint": "한 줄에 사용자 ID 하나."
+      },
+      "maxTurnMs": {
+        "label": "턴 시간 제한 (ms)",
+        "hint": "비우면 기본값 300000 사용."
+      },
+      "save": {
+        "label": "저장"
+      }
+    },
+    "enable": {
+      "confirm": {
+        "title": "이 로봇을 활성화할까요?",
+        "message": "활성화하면 플랫폼에 연결되고 답변을 이 컴퓨터 외부로 보낼 수 있습니다.",
+        "scope": "전송되는 것은 턴의 최종 답변뿐입니다. 도구 호출, 도구 결과, 중간 추론, 파일 내용은 전송되지 않습니다.",
+        "confirm": {
+          "label": "이해했습니다, 활성화"
+        }
+      }
+    },
+    "delete": {
+      "confirm": {
+        "title": "이 로봇을 삭제할까요?",
+        "message": "스레드와 감사 기록도 함께 삭제됩니다. 되돌릴 수 없습니다."
+      }
     }
   }
 }

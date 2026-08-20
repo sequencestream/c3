@@ -189,6 +189,13 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // log (never throw) on failure.
   const broadcastSessions = (workspacePath: string): void => {
     const proj = resolve(workspacePath)
+    // A path that is not a registered workspace has no wire-level name to
+    // broadcast under. Unattended runs can execute in one — an IM chat robot
+    // runs in its own directory, which is deliberately never registered — and
+    // pushing `workspaceName: null` would put a malformed frame on the wire.
+    // No client is listening for that workspace's session list either.
+    const workspaceName = pathToName(proj)
+    if (!workspaceName) return
     void listSessionsVia(sessionAccessor, proj)
       .then((all) => {
         // Bounded fan-out (SR-R14): the broadcast has no per-client cursor, so it
@@ -200,7 +207,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
         const { sessions } = paginateSessions(all)
         broadcaster.toAll({
           type: 'sessions',
-          workspaceName: pathToName(proj)!,
+          workspaceName,
           sessionKind: 'work',
           sessions,
           page: { kind: 'live', hasMore: false },

@@ -19,6 +19,7 @@ export * from './protocol/discussion.js'
 export * from './protocol/intent.js'
 export * from './protocol/log.js'
 export * from './protocol/memory.js'
+export * from './protocol/robot.js'
 export * from './protocol/session.js'
 export * from './protocol/settings.js'
 export * from './protocol/skill.js'
@@ -33,6 +34,7 @@ import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
 import type * as LogMsg from './protocol/log-messages.js'
 import type * as MemoryMsg from './protocol/memory-messages.js'
+import type * as RobotMsg from './protocol/robot-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
 import type * as SettingsMsg from './protocol/settings-messages.js'
 import type * as SkillMsg from './protocol/skill-messages.js'
@@ -169,6 +171,13 @@ export type ClientToServer =
   | WorkspaceMsg.ClientGetTimerangeStats
   | WorkspaceMsg.ClientGetWorkspaceDashboard
   | WorkspaceMsg.ClientSetWorkspacesAutomationEnabled
+  | RobotMsg.ClientListRobots
+  | RobotMsg.ClientCreateRobot
+  | RobotMsg.ClientUpdateRobot
+  | RobotMsg.ClientDeleteRobot
+  | RobotMsg.ClientAcknowledgeRobotOutbound
+  | RobotMsg.ClientSetRobotEnabled
+  | RobotMsg.ClientListRobotTurns
   | SessionMsg.ClientPing
 
 // Server → Client
@@ -264,4 +273,6 @@ export type ServerToClient =
   | WorkspaceMsg.ServerWorkspacesAutomationResult
   | SkillMsg.ServerSkillLinkStatus
   | SkillMsg.ServerSkillInstallResult
+  | RobotMsg.ServerRobots
+  | RobotMsg.ServerRobotTurns
   | SessionMsg.ServerPong

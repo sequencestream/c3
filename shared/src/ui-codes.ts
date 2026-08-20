@@ -338,6 +338,15 @@ export const UI_ERROR_CODES = {
   'automation.agentDisabled': { key: 'error.automation.agentDisabled' },
   'automation.agentVendorMismatch': { key: 'error.automation.agentVendorMismatch' },
   'automation.vendorUnsupported': { key: 'error.automation.vendorUnsupported' },
+  // robot (IM chat robots)
+  'robot.dbUnavailable': { key: 'error.robot.dbUnavailable' },
+  'robot.notFound': { key: 'error.robot.notFound' },
+  'robot.nameInvalid': { key: 'error.robot.nameInvalid' },
+  'robot.nameConflict': { key: 'error.robot.nameConflict' },
+  'robot.platformUnsupported': { key: 'error.robot.platformUnsupported' },
+  'robot.secretRequired': { key: 'error.robot.secretRequired' },
+  'robot.outboundNotAcknowledged': { key: 'error.robot.outboundNotAcknowledged' },
+  'robot.agentRequired': { key: 'error.robot.agentRequired' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
   'waitUserInvolve.invalidStatusTransition': {

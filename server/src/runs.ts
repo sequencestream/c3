@@ -168,6 +168,15 @@ export interface SessionRuntime {
    * session must re-apply it before any turn can start.
    */
   researchDiscussionId?: string
+  /**
+   * Only set for `sessionKind === 'robot'` runs: the IM chat robot this turn
+   * belongs to. It is part of the security contract, not a convenience — the
+   * robot's launch profile (system prompt, disallowed tools, and above all the
+   * frozen write allowlist) is resolved FROM it, so a robot runtime without it
+   * has no configuration to be constrained by. The launcher throws rather than
+   * falling back to a default surface (ADR-0046).
+   */
+  robotId?: string
   viewers: Set<Viewer>
 }
 

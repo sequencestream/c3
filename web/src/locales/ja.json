@@ -2213,6 +2213,9 @@
           },
           "specReview": {
             "label": "仕様レビュー"
+          },
+          "robot": {
+            "label": "チャットロボット"
           }
         },
         "metadataFilter": {
@@ -2476,6 +2479,16 @@
       "notFound": "そのメモリはこのワークスペースにはもうありません。変更は行われていません。",
       "unavailable": "メモリストアが利用できないため、削除は行われませんでした。",
       "deleteFailed": "メモリを削除できませんでした: {detail}"
+    },
+    "robot": {
+      "dbUnavailable": "ロボットストアが利用できません。",
+      "notFound": "ロボットが見つかりません。",
+      "nameInvalid": "小文字・数字・- と _ のみ、英数字で始まり、最大 32 文字です。",
+      "nameConflict": "同じ名前のロボットが既にあります。",
+      "platformUnsupported": "このビルドはそのプラットフォームに対応していません。",
+      "secretRequired": "有効化する前にアプリシークレットを設定してください。",
+      "outboundNotAcknowledged": "有効化する前に、外部へ送信される内容を確認してください。",
+      "agentRequired": "ベンダーとエージェントを選択してください。"
     }
   },
   "statusIndicator": {
@@ -3452,7 +3465,8 @@
       "ariaLabel": "ワークセンターのページ",
       "dashboard": "ダッシュボード",
       "notifications": "通知",
-      "notificationsBadgeAriaLabel": "未処理の通知 {count} 件"
+      "notificationsBadgeAriaLabel": "未処理の通知 {count} 件",
+      "robots": "チャットロボット"
     },
     "column": {
       "workspace": "ワークスペース",
@@ -3797,6 +3811,170 @@
       "connecting": "接続中…",
       "open": "接続済み",
       "closed": "切断されました"
+    }
+  },
+  "robot": {
+    "nav": {
+      "title": "チャットロボット"
+    },
+    "list": {
+      "title": "チャットロボット",
+      "empty": "チャットロボットはまだありません。",
+      "create": {
+        "label": "新規ロボット"
+      },
+      "disabled": {
+        "label": "無効"
+      },
+      "state": {
+        "idle": {
+          "label": "未接続"
+        },
+        "connecting": {
+          "label": "接続中"
+        },
+        "connected": {
+          "label": "接続済み"
+        },
+        "reconnecting": {
+          "label": "再接続中"
+        },
+        "failed": {
+          "label": "接続失敗"
+        }
+      }
+    },
+    "detail": {
+      "empty": "ロボットを選択すると設定が表示されます。",
+      "enable": {
+        "label": "有効化"
+      },
+      "disable": {
+        "label": "無効化"
+      },
+      "edit": {
+        "label": "編集"
+      },
+      "delete": {
+        "label": "削除"
+      },
+      "workdir": {
+        "label": "作業ディレクトリ"
+      },
+      "agent": {
+        "label": "実行主体"
+      },
+      "permission": {
+        "label": "事前設定の権限"
+      },
+      "readonly": {
+        "label": "読み取り専用"
+      },
+      "reach": {
+        "label": "応答範囲"
+      },
+      "mentionOnly": "グループでメンションされたメッセージ",
+      "anyGroup": "グループの任意のメッセージ",
+      "turns": {
+        "title": "最近のターン",
+        "empty": "ターンの記録はまだありません。",
+        "outcome": {
+          "complete": {
+            "label": "回答済み"
+          },
+          "error": {
+            "label": "エラー"
+          },
+          "blocked": {
+            "label": "承認が必要"
+          },
+          "timeout": {
+            "label": "タイムアウト"
+          },
+          "guard_refused": {
+            "label": "送信を保留"
+          }
+        }
+      }
+    },
+    "form": {
+      "create": {
+        "title": "チャットロボットの新規作成"
+      },
+      "edit": {
+        "title": "チャットロボットの編集"
+      },
+      "name": {
+        "label": "名前",
+        "hint": "小文字・数字・- と _。作業ディレクトリ名でもあり、作成後は変更できません。"
+      },
+      "platform": {
+        "label": "プラットフォーム"
+      },
+      "appId": {
+        "label": "アプリ ID"
+      },
+      "appSecret": {
+        "label": "アプリシークレット",
+        "placeholder": "空欄なら保存済みのシークレットを維持",
+        "hint": "暗号化して保存され、ブラウザには返されません。"
+      },
+      "vendor": {
+        "label": "ベンダー"
+      },
+      "agent": {
+        "label": "エージェント"
+      },
+      "tools": {
+        "label": "許可する書き込みツール",
+        "hint": "空欄なら読み取り専用。ここに挙げたツールは確認なしで実行されます。"
+      },
+      "requireMention": {
+        "label": "メンションされた場合のみ応答"
+      },
+      "chatAllowlist": {
+        "label": "グループ許可リスト",
+        "hint": "1 行に 1 つのグループ ID。空欄ならすべてのグループ。"
+      },
+      "dmMode": {
+        "label": "ダイレクトメッセージ",
+        "disabled": {
+          "label": "応答しない"
+        },
+        "allowlist": {
+          "label": "許可リストのユーザーのみ"
+        },
+        "open": {
+          "label": "誰にでも応答"
+        }
+      },
+      "dmAllowlist": {
+        "label": "ユーザー許可リスト",
+        "hint": "1 行に 1 つのユーザー ID。"
+      },
+      "maxTurnMs": {
+        "label": "1 ターンの時間上限 (ms)",
+        "hint": "空欄なら既定値 300000。"
+      },
+      "save": {
+        "label": "保存"
+      }
+    },
+    "enable": {
+      "confirm": {
+        "title": "このロボットを有効にしますか?",
+        "message": "有効にすると、プラットフォームに接続し、回答をこのマシンの外へ送信できるようになります。",
+        "scope": "送信されるのはターンの最終回答のみです。ツール呼び出し、ツール結果、中間推論、ファイル内容は送信されません。",
+        "confirm": {
+          "label": "了解しました、有効にする"
+        }
+      }
+    },
+    "delete": {
+      "confirm": {
+        "title": "このロボットを削除しますか?",
+        "message": "スレッドと監査記録も一緒に削除されます。元に戻せません。"
+      }
     }
   }
 }

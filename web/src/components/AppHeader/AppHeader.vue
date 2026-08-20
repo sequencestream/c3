@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { WorkcenterPage } from '@/controls/state'
 /*
  * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 数据驱动的工作区子 tab。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
@@ -115,7 +116,7 @@ const props = defineProps<{
   /** Current view mode: workspace or workcenter. */
   viewMode: 'workspace' | 'workcenter'
   /** Current workcenter page (drives the top-bar page entries' selected state). */
-  workcenterPage?: 'dashboard' | 'notifications'
+  workcenterPage?: WorkcenterPage
   /** Pending user-involve events shown on the「用户通知」workcenter page entry. */
   workcenterBadgeCount?: number
   /** Show the logout button. Only true once authenticated (ADR-0023); when auth
@@ -142,7 +143,7 @@ const emit = defineEmits<{
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
-  'select-workcenter-page': [page: 'dashboard' | 'notifications']
+  'select-workcenter-page': [page: WorkcenterPage]
   'start-self-update': []
   'apply-self-update': []
   logout: []
@@ -245,12 +246,15 @@ const VIEW_MODES: ReadonlyArray<{ key: 'workspace' | 'workcenter'; labelKey: Loc
 // 工作台页面入口(顶栏,工作台模式下占据原「工作台」标题位置;桌面 + 移动端共用同一组
 // 页面键与 tab 语义)。「用户通知」入口携带待处理数角标(badge=true),计数为 0 时不渲染。
 const WORKCENTER_PAGES: ReadonlyArray<{
-  key: 'dashboard' | 'notifications'
+  key: WorkcenterPage
   labelKey: LocaleKey
   badge?: boolean
 }> = [
   { key: 'notifications', labelKey: 'dashboard.nav.notifications' as LocaleKey, badge: true },
   { key: 'dashboard', labelKey: 'dashboard.nav.dashboard' as LocaleKey },
+  // Robots are global rather than per-workspace, which is why they live in the
+  // workcenter view alongside the cross-workspace pages.
+  { key: 'robots', labelKey: 'dashboard.nav.robots' as LocaleKey },
 ]
 
 // 底部 tab 仅承载工作区子视图(工作台入口已上移到顶部图标切换器);故无 workcenter 分支。

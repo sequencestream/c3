@@ -3897,6 +3897,9 @@
           },
           "guard_refused": {
             "label": "전송 보류"
+          },
+          "busy": {
+            "label": "처리 중"
           }
         }
       }

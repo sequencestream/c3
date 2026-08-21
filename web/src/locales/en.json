@@ -3896,6 +3896,9 @@
           },
           "guard_refused": {
             "label": "Held back"
+          },
+          "busy": {
+            "label": "Busy"
           }
         }
       }

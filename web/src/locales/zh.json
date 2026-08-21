@@ -3896,6 +3896,9 @@
           },
           "guard_refused": {
             "label": "已拦下未发送"
+          },
+          "busy": {
+            "label": "线程忙"
           }
         }
       }

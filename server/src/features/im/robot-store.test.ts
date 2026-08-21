@@ -247,7 +247,7 @@ describe('audit — records that it happened, not what was said', () => {
 
   it('records the outcomes where nothing was sent', () => {
     const robot = createRobot(input())
-    for (const outcome of ['guard_refused', 'blocked', 'timeout', 'error'] as const) {
+    for (const outcome of ['guard_refused', 'blocked', 'timeout', 'error', 'busy'] as const) {
       const id = beginTurn({
         robotId: robot.id,
         threadKey: 'k',
@@ -261,7 +261,7 @@ describe('audit — records that it happened, not what was said', () => {
       listTurns(robot.id)
         .map((t) => t.outcome)
         .sort(),
-    ).toEqual(['blocked', 'error', 'guard_refused', 'timeout'].sort())
+    ).toEqual(['blocked', 'busy', 'error', 'guard_refused', 'timeout'].sort())
     expect(listTurns(robot.id).every((t) => t.outboundChars === 0)).toBe(true)
   })
 })

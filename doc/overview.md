@@ -28,7 +28,7 @@ c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
 - [`session-registry`](domains/core/session-registry/): 管理工作区与会话;负责每个会话的模式、最近访问顺序、历史回放
 - [`web-console`](domains/core/web-console/): 浏览器 UI:prompt 输入、活动流、权限对话框、模式切换
 - [`intent-management`](domains/core/intent-management/): 一个项目范围的意图台账,以及一个只读的意图沟通智能体,负责把想法拆解为可验证的条目,并启动可配置的开发技能
-- [`im-robot`](domains/core/im-robot/): 聊天机器人:把 agent 能力延伸到办公 IM,群里 @机器人 提问、无人值守跑一轮、把最终回答发回群里;与工作区解耦,外发受显式授权约束
+- [`im-robot`](domains/core/im-robot/): 聊天机器人:把 agent 能力延伸到办公 IM,群里 @机器人 提问、无人值守跑一轮、把最终回答发回群里;部署级出入口(全局管理 ≠ 无边界访问),外发只经唯一出站守卫
 
 ### 组 `settings`
 

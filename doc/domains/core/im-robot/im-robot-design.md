@@ -96,6 +96,20 @@ _即使已经显式提供了 agent_。导出了代理变量的机器因此完全
   其余情况静默忽略。
 - `bindMcp` —— 勾了 c3 MCP 工具时的绑定器,把勾选的裸工具名交给传输层;一个 c3 工具都没勾时没有绑定。
 
+### 运行根冻结与双重强制
+
+回合启动时把运行根 `~/.c3/robots/<name>/` 冻结为真实绝对路径(`freezeRobotRoot`,机器人运行时的
+`workspacePath` 即此目录),随画像传入运行启动器;根不可解析则回合失败关闭。冻结根被权限门与 claude
+的执行前 `PreToolUse` 钩子共用——同一裁决、同一根,门裁决一次、钩子再裁决一次(钩子先于宿主机
+`~/.claude/settings.json` 的 allow 规则运行且只拒绝,宿主的设置绕不开边界)。
+
+### 无条件进程隔离
+
+机器人回合无论工作区沙箱开关如何都进程隔离:启动器见 `rt.sandboxPaths` 未置位时,用
+`launchSandbox(workspacePath, executionRoot)` 现造一个——允许集折叠为运行根(读写)+ specs/codex/
+claude 配置目录 + vendor 认证挂载。隔离建立失败以安全错误结束回合,不退化。驱动路径无需另行接线,
+`rt.sandboxPaths` 被强制置位后自动进入包装逻辑。
+
 ## c3 MCP 回环绑定
 
 机器人回合与自动化共用同一套框架无关的工具构造器(`buildAutomationC3Tools`);差异在绑定方式。

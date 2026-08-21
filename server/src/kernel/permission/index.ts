@@ -21,6 +21,18 @@ export {
   type DecisionResult,
 } from './registry.js'
 export {
+  adjudicateRobotToolInput,
+  carriesUndescribedLocation,
+  freezeRobotRoot,
+  isRobotLocalPathTool,
+  ROBOT_FS_DENY_CODE,
+  ROBOT_FS_DENY_MESSAGE,
+  ROBOT_LOCAL_PATH_TOOLS,
+  ROBOT_NON_LOCAL_READ_TOOLS,
+  type RobotFsDenyReason,
+  type RobotFsVerdict,
+} from './robot-fs-scope.js'
+export {
   SAVE_INTENTS_TOOL,
   FIND_INTENTS_TOOL,
   VIEW_INTENT_TOOL,

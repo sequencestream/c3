@@ -10,9 +10,11 @@
  *  - `spec_review` — the spec reviewer: reads pass, the one narrow submit tool
  *    passes, every write is denied outright (it owns no writable location);
  *  - `discussion-research` — the unattended read-only research agent (read tools pass, else deny);
- *  - `robot` — an IM chat-robot turn: reads pass, the human-facing tools are denied
- *    outright (nobody is in the chat to answer them), writes only via the robot's
- *    frozen allowlist (ADR-0046);
+ *  - `robot` — an IM chat-robot turn: the human-facing tools are denied outright
+ *    (nobody is in the chat to answer them), writes pass only via the robot's
+ *    frozen allowlist (ADR-0046), and EVERY local file access is confined to the
+ *    robot's own frozen run root (`robot-fs-scope.ts`) — a read tool's name
+ *    decides whether it may run, never where it may reach;
  *  - `standard` — the normal flow (multi-agent consensus → human prompt).
  *
  * EVERY return is a branded {@link PermissionDecision} minted by `allow`/`deny`,
@@ -41,6 +43,14 @@ import {
   withAnswers,
   WRITE_TOOLS,
 } from './tools.js'
+import {
+  adjudicateRobotToolInput,
+  carriesUndescribedLocation,
+  isRobotLocalPathTool,
+  ROBOT_FS_DENY_CODE,
+  ROBOT_FS_DENY_MESSAGE,
+  ROBOT_NON_LOCAL_READ_TOOLS,
+} from './robot-fs-scope.js'
 import { waitForDecision } from './registry.js'
 import { runAskConsensus, runConsensusVote } from '../../consensus.js'
 import { askQuestions } from '../../consensus-tally.js'
@@ -94,6 +104,15 @@ export interface GatewaySpec {
    * listed here; they pass on their own.
    */
   robotAllowedTools?: ReadonlySet<string>
+  /**
+   * Only meaningful when `gate === 'robot'`: the turn's FROZEN run root — the
+   * real path of `~/.c3/robots/<name>` resolved once at launch. Every local file
+   * access this gate sees is adjudicated against it, so a robot cannot read host
+   * data and recite it into a group chat. Absent is not "unrestricted": the gate
+   * refuses every local file tool without it, because a boundary that was never
+   * established cannot have been satisfied.
+   */
+  robotRoot?: string
   /**
    * Only set when `gate === 'spec'`: the absolute directory writes are confined
    * to. Write-class tools targeting a path outside it are denied; reads pass
@@ -353,14 +372,64 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         console.warn(`[c3] robot gate denied user-interaction tool: ${toolName}`)
         return deny('No one is present in a chat-robot turn, so this tool cannot be answered.')
       }
-      if (INTENT_READ_TOOLS.has(toolName) || INTENT_QUERY_TOOLS.has(toolName)) {
+      // Being on the read set or the allowlist decides only WHETHER the tool may
+      // run — never WHERE it may reach. That second question is answered below,
+      // for every tool, so no allow path can skip it.
+      const permitted =
+        INTENT_READ_TOOLS.has(toolName) ||
+        INTENT_QUERY_TOOLS.has(toolName) ||
+        robotAllowedTools?.has(toolName) === true
+      if (!permitted) {
+        console.warn(`[c3] robot gate denied tool: ${toolName}`)
+        return deny('This tool is outside the allowed set for this chat robot.')
+      }
+      // Local file access is confined to the robot's own run root. A tool that
+      // reaches local paths without a description here is refused rather than
+      // waved through — a read tool added to a vendor's manifest tomorrow must
+      // not arrive already permitted (see robot-fs-scope.ts).
+      if (isRobotLocalPathTool(toolName)) {
+        if (!spec.robotRoot) {
+          console.warn(
+            `[c3] robot gate denied ${toolName}: no frozen run root (${ROBOT_FS_DENY_CODE})`,
+          )
+          return deny(ROBOT_FS_DENY_MESSAGE)
+        }
+        const verdict = adjudicateRobotToolInput({
+          root: spec.robotRoot,
+          toolName,
+          input,
+        })
+        if (!verdict.ok) {
+          // The reason CATEGORY is auditable; the target never is — logging the
+          // requested path would reintroduce the disclosure the denial prevents.
+          console.warn(`[c3] ${ROBOT_FS_DENY_CODE}: tool=${toolName} reason=${verdict.reason}`)
+          return deny(ROBOT_FS_DENY_MESSAGE)
+        }
+        return allow(verdict.input)
+      }
+      // Not a described local file tool. A read tool that reaches no local path
+      // (Web/WebSearch/task tools) or a c3 MCP tool (already bound to this robot's
+      // own directory at the transport) is allowed through — but only as long as it
+      // carries no unexamined filesystem location. A path-like field on one of them
+      // means its description here is out of date; the call fails closed until it
+      // is described (a second way out of the root must not arrive silently).
+      const isReadClass = ROBOT_NON_LOCAL_READ_TOOLS.has(toolName) || toolName.startsWith('mcp__')
+      if (isReadClass) {
+        if (carriesUndescribedLocation(input)) {
+          console.warn(`[c3] ${ROBOT_FS_DENY_CODE}: tool=${toolName} reason=no-descriptor`)
+          return deny(ROBOT_FS_DENY_MESSAGE)
+        }
         return allow(input)
       }
-      if (robotAllowedTools?.has(toolName)) {
+      // An allowlisted write/exec tool (the permit check above already admitted
+      // it). Its blast radius is the process isolation's job, not this
+      // description table — every robot turn is arapuca-confined to its own run
+      // root, so a widened tool can only reach the dirs the sandbox mounts.
+      if (robotAllowedTools?.has(toolName) === true) {
         return allow(input)
       }
-      console.warn(`[c3] robot gate denied tool: ${toolName}`)
-      return deny('This tool is outside the allowed set for this chat robot.')
+      console.warn(`[c3] robot gate denied unclassified read tool: ${toolName}`)
+      return deny(ROBOT_FS_DENY_MESSAGE)
     }
 
     // AskUserQuestion is not an allow/deny tool — it needs an ANSWER per

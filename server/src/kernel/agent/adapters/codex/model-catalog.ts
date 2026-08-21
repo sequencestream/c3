@@ -14,11 +14,11 @@
  * optional capability fields into the minimal legal catalog entry and writes it
  * to a per-run temp location, mirroring image-files' write/cleanup pair.
  *
- * VERSION GATE (0.147.0): the required scaffold-field set below is the
+ * VERSION GATE (0.148.0): the required scaffold-field set below is the
  * serde-required snapshot of codex's catalog entry, discovered by
  * feeding partial entries to the locked binary and reading the `missing field`
- * errors until one parsed, and re-verified against 0.147.0 (the entry below
- * parses; the fields 0.147.0 added all carry defaults). A codex upgrade may
+ * errors until one parsed, and re-verified against 0.148.0 (the entry below
+ * parses; fields added since 0.147.0 all carry defaults). A codex upgrade may
  * add/rename required fields — re-run that drill per doc/architecture/sdk-upgrade/
  * when upgrading. A parse failure surfaces as an explicit codex startup error,
  * never silent degradation.
@@ -32,7 +32,7 @@ import { join } from 'node:path'
 
 /**
  * The reasoning-effort set to declare. Mirrors the bundled catalog's
- * union across models (verified via `codex debug models`, re-checked on 0.147.0
+ * union across models (verified via `codex debug models`, re-checked on 0.148.0
  * — the union is unchanged): every level codex can
  * request (`model_reasoning_effort`) must be present for the model. c3's driver
  * never sets an effort, so this is forward-safety, not a runtime knob.

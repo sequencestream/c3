@@ -67,3 +67,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0045](0045-workspace-memory-as-allowed-local-persistence.md) · accepted — 工作区记忆是被允许的本地持久化类别(结构化字段 + 工作区绑定 + 输入上限 + 凭据/产物拒绝 + 软删与 30 天延迟清理),work session 的两个记忆工具免确认,工具面由 `sessionKind === 'work'` 正向选中
 - [0046](0046-im-robot-outbound-authorization.md) · accepted — IM 聊天机器人:进程内出站长连接 + 外发授权四重表达(默认关闭、启用前确认、仅管理员、逐次审计)+ 只发最终文本 + 无人值守会话不得挂起
 - [0047](0047-robot-local-reads-scoped-to-run-root.md) · accepted — 聊天机器人本地文件读取限定运行根:每回合冻结运行根 + 真实路径裁决 + 描述表无默认开放 + 门/执行前钩子双重强制 + 无条件进程隔离
+- [0048](0048-robot-im-context-as-bounded-local-persistence.md) · accepted — 发送者隔离且有界的机器人 IM 可见上下文是允许的本地持久化例外(四维归属 + 成对结构 + 凭据拒绝 + 码点/回合上限 + 30 天硬删);有限取代 ADR-0045 对转录禁存的禁止;旧群级共享会话安全切断

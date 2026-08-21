@@ -4,10 +4,10 @@
 - **一句话:** 把 c3 的 agent 能力延伸到办公 IM——群里 @机器人 提问,c3 在机器人自己的目录里跑一轮无人值守会话,把最终回答发回群里;这是 c3 唯一一条主动把 agent 产出送往第三方云的路径。
 - **负责人:** maintainer
 - **状态:** 活跃
-- **依赖:** 位于 `~/.c3/c3.db` 的本地 SQLite 存储(`im_robots` / `im_robot_threads` / `im_robot_turns` 三表);`agent-session` 的 run 生命周期(`robot` 会话种类 + 无人值守回合);`permission-gateway` 的 `robot` 门;`agent-config` 的 vendor 与 agent(含组引用)解析;服务端统一出站 HTTP 通道与代理解析。
+- **依赖:** 位于 `~/.c3/c3.db` 的本地 SQLite 存储(`im_robots` / `im_robot_threads` / `im_robot_context_turns` / `im_robot_turns`);`agent-session` 的 run 生命周期(`robot` 会话种类 + 无人值守回合);`permission-gateway` 的 `robot` 门;`agent-config` 的 vendor 与 agent(含组引用)解析;服务端统一出站 HTTP 通道与代理解析。
 - **被依赖方:** 无。没有其它域读取机器人数据。
 - **exposes-api:** true —— 七条 WebSocket 消息(名册读写、启用、外发确认、回合审计),不新增 HTTP 路由,不进外部 MCP 工具目录。
-- **ADRs:** [0046](../../../architecture/adr/0046-im-robot-outbound-authorization.md)、[0047](../../../architecture/adr/0047-robot-local-reads-scoped-to-run-root.md)
+- **ADRs:** [0046](../../../architecture/adr/0046-im-robot-outbound-authorization.md)、[0047](../../../architecture/adr/0047-robot-local-reads-scoped-to-run-root.md)、[0048](../../../architecture/adr/0048-robot-im-context-as-bounded-local-persistence.md)
 
 ## 它解决什么
 
@@ -16,10 +16,15 @@ c3 的人机界面只有浏览器。可日常协作发生在 IM 里:一个问题
 
 它不是把 c3 搬进聊天窗口。机器人回答问题,不替代控制台:过程、工具调用与授权决策仍然只在 c3 里。
 
+同一群中的不同发送者各自拥有互不相通的连续对话;可恢复上下文以数据库为事实源,按发送者隔离
+(ADR-0048),避免跨用户引用他人历史。
+
 ## 边界
 
 - **不绑工作区。** 机器人按名称拥有目录 `~/.c3/robots/<name>/`,那里是它能触及的全部范围。该目录不进
-  工作区注册表,机器人的会话也不出现在会话页。
+  工作区注册表,机器人的会话也不出现在会话页;目录内容不参与会话恢复或授权判断。
+- **发送者隔离。** Conversation 身份是 `(platform, robotId, threadKey, senderId)`。不提供同群共享上下文;
+  需要共同背景时,各发送者须在自己的消息中显式提供。
 - **默认停用,启用是一次独立的授权动作。** 创建不启用;启用需要管理员、需要凭据、需要一次记录在案的
   外发范围确认。缺任何一条,服务端拒绝启用。
 - **只发最终回答。** 工具调用、工具结果、中间推理、文件内容一概不外发——这是结构性的,不是开关。
@@ -30,10 +35,11 @@ c3 的人机界面只有浏览器。可日常协作发生在 IM 里:一个问题
 - **默认只读。** 写/执行能力必须由管理员逐个列举。
 - **响应面默认收敛。** 群消息默认必须 @机器人,单聊默认不响应。
 - **不做平台特性。** 不发卡片、不上传文件、不做流式改写;回答是一段文本。
-- **不承诺内容安全。** 出站守卫挡得住常见凭据形状,挡不住任意散文。
+- **不承诺内容安全。** 入站与出站守卫挡得住常见凭据形状,挡不住任意散文。
+- **不赋予外部 senderId 以 c3 身份语义**,不做账号绑定或 `scope_hash`(后续身份绑定落地后再补)。
 
 ## 索引
 
 - [im-robot-spec.md](im-robot-spec.md) —— 一条消息的完整判定链、授权规则、失败语义、审计规则
 - [im-robot-design.md](im-robot-design.md) —— provider 抽象与飞书实现、supervisor 生命周期、回合执行路径、代理处理
-- [im-robot-models.md](im-robot-models.md) —— Robot / Thread / Turn 三个实体与其判据
+- [im-robot-models.md](im-robot-models.md) —— Robot / Conversation / Context Turn / Turn 实体与其判据

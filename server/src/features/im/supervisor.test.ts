@@ -193,8 +193,8 @@ describe('response policy — which messages are answered at all', () => {
   })
 })
 
-describe('one thread runs one turn at a time', () => {
-  it('tells the asker to wait instead of starting a parallel run', async () => {
+describe('one Conversation runs one turn at a time', () => {
+  it('tells the same sender to wait instead of starting a parallel run', async () => {
     await boot()
     let release: (r: RobotTurnResult) => void = () => {}
     turnResult.mockReturnValueOnce(
@@ -203,9 +203,9 @@ describe('one thread runs one turn at a time', () => {
       }),
     )
 
-    push(message({ messageId: 'm1' }))
+    push(message({ messageId: 'm1', senderId: 'ou_user' }))
     await settle()
-    push(message({ messageId: 'm2' }))
+    push(message({ messageId: 'm2', senderId: 'ou_user' }))
     await settle()
 
     expect(turnResult).toHaveBeenCalledTimes(1)
@@ -213,6 +213,15 @@ describe('one thread runs one turn at a time', () => {
 
     release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
     await settle()
+  })
+
+  it('runs different senders in the same group concurrently', async () => {
+    await boot()
+    turnResult.mockReturnValue(new Promise<RobotTurnResult>(() => {}))
+    push(message({ messageId: 'm1', senderId: 'alice' }))
+    push(message({ messageId: 'm2', senderId: 'bob' }))
+    await settle()
+    expect(turnResult).toHaveBeenCalledTimes(2)
   })
 
   it('runs different threads concurrently', async () => {
@@ -226,7 +235,7 @@ describe('one thread runs one turn at a time', () => {
 })
 
 describe('a redelivered message is not answered twice', () => {
-  it('ignores the same message id arriving again on the same thread', async () => {
+  it('ignores the same message id arriving again', async () => {
     await boot()
     const m = message({ messageId: 'm-dup' })
     push(m)
@@ -238,16 +247,62 @@ describe('a redelivered message is not answered twice', () => {
   })
 })
 
-describe('a thread reads as one conversation', () => {
-  it('resumes the bound session on the next message', async () => {
+describe('sender-isolated continuous conversation', () => {
+  it('resumes the bound session for the same sender', async () => {
     await boot()
-    push(message({ messageId: 'm1' }))
+    push(message({ messageId: 'm1', senderId: 'ou_user' }))
     await settle()
-    push(message({ messageId: 'm2' }))
+    push(message({ messageId: 'm2', senderId: 'ou_user' }))
     await settle()
 
     expect(turnResult.mock.calls[0]?.[0]).not.toHaveProperty('sessionId')
     expect(turnResult.mock.calls[1]?.[0]).toMatchObject({ sessionId: 'sess-1' })
+  })
+
+  it('does not let sender B recover sender A context', async () => {
+    await boot()
+    turnResult
+      .mockResolvedValueOnce({
+        outcome: 'complete',
+        sessionId: 'sess-a',
+        lastMessage: 'alice-private-answer',
+      })
+      .mockResolvedValueOnce({
+        outcome: 'complete',
+        sessionId: 'sess-b',
+        lastMessage: 'bob-answer',
+      })
+      .mockResolvedValueOnce({
+        outcome: 'complete',
+        sessionId: 'sess-a2',
+        lastMessage: 'alice-again',
+      })
+
+    push(message({ messageId: 'm1', senderId: 'alice', text: 'alice secret question' }))
+    await settle()
+    push(message({ messageId: 'm2', senderId: 'bob', text: 'bob question' }))
+    await settle()
+
+    // Force DB recovery for alice's second turn by clearing the native cache mid-flight
+    // is unnecessary — bob's prompt must not contain alice's texts.
+    const bobPrompt = (turnResult.mock.calls[1]?.[0] as { prompt: string }).prompt
+    expect(bobPrompt).not.toContain('alice')
+    expect(bobPrompt).not.toContain('alice-private-answer')
+
+    // Drop alice session so the third turn must seed from DB.
+    const { getDb } = await import('../../kernel/infra/db.js')
+    getDb()!.run(
+      `UPDATE im_robot_threads SET session_id = NULL
+       WHERE sender_id = 'alice'`,
+    )
+
+    push(message({ messageId: 'm3', senderId: 'alice', text: 'follow up' }))
+    await settle()
+    const alicePrompt = (turnResult.mock.calls[2]?.[0] as { prompt: string }).prompt
+    expect(alicePrompt).toContain('alice secret question')
+    expect(alicePrompt).toContain('alice-private-answer')
+    expect(alicePrompt).not.toContain('bob question')
+    expect(alicePrompt).not.toContain('bob-answer')
   })
 
   it('runs in the robot own directory, not a workspace', async () => {
@@ -256,6 +311,25 @@ describe('a thread reads as one conversation', () => {
     await settle()
     const arg = turnResult.mock.calls[0]?.[0] as { workspacePath: string }
     expect(arg.workspacePath).toContain(join('robots', 'helper'))
+  })
+
+  it('rejects credential-shaped input without running or saving body', async () => {
+    const id = await boot()
+    push(
+      message({
+        messageId: 'm-cred',
+        text: 'here is ghp_abcdefghijklmnopqrstuvwxyz012345',
+      }),
+    )
+    await settle()
+    expect(turnResult).not.toHaveBeenCalled()
+    expect(sent.at(-1)?.text).toContain('疑似凭据')
+    expect(sent.at(-1)?.text).not.toContain('ghp_')
+    expect(listTurns(id)[0]).toMatchObject({
+      outcome: 'input_rejected',
+      rejectReason: 'credential',
+      outboundChars: 0,
+    })
   })
 })
 

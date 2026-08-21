@@ -36,6 +36,7 @@ const OUTCOME_LABEL = {
   blocked: 'robot.detail.turns.outcome.blocked.label',
   timeout: 'robot.detail.turns.outcome.timeout.label',
   guard_refused: 'robot.detail.turns.outcome.guard_refused.label',
+  input_rejected: 'robot.detail.turns.outcome.input_rejected.label',
 } as const
 
 /** Read-only unless the robot was deliberately widened; that is the default. */

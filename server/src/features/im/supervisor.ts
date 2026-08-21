@@ -2,24 +2,16 @@
  * The IM supervisor: holds one connection per enabled robot and turns an inbound
  * chat message into one agent turn and one reply.
  *
- * Everything platform-neutral lives here rather than in a provider, so a second
- * platform inherits it: the response policy (@-mention required, chat and DM
- * allowlists), repeat-delivery suppression, one-turn-at-a-time per thread, the
- * outbound guard, and the audit row.
+ * Conversation identity is `(platform, robotId, threadKey, senderId)`. Different
+ * senders in the same IM thread never share recoverable context. Context bodies
+ * live in the database (ADR-0048); `~/.c3/robots/<name>` is only a run root.
  *
- * Two properties are worth stating outright:
- *
- *  - **One thread runs one turn at a time.** A second message arriving while a
- *    thread is busy is answered with a short notice instead of starting a
- *    parallel run that would race the first for the same session. Different
- *    threads are unbounded, matching c3's stance elsewhere.
- *  - **Every accepted message ends in either a reply or an audited reason.** A
- *    robot that silently drops a question is worse than one that says it failed,
- *    because the person in the chat cannot tell the difference from being ignored.
- *
- * Lifecycle follows the scheduler's shape (`features/schedules`): a module-level
- * handle, an idempotent start, and a stop that stops accepting work before
- * draining what is in flight.
+ *  - **One Conversation runs one turn at a time.** A second message for the same
+ *    sender while busy gets a short notice. Different senders do not share the
+ *    gate and may run concurrently.
+ *  - **Every accepted message ends in either a reply or an audited reason.**
+ *  - **Blank senderId never becomes an accepted message** — providers return
+ *    null at normalize time.
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -27,18 +19,26 @@ import type { ImConnectionStatus, ImRobot, ImTurnOutcome } from '@ccc/shared/pro
 import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/paths.js'
 import type { RobotTurnResult, RunRobotTurnInput } from '../../wiring/robot-turn.js'
+import { formatContextSeed } from './context-seed.js'
+import { screenInbound } from './inbound-guard.js'
 import { screenOutbound } from './outbound-guard.js'
 import { resolveImProvider } from './registry.js'
 import {
   beginTurn,
-  bindThreadSession,
+  claimInboundMessage,
+  commitContextTurn,
+  failContextTurn,
   finishTurn,
+  getConversation,
   getRobot,
+  isStoreAvailable,
   listEnabledRobots,
-  openThread,
+  loadCommittedContext,
+  resolvedSessionRef,
   robotSecret,
+  RobotStoreError,
 } from './robot-store.js'
-import { threadKeyFor } from './thread-key.js'
+import { conversationGateKey, conversationIdentityOf, threadKeyFor } from './thread-key.js'
 import type { ImConnection, ImInboundMessage, ImProviderCapabilities } from './types.js'
 
 export interface ImSupervisorDeps {
@@ -48,18 +48,15 @@ export interface ImSupervisorDeps {
 interface RobotHandle {
   connection: ImConnection
   capabilities: ImProviderCapabilities
-  /** Set when the link could not be established; surfaced instead of a status. */
   lastError?: string
 }
 
 let deps: ImSupervisorDeps | null = null
 let handles: Map<string, RobotHandle> | null = null
-/** Turns currently running, keyed by robot+thread. The serialization gate. */
+/** Turns currently running, keyed by Conversation identity. */
 const inFlight = new Map<string, Promise<void>>()
-/** Connection failures for robots that never got a handle. */
 const failures = new Map<string, string>()
 
-/** A robot's working directory. Follows `--db`, so one override moves everything. */
 export function robotWorkdir(name: string): string {
   return join(c3HomeDir(), 'robots', name)
 }
@@ -68,10 +65,6 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-/**
- * Whether this robot should answer this message at all. The narrow defaults live
- * in the store; this only applies them.
- */
 function accepts(robot: ImRobot, msg: ImInboundMessage): boolean {
   if (msg.chatType === 'group') {
     if (robot.requireMention && !msg.mentionedBot) return false
@@ -83,7 +76,6 @@ function accepts(robot: ImRobot, msg: ImInboundMessage): boolean {
   return true
 }
 
-/** What to say when a turn produced no deliverable answer. */
 function failureNotice(outcome: ImTurnOutcome): string {
   switch (outcome) {
     case 'timeout':
@@ -92,6 +84,8 @@ function failureNotice(outcome: ImTurnOutcome): string {
       return '这一步需要人工授权,我在群里无法完成。请到 c3 中继续。'
     case 'guard_refused':
       return '回答里包含疑似凭据的内容,已拦下未发送。请到 c3 会话中查看。'
+    case 'input_rejected':
+      return '这条消息未处理也未保存。'
     default:
       return '处理时出错了,请到 c3 会话中查看详情。'
   }
@@ -107,23 +101,20 @@ async function deliver(
   return messageId
 }
 
-/** Run one turn for one accepted message, and make sure something comes back. */
 async function runOneTurn(
   robot: ImRobot,
   handle: RobotHandle,
   msg: ImInboundMessage,
   threadKey: string,
+  contextTurnId: string,
 ): Promise<void> {
   const runner = deps?.runTurn
-  if (!runner) return
+  if (!runner) {
+    failContextTurn(contextTurnId)
+    return
+  }
 
-  const thread = openThread({
-    robotId: robot.id,
-    threadKey,
-    chatId: msg.chatId,
-    vendor: robot.vendor,
-    messageId: msg.messageId,
-  })
+  const identity = conversationIdentityOf(robot.platform, robot.id, threadKey, msg.senderId)
   const turnId = beginTurn({
     robotId: robot.id,
     threadKey,
@@ -132,32 +123,45 @@ async function runOneTurn(
     messageId: msg.messageId,
   })
 
+  const inbound = screenInbound(msg.text)
+  if (!inbound.ok) {
+    failContextTurn(contextTurnId)
+    finishTurn(turnId, {
+      outcome: 'input_rejected',
+      rejectReason: inbound.reason,
+      outboundChars: 0,
+    })
+    await deliver(handle, msg.chatId, inbound.notice, msg.messageId).catch(() => {})
+    return
+  }
+
   const workdir = robotWorkdir(robot.name)
   try {
     mkdirSync(workdir, { recursive: true })
   } catch (err) {
+    failContextTurn(contextTurnId)
     finishTurn(turnId, { outcome: 'error', error: `workdir: ${errText(err)}` })
     await deliver(handle, msg.chatId, failureNotice('error'), msg.messageId).catch(() => {})
     return
   }
 
+  const conversation = getConversation(identity)
+  const sessionRef = conversation ? resolvedSessionRef(conversation, robot.vendor) : null
+  const seed = sessionRef ? [] : loadCommittedContext(identity)
+  const prompt = sessionRef ? msg.text : formatContextSeed(seed, msg.text)
+
   const result = await runner({
     robotId: robot.id,
     workspacePath: workdir,
-    ...(thread.sessionId ? { sessionId: thread.sessionId } : {}),
-    prompt: msg.text,
+    ...(sessionRef ? { sessionId: sessionRef.sessionId } : {}),
+    prompt,
     maxTurnMs: robot.maxTurnMs ?? ROBOT_DEFAULT_MAX_TURN_MS,
     signal: new AbortController().signal,
   })
 
-  // Bind before replying: the session exists regardless of whether the answer
-  // reaches the chat, and the next message in this thread must resume it.
-  if (result.sessionId) {
-    bindThreadSession(robot.id, threadKey, result.sessionId, robot.vendor)
-  }
-
   if (result.outcome !== 'complete' || !result.lastMessage.trim()) {
     const outcome = result.outcome === 'complete' ? 'error' : result.outcome
+    failContextTurn(contextTurnId)
     finishTurn(turnId, {
       outcome,
       sessionId: result.sessionId,
@@ -171,6 +175,7 @@ async function runOneTurn(
 
   const screened = screenOutbound(result.lastMessage, handle.capabilities.maxOutboundChars)
   if (!screened.ok) {
+    failContextTurn(contextTurnId)
     finishTurn(turnId, { outcome: 'guard_refused', sessionId: result.sessionId })
     await deliver(handle, msg.chatId, failureNotice('guard_refused'), msg.messageId).catch(() => {})
     return
@@ -178,6 +183,13 @@ async function runOneTurn(
 
   try {
     const outMessageId = await deliver(handle, msg.chatId, screened.text, msg.messageId)
+    commitContextTurn({
+      contextTurnId,
+      userText: msg.text,
+      assistantText: screened.text,
+      sessionId: result.sessionId,
+      vendor: robot.vendor,
+    })
     finishTurn(turnId, {
       outcome: 'complete',
       sessionId: result.sessionId,
@@ -185,8 +197,7 @@ async function runOneTurn(
       outMessageId,
     })
   } catch (err) {
-    // The turn succeeded but the platform refused the delivery. Audited as an
-    // error with nothing sent, which is what actually happened.
+    failContextTurn(contextTurnId)
     finishTurn(turnId, {
       outcome: 'error',
       sessionId: result.sessionId,
@@ -198,26 +209,26 @@ async function runOneTurn(
 function onInbound(robotId: string, msg: ImInboundMessage): void {
   const handle = handles?.get(robotId)
   if (!handle) return
-  // Re-read the robot every message: an operator may have narrowed its policy or
-  // disabled it since the connection opened.
   const robot = getRobot(robotId)
   if (!robot || !robot.enabled) return
   if (!accepts(robot, msg)) return
+  // Provider normalize must already drop blank senderId; belt-and-braces here.
+  if (!msg.senderId.trim()) return
+
+  if (!isStoreAvailable()) {
+    void handle.connection
+      .send(msg.chatId, {
+        text: '机器人存储不可用,本回合未启动。',
+        replyTo: msg.messageId,
+      })
+      .catch(() => {})
+    return
+  }
 
   const threadKey = threadKeyFor(msg)
+  const identity = conversationIdentityOf(robot.platform, robot.id, threadKey, msg.senderId)
+  const gate = conversationGateKey(identity)
 
-  // Repeat delivery (a reconnect can redeliver): the same message on the same
-  // thread must not be answered twice.
-  const thread = openThread({
-    robotId: robot.id,
-    threadKey,
-    chatId: msg.chatId,
-    vendor: robot.vendor,
-    messageId: msg.messageId,
-  })
-  if (thread.lastMessageId === msg.messageId && thread.turnCount > 0) return
-
-  const gate = `${robot.id}::${threadKey}`
   if (inFlight.has(gate)) {
     void handle.connection
       .send(msg.chatId, { text: '上一个问题还在处理,稍后再问我。', replyTo: msg.messageId })
@@ -225,9 +236,57 @@ function onInbound(robotId: string, msg: ImInboundMessage): void {
     return
   }
 
-  const running = runOneTurn(robot, handle, msg, threadKey)
-    .catch((err) => console.error('[c3][im] turn failed:', errText(err)))
-    .finally(() => inFlight.delete(gate))
+  // Occupy the gate synchronously before claim so a concurrent sender-identical
+  // message cannot fail this turn's pending row as an "orphan".
+  let releaseHold: () => void = () => {}
+  inFlight.set(
+    gate,
+    new Promise<void>((r) => {
+      releaseHold = r
+    }),
+  )
+
+  let claimed: ReturnType<typeof claimInboundMessage>
+  try {
+    claimed = claimInboundMessage({
+      platform: robot.platform,
+      robotId: robot.id,
+      threadKey,
+      senderId: msg.senderId,
+      chatId: msg.chatId,
+      vendor: robot.vendor,
+      messageId: msg.messageId,
+    })
+  } catch (err) {
+    inFlight.delete(gate)
+    releaseHold()
+    const text =
+      err instanceof RobotStoreError && err.code === 'db_unavailable'
+        ? '机器人存储不可用,本回合未启动。'
+        : failureNotice('error')
+    void handle.connection.send(msg.chatId, { text, replyTo: msg.messageId }).catch(() => {})
+    return
+  }
+
+  if (claimed.kind === 'duplicate') {
+    inFlight.delete(gate)
+    releaseHold()
+    return
+  }
+
+  const running = runOneTurn(robot, handle, msg, threadKey, claimed.contextTurnId)
+    .catch((err) => {
+      console.error('[c3][im] turn failed:', errText(err))
+      try {
+        failContextTurn(claimed.contextTurnId)
+      } catch {
+        /* noop */
+      }
+    })
+    .finally(() => {
+      inFlight.delete(gate)
+      releaseHold()
+    })
   inFlight.set(gate, running)
 }
 
@@ -247,25 +306,22 @@ async function connectRobot(robot: ImRobot): Promise<void> {
     handles?.set(robot.id, { connection, capabilities: provider.capabilities })
     failures.delete(robot.id)
   } catch (err) {
-    // A robot that cannot connect is a visible, recoverable state, never a
-    // reason to stop the other robots or the server.
     failures.set(robot.id, errText(err))
     console.error(`[c3][im] robot ${robot.name} failed to connect:`, errText(err))
   }
 }
 
-/** Start connections for every enabled robot. Idempotent. */
 export function startImSupervisor(input: ImSupervisorDeps): void {
   if (handles) return
+  if (!isStoreAvailable()) {
+    console.warn('[c3][im] robot store unavailable; supervisor not started')
+    return
+  }
   deps = input
   handles = new Map()
   for (const robot of listEnabledRobots()) void connectRobot(robot)
 }
 
-/**
- * Re-apply a robot's configuration: drop its connection and, if it is still
- * enabled, dial again with the current credentials.
- */
 export async function reloadRobot(robotId: string): Promise<void> {
   if (!handles) return
   const handle = handles.get(robotId)
@@ -278,14 +334,6 @@ export async function reloadRobot(robotId: string): Promise<void> {
   if (robot?.enabled) await connectRobot(robot)
 }
 
-/**
- * Stop accepting inbound work, then drain what is already running.
- *
- * Closing first matters: a connection left open during the drain would keep
- * feeding new messages into a supervisor that is shutting down. This runs on
- * SIGINT/SIGTERM and on a self-update relaunch, so a link left open here would
- * survive into the next process.
- */
 export async function stopImSupervisor(timeoutMs = 30_000): Promise<void> {
   const open = handles
   handles = null
@@ -301,7 +349,6 @@ export async function stopImSupervisor(timeoutMs = 30_000): Promise<void> {
   inFlight.clear()
 }
 
-/** A robot's live link state, for the console. */
 export function robotConnectionStatus(robotId: string): ImConnectionStatus | undefined {
   const failure = failures.get(robotId)
   if (failure) return { state: 'failed', reconnectAttempts: 0, lastError: failure }

@@ -142,3 +142,5 @@ OpenAPI 客户端,构建期的摇树无法削减。
 - [ADR-0009](0009-unidirectional-boundaries.md) —— kernel ↛ features 的单向边界,IM 代码因此落在
   features 侧。
 - [ADR-0042](0042-configuration-in-database.md) —— 配置入库,应用密钥的加密落库沿用它。
+- [ADR-0047](0047-robot-local-reads-scoped-to-run-root.md) —— 把本地文件读取边界从「读之后」前移到
+  「读之前」:读类工具按运行根内放行,门与执行前钩子双重强制。

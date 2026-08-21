@@ -20,13 +20,19 @@ import type { RelayCandidate } from '../relay/contract.js'
 import { isSideEffectTool } from '../run/resume.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import {
+  adjudicateRobotToolInput,
   allow,
+  carriesUndescribedLocation,
   createCanUseTool,
   deny,
   INTENT_DISALLOWED_TOOLS,
+  isRobotLocalPathTool,
+  ROBOT_FS_DENY_CODE,
+  ROBOT_FS_DENY_MESSAGE,
   type ConsensusAutoCtx,
   type PermissionRequestCtx,
 } from '../permission/index.js'
+import type { HookCallbackMatcher, HookJSONOutput } from '@anthropic-ai/claude-agent-sdk'
 
 /**
  * Tool names that the server marks as user-interaction tools. When the model calls
@@ -35,6 +41,51 @@ import {
  * interaction tools without maintaining a separate client-side allowlist.
  */
 const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+/**
+ * The chat robot's SECOND filesystem enforcement point: a `PreToolUse` hook that
+ * runs the same adjudication `canUseTool` does, on the same frozen run root.
+ *
+ * It exists because `canUseTool` is skippable. This run inherits user and project
+ * settings (`settingSources`), and an `allow` rule there resolves a tool BEFORE
+ * the SDK ever consults c3's callback — so on a host whose `~/.claude/settings.json`
+ * allows `Read`, the gate would simply not be asked. A hook deny is terminal and
+ * resolves ahead of every rule, which makes "a robot reads only inside its own
+ * directory" hold regardless of what the host operator configured for themselves.
+ *
+ * It only ever DENIES. Answering `allow` here would short-circuit the gate in the
+ * other direction and hand the tool a decision c3's own policy never made.
+ */
+export function robotFsPreToolUseHook(root: string): HookCallbackMatcher {
+  return {
+    hooks: [
+      async (input): Promise<HookJSONOutput> => {
+        if (input.hook_event_name !== 'PreToolUse') return { continue: true }
+        const refuse = (reason: string): HookJSONOutput => {
+          console.warn(`[c3] ${ROBOT_FS_DENY_CODE}: hook tool=${input.tool_name} reason=${reason}`)
+          return {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason: ROBOT_FS_DENY_MESSAGE,
+            },
+          }
+        }
+        if (isRobotLocalPathTool(input.tool_name)) {
+          const verdict = adjudicateRobotToolInput({
+            root,
+            toolName: input.tool_name,
+            input: input.tool_input,
+          })
+          return verdict.ok ? { continue: true } : refuse(verdict.reason)
+        }
+        // A tool with no path description must not carry a location either.
+        if (carriesUndescribedLocation(input.tool_input)) return refuse('no-descriptor')
+        return { continue: true }
+      },
+    ],
+  }
+}
 
 // Moved out of this file in server refactor 3/3 (ADR-0009), imported where needed:
 //  - the permission gate (the `canUseTool` policy + tool-name constants +
@@ -246,6 +297,16 @@ export interface RunOptions {
    * a robot is created with (ADR-0046).
    */
   robotAllowedTools?: ReadonlySet<string>
+  /**
+   * Only with `gate === 'robot'`: the turn's FROZEN run root — the real path of
+   * `~/.c3/robots/<name>` resolved once at launch. Every local file tool the
+   * robot calls is adjudicated against it, twice: the permission gate, and a
+   * `PreToolUse` hook that re-runs the same adjudication ahead of every rule so
+   * an inherited `~/.claude/settings.json` allow-rule cannot route a local read
+   * around the gate. Absent ⇒ the gate refuses every local file tool (a boundary
+   * that was never established cannot have been satisfied).
+   */
+  robotRoot?: string
   /**
    * Only with `gate === 'spec'`: the absolute spec directory this run's writes
    * are confined to. Forwarded to {@link createCanUseTool}; write-class tools
@@ -592,6 +653,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     gate = 'standard',
     specDir,
     robotAllowedTools,
+    robotRoot,
     skillWriteGuard,
     send,
     onStart,
@@ -708,6 +770,16 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // value the user/agent set explicitly still wins.
       env: buildChildEnv(envOverrides),
       ...(model ? { model } : {}),
+      // A chat robot's SECOND local-file enforcement point. `canUseTool` is
+      // skippable — this run inherits user/project settings, and an allow-rule
+      // there resolves a tool BEFORE the SDK consults c3's callback. The
+      // PreToolUse hook runs the SAME frozen-run-root adjudication ahead of every
+      // rule, so a host operator's `~/.claude/settings.json` can never make a
+      // robot read outside its own run directory. It only ever denies; an allow
+      // here would short-circuit the gate the other way (see robotFsPreToolUseHook).
+      ...(gate === 'robot' && robotRoot
+        ? { hooks: { PreToolUse: [robotFsPreToolUseHook(robotRoot)] } }
+        : {}),
       // The permission gateway — the SINGLE chokepoint (C-SEC). Every sensitive
       // tool flows through `createCanUseTool`; the run loop never inspects or mints
       // a verdict itself. `recentContext` is a getter because the message loop keeps
@@ -718,6 +790,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         specDir,
         // Only meaningful for the robot gate: the robot's frozen write allowlist.
         robotAllowedTools,
+        // Only meaningful for the robot gate: the turn's frozen run root, resolved
+        // once at launch. Every local file tool the gate sees is adjudicated
+        // against it (robot-fs-scope.ts); absent ⇒ the gate refuses them all.
+        robotRoot,
         // The producing run's SessionKind, mapped from THIS run's gate (the agent path
         // carries the gate, not a SessionKind): intent comm agent → 'intent', spec
         // write gate → 'spec', spec review → 'spec_review', discussion-research →

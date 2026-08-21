@@ -34,6 +34,7 @@ import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
 import { logRunFailure, type RunLogIdentity } from './run-log.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
+import { freezeRobotRoot } from '../permission/index.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../permission/index.js'
 import {
   getDegradationChain,
@@ -307,6 +308,14 @@ export async function launchRun(
   if (isRobot && !rt.robotId) {
     throw new Error('[c3] launchRun: a robot runtime requires rt.robotId')
   }
+  // The robot's run root, FROZEN to its real path once per turn. A robot runtime's
+  // `workspacePath` IS `~/.c3/robots/<name>` (robot-turn.ts), so this real path is
+  // the boundary every local file access is judged against — the permission gate,
+  // the claude PreToolUse hook, and the process-isolation allow set all share it.
+  // A root that cannot be resolved throws HERE, before `run:started` is published,
+  // so a turn never starts without an established boundary (spec: 根不可解析则回合
+  // 失败关闭).
+  const robotRoot = isRobot ? freezeRobotRoot(workspacePath) : undefined
 
   // 本次 run 的日志身份。`runId` 会在 pending→real 绑定后改写,所以每次取用都重新
   // 读一遍闭包变量,而不是提前算好一份快照。
@@ -418,6 +427,43 @@ export async function launchRun(
         })
         return
       }
+    }
+  }
+
+  // A robot turn is process-isolated by FORCE (spec: 进程边界). The gate + hook
+  // adjudicate every local READ TOOL, but a tool the vendor runs with no per-call
+  // hook (codex `shell`/`apply_patch`, a future manifest tool) would otherwise
+  // reach whatever the bare host process can. So a robot ALWAYS runs inside an
+  // arapuca-narrowed process, independent of the workspace sandbox switch and
+  // `sandboxSessionKinds`; the allow set is the robot's own run root plus the
+  // minimal vendor runtime deps (the same `launchSandbox` the workspace sandbox
+  // uses — a robot runtime's workspacePath IS its run root, so the mounts collapse
+  // to exactly that). Isolation that cannot be established ends the turn with a
+  // safe error, never a bare host run.
+  if (isRobot && !rt.sandboxPaths) {
+    try {
+      const executionRoot = rt.effectiveCwd ?? workspacePath
+      const sandbox = launchSandbox(workspacePath, executionRoot)
+      rt.sandboxPaths = sandbox.paths
+      rt.sandboxTmpDir = sandbox.tmpDir
+      rt.sandboxStop = async () => sandbox.cleanup()
+    } catch (err) {
+      // Hard-isolation failure: settle the run as an error and stop (mirrors the
+      // workspace sandbox block above).
+      const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
+      const error = `[c3] robot process isolation failed (${uiCode}): ${errMsg(err)}`
+      logRunFailure(runLogIdentity(), `robot-isolation:${uiCode}`, err)
+      emit(runId, { type: 'user_text', text: prompt })
+      emit(runId, { type: 'turn_end', reason: 'error', error })
+      finalizeRun(runId)
+      deps.eventBus.publish('run:settled', {
+        sessionId: runId,
+        workspacePath,
+        reason: 'error',
+        sessionKind: rt.sessionKind,
+        runKind: rt.runKind,
+      })
+      return
     }
   }
 
@@ -657,6 +703,10 @@ export async function launchRun(
                       disallowedTools: resolvedRobotProfile!.disallowedTools,
                       gate: resolvedRobotProfile!.gate,
                       robotAllowedTools: resolvedRobotProfile!.allowedTools,
+                      // The turn's frozen run root — the gate adjudicates every
+                      // local file tool against it, and runClaude mounts the
+                      // PreToolUse hook on it (the second enforcement point).
+                      robotRoot,
                       ...(resolvedRobotProfile!.bindMcp
                         ? { bindMcp: resolvedRobotProfile!.bindMcp }
                         : {}),

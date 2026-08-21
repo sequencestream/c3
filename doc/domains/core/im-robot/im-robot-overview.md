@@ -7,7 +7,7 @@
 - **依赖:** 位于 `~/.c3/c3.db` 的本地 SQLite 存储(`im_robots` / `im_robot_threads` / `im_robot_turns` 三表);`agent-session` 的 run 生命周期(`robot` 会话种类 + 无人值守回合);`permission-gateway` 的 `robot` 门;`agent-config` 的 vendor 与 agent(含组引用)解析;服务端统一出站 HTTP 通道与代理解析。
 - **被依赖方:** 无。没有其它域读取机器人数据。
 - **exposes-api:** true —— 七条 WebSocket 消息(名册读写、启用、外发确认、回合审计),不新增 HTTP 路由,不进外部 MCP 工具目录。
-- **ADRs:** [0046](../../../architecture/adr/0046-im-robot-outbound-authorization.md)
+- **ADRs:** [0046](../../../architecture/adr/0046-im-robot-outbound-authorization.md)、[0047](../../../architecture/adr/0047-robot-local-reads-scoped-to-run-root.md)
 
 ## 它解决什么
 
@@ -23,6 +23,9 @@ c3 的人机界面只有浏览器。可日常协作发生在 IM 里:一个问题
 - **默认停用,启用是一次独立的授权动作。** 创建不启用;启用需要管理员、需要凭据、需要一次记录在案的
   外发范围确认。缺任何一条,服务端拒绝启用。
 - **只发最终回答。** 工具调用、工具结果、中间推理、文件内容一概不外发——这是结构性的,不是开关。
+- **只读运行根。** 本地文件读取只在 `~/.c3/robots/<name>/` 内放行:判定基于真实路径(符号链接、`..`
+  均按实际解析结果),越界在读到之前被拒,门与执行前钩子双重强制(宿主 settings 绕不开)——「只发最终
+  回答」因此不靠出站守卫事后拦。
 - **不在群里问权限。** 群里没有人能回答授权对话框,所以权限在配置时冻结;面向人的交互工具被门直接拒绝。
 - **默认只读。** 写/执行能力必须由管理员逐个列举。
 - **响应面默认收敛。** 群消息默认必须 @机器人,单聊默认不响应。

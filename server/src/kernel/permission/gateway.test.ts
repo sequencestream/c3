@@ -8,11 +8,14 @@
  * registry hold state only in memory, unlike settings/state which persist). The
  * standard (consensus) gate's default-deny is pinned by the C4 golden contract.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import fs from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { createCanUseTool, type GatewaySpec } from './gateway.js'
 import { resolveDecision } from './registry.js'
+import { ROBOT_FS_DENY_MESSAGE } from './robot-fs-scope.js'
 
 // Consensus modules are mocked so standard-gate tests can control return values.
 vi.mock('../../consensus.js')
@@ -599,18 +602,130 @@ describe('spec_review gate — strictly read-only, deny-by-default', () => {
 })
 
 describe('robot gate — unattended, never stalls, deny-by-default (ADR-0046)', () => {
-  const g = (allowed?: ReadonlySet<string>) =>
-    createCanUseTool(spec({ gate: 'robot', cwd: '/robots/helper', robotAllowedTools: allowed }))
+  // A REAL robot run root: the gate adjudicates against actual paths, so a
+  // `/robots/helper` that does not exist would deny every local file tool via
+  // `root-unstable` — the very fail-closed the boundary is built on.
+  let root = ''
+  const g = (allowed?: ReadonlySet<string>, robotRoot = root) =>
+    createCanUseTool(
+      spec({
+        gate: 'robot',
+        cwd: robotRoot,
+        workspacePath: robotRoot,
+        robotRoot,
+        robotAllowedTools: allowed,
+      }),
+    )
 
-  it('allows read-class tools', async () => {
+  beforeAll(() => {
+    // The gateway adjudicates against a FROZEN root — a real path, as
+    // run-lifecycle freezes it. A raw mkdtemp path under /tmp realpaths to
+    // /private/tmp on macOS, so the temp dir must be resolved before any
+    // in-root allow can hold (`rootStillFrozen`).
+    root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'c3-robot-gate-')))
+    fs.mkdirSync(join(root, 'notes'), { recursive: true })
+    fs.writeFileSync(join(root, 'notes', 'a.md'), '# hello')
+    fs.writeFileSync(join(root, 'notes.md'), '# top-level')
+  })
+  afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  it('allows read-class tools inside the frozen run root', async () => {
     for (const [tool, input] of [
-      ['Read', { file_path: '/robots/helper/notes.md' }],
+      ['Read', { file_path: join(root, 'notes', 'a.md') }],
+      ['Read', { file_path: join(root, 'notes.md') }],
       ['Grep', { pattern: 'x' }],
       ['Glob', { pattern: '**/*.ts' }],
       ['mcp__c3__find_intents', { keyword: 'login' }],
+      // Relative paths resolve against the run root.
+      ['Read', { file_path: 'notes/a.md' }],
     ] as const) {
       expect(await g()(tool, input, {} as never)).toMatchObject({ behavior: 'allow' })
     }
+  })
+
+  it('DENIES a local read that resolves outside the run root — with the ONE fixed message', async () => {
+    // An absolute path outside the root is refused; the refusal is uniform and
+    // carries no hint of the target (the robot must not be an oracle for host
+    // file existence).
+    const out = await g()('Read', { file_path: '/etc/passwd' }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+    expect((out as { message: string }).message).toBe(ROBOT_FS_DENY_MESSAGE)
+    expect((out as { message: string }).message).not.toMatch(/etc|passwd/)
+  })
+
+  it('DENIES a local read that traverses out with ..', async () => {
+    const out = await g()('Read', { file_path: join(root, '..', 'etc', 'passwd') }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+    expect((out as { message: string }).message).toBe(ROBOT_FS_DENY_MESSAGE)
+  })
+
+  it('DENIES a symlink inside the root that points outside it', async () => {
+    const link = join(root, 'evil-link')
+    fs.symlinkSync('/etc', link)
+    try {
+      const out = await g()('Read', { file_path: join(link, 'passwd') }, {} as never)
+      expect(out).toMatchObject({ behavior: 'deny' })
+    } finally {
+      fs.rmSync(link, { force: true })
+    }
+  })
+
+  it('DENIES a dangling symlink whose target lies outside the root', async () => {
+    const link = join(root, 'dangling-link')
+    fs.symlinkSync('/outside/does-not-exist', link)
+    try {
+      const out = await g()('Read', { file_path: link }, {} as never)
+      expect(out).toMatchObject({ behavior: 'deny' })
+    } finally {
+      fs.rmSync(link, { force: true })
+    }
+  })
+
+  it('DENIES an adjacent-prefix sibling dir (rootEVIL vs root)', async () => {
+    const evil = `${root}EVIL`
+    fs.mkdirSync(evil, { recursive: true })
+    fs.writeFileSync(join(evil, 'secret.md'), 'x')
+    try {
+      const out = await g()('Read', { file_path: join(evil, 'secret.md') }, {} as never)
+      expect(out).toMatchObject({ behavior: 'deny' })
+    } finally {
+      fs.rmSync(evil, { recursive: true, force: true })
+    }
+  })
+
+  it('DENIES a NUL byte in the path (truncates at the syscall boundary)', async () => {
+    const out = await g()('Read', { file_path: `${join(root, 'notes')}\0.md` }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+  })
+
+  it('DENIES a non-string path value', async () => {
+    const out = await g()('Read', { file_path: 42 }, {} as never)
+    expect(out).toMatchObject({ behavior: 'deny' })
+    expect((out as { message: string }).message).toBe(ROBOT_FS_DENY_MESSAGE)
+  })
+
+  it('DENIES every local file tool when no run root was frozen (fail-closed)', async () => {
+    // A boundary that was never established cannot have been satisfied.
+    const gate = createCanUseTool(spec({ gate: 'robot', cwd: '/robots/helper' }))
+    for (const [tool, input] of [
+      ['Read', { file_path: '/robots/helper/notes.md' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['LS', {}],
+    ] as const) {
+      expect(await gate(tool, input, {} as never)).toMatchObject({ behavior: 'deny' })
+    }
+  })
+
+  it('does NOT confine a NON-robot gate to any run root', async () => {
+    // The boundary is robot-scoped: a read-class gate (intent — the same read set
+    // the standard work session uses, but without a human prompt for Read) still
+    // reads any path. The `standard` gate would also allow it, but through a
+    // permission_request this harness has no responder for; `intent` allows Read
+    // directly and makes the point synchronously.
+    const gate = createCanUseTool(spec({ gate: 'intent' }))
+    expect(await gate('Read', { file_path: '/etc/passwd' }, {} as never)).toMatchObject({
+      behavior: 'allow',
+    })
   })
 
   it('DENIES the human-facing tools outright — nobody is in the chat to answer', async () => {
@@ -627,11 +742,18 @@ describe('robot gate — unattended, never stalls, deny-by-default (ADR-0046)', 
     const onPermissionRequest = vi.fn()
     const send = vi.fn()
     const gate = createCanUseTool(
-      spec({ gate: 'robot', cwd: '/robots/helper', onPermissionRequest, send }),
+      spec({
+        gate: 'robot',
+        cwd: root,
+        workspacePath: root,
+        robotRoot: root,
+        onPermissionRequest,
+        send,
+      }),
     )
     for (const [tool, input] of [
-      ['Read', { file_path: '/robots/helper/a.md' }],
-      ['Write', { file_path: '/robots/helper/a.md' }],
+      ['Read', { file_path: join(root, 'notes.md') }],
+      ['Write', { file_path: join(root, 'a.md') }],
       ['Bash', { command: 'ls' }],
       ['AskUserQuestion', {}],
       ['SomethingUnrecognised', {}],
@@ -644,8 +766,8 @@ describe('robot gate — unattended, never stalls, deny-by-default (ADR-0046)', 
 
   it('DENIES write/exec tools when the robot has no allowlist (the default)', async () => {
     for (const [tool, input] of [
-      ['Write', { file_path: '/robots/helper/a.md' }],
-      ['Edit', { file_path: '/robots/helper/a.md' }],
+      ['Write', { file_path: join(root, 'a.md') }],
+      ['Edit', { file_path: join(root, 'a.md') }],
       ['Bash', { command: 'rm -rf /' }],
       ['Task', {}],
     ] as const) {
@@ -655,9 +777,11 @@ describe('robot gate — unattended, never stalls, deny-by-default (ADR-0046)', 
 
   it('allows exactly the write/exec tools the robot froze into its allowlist', async () => {
     const allowed = new Set(['Write'])
-    expect(
-      await g(allowed)('Write', { file_path: '/robots/helper/a.md' }, {} as never),
-    ).toMatchObject({ behavior: 'allow' })
+    expect(await g(allowed)('Write', { file_path: join(root, 'a.md') }, {} as never)).toMatchObject(
+      {
+        behavior: 'allow',
+      },
+    )
     // Widening one tool must not widen its neighbours.
     expect(await g(allowed)('Bash', { command: 'ls' }, {} as never)).toMatchObject({
       behavior: 'deny',

@@ -3,7 +3,7 @@
 > 面向开发者与 AI：解释 c3 所依赖的 `@anthropic-ai/claude-agent-sdk`（TypeScript）
 > 是什么、如何与 Claude Code 协作、数据存在哪里、如何读取 Skill，以及最佳实践。
 >
-> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.233`（在 c3 依赖清单中锁定）。
+> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.237`（在 c3 依赖清单中锁定）。
 > - **历史名称**：该 SDK 前身为 “Claude Code SDK”，2025 年下半年更名为 “Claude Agent SDK”。
 > - **官方文档**：<https://code.claude.com/docs/en/agent-sdk/>
 > - **源码仓库**：<https://github.com/anthropics/claude-agent-sdk-typescript>
@@ -268,12 +268,16 @@ flowchart LR
 
 ### 权限与工具控制
 
-| `permissionMode`    | 适用场景                                                    |
-| ------------------- | ----------------------------------------------------------- |
-| `default`           | 交互式应用，配合 `canUseTool` 做人工审批（**c3 起始模式**） |
-| `acceptEdits`       | 受信开发流，自动批准文件编辑等常见操作                      |
-| `plan`              | 只读分析，不改文件                                          |
-| `bypassPermissions` | CI/容器等隔离环境，全部放行                                 |
+| `permissionMode`    | 适用场景                                                                          |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `default`           | 交互式应用，配合 `canUseTool` 做人工审批（**c3 起始模式**）                       |
+| `acceptEdits`       | 受信开发流，自动批准文件编辑等常见操作                                            |
+| `plan`              | 只读分析，不改文件                                                                |
+| `bypassPermissions` | CI/容器等隔离环境，全部放行                                                       |
+| `auto`              | 模型分类器代答权限提示（c3 不将其作为运行起始模式，仅在用户显式选择时经映射出现） |
+
+> 注：`auto` 依赖宿主分类器行为，2.1.237 起分类器在更多平台使用与 Claude API 一致的默认与
+> severity 分级、`Monitor` allow 规则在 auto 下让位。c3 不加接这些细节，沿用宿主默认。
 
 - `allowedTools`：预批准列出的工具；未列出的回落到 `permissionMode`。
 - `disallowedTools`：裸名（`"Bash"`）从上下文移除该工具；带作用域（`"Bash(rm *)"`）仅拦截匹配调用。
@@ -328,6 +332,8 @@ shell 或 agent 的 env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` 即可—
 留痕去向）独立成档，索引见
 [`sdk-upgrade/sdk-upgrade-records.md`](sdk-upgrade/sdk-upgrade-records.md)：
 
+- `0.3.233 → 0.3.237`（2026-08-21）：[`sdk-upgrade/2026-08-21-claude-agent-sdk-upgrade-to-v0.3.237.md`](sdk-upgrade/2026-08-21-claude-agent-sdk-upgrade-to-v0.3.237.md)
+- `0.3.220 → 0.3.233`（2026-08-16）：[`sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md`](sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)
 - `0.3.183 → 0.3.195`（2026-06-28）：[`sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md`](sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md)
 
 ## 附录：来源与可信度

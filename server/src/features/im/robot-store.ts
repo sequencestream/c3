@@ -156,6 +156,10 @@ function migrateTurnsOutcomeBusy(d: Db): void {
   d.exec('ALTER TABLE im_robot_turns RENAME TO im_robot_turns_pre_busy')
   d.exec(TURNS_TABLE_FRESH)
   d.exec('INSERT INTO im_robot_turns SELECT * FROM im_robot_turns_pre_busy')
+  // Drop the renamed table so its indexes (same names as INDEXES below) go with
+  // it; otherwise CREATE INDEX IF NOT EXISTS would skip and the new table stays
+  // unindexed.
+  d.exec('DROP TABLE im_robot_turns_pre_busy')
 }
 
 function ensureSchema(d: Db): void {

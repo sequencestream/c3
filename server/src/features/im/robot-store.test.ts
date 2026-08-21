@@ -335,4 +335,72 @@ describe('schema', () => {
     })
     expect(getThread(robot.id, 'k')).not.toBeNull()
   })
+
+  it('rebuilds turn indexes onto the post-busy table after outcome migration', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    // Predates `busy`: table + the same index names the runtime INDEXES DDL uses.
+    d.exec(`CREATE TABLE im_robot_turns (
+      id TEXT PRIMARY KEY,
+      robot_id TEXT NOT NULL,
+      thread_key TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      in_message_id TEXT NOT NULL,
+      session_id TEXT,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      outcome TEXT
+        CHECK(outcome IS NULL OR outcome IN
+          ('complete','error','blocked','timeout','guard_refused')),
+      outbound_chars INTEGER NOT NULL DEFAULT 0,
+      out_message_id TEXT,
+      error TEXT
+    )`)
+    d.exec('CREATE INDEX idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC)')
+    d.exec(
+      'CREATE INDEX idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC)',
+    )
+    d.run(
+      `INSERT INTO im_robot_turns
+        (id, robot_id, thread_key, chat_id, sender_id, in_message_id, started_at, outcome, outbound_chars)
+       VALUES ('t1', 'r1', 'k', 'c', 'u', 'm1', 1, 'complete', 10)`,
+    )
+
+    expect(ensureRobotSchema()).toBe(true)
+
+    expect(
+      d.get<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'im_robot_turns_pre_busy'`,
+      ),
+    ).toBeUndefined()
+
+    const indexes = d.all<{ name: string; tbl_name: string }>(
+      `SELECT name, tbl_name FROM sqlite_master
+       WHERE type = 'index' AND name IN ('idx_im_turn_robot', 'idx_im_turn_thread')
+       ORDER BY name`,
+    )
+    expect(indexes).toEqual([
+      { name: 'idx_im_turn_robot', tbl_name: 'im_robot_turns' },
+      { name: 'idx_im_turn_thread', tbl_name: 'im_robot_turns' },
+    ])
+
+    const kept = d.get<{ outcome: string; outbound_chars: number }>(
+      'SELECT outcome, outbound_chars FROM im_robot_turns WHERE id = ?',
+      't1',
+    )
+    expect(kept).toEqual({ outcome: 'complete', outbound_chars: 10 })
+
+    // New CHECK must accept busy.
+    const turnId = beginTurn({
+      robotId: 'r1',
+      threadKey: 'k',
+      chatId: 'c',
+      senderId: 'u',
+      messageId: 'm-busy',
+    })
+    finishTurn(turnId, { outcome: 'busy', outboundChars: 0 })
+    expect(listTurns('r1').some((t) => t.outcome === 'busy')).toBe(true)
+  })
 })

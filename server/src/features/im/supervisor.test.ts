@@ -302,6 +302,26 @@ describe('every accepted message ends in a reply or an audited reason', () => {
     expect(sent).toHaveLength(1)
     expect(listTurns(id)[0]?.outcome).toBe('error')
   })
+
+  it('redacts credential-shaped turn detail before writing the audit error', async () => {
+    const id = await boot()
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz012345'
+    turnResult.mockResolvedValue({
+      outcome: 'error',
+      sessionId: 's',
+      lastMessage: '',
+      detail: `turn_end failed: token=${secret}`,
+    })
+    push(message())
+    await settle()
+
+    const log = listTurns(id)[0]
+    expect(log).toMatchObject({ outcome: 'error' })
+    expect(log?.error).toContain('turn_end failed')
+    expect(log?.error).toContain('[redacted]')
+    expect(log?.error).not.toContain(secret)
+    expect(JSON.stringify(log)).not.toContain(secret)
+  })
 })
 
 describe('the outbound guard is on the delivery path', () => {

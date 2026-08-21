@@ -25,5 +25,9 @@ CREATE TABLE im_robot_turns (
 
 INSERT INTO im_robot_turns SELECT * FROM im_robot_turns_pre_busy;
 
+-- RENAME 会把旧索引一起挂到 pre_busy 上; 必须先 DROP 旧表(连带删掉同名旧索引),
+-- 再建索引, 否则 CREATE INDEX IF NOT EXISTS 会因同名索引仍在而跳过, 新表无索引。
+DROP TABLE im_robot_turns_pre_busy;
+
 CREATE INDEX IF NOT EXISTS idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC);

@@ -286,7 +286,8 @@ describe('sendGuarded — content categories', () => {
 
   it('records a sanitized send_failed when the platform rejects', async () => {
     const id = enabledRobot()
-    const rawSend: RawImSend = () => Promise.reject(new Error('platform boom with secret=abc'))
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz012345'
+    const rawSend: RawImSend = () => Promise.reject(new Error(`request failed: token=${secret}`))
     const result = await sendGuarded({
       robotId: id,
       target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
@@ -295,7 +296,12 @@ describe('sendGuarded — content categories', () => {
       rawSend,
     })
     expect(result).toMatchObject({ ok: false, reason: 'send_failed', outboundChars: 0 })
-    if (!result.ok) expect(result.error).toContain('platform boom')
+    if (!result.ok) {
+      expect(result.error).toContain('request failed')
+      expect(result.error).toContain('[redacted]')
+      expect(result.error).not.toContain(secret)
+      expect(JSON.stringify(result)).not.toContain(secret)
+    }
   })
 
   it('invokes rawSend at most once per guarded attempt', async () => {

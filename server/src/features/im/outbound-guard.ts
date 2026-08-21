@@ -21,6 +21,7 @@
  */
 import type { ImRobot } from '@ccc/shared/protocol'
 import { detectCredentialShape } from '../memory/content-guard.js'
+import { redactSecrets } from '../pr-events/tool-defs.js'
 import { getRobot } from './robot-store.js'
 import type { ImOutbound } from './types.js'
 
@@ -99,9 +100,10 @@ function truncateVisible(text: string, maxChars: number): string {
   return `${trimmed.slice(0, maxChars - TRUNCATION_NOTICE.length)}${TRUNCATION_NOTICE}`
 }
 
+/** Platform failure text for audit: redact secrets first, then truncate. */
 function errText(err: unknown): string {
-  if (err instanceof Error) return err.message.slice(0, 200)
-  return String(err).slice(0, 200)
+  const raw = err instanceof Error ? err.message : String(err)
+  return redactSecrets(raw).slice(0, 200)
 }
 
 /**

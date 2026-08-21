@@ -28,6 +28,7 @@ import type { ImConnectionStatus, ImRobot, ImTurnOutcome } from '@ccc/shared/pro
 import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/paths.js'
 import type { RobotTurnResult, RunRobotTurnInput } from '../../wiring/robot-turn.js'
+import { redactSecrets } from '../pr-events/tool-defs.js'
 import {
   sendGuarded,
   type FixedNoticeId,
@@ -80,8 +81,10 @@ export function robotWorkdir(name: string): string {
   return join(c3HomeDir(), 'robots', name)
 }
 
+/** Diagnostic text for audit / logs: redact secrets before any persistence. */
 function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  const raw = err instanceof Error ? err.message : String(err)
+  return redactSecrets(raw).slice(0, 200)
 }
 
 function targetOf(msg: ImInboundMessage): OutboundTarget {
@@ -189,7 +192,7 @@ async function runOneTurn(
     finishTurn(turnId, {
       outcome,
       sessionId: result.sessionId,
-      error: result.detail ?? null,
+      error: result.detail ? errText(result.detail) : null,
       outboundChars: sent.ok ? sent.outboundChars : 0,
       outMessageId: sent.ok ? sent.messageId : null,
     })
@@ -226,7 +229,7 @@ async function runOneTurn(
       outcome: 'error',
       sessionId: result.sessionId,
       outboundChars: 0,
-      error: `send: ${sent.error ?? 'failed'}`,
+      error: `send: ${errText(sent.error ?? 'failed')}`,
     })
     return
   }

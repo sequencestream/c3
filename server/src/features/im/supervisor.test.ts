@@ -194,8 +194,8 @@ describe('response policy — which messages are answered at all', () => {
 })
 
 describe('one thread runs one turn at a time', () => {
-  it('tells the asker to wait instead of starting a parallel run', async () => {
-    await boot()
+  it('tells the asker to wait instead of starting a parallel run, and audits busy', async () => {
+    const id = await boot()
     let release: (r: RobotTurnResult) => void = () => {}
     turnResult.mockReturnValueOnce(
       new Promise<RobotTurnResult>((r) => {
@@ -210,6 +210,11 @@ describe('one thread runs one turn at a time', () => {
 
     expect(turnResult).toHaveBeenCalledTimes(1)
     expect(sent.at(-1)?.text).toContain('稍后再问我')
+    const busyLog = listTurns(id).find((t) => t.outcome === 'busy')
+    expect(busyLog).toMatchObject({
+      outcome: 'busy',
+      outboundChars: sent.at(-1)!.text.length,
+    })
 
     release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
     await settle()
@@ -297,10 +302,30 @@ describe('every accepted message ends in a reply or an audited reason', () => {
     expect(sent).toHaveLength(1)
     expect(listTurns(id)[0]?.outcome).toBe('error')
   })
+
+  it('redacts credential-shaped turn detail before writing the audit error', async () => {
+    const id = await boot()
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz012345'
+    turnResult.mockResolvedValue({
+      outcome: 'error',
+      sessionId: 's',
+      lastMessage: '',
+      detail: `turn_end failed: token=${secret}`,
+    })
+    push(message())
+    await settle()
+
+    const log = listTurns(id)[0]
+    expect(log).toMatchObject({ outcome: 'error' })
+    expect(log?.error).toContain('turn_end failed')
+    expect(log?.error).toContain('[redacted]')
+    expect(log?.error).not.toContain(secret)
+    expect(JSON.stringify(log)).not.toContain(secret)
+  })
 })
 
 describe('the outbound guard is on the delivery path', () => {
-  it('refuses to send an answer carrying a credential shape', async () => {
+  it('refuses to send an answer carrying a credential shape, and audits the intercept notice length', async () => {
     const id = await boot()
     turnResult.mockResolvedValue({
       outcome: 'complete',
@@ -311,7 +336,94 @@ describe('the outbound guard is on the delivery path', () => {
     await settle()
 
     expect(sent.at(-1)?.text).not.toContain('ghp_')
+    expect(sent.at(-1)?.text).toContain('凭据')
+    expect(listTurns(id)[0]).toMatchObject({
+      outcome: 'guard_refused',
+      outboundChars: sent.at(-1)!.text.length,
+    })
+  })
+
+  it('does not deliver when the robot is disabled after the turn completes', async () => {
+    const id = await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+    push(message())
+    await settle()
+    setRobotEnabled(id, false)
+    release({ outcome: 'complete', sessionId: 's', lastMessage: 'should not leave' })
+    await settle()
+    expect(sent).toEqual([])
     expect(listTurns(id)[0]).toMatchObject({ outcome: 'guard_refused', outboundChars: 0 })
+  })
+
+  it('does not deliver when the chat leave the allowlist before send', async () => {
+    const id = await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+    push(message({ chatId: 'oc_1' }))
+    await settle()
+    updateRobot(id, { chatAllowlist: ['oc_other'] })
+    release({ outcome: 'complete', sessionId: 's', lastMessage: 'should not leave' })
+    await settle()
+    expect(sent).toEqual([])
+    expect(listTurns(id)[0]).toMatchObject({
+      outcome: 'guard_refused',
+      outboundChars: 0,
+      error: 'chat_not_allowed',
+    })
+  })
+
+  it('routes blocked / timeout / error notices through the same path with real outboundChars', async () => {
+    const id = await boot()
+    for (const [outcome, needle] of [
+      ['blocked', '人工授权'],
+      ['timeout', '超时'],
+      ['error', '出错'],
+    ] as const) {
+      sent.length = 0
+      turnResult.mockResolvedValueOnce({
+        outcome,
+        sessionId: 's',
+        lastMessage: '',
+        detail: outcome,
+      })
+      push(message({ messageId: `m-${outcome}-${Date.now()}` }))
+      await settle()
+      expect(sent).toHaveLength(1)
+      expect(sent[0]?.text).toContain(needle)
+      const log = listTurns(id).find((t) => t.outcome === outcome)
+      expect(log).toMatchObject({
+        outcome,
+        outboundChars: sent[0]!.text.length,
+      })
+    }
+  })
+})
+
+describe('no raw IM send bypass outside the guard and providers', () => {
+  it('keeps connection.send / FeishuApi.sendText out of supervisor and store', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const here = dirname(fileURLToPath(import.meta.url))
+    for (const name of ['supervisor.ts', 'robot-store.ts', 'index.ts', 'registry.ts']) {
+      const src = readFileSync(join(here, name), 'utf8')
+      expect(src).not.toMatch(/connection\.send\s*\(/)
+      expect(src).not.toMatch(/FeishuApi/)
+      expect(src).not.toMatch(/\.sendText\s*\(/)
+    }
+    // Guard is allowed to call the injected rawSend; providers own platform send.
+    const guard = readFileSync(join(here, 'outbound-guard.ts'), 'utf8')
+    expect(guard).toContain('rawSend')
+    expect(guard).not.toMatch(/FeishuApi/)
   })
 })
 

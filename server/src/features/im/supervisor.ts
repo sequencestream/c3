@@ -4,8 +4,9 @@
  *
  * Everything platform-neutral lives here rather than in a provider, so a second
  * platform inherits it: the response policy (@-mention required, chat and DM
- * allowlists), repeat-delivery suppression, one-turn-at-a-time per thread, the
- * outbound guard, and the audit row.
+ * allowlists), repeat-delivery suppression, one-turn-at-a-time per thread, and
+ * the audit row. Every outbound byte goes through {@link sendGuarded} — this
+ * module never calls provider `send` directly.
  *
  * Two properties are worth stating outright:
  *
@@ -27,7 +28,14 @@ import type { ImConnectionStatus, ImRobot, ImTurnOutcome } from '@ccc/shared/pro
 import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/paths.js'
 import type { RobotTurnResult, RunRobotTurnInput } from '../../wiring/robot-turn.js'
-import { screenOutbound } from './outbound-guard.js'
+import { redactSecrets } from '../pr-events/tool-defs.js'
+import {
+  sendGuarded,
+  type FixedNoticeId,
+  type OutboundContent,
+  type OutboundTarget,
+  type RawImSend,
+} from './outbound-guard.js'
 import { resolveImProvider } from './registry.js'
 import {
   beginTurn,
@@ -39,15 +47,24 @@ import {
   robotSecret,
 } from './robot-store.js'
 import { threadKeyFor } from './thread-key.js'
-import type { ImConnection, ImInboundMessage, ImProviderCapabilities } from './types.js'
+import type { ImInboundMessage, ImProviderCapabilities } from './types.js'
 
 export interface ImSupervisorDeps {
   runTurn: (input: RunRobotTurnInput) => Promise<RobotTurnResult>
 }
 
+/**
+ * Live link for one robot. The raw provider sender is closed over inside
+ * `sendOutbound` and is not exposed — callers cannot bypass the guard.
+ */
 interface RobotHandle {
-  connection: ImConnection
   capabilities: ImProviderCapabilities
+  status: () => ImConnectionStatus
+  close: () => Promise<void>
+  sendOutbound: (
+    content: OutboundContent,
+    target: OutboundTarget,
+  ) => Promise<Awaited<ReturnType<typeof sendGuarded>>>
   /** Set when the link could not be established; surfaced instead of a status. */
   lastError?: string
 }
@@ -64,13 +81,25 @@ export function robotWorkdir(name: string): string {
   return join(c3HomeDir(), 'robots', name)
 }
 
+/** Diagnostic text for audit / logs: redact secrets before any persistence. */
 function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  const raw = err instanceof Error ? err.message : String(err)
+  return redactSecrets(raw).slice(0, 200)
+}
+
+function targetOf(msg: ImInboundMessage): OutboundTarget {
+  return {
+    chatId: msg.chatId,
+    chatType: msg.chatType,
+    senderId: msg.senderId,
+    replyTo: msg.messageId,
+  }
 }
 
 /**
  * Whether this robot should answer this message at all. The narrow defaults live
- * in the store; this only applies them.
+ * in the store; this only applies them. Outbound re-checks allowlists at send
+ * time — this is the inbound accept gate only.
  */
 function accepts(robot: ImRobot, msg: ImInboundMessage): boolean {
   if (msg.chatType === 'group') {
@@ -83,28 +112,20 @@ function accepts(robot: ImRobot, msg: ImInboundMessage): boolean {
   return true
 }
 
-/** What to say when a turn produced no deliverable answer. */
-function failureNotice(outcome: ImTurnOutcome): string {
+/** Map a non-complete turn outcome onto a registered fixed notice. */
+function noticeForOutcome(outcome: ImTurnOutcome): FixedNoticeId {
   switch (outcome) {
     case 'timeout':
-      return '这个问题处理超时了,已经中止。'
+      return 'timeout'
     case 'blocked':
-      return '这一步需要人工授权,我在群里无法完成。请到 c3 中继续。'
+      return 'blocked'
     case 'guard_refused':
-      return '回答里包含疑似凭据的内容,已拦下未发送。请到 c3 会话中查看。'
+      return 'guard_refused'
+    case 'busy':
+      return 'busy'
     default:
-      return '处理时出错了,请到 c3 会话中查看详情。'
+      return 'error'
   }
-}
-
-async function deliver(
-  handle: RobotHandle,
-  chatId: string,
-  text: string,
-  replyTo: string,
-): Promise<string> {
-  const { messageId } = await handle.connection.send(chatId, { text, replyTo })
-  return messageId
 }
 
 /** Run one turn for one accepted message, and make sure something comes back. */
@@ -131,13 +152,19 @@ async function runOneTurn(
     senderId: msg.senderId,
     messageId: msg.messageId,
   })
+  const target = targetOf(msg)
 
   const workdir = robotWorkdir(robot.name)
   try {
     mkdirSync(workdir, { recursive: true })
   } catch (err) {
-    finishTurn(turnId, { outcome: 'error', error: `workdir: ${errText(err)}` })
-    await deliver(handle, msg.chatId, failureNotice('error'), msg.messageId).catch(() => {})
+    const sent = await handle.sendOutbound({ category: 'fixed_notice', notice: 'error' }, target)
+    finishTurn(turnId, {
+      outcome: 'error',
+      error: `workdir: ${errText(err)}`,
+      outboundChars: sent.ok ? sent.outboundChars : 0,
+      outMessageId: sent.ok ? sent.messageId : null,
+    })
     return
   }
 
@@ -157,42 +184,62 @@ async function runOneTurn(
   }
 
   if (result.outcome !== 'complete' || !result.lastMessage.trim()) {
-    const outcome = result.outcome === 'complete' ? 'error' : result.outcome
+    const outcome: ImTurnOutcome = result.outcome === 'complete' ? 'error' : result.outcome
+    const sent = await handle.sendOutbound(
+      { category: 'fixed_notice', notice: noticeForOutcome(outcome) },
+      target,
+    )
     finishTurn(turnId, {
       outcome,
       sessionId: result.sessionId,
-      error: result.detail ?? null,
+      error: result.detail ? errText(result.detail) : null,
+      outboundChars: sent.ok ? sent.outboundChars : 0,
+      outMessageId: sent.ok ? sent.messageId : null,
     })
-    await deliver(handle, msg.chatId, failureNotice(outcome), msg.messageId).catch((err) =>
-      console.error('[c3][im] failure notice not delivered:', errText(err)),
-    )
     return
   }
 
-  const screened = screenOutbound(result.lastMessage, handle.capabilities.maxOutboundChars)
-  if (!screened.ok) {
-    finishTurn(turnId, { outcome: 'guard_refused', sessionId: result.sessionId })
-    await deliver(handle, msg.chatId, failureNotice('guard_refused'), msg.messageId).catch(() => {})
-    return
-  }
+  const sent = await handle.sendOutbound(
+    { category: 'final_answer', text: result.lastMessage },
+    target,
+  )
 
-  try {
-    const outMessageId = await deliver(handle, msg.chatId, screened.text, msg.messageId)
+  if (sent.ok) {
     finishTurn(turnId, {
       outcome: 'complete',
       sessionId: result.sessionId,
-      outboundChars: screened.text.length,
-      outMessageId,
+      outboundChars: sent.outboundChars,
+      outMessageId: sent.messageId,
     })
-  } catch (err) {
-    // The turn succeeded but the platform refused the delivery. Audited as an
-    // error with nothing sent, which is what actually happened.
+    return
+  }
+
+  if (sent.reason === 'credential') {
+    finishTurn(turnId, {
+      outcome: 'guard_refused',
+      sessionId: result.sessionId,
+      outboundChars: sent.outboundChars ?? 0,
+      outMessageId: sent.messageId ?? null,
+    })
+    return
+  }
+
+  if (sent.reason === 'send_failed') {
     finishTurn(turnId, {
       outcome: 'error',
       sessionId: result.sessionId,
-      error: `send: ${errText(err)}`,
+      outboundChars: 0,
+      error: `send: ${errText(sent.error ?? 'failed')}`,
     })
+    return
   }
+
+  finishTurn(turnId, {
+    outcome: 'guard_refused',
+    sessionId: result.sessionId,
+    outboundChars: 0,
+    error: sent.reason,
+  })
 }
 
 function onInbound(robotId: string, msg: ImInboundMessage): void {
@@ -219,9 +266,26 @@ function onInbound(robotId: string, msg: ImInboundMessage): void {
 
   const gate = `${robot.id}::${threadKey}`
   if (inFlight.has(gate)) {
-    void handle.connection
-      .send(msg.chatId, { text: '上一个问题还在处理,稍后再问我。', replyTo: msg.messageId })
-      .catch(() => {})
+    const turnId = beginTurn({
+      robotId: robot.id,
+      threadKey,
+      chatId: msg.chatId,
+      senderId: msg.senderId,
+      messageId: msg.messageId,
+    })
+    void handle
+      .sendOutbound({ category: 'fixed_notice', notice: 'busy' }, targetOf(msg))
+      .then((sent) => {
+        finishTurn(turnId, {
+          outcome: 'busy',
+          outboundChars: sent.ok ? sent.outboundChars : 0,
+          outMessageId: sent.ok ? sent.messageId : null,
+          error: sent.ok ? null : sent.reason,
+        })
+      })
+      .catch((err) => {
+        finishTurn(turnId, { outcome: 'busy', outboundChars: 0, error: errText(err) })
+      })
     return
   }
 
@@ -229,6 +293,28 @@ function onInbound(robotId: string, msg: ImInboundMessage): void {
     .catch((err) => console.error('[c3][im] turn failed:', errText(err)))
     .finally(() => inFlight.delete(gate))
   inFlight.set(gate, running)
+}
+
+function wrapHandle(
+  robotId: string,
+  connection: { status: () => ImConnectionStatus; send: RawImSend; close: () => Promise<void> },
+  capabilities: ImProviderCapabilities,
+): RobotHandle {
+  // Bind raw send into the guard closure without exposing it on the handle.
+  const { send: rawSend, status, close } = connection
+  return {
+    capabilities,
+    status,
+    close,
+    sendOutbound: (content, target) =>
+      sendGuarded({
+        robotId,
+        target,
+        content,
+        maxOutboundChars: capabilities.maxOutboundChars,
+        rawSend,
+      }),
+  }
 }
 
 async function connectRobot(robot: ImRobot): Promise<void> {
@@ -244,7 +330,7 @@ async function connectRobot(robot: ImRobot): Promise<void> {
       appSecret: robotSecret(robot.id),
       onMessage: (m) => onInbound(robot.id, m),
     })
-    handles?.set(robot.id, { connection, capabilities: provider.capabilities })
+    handles?.set(robot.id, wrapHandle(robot.id, connection, provider.capabilities))
     failures.delete(robot.id)
   } catch (err) {
     // A robot that cannot connect is a visible, recoverable state, never a
@@ -271,7 +357,7 @@ export async function reloadRobot(robotId: string): Promise<void> {
   const handle = handles.get(robotId)
   if (handle) {
     handles.delete(robotId)
-    await handle.connection.close().catch(() => {})
+    await handle.close().catch(() => {})
   }
   failures.delete(robotId)
   const robot = getRobot(robotId)
@@ -291,7 +377,7 @@ export async function stopImSupervisor(timeoutMs = 30_000): Promise<void> {
   handles = null
   deps = null
   if (open) {
-    await Promise.allSettled([...open.values()].map((h) => h.connection.close()))
+    await Promise.allSettled([...open.values()].map((h) => h.close()))
     open.clear()
   }
   if (inFlight.size === 0) return
@@ -305,5 +391,5 @@ export async function stopImSupervisor(timeoutMs = 30_000): Promise<void> {
 export function robotConnectionStatus(robotId: string): ImConnectionStatus | undefined {
   const failure = failures.get(robotId)
   if (failure) return { state: 'failed', reconnectAttempts: 0, lastError: failure }
-  return handles?.get(robotId)?.connection.status()
+  return handles?.get(robotId)?.status()
 }

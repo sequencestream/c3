@@ -3897,6 +3897,9 @@
           },
           "guard_refused": {
             "label": "送信を保留"
+          },
+          "busy": {
+            "label": "処理中"
           }
         }
       }

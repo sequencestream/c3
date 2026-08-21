@@ -6,8 +6,13 @@
  * types are internal to the partition and are NOT part of the public
  * `@ccc/shared/protocol` surface.
  *
- * Robots are not scoped to a workspace, so unlike every other domain here these
- * messages carry no `workspaceName` — that absence is the contract.
+ * These messages carry no robot-level `workspaceName`: the robot is a
+ * deployment-level management object (one roster for the whole instance). That
+ * shape is a management contract, not a data-access safety guarantee — any
+ * workspace-scoped read or write belongs on the tool-call contract and must
+ * recompute visibility per call. Binding a workspace onto the robot, the
+ * connection or a thread is rejected as a design (thread binding would turn a
+ * one-time context choice into invisible lasting authorization).
  */
 
 import type { ImPlatform, ImRobot, ImRobotTurnLog, RobotConfigInput } from './robot.js'
@@ -53,8 +58,9 @@ export type ClientSetRobotEnabled = {
 export type ClientListRobotTurns = { type: 'list_robot_turns'; robotId: string }
 
 /**
- * The full robot roster. Carries no workspace: robots are global, and the
- * console renders this list the same wherever the user is.
+ * The full robot roster. Carries no workspace filter: robots are deployment-
+ * level, so every connected console sees the same list. Global management is
+ * not unbounded data access — see the file header.
  */
 export type ServerRobots = { type: 'robots'; robots: ImRobot[] }
 

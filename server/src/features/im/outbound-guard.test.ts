@@ -1,12 +1,72 @@
 /**
- * The last check before an answer leaves the machine. Two things matter: a
- * credential shape is never delivered and the refusal never quotes it, and an
- * ordinary technical answer — code fences included — still goes out.
+ * Content screening and the sole controlled send entry. Behavioural proofs go
+ * through a fake rawSend so nothing reaches a real platform here.
  */
-import { describe, expect, it } from 'vitest'
-import { screenOutbound } from './outbound-guard.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
+import { FIXED_NOTICES, screenOutbound, sendGuarded, type RawImSend } from './outbound-guard.js'
+import {
+  acknowledgeOutbound,
+  createRobot,
+  resetRobotStoreForTests,
+  setRobotEnabled,
+  updateRobot,
+  type CreateRobotInput,
+} from './robot-store.js'
 
 const MAX = 4000
+
+let home: string
+
+const robotInput = (over: Partial<CreateRobotInput> = {}): CreateRobotInput => ({
+  name: 'helper',
+  platform: 'feishu',
+  appId: 'cli_app',
+  appSecret: 'secret',
+  vendor: 'claude',
+  agentId: 'agent-1',
+  ...over,
+})
+
+function enabledRobot(): string {
+  const robot = createRobot(robotInput())
+  acknowledgeOutbound(robot.id)
+  setRobotEnabled(robot.id, true)
+  return robot.id
+}
+
+function rawRecorder(): {
+  sent: { chatId: string; text: string; replyTo?: string }[]
+  rawSend: RawImSend
+} {
+  const sent: { chatId: string; text: string; replyTo?: string }[] = []
+  return {
+    sent,
+    rawSend: (chatId, out) => {
+      sent.push({ chatId, text: out.text, ...(out.replyTo ? { replyTo: out.replyTo } : {}) })
+      return Promise.resolve({ messageId: `out-${sent.length}` })
+    },
+  }
+}
+
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), 'c3-im-guard-'))
+  process.env.C3_DB_PATH = join(home, 'c3.db')
+  process.env.C3_DIR = home
+  resetDbForTests()
+  resetRobotStoreForTests()
+})
+
+afterEach(() => {
+  resetDbForTests()
+  delete process.env.C3_DB_PATH
+  delete process.env.C3_DIR
+  resetRobotStoreForTests()
+  rmSync(home, { recursive: true, force: true })
+})
 
 describe('screenOutbound — refuses credential shapes', () => {
   it('refuses well-known token formats', () => {
@@ -30,8 +90,6 @@ describe('screenOutbound — refuses credential shapes', () => {
 
 describe('screenOutbound — lets real answers through', () => {
   it('delivers an answer containing a code block', () => {
-    // The memory guard refuses code fences; the outbound guard must not, or a
-    // robot could never answer a question about code.
     const text = 'Use this:\n```ts\nconst x = 1\n```'
     expect(screenOutbound(text, MAX)).toEqual({ ok: true, text })
   })
@@ -61,5 +119,201 @@ describe('screenOutbound — truncation is visible', () => {
   it('leaves an answer at exactly the limit untouched', () => {
     const text = 'y'.repeat(100)
     expect(screenOutbound(text, 100)).toEqual({ ok: true, text })
+  })
+})
+
+describe('sendGuarded — readiness and target', () => {
+  it('refuses when the robot was disabled after the turn started', async () => {
+    const id = enabledRobot()
+    setRobotEnabled(id, false)
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'hello' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'disabled', outboundChars: 0 })
+    expect(sent).toEqual([])
+  })
+
+  it('refuses when outbound acknowledgement was cleared while still enabled', async () => {
+    const id = enabledRobot()
+    // Store refuses enable-without-ack; clear the ack under the table to prove
+    // the guard re-reads live state rather than trusting the inbound snapshot.
+    getDb()!.run('UPDATE im_robots SET outbound_ack_at = NULL WHERE id = ?', id)
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'fixed_notice', notice: 'busy' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'outbound_not_acknowledged',
+      outboundChars: 0,
+    })
+    expect(sent).toEqual([])
+  })
+
+  it('refuses a group that left the allowlist', async () => {
+    const id = enabledRobot()
+    updateRobot(id, { chatAllowlist: ['oc_allowed'] })
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_other', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'hello' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'chat_not_allowed' })
+    expect(sent).toEqual([])
+  })
+
+  it('refuses a DM after the allowlist tightens', async () => {
+    const id = enabledRobot()
+    updateRobot(id, { dmMode: 'allowlist', dmAllowlist: ['ou_ok'] })
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_dm', chatType: 'p2p', senderId: 'ou_other', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'hello' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'dm_not_allowed' })
+    expect(sent).toEqual([])
+  })
+})
+
+describe('sendGuarded — content categories', () => {
+  it('sends a normal final answer through rawSend once', async () => {
+    const id = enabledRobot()
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'the build is green' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      text: 'the build is green',
+      outboundChars: 'the build is green'.length,
+    })
+    expect(sent).toEqual([{ chatId: 'oc_1', text: 'the build is green', replyTo: 'm1' }])
+  })
+
+  it('swaps a credential-shaped answer for the intercept notice without echoing the secret', async () => {
+    const id = enabledRobot()
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz012345'
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: `the key is ${secret}` },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'credential',
+      outboundChars: FIXED_NOTICES.guard_refused.length,
+    })
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.text).toBe(FIXED_NOTICES.guard_refused)
+    expect(JSON.stringify(sent)).not.toContain(secret)
+    expect(JSON.stringify(result)).not.toContain(secret)
+  })
+
+  it('sends each registered fixed notice without credential scanning', async () => {
+    const id = enabledRobot()
+    for (const notice of Object.keys(FIXED_NOTICES) as (keyof typeof FIXED_NOTICES)[]) {
+      const { sent, rawSend } = rawRecorder()
+      const result = await sendGuarded({
+        robotId: id,
+        target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+        content: { category: 'fixed_notice', notice },
+        maxOutboundChars: MAX,
+        rawSend,
+      })
+      expect(result.ok).toBe(true)
+      expect(sent).toEqual([{ chatId: 'oc_1', text: FIXED_NOTICES[notice], replyTo: 'm1' }])
+    }
+  })
+
+  it('truncates a long fixed notice to the platform limit', async () => {
+    const id = enabledRobot()
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'fixed_notice', notice: 'blocked' },
+      maxOutboundChars: 12,
+      rawSend,
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.text.length).toBeLessThanOrEqual(12)
+      expect(result.outboundChars).toBe(result.text.length)
+      expect(FIXED_NOTICES.blocked.length).toBeGreaterThan(12)
+    }
+    expect(sent[0]?.text.length).toBeLessThanOrEqual(12)
+  })
+
+  it('truncates a long final answer with an explicit cut notice', async () => {
+    const id = enabledRobot()
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'x'.repeat(500) },
+      maxOutboundChars: 80,
+      rawSend,
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.text.length).toBeLessThanOrEqual(80)
+      expect(result.text).toContain('截断')
+    }
+    expect(sent[0]?.text).toContain('截断')
+  })
+
+  it('records a sanitized send_failed when the platform rejects', async () => {
+    const id = enabledRobot()
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz012345'
+    const rawSend: RawImSend = () => Promise.reject(new Error(`request failed: token=${secret}`))
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'hello' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'send_failed', outboundChars: 0 })
+    if (!result.ok) {
+      expect(result.error).toContain('request failed')
+      expect(result.error).toContain('[redacted]')
+      expect(result.error).not.toContain(secret)
+      expect(JSON.stringify(result)).not.toContain(secret)
+    }
+  })
+
+  it('invokes rawSend at most once per guarded attempt', async () => {
+    const id = enabledRobot()
+    const rawSend = vi.fn<RawImSend>().mockResolvedValue({ messageId: 'out-1' })
+    await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'hello' },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(rawSend).toHaveBeenCalledTimes(1)
   })
 })

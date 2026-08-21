@@ -109,7 +109,26 @@ CREATE TABLE IF NOT EXISTS im_robot_turns (
   finished_at    INTEGER,
   outcome        TEXT
                  CHECK(outcome IS NULL OR outcome IN
-                   ('complete','error','blocked','timeout','guard_refused')),
+                   ('complete','error','blocked','timeout','guard_refused','busy')),
+  outbound_chars INTEGER NOT NULL DEFAULT 0,
+  out_message_id TEXT,
+  error          TEXT
+);`
+
+const TURNS_TABLE_FRESH = `
+CREATE TABLE im_robot_turns (
+  id             TEXT PRIMARY KEY,
+  robot_id       TEXT NOT NULL,
+  thread_key     TEXT NOT NULL,
+  chat_id        TEXT NOT NULL,
+  sender_id      TEXT NOT NULL,
+  in_message_id  TEXT NOT NULL,
+  session_id     TEXT,
+  started_at     INTEGER NOT NULL,
+  finished_at    INTEGER,
+  outcome        TEXT
+                 CHECK(outcome IS NULL OR outcome IN
+                   ('complete','error','blocked','timeout','guard_refused','busy')),
   outbound_chars INTEGER NOT NULL DEFAULT 0,
   out_message_id TEXT,
   error          TEXT
@@ -125,10 +144,29 @@ CREATE INDEX IF NOT EXISTS idx_im_turn_thread ON im_robot_turns(robot_id, thread
 
 let schemaReadyFor: Db | null = null
 
+/**
+ * SQLite cannot ALTER a CHECK. Existing installs that predate `busy` keep the old
+ * constraint until this rebuild copies rows into a table that allows it.
+ */
+function migrateTurnsOutcomeBusy(d: Db): void {
+  const row = d.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robot_turns'`,
+  )
+  if (!row?.sql || row.sql.includes("'busy'")) return
+  d.exec('ALTER TABLE im_robot_turns RENAME TO im_robot_turns_pre_busy')
+  d.exec(TURNS_TABLE_FRESH)
+  d.exec('INSERT INTO im_robot_turns SELECT * FROM im_robot_turns_pre_busy')
+  // Drop the renamed table so its indexes (same names as INDEXES below) go with
+  // it; otherwise CREATE INDEX IF NOT EXISTS would skip and the new table stays
+  // unindexed.
+  d.exec('DROP TABLE im_robot_turns_pre_busy')
+}
+
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
   d.exec(THREADS_TABLE)
   d.exec(TURNS_TABLE)
+  migrateTurnsOutcomeBusy(d)
   d.exec(INDEXES)
 }
 

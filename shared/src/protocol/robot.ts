@@ -1,12 +1,15 @@
 /**
- * IM chat robots: the public data model for c3's one outbound path to a
- * third-party chat platform (ADR-0046).
+ * IM chat robots: the public data model for c3's deployment-level IM ingress
+ * and egress (ADR-0046).
  *
- * A robot is deliberately NOT scoped to a workspace. It owns a directory named
- * after it — `~/.c3/robots/<name>` — and that directory is the whole of what it
- * can reach. `name` is therefore identity, display name and directory name at
- * once, which is why it is constrained to a path-safe shape and cannot be
- * changed after creation.
+ * A robot is a c3-instance resource, not a workspace resource: its roster,
+ * connection and config are shared across the deployment. That is *not*
+ * unbounded access — workspace, object and user authority are never inferred
+ * from the robot directory, the platform connection, `threadKey` or
+ * `sessionId`; callers that touch c3 objects must recompute scope per tool
+ * call. The run root `~/.c3/robots/<name>/` is an isolated working container
+ * (identity, display name and directory name at once), not an authorization
+ * boundary or a default workspace.
  *
  * The app secret never appears here. A robot carries `hasSecret` so the console
  * can tell "configured" from "not configured"; the plaintext travels one way
@@ -32,13 +35,18 @@ export const ROBOT_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/
 /** Default wall clock for one robot turn, when the robot sets none. */
 export const ROBOT_DEFAULT_MAX_TURN_MS = 300_000
 
-/** How a robot turn ended, including the ways it never reached the chat. */
+/**
+ * How a robot turn ended, including the ways it never reached the chat.
+ * `busy` is the thread already running a turn (busy notice sent, no agent run).
+ * `guard_refused` is any outbound-guard refusal (credential hit included).
+ */
 export const IM_TURN_OUTCOMES = [
   'complete',
   'error',
   'blocked',
   'timeout',
   'guard_refused',
+  'busy',
 ] as const
 export type ImTurnOutcome = (typeof IM_TURN_OUTCOMES)[number]
 

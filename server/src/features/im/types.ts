@@ -75,7 +75,11 @@ export interface ImProviderCapabilities {
 /** A live link to one robot's platform account. */
 export interface ImConnection {
   status(): ImConnectionStatus
-  /** Deliver a reply. Rejects on a platform error; the caller audits it. */
+  /**
+   * Deliver a reply. Rejects on a platform error.
+   * Only the outbound guard may call this — supervisors and handlers must use
+   * `sendGuarded` / the handle's `sendOutbound` wrapper.
+   */
   send(chatId: string, out: ImOutbound): Promise<{ messageId: string }>
   close(): Promise<void>
 }

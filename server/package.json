@@ -22,7 +22,7 @@
     "@hono/node-ws": "^1.0.4",
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/codex-sdk": "0.147.0",
+    "@openai/codex-sdk": "0.148.0",
     "commander": "^12.1.0",
     "hono": "^4.6.14",
     "ws": "^8.18.0",

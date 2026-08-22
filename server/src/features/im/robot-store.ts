@@ -21,6 +21,7 @@ import {
   ROBOT_CONTEXT_MAX_CODEPOINTS,
   ROBOT_CONTEXT_MAX_TURNS,
   ROBOT_CONTEXT_RETENTION_MS,
+  ROBOT_MESSAGE_LOCALES,
   ROBOT_NAME_PATTERN,
   type ImBroadcastType,
   type ImDmMode,
@@ -29,6 +30,7 @@ import {
   type ImRobot,
   type ImRobotTurnLog,
   type ImTurnOutcome,
+  type RobotMessageLocale,
   type VendorId,
 } from '@ccc/shared/protocol'
 import {
@@ -41,6 +43,7 @@ import {
 } from '../../kernel/infra/db.js'
 import { encryptSecret, decryptSecret } from '../../kernel/config/encryption.js'
 import { truncateCodePoints } from './inbound-guard.js'
+import { validateRobotMessageRegistry } from './robot-message-registry.js'
 import type { ConversationIdentity } from './thread-key.js'
 import { execIdentitySchema } from './identity-schema.js'
 import { computeOutboundConfigHash, outboundConfigAcknowledged } from './outbound-config-hash.js'
@@ -55,6 +58,7 @@ export type RobotStoreErrorCode =
   | 'platform_unsupported'
   | 'secret_required'
   | 'outbound_not_acknowledged'
+  | 'locale_invalid'
 
 export class RobotStoreError extends Error {
   constructor(
@@ -71,6 +75,7 @@ export class RobotStoreError extends Error {
 const SENDER_ISOLATION_MIGRATION = 'robots.sender_isolation.v1'
 const IDENTITY_SCOPE_MIGRATION = 'robots.identity_scope.v1'
 const BROADCAST_CONFIG_MIGRATION = 'robots.broadcast_config.v1'
+const LOCALE_MIGRATION = 'robots.locale.v1'
 /** Soft budget for recovery seed size (Unicode code points across all turns). */
 export const ROBOT_CONTEXT_RECOVERY_BUDGET = 80_000
 
@@ -107,6 +112,7 @@ CREATE TABLE IF NOT EXISTS im_robots (
   max_turn_ms      INTEGER,
   enabled          INTEGER NOT NULL DEFAULT 0,
   outbound_ack_at  INTEGER,
+  locale           TEXT CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER NOT NULL
 );`
@@ -413,6 +419,19 @@ function parseBroadcastTypes(raw: string): ImBroadcastType[] {
   }
 }
 
+function migrateRobotLocale(d: Db): void {
+  if (hasMigration(d, LOCALE_MIGRATION)) return
+  tx(d, () => {
+    const cols = tableColumns(d, 'im_robots')
+    if (!cols.has('locale')) {
+      d.exec(`ALTER TABLE im_robots ADD COLUMN locale TEXT
+        CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru'))`)
+      d.exec("UPDATE im_robots SET locale = 'zh'")
+    }
+    markMigration(d, LOCALE_MIGRATION)
+  })
+}
+
 /** Add L0 broadcast config columns and backfill ack hash for existing robots. */
 function migrateBroadcastConfig(d: Db): void {
   if (hasMigration(d, BROADCAST_CONFIG_MIGRATION)) return
@@ -439,6 +458,7 @@ function migrateBroadcastConfig(d: Db): void {
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
   migrateSenderIsolation(d)
+  migrateRobotLocale(d)
   // Idempotent creates for fresh DBs that already ran the migration marker path
   // after rename, and for DBs that never had the old tables.
   d.exec(THREADS_TABLE)
@@ -452,6 +472,7 @@ function ensureSchema(d: Db): void {
   d.exec(CONTEXT_TURNS_TABLE)
   d.exec(TURNS_TABLE)
   d.exec(INDEXES)
+  validateRobotMessageRegistry()
 }
 
 function db(): Db | null {
@@ -529,6 +550,7 @@ interface RobotRow {
   broadcast_event_types: string
   broadcast_to_bound_users: number
   broadcast_group_chat_ids: string
+  locale: string | null
   created_at: number
   updated_at: number
 }
@@ -540,6 +562,21 @@ function parseList(raw: string): string[] {
   } catch {
     return []
   }
+}
+
+function parseLocale(raw: string | null): RobotMessageLocale | null {
+  if (!raw) return null
+  return (ROBOT_MESSAGE_LOCALES as readonly string[]).includes(raw)
+    ? (raw as RobotMessageLocale)
+    : null
+}
+
+function assertLocale(value: RobotMessageLocale | null | undefined): RobotMessageLocale | null {
+  if (value === undefined || value === null) return null
+  if (!(ROBOT_MESSAGE_LOCALES as readonly string[]).includes(value)) {
+    throw new RobotStoreError('locale_invalid', '不支持的机器人语言。')
+  }
+  return value
 }
 
 function toRobot(r: RobotRow): ImRobot {
@@ -564,6 +601,7 @@ function toRobot(r: RobotRow): ImRobot {
     broadcastEventTypes: parseBroadcastTypes(r.broadcast_event_types ?? '[]'),
     broadcastToBoundUsers: (r.broadcast_to_bound_users ?? 0) === 1,
     broadcastGroupChatIds: parseList(r.broadcast_group_chat_ids ?? '[]'),
+    locale: parseLocale(r.locale),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -613,6 +651,7 @@ export interface CreateRobotInput {
   dmMode?: ImDmMode
   dmAllowlist?: string[]
   maxTurnMs?: number | null
+  locale?: RobotMessageLocale | null
 }
 
 function validateName(d: Db, name: string, excludeId?: string): void {
@@ -679,6 +718,7 @@ export interface UpdateRobotInput {
   broadcastEventTypes?: ImBroadcastType[]
   broadcastToBoundUsers?: boolean
   broadcastGroupChatIds?: string[]
+  locale?: RobotMessageLocale | null
 }
 
 export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
@@ -712,6 +752,7 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
   if (patch.broadcastGroupChatIds !== undefined) {
     set('broadcast_group_chat_ids', JSON.stringify(patch.broadcastGroupChatIds))
   }
+  if (patch.locale !== undefined) set('locale', assertLocale(patch.locale))
 
   if (sets.length > 0) {
     set('updated_at', now())

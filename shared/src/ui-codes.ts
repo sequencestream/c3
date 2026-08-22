@@ -346,6 +346,7 @@ export const UI_ERROR_CODES = {
   'robot.platformUnsupported': { key: 'error.robot.platformUnsupported' },
   'robot.secretRequired': { key: 'error.robot.secretRequired' },
   'robot.outboundNotAcknowledged': { key: 'error.robot.outboundNotAcknowledged' },
+  'robot.localeInvalid': { key: 'error.robot.localeInvalid' },
   'robot.agentRequired': { key: 'error.robot.agentRequired' },
   'robot.identityUnavailable': { key: 'error.robot.identityUnavailable' },
   'robot.challengeNotFound': { key: 'error.robot.challengeNotFound' },

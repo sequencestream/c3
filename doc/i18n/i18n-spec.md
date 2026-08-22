@@ -13,6 +13,14 @@
   的有限并集作为合法 key 类型,并导出受类型约束的翻译函数与组件内翻译访问器,
   **key 拼错在类型检查阶段编译失败**。
 
+### 1.1 与 IM 机器人服务端文案的边界
+
+Web vue-i18n 只管**浏览器 UI**(`web/src/locales/*.json`)。IM 机器人出站固定提示由服务端
+**独立注册表**渲染(`server/src/features/im/robot-message-registry.ts`),不导入 vue-i18n、
+不下载 Web locale JSON。两者仅共享 `en`/`zh`/`ja`/`ko`/`ru` 短码与 `doc/i18n/i18n-terms.md`
+术语约束;机器人控制台 `robot.form.locale.*` 配置的是注册表语言,不是 Web 显示语言。
+详见 `doc/domains/core/im-robot/im-robot-spec.md`「允许外发的内容」。
+
 > 注:vue-i18n 原生翻译函数 / 模板翻译指令仅提供 key **自动补全**(其签名会把入参推断为
 > 字面量,故不会对拼错报错)。需要编译期拦截拼错时,**使用本规范约定的受类型约束的翻译函数 /
 > 组件内翻译访问器**,而非直接使用 vue-i18n 原生未约束的翻译函数。

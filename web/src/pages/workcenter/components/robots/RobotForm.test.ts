@@ -78,6 +78,7 @@ function robotFixture(over: Partial<ImRobot> = {}): ImRobot {
     broadcastEventTypes: [],
     broadcastToBoundUsers: false,
     broadcastGroupChatIds: [],
+    locale: null,
     createdAt: 0,
     updatedAt: 0,
     ...over,

@@ -2546,6 +2546,7 @@
       "platformUnsupported": "このビルドはそのプラットフォームに対応していません。",
       "secretRequired": "有効化する前にアプリシークレットを設定してください。",
       "outboundNotAcknowledged": "有効化する前に、外部へ送信される内容を確認してください。",
+      "localeInvalid": "その言語はロボット制御メッセージではサポートされていません。",
       "agentRequired": "ベンダーとエージェントを選択してください。",
       "identityUnavailable": "IM identity store is unavailable.",
       "challengeNotFound": "That binding challenge was not found.",
@@ -4026,6 +4027,13 @@
       "maxTurnMs": {
         "label": "1 ターンの時間上限 (ms)",
         "hint": "空欄なら既定値 300000。"
+      },
+      "locale": {
+        "label": "制御メッセージの言語",
+        "hint": "バインド案内・権限通知など固定返信の言語。エージェント回答の言語は変わりません。",
+        "systemDefault": {
+          "label": "システム既定 (英語)"
+        }
       },
       "save": {
         "label": "保存"

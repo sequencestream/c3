@@ -89,11 +89,21 @@
 
 固定提示分两类:
 
-- **普通 `fixed_notice`:** 超时/阻塞/错误/忙碌/入站拒绝/存储不可用/凭据拦截等运行期提示。
-- **专用 `binding_notice`:** 绑定引导、私聊引导、绑定成败与 `scope_changed`。仅可在触发该控制流程的
-  原始私聊(或群内允许的 `bind_use_dm`/`identity_required`)发送;`chatId`/`senderId`/`replyTo` 必须与
+- **普通 `fixed_notice`:** 超时/阻塞/错误/忙碌/入站拒绝/存储不可用/凭据拦截、可见性降级等运行期提示。
+- **专用 `binding_notice`:** 绑定引导、私聊引导、绑定成败、令牌不可用与 `scope_changed`。仅可在触发该控制流程的
+  原始私聊(或群内允许的 `binding.useDm`/`binding.identityRequired*`)发送;`chatId`/`senderId`/`replyTo` 必须与
   入站一致,不能改投其它聊天或冒充普通 `fixed_notice`。P2p 上可窄豁免 `dmMode`/`dmAllowlist`,其余出站
   约束(启用、外发确认、截断、审计)不变。
+
+固定提示正文来自服务端 **机器人安全文案注册表**(`server/src/features/im/robot-message-catalog.ts` +
+`robot-message-registry.ts`):稳定点分键、受约束参数、五语目录(`en` 基准 + `zh`/`ja`/`ko`/`ru`)。语言按
+**绑定主体当前 `uiLang` → 机器人 `locale`(可空=系统默认 `en`) → `en`** 回退;缺失键或非法 locale 走
+`system.safeFallback`,不交给模型补写。Web 的 vue-i18n 管线独立维护 UI 文案,两者只共享短语言码与术语约定,
+不共享 locale JSON 或运行时。
+
+机器人配置 **`locale`** 只控制注册表固定提示,不改变 agent 最终回答语言。存量机器人迁移为 `zh`,新建默认为
+系统默认(`NULL`)。L1 工具返回纯机器结构;对象不可见与群内隐藏经回合级 `displaySignals` 旁路上报,
+supervisor 在最终外发前按固定优先级丢弃模型正文并改发注册表文案(不可见 > 群隐藏 > 普通答案)。
 
 L0 主动播报:
 

@@ -2546,6 +2546,7 @@
       "platformUnsupported": "이 빌드는 해당 플랫폼을 지원하지 않습니다.",
       "secretRequired": "활성화하기 전에 앱 시크릿을 설정하세요.",
       "outboundNotAcknowledged": "활성화하기 전에 외부로 전송되는 내용을 확인하세요.",
+      "localeInvalid": "해당 언어는 로봇 제어 메시지에서 지원되지 않습니다.",
       "agentRequired": "벤더와 에이전트를 선택하세요.",
       "identityUnavailable": "IM identity store is unavailable.",
       "challengeNotFound": "That binding challenge was not found.",
@@ -4026,6 +4027,13 @@
       "maxTurnMs": {
         "label": "턴 시간 제한 (ms)",
         "hint": "비우면 기본값 300000 사용."
+      },
+      "locale": {
+        "label": "제어 메시지 언어",
+        "hint": "바인딩 안내·권한 알림 등 고정 로봇 회신 언어. 에이전트 답변 언어는 바뀌지 않습니다.",
+        "systemDefault": {
+          "label": "시스템 기본 (영어)"
+        }
       },
       "save": {
         "label": "저장"

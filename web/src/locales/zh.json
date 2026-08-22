@@ -2545,6 +2545,7 @@
       "platformUnsupported": "当前版本不支持该平台。",
       "secretRequired": "启用前请先配置应用密钥。",
       "outboundNotAcknowledged": "启用前请先确认发往本机之外的内容范围。",
+      "localeInvalid": "不支持该机器人控制消息语言。",
       "agentRequired": "请选择厂商与 agent。",
       "identityUnavailable": "IM 身份存储不可用。",
       "challengeNotFound": "未找到该绑定挑战。",
@@ -4064,6 +4065,13 @@
       "maxTurnMs": {
         "label": "单回合时限 (ms)",
         "hint": "留空使用默认值 300000。"
+      },
+      "locale": {
+        "label": "控制消息语言",
+        "hint": "绑定引导、权限提示等固定机器人回复的语言。不改变 agent 回答语言。",
+        "systemDefault": {
+          "label": "系统默认（英语）"
+        }
       },
       "save": {
         "label": "保存"

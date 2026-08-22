@@ -88,6 +88,9 @@ function claim(
     robotId,
     threadKey: over.threadKey ?? 'c:oc',
     senderId: over.senderId ?? 'u1',
+    bindingId: 'b1',
+    subject: 'local',
+    scopeHash: 'h1',
     chatId: over.chatId ?? 'oc',
     vendor: 'claude',
     messageId: over.messageId ?? `m-${Math.random().toString(36).slice(2)}`,
@@ -194,13 +197,15 @@ describe('sender-isolated Conversations', () => {
       sessionId: 'sess-a',
       vendor: 'claude',
     })
-    expect(loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'bob'))).toEqual(
-      [],
-    )
     expect(
-      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'alice')).map(
-        (t) => t.userText,
+      loadCommittedContext(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'bob', 'b1', 'local', 'h1'),
       ),
+    ).toEqual([])
+    expect(
+      loadCommittedContext(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'alice', 'b1', 'local', 'h1'),
+      ).map((t) => t.userText),
     ).toEqual(['alice secret'])
   })
 
@@ -221,9 +226,9 @@ describe('sender-isolated Conversations', () => {
     if (second.kind !== 'claimed') return
     expect(second.conversation.sessionId).toBe('sess-1')
     expect(
-      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1')).map(
-        (t) => t.assistantText,
-      ),
+      loadCommittedContext(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+      ).map((t) => t.assistantText),
     ).toEqual(['a1'])
   })
 
@@ -243,6 +248,9 @@ describe('sender-isolated Conversations', () => {
       robotId: robot.id,
       threadKey: 'c:oc',
       senderId: 'u1',
+      bindingId: 'b1',
+      subject: 'local',
+      scopeHash: 'h1',
       chatId: 'oc',
       vendor: 'claude',
       messageId: 'm-busy',
@@ -255,6 +263,9 @@ describe('sender-isolated Conversations', () => {
         robotId: robot.id,
         threadKey: 'c:oc',
         senderId: 'u1',
+        bindingId: 'b1',
+        subject: 'local',
+        scopeHash: 'h1',
         chatId: 'oc',
         vendor: 'claude',
         messageId: 'm-busy',
@@ -284,12 +295,16 @@ describe('sender-isolated Conversations', () => {
     expect(c.kind).toBe('claimed')
     if (c.kind !== 'claimed') return
     failContextTurn(c.contextTurnId)
-    expect(loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))).toEqual(
-      [],
-    )
+    expect(
+      loadCommittedContext(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+      ),
+    ).toEqual([])
     expect(
       resolvedSessionRef(
-        getConversation(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))!,
+        getConversation(
+          conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+        )!,
         'claude',
       ),
     ).toBeNull()
@@ -306,7 +321,9 @@ describe('sender-isolated Conversations', () => {
       sessionId: 'sess-1',
       vendor: 'claude',
     })
-    const conv = getConversation(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))!
+    const conv = getConversation(
+      conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+    )!
     expect(resolvedSessionRef(conv, 'codex')).toBeNull()
     expect(resolvedSessionRef(conv, 'claude')?.sessionId).toBe('sess-1')
   })
@@ -327,7 +344,9 @@ describe('retention', () => {
         vendor: 'claude',
       })
     }
-    const turns = loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))
+    const turns = loadCommittedContext(
+      conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+    )
     expect(turns).toHaveLength(ROBOT_CONTEXT_MAX_TURNS)
     expect(turns[0]?.userText).toBe('q1')
     expect(turns.at(-1)?.userText).toBe(`q${ROBOT_CONTEXT_MAX_TURNS}`)
@@ -349,12 +368,16 @@ describe('retention', () => {
 
     setRobotStoreClockForTests(() => t0 + ROBOT_CONTEXT_RETENTION_MS)
     expect(
-      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1')),
+      loadCommittedContext(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+      ),
     ).toHaveLength(1)
 
     setRobotStoreClockForTests(() => t0 + ROBOT_CONTEXT_RETENTION_MS + 1)
     expect(
-      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1')),
+      loadCommittedContext(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+      ),
     ).toHaveLength(0)
   })
 })
@@ -451,7 +474,11 @@ describe('deletion', () => {
     deleteRobot(robot.id)
 
     expect(listRobots()).toEqual([])
-    expect(getConversation(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))).toBeNull()
+    expect(
+      getConversation(
+        conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1', 'b1', 'local', 'h1'),
+      ),
+    ).toBeNull()
     expect(listTurns(robot.id)).toEqual([])
     expect(
       getDb()!.all('SELECT id FROM im_robot_context_turns WHERE robot_id = ?', robot.id),
@@ -526,8 +553,16 @@ describe('safe-cut migration from shared sessions', () => {
     expect(hasMigration(d, 'robots.sender_isolation.v1')).toBe(true)
 
     // Old shared session is not on any sender Conversation.
-    expect(getConversation(conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'alice'))).toBeNull()
-    expect(getConversation(conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'bob'))).toBeNull()
+    expect(
+      getConversation(
+        conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'alice', 'b1', 'local', 'h1'),
+      ),
+    ).toBeNull()
+    expect(
+      getConversation(
+        conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'bob', 'b1', 'local', 'h1'),
+      ),
+    ).toBeNull()
     expect(
       d.get("SELECT name FROM sqlite_master WHERE name='im_robot_threads_pre_sender'"),
     ).toBeTruthy()
@@ -561,7 +596,9 @@ describe('safe-cut migration from shared sessions', () => {
     if (c.kind !== 'claimed') return
     expect(c.conversation.sessionId).toBeNull()
     expect(
-      loadCommittedContext(conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'alice')),
+      loadCommittedContext(
+        conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'alice', 'b1', 'local', 'h1'),
+      ),
     ).toEqual([])
 
     // Migration is idempotent.
@@ -604,12 +641,17 @@ describe('schema', () => {
       robotId: robot.id,
       threadKey: 'k',
       senderId: 'u1',
+      bindingId: 'b1',
+      subject: 'local',
+      scopeHash: 'h1',
       chatId: 'c',
       vendor: 'claude',
       messageId: 'm1',
     })
     expect(claimed.kind).toBe('claimed')
-    expect(getConversation(conversationIdentityOf('feishu', robot.id, 'k', 'u1'))).not.toBeNull()
+    expect(
+      getConversation(conversationIdentityOf('feishu', robot.id, 'k', 'u1', 'b1', 'local', 'h1')),
+    ).not.toBeNull()
   })
 
   it('rebuilds turn indexes onto the post-busy table after outcome migration', () => {

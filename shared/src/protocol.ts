@@ -180,6 +180,14 @@ export type ClientToServer =
   | RobotMsg.ClientAcknowledgeRobotOutbound
   | RobotMsg.ClientSetRobotEnabled
   | RobotMsg.ClientListRobotTurns
+  | RobotMsg.ClientGetMyImIdentity
+  | RobotMsg.ClientCreateImIdentityChallenge
+  | RobotMsg.ClientCancelImIdentityChallenge
+  | RobotMsg.ClientRevokeMyImIdentity
+  | RobotMsg.ClientAdminRevokeImIdentity
+  | RobotMsg.ClientListImIdentityBindings
+  | RobotMsg.ClientListImGroupWorkspaceScopes
+  | RobotMsg.ClientSetImGroupWorkspaceScopes
   | SessionMsg.ClientPing
 
 // Server → Client
@@ -277,4 +285,8 @@ export type ServerToClient =
   | SkillMsg.ServerSkillInstallResult
   | RobotMsg.ServerRobots
   | RobotMsg.ServerRobotTurns
+  | RobotMsg.ServerMyImIdentity
+  | RobotMsg.ServerImIdentityChallengeCreated
+  | RobotMsg.ServerImIdentityBindings
+  | RobotMsg.ServerImGroupWorkspaceScopes
   | SessionMsg.ServerPong

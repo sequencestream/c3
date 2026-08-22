@@ -703,20 +703,30 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       gate: 'discussion-research' as const,
     }),
-    // IM chat-robot profile (the `robot` gate + a write/exec lock + the robot's
-    // system prompt), resolved per turn from that robot's stored configuration —
-    // which is the whole of what constrains an externally-driven run. A lookup
-    // miss yields the narrowest profile, never a permissive default (ADR-0046).
-    // The binder freezes exactly the c3 MCP tools the robot's allowlist ticked
-    // onto the per-turn loopback route (scoped to the robot's run root, which the
-    // launch path supplies as `workspacePath`).
-    robotProfile: (_workspacePath, robotId) =>
+    // IM chat-robot profile. L1 c3 tools use call-level scope from imAuth; the
+    // run root is only for local file tools, never a ledger workspace (ADR-0049).
+    robotProfile: (_workspacePath, robotId, imAuth) =>
       robotLaunchProfile(robotId, {
         bindC3Tools: (selected) => (binding) =>
           robotMcp.bind({
             workspacePath: binding.workspacePath,
             getRunId: binding.getRunId,
             selectedTools: selected,
+            ...(imAuth
+              ? {
+                  imAuth: {
+                    robotId,
+                    senderId: imAuth.senderId,
+                    chatType: imAuth.chatType,
+                    chatId: imAuth.chatId,
+                    providerAccountKey: imAuth.providerAccountKey,
+                    platform: imAuth.platform,
+                    expectedBindingId: imAuth.expectedBindingId,
+                    turnStartScopeHash: imAuth.turnStartScopeHash,
+                    onScopeChanged: imAuth.onScopeChanged,
+                  },
+                }
+              : {}),
           }),
       }),
     // Work-session base MCP profile: every new and resumed work session gets

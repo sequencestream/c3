@@ -2491,7 +2491,12 @@
       "platformUnsupported": "This build does not support that platform.",
       "secretRequired": "Configure the app secret before enabling.",
       "outboundNotAcknowledged": "Acknowledge what is sent off this machine before enabling.",
-      "agentRequired": "Choose a vendor and an agent."
+      "agentRequired": "Choose a vendor and an agent.",
+      "identityUnavailable": "IM identity store is unavailable.",
+      "challengeNotFound": "That binding challenge was not found.",
+      "bindingNotFound": "That identity binding was not found.",
+      "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
+      "notOwner": "You can only manage your own identity binding."
     }
   },
   "statusIndicator": {

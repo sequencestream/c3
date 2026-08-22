@@ -167,10 +167,18 @@ import { readRuntimeLogHandler } from './logs/index.js'
 import { deleteWorkspaceMemoryHandler, listWorkspaceMemoriesHandler } from './memory/handlers.js'
 import {
   acknowledgeRobotOutboundHandler,
+  adminRevokeImIdentityHandler,
+  cancelImIdentityChallengeHandler,
+  createImIdentityChallengeHandler,
   createRobotHandler,
   deleteRobotHandler,
+  getMyImIdentityHandler,
+  listImGroupWorkspaceScopesHandler,
+  listImIdentityBindingsHandler,
   listRobotTurnsHandler,
   listRobotsHandler,
+  revokeMyImIdentityHandler,
+  setImGroupWorkspaceScopesHandler,
   setRobotEnabledHandler,
   updateRobotHandler,
 } from './im/index.js'
@@ -341,6 +349,14 @@ export const handlerMap: HandlerMap = {
   acknowledge_robot_outbound: acknowledgeRobotOutboundHandler,
   set_robot_enabled: setRobotEnabledHandler,
   list_robot_turns: listRobotTurnsHandler,
+  get_my_im_identity: getMyImIdentityHandler,
+  create_im_identity_challenge: createImIdentityChallengeHandler,
+  cancel_im_identity_challenge: cancelImIdentityChallengeHandler,
+  revoke_my_im_identity: revokeMyImIdentityHandler,
+  admin_revoke_im_identity: adminRevokeImIdentityHandler,
+  list_im_identity_bindings: listImIdentityBindingsHandler,
+  list_im_group_workspace_scopes: listImGroupWorkspaceScopesHandler,
+  set_im_group_workspace_scopes: setImGroupWorkspaceScopesHandler,
 }
 
 /** Assemble the startup handler registry from the exhaustive map. */

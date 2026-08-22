@@ -2491,7 +2491,12 @@
       "platformUnsupported": "当前版本不支持该平台。",
       "secretRequired": "启用前请先配置应用密钥。",
       "outboundNotAcknowledged": "启用前请先确认发往本机之外的内容范围。",
-      "agentRequired": "请选择厂商与 agent。"
+      "agentRequired": "请选择厂商与 agent。",
+      "identityUnavailable": "IM 身份存储不可用。",
+      "challengeNotFound": "未找到该绑定挑战。",
+      "bindingNotFound": "未找到该身份绑定。",
+      "robotNotReady": "请选择已启用且已确认外发的机器人。",
+      "notOwner": "只能管理自己的身份绑定。"
     }
   },
   "statusIndicator": {

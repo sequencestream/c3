@@ -347,6 +347,11 @@ export const UI_ERROR_CODES = {
   'robot.secretRequired': { key: 'error.robot.secretRequired' },
   'robot.outboundNotAcknowledged': { key: 'error.robot.outboundNotAcknowledged' },
   'robot.agentRequired': { key: 'error.robot.agentRequired' },
+  'robot.identityUnavailable': { key: 'error.robot.identityUnavailable' },
+  'robot.challengeNotFound': { key: 'error.robot.challengeNotFound' },
+  'robot.bindingNotFound': { key: 'error.robot.bindingNotFound' },
+  'robot.robotNotReady': { key: 'error.robot.robotNotReady' },
+  'robot.notOwner': { key: 'error.robot.notOwner' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
   'waitUserInvolve.invalidStatusTransition': {

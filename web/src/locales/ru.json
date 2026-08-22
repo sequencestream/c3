@@ -2492,7 +2492,12 @@
       "platformUnsupported": "Эта сборка не поддерживает такую платформу.",
       "secretRequired": "Перед включением укажите секрет приложения.",
       "outboundNotAcknowledged": "Перед включением подтвердите, что именно отправляется за пределы машины.",
-      "agentRequired": "Выберите вендора и агента."
+      "agentRequired": "Выберите вендора и агента.",
+      "identityUnavailable": "IM identity store is unavailable.",
+      "challengeNotFound": "That binding challenge was not found.",
+      "bindingNotFound": "That identity binding was not found.",
+      "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
+      "notOwner": "You can only manage your own identity binding."
     }
   },
   "statusIndicator": {

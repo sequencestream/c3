@@ -2492,7 +2492,12 @@
       "platformUnsupported": "このビルドはそのプラットフォームに対応していません。",
       "secretRequired": "有効化する前にアプリシークレットを設定してください。",
       "outboundNotAcknowledged": "有効化する前に、外部へ送信される内容を確認してください。",
-      "agentRequired": "ベンダーとエージェントを選択してください。"
+      "agentRequired": "ベンダーとエージェントを選択してください。",
+      "identityUnavailable": "IM identity store is unavailable.",
+      "challengeNotFound": "That binding challenge was not found.",
+      "bindingNotFound": "That identity binding was not found.",
+      "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
+      "notOwner": "You can only manage your own identity binding."
     }
   },
   "statusIndicator": {

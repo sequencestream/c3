@@ -7,12 +7,11 @@
  *  - **A robot is never enabled by accident.** `enabled` starts at 0; enabling
  *    requires credential + outbound acknowledgement.
  *  - **The app secret is only ever stored encrypted.**
- *  - **Conversation identity is four-dimensional.** `(platform, robotId,
- *    threadKey, senderId)` — different senders never share recoverable context.
+ *  - **Conversation identity includes binding + subject + scope_hash.** Different
+ *    senders never share recoverable context; binding/revoke/ACL changes cut it.
  *  - **Context bodies are bounded.** Credential shape refuse, 4000 code points,
  *    50 turns, 30-day hard delete. Audit rows still carry no body.
- *  - **Old shared sessions are cut, not migrated.** A pre-sender threads table is
- *    renamed aside; no `session_id` is copied onto a sender Conversation.
+ *  - **Old sessions without binding dimensions are cut, not migrated.**
  */
 import { randomUUID } from 'node:crypto'
 import {
@@ -65,6 +64,7 @@ export class RobotStoreError extends Error {
 // ---- Constants / clock ----
 
 const SENDER_ISOLATION_MIGRATION = 'robots.sender_isolation.v1'
+const IDENTITY_SCOPE_MIGRATION = 'robots.identity_scope.v1'
 /** Soft budget for recovery seed size (Unicode code points across all turns). */
 export const ROBOT_CONTEXT_RECOVERY_BUDGET = 80_000
 
@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS im_robot_threads (
   robot_id         TEXT NOT NULL,
   thread_key       TEXT NOT NULL,
   sender_id        TEXT NOT NULL,
+  binding_id       TEXT NOT NULL,
+  subject          TEXT NOT NULL,
+  scope_hash       TEXT NOT NULL,
   chat_id          TEXT NOT NULL,
   session_id       TEXT,
   vendor           TEXT NOT NULL,
@@ -118,7 +121,7 @@ CREATE TABLE IF NOT EXISTS im_robot_threads (
   turn_count       INTEGER NOT NULL DEFAULT 0,
   created_at       INTEGER NOT NULL,
   last_active_at   INTEGER NOT NULL,
-  PRIMARY KEY (platform, robot_id, thread_key, sender_id)
+  PRIMARY KEY (platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash)
 );`
 
 const CONTEXT_TURNS_TABLE = `
@@ -128,6 +131,9 @@ CREATE TABLE IF NOT EXISTS im_robot_context_turns (
   robot_id        TEXT NOT NULL,
   thread_key      TEXT NOT NULL,
   sender_id       TEXT NOT NULL,
+  binding_id      TEXT NOT NULL,
+  subject         TEXT NOT NULL,
+  scope_hash      TEXT NOT NULL,
   in_message_id   TEXT NOT NULL,
   status          TEXT NOT NULL
                   CHECK(status IN ('pending','committed','failed')),
@@ -140,7 +146,7 @@ CREATE TABLE IF NOT EXISTS im_robot_context_turns (
 );`
 
 const TURNS_OUTCOME_CHECK =
-  "('complete','error','blocked','timeout','guard_refused','input_rejected','busy')"
+  "('complete','error','blocked','timeout','guard_refused','input_rejected','busy','identity_required','scope_changed')"
 
 const TURNS_TABLE_BODY = `
   id             TEXT PRIMARY KEY,
@@ -171,7 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_im_robot_enabled ON im_robots(enabled);
 CREATE INDEX IF NOT EXISTS idx_im_thread_session ON im_robot_threads(session_id);
 CREATE INDEX IF NOT EXISTS idx_im_thread_idle ON im_robot_threads(last_active_at);
 CREATE INDEX IF NOT EXISTS idx_im_ctx_conversation
-  ON im_robot_context_turns(platform, robot_id, thread_key, sender_id, status, seq);
+  ON im_robot_context_turns(platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash, status, seq);
 CREATE INDEX IF NOT EXISTS idx_im_ctx_committed_at ON im_robot_context_turns(committed_at);
 CREATE INDEX IF NOT EXISTS idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC);`
@@ -311,6 +317,76 @@ function migrateTurnsOutcomeBusy(d: Db): void {
   d.exec('DROP TABLE im_robot_turns_pre_busy')
 }
 
+/**
+ * Upgrade Conversation / Context Turn / turns outcome for identity binding +
+ * scope_hash. Safe-cut: old four-dimensional threads and context bodies are not
+ * copied. Audit rows are preserved into an expanded outcome CHECK.
+ */
+function migrateIdentityScope(d: Db): void {
+  if (hasMigration(d, IDENTITY_SCOPE_MIGRATION)) return
+
+  tx(d, () => {
+    // ---- Threads: cut old PK; do not copy session_id or rows ----
+    if (tableExists(d, 'im_robot_threads')) {
+      const cols = tableColumns(d, 'im_robot_threads')
+      if (!cols.has('binding_id') || !cols.has('scope_hash')) {
+        const archive = tableExists(d, 'im_robot_threads_pre_identity')
+          ? `im_robot_threads_pre_identity_${Date.now()}`
+          : 'im_robot_threads_pre_identity'
+        d.exec(`ALTER TABLE im_robot_threads RENAME TO ${archive}`)
+        d.exec('DROP INDEX IF EXISTS idx_im_thread_session')
+        d.exec('DROP INDEX IF EXISTS idx_im_thread_idle')
+      }
+    }
+    d.exec(THREADS_TABLE)
+
+    // ---- Context turns: cut old bodies (no trusted subject) ----
+    if (tableExists(d, 'im_robot_context_turns')) {
+      const cols = tableColumns(d, 'im_robot_context_turns')
+      if (!cols.has('binding_id') || !cols.has('scope_hash')) {
+        const archive = tableExists(d, 'im_robot_context_turns_pre_identity')
+          ? `im_robot_context_turns_pre_identity_${Date.now()}`
+          : 'im_robot_context_turns_pre_identity'
+        d.exec(`ALTER TABLE im_robot_context_turns RENAME TO ${archive}`)
+        d.exec('DROP INDEX IF EXISTS idx_im_ctx_conversation')
+        d.exec('DROP INDEX IF EXISTS idx_im_ctx_committed_at')
+        // Hard-delete archived bodies after rename so plaintext cannot linger.
+        d.exec(`DROP TABLE IF EXISTS ${archive}`)
+      }
+    }
+    d.exec(CONTEXT_TURNS_TABLE)
+
+    // ---- Audit turns: widen outcome CHECK; copy all historical rows ----
+    if (tableExists(d, 'im_robot_turns')) {
+      const row = d.get<{ sql: string }>(
+        `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robot_turns'`,
+      )
+      if (!row?.sql?.includes("'identity_required'")) {
+        const archive = tableExists(d, 'im_robot_turns_pre_identity')
+          ? `im_robot_turns_pre_identity_${Date.now()}`
+          : 'im_robot_turns_pre_identity'
+        d.exec(`ALTER TABLE im_robot_turns RENAME TO ${archive}`)
+        d.exec(TURNS_TABLE_FRESH)
+        d.exec(`
+          INSERT INTO im_robot_turns
+            (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+             started_at, finished_at, outcome, reject_reason, outbound_chars,
+             out_message_id, error)
+          SELECT id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+                 started_at, finished_at, outcome, reject_reason, outbound_chars,
+                 out_message_id, error
+          FROM ${archive}
+        `)
+        d.exec(`DROP TABLE ${archive}`)
+      }
+    } else {
+      d.exec(TURNS_TABLE)
+    }
+
+    markMigration(d, IDENTITY_SCOPE_MIGRATION)
+  })
+}
+
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
   migrateSenderIsolation(d)
@@ -320,6 +396,11 @@ function ensureSchema(d: Db): void {
   d.exec(CONTEXT_TURNS_TABLE)
   d.exec(TURNS_TABLE)
   migrateTurnsOutcomeBusy(d)
+  migrateIdentityScope(d)
+  // Re-create after identity migration (tables may have been rebuilt).
+  d.exec(THREADS_TABLE)
+  d.exec(CONTEXT_TURNS_TABLE)
+  d.exec(TURNS_TABLE)
   d.exec(INDEXES)
 }
 
@@ -620,6 +701,9 @@ export interface RobotConversation {
   robotId: string
   threadKey: string
   senderId: string
+  bindingId: string
+  subject: string
+  scopeHash: string
   chatId: string
   sessionId: string | null
   vendor: VendorId
@@ -634,6 +718,9 @@ interface ConversationRow {
   robot_id: string
   thread_key: string
   sender_id: string
+  binding_id: string
+  subject: string
+  scope_hash: string
   chat_id: string
   session_id: string | null
   vendor: string
@@ -643,12 +730,30 @@ interface ConversationRow {
   last_active_at: number
 }
 
+const CONV_WHERE =
+  'platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ? AND binding_id = ? AND subject = ? AND scope_hash = ?'
+
+function convParams(id: ConversationIdentity): unknown[] {
+  return [
+    id.platform,
+    id.robotId,
+    id.threadKey,
+    id.senderId,
+    id.bindingId,
+    id.subject,
+    id.scopeHash,
+  ]
+}
+
 function toConversation(r: ConversationRow): RobotConversation {
   return {
     platform: r.platform as ImPlatform,
     robotId: r.robot_id,
     threadKey: r.thread_key,
     senderId: r.sender_id,
+    bindingId: r.binding_id,
+    subject: r.subject,
+    scopeHash: r.scope_hash,
     chatId: r.chat_id,
     sessionId: r.session_id,
     vendor: r.vendor as VendorId,
@@ -663,12 +768,8 @@ export function getConversation(id: ConversationIdentity): RobotConversation | n
   const d = db()
   if (!d) return null
   const row = d.get<ConversationRow>(
-    `SELECT * FROM im_robot_threads
-     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
-    id.platform,
-    id.robotId,
-    id.threadKey,
-    id.senderId,
+    `SELECT * FROM im_robot_threads WHERE ${CONV_WHERE}`,
+    ...convParams(id),
   )
   return row ? toConversation(row) : null
 }
@@ -682,13 +783,16 @@ function ensureConversation(
   if (!existing) {
     d.run(
       `INSERT INTO im_robot_threads
-         (platform, robot_id, thread_key, sender_id, chat_id, session_id, vendor,
-          context_revision, turn_count, created_at, last_active_at)
-       VALUES (?,?,?,?,?,NULL,?,0,0,?,?)`,
+         (platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash,
+          chat_id, session_id, vendor, context_revision, turn_count, created_at, last_active_at)
+       VALUES (?,?,?,?,?,?,?,?,NULL,?,0,0,?,?)`,
       input.platform,
       input.robotId,
       input.threadKey,
       input.senderId,
+      input.bindingId,
+      input.subject,
+      input.scopeHash,
       input.chatId,
       input.vendor,
       t,
@@ -699,6 +803,9 @@ function ensureConversation(
       robotId: input.robotId,
       threadKey: input.threadKey,
       senderId: input.senderId,
+      bindingId: input.bindingId,
+      subject: input.subject,
+      scopeHash: input.scopeHash,
       chatId: input.chatId,
       sessionId: null,
       vendor: input.vendor,
@@ -709,14 +816,10 @@ function ensureConversation(
     }
   }
   d.run(
-    `UPDATE im_robot_threads SET chat_id = ?, last_active_at = ?
-     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+    `UPDATE im_robot_threads SET chat_id = ?, last_active_at = ? WHERE ${CONV_WHERE}`,
     input.chatId,
     t,
-    input.platform,
-    input.robotId,
-    input.threadKey,
-    input.senderId,
+    ...convParams(input),
   )
   return { ...existing, chatId: input.chatId, lastActiveAt: t }
 }
@@ -735,6 +838,55 @@ export type ClaimResult =
   | { kind: 'claimed'; conversation: RobotConversation; contextTurnId: string }
   | { kind: 'busy' }
 
+const UNBOUND_SENTINEL = '_'
+
+/**
+ * Dedup-only claim for identity-gate messages (no recoverable Conversation).
+ * Inserts a failed context row with sentinel binding fields.
+ */
+export function claimGateMessage(input: {
+  platform: ImPlatform
+  robotId: string
+  threadKey: string
+  senderId: string
+  messageId: string
+}): 'duplicate' | 'claimed' {
+  const d = requireDb()
+  return tx(d, () => {
+    const already = d.get<{ n: number }>(
+      `SELECT 1 AS n FROM im_robot_context_turns
+       WHERE platform = ? AND robot_id = ? AND in_message_id = ?`,
+      input.platform,
+      input.robotId,
+      input.messageId,
+    )
+    if (already) return 'duplicate'
+    try {
+      d.run(
+        `INSERT INTO im_robot_context_turns
+           (id, platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash,
+            in_message_id, status, user_text, assistant_text, seq, committed_at, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,'failed','','',NULL,NULL,?)`,
+        randomUUID(),
+        input.platform,
+        input.robotId,
+        input.threadKey,
+        input.senderId,
+        UNBOUND_SENTINEL,
+        UNBOUND_SENTINEL,
+        UNBOUND_SENTINEL,
+        input.messageId,
+        now(),
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/UNIQUE/i.test(msg)) return 'duplicate'
+      throw err
+    }
+    return 'claimed'
+  })
+}
+
 /**
  * Atomically claim an inbound messageId for one Conversation. Duplicate
  * (platform, robotId, messageId) returns `duplicate` without a second run or
@@ -742,17 +894,15 @@ export type ClaimResult =
  * the messageId as a failed row for dedup only — does not heal orphans or
  * clear the live session cache.
  */
-export function claimInboundMessage(input: {
-  platform: ImPlatform
-  robotId: string
-  threadKey: string
-  senderId: string
-  chatId: string
-  vendor: VendorId
-  messageId: string
-  /** Default true. False = busy-path dedup claim (failed row, no orphan heal). */
-  forRun?: boolean
-}): ClaimResult {
+export function claimInboundMessage(
+  input: ConversationIdentity & {
+    chatId: string
+    vendor: VendorId
+    messageId: string
+    /** Default true. False = busy-path dedup claim (failed row, no orphan heal). */
+    forRun?: boolean
+  },
+): ClaimResult {
   const d = requireDb()
   const forRun = input.forRun !== false
   return tx(d, () => {
@@ -768,17 +918,10 @@ export function claimInboundMessage(input: {
     if (already) return { kind: 'duplicate' }
 
     if (forRun) {
-      // Orphan pending (e.g. crash without restart) blocks the Conversation —
-      // fail it and clear the native session cache before claiming anew.
-      // Live serialization is the in-memory gate; this only heals DB leftovers.
       const orphan = d.get<{ id: string }>(
         `SELECT id FROM im_robot_context_turns
-         WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
-           AND status = 'pending'`,
-        input.platform,
-        input.robotId,
-        input.threadKey,
-        input.senderId,
+         WHERE ${CONV_WHERE} AND status = 'pending'`,
+        ...convParams(input),
       )
       if (orphan) {
         d.run(
@@ -789,12 +932,9 @@ export function claimInboundMessage(input: {
         )
         d.run(
           `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
-           WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+           WHERE ${CONV_WHERE}`,
           now(),
-          input.platform,
-          input.robotId,
-          input.threadKey,
-          input.senderId,
+          ...convParams(input),
         )
       }
     }
@@ -804,14 +944,17 @@ export function claimInboundMessage(input: {
     try {
       d.run(
         `INSERT INTO im_robot_context_turns
-           (id, platform, robot_id, thread_key, sender_id, in_message_id, status,
-            user_text, assistant_text, seq, committed_at, created_at)
-         VALUES (?,?,?,?,?,?,?,'','',NULL,NULL,?)`,
+           (id, platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash,
+            in_message_id, status, user_text, assistant_text, seq, committed_at, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,'','',NULL,NULL,?)`,
         id,
         input.platform,
         input.robotId,
         input.threadKey,
         input.senderId,
+        input.bindingId,
+        input.subject,
+        input.scopeHash,
         input.messageId,
         status,
         now(),
@@ -822,7 +965,6 @@ export function claimInboundMessage(input: {
       throw err
     }
     if (!forRun) return { kind: 'busy' }
-    // Re-read after possible session clear.
     const fresh = getConversation(input) ?? conversation
     return { kind: 'claimed', conversation: fresh, contextTurnId: id }
   })
@@ -836,8 +978,12 @@ function failStalePendingContextTurns(d: Db): void {
     robot_id: string
     thread_key: string
     sender_id: string
+    binding_id: string
+    subject: string
+    scope_hash: string
   }>(
-    `SELECT id, platform, robot_id, thread_key, sender_id FROM im_robot_context_turns WHERE status = 'pending'`,
+    `SELECT id, platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash
+     FROM im_robot_context_turns WHERE status = 'pending'`,
   )
   if (pending.length === 0) return
   tx(d, () => {
@@ -850,12 +996,15 @@ function failStalePendingContextTurns(d: Db): void {
       )
       d.run(
         `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
-         WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+         WHERE ${CONV_WHERE}`,
         now(),
         row.platform,
         row.robot_id,
         row.thread_key,
         row.sender_id,
+        row.binding_id,
+        row.subject,
+        row.scope_hash,
       )
     }
   })
@@ -869,9 +1018,13 @@ export function failContextTurn(contextTurnId: string): void {
       robot_id: string
       thread_key: string
       sender_id: string
+      binding_id: string
+      subject: string
+      scope_hash: string
       status: string
     }>(
-      'SELECT platform, robot_id, thread_key, sender_id, status FROM im_robot_context_turns WHERE id = ?',
+      `SELECT platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash, status
+       FROM im_robot_context_turns WHERE id = ?`,
       contextTurnId,
     )
     if (!row || row.status !== 'pending') return
@@ -883,12 +1036,15 @@ export function failContextTurn(contextTurnId: string): void {
     )
     d.run(
       `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
-       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+       WHERE ${CONV_WHERE}`,
       now(),
       row.platform,
       row.robot_id,
       row.thread_key,
       row.sender_id,
+      row.binding_id,
+      row.subject,
+      row.scope_hash,
     )
   })
 }
@@ -912,22 +1068,31 @@ export function commitContextTurn(input: {
       robot_id: string
       thread_key: string
       sender_id: string
+      binding_id: string
+      subject: string
+      scope_hash: string
       status: string
     }>(
-      'SELECT platform, robot_id, thread_key, sender_id, status FROM im_robot_context_turns WHERE id = ?',
+      `SELECT platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash, status
+       FROM im_robot_context_turns WHERE id = ?`,
       input.contextTurnId,
     )
     if (!row || row.status !== 'pending') return
 
+    const identity: ConversationIdentity = {
+      platform: row.platform as ImPlatform,
+      robotId: row.robot_id,
+      threadKey: row.thread_key,
+      senderId: row.sender_id,
+      bindingId: row.binding_id,
+      subject: row.subject,
+      scopeHash: row.scope_hash,
+    }
     const t = now()
     const maxSeq = d.get<{ m: number | null }>(
       `SELECT MAX(seq) AS m FROM im_robot_context_turns
-       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
-         AND status = 'committed'`,
-      row.platform,
-      row.robot_id,
-      row.thread_key,
-      row.sender_id,
+       WHERE ${CONV_WHERE} AND status = 'committed'`,
+      ...convParams(identity),
     )
     const seq = (maxSeq?.m ?? 0) + 1
 
@@ -948,48 +1113,32 @@ export function commitContextTurn(input: {
              context_revision = context_revision + 1,
              turn_count = turn_count + 1,
              last_active_at = ?
-       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+       WHERE ${CONV_WHERE}`,
       input.sessionId,
       input.vendor,
       t,
-      row.platform,
-      row.robot_id,
-      row.thread_key,
-      row.sender_id,
+      ...convParams(identity),
     )
 
-    pruneConversationContext(d, {
-      platform: row.platform as ImPlatform,
-      robotId: row.robot_id,
-      threadKey: row.thread_key,
-      senderId: row.sender_id,
-    })
+    pruneConversationContext(d, identity)
   })
 }
 
 function pruneConversationContext(d: Db, id: ConversationIdentity): void {
   const cutoff = now() - ROBOT_CONTEXT_RETENTION_MS
-  // Time first: delete expired complete turns (exactly 30 days still kept).
   d.run(
     `DELETE FROM im_robot_context_turns
-     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+     WHERE ${CONV_WHERE}
        AND status = 'committed' AND committed_at IS NOT NULL AND committed_at < ?`,
-    id.platform,
-    id.robotId,
-    id.threadKey,
-    id.senderId,
+    ...convParams(id),
     cutoff,
   )
 
   const committed = d.all<{ id: string; seq: number }>(
     `SELECT id, seq FROM im_robot_context_turns
-     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
-       AND status = 'committed'
+     WHERE ${CONV_WHERE} AND status = 'committed'
      ORDER BY seq ASC, id ASC`,
-    id.platform,
-    id.robotId,
-    id.threadKey,
-    id.senderId,
+    ...convParams(id),
   )
   const overflow = committed.length - ROBOT_CONTEXT_MAX_TURNS
   if (overflow <= 0) return
@@ -997,15 +1146,10 @@ function pruneConversationContext(d: Db, id: ConversationIdentity): void {
   for (const row of toDelete) {
     d.run('DELETE FROM im_robot_context_turns WHERE id = ?', row.id)
   }
-  // Keep turn_count aligned with remaining committed rows.
   d.run(
-    `UPDATE im_robot_threads SET turn_count = ?
-     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+    `UPDATE im_robot_threads SET turn_count = ? WHERE ${CONV_WHERE}`,
     committed.length - overflow,
-    id.platform,
-    id.robotId,
-    id.threadKey,
-    id.senderId,
+    ...convParams(id),
   )
 }
 
@@ -1024,13 +1168,9 @@ export function loadCommittedContext(id: ConversationIdentity): CommittedContext
       committed_at: number
     }>(
       `SELECT user_text, assistant_text, seq, committed_at FROM im_robot_context_turns
-       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
-         AND status = 'committed'
+       WHERE ${CONV_WHERE} AND status = 'committed'
        ORDER BY seq ASC, id ASC`,
-      id.platform,
-      id.robotId,
-      id.threadKey,
-      id.senderId,
+      ...convParams(id),
     )
     const turns: CommittedContextTurn[] = rows.map((r) => ({
       userText: r.user_text,

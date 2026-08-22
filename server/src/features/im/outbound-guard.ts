@@ -10,7 +10,8 @@
  * accept snapshot):
  *   1. robot still enabled and outboundAckAt recorded
  *   2. target is still the inbound chat; group/DM allowlists still pass
- *   3. content is a final answer or a registered fixed notice
+ *      (`binding_notice` in p2p may skip dmMode/dmAllowlist only)
+ *   3. content is a final answer, registered fixed notice, or binding_notice
  *   4. final answers: credential shape refuse → swap to intercept notice (no
  *      recursive credential scan); all texts truncated to the platform limit
  *   5. rawSend; callers audit from the result (success / refuse / send failure)
@@ -35,12 +36,43 @@ export const FIXED_NOTICES = {
   store_unavailable: '机器人存储不可用,本回合未启动。',
   input_rejected_credential: '疑似凭据,未处理也未保存。',
   input_rejected_too_long: '消息过长,未处理也未保存。',
+  identity_required:
+    '请先在 c3 Web 的个人设置里发起 IM 身份绑定,再把一次性验证码发到与本机器人的私聊。',
+  bind_use_dm: '请在与本机器人的私聊中完成身份绑定,群内无法验证。',
+  bind_failed: '绑定未成功。请到 c3 Web 重新发起挑战,并在私聊中提交完整验证码。',
+  bind_success: '身份绑定已生效。之后即可向我询问你有权查看的 c3 台账内容。',
+  scope_changed: '权限已变化,请重试。',
 } as const
 
 export type FixedNoticeId = keyof typeof FIXED_NOTICES
 
+/** Binding-control notices that may use the narrow dmMode exemption in p2p. */
+export const BINDING_NOTICE_IDS = [
+  'identity_required',
+  'bind_use_dm',
+  'bind_failed',
+  'bind_success',
+  'scope_changed',
+] as const satisfies readonly FixedNoticeId[]
+
+export type BindingNoticeId = (typeof BINDING_NOTICE_IDS)[number]
+
+export function isBindingNoticeId(id: FixedNoticeId): id is BindingNoticeId {
+  return (BINDING_NOTICE_IDS as readonly string[]).includes(id)
+}
+
 export type OutboundContent =
-  { category: 'final_answer'; text: string } | { category: 'fixed_notice'; notice: FixedNoticeId }
+  | { category: 'final_answer'; text: string }
+  | { category: 'fixed_notice'; notice: FixedNoticeId }
+  | {
+      category: 'binding_notice'
+      notice: BindingNoticeId
+      /**
+       * Must equal the inbound that triggered the control path. Callers cannot
+       * retarget chat/sender/replyTo.
+       */
+      origin: OutboundTarget
+    }
 
 export type OutboundTarget = {
   chatId: string
@@ -57,6 +89,8 @@ export type GuardRefuseReason =
   | 'outbound_not_acknowledged'
   | 'chat_not_allowed'
   | 'dm_not_allowed'
+  | 'binding_target_mismatch'
+  | 'binding_not_p2p'
   | 'credential'
   | 'empty'
   | 'send_failed'
@@ -116,6 +150,7 @@ function errText(err: unknown): string {
 export function outboundTargetAllowed(
   robot: ImRobot,
   target: OutboundTarget,
+  opts?: { skipDmAllowlist?: boolean },
 ): GuardRefuseReason | null {
   if (target.chatType === 'group') {
     if (robot.chatAllowlist.length > 0 && !robot.chatAllowlist.includes(target.chatId)) {
@@ -123,6 +158,7 @@ export function outboundTargetAllowed(
     }
     return null
   }
+  if (opts?.skipDmAllowlist) return null
   if (robot.dmMode === 'disabled') return 'dm_not_allowed'
   if (robot.dmMode === 'allowlist' && !robot.dmAllowlist.includes(target.senderId)) {
     return 'dm_not_allowed'
@@ -148,6 +184,15 @@ async function deliverRaw(input: GuardedSendInput, text: string): Promise<Guarde
   }
 }
 
+function sameOrigin(a: OutboundTarget, b: OutboundTarget): boolean {
+  return (
+    a.chatId === b.chatId &&
+    a.chatType === b.chatType &&
+    a.senderId === b.senderId &&
+    a.replyTo === b.replyTo
+  )
+}
+
 /**
  * Decide and (when allowed) deliver. Returns what actually happened so the
  * caller can write one accurate audit row — never retry on audit failure here.
@@ -156,8 +201,24 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
   const robot = getRobot(input.robotId)
   const ready = readinessRefuse(robot)
   if (ready) return { ok: false, reason: ready, outboundChars: 0 }
-  // robot is non-null when ready is null
   const live = robot!
+
+  if (input.content.category === 'binding_notice') {
+    const isGroupGuide = input.content.notice === 'bind_use_dm'
+    if (!isGroupGuide && input.target.chatType !== 'p2p') {
+      return { ok: false, reason: 'binding_not_p2p', outboundChars: 0 }
+    }
+    if (!sameOrigin(input.target, input.content.origin)) {
+      return { ok: false, reason: 'binding_target_mismatch', outboundChars: 0 }
+    }
+    // Narrow exemption: skip dmMode/dmAllowlist for p2p binding notices only.
+    const skipDm = input.target.chatType === 'p2p'
+    const targetRefuse = outboundTargetAllowed(live, input.target, { skipDmAllowlist: skipDm })
+    if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
+    const body = truncateVisible(FIXED_NOTICES[input.content.notice], input.maxOutboundChars)
+    return deliverRaw(input, body)
+  }
+
   const targetRefuse = outboundTargetAllowed(live, input.target)
   if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
 
@@ -168,7 +229,6 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
 
   const screened = screenOutbound(input.content.text, input.maxOutboundChars)
   if (!screened.ok) {
-    // Intercept notice: truncation + target rules only — no credential re-scan.
     const notice = truncateVisible(FIXED_NOTICES.guard_refused, input.maxOutboundChars)
     const delivered = await deliverRaw(input, notice)
     if (delivered.ok) {

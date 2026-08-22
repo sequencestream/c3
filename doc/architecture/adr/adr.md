@@ -68,3 +68,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0046](0046-im-robot-outbound-authorization.md) · accepted — IM 聊天机器人:进程内出站长连接 + 外发授权四重表达(默认关闭、启用前确认、仅管理员、逐次审计)+ 只发最终文本 + 无人值守会话不得挂起
 - [0047](0047-robot-local-reads-scoped-to-run-root.md) · accepted — 聊天机器人本地文件读取限定运行根:每回合冻结运行根 + 真实路径裁决 + 描述表无默认开放 + 门/执行前钩子双重强制 + 无条件进程隔离
 - [0048](0048-robot-im-context-as-bounded-local-persistence.md) · accepted — 发送者隔离且有界的机器人 IM 可见上下文是允许的本地持久化例外(四维归属 + 成对结构 + 凭据拒绝 + 码点/回合上限 + 30 天硬删);有限取代 ADR-0045 对转录禁存的禁止;旧群级共享会话安全切断
+- [0049](0049-im-identity-binding-and-call-level-scope.md) · accepted — IM 身份绑定与调用级工作区作用域(Web→私聊一次性绑定 + 每次工具调用求交 + scope_hash 切断旧上下文);与 ADR-0044 外部 MCP 连接钉定并列、不共用语义

@@ -140,7 +140,11 @@ export interface LaunchRunDeps {
    * silent downgrade of an externally-driven turn into a write-capable run
    * carrying the work session's tool face (ADR-0046).
    */
-  robotProfile?: (workspacePath: string, robotId: string) => RobotProfile
+  robotProfile?: (
+    workspacePath: string,
+    robotId: string,
+    imAuth: SessionRuntime['robotImAuth'],
+  ) => RobotProfile
   /**
    * Discussion-research launch profile (read-only `discussion-research` gate +
    * disallowed-tools lock + research system prompt), injected at the composition
@@ -368,7 +372,9 @@ export async function launchRun(
   const resolvedResearchProfile =
     isResearch && deps.researchProfile ? deps.researchProfile(workspacePath) : undefined
   const resolvedRobotProfile =
-    isRobot && deps.robotProfile ? deps.robotProfile(workspacePath, rt.robotId!) : undefined
+    isRobot && deps.robotProfile
+      ? deps.robotProfile(workspacePath, rt.robotId!, rt.robotImAuth)
+      : undefined
   // Resolve the work-session base MCP profile once (publish_event + the two
   // workspace-memory tools), for `work` sessions only. Both the claude path and
   // the driver path consume it.

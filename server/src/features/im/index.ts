@@ -25,7 +25,22 @@ import {
   setRobotEnabled,
   updateRobot,
 } from './robot-store.js'
+import {
+  IdentityStoreError,
+  adminRevokeBinding,
+  cancelChallenge,
+  createChallenge,
+  getMyActiveBinding,
+  getMyPendingChallenge,
+  isNoAuthDeployment,
+  listActiveBindings,
+  listGroupWorkspaceScopes,
+  revokeMyBinding,
+  setGroupWorkspaceScopes,
+  isIdentityStoreAvailable,
+} from './identity-store.js'
 import { reloadRobot, robotConnectionStatus } from './supervisor.js'
+import { resolveAuthSubject } from '../auth/authorization.js'
 
 /** Map a store refusal onto the wire error vocabulary. */
 const ERROR_CODES: Record<RobotStoreError['code'], UiErrorCode> = {
@@ -36,6 +51,16 @@ const ERROR_CODES: Record<RobotStoreError['code'], UiErrorCode> = {
   platform_unsupported: 'robot.platformUnsupported',
   secret_required: 'robot.secretRequired',
   outbound_not_acknowledged: 'robot.outboundNotAcknowledged',
+}
+
+const IDENTITY_ERROR_CODES: Record<IdentityStoreError['code'], UiErrorCode> = {
+  db_unavailable: 'robot.identityUnavailable',
+  robot_not_ready: 'robot.robotNotReady',
+  not_found: 'robot.challengeNotFound',
+  not_owner: 'robot.notOwner',
+  conflict: 'robot.bindingNotFound',
+  rate_limited: 'robot.identityUnavailable',
+  invalid: 'robot.identityUnavailable',
 }
 
 /**
@@ -146,4 +171,147 @@ export const setRobotEnabledHandler: Handler<'set_robot_enabled'> = (_ctx, conn,
 export const listRobotTurnsHandler: Handler<'list_robot_turns'> = (_ctx, conn, msg) => {
   if (!requireAdmin(conn)) return
   conn.send({ type: 'robot_turns', robotId: msg.robotId, turns: listTurns(msg.robotId) })
+}
+
+function identityGuarded(conn: Conn, run: () => void): void {
+  try {
+    run()
+  } catch (err) {
+    if (err instanceof IdentityStoreError) {
+      conn.send({ type: 'error', error: { code: IDENTITY_ERROR_CODES[err.code] } })
+      return
+    }
+    throw err
+  }
+}
+
+export const getMyImIdentityHandler: Handler<'get_my_im_identity'> = (_ctx, conn) => {
+  if (!isIdentityStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'robot.identityUnavailable' } })
+    return
+  }
+  const subject = resolveAuthSubject(conn.subject)
+  conn.send({
+    type: 'my_im_identity',
+    binding: getMyActiveBinding(subject),
+    pendingChallenge: getMyPendingChallenge(subject),
+    noAuthLocalHint: isNoAuthDeployment(),
+  })
+}
+
+export const createImIdentityChallengeHandler: Handler<'create_im_identity_challenge'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!isIdentityStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'robot.identityUnavailable' } })
+    return
+  }
+  identityGuarded(conn, () => {
+    const challenge = createChallenge(conn.subject, msg.robotId)
+    conn.send({ type: 'im_identity_challenge_created', challenge })
+    // Refresh summary without the token.
+    conn.send({
+      type: 'my_im_identity',
+      binding: getMyActiveBinding(conn.subject),
+      pendingChallenge: getMyPendingChallenge(conn.subject),
+      noAuthLocalHint: isNoAuthDeployment(),
+    })
+  })
+}
+
+export const cancelImIdentityChallengeHandler: Handler<'cancel_im_identity_challenge'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  identityGuarded(conn, () => {
+    cancelChallenge(conn.subject, msg.challengeId)
+    conn.send({
+      type: 'my_im_identity',
+      binding: getMyActiveBinding(conn.subject),
+      pendingChallenge: getMyPendingChallenge(conn.subject),
+      noAuthLocalHint: isNoAuthDeployment(),
+    })
+  })
+}
+
+export const revokeMyImIdentityHandler: Handler<'revoke_my_im_identity'> = (_ctx, conn, msg) => {
+  identityGuarded(conn, () => {
+    revokeMyBinding(conn.subject, msg.bindingId)
+    conn.send({
+      type: 'my_im_identity',
+      binding: null,
+      pendingChallenge: getMyPendingChallenge(conn.subject),
+      noAuthLocalHint: isNoAuthDeployment(),
+    })
+  })
+}
+
+export const adminRevokeImIdentityHandler: Handler<'admin_revoke_im_identity'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!requireAdmin(conn)) return
+  identityGuarded(conn, () => {
+    adminRevokeBinding(conn.subject, msg.bindingId, msg.reason)
+    conn.send({ type: 'im_identity_bindings', bindings: listActiveBindings() })
+  })
+}
+
+export const listImIdentityBindingsHandler: Handler<'list_im_identity_bindings'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!requireAdmin(conn)) return
+  if (!isIdentityStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'robot.identityUnavailable' } })
+    return
+  }
+  conn.send({
+    type: 'im_identity_bindings',
+    bindings: listActiveBindings(msg.accountNamespace),
+  })
+}
+
+export const listImGroupWorkspaceScopesHandler: Handler<'list_im_group_workspace_scopes'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!requireAdmin(conn)) return
+  conn.send({
+    type: 'im_group_workspace_scopes',
+    platform: msg.platform,
+    providerAccountKey: msg.providerAccountKey,
+    chatId: msg.chatId,
+    grants: listGroupWorkspaceScopes(msg.platform, msg.providerAccountKey, msg.chatId),
+  })
+}
+
+export const setImGroupWorkspaceScopesHandler: Handler<'set_im_group_workspace_scopes'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!requireAdmin(conn)) return
+  identityGuarded(conn, () => {
+    const grants = setGroupWorkspaceScopes(
+      conn.subject,
+      msg.platform,
+      msg.providerAccountKey,
+      msg.chatId,
+      msg.workspaceNames,
+    )
+    conn.send({
+      type: 'im_group_workspace_scopes',
+      platform: msg.platform,
+      providerAccountKey: msg.providerAccountKey,
+      chatId: msg.chatId,
+      grants,
+    })
+  })
 }

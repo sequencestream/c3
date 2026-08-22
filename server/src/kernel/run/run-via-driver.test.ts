@@ -184,6 +184,7 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
       sessionId: 'run-9',
       workspacePath: '/w',
       sessionKind: 'intent',
+      initiatedBySubject: null,
     })
     expect(order).toEqual(['hook', 'emit'])
     expect(d.emit).toHaveBeenCalledWith('run-9', {

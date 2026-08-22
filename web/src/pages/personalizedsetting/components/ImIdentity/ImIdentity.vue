@@ -222,7 +222,7 @@ function confirmRevoke(): void {
 
 <style scoped>
 .im-warn {
-  color: var(--c-warning, #b45309);
+  color: var(--c-warning-text);
 }
 .im-reveal,
 .im-bound,

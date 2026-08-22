@@ -53,6 +53,7 @@ function makeCtx(opts: { connected?: boolean } = {}) {
     settingsOpen: ref(false),
     personalizedSettingOpen: ref(false),
     myMcpApiKeyCreated: ref<{ meta: McpApiKeyMeta; key: string } | null>(null),
+    imIdentityChallengeCreated: ref(null),
     personalizedSettings: ref<PersonalizedSettings>({ uiLang: 'en', theme: 'dark' }),
     workspaceSettingOpen: ref(false),
     currentWorkspace: ref<string | null>(null),
@@ -68,6 +69,7 @@ function makeCtx(opts: { connected?: boolean } = {}) {
     reloadWorkcenter: vi.fn(),
     persistViewMode: vi.fn(),
     onSelectTab: vi.fn(),
+    loadRobots: vi.fn(),
   } as unknown as AppCtx
   installSettingsActions(ctx)
   return { ctx, sent, showToast }
@@ -123,7 +125,11 @@ describe('openPersonalizedSetting', () => {
     const { ctx, sent } = makeCtx()
     ctx.openPersonalizedSetting()
     expect(ctx.personalizedSettingOpen.value).toBe(true)
-    expect(sent.map((m) => m.type)).toEqual(['get_personalized_settings', 'list_my_mcp_api_keys'])
+    expect(sent.map((m) => m.type)).toEqual([
+      'get_personalized_settings',
+      'list_my_mcp_api_keys',
+      'get_my_im_identity',
+    ])
   })
 
   it('drops a still-revealed plaintext key, so opening the page never re-shows one', () => {

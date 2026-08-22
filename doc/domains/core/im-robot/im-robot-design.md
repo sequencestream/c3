@@ -70,8 +70,9 @@ _即使已经显式提供了 agent_。导出了代理变量的机器因此完全
 
 只有最终 assistant 文本离开这一层,其余线事件在此被丢弃——这就是「只发最终回答」的结构性保证。
 
-supervisor 在启动回合前按四维 Conversation 身份认领消息、加载已提交上下文,并把可选的已验证原生
-会话引用或数据库恢复种子交给回合执行体。投递成功后同事务提交 Context Turn;失败则清空正文并失效
+supervisor 在启动回合前按七维 Conversation 身份认领消息、校验 `scope_hash`、加载已提交上下文,并把可选的已验证原生
+会话引用或数据库恢复种子交给回合执行体。最终回答发送前再复核 binding 与 scope;不一致则丢弃 agent 文本,
+只发绑定引导或 `scope_changed` 提示。投递成功后同事务提交 Context Turn;失败则清空正文并失效
 原生会话缓存。
 
 机器人身份挂在运行时上(与规格评审挂载被评审意图同理),其启动画像由该身份解析而来;缺身份或缺画像
@@ -120,10 +121,11 @@ claude 配置目录 + vendor 认证挂载。隔离建立失败以安全错误结
 
 ## c3 MCP 回环绑定
 
-机器人回合与自动化共用同一套框架无关的工具构造器(`buildAutomationC3Tools`);差异在绑定方式。
-自动化在每次执行时经 `transport/automation-mcp` 绑定;机器人经 `transport/robot-mcp`——同一回环
-流式 HTTP 路径(`/internal/robot-mcp/v1`),每次绑定颁发一次性令牌,回环外源被拒,
-`enabledTools` 精确等于勾选子集,dispose 时先吊销令牌再关连接,URL 随即 404。
+机器人回合与自动化共用同一套框架无关的工具构造器;L1 只读子集由 `buildRobotL1Tools` 在每次 handler
+执行时注入调用级授权上下文。自动化在每次执行时经 `transport/automation-mcp` 绑定单一工作区;机器人经
+`transport/robot-mcp`——同一回环流式 HTTP 路径(`/internal/robot-mcp/v1`),每次绑定颁发一次性令牌,
+回环外源被拒,`enabledTools` 精确等于勾选子集,dispose 时先吊销令牌再关连接,URL 随即 404。传输层只
+携带不可伪造的 IM 上下文与 binding id,不在 initialize 时钉定 `workspacePath`。
 
 启动依赖的构造顺序里存在一个「launchDeps ↔ robotMcp」环,靠惰性取值器解开:robotMcp 先于 launchDeps
 创建,工具处理器经 `() => c3McpDeps` 在回合真正运行时才解析依赖。运行 id 也按取值器延迟解析——
@@ -137,5 +139,6 @@ Conversation 的下一条消息可带着上次绑定的原生会话 id 进入,�
 
 ## 存储与配置
 
-四张表在 `robots` 模块下,由 store 在首次访问时惰性、幂等地建表(与全库一致的收敛方式)。密钥经既有的
-配置加密落库,读取只经一个专用访问器,其余读路径只见到「是否已配置」。
+`robots` 模块下除机器人/线程/上下文/审计四表外,还有 IM 身份绑定、一次性挑战、群工作区白名单与授权
+审计表(`database/robots/` 与 `database/auth/` 边界)。均由 store 在首次访问时惰性、幂等地建表(与全库
+一致的收敛方式)。密钥经既有的配置加密落库,读取只经一个专用访问器,其余读路径只见到「是否已配置」。

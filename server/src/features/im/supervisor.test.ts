@@ -692,4 +692,19 @@ describe('identity gate and bind-control path', () => {
     await settle()
     expect(sent).toHaveLength(1)
   })
+
+  it('ignores a group token when requireMention is on and the bot was not mentioned', async () => {
+    const id = await boot({}, { bind: false })
+    const ch = createChallenge('tester', id)
+    push(
+      message({
+        messageId: 'm-group-token-silent',
+        text: ch.token,
+        mentionedBot: false,
+      }),
+    )
+    await settle()
+    expect(sent).toEqual([])
+    expect(listTurns(id)).toEqual([])
+  })
 })

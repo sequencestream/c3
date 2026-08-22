@@ -32,13 +32,14 @@ Robot 上回传,从不落库。
 
 ## Conversation
 
-一条发送者隔离的持续对话,身份是 `(platform, robotId, threadKey, senderId)`。
+一条发送者隔离的持续对话,身份是 `(platform, robotId, threadKey, senderId, bindingId, subject, scope_hash)`。
+
+`bindingId` / `subject` 来自 active IM 身份绑定;`scope_hash` 是对当次详细可见工作区集合与授权版本的不可逆摘要,不是权限凭据。绑定、撤销或 scope 变化后旧键不可恢复 Context Turn 或原生 `sessionId`,即使工作区集合后来恢复为相同内容。
 
 `threadKey` 是平台中性的线程身份,由归一化规则得出,优先级为:平台原生话题 → 回复链根 → 会话本身。
 三者各带前缀,因此一个会话 id 不会与另一个会话的话题 id 相撞。
 
-`senderId` 是平台提供的不透明外部标识,只在所属平台、机器人与线程内有意义;不是 c3 用户,不跨平台
-合并。同一群、同一线程、不同发送者是不同 Conversation,互不可读、不可恢复、不可覆盖。
+`senderId` 是平台提供的不透明外部标识,只在所属平台、机器人与线程内有意义;经 IM 身份绑定映射为 c3 `subject`,不跨平台合并。同一群、同一线程、不同发送者是不同 Conversation,互不可读、不可恢复、不可覆盖。
 
 `sessionId` 可空——原生厂商会话只是续接缓存,且必须与 Conversation 的 `vendor`、已提交修订一致才可
 使用。缓存缺失或 vendor 变更时,从数据库已提交 Context Turn 恢复。`contextRevision` 随每次成功提交
@@ -69,6 +70,8 @@ Robot 上回传,从不落库。
 - `timeout` —— 墙钟到点
 - `guard_refused` —— 出站守卫拒绝(凭据形状命中是其中一种原因);若改发了固定拦截提示,记该提示的实际长度
 - `input_rejected` —— 入站凭据或超长守卫拒绝;封闭原因在 `rejectReason`(`credential` | `too_long`)
+- `identity_required` —— 未绑定或绑定失效,只发送固定绑定引导,未启动 agent run
+- `scope_changed` —— 回合进行中授权版本变化,丢弃 agent 最终文本,只发送固定权限变化提示
 - `busy` —— 同一 Conversation 已有在途回合,未启动 agent run,但发送了忙碌提示
 
 后几种同样留痕:一次没发出去的外发尝试,和一次成功的外发一样值得被看见。

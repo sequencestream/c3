@@ -26,8 +26,8 @@ import { redactSecrets } from '../pr-events/tool-defs.js'
 import { getRobot } from './robot-store.js'
 import type { ImOutbound } from './types.js'
 
-/** Fixed control prompts. Bodies are registered here so free text cannot sneak in. */
-export const FIXED_NOTICES = {
+/** Ordinary fixed control prompts — not binding/identity notices. */
+export const GENERAL_FIXED_NOTICES = {
   timeout: '这个问题处理超时了,已经中止。',
   blocked: '这一步需要人工授权,我在群里无法完成。请到 c3 中继续。',
   error: '处理时出错了,请到 c3 会话中查看详情。',
@@ -36,6 +36,10 @@ export const FIXED_NOTICES = {
   store_unavailable: '机器人存储不可用,本回合未启动。',
   input_rejected_credential: '疑似凭据,未处理也未保存。',
   input_rejected_too_long: '消息过长,未处理也未保存。',
+} as const
+
+/** Binding-control notices — only via `binding_notice`, never `fixed_notice`. */
+export const BINDING_FIXED_NOTICES = {
   identity_required:
     '请先在 c3 Web 的个人设置里发起 IM 身份绑定,再把一次性验证码发到与本机器人的私聊。',
   bind_use_dm: '请在与本机器人的私聊中完成身份绑定,群内无法验证。',
@@ -44,26 +48,24 @@ export const FIXED_NOTICES = {
   scope_changed: '权限已变化,请重试。',
 } as const
 
-export type FixedNoticeId = keyof typeof FIXED_NOTICES
+/** All registered notice bodies (lookup only — category picks the send path). */
+export const FIXED_NOTICES = { ...GENERAL_FIXED_NOTICES, ...BINDING_FIXED_NOTICES } as const
+
+export type GeneralFixedNoticeId = keyof typeof GENERAL_FIXED_NOTICES
+export type BindingNoticeId = keyof typeof BINDING_FIXED_NOTICES
+/** Notices allowed on the ordinary `fixed_notice` path. */
+export type FixedNoticeId = GeneralFixedNoticeId
 
 /** Binding-control notices that may use the narrow dmMode exemption in p2p. */
-export const BINDING_NOTICE_IDS = [
-  'identity_required',
-  'bind_use_dm',
-  'bind_failed',
-  'bind_success',
-  'scope_changed',
-] as const satisfies readonly FixedNoticeId[]
+export const BINDING_NOTICE_IDS = Object.keys(BINDING_FIXED_NOTICES) as BindingNoticeId[]
 
-export type BindingNoticeId = (typeof BINDING_NOTICE_IDS)[number]
-
-export function isBindingNoticeId(id: FixedNoticeId): id is BindingNoticeId {
-  return (BINDING_NOTICE_IDS as readonly string[]).includes(id)
+export function isBindingNoticeId(id: string): id is BindingNoticeId {
+  return Object.prototype.hasOwnProperty.call(BINDING_FIXED_NOTICES, id)
 }
 
 export type OutboundContent =
   | { category: 'final_answer'; text: string }
-  | { category: 'fixed_notice'; notice: FixedNoticeId }
+  | { category: 'fixed_notice'; notice: GeneralFixedNoticeId }
   | {
       category: 'binding_notice'
       notice: BindingNoticeId

@@ -367,9 +367,13 @@ function onInbound(id: string, m: ImInboundMessage): void {
     return
   }
 
-  // Binding control path runs before dmMode / chat accept filters.
   void (async () => {
-    if (await handleBindingControl(r, h, m)) return
+    const tokenText = m.text.trim()
+    if (TOKEN_SHAPE.test(tokenText)) {
+      // P2p bind tokens skip dmMode; group tokens still need mention/allowlist.
+      if (m.chatType === 'group' && !accepts(r, m)) return
+      if (await handleBindingControl(r, h, m)) return
+    }
 
     const ns = accountNamespaceOf(r.platform, r.appId)
     const binding = getActiveBindingForSender(ns, m.senderId)

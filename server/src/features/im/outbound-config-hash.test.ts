@@ -24,6 +24,8 @@ const base = (): ImRobot => ({
   broadcastToBoundUsers: false,
   broadcastGroupChatIds: [],
   locale: null,
+  configRevision: 0,
+  writeGrants: [],
   createdAt: 0,
   updatedAt: 0,
 })

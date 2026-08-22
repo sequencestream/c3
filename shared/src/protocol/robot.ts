@@ -16,7 +16,25 @@
  * only, on the write that sets it.
  */
 import type { ImBroadcastType } from './im-broadcast.js'
+import type { ImRobotWriteGrant } from './robot-write.js'
 import type { VendorId } from './vendor.js'
+
+export type {
+  ImRobotWriteGrant,
+  RobotWriteCapability,
+  RobotWriteGrantStatus,
+  RobotWritableCapability,
+  TodoAnswerContractSummary,
+  TodoAnswerOption,
+  TodoTokenResult,
+} from './robot-write.js'
+export {
+  ROBOT_WRITE_CAPABILITIES,
+  ROBOT_WRITABLE_CAPABILITIES,
+  ROBOT_WRITE_GRANT_STATUSES,
+  TODO_TOKEN_PREFIX,
+  TODO_TOKEN_RESULTS,
+} from './robot-write.js'
 
 /** The chat platforms a robot can be bound to. */
 export const IM_PLATFORMS = ['feishu'] as const
@@ -198,6 +216,13 @@ export interface ImRobot {
    * default (`en`). Does not change agent answer or Web UI language.
    */
   locale: RobotMessageLocale | null
+  /**
+   * Monotonic config revision — incremented on every constrained config or secret
+   * write. Write grants bind to the hash at acknowledgement time.
+   */
+  configRevision: number
+  /** Per-capability L2 write grants (absent rows = unauthorized). */
+  writeGrants: ImRobotWriteGrant[]
   createdAt: number
   updatedAt: number
   /** Live link state; absent when the robot is disabled. */

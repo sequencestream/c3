@@ -616,7 +616,16 @@ export async function launchWorkSession(
 
   // ── Create dev session ──
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const devRt = ensureRuntime(devId, workspacePath, getDefaultMode(workspacePath), [], 'work')
+  const devRt = ensureRuntime(
+    devId,
+    workspacePath,
+    getDefaultMode(workspacePath),
+    [],
+    'work',
+    undefined,
+    'interactive',
+    req.responsibleSubject ?? null,
+  )
   devRt.effectiveCwd = effectiveCwd
   // A fast-mode FRESH turn starts from this git state: capture the baseline so
   // the settle can measure this turn's diff against it (see `fast-spec.ts`).

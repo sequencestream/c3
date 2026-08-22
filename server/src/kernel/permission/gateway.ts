@@ -73,6 +73,11 @@ export interface PermissionRequestCtx {
    * (the handler reads it verbatim).
    */
   sessionKind: string
+  /**
+   * Human who started this run, frozen at launch. Null for automation, resume,
+   * or when the initiator cannot be determined.
+   */
+  initiatedBySubject?: string | null
 }
 
 /**
@@ -165,6 +170,10 @@ export interface GatewaySpec {
    */
   sessionKind: string
   /**
+   * Frozen run initiator forwarded into every permission prompt this gateway raises.
+   */
+  initiatedBySubject?: string | null
+  /**
    * Optional callback invoked **before** a `permission_request` wire frame is
    * sent. Receives the full {@link PermissionRequestCtx} including session-level
    * fields. NOT invoked for `consensus_auto` frames (the human is not involved).
@@ -186,6 +195,13 @@ export interface GatewaySpec {
    * auto-answer and the allow/deny tool consensus auto-decision.
    */
   onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
+}
+
+function permissionRequestCtx(
+  spec: GatewaySpec,
+  base: Omit<PermissionRequestCtx, 'initiatedBySubject'>,
+): PermissionRequestCtx {
+  return { ...base, initiatedBySubject: spec.initiatedBySubject ?? null }
 }
 
 /**
@@ -247,14 +263,16 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       // when `input.answers` is pre-filled). Single agent ⇒ no consensus: just
       // prompt the human and inject the answers (or deny on cancel).
       if (decisionClass === 'ask' && askQuestions(input)) {
-        spec.onPermissionRequest?.({
-          requestId,
-          toolName,
-          input,
-          sessionId: spec.sessionId(),
-          workspacePath: spec.workspacePath,
-          sessionKind: spec.sessionKind,
-        })
+        spec.onPermissionRequest?.(
+          permissionRequestCtx(spec, {
+            requestId,
+            toolName,
+            input,
+            sessionId: spec.sessionId(),
+            workspacePath: spec.workspacePath,
+            sessionKind: spec.sessionKind,
+          }),
+        )
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
         const { decision, answers } = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
@@ -295,14 +313,16 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         return deny('Spec session may only write inside the spec directory.')
       }
       if (toolName === 'AskUserQuestion' && askQuestions(input)) {
-        spec.onPermissionRequest?.({
-          requestId,
-          toolName,
-          input,
-          sessionId: spec.sessionId(),
-          workspacePath: spec.workspacePath,
-          sessionKind: spec.sessionKind,
-        })
+        spec.onPermissionRequest?.(
+          permissionRequestCtx(spec, {
+            requestId,
+            toolName,
+            input,
+            sessionId: spec.sessionId(),
+            workspacePath: spec.workspacePath,
+            sessionKind: spec.sessionKind,
+          }),
+        )
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
         const { decision, answers } = await waitForDecision(requestId, signal)
         if (decision === 'allow') {
@@ -488,14 +508,16 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         )
         return deny('Run aborted during consensus')
       }
-      spec.onPermissionRequest?.({
-        requestId,
-        toolName,
-        input,
-        sessionId: spec.sessionId(),
-        workspacePath: spec.workspacePath,
-        sessionKind: spec.sessionKind,
-      })
+      spec.onPermissionRequest?.(
+        permissionRequestCtx(spec, {
+          requestId,
+          toolName,
+          input,
+          sessionId: spec.sessionId(),
+          workspacePath: spec.workspacePath,
+          sessionKind: spec.sessionKind,
+        }),
+      )
       send(
         ask
           ? {
@@ -535,14 +557,16 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       !INTENT_READ_TOOLS.has(toolName) &&
       toolName !== 'AskUserQuestion'
     ) {
-      spec.onPermissionRequest?.({
-        requestId,
-        toolName,
-        input,
-        sessionId: spec.sessionId(),
-        workspacePath: spec.workspacePath,
-        sessionKind: spec.sessionKind,
-      })
+      spec.onPermissionRequest?.(
+        permissionRequestCtx(spec, {
+          requestId,
+          toolName,
+          input,
+          sessionId: spec.sessionId(),
+          workspacePath: spec.workspacePath,
+          sessionKind: spec.sessionKind,
+        }),
+      )
       send({ type: 'permission_request', requestId, toolName, input })
       const { decision } = await waitForDecision(requestId, signal)
       if (decision === 'allow') return allow(input)
@@ -586,14 +610,16 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
     if (signal.aborted) {
       return deny('Run aborted during consensus')
     }
-    spec.onPermissionRequest?.({
-      requestId,
-      toolName,
-      input,
-      sessionId: spec.sessionId(),
-      workspacePath: spec.workspacePath,
-      sessionKind: spec.sessionKind,
-    })
+    spec.onPermissionRequest?.(
+      permissionRequestCtx(spec, {
+        requestId,
+        toolName,
+        input,
+        sessionId: spec.sessionId(),
+        workspacePath: spec.workspacePath,
+        sessionKind: spec.sessionKind,
+      }),
+    )
     // Split / no consensus ⇒ ask the human, attaching the opinions (if any).
     const isUI = USER_INTERACTION_TOOLS.has(toolName)
     const req: ServerToClient = outcome

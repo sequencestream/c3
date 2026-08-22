@@ -495,6 +495,15 @@ export interface AppMethods {
   deleteRobot(robotId: string): void
   setRobotEnabled(robotId: string, enabled: boolean): void
   acknowledgeAndEnableRobot(robotId: string): void
+  acknowledgeRobotWriteGrant(
+    robotId: string,
+    capability: import('@ccc/shared/protocol').RobotWritableCapability,
+  ): void
+  setRobotWriteGrantEnabled(
+    robotId: string,
+    capability: import('@ccc/shared/protocol').RobotWritableCapability,
+    enabled: boolean,
+  ): void
   /** Fetch one vendor's tool manifest for the robot form (no workspace scope). */
   onLoadRobotToolManifest(vendor: string): void
   /** (Re)fetch the cross-workspace Dashboard snapshot; coalesces while one is in flight. */

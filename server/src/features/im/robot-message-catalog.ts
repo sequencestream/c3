@@ -29,6 +29,11 @@ export const ROBOT_MESSAGE_KEYS = [
   'token.cancelled',
   'token.unusable',
   'token.wrongChat',
+  'todo.answerFormatHint',
+  'todo.grantMissing',
+  'todo.alreadyApplied',
+  'todo.applied',
+  'todo.l2Prompt',
   'runtime.timeout',
   'runtime.blocked',
   'runtime.error',
@@ -238,6 +243,56 @@ export const ROBOT_MESSAGE_CATALOG: Record<RobotMessageKey, MessageCatalogEntry>
       ja: 'そのトークンはこのチャットでは使用できません。',
       ko: '해당 토큰은 이 채팅에서 사용할 수 없습니다.',
       ru: 'Этот токен нельзя использовать в этом чате.',
+    },
+  },
+  'todo.answerFormatHint': {
+    placeholders: [],
+    templates: {
+      en: 'Append one answer code after the token: `<token> <answer_id>`.',
+      zh: '请在令牌后追加一个答案码：`<令牌> <answer_id>`。',
+      ja: 'トークンの後に回答コードを付けてください：`<token> <answer_id>`。',
+      ko: '토큰 뒤에 답변 코드를 추가하세요: `<token> <answer_id>`.',
+      ru: 'Добавьте код ответа после токена: `<token> <answer_id>`.',
+    },
+  },
+  'todo.grantMissing': {
+    placeholders: [],
+    templates: {
+      en: 'This robot is not authorized for that action. Open c3 Web to continue.',
+      zh: '该机器人未获此写能力授权。请在浏览器中打开 c3 Web 继续。',
+      ja: 'このロボットにはその操作の権限がありません。c3 Web を開いて続行してください。',
+      ko: '이 로봇은 해당 작업에 대한 권한이 없습니다. c3 Web을 열어 계속하세요.',
+      ru: 'У этого робота нет разрешения на это действие. Откройте c3 Web.',
+    },
+  },
+  'todo.alreadyApplied': {
+    placeholders: [],
+    templates: {
+      en: 'That answer was already recorded.',
+      zh: '该答案已记录。',
+      ja: 'その回答は既に記録されています。',
+      ko: '해당 답변은 이미 기록되었습니다.',
+      ru: 'Этот ответ уже был записан.',
+    },
+  },
+  'todo.applied': {
+    placeholders: [],
+    templates: {
+      en: 'Answer recorded.',
+      zh: '答案已记录。',
+      ja: '回答を記録しました。',
+      ko: '답변이 기록되었습니다.',
+      ru: 'Ответ записан.',
+    },
+  },
+  'todo.l2Prompt': {
+    placeholders: ['token', 'answerList'],
+    templates: {
+      en: 'Reply with: {token} <answer_id>\n{answerList}',
+      zh: '请回复：{token} <answer_id>\n{answerList}',
+      ja: '返信: {token} <answer_id>\n{answerList}',
+      ko: '답장: {token} <answer_id>\n{answerList}',
+      ru: 'Ответ: {token} <answer_id>\n{answerList}',
     },
   },
   'runtime.timeout': {

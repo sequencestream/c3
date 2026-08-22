@@ -47,6 +47,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
+    responsibleSubject: null,
     sessionActive: false,
     actionDescriptor: null,
     ...overrides,
@@ -259,6 +260,7 @@ describe('useIntentDetailTabs', () => {
   it('awaitingSessionBind suppresses firstIntentTurn while the owner session is binding', async () => {
     const { w, tabs, select } = mountHost({
       intent: intent({ id: 'i1', intentSessionId: null, content: 'already typed' }),
+      responsibleSubject: null,
       awaitingSessionBind: true,
     })
     await select('intentSession')
@@ -273,6 +275,7 @@ describe('useIntentDetailTabs', () => {
   it('non-empty content alone does not suppress firstIntentTurn without the bind flag', async () => {
     const { tabs, select } = mountHost({
       intent: intent({ id: 'i1', intentSessionId: null, content: 'edited after blank create' }),
+      responsibleSubject: null,
       awaitingSessionBind: false,
     })
     await select('intentSession')

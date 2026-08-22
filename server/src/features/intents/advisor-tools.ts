@@ -45,6 +45,8 @@ import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
 import { upsertBoundRow } from '../sessions/session-metadata-store.js'
 import { createEvent, getEventByRequestId } from '../user-involve/store.js'
+import { syncRaiseUserTodoClaim } from '../im/l2-contract-sync.js'
+import { maybeNotifyL2ForTodo } from '../im/l2-notify.js'
 import { getIntent, isStoreAvailable, setChatSession } from './store.js'
 import { registerPendingIntentLink } from './intent-link.js'
 import { registerPendingSpecLink } from './spec-link.js'
@@ -520,7 +522,7 @@ export function buildAdvisorC3Tools(
         if (getEventByRequestId(requestId)) {
           return ok({ requestId, created: false, reason: 'duplicate' })
         }
-        createEvent({
+        const event = createEvent({
           workspacePath: scope.workspacePath,
           sessionKind: 'work',
           sessionId: intent.lastWorkSessionId,
@@ -529,6 +531,14 @@ export function buildAdvisorC3Tools(
           toolName: null,
           toolInput: { intentId: scope.intentId, reason: args.reasonCode },
         })
+        syncRaiseUserTodoClaim({
+          todoId: event.id,
+          intentId: scope.intentId,
+          workspacePath: scope.workspacePath,
+          actorSubject: intent.responsibleSubject,
+          reasonCode: args.reasonCode,
+        })
+        maybeNotifyL2ForTodo(event.id)
         d.broadcastWaitUserEvents(scope.workspacePath)
         return ok({ requestId, created: true })
       },

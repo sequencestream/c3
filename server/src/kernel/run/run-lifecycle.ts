@@ -744,6 +744,7 @@ export async function launchRun(
           // Permission-event hook: the session id is a getter because `runId`
           // changes on pending→real bind (onSessionId reassigns it).
           sessionId: () => runId,
+          initiatedBySubject: rt.initiatedBySubject ?? null,
           onPermissionRequest: deps.onPermissionRequest,
           onConsensusResolved: deps.onConsensusResolved,
           onStart: (h) => {

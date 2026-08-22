@@ -47,6 +47,7 @@ import { validateRobotMessageRegistry } from './robot-message-registry.js'
 import type { ConversationIdentity } from './thread-key.js'
 import { execIdentitySchema } from './identity-schema.js'
 import { computeOutboundConfigHash, outboundConfigAcknowledged } from './outbound-config-hash.js'
+import { listWriteGrantsForRobot } from './write-grant-store.js'
 
 // ---- Errors ----
 
@@ -76,6 +77,7 @@ const SENDER_ISOLATION_MIGRATION = 'robots.sender_isolation.v1'
 const IDENTITY_SCOPE_MIGRATION = 'robots.identity_scope.v1'
 const BROADCAST_CONFIG_MIGRATION = 'robots.broadcast_config.v1'
 const LOCALE_MIGRATION = 'robots.locale.v1'
+const CONFIG_REVISION_MIGRATION = 'robots.config_revision.v1'
 /** Soft budget for recovery seed size (Unicode code points across all turns). */
 export const ROBOT_CONTEXT_RECOVERY_BUDGET = 80_000
 
@@ -432,6 +434,14 @@ function migrateRobotLocale(d: Db): void {
   })
 }
 
+function migrateConfigRevision(d: Db): void {
+  if (hasMigration(d, CONFIG_REVISION_MIGRATION)) return
+  tx(d, () => {
+    ensureColumn(d, 'im_robots', 'config_revision', 'INTEGER NOT NULL DEFAULT 0')
+    markMigration(d, CONFIG_REVISION_MIGRATION)
+  })
+}
+
 /** Add L0 broadcast config columns and backfill ack hash for existing robots. */
 function migrateBroadcastConfig(d: Db): void {
   if (hasMigration(d, BROADCAST_CONFIG_MIGRATION)) return
@@ -467,6 +477,7 @@ function ensureSchema(d: Db): void {
   migrateTurnsOutcomeBusy(d)
   migrateIdentityScope(d)
   migrateBroadcastConfig(d)
+  migrateConfigRevision(d)
   // Re-create after identity migration (tables may have been rebuilt).
   d.exec(THREADS_TABLE)
   d.exec(CONTEXT_TURNS_TABLE)
@@ -551,6 +562,7 @@ interface RobotRow {
   broadcast_to_bound_users: number
   broadcast_group_chat_ids: string
   locale: string | null
+  config_revision: number
   created_at: number
   updated_at: number
 }
@@ -580,7 +592,7 @@ function assertLocale(value: RobotMessageLocale | null | undefined): RobotMessag
 }
 
 function toRobot(r: RobotRow): ImRobot {
-  return {
+  const base: ImRobot = {
     id: r.id,
     name: r.name,
     platform: r.platform as ImPlatform,
@@ -602,9 +614,12 @@ function toRobot(r: RobotRow): ImRobot {
     broadcastToBoundUsers: (r.broadcast_to_bound_users ?? 0) === 1,
     broadcastGroupChatIds: parseList(r.broadcast_group_chat_ids ?? '[]'),
     locale: parseLocale(r.locale),
+    configRevision: r.config_revision ?? 0,
+    writeGrants: [],
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
+  return { ...base, writeGrants: listWriteGrantsForRobot(base) }
 }
 
 const SELECT_ROBOT = 'SELECT * FROM im_robots'
@@ -756,6 +771,7 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
 
   if (sets.length > 0) {
     set('updated_at', now())
+    set('config_revision', (existing.configRevision ?? 0) + 1)
     params.push(id)
     d.run(`UPDATE im_robots SET ${sets.join(', ')} WHERE id = ?`, ...params)
   }

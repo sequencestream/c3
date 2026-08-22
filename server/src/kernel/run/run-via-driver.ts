@@ -359,13 +359,11 @@ export function makeDriverApprovalHandler(deps: {
     signal?: AbortSignal,
   ) => Promise<{ decision: 'allow' | 'deny' }>
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
+  initiatedBySubject?: string | null
 }): ApprovalHandler {
   return async (req) => {
     const isUI = USER_INTERACTION_TOOLS.has(req.toolName)
     const runId = deps.getRunId()
-    // Register the WorkCenter event + broadcast BEFORE the wire frame, so a prompt
-    // on a codex session lands in the pending-items panel + badge, not just
-    // the active chat. sessionKind is the runtime kind (work / intent / spec / …).
     deps.onPermissionRequest?.({
       requestId: req.requestId,
       toolName: req.toolName,
@@ -373,6 +371,7 @@ export function makeDriverApprovalHandler(deps: {
       sessionId: runId,
       workspacePath: deps.workspacePath,
       sessionKind: deps.sessionKind,
+      initiatedBySubject: deps.initiatedBySubject ?? null,
     })
     deps.emit(runId, {
       type: 'permission_request',
@@ -490,6 +489,7 @@ export async function runViaDriver(
       emit,
       waitForDecision,
       onPermissionRequest,
+      initiatedBySubject: rt.initiatedBySubject ?? null,
     }),
   )
 

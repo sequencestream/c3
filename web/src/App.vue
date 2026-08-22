@@ -404,6 +404,8 @@ const {
   deleteRobot,
   setRobotEnabled,
   acknowledgeAndEnableRobot,
+  acknowledgeRobotWriteGrant,
+  setRobotWriteGrantEnabled,
   onLoadRobotToolManifest,
   loadDashboard,
   toggleWorkspaceAutomation,
@@ -1079,6 +1081,8 @@ function onFilesChatWidth(px: number): void {
           @admin-revoke-im-identity="adminRevokeImIdentity"
           @load-im-group-scopes="fetchImGroupWorkspaceScopes"
           @save-im-group-scopes="setImGroupWorkspaceScopes"
+          @acknowledge-write-grant="acknowledgeRobotWriteGrant"
+          @set-write-grant-enabled="setRobotWriteGrantEnabled"
         />
 
         <Dashboard

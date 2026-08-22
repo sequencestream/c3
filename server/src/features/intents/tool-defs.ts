@@ -227,12 +227,13 @@ export function runSaveConfirmed(
   args: SaveArgs,
   onSaved: (workspacePath: string) => void,
   actor?: string | null,
+  responsibleSubjectForNew?: string | null,
 ): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,未保存。'), isError: true }
   try {
     const updated = args.intents.filter((it) => it.id !== undefined).length
     const created = args.intents.length - updated
-    const saved = upsertIntents(workspacePath, args.intents, actor)
+    const saved = upsertIntents(workspacePath, args.intents, actor, responsibleSubjectForNew)
     for (const [index, input] of args.intents.entries()) {
       if (input.id === undefined && saved[index]) {
         publishIntentLifecycle(workspacePath, saved[index], 'created')

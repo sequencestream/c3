@@ -2551,7 +2551,9 @@
       "challengeNotFound": "未找到该绑定挑战。",
       "bindingNotFound": "未找到该身份绑定。",
       "robotNotReady": "请选择已启用且已确认外发的机器人。",
-      "notOwner": "只能管理自己的身份绑定。"
+      "notOwner": "只能管理自己的身份绑定。",
+      "writeCapabilityInvalid": "未知或无效的写能力。",
+      "writeCapabilityNotGrantable": "该能力不能通过 IM 聊天授权。"
     }
   },
   "statusIndicator": {
@@ -4075,6 +4077,51 @@
       },
       "save": {
         "label": "保存"
+      }
+    },
+    "writeGrants": {
+      "title": "写能力",
+      "hint": "每项写能力都需单独确认后,机器人才可在 IM 私聊待办中代你执行。外发授权与工具权限不能代替这些能力。",
+      "acknowledge": {
+        "label": "确认"
+      },
+      "enable": {
+        "label": "启用"
+      },
+      "disable": {
+        "label": "停用"
+      },
+      "confirm": {
+        "title": "确认这项写能力?",
+        "message": "当你在 IM 中回复私聊待办时,机器人可代你执行下列操作。每次作答仍需要你的身份绑定、个人范围与一次性令牌。"
+      },
+      "status": {
+        "unauthorized": {
+          "label": "未确认"
+        },
+        "active": {
+          "label": "已启用"
+        },
+        "stale": {
+          "label": "配置已变更 — 需重新确认"
+        },
+        "disabled": {
+          "label": "已停用"
+        }
+      },
+      "capability": {
+        "queue_respond": {
+          "label": "队列作答",
+          "description": "回答封闭选项待办:权限提示、规格批准/打回、raise-user-todo 认领。"
+        },
+        "automation_control": {
+          "label": "自动化控制",
+          "description": "对已 park 的意图执行 unpark,让队列重新检查闸门。"
+        },
+        "annotate": {
+          "label": "注释",
+          "description": "对冻结待办或对象写入幂等注释或原因码。"
+        }
       }
     },
     "enable": {

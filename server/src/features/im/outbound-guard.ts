@@ -1,28 +1,26 @@
 /**
- * The sole controlled outbound entry for IM replies.
+ * The sole controlled outbound entry for IM — replies and L0 broadcasts.
  *
- * Every final answer and every registered fixed notice leaves the machine only
- * through {@link sendGuarded}. The supervisor never holds a raw sender: provider
- * `ImConnection.send` / platform HTTP APIs stay inside the provider, and this
- * module is the only caller that may invoke a bound `rawSend`.
+ * Every final answer, fixed notice, and registered broadcast template leaves
+ * only through {@link sendGuarded} or {@link sendGuardedBroadcast}. The
+ * supervisor never holds a raw sender: provider `ImConnection.send` stays
+ * inside the provider, and this module is the only caller that may invoke
+ * a bound `rawSend`.
  *
- * Decision order (re-read live robot state each time — never reuse the inbound
- * accept snapshot):
- *   1. robot still enabled and outboundAckAt recorded
- *   2. target is still the inbound chat; group/DM allowlists still pass
- *      (`binding_notice` in p2p may skip dmMode/dmAllowlist only)
- *   3. content is a final answer, registered fixed notice, or binding_notice
- *   4. final answers: credential shape refuse → swap to intercept notice (no
- *      recursive credential scan); all texts truncated to the platform limit
- *   5. rawSend; callers audit from the result (success / refuse / send failure)
- *
- * Credential shape rules are shared with the memory guard. Artifact rules are
- * deliberately NOT applied here: a robot answering about code must be allowed
- * to send a code fence.
+ * Decision order (re-read live robot state each time):
+ *   1. robot enabled, outbound acknowledged, config hash still matches ack
+ *   2. target allowed (inbound reply chat, or solver-produced broadcast target)
+ *   3. content is a registered closed category
+ *   4. credential shape + truncation
+ *   5. rawSend; callers write unified audit from the result
  */
+import type { ImBroadcastType } from '@ccc/shared/protocol'
 import type { ImRobot } from '@ccc/shared/protocol'
 import { detectCredentialShape } from '../memory/content-guard.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
+import { renderBroadcastTemplate, type TemplateFieldValues } from './broadcast-templates.js'
+import type { BroadcastDeliveryTarget } from './broadcast-recipients.js'
+import { outboundConfigAcknowledged } from './outbound-config-hash.js'
 import { getRobot } from './robot-store.js'
 import type { ImOutbound } from './types.js'
 
@@ -93,11 +91,13 @@ export type RawImSend = (chatId: string, out: ImOutbound) => Promise<{ messageId
 export type GuardRefuseReason =
   | 'disabled'
   | 'outbound_not_acknowledged'
+  | 'outbound_config_stale'
   | 'chat_not_allowed'
   | 'dm_not_allowed'
   | 'binding_target_mismatch'
   | 'binding_not_p2p'
   | 'invalid_notice'
+  | 'invalid_template'
   | 'credential'
   | 'empty'
   | 'send_failed'
@@ -112,16 +112,28 @@ export type GuardedSendInput = {
 }
 
 export type GuardedSendResult =
-  | { ok: true; messageId: string; outboundChars: number; text: string }
+  | { ok: true; messageId: string; outboundChars: number; text: string; templateKey?: string }
   | {
       ok: false
       reason: GuardRefuseReason
       /** Present when a credential hit still delivered the intercept notice. */
       messageId?: string
       outboundChars?: number
+      templateKey?: string
       /** Sanitized platform failure; never a full provider dump. */
       error?: string
     }
+
+export type GuardedBroadcastInput = {
+  robotId: string
+  target: BroadcastDeliveryTarget
+  kind: ImBroadcastType
+  fields: TemplateFieldValues
+  idempotencyKey: string
+  objectWorkspace: string
+  maxOutboundChars: number
+  rawSend: RawImSend
+}
 
 const TRUNCATION_NOTICE = '\n…（回答过长已截断,完整内容见 c3 会话）'
 
@@ -176,10 +188,30 @@ export function outboundTargetAllowed(
 function readinessRefuse(robot: ImRobot | null | undefined): GuardRefuseReason | null {
   if (!robot || !robot.enabled) return 'disabled'
   if (robot.outboundAckAt == null) return 'outbound_not_acknowledged'
+  if (!outboundConfigAcknowledged(robot)) return 'outbound_config_stale'
   return null
 }
 
-async function deliverRaw(input: GuardedSendInput, text: string): Promise<GuardedSendResult> {
+function proactiveTargetAllowed(
+  robot: ImRobot,
+  target: BroadcastDeliveryTarget,
+): GuardRefuseReason | null {
+  if (target.kind === 'group') {
+    if (robot.chatAllowlist.length > 0 && !robot.chatAllowlist.includes(target.chatId)) {
+      return 'chat_not_allowed'
+    }
+    if (!robot.broadcastGroupChatIds.includes(target.chatId)) return 'chat_not_allowed'
+    return null
+  }
+  if (!robot.broadcastToBoundUsers) return 'dm_not_allowed'
+  if (robot.dmMode === 'disabled') return 'dm_not_allowed'
+  if (robot.dmMode === 'allowlist' && !robot.dmAllowlist.includes(target.senderId)) {
+    return 'dm_not_allowed'
+  }
+  return null
+}
+
+async function deliverRawReply(input: GuardedSendInput, text: string): Promise<GuardedSendResult> {
   try {
     const { messageId } = await input.rawSend(input.target.chatId, {
       text,
@@ -188,6 +220,25 @@ async function deliverRaw(input: GuardedSendInput, text: string): Promise<Guarde
     return { ok: true, messageId, outboundChars: text.length, text }
   } catch (err) {
     return { ok: false, reason: 'send_failed', error: errText(err), outboundChars: 0 }
+  }
+}
+
+async function deliverRawProactive(
+  input: GuardedBroadcastInput,
+  text: string,
+  templateKey: string,
+): Promise<GuardedSendResult> {
+  try {
+    const { messageId } = await input.rawSend(input.target.chatId, { text })
+    return { ok: true, messageId, outboundChars: text.length, text, templateKey }
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'send_failed',
+      error: errText(err),
+      outboundChars: 0,
+      templateKey,
+    }
   }
 }
 
@@ -224,7 +275,7 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
     const targetRefuse = outboundTargetAllowed(live, input.target, { skipDmAllowlist: skipDm })
     if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
     const body = truncateVisible(FIXED_NOTICES[input.content.notice], input.maxOutboundChars)
-    return deliverRaw(input, body)
+    return deliverRawReply(input, body)
   }
 
   const targetRefuse = outboundTargetAllowed(live, input.target)
@@ -236,13 +287,13 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
       return { ok: false, reason: 'invalid_notice', outboundChars: 0 }
     }
     const text = truncateVisible(GENERAL_FIXED_NOTICES[notice], input.maxOutboundChars)
-    return deliverRaw(input, text)
+    return deliverRawReply(input, text)
   }
 
   const screened = screenOutbound(input.content.text, input.maxOutboundChars)
   if (!screened.ok) {
     const notice = truncateVisible(FIXED_NOTICES.guard_refused, input.maxOutboundChars)
-    const delivered = await deliverRaw(input, notice)
+    const delivered = await deliverRawReply(input, notice)
     if (delivered.ok) {
       return {
         ok: false,
@@ -260,5 +311,41 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
   }
 
   if (!screened.text) return { ok: false, reason: 'empty', outboundChars: 0 }
-  return deliverRaw(input, screened.text)
+  return deliverRawReply(input, screened.text)
+}
+
+/**
+ * Proactive L0 broadcast through the same guard pipeline as inbound replies.
+ */
+export async function sendGuardedBroadcast(
+  input: GuardedBroadcastInput,
+): Promise<GuardedSendResult> {
+  const robot = getRobot(input.robotId)
+  const ready = readinessRefuse(robot)
+  if (ready) return { ok: false, reason: ready, outboundChars: 0 }
+  const live = robot!
+
+  if (!live.broadcastEventTypes.includes(input.kind)) {
+    return { ok: false, reason: 'invalid_template', outboundChars: 0 }
+  }
+
+  const targetRefuse = proactiveTargetAllowed(live, input.target)
+  if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
+
+  const rendered = renderBroadcastTemplate({
+    kind: input.kind,
+    fields: input.fields,
+    groupDowngrade: input.target.kind === 'group' && !input.target.fullTemplate,
+  })
+  if (!rendered.ok) {
+    return { ok: false, reason: 'invalid_template', outboundChars: 0 }
+  }
+
+  const text = truncateVisible(rendered.text, input.maxOutboundChars)
+  if (detectCredentialShape(text)) {
+    return { ok: false, reason: 'credential', outboundChars: 0, templateKey: rendered.templateKey }
+  }
+  if (!text) return { ok: false, reason: 'empty', outboundChars: 0 }
+
+  return deliverRawProactive(input, text, rendered.templateKey)
 }

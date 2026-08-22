@@ -34,6 +34,10 @@ import {
 } from './funnel-store.js'
 import { publishIntentLifecycle } from './lifecycle-events.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
+import {
+  maybePublishIntentParked,
+  maybePublishIntentRetryExhausted,
+} from '../im/broadcast-hooks.js'
 
 // ---------------------------------------------------------------------------
 // Kernel actions
@@ -141,6 +145,7 @@ export function recordFailure(
       reasonCode: reason,
       at: now,
     })
+    maybePublishIntentRetryExhausted(intentId, failureCount, now)
   }
   appendQueueDecisions([
     {
@@ -227,6 +232,7 @@ export function applyPark(
       reasonCode: reason,
       at: now,
     })
+    maybePublishIntentParked(intentId, reason, detail, now)
   }
   ctx.hooks.broadcastQueueDetail(ctx.workspacePath)
 }

@@ -15,6 +15,7 @@
  * can tell "configured" from "not configured"; the plaintext travels one way
  * only, on the write that sets it.
  */
+import type { ImBroadcastType } from './im-broadcast.js'
 import type { VendorId } from './vendor.js'
 
 /** The chat platforms a robot can be bound to. */
@@ -174,6 +175,17 @@ export interface ImRobot {
    * without it is refused server-side.
    */
   outboundAckAt: number | null
+  /**
+   * Normalized hash of outbound content + target config at acknowledgement time.
+   * Any config change invalidates this until the operator re-confirms.
+   */
+  outboundAckHash: string | null
+  /** L0 event kinds this robot may proactively broadcast. Empty = none. */
+  broadcastEventTypes: ImBroadcastType[]
+  /** When true, bound users with matching personal scope receive p2p broadcasts. */
+  broadcastToBoundUsers: boolean
+  /** Group chat ids that may receive broadcasts (also must pass chatAllowlist). */
+  broadcastGroupChatIds: string[]
   createdAt: number
   updatedAt: number
   /** Live link state; absent when the robot is disabled. */
@@ -223,4 +235,7 @@ export interface RobotConfigInput {
   dmMode?: ImDmMode
   dmAllowlist?: string[]
   maxTurnMs?: number | null
+  broadcastEventTypes?: ImBroadcastType[]
+  broadcastToBoundUsers?: boolean
+  broadcastGroupChatIds?: string[]
 }

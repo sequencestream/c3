@@ -3,26 +3,30 @@
  *
  * Mirrors `scheduler-startup.ts`: the composition root calls these two, and the
  * feature module stays free of any knowledge about process lifecycle.
- *
- * The stop side matters more than it looks. `stopAndRelease` in `server.ts` runs
- * on SIGINT/SIGTERM *and* on a self-update relaunch, so a link left open here
- * would survive into the next process and two builds would answer the same chat.
  */
+import type { EventBus } from '../kernel/events/event-bus.js'
+import { subscribeImBroadcastDispatcher } from '../features/im/broadcast-dispatcher.js'
+import { wireBroadcastCandidateBus } from '../features/im/broadcast-publish.js'
+import { ensureOutboundAuditSchema } from '../features/im/outbound-audit-store.js'
 import { startImSupervisor, stopImSupervisor } from '../features/im/supervisor.js'
 import { ensureRobotSchema } from '../features/im/robot-store.js'
 import { ensureIdentitySchema } from '../features/im/identity-store.js'
 import { makeRunRobotTurn, type RobotTurnDeps } from './robot-turn.js'
 
-export function startImRobotsWiring(deps: RobotTurnDeps): void {
-  // Materialize the tables first, so an unusable database surfaces here rather
-  // than on the first inbound message.
-  if (!ensureRobotSchema() || !ensureIdentitySchema()) {
-    console.warn('[c3][im] robot/identity store unavailable; chat robots are disabled this run')
+let disposeBroadcast: (() => void) | null = null
+
+export function startImRobotsWiring(deps: RobotTurnDeps, eventBus: EventBus): void {
+  if (!ensureRobotSchema() || !ensureIdentitySchema() || !ensureOutboundAuditSchema()) {
+    console.warn('[c3][im] robot/identity/outbound store unavailable; chat robots disabled')
     return
   }
+  wireBroadcastCandidateBus(eventBus)
+  disposeBroadcast = subscribeImBroadcastDispatcher(eventBus)
   startImSupervisor({ runTurn: makeRunRobotTurn(deps) })
 }
 
 export async function stopImRobotsWiring(timeoutMs = 30_000): Promise<void> {
+  disposeBroadcast?.()
+  disposeBroadcast = null
   await stopImSupervisor(timeoutMs)
 }

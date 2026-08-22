@@ -13,6 +13,7 @@ import {
   GENERAL_FIXED_NOTICES,
   screenOutbound,
   sendGuarded,
+  sendGuardedBroadcast,
   type RawImSend,
 } from './outbound-guard.js'
 import {
@@ -149,7 +150,10 @@ describe('sendGuarded — readiness and target', () => {
     const id = enabledRobot()
     // Store refuses enable-without-ack; clear the ack under the table to prove
     // the guard re-reads live state rather than trusting the inbound snapshot.
-    getDb()!.run('UPDATE im_robots SET outbound_ack_at = NULL WHERE id = ?', id)
+    getDb()!.run(
+      'UPDATE im_robots SET outbound_ack_at = NULL, outbound_ack_hash = NULL WHERE id = ?',
+      id,
+    )
     const { sent, rawSend } = rawRecorder()
     const result = await sendGuarded({
       robotId: id,
@@ -169,6 +173,7 @@ describe('sendGuarded — readiness and target', () => {
   it('refuses a group that left the allowlist', async () => {
     const id = enabledRobot()
     updateRobot(id, { chatAllowlist: ['oc_allowed'] })
+    acknowledgeOutbound(id)
     const { sent, rawSend } = rawRecorder()
     const result = await sendGuarded({
       robotId: id,
@@ -184,6 +189,7 @@ describe('sendGuarded — readiness and target', () => {
   it('refuses a DM after the allowlist tightens', async () => {
     const id = enabledRobot()
     updateRobot(id, { dmMode: 'allowlist', dmAllowlist: ['ou_ok'] })
+    acknowledgeOutbound(id)
     const { sent, rawSend } = rawRecorder()
     const result = await sendGuarded({
       robotId: id,
@@ -401,5 +407,59 @@ describe('sendGuarded — content categories', () => {
       rawSend,
     })
     expect(rawSend).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('sendGuardedBroadcast — same guard pipeline', () => {
+  it('refuses when outbound config hash is stale after L0 config change', async () => {
+    const id = enabledRobot()
+    updateRobot(id, { broadcastEventTypes: ['intent_parked'] })
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuardedBroadcast({
+      robotId: id,
+      target: { kind: 'p2p_dm', chatId: 'ou_u', senderId: 'ou_u', fullTemplate: true },
+      kind: 'intent_parked',
+      fields: {
+        eventType: 'intent_parked',
+        objectType: 'intent',
+        objectId: 'i1',
+        objectTitle: 'hello',
+      },
+      idempotencyKey: 'k1',
+      objectWorkspace: 'ws',
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'outbound_config_stale' })
+    expect(sent).toEqual([])
+  })
+
+  it('delivers broadcast through rawSend when config is re-acknowledged', async () => {
+    const id = enabledRobot()
+    updateRobot(id, {
+      broadcastEventTypes: ['intent_parked'],
+      broadcastToBoundUsers: true,
+      dmMode: 'open',
+    })
+    acknowledgeOutbound(id)
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuardedBroadcast({
+      robotId: id,
+      target: { kind: 'p2p_dm', chatId: 'ou_u', senderId: 'ou_u', fullTemplate: true },
+      kind: 'intent_parked',
+      fields: {
+        eventType: 'intent_parked',
+        objectType: 'intent',
+        objectId: 'i1',
+        objectTitle: 'hello',
+      },
+      idempotencyKey: 'k1',
+      objectWorkspace: 'ws',
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result.ok).toBe(true)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.replyTo).toBeUndefined()
   })
 })

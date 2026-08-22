@@ -174,6 +174,11 @@ export interface EventBusEvents {
    * PR-status reset consumer from `event.metadata.operation` + `event.status`.
    */
   event: GenericEventEnvelope
+  /**
+   * Strong-typed IM L0 broadcast candidate. Published ONLY by server domain code
+   * after authoritative facts commit. Never subscribed or converted from `event`.
+   */
+  'im:broadcast_candidate': import('@ccc/shared/protocol').ImBroadcastCandidate
 }
 
 /** A handler function for a given event topic. May return a Promise (fire-and-forget). */

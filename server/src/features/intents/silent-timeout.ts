@@ -238,6 +238,19 @@ export function deriveSilentTimeoutActionDescriptor(
   }
 
   if (!isSilentTimeout(facts)) return null
+  const lastProgressAt = latestFact(
+    facts.ledgerUpdatedAt,
+    facts.runActivityAt,
+    facts.metaUpdatedAt,
+    facts.decisionChangedAt,
+    facts.queueStartedAt,
+  )
+  if (lastProgressAt != null) {
+    // Fire-and-forget L0 broadcast; idempotency prevents duplicate IM messages.
+    import('../im/broadcast-hooks.js')
+      .then(({ maybePublishSilentTimeout }) => maybePublishSilentTimeout(intent.id, lastProgressAt))
+      .catch(() => {})
+  }
   return {
     labelCode: 'silent_timeout',
     target: { type: 'intent-work-session', intentId: intent.id },

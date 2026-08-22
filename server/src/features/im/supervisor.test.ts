@@ -212,6 +212,7 @@ describe('response policy — which messages are answered at all', () => {
   it('answers a direct message from an allowlisted user when configured', async () => {
     const id = await boot()
     updateRobot(id, { dmMode: 'allowlist', dmAllowlist: ['ou_user'] })
+    acknowledgeOutbound(id)
     push(message({ chatType: 'p2p', mentionedBot: false }))
     await settle()
     expect(sent).toHaveLength(1)
@@ -561,6 +562,7 @@ describe('the outbound guard is on the delivery path', () => {
     push(message({ chatId: 'oc_1' }))
     await settle()
     updateRobot(id, { chatAllowlist: ['oc_other'] })
+    acknowledgeOutbound(id)
     release({ outcome: 'complete', sessionId: 's', lastMessage: 'should not leave' })
     await settle()
     expect(sent).toEqual([])

@@ -15,6 +15,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import {
+  IM_BROADCAST_TYPES,
   IM_DM_MODES,
   IM_PLATFORMS,
   ROBOT_CONTEXT_MAX_CODEPOINTS,
@@ -22,6 +23,7 @@ import {
   ROBOT_CONTEXT_RETENTION_MS,
   ROBOT_MESSAGE_LOCALES,
   ROBOT_NAME_PATTERN,
+  type ImBroadcastType,
   type ImDmMode,
   type ImInputRejectReason,
   type ImPlatform,
@@ -44,6 +46,7 @@ import { truncateCodePoints } from './inbound-guard.js'
 import { validateRobotMessageRegistry } from './robot-message-registry.js'
 import type { ConversationIdentity } from './thread-key.js'
 import { execIdentitySchema } from './identity-schema.js'
+import { computeOutboundConfigHash, outboundConfigAcknowledged } from './outbound-config-hash.js'
 
 // ---- Errors ----
 
@@ -71,6 +74,7 @@ export class RobotStoreError extends Error {
 
 const SENDER_ISOLATION_MIGRATION = 'robots.sender_isolation.v1'
 const IDENTITY_SCOPE_MIGRATION = 'robots.identity_scope.v1'
+const BROADCAST_CONFIG_MIGRATION = 'robots.broadcast_config.v1'
 const LOCALE_MIGRATION = 'robots.locale.v1'
 /** Soft budget for recovery seed size (Unicode code points across all turns). */
 export const ROBOT_CONTEXT_RECOVERY_BUDGET = 80_000
@@ -397,6 +401,24 @@ function migrateIdentityScope(d: Db): void {
   })
 }
 
+function ensureColumn(d: Db, table: string, column: string, ddl: string): void {
+  const cols = tableColumns(d, table)
+  if (!cols.has(column)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`)
+}
+
+function parseBroadcastTypes(raw: string): ImBroadcastType[] {
+  try {
+    const v: unknown = JSON.parse(raw)
+    if (!Array.isArray(v)) return []
+    return v.filter(
+      (x): x is ImBroadcastType =>
+        typeof x === 'string' && (IM_BROADCAST_TYPES as readonly string[]).includes(x),
+    )
+  } catch {
+    return []
+  }
+}
+
 function migrateRobotLocale(d: Db): void {
   if (hasMigration(d, LOCALE_MIGRATION)) return
   tx(d, () => {
@@ -407,6 +429,29 @@ function migrateRobotLocale(d: Db): void {
       d.exec("UPDATE im_robots SET locale = 'zh'")
     }
     markMigration(d, LOCALE_MIGRATION)
+  })
+}
+
+/** Add L0 broadcast config columns and backfill ack hash for existing robots. */
+function migrateBroadcastConfig(d: Db): void {
+  if (hasMigration(d, BROADCAST_CONFIG_MIGRATION)) return
+  tx(d, () => {
+    ensureColumn(d, 'im_robots', 'outbound_ack_hash', 'TEXT')
+    ensureColumn(d, 'im_robots', 'broadcast_event_types', "TEXT NOT NULL DEFAULT '[]'")
+    ensureColumn(d, 'im_robots', 'broadcast_to_bound_users', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(d, 'im_robots', 'broadcast_group_chat_ids', "TEXT NOT NULL DEFAULT '[]'")
+    const rows = d.all<RobotRow>('SELECT * FROM im_robots')
+    for (const row of rows) {
+      const robot = toRobot(row)
+      if (robot.outboundAckAt != null && robot.outboundAckHash == null) {
+        d.run(
+          'UPDATE im_robots SET outbound_ack_hash = ? WHERE id = ?',
+          computeOutboundConfigHash(robot),
+          robot.id,
+        )
+      }
+    }
+    markMigration(d, BROADCAST_CONFIG_MIGRATION)
   })
 }
 
@@ -421,6 +466,7 @@ function ensureSchema(d: Db): void {
   d.exec(TURNS_TABLE)
   migrateTurnsOutcomeBusy(d)
   migrateIdentityScope(d)
+  migrateBroadcastConfig(d)
   // Re-create after identity migration (tables may have been rebuilt).
   d.exec(THREADS_TABLE)
   d.exec(CONTEXT_TURNS_TABLE)
@@ -500,6 +546,10 @@ interface RobotRow {
   max_turn_ms: number | null
   enabled: number
   outbound_ack_at: number | null
+  outbound_ack_hash: string | null
+  broadcast_event_types: string
+  broadcast_to_bound_users: number
+  broadcast_group_chat_ids: string
   locale: string | null
   created_at: number
   updated_at: number
@@ -547,6 +597,10 @@ function toRobot(r: RobotRow): ImRobot {
     maxTurnMs: r.max_turn_ms,
     enabled: r.enabled === 1,
     outboundAckAt: r.outbound_ack_at,
+    outboundAckHash: r.outbound_ack_hash ?? null,
+    broadcastEventTypes: parseBroadcastTypes(r.broadcast_event_types ?? '[]'),
+    broadcastToBoundUsers: (r.broadcast_to_bound_users ?? 0) === 1,
+    broadcastGroupChatIds: parseList(r.broadcast_group_chat_ids ?? '[]'),
     locale: parseLocale(r.locale),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -661,6 +715,9 @@ export interface UpdateRobotInput {
   dmMode?: ImDmMode
   dmAllowlist?: string[]
   maxTurnMs?: number | null
+  broadcastEventTypes?: ImBroadcastType[]
+  broadcastToBoundUsers?: boolean
+  broadcastGroupChatIds?: string[]
   locale?: RobotMessageLocale | null
 }
 
@@ -686,6 +743,15 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
   if (patch.dmMode !== undefined && IM_DM_MODES.includes(patch.dmMode)) set('dm_mode', patch.dmMode)
   if (patch.dmAllowlist !== undefined) set('dm_allowlist', JSON.stringify(patch.dmAllowlist))
   if (patch.maxTurnMs !== undefined) set('max_turn_ms', patch.maxTurnMs)
+  if (patch.broadcastEventTypes !== undefined) {
+    set('broadcast_event_types', JSON.stringify(patch.broadcastEventTypes))
+  }
+  if (patch.broadcastToBoundUsers !== undefined) {
+    set('broadcast_to_bound_users', patch.broadcastToBoundUsers ? 1 : 0)
+  }
+  if (patch.broadcastGroupChatIds !== undefined) {
+    set('broadcast_group_chat_ids', JSON.stringify(patch.broadcastGroupChatIds))
+  }
   if (patch.locale !== undefined) set('locale', assertLocale(patch.locale))
 
   if (sets.length > 0) {
@@ -700,8 +766,17 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
 
 export function acknowledgeOutbound(id: string): ImRobot {
   const d = requireDb()
+  const existing = getRobot(id)
+  if (!existing) throw new RobotStoreError('not_found', '机器人不存在。')
   const t = now()
-  d.run('UPDATE im_robots SET outbound_ack_at = ?, updated_at = ? WHERE id = ?', t, t, id)
+  const hash = computeOutboundConfigHash(existing)
+  d.run(
+    'UPDATE im_robots SET outbound_ack_at = ?, outbound_ack_hash = ?, updated_at = ? WHERE id = ?',
+    t,
+    hash,
+    t,
+    id,
+  )
   const robot = getRobot(id)
   if (!robot) throw new RobotStoreError('not_found', '机器人不存在。')
   return robot
@@ -715,7 +790,7 @@ export function setRobotEnabled(id: string, enabled: boolean): ImRobot {
     if (!robot.hasSecret) {
       throw new RobotStoreError('secret_required', '启用前需要先配置应用密钥。')
     }
-    if (robot.outboundAckAt === null) {
+    if (robot.outboundAckAt === null || !outboundConfigAcknowledged(robot)) {
       throw new RobotStoreError(
         'outbound_not_acknowledged',
         '启用前需要先确认发往第三方平台的内容范围。',

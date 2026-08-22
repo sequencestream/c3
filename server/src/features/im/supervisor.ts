@@ -31,6 +31,7 @@ import {
   runtimeInputTooLongRef,
 } from './robot-message-registry.js'
 import { resolveImProvider } from './registry.js'
+import { registerRobotHandleLookup } from './supervisor-access.js'
 import {
   beginTurn,
   claimGateMessage,
@@ -56,6 +57,8 @@ export interface ImSupervisorDeps {
 interface RobotHandle {
   status: () => ImConnectionStatus
   close: () => Promise<void>
+  maxOutboundChars: number
+  rawSend: RawImSend
   sendOutbound: (
     content: OutboundContent,
     target: OutboundTarget,
@@ -610,6 +613,8 @@ function wrapHandle(
   return {
     status: c.status,
     close: c.close,
+    maxOutboundChars: capabilities.maxOutboundChars,
+    rawSend: c.send,
     sendOutbound: (content, target, renderContext) =>
       sendGuarded({
         robotId,
@@ -645,6 +650,11 @@ export function startImSupervisor(input: ImSupervisorDeps): void {
   if (handles || !isStoreAvailable() || !isIdentityStoreAvailable()) return
   deps = input
   handles = new Map()
+  registerRobotHandleLookup((robotId) => {
+    const h = handles?.get(robotId)
+    if (!h) return null
+    return { maxOutboundChars: h.maxOutboundChars, rawSend: h.rawSend }
+  })
   for (const r of listEnabledRobots()) void connectRobot(r)
 }
 export async function reloadRobot(id: string): Promise<void> {

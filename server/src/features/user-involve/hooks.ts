@@ -19,6 +19,7 @@ import type { Broadcaster } from '../../transport/index.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../../kernel/permission/gateway.js'
 import { createEvent, getEventByRequestId, listEvents } from './store.js'
 import { getByC3Id } from '../works/work-session-store.js'
+import { maybePublishPermissionQueued } from '../im/broadcast-hooks.js'
 
 /** Resolve a session's human-readable title from the projection (graceful: null on miss/error). */
 function lookupTitle(sessionId: string): string | null {
@@ -61,6 +62,8 @@ export function createPermissionRequestHandler(deps: {
       toolName: ctx.toolName,
       toolInput: ctx.input,
     })
+
+    maybePublishPermissionQueued(ctx.requestId)
 
     // Broadcast the fresh todo list so every connection sees it.
     const items = listEvents(ctx.workspacePath, 'todo')

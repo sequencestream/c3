@@ -43,6 +43,8 @@ import { getSddEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceBaseBranch } from './base-branch.js'
 import { parsePrIdentity } from './pr-identity.js'
 import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
+import { readSpecFingerprint } from './spec-review.js'
+import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
 const SCHEMA_VERSION = 22
 
@@ -1994,7 +1996,7 @@ export type SpecAuthoredOutcome = 'promoted' | 'reopened' | 'unchanged'
  */
 export function markSpecAuthored(id: string): SpecAuthoredOutcome {
   const d = requireDb()
-  let outcome: SpecAuthoredOutcome = 'unchanged'
+  const result: { outcome: SpecAuthoredOutcome } = { outcome: 'unchanged' }
   tx(d, () => {
     const row = d.get<Row>('SELECT * FROM intents WHERE id=?', id)
     if (!row) return
@@ -2006,21 +2008,27 @@ export function markSpecAuthored(id: string): SpecAuthoredOutcome {
         Date.now(),
         id,
       )
-      outcome = 'promoted'
+      result.outcome = 'promoted'
       return
     }
-    // `approved`: the reviewed-and-approved document has been rewritten. The
-    // approval is withdrawn with it — the conclusion it rested on is bound to the
-    // old fingerprint anyway, so leaving the flag set would admit development
-    // against content nobody approved.
     d.run(
       "UPDATE intents SET spec_status='pending', spec_approved=0, spec_approve_user=NULL, updated_at=? WHERE id=?",
       Date.now(),
       id,
     )
-    outcome = 'reopened'
+    result.outcome = 'reopened'
   })
-  return outcome
+  if (result.outcome === 'promoted' || result.outcome === 'reopened') {
+    const row = getIntent(id)
+    if (row?.specPath) {
+      const ws = resolveWorkspaceRoot(row.workspaceName)
+      if (ws) {
+        const fp = readSpecFingerprint(ws, row.specPath)
+        if (fp) maybePublishSpecAwaitingApproval(id, fp)
+      }
+    }
+  }
+  return result.outcome
 }
 
 /**

@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS im_robots (
   outbound_ack_at  INTEGER,            -- 用户确认外发内容范围的时刻 (epoch ms); 为空则拒绝启用
   locale           TEXT                -- 注册表文案语言; NULL = 系统默认 (en); 仅影响固定控制提示
                    CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
+  outbound_ack_hash TEXT,              -- 外发确认时刻的配置规范化哈希; 变更回复面或 L0 目标后须重新确认
+  broadcast_event_types TEXT NOT NULL  -- JSON 数组: 允许的 L0 播报事件类型; 空 = 无主动播报
+                   DEFAULT '[]',
+  broadcast_to_bound_users INTEGER NOT NULL -- 1 = 向绑定用户私聊播报 (个人 scope 含对象工作区)
+                   DEFAULT 0,
+  broadcast_group_chat_ids TEXT NOT NULL -- JSON 数组: 允许接收播报的群 id (亦须过 chat_allowlist)
+                   DEFAULT '[]',
   created_at       INTEGER NOT NULL,   -- epoch ms
   updated_at       INTEGER NOT NULL    -- epoch ms
 );

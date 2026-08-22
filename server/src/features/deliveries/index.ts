@@ -56,6 +56,7 @@ import { resolveWorkspaceBaseBranch } from '../intents/base-branch.js'
 import { parsePrIdentity } from '../intents/pr-identity.js'
 import { getIntent, upsertIntentPr } from '../intents/store.js'
 import { markQueueDirty } from '../intents/workflow.js'
+import { maybePublishDeliveryReviewRequired } from '../im/broadcast-hooks.js'
 import { deliveryMergeActionable } from './merge-attention.js'
 import {
   canTransitionDelivery,
@@ -1642,6 +1643,9 @@ function publishDeliveryStatusChanged(
     from,
     to,
   })
+  if (to === 'verifying') {
+    maybePublishDeliveryReviewRequired(delivery.id, delivery.updatedAt)
+  }
 }
 
 /**

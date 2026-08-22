@@ -60,9 +60,14 @@ export interface RunRobotTurnInput {
   /**
    * The robot's working directory — `~/.c3/robots/<name>`. Deliberately not a
    * registered workspace: a robot is not scoped to one, and this directory is
-   * all it can reach.
+   * all local file tools can reach.
    */
   workspacePath: string
+  /**
+   * Call-level IM authorization for c3 L1 tools. Required for ledger access;
+   * handlers re-resolve scope on every call.
+   */
+  imAuth: NonNullable<import('../runs.js').SessionRuntime['robotImAuth']>
   /**
    * Optional native session cache for this Conversation. Present only when the
    * supervisor verified it against the Conversation's vendor and revision.
@@ -110,6 +115,7 @@ export function makeRunRobotTurn(
       // intent it reviews: `launchRun` resolves the robot's profile from it and
       // throws when it is missing, so a turn can never run unconstrained.
       rt.robotId = input.robotId
+      rt.robotImAuth = input.imAuth
 
       let lastText = ''
       let settled = false

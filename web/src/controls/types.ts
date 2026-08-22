@@ -409,6 +409,28 @@ export interface AppMethods {
   revokeMyMcpApiKey(payload: { id: string }): void
   /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
   dismissMyMcpApiKeyReveal(): void
+  /** Load this identity's IM binding state and pending challenge summary. */
+  fetchMyImIdentity(): void
+  /** Create a one-shot IM binding challenge; plaintext arrives in `im_identity_challenge_created`. */
+  createImIdentityChallenge(robotId: string): void
+  cancelImIdentityChallenge(challengeId: string): void
+  revokeMyImIdentity(bindingId: string): void
+  /** Drop the one-time binding token from memory. */
+  dismissImIdentityChallengeReveal(): void
+  /** Admin: list active bindings for one robot account namespace. */
+  fetchImIdentityBindings(accountNamespace: string): void
+  adminRevokeImIdentity(bindingId: string): void
+  fetchImGroupWorkspaceScopes(
+    platform: ImPlatform,
+    providerAccountKey: string,
+    chatId: string,
+  ): void
+  setImGroupWorkspaceScopes(
+    platform: ImPlatform,
+    providerAccountKey: string,
+    chatId: string,
+    workspaceNames: string[],
+  ): void
   /** Load the account × workspace access roster (administrator-only server-side). */
   fetchUserWorkspaceAccess(): void
   /** Replace ONE account's workspace policy with the complete submitted set. */

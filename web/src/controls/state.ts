@@ -83,6 +83,10 @@ import type {
   WorkspaceDashboardRow,
   ImRobot,
   ImRobotTurnLog,
+  ImIdentityBinding,
+  ImIdentityChallengeCreated,
+  ImIdentityChallengeSummary,
+  ImGroupWorkspaceGrant,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import { useTypedI18n } from '@/i18n'
@@ -93,6 +97,12 @@ import type { ApprovalRequest } from '@/components/SkillApprovalModal/SkillAppro
 export type TypedT = ReturnType<typeof useTypedI18n>['t']
 export type ModeLabel = ReturnType<typeof useModeLabel>
 export type AuthApi = ReturnType<typeof useAuth>
+
+export type MyImIdentityView = {
+  bindings: ImIdentityBinding[]
+  pendingChallenges: ImIdentityChallengeSummary[]
+  noAuthLocalHint: boolean
+}
 
 export interface StateDeps {
   t: TypedT
@@ -826,6 +836,15 @@ export function createState(deps: StateDeps) {
   const myMcpApiKeys = ref<McpApiKeyMeta[]>([])
   const myMcpApiKeyCreated = ref<{ meta: McpApiKeyMeta; key: string } | null>(null)
 
+  // IM identity binding (personal settings). Challenge plaintext mirrors MCP keys:
+  // shown once in memory, cleared on dismiss / page close / reconnect.
+  const myImIdentity = ref<MyImIdentityView | null>(null)
+  const imIdentityChallengeCreated = ref<ImIdentityChallengeCreated | null>(null)
+  // Admin robot console: bindings and group scope for the selected robot.
+  const imIdentityBindings = ref<ImIdentityBinding[]>([])
+  const imGroupWorkspaceScopes = ref<ImGroupWorkspaceGrant[]>([])
+  const imGroupScopeChatId = ref('')
+
   // ---- Account × workspace access (system settings) ----
   // The administrator's authorization editor. Held outside `serverSettings`
   // because it is NOT part of the `SystemSettings` draft/save payload: a whole
@@ -1277,6 +1296,11 @@ export function createState(deps: StateDeps) {
     bindingStats,
     myMcpApiKeys,
     myMcpApiKeyCreated,
+    myImIdentity,
+    imIdentityChallengeCreated,
+    imIdentityBindings,
+    imGroupWorkspaceScopes,
+    imGroupScopeChatId,
     userWorkspaceAccess,
     workspaceAccessors,
     sessionCapabilities,

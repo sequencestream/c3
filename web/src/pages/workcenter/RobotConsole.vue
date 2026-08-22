@@ -18,11 +18,14 @@ import RobotDetail from './components/robots/RobotDetail.vue'
 import RobotForm from './components/robots/RobotForm.vue'
 import type {
   AgentConfig,
+  ImGroupWorkspaceGrant,
+  ImIdentityBinding,
   ImPlatform,
   ImRobot,
   ImRobotTurnLog,
   RobotConfigInput,
   ToolManifestEntry,
+  WorkspaceInfo,
 } from '@ccc/shared/protocol'
 
 const props = defineProps<{
@@ -35,6 +38,9 @@ const props = defineProps<{
   toolManifest: Record<string, ToolManifestEntry[] | null>
   toolManifestLoading: boolean
   toolManifestError: string | null
+  workspaces: WorkspaceInfo[]
+  imIdentityBindings: ImIdentityBinding[]
+  imGroupWorkspaceScopes: ImGroupWorkspaceGrant[]
 }>()
 
 const emit = defineEmits<{
@@ -45,6 +51,20 @@ const emit = defineEmits<{
   (e: 'enable', robotId: string): void
   (e: 'disable', robotId: string): void
   (e: 'load-tool-manifest', vendor: string): void
+  (e: 'admin-revoke-im-identity', bindingId: string): void
+  (
+    e: 'load-im-group-scopes',
+    platform: ImPlatform,
+    providerAccountKey: string,
+    chatId: string,
+  ): void
+  (
+    e: 'save-im-group-scopes',
+    platform: ImPlatform,
+    providerAccountKey: string,
+    chatId: string,
+    workspaceNames: string[],
+  ): void
 }>()
 
 const { t } = useTypedI18n()
@@ -85,6 +105,18 @@ function submitUpdate(robotId: string, config: RobotConfigInput): void {
   formOpen.value = false
   emit('update', robotId, config)
 }
+
+function onLoadGroupScopes(chatId: string): void {
+  const r = selected.value
+  if (!r) return
+  emit('load-im-group-scopes', r.platform, r.appId, chatId)
+}
+
+function onSaveGroupScopes(chatId: string, workspaceNames: string[]): void {
+  const r = selected.value
+  if (!r) return
+  emit('save-im-group-scopes', r.platform, r.appId, chatId, workspaceNames)
+}
 </script>
 
 <template>
@@ -110,10 +142,16 @@ function submitUpdate(robotId: string, config: RobotConfigInput): void {
         :robot="selected"
         :turns="turns"
         :is-admin="isAdmin"
+        :workspaces="workspaces"
+        :im-identity-bindings="imIdentityBindings"
+        :im-group-workspace-scopes="imGroupWorkspaceScopes"
         @edit="openEdit"
         @delete="emit('delete', $event)"
         @enable="emit('enable', $event)"
         @disable="emit('disable', $event)"
+        @admin-revoke-im-identity="emit('admin-revoke-im-identity', $event)"
+        @load-im-group-scopes="onLoadGroupScopes"
+        @save-im-group-scopes="onSaveGroupScopes"
       />
     </template>
   </MobileStack>
@@ -133,10 +171,16 @@ function submitUpdate(robotId: string, config: RobotConfigInput): void {
         :robot="selected"
         :turns="turns"
         :is-admin="isAdmin"
+        :workspaces="workspaces"
+        :im-identity-bindings="imIdentityBindings"
+        :im-group-workspace-scopes="imGroupWorkspaceScopes"
         @edit="openEdit"
         @delete="emit('delete', $event)"
         @enable="emit('enable', $event)"
         @disable="emit('disable', $event)"
+        @admin-revoke-im-identity="emit('admin-revoke-im-identity', $event)"
+        @load-im-group-scopes="onLoadGroupScopes"
+        @save-im-group-scopes="onSaveGroupScopes"
       />
     </section>
   </div>

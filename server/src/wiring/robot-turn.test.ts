@@ -36,6 +36,15 @@ function input(overrides: Partial<RunRobotTurnInput> = {}): RunRobotTurnInput {
   return {
     robotId: 'rb-1',
     workspacePath: '/home/u/.c3/robots/helper',
+    imAuth: {
+      senderId: 'ou_1',
+      chatType: 'p2p',
+      chatId: 'oc_1',
+      providerAccountKey: 'cli_app',
+      platform: 'feishu',
+      expectedBindingId: 'bind-1',
+      turnStartScopeHash: 'hash-1',
+    },
     prompt: 'what is the build status?',
     maxTurnMs: 300_000,
     signal: new AbortController().signal,

@@ -130,11 +130,10 @@ describe('robot MCP HTTP route', () => {
       const listed = await client.listTools()
       expect(listed.tools.map((t) => t.name)).toEqual(['find_intents'])
 
-      // A fresh robot run root has no intents — find_* returning empty is the
-      // EXPECTED scoping (spec: c3 MCP 不得跨出机器人自身运行根目录), not an error.
+      // A robot MCP bind without imAuth must not leak ledger data — L1 tools
+      // refuse with the same not_visible shape as an unauthorized object read.
       const find = await client.callTool({ name: 'find_intents', arguments: {} })
-      expect(find.isError).toBeFalsy()
-      expect(JSON.stringify(find.content)).toContain('未找到匹配的意图')
+      expect(JSON.stringify(find.content)).toContain('not_visible')
     } finally {
       await client.close()
       binding.dispose()

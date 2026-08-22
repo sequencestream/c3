@@ -7,7 +7,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
-import { FIXED_NOTICES, screenOutbound, sendGuarded, type RawImSend } from './outbound-guard.js'
+import {
+  BINDING_FIXED_NOTICES,
+  FIXED_NOTICES,
+  GENERAL_FIXED_NOTICES,
+  screenOutbound,
+  sendGuarded,
+  type RawImSend,
+} from './outbound-guard.js'
 import {
   acknowledgeOutbound,
   createRobot,
@@ -231,9 +238,11 @@ describe('sendGuarded — content categories', () => {
     expect(JSON.stringify(result)).not.toContain(secret)
   })
 
-  it('sends each registered fixed notice without credential scanning', async () => {
+  it('sends each general fixed notice without credential scanning', async () => {
     const id = enabledRobot()
-    for (const notice of Object.keys(FIXED_NOTICES) as (keyof typeof FIXED_NOTICES)[]) {
+    for (const notice of Object.keys(
+      GENERAL_FIXED_NOTICES,
+    ) as (keyof typeof GENERAL_FIXED_NOTICES)[]) {
       const { sent, rawSend } = rawRecorder()
       const result = await sendGuarded({
         robotId: id,
@@ -245,6 +254,83 @@ describe('sendGuarded — content categories', () => {
       expect(result.ok).toBe(true)
       expect(sent).toEqual([{ chatId: 'oc_1', text: FIXED_NOTICES[notice], replyTo: 'm1' }])
     }
+  })
+
+  it('refuses binding notices forged as fixed_notice at runtime', async () => {
+    const id = enabledRobot()
+    const { sent, rawSend } = rawRecorder()
+    const forged = {
+      category: 'fixed_notice',
+      notice: 'bind_success',
+    } as unknown as Parameters<typeof sendGuarded>[0]['content']
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: forged,
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'invalid_notice', outboundChars: 0 })
+    expect(sent).toEqual([])
+  })
+
+  it('delivers binding notices only through binding_notice with origin constraints', async () => {
+    const id = enabledRobot()
+    const target = {
+      chatId: 'ou_user',
+      chatType: 'p2p' as const,
+      senderId: 'ou_user',
+      replyTo: 'm1',
+    }
+    const { sent, rawSend } = rawRecorder()
+    const ok = await sendGuarded({
+      robotId: id,
+      target,
+      content: {
+        category: 'binding_notice',
+        notice: 'bind_success',
+        origin: target,
+      },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(ok.ok).toBe(true)
+    expect(sent[0]?.text).toBe(BINDING_FIXED_NOTICES.bind_success)
+  })
+
+  it('refuses binding notices retargeted to another chat or sender', async () => {
+    const id = enabledRobot()
+    const origin = {
+      chatId: 'ou_user',
+      chatType: 'p2p' as const,
+      senderId: 'ou_user',
+      replyTo: 'm1',
+    }
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'ou_other', chatType: 'p2p', senderId: 'ou_other', replyTo: 'm2' },
+      content: { category: 'binding_notice', notice: 'bind_success', origin },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'binding_target_mismatch' })
+    expect(sent).toEqual([])
+  })
+
+  it('refuses bind_success in a group even as binding_notice', async () => {
+    const id = enabledRobot()
+    const target = { chatId: 'oc_1', chatType: 'group' as const, senderId: 'ou_u', replyTo: 'm1' }
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target,
+      content: { category: 'binding_notice', notice: 'bind_success', origin: target },
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'binding_not_p2p' })
+    expect(sent).toEqual([])
   })
 
   it('truncates a long fixed notice to the platform limit', async () => {

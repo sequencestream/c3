@@ -48,8 +48,63 @@ export const IM_TURN_OUTCOMES = [
   'guard_refused',
   'input_rejected',
   'busy',
+  /** Unbound / revoked sender — identity gate closed before any agent run. */
+  'identity_required',
+  /** Authorization version changed mid-turn; final answer discarded. */
+  'scope_changed',
 ] as const
 export type ImTurnOutcome = (typeof IM_TURN_OUTCOMES)[number]
+
+/** How an IM identity challenge ended, for list/detail summaries (never carries the token). */
+export const IM_CHALLENGE_STATUSES = ['pending', 'consumed', 'expired', 'cancelled'] as const
+export type ImChallengeStatus = (typeof IM_CHALLENGE_STATUSES)[number]
+
+/**
+ * Active binding summary for the authenticated subject (self) or admin views.
+ * Tokens never appear here.
+ */
+export interface ImIdentityBinding {
+  id: string
+  /** Stable account namespace, e.g. `feishu:<appId>`. */
+  accountNamespace: string
+  platform: ImPlatform
+  /** Opaque platform sender id (admin views may redact; self views show full). */
+  senderId: string
+  subject: string
+  verifiedAt: number
+  revokedAt: number | null
+}
+
+/** One-shot challenge creation result — plaintext token appears ONLY here. */
+export interface ImIdentityChallengeCreated {
+  challengeId: string
+  accountNamespace: string
+  robotId: string
+  /** Plaintext token; never listed or re-fetched. */
+  token: string
+  expiresAt: number
+}
+
+/** Pending challenge summary without the token. */
+export interface ImIdentityChallengeSummary {
+  challengeId: string
+  accountNamespace: string
+  robotId: string
+  status: ImChallengeStatus
+  createdAt: number
+  expiresAt: number
+}
+
+/** One workspace granted to a group chat for detail visibility. */
+export interface ImGroupWorkspaceGrant {
+  platform: ImPlatform
+  /** Provider account key within the platform (Feishu: appId). */
+  providerAccountKey: string
+  chatId: string
+  workspaceName: string
+  grantedBy: string
+  grantedAt: number
+}
 
 /** Closed reason when {@link ImTurnOutcome} is `input_rejected`. */
 export const IM_INPUT_REJECT_REASONS = ['credential', 'too_long'] as const

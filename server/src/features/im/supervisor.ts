@@ -5,10 +5,19 @@ import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/paths.js'
 import type { RobotTurnResult, RunRobotTurnInput } from '../../wiring/robot-turn.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
+import {
+  accountNamespaceOf,
+  consumeChallenge,
+  getActiveBindingForSender,
+  isIdentityStoreAvailable,
+  providerAccountKeyOf,
+} from './identity-store.js'
+import { chatContextFor, resolveCallScope } from './call-scope.js'
 import { formatContextSeed } from './context-seed.js'
 import { screenInbound } from './inbound-guard.js'
 import {
   sendGuarded,
+  type BindingNoticeId,
   type FixedNoticeId,
   type OutboundContent,
   type OutboundTarget,
@@ -17,6 +26,7 @@ import {
 import { resolveImProvider } from './registry.js'
 import {
   beginTurn,
+  claimGateMessage,
   claimInboundMessage,
   commitContextTurn,
   failContextTurn,
@@ -48,6 +58,10 @@ let deps: ImSupervisorDeps | null = null
 let handles: Map<string, RobotHandle> | null = null
 const inFlight = new Map<string, Promise<void>>()
 const failures = new Map<string, string>()
+
+/** Base64url-ish token shape (128-bit ≈ 22 chars; allow a small range). */
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,48}$/
+
 export function robotWorkdir(name: string): string {
   return join(c3HomeDir(), 'robots', name)
 }
@@ -86,6 +100,94 @@ function fail(id: string): void {
 async function fixed(h: RobotHandle, n: FixedNoticeId, t: OutboundTarget) {
   return h.sendOutbound({ category: 'fixed_notice', notice: n }, t)
 }
+async function bindingNotice(h: RobotHandle, n: BindingNoticeId, t: OutboundTarget) {
+  return h.sendOutbound({ category: 'binding_notice', notice: n, origin: t }, t)
+}
+
+async function claimControlMessage(
+  r: ImRobot,
+  h: RobotHandle,
+  m: ImInboundMessage,
+): Promise<'duplicate' | 'claimed' | 'error'> {
+  try {
+    return claimGateMessage({
+      platform: r.platform,
+      robotId: r.id,
+      threadKey: threadKeyFor(m),
+      senderId: m.senderId,
+      messageId: m.messageId,
+    })
+  } catch (e) {
+    void fixed(
+      h,
+      e instanceof RobotStoreError && e.code === 'db_unavailable' ? 'store_unavailable' : 'error',
+      targetOf(m),
+    )
+    return 'error'
+  }
+}
+
+async function auditedBindingNotice(
+  r: ImRobot,
+  h: RobotHandle,
+  m: ImInboundMessage,
+  noticeId: BindingNoticeId,
+  outcome: ImTurnOutcome,
+): Promise<void> {
+  const tid = beginTurn({
+    robotId: r.id,
+    threadKey: threadKeyFor(m),
+    chatId: m.chatId,
+    senderId: m.senderId,
+    messageId: m.messageId,
+  })
+  const s = await bindingNotice(h, noticeId, targetOf(m))
+  finishTurn(tid, {
+    outcome,
+    outboundChars: s.ok ? s.outboundChars : 0,
+    outMessageId: s.ok ? s.messageId : null,
+    error: s.ok ? null : s.reason,
+  })
+}
+
+/**
+ * Deterministic bind-control path before ordinary chat. Returns true when the
+ * message was fully handled here (no agent run). Claims the inbound messageId
+ * first so a redelivery cannot consume twice or send a second notice.
+ */
+async function handleBindingControl(
+  r: ImRobot,
+  h: RobotHandle,
+  m: ImInboundMessage,
+): Promise<boolean> {
+  const text = m.text.trim()
+  if (!TOKEN_SHAPE.test(text)) return false
+
+  const gate = await claimControlMessage(r, h, m)
+  if (gate !== 'claimed') return true
+
+  if (m.chatType === 'group') {
+    // Do not query or consume — no oracle. Always the same guide.
+    await auditedBindingNotice(r, h, m, 'bind_use_dm', 'identity_required')
+    return true
+  }
+
+  const ns = accountNamespaceOf(r.platform, r.appId)
+  const result = consumeChallenge({
+    robotId: r.id,
+    accountNamespace: ns,
+    senderId: m.senderId,
+    token: text,
+  })
+  await auditedBindingNotice(
+    r,
+    h,
+    m,
+    result.ok ? 'bind_success' : 'bind_failed',
+    result.ok ? 'complete' : 'identity_required',
+  )
+  return true
+}
 
 async function runOneTurn(
   r: ImRobot,
@@ -93,6 +195,8 @@ async function runOneTurn(
   m: ImInboundMessage,
   threadKey: string,
   contextTurnId: string,
+  identity: ReturnType<typeof conversationIdentityOf>,
+  turnScopeHash: string,
 ): Promise<void> {
   const turnId = beginTurn({
     robotId: r.id,
@@ -142,7 +246,8 @@ async function runOneTurn(
     })
     return
   }
-  const identity = conversationIdentityOf(r.platform, r.id, threadKey, m.senderId)
+
+  let scopeChanged = false
   const c = getConversation(identity),
     ref = c ? resolvedSessionRef(c, r.vendor) : null
   let result: RobotTurnResult
@@ -150,6 +255,18 @@ async function runOneTurn(
     result = await runner({
       robotId: r.id,
       workspacePath: robotWorkdir(r.name),
+      imAuth: {
+        senderId: m.senderId,
+        chatType: m.chatType,
+        chatId: m.chatId,
+        providerAccountKey: providerAccountKeyOf(r.platform, r.appId),
+        platform: r.platform,
+        expectedBindingId: identity.bindingId,
+        turnStartScopeHash: turnScopeHash,
+        onScopeChanged: () => {
+          scopeChanged = true
+        },
+      },
       ...(ref ? { sessionId: ref.sessionId } : {}),
       prompt: ref ? m.text : formatContextSeed(loadCommittedContext(identity), m.text),
       maxTurnMs: r.maxTurnMs ?? ROBOT_DEFAULT_MAX_TURN_MS,
@@ -165,6 +282,40 @@ async function runOneTurn(
     })
     return
   }
+
+  // Pre-send authorization recheck.
+  const chat = chatContextFor(r.platform, r.appId, m.chatType, m.chatId)
+  const live = resolveCallScope({
+    robotId: r.id,
+    senderId: m.senderId,
+    chat,
+    expectedBindingId: identity.bindingId,
+  })
+  if (!live.ok) {
+    fail(contextTurnId)
+    const s = await bindingNotice(h, 'identity_required', target)
+    finishTurn(turnId, {
+      outcome: 'identity_required',
+      sessionId: result.sessionId,
+      outboundChars: s.ok ? s.outboundChars : 0,
+      outMessageId: s.ok ? s.messageId : null,
+      error: s.ok ? null : s.reason,
+    })
+    return
+  }
+  if (scopeChanged || live.scope.scopeHash !== turnScopeHash) {
+    fail(contextTurnId)
+    const s = await bindingNotice(h, 'scope_changed', target)
+    finishTurn(turnId, {
+      outcome: 'scope_changed',
+      sessionId: result.sessionId,
+      outboundChars: s.ok ? s.outboundChars : 0,
+      outMessageId: s.ok ? s.messageId : null,
+      error: s.ok ? null : s.reason,
+    })
+    return
+  }
+
   if (result.outcome !== 'complete' || !result.lastMessage.trim()) {
     const o: ImTurnOutcome = result.outcome === 'complete' ? 'error' : result.outcome
     fail(contextTurnId)
@@ -208,30 +359,134 @@ async function runOneTurn(
 function onInbound(id: string, m: ImInboundMessage): void {
   const h = handles?.get(id),
     r = getRobot(id)
-  if (!h || !r || !r.enabled || !m.senderId.trim() || !accepts(r, m)) return
+  if (!h || !r || !r.enabled || !m.senderId.trim()) return
   const target = targetOf(m)
-  if (!isStoreAvailable()) {
+
+  if (!isStoreAvailable() || !isIdentityStoreAvailable()) {
     void fixed(h, 'store_unavailable', target)
     return
   }
-  const threadKey = threadKeyFor(m),
-    gate = conversationGateKey(conversationIdentityOf(r.platform, r.id, threadKey, m.senderId))
-  // Claim before any outbound so every accepted messageId (including busy) is
-  // durable dedup. Busy uses forRun:false — failed row only, no orphan heal.
-  if (inFlight.has(gate)) {
+
+  void (async () => {
+    const tokenText = m.text.trim()
+    if (TOKEN_SHAPE.test(tokenText)) {
+      // P2p bind tokens skip dmMode; group tokens still need mention/allowlist.
+      if (m.chatType === 'group' && !accepts(r, m)) return
+      if (await handleBindingControl(r, h, m)) return
+    }
+
+    const ns = accountNamespaceOf(r.platform, r.appId)
+    const binding = getActiveBindingForSender(ns, m.senderId)
+    if (!binding) {
+      // Group mention/allowlist still decides whether we respond at all.
+      // DM identity guides skip dmMode so a disabled-DM robot can still bind.
+      if (m.chatType === 'group' && !accepts(r, m)) return
+      const gate = await claimControlMessage(r, h, m)
+      if (gate !== 'claimed') return
+      await auditedBindingNotice(r, h, m, 'identity_required', 'identity_required')
+      return
+    }
+
+    // Bound senders still pass ordinary accept filters (dmMode / mention / chatAllowlist).
+    if (!accepts(r, m)) return
+
+    const chat = chatContextFor(r.platform, r.appId, m.chatType, m.chatId)
+    const scope = resolveCallScope({
+      robotId: r.id,
+      senderId: m.senderId,
+      chat,
+      expectedBindingId: binding.id,
+    })
+    if (!scope.ok) {
+      const tid = beginTurn({
+        robotId: r.id,
+        threadKey: threadKeyFor(m),
+        chatId: m.chatId,
+        senderId: m.senderId,
+        messageId: m.messageId,
+      })
+      const s = await bindingNotice(h, 'identity_required', target)
+      finishTurn(tid, {
+        outcome: 'identity_required',
+        outboundChars: s.ok ? s.outboundChars : 0,
+        outMessageId: s.ok ? s.messageId : null,
+        error: s.ok ? null : s.reason,
+      })
+      return
+    }
+
+    const threadKey = threadKeyFor(m)
+    const identity = conversationIdentityOf(
+      r.platform,
+      r.id,
+      threadKey,
+      m.senderId,
+      binding.id,
+      binding.subject,
+      scope.scope.scopeHash,
+    )
+    const gate = conversationGateKey(identity)
+
+    if (inFlight.has(gate)) {
+      let claim: ReturnType<typeof claimInboundMessage>
+      try {
+        claim = claimInboundMessage({
+          ...identity,
+          chatId: m.chatId,
+          vendor: r.vendor,
+          messageId: m.messageId,
+          forRun: false,
+        })
+      } catch (e) {
+        void fixed(
+          h,
+          e instanceof RobotStoreError && e.code === 'db_unavailable'
+            ? 'store_unavailable'
+            : 'error',
+          target,
+        )
+        return
+      }
+      if (claim.kind === 'duplicate') return
+      const tid = beginTurn({
+        robotId: r.id,
+        threadKey,
+        chatId: m.chatId,
+        senderId: m.senderId,
+        messageId: m.messageId,
+      })
+      void fixed(h, 'busy', target)
+        .then((s) =>
+          finishTurn(tid, {
+            outcome: 'busy',
+            outboundChars: s.ok ? s.outboundChars : 0,
+            outMessageId: s.ok ? s.messageId : null,
+            error: s.ok ? null : s.reason,
+          }),
+        )
+        .catch((e) => finishTurn(tid, { outcome: 'busy', error: errText(e) }))
+      return
+    }
+
+    let release = () => {}
+    inFlight.set(
+      gate,
+      new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    )
     let claim: ReturnType<typeof claimInboundMessage>
     try {
       claim = claimInboundMessage({
-        platform: r.platform,
-        robotId: r.id,
-        threadKey,
-        senderId: m.senderId,
+        ...identity,
         chatId: m.chatId,
         vendor: r.vendor,
         messageId: m.messageId,
-        forRun: false,
+        forRun: true,
       })
     } catch (e) {
+      inFlight.delete(gate)
+      release()
       void fixed(
         h,
         e instanceof RobotStoreError && e.code === 'db_unavailable' ? 'store_unavailable' : 'error',
@@ -239,70 +494,30 @@ function onInbound(id: string, m: ImInboundMessage): void {
       )
       return
     }
-    if (claim.kind === 'duplicate') return
-    const tid = beginTurn({
-      robotId: r.id,
-      threadKey,
-      chatId: m.chatId,
-      senderId: m.senderId,
-      messageId: m.messageId,
-    })
-    void fixed(h, 'busy', target)
-      .then((s) =>
-        finishTurn(tid, {
-          outcome: 'busy',
-          outboundChars: s.ok ? s.outboundChars : 0,
-          outMessageId: s.ok ? s.messageId : null,
-          error: s.ok ? null : s.reason,
-        }),
-      )
-      .catch((e) => finishTurn(tid, { outcome: 'busy', error: errText(e) }))
-    return
-  }
-  let release = () => {}
-  inFlight.set(
-    gate,
-    new Promise<void>((resolve) => {
-      release = resolve
-    }),
-  )
-  let claim: ReturnType<typeof claimInboundMessage>
-  try {
-    claim = claimInboundMessage({
-      platform: r.platform,
-      robotId: r.id,
-      threadKey,
-      senderId: m.senderId,
-      chatId: m.chatId,
-      vendor: r.vendor,
-      messageId: m.messageId,
-      forRun: true,
-    })
-  } catch (e) {
-    inFlight.delete(gate)
-    release()
-    void fixed(
-      h,
-      e instanceof RobotStoreError && e.code === 'db_unavailable' ? 'store_unavailable' : 'error',
-      target,
-    )
-    return
-  }
-  if (claim.kind !== 'claimed') {
-    inFlight.delete(gate)
-    release()
-    return
-  }
-  const running = runOneTurn(r, h, m, threadKey, claim.contextTurnId)
-    .catch((e) => {
-      console.error('[c3][im] turn failed:', errText(e))
-      fail(claim.contextTurnId)
-    })
-    .finally(() => {
+    if (claim.kind !== 'claimed') {
       inFlight.delete(gate)
       release()
-    })
-  inFlight.set(gate, running)
+      return
+    }
+    const running = runOneTurn(
+      r,
+      h,
+      m,
+      threadKey,
+      claim.contextTurnId,
+      identity,
+      scope.scope.scopeHash,
+    )
+      .catch((e) => {
+        console.error('[c3][im] turn failed:', errText(e))
+        fail(claim.contextTurnId)
+      })
+      .finally(() => {
+        inFlight.delete(gate)
+        release()
+      })
+    inFlight.set(gate, running)
+  })()
 }
 
 function wrapHandle(
@@ -344,7 +559,7 @@ async function connectRobot(r: ImRobot): Promise<void> {
   }
 }
 export function startImSupervisor(input: ImSupervisorDeps): void {
-  if (handles || !isStoreAvailable()) return
+  if (handles || !isStoreAvailable() || !isIdentityStoreAvailable()) return
   deps = input
   handles = new Map()
   for (const r of listEnabledRobots()) void connectRobot(r)

@@ -879,6 +879,60 @@
       "lastUsed": {
         "never": "从未使用"
       }
+    },
+    "imIdentity": {
+      "title": {
+        "label": "IM 身份"
+      },
+      "hint": "将 c3 账号与 IM 发送者绑定,聊天机器人才能确认你的身份。在此创建一次性验证码,再在与机器人的私聊中发送。",
+      "noAuthHint": "未登录时,首个完成绑定的人将成为该应用下唯一的 local 主体并获得全部注册工作区个人范围;多人使用前请先启用 basic auth。",
+      "unavailable": "此服务器的 IM 身份存储不可用。",
+      "bound": {
+        "title": "当前绑定",
+        "namespace": "账号命名空间",
+        "verified": "已于 {time} 验证"
+      },
+      "pending": {
+        "title": "待完成挑战",
+        "expires": "将于 {time} 过期",
+        "cancel": {
+          "label": "取消"
+        }
+      },
+      "empty": "尚未绑定 IM 身份。",
+      "robot": {
+        "label": "机器人",
+        "placeholder": "选择机器人"
+      },
+      "create": {
+        "label": "创建绑定验证码",
+        "submit": {
+          "label": "创建验证码"
+        }
+      },
+      "reveal": {
+        "title": "绑定验证码",
+        "forRobot": "对应机器人「{name}」。",
+        "onceOnly": "仅显示一次。请将完整验证码发到与机器人的私聊(不要在群里发送)。",
+        "dismiss": {
+          "label": "我已复制"
+        },
+        "token": {
+          "label": "验证码"
+        }
+      },
+      "revoke": {
+        "label": "撤销绑定",
+        "confirm": {
+          "title": "撤销 IM 绑定?",
+          "body": "IM 发送者将不再被视为你,需重新绑定。",
+          "confirm": {
+            "label": "撤销"
+          }
+        }
+      },
+      "noRobot": "没有可用于绑定的已启用机器人。机器人须已启用并完成外发确认。",
+      "allBound": "每个已启用机器人应用都已绑定。撤销其中一个后可重新绑定该命名空间。"
     }
   },
   "intent": {
@@ -2491,7 +2545,12 @@
       "platformUnsupported": "当前版本不支持该平台。",
       "secretRequired": "启用前请先配置应用密钥。",
       "outboundNotAcknowledged": "启用前请先确认发往本机之外的内容范围。",
-      "agentRequired": "请选择厂商与 agent。"
+      "agentRequired": "请选择厂商与 agent。",
+      "identityUnavailable": "IM 身份存储不可用。",
+      "challengeNotFound": "未找到该绑定挑战。",
+      "bindingNotFound": "未找到该身份绑定。",
+      "robotNotReady": "请选择已启用且已确认外发的机器人。",
+      "notOwner": "只能管理自己的身份绑定。"
     }
   },
   "statusIndicator": {
@@ -3902,8 +3961,53 @@
           },
           "busy": {
             "label": "线程忙"
+          },
+          "identity_required": {
+            "label": "需要身份绑定"
+          },
+          "scope_changed": {
+            "label": "权限已变化"
           }
         }
+      }
+    },
+    "identityAdmin": {
+      "title": "IM 身份绑定",
+      "hint": "此机器人应用下的活跃发送者绑定。撤销立即生效。",
+      "empty": "暂无活跃绑定。",
+      "sender": {
+        "label": "发送者"
+      },
+      "subject": {
+        "label": "主体"
+      },
+      "verified": {
+        "label": "验证时间"
+      },
+      "revoke": {
+        "label": "撤销",
+        "confirm": {
+          "title": "撤销此绑定?",
+          "body": "该 IM 发送者将不再被视为对应主体,需重新绑定。",
+          "confirm": {
+            "label": "撤销"
+          }
+        }
+      },
+      "groupScope": {
+        "title": "群工作区可见范围",
+        "hint": "群内回复可展示哪些工作区的台账明细。响应群白名单本身不授予数据访问。",
+        "chatId": {
+          "label": "群 chat ID",
+          "placeholder": "oc_…"
+        },
+        "load": {
+          "label": "加载"
+        },
+        "save": {
+          "label": "保存"
+        },
+        "empty": "未选择工作区 — 群内回复不展示台账明细。"
       }
     },
     "form": {

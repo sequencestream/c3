@@ -433,6 +433,17 @@ const {
   resetMyMcpApiKey,
   revokeMyMcpApiKey,
   dismissMyMcpApiKeyReveal,
+  myImIdentity,
+  imIdentityChallengeCreated,
+  createImIdentityChallenge,
+  cancelImIdentityChallenge,
+  revokeMyImIdentity,
+  dismissImIdentityChallengeReveal,
+  imIdentityBindings,
+  imGroupWorkspaceScopes,
+  adminRevokeImIdentity,
+  fetchImGroupWorkspaceScopes,
+  setImGroupWorkspaceScopes,
   closePersonalizedSetting,
   openSettingsFromPersonalizedSetting,
   workspaceAccessors,
@@ -1055,6 +1066,9 @@ function onFilesChatWidth(px: number): void {
           :tool-manifest="robotToolManifest"
           :tool-manifest-loading="robotToolManifestLoading"
           :tool-manifest-error="robotToolManifestError"
+          :workspaces="workspaces"
+          :im-identity-bindings="imIdentityBindings"
+          :im-group-workspace-scopes="imGroupWorkspaceScopes"
           @select="selectRobot"
           @create="createRobot"
           @update="updateRobot"
@@ -1062,6 +1076,9 @@ function onFilesChatWidth(px: number): void {
           @enable="acknowledgeAndEnableRobot"
           @disable="(id: string) => setRobotEnabled(id, false)"
           @load-tool-manifest="onLoadRobotToolManifest"
+          @admin-revoke-im-identity="adminRevokeImIdentity"
+          @load-im-group-scopes="fetchImGroupWorkspaceScopes"
+          @save-im-group-scopes="setImGroupWorkspaceScopes"
         />
 
         <Dashboard
@@ -1138,6 +1155,9 @@ function onFilesChatWidth(px: number): void {
       :mcp-api-keys="myMcpApiKeys"
       :mcp-api-key-created="myMcpApiKeyCreated"
       :base-url="serverSettings?.baseUrl ?? null"
+      :robots="robots"
+      :my-im-identity="myImIdentity"
+      :im-identity-challenge-created="imIdentityChallengeCreated"
       @close="closePersonalizedSetting"
       @set-ui-lang="setLocale"
       @set-theme="setTheme"
@@ -1146,6 +1166,10 @@ function onFilesChatWidth(px: number): void {
       @reset-mcp-api-key="(id: string) => resetMyMcpApiKey({ id })"
       @revoke-mcp-api-key="(id: string) => revokeMyMcpApiKey({ id })"
       @dismiss-mcp-api-key-reveal="dismissMyMcpApiKeyReveal"
+      @create-im-identity-challenge="createImIdentityChallenge"
+      @cancel-im-identity-challenge="cancelImIdentityChallenge"
+      @revoke-my-im-identity="revokeMyImIdentity"
+      @dismiss-im-identity-reveal="dismissImIdentityChallengeReveal"
       @goto-system-settings="openSettingsFromPersonalizedSetting"
     />
 

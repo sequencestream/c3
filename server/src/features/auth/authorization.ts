@@ -99,6 +99,7 @@ export function isValidOwner(ownerSubject: string): boolean {
  * like the unfiltered one with entries missing — not like a re-sorted one.
  */
 function scopedWorkspaces(subject: string): WorkspaceInfo[] {
+  if (!isValidOwner(subject)) return []
   const registry = listWorkspaces()
   const { admin } = authFacts()
   if (admin === null) return subject === LOCAL_SUBJECT ? registry : []

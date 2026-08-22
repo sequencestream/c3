@@ -177,6 +177,21 @@ export interface SessionRuntime {
    * falling back to a default surface (ADR-0046).
    */
   robotId?: string
+  /**
+   * Call-level IM authorization context for robot c3 tools. Set by the robot
+   * turn runner; handlers re-resolve scope on every tool call and compare to
+   * the turn-start hash carried here.
+   */
+  robotImAuth?: {
+    senderId: string
+    chatType: 'group' | 'p2p'
+    chatId: string
+    providerAccountKey: string
+    platform: import('@ccc/shared/protocol').ImPlatform
+    expectedBindingId: string
+    turnStartScopeHash: string
+    onScopeChanged?: () => void
+  }
   viewers: Set<Viewer>
 }
 

@@ -1,24 +1,14 @@
 /**
- * Localhost HTTP MCP route for the chat-robot c3 tool profile. A robot turn's
- * SELECTED c3 tools are served over this ONE streamable-HTTP MCP route bound to
- * a single robot turn — the same transport every vendor consumes (mirror of
- * `transport/automation-mcp`, but the binding registers only the subset this
- * robot's allowlist ticked, never the full automation catalogue).
+ * Localhost HTTP MCP route for the chat-robot c3 tool profile.
  *
- * Per-turn isolation: each `bind()` mints a token → a private {@link McpServer}
- * whose tool handlers close over the robot's run root (`~/.c3/robots/<name>`,
- * passed as `workspacePath`) and the live run/session identity. Only the
- * selected tools are registered — an unselected tool appears in neither
- * `tools/list` nor dispatch (the MCP SDK rejects a call to an unregistered
- * tool). `dispose()` evicts the binding at turn end (complete, timeout, blocked
- * or launch failure), and the token is a per-turn resource: the next turn of
- * the same robot mints a fresh token, server, and closure.
+ * Per-turn isolation: each `bind()` mints a token → a private {@link McpServer}.
+ * L1 read tools use call-level scope (re-read binding / ACL / group whitelist on
+ * every handler). The run root is NOT an authorization workspace for ledger
+ * tools. Non-L1 selected c3 tools refuse with a Web-only guide — they must not
+ * reverse-lookup object ids into registered workspace paths.
  *
- * The tool behaviors come from the shared automation c3-tools builder with
- * composition-root callbacks injected as `deps` — a lazy getter, because the
- * full deps object closes over `launchDeps` which is constructed later at the
- * composition root. The deps are only consulted at tool-dispatch time, well
- * after startup, so the getter resolves the same object every route reads.
+ * External MCP's connection-level `X-C3-Workspace` pin is deliberately not used
+ * here.
  */
 import type { Context } from 'hono'
 import { getConnInfo } from '@hono/node-server/conninfo'
@@ -30,63 +20,70 @@ import {
   type AutomationC3ToolResult,
   type AutomationMcpDeps,
 } from '../../features/automations/c3-tools.js'
+import {
+  buildRobotL1Tools,
+  refuseWriteViaObjectId,
+  type RobotL1AuthContext,
+} from '../../features/im/robot-l1-tools.js'
+import { isL1ReadTool } from '../../features/im/call-scope.js'
+import type { ImPlatform } from '@ccc/shared/protocol'
 
 /** The loopback path the robot MCP route is mounted at. */
 export const ROBOT_MCP_PATH = '/internal/robot-mcp/v1'
 
-/** Per-turn binding: which directory the tools act on, and the run identity. */
+/** Per-turn binding: run root for local tools + IM auth for L1 ledger tools. */
 export interface RobotMcpBinding {
-  /** The robot's working directory — `~/.c3/robots/<name>`. All tools are scoped to it. */
-  workspacePath: string
   /**
-   * The LIVE run/session id. A getter so a pending→real rebind attributes the
-   * turn's `publish_event` to the bound session, not the stale pending id.
+   * Robot working directory — `~/.c3/robots/<name>`. Local file tools stay here;
+   * it is never treated as a registered workspace for L1 ledger tools.
    */
+  workspacePath: string
   getRunId: () => string
-  /** Bare c3 tool names the robot's allowlist selected (`find_intents`, …). */
+  /** Bare c3 tool names the robot's allowlist selected. */
   selectedTools: readonly string[]
+  /** Required for L1 call-level scope. Absent ⇒ L1 tools refuse. */
+  imAuth?: {
+    robotId: string
+    senderId: string
+    chatType: 'group' | 'p2p'
+    chatId: string
+    providerAccountKey: string
+    platform: ImPlatform
+    expectedBindingId: string
+    turnStartScopeHash: string
+    onScopeChanged?: () => void
+  }
 }
 
-/** The served route: the kernel-facing bind handle plus the HTTP handler the root mounts. */
 export interface ServedRobotMcp {
-  /** Loopback base URL the bound descriptors point at (`http://127.0.0.1:<port><PATH>`). */
   readonly baseUrl: string
-  /**
-   * Bind one robot turn: mint a token, stand up a private MCP server carrying
-   * exactly the turn's selected c3 tools, and return the neutral
-   * {@link RemoteMcpServer} descriptor (for `DriverStartOptions.mcpServers`) plus a
-   * `dispose` to evict at turn end.
-   */
   bind(binding: RobotMcpBinding): {
     servers: Record<string, RemoteMcpServer>
     dispose: () => void
   }
-  /** The Hono handler for `ALL <PATH>` (POST messages / GET SSE / DELETE session-end). */
   handler(c: Context): Promise<Response>
 }
 
 interface Entry {
   transport: WebStandardStreamableHTTPServerTransport
   server: McpServer
-  /** Resolves once `server.connect(transport)` finishes — `handler` awaits it before dispatch. */
   ready: Promise<void>
 }
 
-/** Loopback addresses accepted by the guard (IPv4, IPv6, IPv4-mapped IPv6). */
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
-/** Loopback predicate for the route's defence-in-depth guard. Exported for tests. */
 export function isLoopback(address: string | undefined): boolean {
   if (!address) return false
   return LOOPBACK.has(address) || address.startsWith('127.')
 }
 
-/**
- * Build the robot MCP route. `origin` is c3's own loopback origin
- * (`http://127.0.0.1:<port>`); `deps` lazily supplies the composition-root
- * callbacks the tool handlers need (the same object automation binds); `makeToken`
- * is injected for tests (defaults to `crypto.randomUUID`).
- */
+function toCallResult(r: AutomationC3ToolResult): {
+  content: Array<{ type: 'text'; text: string }>
+  isError?: boolean
+} {
+  return r.isError ? { content: r.content, isError: true } : { content: r.content }
+}
+
 export function createRobotMcp(
   origin: string,
   deps: () => AutomationMcpDeps | null,
@@ -97,17 +94,62 @@ export function createRobotMcp(
 
   const buildServer = (binding: RobotMcpBinding): { server: McpServer; toolNames: string[] } => {
     const server = new McpServer({ name: 'c3', version: '1.0.0' })
-    const tools = buildAutomationC3Tools(binding.workspacePath, binding.getRunId, deps()).filter(
-      (t) => binding.selectedTools.includes(t.name),
-    )
-    for (const t of tools) {
-      server.registerTool(
-        t.name,
-        { description: t.description, inputSchema: t.inputSchema },
-        async (args) => toCallResult(await t.handler(args)),
-      )
+    const selected = binding.selectedTools
+    const toolNames: string[] = []
+
+    const l1Selected = selected.filter(isL1ReadTool)
+    if (l1Selected.length > 0 && binding.imAuth) {
+      const auth: RobotL1AuthContext = {
+        robotId: binding.imAuth.robotId,
+        senderId: binding.imAuth.senderId,
+        chat: {
+          chatType: binding.imAuth.chatType,
+          chatId: binding.imAuth.chatId,
+          platform: binding.imAuth.platform,
+          providerAccountKey: binding.imAuth.providerAccountKey,
+        },
+        expectedBindingId: binding.imAuth.expectedBindingId,
+        turnStartScopeHash: binding.imAuth.turnStartScopeHash,
+        onScopeChanged: binding.imAuth.onScopeChanged,
+      }
+      for (const t of buildRobotL1Tools(auth)) {
+        if (!l1Selected.includes(t.name as (typeof l1Selected)[number])) continue
+        server.registerTool(
+          t.name,
+          { description: t.description, inputSchema: t.inputSchema },
+          async (args) => toCallResult(await t.handler(args)),
+        )
+        toolNames.push(t.name)
+      }
+    } else if (l1Selected.length > 0) {
+      // Auth missing — register L1 names that always refuse (no ledger leak).
+      for (const name of l1Selected) {
+        server.registerTool(name, { description: 'identity required', inputSchema: {} }, async () =>
+          toCallResult({
+            content: [{ type: 'text', text: JSON.stringify({ code: 'not_visible' }) }],
+          }),
+        )
+        toolNames.push(name)
+      }
     }
-    return { server, toolNames: tools.map((t) => t.name) }
+
+    // Non-L1 selected tools: never bind to a registered workspace path.
+    const nonL1 = selected.filter((n) => !isL1ReadTool(n))
+    if (nonL1.length > 0) {
+      const all = buildAutomationC3Tools(binding.workspacePath, binding.getRunId, deps())
+      for (const t of all) {
+        if (!nonL1.includes(t.name)) continue
+        // Write / action tools: Web-only guide. Do not close over a registry path.
+        server.registerTool(
+          t.name,
+          { description: t.description, inputSchema: t.inputSchema },
+          async () => toCallResult(refuseWriteViaObjectId()),
+        )
+        toolNames.push(t.name)
+      }
+    }
+
+    return { server, toolNames }
   }
 
   return {
@@ -115,8 +157,6 @@ export function createRobotMcp(
     bind(binding) {
       const token = makeToken()
       const { server, toolNames } = buildServer(binding)
-      // Stateful: the client initializes once, gets a session id, and reuses it.
-      // One transport per token === one MCP session per robot turn.
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         enableJsonResponse: true,
@@ -128,17 +168,12 @@ export function createRobotMcp(
           c3: {
             type: 'http',
             url: `${baseUrl}?token=${token}`,
-            // Codex marks each enabled tool required/approved, so the route must
-            // advertise EXACTLY the registered subset — a registered tool that is
-            // omitted here would be silently disabled.
             enabledTools: toolNames,
           },
         },
         dispose: () => {
           const entry = entries.get(token)
           if (!entry) return
-          // Evict FIRST so an in-flight request that lost the race 404s instead of
-          // reaching a closing transport; then close transport + server.
           entries.delete(token)
           void entry.transport.close()
           void entry.server.close()
@@ -146,7 +181,6 @@ export function createRobotMcp(
       }
     },
     async handler(c) {
-      // Defence in depth: reject non-loopback peers even though c3 binds localhost.
       const remote = getConnInfo(c).remote.address
       if (!isLoopback(remote)) {
         return c.json({ error: 'robot MCP is loopback-only' }, 403)
@@ -160,12 +194,4 @@ export function createRobotMcp(
       return entry.transport.handleRequest(c.req.raw)
     },
   }
-}
-
-/** Map our framing-free tool result to the MCP SDK `CallToolResult` shape (structurally identical). */
-function toCallResult(r: AutomationC3ToolResult): {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-} {
-  return r.isError ? { content: r.content, isError: true } : { content: r.content }
 }

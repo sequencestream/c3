@@ -1,5 +1,5 @@
 /**
- * Conversation identity: thread key plus the four-dimensional isolation key.
+ * Conversation identity: thread key plus binding subject and scope_hash.
  */
 import { describe, expect, it } from 'vitest'
 import { conversationGateKey, conversationIdentityOf, threadKeyFor } from './thread-key.js'
@@ -41,24 +41,26 @@ describe('threadKeyFor', () => {
 
 describe('conversationIdentityOf', () => {
   it('differs when only senderId differs', () => {
-    const a = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a')
-    const b = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-b')
+    const a = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a', 'b1', 'local', 'h1')
+    const b = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-b', 'b1', 'local', 'h1')
     expect(conversationGateKey(a)).not.toBe(conversationGateKey(b))
   })
 
   it('is stable for the same sender in the same thread', () => {
-    const a = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a')
-    const b = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a')
+    const a = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a', 'b1', 'local', 'h1')
+    const b = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a', 'b1', 'local', 'h1')
     expect(conversationGateKey(a)).toBe(conversationGateKey(b))
   })
 
   it('differs across thread, robot, or platform', () => {
-    const base = conversationIdentityOf('feishu', 'r1', 'c:oc', 'u')
+    const base = conversationIdentityOf('feishu', 'r1', 'c:oc', 'u', 'b1', 'local', 'h1')
     expect(conversationGateKey(base)).not.toBe(
-      conversationGateKey(conversationIdentityOf('feishu', 'r1', 'c:other', 'u')),
+      conversationGateKey(
+        conversationIdentityOf('feishu', 'r1', 'c:other', 'u', 'b1', 'local', 'h1'),
+      ),
     )
     expect(conversationGateKey(base)).not.toBe(
-      conversationGateKey(conversationIdentityOf('feishu', 'r2', 'c:oc', 'u')),
+      conversationGateKey(conversationIdentityOf('feishu', 'r2', 'c:oc', 'u', 'b1', 'local', 'h1')),
     )
   })
 })

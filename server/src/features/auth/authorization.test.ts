@@ -198,6 +198,28 @@ describe('workspace resolution', () => {
     // socket, decides that this means `local`.
     expect(listWorkspacesForSubject(resolveAuthSubject(null)).map((w) => w.name)).toEqual([alpha])
   })
+
+  it('returns nothing for a subject removed from the account roster', () => {
+    const alpha = makeWorkspace('alpha')
+    useBasicAuth('root', 'alice')
+    putWorkspaceScope('alice', 'selected', [alpha], 1)
+    expect(listWorkspacesForSubject('alice').map((w) => w.name)).toEqual([alpha])
+
+    const settings = loadSettings()
+    const provider = settings.auth?.provider
+    if (provider?.kind !== 'basic') throw new Error('expected basic')
+    saveSettings({
+      ...settings,
+      auth: {
+        ...settings.auth!,
+        provider: {
+          ...provider,
+          accounts: provider.accounts.filter((a) => a.username !== 'alice'),
+        },
+      },
+    })
+    expect(listWorkspacesForSubject('alice')).toEqual([])
+  })
 })
 
 describe('authorizeCall', () => {

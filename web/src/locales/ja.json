@@ -880,6 +880,60 @@
       "lastUsed": {
         "never": "未使用"
       }
+    },
+    "imIdentity": {
+      "title": {
+        "label": "IM identity"
+      },
+      "hint": "Bind your c3 account to an IM sender so chat robots can verify who you are. Create a one-time code here, then send it to the robot in a direct message.",
+      "noAuthHint": "Without sign-in, the first person to bind becomes the sole local principal with full workspace access for this app. Enable basic auth before sharing the robot with others.",
+      "unavailable": "IM identity storage is unavailable on this server.",
+      "bound": {
+        "title": "Active binding",
+        "namespace": "Account",
+        "verified": "Verified {time}"
+      },
+      "pending": {
+        "title": "Pending challenge",
+        "expires": "Expires {time}",
+        "cancel": {
+          "label": "Cancel"
+        }
+      },
+      "empty": "No IM identity binding yet.",
+      "robot": {
+        "label": "Robot",
+        "placeholder": "Choose a robot"
+      },
+      "create": {
+        "label": "Create binding code",
+        "submit": {
+          "label": "Create code"
+        }
+      },
+      "reveal": {
+        "title": "Binding code",
+        "onceOnly": "Shown once. Send the full code to the robot in a direct message (not in a group).",
+        "dismiss": {
+          "label": "I have copied it"
+        },
+        "token": {
+          "label": "Code"
+        },
+        "forRobot": "For robot “{name}”."
+      },
+      "revoke": {
+        "label": "Revoke binding",
+        "confirm": {
+          "title": "Revoke IM binding?",
+          "body": "The IM sender will no longer be treated as you until you bind again.",
+          "confirm": {
+            "label": "Revoke"
+          }
+        }
+      },
+      "noRobot": "No enabled robot is ready for binding. A robot must be enabled and outbound-acknowledged first.",
+      "allBound": "Every enabled robot app is already bound for your account. Revoke one to re-bind that namespace."
     }
   },
   "intent": {
@@ -2492,7 +2546,12 @@
       "platformUnsupported": "このビルドはそのプラットフォームに対応していません。",
       "secretRequired": "有効化する前にアプリシークレットを設定してください。",
       "outboundNotAcknowledged": "有効化する前に、外部へ送信される内容を確認してください。",
-      "agentRequired": "ベンダーとエージェントを選択してください。"
+      "agentRequired": "ベンダーとエージェントを選択してください。",
+      "identityUnavailable": "IM identity store is unavailable.",
+      "challengeNotFound": "That binding challenge was not found.",
+      "bindingNotFound": "That identity binding was not found.",
+      "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
+      "notOwner": "You can only manage your own identity binding."
     }
   },
   "statusIndicator": {
@@ -3903,6 +3962,12 @@
           },
           "busy": {
             "label": "処理中"
+          },
+          "identity_required": {
+            "label": "Identity required"
+          },
+          "scope_changed": {
+            "label": "Scope changed"
           }
         }
       }
@@ -3980,6 +4045,45 @@
       "confirm": {
         "title": "このロボットを削除しますか?",
         "message": "スレッドと監査記録も一緒に削除されます。元に戻せません。"
+      }
+    },
+    "identityAdmin": {
+      "title": "IM bindings",
+      "hint": "Active sender bindings for this robot's app. Revoking takes effect immediately.",
+      "empty": "No active bindings.",
+      "sender": {
+        "label": "Sender"
+      },
+      "subject": {
+        "label": "Subject"
+      },
+      "verified": {
+        "label": "Verified"
+      },
+      "revoke": {
+        "label": "Revoke",
+        "confirm": {
+          "title": "Revoke this binding?",
+          "body": "The IM sender will no longer be treated as this subject until they bind again.",
+          "confirm": {
+            "label": "Revoke"
+          }
+        }
+      },
+      "groupScope": {
+        "title": "Group workspace visibility",
+        "hint": "Which workspaces may appear in group replies for a chat. The response allowlist alone does not grant data access.",
+        "chatId": {
+          "label": "Group chat ID",
+          "placeholder": "oc_…"
+        },
+        "load": {
+          "label": "Load"
+        },
+        "save": {
+          "label": "Save"
+        },
+        "empty": "No workspaces selected — group replies show no ledger details."
       }
     }
   }

@@ -256,6 +256,24 @@ describe('sendGuarded — content categories', () => {
     }
   })
 
+  it('refuses binding notices forged as fixed_notice at runtime', async () => {
+    const id = enabledRobot()
+    const { sent, rawSend } = rawRecorder()
+    const forged = {
+      category: 'fixed_notice',
+      notice: 'bind_success',
+    } as unknown as Parameters<typeof sendGuarded>[0]['content']
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: forged,
+      maxOutboundChars: MAX,
+      rawSend,
+    })
+    expect(result).toMatchObject({ ok: false, reason: 'invalid_notice', outboundChars: 0 })
+    expect(sent).toEqual([])
+  })
+
   it('delivers binding notices only through binding_notice with origin constraints', async () => {
     const id = enabledRobot()
     const target = {

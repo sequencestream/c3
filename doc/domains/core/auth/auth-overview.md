@@ -60,8 +60,9 @@ policyEpoch, workspaceName, workspacePath, tools }`。它同时是会话钉定�
 
 ## 工作区范围 `user_workspace_scopes`
 
-「这个账号能碰哪些工作区」是**管理员配置的授权状态**,不是用户偏好。它决定两件事:控制台工作区列表
-里出现哪些条目,以及一把外部 MCP key(借它归属账号的权限)能到达哪些工作区。
+「这个账号能碰哪些工作区」是**管理员配置的授权状态**,不是用户偏好。它决定三件事:控制台工作区列表
+里出现哪些条目,一把外部 MCP key(借它归属账号的权限)能到达哪些工作区,以及 IM 机器人每次 c3 工具
+调用时的个人 scope 求解(调用级,不与连接钉定混用)。
 
 - **两张表,不是一列名单。** `user_workspace_scopes` 存 subject 与 `mode`;`user_workspace_scope_items`
   存 `selected` 模式下的明细。拆开是为了让「选定了,但一个都没选」成为可表达的状态 —— 单列名单会把它
@@ -154,13 +155,15 @@ policyEpoch, workspaceName, workspacePath, tools }`。它同时是会话钉定�
   [personalized-setting](../../settings/personalized-setting/personalized-setting-spec.md)。
 
 - **AUTH-R11(工作区可见性按主体求解)** —— 工作区列表不是原始注册表,而是
-  `listWorkspacesForSubject(subject)` 的结果:控制台的 `ready.workspaces`、后续的 `workspaces` 刷新与
-  外部 MCP 的工作区解析共用同一个 resolver,保持注册表顺序、只做过滤。管理员与 `local` 看到全部;其余
-  账号看到其存储范围求解出的子集,无范围记录即为空。**内部系统任务**(调度、清理)仍可读未过滤的注册表,
-  但任何面向用户的界面与外部 MCP 路径都不得把原始注册表当作授权判据。
-  **已知边界**:控制台的列表是**可见性**过滤,不是逐消息的访问控制 —— 一个已认证连接仍可对未列出的
-  `workspaceName` 发起工作区内消息(与引入范围之前一致)。外部 MCP 侧有 `authorizeCall` 逐调用把关,
-  WebSocket 侧的逐消息强制留待后续意图。
+  `listWorkspacesForSubject(subject)` 的结果:控制台的 `ready.workspaces`、后续的 `workspaces` 刷新、
+  外部 MCP 的工作区解析与 IM 机器人调用级 scope 求解共用同一个 resolver,保持注册表顺序、只做过滤。
+  管理员与 `local` 看到全部;其余账号看到其存储范围求解出的子集,无范围记录即为空。**名册中已删除的
+  subject 恒为空范围**——`remove_account` 不自动清除 `user_workspace_scopes` 行,但 resolver 先校验
+  `isValidOwner`,因此遗留 scope 行不能继续授权控制台、外部 MCP 或 IM 绑定发送者。**内部系统任务**
+  (调度、清理)仍可读未过滤的注册表,但任何面向用户的界面与外部 MCP / IM 路径都不得把原始注册表当作
+  授权判据。控制台的列表是**可见性**过滤,不是逐消息的访问控制 —— 一个已认证连接仍可对未列出的
+  `workspaceName` 发起工作区内消息(与引入范围之前一致)。外部 MCP 侧有 `authorizeCall` 逐调用把关;
+  IM 侧在每次 L1 工具 handler 内重读 binding 与 scope; WebSocket 侧的逐消息强制留待后续意图。
 - **AUTH-R12(外部 MCP 三层求交)** —— 外部调用的权限 = key 自身范围 ∩ owner 的工作区范围 ∩
   (key 工具 ∩ 可外部授权目录)。唯一卡口是 `authorizeCall`,它先判 owner、再判工作区、最后判工具,
   返回冻结的 `EffectiveScope`。`local` 归属的 key 只在没有管理员关卡时有效;一旦配置 basic 认证,它
@@ -193,7 +196,8 @@ policyEpoch, workspaceName, workspacePath, tools }`。它同时是会话钉定�
   标志把 UX 提示传给控制台。Basic provider 的保留、
   派生的 `basic.enabled`、旧版单账户迁移,以及跨字段不变式全都位于
   服务端的配置校验层中。授权侧另有主体求解、工作区范围求解与 `authorizeCall`,
-  它们是控制台工作区列表与外部 MCP 的**同一个**判断来源。
+  它们是控制台工作区列表、外部 MCP 与 IM 机器人调用级 scope 的**同一个**判断来源;账号删除后 IM
+  绑定发送者因 `isValidOwner` 落空而得到空个人 scope,不得继续读取遗留明细。
 - **Config panel** —— System Settings 页面承载认证区域,并路由
   账户管理消息及其结果。工作区范围目前没有编辑界面,由后续意图交付。
 - 认证配置持久化在 `system_configs` 的 `auth.*` 键空间下(policy epoch 是同一键空间里的

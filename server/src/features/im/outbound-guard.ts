@@ -63,6 +63,10 @@ export function isBindingNoticeId(id: string): id is BindingNoticeId {
   return Object.prototype.hasOwnProperty.call(BINDING_FIXED_NOTICES, id)
 }
 
+export function isGeneralFixedNoticeId(id: string): id is GeneralFixedNoticeId {
+  return Object.prototype.hasOwnProperty.call(GENERAL_FIXED_NOTICES, id)
+}
+
 export type OutboundContent =
   | { category: 'final_answer'; text: string }
   | { category: 'fixed_notice'; notice: GeneralFixedNoticeId }
@@ -93,6 +97,7 @@ export type GuardRefuseReason =
   | 'dm_not_allowed'
   | 'binding_target_mismatch'
   | 'binding_not_p2p'
+  | 'invalid_notice'
   | 'credential'
   | 'empty'
   | 'send_failed'
@@ -226,7 +231,11 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
   if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
 
   if (input.content.category === 'fixed_notice') {
-    const text = truncateVisible(FIXED_NOTICES[input.content.notice], input.maxOutboundChars)
+    const notice = input.content.notice
+    if (!isGeneralFixedNoticeId(notice)) {
+      return { ok: false, reason: 'invalid_notice', outboundChars: 0 }
+    }
+    const text = truncateVisible(GENERAL_FIXED_NOTICES[notice], input.maxOutboundChars)
     return deliverRaw(input, text)
   }
 

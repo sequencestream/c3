@@ -219,10 +219,12 @@ state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数
 
 ### robots
 
-IM 聊天机器人域。四张表把「群里 @机器人 提问、c3 跑一轮会话、把答案发回群里」这条链路分开持有:
-`im_robots` 是配置与授权,`im_robot_threads` 是发送者隔离的 Conversation,`im_robot_context_turns` 是
-可恢复的 IM 可见正文,`im_robot_turns` 是外发审计。它是 c3 唯一一条主动把 agent 产出送往第三方云的
-路径;授权模型由 ADR-0046 裁定,上下文持久化例外由 ADR-0048 裁定。正式定义见
+IM 聊天机器人域。八张表把「群里 @机器人 提问、c3 跑一轮会话、把答案发回群里」以及 IM 身份绑定与
+调用级作用域分开持有:`im_robots` 是配置与授权,`im_robot_threads` 是发送者隔离的 Conversation,
+`im_robot_context_turns` 是可恢复的 IM 可见正文,`im_robot_turns` 是外发审计,`im_identity_challenges` /
+`im_identity_bindings` / `im_group_workspace_scopes` / `im_identity_audit` 是 Web→私聊身份绑定、群明细
+白名单与授权审计。它是 c3 唯一一条主动把 agent 产出送往第三方云的路径;授权模型由 ADR-0046 裁定,
+上下文持久化例外由 ADR-0048 裁定,身份绑定与调用级作用域由 ADR-0049 裁定。正式定义见
 [术语表·机器人](../doc/glossary.md)。
 
 **部署级出入口、不绑工作区**是本域的结构性特征:`im_robots` 刻意没有 `workspace_name` 列——配置/
@@ -231,7 +233,8 @@ IM 聊天机器人域。四张表把「群里 @机器人 提问、c3 跑一轮�
 身份,受路径安全约束且创建后不可改。该目录不进工作区注册表,也不是会话恢复或授权判断的输入。否决
 工作区内机器人以及连接/线程级工作区绑定。
 
-Conversation 身份是 `(platform, robot_id, thread_key, sender_id)`。同一群内不同发送者互不相通;
+Conversation 身份是 `(platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash)`。
+同一群内不同发送者互不相通;绑定后的 c3 主体与单调 `scope_hash` 决定可恢复的 Context Turn 候选。
 `session_id` 只是同 vendor 下的续接缓存。正文只存在于 `im_robot_context_turns`(成对、有界、30 天硬删);
 审计**只记元数据**——`outbound_chars` 是长度而非内容。没发出去的结局同样留痕
 (`guard_refused` / `blocked` / `timeout` / `input_rejected` / `busy`)。

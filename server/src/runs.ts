@@ -190,6 +190,7 @@ export interface SessionRuntime {
     platform: import('@ccc/shared/protocol').ImPlatform
     expectedBindingId: string
     turnStartScopeHash: string
+    displaySignals?: import('./features/im/robot-message-registry.js').TurnDisplaySignals
     onScopeChanged?: () => void
   }
   viewers: Set<Viewer>

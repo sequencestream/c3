@@ -45,6 +45,7 @@ import {
   refuseWriteViaObjectId,
   type RobotL1AuthContext,
 } from './robot-l1-tools.js'
+import { createTurnDisplaySignals } from './robot-message-registry.js'
 
 let dir: string
 
@@ -77,6 +78,7 @@ function authCtx(input: {
   chatId: string
   bindingId: string
   scopeHash: string
+  displaySignals?: ReturnType<typeof createTurnDisplaySignals>
 }): RobotL1AuthContext {
   return {
     robotId: input.robotId,
@@ -85,6 +87,7 @@ function authCtx(input: {
     expectedBindingId: input.bindingId,
     turnStartScopeHash: input.scopeHash,
     onScopeChanged: () => {},
+    displaySignals: input.displaySignals,
   }
 }
 
@@ -340,7 +343,7 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(body).toContain('workspaceName')
   })
 
-  it('projects hiddenCount for group matches outside the whitelist', async () => {
+  it('records group hidden matches via displaySignals, not tool payload', async () => {
     useBasicAuth('root', 'alice')
     const alpha = makeWorkspace('alpha')
     const beta = makeWorkspace('beta')
@@ -372,6 +375,7 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(scope.ok).toBe(true)
     if (!scope.ok) return
 
+    const signals = createTurnDisplaySignals()
     const find = buildRobotL1Tools(
       authCtx({
         robotId: robot.id,
@@ -380,17 +384,19 @@ describe('buildRobotL1Tools — list tools', () => {
         chatId: 'oc_group',
         bindingId: binding.id,
         scopeHash: scope.scope.scopeHash,
+        displaySignals: signals,
       }),
     ).find((t) => t.name === 'find_intents')!
     const result = await find.handler({})
-    const body = result.content[0]!.text!
-    const payload = JSON.parse(body.slice(body.indexOf('{'))) as {
+    const payload = JSON.parse(result.content[0]!.text!) as {
       items: { workspaceName: string }[]
-      hiddenCount: number
+      hiddenCount?: number
     }
-    expect(payload.hiddenCount).toBe(1)
+    expect(payload.hiddenCount).toBeUndefined()
+    expect(signals.groupHiddenCount).toBe(1)
+    expect(signals.groupVisibleCount).toBe(1)
     expect(payload.items).toHaveLength(1)
-    expect(payload.items[0].workspaceName).toBe(alpha)
+    expect(payload.items[0]!.workspaceName).toBe(alpha)
     expect(JSON.stringify(payload)).not.toContain(beta)
   })
 
@@ -454,7 +460,7 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(body).toContain('workspaceName')
   })
 
-  it('projects hiddenCount for group delivery matches outside the whitelist', async () => {
+  it('records group hidden delivery matches via displaySignals', async () => {
     useBasicAuth('root', 'alice')
     const alpha = makeWorkspace('alpha')
     const beta = makeWorkspace('beta')
@@ -498,6 +504,7 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(scope.ok).toBe(true)
     if (!scope.ok) return
 
+    const signals = createTurnDisplaySignals()
     const find = buildRobotL1Tools(
       authCtx({
         robotId: robot.id,
@@ -506,18 +513,18 @@ describe('buildRobotL1Tools — list tools', () => {
         chatId: 'oc_group',
         bindingId: binding.id,
         scopeHash: scope.scope.scopeHash,
+        displaySignals: signals,
       }),
     ).find((t) => t.name === 'find_deliveries')!
     const result = await find.handler({})
-    const body = result.content[0]!.text!
-    const payload = JSON.parse(body.slice(body.indexOf('{'))) as {
+    const payload = JSON.parse(result.content[0]!.text!) as {
       items: { workspaceName: string }[]
-      hiddenCount: number
+      hiddenCount?: number
     }
-    expect(payload.hiddenCount).toBe(1)
+    expect(payload.hiddenCount).toBeUndefined()
+    expect(signals.groupHiddenCount).toBe(1)
     expect(payload.items).toHaveLength(1)
-    expect(payload.items[0].workspaceName).toBe(alpha)
-    expect(JSON.stringify(payload)).not.toContain(beta)
+    expect(payload.items[0]!.workspaceName).toBe(alpha)
   })
 
   it('merges discussions across workspaces with workspaceName on each row', async () => {
@@ -572,7 +579,7 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(body).toContain('workspaceName')
   })
 
-  it('projects hiddenCount for group discussion matches outside the whitelist', async () => {
+  it('records group hidden discussion matches via displaySignals', async () => {
     useBasicAuth('root', 'alice')
     const alpha = makeWorkspace('alpha')
     const beta = makeWorkspace('beta')
@@ -608,6 +615,7 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(scope.ok).toBe(true)
     if (!scope.ok) return
 
+    const signals = createTurnDisplaySignals()
     const find = buildRobotL1Tools(
       authCtx({
         robotId: robot.id,
@@ -616,18 +624,18 @@ describe('buildRobotL1Tools — list tools', () => {
         chatId: 'oc_group',
         bindingId: binding.id,
         scopeHash: scope.scope.scopeHash,
+        displaySignals: signals,
       }),
     ).find((t) => t.name === 'find_discussions')!
     const result = await find.handler({})
-    const body = result.content[0]!.text!
-    const payload = JSON.parse(body.slice(body.indexOf('{'))) as {
+    const payload = JSON.parse(result.content[0]!.text!) as {
       items: { workspaceName: string }[]
-      hiddenCount: number
+      hiddenCount?: number
     }
-    expect(payload.hiddenCount).toBe(1)
+    expect(payload.hiddenCount).toBeUndefined()
+    expect(signals.groupHiddenCount).toBe(1)
     expect(payload.items).toHaveLength(1)
-    expect(payload.items[0].workspaceName).toBe(alpha)
-    expect(JSON.stringify(payload)).not.toContain(beta)
+    expect(payload.items[0]!.workspaceName).toBe(alpha)
   })
 })
 

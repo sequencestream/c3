@@ -242,7 +242,7 @@ describe('one Conversation runs one turn at a time', () => {
     await settle()
 
     expect(turnResult).toHaveBeenCalledTimes(1)
-    expect(sent.at(-1)?.text).toContain('稍后再问我')
+    expect(sent.at(-1)?.text).toContain('Still working')
     const busyLog = listTurns(id).find((t) => t.outcome === 'busy')
     expect(busyLog).toMatchObject({
       outcome: 'busy',
@@ -263,7 +263,7 @@ describe('one Conversation runs one turn at a time', () => {
     // No-auth deployments only allow one active binding; the second sender is
     // identity-gated and must not start a parallel run.
     expect(turnResult).toHaveBeenCalledTimes(1)
-    expect(sent.some((s) => s.text.includes('个人设置'))).toBe(true)
+    expect(sent.some((s) => s.text.includes('Personal settings'))).toBe(true)
   })
 
   it('runs different threads concurrently', async () => {
@@ -331,7 +331,7 @@ describe('a redelivered message is not answered twice', () => {
     await settle()
 
     expect(turnResult).toHaveBeenCalledTimes(1)
-    expect(sent.filter((s) => s.text.includes('稍后再问我'))).toHaveLength(1)
+    expect(sent.filter((s) => s.text.includes('Still working'))).toHaveLength(1)
     expect(listTurns(id).filter((t) => t.outcome === 'busy')).toHaveLength(1)
 
     release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
@@ -352,7 +352,7 @@ describe('a redelivered message is not answered twice', () => {
     const busyMsg = message({ messageId: 'm-busy-later', senderId: 'ou_user' })
     push(busyMsg)
     await settle()
-    expect(sent.at(-1)?.text).toContain('稍后再问我')
+    expect(sent.at(-1)?.text).toContain('Still working')
 
     release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
     await settle()
@@ -444,7 +444,7 @@ describe('sender-isolated continuous conversation', () => {
     )
     await settle()
     expect(turnResult).not.toHaveBeenCalled()
-    expect(sent.at(-1)?.text).toContain('疑似凭据')
+    expect(sent.at(-1)?.text).toMatch(/credentials|credential/i)
     expect(sent.at(-1)?.text).not.toContain('ghp_')
     expect(listTurns(id)[0]).toMatchObject({
       outcome: 'input_rejected',
@@ -465,7 +465,7 @@ describe('every accepted message ends in a reply or an audited reason', () => {
     })
     push(message())
     await settle()
-    expect(sent.at(-1)?.text).toContain('人工授权')
+    expect(sent.at(-1)?.text).toContain('manual approval')
   })
 
   it('reports a timeout', async () => {
@@ -473,7 +473,7 @@ describe('every accepted message ends in a reply or an audited reason', () => {
     turnResult.mockResolvedValue({ outcome: 'timeout', sessionId: 's', lastMessage: '' })
     push(message())
     await settle()
-    expect(sent.at(-1)?.text).toContain('超时')
+    expect(sent.at(-1)?.text).toContain('timed out')
   })
 
   it('audits the outcome of every turn', async () => {
@@ -526,7 +526,7 @@ describe('the outbound guard is on the delivery path', () => {
     await settle()
 
     expect(sent.at(-1)?.text).not.toContain('ghp_')
-    expect(sent.at(-1)?.text).toContain('凭据')
+    expect(sent.at(-1)?.text).toMatch(/credentials|credential/i)
     expect(listTurns(id)[0]).toMatchObject({
       outcome: 'guard_refused',
       outboundChars: sent.at(-1)!.text.length,
@@ -574,9 +574,9 @@ describe('the outbound guard is on the delivery path', () => {
   it('routes blocked / timeout / error notices through the same path with real outboundChars', async () => {
     const id = await boot()
     for (const [outcome, needle] of [
-      ['blocked', '人工授权'],
-      ['timeout', '超时'],
-      ['error', '出错'],
+      ['blocked', 'manual approval'],
+      ['timeout', 'timed out'],
+      ['error', 'went wrong'],
     ] as const) {
       sent.length = 0
       turnResult.mockResolvedValueOnce({
@@ -653,7 +653,7 @@ describe('identity gate and bind-control path', () => {
     push(message())
     await settle()
     expect(turnResult).not.toHaveBeenCalled()
-    expect(sent[0]?.text).toContain('个人设置')
+    expect(sent[0]?.text).toContain('Personal settings')
     expect(listTurns(id)[0]?.outcome).toBe('identity_required')
   })
 
@@ -670,7 +670,7 @@ describe('identity gate and bind-control path', () => {
     push(m)
     await settle()
     expect(sent).toHaveLength(1)
-    expect(sent[0]?.text).toContain('身份绑定已生效')
+    expect(sent[0]?.text).toContain('Identity binding is active')
     expect(listTurns(id)[0]?.outcome).toBe('complete')
 
     push(m)
@@ -685,7 +685,7 @@ describe('identity gate and bind-control path', () => {
     const m = message({ messageId: 'm-group-token', text: ch.token })
     push(m)
     await settle()
-    expect(sent[0]?.text).toContain('私聊')
+    expect(sent[0]?.text).toContain('direct message')
     expect(listTurns(id)[0]?.outcome).toBe('identity_required')
 
     push(m)

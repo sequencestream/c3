@@ -2545,6 +2545,7 @@
       "platformUnsupported": "This build does not support that platform.",
       "secretRequired": "Configure the app secret before enabling.",
       "outboundNotAcknowledged": "Acknowledge what is sent off this machine before enabling.",
+      "localeInvalid": "That language is not supported for robot control messages.",
       "agentRequired": "Choose a vendor and an agent.",
       "identityUnavailable": "IM identity store is unavailable.",
       "challengeNotFound": "That binding challenge was not found.",
@@ -4064,6 +4065,13 @@
       "maxTurnMs": {
         "label": "Turn time limit (ms)",
         "hint": "Empty uses the default of 300000."
+      },
+      "locale": {
+        "label": "Control message language",
+        "hint": "Language for binding guides, permission notices and other fixed robot replies. Does not change agent answer language.",
+        "systemDefault": {
+          "label": "System default (English)"
+        }
       },
       "save": {
         "label": "Save"

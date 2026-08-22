@@ -74,6 +74,7 @@ function robotFixture(over: Partial<ImRobot> = {}): ImRobot {
     maxTurnMs: null,
     enabled: false,
     outboundAckAt: null,
+    locale: null,
     createdAt: 0,
     updatedAt: 0,
     ...over,

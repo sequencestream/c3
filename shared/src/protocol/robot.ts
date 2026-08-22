@@ -36,6 +36,13 @@ export const ROBOT_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/
 export const ROBOT_DEFAULT_MAX_TURN_MS = 300_000
 
 /**
+ * Languages the server-side robot message registry supports. Matches Web
+ * {@link UiLang} short codes; null on a robot means follow system default (`en`).
+ */
+export const ROBOT_MESSAGE_LOCALES = ['en', 'zh', 'ja', 'ko', 'ru'] as const
+export type RobotMessageLocale = (typeof ROBOT_MESSAGE_LOCALES)[number]
+
+/**
  * How a robot turn ended, including the ways it never reached the chat.
  * `busy` is the thread already running a turn (busy notice sent, no agent run).
  * `guard_refused` is any outbound-guard refusal (credential hit included).
@@ -174,6 +181,11 @@ export interface ImRobot {
    * without it is refused server-side.
    */
   outboundAckAt: number | null
+  /**
+   * Registry copy language for fixed control notices. Null follows system
+   * default (`en`). Does not change agent answer or Web UI language.
+   */
+  locale: RobotMessageLocale | null
   createdAt: number
   updatedAt: number
   /** Live link state; absent when the robot is disabled. */
@@ -223,4 +235,6 @@ export interface RobotConfigInput {
   dmMode?: ImDmMode
   dmAllowlist?: string[]
   maxTurnMs?: number | null
+  /** Registry language; omit on update to keep stored value. Null = system default. */
+  locale?: RobotMessageLocale | null
 }

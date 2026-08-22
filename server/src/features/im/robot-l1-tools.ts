@@ -53,6 +53,11 @@ import {
   type ChatContext,
   type L1ReadTool,
 } from './call-scope.js'
+import {
+  recordGroupHidden,
+  recordObjectNotVisible,
+  type TurnDisplaySignals,
+} from './robot-message-registry.js'
 
 export type RobotL1AuthContext = {
   robotId: string
@@ -64,13 +69,16 @@ export type RobotL1AuthContext = {
   turnStartScopeHash: string
   /** Invoked when a call sees a mid-turn auth change. */
   onScopeChanged?: () => void
+  /** Server-only turn signals for fixed security copy (not in MCP results). */
+  displaySignals?: TurnDisplaySignals
 }
 
 function text(s: string): AutomationC3ToolResult['content'] {
   return [{ type: 'text' as const, text: s }]
 }
 
-function notVisible(): AutomationC3ToolResult {
+function notVisible(auth: RobotL1AuthContext): AutomationC3ToolResult {
+  if (auth.displaySignals) recordObjectNotVisible(auth.displaySignals)
   return { content: text(JSON.stringify(NOT_VISIBLE_RESULT)) }
 }
 
@@ -116,36 +124,19 @@ function extractJsonArray(body: string): unknown[] | null {
 }
 
 function mergeListResults(
+  auth: RobotL1AuthContext,
   scope: CallScopeSnapshot,
   perWorkspace: Array<{ workspaceName: string; items: Record<string, unknown>[] }>,
   hiddenCount: number,
-  emptyLabel: string,
-  foundLabel: (n: number) => string,
 ): AutomationC3ToolResult {
+  if (scope.chat.chatType === 'group' && hiddenCount > 0 && auth.displaySignals) {
+    const visibleCount = perWorkspace.reduce((n, w) => n + w.items.length, 0)
+    recordGroupHidden(auth.displaySignals, visibleCount, hiddenCount)
+  }
   const items = perWorkspace.flatMap((w) =>
     w.items.map((it) => ({ ...it, workspaceName: w.workspaceName })),
   )
-  const payload: Record<string, unknown> = { items }
-  if (scope.chat.chatType === 'group' && hiddenCount > 0) {
-    payload.hiddenCount = hiddenCount
-  }
-  if (items.length === 0 && hiddenCount === 0) {
-    return { content: text(emptyLabel) }
-  }
-  if (items.length === 0 && hiddenCount > 0) {
-    return {
-      content: text(
-        JSON.stringify({
-          items: [],
-          hiddenCount,
-          note: '存在群白名单外的匹配结果；请私聊机器人或打开 c3 Web 查看。',
-        }),
-      ),
-    }
-  }
-  return {
-    content: text(`${foundLabel(items.length)}\n${JSON.stringify(payload, null, 2)}`),
-  }
+  return { content: text(JSON.stringify({ items })) }
 }
 
 function runObjectTool(
@@ -156,10 +147,10 @@ function runObjectTool(
   const scope = freshScope(auth)
   if (scope === 'changed' || scope === 'unbound') return scopeChanged()
   const located = locate()
-  if (!located) return notVisible()
-  if (!isWorkspaceInDetail(scope, located.workspaceName)) return notVisible()
+  if (!located) return notVisible(auth)
+  if (!isWorkspaceInDetail(scope, located.workspaceName)) return notVisible(auth)
   const path = pathFor(located.workspaceName)
-  if (!path) return notVisible()
+  if (!path) return notVisible(auth)
   return viewAt(path)
 }
 
@@ -185,7 +176,7 @@ function runListTool(
     }
   }
 
-  return mergeListResults(scope, perWs, hiddenCount, '未找到匹配结果。', (n) => `找到 ${n} 条:`)
+  return mergeListResults(auth, scope, perWs, hiddenCount)
 }
 
 function parseFindBody(result: AutomationC3ToolResult): Record<string, unknown>[] {
@@ -292,12 +283,7 @@ export function buildRobotL1Tools(auth: RobotL1AuthContext): AutomationC3Tool[] 
  */
 export function refuseWriteViaObjectId(): AutomationC3ToolResult {
   return {
-    content: text(
-      JSON.stringify({
-        code: 'web_only',
-        message: '请到 c3 Web 完成写入类操作。',
-      }),
-    ),
+    content: text(JSON.stringify({ code: 'web_only' })),
     isError: true,
   }
 }

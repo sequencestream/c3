@@ -135,6 +135,11 @@ export function installMessageHandler(ctx: AppCtx): void {
     bindingStats,
     myMcpApiKeys,
     myMcpApiKeyCreated,
+    myImIdentity,
+    imIdentityChallengeCreated,
+    imIdentityBindings,
+    imGroupWorkspaceScopes,
+    imGroupScopeChatId,
     userWorkspaceAccess,
     workspaceAccessors,
     sessionCapabilities,
@@ -434,6 +439,11 @@ export function installMessageHandler(ctx: AppCtx): void {
         // dropping it here costs nothing that was not already promised.
         myMcpApiKeys.value = []
         myMcpApiKeyCreated.value = null
+        myImIdentity.value = null
+        imIdentityChallengeCreated.value = null
+        imIdentityBindings.value = []
+        imGroupWorkspaceScopes.value = []
+        imGroupScopeChatId.value = ''
         userWorkspaceAccess.value = null
         ctx.applyStatuses(msg.statuses)
 
@@ -1775,6 +1785,23 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'robot_turns':
         // Ignore a reply for a robot the user has since navigated away from.
         if (msg.robotId === ctx.selectedRobotId.value) ctx.robotTurns.value = msg.turns
+        break
+      case 'my_im_identity':
+        myImIdentity.value = {
+          binding: msg.binding,
+          pendingChallenge: msg.pendingChallenge,
+          noAuthLocalHint: msg.noAuthLocalHint,
+        }
+        break
+      case 'im_identity_challenge_created':
+        imIdentityChallengeCreated.value = msg.challenge
+        break
+      case 'im_identity_bindings':
+        imIdentityBindings.value = msg.bindings
+        break
+      case 'im_group_workspace_scopes':
+        if (msg.chatId !== imGroupScopeChatId.value) break
+        imGroupWorkspaceScopes.value = msg.grants
         break
       case 'workspace_dashboard':
         ctx.dashboardLoading.value = false

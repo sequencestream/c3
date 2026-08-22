@@ -204,8 +204,9 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
   const live = robot!
 
   if (input.content.category === 'binding_notice') {
-    const isGroupGuide = input.content.notice === 'bind_use_dm'
-    if (!isGroupGuide && input.target.chatType !== 'p2p') {
+    const allowsGroup =
+      input.content.notice === 'bind_use_dm' || input.content.notice === 'identity_required'
+    if (!allowsGroup && input.target.chatType !== 'p2p') {
       return { ok: false, reason: 'binding_not_p2p', outboundChars: 0 }
     }
     if (!sameOrigin(input.target, input.content.origin)) {

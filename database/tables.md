@@ -56,9 +56,13 @@
 | 34  | external-mcp | `external_mcp_write_audits`  | [external-mcp/external_mcp_write_audits.sql](external-mcp/external_mcp_write_audits.sql) | `server/src/features/external-mcp/audit-store.ts`           | 外部 MCP 写调用的只增审计轨迹                            |
 | 35  | memory       | `workspace_memories`         | [memory/workspace_memories.sql](memory/workspace_memories.sql)                           | `server/src/features/memory/store.ts`                       | 工作区长期记忆 (偏好/约束/事实/教训)                     |
 | 36  | robots       | `im_robots`                  | [robots/im_robots.sql](robots/im_robots.sql)                                             | `server/src/features/im/robot-store.ts`                     | IM 聊天机器人配置 (执行身份/预设权限/外发授权)           |
-| 37  | robots       | `im_robot_threads`           | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                               | `server/src/features/im/robot-store.ts`                     | 发送者隔离 Conversation (四维身份 ↔ 可选原生会话缓存)    |
+| 37  | robots       | `im_robot_threads`           | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                               | `server/src/features/im/robot-store.ts`                     | 发送者隔离 Conversation (七维身份含 binding/scope_hash)  |
 | 38  | robots       | `im_robot_context_turns`     | [robots/im_robot_context_turns.sql](robots/im_robot_context_turns.sql)                   | `server/src/features/im/robot-store.ts`                     | 有界 IM 可见上下文 (成对用户/回答正文, ADR-0048)         |
 | 39  | robots       | `im_robot_turns`             | [robots/im_robot_turns.sql](robots/im_robot_turns.sql)                                   | `server/src/features/im/robot-store.ts`                     | 机器人回合外发审计 (只记元数据, 不记正文)                |
+| 40  | robots       | `im_identity_challenges`     | [robots/im_identity_challenges.sql](robots/im_identity_challenges.sql)                   | `server/src/features/im/identity-store.ts`                  | IM 身份绑定一次性挑战 (仅存令牌哈希)                     |
+| 41  | robots       | `im_identity_bindings`       | [robots/im_identity_bindings.sql](robots/im_identity_bindings.sql)                       | `server/src/features/im/identity-store.ts`                  | IM 外部发送者 ↔ c3 主体 的 active 绑定                   |
+| 42  | robots       | `im_group_workspace_scopes`  | [robots/im_group_workspace_scopes.sql](robots/im_group_workspace_scopes.sql)             | `server/src/features/im/identity-store.ts`                  | 群聊明细可见工作区白名单                                 |
+| 43  | robots       | `im_identity_audit`          | [robots/im_identity_audit.sql](robots/im_identity_audit.sql)                             | `server/src/features/im/identity-store.ts`                  | IM 身份/群范围变更审计 (只增)                            |
 
 ## 模块说明
 

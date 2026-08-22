@@ -104,9 +104,56 @@ async function bindingNotice(h: RobotHandle, n: BindingNoticeId, t: OutboundTarg
   return h.sendOutbound({ category: 'binding_notice', notice: n, origin: t }, t)
 }
 
+async function claimControlMessage(
+  r: ImRobot,
+  h: RobotHandle,
+  m: ImInboundMessage,
+): Promise<'duplicate' | 'claimed' | 'error'> {
+  try {
+    return claimGateMessage({
+      platform: r.platform,
+      robotId: r.id,
+      threadKey: threadKeyFor(m),
+      senderId: m.senderId,
+      messageId: m.messageId,
+    })
+  } catch (e) {
+    void fixed(
+      h,
+      e instanceof RobotStoreError && e.code === 'db_unavailable' ? 'store_unavailable' : 'error',
+      targetOf(m),
+    )
+    return 'error'
+  }
+}
+
+async function auditedBindingNotice(
+  r: ImRobot,
+  h: RobotHandle,
+  m: ImInboundMessage,
+  noticeId: BindingNoticeId,
+  outcome: ImTurnOutcome,
+): Promise<void> {
+  const tid = beginTurn({
+    robotId: r.id,
+    threadKey: threadKeyFor(m),
+    chatId: m.chatId,
+    senderId: m.senderId,
+    messageId: m.messageId,
+  })
+  const s = await bindingNotice(h, noticeId, targetOf(m))
+  finishTurn(tid, {
+    outcome,
+    outboundChars: s.ok ? s.outboundChars : 0,
+    outMessageId: s.ok ? s.messageId : null,
+    error: s.ok ? null : s.reason,
+  })
+}
+
 /**
  * Deterministic bind-control path before ordinary chat. Returns true when the
- * message was fully handled here (no agent run).
+ * message was fully handled here (no agent run). Claims the inbound messageId
+ * first so a redelivery cannot consume twice or send a second notice.
  */
 async function handleBindingControl(
   r: ImRobot,
@@ -115,15 +162,16 @@ async function handleBindingControl(
 ): Promise<boolean> {
   const text = m.text.trim()
   if (!TOKEN_SHAPE.test(text)) return false
-  const target = targetOf(m)
+
+  const gate = await claimControlMessage(r, h, m)
+  if (gate !== 'claimed') return true
 
   if (m.chatType === 'group') {
     // Do not query or consume — no oracle. Always the same guide.
-    await bindingNotice(h, 'bind_use_dm', target)
+    await auditedBindingNotice(r, h, m, 'bind_use_dm', 'identity_required')
     return true
   }
 
-  // p2p: attempt consume. All failures collapse to bind_failed.
   const ns = accountNamespaceOf(r.platform, r.appId)
   const result = consumeChallenge({
     robotId: r.id,
@@ -131,11 +179,13 @@ async function handleBindingControl(
     senderId: m.senderId,
     token: text,
   })
-  if (result.ok) {
-    await bindingNotice(h, 'bind_success', target)
-  } else {
-    await bindingNotice(h, 'bind_failed', target)
-  }
+  await auditedBindingNotice(
+    r,
+    h,
+    m,
+    result.ok ? 'bind_success' : 'bind_failed',
+    result.ok ? 'complete' : 'identity_required',
+  )
   return true
 }
 
@@ -324,41 +374,12 @@ function onInbound(id: string, m: ImInboundMessage): void {
     const ns = accountNamespaceOf(r.platform, r.appId)
     const binding = getActiveBindingForSender(ns, m.senderId)
     if (!binding) {
-      const threadKey = threadKeyFor(m)
-      let gate: 'duplicate' | 'claimed'
-      try {
-        gate = claimGateMessage({
-          platform: r.platform,
-          robotId: r.id,
-          threadKey,
-          senderId: m.senderId,
-          messageId: m.messageId,
-        })
-      } catch (e) {
-        void fixed(
-          h,
-          e instanceof RobotStoreError && e.code === 'db_unavailable'
-            ? 'store_unavailable'
-            : 'error',
-          target,
-        )
-        return
-      }
-      if (gate === 'duplicate') return
-      const tid = beginTurn({
-        robotId: r.id,
-        threadKey,
-        chatId: m.chatId,
-        senderId: m.senderId,
-        messageId: m.messageId,
-      })
-      const s = await bindingNotice(h, 'identity_required', target)
-      finishTurn(tid, {
-        outcome: 'identity_required',
-        outboundChars: s.ok ? s.outboundChars : 0,
-        outMessageId: s.ok ? s.messageId : null,
-        error: s.ok ? null : s.reason,
-      })
+      // Group mention/allowlist still decides whether we respond at all.
+      // DM identity guides skip dmMode so a disabled-DM robot can still bind.
+      if (m.chatType === 'group' && !accepts(r, m)) return
+      const gate = await claimControlMessage(r, h, m)
+      if (gate !== 'claimed') return
+      await auditedBindingNotice(r, h, m, 'identity_required', 'identity_required')
       return
     }
 

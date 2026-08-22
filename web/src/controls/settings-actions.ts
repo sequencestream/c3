@@ -107,10 +107,11 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openPersonalizedSetting = (): void => {
     personalizedSettingOpen.value = true
     ctx.fetchPersonalizedSettings()
-    // The key roster is per-identity and never cached across a page open: a
-    // signed-in account must not see the roster the previous identity loaded.
     ctx.dismissMyMcpApiKeyReveal()
     ctx.fetchMyMcpApiKeys()
+    ctx.dismissImIdentityChallengeReveal()
+    ctx.fetchMyImIdentity()
+    ctx.loadRobots()
   }
 
   /**
@@ -121,6 +122,7 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.closePersonalizedSetting = (): void => {
     personalizedSettingOpen.value = false
     ctx.dismissMyMcpApiKeyReveal()
+    ctx.dismissImIdentityChallengeReveal()
   }
 
   /**
@@ -300,6 +302,26 @@ export function installSettingsActions(ctx: AppCtx): void {
    */
   ctx.dismissMyMcpApiKeyReveal = (): void => {
     ctx.myMcpApiKeyCreated.value = null
+  }
+
+  ctx.fetchMyImIdentity = (): void => {
+    send({ type: 'get_my_im_identity' })
+  }
+
+  ctx.createImIdentityChallenge = (robotId: string): void => {
+    send({ type: 'create_im_identity_challenge', robotId })
+  }
+
+  ctx.cancelImIdentityChallenge = (challengeId: string): void => {
+    send({ type: 'cancel_im_identity_challenge', challengeId })
+  }
+
+  ctx.revokeMyImIdentity = (bindingId: string): void => {
+    send({ type: 'revoke_my_im_identity', bindingId })
+  }
+
+  ctx.dismissImIdentityChallengeReveal = (): void => {
+    ctx.imIdentityChallengeCreated.value = null
   }
 
   // ---- Account × workspace access (administrator-only) ----

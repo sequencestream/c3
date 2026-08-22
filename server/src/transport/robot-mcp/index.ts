@@ -8,7 +8,7 @@
  * reverse-lookup object ids into registered workspace paths.
  *
  * External MCP's connection-level `X-C3-Workspace` pin is deliberately not used
- * here (ADR-0049).
+ * here.
  */
 import type { Context } from 'hono'
 import { getConnInfo } from '@hono/node-server/conninfo'

@@ -24,6 +24,7 @@ import {
   getActiveBindingForSender,
   getMyActiveBinding,
   getMyPendingChallenge,
+  listIdentityAudit,
   resetIdentityStoreForTests,
   revokeMyBinding,
   setGroupWorkspaceScopes,
@@ -108,6 +109,7 @@ describe('identity challenge + bind', () => {
       token: ch.token,
     })
     expect(replay.ok).toBe(false)
+    expect(listIdentityAudit().some((e) => e.eventType === 'challenge_consume_failed')).toBe(true)
   })
 
   it('rejects second sender uniqueness conflict without revealing which side', () => {
@@ -131,6 +133,11 @@ describe('identity challenge + bind', () => {
     })
     expect(conflict.ok).toBe(false)
     expect(getActiveBindingForSender(ch2.accountNamespace, 'ou_2')).toBeNull()
+    expect(
+      listIdentityAudit().some(
+        (e) => e.eventType === 'challenge_consume_failed' && e.reasonCode === 'uniqueness_conflict',
+      ),
+    ).toBe(true)
   })
 
   it('expires pending after TTL', () => {

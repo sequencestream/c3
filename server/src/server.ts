@@ -704,7 +704,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       gate: 'discussion-research' as const,
     }),
     // IM chat-robot profile. L1 c3 tools use call-level scope from imAuth; the
-    // run root is only for local file tools, never a ledger workspace (ADR-0049).
+    // run root is only for local file tools, never a ledger workspace.
     robotProfile: (_workspacePath, robotId, imAuth) =>
       robotLaunchProfile(robotId, {
         bindC3Tools: (selected) => (binding) =>

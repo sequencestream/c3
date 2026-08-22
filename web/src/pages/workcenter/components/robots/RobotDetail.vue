@@ -10,7 +10,14 @@
 import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
-import type { ImRobot, ImRobotTurnLog } from '@ccc/shared/protocol'
+import RobotIdentityAdmin from './RobotIdentityAdmin.vue'
+import type {
+  ImGroupWorkspaceGrant,
+  ImIdentityBinding,
+  ImRobot,
+  ImRobotTurnLog,
+  WorkspaceInfo,
+} from '@ccc/shared/protocol'
 
 const { t } = useTypedI18n()
 
@@ -18,6 +25,9 @@ const props = defineProps<{
   robot: ImRobot | null
   turns: ImRobotTurnLog[]
   isAdmin: boolean
+  workspaces?: WorkspaceInfo[]
+  imIdentityBindings?: ImIdentityBinding[]
+  imGroupWorkspaceScopes?: ImGroupWorkspaceGrant[]
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +35,9 @@ const emit = defineEmits<{
   (e: 'delete', robotId: string): void
   (e: 'disable', robotId: string): void
   (e: 'enable', robotId: string): void
+  (e: 'adminRevokeImIdentity', bindingId: string): void
+  (e: 'loadImGroupScopes', chatId: string): void
+  (e: 'saveImGroupScopes', chatId: string, workspaceNames: string[]): void
 }>()
 
 const enableOpen = ref(false)
@@ -38,6 +51,8 @@ const OUTCOME_LABEL = {
   guard_refused: 'robot.detail.turns.outcome.guard_refused.label',
   input_rejected: 'robot.detail.turns.outcome.input_rejected.label',
   busy: 'robot.detail.turns.outcome.busy.label',
+  identity_required: 'robot.detail.turns.outcome.identity_required.label',
+  scope_changed: 'robot.detail.turns.outcome.scope_changed.label',
 } as const
 
 /** Read-only unless the robot was deliberately widened; that is the default. */
@@ -143,6 +158,17 @@ function confirmDelete(): void {
         </tbody>
       </table>
     </section>
+
+    <RobotIdentityAdmin
+      v-if="isAdmin && robot"
+      :robot="robot"
+      :bindings="imIdentityBindings ?? []"
+      :group-grants="imGroupWorkspaceScopes ?? []"
+      :workspaces="workspaces ?? []"
+      @revoke-binding="emit('adminRevokeImIdentity', $event)"
+      @load-group-scopes="emit('loadImGroupScopes', $event)"
+      @save-group-scopes="(chatId, names) => emit('saveImGroupScopes', chatId, names)"
+    />
 
     <ConfirmDialog
       :open="enableOpen"

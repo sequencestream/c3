@@ -35,6 +35,7 @@ import {
   isDbAvailable,
   markMigration,
   type Db,
+  type SqlParam,
 } from '../../kernel/infra/db.js'
 import { encryptSecret, decryptSecret } from '../../kernel/config/encryption.js'
 import { truncateCodePoints } from './inbound-guard.js'
@@ -733,7 +734,7 @@ interface ConversationRow {
 const CONV_WHERE =
   'platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ? AND binding_id = ? AND subject = ? AND scope_hash = ?'
 
-function convParams(id: ConversationIdentity): unknown[] {
+function convParams(id: ConversationIdentity): SqlParam[] {
   return [
     id.platform,
     id.robotId,

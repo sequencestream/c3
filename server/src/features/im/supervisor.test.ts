@@ -16,12 +16,20 @@ import { resolveImProvider } from './registry.js'
 import {
   acknowledgeOutbound,
   createRobot,
+  getRobot,
   listTurns,
   resetRobotStoreForTests,
   setRobotEnabled,
   updateRobot,
   type CreateRobotInput,
 } from './robot-store.js'
+import {
+  accountNamespaceOf,
+  consumeChallenge,
+  createChallenge,
+  resetIdentityStoreForTests,
+  seedBindingForTests,
+} from './identity-store.js'
 import {
   reloadRobot,
   robotConnectionStatus,
@@ -95,14 +103,37 @@ const robotInput = (over: Partial<CreateRobotInput> = {}): CreateRobotInput => (
 /**
  * Create an enabled robot and bring the supervisor up around it. Connecting is
  * asynchronous, so this waits for the link before the test pushes anything.
+ * Default `bind` maps `ou_user` so ordinary-chat tests match the new identity gate.
  */
-async function boot(over: Partial<CreateRobotInput> = {}): Promise<string> {
+async function boot(
+  over: Partial<CreateRobotInput> = {},
+  opts: { bind?: boolean; senderId?: string } = {},
+): Promise<string> {
   const robot = createRobot(robotInput(over))
   acknowledgeOutbound(robot.id)
   setRobotEnabled(robot.id, true)
   startImSupervisor({ runTurn: turnResult as never })
   await settle()
+  if (opts.bind !== false) bindSender(robot.id, opts.senderId ?? 'ou_user')
   return robot.id
+}
+
+function bindSender(robotId: string, senderId: string, subject?: string): void {
+  const robot = getRobot(robotId)
+  if (!robot) throw new Error('robot missing')
+  const ns = accountNamespaceOf(robot.platform, robot.appId)
+  if (subject) {
+    seedBindingForTests({ accountNamespace: ns, senderId, subject })
+    return
+  }
+  const ch = createChallenge('tester', robotId)
+  const result = consumeChallenge({
+    robotId,
+    accountNamespace: ns,
+    senderId,
+    token: ch.token,
+  })
+  if (!result.ok) throw new Error('bind failed')
 }
 
 /** Let the supervisor's in-flight promise chain settle. */
@@ -116,6 +147,7 @@ beforeEach(() => {
   process.env.C3_DIR = home
   resetDbForTests()
   resetRobotStoreForTests()
+  resetIdentityStoreForTests()
   sent = []
   closed = false
   vi.mocked(resolveImProvider).mockReturnValue(fakeProvider())
@@ -133,6 +165,7 @@ afterEach(async () => {
   delete process.env.C3_DB_PATH
   delete process.env.C3_DIR
   resetRobotStoreForTests()
+  resetIdentityStoreForTests()
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -221,12 +254,16 @@ describe('one Conversation runs one turn at a time', () => {
   })
 
   it('runs different senders in the same group concurrently', async () => {
-    await boot()
+    const id = await boot({}, { bind: false })
+    bindSender(id, 'alice')
     turnResult.mockReturnValue(new Promise<RobotTurnResult>(() => {}))
     push(message({ messageId: 'm1', senderId: 'alice' }))
     push(message({ messageId: 'm2', senderId: 'bob' }))
     await settle()
-    expect(turnResult).toHaveBeenCalledTimes(2)
+    // No-auth deployments only allow one active binding; the second sender is
+    // identity-gated and must not start a parallel run.
+    expect(turnResult).toHaveBeenCalledTimes(1)
+    expect(sent.some((s) => s.text.includes('个人设置'))).toBe(true)
   })
 
   it('runs different threads concurrently', async () => {
@@ -342,7 +379,9 @@ describe('sender-isolated continuous conversation', () => {
   })
 
   it('does not let sender B recover sender A context', async () => {
-    await boot()
+    const id = await boot({}, { bind: false })
+    bindSender(id, 'alice', 'subject-alice')
+    bindSender(id, 'bob', 'subject-bob')
     turnResult
       .mockResolvedValueOnce({
         outcome: 'complete',
@@ -605,5 +644,52 @@ describe('lifecycle', () => {
     await reloadRobot(id)
     expect(closed).toBe(true)
     expect(robotConnectionStatus(id)).toBeUndefined()
+  })
+})
+
+describe('identity gate and bind-control path', () => {
+  it('guides an unbound sender instead of starting a run', async () => {
+    const id = await boot({}, { bind: false })
+    push(message())
+    await settle()
+    expect(turnResult).not.toHaveBeenCalled()
+    expect(sent[0]?.text).toContain('个人设置')
+    expect(listTurns(id)[0]?.outcome).toBe('identity_required')
+  })
+
+  it('consumes a DM token once, audits the notice, and ignores redelivery', async () => {
+    const id = await boot({ dmMode: 'disabled' }, { bind: false })
+    const ch = createChallenge('tester', id)
+    const m = message({
+      messageId: 'm-bind',
+      chatType: 'p2p',
+      chatId: 'ou_user',
+      mentionedBot: false,
+      text: ch.token,
+    })
+    push(m)
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.text).toContain('身份绑定已生效')
+    expect(listTurns(id)[0]?.outcome).toBe('complete')
+
+    push(m)
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(listTurns(id)).toHaveLength(1)
+  })
+
+  it('does not consume a group token and still audits the dm-only guide', async () => {
+    const id = await boot({}, { bind: false })
+    const ch = createChallenge('tester', id)
+    const m = message({ messageId: 'm-group-token', text: ch.token })
+    push(m)
+    await settle()
+    expect(sent[0]?.text).toContain('私聊')
+    expect(listTurns(id)[0]?.outcome).toBe('identity_required')
+
+    push(m)
+    await settle()
+    expect(sent).toHaveLength(1)
   })
 })

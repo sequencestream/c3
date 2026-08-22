@@ -11,11 +11,14 @@
  */
 import { computed } from 'vue'
 import type { McpApiKeyMeta, PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
+import type { ImIdentityChallengeCreated, ImRobot } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import McpApiKeys from './components/McpApiKeys/McpApiKeys.vue'
+import ImIdentity from './components/ImIdentity/ImIdentity.vue'
 import { UI_LANGS as ALL_UI_LANGS } from '@/lib/personalized-settings'
 import { DEFAULT_THEME, THEMES } from '@/lib/theme'
 import { DEFAULT_FONT_SCALE, FONT_SCALE_MAX, FONT_SCALE_MIN } from '@/lib/font-scale'
+import type { MyImIdentityView } from '@/controls/state'
 
 const { t } = useTypedI18n()
 
@@ -23,14 +26,21 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     settings: PersonalizedSettings
-    /** 我名下的外部 MCP key(仅元数据)。 */
     mcpApiKeys?: McpApiKeyMeta[]
-    /** 新建/重置成功时唯一一次出现的明文。 */
     mcpApiKeyCreated?: { meta: McpApiKeyMeta; key: string } | null
-    /** 系统设置里的公开访问地址,用于拼接可复制的接入命令。 */
     baseUrl?: string | null
+    robots?: ImRobot[]
+    myImIdentity?: MyImIdentityView | null
+    imIdentityChallengeCreated?: ImIdentityChallengeCreated | null
   }>(),
-  { mcpApiKeys: () => [], mcpApiKeyCreated: null, baseUrl: null },
+  {
+    mcpApiKeys: () => [],
+    mcpApiKeyCreated: null,
+    baseUrl: null,
+    robots: () => [],
+    myImIdentity: null,
+    imIdentityChallengeCreated: null,
+  },
 )
 
 const emit = defineEmits<{
@@ -46,6 +56,10 @@ const emit = defineEmits<{
   'reset-mcp-api-key': [id: string]
   'revoke-mcp-api-key': [id: string]
   'dismiss-mcp-api-key-reveal': []
+  'create-im-identity-challenge': [robotId: string]
+  'cancel-im-identity-challenge': [challengeId: string]
+  'revoke-my-im-identity': [bindingId: string]
+  'dismiss-im-identity-reveal': []
   'goto-system-settings': []
 }>()
 
@@ -165,6 +179,16 @@ const fontScaleFill = computed<string>(
           </span>
         </div>
       </section>
+
+      <ImIdentity
+        :identity="myImIdentity"
+        :robots="robots"
+        :created="imIdentityChallengeCreated"
+        @create="(id) => emit('create-im-identity-challenge', id)"
+        @cancel="(id) => emit('cancel-im-identity-challenge', id)"
+        @revoke="(id) => emit('revoke-my-im-identity', id)"
+        @dismiss-reveal="emit('dismiss-im-identity-reveal')"
+      />
 
       <McpApiKeys
         :base-url="baseUrl"

@@ -22,7 +22,19 @@ export function installRobotActions(ctx: AppCtx): void {
   ctx.selectRobot = (robotId: string | null): void => {
     ctx.selectedRobotId.value = robotId
     ctx.robotTurns.value = []
-    if (robotId) send({ type: 'list_robot_turns', robotId })
+    ctx.imIdentityBindings.value = []
+    ctx.imGroupWorkspaceScopes.value = []
+    ctx.imGroupScopeChatId.value = ''
+    if (robotId) {
+      send({ type: 'list_robot_turns', robotId })
+      const robot = ctx.robots.value.find((r) => r.id === robotId)
+      if (robot && ctx.auth.isAdmin.value) {
+        send({
+          type: 'list_im_identity_bindings',
+          accountNamespace: `${robot.platform}:${robot.appId}`,
+        })
+      }
+    }
   }
 
   ctx.createRobot = (name: string, platform: ImPlatform, config: RobotConfigInput): void => {
@@ -62,5 +74,37 @@ export function installRobotActions(ctx: AppCtx): void {
   ctx.acknowledgeAndEnableRobot = (robotId: string): void => {
     send({ type: 'acknowledge_robot_outbound', robotId })
     send({ type: 'set_robot_enabled', robotId, enabled: true })
+  }
+
+  ctx.fetchImIdentityBindings = (accountNamespace: string): void => {
+    send({ type: 'list_im_identity_bindings', accountNamespace })
+  }
+
+  ctx.adminRevokeImIdentity = (bindingId: string): void => {
+    send({ type: 'admin_revoke_im_identity', bindingId })
+  }
+
+  ctx.fetchImGroupWorkspaceScopes = (
+    platform: ImPlatform,
+    providerAccountKey: string,
+    chatId: string,
+  ): void => {
+    ctx.imGroupScopeChatId.value = chatId
+    send({ type: 'list_im_group_workspace_scopes', platform, providerAccountKey, chatId })
+  }
+
+  ctx.setImGroupWorkspaceScopes = (
+    platform: ImPlatform,
+    providerAccountKey: string,
+    chatId: string,
+    workspaceNames: string[],
+  ): void => {
+    send({
+      type: 'set_im_group_workspace_scopes',
+      platform,
+      providerAccountKey,
+      chatId,
+      workspaceNames,
+    })
   }
 }

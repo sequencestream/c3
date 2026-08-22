@@ -61,6 +61,41 @@ export function resetIdentityStoreForTests(): void {
   nowFn = () => Date.now()
 }
 
+/** Test-only: insert an active binding (multi-sender supervisor scenarios). */
+export function seedBindingForTests(input: {
+  accountNamespace: string
+  senderId: string
+  subject: string
+}): ImIdentityBinding {
+  return configTx((d) => {
+    ensureSchema(d)
+    const bindingId = randomUUID()
+    const t = now()
+    d.run(
+      `INSERT INTO im_identity_bindings
+         (id, account_namespace, sender_id, subject, verified_at,
+          revoked_at, revoked_by, revoke_reason)
+       VALUES (?,?,?,?,?,NULL,NULL,NULL)`,
+      bindingId,
+      input.accountNamespace,
+      input.senderId,
+      input.subject,
+      t,
+    )
+    bumpPolicyEpoch()
+    return toBinding({
+      id: bindingId,
+      account_namespace: input.accountNamespace,
+      sender_id: input.senderId,
+      subject: input.subject,
+      verified_at: t,
+      revoked_at: null,
+      revoked_by: null,
+      revoke_reason: null,
+    })
+  })
+}
+
 function now(): number {
   return nowFn()
 }
@@ -476,7 +511,7 @@ export function consumeChallenge(input: {
   const t = now()
 
   try {
-    const binding = configTx((txDb) => {
+    const result = configTx((txDb): ConsumeChallengeResult => {
       ensureSchema(txDb)
       expirePending(txDb, t)
       const row = txDb.get<ChallengeRow>(
@@ -497,7 +532,7 @@ export function consumeChallenge(input: {
           robotId: input.robotId,
           reasonCode: 'invalid_or_mismatch',
         })
-        throw new IdentityStoreError('invalid', 'consume failed')
+        return { ok: false, reason: 'failed' }
       }
 
       const senderConflict = txDb.get<{ id: string }>(
@@ -521,7 +556,7 @@ export function consumeChallenge(input: {
           robotId: input.robotId,
           reasonCode: 'uniqueness_conflict',
         })
-        throw new IdentityStoreError('conflict', 'consume failed')
+        return { ok: false, reason: 'failed' }
       }
 
       const bindingId = randomUUID()
@@ -553,18 +588,22 @@ export function consumeChallenge(input: {
         bindingId,
         actor: row.subject,
       })
-      return toBinding({
-        id: bindingId,
-        account_namespace: input.accountNamespace,
-        sender_id: input.senderId,
-        subject: row.subject,
-        verified_at: t,
-        revoked_at: null,
-        revoked_by: null,
-        revoke_reason: null,
-      })
+      return {
+        ok: true,
+        binding: toBinding({
+          id: bindingId,
+          account_namespace: input.accountNamespace,
+          sender_id: input.senderId,
+          subject: row.subject,
+          verified_at: t,
+          revoked_at: null,
+          revoked_by: null,
+          revoke_reason: null,
+        }),
+      }
     })
-    return { ok: true, binding }
+    if (!result.ok) recordFail(input.robotId, input.senderId)
+    return result
   } catch {
     recordFail(input.robotId, input.senderId)
     return { ok: false, reason: 'failed' }
@@ -746,6 +785,17 @@ export function groupWorkspaceNames(
   chatId: string,
 ): string[] {
   return listGroupWorkspaceScopes(platform, providerAccountKey, chatId).map((g) => g.workspaceName)
+}
+
+/** Identity audit rows — used by tests to assert failed consumes persist. */
+export function listIdentityAudit(): { eventType: string; reasonCode: string | null }[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<{ event_type: string; reason_code: string | null }>(
+      `SELECT event_type, reason_code FROM im_identity_audit ORDER BY created_at ASC`,
+    )
+    .map((r) => ({ eventType: r.event_type, reasonCode: r.reason_code }))
 }
 
 /** Subject used for no-auth local bindings — exported for tests/docs. */

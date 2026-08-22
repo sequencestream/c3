@@ -23,7 +23,6 @@ import {
   finishTurn,
   getConversation,
   getRobot,
-  hasClaimedInboundMessage,
   isStoreAvailable,
   listEnabledRobots,
   loadCommittedContext,
@@ -217,11 +216,30 @@ function onInbound(id: string, m: ImInboundMessage): void {
   }
   const threadKey = threadKeyFor(m),
     gate = conversationGateKey(conversationIdentityOf(r.platform, r.id, threadKey, m.senderId))
+  // Claim before any outbound so every accepted messageId (including busy) is
+  // durable dedup. Busy uses forRun:false — failed row only, no orphan heal.
   if (inFlight.has(gate)) {
-    // Same messageId redelivered while the original turn is still running must
-    // stay silent — do not claim again (orphan cleanup would kill the live
-    // pending row) and do not send a second busy reply.
-    if (hasClaimedInboundMessage(r.platform, r.id, m.messageId)) return
+    let claim: ReturnType<typeof claimInboundMessage>
+    try {
+      claim = claimInboundMessage({
+        platform: r.platform,
+        robotId: r.id,
+        threadKey,
+        senderId: m.senderId,
+        chatId: m.chatId,
+        vendor: r.vendor,
+        messageId: m.messageId,
+        forRun: false,
+      })
+    } catch (e) {
+      void fixed(
+        h,
+        e instanceof RobotStoreError && e.code === 'db_unavailable' ? 'store_unavailable' : 'error',
+        target,
+      )
+      return
+    }
+    if (claim.kind === 'duplicate') return
     const tid = beginTurn({
       robotId: r.id,
       threadKey,
@@ -258,6 +276,7 @@ function onInbound(id: string, m: ImInboundMessage): void {
       chatId: m.chatId,
       vendor: r.vendor,
       messageId: m.messageId,
+      forRun: true,
     })
   } catch (e) {
     inFlight.delete(gate)
@@ -269,7 +288,7 @@ function onInbound(id: string, m: ImInboundMessage): void {
     )
     return
   }
-  if (claim.kind === 'duplicate') {
+  if (claim.kind !== 'claimed') {
     inFlight.delete(gate)
     release()
     return

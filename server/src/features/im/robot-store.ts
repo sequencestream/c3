@@ -1,6 +1,6 @@
 /**
  * Persistence for IM chat robots: configuration, sender-isolated Conversations,
- * bounded IM-visible context (ADR-0048), and the outbound audit trail (ADR-0046).
+ * bounded IM-visible context, and the outbound audit trail.
  *
  * Properties this module keeps true:
  *
@@ -733,31 +733,14 @@ export interface CommittedContextTurn {
 export type ClaimResult =
   | { kind: 'duplicate' }
   | { kind: 'claimed'; conversation: RobotConversation; contextTurnId: string }
-
-/**
- * Whether `(platform, robotId, messageId)` was already claimed. Used by the
- * supervisor busy gate so in-flight redelivery can stay silent without calling
- * `claimInboundMessage` (which would fail the live pending row as an orphan).
- */
-export function hasClaimedInboundMessage(
-  platform: ImPlatform,
-  robotId: string,
-  messageId: string,
-): boolean {
-  const d = db()
-  if (!d) return false
-  return !!d.get<{ n: number }>(
-    `SELECT 1 AS n FROM im_robot_context_turns
-     WHERE platform = ? AND robot_id = ? AND in_message_id = ?`,
-    platform,
-    robotId,
-    messageId,
-  )
-}
+  | { kind: 'busy' }
 
 /**
  * Atomically claim an inbound messageId for one Conversation. Duplicate
- * (platform, robotId, messageId) returns `duplicate` without a second run.
+ * (platform, robotId, messageId) returns `duplicate` without a second run or
+ * outbound. When `forRun` is false (conversation already in flight), reserves
+ * the messageId as a failed row for dedup only — does not heal orphans or
+ * clear the live session cache.
  */
 export function claimInboundMessage(input: {
   platform: ImPlatform
@@ -767,53 +750,70 @@ export function claimInboundMessage(input: {
   chatId: string
   vendor: VendorId
   messageId: string
+  /** Default true. False = busy-path dedup claim (failed row, no orphan heal). */
+  forRun?: boolean
 }): ClaimResult {
   const d = requireDb()
+  const forRun = input.forRun !== false
   return tx(d, () => {
     const conversation = ensureConversation(d, input)
-    // Orphan pending (e.g. crash without restart) blocks the Conversation —
-    // fail it and clear the native session cache before claiming anew.
-    // Live serialization is the in-memory gate; this only heals DB leftovers.
-    const orphan = d.get<{ id: string }>(
-      `SELECT id FROM im_robot_context_turns
-       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
-         AND status = 'pending'`,
+    // Dedup before orphan heal — a redelivered messageId must not fail a live pending.
+    const already = d.get<{ n: number }>(
+      `SELECT 1 AS n FROM im_robot_context_turns
+       WHERE platform = ? AND robot_id = ? AND in_message_id = ?`,
       input.platform,
       input.robotId,
-      input.threadKey,
-      input.senderId,
+      input.messageId,
     )
-    if (orphan) {
-      d.run(
-        `UPDATE im_robot_context_turns
-           SET status = 'failed', user_text = '', assistant_text = ''
-         WHERE id = ?`,
-        orphan.id,
-      )
-      d.run(
-        `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
-         WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
-        now(),
+    if (already) return { kind: 'duplicate' }
+
+    if (forRun) {
+      // Orphan pending (e.g. crash without restart) blocks the Conversation —
+      // fail it and clear the native session cache before claiming anew.
+      // Live serialization is the in-memory gate; this only heals DB leftovers.
+      const orphan = d.get<{ id: string }>(
+        `SELECT id FROM im_robot_context_turns
+         WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+           AND status = 'pending'`,
         input.platform,
         input.robotId,
         input.threadKey,
         input.senderId,
       )
+      if (orphan) {
+        d.run(
+          `UPDATE im_robot_context_turns
+             SET status = 'failed', user_text = '', assistant_text = ''
+           WHERE id = ?`,
+          orphan.id,
+        )
+        d.run(
+          `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
+           WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+          now(),
+          input.platform,
+          input.robotId,
+          input.threadKey,
+          input.senderId,
+        )
+      }
     }
 
     const id = randomUUID()
+    const status = forRun ? 'pending' : 'failed'
     try {
       d.run(
         `INSERT INTO im_robot_context_turns
            (id, platform, robot_id, thread_key, sender_id, in_message_id, status,
             user_text, assistant_text, seq, committed_at, created_at)
-         VALUES (?,?,?,?,?,?,'pending','','',NULL,NULL,?)`,
+         VALUES (?,?,?,?,?,?,?,'','',NULL,NULL,?)`,
         id,
         input.platform,
         input.robotId,
         input.threadKey,
         input.senderId,
         input.messageId,
+        status,
         now(),
       )
     } catch (err) {
@@ -821,6 +821,7 @@ export function claimInboundMessage(input: {
       if (/UNIQUE/i.test(msg)) return { kind: 'duplicate' }
       throw err
     }
+    if (!forRun) return { kind: 'busy' }
     // Re-read after possible session clear.
     const fresh = getConversation(input) ?? conversation
     return { kind: 'claimed', conversation: fresh, contextTurnId: id }

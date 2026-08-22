@@ -1,6 +1,6 @@
 /**
  * IM chat robots: the public data model for c3's deployment-level IM ingress
- * and egress (ADR-0046).
+ * and egress.
  *
  * A robot is a c3-instance resource, not a workspace resource: its roster,
  * connection and config are shared across the deployment. That is *not*
@@ -116,7 +116,7 @@ export interface ImRobot {
   enabled: boolean
   /**
    * When the operator acknowledged what leaves the machine. Enabling a robot
-   * without it is refused server-side (ADR-0046).
+   * without it is refused server-side.
    */
   outboundAckAt: number | null
   createdAt: number
@@ -128,7 +128,7 @@ export interface ImRobot {
 /**
  * One recorded turn. The audit answers when, for whom, how much was sent and how
  * it ended — never what was said. IM-visible bodies live only in the bounded
- * context store (ADR-0048); this audit trail still carries no transcript.
+ * context store; this audit trail still carries no transcript.
  */
 export interface ImRobotTurnLog {
   id: string

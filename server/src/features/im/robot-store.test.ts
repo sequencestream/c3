@@ -233,6 +233,51 @@ describe('sender-isolated Conversations', () => {
     expect(claim(robot.id, { messageId: 'dup' }).kind).toBe('duplicate')
   })
 
+  it('reserves a busy-path claim without healing a live pending', () => {
+    const robot = createRobot(input())
+    const pending = claim(robot.id, { messageId: 'm-pending' })
+    expect(pending.kind).toBe('claimed')
+
+    const busy = claimInboundMessage({
+      platform: 'feishu',
+      robotId: robot.id,
+      threadKey: 'c:oc',
+      senderId: 'u1',
+      chatId: 'oc',
+      vendor: 'claude',
+      messageId: 'm-busy',
+      forRun: false,
+    })
+    expect(busy.kind).toBe('busy')
+    expect(
+      claimInboundMessage({
+        platform: 'feishu',
+        robotId: robot.id,
+        threadKey: 'c:oc',
+        senderId: 'u1',
+        chatId: 'oc',
+        vendor: 'claude',
+        messageId: 'm-busy',
+        forRun: true,
+      }).kind,
+    ).toBe('duplicate')
+
+    expect(
+      getDb()!.get<{ status: string }>(
+        `SELECT status FROM im_robot_context_turns
+         WHERE robot_id = ? AND in_message_id = 'm-pending'`,
+        robot.id,
+      )?.status,
+    ).toBe('pending')
+    expect(
+      getDb()!.get<{ status: string }>(
+        `SELECT status FROM im_robot_context_turns
+         WHERE robot_id = ? AND in_message_id = 'm-busy'`,
+        robot.id,
+      )?.status,
+    ).toBe('failed')
+  })
+
   it('does not put failed turn bodies into recovery context', () => {
     const robot = createRobot(input())
     const c = claim(robot.id, { messageId: 'm-fail' })

@@ -275,6 +275,58 @@ describe('a redelivered message is not answered twice', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]?.text).toBe('done')
   })
+
+  it('sends busy once for a new message, then silently drops its redelivery while still busy', async () => {
+    const id = await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+
+    push(message({ messageId: 'm-a', senderId: 'ou_user' }))
+    await settle()
+    const busyMsg = message({ messageId: 'm-busy', senderId: 'ou_user' })
+    push(busyMsg)
+    await settle()
+    push(busyMsg)
+    await settle()
+
+    expect(turnResult).toHaveBeenCalledTimes(1)
+    expect(sent.filter((s) => s.text.includes('稍后再问我'))).toHaveLength(1)
+    expect(listTurns(id).filter((t) => t.outcome === 'busy')).toHaveLength(1)
+
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+  })
+
+  it('does not start an agent for a busy message redelivered after the prior turn ends', async () => {
+    await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+
+    push(message({ messageId: 'm-a', senderId: 'ou_user' }))
+    await settle()
+    const busyMsg = message({ messageId: 'm-busy-later', senderId: 'ou_user' })
+    push(busyMsg)
+    await settle()
+    expect(sent.at(-1)?.text).toContain('稍后再问我')
+
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+    const afterDone = sent.length
+
+    push(busyMsg)
+    await settle()
+
+    expect(turnResult).toHaveBeenCalledTimes(1)
+    expect(sent).toHaveLength(afterDone)
+  })
 })
 
 describe('sender-isolated continuous conversation', () => {

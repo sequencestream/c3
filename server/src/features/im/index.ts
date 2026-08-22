@@ -48,6 +48,7 @@ const ERROR_CODES: Record<RobotStoreError['code'], UiErrorCode> = {
   platform_unsupported: 'robot.platformUnsupported',
   secret_required: 'robot.secretRequired',
   outbound_not_acknowledged: 'robot.outboundNotAcknowledged',
+  locale_invalid: 'robot.localeInvalid',
 }
 
 const IDENTITY_ERROR_CODES: Record<IdentityStoreError['code'], UiErrorCode> = {

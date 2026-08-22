@@ -24,55 +24,23 @@ import type { ImRobot } from '@ccc/shared/protocol'
 import { detectCredentialShape } from '../memory/content-guard.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
 import { getRobot } from './robot-store.js'
+import {
+  assertSendableCategory,
+  isBindingGroupAllowedKey,
+  renderRobotMessage,
+  type RobotMessageRef,
+  type RobotRenderContext,
+} from './robot-message-registry.js'
 import type { ImOutbound } from './types.js'
 
-/** Ordinary fixed control prompts — not binding/identity notices. */
-export const GENERAL_FIXED_NOTICES = {
-  timeout: '这个问题处理超时了,已经中止。',
-  blocked: '这一步需要人工授权,我在群里无法完成。请到 c3 中继续。',
-  error: '处理时出错了,请到 c3 会话中查看详情。',
-  guard_refused: '回答里包含疑似凭据的内容,已拦下未发送。请到 c3 会话中查看。',
-  busy: '上一个问题还在处理,稍后再问我。',
-  store_unavailable: '机器人存储不可用,本回合未启动。',
-  input_rejected_credential: '疑似凭据,未处理也未保存。',
-  input_rejected_too_long: '消息过长,未处理也未保存。',
-} as const
-
-/** Binding-control notices — only via `binding_notice`, never `fixed_notice`. */
-export const BINDING_FIXED_NOTICES = {
-  identity_required:
-    '请先在 c3 Web 的个人设置里发起 IM 身份绑定,再把一次性验证码发到与本机器人的私聊。',
-  bind_use_dm: '请在与本机器人的私聊中完成身份绑定,群内无法验证。',
-  bind_failed: '绑定未成功。请到 c3 Web 重新发起挑战,并在私聊中提交完整验证码。',
-  bind_success: '身份绑定已生效。之后即可向我询问你有权查看的 c3 台账内容。',
-  scope_changed: '权限已变化,请重试。',
-} as const
-
-/** All registered notice bodies (lookup only — category picks the send path). */
-export const FIXED_NOTICES = { ...GENERAL_FIXED_NOTICES, ...BINDING_FIXED_NOTICES } as const
-
-export type GeneralFixedNoticeId = keyof typeof GENERAL_FIXED_NOTICES
-export type BindingNoticeId = keyof typeof BINDING_FIXED_NOTICES
-/** Notices allowed on the ordinary `fixed_notice` path. */
-export type FixedNoticeId = GeneralFixedNoticeId
-
-/** Binding-control notices that may use the narrow dmMode exemption in p2p. */
-export const BINDING_NOTICE_IDS = Object.keys(BINDING_FIXED_NOTICES) as BindingNoticeId[]
-
-export function isBindingNoticeId(id: string): id is BindingNoticeId {
-  return Object.prototype.hasOwnProperty.call(BINDING_FIXED_NOTICES, id)
-}
-
-export function isGeneralFixedNoticeId(id: string): id is GeneralFixedNoticeId {
-  return Object.prototype.hasOwnProperty.call(GENERAL_FIXED_NOTICES, id)
-}
+export type { RobotMessageRef, RobotRenderContext } from './robot-message-registry.js'
 
 export type OutboundContent =
   | { category: 'final_answer'; text: string }
-  | { category: 'fixed_notice'; notice: GeneralFixedNoticeId }
+  | { category: 'fixed_notice'; message: RobotMessageRef }
   | {
       category: 'binding_notice'
-      notice: BindingNoticeId
+      message: RobotMessageRef
       /**
        * Must equal the inbound that triggered the control path. Callers cannot
        * retarget chat/sender/replyTo.
@@ -107,6 +75,7 @@ export type GuardedSendInput = {
   target: OutboundTarget
   content: OutboundContent
   maxOutboundChars: number
+  renderContext: RobotRenderContext
   /** Provider raw send — only this module may call it. */
   rawSend: RawImSend
 }
@@ -142,6 +111,18 @@ function truncateVisible(text: string, maxChars: number): string {
   if (trimmed.length <= maxChars) return trimmed
   if (maxChars <= TRUNCATION_NOTICE.length) return trimmed.slice(0, maxChars)
   return `${trimmed.slice(0, maxChars - TRUNCATION_NOTICE.length)}${TRUNCATION_NOTICE}`
+}
+
+function renderFixed(
+  message: RobotMessageRef,
+  category: 'fixed_notice' | 'binding_notice',
+  ctx: RobotRenderContext,
+  maxChars: number,
+): string | null {
+  if (!assertSendableCategory(message, category)) return null
+  const text = renderRobotMessage(message, ctx).trim()
+  if (!text) return null
+  return truncateVisible(text, maxChars)
 }
 
 /** Platform failure text for audit: redact secrets first, then truncate. */
@@ -211,19 +192,23 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
   const live = robot!
 
   if (input.content.category === 'binding_notice') {
-    const allowsGroup =
-      input.content.notice === 'bind_use_dm' || input.content.notice === 'identity_required'
+    const allowsGroup = isBindingGroupAllowedKey(input.content.message.key)
     if (!allowsGroup && input.target.chatType !== 'p2p') {
       return { ok: false, reason: 'binding_not_p2p', outboundChars: 0 }
     }
     if (!sameOrigin(input.target, input.content.origin)) {
       return { ok: false, reason: 'binding_target_mismatch', outboundChars: 0 }
     }
-    // Narrow exemption: skip dmMode/dmAllowlist for p2p binding notices only.
     const skipDm = input.target.chatType === 'p2p'
     const targetRefuse = outboundTargetAllowed(live, input.target, { skipDmAllowlist: skipDm })
     if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
-    const body = truncateVisible(FIXED_NOTICES[input.content.notice], input.maxOutboundChars)
+    const body = renderFixed(
+      input.content.message,
+      'binding_notice',
+      input.renderContext,
+      input.maxOutboundChars,
+    )
+    if (!body) return { ok: false, reason: 'invalid_notice', outboundChars: 0 }
     return deliverRaw(input, body)
   }
 
@@ -231,17 +216,25 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
   if (targetRefuse) return { ok: false, reason: targetRefuse, outboundChars: 0 }
 
   if (input.content.category === 'fixed_notice') {
-    const notice = input.content.notice
-    if (!isGeneralFixedNoticeId(notice)) {
-      return { ok: false, reason: 'invalid_notice', outboundChars: 0 }
-    }
-    const text = truncateVisible(GENERAL_FIXED_NOTICES[notice], input.maxOutboundChars)
+    const text = renderFixed(
+      input.content.message,
+      'fixed_notice',
+      input.renderContext,
+      input.maxOutboundChars,
+    )
+    if (!text) return { ok: false, reason: 'invalid_notice', outboundChars: 0 }
     return deliverRaw(input, text)
   }
 
   const screened = screenOutbound(input.content.text, input.maxOutboundChars)
   if (!screened.ok) {
-    const notice = truncateVisible(FIXED_NOTICES.guard_refused, input.maxOutboundChars)
+    const notice = renderFixed(
+      { key: 'runtime.guardRefused', params: { nav: { kind: 'webEntry' } } },
+      'fixed_notice',
+      input.renderContext,
+      input.maxOutboundChars,
+    )
+    if (!notice) return { ok: false, reason: 'invalid_notice', outboundChars: 0 }
     const delivered = await deliverRaw(input, notice)
     if (delivered.ok) {
       return {

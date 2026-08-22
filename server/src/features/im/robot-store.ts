@@ -20,6 +20,7 @@ import {
   ROBOT_CONTEXT_MAX_CODEPOINTS,
   ROBOT_CONTEXT_MAX_TURNS,
   ROBOT_CONTEXT_RETENTION_MS,
+  ROBOT_MESSAGE_LOCALES,
   ROBOT_NAME_PATTERN,
   type ImDmMode,
   type ImInputRejectReason,
@@ -27,6 +28,7 @@ import {
   type ImRobot,
   type ImRobotTurnLog,
   type ImTurnOutcome,
+  type RobotMessageLocale,
   type VendorId,
 } from '@ccc/shared/protocol'
 import {
@@ -39,6 +41,7 @@ import {
 } from '../../kernel/infra/db.js'
 import { encryptSecret, decryptSecret } from '../../kernel/config/encryption.js'
 import { truncateCodePoints } from './inbound-guard.js'
+import { validateRobotMessageRegistry } from './robot-message-registry.js'
 import type { ConversationIdentity } from './thread-key.js'
 import { execIdentitySchema } from './identity-schema.js'
 
@@ -52,6 +55,7 @@ export type RobotStoreErrorCode =
   | 'platform_unsupported'
   | 'secret_required'
   | 'outbound_not_acknowledged'
+  | 'locale_invalid'
 
 export class RobotStoreError extends Error {
   constructor(
@@ -67,6 +71,7 @@ export class RobotStoreError extends Error {
 
 const SENDER_ISOLATION_MIGRATION = 'robots.sender_isolation.v1'
 const IDENTITY_SCOPE_MIGRATION = 'robots.identity_scope.v1'
+const LOCALE_MIGRATION = 'robots.locale.v1'
 /** Soft budget for recovery seed size (Unicode code points across all turns). */
 export const ROBOT_CONTEXT_RECOVERY_BUDGET = 80_000
 
@@ -103,6 +108,7 @@ CREATE TABLE IF NOT EXISTS im_robots (
   max_turn_ms      INTEGER,
   enabled          INTEGER NOT NULL DEFAULT 0,
   outbound_ack_at  INTEGER,
+  locale           TEXT CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER NOT NULL
 );`
@@ -391,9 +397,23 @@ function migrateIdentityScope(d: Db): void {
   })
 }
 
+function migrateRobotLocale(d: Db): void {
+  if (hasMigration(d, LOCALE_MIGRATION)) return
+  tx(d, () => {
+    const cols = tableColumns(d, 'im_robots')
+    if (!cols.has('locale')) {
+      d.exec(`ALTER TABLE im_robots ADD COLUMN locale TEXT
+        CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru'))`)
+      d.exec("UPDATE im_robots SET locale = 'zh'")
+    }
+    markMigration(d, LOCALE_MIGRATION)
+  })
+}
+
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
   migrateSenderIsolation(d)
+  migrateRobotLocale(d)
   // Idempotent creates for fresh DBs that already ran the migration marker path
   // after rename, and for DBs that never had the old tables.
   d.exec(THREADS_TABLE)
@@ -406,6 +426,7 @@ function ensureSchema(d: Db): void {
   d.exec(CONTEXT_TURNS_TABLE)
   d.exec(TURNS_TABLE)
   d.exec(INDEXES)
+  validateRobotMessageRegistry()
 }
 
 function db(): Db | null {
@@ -479,6 +500,7 @@ interface RobotRow {
   max_turn_ms: number | null
   enabled: number
   outbound_ack_at: number | null
+  locale: string | null
   created_at: number
   updated_at: number
 }
@@ -490,6 +512,21 @@ function parseList(raw: string): string[] {
   } catch {
     return []
   }
+}
+
+function parseLocale(raw: string | null): RobotMessageLocale | null {
+  if (!raw) return null
+  return (ROBOT_MESSAGE_LOCALES as readonly string[]).includes(raw)
+    ? (raw as RobotMessageLocale)
+    : null
+}
+
+function assertLocale(value: RobotMessageLocale | null | undefined): RobotMessageLocale | null {
+  if (value === undefined || value === null) return null
+  if (!(ROBOT_MESSAGE_LOCALES as readonly string[]).includes(value)) {
+    throw new RobotStoreError('locale_invalid', '不支持的机器人语言。')
+  }
+  return value
 }
 
 function toRobot(r: RobotRow): ImRobot {
@@ -510,6 +547,7 @@ function toRobot(r: RobotRow): ImRobot {
     maxTurnMs: r.max_turn_ms,
     enabled: r.enabled === 1,
     outboundAckAt: r.outbound_ack_at,
+    locale: parseLocale(r.locale),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -559,6 +597,7 @@ export interface CreateRobotInput {
   dmMode?: ImDmMode
   dmAllowlist?: string[]
   maxTurnMs?: number | null
+  locale?: RobotMessageLocale | null
 }
 
 function validateName(d: Db, name: string, excludeId?: string): void {
@@ -622,6 +661,7 @@ export interface UpdateRobotInput {
   dmMode?: ImDmMode
   dmAllowlist?: string[]
   maxTurnMs?: number | null
+  locale?: RobotMessageLocale | null
 }
 
 export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
@@ -646,6 +686,7 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
   if (patch.dmMode !== undefined && IM_DM_MODES.includes(patch.dmMode)) set('dm_mode', patch.dmMode)
   if (patch.dmAllowlist !== undefined) set('dm_allowlist', JSON.stringify(patch.dmAllowlist))
   if (patch.maxTurnMs !== undefined) set('max_turn_ms', patch.maxTurnMs)
+  if (patch.locale !== undefined) set('locale', assertLocale(patch.locale))
 
   if (sets.length > 0) {
     set('updated_at', now())

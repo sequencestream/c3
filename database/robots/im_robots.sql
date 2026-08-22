@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS im_robots (
   enabled          INTEGER NOT NULL    -- 0 = 停用 (创建时的默认, ADR-0046 要求); 1 = 已授权外发并连接
                    DEFAULT 0,
   outbound_ack_at  INTEGER,            -- 用户确认外发内容范围的时刻 (epoch ms); 为空则拒绝启用
+  locale           TEXT                -- 注册表文案语言; NULL = 系统默认 (en); 仅影响固定控制提示
+                   CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
   created_at       INTEGER NOT NULL,   -- epoch ms
   updated_at       INTEGER NOT NULL    -- epoch ms
 );

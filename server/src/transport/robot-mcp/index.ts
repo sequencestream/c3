@@ -51,6 +51,7 @@ export interface RobotMcpBinding {
     platform: ImPlatform
     expectedBindingId: string
     turnStartScopeHash: string
+    displaySignals?: import('../../features/im/robot-message-registry.js').TurnDisplaySignals
     onScopeChanged?: () => void
   }
 }
@@ -110,6 +111,7 @@ export function createRobotMcp(
         },
         expectedBindingId: binding.imAuth.expectedBindingId,
         turnStartScopeHash: binding.imAuth.turnStartScopeHash,
+        displaySignals: binding.imAuth.displaySignals,
         onScopeChanged: binding.imAuth.onScopeChanged,
       }
       for (const t of buildRobotL1Tools(auth)) {

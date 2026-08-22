@@ -19,9 +19,11 @@ import type {
   ImPlatform,
   ImRobot,
   RobotConfigInput,
+  RobotMessageLocale,
   ToolManifestEntry,
   VendorId,
 } from '@ccc/shared/protocol'
+import { ROBOT_MESSAGE_LOCALES } from '@ccc/shared/protocol'
 import ToolPermissionGrid from '@/components/ToolPermissionGrid/ToolPermissionGrid.vue'
 
 const { t } = useTypedI18n()
@@ -63,6 +65,16 @@ const chatAllowlist = ref('')
 const dmMode = ref<ImDmMode>('disabled')
 const dmAllowlist = ref('')
 const maxTurnMs = ref('')
+/** Empty string = system default (null). */
+const locale = ref<'' | RobotMessageLocale>('')
+
+const LOCALE_LABELS: Record<RobotMessageLocale, string> = {
+  en: 'English',
+  zh: '中文',
+  ja: '日本語',
+  ko: '한국어',
+  ru: 'Русский',
+}
 
 const isEdit = computed(() => props.robot !== null)
 
@@ -102,6 +114,7 @@ watch(
     dmMode.value = r?.dmMode ?? 'disabled'
     dmAllowlist.value = (r?.dmAllowlist ?? []).join('\n')
     maxTurnMs.value = r?.maxTurnMs ? String(r.maxTurnMs) : ''
+    locale.value = r?.locale ?? ''
     vendorInitialised.value = true
     // Load the initial vendor's manifest; the vendor watcher below won't fire if
     // the restore happens to equal the default, leaving the grid permanently blank.
@@ -175,6 +188,7 @@ function draft(): RobotConfigInput {
     dmMode: dmMode.value,
     dmAllowlist: lines(dmAllowlist.value),
     maxTurnMs: maxTurnMs.value.trim() && Number.isFinite(limit) ? limit : null,
+    locale: locale.value === '' ? null : locale.value,
   }
 }
 
@@ -278,6 +292,17 @@ const DM_LABEL = {
           <span class="rf-label">{{ t('robot.form.dmAllowlist.label') }}</span>
           <textarea v-model="dmAllowlist" rows="2"></textarea>
           <span class="rf-hint">{{ t('robot.form.dmAllowlist.hint') }}</span>
+        </label>
+
+        <label class="rf-field">
+          <span class="rf-label">{{ t('robot.form.locale.label') }}</span>
+          <select v-model="locale" data-testid="robot-locale">
+            <option value="">{{ t('robot.form.locale.systemDefault.label') }}</option>
+            <option v-for="lang in ROBOT_MESSAGE_LOCALES" :key="lang" :value="lang">
+              {{ LOCALE_LABELS[lang] }}
+            </option>
+          </select>
+          <span class="rf-hint">{{ t('robot.form.locale.hint') }}</span>
         </label>
 
         <label class="rf-field">

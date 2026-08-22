@@ -919,7 +919,8 @@
         },
         "token": {
           "label": "Code"
-        }
+        },
+        "forRobot": "For robot “{name}”."
       },
       "revoke": {
         "label": "Revoke binding",
@@ -931,7 +932,8 @@
           }
         }
       },
-      "noRobot": "No enabled robot is ready for binding. A robot must be enabled and outbound-acknowledged first."
+      "noRobot": "No enabled robot is ready for binding. A robot must be enabled and outbound-acknowledged first.",
+      "allBound": "Every enabled robot app is already bound for your account. Revoke one to re-bind that namespace."
     }
   },
   "intent": {

@@ -7,7 +7,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ROBOT_CONTEXT_MAX_TURNS, ROBOT_CONTEXT_RETENTION_MS } from '@ccc/shared/protocol'
-import { getDb, hasMigration, resetDbForTests } from '../../kernel/infra/db.js'
+import {
+  getDb,
+  hasMigration,
+  resetDbForTests,
+  ensureMigrationsTable,
+  markMigration,
+} from '../../kernel/infra/db.js'
+import { identityTablesPresent } from './identity-schema.js'
 import {
   RobotStoreError,
   acknowledgeOutbound,
@@ -605,6 +612,145 @@ describe('safe-cut migration from shared sessions', () => {
     resetRobotStoreForTests()
     expect(ensureRobotSchema()).toBe(true)
     expect(listTurns('rb-old')).toHaveLength(2)
+  })
+})
+
+describe('identity-scope migration (robots.identity_scope.v1)', () => {
+  it('rebuilds seven-dimensional threads, drops old context bodies, preserves audit, and converges identity tables atomically', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    d.exec(`
+      CREATE TABLE im_robots (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL,
+        app_id TEXT NOT NULL, app_secret TEXT NOT NULL DEFAULT '',
+        vendor TEXT NOT NULL, agent_id TEXT NOT NULL, mode TEXT NOT NULL DEFAULT '',
+        tool_allowlist TEXT NOT NULL DEFAULT '[]', require_mention INTEGER NOT NULL DEFAULT 1,
+        chat_allowlist TEXT NOT NULL DEFAULT '[]', dm_mode TEXT NOT NULL DEFAULT 'disabled',
+        dm_allowlist TEXT NOT NULL DEFAULT '[]', max_turn_ms INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0, outbound_ack_at INTEGER,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE im_robot_threads (
+        platform TEXT NOT NULL, robot_id TEXT NOT NULL, thread_key TEXT NOT NULL,
+        sender_id TEXT NOT NULL, chat_id TEXT NOT NULL, session_id TEXT,
+        vendor TEXT NOT NULL, turn_count INTEGER NOT NULL DEFAULT 0,
+        last_message_id TEXT, created_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
+        PRIMARY KEY (platform, robot_id, thread_key, sender_id)
+      );
+      CREATE TABLE im_robot_context_turns (
+        id TEXT PRIMARY KEY, platform TEXT NOT NULL, robot_id TEXT NOT NULL,
+        thread_key TEXT NOT NULL, sender_id TEXT NOT NULL, in_message_id TEXT NOT NULL,
+        status TEXT NOT NULL, user_text TEXT NOT NULL DEFAULT '',
+        assistant_text TEXT NOT NULL DEFAULT '', seq INTEGER, committed_at INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE (platform, robot_id, in_message_id)
+      );
+      CREATE TABLE im_robot_turns (
+        id TEXT PRIMARY KEY, robot_id TEXT NOT NULL, thread_key TEXT NOT NULL,
+        chat_id TEXT NOT NULL, sender_id TEXT NOT NULL, in_message_id TEXT NOT NULL,
+        session_id TEXT, started_at INTEGER NOT NULL, finished_at INTEGER,
+        outcome TEXT CHECK(outcome IS NULL OR outcome IN
+          ('complete','error','blocked','timeout','guard_refused','input_rejected','busy')),
+        reject_reason TEXT, outbound_chars INTEGER NOT NULL DEFAULT 0,
+        out_message_id TEXT, error TEXT
+      );
+    `)
+    d.run(
+      `INSERT INTO im_robots
+         (id,name,platform,app_id,app_secret,vendor,agent_id,mode,tool_allowlist,
+          require_mention,chat_allowlist,dm_mode,dm_allowlist,max_turn_ms,
+          enabled,outbound_ack_at,created_at,updated_at)
+       VALUES ('rb-id','bot','feishu','app','','claude','a','','[]',1,'[]','disabled','[]',NULL,0,NULL,1,1)`,
+    )
+    d.run(
+      `INSERT INTO im_robot_threads
+         (platform,robot_id,thread_key,sender_id,chat_id,session_id,vendor,turn_count,
+          last_message_id,created_at,last_active_at)
+       VALUES ('feishu','rb-id','c:oc','alice','oc','sess-old','claude',1,'m1',1,1)`,
+    )
+    d.run(
+      `INSERT INTO im_robot_context_turns
+         (id,platform,robot_id,thread_key,sender_id,in_message_id,status,user_text,
+          assistant_text,seq,committed_at,created_at)
+       VALUES ('ctx-1','feishu','rb-id','c:oc','alice','m-old','committed','secret q','secret a',1,1,1)`,
+    )
+    d.run(
+      `INSERT INTO im_robot_turns
+         (id,robot_id,thread_key,chat_id,sender_id,in_message_id,session_id,
+          started_at,finished_at,outcome,reject_reason,outbound_chars,out_message_id,error)
+       VALUES ('t-old','rb-id','c:oc','oc','alice','m-old','sess-old',1,2,'complete',NULL,12,NULL,NULL)`,
+    )
+
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(hasMigration(d, 'robots.identity_scope.v1')).toBe(true)
+    expect(identityTablesPresent(d)).toBe(true)
+    expect(
+      d.get("SELECT name FROM sqlite_master WHERE name='im_robot_threads_pre_identity'"),
+    ).toBeTruthy()
+    expect(d.all('SELECT id FROM im_robot_context_turns')).toEqual([])
+    expect(listTurns('rb-id')).toHaveLength(1)
+    expect(listTurns('rb-id')[0]?.outcome).toBe('complete')
+
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(listTurns('rb-id')).toHaveLength(1)
+  })
+
+  it('rolls back the whole migration when turn copy fails', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    ensureMigrationsTable(d)
+    markMigration(d, 'robots.sender_isolation.v1')
+    d.exec(`
+      CREATE TABLE im_robots (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL,
+        app_id TEXT NOT NULL, app_secret TEXT NOT NULL DEFAULT '',
+        vendor TEXT NOT NULL, agent_id TEXT NOT NULL, mode TEXT NOT NULL DEFAULT '',
+        tool_allowlist TEXT NOT NULL DEFAULT '[]', require_mention INTEGER NOT NULL DEFAULT 1,
+        chat_allowlist TEXT NOT NULL DEFAULT '[]', dm_mode TEXT NOT NULL DEFAULT 'disabled',
+        dm_allowlist TEXT NOT NULL DEFAULT '[]', max_turn_ms INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0, outbound_ack_at INTEGER,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE im_robot_threads (
+        platform TEXT NOT NULL, robot_id TEXT NOT NULL, thread_key TEXT NOT NULL,
+        sender_id TEXT NOT NULL, chat_id TEXT NOT NULL, session_id TEXT,
+        vendor TEXT NOT NULL, turn_count INTEGER NOT NULL DEFAULT 0,
+        last_message_id TEXT, created_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
+        PRIMARY KEY (platform, robot_id, thread_key, sender_id)
+      );
+      CREATE TABLE im_robot_turns (
+        id TEXT PRIMARY KEY, robot_id TEXT NOT NULL, thread_key TEXT NOT NULL,
+        chat_id TEXT NOT NULL, sender_id TEXT NOT NULL, in_message_id TEXT NOT NULL,
+        session_id TEXT, started_at INTEGER NOT NULL, finished_at INTEGER,
+        outcome TEXT CHECK(outcome IS NULL OR outcome IN
+          ('complete','error','blocked','timeout','guard_refused','input_rejected','busy')),
+        reject_reason TEXT, outbound_chars INTEGER NOT NULL DEFAULT 0,
+        out_message_id TEXT, error TEXT
+      );
+    `)
+    d.run(
+      `INSERT INTO im_robot_turns
+         (id,robot_id,thread_key,chat_id,sender_id,in_message_id,started_at,outcome,outbound_chars)
+       VALUES ('bad','rb','k','c','u','m',1,'complete',1)`,
+    )
+
+    const origExec = d.exec.bind(d)
+    d.exec = (sql: string) => {
+      if (sql.includes('FROM im_robot_turns_pre_identity')) {
+        throw new Error('inject copy failure')
+      }
+      return origExec(sql)
+    }
+
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(false)
+    expect(hasMigration(d, 'robots.identity_scope.v1')).toBe(false)
+    expect(identityTablesPresent(d)).toBe(false)
+    expect(d.get<{ id: string }>("SELECT id FROM im_robot_turns WHERE id='bad'")?.id).toBe('bad')
   })
 })
 

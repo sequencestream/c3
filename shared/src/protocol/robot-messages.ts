@@ -134,11 +134,11 @@ export type ServerRobotTurns = {
   turns: ImRobotTurnLog[]
 }
 
-/** Self identity state: active binding and optional pending challenge (no token). */
+/** Self identity state: active bindings and pending challenges per account namespace. */
 export type ServerMyImIdentity = {
   type: 'my_im_identity'
-  binding: ImIdentityBinding | null
-  pendingChallenge: ImIdentityChallengeSummary | null
+  bindings: ImIdentityBinding[]
+  pendingChallenges: ImIdentityChallengeSummary[]
   /**
    * When auth is off, the first binder becomes the sole `local` principal with
    * full registered workspace personal scope.

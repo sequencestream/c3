@@ -25,15 +25,32 @@ const emit = defineEmits<{
 
 const creating = ref(false)
 const selectedRobotId = ref('')
-const revokeOpen = ref(false)
+const revokeBindingId = ref<string | null>(null)
+
+function robotNamespace(r: ImRobot): string {
+  return `${r.platform}:${r.appId}`
+}
 
 const bindableRobots = computed(() =>
   props.robots.filter((r) => r.enabled && r.outboundAckAt != null),
 )
 
-const canCreate = computed(
-  () => bindableRobots.value.length > 0 && selectedRobotId.value.length > 0,
+const boundNamespaces = computed(
+  () => new Set(props.identity?.bindings.map((b) => b.accountNamespace) ?? []),
 )
+
+/** Robots whose account namespace is not yet bound for this subject. */
+const robotsNeedingBind = computed(() =>
+  bindableRobots.value.filter((r) => !boundNamespaces.value.has(robotNamespace(r))),
+)
+
+const canCreate = computed(
+  () => robotsNeedingBind.value.length > 0 && selectedRobotId.value.length > 0,
+)
+
+function robotLabel(robotId: string): string {
+  return props.robots.find((r) => r.id === robotId)?.name ?? robotId
+}
 
 function formatTime(ms: number | null | undefined): string {
   return ms ? d(new Date(ms), 'full') : '—'
@@ -41,7 +58,7 @@ function formatTime(ms: number | null | undefined): string {
 
 function startCreate(): void {
   creating.value = true
-  selectedRobotId.value = bindableRobots.value[0]?.id ?? ''
+  selectedRobotId.value = robotsNeedingBind.value[0]?.id ?? ''
 }
 
 function submitCreate(): void {
@@ -51,9 +68,8 @@ function submitCreate(): void {
 }
 
 function confirmRevoke(): void {
-  revokeOpen.value = false
-  const id = props.identity?.binding?.id
-  if (id) emit('revoke', id)
+  if (revokeBindingId.value) emit('revoke', revokeBindingId.value)
+  revokeBindingId.value = null
 }
 </script>
 
@@ -74,6 +90,13 @@ function confirmRevoke(): void {
         <p class="settings-section-title">
           {{ t('personalizedSetting.imIdentity.reveal.title') }}
         </p>
+        <p class="settings-hint">
+          {{
+            t('personalizedSetting.imIdentity.reveal.forRobot', {
+              name: robotLabel(created.robotId),
+            })
+          }}
+        </p>
         <p class="settings-hint">{{ t('personalizedSetting.imIdentity.reveal.onceOnly') }}</p>
         <div class="im-token-row">
           <span class="settings-hint">{{
@@ -86,51 +109,65 @@ function confirmRevoke(): void {
         </button>
       </div>
 
-      <div v-if="identity.binding" class="im-bound">
+      <div v-if="identity.bindings.length > 0" class="im-bound-list">
         <p class="settings-section-title">
           {{ t('personalizedSetting.imIdentity.bound.title') }}
         </p>
-        <p class="settings-hint">
-          {{ t('personalizedSetting.imIdentity.bound.namespace') }}:
-          {{ identity.binding.accountNamespace }}
-        </p>
-        <p class="settings-hint">
-          {{
-            t('personalizedSetting.imIdentity.bound.verified', {
-              time: formatTime(identity.binding.verifiedAt),
-            })
-          }}
-        </p>
-        <button type="button" class="ghost danger" @click="revokeOpen = true">
-          {{ t('personalizedSetting.imIdentity.revoke.label') }}
-        </button>
+        <div v-for="binding in identity.bindings" :key="binding.id" class="im-bound">
+          <p class="settings-hint">
+            {{ t('personalizedSetting.imIdentity.bound.namespace') }}:
+            {{ binding.accountNamespace }}
+          </p>
+          <p class="settings-hint">
+            {{
+              t('personalizedSetting.imIdentity.bound.verified', {
+                time: formatTime(binding.verifiedAt),
+              })
+            }}
+          </p>
+          <button type="button" class="ghost danger" @click="revokeBindingId = binding.id">
+            {{ t('personalizedSetting.imIdentity.revoke.label') }}
+          </button>
+        </div>
       </div>
 
-      <div v-else-if="identity.pendingChallenge" class="im-pending">
-        <p class="settings-section-title">
-          {{ t('personalizedSetting.imIdentity.pending.title') }}
+      <div v-if="identity.pendingChallenges.length > 0" class="im-pending-list">
+        <p v-for="ch in identity.pendingChallenges" :key="ch.challengeId" class="im-pending">
+          <span class="settings-section-title">{{
+            t('personalizedSetting.imIdentity.pending.title')
+          }}</span>
+          <span class="settings-hint">
+            {{ robotLabel(ch.robotId) }} · {{ ch.accountNamespace }}
+          </span>
+          <span class="settings-hint">
+            {{
+              t('personalizedSetting.imIdentity.pending.expires', {
+                time: formatTime(ch.expiresAt),
+              })
+            }}
+          </span>
+          <button type="button" class="ghost" @click="emit('cancel', ch.challengeId)">
+            {{ t('personalizedSetting.imIdentity.pending.cancel.label') }}
+          </button>
         </p>
-        <p class="settings-hint">
-          {{
-            t('personalizedSetting.imIdentity.pending.expires', {
-              time: formatTime(identity.pendingChallenge.expiresAt),
-            })
-          }}
-        </p>
-        <button
-          type="button"
-          class="ghost"
-          @click="emit('cancel', identity.pendingChallenge.challengeId)"
+      </div>
+
+      <template v-if="!created">
+        <p
+          v-if="robotsNeedingBind.length === 0 && identity.bindings.length === 0"
+          class="settings-hint"
         >
-          {{ t('personalizedSetting.imIdentity.pending.cancel.label') }}
-        </button>
-      </div>
-
-      <template v-else-if="!created">
-        <p v-if="bindableRobots.length === 0" class="settings-hint">
           {{ t('personalizedSetting.imIdentity.noRobot') }}
         </p>
-        <p v-else-if="!creating" class="settings-hint">
+        <p v-else-if="robotsNeedingBind.length === 0 && !creating" class="settings-hint">
+          {{ t('personalizedSetting.imIdentity.allBound') }}
+        </p>
+        <p
+          v-else-if="
+            !creating && identity.bindings.length === 0 && identity.pendingChallenges.length === 0
+          "
+          class="settings-hint"
+        >
           {{ t('personalizedSetting.imIdentity.empty') }}
         </p>
         <div v-if="creating" class="im-create">
@@ -139,8 +176,8 @@ function confirmRevoke(): void {
             <option disabled value="">
               {{ t('personalizedSetting.imIdentity.robot.placeholder') }}
             </option>
-            <option v-for="r in bindableRobots" :key="r.id" :value="r.id">
-              {{ r.name }}
+            <option v-for="r in robotsNeedingBind" :key="r.id" :value="r.id">
+              {{ r.name }} ({{ robotNamespace(r) }})
             </option>
           </select>
           <div class="im-actions">
@@ -159,7 +196,7 @@ function confirmRevoke(): void {
           </div>
         </div>
         <button
-          v-else-if="bindableRobots.length > 0"
+          v-else-if="robotsNeedingBind.length > 0"
           type="button"
           class="ghost"
           data-testid="im-identity-create-open"
@@ -171,14 +208,14 @@ function confirmRevoke(): void {
     </template>
 
     <ConfirmDialog
-      :open="revokeOpen"
+      :open="revokeBindingId !== null"
       danger
       :title="t('personalizedSetting.imIdentity.revoke.confirm.title')"
       :message="t('personalizedSetting.imIdentity.revoke.confirm.body')"
       :confirm-label="t('personalizedSetting.imIdentity.revoke.confirm.confirm.label')"
       :cancel-label="t('common.action.cancel.label')"
       @confirm="confirmRevoke"
-      @cancel="revokeOpen = false"
+      @cancel="revokeBindingId = null"
     />
   </section>
 </template>
@@ -190,11 +227,24 @@ function confirmRevoke(): void {
 .im-reveal,
 .im-bound,
 .im-pending,
-.im-create {
+.im-create,
+.im-bound-list,
+.im-pending-list {
   margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.im-bound {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+.im-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
 }
 .im-token-row {
   display: flex;
@@ -213,6 +263,6 @@ function confirmRevoke(): void {
   flex-wrap: wrap;
 }
 select {
-  max-width: 320px;
+  max-width: 360px;
 }
 </style>

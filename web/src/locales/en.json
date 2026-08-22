@@ -912,6 +912,7 @@
       },
       "reveal": {
         "title": "Binding code",
+        "forRobot": "For robot “{name}”.",
         "onceOnly": "Shown once. Send the full code to the robot in a direct message (not in a group).",
         "dismiss": {
           "label": "I have copied it"
@@ -930,7 +931,8 @@
           }
         }
       },
-      "noRobot": "No enabled robot is ready for binding. A robot must be enabled and outbound-acknowledged first."
+      "noRobot": "No enabled robot is ready for binding. A robot must be enabled and outbound-acknowledged first.",
+      "allBound": "Every enabled robot app is already bound for your account. Revoke one to re-bind that namespace."
     }
   },
   "intent": {

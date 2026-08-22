@@ -99,8 +99,8 @@ export type ModeLabel = ReturnType<typeof useModeLabel>
 export type AuthApi = ReturnType<typeof useAuth>
 
 export type MyImIdentityView = {
-  binding: ImIdentityBinding | null
-  pendingChallenge: ImIdentityChallengeSummary | null
+  bindings: ImIdentityBinding[]
+  pendingChallenges: ImIdentityChallengeSummary[]
   noAuthLocalHint: boolean
 }
 

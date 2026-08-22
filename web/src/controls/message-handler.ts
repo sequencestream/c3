@@ -1788,8 +1788,8 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'my_im_identity':
         myImIdentity.value = {
-          binding: msg.binding,
-          pendingChallenge: msg.pendingChallenge,
+          bindings: msg.bindings,
+          pendingChallenges: msg.pendingChallenges,
           noAuthLocalHint: msg.noAuthLocalHint,
         }
         break

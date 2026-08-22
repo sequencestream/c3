@@ -30,9 +30,7 @@ import {
   adminRevokeBinding,
   cancelChallenge,
   createChallenge,
-  getMyActiveBinding,
-  getMyPendingChallenge,
-  isNoAuthDeployment,
+  buildMyImIdentityView,
   listActiveBindings,
   listGroupWorkspaceScopes,
   revokeMyBinding,
@@ -40,7 +38,6 @@ import {
   isIdentityStoreAvailable,
 } from './identity-store.js'
 import { reloadRobot, robotConnectionStatus } from './supervisor.js'
-import { resolveAuthSubject } from '../auth/authorization.js'
 
 /** Map a store refusal onto the wire error vocabulary. */
 const ERROR_CODES: Record<RobotStoreError['code'], UiErrorCode> = {
@@ -190,13 +187,7 @@ export const getMyImIdentityHandler: Handler<'get_my_im_identity'> = (_ctx, conn
     conn.send({ type: 'error', error: { code: 'robot.identityUnavailable' } })
     return
   }
-  const subject = resolveAuthSubject(conn.subject)
-  conn.send({
-    type: 'my_im_identity',
-    binding: getMyActiveBinding(subject),
-    pendingChallenge: getMyPendingChallenge(subject),
-    noAuthLocalHint: isNoAuthDeployment(),
-  })
+  conn.send({ type: 'my_im_identity', ...buildMyImIdentityView(conn.subject) })
 }
 
 export const createImIdentityChallengeHandler: Handler<'create_im_identity_challenge'> = (
@@ -211,13 +202,7 @@ export const createImIdentityChallengeHandler: Handler<'create_im_identity_chall
   identityGuarded(conn, () => {
     const challenge = createChallenge(conn.subject, msg.robotId)
     conn.send({ type: 'im_identity_challenge_created', challenge })
-    // Refresh summary without the token.
-    conn.send({
-      type: 'my_im_identity',
-      binding: getMyActiveBinding(conn.subject),
-      pendingChallenge: getMyPendingChallenge(conn.subject),
-      noAuthLocalHint: isNoAuthDeployment(),
-    })
+    conn.send({ type: 'my_im_identity', ...buildMyImIdentityView(conn.subject) })
   })
 }
 
@@ -228,24 +213,14 @@ export const cancelImIdentityChallengeHandler: Handler<'cancel_im_identity_chall
 ) => {
   identityGuarded(conn, () => {
     cancelChallenge(conn.subject, msg.challengeId)
-    conn.send({
-      type: 'my_im_identity',
-      binding: getMyActiveBinding(conn.subject),
-      pendingChallenge: getMyPendingChallenge(conn.subject),
-      noAuthLocalHint: isNoAuthDeployment(),
-    })
+    conn.send({ type: 'my_im_identity', ...buildMyImIdentityView(conn.subject) })
   })
 }
 
 export const revokeMyImIdentityHandler: Handler<'revoke_my_im_identity'> = (_ctx, conn, msg) => {
   identityGuarded(conn, () => {
     revokeMyBinding(conn.subject, msg.bindingId)
-    conn.send({
-      type: 'my_im_identity',
-      binding: null,
-      pendingChallenge: getMyPendingChallenge(conn.subject),
-      noAuthLocalHint: isNoAuthDeployment(),
-    })
+    conn.send({ type: 'my_im_identity', ...buildMyImIdentityView(conn.subject) })
   })
 }
 

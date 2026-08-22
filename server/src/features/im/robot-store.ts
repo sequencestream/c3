@@ -40,6 +40,7 @@ import {
 import { encryptSecret, decryptSecret } from '../../kernel/config/encryption.js'
 import { truncateCodePoints } from './inbound-guard.js'
 import type { ConversationIdentity } from './thread-key.js'
+import { execIdentitySchema } from './identity-schema.js'
 
 // ---- Errors ----
 
@@ -383,6 +384,8 @@ function migrateIdentityScope(d: Db): void {
     } else {
       d.exec(TURNS_TABLE)
     }
+
+    execIdentitySchema(d)
 
     markMigration(d, IDENTITY_SCOPE_MIGRATION)
   })

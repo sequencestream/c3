@@ -25,6 +25,9 @@ import {
   getMyActiveBinding,
   getMyPendingChallenge,
   listIdentityAudit,
+  listMyActiveBindings,
+  listMyPendingChallenges,
+  buildMyImIdentityView,
   resetIdentityStoreForTests,
   revokeMyBinding,
   setGroupWorkspaceScopes,
@@ -50,11 +53,11 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function readyRobot(): string {
+function readyRobot(opts?: { name?: string; appId?: string }): string {
   const r = createRobot({
-    name: 'helper',
+    name: opts?.name ?? 'helper',
     platform: 'feishu',
-    appId: 'cli_app',
+    appId: opts?.appId ?? 'cli_app',
     appSecret: 'secret',
     vendor: 'claude',
     agentId: 'default',
@@ -178,6 +181,67 @@ describe('identity challenge + bind', () => {
     expect(readPolicyEpoch()).toBeGreaterThan(before)
     expect(getMyActiveBinding('alice')).toBeNull()
     expect(getActiveBindingForSender(ch.accountNamespace, 'ou_1')).toBeNull()
+  })
+})
+
+describe('multi account-namespace bindings', () => {
+  it('lists and binds each platform app namespace independently', () => {
+    const r1 = readyRobot({ name: 'bot-a', appId: 'app_a' })
+    const r2 = readyRobot({ name: 'bot-b', appId: 'app_b' })
+    const ch1 = createChallenge('alice', r1)
+    const ch2 = createChallenge('alice', r2)
+    expect(
+      consumeChallenge({
+        robotId: r1,
+        accountNamespace: ch1.accountNamespace,
+        senderId: 'ou_a',
+        token: ch1.token,
+      }).ok,
+    ).toBe(true)
+    expect(
+      consumeChallenge({
+        robotId: r2,
+        accountNamespace: ch2.accountNamespace,
+        senderId: 'ou_b',
+        token: ch2.token,
+      }).ok,
+    ).toBe(true)
+    const namespaces = listMyActiveBindings('alice')
+      .map((b) => b.accountNamespace)
+      .sort()
+    expect(namespaces).toEqual(['feishu:app_a', 'feishu:app_b'])
+    expect(listMyPendingChallenges('alice')).toEqual([])
+    const view = buildMyImIdentityView('alice')
+    expect(view.bindings).toHaveLength(2)
+  })
+})
+
+describe('consume rate limit audit', () => {
+  it('persists challenge_consume_failed when the fail bucket is full', () => {
+    const robotId = readyRobot()
+    const ns = accountNamespaceOf('feishu', 'cli_app')
+    for (let i = 0; i < 10; i++) {
+      expect(
+        consumeChallenge({
+          robotId,
+          accountNamespace: ns,
+          senderId: 'ou_rate',
+          token: `not-a-real-token-${i}`,
+        }).ok,
+      ).toBe(false)
+    }
+    const limited = consumeChallenge({
+      robotId,
+      accountNamespace: ns,
+      senderId: 'ou_rate',
+      token: 'not-a-real-token-final',
+    })
+    expect(limited).toEqual({ ok: false, reason: 'rate_limited' })
+    expect(
+      listIdentityAudit().some(
+        (e) => e.eventType === 'challenge_consume_failed' && e.reasonCode === 'rate_limited',
+      ),
+    ).toBe(true)
   })
 })
 

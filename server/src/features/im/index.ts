@@ -38,6 +38,12 @@ import {
   isIdentityStoreAvailable,
 } from './identity-store.js'
 import { reloadRobot, robotConnectionStatus } from './supervisor.js'
+import {
+  WriteGrantStoreError,
+  acknowledgeWriteCapability,
+  setWriteGrantEnabled,
+  isWriteGrantStoreAvailable,
+} from './write-grant-store.js'
 
 /** Map a store refusal onto the wire error vocabulary. */
 const ERROR_CODES: Record<RobotStoreError['code'], UiErrorCode> = {
@@ -77,7 +83,26 @@ function guarded(conn: Conn, run: () => void): void {
   }
 }
 
-/** Attach each robot's live link state, which is runtime-only and never stored. */
+const WRITE_GRANT_ERROR_CODES: Record<WriteGrantStoreError['code'], UiErrorCode> = {
+  db_unavailable: 'robot.dbUnavailable',
+  not_found: 'robot.notFound',
+  capability_invalid: 'robot.writeCapabilityInvalid',
+  capability_not_grantable: 'robot.writeCapabilityNotGrantable',
+}
+
+function guardedWriteGrant(conn: Conn, run: () => void): void {
+  try {
+    run()
+  } catch (err) {
+    if (err instanceof WriteGrantStoreError) {
+      conn.send({ type: 'error', error: { code: WRITE_GRANT_ERROR_CODES[err.code] } })
+      return
+    }
+    throw err
+  }
+}
+
+/** Attach live connection state and return the roster snapshot. */
 function withConnections(robots: ImRobot[]): ImRobot[] {
   return robots.map((r) => {
     const connection = robotConnectionStatus(r.id)
@@ -289,5 +314,35 @@ export const setImGroupWorkspaceScopesHandler: Handler<'set_im_group_workspace_s
       chatId: msg.chatId,
       grants,
     })
+  })
+}
+
+export const acknowledgeRobotWriteCapabilityHandler: Handler<
+  'acknowledge_robot_write_capability'
+> = (_ctx, conn, msg) => {
+  if (!requireAdmin(conn)) return
+  if (!isStoreAvailable() || !isWriteGrantStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'robot.dbUnavailable' } })
+    return
+  }
+  guardedWriteGrant(conn, () => {
+    acknowledgeWriteCapability(msg.robotId, msg.capability, conn.subject ?? 'admin')
+    sendRoster(conn)
+  })
+}
+
+export const setRobotWriteGrantEnabledHandler: Handler<'set_robot_write_grant_enabled'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!requireAdmin(conn)) return
+  if (!isStoreAvailable() || !isWriteGrantStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'robot.dbUnavailable' } })
+    return
+  }
+  guardedWriteGrant(conn, () => {
+    setWriteGrantEnabled(msg.robotId, msg.capability, msg.enabled)
+    sendRoster(conn)
   })
 }

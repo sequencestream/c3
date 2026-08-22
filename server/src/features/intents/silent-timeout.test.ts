@@ -279,6 +279,7 @@ describe('deriveSilentTimeoutActionDescriptor — gathering', () => {
       automate: true,
       updatedAt: NOW - 6 * SILENT_TIMEOUT_MS,
       intentSessionId: null,
+      responsibleSubject: null,
       specSessionId: null,
       specReviewSessionId: null,
       lastWorkSessionId: 'sess-1',

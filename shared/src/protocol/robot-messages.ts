@@ -24,6 +24,7 @@ import type {
   ImRobot,
   ImRobotTurnLog,
   RobotConfigInput,
+  RobotWriteCapability,
 } from './robot.js'
 
 /** List every configured robot; server replies with `robots`. */
@@ -65,6 +66,24 @@ export type ClientSetRobotEnabled = {
 
 /** Read one robot's recent turns; server replies with `robot_turns`. */
 export type ClientListRobotTurns = { type: 'list_robot_turns'; robotId: string }
+
+/**
+ * Admin: acknowledge one L2 write capability for a robot. Confirmer and config
+ * hash are derived server-side — the payload carries no actor or scope fields.
+ */
+export type ClientAcknowledgeRobotWriteCapability = {
+  type: 'acknowledge_robot_write_capability'
+  robotId: string
+  capability: RobotWriteCapability
+}
+
+/** Admin: enable or disable one L2 write grant immediately. */
+export type ClientSetRobotWriteGrantEnabled = {
+  type: 'set_robot_write_grant_enabled'
+  robotId: string
+  capability: RobotWriteCapability
+  enabled: boolean
+}
 
 /** List the caller's own active IM identity binding (and pending challenge). */
 export type ClientGetMyImIdentity = { type: 'get_my_im_identity' }

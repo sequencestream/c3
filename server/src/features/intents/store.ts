@@ -32,6 +32,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { INTENT_PR_STATUSES, SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
+import { resolveRunInitiatedBySubject } from '../auth/authorization.js'
 import {
   getDb,
   hasMigration,
@@ -44,6 +45,7 @@ import { resolveWorkspaceBaseBranch } from './base-branch.js'
 import { parsePrIdentity } from './pr-identity.js'
 import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
 import { readSpecFingerprint } from './spec-review.js'
+import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
 const SCHEMA_VERSION = 22
@@ -625,6 +627,7 @@ function db(): Db | null {
     // and inheritance all coexist in one column. No backfill — old intents
     // continue to derive their mode exactly as before.
     ensureColumn(d, 'intents', 'spec_mode', "TEXT CHECK(spec_mode IN ('sdd','fast'))")
+    ensureColumn(d, 'intents', 'responsible_subject', 'TEXT')
     // v20 → v21: the work session's DELIVERY CONTEXT. Nullable, no backfill —
     // a session started before deliveries existed had no context, and inventing
     // one retroactively would re-point its worktree baseline and its dependency
@@ -710,6 +713,7 @@ interface Row {
   spec_review_rework_rounds: number
   spec_review_machine_blocked: number
   intent_session_id: string | null
+  responsible_subject: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
@@ -868,6 +872,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
       specReviewReworkRounds: r.spec_review_rework_rounds ?? 0,
       specReviewMachineApprovalBlocked: r.spec_review_machine_blocked === 1,
       intentSessionId: r.intent_session_id,
+      responsibleSubject: r.responsible_subject,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       completedAt: r.completed_at,
@@ -1178,6 +1183,7 @@ export function upsertIntents(
   workspacePath: string,
   items: ProposedIntent[],
   actor?: string | null,
+  responsibleSubjectForNew?: string | null,
 ): Intent[] {
   const d = requireDb()
   const proj = workspaceKey(workspacePath)
@@ -1288,8 +1294,8 @@ export function upsertIntents(
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_name, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_name, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode, responsible_subject)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
@@ -1307,6 +1313,7 @@ export function upsertIntents(
           null,
           sessionIdParam,
           it.specMode ?? null,
+          responsibleSubjectForNew ?? null,
         )
         for (const dep of deps[i]) {
           d.run(
@@ -1378,14 +1385,15 @@ export function createEmptyIntent(
   // the workspace resolver rather than persisting an empty base branch.
   const baseBranch =
     input?.baseBranch?.trim() || resolveWorkspaceBaseBranch(workspaceRoot(workspacePath, proj))
+  const responsible = resolveRunInitiatedBySubject(actor)
   tx(d, () => {
     d.run(
       `INSERT INTO intents
          (id, workspace_name, title, short_en_title, content, priority, status, module,
           last_work_session_id, automate, branch_name, base_branch, latest_commit_hash,
           spec_path, spec_approved, spec_approve_user, spec_session_id, intent_session_id,
-          created_at, updated_at, completed_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          responsible_subject, created_at, updated_at, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
       proj,
       'new intent',
@@ -1404,6 +1412,7 @@ export function createEmptyIntent(
       null,
       null,
       null,
+      responsible,
       now,
       now,
       null,
@@ -2024,7 +2033,10 @@ export function markSpecAuthored(id: string): SpecAuthoredOutcome {
       const ws = resolveWorkspaceRoot(row.workspaceName)
       if (ws) {
         const fp = readSpecFingerprint(ws, row.specPath)
-        if (fp) maybePublishSpecAwaitingApproval(id, fp)
+        if (fp) {
+          maybePublishSpecAwaitingApproval(id, fp)
+          ensureSpecApprovalTodo(id, fp)
+        }
       }
     }
   }

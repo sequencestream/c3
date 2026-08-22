@@ -2552,7 +2552,9 @@
       "challengeNotFound": "That binding challenge was not found.",
       "bindingNotFound": "That identity binding was not found.",
       "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
-      "notOwner": "You can only manage your own identity binding."
+      "notOwner": "You can only manage your own identity binding.",
+      "writeCapabilityInvalid": "Unknown or invalid write capability.",
+      "writeCapabilityNotGrantable": "That capability cannot be enabled via IM chat."
     }
   },
   "statusIndicator": {
@@ -4037,6 +4039,51 @@
       },
       "save": {
         "label": "保存"
+      }
+    },
+    "writeGrants": {
+      "title": "書き込み能力",
+      "hint": "各能力は個別に確認後、IM 私聊 TODO への回答でロボットが代行できます。外向き送信やツール権限の代わりにはなりません。",
+      "acknowledge": {
+        "label": "確認"
+      },
+      "enable": {
+        "label": "有効化"
+      },
+      "disable": {
+        "label": "無効化"
+      },
+      "confirm": {
+        "title": "この書き込み能力を確認しますか?",
+        "message": "IM で私聊 TODO に答えると、ロボットが以下の操作を代行できます。各回答にはバインド、スコープ、使い捨てトークンが必要です。"
+      },
+      "status": {
+        "unauthorized": {
+          "label": "未確認"
+        },
+        "active": {
+          "label": "有効"
+        },
+        "stale": {
+          "label": "設定変更 — 再確認が必要"
+        },
+        "disabled": {
+          "label": "無効"
+        }
+      },
+      "capability": {
+        "queue_respond": {
+          "label": "キュー応答",
+          "description": "選択式 TODO への回答: 権限プロンプト、仕様の承認/差し戻し、raise-user-todo の認領。"
+        },
+        "automation_control": {
+          "label": "自動化制御",
+          "description": "park された意図を unpark し、キューがゲートを再チェックします。"
+        },
+        "annotate": {
+          "label": "注釈",
+          "description": "凍結 TODO やオブジェクトに冪等なメモや理由コードを書き込みます。"
+        }
       }
     },
     "enable": {

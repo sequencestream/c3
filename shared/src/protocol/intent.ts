@@ -628,6 +628,11 @@ export interface Intent {
    */
   intentSessionId: string | null
   /**
+   * Human responsible for this intent, frozen at creation. Null for automation,
+   * historical rows, or when the creator cannot be determined.
+   */
+  responsibleSubject: string | null
+  /**
    * Derived, send-time boolean: `true` when ANY of `intentSessionId`,
    * `specSessionId`, or `lastWorkSessionId` is a non-null id that the run
    * registry reports as `isRunning` (a turn is executing right now). Covers all

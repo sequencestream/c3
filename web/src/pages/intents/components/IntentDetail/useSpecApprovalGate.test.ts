@@ -43,6 +43,7 @@ function intent(id: string): Intent {
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
+    responsibleSubject: null,
     sessionActive: false,
     actionDescriptor: null,
   }

@@ -72,6 +72,7 @@ const req: Intent = {
   specReviewReworkRounds: 0,
   specReviewMachineApprovalBlocked: false,
   intentSessionId: null,
+  responsibleSubject: null,
   createdAt: 1,
   updatedAt: 1,
   completedAt: 0,

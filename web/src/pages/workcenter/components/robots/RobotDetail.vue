@@ -11,11 +11,13 @@ import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import RobotIdentityAdmin from './RobotIdentityAdmin.vue'
+import RobotWriteGrants from './RobotWriteGrants.vue'
 import type {
   ImGroupWorkspaceGrant,
   ImIdentityBinding,
   ImRobot,
   ImRobotTurnLog,
+  RobotWritableCapability,
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
 
@@ -38,6 +40,8 @@ const emit = defineEmits<{
   (e: 'adminRevokeImIdentity', bindingId: string): void
   (e: 'loadImGroupScopes', chatId: string): void
   (e: 'saveImGroupScopes', chatId: string, workspaceNames: string[]): void
+  (e: 'acknowledgeWriteGrant', capability: RobotWritableCapability): void
+  (e: 'setWriteGrantEnabled', capability: RobotWritableCapability, enabled: boolean): void
 }>()
 
 const enableOpen = ref(false)
@@ -140,6 +144,13 @@ function confirmDelete(): void {
       <dt>{{ t('robot.detail.workdir.label') }}</dt>
       <dd class="rb-path">{{ workdirPath }}</dd>
     </dl>
+
+    <RobotWriteGrants
+      v-if="isAdmin"
+      :robot="robot"
+      @acknowledge="emit('acknowledgeWriteGrant', $event)"
+      @set-enabled="(cap, enabled) => emit('setWriteGrantEnabled', cap, enabled)"
+    />
 
     <section class="rb-turns">
       <h3 class="rb-turns-title">{{ t('robot.detail.turns.title') }}</h3>

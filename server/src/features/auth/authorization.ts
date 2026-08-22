@@ -77,6 +77,15 @@ export function resolveAuthSubject(rawSubject: string | null): string | null {
 }
 
 /**
+ * Subject that initiated a run, frozen at runtime creation. System/automation
+ * actors are excluded; unauthenticated deployments fall back to {@link LOCAL_SUBJECT}.
+ */
+export function resolveRunInitiatedBySubject(rawSubject: string | null | undefined): string | null {
+  if (rawSubject === 'system' || rawSubject === 'automation') return null
+  return resolveAuthSubject(rawSubject ?? null)
+}
+
+/**
  * Whether a key's stored owner is still a principal this deployment recognizes.
  *
  * `local` is valid only while no admin gate applies. A key minted on a localhost

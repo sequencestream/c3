@@ -76,6 +76,21 @@ export function installRobotActions(ctx: AppCtx): void {
     send({ type: 'set_robot_enabled', robotId, enabled: true })
   }
 
+  ctx.acknowledgeRobotWriteGrant = (
+    robotId: string,
+    capability: import('@ccc/shared/protocol').RobotWritableCapability,
+  ): void => {
+    send({ type: 'acknowledge_robot_write_capability', robotId, capability })
+  }
+
+  ctx.setRobotWriteGrantEnabled = (
+    robotId: string,
+    capability: import('@ccc/shared/protocol').RobotWritableCapability,
+    enabled: boolean,
+  ): void => {
+    send({ type: 'set_robot_write_grant_enabled', robotId, capability, enabled })
+  }
+
   ctx.fetchImIdentityBindings = (accountNamespace: string): void => {
     send({ type: 'list_im_identity_bindings', accountNamespace })
   }

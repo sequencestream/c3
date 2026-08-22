@@ -267,6 +267,7 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   specReviewReworkRounds: 0,
   specReviewMachineApprovalBlocked: false,
   intentSessionId: null,
+  responsibleSubject: null,
   lastWorkSessionId: null,
   sessionActive: false,
   actionDescriptor: null,

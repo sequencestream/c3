@@ -167,6 +167,7 @@ import { readRuntimeLogHandler } from './logs/index.js'
 import { deleteWorkspaceMemoryHandler, listWorkspaceMemoriesHandler } from './memory/handlers.js'
 import {
   acknowledgeRobotOutboundHandler,
+  acknowledgeRobotWriteCapabilityHandler,
   adminRevokeImIdentityHandler,
   cancelImIdentityChallengeHandler,
   createImIdentityChallengeHandler,
@@ -180,6 +181,7 @@ import {
   revokeMyImIdentityHandler,
   setImGroupWorkspaceScopesHandler,
   setRobotEnabledHandler,
+  setRobotWriteGrantEnabledHandler,
   updateRobotHandler,
 } from './im/index.js'
 
@@ -347,6 +349,8 @@ export const handlerMap: HandlerMap = {
   update_robot: updateRobotHandler,
   delete_robot: deleteRobotHandler,
   acknowledge_robot_outbound: acknowledgeRobotOutboundHandler,
+  acknowledge_robot_write_capability: acknowledgeRobotWriteCapabilityHandler,
+  set_robot_write_grant_enabled: setRobotWriteGrantEnabledHandler,
   set_robot_enabled: setRobotEnabledHandler,
   list_robot_turns: listRobotTurnsHandler,
   get_my_im_identity: getMyImIdentityHandler,

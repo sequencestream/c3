@@ -8,6 +8,7 @@
  * (launcher, broadcasts) are reached via `ctx`; per-connection delivery via `conn`.
  */
 import { randomUUID } from 'node:crypto'
+import { resolveRunInitiatedBySubject } from '../auth/authorization.js'
 import { dirname } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
@@ -302,7 +303,16 @@ async function bindAndLaunchIntentSession(
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   try {
     if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
-    const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+    const rt = ensureRuntime(
+      chatId,
+      proj,
+      'default',
+      [],
+      'intent',
+      undefined,
+      'interactive',
+      resolveRunInitiatedBySubject(conn.subject),
+    )
     rt.effectiveCwd = cwd.prepared.cwd
     bindIntentAgent(chatId, target.target.ref)
     setChatSession(proj, chatId, title)
@@ -886,7 +896,16 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
   // open_intent_session resumes THIS session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  const rt = ensureRuntime(
+    chatId,
+    proj,
+    'default',
+    [],
+    'intent',
+    undefined,
+    'interactive',
+    resolveRunInitiatedBySubject(conn.subject),
+  )
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId)
   syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: 'New Intent' })
@@ -945,7 +964,16 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   // Restart the comm session as a fresh one seeded with this intent.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  const rt = ensureRuntime(
+    chatId,
+    proj,
+    'default',
+    [],
+    'intent',
+    undefined,
+    'interactive',
+    resolveRunInitiatedBySubject(conn.subject),
+  )
   rt.effectiveCwd = cwd.prepared.cwd
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
@@ -1027,7 +1055,16 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   // Restart the comm session as a fresh one seeded with this intent + new input.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+  const rt = ensureRuntime(
+    chatId,
+    proj,
+    'default',
+    [],
+    'intent',
+    undefined,
+    'interactive',
+    resolveRunInitiatedBySubject(conn.subject),
+  )
   rt.effectiveCwd = cwd.prepared.cwd
   bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)

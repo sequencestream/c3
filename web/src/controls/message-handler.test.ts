@@ -2531,6 +2531,7 @@ describe('create_intent_result — 精确落点与守卫释放', () => {
       type: 'intents',
       workspaceName: '/ws',
       items: [{ id: 'i-late', status: 'draft', intentSessionId: null, content: 'contentful' }],
+      responsibleSubject: null,
       sddEnabled: false,
     } as unknown as ServerToClient)
 

@@ -2551,7 +2551,9 @@
       "challengeNotFound": "That binding challenge was not found.",
       "bindingNotFound": "That identity binding was not found.",
       "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
-      "notOwner": "You can only manage your own identity binding."
+      "notOwner": "You can only manage your own identity binding.",
+      "writeCapabilityInvalid": "Unknown or invalid write capability.",
+      "writeCapabilityNotGrantable": "That capability cannot be enabled via IM chat."
     }
   },
   "statusIndicator": {
@@ -4075,6 +4077,51 @@
       },
       "save": {
         "label": "Save"
+      }
+    },
+    "writeGrants": {
+      "title": "Write capabilities",
+      "hint": "Each capability must be acknowledged before the robot can act on your behalf in IM chat. Outbound replies and tool permissions do not grant these.",
+      "acknowledge": {
+        "label": "Acknowledge"
+      },
+      "enable": {
+        "label": "Enable"
+      },
+      "disable": {
+        "label": "Disable"
+      },
+      "confirm": {
+        "title": "Acknowledge this write capability?",
+        "message": "The robot may perform the actions below on your behalf when you answer a private todo in IM. Each answer still requires your binding, scope, and a one-time token."
+      },
+      "status": {
+        "unauthorized": {
+          "label": "Not acknowledged"
+        },
+        "active": {
+          "label": "Active"
+        },
+        "stale": {
+          "label": "Config changed — re-acknowledge"
+        },
+        "disabled": {
+          "label": "Disabled"
+        }
+      },
+      "capability": {
+        "queue_respond": {
+          "label": "Queue respond",
+          "description": "Answer closed-choice todos: permission prompts, spec approve/reject, and raise-user-todo claims."
+        },
+        "automation_control": {
+          "label": "Automation control",
+          "description": "Unpark a parked intent so the queue can re-check gates."
+        },
+        "annotate": {
+          "label": "Annotate",
+          "description": "Write idempotent notes or reason codes on frozen todos and objects."
+        }
       }
     },
     "enable": {

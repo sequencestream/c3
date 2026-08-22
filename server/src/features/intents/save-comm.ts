@@ -20,6 +20,7 @@
  */
 import { runSaveConfirmed, type IntentToolResult, type SaveArgs } from './tool-defs.js'
 import { findIntentIdByAnySessionId } from './store.js'
+import { getRuntime } from '../../runs.js'
 
 export interface CommSaveDeps {
   broadcastIntents: (workspacePath: string) => void
@@ -52,10 +53,13 @@ export function runCommSave(
   }
   // No permission decision means no approving subject: `intent_logs.actor` falls
   // back to `'system'` in the store.
+  const initiatedBySubject = getRuntime(runId)?.initiatedBySubject ?? null
   return runSaveConfirmed(
     binding.workspacePath,
     normalizeSessionBackLink(args, runId),
     deps.broadcastIntents,
+    undefined,
+    initiatedBySubject,
   )
 }
 

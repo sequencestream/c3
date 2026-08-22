@@ -93,6 +93,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
+    responsibleSubject: null,
     createdAt: 1,
     updatedAt: 1,
     completedAt: null,

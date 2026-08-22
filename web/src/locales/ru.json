@@ -2552,7 +2552,9 @@
       "challengeNotFound": "That binding challenge was not found.",
       "bindingNotFound": "That identity binding was not found.",
       "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
-      "notOwner": "You can only manage your own identity binding."
+      "notOwner": "You can only manage your own identity binding.",
+      "writeCapabilityInvalid": "Unknown or invalid write capability.",
+      "writeCapabilityNotGrantable": "That capability cannot be enabled via IM chat."
     }
   },
   "statusIndicator": {
@@ -4037,6 +4039,51 @@
       },
       "save": {
         "label": "Сохранить"
+      }
+    },
+    "writeGrants": {
+      "title": "Права записи",
+      "hint": "Каждое право нужно подтвердить отдельно, прежде чем робот сможет действовать от вашего имени в личных TODO в IM. Исходящие ответы и права на инструменты их не заменяют.",
+      "acknowledge": {
+        "label": "Подтвердить"
+      },
+      "enable": {
+        "label": "Включить"
+      },
+      "disable": {
+        "label": "Отключить"
+      },
+      "confirm": {
+        "title": "Подтвердить это право записи?",
+        "message": "Когда вы отвечаете на личный TODO в IM, робот может выполнять действия ниже от вашего имени. Каждый ответ по-прежнему требует привязку, область и одноразовый токен."
+      },
+      "status": {
+        "unauthorized": {
+          "label": "Не подтверждено"
+        },
+        "active": {
+          "label": "Активно"
+        },
+        "stale": {
+          "label": "Конфигурация изменилась — нужно подтвердить снова"
+        },
+        "disabled": {
+          "label": "Отключено"
+        }
+      },
+      "capability": {
+        "queue_respond": {
+          "label": "Ответ очереди",
+          "description": "Ответы на TODO с выбором: запросы прав, одобрение/отклонение спеки, claim raise-user-todo."
+        },
+        "automation_control": {
+          "label": "Управление автоматизацией",
+          "description": "Снять park с intent, чтобы очередь снова проверила шлюзы."
+        },
+        "annotate": {
+          "label": "Аннотации",
+          "description": "Идempotentные заметки или коды причин для замороженных TODO и объектов."
+        }
       }
     },
     "enable": {

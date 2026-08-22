@@ -353,6 +353,8 @@ export const UI_ERROR_CODES = {
   'robot.bindingNotFound': { key: 'error.robot.bindingNotFound' },
   'robot.robotNotReady': { key: 'error.robot.robotNotReady' },
   'robot.notOwner': { key: 'error.robot.notOwner' },
+  'robot.writeCapabilityInvalid': { key: 'error.robot.writeCapabilityInvalid' },
+  'robot.writeCapabilityNotGrantable': { key: 'error.robot.writeCapabilityNotGrantable' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
   'waitUserInvolve.invalidStatusTransition': {

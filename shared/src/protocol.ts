@@ -181,6 +181,8 @@ export type ClientToServer =
   | RobotMsg.ClientAcknowledgeRobotOutbound
   | RobotMsg.ClientSetRobotEnabled
   | RobotMsg.ClientListRobotTurns
+  | RobotMsg.ClientAcknowledgeRobotWriteCapability
+  | RobotMsg.ClientSetRobotWriteGrantEnabled
   | RobotMsg.ClientGetMyImIdentity
   | RobotMsg.ClientCreateImIdentityChallenge
   | RobotMsg.ClientCancelImIdentityChallenge

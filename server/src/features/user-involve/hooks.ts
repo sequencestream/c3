@@ -19,7 +19,11 @@ import type { Broadcaster } from '../../transport/index.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../../kernel/permission/gateway.js'
 import { createEvent, getEventByRequestId, listEvents } from './store.js'
 import { getByC3Id } from '../works/work-session-store.js'
+import { getIntent } from '../intents/store.js'
+import { getQueueIntentMetaById } from '../intents/queue-store.js'
 import { maybePublishPermissionQueued } from '../im/broadcast-hooks.js'
+import { syncPermissionRequestContract, syncParkUnparkContract } from '../im/l2-contract-sync.js'
+import { maybeNotifyL2ForTodo } from '../im/l2-notify.js'
 
 /** Resolve a session's human-readable title from the projection (graceful: null on miss/error). */
 function lookupTitle(sessionId: string): string | null {
@@ -63,6 +67,7 @@ export function createPermissionRequestHandler(deps: {
       toolInput: ctx.input,
     })
 
+    syncPermissionRequestContract(ctx, ctx.initiatedBySubject)
     maybePublishPermissionQueued(ctx.requestId)
 
     // Broadcast the fresh todo list so every connection sees it.
@@ -137,7 +142,7 @@ export function createQueueTodoHandler(deps: {
     const requestId = `queue:${input.intentId}:${input.reasonCode}`
     try {
       if (getEventByRequestId(requestId)) return
-      createEvent({
+      const event = createEvent({
         workspacePath: input.workspacePath,
         sessionKind: 'work',
         sessionId: input.sessionId,
@@ -146,6 +151,17 @@ export function createQueueTodoHandler(deps: {
         toolName: null,
         toolInput: { intentId: input.intentId, reason: input.reasonCode },
       })
+      const intent = getIntent(input.intentId)
+      const meta = getQueueIntentMetaById(input.intentId)
+      if (intent && meta.parked) {
+        syncParkUnparkContract({
+          intentId: input.intentId,
+          workspacePath: input.workspacePath,
+          actorSubject: intent.responsibleSubject,
+          todoId: event.id,
+        })
+        maybeNotifyL2ForTodo(event.id)
+      }
     } catch (err) {
       console.warn(
         `[c3:queue] wait-user-involve 待办创建失败 (non-fatal): ${

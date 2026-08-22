@@ -6,7 +6,7 @@
 
 所有工作区关联统一使用 `workspace_name`，其值引用 `workspaces.name`；绝对路径只保存在注册表并用于文件系统操作。迁移 `039-workspace-name-identity.sql` 由配置 store 在单事务内把历史 workspace UUID 和各业务表路径映射为名称。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 38 张表，14 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 42 张表，14 个模块。
 
 ## 基础设施
 
@@ -65,6 +65,10 @@
 | 43  | robots       | `im_identity_bindings`       | [robots/im_identity_bindings.sql](robots/im_identity_bindings.sql)                       | `server/src/features/im/identity-store.ts`                  | IM 外部发送者 ↔ c3 主体 的 active 绑定                   |
 | 44  | robots       | `im_group_workspace_scopes`  | [robots/im_group_workspace_scopes.sql](robots/im_group_workspace_scopes.sql)             | `server/src/features/im/identity-store.ts`                  | 群聊明细可见工作区白名单                                 |
 | 45  | robots       | `im_identity_audit`          | [robots/im_identity_audit.sql](robots/im_identity_audit.sql)                             | `server/src/features/im/identity-store.ts`                  | IM 身份/群范围变更审计 (只增)                            |
+| 46  | robots       | `im_robot_write_grants`      | [robots/im_robot_write_grants.sql](robots/im_robot_write_grants.sql)                     | `server/src/features/im/write-grant-store.ts`               | IM 机器人 L2 写能力逐项授权 (与外发确认独立)             |
+| 47  | robots       | `im_robot_write_audits`      | [robots/im_robot_write_audits.sql](robots/im_robot_write_audits.sql)                     | `server/src/features/im/write-grant-store.ts`               | L2 待办令牌作答审计 (不含令牌明文/正文)                  |
+| 48  | robots       | `im_todo_tokens`             | [robots/im_todo_tokens.sql](robots/im_todo_tokens.sql)                                   | `server/src/features/im/todo-token-store.ts`                | 私聊待办一次性令牌 (仅存哈希)                            |
+| 49  | user-involve | `im_todo_answer_contracts`   | [user-involve/im_todo_answer_contracts.sql](user-involve/im_todo_answer_contracts.sql)   | `server/src/features/user-involve/answer-contract-store.ts` | L2 可作答契约 (封闭答案集, 不含令牌)                     |
 
 ## 模块说明
 

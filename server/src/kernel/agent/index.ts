@@ -261,6 +261,10 @@ export interface RunOptions {
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
   /**
+   * Frozen run initiator forwarded into permission prompts.
+   */
+  initiatedBySubject?: string | null
+  /**
    * Optional callback for consensus auto-resolutions (the `consensus_auto` path —
    * no human prompt). Forwarded to {@link createCanUseTool} so the wiring layer can
    * record a non-blocking `status: 'auto'` WaitUserInvolveEvent for auditability.
@@ -821,6 +825,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         recentContext: () => recentContext,
         skillWriteGuard,
         sessionId: opts.sessionId ?? (() => ''),
+        initiatedBySubject: opts.initiatedBySubject ?? null,
         onPermissionRequest: opts.onPermissionRequest,
         onConsensusResolved: opts.onConsensusResolved,
       }),

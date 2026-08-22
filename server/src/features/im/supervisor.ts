@@ -49,10 +49,13 @@ import {
   RobotStoreError,
 } from './robot-store.js'
 import { conversationGateKey, conversationIdentityOf, threadKeyFor } from './thread-key.js'
+import { handleTodoControl } from './l2-control.js'
+import { parseTodoInbound } from './todo-token-parse.js'
 import type { ImInboundMessage, ImProviderCapabilities } from './types.js'
 
 export interface ImSupervisorDeps {
   runTurn: (input: RunRobotTurnInput) => Promise<RobotTurnResult>
+  broadcastIntents?: (workspacePath: string) => void
 }
 interface RobotHandle {
   status: () => ImConnectionStatus
@@ -449,6 +452,27 @@ function onInbound(id: string, m: ImInboundMessage): void {
 
   void (async () => {
     const tokenText = m.text.trim()
+    if (parseTodoInbound(tokenText)) {
+      if (m.chatType === 'group' && !accepts(r, m)) return
+      if (
+        await handleTodoControl(r, m, {
+          sendFixed: async (message, t, c) => {
+            const s = await fixed(h, message, t, c)
+            return {
+              ok: s.ok,
+              outboundChars: s.ok ? s.outboundChars : 0,
+              messageId: s.ok ? s.messageId : null,
+              reason: s.ok ? undefined : s.reason,
+            }
+          },
+          renderCtx: (subject) => renderCtx(r, subject),
+          accepts,
+          broadcastIntents: deps?.broadcastIntents,
+        })
+      ) {
+        return
+      }
+    }
     if (TOKEN_SHAPE.test(tokenText)) {
       if (m.chatType === 'group' && !accepts(r, m)) return
       if (await handleBindingControl(r, h, m)) return

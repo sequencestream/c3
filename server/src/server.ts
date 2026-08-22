@@ -1040,7 +1040,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // Dial out to every enabled chat robot's platform. A robot that cannot connect
   // is a visible, recoverable state; it never blocks startup or the others.
-  startImRobotsWiring({ launchDeps }, eventBus)
+  startImRobotsWiring({ launchDeps, broadcastIntents: broadcasts.broadcastIntents }, eventBus)
 
   // Recover every queue that was running before this process started, then arm
   // the fixed reconcile cadence. The startup pass runs BEFORE the tick loop so

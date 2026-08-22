@@ -2552,7 +2552,9 @@
       "challengeNotFound": "That binding challenge was not found.",
       "bindingNotFound": "That identity binding was not found.",
       "robotNotReady": "Choose an enabled robot that has acknowledged outbound sending.",
-      "notOwner": "You can only manage your own identity binding."
+      "notOwner": "You can only manage your own identity binding.",
+      "writeCapabilityInvalid": "Unknown or invalid write capability.",
+      "writeCapabilityNotGrantable": "That capability cannot be enabled via IM chat."
     }
   },
   "statusIndicator": {
@@ -4037,6 +4039,51 @@
       },
       "save": {
         "label": "저장"
+      }
+    },
+    "writeGrants": {
+      "title": "쓰기 권한",
+      "hint": "각 권한은 개별 확인 후 IM 개인 TODO 답변에서 로봇이 대신 실행할 수 있습니다. 아웃바운드나 도구 권한으로 대체되지 않습니다.",
+      "acknowledge": {
+        "label": "확인"
+      },
+      "enable": {
+        "label": "활성화"
+      },
+      "disable": {
+        "label": "비활성화"
+      },
+      "confirm": {
+        "title": "이 쓰기 권한을 확인할까요?",
+        "message": "IM에서 개인 TODO에 답하면 로봇이 아래 작업을 대신 수행할 수 있습니다. 각 답변에는 바인딩, 범위, 일회용 토큰이 필요합니다."
+      },
+      "status": {
+        "unauthorized": {
+          "label": "미확인"
+        },
+        "active": {
+          "label": "활성"
+        },
+        "stale": {
+          "label": "설정 변경 — 재확인 필요"
+        },
+        "disabled": {
+          "label": "비활성"
+        }
+      },
+      "capability": {
+        "queue_respond": {
+          "label": "큐 응답",
+          "description": "선택형 TODO 답변: 권한 프롬프트, 스펙 승인/반려, raise-user-todo 인수."
+        },
+        "automation_control": {
+          "label": "자동화 제어",
+          "description": "park된 intent를 unpark하여 큐가 게이트를 다시 확인합니다."
+        },
+        "annotate": {
+          "label": "주석",
+          "description": "동결된 TODO/객체에 멱등 메모나 사유 코드를 기록합니다."
+        }
       }
     },
     "enable": {

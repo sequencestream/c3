@@ -193,6 +193,11 @@ export interface SessionRuntime {
     displaySignals?: import('./features/im/robot-message-registry.js').TurnDisplaySignals
     onScopeChanged?: () => void
   }
+  /**
+   * Human who started this run, frozen at runtime creation. Null for automation,
+   * cold resume, or when the initiator cannot be determined.
+   */
+  initiatedBySubject?: string | null
   viewers: Set<Viewer>
 }
 
@@ -285,6 +290,7 @@ export function ensureRuntime(
   sessionKind: SessionKind = 'work',
   codexPolicy?: CodexPolicy,
   runKind: RunKind = 'interactive',
+  initiatedBySubject?: string | null,
 ): SessionRuntime {
   let rt = runtimes.get(id)
   if (!rt) {
@@ -303,6 +309,7 @@ export function ensureRuntime(
       pending: new Set(),
       sawTurnEnd: false,
       lastActivityAt: Date.now(),
+      initiatedBySubject: initiatedBySubject ?? null,
       viewers: new Set(),
     }
     runtimes.set(id, rt)

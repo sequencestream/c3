@@ -53,6 +53,11 @@ export type RobotMessageParams = {
   'token.cancelled': Record<string, never>
   'token.unusable': Record<string, never>
   'token.wrongChat': Record<string, never>
+  'todo.answerFormatHint': Record<string, never>
+  'todo.grantMissing': Record<string, never>
+  'todo.alreadyApplied': Record<string, never>
+  'todo.applied': Record<string, never>
+  'todo.l2Prompt': { token: string; answerList: string }
   'runtime.timeout': Record<string, never>
   'runtime.blocked': { nav?: RobotNavTarget }
   'runtime.error': { nav?: RobotNavTarget }
@@ -112,6 +117,11 @@ const MESSAGE_USAGE: Record<RobotMessageKey, MessageUsagePolicy> = {
   'token.cancelled': 'fixed_notice',
   'token.unusable': 'fixed_notice',
   'token.wrongChat': 'fixed_notice',
+  'todo.answerFormatHint': 'fixed_notice',
+  'todo.grantMissing': 'fixed_notice',
+  'todo.alreadyApplied': 'fixed_notice',
+  'todo.applied': 'fixed_notice',
+  'todo.l2Prompt': 'fixed_notice',
   'runtime.timeout': 'fixed_notice',
   'runtime.blocked': 'fixed_notice',
   'runtime.error': 'fixed_notice',
@@ -307,6 +317,11 @@ function validateParams(
     'token.cancelled',
     'token.unusable',
     'token.wrongChat',
+    'todo.answerFormatHint',
+    'todo.grantMissing',
+    'todo.alreadyApplied',
+    'todo.applied',
+    'todo.l2Prompt',
     'runtime.timeout',
     'runtime.busy',
     'runtime.storeUnavailable',

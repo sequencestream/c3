@@ -7,6 +7,11 @@ import type { EventBus } from '../../kernel/events/event-bus.js'
 import { dedupeBroadcastTargets, resolveBroadcastRecipients } from './broadcast-recipients.js'
 import { resolveBroadcastFacts } from './broadcast-facts.js'
 import {
+  broadcastKindSupportsL2Upgrade,
+  todoIdForL2Broadcast,
+  tryDeliverL2TodoPrompt,
+} from './l2-broadcast-upgrade.js'
+import {
   appendOutboundAudit,
   claimBroadcastDelivery,
   finalizeBroadcastClaim,
@@ -81,16 +86,36 @@ async function dispatchBroadcastCandidate(candidate: ImBroadcastCandidate): Prom
         continue
       }
 
-      const result = await sendGuardedBroadcast({
-        robotId: robot.id,
-        target,
-        kind: facts.kind,
-        fields: facts.fields,
-        idempotencyKey: facts.idempotencyKey,
-        objectWorkspace: facts.workspaceName,
-        maxOutboundChars: handle.maxOutboundChars,
-        rawSend: handle.rawSend,
-      })
+      const todoId =
+        target.kind === 'p2p_dm' && broadcastKindSupportsL2Upgrade(facts.kind)
+          ? todoIdForL2Broadcast(candidate)
+          : null
+      const l2Result =
+        todoId && target.kind === 'p2p_dm'
+          ? await tryDeliverL2TodoPrompt({
+              robot,
+              target,
+              todoId,
+              maxOutboundChars: handle.maxOutboundChars,
+              rawSend: handle.rawSend,
+            })
+          : null
+
+      let result: Awaited<ReturnType<typeof sendGuardedBroadcast>>
+      if (l2Result?.ok) {
+        result = l2Result
+      } else {
+        result = await sendGuardedBroadcast({
+          robotId: robot.id,
+          target,
+          kind: facts.kind,
+          fields: facts.fields,
+          idempotencyKey: facts.idempotencyKey,
+          objectWorkspace: facts.workspaceName,
+          maxOutboundChars: handle.maxOutboundChars,
+          rawSend: handle.rawSend,
+        })
+      }
 
       if (result.ok) {
         finalizeBroadcastClaim({

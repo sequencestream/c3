@@ -48,6 +48,7 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
+    responsibleSubject: null,
     createdAt: 1000,
     updatedAt: 2000,
     completedAt: null,

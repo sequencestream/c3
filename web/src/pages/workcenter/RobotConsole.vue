@@ -65,6 +65,17 @@ const emit = defineEmits<{
     chatId: string,
     workspaceNames: string[],
   ): void
+  (
+    e: 'acknowledge-write-grant',
+    robotId: string,
+    capability: import('@ccc/shared/protocol').RobotWritableCapability,
+  ): void
+  (
+    e: 'set-write-grant-enabled',
+    robotId: string,
+    capability: import('@ccc/shared/protocol').RobotWritableCapability,
+    enabled: boolean,
+  ): void
 }>()
 
 const { t } = useTypedI18n()
@@ -152,6 +163,12 @@ function onSaveGroupScopes(chatId: string, workspaceNames: string[]): void {
         @admin-revoke-im-identity="emit('admin-revoke-im-identity', $event)"
         @load-im-group-scopes="onLoadGroupScopes"
         @save-im-group-scopes="onSaveGroupScopes"
+        @acknowledge-write-grant="
+          (cap) => selected && emit('acknowledge-write-grant', selected.id, cap)
+        "
+        @set-write-grant-enabled="
+          (cap, enabled) => selected && emit('set-write-grant-enabled', selected.id, cap, enabled)
+        "
       />
     </template>
   </MobileStack>
@@ -181,6 +198,12 @@ function onSaveGroupScopes(chatId: string, workspaceNames: string[]): void {
         @admin-revoke-im-identity="emit('admin-revoke-im-identity', $event)"
         @load-im-group-scopes="onLoadGroupScopes"
         @save-im-group-scopes="onSaveGroupScopes"
+        @acknowledge-write-grant="
+          (cap) => selected && emit('acknowledge-write-grant', selected.id, cap)
+        "
+        @set-write-grant-enabled="
+          (cap, enabled) => selected && emit('set-write-grant-enabled', selected.id, cap, enabled)
+        "
       />
     </section>
   </div>

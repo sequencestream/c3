@@ -23,6 +23,7 @@ import {
   finishTurn,
   getConversation,
   getRobot,
+  hasClaimedInboundMessage,
   isStoreAvailable,
   listEnabledRobots,
   loadCommittedContext,
@@ -217,6 +218,10 @@ function onInbound(id: string, m: ImInboundMessage): void {
   const threadKey = threadKeyFor(m),
     gate = conversationGateKey(conversationIdentityOf(r.platform, r.id, threadKey, m.senderId))
   if (inFlight.has(gate)) {
+    // Same messageId redelivered while the original turn is still running must
+    // stay silent — do not claim again (orphan cleanup would kill the live
+    // pending row) and do not send a second busy reply.
+    if (hasClaimedInboundMessage(r.platform, r.id, m.messageId)) return
     const tid = beginTurn({
       robotId: r.id,
       threadKey,

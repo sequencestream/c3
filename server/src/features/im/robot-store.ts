@@ -231,6 +231,11 @@ function migrateSenderIsolation(d: Db): void {
           // rename of the current incomplete table if it lacks sender_id.
           d.exec(`ALTER TABLE im_robot_threads RENAME TO im_robot_threads_pre_sender_${Date.now()}`)
         }
+        // RENAME keeps index names on the archive table. Drop them so INDEXES'
+        // CREATE INDEX IF NOT EXISTS can attach to the new empty threads table.
+        // The archive itself is retained (safe-cut); only the name collision goes.
+        d.exec('DROP INDEX IF EXISTS idx_im_thread_session')
+        d.exec('DROP INDEX IF EXISTS idx_im_thread_idle')
       }
     }
     d.exec(THREADS_TABLE)
@@ -728,6 +733,27 @@ export interface CommittedContextTurn {
 export type ClaimResult =
   | { kind: 'duplicate' }
   | { kind: 'claimed'; conversation: RobotConversation; contextTurnId: string }
+
+/**
+ * Whether `(platform, robotId, messageId)` was already claimed. Used by the
+ * supervisor busy gate so in-flight redelivery can stay silent without calling
+ * `claimInboundMessage` (which would fail the live pending row as an orphan).
+ */
+export function hasClaimedInboundMessage(
+  platform: ImPlatform,
+  robotId: string,
+  messageId: string,
+): boolean {
+  const d = db()
+  if (!d) return false
+  return !!d.get<{ n: number }>(
+    `SELECT 1 AS n FROM im_robot_context_turns
+     WHERE platform = ? AND robot_id = ? AND in_message_id = ?`,
+    platform,
+    robotId,
+    messageId,
+  )
+}
 
 /**
  * Atomically claim an inbound messageId for one Conversation. Duplicate

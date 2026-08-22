@@ -437,6 +437,8 @@ describe('safe-cut migration from shared sessions', () => {
         last_message_id TEXT, created_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
         PRIMARY KEY (robot_id, thread_key)
       );
+      CREATE INDEX idx_im_thread_session ON im_robot_threads(session_id);
+      CREATE INDEX idx_im_thread_idle ON im_robot_threads(last_active_at);
       CREATE TABLE im_robot_turns (
         id TEXT PRIMARY KEY, robot_id TEXT NOT NULL, thread_key TEXT NOT NULL,
         chat_id TEXT NOT NULL, sender_id TEXT NOT NULL, in_message_id TEXT NOT NULL,
@@ -444,6 +446,8 @@ describe('safe-cut migration from shared sessions', () => {
         outcome TEXT, outbound_chars INTEGER NOT NULL DEFAULT 0,
         out_message_id TEXT, error TEXT
       );
+      CREATE INDEX idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC);
+      CREATE INDEX idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC);
     `)
     d.run(
       `INSERT INTO im_robots
@@ -482,6 +486,26 @@ describe('safe-cut migration from shared sessions', () => {
     expect(
       d.get("SELECT name FROM sqlite_master WHERE name='im_robot_threads_pre_sender'"),
     ).toBeTruthy()
+
+    // Indexes must land on the new sender-isolated table, not stay on the archive.
+    const threadIndexes = d.all<{ name: string; tbl_name: string }>(
+      `SELECT name, tbl_name FROM sqlite_master
+       WHERE type = 'index' AND name IN ('idx_im_thread_session', 'idx_im_thread_idle')
+       ORDER BY name`,
+    )
+    expect(threadIndexes).toEqual([
+      { name: 'idx_im_thread_idle', tbl_name: 'im_robot_threads' },
+      { name: 'idx_im_thread_session', tbl_name: 'im_robot_threads' },
+    ])
+    const turnIndexes = d.all<{ name: string; tbl_name: string }>(
+      `SELECT name, tbl_name FROM sqlite_master
+       WHERE type = 'index' AND name IN ('idx_im_turn_robot', 'idx_im_turn_thread')
+       ORDER BY name`,
+    )
+    expect(turnIndexes).toEqual([
+      { name: 'idx_im_turn_robot', tbl_name: 'im_robot_turns' },
+      { name: 'idx_im_turn_thread', tbl_name: 'im_robot_turns' },
+    ])
 
     // Audit rows preserved.
     expect(listTurns('rb-old')).toHaveLength(2)

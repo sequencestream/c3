@@ -250,6 +250,31 @@ describe('a redelivered message is not answered twice', () => {
     expect(turnResult).toHaveBeenCalledTimes(1)
     expect(sent).toHaveLength(1)
   })
+
+  it('silently drops an in-flight redelivery instead of sending busy', async () => {
+    const id = await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+
+    const m = message({ messageId: 'm-inflight-dup', senderId: 'ou_user' })
+    push(m)
+    await settle()
+    push(m)
+    await settle()
+
+    expect(turnResult).toHaveBeenCalledTimes(1)
+    expect(sent).toHaveLength(0)
+    expect(listTurns(id).some((t) => t.outcome === 'busy')).toBe(false)
+
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.text).toBe('done')
+  })
 })
 
 describe('sender-isolated continuous conversation', () => {

@@ -6,9 +6,9 @@
  * this machine for a third-party cloud, which ADR-0046 makes an authorization
  * decision rather than a personal preference.
  *
- * The roster broadcast carries no workspace. Robots are global — they are the
- * one domain here deliberately not scoped to one — so every connected console
- * sees the same list.
+ * The roster broadcast carries no workspace filter. Robots are a deployment-
+ * level management surface — one list for the whole instance — which is not
+ * the same as unbounded data access.
  */
 import type { ImRobot } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'

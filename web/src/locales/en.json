@@ -3899,6 +3899,9 @@
           },
           "input_rejected": {
             "label": "Input refused"
+          },
+          "busy": {
+            "label": "Busy"
           }
         }
       }

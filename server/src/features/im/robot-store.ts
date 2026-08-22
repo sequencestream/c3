@@ -139,8 +139,10 @@ CREATE TABLE IF NOT EXISTS im_robot_context_turns (
   UNIQUE (platform, robot_id, in_message_id)
 );`
 
-const TURNS_TABLE = `
-CREATE TABLE IF NOT EXISTS im_robot_turns (
+const TURNS_OUTCOME_CHECK =
+  "('complete','error','blocked','timeout','guard_refused','input_rejected','busy')"
+
+const TURNS_TABLE_BODY = `
   id             TEXT PRIMARY KEY,
   robot_id       TEXT NOT NULL,
   thread_key     TEXT NOT NULL,
@@ -151,14 +153,17 @@ CREATE TABLE IF NOT EXISTS im_robot_turns (
   started_at     INTEGER NOT NULL,
   finished_at    INTEGER,
   outcome        TEXT
-                 CHECK(outcome IS NULL OR outcome IN
-                   ('complete','error','blocked','timeout','guard_refused','input_rejected')),
+                 CHECK(outcome IS NULL OR outcome IN ${TURNS_OUTCOME_CHECK}),
   reject_reason  TEXT
                  CHECK(reject_reason IS NULL OR reject_reason IN ('credential','too_long')),
   outbound_chars INTEGER NOT NULL DEFAULT 0,
   out_message_id TEXT,
   error          TEXT
-);`
+`
+
+const TURNS_TABLE = `CREATE TABLE IF NOT EXISTS im_robot_turns (${TURNS_TABLE_BODY});`
+
+const TURNS_TABLE_FRESH = `CREATE TABLE im_robot_turns (${TURNS_TABLE_BODY});`
 
 const INDEXES = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_im_robot_name ON im_robots(name);
@@ -256,6 +261,9 @@ function migrateSenderIsolation(d: Db): void {
                    out_message_id, error
             FROM im_robot_turns_pre_input_rejected
           `)
+          // Same index ownership pitfall as the busy rebuild: RENAME keeps the old
+          // index names on the pre_ table, so INDEXES' IF NOT EXISTS would skip.
+          d.exec('DROP TABLE im_robot_turns_pre_input_rejected')
         }
       }
     } else {
@@ -266,6 +274,38 @@ function migrateSenderIsolation(d: Db): void {
   })
 }
 
+/**
+ * SQLite cannot ALTER a CHECK. Existing installs that predate `busy` keep the old
+ * constraint until this rebuild copies rows into a table that allows it.
+ */
+function migrateTurnsOutcomeBusy(d: Db): void {
+  const row = d.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robot_turns'`,
+  )
+  if (!row?.sql || row.sql.includes("'busy'")) return
+  const cols = tableColumns(d, 'im_robot_turns')
+  d.exec('ALTER TABLE im_robot_turns RENAME TO im_robot_turns_pre_busy')
+  d.exec(TURNS_TABLE_FRESH)
+  if (cols.has('reject_reason')) {
+    d.exec('INSERT INTO im_robot_turns SELECT * FROM im_robot_turns_pre_busy')
+  } else {
+    d.exec(`
+      INSERT INTO im_robot_turns
+        (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+         started_at, finished_at, outcome, reject_reason, outbound_chars,
+         out_message_id, error)
+      SELECT id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+             started_at, finished_at, outcome, NULL, outbound_chars,
+             out_message_id, error
+      FROM im_robot_turns_pre_busy
+    `)
+  }
+  // Drop the renamed table so its indexes (same names as INDEXES below) go with
+  // it; otherwise CREATE INDEX IF NOT EXISTS would skip and the new table stays
+  // unindexed.
+  d.exec('DROP TABLE im_robot_turns_pre_busy')
+}
+
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
   migrateSenderIsolation(d)
@@ -274,6 +314,7 @@ function ensureSchema(d: Db): void {
   d.exec(THREADS_TABLE)
   d.exec(CONTEXT_TURNS_TABLE)
   d.exec(TURNS_TABLE)
+  migrateTurnsOutcomeBusy(d)
   d.exec(INDEXES)
 }
 

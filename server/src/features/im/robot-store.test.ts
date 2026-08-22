@@ -358,6 +358,26 @@ describe('audit — records that it happened, not what was said', () => {
       outboundChars: 0,
     })
   })
+
+  it('records non-complete outcomes including busy without bodies', () => {
+    const robot = createRobot(input())
+    for (const outcome of ['guard_refused', 'blocked', 'timeout', 'error', 'busy'] as const) {
+      const id = beginTurn({
+        robotId: robot.id,
+        threadKey: 'k',
+        chatId: 'c',
+        senderId: 'u1',
+        messageId: `m-${outcome}`,
+      })
+      finishTurn(id, { outcome, outboundChars: 0 })
+    }
+    expect(
+      listTurns(robot.id)
+        .map((t) => t.outcome)
+        .sort(),
+    ).toEqual(['blocked', 'busy', 'error', 'guard_refused', 'timeout'].sort())
+    expect(listTurns(robot.id).every((t) => t.outboundChars === 0)).toBe(true)
+  })
 })
 
 describe('deletion', () => {
@@ -489,5 +509,104 @@ describe('schema', () => {
     resetRobotStoreForTests()
     expect(ensureRobotSchema()).toBe(true)
     expect(listRobots().map((r) => r.id)).toEqual([robot.id])
+  })
+
+  it('converges a database that predates these tables', () => {
+    getDb()!.exec('CREATE TABLE IF NOT EXISTS unrelated (x TEXT)')
+    getDb()!.run("INSERT INTO unrelated (x) VALUES ('keep me')")
+    resetRobotStoreForTests()
+
+    expect(ensureRobotSchema()).toBe(true)
+    expect(listRobots()).toEqual([])
+    expect(getDb()!.get<{ x: string }>('SELECT x FROM unrelated')!.x).toBe('keep me')
+  })
+
+  it('converges from a partially created schema', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    getDb()!.exec(
+      "CREATE TABLE IF NOT EXISTS im_robots (id TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL, app_id TEXT NOT NULL, app_secret TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL, agent_id TEXT NOT NULL, mode TEXT NOT NULL DEFAULT '', tool_allowlist TEXT NOT NULL DEFAULT '[]', require_mention INTEGER NOT NULL DEFAULT 1, chat_allowlist TEXT NOT NULL DEFAULT '[]', dm_mode TEXT NOT NULL DEFAULT 'disabled', dm_allowlist TEXT NOT NULL DEFAULT '[]', max_turn_ms INTEGER, enabled INTEGER NOT NULL DEFAULT 0, outbound_ack_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    )
+
+    expect(ensureRobotSchema()).toBe(true)
+    const robot = createRobot(input())
+    const claimed = claimInboundMessage({
+      platform: 'feishu',
+      robotId: robot.id,
+      threadKey: 'k',
+      senderId: 'u1',
+      chatId: 'c',
+      vendor: 'claude',
+      messageId: 'm1',
+    })
+    expect(claimed.kind).toBe('claimed')
+    expect(getConversation(conversationIdentityOf('feishu', robot.id, 'k', 'u1'))).not.toBeNull()
+  })
+
+  it('rebuilds turn indexes onto the post-busy table after outcome migration', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    // Predates `busy` / `reject_reason`: table + the same index names INDEXES uses.
+    d.exec(`CREATE TABLE im_robot_turns (
+      id TEXT PRIMARY KEY,
+      robot_id TEXT NOT NULL,
+      thread_key TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      in_message_id TEXT NOT NULL,
+      session_id TEXT,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      outcome TEXT
+        CHECK(outcome IS NULL OR outcome IN
+          ('complete','error','blocked','timeout','guard_refused')),
+      outbound_chars INTEGER NOT NULL DEFAULT 0,
+      out_message_id TEXT,
+      error TEXT
+    )`)
+    d.exec('CREATE INDEX idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC)')
+    d.exec(
+      'CREATE INDEX idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC)',
+    )
+    d.run(
+      `INSERT INTO im_robot_turns
+        (id, robot_id, thread_key, chat_id, sender_id, in_message_id, started_at, outcome, outbound_chars)
+       VALUES ('t1', 'r1', 'k', 'c', 'u', 'm1', 1, 'complete', 10)`,
+    )
+
+    expect(ensureRobotSchema()).toBe(true)
+
+    expect(
+      d.get<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'im_robot_turns_pre_busy'`,
+      ),
+    ).toBeUndefined()
+
+    const indexes = d.all<{ name: string; tbl_name: string }>(
+      `SELECT name, tbl_name FROM sqlite_master
+       WHERE type = 'index' AND name IN ('idx_im_turn_robot', 'idx_im_turn_thread')
+       ORDER BY name`,
+    )
+    expect(indexes).toEqual([
+      { name: 'idx_im_turn_robot', tbl_name: 'im_robot_turns' },
+      { name: 'idx_im_turn_thread', tbl_name: 'im_robot_turns' },
+    ])
+
+    const kept = d.get<{ outcome: string; outbound_chars: number; reject_reason: string | null }>(
+      'SELECT outcome, outbound_chars, reject_reason FROM im_robot_turns WHERE id = ?',
+      't1',
+    )
+    expect(kept).toEqual({ outcome: 'complete', outbound_chars: 10, reject_reason: null })
+
+    const turnId = beginTurn({
+      robotId: 'r1',
+      threadKey: 'k',
+      chatId: 'c',
+      senderId: 'u',
+      messageId: 'm-busy',
+    })
+    finishTurn(turnId, { outcome: 'busy', outboundChars: 0 })
+    expect(listTurns('r1').some((t) => t.outcome === 'busy')).toBe(true)
   })
 })

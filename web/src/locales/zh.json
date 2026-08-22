@@ -3899,6 +3899,9 @@
           },
           "input_rejected": {
             "label": "入站已拒绝"
+          },
+          "busy": {
+            "label": "线程忙"
           }
         }
       }

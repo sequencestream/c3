@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS im_robot_turns (
   finished_at    INTEGER,
   outcome        TEXT
                  CHECK(outcome IS NULL OR outcome IN
-                   ('complete','error','blocked','timeout','guard_refused','input_rejected')),
+                   ('complete','error','blocked','timeout','guard_refused','input_rejected','busy')),
   reject_reason  TEXT
                  CHECK(reject_reason IS NULL OR reject_reason IN ('credential','too_long')),
   outbound_chars INTEGER NOT NULL DEFAULT 0,

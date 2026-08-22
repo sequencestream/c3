@@ -3900,6 +3900,9 @@
           },
           "input_rejected": {
             "label": "入力を拒否"
+          },
+          "busy": {
+            "label": "処理中"
           }
         }
       }

@@ -3900,6 +3900,9 @@
           },
           "input_rejected": {
             "label": "입력 거부"
+          },
+          "busy": {
+            "label": "처리 중"
           }
         }
       }

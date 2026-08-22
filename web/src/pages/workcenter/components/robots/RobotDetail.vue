@@ -37,6 +37,7 @@ const OUTCOME_LABEL = {
   timeout: 'robot.detail.turns.outcome.timeout.label',
   guard_refused: 'robot.detail.turns.outcome.guard_refused.label',
   input_rejected: 'robot.detail.turns.outcome.input_rejected.label',
+  busy: 'robot.detail.turns.outcome.busy.label',
 } as const
 
 /** Read-only unless the robot was deliberately widened; that is the default. */
@@ -264,7 +265,8 @@ function confirmDelete(): void {
   color: var(--c-error);
 }
 .rb-outcome.blocked,
-.rb-outcome.timeout {
+.rb-outcome.timeout,
+.rb-outcome.busy {
   color: var(--c-warning);
 }
 </style>

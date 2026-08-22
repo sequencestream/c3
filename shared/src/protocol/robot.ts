@@ -1,6 +1,6 @@
 /**
  * IM chat robots: the public data model for c3's deployment-level IM ingress
- * and egress (ADR-0046).
+ * and egress.
  *
  * A robot is a c3-instance resource, not a workspace resource: its roster,
  * connection and config are shared across the deployment. That is *not*
@@ -46,9 +46,23 @@ export const IM_TURN_OUTCOMES = [
   'blocked',
   'timeout',
   'guard_refused',
+  'input_rejected',
   'busy',
 ] as const
 export type ImTurnOutcome = (typeof IM_TURN_OUTCOMES)[number]
+
+/** Closed reason when {@link ImTurnOutcome} is `input_rejected`. */
+export const IM_INPUT_REJECT_REASONS = ['credential', 'too_long'] as const
+export type ImInputRejectReason = (typeof IM_INPUT_REJECT_REASONS)[number]
+
+/** Max Unicode code points persisted per user or assistant context body. */
+export const ROBOT_CONTEXT_MAX_CODEPOINTS = 4000
+
+/** Max committed context turns retained per Conversation. */
+export const ROBOT_CONTEXT_MAX_TURNS = 50
+
+/** Retention window for a committed context turn, in milliseconds (30 days). */
+export const ROBOT_CONTEXT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 /**
  * A robot's live link to its platform. Runtime state, never persisted — it is
@@ -102,7 +116,7 @@ export interface ImRobot {
   enabled: boolean
   /**
    * When the operator acknowledged what leaves the machine. Enabling a robot
-   * without it is refused server-side (ADR-0046).
+   * without it is refused server-side.
    */
   outboundAckAt: number | null
   createdAt: number
@@ -113,8 +127,8 @@ export interface ImRobot {
 
 /**
  * One recorded turn. The audit answers when, for whom, how much was sent and how
- * it ended — never what was said. An outbound copy of the text is exactly the
- * kind of data c3 does not put on disk (ADR-0045).
+ * it ended — never what was said. IM-visible bodies live only in the bounded
+ * context store; this audit trail still carries no transcript.
  */
 export interface ImRobotTurnLog {
   id: string
@@ -126,6 +140,8 @@ export interface ImRobotTurnLog {
   startedAt: number
   finishedAt: number | null
   outcome: ImTurnOutcome | null
+  /** Present only when outcome is `input_rejected`. */
+  rejectReason: ImInputRejectReason | null
   /** Characters actually delivered to the platform; 0 when nothing was sent. */
   outboundChars: number
   error: string | null

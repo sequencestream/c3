@@ -1,39 +1,45 @@
 /**
- * Persistence for IM chat robots: configuration, thread↔session mapping, and the
- * outbound audit trail (ADR-0046).
+ * Persistence for IM chat robots: configuration, sender-isolated Conversations,
+ * bounded IM-visible context, and the outbound audit trail.
  *
- * Three properties this module is responsible for keeping true:
+ * Properties this module keeps true:
  *
- *  - **A robot is never enabled by accident.** `enabled` starts at 0 and there is
- *    no create-and-enable call. Enabling is refused unless the operator has
- *    acknowledged what leaves the machine; that check lives here, not only in the
- *    console, so a client that skips the dialog still cannot turn a robot on.
- *  - **The app secret is only ever stored encrypted.** It enters as plaintext on a
- *    write, is encrypted before it touches a row, and leaves this module only
- *    through the one accessor the supervisor needs to connect. Everything else
- *    sees `hasSecret`.
- *  - **The audit records that an outbound happened, never what was said.** A turn
- *    row carries a character count. An outbound copy of the text is exactly the
- *    kind of data ADR-0045 keeps off disk.
- *
- * Availability follows the established store contract: reads degrade to an empty
- * result when the database is unavailable, writes throw. A write that failed must
- * never come back as a receipt.
+ *  - **A robot is never enabled by accident.** `enabled` starts at 0; enabling
+ *    requires credential + outbound acknowledgement.
+ *  - **The app secret is only ever stored encrypted.**
+ *  - **Conversation identity is four-dimensional.** `(platform, robotId,
+ *    threadKey, senderId)` — different senders never share recoverable context.
+ *  - **Context bodies are bounded.** Credential shape refuse, 4000 code points,
+ *    50 turns, 30-day hard delete. Audit rows still carry no body.
+ *  - **Old shared sessions are cut, not migrated.** A pre-sender threads table is
+ *    renamed aside; no `session_id` is copied onto a sender Conversation.
  */
 import { randomUUID } from 'node:crypto'
 import {
   IM_DM_MODES,
   IM_PLATFORMS,
+  ROBOT_CONTEXT_MAX_CODEPOINTS,
+  ROBOT_CONTEXT_MAX_TURNS,
+  ROBOT_CONTEXT_RETENTION_MS,
   ROBOT_NAME_PATTERN,
   type ImDmMode,
+  type ImInputRejectReason,
   type ImPlatform,
   type ImRobot,
   type ImRobotTurnLog,
   type ImTurnOutcome,
   type VendorId,
 } from '@ccc/shared/protocol'
-import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import {
+  getDb,
+  hasMigration,
+  isDbAvailable,
+  markMigration,
+  type Db,
+} from '../../kernel/infra/db.js'
 import { encryptSecret, decryptSecret } from '../../kernel/config/encryption.js'
+import { truncateCodePoints } from './inbound-guard.js'
+import type { ConversationIdentity } from './thread-key.js'
 
 // ---- Errors ----
 
@@ -54,6 +60,23 @@ export class RobotStoreError extends Error {
     super(message)
     this.name = 'RobotStoreError'
   }
+}
+
+// ---- Constants / clock ----
+
+const SENDER_ISOLATION_MIGRATION = 'robots.sender_isolation.v1'
+/** Soft budget for recovery seed size (Unicode code points across all turns). */
+export const ROBOT_CONTEXT_RECOVERY_BUDGET = 80_000
+
+let nowFn: () => number = () => Date.now()
+
+/** Test hook: inject a clock for retention boundaries. */
+export function setRobotStoreClockForTests(fn: (() => number) | null): void {
+  nowFn = fn ?? (() => Date.now())
+}
+
+function now(): number {
+  return nowFn()
 }
 
 // ---- Schema ----
@@ -84,20 +107,42 @@ CREATE TABLE IF NOT EXISTS im_robots (
 
 const THREADS_TABLE = `
 CREATE TABLE IF NOT EXISTS im_robot_threads (
+  platform         TEXT NOT NULL,
+  robot_id         TEXT NOT NULL,
+  thread_key       TEXT NOT NULL,
+  sender_id        TEXT NOT NULL,
+  chat_id          TEXT NOT NULL,
+  session_id       TEXT,
+  vendor           TEXT NOT NULL,
+  context_revision INTEGER NOT NULL DEFAULT 0,
+  turn_count       INTEGER NOT NULL DEFAULT 0,
+  created_at       INTEGER NOT NULL,
+  last_active_at   INTEGER NOT NULL,
+  PRIMARY KEY (platform, robot_id, thread_key, sender_id)
+);`
+
+const CONTEXT_TURNS_TABLE = `
+CREATE TABLE IF NOT EXISTS im_robot_context_turns (
+  id              TEXT PRIMARY KEY,
+  platform        TEXT NOT NULL,
   robot_id        TEXT NOT NULL,
   thread_key      TEXT NOT NULL,
-  chat_id         TEXT NOT NULL,
-  session_id      TEXT,
-  vendor          TEXT NOT NULL,
-  turn_count      INTEGER NOT NULL DEFAULT 0,
-  last_message_id TEXT,
+  sender_id       TEXT NOT NULL,
+  in_message_id   TEXT NOT NULL,
+  status          TEXT NOT NULL
+                  CHECK(status IN ('pending','committed','failed')),
+  user_text       TEXT NOT NULL DEFAULT '',
+  assistant_text  TEXT NOT NULL DEFAULT '',
+  seq             INTEGER,
+  committed_at    INTEGER,
   created_at      INTEGER NOT NULL,
-  last_active_at  INTEGER NOT NULL,
-  PRIMARY KEY (robot_id, thread_key)
+  UNIQUE (platform, robot_id, in_message_id)
 );`
 
-const TURNS_TABLE = `
-CREATE TABLE IF NOT EXISTS im_robot_turns (
+const TURNS_OUTCOME_CHECK =
+  "('complete','error','blocked','timeout','guard_refused','input_rejected','busy')"
+
+const TURNS_TABLE_BODY = `
   id             TEXT PRIMARY KEY,
   robot_id       TEXT NOT NULL,
   thread_key     TEXT NOT NULL,
@@ -108,41 +153,131 @@ CREATE TABLE IF NOT EXISTS im_robot_turns (
   started_at     INTEGER NOT NULL,
   finished_at    INTEGER,
   outcome        TEXT
-                 CHECK(outcome IS NULL OR outcome IN
-                   ('complete','error','blocked','timeout','guard_refused','busy')),
+                 CHECK(outcome IS NULL OR outcome IN ${TURNS_OUTCOME_CHECK}),
+  reject_reason  TEXT
+                 CHECK(reject_reason IS NULL OR reject_reason IN ('credential','too_long')),
   outbound_chars INTEGER NOT NULL DEFAULT 0,
   out_message_id TEXT,
   error          TEXT
-);`
+`
 
-const TURNS_TABLE_FRESH = `
-CREATE TABLE im_robot_turns (
-  id             TEXT PRIMARY KEY,
-  robot_id       TEXT NOT NULL,
-  thread_key     TEXT NOT NULL,
-  chat_id        TEXT NOT NULL,
-  sender_id      TEXT NOT NULL,
-  in_message_id  TEXT NOT NULL,
-  session_id     TEXT,
-  started_at     INTEGER NOT NULL,
-  finished_at    INTEGER,
-  outcome        TEXT
-                 CHECK(outcome IS NULL OR outcome IN
-                   ('complete','error','blocked','timeout','guard_refused','busy')),
-  outbound_chars INTEGER NOT NULL DEFAULT 0,
-  out_message_id TEXT,
-  error          TEXT
-);`
+const TURNS_TABLE = `CREATE TABLE IF NOT EXISTS im_robot_turns (${TURNS_TABLE_BODY});`
+
+const TURNS_TABLE_FRESH = `CREATE TABLE im_robot_turns (${TURNS_TABLE_BODY});`
 
 const INDEXES = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_im_robot_name ON im_robots(name);
 CREATE INDEX IF NOT EXISTS idx_im_robot_enabled ON im_robots(enabled);
 CREATE INDEX IF NOT EXISTS idx_im_thread_session ON im_robot_threads(session_id);
 CREATE INDEX IF NOT EXISTS idx_im_thread_idle ON im_robot_threads(last_active_at);
+CREATE INDEX IF NOT EXISTS idx_im_ctx_conversation
+  ON im_robot_context_turns(platform, robot_id, thread_key, sender_id, status, seq);
+CREATE INDEX IF NOT EXISTS idx_im_ctx_committed_at ON im_robot_context_turns(committed_at);
 CREATE INDEX IF NOT EXISTS idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC);`
 
 let schemaReadyFor: Db | null = null
+let schemaFailed = false
+
+function tableColumns(d: Db, table: string): Set<string> {
+  return new Set(d.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name))
+}
+
+function tableExists(d: Db, table: string): boolean {
+  return !!d.get<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+    table,
+  )
+}
+
+function tx<T>(d: Db, fn: () => T): T {
+  d.exec('BEGIN')
+  try {
+    const out = fn()
+    d.exec('COMMIT')
+    return out
+  } catch (err) {
+    try {
+      d.exec('ROLLBACK')
+    } catch {
+      /* noop */
+    }
+    throw err
+  }
+}
+
+/**
+ * Converge threads + turns to the sender-isolated schema. Safe-cut: old shared
+ * session rows are renamed aside and never copied. Failure throws — caller must
+ * not start the supervisor.
+ */
+function migrateSenderIsolation(d: Db): void {
+  if (hasMigration(d, SENDER_ISOLATION_MIGRATION)) {
+    // Marker set, but tables must still exist (idempotent CREATE below).
+    return
+  }
+
+  tx(d, () => {
+    // ---- Threads: old shared → rename aside; new empty Conversation table ----
+    if (tableExists(d, 'im_robot_threads')) {
+      const cols = tableColumns(d, 'im_robot_threads')
+      if (!cols.has('sender_id')) {
+        // Safe cut: keep the old rows under a name no read path touches.
+        if (!tableExists(d, 'im_robot_threads_pre_sender')) {
+          d.exec('ALTER TABLE im_robot_threads RENAME TO im_robot_threads_pre_sender')
+        } else {
+          // Interrupted prior attempt left both — drop the incomplete new name by
+          // renaming it aside with a unique suffix is forbidden (DROP). Clear via
+          // rename of the current incomplete table if it lacks sender_id.
+          d.exec(`ALTER TABLE im_robot_threads RENAME TO im_robot_threads_pre_sender_${Date.now()}`)
+        }
+        // RENAME keeps index names on the archive table. Drop them so INDEXES'
+        // CREATE INDEX IF NOT EXISTS can attach to the new empty threads table.
+        // The archive itself is retained (safe-cut); only the name collision goes.
+        d.exec('DROP INDEX IF EXISTS idx_im_thread_session')
+        d.exec('DROP INDEX IF EXISTS idx_im_thread_idle')
+      }
+    }
+    d.exec(THREADS_TABLE)
+
+    // ---- Context turns (new) ----
+    d.exec(CONTEXT_TURNS_TABLE)
+
+    // ---- Audit turns: extend outcome CHECK + reject_reason ----
+    if (tableExists(d, 'im_robot_turns')) {
+      const cols = tableColumns(d, 'im_robot_turns')
+      if (!cols.has('reject_reason')) {
+        if (!tableExists(d, 'im_robot_turns_pre_input_rejected')) {
+          d.exec('ALTER TABLE im_robot_turns RENAME TO im_robot_turns_pre_input_rejected')
+        } else {
+          d.exec(
+            `ALTER TABLE im_robot_turns RENAME TO im_robot_turns_pre_input_rejected_${Date.now()}`,
+          )
+        }
+        d.exec(TURNS_TABLE)
+        if (tableExists(d, 'im_robot_turns_pre_input_rejected')) {
+          d.exec(`
+            INSERT INTO im_robot_turns
+              (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+               started_at, finished_at, outcome, reject_reason, outbound_chars,
+               out_message_id, error)
+            SELECT id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+                   started_at, finished_at, outcome, NULL, outbound_chars,
+                   out_message_id, error
+            FROM im_robot_turns_pre_input_rejected
+          `)
+          // Same index ownership pitfall as the busy rebuild: RENAME keeps the old
+          // index names on the pre_ table, so INDEXES' IF NOT EXISTS would skip.
+          d.exec('DROP TABLE im_robot_turns_pre_input_rejected')
+        }
+      }
+    } else {
+      d.exec(TURNS_TABLE)
+    }
+
+    markMigration(d, SENDER_ISOLATION_MIGRATION)
+  })
+}
 
 /**
  * SQLite cannot ALTER a CHECK. Existing installs that predate `busy` keep the old
@@ -153,9 +288,23 @@ function migrateTurnsOutcomeBusy(d: Db): void {
     `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robot_turns'`,
   )
   if (!row?.sql || row.sql.includes("'busy'")) return
+  const cols = tableColumns(d, 'im_robot_turns')
   d.exec('ALTER TABLE im_robot_turns RENAME TO im_robot_turns_pre_busy')
   d.exec(TURNS_TABLE_FRESH)
-  d.exec('INSERT INTO im_robot_turns SELECT * FROM im_robot_turns_pre_busy')
+  if (cols.has('reject_reason')) {
+    d.exec('INSERT INTO im_robot_turns SELECT * FROM im_robot_turns_pre_busy')
+  } else {
+    d.exec(`
+      INSERT INTO im_robot_turns
+        (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+         started_at, finished_at, outcome, reject_reason, outbound_chars,
+         out_message_id, error)
+      SELECT id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+             started_at, finished_at, outcome, NULL, outbound_chars,
+             out_message_id, error
+      FROM im_robot_turns_pre_busy
+    `)
+  }
   // Drop the renamed table so its indexes (same names as INDEXES below) go with
   // it; otherwise CREATE INDEX IF NOT EXISTS would skip and the new table stays
   // unindexed.
@@ -164,20 +313,32 @@ function migrateTurnsOutcomeBusy(d: Db): void {
 
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
+  migrateSenderIsolation(d)
+  // Idempotent creates for fresh DBs that already ran the migration marker path
+  // after rename, and for DBs that never had the old tables.
   d.exec(THREADS_TABLE)
+  d.exec(CONTEXT_TURNS_TABLE)
   d.exec(TURNS_TABLE)
   migrateTurnsOutcomeBusy(d)
   d.exec(INDEXES)
 }
 
 function db(): Db | null {
+  if (schemaFailed) return null
   if (!isDbAvailable()) return null
   const d = getDb()
   if (!d) return null
   if (schemaReadyFor !== d) {
     try {
       ensureSchema(d)
-    } catch {
+      failStalePendingContextTurns(d)
+    } catch (err) {
+      schemaFailed = true
+      schemaReadyFor = null
+      console.error(
+        '[c3][im] robot schema migration failed; supervisor must not start:',
+        err instanceof Error ? err.message : err,
+      )
       return null
     }
     schemaReadyFor = d
@@ -194,6 +355,8 @@ function requireDb(): Db {
 /** Test hook: forget the "schema ensured" connection (pair with `resetDbForTests`). */
 export function resetRobotStoreForTests(): void {
   schemaReadyFor = null
+  schemaFailed = false
+  nowFn = () => Date.now()
 }
 
 /** Materialize the tables at startup so an unusable database is found early. */
@@ -203,6 +366,13 @@ export function ensureRobotSchema(): boolean {
 
 export function isStoreAvailable(): boolean {
   return db() !== null
+}
+
+/** Whether the sender-isolation migration has been recorded on the open DB. */
+export function hasSenderIsolationMigration(): boolean {
+  const d = db()
+  if (!d) return false
+  return hasMigration(d, SENDER_ISOLATION_MIGRATION)
 }
 
 // ---- Row mapping ----
@@ -228,7 +398,6 @@ interface RobotRow {
   updated_at: number
 }
 
-/** Parse a JSON string column into a string list, tolerating a corrupted value. */
 function parseList(raw: string): string[] {
   try {
     const v: unknown = JSON.parse(raw)
@@ -278,16 +447,10 @@ export function getRobot(id: string): ImRobot | null {
   return row ? toRobot(row) : null
 }
 
-/** Robots the supervisor should hold a connection for. */
 export function listEnabledRobots(): ImRobot[] {
   return listRobots().filter((r) => r.enabled)
 }
 
-/**
- * The decrypted app secret, for the one caller that must present it to the
- * platform. Kept separate from {@link getRobot} so that reading a robot for any
- * other purpose cannot carry the plaintext along by accident.
- */
 export function robotSecret(id: string): string {
   const d = db()
   if (!d) return ''
@@ -326,17 +489,13 @@ function validateName(d: Db, name: string, excludeId?: string): void {
   }
 }
 
-/**
- * Create a robot. It is always created disabled and unacknowledged — turning it
- * on is a separate, deliberate act (ADR-0046), so there is no `enabled` input.
- */
 export function createRobot(input: CreateRobotInput): ImRobot {
   const d = requireDb()
   if (!IM_PLATFORMS.includes(input.platform)) {
     throw new RobotStoreError('platform_unsupported', '不支持的 IM 平台。')
   }
   validateName(d, input.name)
-  const now = Date.now()
+  const t = now()
   const id = randomUUID()
   d.run(
     `INSERT INTO im_robots
@@ -358,8 +517,8 @@ export function createRobot(input: CreateRobotInput): ImRobot {
     input.dmMode && IM_DM_MODES.includes(input.dmMode) ? input.dmMode : 'disabled',
     JSON.stringify(input.dmAllowlist ?? []),
     input.maxTurnMs ?? null,
-    now,
-    now,
+    t,
+    t,
   )
   const created = getRobot(id)
   if (!created) throw new RobotStoreError('db_unavailable', '机器人创建后读取失败。')
@@ -368,7 +527,6 @@ export function createRobot(input: CreateRobotInput): ImRobot {
 
 export interface UpdateRobotInput {
   appId?: string
-  /** Plaintext. Omit to keep the stored secret; pass '' to clear it. */
   appSecret?: string
   vendor?: VendorId
   agentId?: string
@@ -381,11 +539,6 @@ export interface UpdateRobotInput {
   maxTurnMs?: number | null
 }
 
-/**
- * Update a robot's configuration. `name` and `platform` are absent by design:
- * the name is also the working directory, so changing it would orphan every
- * thread's history, and the platform decides which credentials mean anything.
- */
 export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
   const d = requireDb()
   const existing = getRobot(id)
@@ -410,7 +563,7 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
   if (patch.maxTurnMs !== undefined) set('max_turn_ms', patch.maxTurnMs)
 
   if (sets.length > 0) {
-    set('updated_at', Date.now())
+    set('updated_at', now())
     params.push(id)
     d.run(`UPDATE im_robots SET ${sets.join(', ')} WHERE id = ?`, ...params)
   }
@@ -419,21 +572,15 @@ export function updateRobot(id: string, patch: UpdateRobotInput): ImRobot {
   return updated
 }
 
-/** Record that the operator acknowledged what a robot sends off the machine. */
 export function acknowledgeOutbound(id: string): ImRobot {
   const d = requireDb()
-  const now = Date.now()
-  d.run('UPDATE im_robots SET outbound_ack_at = ?, updated_at = ? WHERE id = ?', now, now, id)
+  const t = now()
+  d.run('UPDATE im_robots SET outbound_ack_at = ?, updated_at = ? WHERE id = ?', t, t, id)
   const robot = getRobot(id)
   if (!robot) throw new RobotStoreError('not_found', '机器人不存在。')
   return robot
 }
 
-/**
- * Enable or disable a robot. Enabling requires both a credential to connect with
- * and a recorded acknowledgement — the server refuses regardless of what the
- * client rendered, so skipping the dialog cannot turn a robot on.
- */
 export function setRobotEnabled(id: string, enabled: boolean): ImRobot {
   const d = requireDb()
   const robot = getRobot(id)
@@ -449,150 +596,481 @@ export function setRobotEnabled(id: string, enabled: boolean): ImRobot {
       )
     }
   }
-  d.run(
-    'UPDATE im_robots SET enabled = ?, updated_at = ? WHERE id = ?',
-    enabled ? 1 : 0,
-    Date.now(),
-    id,
-  )
+  d.run('UPDATE im_robots SET enabled = ?, updated_at = ? WHERE id = ?', enabled ? 1 : 0, now(), id)
   const next = getRobot(id)
   if (!next) throw new RobotStoreError('not_found', '机器人不存在。')
   return next
 }
 
-/** Delete a robot together with its threads and audit rows. */
+/** Delete a robot together with its Conversations, context and audit rows. */
 export function deleteRobot(id: string): void {
   const d = requireDb()
-  d.run('DELETE FROM im_robot_turns WHERE robot_id = ?', id)
-  d.run('DELETE FROM im_robot_threads WHERE robot_id = ?', id)
-  d.run('DELETE FROM im_robots WHERE id = ?', id)
+  tx(d, () => {
+    d.run('DELETE FROM im_robot_context_turns WHERE robot_id = ?', id)
+    d.run('DELETE FROM im_robot_turns WHERE robot_id = ?', id)
+    d.run('DELETE FROM im_robot_threads WHERE robot_id = ?', id)
+    d.run('DELETE FROM im_robots WHERE id = ?', id)
+  })
 }
 
-// ---- Threads ----
+// ---- Conversations ----
 
-export interface RobotThread {
+export interface RobotConversation {
+  platform: ImPlatform
   robotId: string
   threadKey: string
+  senderId: string
   chatId: string
   sessionId: string | null
   vendor: VendorId
+  contextRevision: number
   turnCount: number
-  lastMessageId: string | null
   createdAt: number
   lastActiveAt: number
 }
 
-interface ThreadRow {
+interface ConversationRow {
+  platform: string
   robot_id: string
   thread_key: string
+  sender_id: string
   chat_id: string
   session_id: string | null
   vendor: string
+  context_revision: number
   turn_count: number
-  last_message_id: string | null
   created_at: number
   last_active_at: number
 }
 
-function toThread(r: ThreadRow): RobotThread {
+function toConversation(r: ConversationRow): RobotConversation {
   return {
+    platform: r.platform as ImPlatform,
     robotId: r.robot_id,
     threadKey: r.thread_key,
+    senderId: r.sender_id,
     chatId: r.chat_id,
     sessionId: r.session_id,
     vendor: r.vendor as VendorId,
+    contextRevision: r.context_revision,
     turnCount: r.turn_count,
-    lastMessageId: r.last_message_id,
     createdAt: r.created_at,
     lastActiveAt: r.last_active_at,
   }
 }
 
-export function getThread(robotId: string, threadKey: string): RobotThread | null {
+export function getConversation(id: ConversationIdentity): RobotConversation | null {
   const d = db()
   if (!d) return null
-  const row = d.get<ThreadRow>(
-    'SELECT * FROM im_robot_threads WHERE robot_id = ? AND thread_key = ?',
-    robotId,
-    threadKey,
+  const row = d.get<ConversationRow>(
+    `SELECT * FROM im_robot_threads
+     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+    id.platform,
+    id.robotId,
+    id.threadKey,
+    id.senderId,
   )
-  return row ? toThread(row) : null
+  return row ? toConversation(row) : null
 }
 
-/**
- * Create the thread row if this is its first message, and record which inbound
- * message is being handled. Returns the thread as it stands BEFORE this message
- * — the caller needs the previously bound session to resume.
- */
-export function openThread(input: {
-  robotId: string
-  threadKey: string
-  chatId: string
-  vendor: VendorId
-  messageId: string
-}): RobotThread {
-  const d = requireDb()
-  const now = Date.now()
-  const existing = getThread(input.robotId, input.threadKey)
+function ensureConversation(
+  d: Db,
+  input: ConversationIdentity & { chatId: string; vendor: VendorId },
+): RobotConversation {
+  const existing = getConversation(input)
+  const t = now()
   if (!existing) {
     d.run(
       `INSERT INTO im_robot_threads
-         (robot_id, thread_key, chat_id, session_id, vendor, turn_count, last_message_id,
-          created_at, last_active_at)
-       VALUES (?,?,?,NULL,?,0,?,?,?)`,
+         (platform, robot_id, thread_key, sender_id, chat_id, session_id, vendor,
+          context_revision, turn_count, created_at, last_active_at)
+       VALUES (?,?,?,?,?,NULL,?,0,0,?,?)`,
+      input.platform,
       input.robotId,
       input.threadKey,
+      input.senderId,
       input.chatId,
       input.vendor,
-      input.messageId,
-      now,
-      now,
+      t,
+      t,
     )
     return {
+      platform: input.platform,
       robotId: input.robotId,
       threadKey: input.threadKey,
+      senderId: input.senderId,
       chatId: input.chatId,
       sessionId: null,
       vendor: input.vendor,
+      contextRevision: 0,
       turnCount: 0,
-      lastMessageId: input.messageId,
-      createdAt: now,
-      lastActiveAt: now,
+      createdAt: t,
+      lastActiveAt: t,
     }
   }
   d.run(
-    'UPDATE im_robot_threads SET last_message_id = ?, chat_id = ?, last_active_at = ? WHERE robot_id = ? AND thread_key = ?',
-    input.messageId,
+    `UPDATE im_robot_threads SET chat_id = ?, last_active_at = ?
+     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
     input.chatId,
-    now,
+    t,
+    input.platform,
     input.robotId,
     input.threadKey,
+    input.senderId,
   )
-  return existing
+  return { ...existing, chatId: input.chatId, lastActiveAt: t }
+}
+
+export type ContextTurnStatus = 'pending' | 'committed' | 'failed'
+
+export interface CommittedContextTurn {
+  userText: string
+  assistantText: string
+  seq: number
+  committedAt: number
+}
+
+export type ClaimResult =
+  | { kind: 'duplicate' }
+  | { kind: 'claimed'; conversation: RobotConversation; contextTurnId: string }
+  | { kind: 'busy' }
+
+/**
+ * Atomically claim an inbound messageId for one Conversation. Duplicate
+ * (platform, robotId, messageId) returns `duplicate` without a second run or
+ * outbound. When `forRun` is false (conversation already in flight), reserves
+ * the messageId as a failed row for dedup only — does not heal orphans or
+ * clear the live session cache.
+ */
+export function claimInboundMessage(input: {
+  platform: ImPlatform
+  robotId: string
+  threadKey: string
+  senderId: string
+  chatId: string
+  vendor: VendorId
+  messageId: string
+  /** Default true. False = busy-path dedup claim (failed row, no orphan heal). */
+  forRun?: boolean
+}): ClaimResult {
+  const d = requireDb()
+  const forRun = input.forRun !== false
+  return tx(d, () => {
+    const conversation = ensureConversation(d, input)
+    // Dedup before orphan heal — a redelivered messageId must not fail a live pending.
+    const already = d.get<{ n: number }>(
+      `SELECT 1 AS n FROM im_robot_context_turns
+       WHERE platform = ? AND robot_id = ? AND in_message_id = ?`,
+      input.platform,
+      input.robotId,
+      input.messageId,
+    )
+    if (already) return { kind: 'duplicate' }
+
+    if (forRun) {
+      // Orphan pending (e.g. crash without restart) blocks the Conversation —
+      // fail it and clear the native session cache before claiming anew.
+      // Live serialization is the in-memory gate; this only heals DB leftovers.
+      const orphan = d.get<{ id: string }>(
+        `SELECT id FROM im_robot_context_turns
+         WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+           AND status = 'pending'`,
+        input.platform,
+        input.robotId,
+        input.threadKey,
+        input.senderId,
+      )
+      if (orphan) {
+        d.run(
+          `UPDATE im_robot_context_turns
+             SET status = 'failed', user_text = '', assistant_text = ''
+           WHERE id = ?`,
+          orphan.id,
+        )
+        d.run(
+          `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
+           WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+          now(),
+          input.platform,
+          input.robotId,
+          input.threadKey,
+          input.senderId,
+        )
+      }
+    }
+
+    const id = randomUUID()
+    const status = forRun ? 'pending' : 'failed'
+    try {
+      d.run(
+        `INSERT INTO im_robot_context_turns
+           (id, platform, robot_id, thread_key, sender_id, in_message_id, status,
+            user_text, assistant_text, seq, committed_at, created_at)
+         VALUES (?,?,?,?,?,?,?,'','',NULL,NULL,?)`,
+        id,
+        input.platform,
+        input.robotId,
+        input.threadKey,
+        input.senderId,
+        input.messageId,
+        status,
+        now(),
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/UNIQUE/i.test(msg)) return { kind: 'duplicate' }
+      throw err
+    }
+    if (!forRun) return { kind: 'busy' }
+    // Re-read after possible session clear.
+    const fresh = getConversation(input) ?? conversation
+    return { kind: 'claimed', conversation: fresh, contextTurnId: id }
+  })
+}
+
+/** Converge leftover pending rows after restart; clear their session caches. */
+function failStalePendingContextTurns(d: Db): void {
+  const pending = d.all<{
+    id: string
+    platform: string
+    robot_id: string
+    thread_key: string
+    sender_id: string
+  }>(
+    `SELECT id, platform, robot_id, thread_key, sender_id FROM im_robot_context_turns WHERE status = 'pending'`,
+  )
+  if (pending.length === 0) return
+  tx(d, () => {
+    for (const row of pending) {
+      d.run(
+        `UPDATE im_robot_context_turns
+           SET status = 'failed', user_text = '', assistant_text = ''
+         WHERE id = ?`,
+        row.id,
+      )
+      d.run(
+        `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
+         WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+        now(),
+        row.platform,
+        row.robot_id,
+        row.thread_key,
+        row.sender_id,
+      )
+    }
+  })
+}
+
+export function failContextTurn(contextTurnId: string): void {
+  const d = requireDb()
+  tx(d, () => {
+    const row = d.get<{
+      platform: string
+      robot_id: string
+      thread_key: string
+      sender_id: string
+      status: string
+    }>(
+      'SELECT platform, robot_id, thread_key, sender_id, status FROM im_robot_context_turns WHERE id = ?',
+      contextTurnId,
+    )
+    if (!row || row.status !== 'pending') return
+    d.run(
+      `UPDATE im_robot_context_turns
+         SET status = 'failed', user_text = '', assistant_text = ''
+       WHERE id = ?`,
+      contextTurnId,
+    )
+    d.run(
+      `UPDATE im_robot_threads SET session_id = NULL, last_active_at = ?
+       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+      now(),
+      row.platform,
+      row.robot_id,
+      row.thread_key,
+      row.sender_id,
+    )
+  })
 }
 
 /**
- * Bind the session a completed turn ran in, so the next message in this thread
- * resumes the same conversation. A session only resumes within the vendor that
- * produced it, so the vendor is recorded alongside.
+ * Commit a delivered turn into recoverable context and bind the native session
+ * cache. Prunes by capacity and retention in the same transaction.
  */
-export function bindThreadSession(
-  robotId: string,
-  threadKey: string,
-  sessionId: string,
-  vendor: VendorId,
-): void {
+export function commitContextTurn(input: {
+  contextTurnId: string
+  userText: string
+  assistantText: string
+  sessionId: string
+  vendor: VendorId
+}): void {
   const d = requireDb()
+  const assistant = truncateCodePoints(input.assistantText, ROBOT_CONTEXT_MAX_CODEPOINTS)
+  tx(d, () => {
+    const row = d.get<{
+      platform: string
+      robot_id: string
+      thread_key: string
+      sender_id: string
+      status: string
+    }>(
+      'SELECT platform, robot_id, thread_key, sender_id, status FROM im_robot_context_turns WHERE id = ?',
+      input.contextTurnId,
+    )
+    if (!row || row.status !== 'pending') return
+
+    const t = now()
+    const maxSeq = d.get<{ m: number | null }>(
+      `SELECT MAX(seq) AS m FROM im_robot_context_turns
+       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+         AND status = 'committed'`,
+      row.platform,
+      row.robot_id,
+      row.thread_key,
+      row.sender_id,
+    )
+    const seq = (maxSeq?.m ?? 0) + 1
+
+    d.run(
+      `UPDATE im_robot_context_turns
+         SET status = 'committed', user_text = ?, assistant_text = ?, seq = ?, committed_at = ?
+       WHERE id = ? AND status = 'pending'`,
+      input.userText,
+      assistant,
+      seq,
+      t,
+      input.contextTurnId,
+    )
+
+    d.run(
+      `UPDATE im_robot_threads
+         SET session_id = ?, vendor = ?,
+             context_revision = context_revision + 1,
+             turn_count = turn_count + 1,
+             last_active_at = ?
+       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+      input.sessionId,
+      input.vendor,
+      t,
+      row.platform,
+      row.robot_id,
+      row.thread_key,
+      row.sender_id,
+    )
+
+    pruneConversationContext(d, {
+      platform: row.platform as ImPlatform,
+      robotId: row.robot_id,
+      threadKey: row.thread_key,
+      senderId: row.sender_id,
+    })
+  })
+}
+
+function pruneConversationContext(d: Db, id: ConversationIdentity): void {
+  const cutoff = now() - ROBOT_CONTEXT_RETENTION_MS
+  // Time first: delete expired complete turns (exactly 30 days still kept).
   d.run(
-    `UPDATE im_robot_threads
-       SET session_id = ?, vendor = ?, turn_count = turn_count + 1, last_active_at = ?
-     WHERE robot_id = ? AND thread_key = ?`,
-    sessionId,
-    vendor,
-    Date.now(),
-    robotId,
-    threadKey,
+    `DELETE FROM im_robot_context_turns
+     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+       AND status = 'committed' AND committed_at IS NOT NULL AND committed_at < ?`,
+    id.platform,
+    id.robotId,
+    id.threadKey,
+    id.senderId,
+    cutoff,
   )
+
+  const committed = d.all<{ id: string; seq: number }>(
+    `SELECT id, seq FROM im_robot_context_turns
+     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+       AND status = 'committed'
+     ORDER BY seq ASC, id ASC`,
+    id.platform,
+    id.robotId,
+    id.threadKey,
+    id.senderId,
+  )
+  const overflow = committed.length - ROBOT_CONTEXT_MAX_TURNS
+  if (overflow <= 0) return
+  const toDelete = committed.slice(0, overflow)
+  for (const row of toDelete) {
+    d.run('DELETE FROM im_robot_context_turns WHERE id = ?', row.id)
+  }
+  // Keep turn_count aligned with remaining committed rows.
+  d.run(
+    `UPDATE im_robot_threads SET turn_count = ?
+     WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?`,
+    committed.length - overflow,
+    id.platform,
+    id.robotId,
+    id.threadKey,
+    id.senderId,
+  )
+}
+
+/**
+ * Load committed IM-visible turns for recovery. Applies retention prune first,
+ * then trims from the earliest complete turn if the soft budget is exceeded.
+ */
+export function loadCommittedContext(id: ConversationIdentity): CommittedContextTurn[] {
+  const d = requireDb()
+  return tx(d, () => {
+    pruneConversationContext(d, id)
+    const rows = d.all<{
+      user_text: string
+      assistant_text: string
+      seq: number
+      committed_at: number
+    }>(
+      `SELECT user_text, assistant_text, seq, committed_at FROM im_robot_context_turns
+       WHERE platform = ? AND robot_id = ? AND thread_key = ? AND sender_id = ?
+         AND status = 'committed'
+       ORDER BY seq ASC, id ASC`,
+      id.platform,
+      id.robotId,
+      id.threadKey,
+      id.senderId,
+    )
+    const turns: CommittedContextTurn[] = rows.map((r) => ({
+      userText: r.user_text,
+      assistantText: r.assistant_text,
+      seq: r.seq,
+      committedAt: r.committed_at,
+    }))
+    return trimByBudget(turns)
+  })
+}
+
+function trimByBudget(turns: CommittedContextTurn[]): CommittedContextTurn[] {
+  let total = 0
+  for (const t of turns) {
+    total += Array.from(t.userText).length + Array.from(t.assistantText).length
+  }
+  if (total <= ROBOT_CONTEXT_RECOVERY_BUDGET) return turns
+  const kept = [...turns]
+  while (kept.length > 0) {
+    total = 0
+    for (const t of kept) {
+      total += Array.from(t.userText).length + Array.from(t.assistantText).length
+    }
+    if (total <= ROBOT_CONTEXT_RECOVERY_BUDGET) break
+    kept.shift() // drop earliest complete pair — never split a pair
+  }
+  return kept
+}
+
+/**
+ * Verified native session reference for resume, or null when the cache must be
+ * discarded and the turn must start from the DB seed.
+ */
+export function resolvedSessionRef(
+  conversation: RobotConversation,
+  robotVendor: VendorId,
+): { sessionId: string; contextRevision: number } | null {
+  if (!conversation.sessionId) return null
+  if (conversation.vendor !== robotVendor) return null
+  return { sessionId: conversation.sessionId, contextRevision: conversation.contextRevision }
 }
 
 // ---- Audit ----
@@ -607,11 +1085,11 @@ interface TurnRow {
   started_at: number
   finished_at: number | null
   outcome: string | null
+  reject_reason: string | null
   outbound_chars: number
   error: string | null
 }
 
-/** Open an audit row for a turn that is about to run. Returns its id. */
 export function beginTurn(input: {
   robotId: string
   threadKey: string
@@ -624,23 +1102,19 @@ export function beginTurn(input: {
   d.run(
     `INSERT INTO im_robot_turns
        (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
-        started_at, finished_at, outcome, outbound_chars, out_message_id, error)
-     VALUES (?,?,?,?,?,?,NULL,?,NULL,NULL,0,NULL,NULL)`,
+        started_at, finished_at, outcome, reject_reason, outbound_chars, out_message_id, error)
+     VALUES (?,?,?,?,?,?,NULL,?,NULL,NULL,NULL,0,NULL,NULL)`,
     id,
     input.robotId,
     input.threadKey,
     input.chatId,
     input.senderId,
     input.messageId,
-    Date.now(),
+    now(),
   )
   return id
 }
 
-/**
- * Close an audit row. `outboundChars` is a LENGTH — the sent text itself is
- * deliberately not persisted anywhere (ADR-0045).
- */
 export function finishTurn(
   turnId: string,
   result: {
@@ -649,20 +1123,22 @@ export function finishTurn(
     outboundChars?: number
     outMessageId?: string | null
     error?: string | null
+    rejectReason?: ImInputRejectReason | null
   },
 ): void {
   const d = requireDb()
   d.run(
     `UPDATE im_robot_turns
        SET finished_at = ?, outcome = ?, session_id = ?, outbound_chars = ?,
-           out_message_id = ?, error = ?
+           out_message_id = ?, error = ?, reject_reason = ?
      WHERE id = ?`,
-    Date.now(),
+    now(),
     result.outcome,
     result.sessionId ?? null,
     result.outboundChars ?? 0,
     result.outMessageId ?? null,
     result.error ?? null,
+    result.rejectReason ?? null,
     turnId,
   )
 }
@@ -686,6 +1162,7 @@ export function listTurns(robotId: string, limit = 50): ImRobotTurnLog[] {
       startedAt: r.started_at,
       finishedAt: r.finished_at,
       outcome: r.outcome as ImTurnOutcome | null,
+      rejectReason: (r.reject_reason as ImInputRejectReason | null) ?? null,
       outboundChars: r.outbound_chars,
       error: r.error,
     }))

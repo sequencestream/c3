@@ -56,8 +56,9 @@
 | 34  | external-mcp | `external_mcp_write_audits`  | [external-mcp/external_mcp_write_audits.sql](external-mcp/external_mcp_write_audits.sql) | `server/src/features/external-mcp/audit-store.ts`           | 外部 MCP 写调用的只增审计轨迹                            |
 | 35  | memory       | `workspace_memories`         | [memory/workspace_memories.sql](memory/workspace_memories.sql)                           | `server/src/features/memory/store.ts`                       | 工作区长期记忆 (偏好/约束/事实/教训)                     |
 | 36  | robots       | `im_robots`                  | [robots/im_robots.sql](robots/im_robots.sql)                                             | `server/src/features/im/robot-store.ts`                     | IM 聊天机器人配置 (执行身份/预设权限/外发授权)           |
-| 37  | robots       | `im_robot_threads`           | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                               | `server/src/features/im/robot-store.ts`                     | IM 线程 ↔ agent 会话映射 (一条线程即一次持续对话)        |
-| 38  | robots       | `im_robot_turns`             | [robots/im_robot_turns.sql](robots/im_robot_turns.sql)                                   | `server/src/features/im/robot-store.ts`                     | 机器人回合外发审计 (只记元数据, 不记正文)                |
+| 37  | robots       | `im_robot_threads`           | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                               | `server/src/features/im/robot-store.ts`                     | 发送者隔离 Conversation (四维身份 ↔ 可选原生会话缓存)    |
+| 38  | robots       | `im_robot_context_turns`     | [robots/im_robot_context_turns.sql](robots/im_robot_context_turns.sql)                   | `server/src/features/im/robot-store.ts`                     | 有界 IM 可见上下文 (成对用户/回答正文, ADR-0048)         |
+| 39  | robots       | `im_robot_turns`             | [robots/im_robot_turns.sql](robots/im_robot_turns.sql)                                   | `server/src/features/im/robot-store.ts`                     | 机器人回合外发审计 (只记元数据, 不记正文)                |
 
 ## 模块说明
 
@@ -214,26 +215,32 @@ state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数
 
 ### robots
 
-IM 聊天机器人域。三张表把「群里 @机器人 提问、c3 跑一轮会话、把答案发回群里」这条链路的三件事分开
-持有：`im_robots` 是配置与授权，`im_robot_threads` 是线程与会话的对应关系，`im_robot_turns` 是外发
-审计。它是 c3 唯一一条主动把 agent 产出送往第三方云的路径，授权模型由 ADR-0046 裁定。正式定义见
+IM 聊天机器人域。四张表把「群里 @机器人 提问、c3 跑一轮会话、把答案发回群里」这条链路分开持有:
+`im_robots` 是配置与授权,`im_robot_threads` 是发送者隔离的 Conversation,`im_robot_context_turns` 是
+可恢复的 IM 可见正文,`im_robot_turns` 是外发审计。它是 c3 唯一一条主动把 agent 产出送往第三方云的
+路径;授权模型由 ADR-0046 裁定,上下文持久化例外由 ADR-0048 裁定。正式定义见
 [术语表·机器人](../doc/glossary.md)。
 
-**部署级出入口**是本域的结构性特征：`im_robots` 刻意没有 `workspace_name` 列——配置/连接/名册跨工作区
-一致，但不等于无边界访问。机器人按 `name` 拥有独立工作目录 `~/.c3/robots/<name>/`，那是隔离的运行
-容器而非授权范围或默认工作区；`name` 同时是显示名、目录名与身份，受路径安全约束且创建后不可改。
-该目录不进工作区注册表，机器人的会话也不出现在会话页。否决工作区内机器人以及连接/线程级工作区绑定。
+**部署级出入口、不绑工作区**是本域的结构性特征:`im_robots` 刻意没有 `workspace_name` 列——配置/
+连接/名册跨工作区一致,但不等于无边界访问。机器人按 `name` 拥有独立工作目录
+`~/.c3/robots/<name>/`,那是隔离的运行容器而非授权范围或默认工作区;`name` 同时是显示名、目录名与
+身份,受路径安全约束且创建后不可改。该目录不进工作区注册表,也不是会话恢复或授权判断的输入。否决
+工作区内机器人以及连接/线程级工作区绑定。
 
-ADR-0046 的四条授权凭据里有三条落在这里：`enabled` 默认 `0` 且没有「创建并启用」的一步操作；
-`outbound_ack_at` 记录用户确认外发范围的时刻，服务端在启用时校验它；每一次外发在 `im_robot_turns`
-留一行。审计**只记元数据**——`outbound_chars` 是长度而非内容，因为一份外发正文副本正是 ADR-0045
-禁止落盘的那类数据。没发出去的结局同样留痕 (`guard_refused` / `blocked` / `timeout` / `busy`)。
+Conversation 身份是 `(platform, robot_id, thread_key, sender_id)`。同一群内不同发送者互不相通;
+`session_id` 只是同 vendor 下的续接缓存。正文只存在于 `im_robot_context_turns`(成对、有界、30 天硬删);
+审计**只记元数据**——`outbound_chars` 是长度而非内容。没发出去的结局同样留痕
+(`guard_refused` / `blocked` / `timeout` / `input_rejected` / `busy`)。
 
-权限在配置时冻结而非现场询问：群里没有人能回答权限对话框，所以 `tool_allowlist` 为空 (创建时的默认)
-即只读，写/执行能力必须由管理员显式列举。响应面同样默认收敛：`require_mention` 默认 `1`，
+ADR-0046 的四条授权凭据里有三条落在这里:`enabled` 默认 `0` 且没有「创建并启用」的一步操作;
+`outbound_ack_at` 记录用户确认外发范围的时刻,服务端在启用时校验它;每一次外发在 `im_robot_turns`
+留一行。
+
+权限在配置时冻结而非现场询问:群里没有人能回答权限对话框,所以 `tool_allowlist` 为空 (创建时的默认)
+即只读,写/执行能力必须由管理员显式列举。响应面同样默认收敛:`require_mention` 默认 `1`,
 `dm_mode` 默认 `disabled`。
 
-连接状态不在库里。连上没有、重连第几次、上次为何失败都是进程内的运行时事实，由 supervisor 持有并
+连接状态不在库里。连上没有、重连第几次、上次为何失败都是进程内的运行时事实,由 supervisor 持有并
 随查询回传——落库只会产生一份必然过期的快照。
 
 ## 数据库设计约定

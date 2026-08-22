@@ -77,11 +77,15 @@ export function normalizeFeishuMessage(
   )
   if (!body) return null
 
+  // Missing/blank senderId is not an accepted message: no reply, audit, or Conversation.
+  const senderId = event.sender?.sender_id?.open_id?.trim() ?? ''
+  if (!senderId) return null
+
   return {
     messageId: msg.message_id,
     chatId: msg.chat_id,
     chatType: msg.chat_type === 'p2p' ? 'p2p' : 'group',
-    senderId: event.sender?.sender_id?.open_id ?? '',
+    senderId,
     text: body,
     mentionedBot: botOpenId !== null && mentions.some((m) => m.id?.open_id === botOpenId),
     // Feishu sets `thread_id` only inside a topic, and `root_id` only on a reply.

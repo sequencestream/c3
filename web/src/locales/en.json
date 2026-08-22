@@ -3897,6 +3897,9 @@
           "guard_refused": {
             "label": "Held back"
           },
+          "input_rejected": {
+            "label": "Input refused"
+          },
           "busy": {
             "label": "Busy"
           }

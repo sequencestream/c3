@@ -3898,6 +3898,9 @@
           "guard_refused": {
             "label": "Отправка задержана"
           },
+          "input_rejected": {
+            "label": "Ввод отклонён"
+          },
           "busy": {
             "label": "Занято"
           }

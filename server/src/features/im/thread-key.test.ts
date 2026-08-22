@@ -1,42 +1,64 @@
 /**
- * Thread identity decides which messages share an agent session — and therefore
- * a context. The precedence is the whole rule, so it is pinned here directly.
+ * Conversation identity: thread key plus the four-dimensional isolation key.
  */
 import { describe, expect, it } from 'vitest'
-import { threadKeyFor } from './thread-key.js'
+import { conversationGateKey, conversationIdentityOf, threadKeyFor } from './thread-key.js'
 
 describe('threadKeyFor', () => {
-  it('prefers the platform topic when the message is in one', () => {
+  it('prefers a native topic', () => {
     expect(threadKeyFor({ chatId: 'c1', threadId: 'tp1', rootId: 'r1' })).toBe('t:tp1')
   })
 
-  it('falls back to the reply-chain root, so a reply continues what it replies to', () => {
+  it('falls back to the reply-chain root', () => {
     expect(threadKeyFor({ chatId: 'c1', rootId: 'r1' })).toBe('r:r1')
   })
 
-  it('falls back to the chat — one chat is one long conversation', () => {
+  it('falls back to the chat itself', () => {
     expect(threadKeyFor({ chatId: 'c1' })).toBe('c:c1')
   })
 
-  it('treats blank ids as absent rather than as a distinct thread', () => {
+  it('treats blank topic/root as absent', () => {
     expect(threadKeyFor({ chatId: 'c1', threadId: '   ', rootId: '' })).toBe('c:c1')
     expect(threadKeyFor({ chatId: 'c1', threadId: '', rootId: '  r2 ' })).toBe('r:r2')
   })
 
-  it('keeps the three sources in separate namespaces', () => {
-    // Without the prefixes, a chat id equal to some other chat's topic id would
-    // silently merge two conversations.
-    const same = 'x1'
-    const keys = new Set([
-      threadKeyFor({ chatId: same }),
-      threadKeyFor({ chatId: 'other', rootId: same }),
-      threadKeyFor({ chatId: 'other', threadId: same }),
-    ])
-    expect(keys.size).toBe(3)
+  it('prefixes so ids from different layers cannot collide', () => {
+    const same = 'x'
+    expect(
+      new Set([
+        threadKeyFor({ chatId: same }),
+        threadKeyFor({ chatId: 'other', rootId: same }),
+        threadKeyFor({ chatId: 'other', threadId: same }),
+      ]).size,
+    ).toBe(3)
   })
 
   it('is stable for the same message', () => {
-    const m = { chatId: 'c1', threadId: 'tp1' }
+    const m = { chatId: 'c1', threadId: 't1' }
     expect(threadKeyFor(m)).toBe(threadKeyFor(m))
+  })
+})
+
+describe('conversationIdentityOf', () => {
+  it('differs when only senderId differs', () => {
+    const a = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a')
+    const b = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-b')
+    expect(conversationGateKey(a)).not.toBe(conversationGateKey(b))
+  })
+
+  it('is stable for the same sender in the same thread', () => {
+    const a = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a')
+    const b = conversationIdentityOf('feishu', 'r1', 'c:oc', 'user-a')
+    expect(conversationGateKey(a)).toBe(conversationGateKey(b))
+  })
+
+  it('differs across thread, robot, or platform', () => {
+    const base = conversationIdentityOf('feishu', 'r1', 'c:oc', 'u')
+    expect(conversationGateKey(base)).not.toBe(
+      conversationGateKey(conversationIdentityOf('feishu', 'r1', 'c:other', 'u')),
+    )
+    expect(conversationGateKey(base)).not.toBe(
+      conversationGateKey(conversationIdentityOf('feishu', 'r2', 'c:oc', 'u')),
+    )
   })
 })

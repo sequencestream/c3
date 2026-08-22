@@ -106,6 +106,19 @@ describe('normalizeFeishuMessage', () => {
     expect(normalizeFeishuMessage(event({ chat_id: undefined }), BOT)).toBeNull()
   })
 
+  it('ignores a message with blank or missing senderId — never an accepted message', () => {
+    const blank: FeishuMessageEvent = {
+      sender: { sender_id: { open_id: '   ' }, sender_type: 'user' },
+      message: event().message,
+    }
+    expect(normalizeFeishuMessage(blank, BOT)).toBeNull()
+    const missing: FeishuMessageEvent = {
+      sender: { sender_type: 'user' },
+      message: event().message,
+    }
+    expect(normalizeFeishuMessage(missing, BOT)).toBeNull()
+  })
+
   it('marks a direct message as p2p', () => {
     expect(normalizeFeishuMessage(event({ chat_type: 'p2p' }), BOT)?.chatType).toBe('p2p')
   })

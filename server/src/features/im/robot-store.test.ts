@@ -1,38 +1,40 @@
 /**
- * The robot store. What is pinned here is what ADR-0046 depends on being true no
- * matter which client is talking to the server: a robot cannot be created
- * already enabled, cannot be enabled without both a credential and a recorded
- * acknowledgement, and never hands its app secret back through the read path.
- * Alongside that, the thread mapping is what makes an IM thread read as one
- * continuous conversation, and the audit records that an outbound happened
- * without recording what was said.
+ * Robot store: authorization invariants, sender-isolated Conversations, bounded
+ * context persistence, safe-cut migration, and audit-without-body.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
+import { ROBOT_CONTEXT_MAX_TURNS, ROBOT_CONTEXT_RETENTION_MS } from '@ccc/shared/protocol'
+import { getDb, hasMigration, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   RobotStoreError,
   acknowledgeOutbound,
   beginTurn,
-  bindThreadSession,
+  claimInboundMessage,
+  commitContextTurn,
   createRobot,
   deleteRobot,
   ensureRobotSchema,
+  failContextTurn,
   finishTurn,
+  getConversation,
   getRobot,
-  getThread,
+  hasSenderIsolationMigration,
   listEnabledRobots,
   listRobots,
   listTurns,
-  openThread,
+  loadCommittedContext,
   resetRobotStoreForTests,
+  resolvedSessionRef,
   robotSecret,
   setRobotEnabled,
+  setRobotStoreClockForTests,
   updateRobot,
   type CreateRobotInput,
 } from './robot-store.js'
+import { conversationIdentityOf } from './thread-key.js'
 
 let home: string
 
@@ -44,6 +46,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setRobotStoreClockForTests(null)
   resetDbForTests()
   delete process.env.C3_DB_PATH
   resetRobotStoreForTests()
@@ -69,6 +72,26 @@ function refuses(fn: () => unknown, code: string): RobotStoreError {
     return err as RobotStoreError
   }
   throw new Error(`expected a refusal with code ${code}`)
+}
+
+function claim(
+  robotId: string,
+  over: Partial<{
+    threadKey: string
+    senderId: string
+    messageId: string
+    chatId: string
+  }> = {},
+) {
+  return claimInboundMessage({
+    platform: 'feishu',
+    robotId,
+    threadKey: over.threadKey ?? 'c:oc',
+    senderId: over.senderId ?? 'u1',
+    chatId: over.chatId ?? 'oc',
+    vendor: 'claude',
+    messageId: over.messageId ?? `m-${Math.random().toString(36).slice(2)}`,
+  })
 }
 
 describe('creation — never enabled, never acknowledged', () => {
@@ -156,69 +179,183 @@ describe('enabling — the server enforces the authorization, not the client', (
   })
 })
 
-describe('threads — one thread reads as one conversation', () => {
-  it('reports no bound session on a thread first message', () => {
+describe('sender-isolated Conversations', () => {
+  it('gives different senders independent Conversations in the same thread', () => {
     const robot = createRobot(input())
-    const thread = openThread({
-      robotId: robot.id,
-      threadKey: 'chat-1',
-      chatId: 'chat-1',
+    const a = claim(robot.id, { senderId: 'alice', messageId: 'm1' })
+    const b = claim(robot.id, { senderId: 'bob', messageId: 'm2' })
+    expect(a.kind).toBe('claimed')
+    expect(b.kind).toBe('claimed')
+    if (a.kind !== 'claimed' || b.kind !== 'claimed') return
+    commitContextTurn({
+      contextTurnId: a.contextTurnId,
+      userText: 'alice secret',
+      assistantText: 'alice answer',
+      sessionId: 'sess-a',
       vendor: 'claude',
-      messageId: 'm1',
     })
-    expect(thread.sessionId).toBeNull()
-    expect(thread.turnCount).toBe(0)
+    expect(loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'bob'))).toEqual(
+      [],
+    )
+    expect(
+      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'alice')).map(
+        (t) => t.userText,
+      ),
+    ).toEqual(['alice secret'])
   })
 
-  it('returns the PREVIOUSLY bound session on a follow-up, so the turn resumes it', () => {
+  it('resumes the same sender continuous context', () => {
     const robot = createRobot(input())
-    openThread({
-      robotId: robot.id,
-      threadKey: 'chat-1',
-      chatId: 'chat-1',
+    const first = claim(robot.id, { senderId: 'u1', messageId: 'm1' })
+    expect(first.kind).toBe('claimed')
+    if (first.kind !== 'claimed') return
+    commitContextTurn({
+      contextTurnId: first.contextTurnId,
+      userText: 'q1',
+      assistantText: 'a1',
+      sessionId: 'sess-1',
       vendor: 'claude',
-      messageId: 'm1',
     })
-    bindThreadSession(robot.id, 'chat-1', 'sess-9', 'claude')
-
-    const second = openThread({
-      robotId: robot.id,
-      threadKey: 'chat-1',
-      chatId: 'chat-1',
-      vendor: 'claude',
-      messageId: 'm2',
-    })
-    expect(second.sessionId).toBe('sess-9')
-    expect(getThread(robot.id, 'chat-1')!.lastMessageId).toBe('m2')
+    const second = claim(robot.id, { senderId: 'u1', messageId: 'm2' })
+    expect(second.kind).toBe('claimed')
+    if (second.kind !== 'claimed') return
+    expect(second.conversation.sessionId).toBe('sess-1')
+    expect(
+      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1')).map(
+        (t) => t.assistantText,
+      ),
+    ).toEqual(['a1'])
   })
 
-  it('keeps threads of different keys independent', () => {
+  it('treats a duplicate messageId as a no-op claim', () => {
     const robot = createRobot(input())
-    for (const key of ['a', 'b']) {
-      openThread({
+    expect(claim(robot.id, { messageId: 'dup' }).kind).toBe('claimed')
+    expect(claim(robot.id, { messageId: 'dup' }).kind).toBe('duplicate')
+  })
+
+  it('reserves a busy-path claim without healing a live pending', () => {
+    const robot = createRobot(input())
+    const pending = claim(robot.id, { messageId: 'm-pending' })
+    expect(pending.kind).toBe('claimed')
+
+    const busy = claimInboundMessage({
+      platform: 'feishu',
+      robotId: robot.id,
+      threadKey: 'c:oc',
+      senderId: 'u1',
+      chatId: 'oc',
+      vendor: 'claude',
+      messageId: 'm-busy',
+      forRun: false,
+    })
+    expect(busy.kind).toBe('busy')
+    expect(
+      claimInboundMessage({
+        platform: 'feishu',
         robotId: robot.id,
-        threadKey: key,
-        chatId: key,
+        threadKey: 'c:oc',
+        senderId: 'u1',
+        chatId: 'oc',
         vendor: 'claude',
-        messageId: `m-${key}`,
+        messageId: 'm-busy',
+        forRun: true,
+      }).kind,
+    ).toBe('duplicate')
+
+    expect(
+      getDb()!.get<{ status: string }>(
+        `SELECT status FROM im_robot_context_turns
+         WHERE robot_id = ? AND in_message_id = 'm-pending'`,
+        robot.id,
+      )?.status,
+    ).toBe('pending')
+    expect(
+      getDb()!.get<{ status: string }>(
+        `SELECT status FROM im_robot_context_turns
+         WHERE robot_id = ? AND in_message_id = 'm-busy'`,
+        robot.id,
+      )?.status,
+    ).toBe('failed')
+  })
+
+  it('does not put failed turn bodies into recovery context', () => {
+    const robot = createRobot(input())
+    const c = claim(robot.id, { messageId: 'm-fail' })
+    expect(c.kind).toBe('claimed')
+    if (c.kind !== 'claimed') return
+    failContextTurn(c.contextTurnId)
+    expect(loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))).toEqual(
+      [],
+    )
+    expect(
+      resolvedSessionRef(
+        getConversation(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))!,
+        'claude',
+      ),
+    ).toBeNull()
+  })
+
+  it('refuses to resume a session when vendor mismatches', () => {
+    const robot = createRobot(input())
+    const c = claim(robot.id, { messageId: 'm1' })
+    if (c.kind !== 'claimed') return
+    commitContextTurn({
+      contextTurnId: c.contextTurnId,
+      userText: 'q',
+      assistantText: 'a',
+      sessionId: 'sess-1',
+      vendor: 'claude',
+    })
+    const conv = getConversation(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))!
+    expect(resolvedSessionRef(conv, 'codex')).toBeNull()
+    expect(resolvedSessionRef(conv, 'claude')?.sessionId).toBe('sess-1')
+  })
+})
+
+describe('retention', () => {
+  it('hard-deletes the oldest complete turn when the 51st is written', () => {
+    const robot = createRobot(input())
+    for (let i = 0; i < ROBOT_CONTEXT_MAX_TURNS + 1; i++) {
+      const c = claim(robot.id, { messageId: `m-${i}` })
+      expect(c.kind).toBe('claimed')
+      if (c.kind !== 'claimed') return
+      commitContextTurn({
+        contextTurnId: c.contextTurnId,
+        userText: `q${i}`,
+        assistantText: `a${i}`,
+        sessionId: `sess-${i}`,
+        vendor: 'claude',
       })
     }
-    bindThreadSession(robot.id, 'a', 'sess-a', 'claude')
-    expect(getThread(robot.id, 'b')!.sessionId).toBeNull()
+    const turns = loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))
+    expect(turns).toHaveLength(ROBOT_CONTEXT_MAX_TURNS)
+    expect(turns[0]?.userText).toBe('q1')
+    expect(turns.at(-1)?.userText).toBe(`q${ROBOT_CONTEXT_MAX_TURNS}`)
   })
 
-  it('counts turns as they bind', () => {
+  it('keeps a turn at exactly 30 days and deletes after', () => {
     const robot = createRobot(input())
-    openThread({
-      robotId: robot.id,
-      threadKey: 'k',
-      chatId: 'c',
+    const t0 = 1_700_000_000_000
+    setRobotStoreClockForTests(() => t0)
+    const c = claim(robot.id, { messageId: 'm1' })
+    if (c.kind !== 'claimed') return
+    commitContextTurn({
+      contextTurnId: c.contextTurnId,
+      userText: 'q',
+      assistantText: 'a',
+      sessionId: 's',
       vendor: 'claude',
-      messageId: 'm1',
     })
-    bindThreadSession(robot.id, 'k', 'sess-1', 'claude')
-    bindThreadSession(robot.id, 'k', 'sess-1', 'claude')
-    expect(getThread(robot.id, 'k')!.turnCount).toBe(2)
+
+    setRobotStoreClockForTests(() => t0 + ROBOT_CONTEXT_RETENTION_MS)
+    expect(
+      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1')),
+    ).toHaveLength(1)
+
+    setRobotStoreClockForTests(() => t0 + ROBOT_CONTEXT_RETENTION_MS + 1)
+    expect(
+      loadCommittedContext(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1')),
+    ).toHaveLength(0)
   })
 })
 
@@ -235,17 +372,39 @@ describe('audit — records that it happened, not what was said', () => {
     finishTurn(turnId, { outcome: 'complete', sessionId: 'sess-1', outboundChars: 42 })
 
     const [log] = listTurns(robot.id)
-    expect(log).toMatchObject({ outcome: 'complete', outboundChars: 42, sessionId: 'sess-1' })
-    // The whole row, as stored, must not contain anything resembling a body.
+    expect(log).toMatchObject({
+      outcome: 'complete',
+      outboundChars: 42,
+      sessionId: 'sess-1',
+      rejectReason: null,
+    })
     const raw = getDb()!.get<Record<string, unknown>>(
       'SELECT * FROM im_robot_turns WHERE id = ?',
       turnId,
     )!
     expect(Object.keys(raw)).not.toContain('body')
     expect(Object.keys(raw)).not.toContain('content')
+    expect(Object.keys(raw)).not.toContain('user_text')
   })
 
-  it('records the outcomes where nothing was sent', () => {
+  it('records input_rejected with a closed reason code', () => {
+    const robot = createRobot(input())
+    const id = beginTurn({
+      robotId: robot.id,
+      threadKey: 'k',
+      chatId: 'c',
+      senderId: 'u1',
+      messageId: 'm-rej',
+    })
+    finishTurn(id, { outcome: 'input_rejected', rejectReason: 'credential', outboundChars: 0 })
+    expect(listTurns(robot.id)[0]).toMatchObject({
+      outcome: 'input_rejected',
+      rejectReason: 'credential',
+      outboundChars: 0,
+    })
+  })
+
+  it('records non-complete outcomes including busy without bodies', () => {
     const robot = createRobot(input())
     for (const outcome of ['guard_refused', 'blocked', 'timeout', 'error', 'busy'] as const) {
       const id = beginTurn({
@@ -267,21 +426,23 @@ describe('audit — records that it happened, not what was said', () => {
 })
 
 describe('deletion', () => {
-  it('removes the robot together with its threads and audit rows', () => {
+  it('cascades Conversations, context and audit', () => {
     const robot = createRobot(input())
-    openThread({
-      robotId: robot.id,
-      threadKey: 'k',
-      chatId: 'c',
+    const c = claim(robot.id, { messageId: 'm1' })
+    if (c.kind !== 'claimed') return
+    commitContextTurn({
+      contextTurnId: c.contextTurnId,
+      userText: 'q',
+      assistantText: 'a',
+      sessionId: 's',
       vendor: 'claude',
-      messageId: 'm1',
     })
     finishTurn(
       beginTurn({
         robotId: robot.id,
-        threadKey: 'k',
-        chatId: 'c',
-        senderId: 'u',
+        threadKey: 'c:oc',
+        chatId: 'oc',
+        senderId: 'u1',
         messageId: 'm1',
       }),
       { outcome: 'complete' },
@@ -290,8 +451,123 @@ describe('deletion', () => {
     deleteRobot(robot.id)
 
     expect(listRobots()).toEqual([])
-    expect(getThread(robot.id, 'k')).toBeNull()
+    expect(getConversation(conversationIdentityOf('feishu', robot.id, 'c:oc', 'u1'))).toBeNull()
     expect(listTurns(robot.id)).toEqual([])
+    expect(
+      getDb()!.all('SELECT id FROM im_robot_context_turns WHERE robot_id = ?', robot.id),
+    ).toEqual([])
+  })
+})
+
+describe('safe-cut migration from shared sessions', () => {
+  it('renames old shared threads aside and leaves no readable session_id', () => {
+    // Simulate a pre-sender-isolation database.
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    d.exec(`
+      CREATE TABLE im_robots (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL,
+        app_id TEXT NOT NULL, app_secret TEXT NOT NULL DEFAULT '',
+        vendor TEXT NOT NULL, agent_id TEXT NOT NULL, mode TEXT NOT NULL DEFAULT '',
+        tool_allowlist TEXT NOT NULL DEFAULT '[]', require_mention INTEGER NOT NULL DEFAULT 1,
+        chat_allowlist TEXT NOT NULL DEFAULT '[]', dm_mode TEXT NOT NULL DEFAULT 'disabled',
+        dm_allowlist TEXT NOT NULL DEFAULT '[]', max_turn_ms INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0, outbound_ack_at INTEGER,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE im_robot_threads (
+        robot_id TEXT NOT NULL, thread_key TEXT NOT NULL, chat_id TEXT NOT NULL,
+        session_id TEXT, vendor TEXT NOT NULL, turn_count INTEGER NOT NULL DEFAULT 0,
+        last_message_id TEXT, created_at INTEGER NOT NULL, last_active_at INTEGER NOT NULL,
+        PRIMARY KEY (robot_id, thread_key)
+      );
+      CREATE INDEX idx_im_thread_session ON im_robot_threads(session_id);
+      CREATE INDEX idx_im_thread_idle ON im_robot_threads(last_active_at);
+      CREATE TABLE im_robot_turns (
+        id TEXT PRIMARY KEY, robot_id TEXT NOT NULL, thread_key TEXT NOT NULL,
+        chat_id TEXT NOT NULL, sender_id TEXT NOT NULL, in_message_id TEXT NOT NULL,
+        session_id TEXT, started_at INTEGER NOT NULL, finished_at INTEGER,
+        outcome TEXT, outbound_chars INTEGER NOT NULL DEFAULT 0,
+        out_message_id TEXT, error TEXT
+      );
+      CREATE INDEX idx_im_turn_robot ON im_robot_turns(robot_id, started_at DESC);
+      CREATE INDEX idx_im_turn_thread ON im_robot_turns(robot_id, thread_key, started_at DESC);
+    `)
+    d.run(
+      `INSERT INTO im_robots
+         (id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+          require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms,
+          enabled, outbound_ack_at, created_at, updated_at)
+       VALUES ('rb-old','old','feishu','app','','claude','a','','[]',1,'[]','disabled','[]',NULL,0,NULL,1,1)`,
+    )
+    d.run(
+      `INSERT INTO im_robot_threads
+         (robot_id, thread_key, chat_id, session_id, vendor, turn_count, last_message_id,
+          created_at, last_active_at)
+       VALUES ('rb-old','c:oc','oc','shared-sess','claude',3,'m-last',1,1)`,
+    )
+    d.run(
+      `INSERT INTO im_robot_turns
+         (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+          started_at, finished_at, outcome, outbound_chars, out_message_id, error)
+       VALUES ('t1','rb-old','c:oc','oc','alice','m-a','shared-sess',1,2,'complete',10,NULL,NULL)`,
+    )
+    d.run(
+      `INSERT INTO im_robot_turns
+         (id, robot_id, thread_key, chat_id, sender_id, in_message_id, session_id,
+          started_at, finished_at, outcome, outbound_chars, out_message_id, error)
+       VALUES ('t2','rb-old','c:oc','oc','bob','m-b','shared-sess',3,4,'complete',10,NULL,NULL)`,
+    )
+
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(hasSenderIsolationMigration()).toBe(true)
+    expect(hasMigration(d, 'robots.sender_isolation.v1')).toBe(true)
+
+    // Old shared session is not on any sender Conversation.
+    expect(getConversation(conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'alice'))).toBeNull()
+    expect(getConversation(conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'bob'))).toBeNull()
+    expect(
+      d.get("SELECT name FROM sqlite_master WHERE name='im_robot_threads_pre_sender'"),
+    ).toBeTruthy()
+
+    // Indexes must land on the new sender-isolated table, not stay on the archive.
+    const threadIndexes = d.all<{ name: string; tbl_name: string }>(
+      `SELECT name, tbl_name FROM sqlite_master
+       WHERE type = 'index' AND name IN ('idx_im_thread_session', 'idx_im_thread_idle')
+       ORDER BY name`,
+    )
+    expect(threadIndexes).toEqual([
+      { name: 'idx_im_thread_idle', tbl_name: 'im_robot_threads' },
+      { name: 'idx_im_thread_session', tbl_name: 'im_robot_threads' },
+    ])
+    const turnIndexes = d.all<{ name: string; tbl_name: string }>(
+      `SELECT name, tbl_name FROM sqlite_master
+       WHERE type = 'index' AND name IN ('idx_im_turn_robot', 'idx_im_turn_thread')
+       ORDER BY name`,
+    )
+    expect(turnIndexes).toEqual([
+      { name: 'idx_im_turn_robot', tbl_name: 'im_robot_turns' },
+      { name: 'idx_im_turn_thread', tbl_name: 'im_robot_turns' },
+    ])
+
+    // Audit rows preserved.
+    expect(listTurns('rb-old')).toHaveLength(2)
+
+    // First post-upgrade message starts empty — does not inherit shared-sess.
+    const c = claim('rb-old', { senderId: 'alice', messageId: 'm-new' })
+    expect(c.kind).toBe('claimed')
+    if (c.kind !== 'claimed') return
+    expect(c.conversation.sessionId).toBeNull()
+    expect(
+      loadCommittedContext(conversationIdentityOf('feishu', 'rb-old', 'c:oc', 'alice')),
+    ).toEqual([])
+
+    // Migration is idempotent.
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(listTurns('rb-old')).toHaveLength(2)
   })
 })
 
@@ -305,8 +581,6 @@ describe('schema', () => {
   })
 
   it('converges a database that predates these tables', () => {
-    // A pre-existing database with unrelated content is the "old database"
-    // starting point: the tables simply appear, and nothing else is touched.
     getDb()!.exec('CREATE TABLE IF NOT EXISTS unrelated (x TEXT)')
     getDb()!.run("INSERT INTO unrelated (x) VALUES ('keep me')")
     resetRobotStoreForTests()
@@ -317,7 +591,6 @@ describe('schema', () => {
   })
 
   it('converges from a partially created schema', () => {
-    // Interrupted midway: one table exists, the others do not.
     resetDbForTests()
     resetRobotStoreForTests()
     getDb()!.exec(
@@ -326,21 +599,24 @@ describe('schema', () => {
 
     expect(ensureRobotSchema()).toBe(true)
     const robot = createRobot(input())
-    openThread({
+    const claimed = claimInboundMessage({
+      platform: 'feishu',
       robotId: robot.id,
       threadKey: 'k',
+      senderId: 'u1',
       chatId: 'c',
       vendor: 'claude',
       messageId: 'm1',
     })
-    expect(getThread(robot.id, 'k')).not.toBeNull()
+    expect(claimed.kind).toBe('claimed')
+    expect(getConversation(conversationIdentityOf('feishu', robot.id, 'k', 'u1'))).not.toBeNull()
   })
 
   it('rebuilds turn indexes onto the post-busy table after outcome migration', () => {
     resetDbForTests()
     resetRobotStoreForTests()
     const d = getDb()!
-    // Predates `busy`: table + the same index names the runtime INDEXES DDL uses.
+    // Predates `busy` / `reject_reason`: table + the same index names INDEXES uses.
     d.exec(`CREATE TABLE im_robot_turns (
       id TEXT PRIMARY KEY,
       robot_id TEXT NOT NULL,
@@ -386,13 +662,12 @@ describe('schema', () => {
       { name: 'idx_im_turn_thread', tbl_name: 'im_robot_turns' },
     ])
 
-    const kept = d.get<{ outcome: string; outbound_chars: number }>(
-      'SELECT outcome, outbound_chars FROM im_robot_turns WHERE id = ?',
+    const kept = d.get<{ outcome: string; outbound_chars: number; reject_reason: string | null }>(
+      'SELECT outcome, outbound_chars, reject_reason FROM im_robot_turns WHERE id = ?',
       't1',
     )
-    expect(kept).toEqual({ outcome: 'complete', outbound_chars: 10 })
+    expect(kept).toEqual({ outcome: 'complete', outbound_chars: 10, reject_reason: null })
 
-    // New CHECK must accept busy.
     const turnId = beginTurn({
       robotId: 'r1',
       threadKey: 'k',

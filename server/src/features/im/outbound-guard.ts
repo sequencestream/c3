@@ -32,6 +32,9 @@ export const FIXED_NOTICES = {
   error: '处理时出错了,请到 c3 会话中查看详情。',
   guard_refused: '回答里包含疑似凭据的内容,已拦下未发送。请到 c3 会话中查看。',
   busy: '上一个问题还在处理,稍后再问我。',
+  store_unavailable: '机器人存储不可用,本回合未启动。',
+  input_rejected_credential: '疑似凭据,未处理也未保存。',
+  input_rejected_too_long: '消息过长,未处理也未保存。',
 } as const
 
 export type FixedNoticeId = keyof typeof FIXED_NOTICES

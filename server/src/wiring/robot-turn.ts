@@ -64,11 +64,16 @@ export interface RunRobotTurnInput {
    */
   workspacePath: string
   /**
-   * The thread's already-bound session id. Absent on a thread's first message,
-   * which starts a fresh session; present afterwards, so the vendor resumes the
-   * same conversation and the IM thread reads as one continuous chat.
+   * Optional native session cache for this Conversation. Present only when the
+   * supervisor verified it against the Conversation's vendor and revision.
+   * Absent (or after workdir rebuild / vendor change) means `prompt` already
+   * carries any database recovery seed for a fresh native session.
    */
   sessionId?: string
+  /**
+   * The current user question, or a database-seeded prompt when the native
+   * session cache is unavailable. The supervisor owns seed formatting.
+   */
   prompt: string
   /** Wall-clock ceiling for this turn. */
   maxTurnMs: number

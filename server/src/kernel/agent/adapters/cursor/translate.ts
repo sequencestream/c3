@@ -43,6 +43,7 @@
  * infers reasoning from message text or event names.
  */
 import type { CanonicalBlock, CanonicalMessage, CanonicalToolResult } from '../types.js'
+import { ASK_TOOL_NAME, isCursorAskName, normalizeCursorAskInput } from './ask.js'
 import { cursorToolCategory } from './tools.js'
 
 /**
@@ -380,11 +381,31 @@ export class CursorStreamTranslator {
     // The tool, its arguments and its result all live inside the discriminated
     // `tool_call` payload; the flat fields are the older shape of the same three.
     const native = cursorToolPayload(event.tool_call)
-    const name = str(event.name) ?? native?.name ?? prior?.name ?? 'unknown'
+    // The tool's identity comes from the discriminated `tool_call` arm or the
+    // flat `name`. Cursor's native ask appears as `askQuestion` (the stripped
+    // discriminant) or `AskQuestion`, so the two are matched case-insensitively
+    // and canonicalized to the single wire name `AskQuestion` (cursor-only; a
+    // same-named tool on another vendor is never rewritten).
+    const rawName = str(event.name) ?? native?.name ?? prior?.name ?? 'unknown'
+    const isAsk = isCursorAskName(rawName)
+    const name = isAsk ? ASK_TOOL_NAME : rawName
     // The running frame carries the arguments; the completed one need not repeat
     // them, so the opening call's input is what the block keeps.
     const input = prior?.input ?? native?.args ?? event.args ?? {}
-    if (!prior) this.openTools.set(id, { name, input })
+    // Normalize a Cursor ask to the unified ask shape ONCE, at the opening frame.
+    // A completion reuses that stored, already-normalized input instead of
+    // re-normalizing (which would fail against the unified shape).
+    let askInput = input
+    let askNormalizationFailed: string | undefined
+    if (isAsk && !prior) {
+      const normalized = normalizeCursorAskInput(input)
+      if (normalized.ok) {
+        askInput = { questions: normalized.questions }
+      } else {
+        askNormalizationFailed = normalized.error
+      }
+    }
+    if (!prior) this.openTools.set(id, { name, input: askInput })
 
     const result = finished
       ? toolResult(native?.result ?? event.result, status === 'error')
@@ -394,15 +415,21 @@ export class CursorStreamTranslator {
       type: 'tool_use',
       id,
       name,
-      input,
+      input: askInput,
       ...(result ? { result } : {}),
       vendorExtra: {
-        category: cursorToolCategory(name) ?? 'unknown',
+        category: isAsk ? 'meta' : (cursorToolCategory(name) ?? 'unknown'),
         ...(status ? { status } : {}),
         ...(idSource ? { idSource } : {}),
         // A completion for a call c3 never saw opened: surfaced as its own block
         // rather than guessed onto a neighbouring tool.
         ...(orphanCompletion ? { orphanCompletion: true } : {}),
+        // The native ask payload is kept only to re-attach original identities
+        // when shaping the resume answer; it never reaches the wire or the UI.
+        ...(isAsk && !prior ? { nativeAskInput: input } : {}),
+        // A malformed ask is surfaced to the run coordinator as an explicit
+        // error rather than a half-formed question panel.
+        ...(askNormalizationFailed ? { askNormalizationFailed } : {}),
       },
     }
 
@@ -410,9 +437,10 @@ export class CursorStreamTranslator {
       messages: [
         ...pending,
         this.envelope('assistant', [block], {
-          // Cursor's permission decision is made once at launch; no per-call c3
-          // or human ruling exists, so every tool is recorded as pre-approved.
-          preApproved: true,
+          // Every Cursor tool is pre-approved except AskQuestion: that one is the
+          // conversation's own question to the human and is answered through the
+          // driver bridge, so it must NOT carry the pre-approved audit flag.
+          preApproved: !isAsk,
         }),
       ],
     }

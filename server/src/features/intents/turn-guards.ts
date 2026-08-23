@@ -9,6 +9,7 @@
  * dependency-free module both can import without pulling in the orchestrator.
  */
 import type { ServerToClient } from '@ccc/shared/protocol'
+import { ASK_TOOL_NAME } from '../../kernel/agent/adapters/cursor/ask.js'
 
 /**
  * Continuation budget per intent — a hard gate. A continuation is a turn the
@@ -18,9 +19,10 @@ import type { ServerToClient } from '@ccc/shared/protocol'
 export const MAX_CONTINUATIONS = 10
 
 /**
- * Whether a session buffer holds an `AskUserQuestion` tool call that never got
- * its `tool_result` — i.e. a human decision point still waiting for the human.
- * A pending question is never continued over and never auto-answered.
+ * The ask tools whose unanswered call is a human decision point: Claude's
+ * `AskUserQuestion` and Cursor's headless `AskQuestion` (both canonicalized to
+ * the same answer channel). A pending question is never continued over and never
+ * auto-answered.
  */
 export function hasPendingQuestion(buffer: readonly ServerToClient[]): boolean {
   const answered = new Set<string>()
@@ -28,7 +30,11 @@ export function hasPendingQuestion(buffer: readonly ServerToClient[]): boolean {
     if (e.type === 'tool_result') answered.add(e.toolUseId)
   }
   for (const e of buffer) {
-    if (e.type === 'tool_use' && e.toolName === 'AskUserQuestion' && !answered.has(e.toolUseId)) {
+    if (
+      e.type === 'tool_use' &&
+      (e.toolName === 'AskUserQuestion' || e.toolName === ASK_TOOL_NAME) &&
+      !answered.has(e.toolUseId)
+    ) {
       return true
     }
   }

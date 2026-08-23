@@ -380,6 +380,13 @@ export interface AgentRun {
   messages(): AsyncIterable<CanonicalMessage>
   /** Kill the whole turn. The one control every vendor supports. Required. */
   abort(): void
+  /**
+   * Resolves once the run's child process has fully exited and its side effects
+   * (a per-run MCP config file) have been restored. Optional: a run that never
+   * finishes its cleanup would otherwise make a follower `start()` in the same
+   * workspace fail on the leftover claim.
+   */
+  settled?: Promise<void>
 
   /** Mid-turn interrupt. Present iff `capabilities.interrupt`. */
   interrupt?(): Promise<void>

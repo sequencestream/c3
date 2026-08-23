@@ -197,6 +197,15 @@ describe('deriveActionDescriptor — priority', () => {
     })
   })
 
+  it('deep-links a pending Cursor AskQuestion the same as AskUserQuestion', () => {
+    findTodo.mockReturnValue(makeEvent({ id: 'e-ask-c', toolName: 'AskQuestion' }))
+    const intent = makeIntent({ id: 'i-1', lastWorkSessionId: 'sess-1' })
+    expect(derive(intent)).toEqual({
+      labelCode: 'ask_user_question_pending',
+      target: { type: 'workcenter-event', eventId: 'e-ask-c' },
+    })
+  })
+
   it('maps an ordinary gated tool to permission_pending', () => {
     findTodo.mockReturnValue(makeEvent({ id: 'e-perm', toolName: 'Edit' }))
     expect(derive(makeIntent({ id: 'i-1', lastWorkSessionId: 'sess-1' }))).toEqual({

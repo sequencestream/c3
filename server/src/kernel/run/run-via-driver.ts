@@ -25,7 +25,9 @@ import {
 } from '@ccc/shared/protocol'
 import { mkdirSync } from 'node:fs'
 import type {
+  AgentRun,
   ApprovalHandler,
+  CanonicalBlock,
   CanonicalMessage,
   RemoteMcpServer,
   VendorAdapter,
@@ -36,6 +38,12 @@ import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import { VENDOR_CAPABILITIES } from '../agent/adapters/capabilities.js'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
+import {
+  ASK_TOOL_NAME,
+  buildCursorResumePrompt,
+  renderAskAnswers,
+  validateAskAnswers,
+} from '../agent/adapters/cursor/ask.js'
 import { getSpecsBase, relayCodexHome } from '../config/workspace-path.js'
 import {
   freezeSessionAgent,
@@ -44,7 +52,8 @@ import {
   resolveSessionLaunch,
   resolveSessionStoreScope,
 } from '../agent-config/index.js'
-import { waitForDecision } from '../permission/index.js'
+import { askQuestions } from '../../consensus-tally.js'
+import { waitForAskAnswers, waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import { VENDOR_AUTH_PROFILES } from '../sandbox/vendor-auth.js'
 import { agentErrorEvent } from './agent-events.js'
@@ -219,7 +228,7 @@ function errMsg(err: unknown): string {
  * events (`tool_use`, `tool_result`), so the web can identify interaction tools
  * without a client-side name-based allowlist.
  */
-const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode', ASK_TOOL_NAME])
 
 /**
  * The tool gate a driver-path vendor must use when a session imposes its own grid
@@ -642,54 +651,172 @@ export async function runViaDriver(
     disposeDriverMcp = bound.dispose
   }
 
+  /**
+   * The neutral DriverStartOptions shared by the initial turn and every Cursor
+   * AskQuestion `--resume` subprocess. A resume pins the SAME native session and
+   * replaces the visible user turn with the hidden answer prompt — the session
+   * already holds the system instruction and any attachments, so those are only
+   * sent on the initial turn.
+   */
+  const driverStartFor = (
+    prompt: string,
+    resume?: string,
+  ): Parameters<VendorAdapter['driver']['start']>[0] => ({
+    prompt,
+    ...(systemInstruction && !resume ? { systemInstruction } : {}),
+    ...(images && images.length > 0 && !resume ? { images } : {}),
+    cwd: driverCwd,
+    workspacePath,
+    signal: cycleAbort.signal,
+    actionMode,
+    toolGate,
+    ...(model ? { model } : {}),
+    ...(relayCandidates ? { relayCandidates } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(rt.sandboxTmpDir ? { sandboxTmpDir: rt.sandboxTmpDir } : {}),
+    ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
+    ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
+    ...(rt.sandboxPaths ? { sandboxed: true } : {}),
+    ...(adapter.vendor === 'codex' ? { additionalDirectories: [getSpecsBase(workspacePath)] } : {}),
+    ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
+    networkAccess: robotProfile
+      ? adapter.vendor === 'codex' && actionMode === 'build' && robotProfile.networkAccess
+      : true,
+    webSearch: true,
+    // A pending session starts fresh; a real id resumes that native session.
+    ...(resume ? { resume } : runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
+  })
+
+  /** A canonical message that closes a pending AskQuestion with its ONE tool_result. */
+  const askResult = (
+    sessionId: string,
+    ask: Extract<CanonicalBlock, { type: 'tool_use' }>,
+    content: string,
+    isError: boolean,
+  ): CanonicalMessage => ({
+    vendor: adapter.vendor,
+    sessionId,
+    role: 'assistant',
+    blocks: [
+      {
+        type: 'tool_use',
+        id: ask.id,
+        name: ASK_TOOL_NAME,
+        input: ask.input ?? {},
+        result: { content, isError },
+      },
+    ],
+    ts: Date.now(),
+  })
+
+  /**
+   * Consume one Cursor subprocess's canonical stream through a FRESH
+   * WireEmitter, bridging any pending AskQuestion to the human-answer channel.
+   *
+   * Per-subprocess emitter isolation is mandatory: every CursorRun's translator
+   * re-counts synthesized block ids (`assistant-0` …), so a shared emitter would
+   * read a resumed subprocess's `assistant-0` as a new delta of the previous
+   * span and truncate the reply. The original AskQuestion's single `tool_result`
+   * is therefore synthesized by the emitter that OPENED it — this function's own
+   * emitter on its first invocation — exactly once.
+   */
+  const bridgedAskIds = new Set<string>()
+  const consumeAskAwareStream = async (run: AgentRun): Promise<void> => {
+    const emitter = new WireEmitter((m) => emit(runId, m))
+    for await (const msg of run.messages()) {
+      if (cycleAbort.signal.aborted) break
+      emitter.consume(msg)
+      const ask = msg.blocks.find(
+        (b): b is Extract<CanonicalBlock, { type: 'tool_use' }> =>
+          b.type === 'tool_use' &&
+          b.name === ASK_TOOL_NAME &&
+          !b.result &&
+          !bridgedAskIds.has(b.id),
+      )
+      if (!ask || cycleAbort.signal.aborted) continue
+      bridgedAskIds.add(ask.id)
+
+      // Fail closed: a malformed ask (missing questions, bad prompt, duplicates)
+      // ends the turn with a visible error and no permission_request, wait-user
+      // todo, or resume — never a half-formed question panel.
+      const failure = ask.vendorExtra?.askNormalizationFailed
+      if (failure) {
+        emitter.consume(
+          askResult(runId, ask, `[c3] Cursor AskQuestion 无法归一化：${String(failure)}`, true),
+        )
+        throw new Error(`[c3] Cursor AskQuestion 输入无效：${String(failure)}`)
+      }
+      const questions = askQuestions(ask.input)
+      if (!questions) {
+        emitter.consume(askResult(runId, ask, '[c3] Cursor AskQuestion 没有可作答的问题', true))
+        throw new Error('[c3] Cursor AskQuestion 没有可作答的问题')
+      }
+
+      // Register the wait-user todo FIRST, then the permission_request — the same
+      // order the claude gateway uses, so WorkCenter shows the item before the
+      // answering panel does.
+      const requestId = `cursor-ask:${runId}:${ask.id}`
+      onPermissionRequest?.({
+        requestId,
+        toolName: ASK_TOOL_NAME,
+        input: ask.input ?? {},
+        sessionId: runId,
+        workspacePath,
+        sessionKind: rt.sessionKind,
+        initiatedBySubject: rt.initiatedBySubject ?? null,
+      })
+      emit(runId, {
+        type: 'permission_request',
+        requestId,
+        toolName: ASK_TOOL_NAME,
+        input: ask.input ?? {},
+        isUserInteraction: true,
+      })
+
+      // Block on the human. `waitForAskAnswers` re-validates every answer
+      // server-side; an invalid submission stays pending (the WS handler shows
+      // `permission.answersInvalid` and the user resubmits).
+      const { decision, answers } = await waitForAskAnswers(
+        requestId,
+        (a) => validateAskAnswers(questions, a),
+        cycleAbort.signal,
+      )
+      if (cycleAbort.signal.aborted) break
+      const answerMap = answers ?? {}
+
+      // Close the ask with its ONE tool_result on the emitter that opened it
+      // (the only emitter that may — its block-id state owns the ask).
+      emitter.consume(
+        askResult(
+          runId,
+          ask,
+          decision === 'allow' ? renderAskAnswers(questions, answerMap) : '[c3] 用户拒绝了该问题',
+          decision !== 'allow',
+        ),
+      )
+
+      // Free the current subprocess either way: the resume would write the same
+      // project MCP file, and a denied/stopped child must not keep holding it for
+      // the next turn on this workspace. `settled` resolves only after the child
+      // exited AND the MCP config was restored (CursorRun's pump finally).
+      run.abort()
+      if (run.settled) await run.settled
+      if (cycleAbort.signal.aborted) break
+      if (decision !== 'allow') break
+
+      // Accepted: continue the SAME native session via `--resume`, handing the
+      // answers to the model as a hidden question-and-answer prompt.
+      const resumed = await adapter.driver.start(
+        driverStartFor(buildCursorResumePrompt(questions, answerMap), runId),
+      )
+      await consumeAskAwareStream(resumed)
+      return
+    }
+  }
+
   try {
-    const run = await adapter.driver.start({
-      prompt: userTurn,
-      ...(systemInstruction ? { systemInstruction } : {}),
-      ...(images && images.length > 0 ? { images } : {}),
-      cwd: driverCwd,
-      // The registered root — the Claude driver reads consensus config / attributes
-      // audit off this, not the effective (worktree/sandbox) driverCwd above.
-      workspacePath,
-      signal: cycleAbort.signal,
-      actionMode,
-      toolGate,
-      ...(model ? { model } : {}),
-      ...(relayCandidates ? { relayCandidates } : {}),
-      // Optional model capabilities: the codex driver's relay branch registers the
-      // CLI-launched model in a local catalog (2026-08-08-013) so codex stops
-      // falling back to default metadata. `sandboxTmpDir` (the arapuca allow-set
-      // rw dir) must accompany a sandboxed run — the catalog file has to land
-      // there or the sandboxed codex cannot read it at startup.
-      ...(contextWindow !== undefined ? { contextWindow } : {}),
-      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-      ...(rt.sandboxTmpDir ? { sandboxTmpDir: rt.sandboxTmpDir } : {}),
-      ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
-      ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
-      ...(rt.sandboxPaths ? { sandboxed: true } : {}),
-      ...(adapter.vendor === 'codex'
-        ? { additionalDirectories: [getSpecsBase(workspacePath)] }
-        : {}),
-      ...(driverMcpServers ? { mcpServers: driverMcpServers } : {}),
-      // Work & intent sessions are interactive, user-driven runs that must be able
-      // to reach the network (web search/fetch + sandboxed command network access).
-      // Codex denies both by default; claude ignores these flags and governs
-      // network via their tool allowlist (2026-06-15). Scheduled runs do NOT pass
-      // through here — they stay config-gated by toolAllowlist (dispatcher.ts).
-      //
-      // A robot turn is different: its network opt-in comes from the robot's own
-      // profile and means something ONLY when the Codex native sandbox is
-      // workspace-write (spec §4 matrix). The profile's opt-in is re-checked here
-      // against vendor + action mode so a stale `network-access` marker in a
-      // read-only or non-codex runtime is inert — and every other robot turn is an
-      // explicit `false`, overriding the unconditional `true` above.
-      networkAccess: robotProfile
-        ? adapter.vendor === 'codex' && actionMode === 'build' && robotProfile.networkAccess
-        : true,
-      webSearch: true,
-      // A pending session starts fresh; a real id resumes that native session.
-      ...(runId.startsWith(PENDING_SESSION_PREFIX) ? {} : { resume: runId }),
-    })
+    const run = await adapter.driver.start(driverStartFor(userTurn))
 
     // Bind pending→real once the native session id resolves.
     // session.create, so this is immediate). Mirrors launchRun's bind so the
@@ -719,11 +846,7 @@ export async function runViaDriver(
       eventBus.publish('run:bound', { prevId: prev, realId: sid, workspacePath })
     }
 
-    const emitter = new WireEmitter((m) => emit(runId, m))
-    for await (const msg of run.messages()) {
-      if (cycleAbort.signal.aborted) break
-      emitter.consume(msg)
-    }
+    await consumeAskAwareStream(run)
     if (!cycleAbort.signal.aborted) emit(runId, { type: 'turn_end', reason: 'complete' })
   } catch (err) {
     settledReason = 'error'

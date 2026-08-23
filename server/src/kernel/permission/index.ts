@@ -14,10 +14,12 @@ export {
 } from './gateway.js'
 export {
   waitForDecision,
+  waitForAskAnswers,
   resolveDecision,
   pendingCount,
   registerPermissionResolver,
   type Decision,
+  type DecisionResolveResult,
   type DecisionResult,
 } from './registry.js'
 export {

@@ -15,6 +15,7 @@ import {
   askQuestionsOf,
   initAskDraft,
   isAskConsensus,
+  isAskTool,
   type AskDraftSlot,
   type AskQuestionView,
 } from '../../../lib/ask'
@@ -30,8 +31,6 @@ const RISK_AXES = ['read', 'write', 'execute', 'network'] as const
 function activeAxes(risks: NormalizedToolRisk['risks']): (typeof RISK_AXES)[number][] {
   return RISK_AXES.filter((a) => risks[a])
 }
-
-const ASK_TOOL_LABEL = 'AskUserQuestion'
 
 const props = defineProps<{
   event: WaitUserInvolveEvent | null
@@ -133,19 +132,18 @@ const askConsensus = computed(() => {
 })
 
 const askQuestions = computed<AskQuestionView[]>(() =>
-  props.event?.toolName === 'AskUserQuestion' ? askQuestionsOf(props.event.toolInput) : [],
+  isAskTool(props.event?.toolName) ? askQuestionsOf(props.event?.toolInput) : [],
 )
 
 function initCurrentAskDraft() {
   askPanelExpanded.value = true
-  askDraft.value =
-    props.event?.toolName === 'AskUserQuestion'
-      ? initAskDraft(props.event.toolInput, askConsensus.value)
-      : {}
+  askDraft.value = isAskTool(props.event?.toolName)
+    ? initAskDraft(props.event?.toolInput, askConsensus.value)
+    : {}
 }
 
 function isAskActionable(event: WaitUserInvolveEvent): boolean {
-  return event.status === 'todo' && event.toolName === 'AskUserQuestion'
+  return event.status === 'todo' && isAskTool(event.toolName)
 }
 
 function isOptionSelected(questionIndex: number, label: string): boolean {
@@ -286,9 +284,7 @@ watch(
       <!-- Event actions -->
       <div class="wc-detail-actions">
         <!-- Allow / Deny for todo events with a requestId -->
-        <template
-          v-if="event.status === 'todo' && event.requestId && event.toolName !== 'AskUserQuestion'"
-        >
+        <template v-if="event.status === 'todo' && event.requestId && !isAskTool(event.toolName)">
           <button class="wc-btn wc-btn-allow" @click="emit('respond', event, 'allow')">
             {{ t('common.action.allow.label') }}
           </button>
@@ -319,7 +315,7 @@ watch(
       <!-- AskUserQuestion panel -->
       <div v-if="isAskActionable(event) && askPanelExpanded" class="wc-ask-panel">
         <div class="wc-ask-label">
-          {{ t('permission.ask.answerQuestion.label') }} <code>{{ ASK_TOOL_LABEL }}</code>
+          {{ t('permission.ask.answerQuestion.label') }} <code>{{ event.toolName }}</code>
           <span v-if="askConsensus" class="wc-ask-consensus-badge">
             {{ t('permission.ask.multiAgentSuggestion.label') }}
           </span>
@@ -418,10 +414,7 @@ watch(
           </button>
         </div>
       </div>
-      <div
-        v-else-if="event.toolName === 'AskUserQuestion' && event.status !== 'auto'"
-        class="wc-ask-readonly"
-      >
+      <div v-else-if="isAskTool(event.toolName) && event.status !== 'auto'" class="wc-ask-readonly">
         {{
           event.status === 'canceled' ? t('workcenter.ask.canceled') : t('workcenter.ask.answered')
         }}

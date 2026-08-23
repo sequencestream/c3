@@ -84,7 +84,11 @@ Cursor 与 Claude/Codex 一样进入 `HOST_BINARIES`,但它是其中唯一**不�
   工具身份、鉴权与审计出现第二套规则。因此这一项不等待任何探针。
 - `taskStore: false` —— 没有 task API;`updateTodos` 是对话内记账调用,不是 c3 可
   读写的存储。
-- `nativeUserInput: false` —— headless 运行从不向人发问。
+- `nativeUserInput: false` —— CLI 没有原生的回合内等待输入通道(stdin 在派发后即关闭)。
+  headless 运行仍可经 c3 的人机桥接向人发问:Cursor 原生 `AskQuestion` 工具被识别、归一化后,
+  经 `permission_request` + wait-user 事件交给会话页 / WorkCenter 逐题作答,答案以同一原生会话的
+  `--resume` 续跑交还模型(见「AskQuestion 人机问答」)。这是跨子进程模拟,不是获得 Cursor 的
+  原生输入能力,故标志保持为假。
 - `setActionMode` / `streamingPush` / `forkSession: false` —— 模式是 argv,在轮次
   启动时固定(可逐轮改变,但不能改活跃 run);下一轮是新的进程而非推入活跃会话;
   `--resume` 服务于中性 resume 语义而非 fork。
@@ -117,7 +121,10 @@ agent-team 的常驻 lead。
 - **工具**按稳定 `call_id` 关联(started 与 completed 同 id),结果回填到同一
   `tool_use` 块;不按到达顺序配对并发调用。工具身份来自 `tool_call` 载荷里唯一
   的判别键 —— `{ editToolCall: { args, result } }` 这样的形状,去掉 `ToolCall`
-  后缀即得工具名。无 `call_id` 时按确定性序号合成并标记降级;补全帧找不到对应开始
+  后缀即得工具名。`askQuestionToolCall` 与扁平 `name: 'AskQuestion'` 是这条规则的人机
+  问答例外:两种来源都以大小写不敏感比较识别,统一规范为线上名 `AskQuestion`,命中时去掉
+  该块的 `preApproved`、把 `vendorExtra.category` 记为 `meta`(见「AskQuestion 人机问答」)。
+  无 `call_id` 时按确定性序号合成并标记降级;补全帧找不到对应开始
   帧时单独成块并标 `orphanCompletion`,不误绑到他工具。
 - **未知事件 / 运行时记账帧(`task`/`usage`/`request`)**完整保存在 envelope 或
   block 的 `vendorExtra`,不丢弃也不伪造转录内容。
@@ -148,9 +155,98 @@ argv 给出三组各自独立、且在轮次启动时固定的旋钮:工作区�
 `listTools()` 向 `freezeTools()` 提供原生工具静态表 —— 工具名即帧里判别键去后缀后
 的值(`read` / `shell` / `semSearch` / …),既是线上身份也是控制台显示名。每项归入
 六个中立类别之一:`read` / `search` / `edit` / `execute` / `network` / `meta`;另附
-MCP 命名空间前缀(保守按 write)。风险归一化只映射原生参数形状已知的工具;其余
+MCP 命名空间前缀(保守按 write)。`askQuestion` 归入 `meta` 且非 write
+(`cursorToolIsWrite('askQuestion') === false`):它是只读的人机问答调用,`listTools()`
+因此把它列为只读 `meta` 项,`freezeTools()`、robot 允许集与工具清单面板不再按未知写
+工具保守处理。风险归一化只映射原生参数形状已知的工具;其余
 (`mcp`/`task`/`createPlan`/`updateTodos`/`readLints`/`generateImage`/`recordScreen`)
-保持 `unknown-tool` 并 **fail-closed**——未知工具永不因名字近似而默认放行。
+保持 `unknown-tool` 并 **fail-closed**——未知工具永不因名字近似而默认放行。`askQuestion`
+不参与普通工具风险共识,保持 `unknown-tool` 亦无实际影响。
+
+## AskQuestion 人机问答
+
+Cursor 原生 `AskQuestion` 是 headless 运行里唯一的人机决策点:CLI 没有 TTY 可接收答案,
+若把它当作预批准工具直接放行,用户只能看到工具 JSON,工作流还会越过未回答的问题继续。
+c3 把它接入既有的人机问答通道,与 Claude `AskUserQuestion` 对齐;该能力适用于所有经
+driver 路径托管的 Cursor 会话(work / intent / spec / discussion / automation / robot)。
+
+### 识别与规范名
+
+工具身份来自 `tool_call` 判别键去 `ToolCall` 后缀(`askQuestionToolCall` → `askQuestion`)
+或扁平 `name` 字段(可能直接写 `AskQuestion`),两种来源都以大小写不敏感比较识别并统一
+规范为线上名 **`AskQuestion`** —— 它是唯一落线字符串:`tool_use.toolName`、
+`permission_request.toolName`、wait-user 事件 `toolName`、UI 判定、`hasPendingQuestion`
+与 `actionDescriptor` 都以它为准;Claude 一侧仍是 `AskUserQuestion`,二者在判定表里并列。
+识别只在 `vendor = cursor` 时启用,其他厂商出现同名工具不被改写。翻译器命中时改写工具名、
+去掉该块的 `preApproved`、把 `vendorExtra.category` 记为 `meta`;其余 Cursor 工具保持原名
+与预批准审计。
+
+### 输入归一化
+
+Cursor 输入先转换为既有 ask 形状再进入 wait-user 事件与 UI(与 `askQuestions()` /
+`AskQuestionView` 一致):
+
+| Cursor 输入              | 统一字段                | 规则                               |
+| ------------------------ | ----------------------- | ---------------------------------- |
+| `questions[].prompt`     | `question`              | 非空字符串,也是答案的键            |
+| 问题标识                 | `header`                | 有可展示标识时使用,否则为空字符串  |
+| `allow_multiple`         | `multiSelect`           | 仅严格 `true` 表示多选,其余为单选  |
+| `options[].label` / `id` | `options[].label`       | 优先非空 `label`,否则使用非空 `id` |
+| 选项补充文本             | `options[].description` | 仅保留字符串值                     |
+
+`questions` 必须是非空数组;每题必须有非空 `prompt` 与数组形态的 `options`(无有效选项的
+题仍可用既有「自定义回复」作答);问题文本必须唯一,因为 `permission_response.answers` 以
+问题文本为键,重复问题不得被静默覆盖。归一化失败以明确的运行错误收束,不创建不可作答的
+`permission_request` 或 wait-user 待办,也不自动续跑。合法输入复用服务端 `askQuestions()`
+与前端 `web/src/lib/ask.ts`,不建立 Cursor 专用的第二套问答组件;服务端保留原生问题与选项
+标识的关联,仅用于构造 Cursor 续跑答案,不扩展线协议。
+
+### driver 桥接与续跑
+
+协调层为每个待答 `AskQuestion` 先登记 `status: todo` 的 wait-user 事件
+(`toolName = 'AskQuestion'`),再发送同一 `requestId` 的 `permission_request`
+(`toolName = 'AskQuestion'`、统一 ask 形状、`isUserInteraction = true`),幂等键为
+`(sessionId, toolUseId)`。请求存在期间逻辑运行保持 `awaiting_permission`;底层单向子进程
+可以结束或被收束,但不得发出使请求失效的普通 `turn_end`。
+
+- `allow` 必须携带覆盖全部问题的非空答案;服务端在解出待决请求前重新校验单选、多选与
+  自定义回复,并依据归一化时保留的映射补回原生选项标识,不信任前端校验。无效答案返回可见
+  错误并保持请求与 wait-user 事件为 `todo`,允许修正后重交。
+- 答案被接受后,原 `toolUseId` 恰好产生一个成功 `tool_result`,关闭 pending 守卫;随后以
+  新 emitter 转发恢复进程的文本与工具帧。若续跑启动失败,问题仍视为已回答,事件不退回
+  `todo`,运行以可见错误结束。
+- 答案以一条不产生 `user_text` 回显的内部续跑提示交给同一 Cursor session,并以
+  `--resume <sessionId>` 启动下一子进程;提示只用于回答该次 `AskQuestion`,不伪装成新的
+  业务指令。
+- `deny` 或运行停止不启动 `--resume`;人工拒绝把事件置为 `canceled`,运行中止沿用默认
+  拒绝与晚到响应空操作语义,不留下仍显示为可操作的幽灵请求。
+
+**续跑转发的块 id 隔离(必做)**:`WireEmitter` 按块 id 记录 `textLen` / `toolSeen`,而每个
+`CursorRun` 新建的翻译器合成 id 从 `assistant-0` / `thinking-0` / `tool-synth-0` 重新计数;
+若整轮共用一个 emitter,续跑子进程的 `assistant-0` 会被当作前一子进程同名 span 的增量而
+截断。因此每个子进程使用一个全新的 `WireEmitter`:原始 `AskQuestion` 的 `tool_result` 由
+打开该 `tool_use` 的 emitter(第一个子进程的 emitter)合成恰好一次,之后才用新 emitter 消费
+续跑流 —— 既关闭 pending 守卫,又不丢失续跑回复的首段文本。
+
+**多智能体共识(本次非目标)**:`runAskConsensus` 目前只被 Claude 网关调用,driver 路径没有
+`currentAgentId`、滚动 `context`、注册根 `workspacePath` 与 `onConsensusResolved` 审计
+钩子的现成接线,因此本次不把问答共识接入 driver 路径;所有待答 Cursor 问题都走人工面板。
+
+### 作答入口、守卫与深链
+
+会话页 `PermissionPrompt.vue` 与 WorkCenter `EventDetail.vue` 的问答判定同时识别
+`AskUserQuestion` 与 `AskQuestion`,把实际工具名用于标题与历史记录,复用统一输入与草稿逻辑
+(逐题单选 / 多选 / 自定义回复 / 完整性校验);两个入口发送同一
+`permission_response { requestId, decision, answers? }`。合法 `AskQuestion` 不再展示为仅有
+原始 `toolInput` 的普通 allow/deny 卡片;已终结的事件只读展示,不能重复回答。
+
+「待回答问题」是由未配对的用户问答 `tool_use` 派生的统一事实:`hasPendingQuestion` 同时
+识别两种工具,意图队列、顾问校验与工作会话 resume 共用;Cursor 问题未回答时 resume 返回
+既有 `intent.pendingQuestionUnanswered`,自动化不得以普通继续提示越过它。wait-user 事件
+`toolName = 'AskQuestion'` 仍映射到既有 `actionDescriptor.labelCode = ask_user_question_pending`,
+目标保持 `{ type: 'workcenter-event', eventId }` —— 点击意图「下一步」打开 WorkCenter 并
+选中可回答的同一事件。该标签码表达「待回答的人机问题」而非 Claude 专属工具名,不新增
+第二个标签码或意图状态。
 
 ## MCP
 

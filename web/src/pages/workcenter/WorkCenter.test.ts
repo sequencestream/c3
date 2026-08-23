@@ -668,6 +668,70 @@ describe('EventDetail.vue — AskUserQuestion', () => {
   })
 })
 
+describe('EventDetail.vue — AskQuestion（Cursor 规范名）', () => {
+  it('renders the ask panel for toolName AskQuestion and labels the actual tool name', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({ toolName: 'AskQuestion', toolInput: askToolInput }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    expect(wrapper.find('.wc-ask-panel').exists()).toBe(true)
+    expect(wrapper.find('.wc-ask-label code').text()).toBe('AskQuestion')
+    expect(wrapper.findAll('.wc-detail-actions .wc-btn-allow')).toHaveLength(0)
+    expect(wrapper.findAll('.wc-detail-actions .wc-btn-deny')).toHaveLength(0)
+  })
+
+  it('answers single and multi-select questions via the same submit-ask payload', async () => {
+    const event = ev({ toolName: 'AskQuestion', toolInput: askToolInput })
+    const wrapper = mount(EventDetail, { props: { event, workspaces: WORKSPACES } })
+
+    await wrapper.findAll('input[type="radio"]')[1].setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[0].setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[1].setValue(true)
+    await wrapper.find('.wc-ask-actions .wc-btn-allow').trigger('click')
+
+    expect(wrapper.emitted('submit-ask')?.[0]).toEqual([
+      event,
+      {
+        'Where should this run?': 'Production',
+        'Which checks should run?': 'Unit tests, E2E tests',
+      },
+    ])
+  })
+
+  it('shows the custom reply input for a Cursor ask after selecting the synthetic option', async () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({ toolName: 'AskQuestion', toolInput: askToolInput }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.findAll('.wc-ask-option-custom input')[0].setValue(true)
+    expect(wrapper.find('.wc-ask-custom-input').exists()).toBe(true)
+    await wrapper.find('.wc-ask-custom-input').setValue('Canary first')
+    expect((wrapper.find('.wc-ask-custom-input').element as HTMLInputElement).value).toBe(
+      'Canary first',
+    )
+  })
+
+  it('renders a done Cursor ask as read-only history without action controls', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({ status: 'done', toolName: 'AskQuestion', toolInput: askToolInput }),
+        workspaces: WORKSPACES,
+      },
+    })
+
+    expect(wrapper.find('.wc-ask-readonly').exists()).toBe(true)
+    expect(wrapper.find('.wc-ask-panel').exists()).toBe(false)
+    expect(wrapper.find('.wc-btn-allow').exists()).toBe(false)
+    expect(wrapper.find('.wc-btn-deny').exists()).toBe(false)
+  })
+})
+
 describe('EventDetail.vue — attribute list', () => {
   it('renders all four rows when the event has an owning intent', () => {
     const wrapper = mount(EventDetail, {

@@ -184,7 +184,7 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 {count} 件の質問への回答を要求 · AskUserQuestion",
+      "askQuestion": "🙋 {count} 件の質問への回答を要求 · {toolName}",
       "useTool": "🔧 ツール {toolName} の使用を要求"
     },
     "ask": {
@@ -2387,6 +2387,9 @@
     },
     "prompt": {
       "unsupportedFile": "メッセージには画像のみ添付できます(受信: \"{mediaType}\")。"
+    },
+    "permission": {
+      "answersInvalid": "提出された回答が不完全です。修正してもう一度送信してください。{reason}"
     },
     "intent": {
       "notFound": "意図が見つかりません。",

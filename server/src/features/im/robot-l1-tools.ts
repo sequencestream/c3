@@ -107,6 +107,26 @@ function freshScope(auth: RobotL1AuthContext): CallScopeSnapshot | 'unbound' | '
   return r.scope
 }
 
+/**
+ * Workspace discovery returns the newest valid intersection even when its
+ * authorization version moved during the turn. The signal still invalidates
+ * the final answer, while a revoked or replaced binding cannot switch subject.
+ */
+function freshDiscoveryScope(auth: RobotL1AuthContext): CallScopeSnapshot | 'changed' {
+  const r = resolveCallScope({
+    robotId: auth.robotId,
+    senderId: auth.senderId,
+    chat: auth.chat,
+    expectedBindingId: auth.expectedBindingId,
+  })
+  if (!r.ok) {
+    auth.onScopeChanged?.()
+    return 'changed'
+  }
+  if (r.scope.scopeHash !== auth.turnStartScopeHash) auth.onScopeChanged?.()
+  return r.scope
+}
+
 function pathFor(workspaceName: string): string | null {
   return resolveWorkspaceRoot(workspaceName)
 }
@@ -186,9 +206,27 @@ function parseFindBody(result: AutomationC3ToolResult): Record<string, unknown>[
   return arr.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
 }
 
-/** Build the six L1 read tools with call-level scope. */
+/** Build the six ledger reads plus workspace discovery with call-level scope. */
 export function buildRobotL1Tools(auth: RobotL1AuthContext): AutomationC3Tool[] {
   const tools: AutomationC3Tool[] = [
+    {
+      name: 'list_workspaces',
+      description:
+        '列出本次 IM 调用当前可见的工作区名称(只读)。' +
+        '返回 JSON:{"workspaces":["…"]},顺序与注册表一致,只含名称、不含任何磁盘路径。',
+      inputSchema: {},
+      handler: async () => {
+        const scope = freshDiscoveryScope(auth)
+        if (scope === 'changed') return scopeChanged()
+        return {
+          content: text(
+            JSON.stringify({
+              workspaces: scope.detailWorkspaces.map((workspace) => workspace.name),
+            }),
+          ),
+        }
+      },
+    },
     {
       name: 'find_intents',
       description: findDesc,

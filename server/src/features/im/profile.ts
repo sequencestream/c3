@@ -24,7 +24,7 @@
  */
 import type { RobotProfile } from '../../kernel/run/run-via-driver.js'
 import { NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
-import { selectedC3McpToolNames, selectsLocalWriteTool } from '../tool-manifest/index.js'
+import { selectedRobotC3McpToolNames, selectsLocalWriteTool } from '../tool-manifest/index.js'
 import { getRobot } from './robot-store.js'
 
 /**
@@ -77,7 +77,7 @@ export function robotLaunchProfile(robotId: string, mcp: RobotMcpBinder): RobotP
   const allowlist = robot?.toolAllowlist ?? []
   const real = allowlist.filter((t) => t !== NETWORK_ACCESS_TOOL)
   const allowed = new Set(real)
-  const selected = selectedC3McpToolNames(real)
+  const selected = selectedRobotC3McpToolNames(real)
   return {
     appendSystemPrompt: systemPrompt(robot?.name ?? 'robot'),
     disallowedTools: ROBOT_BASE_DISALLOWED_TOOLS.filter((t) => !allowed.has(t)),

@@ -14,9 +14,9 @@ import type { ToolManifestEntry, ToolManifestScope } from './tool-manifest.js'
  * `tool_manifest`.
  *
  * `workspaceName` narrows the manifest to one workspace's configured MCP servers
- * (their `mcp__<server>__` namespace prefixes join the list). Omitted — the chat
- * robot case — the reply carries the vendor's built-ins plus c3's own MCP tools
- * and no workspace namespaces, because there is no workspace to read.
+ * (their `mcp__<server>__` namespace prefixes join the list). `scope` selects
+ * usage-specific c3 entries; the robot request omits `workspaceName`, so it gets
+ * no workspace namespace prefixes.
  */
 export type ClientGetToolManifest = {
   type: 'get_tool_manifest'

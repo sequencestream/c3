@@ -34,6 +34,7 @@ const {
 } = await import('./store.js')
 const { readSpecFingerprint, runSubmitSpecReview, specFingerprint } =
   await import('./spec-review.js')
+const { submitSpecReviewSchema } = await import('./spec-review.js')
 
 const WS = '/tmp/spec-review-ws'
 
@@ -69,6 +70,12 @@ describe('specFingerprint / readSpecFingerprint', () => {
   it('reads null for a missing path and for an unreadable file — never an empty hash', () => {
     expect(readSpecFingerprint(WS, null)).toBeNull()
     expect(readSpecFingerprint(WS, join(specsRoot, 'does-not-exist.md'))).toBeNull()
+  })
+})
+
+describe('submit_spec_review internal contract', () => {
+  it('keeps intent and fingerprint in the launch binding, not model arguments', () => {
+    expect(Object.keys(submitSpecReviewSchema)).toEqual(['verdict', 'reason'])
   })
 })
 

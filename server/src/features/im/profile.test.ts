@@ -120,6 +120,9 @@ describe('robotLaunchProfile — allowlist split', () => {
     const profile = robotLaunchProfile(id, binder)
     expect(profile.allowedTools.has('mcp__c3__save_intents')).toBe(true)
     expect(profile.writeEnabled).toBe(false)
+    expect(profile.appendSystemPrompt).toContain('save_intents')
+    expect(profile.appendSystemPrompt).toContain('文字明确确认')
+    expect(profile.appendSystemPrompt).toContain('管理员勾选工具只授予调用能力')
   })
 
   it('a read-only c3 MCP tool alone stays read-only', () => {

@@ -77,19 +77,21 @@ function text(s: string): AutomationC3ToolResult['content'] {
   return [{ type: 'text' as const, text: s }]
 }
 
-function notVisible(auth: RobotL1AuthContext): AutomationC3ToolResult {
+export function robotNotVisible(auth: RobotL1AuthContext): AutomationC3ToolResult {
   if (auth.displaySignals) recordObjectNotVisible(auth.displaySignals)
   return { content: text(JSON.stringify(NOT_VISIBLE_RESULT)) }
 }
 
-function scopeChanged(): AutomationC3ToolResult {
+export function robotScopeChanged(): AutomationC3ToolResult {
   return {
     content: text(JSON.stringify({ code: 'scope_changed' })),
     isError: true,
   }
 }
 
-function freshScope(auth: RobotL1AuthContext): CallScopeSnapshot | 'unbound' | 'changed' {
+export function freshRobotScope(
+  auth: RobotL1AuthContext,
+): CallScopeSnapshot | 'unbound' | 'changed' {
   const r = resolveCallScope({
     robotId: auth.robotId,
     senderId: auth.senderId,
@@ -164,13 +166,13 @@ function runObjectTool(
   locate: () => { workspaceName: string } | null,
   viewAt: (workspacePath: string) => AutomationC3ToolResult,
 ): AutomationC3ToolResult {
-  const scope = freshScope(auth)
-  if (scope === 'changed' || scope === 'unbound') return scopeChanged()
+  const scope = freshRobotScope(auth)
+  if (scope === 'changed' || scope === 'unbound') return robotScopeChanged()
   const located = locate()
-  if (!located) return notVisible(auth)
-  if (!isWorkspaceInDetail(scope, located.workspaceName)) return notVisible(auth)
+  if (!located) return robotNotVisible(auth)
+  if (!isWorkspaceInDetail(scope, located.workspaceName)) return robotNotVisible(auth)
   const path = pathFor(located.workspaceName)
-  if (!path) return notVisible(auth)
+  if (!path) return robotNotVisible(auth)
   return viewAt(path)
 }
 
@@ -178,8 +180,8 @@ function runListTool(
   auth: RobotL1AuthContext,
   listAt: (workspacePath: string) => { items: Record<string, unknown>[]; rawEmpty: boolean },
 ): AutomationC3ToolResult {
-  const scope = freshScope(auth)
-  if (scope === 'changed' || scope === 'unbound') return scopeChanged()
+  const scope = freshRobotScope(auth)
+  if (scope === 'changed' || scope === 'unbound') return robotScopeChanged()
 
   const detailNames = new Set(scope.detailWorkspaces.map((w) => w.name))
   const perWs: Array<{ workspaceName: string; items: Record<string, unknown>[] }> = []
@@ -217,7 +219,7 @@ export function buildRobotL1Tools(auth: RobotL1AuthContext): AutomationC3Tool[] 
       inputSchema: {},
       handler: async () => {
         const scope = freshDiscoveryScope(auth)
-        if (scope === 'changed') return scopeChanged()
+        if (scope === 'changed') return robotScopeChanged()
         return {
           content: text(
             JSON.stringify({
@@ -313,17 +315,6 @@ export function buildRobotL1Tools(auth: RobotL1AuthContext): AutomationC3Tool[] 
     },
   ]
   return tools
-}
-
-/**
- * Guard for write-class c3 tools on the robot profile: never reverse-lookup an
- * object id into a registered workspace path.
- */
-export function refuseWriteViaObjectId(): AutomationC3ToolResult {
-  return {
-    content: text(JSON.stringify({ code: 'web_only' })),
-    isError: true,
-  }
 }
 
 export function filterSelectedL1(selected: readonly string[]): L1ReadTool[] {

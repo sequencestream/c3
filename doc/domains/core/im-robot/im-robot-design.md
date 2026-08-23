@@ -98,7 +98,7 @@ supervisor 在启动回合前按七维 Conversation 身份认领消息、校验 
 
 表单的工具区是一个与自动化表单**共享**的权限网格(只读/写入两组 + 全选/全清 + 可选的网络开关)。
 工具清单按厂商静态声明(`ToolManifestEntry { name, isWrite }`),由服务端一次下发给两个表单:
-厂商 SDK 内建工具 + c3 自己的 13 个通用 MCP 工具。`scope: 'robot'` 再加入机器人专属只读
+厂商 SDK 内建工具 + c3 自己的 14 个通用 MCP 工具。`scope: 'robot'` 再加入机器人专属只读
 `mcp__c3__list_workspaces`,`scope: 'automation'` 不加入。机器人是部署级管理对象、不绑工作区字段,因此清单
 不含任何 `mcp__<server>__` 工作区命名空间——这是管理契约,不是「无 workspaceName 即安全」的数据访问保证。
 
@@ -138,17 +138,28 @@ claude 配置目录 + vendor 认证挂载。隔离建立失败以安全错误结
 
 ## c3 MCP 回环绑定
 
-机器人回合与自动化共用同一套框架无关的工具构造器;六个 L1 账本读取与机器人专属 `list_workspaces`
-由 `buildRobotL1Tools` 在每次 handler 执行时注入调用级授权上下文。`list_workspaces` 直接从实时
-`CallScopeSnapshot.detailWorkspaces` 投影注册表有序名称,不接触 `workspacePath`;scope hash 变化时返回最新
-交集并通知 supervisor,binding 不再匹配时拒绝。自动化在每次执行时经 `transport/automation-mcp` 绑定单一工作区;机器人经
-`transport/robot-mcp`——同一回环流式 HTTP 路径(`/internal/robot-mcp/v1`),每次绑定颁发一次性令牌,
-回环外源被拒,`enabledTools` 精确等于勾选子集,dispose 时先吊销令牌再关连接,URL 随即 404。传输层只
-携带不可伪造的 IM 上下文与 binding id,不在 initialize 时钉定 `workspacePath`。
+机器人经 `transport/robot-mcp` 使用独立回环流式 HTTP 路径(`/internal/robot-mcp/v1`):每次绑定颁发
+一次性令牌,回环外源被拒,`enabledTools` 精确等于勾选子集,dispose 时先吊销令牌再关连接,URL 随即
+404。传输层只携带不可伪造的 IM 上下文、binding id、回合起点 `scope_hash` 与实时 run id,不在
+initialize 时钉定台账 `workspacePath`。
+
+装配分为两个机器人专用构造器:
+
+- `buildRobotL1Tools` 处理六个账本只读工具和机器人专属 `list_workspaces`。列举型遍历当次详细可见工作区,
+  对象型先反查归属再验详细可见集;`list_workspaces` 仅按注册表顺序返回实时详细可见集的名称。
+- `buildRobotWriteTools` 处理 `save_intents`、`save_intent_directly`、`submit_spec_review`、
+  `start_session_for_intent`、`start_discussion`、`continue_discussion`。每个 handler 先重算调用级作用域;
+  新建型从显式 `workspaceName` 解析注册根,对象型从 id 反查候选归属后验详细可见集,再调用意图、规格评审、
+  会话启动或讨论域的共享核心。
+
+机器人写构造器的闭包不含运行根。保存包装 schema 才有 `workspaceName`,进入共享核心前剥离该字段与
+`intentSessionId`;intent-mcp 和 automation-mcp 的 schema 与既有工作区 binding 不变。规格审核包装额外
+接收 `intentId`,首次读取 live spec 指纹并以实时 robot run id 归因;共享核心提交前再次读取,不一致即
+stale 零写入。对象缺失与越权使用相同 `not_visible` 结果,不会泄露其它工作区是否存在该 id。
 
 启动依赖的构造顺序里存在一个「launchDeps ↔ robotMcp」环,靠惰性取值器解开:robotMcp 先于 launchDeps
-创建,工具处理器经 `() => c3McpDeps` 在回合真正运行时才解析依赖。运行 id 也按取值器延迟解析——
-回合尚在 pending 阶段最终 id 未定,publish_event 用活着的会话 id 归因。
+创建,工具处理器经 `() => robotMcpDeps` 在回合真正运行时才解析广播、讨论启动与 session launch 依赖;
+依赖未就绪则拒绝。运行 id 按取值器延迟解析,供 `submit_spec_review` 使用实际 robot run id 归因。
 
 ## 会话续接
 

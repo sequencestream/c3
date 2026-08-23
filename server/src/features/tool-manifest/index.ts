@@ -37,6 +37,7 @@ export const C3_MCP_TOOLS: readonly ToolManifestEntry[] = [
   { name: 'mcp__c3__view_intent', isWrite: false },
   { name: 'mcp__c3__save_intents', isWrite: true },
   { name: 'mcp__c3__save_intent_directly', isWrite: true },
+  { name: 'mcp__c3__submit_spec_review', isWrite: true },
   // PR-status sync triggers server-side forge derivation and persists terminal
   // PR states — a write, not a read. It replaces the deprecated save_intent_pr_info
   // (the model supplies no status value; only the forge verdict lands in the ledger).

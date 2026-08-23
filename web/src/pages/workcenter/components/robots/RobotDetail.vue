@@ -7,7 +7,7 @@
 // what is sent (ADR-0046). Confirming records the acknowledgement the server
 // requires — the server refuses to enable without it, so skipping this dialog
 // cannot turn a robot on.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import RobotIdentityAdmin from './RobotIdentityAdmin.vue'
@@ -46,6 +46,16 @@ const emit = defineEmits<{
 
 const enableOpen = ref(false)
 const deleteOpen = ref(false)
+
+type DetailTab = 'basic' | 'recent'
+const activeTab = ref<DetailTab>('basic')
+
+watch(
+  () => props.robot?.id,
+  () => {
+    activeTab.value = 'basic'
+  },
+)
 
 const OUTCOME_LABEL = {
   complete: 'robot.detail.turns.outcome.complete.label',
@@ -134,25 +144,86 @@ function confirmDelete(): void {
       </div>
     </header>
 
-    <dl class="rb-meta">
-      <dt>{{ t('robot.detail.agent.label') }}</dt>
-      <dd>{{ robot.vendor }} · {{ robot.agentId }}</dd>
-      <dt>{{ t('robot.detail.permission.label') }}</dt>
-      <dd data-testid="robot-permission">{{ permissionText }}</dd>
-      <dt>{{ t('robot.detail.reach.label') }}</dt>
-      <dd>{{ reachText }}</dd>
-      <dt>{{ t('robot.detail.workdir.label') }}</dt>
-      <dd class="rb-path">{{ workdirPath }}</dd>
-    </dl>
+    <nav
+      class="rb-tabs"
+      role="tablist"
+      :aria-label="t('robot.detail.tabs.label')"
+      data-testid="robot-detail-tabs"
+    >
+      <button
+        id="robot-detail-tab-basic"
+        type="button"
+        class="rb-tab"
+        :class="{ active: activeTab === 'basic' }"
+        role="tab"
+        :aria-selected="activeTab === 'basic'"
+        aria-controls="robot-detail-panel-basic"
+        data-testid="robot-detail-tab-basic"
+        @click="activeTab = 'basic'"
+      >
+        {{ t('robot.detail.tabs.basic') }}
+      </button>
+      <button
+        id="robot-detail-tab-recent"
+        type="button"
+        class="rb-tab"
+        :class="{ active: activeTab === 'recent' }"
+        role="tab"
+        :aria-selected="activeTab === 'recent'"
+        aria-controls="robot-detail-panel-recent"
+        data-testid="robot-detail-tab-recent"
+        @click="activeTab = 'recent'"
+      >
+        {{ t('robot.detail.tabs.recent') }}
+      </button>
+    </nav>
 
-    <RobotWriteGrants
-      v-if="isAdmin"
-      :robot="robot"
-      @acknowledge="emit('acknowledgeWriteGrant', $event)"
-      @set-enabled="(cap, enabled) => emit('setWriteGrantEnabled', cap, enabled)"
-    />
+    <section
+      v-if="activeTab === 'basic'"
+      id="robot-detail-panel-basic"
+      class="rb-panel"
+      role="tabpanel"
+      aria-labelledby="robot-detail-tab-basic"
+      data-testid="robot-detail-panel-basic"
+    >
+      <dl class="rb-meta">
+        <dt>{{ t('robot.detail.agent.label') }}</dt>
+        <dd>{{ robot.vendor }} · {{ robot.agentId }}</dd>
+        <dt>{{ t('robot.detail.permission.label') }}</dt>
+        <dd data-testid="robot-permission">{{ permissionText }}</dd>
+        <dt>{{ t('robot.detail.reach.label') }}</dt>
+        <dd>{{ reachText }}</dd>
+        <dt>{{ t('robot.detail.workdir.label') }}</dt>
+        <dd class="rb-path">{{ workdirPath }}</dd>
+      </dl>
 
-    <section class="rb-turns">
+      <RobotWriteGrants
+        v-if="isAdmin"
+        :robot="robot"
+        @acknowledge="emit('acknowledgeWriteGrant', $event)"
+        @set-enabled="(cap, enabled) => emit('setWriteGrantEnabled', cap, enabled)"
+      />
+
+      <RobotIdentityAdmin
+        v-if="isAdmin"
+        :robot="robot"
+        :bindings="imIdentityBindings ?? []"
+        :group-grants="imGroupWorkspaceScopes ?? []"
+        :workspaces="workspaces ?? []"
+        @revoke-binding="emit('adminRevokeImIdentity', $event)"
+        @load-group-scopes="emit('loadImGroupScopes', $event)"
+        @save-group-scopes="(chatId, names) => emit('saveImGroupScopes', chatId, names)"
+      />
+    </section>
+
+    <section
+      v-else
+      id="robot-detail-panel-recent"
+      class="rb-panel rb-turns"
+      role="tabpanel"
+      aria-labelledby="robot-detail-tab-recent"
+      data-testid="robot-detail-panel-recent"
+    >
       <h3 class="rb-turns-title">{{ t('robot.detail.turns.title') }}</h3>
       <p v-if="turns.length === 0" class="rb-hint">{{ t('robot.detail.turns.empty') }}</p>
       <table v-else class="rb-turns-table">
@@ -169,17 +240,6 @@ function confirmDelete(): void {
         </tbody>
       </table>
     </section>
-
-    <RobotIdentityAdmin
-      v-if="isAdmin && robot"
-      :robot="robot"
-      :bindings="imIdentityBindings ?? []"
-      :group-grants="imGroupWorkspaceScopes ?? []"
-      :workspaces="workspaces ?? []"
-      @revoke-binding="emit('adminRevokeImIdentity', $event)"
-      @load-group-scopes="emit('loadImGroupScopes', $event)"
-      @save-group-scopes="(chatId, names) => emit('saveImGroupScopes', chatId, names)"
-    />
 
     <ConfirmDialog
       :open="enableOpen"
@@ -236,6 +296,34 @@ function confirmDelete(): void {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+.rb-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--c-border);
+}
+.rb-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--c-text-muted);
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.rb-tab.active {
+  border-bottom-color: var(--c-primary);
+  color: var(--c-primary);
+}
+.rb-tab:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+.rb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 .rb-btn {
   border: 1px solid var(--c-border);

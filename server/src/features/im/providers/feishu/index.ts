@@ -30,14 +30,18 @@ import type {
   ImProvider,
   ImProviderCapabilities,
 } from '../../types.js'
+import { logImProviderSkip } from '../../im-log.js'
 import { FeishuApi } from './api.js'
-import { normalizeFeishuMessage } from './normalize.js'
+import { parseFeishuInbound } from './normalize.js'
 
 /**
  * The host the long link is established against. Used only to decide whether a
  * proxy applies — the SDK discovers the actual endpoint itself.
  */
 const FEISHU_WS_ORIGIN = 'wss://open.feishu.cn'
+
+/** How long to wait for the first successful WS handshake after `start()`. */
+const CONNECT_READY_TIMEOUT_MS = 45_000
 
 // The SDK's HTTP client otherwise picks a proxy out of `http_proxy` / `all_proxy`
 // on its own, and the long link then fails with a protocol mismatch even when an
@@ -60,9 +64,14 @@ const CAPABILITIES: ImProviderCapabilities = {
 const logger = {
   error: (...args: unknown[]): void => console.error('[c3][feishu]', ...args),
   warn: (...args: unknown[]): void => console.warn('[c3][feishu]', ...args),
-  info: (): void => {},
+  // Connection lifecycle (ws ready, reconnect, unknown event types) helps diagnose silent bots.
+  info: (...args: unknown[]): void => console.info('[c3][feishu]', ...args),
   debug: (): void => {},
   trace: (): void => {},
+}
+
+function errMsg(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).slice(0, 200)
 }
 
 export function createFeishuProvider(): ImProvider {
@@ -76,37 +85,106 @@ export function createFeishuProvider(): ImProvider {
       // tell "this robot was mentioned" from "somebody was mentioned", and the
       // require-mention policy would be unenforceable.
       const botOpenId = await api.botOpenId()
+      console.info(
+        `[c3][feishu] bot open_id ${botOpenId ? 'resolved' : 'missing'} robotId=${input.robotId}`,
+      )
 
-      const dispatcher = new EventDispatcher({}).register({
+      // Share c3's logger so "no <type> handle" / verification warnings are visible.
+      const dispatcher = new EventDispatcher({
+        loggerLevel: LoggerLevel.info,
+        logger,
+      }).register({
         'im.message.receive_v1': (data) => {
-          const message = normalizeFeishuMessage(data, botOpenId)
+          console.info(`[c3][feishu] event im.message.receive_v1 robotId=${input.robotId}`)
+          const parsed = parseFeishuInbound(data, botOpenId)
           // Everything the robot cannot act on (non-text, other bots, empty
           // bodies) is dropped here rather than travelling further as a null.
-          if (message) input.onMessage(message)
+          if (!parsed.ok) {
+            logImProviderSkip({
+              robotId: input.robotId,
+              reason: parsed.reason,
+              messageType: parsed.messageType,
+              chatType: parsed.chatType,
+            })
+            return
+          }
+          input.onMessage(parsed.message)
         },
       })
 
       const agent = proxyAgentFor(FEISHU_WS_ORIGIN, getProxyConfig())
-      const ws = new WSClient({
-        appId: input.appId,
-        appSecret: input.appSecret,
-        loggerLevel: LoggerLevel.warn,
-        logger,
-        autoReconnect: true,
-        ...(agent ? { agent } : {}),
-      })
 
+      // `WSClient.start()` returns before the socket is open — it only kicks off
+      // reconnect. Gate on onReady / terminal onError so "connected" means events
+      // can arrive.
+      let resolveReady!: () => void
+      let rejectReady!: (err: Error) => void
+      let settled = false
+      const ready = new Promise<void>((resolve, reject) => {
+        resolveReady = resolve
+        rejectReady = reject
+      })
+      const settle = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        fn()
+      }
+      const timer = setTimeout(() => {
+        settle(() =>
+          rejectReady(
+            new Error(
+              `feishu ws not ready within ${CONNECT_READY_TIMEOUT_MS}ms ` +
+                '(Developer Console → 事件与回调 → 订阅方式 must be 长连接; ' +
+                'also subscribe im.message.receive_v1; check network/proxy)',
+            ),
+          ),
+        )
+      }, CONNECT_READY_TIMEOUT_MS)
+      timer.unref?.()
+
+      const wsRef: { current: WSClient | null } = { current: null }
       const report = (): void => input.onStateChange?.(status())
       const status = (): ImConnectionStatus => {
-        const snapshot = ws.getConnectionStatus()
+        const snapshot = wsRef.current?.getConnectionStatus()
         return {
           state: snapshot?.state ?? 'idle',
           reconnectAttempts: snapshot?.reconnectAttempts ?? 0,
         }
       }
 
+      const ws = new WSClient({
+        appId: input.appId,
+        appSecret: input.appSecret,
+        // info: surface SDK "ws client ready" / long-connection setup hints.
+        loggerLevel: LoggerLevel.info,
+        logger,
+        autoReconnect: true,
+        onReady: () => {
+          console.info('[c3][feishu] ws ready')
+          report()
+          settle(resolveReady)
+        },
+        onError: (e: Error) => {
+          console.error('[c3][feishu] ws terminal error:', errMsg(e))
+          report()
+          settle(() => rejectReady(e instanceof Error ? e : new Error(errMsg(e))))
+        },
+        onReconnecting: () => {
+          console.warn('[c3][feishu] ws reconnecting')
+          report()
+        },
+        onReconnected: () => {
+          console.info('[c3][feishu] ws reconnected')
+          report()
+        },
+        ...(agent ? { agent } : {}),
+      })
+      wsRef.current = ws
+
       await ws.start({ eventDispatcher: dispatcher })
       report()
+      await ready
 
       return {
         status,

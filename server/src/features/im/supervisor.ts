@@ -51,6 +51,15 @@ import {
 import { conversationGateKey, conversationIdentityOf, threadKeyFor } from './thread-key.js'
 import { handleTodoControl } from './l2-control.js'
 import { parseTodoInbound } from './todo-token-parse.js'
+import {
+  logImBindingControl,
+  logImConnectFailed,
+  logImConnected,
+  logImConnecting,
+  logImConnectionState,
+  logImInbound,
+  logImInboundIgnored,
+} from './im-log.js'
 import type { ImInboundMessage, ImProviderCapabilities } from './types.js'
 
 export interface ImSupervisorDeps {
@@ -200,6 +209,7 @@ async function handleBindingControl(
   if (gate !== 'claimed') return true
 
   if (m.chatType === 'group') {
+    logImBindingControl({ robot: r, chatType: 'group', path: 'use_dm' })
     await auditedBindingNotice(r, h, m, { key: 'binding.useDm', params: {} }, 'identity_required')
     return true
   }
@@ -210,6 +220,12 @@ async function handleBindingControl(
     accountNamespace: ns,
     senderId: m.senderId,
     token: text,
+  })
+  logImBindingControl({
+    robot: r,
+    chatType: 'p2p',
+    path: 'consume',
+    result: result.ok ? 'ok' : result.reason === 'rate_limited' ? 'rate_limited' : 'failed',
   })
   await auditedBindingNotice(
     r,
@@ -441,11 +457,16 @@ async function runOneTurn(
 function onInbound(id: string, m: ImInboundMessage): void {
   const h = handles?.get(id)
   const r = getRobot(id)
-  if (!h || !r || !r.enabled || !m.senderId.trim()) return
+  if (!h || !r || !r.enabled || !m.senderId.trim()) {
+    if (r) logImInboundIgnored(r, !h ? 'not_connected' : !r.enabled ? 'disabled' : 'blank_sender')
+    return
+  }
   const target = targetOf(m)
   const ctx = renderCtx(r)
+  logImInbound({ robot: r, message: m })
 
   if (!isStoreAvailable() || !isIdentityStoreAvailable()) {
+    logImInboundIgnored(r, 'store_unavailable')
     void fixed(h, { key: 'runtime.storeUnavailable', params: {} }, target, ctx)
     return
   }
@@ -453,7 +474,10 @@ function onInbound(id: string, m: ImInboundMessage): void {
   void (async () => {
     const tokenText = m.text.trim()
     if (parseTodoInbound(tokenText)) {
-      if (m.chatType === 'group' && !accepts(r, m)) return
+      if (m.chatType === 'group' && !accepts(r, m)) {
+        logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
+        return
+      }
       if (
         await handleTodoControl(r, m, {
           sendFixed: async (message, t, c) => {
@@ -474,21 +498,33 @@ function onInbound(id: string, m: ImInboundMessage): void {
       }
     }
     if (TOKEN_SHAPE.test(tokenText)) {
-      if (m.chatType === 'group' && !accepts(r, m)) return
+      if (m.chatType === 'group' && !accepts(r, m)) {
+        logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
+        return
+      }
       if (await handleBindingControl(r, h, m)) return
     }
 
     const ns = accountNamespaceOf(r.platform, r.appId)
     const binding = getActiveBindingForSender(ns, m.senderId)
     if (!binding) {
-      if (m.chatType === 'group' && !accepts(r, m)) return
+      if (m.chatType === 'group' && !accepts(r, m)) {
+        logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
+        return
+      }
       const gate = await claimControlMessage(r, h, m)
-      if (gate !== 'claimed') return
+      if (gate !== 'claimed') {
+        logImInboundIgnored(r, gate)
+        return
+      }
       await auditedBindingNotice(r, h, m, identityRequiredRef(m.chatType), 'identity_required')
       return
     }
 
-    if (!accepts(r, m)) return
+    if (!accepts(r, m)) {
+      logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
+      return
+    }
 
     const chat = chatContextFor(r.platform, r.appId, m.chatType, m.chatId)
     const scope = resolveCallScope({
@@ -654,20 +690,24 @@ async function connectRobot(r: ImRobot): Promise<void> {
   const p = resolveImProvider(r.platform)
   if (!p) {
     failures.set(r.id, `platform ${r.platform} is not supported by this build`)
+    logImConnectFailed(r, failures.get(r.id)!)
     return
   }
+  logImConnecting(r)
   try {
     const c = await p.connect({
       robotId: r.id,
       appId: r.appId,
       appSecret: robotSecret(r.id),
       onMessage: (m) => onInbound(r.id, m),
+      onStateChange: (s) => logImConnectionState(r, s),
     })
     handles?.set(r.id, wrapHandle(r.id, c, p.capabilities))
     failures.delete(r.id)
+    logImConnected(r, c.status())
   } catch (e) {
     failures.set(r.id, errText(e))
-    console.error(`[c3][im] robot ${r.name} failed to connect:`, errText(e))
+    logImConnectFailed(r, errText(e))
   }
 }
 export function startImSupervisor(input: ImSupervisorDeps): void {

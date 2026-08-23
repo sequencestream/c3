@@ -4,7 +4,7 @@
  * ends up reading.
  */
 import { describe, expect, it } from 'vitest'
-import { normalizeFeishuMessage, type FeishuMessageEvent } from './normalize.js'
+import { normalizeFeishuMessage, parseFeishuInbound, type FeishuMessageEvent } from './normalize.js'
 
 const BOT = 'ou_bot'
 
@@ -78,6 +78,11 @@ describe('normalizeFeishuMessage', () => {
   it('ignores non-text messages rather than answering something it cannot read', () => {
     for (const type of ['image', 'file', 'interactive', 'audio']) {
       expect(normalizeFeishuMessage(event({ message_type: type }), BOT)).toBeNull()
+      expect(parseFeishuInbound(event({ message_type: type }), BOT)).toMatchObject({
+        ok: false,
+        reason: 'non_text',
+        messageType: type,
+      })
     }
   })
 

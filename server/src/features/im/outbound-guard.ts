@@ -20,6 +20,7 @@ import { detectCredentialShape } from '../memory/content-guard.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
 import { renderBroadcastTemplate, type TemplateFieldValues } from './broadcast-templates.js'
 import type { BroadcastDeliveryTarget } from './broadcast-recipients.js'
+import { logImOutbound } from './im-log.js'
 import { outboundConfigAcknowledged } from './outbound-config-hash.js'
 import { getRobot } from './robot-store.js'
 import {
@@ -237,6 +238,26 @@ function sameOrigin(a: OutboundTarget, b: OutboundTarget): boolean {
  * caller can write one accurate audit row — never retry on audit failure here.
  */
 export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendResult> {
+  const result = await sendGuardedInner(input)
+  const robot = getRobot(input.robotId)
+  const noticeKey =
+    input.content.category === 'binding_notice' || input.content.category === 'fixed_notice'
+      ? input.content.message.key
+      : undefined
+  logImOutbound({
+    robot: robot ?? { id: input.robotId, name: input.robotId, platform: 'feishu' },
+    category: input.content.category,
+    chatType: input.target.chatType,
+    noticeKey,
+    ok: result.ok,
+    reason: result.ok ? undefined : result.reason,
+    outboundChars: result.ok ? result.outboundChars : result.outboundChars,
+    outMessageId: result.ok ? result.messageId : result.messageId,
+  })
+  return result
+}
+
+async function sendGuardedInner(input: GuardedSendInput): Promise<GuardedSendResult> {
   const robot = getRobot(input.robotId)
   const ready = readinessRefuse(robot)
   if (ready) return { ok: false, reason: ready, outboundChars: 0 }
@@ -313,6 +334,22 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
 export async function sendGuardedBroadcast(
   input: GuardedBroadcastInput,
 ): Promise<GuardedSendResult> {
+  const result = await sendGuardedBroadcastInner(input)
+  const robot = getRobot(input.robotId)
+  logImOutbound({
+    robot: robot ?? { id: input.robotId, name: input.robotId, platform: 'feishu' },
+    category: 'broadcast_template',
+    chatType: input.target.kind === 'group' ? 'group' : 'dm',
+    templateKey: result.ok ? result.templateKey : result.templateKey,
+    ok: result.ok,
+    reason: result.ok ? undefined : result.reason,
+    outboundChars: result.ok ? result.outboundChars : result.outboundChars,
+    outMessageId: result.ok ? result.messageId : result.messageId,
+  })
+  return result
+}
+
+async function sendGuardedBroadcastInner(input: GuardedBroadcastInput): Promise<GuardedSendResult> {
   const robot = getRobot(input.robotId)
   const ready = readinessRefuse(robot)
   if (ready) return { ok: false, reason: ready, outboundChars: 0 }

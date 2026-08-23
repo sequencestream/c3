@@ -23,6 +23,7 @@ import { configTx } from '../../kernel/config/config-store.js'
 import { bumpPolicyEpoch } from '../../kernel/config/policy-epoch.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { execIdentitySchema } from './identity-schema.js'
+import { logImChallengeCancelled, logImChallengeConsume, logImChallengeCreated } from './im-log.js'
 import { getRobot } from './robot-store.js'
 
 export { execIdentitySchema, identityTablesPresent } from './identity-schema.js'
@@ -354,7 +355,7 @@ export function createChallenge(
   const expiresAt = t + CHALLENGE_TTL_MS
   const challengeId = randomUUID()
 
-  return configTx((d) => {
+  const created = configTx((d) => {
     ensureSchema(d)
     expirePending(d, t)
     d.run(
@@ -393,12 +394,20 @@ export function createChallenge(
       expiresAt,
     }
   })
+  logImChallengeCreated({
+    robotId,
+    subject,
+    accountNamespace: ns,
+    challengeId,
+    expiresAt,
+  })
+  return created
 }
 
 export function cancelChallenge(rawSubject: string | null, challengeId: string): void {
   const subject = resolveAuthSubject(rawSubject)
   if (!subject) throw new IdentityStoreError('invalid', 'no subject')
-  configTx((d) => {
+  const cancelled = configTx((d) => {
     ensureSchema(d)
     const row = d.get<ChallengeRow>(
       `SELECT * FROM im_identity_challenges WHERE id = ?`,
@@ -422,6 +431,12 @@ export function cancelChallenge(rawSubject: string | null, challengeId: string):
       robotId: row.robot_id,
       actor: subject,
     })
+    return { robotId: row.robot_id }
+  })
+  logImChallengeCancelled({
+    robotId: cancelled.robotId,
+    subject,
+    challengeId,
   })
 }
 
@@ -475,18 +490,35 @@ export function consumeChallenge(input: {
         /* audit failure must not change the collapsed consume result */
       }
     }
+    logImChallengeConsume({
+      robotId: input.robotId,
+      accountNamespace: input.accountNamespace,
+      senderId: input.senderId,
+      ok: false,
+      reason: 'rate_limited',
+    })
     return { ok: false, reason: 'rate_limited' }
   }
   const d = db()
   if (!d) {
     recordFail(input.robotId, input.senderId)
+    logImChallengeConsume({
+      robotId: input.robotId,
+      accountNamespace: input.accountNamespace,
+      senderId: input.senderId,
+      ok: false,
+      reason: 'db_unavailable',
+    })
     return { ok: false, reason: 'failed' }
   }
   const tokenHash = hashToken(input.token.trim())
   const t = now()
 
   try {
-    const result = configTx((txDb): ConsumeChallengeResult => {
+    type TxResult =
+      | { ok: true; binding: ImIdentityBinding }
+      | { ok: false; reason: 'failed' | 'rate_limited'; logReason: string }
+    const result = configTx((txDb): TxResult => {
       ensureSchema(txDb)
       expirePending(txDb, t)
       const row = txDb.get<ChallengeRow>(
@@ -507,7 +539,7 @@ export function consumeChallenge(input: {
           robotId: input.robotId,
           reasonCode: 'invalid_or_mismatch',
         })
-        return { ok: false, reason: 'failed' }
+        return { ok: false, reason: 'failed', logReason: 'invalid_or_mismatch' }
       }
 
       const senderConflict = txDb.get<{ id: string }>(
@@ -531,7 +563,7 @@ export function consumeChallenge(input: {
           robotId: input.robotId,
           reasonCode: 'uniqueness_conflict',
         })
-        return { ok: false, reason: 'failed' }
+        return { ok: false, reason: 'failed', logReason: 'uniqueness_conflict' }
       }
 
       const bindingId = randomUUID()
@@ -578,9 +610,34 @@ export function consumeChallenge(input: {
       }
     })
     if (!result.ok) recordFail(input.robotId, input.senderId)
-    return result
+    if (result.ok) {
+      logImChallengeConsume({
+        robotId: input.robotId,
+        accountNamespace: input.accountNamespace,
+        senderId: input.senderId,
+        ok: true,
+        bindingId: result.binding.id,
+        subject: result.binding.subject,
+      })
+      return { ok: true, binding: result.binding }
+    }
+    logImChallengeConsume({
+      robotId: input.robotId,
+      accountNamespace: input.accountNamespace,
+      senderId: input.senderId,
+      ok: false,
+      reason: result.logReason,
+    })
+    return { ok: false, reason: result.reason }
   } catch {
     recordFail(input.robotId, input.senderId)
+    logImChallengeConsume({
+      robotId: input.robotId,
+      accountNamespace: input.accountNamespace,
+      senderId: input.senderId,
+      ok: false,
+      reason: 'error',
+    })
     return { ok: false, reason: 'failed' }
   }
 }

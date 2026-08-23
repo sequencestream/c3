@@ -369,6 +369,36 @@ function makeCtx() {
   }
 }
 
+describe('robot turns reply routing', () => {
+  it('accepts only the reply matching the currently selected robot', () => {
+    const r = makeCtx()
+    const selectedRobotId = ref<string | null>('r2')
+    const robotTurns = ref<import('@ccc/shared/protocol').ImRobotTurnLog[]>([])
+    Object.assign(r.ctx, { selectedRobotId, robotTurns })
+    const staleTurn = {
+      id: 't1',
+      robotId: 'r1',
+      threadKey: 'thread-1',
+      chatId: 'chat-1',
+      senderId: 'sender-1',
+      sessionId: null,
+      startedAt: 1,
+      finishedAt: 2,
+      outcome: 'complete',
+      rejectReason: null,
+      outboundChars: 12,
+      error: null,
+    } satisfies import('@ccc/shared/protocol').ImRobotTurnLog
+    const currentTurn = { ...staleTurn, id: 't2', robotId: 'r2' }
+
+    r.ctx.handleMessage({ type: 'robot_turns', robotId: 'r1', turns: [staleTurn] })
+    expect(robotTurns.value).toEqual([])
+
+    r.ctx.handleMessage({ type: 'robot_turns', robotId: 'r2', turns: [currentTurn] })
+    expect(robotTurns.value).toEqual([currentTurn])
+  })
+})
+
 describe('personalized settings echo', () => {
   /** Fake browser store so the mirror-to-local step is observable. */
   function installStorage(): Map<string, string> {

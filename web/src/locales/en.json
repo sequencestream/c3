@@ -3911,6 +3911,11 @@
     },
     "detail": {
       "empty": "Select a robot to see its configuration.",
+      "tabs": {
+        "label": "Robot detail sections",
+        "basic": "Basic info",
+        "recent": "Recent turns"
+      },
       "enable": {
         "label": "Enable"
       },

@@ -33,6 +33,7 @@ function calls() {
     method: (init as RequestInit | undefined)?.method ?? 'GET',
     headers: (init as RequestInit | undefined)?.headers,
     body: (init as RequestInit | undefined)?.body,
+    signal: (init as RequestInit | undefined)?.signal,
   }))
 }
 
@@ -100,5 +101,35 @@ describe('configureAppWebsocket (application v7)', () => {
     await expect(configureAppWebsocket('', 'new-secret')).rejects.toBeInstanceOf(FeishuApiError)
     await expect(configureAppWebsocket('cli_new', '')).rejects.toBeInstanceOf(FeishuApiError)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // The design doc's "cancel/15s timeout covers the token + PATCH leg" claim
+  // only holds if the token fetch actually carries the same signal as the
+  // PATCH — otherwise a hung token request outlives cancellation and keeps
+  // the connection's single registration slot occupied.
+  it('applies the same combined abort/timeout signal to the token fetch as to the PATCH', async () => {
+    fetchMock.mockResolvedValueOnce(tokenOk()).mockResolvedValueOnce(jsonResponse({ code: 0 }))
+    await configureAppWebsocket('cli_new', 'new-secret', { timeoutMs: 5_000 })
+
+    const [tokenCall, patchCall] = calls()
+    expect(tokenCall.signal).toBeInstanceOf(AbortSignal)
+    expect(tokenCall.signal).toBe(patchCall.signal)
+  })
+
+  it('aborts the token fetch when the caller cancels, without ever issuing the PATCH', async () => {
+    const controller = new AbortController()
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = (init as RequestInit | undefined)?.signal
+          signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        }),
+    )
+
+    const outcome = configureAppWebsocket('cli_new', 'new-secret', { signal: controller.signal })
+    controller.abort()
+
+    expect(await outcome).toBe('config_network_error')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

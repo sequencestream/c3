@@ -152,7 +152,7 @@ function startCountdown(): void {
 watch(
   () => props.feishuRegistration.phase,
   (phase, prev) => {
-    if (phase === 'waiting_scan') startCountdown()
+    if (phase === 'waiting_scan' || phase === 'slow_down') startCountdown()
     else stopCountdown()
     // Backfill credentials exactly once, when a credential-bearing result
     // arrives. The countdown and the QR live purely in controls state; this
@@ -395,10 +395,22 @@ const DM_LABEL = {
             </p>
           </template>
 
-          <template v-else-if="feishuRegistration.phase === 'waiting_scan'">
+          <template
+            v-else-if="
+              feishuRegistration.phase === 'waiting_scan' ||
+              feishuRegistration.phase === 'slow_down'
+            "
+          >
             <h3 class="rf-feishu-title" data-testid="feishu-waiting-title">
               {{ t('robot.form.feishuRegistration.waitingScan.title') }}
             </h3>
+            <p
+              v-if="feishuRegistration.phase === 'slow_down'"
+              class="rf-feishu-status"
+              data-testid="feishu-status-slow-down"
+            >
+              {{ t('robot.form.feishuRegistration.slowDown.label') }}
+            </p>
             <div class="rf-feishu-qr">
               <QrcodeSvg
                 v-if="feishuRegistration.verificationUrl"
@@ -459,12 +471,6 @@ const DM_LABEL = {
             >
               {{ t('robot.form.feishuRegistration.cancel.label') }}
             </button>
-          </template>
-
-          <template v-else-if="feishuRegistration.phase === 'slow_down'">
-            <p class="rf-feishu-status" data-testid="feishu-status-slow-down">
-              {{ t('robot.form.feishuRegistration.slowDown.label') }}
-            </p>
           </template>
 
           <template v-else-if="feishuRegistration.phase === 'configuring'">

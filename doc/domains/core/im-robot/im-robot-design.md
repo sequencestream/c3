@@ -48,8 +48,9 @@ begin/轮询**:`@larksuiteoapi/node-sdk` 的 `registerApp` 经进程级单例 `d
   `proxyAgentFor`,为 HTTPS 请求设置或清除 `httpsAgent`。agent 按目标 origin 与有效代理配置
   复用,配置变化时淘汰旧 agent,避免轮询循环每次重建连接池;直连与 `NO_PROXY` 目标显式清除
   agent,绝不残留上一请求的 agent。
-- 初始化可重复调用而不叠加 interceptor;`releaseSdkHttpAgents()` 在测试与进程关闭时释放缓存
-  agent 并卸载。长连接不受影响:`WSClient` 收到显式 agent,不经过该 interceptor。
+- 初始化可重复调用而不叠加 interceptor;`installSdkHttpAgent()` 返回的 `{ release }` 在测试与
+  进程关闭时释放缓存 agent 并卸载。长连接不受影响:`WSClient` 收到显式 agent,不经过该
+  interceptor。
 
 注册只面向**飞书中国区**(`accounts.feishu.cn`),固定 `createOnly: true`,不接受客户端传入
 addons、既有 App ID 或域名。SDK 一旦报告 `domain_switched`(国际 Lark 租户),服务端立即中止

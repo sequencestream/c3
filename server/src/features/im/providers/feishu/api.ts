@@ -77,11 +77,12 @@ export class FeishuApi {
     private readonly appSecret: string,
   ) {}
 
-  private async fetchToken(): Promise<string> {
+  private async fetchToken(signal?: AbortSignal): Promise<string> {
     const res = await outboundFetch(`${FEISHU_BASE}/auth/v3/tenant_access_token/internal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ app_id: this.appId, app_secret: this.appSecret }),
+      signal,
     })
     const body = (await res.json()) as TokenResponse
     if (body.code !== 0 || !body.tenant_access_token) {
@@ -93,13 +94,18 @@ export class FeishuApi {
     return this.token
   }
 
-  /** A currently valid token, refreshing it when it is missing or near expiry. */
-  async accessToken(): Promise<string> {
+  /**
+   * A currently valid token, refreshing it when it is missing or near expiry.
+   * `signal` only matters for the refresh leg it triggers here; a caller that
+   * joins an already in-flight refresh started by another caller does not
+   * abort it early just because its own signal fires.
+   */
+  async accessToken(signal?: AbortSignal): Promise<string> {
     if (this.token && Date.now() < this.tokenExpiresAt - TOKEN_EARLY_REFRESH_MS) {
       return this.token
     }
     if (!this.refreshing) {
-      this.refreshing = this.fetchToken().finally(() => {
+      this.refreshing = this.fetchToken(signal).finally(() => {
         this.refreshing = null
       })
     }
@@ -203,7 +209,7 @@ export async function configureAppWebsocket(
     : AbortSignal.timeout(timeoutMs)
   try {
     const api = new FeishuApi(appId, appSecret)
-    const token = await api.accessToken()
+    const token = await api.accessToken(signal)
     const res = await outboundFetch(
       `${FEISHU_BASE}/application/v7/applications/${encodeURIComponent(appId)}/config`,
       {

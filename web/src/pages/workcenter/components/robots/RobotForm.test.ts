@@ -308,11 +308,23 @@ describe('RobotForm — one-click Feishu app creation', () => {
     expect(w.find('[data-testid="feishu-copy"]').exists()).toBe(true)
   })
 
-  it('shows slow_down and configuring statuses', async () => {
+  it('shows slow_down as a banner over the still-visible QR/link, not in place of them', async () => {
+    // slow_down is a non-terminal rate-limit hint during polling, per the design
+    // doc and protocol contract — it must not unmount the scan UI, or the admin
+    // loses the ability to scan once Feishu emits it.
     const slow = mountForm({
-      feishuRegistration: registrationState({ requestId: 'req-1', phase: 'slow_down' }),
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'slow_down',
+        verificationUrl: 'https://accounts.feishu.cn/oauth/v1/app/registration?from=sdk',
+        expiresAt: Date.now() + 90_000,
+      }),
     })
     expect(slow.find('[data-testid="feishu-status-slow-down"]').exists()).toBe(true)
+    expect(slow.findComponent(QrcodeSvg).exists()).toBe(true)
+    expect(slow.find('[data-testid="feishu-url"]').exists()).toBe(true)
+    expect(slow.find('[data-testid="feishu-countdown"]').exists()).toBe(true)
+    expect(slow.find('[data-testid="feishu-scopes"]').exists()).toBe(true)
 
     const configuring = mountForm({
       feishuRegistration: registrationState({ requestId: 'req-1', phase: 'configuring' }),

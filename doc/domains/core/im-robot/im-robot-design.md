@@ -34,6 +34,60 @@ SDK 只负责**入站长连接**:建连、心跳、重连、解码平台私有�
 
 代价是平台无关的策略要自己写——但它们本来就该写在中性层。
 
+### 设备授权与一键建应用的窄例外
+
+一键建应用是「SDK 只负责入站」边界的唯一例外,且只覆盖**官方 Device Authorization 的设备码
+begin/轮询**:`@larksuiteoapi/node-sdk` 的 `registerApp` 经进程级单例 `defaultHttpInstance`
+发 HTTP,无法按调用注入独立 client。代理选择仍由 c3 单方面决定,于是飞书平台边界提供一个幂等
+初始化器 `installSdkHttpAgent()`(注册 handler 与 provider 共同依赖,替代原先只设
+`defaults.proxy=false` 的孤立副作用):
+
+- 保留 `defaultHttpInstance.defaults.proxy=false`,禁止 Axios 自行读取代理环境变量,避免与 c3
+  的代理决策叠加。
+- 只安装一次 request interceptor:按每次请求的绝对 URL、当前 `getProxyConfig()` 与环境变量调用
+  `proxyAgentFor`,为 HTTPS 请求设置或清除 `httpsAgent`。agent 按目标 origin 与有效代理配置
+  复用,配置变化时淘汰旧 agent,避免轮询循环每次重建连接池;直连与 `NO_PROXY` 目标显式清除
+  agent,绝不残留上一请求的 agent。
+- 初始化可重复调用而不叠加 interceptor;`releaseSdkHttpAgents()` 在测试与进程关闭时释放缓存
+  agent 并卸载。长连接不受影响:`WSClient` 收到显式 agent,不经过该 interceptor。
+
+注册只面向**飞书中国区**(`accounts.feishu.cn`),固定 `createOnly: true`,不接受客户端传入
+addons、既有 App ID 或域名。SDK 一旦报告 `domain_switched`(国际 Lark 租户),服务端立即中止
+轮询并以不支持地区收敛,后续可能返回的 Lark 凭据一律丢弃。
+
+### 最小权限模板与灰度限制
+
+`registerApp` 的 addons 是封闭模板,不套用 Agent 全量 manifest:
+
+- `preset: false`,只使用机器人能力最小基底,不叠加平台默认模板。
+- tenant scopes 为 `im:message:send_as_bot`、`im:message.group_at_msg:readonly`、
+  `im:message.p2p_msg:readonly`、`application:bot.basic_info:read`,覆盖默认群聊 @提及、
+  单聊文本入站、文本回复与机器人身份解析;不申请 user scopes、卡片、文档、评论、Wiki 或文件
+  能力,也不读取未 @机器人的群内普通消息。
+- tenant events 仅为 `im.message.receive_v1`。
+
+addons 受飞书平台灰度控制:未开灰时平台会忽略整个 addons 并展示默认流程,SDK 状态与最终凭据
+都不会说明模板是否被忽略,确认页是唯一可观察面。c3 能保证的是请求载荷严格为上述模板,不能把
+平台实际授权面伪装成可由程序核验的结果;管理员在确认页看到默认模板或额外业务权限时应拒绝。
+
+### 凭据后的长连接配置与手工降级
+
+取得凭据后,服务端用该应用**自己**的 tenant token 走 application v7 开发配置接口——不构造 SDK
+全量 `Client`,不调 v6 PATCH/GET:
+
+- 先以本次返回的 App ID/App Secret 获取 `tenant_access_token`(App ID 必须来自同一注册结果,
+  不能由客户端指定),再 `PATCH /open-apis/application/v7/applications/{appId}/config`。
+- 请求体只含 `event: { subscription_type: 'websocket', add_events: ['im.message.receive_v1'] }`,
+  即一次完成长连接订阅方式与消息事件订阅,正好覆盖下方三条前置条件中的两条。
+- 令牌获取与 PATCH 都走 `outboundFetch`,沿用统一代理/豁免与错误处理,叠加任务取消信号与单次
+  15 秒超时;`code=0` 是「官方配置接口已接受」的唯一同步判定,之后才返回 `ready`。
+
+若凭据已完整但 token 或 PATCH 因接口不可用、权限拒绝、业务拒绝或网络错误未获 `code=0`,任务
+返回 `manual_setup_required` 并**携带完整凭据**,让管理员能找回刚创建的应用手工补齐长连接;
+只有取得凭据前的传输错误、响应缺少任一项凭据或内部不变量破坏才返回不含凭据的失败。凭据在
+`ready` / `manual_setup_required` 结果中只出现一次、只发往发起连接,不落日志、不广播、不在
+机器人创建前持久化。
+
 ### 飞书应用侧前置条件
 
 入站只走 SDK 长连接,因此飞书开发者后台必须同时满足:
@@ -41,6 +95,9 @@ SDK 只负责**入站长连接**:建连、心跳、重连、解码平台私有�
 1. **订阅方式 = 使用长连接接收事件/回调**(不是请求网址推送)。
 2. **已添加事件** `im.message.receive_v1`(接收消息)。
 3. 应用具备机器人能力,且凭据与 c3 中配置的 `appId`/`appSecret` 一致。
+
+一键建应用(仅飞书、仅新建表单)自动完成 1–3 中的凭据与长连接配置;`manual_setup_required`
+降级结果仍须管理员手工补齐 1–2。手工填写凭据、编辑既有机器人及只写密钥语义不变。
 
 `WSClient.start()` 在握手完成前就会返回;c3 会等到 SDK `onReady`(或终端失败/超时)后才记
 `[im] connected`。若控制台未切长连接或未订阅该事件,表现为连接失败/超时,或连接成功但发消息后
@@ -53,7 +110,9 @@ SDK 只负责**入站长连接**:建连、心跳、重连、解码平台私有�
 
 **同时必须关闭 SDK 自身的代理探测。** 它会自行读取环境变量,随后长连接以协议不匹配失败,
 _即使已经显式提供了 agent_。导出了代理变量的机器因此完全连不上,而这类机器很常见。关闭它一次,
-代理由 c3 单方面决定。
+代理由 c3 单方面决定。设备授权的 SDK HTTP 请求同样遵守这条边界:interceptor 按每个请求的目标
+origin 重新应用 c3 的代理决策,账号域的静态 agent 不会错用于其它飞书 origin,直连与 `NO_PROXY`
+不会残留上一请求的 `httpsAgent`(详见上文「设备授权与一键建应用的窄例外」)。
 
 ## supervisor 生命周期
 

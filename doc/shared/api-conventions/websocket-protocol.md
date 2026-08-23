@@ -518,6 +518,26 @@
 
 **字段：** `vendor: VendorId`, `workspaceName?: string`, `scope?: 'automation' | 'robot'`
 
+### `start_feishu_app_registration`
+
+管理员在新建飞书机器人表单点击「一键创建飞书应用」时发起。服务器再次执行管理员鉴权（按钮可见性
+不是权限边界），然后经飞书官方 SDK 的设备授权流程创建企业自建应用并预置凭据。`requestId` 由客户端
+生成，之后的每条进度/结果帧都回显它；每个连接同时至多一个活动任务，重复发起以 `server_error`
+结果拒绝，不创建并行应用。
+
+请求不携带任何飞书凭据、addons 或域名：`createOnly`、最小权限模板与中国区域名都由服务端固定，
+客户端不能扩大权限面或把既有 App ID 当作更新目标。
+
+**字段：** `requestId: string`
+
+### `cancel_feishu_app_registration`
+
+取消本连接的活动注册任务（按 `requestId` 匹配）。幂等：未知或已收敛的 `requestId` 是无操作；
+只有发起连接能取消自己的任务，取消后仍会收到一条 `cancelled` 结果。任务在连接关闭时被服务端
+自动中止并丢弃。
+
+**字段：** `requestId: string`
+
 ### `skill_load_approval_resolve`
 
 解决待处理的启动前 skill 加载门控（挂载层 2/3）。`approve` 允许挂载继续并持久化 `.gitignore` 确认；`cancel` 跳过追加 `.gitignore` 行（skill 不挂载，但会话仍然启动）。通过 `requestId` 与 `SkillLoadApprovalRequest` 关联。
@@ -980,6 +1000,40 @@ automation 的执行日志。
 供应商的工具清单（回复 `get_tool_manifest`）。`scope` 回显发问的网格。
 
 **字段：** `vendor: VendorId`, `tools: ToolManifestEntry[]`, `scope?: 'automation' | 'robot'`
+
+### `feishu_app_registration_progress`
+
+一次 `start_feishu_app_registration` 的进度，**只发往发起连接**，且只在该帧的 `requestId` 仍是该
+连接的活动任务时投递——迟到的或不匹配的帧一律丢弃，绝不广播。状态机为
+`starting → waiting_scan → configuring → ready | manual_setup_required`，轮询中可穿插 `slow_down`；
+取得凭据前任一非终态都可转入 `failed`。
+
+- `starting`：已受理，正在生成授权码。
+- `waiting_scan`：携带 `verificationUrl` 与服务端按 SDK `expireIn` 计算的 `expiresAt`（epoch 毫秒），
+  前端据此渲染本地 SVG 二维码、可点击/复制链接与倒计时。授权 URL 是公开展示内容，不是秘密。
+- `slow_down`：飞书要求降低轮询频率，仅提示，不改变流程。
+- `configuring`：已取得凭据，正在用该应用自己的 tenant token 设置长连接与事件订阅。
+
+**字段：** `requestId: string`, `status: 'starting' | 'waiting_scan' | 'slow_down' | 'configuring'`,
+`verificationUrl?: string`, `expiresAt?: number`（后两项仅 `waiting_scan` 携带）
+
+### `feishu_app_registration_result`
+
+一次注册的终态结果，同样只发往发起连接并校验 `requestId`。三类结果互斥：
+
+- `ready`：凭据 + 长连接配置均完成，携带完整 `appId` / `appSecret` 供表单回填。
+- `manual_setup_required`：应用已创建、凭据完整，但自动长连接配置失败（`config_unavailable` /
+  `config_forbidden` / `config_rejected` / `config_network_error` 之一），仍携带完整凭据，管理员
+  按指引手工补齐后表单可继续保存。
+- `failed`：只携带 `denied` / `expired` / `cancelled` / `unsupported_region` / `network_error` /
+  `server_error` 及可选安全详情，**绝不携带凭据**。
+
+含凭据帧只会出现一次、只到达发起连接；授权 URL、设备码、App Secret 与访问令牌不落日志、不进
+通用错误、不被广播、不在机器人创建前持久化。`unsupported_region` 表示 SDK 报告跨到国际 Lark 域，
+服务端已中止并丢弃后续可能返回的 Lark 凭据。
+
+**字段：** `requestId: string`, `outcome: 'ready' | 'manual_setup_required' | 'failed'`, 以及按
+结果类别区分的凭据/原因字段（见上）。
 
 ### `wait_user_events`
 

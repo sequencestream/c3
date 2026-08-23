@@ -506,6 +506,12 @@ export interface AppMethods {
   ): void
   /** Fetch one vendor's tool manifest for the robot form (no workspace scope). */
   onLoadRobotToolManifest(vendor: string): void
+  /** Start a one-click Feishu app registration for the create form. */
+  startFeishuAppRegistration(): void
+  /** Cancel the active registration and clear its view state (form closed / cancel). */
+  cancelFeishuAppRegistration(): void
+  /** Drop the registration view state without a wire message (e.g. user edited creds). */
+  clearFeishuAppRegistration(): void
   /** (Re)fetch the cross-workspace Dashboard snapshot; coalesces while one is in flight. */
   loadDashboard(): void
   /** Refresh the Dashboard only when it is the active view (domain-broadcast hook). */

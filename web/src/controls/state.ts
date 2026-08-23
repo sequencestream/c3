@@ -87,6 +87,8 @@ import type {
   ImIdentityChallengeCreated,
   ImIdentityChallengeSummary,
   ImGroupWorkspaceGrant,
+  FeishuManualSetupReason,
+  FeishuRegistrationFailedReason,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import { useTypedI18n } from '@/i18n'
@@ -102,6 +104,57 @@ export type MyImIdentityView = {
   bindings: ImIdentityBinding[]
   pendingChallenges: ImIdentityChallengeSummary[]
   noAuthLocalHint: boolean
+}
+
+/** UI phase of the one-click Feishu app registration, mirrored from the wire. */
+export type FeishuRegistrationPhase =
+  | 'idle'
+  | 'starting'
+  | 'waiting_scan'
+  | 'slow_down'
+  | 'configuring'
+  | 'ready'
+  | 'manual_setup_required'
+  | 'failed'
+
+/**
+ * Per-connection one-click registration view state. Credentials from a
+ * terminal result live here in memory until the form is saved or closed.
+ */
+export interface FeishuAppRegistrationState {
+  requestId: string | null
+  phase: FeishuRegistrationPhase
+  verificationUrl: string | null
+  expiresAt: number | null
+  appId: string | null
+  appSecret: string | null
+  manualSetupReason: FeishuManualSetupReason | null
+  failedReason: FeishuRegistrationFailedReason | null
+  detail: string | null
+}
+
+export function idleFeishuAppRegistration(): FeishuAppRegistrationState {
+  return {
+    requestId: null,
+    phase: 'idle',
+    verificationUrl: null,
+    expiresAt: null,
+    appId: null,
+    appSecret: null,
+    manualSetupReason: null,
+    failedReason: null,
+    detail: null,
+  }
+}
+
+/** True while a request is in flight and the form must lock its credentials. */
+export function isFeishuRegistrationActive(s: FeishuAppRegistrationState): boolean {
+  return (
+    s.phase === 'starting' ||
+    s.phase === 'waiting_scan' ||
+    s.phase === 'slow_down' ||
+    s.phase === 'configuring'
+  )
 }
 
 export interface StateDeps {
@@ -307,6 +360,13 @@ export function createState(deps: StateDeps) {
   const robotsLoading = ref(false)
   const selectedRobotId = ref<string | null>(null)
   const robotTurns = ref<ImRobotTurnLog[]>([])
+
+  // One-click Feishu app registration: the controls layer owns the request
+  // association (client-generated requestId) and the whole UI state, so the
+  // form only renders it and emits actions. Credentials in a `ready` /
+  // `manual_setup_required` result live here in memory until the user saves;
+  // they never reach the roster, broadcast or any persisted state.
+  const feishuAppRegistration = ref<FeishuAppRegistrationState>(idleFeishuAppRegistration())
 
   // Robot-form tool manifest: cached per vendor, like the automation form's, but
   // with no workspace attached — a robot is not scoped to one, so the manifest is
@@ -1210,6 +1270,7 @@ export function createState(deps: StateDeps) {
     robotsLoading,
     selectedRobotId,
     robotTurns,
+    feishuAppRegistration,
     robotToolManifest,
     robotToolManifestLoading,
     robotToolManifestError,

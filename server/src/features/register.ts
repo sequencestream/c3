@@ -169,6 +169,7 @@ import {
   acknowledgeRobotOutboundHandler,
   acknowledgeRobotWriteCapabilityHandler,
   adminRevokeImIdentityHandler,
+  cancelFeishuAppRegistrationHandler,
   cancelImIdentityChallengeHandler,
   createImIdentityChallengeHandler,
   createRobotHandler,
@@ -182,6 +183,7 @@ import {
   setImGroupWorkspaceScopesHandler,
   setRobotEnabledHandler,
   setRobotWriteGrantEnabledHandler,
+  startFeishuAppRegistrationHandler,
   updateRobotHandler,
 } from './im/index.js'
 
@@ -361,6 +363,8 @@ export const handlerMap: HandlerMap = {
   list_im_identity_bindings: listImIdentityBindingsHandler,
   list_im_group_workspace_scopes: listImGroupWorkspaceScopesHandler,
   set_im_group_workspace_scopes: setImGroupWorkspaceScopesHandler,
+  start_feishu_app_registration: startFeishuAppRegistrationHandler,
+  cancel_feishu_app_registration: cancelFeishuAppRegistrationHandler,
 }
 
 /** Assemble the startup handler registry from the exhaustive map. */

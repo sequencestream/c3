@@ -16,6 +16,7 @@
  * The tenant access token is short-lived, so it is cached and refreshed a little
  * before it expires rather than fetched per message.
  */
+import type { FeishuManualSetupReason } from '@ccc/shared/protocol'
 import { outboundFetch } from '../../../../kernel/infra/proxy-fetch.js'
 
 const FEISHU_BASE = 'https://open.feishu.cn/open-apis'
@@ -51,6 +52,14 @@ interface SendResponse {
   msg: string
   data?: { message_id?: string }
 }
+
+interface ApplicationConfigResponse {
+  code: number
+  msg: string
+}
+
+/** Single timeout for the token + v7 config PATCH leg of one-click setup. */
+const APP_CONFIG_TIMEOUT_MS = 15_000
 
 /**
  * Holds one app's credentials and its cached token. One instance per robot —
@@ -152,5 +161,78 @@ export class FeishuApi {
       throw new FeishuApiError(body.code, `send failed: ${body.msg}`)
     }
     return body.data?.message_id ?? ''
+  }
+}
+
+/**
+ * Outcome of the post-registration long-connection configuration.
+ * `configured` is the only success; every other value is a closed reason the
+ * caller surfaces as `manual_setup_required` together with the credentials.
+ */
+export type AppConfigOutcome = 'configured' | FeishuManualSetupReason
+
+/**
+ * Configure a just-created Feishu app for c3's inbound long connection, using
+ * application v7's `applicationConfig.patch` with the app's OWN tenant token.
+ *
+ * The path and payload are deliberate:
+ *  - `PATCH /open-apis/application/v7/applications/{appId}/config` — the v7
+ *    development-config endpoint; NOT the v6 "update app group info" PATCH,
+ *    which shares no model with dev config (and would need a `lang` query).
+ *  - body carries only `event.subscription_type='websocket'` and
+ *    `event.add_events=['im.message.receive_v1']`.
+ *  - no SDK `Client` is constructed; the token and the PATCH both ride c3's
+ *    own `outboundFetch` channel, so proxy/NO_PROXY handling is the settled one.
+ *
+ * `code=0` is the only synchronous "accepted by the official config interface"
+ * signal. HTTP 404/405/501 (interface unavailable), 403 (permission denied),
+ * non-zero business code and network/timeout failures map to the four closed
+ * `manual_setup_required` reasons so the created app stays findable.
+ */
+export async function configureAppWebsocket(
+  appId: string,
+  appSecret: string,
+  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<AppConfigOutcome> {
+  if (!appId || !appSecret) {
+    throw new FeishuApiError(0, 'configureAppWebsocket requires both credentials')
+  }
+  const timeoutMs = opts.timeoutMs ?? APP_CONFIG_TIMEOUT_MS
+  const signal = opts.signal
+    ? AbortSignal.any([opts.signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs)
+  try {
+    const api = new FeishuApi(appId, appSecret)
+    const token = await api.accessToken()
+    const res = await outboundFetch(
+      `${FEISHU_BASE}/application/v7/applications/${encodeURIComponent(appId)}/config`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          event: {
+            subscription_type: 'websocket',
+            add_events: ['im.message.receive_v1'],
+          },
+        }),
+        signal,
+      },
+    )
+    if (res.status === 403) return 'config_forbidden'
+    if (res.status === 404 || res.status === 405 || res.status === 501) {
+      return 'config_unavailable'
+    }
+    const body = (await res.json()) as ApplicationConfigResponse
+    if (body.code === 0) return 'configured'
+    return 'config_rejected'
+  } catch (err) {
+    // Caller cancellation (e.g. the form closed mid-config) and network faults
+    // both land here; after credentials exist the app was already created, so
+    // the correct result is still a findable manual_setup_required.
+    if (err instanceof FeishuApiError) return 'config_rejected'
+    return 'config_network_error'
   }
 }

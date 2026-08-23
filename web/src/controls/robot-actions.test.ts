@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import type { ClientToServer, ImRobot } from '@ccc/shared/protocol'
+import { idleFeishuAppRegistration, isFeishuRegistrationActive } from './state'
 import { installRobotActions } from './robot-actions'
 import type { AppCtx } from './types'
 
@@ -42,6 +43,7 @@ function makeCtx(isAdmin = true) {
   const imIdentityBindings = ref([{ id: 'stale' }])
   const imGroupWorkspaceScopes = ref([{ chatId: 'stale' }])
   const imGroupScopeChatId = ref('stale')
+  const feishuAppRegistration = ref(idleFeishuAppRegistration())
   const ctx = {
     send,
     client: {},
@@ -52,6 +54,7 @@ function makeCtx(isAdmin = true) {
     imIdentityBindings,
     imGroupWorkspaceScopes,
     imGroupScopeChatId,
+    feishuAppRegistration,
   } as unknown as AppCtx
 
   installRobotActions(ctx)
@@ -63,6 +66,7 @@ function makeCtx(isAdmin = true) {
     imIdentityBindings,
     imGroupWorkspaceScopes,
     imGroupScopeChatId,
+    feishuAppRegistration,
   }
 }
 
@@ -89,5 +93,51 @@ describe('robot selection refresh', () => {
     expect(c.send.mock.calls.map(([message]) => message)).toEqual([
       { type: 'list_robot_turns', robotId: 'r1' },
     ])
+  })
+})
+
+describe('one-click Feishu app registration actions', () => {
+  it('starts a registration with a client-generated requestId', () => {
+    const c = makeCtx()
+    c.ctx.startFeishuAppRegistration()
+    const sent = c.send.mock.calls[0][0] as Extract<
+      ClientToServer,
+      { type: 'start_feishu_app_registration' }
+    >
+    expect(sent.type).toBe('start_feishu_app_registration')
+    expect(sent.requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(c.feishuAppRegistration.value.phase).toBe('starting')
+    expect(c.feishuAppRegistration.value.requestId).toBe(sent.requestId)
+  })
+
+  it('does not mint a second request while one is active', () => {
+    const c = makeCtx()
+    c.ctx.startFeishuAppRegistration()
+    const first = c.send.mock.calls[0][0]
+    c.ctx.startFeishuAppRegistration()
+    expect(c.send.mock.calls).toHaveLength(1)
+    expect(c.feishuAppRegistration.value.requestId).toBe((first as { requestId: string }).requestId)
+    expect(isFeishuRegistrationActive(c.feishuAppRegistration.value)).toBe(true)
+  })
+
+  it('cancel sends the wire cancel and clears the view state', () => {
+    const c = makeCtx()
+    c.ctx.startFeishuAppRegistration()
+    const first = c.send.mock.calls[0][0] as { requestId: string }
+    c.ctx.cancelFeishuAppRegistration()
+    expect(c.send.mock.calls[1][0]).toEqual({
+      type: 'cancel_feishu_app_registration',
+      requestId: first.requestId,
+    })
+    expect(c.feishuAppRegistration.value.phase).toBe('idle')
+    expect(c.feishuAppRegistration.value.requestId).toBeNull()
+  })
+
+  it('clear drops local state without sending a wire message', () => {
+    const c = makeCtx()
+    c.ctx.startFeishuAppRegistration()
+    c.ctx.clearFeishuAppRegistration()
+    expect(c.send.mock.calls).toHaveLength(1)
+    expect(c.feishuAppRegistration.value.phase).toBe('idle')
   })
 })

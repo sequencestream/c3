@@ -192,6 +192,8 @@ export type ClientToServer =
   | RobotMsg.ClientListImIdentityBindings
   | RobotMsg.ClientListImGroupWorkspaceScopes
   | RobotMsg.ClientSetImGroupWorkspaceScopes
+  | RobotMsg.ClientStartFeishuAppRegistration
+  | RobotMsg.ClientCancelFeishuAppRegistration
   | SessionMsg.ClientPing
 
 // Server → Client
@@ -293,4 +295,6 @@ export type ServerToClient =
   | RobotMsg.ServerImIdentityChallengeCreated
   | RobotMsg.ServerImIdentityBindings
   | RobotMsg.ServerImGroupWorkspaceScopes
+  | RobotMsg.ServerFeishuAppRegistrationProgress
+  | RobotMsg.ServerFeishuAppRegistrationResult
   | SessionMsg.ServerPong

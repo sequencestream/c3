@@ -4025,6 +4025,60 @@
       "edit": {
         "title": "Edit chat robot"
       },
+      "feishuRegistration": {
+        "create": {
+          "label": "Create Feishu app"
+        },
+        "cancel": {
+          "label": "Cancel"
+        },
+        "starting": {
+          "label": "Generating authorization code…"
+        },
+        "waitingScan": {
+          "title": "Scan with the Feishu app",
+          "hint": "Scan the QR code with Feishu and confirm the app creation.",
+          "linkLabel": "Authorization link",
+          "copy": {
+            "label": "Copy link",
+            "copied": "Copied"
+          },
+          "expiresIn": "Expires in {seconds}s"
+        },
+        "slowDown": {
+          "label": "Feishu is busy; keep waiting…"
+        },
+        "configuring": {
+          "label": "Configuring the app (long connection)…"
+        },
+        "ready": {
+          "label": "Feishu app created. App ID and app secret have been filled in below."
+        },
+        "manualSetup": {
+          "title": "Manual setup required",
+          "warning": "The long connection could not be configured automatically. The created app credentials are filled in below; finish the setup in the developer console before enabling this robot.",
+          "step1": "Events & Callbacks → set Subscription method to Long connection.",
+          "step2": "Confirm im.message.receive_v1 is subscribed.",
+          "consoleLink": "Open the Feishu developer console"
+        },
+        "failed": {
+          "denied": "Authorization was declined. No credentials were changed.",
+          "expired": "The authorization code expired. Try again.",
+          "cancelled": "The request was cancelled.",
+          "unsupportedRegion": "This flow supports Feishu China tenants only. International Lark tenants are not supported.",
+          "networkError": "A network error occurred. Try again.",
+          "serverError": "A server error occurred. Try again."
+        },
+        "scopes": {
+          "title": "Permissions this app will request",
+          "warning": "Always check the Feishu confirmation page. If it shows the default template or extra business permissions, decline the authorization.",
+          "sendAsBot": "Send messages as the bot",
+          "groupAtRead": "Read group messages that mention the bot",
+          "p2pRead": "Read direct messages with the bot",
+          "botBasicInfoRead": "Read the bot's basic info",
+          "event": "Receive message events"
+        }
+      },
       "name": {
         "label": "Name",
         "hint": "Lowercase letters, digits, - and _. Also the working directory name, and fixed after creation."

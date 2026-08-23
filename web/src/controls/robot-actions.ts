@@ -1,4 +1,5 @@
 import type { ImPlatform, RobotConfigInput, VendorId } from '@ccc/shared/protocol'
+import { idleFeishuAppRegistration, isFeishuRegistrationActive } from './state'
 import type { AppCtx } from './types'
 
 /**
@@ -67,6 +68,38 @@ export function installRobotActions(ctx: AppCtx): void {
     ctx.robotToolManifestLoading.value = true
     ctx.robotToolManifestError.value = null
     send({ type: 'get_tool_manifest', vendor: vendor as VendorId, scope: 'robot' })
+  }
+
+  /**
+   * Start a one-click Feishu app registration. The requestId is generated here
+   * and echoed on every server frame for this attempt; the form only sees the
+   * derived state. No-op while a request is already active — the server refuses
+   * a duplicate anyway, but the client must not even mint a second requestId.
+   */
+  ctx.startFeishuAppRegistration = (): void => {
+    const current = ctx.feishuAppRegistration.value
+    if (isFeishuRegistrationActive(current)) return
+    const requestId = crypto.randomUUID()
+    ctx.feishuAppRegistration.value = {
+      ...idleFeishuAppRegistration(),
+      requestId,
+      phase: 'starting',
+    }
+    send({ type: 'start_feishu_app_registration', requestId })
+  }
+
+  /** Cancel the active request and clear the QR/status immediately. */
+  ctx.cancelFeishuAppRegistration = (): void => {
+    const current = ctx.feishuAppRegistration.value
+    if (current.requestId) {
+      send({ type: 'cancel_feishu_app_registration', requestId: current.requestId })
+    }
+    ctx.feishuAppRegistration.value = idleFeishuAppRegistration()
+  }
+
+  /** Drop the registration view state locally (no wire message). */
+  ctx.clearFeishuAppRegistration = (): void => {
+    ctx.feishuAppRegistration.value = idleFeishuAppRegistration()
   }
 
   // Enabling is refused until this is recorded, so the two are sent together

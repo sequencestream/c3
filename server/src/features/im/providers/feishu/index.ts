@@ -15,12 +15,7 @@
  * The SDK import is confined to this directory by design: it is the seam, and
  * keeping it here is what lets the rest of the codebase stay unaware of Feishu.
  */
-import {
-  EventDispatcher,
-  WSClient,
-  LoggerLevel,
-  defaultHttpInstance,
-} from '@larksuiteoapi/node-sdk'
+import { EventDispatcher, WSClient, LoggerLevel } from '@larksuiteoapi/node-sdk'
 import type { ImConnectionStatus } from '@ccc/shared/protocol'
 import { getProxyConfig } from '../../../../kernel/config/index.js'
 import { proxyAgentFor } from '../../../../kernel/infra/proxy-agent.js'
@@ -33,6 +28,7 @@ import type {
 import { logImProviderSkip } from '../../im-log.js'
 import { FeishuApi } from './api.js'
 import { parseFeishuInbound } from './normalize.js'
+import { installSdkHttpAgent } from './sdk-http.js'
 
 /**
  * The host the long link is established against. Used only to decide whether a
@@ -46,9 +42,11 @@ const CONNECT_READY_TIMEOUT_MS = 45_000
 // The SDK's HTTP client otherwise picks a proxy out of `http_proxy` / `all_proxy`
 // on its own, and the long link then fails with a protocol mismatch even when an
 // agent was supplied — a machine with those variables exported (common) could
-// never connect. c3 decides the proxy itself and passes it as an agent below, so
-// the client's own detection is turned off once, here.
-defaultHttpInstance.defaults.proxy = false
+// never connect. c3 decides the proxy itself: the shared initializer kills
+// axios' own detection once and re-applies c3's per-request agent decision for
+// the SDK's Device Authorization calls; the long link below passes its agent
+// explicitly and never goes through that interceptor.
+installSdkHttpAgent()
 
 const CAPABILITIES: ImProviderCapabilities = {
   outboundLongPoll: true,

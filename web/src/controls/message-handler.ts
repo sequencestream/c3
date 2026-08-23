@@ -208,6 +208,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     robotToolManifest,
     robotToolManifestLoading,
     robotToolManifestError,
+    feishuAppRegistration,
     executionTranscripts,
     filesProject,
     filesDirs,
@@ -1786,6 +1787,49 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Ignore a reply for a robot the user has since navigated away from.
         if (msg.robotId === ctx.selectedRobotId.value) ctx.robotTurns.value = msg.turns
         break
+      case 'feishu_app_registration_progress': {
+        // Only the frame for the CURRENT request is applied; a late frame from
+        // a cancelled/replaced attempt is ignored, never applied to a new one.
+        if (feishuAppRegistration.value.requestId !== msg.requestId) break
+        const current = feishuAppRegistration.value
+        feishuAppRegistration.value =
+          msg.status === 'waiting_scan'
+            ? {
+                ...current,
+                phase: 'waiting_scan',
+                verificationUrl: msg.verificationUrl ?? null,
+                expiresAt: msg.expiresAt ?? null,
+              }
+            : { ...current, phase: msg.status }
+        break
+      }
+      case 'feishu_app_registration_result': {
+        if (feishuAppRegistration.value.requestId !== msg.requestId) break
+        if (msg.outcome === 'ready') {
+          feishuAppRegistration.value = {
+            ...feishuAppRegistration.value,
+            phase: 'ready',
+            appId: msg.appId,
+            appSecret: msg.appSecret,
+          }
+        } else if (msg.outcome === 'manual_setup_required') {
+          feishuAppRegistration.value = {
+            ...feishuAppRegistration.value,
+            phase: 'manual_setup_required',
+            appId: msg.appId,
+            appSecret: msg.appSecret,
+            manualSetupReason: msg.reason,
+          }
+        } else {
+          feishuAppRegistration.value = {
+            ...feishuAppRegistration.value,
+            phase: 'failed',
+            failedReason: msg.reason,
+            detail: msg.detail ?? null,
+          }
+        }
+        break
+      }
       case 'my_im_identity':
         myImIdentity.value = {
           bindings: msg.bindings,

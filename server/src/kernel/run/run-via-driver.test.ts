@@ -31,6 +31,7 @@ import {
 } from './run-via-driver.js'
 import { addViewer, ensureRuntime, removeRuntime, type Viewer } from '../../runs.js'
 import { getSpecsBase } from '../config/workspace-path.js'
+import { pendingCount, resolveDecision } from '../permission/index.js'
 
 function frame(blocks: CanonicalBlock[], extra?: Partial<CanonicalMessage>): CanonicalMessage {
   return { vendor: 'codex', sessionId: 's', role: 'assistant', blocks, ts: 0, ...extra }
@@ -526,6 +527,178 @@ describe('runViaDriver — gh token bridge', () => {
     await runViaDriver(rt, 'hi', captureAdapter('claude', sid, started), eventBus)
 
     expect(ghBridge.fn).not.toHaveBeenCalled()
+    removeRuntime(sid)
+  })
+})
+
+describe('runViaDriver — Cursor AskQuestion bridging', () => {
+  // A cursor adapter whose driver yields ONE pending AskQuestion on the initial
+  // turn, then — when resumed with the answers — a plain text reply. The resume
+  // call is captured so the test can assert the same native session id + hidden
+  // answer prompt.
+  function askFakeAdapter(opts: {
+    sid: string
+    askId: string
+    question: string
+    resumedReply: string
+  }): { adapter: VendorAdapter; started: Array<{ prompt?: string; resume?: string }> } {
+    const started: Array<{ prompt?: string; resume?: string }> = []
+    const askBlock: CanonicalBlock = {
+      type: 'tool_use',
+      id: opts.askId,
+      name: 'AskQuestion',
+      // The translator has already normalized the native payload to the unified
+      // shape by the time a canonical block leaves the stream.
+      input: {
+        questions: [
+          {
+            question: opts.question,
+            header: '',
+            multiSelect: false,
+            options: [{ label: '是' }, { label: '否' }],
+          },
+        ],
+      },
+    }
+    const adapter = {
+      vendor: 'cursor',
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: (dopts: { prompt: string; resume?: string }) => {
+          started.push({ prompt: dopts.prompt, resume: dopts.resume })
+          if (started.length === 1) {
+            return Promise.resolve({
+              sessionId: () => Promise.resolve(opts.sid),
+              abort: () => {},
+
+              messages: async function* () {
+                yield frame([askBlock], { vendor: 'cursor', sessionId: opts.sid })
+              },
+            })
+          }
+          return Promise.resolve({
+            sessionId: () => Promise.resolve(opts.sid),
+            abort: () => {},
+
+            messages: async function* () {
+              yield frame([{ type: 'text', text: opts.resumedReply }], {
+                vendor: 'cursor',
+                sessionId: opts.sid,
+              })
+            },
+          })
+        },
+      },
+    } as unknown as VendorAdapter
+    return { adapter, started }
+  }
+
+  it('registers the wait-user event + permission_request, closes the ask with one tool_result, and resumes the same native session', async () => {
+    const sid = 'cursor-ask-1'
+    const question = '部署到生产？'
+    const askId = 'ask-1'
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
+    const frames: ServerToClient[] = []
+    addViewer(sid, (e) => frames.push(e))
+    const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+
+    const onPermissionRequest = vi.fn()
+    const { adapter, started } = askFakeAdapter({
+      sid,
+      askId,
+      question,
+      resumedReply: '收到，我继续。',
+    })
+
+    const run = runViaDriver(rt, 'hi', adapter, eventBus, undefined, onPermissionRequest)
+    // The bridge blocks on the human — answer it from the test side once the
+    // waiter is registered.
+    await vi.waitFor(() => expect(pendingCount()).toBe(1))
+    const decision = resolveDecision(`cursor-ask:${sid}:${askId}`, 'allow', { [question]: '是' })
+    expect(decision).toEqual({ status: 'resolved' })
+    await run
+
+    // Wait-user event FIRST, carrying the runtime's live session + business kind.
+    expect(onPermissionRequest).toHaveBeenCalledWith({
+      requestId: `cursor-ask:${sid}:${askId}`,
+      toolName: 'AskQuestion',
+      input: expect.anything(),
+      sessionId: sid,
+      workspacePath: '/proj',
+      sessionKind: 'work',
+      initiatedBySubject: null,
+    })
+
+    const perms = frames.filter((f) => f.type === 'permission_request')
+    expect(perms).toHaveLength(1)
+    expect(perms[0]).toMatchObject({
+      requestId: `cursor-ask:${sid}:${askId}`,
+      toolName: 'AskQuestion',
+      isUserInteraction: true,
+    })
+
+    // The pending guard closes with exactly ONE interaction tool_result carrying
+    // the readable question/answer rendering.
+    const results = frames.filter(
+      (f): f is Extract<ServerToClient, { type: 'tool_result' }> =>
+        f.type === 'tool_result' && f.toolUseId === askId,
+    )
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ isError: false, isUserInteraction: true })
+    expect(String(results[0].content)).toContain(`问：${question}`)
+    expect(String(results[0].content)).toContain('答：是')
+
+    // Same native session resumed via --resume with the hidden answer prompt —
+    // never a new business instruction.
+    expect(started).toHaveLength(2)
+    expect(started[1].resume).toBe(sid)
+    expect(started[1].prompt).toContain('你上一个回合调用的 AskQuestion 已由用户逐题作答')
+    expect(started[1].prompt).toContain(`问题：${question}`)
+    expect(started[1].prompt).toContain('回答：是')
+
+    // The resumed reply streams through a FRESH emitter (one assistant_text per
+    // reply, no cross-subprocess text-span bleed).
+    const text = frames.filter((f) => f.type === 'assistant_text').at(-1)
+    expect(text).toEqual({ type: 'assistant_text', text: '收到，我继续。' })
+    expect(frames.at(-1)).toEqual({ type: 'turn_end', reason: 'complete' })
+
+    removeRuntime(sid)
+  })
+
+  it('a deny closes the ask with a failed result and never resumes the session', async () => {
+    const sid = 'cursor-ask-deny'
+    const question = '继续吗？'
+    const askId = 'ask-deny'
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
+    const frames: ServerToClient[] = []
+    addViewer(sid, (e) => frames.push(e))
+    const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+
+    const { adapter, started } = askFakeAdapter({
+      sid,
+      askId,
+      question,
+      resumedReply: '不该到这里来',
+    })
+
+    const run = runViaDriver(rt, 'hi', adapter, eventBus, undefined, vi.fn())
+    await vi.waitFor(() => expect(pendingCount()).toBe(1))
+    expect(resolveDecision(`cursor-ask:${sid}:${askId}`, 'deny')).toEqual({ status: 'resolved' })
+    await run
+
+    const results = frames.filter(
+      (f): f is Extract<ServerToClient, { type: 'tool_result' }> =>
+        f.type === 'tool_result' && f.toolUseId === askId,
+    )
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ isError: true, isUserInteraction: true })
+    expect(String(results[0].content)).toContain('用户拒绝')
+
+    // A deny starts nothing new: exactly one driver.start, no answer-resume.
+    expect(started).toHaveLength(1)
+    expect(started[0].prompt).toBe('hi')
+    expect(frames.at(-1)).toEqual({ type: 'turn_end', reason: 'complete' })
+
     removeRuntime(sid)
   })
 })

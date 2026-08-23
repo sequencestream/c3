@@ -15,6 +15,7 @@ import {
   agentsForOption,
   agentsForCustom,
   initAskDraft,
+  isAskTool,
   type AskQuestionView,
   type AskDraftSlot,
 } from '../../lib/ask'
@@ -46,10 +47,6 @@ function axisLabel(axis: Axis): string {
   }
 }
 
-// Fixed tool identifier shown verbatim in a <code> tag (do-not-translate; bound
-// via a const so `no-raw-text` doesn't flag it as hard-coded copy).
-const ASK_TOOL_LABEL = 'AskUserQuestion'
-
 // `actionable` is true only for the live, still-pending permission the user can
 // answer. When false and undecided, this prompt is a history record replayed
 // from the buffer (or a superseded earlier request) and renders as a single
@@ -64,9 +61,12 @@ const isStatic = computed(() => props.m.decision === null && !props.actionable)
 
 /** The one-line label for a static history record, per tool type. */
 const historyLine = computed<string>(() => {
-  if (props.m.toolName === 'AskUserQuestion') {
-    // 复数 key:传 number 形参触发分支选择,消息内 {count} 自动暴露。
-    return t('permission.history.askQuestion', askQuestionsOf(props.m.input).length)
+  if (isAskTool(props.m.toolName)) {
+    // 复数 key:{count} 既触发分支选择,又参与插值;工具名显示实际 ask 工具。
+    return t('permission.history.askQuestion', {
+      count: askQuestionsOf(props.m.input).length,
+      toolName: props.m.toolName,
+    })
   }
   return t('permission.history.useTool', { toolName: props.m.toolName })
 })
@@ -157,10 +157,10 @@ function submitAsk() {
   <!-- Replayed / superseded history: a single static line, no actions, no verdict -->
   <div v-if="isStatic" class="perm-history">{{ historyLine }}</div>
 
-  <!-- AskUserQuestion: per-question answer panel -->
-  <template v-else-if="m.toolName === 'AskUserQuestion'">
+  <!-- Ask tool (AskUserQuestion / AskQuestion): per-question answer panel -->
+  <template v-else-if="isAskTool(m.toolName)">
     <div class="label">
-      {{ t('permission.ask.answerQuestion.label') }} <code>{{ ASK_TOOL_LABEL }}</code>
+      {{ t('permission.ask.answerQuestion.label') }} <code>{{ m.toolName }}</code>
       <span v-if="m.consensus" class="consensus-badge split">{{
         t('permission.ask.multiAgentSuggestion.label')
       }}</span>

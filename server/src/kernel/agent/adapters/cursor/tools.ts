@@ -54,6 +54,10 @@ export const CURSOR_TOOL_CATEGORIES: Readonly<Record<string, CursorToolCategory>
   task: 'meta',
   createPlan: 'meta',
   updateTodos: 'meta',
+
+  // The headless conversation's own question to the human: c3 intercepts it and
+  // answers via a `--resume` subprocess, never as a write or a network call.
+  askQuestion: 'meta',
 }
 
 /** Categories whose tools change state — everything else is read-only. */

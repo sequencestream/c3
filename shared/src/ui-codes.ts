@@ -365,6 +365,14 @@ export const UI_ERROR_CODES = {
     key: 'error.session.invalidMode',
     params: ['vendor', 'mode'],
   },
+  // An ask request's `allow` was re-submitted with an invalid answer set (missing /
+  // empty answer for some question, or a malformed answers payload). The request
+  // stays pending server-side, so the UI resets that prompt for a corrected
+  // resubmission instead of treating the refusal as terminal.
+  'permission.answersInvalid': {
+    key: 'error.permission.answersInvalid',
+    params: ['reason'],
+  },
   // workspace setting
   'workspaceSetting.invalidDefaultMode': {
     key: 'error.workspaceSetting.invalidDefaultMode',

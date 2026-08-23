@@ -184,7 +184,7 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 Запрошен ответ на {count} вопрос · AskUserQuestion | 🙋 Запрошен ответ на {count} вопроса · AskUserQuestion | 🙋 Запрошен ответ на {count} вопросов · AskUserQuestion",
+      "askQuestion": "🙋 Запрошен ответ на {count} вопрос · {toolName} | 🙋 Запрошен ответ на {count} вопроса · {toolName} | 🙋 Запрошен ответ на {count} вопросов · {toolName}",
       "useTool": "🔧 Запрошено использование инструмента {toolName}"
     },
     "ask": {
@@ -2387,6 +2387,9 @@
     },
     "prompt": {
       "unsupportedFile": "К сообщению можно прикреплять только изображения (получено \"{mediaType}\")."
+    },
+    "permission": {
+      "answersInvalid": "Отправленные ответы неполные — исправьте и отправьте снова. {reason}"
     },
     "intent": {
       "notFound": "Намерение не найдено.",

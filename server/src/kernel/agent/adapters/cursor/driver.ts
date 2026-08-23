@@ -103,6 +103,10 @@ class CursorRun implements AgentRun {
   private readonly translator: CursorStreamTranslator
   private readonly controller = new AbortController()
   private aborted = false
+  /** Resolves once the child has exited and the workspace MCP config is restored. */
+  readonly settled: Promise<void>
+  /** Settles {@link CursorRun.settled} from `pump()`'s finally, on every exit path. */
+  private settleResolve: (() => void) | null = null
 
   constructor(
     private readonly launch: CursorRunLaunch,
@@ -110,6 +114,9 @@ class CursorRun implements AgentRun {
     signal: AbortSignal,
   ) {
     this.translator = new CursorStreamTranslator(launch.sessionId)
+    this.settled = new Promise((resolve) => {
+      this.settleResolve = resolve
+    })
     if (signal.aborted) this.abort()
     else signal.addEventListener('abort', () => this.abort(), { once: true })
     void this.pump()
@@ -170,6 +177,7 @@ class CursorRun implements AgentRun {
     } finally {
       // However the turn ended, the workspace goes back the way it was found.
       cleanupCursorMcpConfig(this.launch.mcp)
+      this.settleResolve?.()
     }
   }
 }

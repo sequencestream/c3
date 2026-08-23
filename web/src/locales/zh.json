@@ -183,7 +183,7 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 请求回答 {count} 个问题 · AskUserQuestion",
+      "askQuestion": "🙋 请求回答 {count} 个问题 · {toolName}",
       "useTool": "🔧 请求使用工具 {toolName}"
     },
     "ask": {
@@ -2386,6 +2386,9 @@
     },
     "prompt": {
       "unsupportedFile": "消息只能附带图片（收到 \"{mediaType}\"）。"
+    },
+    "permission": {
+      "answersInvalid": "提交的答案不完整，请修正后重新提交。{reason}"
     },
     "intent": {
       "notFound": "意图不存在。",

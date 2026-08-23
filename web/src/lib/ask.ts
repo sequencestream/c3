@@ -7,6 +7,16 @@ import type { AnyConsensusOutcome, AskConsensusOutcome } from '@ccc/shared/proto
  * shape is whatever the model emitted.
  */
 
+/**
+ * The ask tools c3 routes to the per-question human-answer panel: Claude's
+ * `AskUserQuestion` and Cursor's headless `AskQuestion` (both canonicalized to
+ * the same wire name; Cursor's is carried verbatim so the UI can show which
+ * vendor's ask this is).
+ */
+export function isAskTool(toolName: string | null | undefined): boolean {
+  return toolName === 'AskUserQuestion' || toolName === 'AskQuestion'
+}
+
 export interface AskOption {
   label: string
   description?: string

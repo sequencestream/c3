@@ -17,6 +17,7 @@ import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/Bas
 import MobileStack from '@/components/MobileStack/MobileStack.vue'
 import EventList from './components/EventList.vue'
 import EventDetail from './components/EventDetail.vue'
+import { isAskTool } from '@/lib/ask'
 import type {
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
@@ -166,7 +167,7 @@ function onLoadMore(): void {
 }
 
 function isNotificationEvent(event: WaitUserInvolveEvent): boolean {
-  return event.status === 'todo' && event.requestId === null && event.toolName !== 'AskUserQuestion'
+  return event.status === 'todo' && event.requestId === null && !isAskTool(event.toolName)
 }
 </script>
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { waitForDecision, resolveDecision, pendingCount } from './registry.js'
+import { waitForDecision, waitForAskAnswers, resolveDecision, pendingCount } from './registry.js'
 
 describe('permission registry', () => {
   it('resolves with the decision delivered via resolveDecision', async () => {
@@ -7,7 +7,7 @@ describe('permission registry', () => {
     expect(pendingCount()).toBe(1)
 
     const matched = resolveDecision('req-1', 'allow')
-    expect(matched).toBe(true)
+    expect(matched).toEqual({ status: 'resolved' })
 
     await expect(p).resolves.toEqual({ decision: 'allow', answers: undefined })
     expect(pendingCount()).toBe(0)
@@ -75,7 +75,9 @@ describe('permission registry', () => {
     // abort must not flip it to deny or double-resolve.
     const ac = new AbortController()
     const p = waitForDecision('req-answered-then-abort', ac.signal)
-    expect(resolveDecision('req-answered-then-abort', 'allow', { Q: 'A' })).toBe(true)
+    expect(resolveDecision('req-answered-then-abort', 'allow', { Q: 'A' })).toEqual({
+      status: 'resolved',
+    })
     // Abort arrives after the decision: nothing pending, so it cannot change it.
     ac.abort()
     await expect(p).resolves.toEqual({ decision: 'allow', answers: { Q: 'A' } })
@@ -88,16 +90,45 @@ describe('permission registry', () => {
     ac.abort()
     await expect(p).resolves.toEqual({ decision: 'deny' })
     // The pending entry is gone, so a late human answer finds nothing to resolve.
-    expect(resolveDecision('req-abort-then-answer', 'allow')).toBe(false)
+    expect(resolveDecision('req-abort-then-answer', 'allow')).toEqual({ status: 'stale' })
     expect(pendingCount()).toBe(0)
   })
 
-  it('returns false for unknown or already-resolved request ids', () => {
-    expect(resolveDecision('never-registered', 'allow')).toBe(false)
+  it('reports stale for unknown or already-resolved request ids', () => {
+    expect(resolveDecision('never-registered', 'allow')).toEqual({ status: 'stale' })
 
     waitForDecision('req-once')
-    expect(resolveDecision('req-once', 'allow')).toBe(true)
+    expect(resolveDecision('req-once', 'allow')).toEqual({ status: 'resolved' })
     // Second resolve finds nothing pending.
-    expect(resolveDecision('req-once', 'deny')).toBe(false)
+    expect(resolveDecision('req-once', 'deny')).toEqual({ status: 'stale' })
+  })
+
+  it('rejects an allow whose answers fail validation and stays pending', async () => {
+    const p = waitForAskAnswers('req-ask', (a) =>
+      a?.['Q'] ? { ok: true } : { ok: false, error: 'question not answered: "Q"' },
+    )
+    const rejected = resolveDecision('req-ask', 'allow', {})
+    expect(rejected).toEqual({ status: 'rejected', rejected: 'question not answered: "Q"' })
+    // The entry survives a rejection, so a corrected submission can still resolve.
+    expect(pendingCount()).toBe(1)
+
+    const settled = vi.fn()
+    p.then(settled)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+
+    expect(resolveDecision('req-ask', 'allow', { Q: 'A' })).toEqual({ status: 'resolved' })
+    await expect(p).resolves.toEqual({ decision: 'allow', answers: { Q: 'A' } })
+    expect(pendingCount()).toBe(0)
+  })
+
+  it('resolves a deny without consulting the validator', async () => {
+    const p = waitForAskAnswers('req-ask-deny', () => ({
+      ok: false,
+      error: 'should never run on a deny',
+    }))
+    expect(resolveDecision('req-ask-deny', 'deny')).toEqual({ status: 'resolved' })
+    await expect(p).resolves.toEqual({ decision: 'deny', answers: undefined })
+    expect(pendingCount()).toBe(0)
   })
 })

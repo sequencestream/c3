@@ -183,7 +183,7 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 Asked to answer one question · AskUserQuestion | 🙋 Asked to answer {count} questions · AskUserQuestion",
+      "askQuestion": "🙋 Asked to answer one question · {toolName} | 🙋 Asked to answer {count} questions · {toolName}",
       "useTool": "🔧 Asked to use tool {toolName}"
     },
     "ask": {
@@ -2386,6 +2386,9 @@
     },
     "prompt": {
       "unsupportedFile": "Only images can be attached to a message (received \"{mediaType}\")."
+    },
+    "permission": {
+      "answersInvalid": "The submitted answers are incomplete — fix them and submit again. {reason}"
     },
     "intent": {
       "notFound": "Intent not found.",

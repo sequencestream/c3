@@ -13,6 +13,7 @@
  */
 import type { ActionDescriptor, Intent } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
+import { ASK_TOOL_NAME } from '../../kernel/agent/adapters/cursor/ask.js'
 import { getDefaultMainBranch, getGitBranchMode, getSddEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { findLatestTodoEventForSessionIds } from '../user-involve/store.js'
@@ -49,9 +50,10 @@ function sessionIdsForIntent(
 
 /**
  * A pending wait-user event for this intent as a deep-link descriptor, or `null`
- * when none is waiting. AskUserQuestion is distinguished from ordinary tool
- * gates by `toolName`; events without a `requestId` (notification-only todos)
- * are ignored — they have no actionable prompt to land on.
+ * when none is waiting. Ask tools (AskUserQuestion / AskQuestion) are
+ * distinguished from ordinary tool gates by `toolName`; events without a
+ * `requestId` (notification-only todos) are ignored — they have no actionable
+ * prompt to land on.
  */
 function deriveWaitUserActionDescriptor(
   intent: Pick<
@@ -68,7 +70,7 @@ function deriveWaitUserActionDescriptor(
   if (!workspacePath) return null
   const event = findLatestTodoEventForSessionIds(workspacePath, sessionIdsForIntent(intent))
   if (!event || !event.requestId) return null
-  if (event.toolName === 'AskUserQuestion') {
+  if (event.toolName === 'AskUserQuestion' || event.toolName === ASK_TOOL_NAME) {
     return {
       labelCode: 'ask_user_question_pending',
       target: { type: 'workcenter-event', eventId: event.id },

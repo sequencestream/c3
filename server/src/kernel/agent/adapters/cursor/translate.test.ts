@@ -4,7 +4,7 @@
  * and assert the canonical output.
  */
 import { describe, it, expect } from 'vitest'
-import type { CanonicalMessage } from '../types.js'
+import type { CanonicalBlock, CanonicalMessage } from '../types.js'
 import { CursorStreamTranslator, type CursorEvent } from './translate.js'
 
 /**
@@ -391,6 +391,138 @@ describe('discriminated tool_call payloads', () => {
     // Same id twice: the accumulator upserts, so the second carries the result.
     expect(blocks.map((b) => b.id)).toEqual(['call-1', 'call-1'])
     expect(blocks[1]).toMatchObject({ name: 'edit', result: { isError: false } })
+  })
+})
+
+describe('AskQuestion recognition', () => {
+  const askArgs = {
+    questions: [
+      {
+        prompt: '部署到生产？',
+        allow_multiple: false,
+        options: [{ label: '是' }, { id: 'no', label: '否' }],
+      },
+    ],
+  }
+
+  function askFrame(over: Partial<CursorEvent> = {}): CursorEvent {
+    return {
+      type: 'tool_call',
+      subtype: 'started',
+      call_id: 'ask-1',
+      session_id: 'agent-1',
+      tool_call: { askQuestionToolCall: { args: askArgs } },
+      ...over,
+    }
+  }
+
+  function askToolBlock(
+    messages: CanonicalMessage[],
+  ): Extract<CanonicalBlock, { type: 'tool_use' }> | undefined {
+    return messages
+      .flatMap((m) => m.blocks)
+      .find((b): b is Extract<CanonicalBlock, { type: 'tool_use' }> => b.type === 'tool_use')
+  }
+
+  it('canonicalizes the discriminated arm to the wire name AskQuestion', () => {
+    const { messages } = translate([askFrame()])
+    const block = askToolBlock(messages)
+    expect(block).toMatchObject({ name: 'AskQuestion', id: 'ask-1' })
+    expect(block?.vendorExtra?.category).toBe('meta')
+    // The human-facing ask must not look pre-approved: c3 routes it to a person.
+    expect(messages.at(-1)?.preApproved).toBeUndefined()
+  })
+
+  it('normalizes the native payload to the unified ask shape', () => {
+    const { messages } = translate([askFrame()])
+    expect(askToolBlock(messages)?.input).toEqual({
+      questions: [
+        {
+          question: '部署到生产？',
+          header: '',
+          multiSelect: false,
+          options: [{ label: '是' }, { label: '否' }],
+        },
+      ],
+    })
+    // The native payload survives only for shaping the resume answer.
+    expect(askToolBlock(messages)?.vendorExtra?.nativeAskInput).toEqual(askArgs)
+  })
+
+  it('recognizes the flat name regardless of case', () => {
+    for (const name of ['AskQuestion', 'askquestion', 'ASKQUESTION']) {
+      const { messages } = translate([
+        {
+          type: 'tool_call',
+          agent_id: 'agent-1',
+          run_id: 'run-1',
+          call_id: 'ask-f',
+          name,
+          status: 'running',
+          args: askArgs,
+        },
+      ])
+      expect(askToolBlock(messages)?.name).toBe('AskQuestion')
+      expect(messages.at(-1)?.preApproved).toBeUndefined()
+    }
+  })
+
+  it('never rewrites a non-ask tool, including a Claude-shaped name', () => {
+    const { messages } = translate([
+      {
+        type: 'tool_call',
+        agent_id: 'agent-1',
+        run_id: 'run-1',
+        call_id: 'ask-uq',
+        name: 'AskUserQuestion',
+        status: 'running',
+        args: {},
+      },
+    ])
+    expect(askToolBlock(messages)?.name).toBe('AskUserQuestion')
+    expect(messages.at(-1)?.preApproved).toBe(true)
+  })
+
+  it('keeps other Cursor tools pre-approved', () => {
+    const { messages } = translate([
+      {
+        type: 'tool_call',
+        agent_id: 'agent-1',
+        run_id: 'run-1',
+        call_id: 'c1',
+        name: 'read',
+        status: 'running',
+        args: { path: '/a' },
+      },
+    ])
+    expect(messages.at(-1)?.preApproved).toBe(true)
+  })
+
+  it('a completion reuses the stored normalized input instead of re-normalizing', () => {
+    const { messages } = translate([askFrame(), { ...askFrame({ subtype: 'completed' }) }])
+    const block = messages
+      .flatMap((m) => m.blocks)
+      .filter((b) => b.type === 'tool_use')
+      .at(-1)
+    expect(block?.vendorExtra?.askNormalizationFailed).toBeUndefined()
+    expect(block?.input).toMatchObject({ questions: [{ question: '部署到生产？' }] })
+  })
+
+  it('a malformed ask fails normalization visibly instead of a half-formed panel', () => {
+    const { messages } = translate([
+      {
+        type: 'tool_call',
+        agent_id: 'agent-1',
+        run_id: 'run-1',
+        call_id: 'ask-bad',
+        name: 'AskQuestion',
+        status: 'running',
+        args: { questions: [] },
+      },
+    ])
+    const block = askToolBlock(messages)
+    expect(block?.vendorExtra?.askNormalizationFailed).toBeTruthy()
+    expect(messages.at(-1)?.preApproved).toBeUndefined()
   })
 })
 

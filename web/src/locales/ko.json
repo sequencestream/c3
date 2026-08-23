@@ -184,7 +184,7 @@
   },
   "permission": {
     "history": {
-      "askQuestion": "🙋 {count}개 질문에 답변 요청됨 · AskUserQuestion",
+      "askQuestion": "🙋 {count}개 질문에 답변 요청됨 · {toolName}",
       "useTool": "🔧 {toolName} 도구 사용 요청됨"
     },
     "ask": {
@@ -2387,6 +2387,9 @@
     },
     "prompt": {
       "unsupportedFile": "메시지에는 이미지만 첨부할 수 있습니다 (받은 형식: \"{mediaType}\")."
+    },
+    "permission": {
+      "answersInvalid": "제출한 답변이 불완전합니다. 수정 후 다시 제출하세요. {reason}"
     },
     "intent": {
       "notFound": "의도를 찾을 수 없습니다.",

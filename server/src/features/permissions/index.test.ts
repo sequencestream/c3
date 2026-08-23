@@ -18,13 +18,13 @@ vi.mock('../user-involve/store.js', () => ({
 }))
 
 import { permissionResponse } from './index.js'
-import { waitForDecision, pendingCount } from '../../kernel/permission/index.js'
+import { waitForDecision, waitForAskAnswers, pendingCount } from '../../kernel/permission/index.js'
 import { getEventByRequestId, updateStatus } from '../user-involve/store.js'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 
-function fakeConn(subject: string | null): Conn {
-  return { subject } as unknown as Conn
+function fakeConn(subject: string | null): Conn & { send: ReturnType<typeof vi.fn> } {
+  return { subject, send: vi.fn() } as unknown as Conn & { send: ReturnType<typeof vi.fn> }
 }
 
 function fakeCtx(): { ctx: KernelContext; broadcast: ReturnType<typeof vi.fn> } {
@@ -102,5 +102,47 @@ describe('permissionResponse', () => {
     })
     expect(updateStatus).not.toHaveBeenCalled()
     expect(broadcast).not.toHaveBeenCalled()
+  })
+
+  it('a rejected ask answer sends a visible error and settles nothing', async () => {
+    const p = waitForAskAnswers('req-ask-bad', (a) =>
+      a?.['Q'] ? { ok: true } : { ok: false, error: 'question not answered: "Q"' },
+    )
+    expect(pendingCount()).toBe(1)
+
+    const conn = fakeConn('alice')
+    const { ctx, broadcast } = fakeCtx()
+    permissionResponse(ctx, conn, {
+      type: 'permission_response',
+      requestId: 'req-ask-bad',
+      decision: 'allow',
+      answers: {},
+    })
+
+    // The answering connection sees the reason; the request and its wait-user
+    // event stay pending so a corrected submission can still resolve it.
+    expect(conn.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        error: {
+          code: 'permission.answersInvalid',
+          params: { reason: 'question not answered: "Q"' },
+        },
+        requestId: 'req-ask-bad',
+      }),
+    )
+    expect(updateStatus).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
+    expect(pendingCount()).toBe(1)
+
+    // A corrected submission resolves normally.
+    permissionResponse(ctx, fakeConn('alice'), {
+      type: 'permission_response',
+      requestId: 'req-ask-bad',
+      decision: 'allow',
+      answers: { Q: 'A' },
+    })
+    await expect(p).resolves.toMatchObject({ decision: 'allow', answers: { Q: 'A' } })
+    expect(pendingCount()).toBe(0)
   })
 })

@@ -23,11 +23,17 @@ import { getRobot } from './robot-store.js'
 export const L1_OBJECT_TOOLS = ['view_intent', 'view_delivery', 'view_discussion'] as const
 export const L1_LIST_TOOLS = ['find_intents', 'find_deliveries', 'find_discussions'] as const
 export const L1_READ_TOOLS = [...L1_OBJECT_TOOLS, ...L1_LIST_TOOLS] as const
+export const ROBOT_CALL_SCOPE_TOOLS = [...L1_READ_TOOLS, 'list_workspaces'] as const
 
 export type L1ReadTool = (typeof L1_READ_TOOLS)[number]
+export type RobotCallScopeTool = (typeof ROBOT_CALL_SCOPE_TOOLS)[number]
 
 export function isL1ReadTool(name: string): name is L1ReadTool {
   return (L1_READ_TOOLS as readonly string[]).includes(name)
+}
+
+export function isRobotCallScopeTool(name: string): name is RobotCallScopeTool {
+  return (ROBOT_CALL_SCOPE_TOOLS as readonly string[]).includes(name)
 }
 
 /** Uniform tool result when an object is missing, out of scope, or group-hidden. */

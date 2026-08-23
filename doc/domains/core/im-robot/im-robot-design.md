@@ -98,8 +98,9 @@ supervisor 在启动回合前按七维 Conversation 身份认领消息、校验 
 
 表单的工具区是一个与自动化表单**共享**的权限网格(只读/写入两组 + 全选/全清 + 可选的网络开关)。
 工具清单按厂商静态声明(`ToolManifestEntry { name, isWrite }`),由服务端一次下发给两个表单:
-厂商 SDK 内建工具 + c3 自己的 14 个 MCP 工具。机器人是部署级管理对象、不绑工作区字段,因此清单不含任何
-`mcp__<server>__` 工作区命名空间——这是管理契约,不是「无 workspaceName 即安全」的数据访问保证。
+厂商 SDK 内建工具 + c3 自己的 14 个通用 MCP 工具。`scope: 'robot'` 再加入机器人专属只读
+`mcp__c3__list_workspaces`,`scope: 'automation'` 不加入。机器人是部署级管理对象、不绑工作区字段,因此清单
+不含任何 `mcp__<server>__` 工作区命名空间——这是管理契约,不是「无 workspaceName 即安全」的数据访问保证。
 
 线路上是同一对消息 `get_tool_manifest { vendor, workspaceName?, scope? }` → `tool_manifest
 { vendor, tools, scope? }`:机器人侧发 `scope: 'robot'` 且不带 `workspaceName`,服务器原样回显
@@ -144,7 +145,8 @@ initialize 时钉定台账 `workspacePath`。
 
 装配分为两个机器人专用构造器:
 
-- `buildRobotL1Tools` 处理六个只读工具。列举型遍历当次详细可见工作区,对象型先反查归属再验详细可见集。
+- `buildRobotL1Tools` 处理六个账本只读工具和机器人专属 `list_workspaces`。列举型遍历当次详细可见工作区,
+  对象型先反查归属再验详细可见集;`list_workspaces` 仅按注册表顺序返回实时详细可见集的名称。
 - `buildRobotWriteTools` 处理 `save_intents`、`save_intent_directly`、`submit_spec_review`、
   `start_session_for_intent`、`start_discussion`、`continue_discussion`。每个 handler 先重算调用级作用域;
   新建型从显式 `workspaceName` 解析注册根,对象型从 id 反查候选归属后验详细可见集,再调用意图、规格评审、

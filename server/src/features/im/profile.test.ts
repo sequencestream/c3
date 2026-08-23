@@ -131,6 +131,17 @@ describe('robotLaunchProfile — allowlist split', () => {
     const profile = robotLaunchProfile(id, binder)
     expect(profile.writeEnabled).toBe(false)
   })
+
+  it('list_workspaces is read-only and reaches the robot MCP binder', () => {
+    const id = createRobot(
+      input({ vendor: 'codex', toolAllowlist: ['mcp__c3__list_workspaces'] }),
+    ).id
+    const binder = makeBinder()
+    const profile = robotLaunchProfile(id, binder)
+    expect(profile.writeEnabled).toBe(false)
+    expect(profile.allowedTools.has('mcp__c3__list_workspaces')).toBe(true)
+    expect(bindCalls(binder)).toEqual([['list_workspaces']])
+  })
 })
 
 describe('robotLaunchProfile — MCP binder subset', () => {

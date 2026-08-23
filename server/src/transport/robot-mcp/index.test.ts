@@ -4,8 +4,7 @@
  *  - the loopback predicate (non-local peers rejected; defence in depth);
  *  - unknown-token rejection (404) at the route;
  *  - a REAL MCP client over streamable-HTTP that lists ONLY the selected tools and
- *    calls one end-to-end, proving the binding freezes the subset (spec: 未勾选工具
- *    既不出现在 tools/list,直接调用也被服务端拒绝);
+ *    calls one end-to-end, proving the binding freezes the subset;
  *  - the per-turn `enabledTools` descriptor equals exactly the registered subset;
  *  - dispose evicts the token: the same URL 404s afterward.
  * Tool behaviors are the shared framing-free builders bound to a temp workspace,
@@ -19,10 +18,9 @@ import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { resetDbForTests } from '../../kernel/infra/db.js'
-import type { AutomationMcpDeps } from '../../features/automations/c3-tools.js'
 import type { AuthConfig } from '@ccc/shared/protocol'
 import { initTestGitRepo } from '../../../test/git-repo.js'
+import { resetDbForTests } from '../../kernel/infra/db.js'
 import { releaseConfigDb, useConfigDb } from '../../kernel/config/config-fixture.js'
 import {
   loadSettings,
@@ -48,6 +46,7 @@ import {
 import { chatContextFor, resolveCallScope } from '../../features/im/call-scope.js'
 import { createRobot, resetRobotStoreForTests } from '../../features/im/robot-store.js'
 import { ROBOT_WRITE_TOOL_NAMES } from '../../features/im/robot-write-tools.js'
+import type { AutomationMcpDeps } from '../../features/automations/c3-tools.js'
 import {
   createRobotMcp,
   ROBOT_MCP_PATH,
@@ -142,6 +141,22 @@ describe('robot MCP HTTP route', () => {
     accept: 'application/json, text/event-stream',
   }
 
+  function useBasicAuth(...usernames: string[]): void {
+    const auth: AuthConfig = {
+      enabled: true,
+      provider: {
+        kind: 'basic',
+        accounts: usernames.map((username) => ({
+          username,
+          passwordHash: hashPassword('pw'),
+        })),
+        adminUsername: usernames[0],
+      },
+      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+    }
+    saveSettings({ ...loadSettings(), auth })
+  }
+
   function configureBoundAlice(): {
     robotId: string
     senderId: string
@@ -150,19 +165,7 @@ describe('robot MCP HTTP route', () => {
     workspaceName: string
     workspacePath: string
   } {
-    const auth: AuthConfig = {
-      enabled: true,
-      provider: {
-        kind: 'basic',
-        accounts: [
-          { username: 'root', passwordHash: hashPassword('pw') },
-          { username: 'alice', passwordHash: hashPassword('pw') },
-        ],
-        adminUsername: 'root',
-      },
-      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
-    }
-    saveSettings({ ...loadSettings(), auth })
+    useBasicAuth('root', 'alice')
     const workspacePath = join(dir, 'ledger')
     mkdirSync(workspacePath, { recursive: true })
     initTestGitRepo(workspacePath)
@@ -243,11 +246,97 @@ describe('robot MCP HTTP route', () => {
     }
   })
 
+  it('lists and calls selected list_workspaces with the live IM scope', async () => {
+    useBasicAuth('root', 'alice')
+    const alphaPath = join(dir, 'workspace-alpha')
+    const betaPath = join(dir, 'workspace-beta')
+    const robotRoot = join(dir, 'robots', 'helper')
+    for (const path of [alphaPath, betaPath, robotRoot]) mkdirSync(path, { recursive: true })
+    const alpha = registerWorkspace(alphaPath, 'alpha', 200).name
+    const beta = registerWorkspace(betaPath, 'beta', 100).name
+    putWorkspaceScope('alice', 'selected', [beta, alpha], 1)
+    const robot = createRobot({
+      name: 'helper',
+      platform: 'feishu',
+      appId: 'cli_app',
+      appSecret: 'secret',
+      vendor: 'claude',
+      agentId: 'agent-1',
+    })
+    const binding = seedBindingForTests({
+      accountNamespace: accountNamespaceOf('feishu', 'cli_app'),
+      senderId: 'ou_alice',
+      subject: 'alice',
+    })
+    const chat = chatContextFor('feishu', 'cli_app', 'p2p', 'ou_alice')
+    const scope = resolveCallScope({ robotId: robot.id, senderId: 'ou_alice', chat })
+    expect(scope.ok).toBe(true)
+    if (!scope.ok) return
+
+    const mcpBinding = robotMcp.bind({
+      workspacePath: robotRoot,
+      getRunId: () => 'run-1',
+      selectedTools: ['list_workspaces'],
+      imAuth: {
+        robotId: robot.id,
+        senderId: 'ou_alice',
+        chatType: 'p2p',
+        chatId: 'ou_alice',
+        providerAccountKey: 'cli_app',
+        platform: 'feishu',
+        expectedBindingId: binding.id,
+        turnStartScopeHash: scope.scope.scopeHash,
+      },
+    })
+    expect(mcpBinding.servers.c3.enabledTools).toEqual(['list_workspaces'])
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    await client.connect(
+      new StreamableHTTPClientTransport(routeUrl(tokenOf(mcpBinding.servers.c3.url))),
+    )
+    try {
+      const listed = await client.listTools()
+      expect(listed.tools.map((tool) => tool.name)).toEqual(['list_workspaces'])
+      const result = await client.callTool({ name: 'list_workspaces', arguments: {} })
+      const payload = JSON.parse((result.content as Array<{ text: string }>)[0]!.text) as {
+        workspaces: string[]
+      }
+      expect(payload).toEqual({ workspaces: [alpha, beta] })
+      expect(JSON.stringify(payload)).not.toContain(alphaPath)
+      expect(JSON.stringify(payload)).not.toContain(betaPath)
+      expect(JSON.stringify(payload)).not.toContain(robotRoot)
+    } finally {
+      await client.close()
+      mcpBinding.dispose()
+    }
+  })
+
+  it('returns not_visible for selected list_workspaces when IM auth is absent', async () => {
+    const binding = robotMcp.bind({
+      workspacePath: runRoot,
+      getRunId: () => 'run-1',
+      selectedTools: ['list_workspaces'],
+    })
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    await client.connect(
+      new StreamableHTTPClientTransport(routeUrl(tokenOf(binding.servers.c3.url))),
+    )
+    try {
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['list_workspaces'])
+      const result = await client.callTool({ name: 'list_workspaces', arguments: {} })
+      expect(JSON.parse((result.content as Array<{ text: string }>)[0]!.text)).toEqual({
+        code: 'not_visible',
+      })
+    } finally {
+      await client.close()
+      binding.dispose()
+    }
+  })
+
   it('an unselected tool is absent from tools/list and direct call is refused', async () => {
     const binding = robotMcp.bind({
       workspacePath: runRoot,
       getRunId: () => 'run-1',
-      // The six robot writes are deliberately NOT selected.
+      // Robot-only reads and writes are deliberately not selected.
       selectedTools: ['find_intents'],
     })
     const client = new Client({ name: 'test', version: '1.0.0' })
@@ -256,11 +345,12 @@ describe('robot MCP HTTP route', () => {
     )
     try {
       const listed = await client.listTools()
-      for (const name of ROBOT_WRITE_TOOL_NAMES) {
+      const unselected = ['list_workspaces', ...ROBOT_WRITE_TOOL_NAMES]
+      for (const name of unselected) {
         expect(listed.tools.map((t) => t.name)).not.toContain(name)
       }
 
-      for (const name of ROBOT_WRITE_TOOL_NAMES) {
+      for (const name of unselected) {
         const refused = await client.callTool({ name, arguments: {} })
         expect(refused.isError).toBe(true)
         expect(JSON.stringify(refused.content)).toContain(name)

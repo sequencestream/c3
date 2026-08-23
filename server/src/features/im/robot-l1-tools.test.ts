@@ -2,7 +2,7 @@
  * Call-level L1 read tools for IM robots: object reverse-lookup, multi-workspace
  * enumeration, group hiddenCount projection, and mid-turn scope change.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,6 +31,7 @@ import {
 import {
   accountNamespaceOf,
   resetIdentityStoreForTests,
+  revokeMyBinding,
   seedBindingForTests,
   setGroupWorkspaceScopes,
 } from './identity-store.js'
@@ -61,10 +62,10 @@ function useBasicAuth(...usernames: string[]): void {
   saveSettings({ ...loadSettings(), auth })
 }
 
-function makeWorkspace(name: string): string {
+function makeWorkspace(name: string, lastAccessed = Date.now()): string {
   const p = join(dir, name)
   mkdirSync(p, { recursive: true })
-  return registerWorkspace(p, name, Date.now()).name
+  return registerWorkspace(p, name, lastAccessed).name
 }
 
 function authCtx(input: {
@@ -75,6 +76,7 @@ function authCtx(input: {
   bindingId: string
   scopeHash: string
   displaySignals?: ReturnType<typeof createTurnDisplaySignals>
+  onScopeChanged?: () => void
 }): RobotL1AuthContext {
   return {
     robotId: input.robotId,
@@ -82,7 +84,7 @@ function authCtx(input: {
     chat: chatContextFor('feishu', 'cli_app', input.chatType, input.chatId),
     expectedBindingId: input.bindingId,
     turnStartScopeHash: input.scopeHash,
-    onScopeChanged: () => {},
+    onScopeChanged: input.onScopeChanged ?? (() => {}),
     displaySignals: input.displaySignals,
   }
 }
@@ -100,6 +102,14 @@ beforeEach(() => {
   resetDeliveryStoreForTests()
   resetDiscussionStoreForTests()
 })
+
+function parseWorkspaceNames(result: Awaited<ReturnType<AutomationToolHandler>>): {
+  workspaces: string[]
+} {
+  return JSON.parse(result.content[0]!.text!) as { workspaces: string[] }
+}
+
+type AutomationToolHandler = ReturnType<typeof buildRobotL1Tools>[number]['handler']
 
 afterEach(() => {
   releaseConfigDb()
@@ -632,6 +642,163 @@ describe('buildRobotL1Tools — list tools', () => {
     expect(signals.groupHiddenCount).toBe(1)
     expect(payload.items).toHaveLength(1)
     expect(payload.items[0]!.workspaceName).toBe(alpha)
+  })
+})
+
+describe('buildRobotL1Tools — list_workspaces', () => {
+  function setup(chatType: 'group' | 'p2p' = 'p2p') {
+    useBasicAuth('root', 'alice')
+    const alpha = makeWorkspace('alpha', 300)
+    const beta = makeWorkspace('beta', 200)
+    const gamma = makeWorkspace('gamma', 100)
+    const robot = createRobot({
+      name: 'helper',
+      platform: 'feishu',
+      appId: 'cli_app',
+      appSecret: 'secret',
+      vendor: 'claude',
+      agentId: 'agent-1',
+    })
+    const ns = accountNamespaceOf('feishu', 'cli_app')
+    const binding = seedBindingForTests({
+      accountNamespace: ns,
+      senderId: 'ou_alice',
+      subject: 'alice',
+    })
+    const chatId = chatType === 'group' ? 'oc_group' : 'ou_alice'
+    const chat = chatContextFor('feishu', 'cli_app', chatType, chatId)
+    return { alpha, beta, gamma, robot, binding, chat, chatId }
+  }
+
+  it('returns only authorized names in registry order, never paths or the robot root', async () => {
+    const { alpha, beta, gamma, robot, binding, chat, chatId } = setup()
+    putWorkspaceScope('alice', 'selected', [gamma, beta, alpha], 1)
+    rmSync(join(dir, gamma), { recursive: true })
+    const atStart = resolveCallScope({ robotId: robot.id, senderId: 'ou_alice', chat })
+    expect(atStart.ok).toBe(true)
+    if (!atStart.ok) return
+
+    const robotRoot = join(dir, 'robots', 'helper')
+    mkdirSync(robotRoot, { recursive: true })
+    const list = buildRobotL1Tools(
+      authCtx({
+        robotId: robot.id,
+        senderId: 'ou_alice',
+        chatType: 'p2p',
+        chatId,
+        bindingId: binding.id,
+        scopeHash: atStart.scope.scopeHash,
+      }),
+    ).find((tool) => tool.name === 'list_workspaces')!
+
+    const result = await list.handler({})
+    expect(parseWorkspaceNames(result)).toEqual({ workspaces: [alpha, beta] })
+    expect(Object.keys(parseWorkspaceNames(result))).toEqual(['workspaces'])
+    expect(JSON.stringify(result.content)).not.toContain(join(dir, alpha))
+    expect(JSON.stringify(result.content)).not.toContain(join(dir, beta))
+    expect(JSON.stringify(result.content)).not.toContain(robotRoot)
+    expect(parseWorkspaceNames(result).workspaces).not.toContain('helper')
+  })
+
+  it('narrows personal scope again through the current group whitelist', async () => {
+    const { alpha, beta, robot, binding, chat, chatId } = setup('group')
+    putWorkspaceScope('alice', 'selected', [alpha, beta], 1)
+    setGroupWorkspaceScopes('root', 'feishu', 'cli_app', chatId, [beta])
+    const atStart = resolveCallScope({ robotId: robot.id, senderId: 'ou_alice', chat })
+    expect(atStart.ok).toBe(true)
+    if (!atStart.ok) return
+
+    const list = buildRobotL1Tools(
+      authCtx({
+        robotId: robot.id,
+        senderId: 'ou_alice',
+        chatType: 'group',
+        chatId,
+        bindingId: binding.id,
+        scopeHash: atStart.scope.scopeHash,
+      }),
+    ).find((tool) => tool.name === 'list_workspaces')!
+    expect(parseWorkspaceNames(await list.handler({}))).toEqual({ workspaces: [beta] })
+  })
+
+  it('re-resolves personal scope on every call and signals a mid-turn change', async () => {
+    const { alpha, beta, robot, binding, chat, chatId } = setup()
+    putWorkspaceScope('alice', 'selected', [alpha, beta], 1)
+    const atStart = resolveCallScope({ robotId: robot.id, senderId: 'ou_alice', chat })
+    expect(atStart.ok).toBe(true)
+    if (!atStart.ok) return
+    const onScopeChanged = vi.fn()
+    const list = buildRobotL1Tools(
+      authCtx({
+        robotId: robot.id,
+        senderId: 'ou_alice',
+        chatType: 'p2p',
+        chatId,
+        bindingId: binding.id,
+        scopeHash: atStart.scope.scopeHash,
+        onScopeChanged,
+      }),
+    ).find((tool) => tool.name === 'list_workspaces')!
+
+    expect(parseWorkspaceNames(await list.handler({}))).toEqual({ workspaces: [alpha, beta] })
+    putWorkspaceScope('alice', 'selected', [beta], 2)
+    const latest = await list.handler({})
+    expect(parseWorkspaceNames(latest)).toEqual({ workspaces: [beta] })
+    expect(latest.isError).toBeUndefined()
+    expect(onScopeChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-resolves the group whitelist on every call and can return an empty intersection', async () => {
+    const { alpha, beta, robot, binding, chat, chatId } = setup('group')
+    putWorkspaceScope('alice', 'selected', [alpha, beta], 1)
+    setGroupWorkspaceScopes('root', 'feishu', 'cli_app', chatId, [alpha])
+    const atStart = resolveCallScope({ robotId: robot.id, senderId: 'ou_alice', chat })
+    expect(atStart.ok).toBe(true)
+    if (!atStart.ok) return
+    const onScopeChanged = vi.fn()
+    const list = buildRobotL1Tools(
+      authCtx({
+        robotId: robot.id,
+        senderId: 'ou_alice',
+        chatType: 'group',
+        chatId,
+        bindingId: binding.id,
+        scopeHash: atStart.scope.scopeHash,
+        onScopeChanged,
+      }),
+    ).find((tool) => tool.name === 'list_workspaces')!
+
+    expect(parseWorkspaceNames(await list.handler({}))).toEqual({ workspaces: [alpha] })
+    setGroupWorkspaceScopes('root', 'feishu', 'cli_app', chatId, [])
+    expect(parseWorkspaceNames(await list.handler({}))).toEqual({ workspaces: [] })
+    expect(onScopeChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects after the expected binding is revoked without returning old names', async () => {
+    const { alpha, robot, binding, chat, chatId } = setup()
+    putWorkspaceScope('alice', 'selected', [alpha], 1)
+    const atStart = resolveCallScope({ robotId: robot.id, senderId: 'ou_alice', chat })
+    expect(atStart.ok).toBe(true)
+    if (!atStart.ok) return
+    const onScopeChanged = vi.fn()
+    const list = buildRobotL1Tools(
+      authCtx({
+        robotId: robot.id,
+        senderId: 'ou_alice',
+        chatType: 'p2p',
+        chatId,
+        bindingId: binding.id,
+        scopeHash: atStart.scope.scopeHash,
+        onScopeChanged,
+      }),
+    ).find((tool) => tool.name === 'list_workspaces')!
+
+    revokeMyBinding('alice', binding.id)
+    const result = await list.handler({})
+    expect(JSON.parse(result.content[0]!.text!)).toEqual({ code: 'scope_changed' })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result.content)).not.toContain(alpha)
+    expect(onScopeChanged).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -25,7 +25,7 @@ import {
   isRobotWriteTool,
   type RobotWriteMcpDeps,
 } from '../../features/im/robot-write-tools.js'
-import { isL1ReadTool } from '../../features/im/call-scope.js'
+import { isRobotCallScopeTool } from '../../features/im/call-scope.js'
 import type { ImPlatform } from '@ccc/shared/protocol'
 
 /** The loopback path the robot MCP route is mounted at. */
@@ -122,7 +122,7 @@ export function createRobotMcp(
     const toolNames: string[] = []
     const auth = authFor(binding)
 
-    const l1Selected = selected.filter(isL1ReadTool)
+    const l1Selected = selected.filter(isRobotCallScopeTool)
     if (l1Selected.length > 0 && auth) {
       for (const t of buildRobotL1Tools(auth)) {
         if (!l1Selected.includes(t.name as (typeof l1Selected)[number])) continue
@@ -170,7 +170,9 @@ export function createRobotMcp(
 
     // Non-target action tools keep their established Web-only boundary. Their
     // contracts are discovered without ever binding a handler to the robot root.
-    const legacySelected = selected.filter((n) => !isL1ReadTool(n) && !isRobotWriteTool(n))
+    const legacySelected = selected.filter(
+      (name) => !isRobotCallScopeTool(name) && !isRobotWriteTool(name),
+    )
     if (legacySelected.length > 0) {
       const all = buildAutomationC3Tools(
         '',

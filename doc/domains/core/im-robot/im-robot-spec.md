@@ -155,7 +155,8 @@ L0 主动播报:
 ## 工具权限网格
 
 机器人回合能用哪些工具,由创建/编辑时勾选的权限网格决定。网格按当前厂商加载工具清单
-(SDK 内建工具 + c3 自己的 MCP 工具),按「只读 / 写入」两组呈现,带全选与全清。两条原则:
+(SDK 内建工具 + c3 自己的通用 MCP 工具 + 机器人专属只读 `list_workspaces`),按「只读 / 写入」两组呈现,
+带全选与全清。自动化权限网格不出现机器人专属工具。两条原则:
 
 - **创建默认只读。** 新建时只勾只读类工具,写入/执行类不勾,`network-access` 关闭。
 - **编辑保持原样。** 编辑时回读已存的白名单并原样勾选;清单加载失败或为空时网格显示空态,
@@ -189,9 +190,11 @@ workspace-write,否则只读。勾选 c3 MCP 写工具(如 `mcp__c3__save_intent
 
 勾选的 c3 MCP 工具按 Conversation 经回环 HTTP MCP 绑定,只注册 `toolAllowlist` 的勾选子集:未勾选工具
 不出现在 `tools/list`,直接调用由 MCP 服务端按未知工具拒绝。机器人 c3 工具不在连接时钉定单一工作区;
-六个 L1 只读工具与下列六个写工具在每次 handler 执行时重新读取 active binding、
+六个 L1 账本只读工具、机器人专属 `list_workspaces` 与下列六个写工具在每次 handler 执行时重新读取 active binding、
 `user_workspace_scopes`、群白名单与授权版本并求交:
 
+- `list_workspaces`:只按注册表顺序返回详细可见工作区名称,不返回路径、身份或注册表元数据;有效身份下的
+  空交集返回空数组。
 - `save_intents`、`save_intent_directly`:必须显式传入详细可见的 `workspaceName`,再由工作区注册表解析根目录。
 - `submit_spec_review`、`start_session_for_intent`:按 `intentId` 反查归属,归属须在详细可见集内。
 - `start_discussion`、`continue_discussion`:按 `discussionId` 反查归属,归属须在详细可见集内。

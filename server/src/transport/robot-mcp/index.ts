@@ -25,7 +25,7 @@ import {
   refuseWriteViaObjectId,
   type RobotL1AuthContext,
 } from '../../features/im/robot-l1-tools.js'
-import { isL1ReadTool } from '../../features/im/call-scope.js'
+import { isRobotCallScopeTool } from '../../features/im/call-scope.js'
 import type { ImPlatform } from '@ccc/shared/protocol'
 
 /** The loopback path the robot MCP route is mounted at. */
@@ -98,7 +98,7 @@ export function createRobotMcp(
     const selected = binding.selectedTools
     const toolNames: string[] = []
 
-    const l1Selected = selected.filter(isL1ReadTool)
+    const l1Selected = selected.filter(isRobotCallScopeTool)
     if (l1Selected.length > 0 && binding.imAuth) {
       const auth: RobotL1AuthContext = {
         robotId: binding.imAuth.robotId,
@@ -136,7 +136,7 @@ export function createRobotMcp(
     }
 
     // Non-L1 selected tools: never bind to a registered workspace path.
-    const nonL1 = selected.filter((n) => !isL1ReadTool(n))
+    const nonL1 = selected.filter((n) => !isRobotCallScopeTool(n))
     if (nonL1.length > 0) {
       const all = buildAutomationC3Tools(binding.workspacePath, binding.getRunId, deps())
       for (const t of all) {

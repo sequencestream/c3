@@ -25,6 +25,7 @@ import RobotForm from './RobotForm.vue'
 const READ_TOOLS: ToolManifestEntry[] = [
   { name: 'Read', isWrite: false },
   { name: 'Grep', isWrite: false },
+  { name: 'mcp__c3__list_workspaces', isWrite: false },
 ]
 const WRITE_TOOLS: ToolManifestEntry[] = [
   { name: 'Write', isWrite: true },
@@ -123,6 +124,7 @@ describe('RobotForm — create seeds read-only by default', () => {
     const w = mountForm({ toolManifest: { claude: ALL_TOOLS } })
     expect(checked(w, 'Read')).toBe(true)
     expect(checked(w, 'Grep')).toBe(true)
+    expect(checked(w, 'mcp__c3__list_workspaces')).toBe(true)
     expect(checked(w, 'Write')).toBe(false)
     expect(checked(w, 'Edit')).toBe(false)
     // claude has no sandbox network knob — the switch is not even rendered.
@@ -139,7 +141,7 @@ describe('RobotForm — create seeds read-only by default', () => {
 
     const [name, , config] = w.emitted('create')![0] as [string, string, RobotConfigInput]
     expect(name).toBe('helper')
-    expect(config.toolAllowlist).toEqual(['Read', 'Grep'])
+    expect(config.toolAllowlist).toEqual(['Read', 'Grep', 'mcp__c3__list_workspaces'])
     expect(config.toolAllowlist).not.toContain('network-access')
   })
 })

@@ -98,8 +98,9 @@ supervisor 在启动回合前按七维 Conversation 身份认领消息、校验 
 
 表单的工具区是一个与自动化表单**共享**的权限网格(只读/写入两组 + 全选/全清 + 可选的网络开关)。
 工具清单按厂商静态声明(`ToolManifestEntry { name, isWrite }`),由服务端一次下发给两个表单:
-厂商 SDK 内建工具 + c3 自己的 13 个 MCP 工具。机器人是部署级管理对象、不绑工作区字段,因此清单不含任何
-`mcp__<server>__` 工作区命名空间——这是管理契约,不是「无 workspaceName 即安全」的数据访问保证。
+厂商 SDK 内建工具 + c3 自己的 13 个通用 MCP 工具。`scope: 'robot'` 再加入机器人专属只读
+`mcp__c3__list_workspaces`,`scope: 'automation'` 不加入。机器人是部署级管理对象、不绑工作区字段,因此清单
+不含任何 `mcp__<server>__` 工作区命名空间——这是管理契约,不是「无 workspaceName 即安全」的数据访问保证。
 
 线路上是同一对消息 `get_tool_manifest { vendor, workspaceName?, scope? }` → `tool_manifest
 { vendor, tools, scope? }`:机器人侧发 `scope: 'robot'` 且不带 `workspaceName`,服务器原样回显
@@ -137,8 +138,10 @@ claude 配置目录 + vendor 认证挂载。隔离建立失败以安全错误结
 
 ## c3 MCP 回环绑定
 
-机器人回合与自动化共用同一套框架无关的工具构造器;L1 只读子集由 `buildRobotL1Tools` 在每次 handler
-执行时注入调用级授权上下文。自动化在每次执行时经 `transport/automation-mcp` 绑定单一工作区;机器人经
+机器人回合与自动化共用同一套框架无关的工具构造器;六个 L1 账本读取与机器人专属 `list_workspaces`
+由 `buildRobotL1Tools` 在每次 handler 执行时注入调用级授权上下文。`list_workspaces` 直接从实时
+`CallScopeSnapshot.detailWorkspaces` 投影注册表有序名称,不接触 `workspacePath`;scope hash 变化时返回最新
+交集并通知 supervisor,binding 不再匹配时拒绝。自动化在每次执行时经 `transport/automation-mcp` 绑定单一工作区;机器人经
 `transport/robot-mcp`——同一回环流式 HTTP 路径(`/internal/robot-mcp/v1`),每次绑定颁发一次性令牌,
 回环外源被拒,`enabledTools` 精确等于勾选子集,dispose 时先吊销令牌再关连接,URL 随即 404。传输层只
 携带不可伪造的 IM 上下文与 binding id,不在 initialize 时钉定 `workspacePath`。

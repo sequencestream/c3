@@ -59,6 +59,7 @@ c3
 │   ├── intent-management 意图管理                # 把想法变成可验证、可追踪的意图账本并驱动其生命周期
 │   │   ├── 意图账本                              # 按工作区持久化意图,追踪 status/生命周期
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
+│   │   ├── MCP 确认保存                           # save_intents 原子新建/upsert,可显式 draft/cancelled→todo 并设置 automate;正文按五维软指引,save_intent_directly 仍固定新建 draft
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
 │   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管;该开关**仅在规范与开发均未起步前可改**(无规范内容 + 无规范会话 + 无工作会话,判据 canEditIntentSpecMode),起步后概览页降级为只读文本、set_intent_spec_mode 回 intent.specModeLocked 不落库不广播,无强制解锁入口
@@ -250,7 +251,7 @@ c3
 │       ├── 会话四元组钉定                        # (keyId, secretVersion, workspaceName, policyEpoch);换 key 与未知会话同答 404;版本/epoch 变化先清场再 404;先持久化后清连接
 │       ├── trusted-local                         # 无管理员关卡 + 回环 peer 时无需 key,合成 local 主体拥有全部工作区与全部工具;已出示的 bearer 必须校验通过,绝不降级
 │       ├── 暴露未配置 503                        # 绑定非回环地址却无管理员时整面 503 + 引导文案,回环请求同样拒绝,不建立任何会话
-│       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event/list_workspaces/whoami(新 key 默认勾选)+ find_deliveries/view_delivery(可授权但**默认不勾选**);写:save_intents/save_intent_directly/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选);目录不含按意图回填 PR 状态的工具,无法授权
+│       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event/list_workspaces/whoami(新 key 默认勾选)+ find_deliveries/view_delivery(可授权但**默认不勾选**);写:save_intents(可激活 todo/设置 automate)/save_intent_directly(固定新建 draft)/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选);目录不含按意图回填 PR 状态的工具,无法授权
 │       ├── 目录与默认集解耦                      # 「可被管理员勾选」与「新 key 自动获得」是两份名表:EXTERNAL_MCP_READ_TOOLS 是分级来源,EXTERNAL_MCP_DEFAULT_TOOLS 是建 key 时服务端强制写入的初值;编译期钉死默认集只能取读级工具
 │       ├── 越权拒绝                              # 未勾选工具不进 tools/list,绕过发现直接调用返回稳定 forbidden 且无副作用
 │       ├── 逐次授权与写工具目标                  # 目录不闭包作用域,handler 只收本次调用求解出的 EffectiveScope;写工具可选入参 workspaceName 逐次指定目标(读工具不接受),越权目标返回与「工具未授权」逐字相同的 forbidden

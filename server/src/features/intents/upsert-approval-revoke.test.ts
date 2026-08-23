@@ -377,6 +377,27 @@ const launchOf = (out: ReturnType<typeof reconcileQueue>) =>
   out.actions.find((a) => a.kind === 'launch' || a.kind === 'resume') ?? null
 
 describe('队列准入 — 被改写的排队意图不得直接进入开发', () => {
+  it('save_intents 同批激活并开启 automate 后进入既有队列候选判定', () => {
+    const r = seedApproved()
+    updateStatus(r.id, 'draft')
+    setAutomate(r.id, false)
+
+    upsertIntents(proj, [
+      {
+        id: r.id,
+        title: r.title,
+        shortEnTitle: 'orig',
+        content: r.content,
+        priority: r.priority,
+        status: 'todo',
+        automate: true,
+      },
+    ])
+
+    expect(getIntent(r.id)).toMatchObject({ status: 'todo', automate: true })
+    expect(launchOf(reconcileFor(r.id))).toMatchObject({ kind: 'launch', intentId: r.id })
+  })
+
   it('改写前可启动;改写正文后本轮不产生 launch,回到等待批准', () => {
     const r = seedApproved()
     // 基线:批准状态下队列会选中它。

@@ -45,12 +45,21 @@ describe('buildIntentAgentPrompt', () => {
     for (const field of ['title', 'priority', 'module', 'dependencies']) {
       expect(prompt).toContain(field)
     }
+    expect(prompt).toContain('effective status / automate values')
+    expect(prompt).toContain('explicitly name each old → new value')
     // A revision restarts the confirmation: re-list everything, wait again.
     expect(prompt).toContain('objection / change request is NOT a confirmation')
     expect(prompt).toContain('re-list ALL items in full again')
     expect(prompt).toContain('never call `save_intents` before the user has explicitly confirmed')
     // Confirmed ⇒ save immediately.
     expect(prompt).toContain('Once the user explicitly confirms, call the `save_intents` tool')
+  })
+
+  it('requires one confirmed save to activate a draft and enable automation', () => {
+    const prompt = buildIntentAgentPrompt('en', SID)
+    expect(prompt).toContain("set `status: 'todo'` only when the user explicitly confirms")
+    expect(prompt).toContain('Omit `automate` to preserve an existing value')
+    expect(prompt).toContain("a draft must carry `status: 'todo'` in the same confirmed call")
   })
 
   it('keeps one business goal together across technical layers', () => {

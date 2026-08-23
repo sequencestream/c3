@@ -122,6 +122,8 @@ describe('robotLaunchProfile — allowlist split', () => {
     expect(profile.writeEnabled).toBe(false)
     expect(profile.appendSystemPrompt).toContain('save_intents')
     expect(profile.appendSystemPrompt).toContain('文字明确确认')
+    expect(profile.appendSystemPrompt).toContain('status/automate')
+    expect(profile.appendSystemPrompt).toContain('旧值→新值')
     expect(profile.appendSystemPrompt).toContain('管理员勾选工具只授予调用能力')
   })
 

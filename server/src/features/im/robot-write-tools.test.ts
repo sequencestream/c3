@@ -194,33 +194,54 @@ describe('buildRobotWriteTools — visible targets', () => {
       () => 'robot-run-1',
       () => callbacks,
     )
+    const saveTool = tools.find((t) => t.name === 'save_intents')!
+    const directTool = tools.find((t) => t.name === 'save_intent_directly')!
+    expect(saveTool.description).toContain('Why')
+    expect(saveTool.description).toContain('Acceptance')
+    expect(saveTool.description).toContain('须明示旧值→新值并获得用户文字明确确认')
+    expect(saveTool.description).not.toContain('可用 intentSessionId 把它回链')
+    expect(saveTool.inputSchema).toHaveProperty('workspaceName')
+    expect(JSON.stringify(saveTool.inputSchema)).toContain('status')
+    expect(JSON.stringify(saveTool.inputSchema)).toContain('automate')
+    expect(directTool.description).toContain('Trade-offs / Non-goals')
+    expect(JSON.stringify(directTool.inputSchema)).not.toContain('status')
+    expect(JSON.stringify(directTool.inputSchema)).not.toContain('automate')
 
-    const saved = await tools
-      .find((t) => t.name === 'save_intents')!
-      .handler({
-        workspaceName: alphaName,
-        intents: [
-          {
-            title: 'Confirmed',
-            shortEnTitle: 'confirmed',
-            content: 'body',
-            priority: 'P1',
-            intentSessionId: 'forged-session-link',
-          },
-        ],
-      })
-    const drafted = await tools
-      .find((t) => t.name === 'save_intent_directly')!
-      .handler({
-        workspaceName: alphaName,
-        intents: [{ title: 'Drafted', shortEnTitle: 'drafted', content: 'body', priority: 'P2' }],
-      })
+    const saved = await saveTool.handler({
+      workspaceName: alphaName,
+      intents: [
+        {
+          title: 'Confirmed',
+          shortEnTitle: 'confirmed',
+          content: 'body',
+          priority: 'P1',
+          intentSessionId: 'forged-session-link',
+          status: 'todo',
+          automate: true,
+        },
+      ],
+    })
+    const drafted = await directTool.handler({
+      workspaceName: alphaName,
+      intents: [
+        {
+          title: 'Drafted',
+          shortEnTitle: 'drafted',
+          content: 'body',
+          priority: 'P2',
+          status: 'todo',
+          automate: true,
+        },
+      ],
+    })
 
     expect(saved.isError).not.toBe(true)
     expect(drafted.isError).not.toBe(true)
     expect(JSON.stringify([saved, drafted])).not.toContain('web_only')
     const alphaRows = findIntents(alphaPath, {})
     expect(alphaRows.map((row) => row.status).sort()).toEqual(['draft', 'todo'])
+    expect(alphaRows.find((row) => row.title === 'Confirmed')?.automate).toBe(true)
+    expect(alphaRows.find((row) => row.title === 'Drafted')?.automate).toBe(false)
     expect(alphaRows.find((row) => row.title === 'Confirmed')?.intentSessionId).toBeNull()
     expect(findIntents(betaPath, {})).toEqual([])
     expect(callbacks.broadcastIntents).toHaveBeenCalledTimes(2)

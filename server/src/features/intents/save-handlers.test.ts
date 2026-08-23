@@ -27,9 +27,23 @@ vi.mock('../../state.js', async (importOriginal) => ({
 }))
 import { z } from 'zod'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { runSaveConfirmed, saveIntentDirectlySchema, saveSchema } from './tool-defs.js'
+import {
+  intentContentGuidance,
+  runSaveConfirmed,
+  saveDesc,
+  saveIntentDirectlyDesc,
+  saveIntentDirectlySchema,
+  saveSchema,
+} from './tool-defs.js'
 import { runCommSave, type CommSaveBinding } from './save-comm.js'
-import { getIntent, insertIntents, listIntents, resetStoreForTests, updateStatus } from './store.js'
+import {
+  getIntent,
+  insertIntents,
+  listIntents,
+  resetStoreForTests,
+  setAutomate,
+  updateStatus,
+} from './store.js'
 
 const proj = '/abs/save-handlers-proj'
 let dir: string
@@ -81,6 +95,186 @@ describe('runSaveConfirmed — post-confirmation persist', () => {
     expect(saved.every((r) => r.status === 'todo')).toBe(true)
     const logout = saved.find((r) => r.title === 'Logout')!
     expect(logout.dependsOn).toEqual(['x'])
+  })
+
+  it('creates an explicitly automated todo and keeps omitted defaults compatible', () => {
+    const explicit = runSaveConfirmed(
+      proj,
+      {
+        intents: [
+          {
+            title: 'Automated',
+            shortEnTitle: 'automated',
+            content: '',
+            priority: 'P0',
+            status: 'todo',
+            automate: true,
+          },
+          { title: 'Default', shortEnTitle: 'default', content: '', priority: 'P1' },
+        ],
+      },
+      () => {},
+    )
+
+    expect(explicit.isError).toBeFalsy()
+    expect(getIntent(listIntents(proj).find((r) => r.title === 'Automated')!.id)).toMatchObject({
+      status: 'todo',
+      automate: true,
+    })
+    expect(getIntent(listIntents(proj).find((r) => r.title === 'Default')!.id)).toMatchObject({
+      status: 'todo',
+      automate: false,
+    })
+  })
+
+  it('atomically promotes a draft to todo and enables automation on the same id', () => {
+    const [draft] = insertIntents(
+      proj,
+      [{ title: 'Draft', shortEnTitle: 'draft', content: 'before', priority: 'P1' }],
+      'draft',
+    )
+
+    const result = runSaveConfirmed(
+      proj,
+      {
+        intents: [
+          {
+            id: draft.id,
+            title: 'Activated',
+            shortEnTitle: 'activated',
+            content: 'after',
+            priority: 'P0',
+            status: 'todo',
+            automate: true,
+          },
+        ],
+      },
+      () => {},
+    )
+
+    expect(result.isError).toBeFalsy()
+    expect(listIntents(proj)).toHaveLength(1)
+    expect(getIntent(draft.id)).toMatchObject({
+      title: 'Activated',
+      content: 'after',
+      status: 'todo',
+      automate: true,
+    })
+  })
+
+  it('preserves automate when omitted and permits todo/cancelled activation semantics', () => {
+    const [todo, cancelled] = insertIntents(proj, [
+      { title: 'Todo', shortEnTitle: 'todo', content: '', priority: 'P1' },
+      { title: 'Cancelled', shortEnTitle: 'cancelled', content: '', priority: 'P1' },
+    ])
+    setAutomate(todo.id, true)
+    updateStatus(cancelled.id, 'cancelled')
+
+    const result = runSaveConfirmed(
+      proj,
+      {
+        intents: [
+          {
+            id: todo.id,
+            title: 'Todo',
+            shortEnTitle: 'todo',
+            content: '',
+            priority: 'P1',
+            status: 'todo',
+          },
+          {
+            id: cancelled.id,
+            title: 'Cancelled again',
+            shortEnTitle: 'cancelled',
+            content: '',
+            priority: 'P1',
+            automate: true,
+          },
+        ],
+      },
+      () => {},
+    )
+
+    expect(result.isError).toBeFalsy()
+    expect(getIntent(todo.id)).toMatchObject({ status: 'todo', automate: true })
+    expect(getIntent(cancelled.id)).toMatchObject({ status: 'todo', automate: true })
+  })
+
+  it('rejects automate=true on a draft and leaves the whole mixed batch untouched', () => {
+    const [draft] = insertIntents(
+      proj,
+      [
+        {
+          title: 'Original',
+          shortEnTitle: 'original',
+          content: 'before',
+          priority: 'P1',
+          dependsOn: ['existing-dependency'],
+        },
+      ],
+      'draft',
+    )
+    const onSaved = vi.fn()
+
+    const result = runSaveConfirmed(
+      proj,
+      {
+        intents: [
+          {
+            id: draft.id,
+            title: 'Dirty rewrite',
+            shortEnTitle: 'dirty',
+            content: 'after',
+            priority: 'P0',
+            automate: true,
+            dependsOn: ['replacement-dependency'],
+          },
+          { title: 'Must not exist', shortEnTitle: 'no-write', content: '', priority: 'P2' },
+        ],
+      },
+      onSaved,
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('automate=true')
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(listIntents(proj)).toHaveLength(1)
+    expect(getIntent(draft.id)).toMatchObject({
+      title: 'Original',
+      content: 'before',
+      priority: 'P1',
+      status: 'draft',
+      automate: false,
+      dependsOn: ['existing-dependency'],
+    })
+  })
+
+  it('rejects an explicit todo transition from a non-whitelisted modifiable status', () => {
+    const [blocked] = insertIntents(proj, [
+      { title: 'Blocked', shortEnTitle: 'blocked', content: '', priority: 'P1' },
+    ])
+    updateStatus(blocked.id, 'blocked')
+
+    const result = runSaveConfirmed(
+      proj,
+      {
+        intents: [
+          {
+            id: blocked.id,
+            title: 'Blocked',
+            shortEnTitle: 'blocked',
+            content: '',
+            priority: 'P1',
+            status: 'todo',
+          },
+        ],
+      },
+      () => {},
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('不允许从 blocked 转为 todo')
+    expect(getIntent(blocked.id)?.status).toBe('blocked')
   })
 
   it('resolves intra-batch dependsOnIndexes to the sibling real id', () => {
@@ -324,7 +518,7 @@ describe('save_intents single-intent session back-link (comm-handler normalizati
   })
 })
 
-describe('save_intents input validation (shortEnTitle required)', () => {
+describe('save_intents input validation', () => {
   const schema = z.object(saveSchema)
 
   it('rejects a batch when an item is missing shortEnTitle', () => {
@@ -337,6 +531,45 @@ describe('save_intents input validation (shortEnTitle required)', () => {
       intents: [{ title: 'A', shortEnTitle: 'a-slug', content: 'c', priority: 'P0' }],
     })
     expect(parsed.success).toBe(true)
+  })
+
+  it('accepts optional todo/automate fields and rejects non-whitelisted status targets', () => {
+    expect(
+      schema.safeParse({
+        intents: [
+          {
+            title: 'A',
+            shortEnTitle: 'a',
+            content: '',
+            priority: 'P0',
+            status: 'todo',
+            automate: true,
+          },
+        ],
+      }).success,
+    ).toBe(true)
+    expect(
+      schema.safeParse({
+        intents: [{ title: 'A', shortEnTitle: 'a', content: '', priority: 'P0', status: 'draft' }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('keeps five-dimension content guidance soft at tool and content-field level', () => {
+    for (const description of [saveDesc, saveIntentDirectlyDesc, intentContentGuidance]) {
+      for (const dimension of ['Why', 'What', 'Trade-offs / Non-goals', 'When', 'Acceptance']) {
+        expect(description).toContain(dimension)
+      }
+    }
+    expect(saveSchema.intents.element.shape.content.description).toBe(intentContentGuidance)
+    expect(saveIntentDirectlySchema.intents.element.shape.content.description).toBe(
+      intentContentGuidance,
+    )
+    expect(
+      schema.safeParse({
+        intents: [{ title: 'A', shortEnTitle: 'a', content: '', priority: 'P0' }],
+      }).success,
+    ).toBe(true)
   })
 })
 
@@ -368,5 +601,25 @@ describe('intentSessionId field exposure / isolation', () => {
     })
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.intents[0]).not.toHaveProperty('intentSessionId')
+  })
+
+  it('save_intent_directly schema strips status/automate and remains create-only', () => {
+    const schema = z.object(saveIntentDirectlySchema)
+    const parsed = schema.parse({
+      intents: [
+        {
+          id: 'existing',
+          title: 'A',
+          shortEnTitle: 'a',
+          content: '',
+          priority: 'P0',
+          status: 'todo',
+          automate: true,
+        },
+      ],
+    })
+    expect(parsed.intents[0]).not.toHaveProperty('id')
+    expect(parsed.intents[0]).not.toHaveProperty('status')
+    expect(parsed.intents[0]).not.toHaveProperty('automate')
   })
 })

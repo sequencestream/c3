@@ -48,6 +48,11 @@ const text = (s: string): IntentToolResult['content'] => [{ type: 'text' as cons
 // Shared field shapes for one proposed intent. `save_intents`(upsert,带可选 id)与
 // 直接写路径的 `save_intent_directly`(create-only,无 id)都复用这一组字段,
 // 避免两处 schema 漂移。
+export const intentContentGuidance =
+  '请用自由文本覆盖五维内容:Why(问题、证据、不处理的影响);What(可观察目标);' +
+  'Trade-offs / Non-goals(取舍、边界、不做什么);When(仅有时限、阶段或依赖窗口时填写,否则可省略);' +
+  'Acceptance(可验证完成条件)。这是软性写作指引,缺少维度、使用不同 Markdown 或空内容不会因此被拒绝。'
+
 const proposedIntentShape = {
   title: z.string(),
   shortEnTitle: z
@@ -57,7 +62,7 @@ const proposedIntentShape = {
         '作为派生 Git 分支名 / worktree 目录名的稳定来源(勿用中文/非 ASCII);' +
         '应是对 title 的简明英文概括。落库时超过 128 字符会被截断。',
     ),
-  content: z.string(),
+  content: z.string().describe(intentContentGuidance),
   priority: z.enum(['P0', 'P1', 'P2', 'P3']),
   module: z.string().optional().describe('所属模块名(按标题/内容推断,可留空)'),
   dependsOn: z
@@ -106,6 +111,21 @@ export const saveSchema = {
             '仅当本批只保存 1 条意图时才填写,值用系统在提示中给出的当前会话 id;' +
             '批量保存多条时一律不填——填了也会被忽略,不会写入任何一行。',
         ),
+      status: z
+        .literal('todo')
+        .optional()
+        .describe(
+          "可选:本次保存后的目标状态,只允许 'todo'。新建时省略仍为 todo;" +
+            'upsert 时可显式执行 draft→todo、cancelled→todo 或 todo→todo。' +
+            '省略时 draft/todo 保持、cancelled 沿用既有规则恢复为 todo,其他可修改状态保持。',
+        ),
+      automate: z
+        .boolean()
+        .optional()
+        .describe(
+          '可选:是否允许自动化队列拾取。新建时省略为 false,upsert 时省略保留原值;' +
+            '显式 true 仅在本次保存后的状态为 todo 时允许,且不会绕过规格、依赖或工作区自动化总闸。',
+        ),
       ...proposedIntentShape,
     }),
   ),
@@ -144,16 +164,23 @@ export type SaveIntentPrInfoArgs = { intentId: string; prStatus: IntentPrStatus;
 
 // ---- Description strings (advertised in the system prompt) ----
 
-export const saveDesc =
-  '提交一批意图条目(新建或更新);仅在你已把本轮全部意图完整列出、且用户在对话中明确确认后才调用——' +
-  '调用即落库,没有任何确认弹框可以撤回。' +
+export const saveCoreDesc =
+  '提交一批意图条目(新建或更新),调用即落库。' +
   '每条不带 id 则新建;带 id 则原地更新该已存在意图(upsert)——' +
   'refine 已有意图时务必回填原 id 以更新原条目,避免新建重复项;' +
   'in_progress/done 的意图不可修改(整批失败),cancelled 更新后会重新激活为 todo;' +
+  "每条可用 status='todo' 显式激活 draft/cancelled,并用 automate 设置自动执行资格;" +
+  'automate=true 仅允许最终状态为 todo,任一非法状态或组合会使整批原子失败。' +
   '更新使已有意图的 title/content 实际改变时,其原有 spec 批准会被撤销(需重新评审批准才能开发)。' +
   '当本批意图之间存在先后/依赖关系时,用每条的 dependsOnIndexes 字段(同批数组下标)' +
   '声明它依赖本批的哪些兄弟意图,落库时会解析为真实 id,使自动化编排按依赖顺序启动。' +
-  '当本轮只产出 1 条意图、且它来自与用户的沟通时,可用 intentSessionId 把它回链到本次会话(批量多条时不填)。'
+  intentContentGuidance
+
+export const saveDesc =
+  saveCoreDesc +
+  '当本轮只产出 1 条意图、且它来自与用户的沟通时,可用 intentSessionId 把它回链到本次会话(批量多条时不填)。' +
+  '仅在你已把本轮全部意图及有效 status/automate 完整列出、明确说明本次会改变的值,' +
+  '且用户在对话中明确确认后才调用;没有任何确认弹框可以撤回。'
 
 export const findDesc =
   '检索本项目已有意图(只读)。用于发现关联项、避免重复、为 dependsOn 找到真实 id。' +
@@ -164,7 +191,9 @@ export const saveIntentDirectlyDesc =
   '直接落库一批“新建”意图为草稿(draft):仅供管理员明确授权的直接写路径使用,不等待对话确认,直接写库。' +
   '人工确认门由意图列表对 draft 的评审/激活承担。' +
   '仅新建、不更新已有意图(create-only,不接受 id);落库前务必先用 find_intents 去重,' +
-  '已被现有意图覆盖的不要重复创建。本批意图之间的先后关系用每条的 dependsOnIndexes(同批数组下标)声明。'
+  '已被现有意图覆盖的不要重复创建。本批意图之间的先后关系用每条的 dependsOnIndexes(同批数组下标)声明。' +
+  '本工具不接受 status/automate,始终新建 draft + automate=false。' +
+  intentContentGuidance
 
 export const viewDesc = '按 id 查看本项目单条意图的完整详情(只读,含 content、dependsOn 等)。'
 export const saveIntentPrInfoDesc =

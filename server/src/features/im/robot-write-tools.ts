@@ -14,7 +14,7 @@ import type { AutomationC3Tool, AutomationC3ToolResult } from '../automations/c3
 import {
   runSaveConfirmed,
   runSaveIntentDirectly,
-  saveDesc,
+  saveCoreDesc,
   saveIntentDirectlyDesc,
   saveIntentDirectlySchema,
   saveSchema,
@@ -244,7 +244,8 @@ export function buildRobotWriteTools(
   return [
     tool(
       'save_intents',
-      `${saveDesc}机器人调用还必须显式给出当前可见的 workspaceName,且不得携带会话回链。`,
+      `${saveCoreDesc}机器人调用还必须显式给出当前可见的 workspaceName,且不得携带会话回链。` +
+        '调用前须完整列出本轮全部意图及有效 status/automate;若会改变状态或自动执行,须明示旧值→新值并获得用户文字明确确认。',
       { workspaceName: workspaceNameField, ...saveSchema },
       async (raw) => {
         const args = raw as SaveArgs & ExplicitWorkspaceArgs

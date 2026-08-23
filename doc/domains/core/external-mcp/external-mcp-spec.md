@@ -115,7 +115,8 @@ keyId、归属账号、本会话工作区、可访问工作区名单与该 key �
 
 工具**行为**复用与内部完全相同的 `run*` 核心,所以外部调用方观察到的规则与内部一致;外部授权不绕过意图状态约束、spec 审核约束或会话启动失败处理。差别只有 binding 与授权源:
 
-- `save_intents` 交互式由会话内的用户文本确认把关;外部无人值守调用没有对话方,**管理员勾选该工具即替代确认门**——此例外只跳过确认,不放宽业务校验,其余走同一落库原子校验。
+- `save_intents` 交互式由会话内的用户文本确认把关;外部无人值守调用没有对话方,**管理员勾选该工具即替代确认门**——此例外只跳过确认,不放宽业务校验。每项可选 `status: 'todo'` 与 `automate`,状态白名单、`automate=true` 的 todo 约束及整批事务性与内部调用完全相同;工具描述同时给出五维正文软指引。
+- `save_intent_directly` 保持 create-only `draft + automate=false`,schema 不含 `status`/`automate`;需要激活时,调用方须另获 `save_intents` 授权后按 id upsert。
 - `submit_spec_review` 内部审核由启动时刻捕获的 spec 指纹做防过期比对;外部调用没有启动时刻,结论绑定**调用当时**的 spec 实时内容(比内部弱,因为 c3 无法知道外部进程何时开始阅读),其余规则(意图必须存在、spec 可读、重复提交不重复计数)不变。
 - `start_session_for_intent` 复用同一会话启动器,含状态校验、SDD 审批、依赖阻塞与 Git 分支策略;启动真实拉起 agent 并消耗资源。
 
@@ -192,7 +193,7 @@ id 返回既有的「未找到(本项目)」文案;显式指定了有效范围�
 
 - **API key 是该路由唯一的访问凭据**,且只从 `Authorization: Bearer` 读取。Web 登录会话、内部 per-run token 都不能替代它。
 - **地址不含凭据**。端点对每把 key、每个工作区都是同一个,因此不会有 key 随 URL 进入代理访问日志、shell 历史或工单正文。c3 不记录 `Authorization` 的值。
-- **写权限会真实修改 c3 状态**:`save_intents` 可持久化意图,`submit_spec_review` 可提交审核结论,`start_session_for_intent` 可拉起 agent。这是安全边界的有意放宽:key 默认只读,写接口须显式勾选,key 可吊销,且每次写调用尝试都留下一条可归因的审计行。创建与编辑界面必须在写工具区持续展示该风险,保存含写权限的范围前有明确确认。
+- **写权限会真实修改 c3 状态**:`save_intents` 可持久化正文、把草稿/取消态激活为 todo 并设置自动执行资格,`submit_spec_review` 可提交审核结论,`start_session_for_intent` 可拉起 agent。这是安全边界的有意放宽:key 默认只读,写接口须显式勾选,key 可吊销,且每次写调用尝试都留下一条可归因的审计行。创建与编辑界面必须在写工具区持续展示该风险,保存含写权限的范围前有明确确认。
 - **不内建也不强制 HTTPS**。明文 HTTP 下同网络的人可嗅探到 bearer。远程暴露应通过用户自管的 TLS 反向代理,并抑制日志中的敏感头。这是已知并接受的部署侧风险。
 - **`X-C3-Workspace` 依赖客户端的自定义头能力**。遇到不支持配置任意头的客户端时本端点不可用,且不做 fallback —— 这是已知限制。
 - **claude.ai 自定义连接器不受支持**:它要求服务端提供 OAuth 授权流程,而 c3 的静态 bearer key 不是 OAuth access token,c3 也不是 OAuth 授权服务器。

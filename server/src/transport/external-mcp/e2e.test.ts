@@ -323,6 +323,79 @@ describe('external MCP over a real Streamable HTTP client', () => {
     }
   })
 
+  it('advertises and persists status/automate through the external save_intents contract', async () => {
+    const [draft, invalidDraft] = insertIntents(
+      projectDir,
+      [
+        {
+          title: 'Activate externally',
+          shortEnTitle: 'activate-external',
+          content: '',
+          priority: 'P1',
+        },
+        { title: 'Remain draft', shortEnTitle: 'remain-draft', content: 'before', priority: 'P2' },
+      ],
+      'draft',
+    )
+    const created = await mintKey('activator', ['find_intents', 'view_intent', 'save_intents'])
+    const client = await connect('127.0.0.1', created.key)
+    try {
+      const contract = (await client.listTools()).tools.find(
+        (tool) => tool.name === 'save_intents',
+      )!
+      expect(JSON.stringify(contract.inputSchema)).toContain('status')
+      expect(JSON.stringify(contract.inputSchema)).toContain('automate')
+      expect(contract.description).toContain('Acceptance')
+      expect(contract.description).toContain('管理员为当前 key 授予本写工具即构成调用授权')
+      expect(contract.description).not.toContain('用户在对话中明确确认后才调用')
+
+      const activated = await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          intents: [
+            {
+              id: draft.id,
+              title: draft.title,
+              shortEnTitle: draft.shortEnTitle,
+              content: draft.content,
+              priority: draft.priority,
+              status: 'todo',
+              automate: true,
+            },
+          ],
+        },
+      })
+      expect(activated.isError).toBeFalsy()
+      expect(getIntent(draft.id)).toMatchObject({ status: 'todo', automate: true })
+
+      const rejected = await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          intents: [
+            {
+              id: invalidDraft.id,
+              title: 'Must not change',
+              shortEnTitle: invalidDraft.shortEnTitle,
+              content: 'after',
+              priority: invalidDraft.priority,
+              automate: true,
+            },
+          ],
+        },
+      })
+      expect(rejected.isError).toBe(true)
+      expect(JSON.stringify(rejected.content)).toContain('automate=true')
+      expect(getIntent(invalidDraft.id)).toMatchObject({
+        title: 'Remain draft',
+        content: 'before',
+        status: 'draft',
+        automate: false,
+      })
+    } finally {
+      await client.close()
+    }
+  })
+
   it('records a spec review through a key granted submit_spec_review', async () => {
     const [intent] = insertIntents(projectDir, [
       { title: 'Spec me', shortEnTitle: 'spec-me', content: '', priority: 'P1' },

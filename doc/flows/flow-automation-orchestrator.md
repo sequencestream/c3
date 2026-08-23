@@ -158,7 +158,7 @@ flowchart TD
 - **`view_intent`**(只读): 按 id 查看单条意图完整详情
 - **`find_deliveries`**(只读): 按 status/keyword 检索项目交付列表(状态、基线/交付分支、就绪标志、集成就绪 N/M)。交付**没有写工具**:状态写必须过交付状态机与守卫;默认不勾选
 - **`view_delivery`**(只读): 按 id 查看单条交付完整详情(含关联意图与最新交付 PR 行);默认不勾选
-- **`save_intent_directly`**(写): 直接落库新建草稿意图(绕过人工确认,仅限自动化)
+- **`save_intent_directly`**(写): 直接落库新建 `draft + automate=false` 意图(绕过人工确认,仅限自动化)。schema 不含 `status`/`automate`;工具与 `save_intents` 共用的正文描述按 Why / What / Trade-offs·Non-goals / 可选 When / Acceptance 五维引导,缺维不构成业务错误。自动化 MCP 不暴露交互式 `save_intents`;后续激活须由另一个已获该工具授权的入口按 id upsert
 - **`sync_intent_pr_status`**(写): **触发服务端从 forge 派生 PR 终态并落库**。只接受 `intentId`,不接受任何状态值:服务端遍历该意图全部 `reviewing` 的 PR 行逐条向 forge 查询,`merged`/`closed` 终态落库并写意图日志,仍 `open` 的行不变。模型只触发,状态唯一由 forge 裁决
 - **`publish_pr_event`**(写): 发布 PR 操作事件(触发其他自动化)
 - **`find_discussions`**(只读): 检索项目讨论列表

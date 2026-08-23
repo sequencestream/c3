@@ -1156,10 +1156,13 @@ export function insertIntents(
  *    a "正在开发 / 已完成,不可修改" message);
  *  - `dependsOnIndexes` out-of-range / self / cyclic → throw (resolveBatchDependencies).
  *
- * Status rules on UPDATE: `draft`/`todo` keep their status; `cancelled` is reactivated
- * to `todo` (completed_at stays null per the updateStatus rule). New rows insert as
- * `todo`. Un-supplied optional fields are preserved: `module` keeps its prior value when
- * omitted, and deps are only rewritten when `dependsOn`/`dependsOnIndexes` is supplied.
+ * Status rules on UPDATE: omitted `status` keeps `draft`/`todo` and reactivates
+ * `cancelled` to `todo`; explicit `todo` only permits `draft`/`cancelled`/`todo`
+ * as sources. New rows insert as `todo`. Explicit `automate=true` requires that
+ * computed target status; omitted automation preserves an update's stored value
+ * and defaults to false on create. Un-supplied optional fields are preserved:
+ * `module` keeps its prior value when omitted, and deps are only rewritten when
+ * `dependsOn`/`dependsOnIndexes` is supplied.
  * `dependsOnIndexes` resolves against the FULL batch, so a new item can depend (by index)
  * on an updated sibling and vice-versa.
  *
@@ -1213,6 +1216,35 @@ export function upsertIntents(
     }
     return row
   })
+  const targets = items.map((it, i) => {
+    const prior = priors[i]
+    if (it.status !== undefined && it.status !== 'todo') {
+      throw new Error(
+        `意图 ${it.id ?? `第 ${i} 条`} 的目标状态 ${String(it.status)} 不受 save_intents 支持`,
+      )
+    }
+    if (
+      prior &&
+      it.status === 'todo' &&
+      prior.status !== 'draft' &&
+      prior.status !== 'todo' &&
+      prior.status !== 'cancelled'
+    ) {
+      throw new Error(`意图 ${prior.id} 不允许从 ${prior.status} 转为 todo`)
+    }
+    const status: IntentStatus = prior
+      ? it.status === 'todo' || prior.status === 'cancelled'
+        ? 'todo'
+        : (prior.status as IntentStatus)
+      : 'todo'
+    const automate = it.automate !== undefined ? it.automate : prior ? prior.automate === 1 : false
+    if (it.automate === true && status !== 'todo') {
+      throw new Error(
+        `意图 ${prior?.id ?? `第 ${i} 条`} 的 automate=true 仅允许用于保存后状态为 todo 的意图`,
+      )
+    }
+    return { status, automate }
+  })
   // Validate + resolve intra-batch deps (out-of-range / self / cyclic throws here).
   const deps = resolveBatchDependencies(items, ids)
   // Only the INSERT half uses it; an UPDATE never re-takes the snapshot (an edit
@@ -1224,13 +1256,12 @@ export function upsertIntents(
   tx(d, () => {
     items.forEach((it, i) => {
       const prior = priors[i]
+      const target = targets[i]
       // Whether this item supplied its dependency set; only then do we rewrite deps.
       const depsSupplied = it.dependsOn !== undefined || it.dependsOnIndexes !== undefined
       if (prior) {
         // UPDATE: cancelled → todo (reactivate); else keep status. Neither outcome is
         // `done`, so completed_at is always cleared to null.
-        const status: IntentStatus =
-          prior.status === 'cancelled' ? 'todo' : (prior.status as IntentStatus)
         const module = it.module !== undefined ? it.module : prior.module
         // The requirement text itself changed → the old approval no longer applies.
         const requirementChanged = it.title !== prior.title || it.content !== prior.content
@@ -1251,14 +1282,15 @@ export function upsertIntents(
         const specModeValue = it.specMode ?? null
         d.run(
           `UPDATE intents
-             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?, spec_mode=CASE WHEN ?=1 THEN ? ELSE spec_mode END${revokeApproval}
+             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, automate=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?, spec_mode=CASE WHEN ?=1 THEN ? ELSE spec_mode END${revokeApproval}
            WHERE id=?`,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
           it.content,
           it.priority,
           module,
-          status,
+          target.status,
+          target.automate ? 1 : 0,
           sessionIdParam,
           now,
           null,
@@ -1294,17 +1326,18 @@ export function upsertIntents(
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_name, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode, responsible_subject)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_name, title, short_en_title, content, priority, status, module, last_work_session_id, automate, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode, responsible_subject)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
           it.content,
           it.priority,
-          'todo',
+          target.status,
           it.module ?? '',
           null,
+          target.automate ? 1 : 0,
           createdAt,
           createdAt,
           null,

@@ -45,7 +45,7 @@ import {
   runSaveConfirmed,
   runSaveIntentDirectly,
   runView,
-  saveDesc,
+  saveCoreDesc,
   saveIntentDirectlyDesc,
   saveIntentDirectlySchema,
   saveSchema,
@@ -340,7 +340,9 @@ function buildToolSpecs(deps: ExternalMcpToolDeps): ExternalMcpToolSpec[] {
     // ---- write ----
     {
       name: 'save_intents',
-      description: saveDesc,
+      description:
+        saveCoreDesc +
+        '外部 MCP 没有逐次对话确认;管理员为当前 key 授予本写工具即构成调用授权,且不放宽任何业务校验。',
       inputSchema: saveSchema,
       // Every id the batch names — the upsert targets AND the dependency
       // references that get persisted as edges — must already belong to this

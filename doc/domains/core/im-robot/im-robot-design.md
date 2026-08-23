@@ -153,7 +153,9 @@ initialize 时钉定台账 `workspacePath`。
   会话启动或讨论域的共享核心。
 
 机器人写构造器的闭包不含运行根。保存包装 schema 才有 `workspaceName`,进入共享核心前剥离该字段与
-`intentSessionId`;intent-mcp 和 automation-mcp 的 schema 与既有工作区 binding 不变。规格审核包装额外
+`intentSessionId`;`save_intents` 的每项 `status: 'todo'`/`automate` 与五维正文说明直接复用意图域
+共享 schema,机器人不复制状态规则;`save_intent_directly` 不含这两个写字段。intent-mcp 和
+automation-mcp 的 schema 与既有工作区 binding 不变。规格审核包装额外
 接收 `intentId`,首次读取 live spec 指纹并以实时 robot run id 归因;共享核心提交前再次读取,不一致即
 stale 零写入。对象缺失与越权使用相同 `not_visible` 结果,不会泄露其它工作区是否存在该 id。
 

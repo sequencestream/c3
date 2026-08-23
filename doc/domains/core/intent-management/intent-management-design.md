@@ -67,7 +67,7 @@
   `updated_at`。一个项目全部行的集合即为隐藏集;`is_current=1` 的那一行
   是未指定具体 `sessionId` 进入意图视图时重新加载的会话。
 
-**Schema 版本(当前:v19)。** Schema 版本为 `19`。每次升级都在旧字段重命名之后、
+**Schema 版本(当前:v22)。** Schema 版本为 `22`。每次升级都在旧字段重命名之后、
 应用 schema 之前追加一个幂等迁移:v2 `module`,v3
 `completed_at`(可空),v4 `automate`(`INTEGER NOT NULL DEFAULT 0`),v6 旧的 `requirement*`
 → `intent*` 重命名,v7 `intent_chats.title`(`TEXT`),v8 git 追踪字段,v9 `intent_deps`
@@ -86,7 +86,9 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 `intent_prs` 并从冻结的旧三列一次性回填;回填与其标记写在同一事务内,以跨域标记表
 `schema_migrations` 判定幂等——列存在性检查回答不了「表已建、回填做完没有」
 (裁决见 [ADR-0035](../../../architecture/adr/0035-intent-pr-table-split-and-migration-markers.md);
-详见迁移记录 `migrate/2026/08/06/031`)。
+详见迁移记录 `migrate/2026/08/06/031`)。v20→v21 为 `intent_sessions` 增加可空的
+`delivery_id` 会话交付上下文;v21→v22 为 `intents` 增加可空的 `base_branch` 基准分支快照并按
+单一就绪交付分支或工作区主分支一次性回填。完整迁移约束以 `database/tables.md` 为准。
 
 **Schema 版本与迁移(v1 → v2)。** 新建时的 schema
 已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径
@@ -113,11 +115,16 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
   `dependsOnIndexes`(RM-R17)都能针对完整批次解析。**所有校验都在
   事务开启前完成**(原子性拒绝,不写入任何半成品):每个更新 `id` 都会被取出,
   并校验其属于解析出的工作区(未知 / 跨项目 ⇒ 拒绝),同时检查其当前
-  状态——`in_progress`/`done` 因不可变而拒绝,`cancelled` 被标记为待重新激活。
+  状态——`in_progress`/`done` 因不可变而拒绝。每项随后计算目标状态与自动执行标记:
+  新建固定落 `todo`,`automate` 缺省为 `false`;更新省略 `status` 时保留 `draft`/`todo` 与
+  其他可修改状态、把 `cancelled` 按兼容规则重新激活为 `todo`,省略 `automate` 时保留原值;
+  显式状态只接受 `todo`,且只允许 `draft`/`cancelled`/`todo → todo`。显式
+  `automate=true` 只允许目标状态为 `todo`,因此 draft 必须在同一次保存中显式激活。
   在同一个事务内,更新会写入 `title`/`content`/`priority`,仅当提供了 `module` 时才写入
-  (否则保留原值),对被重新激活的 `cancelled` 将状态置为 `todo`(否则不变)并
+  (否则保留原值),同时写入计算后的状态与 `automate` 并
   清空 `completed_at`,并且仅当提供了 `dependsOn`/`dependsOnIndexes` 时才重写依赖边;
-  插入的行为与普通插入完全一致(状态 `todo`,创建时间按索引偏移)。
+  插入的行为与普通插入完全一致(状态 `todo`,创建时间按索引偏移)。状态、自动执行标记、正文元数据、
+  依赖边与正文变化引发的 spec 批准撤销同属该事务;任一条校验失败时整批零业务写入。
   `save_intents` 的 handler 会把任何拒绝转换为一个错误结果,让智能体知道没有任何写入发生。
   - **单意图会话回链(`intentSessionId`)。** 当且仅当批次中**恰好一项**携带了
     `intentSessionId` 时,upsert 才会把它写入该行的

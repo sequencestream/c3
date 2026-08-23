@@ -907,8 +907,8 @@ export type QueueControlAction =
 /**
  * One intent proposed by the intent-communication agent via the
  * `save_intents` tool. The agent lists it in full in the conversation and waits
- * for the user's textual confirmation; the confirmed call persists it with
- * status `todo`.
+ * for the user's textual confirmation; the confirmed call may also promote it
+ * to `todo` and set whether automation may pick it up.
  */
 export interface ProposedIntent {
   /**
@@ -921,6 +921,19 @@ export interface ProposedIntent {
    * is rejected). Omit to insert a brand-new intent (status `todo`).
    */
   id?: string
+  /**
+   * Optional save-tool-specific target status. `save_intents` only accepts
+   * `todo`: new intents already default to it, while existing `draft` and
+   * `cancelled` intents may be promoted/reactivated. Omit to preserve the
+   * existing upsert compatibility rules.
+   */
+  status?: 'todo'
+  /**
+   * Optional automation eligibility flag. Omit on update to preserve the stored
+   * value; omit on create for `false`. An explicit `true` is valid only when the
+   * status after this save is `todo`.
+   */
+  automate?: boolean
   title: string
   /**
    * Required short ASCII English title — the stable source for the derived

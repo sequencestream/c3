@@ -202,7 +202,10 @@ workspace-write,否则只读。勾选 c3 MCP 写工具(如 `mcp__c3__save_intent
 对象不存在、归属未注册或不在详细可见集时统一返回 `not_visible`;调用中绑定、授权版本或可见集变化时
 返回 `scope_changed`,均不得进入业务 handler。两个保存工具的 upsert 目标与 `dependsOn` 引用必须全部
 属于显式目标工作区,否则整批拒绝。`save_intents` 只在机器人已完整列出本轮意图且用户文字明确确认后
-调用;工具勾选不替代这次对话确认。机器人运行根 `~/.c3/robots/<name>/` 只服务本地工具,永不参与台账
+调用;待确认内容同时列出有效 `status`/`automate`,任何状态或自动执行变化都明示旧值 → 新值。
+该工具的 `status: 'todo'`/`automate` 与原子校验复用意图域核心,工具勾选不替代这次对话确认。
+`save_intent_directly` 仍固定 create-only `draft + automate=false`;两个工具都以描述性五维指引约束正文质量,
+不以缺维拒绝保存。机器人运行根 `~/.c3/robots/<name>/` 只服务本地工具,永不参与台账
 工作区解析。
 
 ## 与工作区的关系

@@ -14,12 +14,15 @@
  */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { QrcodeSvg } from 'qrcode.vue'
 import type {
   AgentConfig,
   ImRobot,
   RobotConfigInput,
   ToolManifestEntry,
 } from '@ccc/shared/protocol'
+import { idleFeishuAppRegistration } from '@/controls/state'
+import type { FeishuAppRegistrationState } from '@/controls/state'
 import RobotForm from './RobotForm.vue'
 
 const READ_TOOLS: ToolManifestEntry[] = [
@@ -96,6 +99,7 @@ function mountForm(
     toolManifest: Record<string, ToolManifestEntry[] | null>
     toolManifestLoading: boolean
     toolManifestError: string | null
+    feishuRegistration: FeishuAppRegistrationState
   }> = {},
 ) {
   return mount(RobotForm, {
@@ -106,9 +110,14 @@ function mountForm(
       toolManifest: {},
       toolManifestLoading: false,
       toolManifestError: null,
+      feishuRegistration: idleFeishuAppRegistration(),
       ...over,
     },
   })
+}
+
+function registrationState(over: Partial<FeishuAppRegistrationState>): FeishuAppRegistrationState {
+  return { ...idleFeishuAppRegistration(), ...over }
 }
 
 function checked(w: ReturnType<typeof mountForm>, name: string): boolean {
@@ -232,5 +241,198 @@ describe('RobotForm — codex network switch', () => {
     const [, , config] = w.emitted('create')![0] as [string, string, RobotConfigInput]
     expect(config.toolAllowlist).toContain('shell')
     expect(config.toolAllowlist).toContain('network-access')
+  })
+})
+
+describe('RobotForm — one-click Feishu app creation', () => {
+  it('shows the entry only in create mode, never while editing', () => {
+    const create = mountForm()
+    expect(create.find('[data-testid="feishu-one-click"]').exists()).toBe(true)
+
+    const edit = mountForm({ robot: robotFixture() })
+    expect(edit.find('[data-testid="feishu-one-click"]').exists()).toBe(false)
+    expect(edit.find('[data-testid="feishu-registration-panel"]').exists()).toBe(false)
+  })
+
+  it('emits start on click and disables the button + credential inputs while active', async () => {
+    const w = mountForm()
+    await w.get('[data-testid="feishu-one-click"]').trigger('click')
+    expect(w.emitted('start-feishu-registration')).toHaveLength(1)
+
+    const active = registrationState({ requestId: 'req-1', phase: 'starting' })
+    await w.setProps({ feishuRegistration: active })
+    expect((w.get('[data-testid="feishu-one-click"]').element as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((w.get('[data-testid="robot-app-id"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((w.get('[data-testid="robot-app-secret"]').element as HTMLInputElement).disabled).toBe(
+      true,
+    )
+    expect(w.find('[data-testid="feishu-status-starting"]').exists()).toBe(true)
+  })
+
+  it('renders the QR with the same value as the clickable/copyable URL, plus scopes', async () => {
+    const w = mountForm({
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'waiting_scan',
+        verificationUrl: 'https://accounts.feishu.cn/oauth/v1/app/registration?from=sdk',
+        expiresAt: Date.now() + 90_000,
+      }),
+    })
+    const qr = w.findComponent(QrcodeSvg)
+    expect(qr.exists()).toBe(true)
+    expect(qr.props('value')).toBe('https://accounts.feishu.cn/oauth/v1/app/registration?from=sdk')
+    const link = w.get('[data-testid="feishu-url"]')
+    expect(link.attributes('href')).toBe(
+      'https://accounts.feishu.cn/oauth/v1/app/registration?from=sdk',
+    )
+    expect(link.text()).toBe('https://accounts.feishu.cn/oauth/v1/app/registration?from=sdk')
+    expect(w.find('[data-testid="feishu-countdown"]').exists()).toBe(true)
+
+    const scopeItems = w.findAll('[data-testid="feishu-scopes"] li')
+    expect(scopeItems).toHaveLength(5)
+    expect(scopeItems.map((li) => li.text()).join('\n')).toContain('im:message:send_as_bot')
+    expect(scopeItems.map((li) => li.text()).join('\n')).toContain(
+      'im:message.group_at_msg:readonly',
+    )
+    expect(scopeItems.map((li) => li.text()).join('\n')).toContain('im:message.p2p_msg:readonly')
+    expect(scopeItems.map((li) => li.text()).join('\n')).toContain(
+      'application:bot.basic_info:read',
+    )
+    expect(scopeItems.map((li) => li.text()).join('\n')).toContain('im.message.receive_v1')
+    expect(w.find('[data-testid="feishu-scope-warning"]').exists()).toBe(true)
+
+    // Copying is a user gesture over the same URL; no network request is made.
+    await w.get('[data-testid="feishu-copy"]').trigger('click')
+    expect(w.find('[data-testid="feishu-copy"]').exists()).toBe(true)
+  })
+
+  it('shows slow_down as a banner over the still-visible QR/link, not in place of them', async () => {
+    // slow_down is a non-terminal rate-limit hint during polling, per the design
+    // doc and protocol contract — it must not unmount the scan UI, or the admin
+    // loses the ability to scan once Feishu emits it.
+    const slow = mountForm({
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'slow_down',
+        verificationUrl: 'https://accounts.feishu.cn/oauth/v1/app/registration?from=sdk',
+        expiresAt: Date.now() + 90_000,
+      }),
+    })
+    expect(slow.find('[data-testid="feishu-status-slow-down"]').exists()).toBe(true)
+    expect(slow.findComponent(QrcodeSvg).exists()).toBe(true)
+    expect(slow.find('[data-testid="feishu-url"]').exists()).toBe(true)
+    expect(slow.find('[data-testid="feishu-countdown"]').exists()).toBe(true)
+    expect(slow.find('[data-testid="feishu-scopes"]').exists()).toBe(true)
+
+    const configuring = mountForm({
+      feishuRegistration: registrationState({ requestId: 'req-1', phase: 'configuring' }),
+    })
+    expect(configuring.find('[data-testid="feishu-status-configuring"]').exists()).toBe(true)
+  })
+
+  it('backfills both credentials on ready and keeps them editable', async () => {
+    const w = mountForm()
+    await w.setProps({
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'ready',
+        appId: 'cli_new',
+        appSecret: 'new-secret',
+      }),
+    })
+    expect((w.get('[data-testid="robot-app-id"]').element as HTMLInputElement).value).toBe(
+      'cli_new',
+    )
+    expect((w.get('[data-testid="robot-app-secret"]').element as HTMLInputElement).value).toBe(
+      'new-secret',
+    )
+    expect((w.get('[data-testid="robot-app-id"]').element as HTMLInputElement).disabled).toBe(false)
+    expect(w.find('[data-testid="feishu-status-ready"]').exists()).toBe(true)
+  })
+
+  it('backfills on manual_setup_required and keeps the manual steps visible', async () => {
+    const w = mountForm()
+    await w.setProps({
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'manual_setup_required',
+        appId: 'cli_new',
+        appSecret: 'new-secret',
+        manualSetupReason: 'config_forbidden',
+      }),
+    })
+    expect((w.get('[data-testid="robot-app-id"]').element as HTMLInputElement).value).toBe(
+      'cli_new',
+    )
+    expect(w.find('[data-testid="feishu-manual-title"]').exists()).toBe(true)
+    expect(w.find('[data-testid="feishu-manual-warning"]').exists()).toBe(true)
+    expect(w.get('[data-testid="feishu-manual-console"]').attributes('href')).toBe(
+      'https://open.feishu.cn/app',
+    )
+    // Still editable after the fill — the user can correct or replace values.
+    await w.get('[data-testid="robot-app-id"]').setValue('cli_manual')
+    expect((w.get('[data-testid="robot-app-id"]').element as HTMLInputElement).value).toBe(
+      'cli_manual',
+    )
+  })
+
+  it.each([
+    ['denied', 'denied'],
+    ['expired', 'expired'],
+    ['cancelled', 'cancelled'],
+    ['unsupported_region', 'unsupported_region'],
+    ['network_error', 'network_error'],
+    ['server_error', 'server_error'],
+  ] as const)(
+    'failed %s keeps the prior form values and shows the failed status',
+    async (_, reason) => {
+      const w = mountForm()
+      await w.get('[data-testid="robot-app-id"]').setValue('cli_kept')
+      await w.get('[data-testid="robot-app-secret"]').setValue('kept-secret')
+      await w.setProps({
+        feishuRegistration: registrationState({
+          requestId: 'req-1',
+          phase: 'failed',
+          failedReason: reason,
+        }),
+      })
+      expect((w.get('[data-testid="robot-app-id"]').element as HTMLInputElement).value).toBe(
+        'cli_kept',
+      )
+      expect((w.get('[data-testid="robot-app-secret"]').element as HTMLInputElement).value).toBe(
+        'kept-secret',
+      )
+      expect(w.find('[data-testid="feishu-status-failed"]').exists()).toBe(true)
+    },
+  )
+
+  it('clears the result hint when the user edits a credential after a result', async () => {
+    const w = mountForm()
+    await w.setProps({
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'ready',
+        appId: 'cli_new',
+        appSecret: 'new-secret',
+      }),
+    })
+    await w.get('[data-testid="robot-app-id"]').setValue('cli_edited')
+    expect(w.emitted('clear-feishu-registration')).toHaveLength(1)
+  })
+
+  it('closing cancels the registration together with the dialog', async () => {
+    const w = mountForm({
+      feishuRegistration: registrationState({
+        requestId: 'req-1',
+        phase: 'waiting_scan',
+        verificationUrl: 'https://accounts.feishu.cn/x',
+        expiresAt: Date.now() + 60_000,
+      }),
+    })
+    await w.get('[data-testid="feishu-cancel"]').trigger('click')
+    expect(w.emitted('cancel')).toHaveLength(1)
+    expect(w.emitted('cancel-feishu-registration')).toHaveLength(1)
   })
 })

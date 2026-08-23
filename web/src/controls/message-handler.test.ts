@@ -12,7 +12,12 @@ import type { SessionInfo } from '@ccc/shared/protocol'
 import { installMessageHandler } from './message-handler'
 import type { ChatMsg } from '@/lib/chat-types'
 import type { AppCtx } from './types'
-import { sessionCacheKey, type SessionPageKind } from './state'
+import {
+  idleFeishuAppRegistration,
+  sessionCacheKey,
+  type FeishuAppRegistrationState,
+  type SessionPageKind,
+} from './state'
 import { applyLocale, i18n } from '@/i18n'
 
 function s(id: string, lastModified: number): SessionInfo {
@@ -296,6 +301,7 @@ function makeCtx() {
     send: vi.fn(),
     // Post-switch Dashboard refresh hook — a no-op in these session/intent tests.
     maybeRefreshDashboard: vi.fn(),
+    feishuAppRegistration: ref<FeishuAppRegistrationState>(idleFeishuAppRegistration()),
     personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
       uiLang: 'en',
     }),
@@ -396,6 +402,90 @@ describe('robot turns reply routing', () => {
 
     r.ctx.handleMessage({ type: 'robot_turns', robotId: 'r2', turns: [currentTurn] })
     expect(robotTurns.value).toEqual([currentTurn])
+  })
+})
+
+describe('feishu app registration routing', () => {
+  function makeRegCtx() {
+    const result = makeCtx()
+    const feishuAppRegistration = result.ctx.feishuAppRegistration
+    feishuAppRegistration.value = {
+      ...idleFeishuAppRegistration(),
+      requestId: 'req-1',
+      phase: 'waiting_scan',
+    }
+    return { ctx: result.ctx, feishuAppRegistration }
+  }
+
+  it('applies progress only for the current requestId', () => {
+    const r = makeRegCtx()
+    r.ctx.handleMessage({
+      type: 'feishu_app_registration_progress',
+      requestId: 'req-other',
+      status: 'configuring',
+    })
+    expect(r.feishuAppRegistration.value.phase).toBe('waiting_scan')
+
+    r.ctx.handleMessage({
+      type: 'feishu_app_registration_progress',
+      requestId: 'req-1',
+      status: 'waiting_scan',
+      verificationUrl: 'https://accounts.feishu.cn/x',
+      expiresAt: 123456,
+    })
+    expect(r.feishuAppRegistration.value.phase).toBe('waiting_scan')
+    expect(r.feishuAppRegistration.value.verificationUrl).toBe('https://accounts.feishu.cn/x')
+    expect(r.feishuAppRegistration.value.expiresAt).toBe(123456)
+  })
+
+  it('ignores a late or mismatched result and only backfills on a matching one', () => {
+    const r = makeRegCtx()
+    r.ctx.handleMessage({
+      type: 'feishu_app_registration_result',
+      requestId: 'req-old',
+      outcome: 'ready',
+      appId: 'cli_late',
+      appSecret: 'late-secret',
+    })
+    expect(r.feishuAppRegistration.value.appId).toBeNull()
+    expect(r.feishuAppRegistration.value.phase).toBe('waiting_scan')
+
+    r.ctx.handleMessage({
+      type: 'feishu_app_registration_result',
+      requestId: 'req-1',
+      outcome: 'ready',
+      appId: 'cli_new',
+      appSecret: 'new-secret',
+    })
+    expect(r.feishuAppRegistration.value.phase).toBe('ready')
+    expect(r.feishuAppRegistration.value.appId).toBe('cli_new')
+    expect(r.feishuAppRegistration.value.appSecret).toBe('new-secret')
+  })
+
+  it('records manual_setup_required with the reason and never lets a failed frame inject credentials', () => {
+    const r = makeRegCtx()
+    r.ctx.handleMessage({
+      type: 'feishu_app_registration_result',
+      requestId: 'req-1',
+      outcome: 'manual_setup_required',
+      appId: 'cli_new',
+      appSecret: 'new-secret',
+      reason: 'config_forbidden',
+    })
+    expect(r.feishuAppRegistration.value.phase).toBe('manual_setup_required')
+    expect(r.feishuAppRegistration.value.manualSetupReason).toBe('config_forbidden')
+
+    const denied = makeRegCtx()
+    denied.ctx.handleMessage({
+      type: 'feishu_app_registration_result',
+      requestId: 'req-1',
+      outcome: 'failed',
+      reason: 'denied',
+    })
+    expect(denied.feishuAppRegistration.value.phase).toBe('failed')
+    expect(denied.feishuAppRegistration.value.failedReason).toBe('denied')
+    expect(denied.feishuAppRegistration.value.appId).toBeNull()
+    expect(denied.feishuAppRegistration.value.appSecret).toBeNull()
   })
 })
 

@@ -397,6 +397,7 @@ const {
   robotToolManifest,
   robotToolManifestLoading,
   robotToolManifestError,
+  feishuAppRegistration,
   loadRobots,
   selectRobot,
   createRobot,
@@ -407,6 +408,9 @@ const {
   acknowledgeRobotWriteGrant,
   setRobotWriteGrantEnabled,
   onLoadRobotToolManifest,
+  startFeishuAppRegistration,
+  cancelFeishuAppRegistration,
+  clearFeishuAppRegistration,
   loadDashboard,
   toggleWorkspaceAutomation,
   // ---- modals ----
@@ -1068,6 +1072,7 @@ function onFilesChatWidth(px: number): void {
           :tool-manifest="robotToolManifest"
           :tool-manifest-loading="robotToolManifestLoading"
           :tool-manifest-error="robotToolManifestError"
+          :feishu-registration="feishuAppRegistration"
           :workspaces="workspaces"
           :im-identity-bindings="imIdentityBindings"
           :im-group-workspace-scopes="imGroupWorkspaceScopes"
@@ -1083,6 +1088,9 @@ function onFilesChatWidth(px: number): void {
           @save-im-group-scopes="setImGroupWorkspaceScopes"
           @acknowledge-write-grant="acknowledgeRobotWriteGrant"
           @set-write-grant-enabled="setRobotWriteGrantEnabled"
+          @start-feishu-registration="startFeishuAppRegistration"
+          @cancel-feishu-registration="cancelFeishuAppRegistration"
+          @clear-feishu-registration="clearFeishuAppRegistration"
         />
 
         <Dashboard

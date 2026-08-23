@@ -278,3 +278,11 @@ export interface RobotConfigInput {
   /** Registry language; omit on update to keep stored value. Null = system default. */
   locale?: RobotMessageLocale | null
 }
+
+/** Why automatic Feishu long-connection configuration could not be completed. */
+export type FeishuManualSetupReason =
+  'config_unavailable' | 'config_forbidden' | 'config_rejected' | 'config_network_error'
+
+/** Closed failed-outcome vocabulary; `failed` frames never carry credentials. */
+export type FeishuRegistrationFailedReason =
+  'denied' | 'expired' | 'cancelled' | 'unsupported_region' | 'network_error' | 'server_error'

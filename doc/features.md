@@ -241,6 +241,8 @@ c3
 │   │   ├── 身份作用域原子迁移                     # robots.identity_scope.v1 在同一事务内重建七维 Conversation/Context Turn、扩展 turns outcome、收敛四张身份表;旧四维线程与上下文正文 safe-cut 不复制;失败整体回滚且不写迁移标记
 │   │   ├── provider 中性抽象                      # 接口 + 能力台账 + 按平台键入的工厂(形状同 agent 适配器,非 forge 的三元分派);平台无关策略全在中性层,加平台=一个目录加一行
 │   │   └── SDK 只用入站                           # 平台 SDK 只负责长连接(私有二进制帧难自实现),发消息与令牌走 c3 统一出站通道——外发留在自己代码里,守卫与审计才没有绕过路径;产物只增约 0.7 MB 而非约三倍
+│   │   ├── 一键创建飞书应用                       # 新建飞书机器人表单提供扫码建应用入口:管理员扫码(官方 Device Authorization,中国区),服务端以最小 addons(preset=false + 四项 tenant scope + im.message.receive_v1,createOnly)建应用,并以 application v7 自动切长连接;二维码/链接/倒计时与全程状态实时推送,仅管理员可发起
+│   │   ├── 凭据回填与手工降级                     # 结果按 requestId 定向回填 App ID/App Secret(仍可手动修改);自动长连接配置被拒时保留凭据并给出 `manual_setup_required` 手工指引;失败/取消/拒绝/过期绝不脏填,SDK 报跨 Lark 域立即中止并丢弃凭据
 │   │
 │   └── external-mcp 外部 MCP 接入                 # c3 未拉起的 agent(独立 Claude/Codex/Cursor 会话、CI、监控脚本)凭长期 key 访问本部署;与 /internal/*-mcp 并列而非放宽,后者语义不变
 │       ├── 统一端点 POST /mcp                    # 裸路径不含凭据,Streamable HTTP,挂在 SPA catch-all 之前;/mcp/<任何东西> 一律 404(含旧 key 路径与 /mcp/v1)

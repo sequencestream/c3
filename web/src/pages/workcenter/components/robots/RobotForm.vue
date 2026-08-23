@@ -9,8 +9,9 @@
 //     so renaming would orphan every thread's history.
 //   - `appSecret` is write-only. Left blank on an edit, the stored secret stays;
 //     it is never sent back to the browser, so there is nothing to prefill.
-import { computed, ref, watch } from 'vue'
-import { useTypedI18n } from '@/i18n'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { QrcodeSvg } from 'qrcode.vue'
+import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { IM_DM_MODES, IM_PLATFORMS, VENDOR_IDS } from '@ccc/shared/protocol'
 import type {
@@ -25,6 +26,8 @@ import type {
 } from '@ccc/shared/protocol'
 import { ROBOT_MESSAGE_LOCALES } from '@ccc/shared/protocol'
 import ToolPermissionGrid from '@/components/ToolPermissionGrid/ToolPermissionGrid.vue'
+import { isFeishuRegistrationActive } from '@/controls/state'
+import type { FeishuAppRegistrationState } from '@/controls/state'
 
 const { t } = useTypedI18n()
 
@@ -39,6 +42,8 @@ const props = defineProps<{
   toolManifest: Record<string, ToolManifestEntry[] | null>
   toolManifestLoading: boolean
   toolManifestError: string | null
+  /** One-click Feishu app registration view state (controls-owned). */
+  feishuRegistration: FeishuAppRegistrationState
 }>()
 
 const emit = defineEmits<{
@@ -46,6 +51,9 @@ const emit = defineEmits<{
   (e: 'update', robotId: string, config: RobotConfigInput): void
   (e: 'cancel'): void
   (e: 'load-tool-manifest', vendor: string): void
+  (e: 'start-feishu-registration'): void
+  (e: 'cancel-feishu-registration'): void
+  (e: 'clear-feishu-registration'): void
 }>()
 
 const name = ref('')
@@ -67,6 +75,10 @@ const dmAllowlist = ref('')
 const maxTurnMs = ref('')
 /** Empty string = system default (null). */
 const locale = ref<'' | RobotMessageLocale>('')
+/** Countdown clock while the QR is being shown; drives display only. */
+const now = ref(Date.now())
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+const copyLabel = ref<'label' | 'copied'>('label')
 
 const LOCALE_LABELS: Record<RobotMessageLocale, string> = {
   en: 'English',
@@ -77,6 +89,122 @@ const LOCALE_LABELS: Record<RobotMessageLocale, string> = {
 }
 
 const isEdit = computed(() => props.robot !== null)
+
+/** The one-click entry exists only in Feishu CREATE mode (edit keeps manual
+ *  credentials and never touches an existing app). */
+const showFeishuOneClick = computed(() => props.robot === null && platform.value === 'feishu')
+const feishuActive = computed(() => isFeishuRegistrationActive(props.feishuRegistration))
+const feishuRemainingSeconds = computed(() => {
+  if (!props.feishuRegistration.expiresAt) return 0
+  return Math.max(0, Math.ceil((props.feishuRegistration.expiresAt - now.value) / 1000))
+})
+
+const FEISHU_SCOPES: { scope: string; labelKey: LocaleKey }[] = [
+  {
+    scope: 'im:message:send_as_bot',
+    labelKey: 'robot.form.feishuRegistration.scopes.sendAsBot',
+  },
+  {
+    scope: 'im:message.group_at_msg:readonly',
+    labelKey: 'robot.form.feishuRegistration.scopes.groupAtRead',
+  },
+  {
+    scope: 'im:message.p2p_msg:readonly',
+    labelKey: 'robot.form.feishuRegistration.scopes.p2pRead',
+  },
+  {
+    scope: 'application:bot.basic_info:read',
+    labelKey: 'robot.form.feishuRegistration.scopes.botBasicInfoRead',
+  },
+  {
+    scope: 'im.message.receive_v1',
+    labelKey: 'robot.form.feishuRegistration.scopes.event',
+  },
+]
+
+const FEISHU_FAILED_LABELS: Record<
+  NonNullable<FeishuAppRegistrationState['failedReason']>,
+  LocaleKey
+> = {
+  denied: 'robot.form.feishuRegistration.failed.denied',
+  expired: 'robot.form.feishuRegistration.failed.expired',
+  cancelled: 'robot.form.feishuRegistration.failed.cancelled',
+  unsupported_region: 'robot.form.feishuRegistration.failed.unsupportedRegion',
+  network_error: 'robot.form.feishuRegistration.failed.networkError',
+  server_error: 'robot.form.feishuRegistration.failed.serverError',
+}
+
+function stopCountdown(): void {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
+
+function startCountdown(): void {
+  stopCountdown()
+  now.value = Date.now()
+  countdownTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+}
+
+watch(
+  () => props.feishuRegistration.phase,
+  (phase, prev) => {
+    if (phase === 'waiting_scan' || phase === 'slow_down') startCountdown()
+    else stopCountdown()
+    // Backfill credentials exactly once, when a credential-bearing result
+    // arrives. The countdown and the QR live purely in controls state; this
+    // component only mirrors them into the draft, which stays editable.
+    if (
+      (phase === 'ready' || phase === 'manual_setup_required') &&
+      prev !== 'ready' &&
+      prev !== 'manual_setup_required'
+    ) {
+      const r = props.feishuRegistration
+      if (r.appId && r.appSecret) {
+        appId.value = r.appId
+        appSecret.value = r.appSecret
+      }
+    }
+  },
+)
+
+onBeforeUnmount(stopCountdown)
+
+/**
+ * The user touched a credential after a result: drop the result hint and the
+ * registration reference. Backfilling by the form itself is a programmatic
+ * write and never triggers this (the input event does not fire for it).
+ */
+function onCredentialEdited(): void {
+  const phase = props.feishuRegistration.phase
+  if (phase === 'ready' || phase === 'manual_setup_required') {
+    emit('clear-feishu-registration')
+  }
+}
+
+/** Close the dialog AND cancel any live registration in one gesture. */
+function close(): void {
+  emit('cancel')
+  emit('cancel-feishu-registration')
+}
+
+async function copyVerificationUrl(): Promise<void> {
+  const url = props.feishuRegistration.verificationUrl
+  if (!url) return
+  try {
+    await navigator.clipboard?.writeText(url)
+    copyLabel.value = 'copied'
+    setTimeout(() => {
+      copyLabel.value = 'label'
+    }, 1500)
+  } catch {
+    // No clipboard access (permissions, non-secure context): the URL stays
+    // visible and selectable, nothing else to do.
+  }
+}
 
 /** Real agents of the chosen vendor, plus its virtual group agents (ADR-0029). */
 const agentOptions = computed(() => {
@@ -194,6 +322,14 @@ function draft(): RobotConfigInput {
 
 function submit(): void {
   if (!canSave.value) return
+  // A credential-bearing result is consumed by the create/update; drop the
+  // registration reference so the next open starts clean.
+  if (
+    props.feishuRegistration.phase === 'ready' ||
+    props.feishuRegistration.phase === 'manual_setup_required'
+  ) {
+    emit('clear-feishu-registration')
+  }
   if (props.robot) emit('update', props.robot.id, draft())
   else emit('create', name.value.trim(), platform.value, { ...draft(), appSecret: appSecret.value })
 }
@@ -206,7 +342,7 @@ const DM_LABEL = {
 </script>
 
 <template>
-  <div v-if="open" class="rf-overlay" @click.self="emit('cancel')">
+  <div v-if="open" class="rf-overlay" @click.self="close">
     <div class="rf-panel" role="dialog" aria-modal="true">
       <h2 class="rf-title">
         {{ isEdit ? t('robot.form.edit.title') : t('robot.form.create.title') }}
@@ -228,16 +364,173 @@ const DM_LABEL = {
 
         <label class="rf-field">
           <span class="rf-label">{{ t('robot.form.appId.label') }}</span>
-          <input v-model="appId" data-testid="robot-app-id" />
+          <div class="rf-app-id-row">
+            <input
+              v-model="appId"
+              :disabled="feishuActive"
+              data-testid="robot-app-id"
+              @input="onCredentialEdited"
+            />
+            <button
+              v-if="showFeishuOneClick"
+              type="button"
+              class="rf-btn rf-btn-secondary"
+              :disabled="feishuActive"
+              data-testid="feishu-one-click"
+              @click="emit('start-feishu-registration')"
+            >
+              {{ t('robot.form.feishuRegistration.create.label') }}
+            </button>
+          </div>
         </label>
+
+        <div
+          v-if="showFeishuOneClick && feishuRegistration.phase !== 'idle'"
+          class="rf-feishu-reg"
+          data-testid="feishu-registration-panel"
+        >
+          <template v-if="feishuRegistration.phase === 'starting'">
+            <p class="rf-feishu-status" data-testid="feishu-status-starting">
+              {{ t('robot.form.feishuRegistration.starting.label') }}
+            </p>
+          </template>
+
+          <template
+            v-else-if="
+              feishuRegistration.phase === 'waiting_scan' ||
+              feishuRegistration.phase === 'slow_down'
+            "
+          >
+            <h3 class="rf-feishu-title" data-testid="feishu-waiting-title">
+              {{ t('robot.form.feishuRegistration.waitingScan.title') }}
+            </h3>
+            <p
+              v-if="feishuRegistration.phase === 'slow_down'"
+              class="rf-feishu-status"
+              data-testid="feishu-status-slow-down"
+            >
+              {{ t('robot.form.feishuRegistration.slowDown.label') }}
+            </p>
+            <div class="rf-feishu-qr">
+              <QrcodeSvg
+                v-if="feishuRegistration.verificationUrl"
+                :value="feishuRegistration.verificationUrl"
+                :size="180"
+                data-testid="feishu-qr"
+              />
+            </div>
+            <a
+              class="rf-feishu-url"
+              :href="feishuRegistration.verificationUrl ?? '#'"
+              target="_blank"
+              rel="noreferrer"
+              data-testid="feishu-url"
+            >
+              {{ feishuRegistration.verificationUrl }}
+            </a>
+            <div class="rf-feishu-row">
+              <button
+                type="button"
+                class="rf-btn rf-btn-secondary"
+                data-testid="feishu-copy"
+                @click="copyVerificationUrl"
+              >
+                {{
+                  copyLabel === 'copied'
+                    ? t('robot.form.feishuRegistration.waitingScan.copy.copied')
+                    : t('robot.form.feishuRegistration.waitingScan.copy.label')
+                }}
+              </button>
+              <span class="rf-feishu-countdown" data-testid="feishu-countdown">
+                {{
+                  t('robot.form.feishuRegistration.waitingScan.expiresIn', {
+                    seconds: feishuRemainingSeconds,
+                  })
+                }}
+              </span>
+            </div>
+            <div class="rf-feishu-scopes" data-testid="feishu-scopes">
+              <h4 class="rf-feishu-scopes-title">
+                {{ t('robot.form.feishuRegistration.scopes.title') }}
+              </h4>
+              <ul>
+                <li v-for="item in FEISHU_SCOPES" :key="item.scope">
+                  <code>{{ item.scope }}</code>
+                  — {{ t(item.labelKey) }}
+                </li>
+              </ul>
+              <p class="rf-feishu-warning" data-testid="feishu-scope-warning">
+                {{ t('robot.form.feishuRegistration.scopes.warning') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rf-btn rf-btn-secondary"
+              data-testid="feishu-cancel"
+              @click="close"
+            >
+              {{ t('robot.form.feishuRegistration.cancel.label') }}
+            </button>
+          </template>
+
+          <template v-else-if="feishuRegistration.phase === 'configuring'">
+            <p class="rf-feishu-status" data-testid="feishu-status-configuring">
+              {{ t('robot.form.feishuRegistration.configuring.label') }}
+            </p>
+          </template>
+
+          <template v-else-if="feishuRegistration.phase === 'ready'">
+            <p class="rf-feishu-status" data-testid="feishu-status-ready">
+              {{ t('robot.form.feishuRegistration.ready.label') }}
+            </p>
+          </template>
+
+          <template v-else-if="feishuRegistration.phase === 'manual_setup_required'">
+            <h3 class="rf-feishu-title" data-testid="feishu-manual-title">
+              {{ t('robot.form.feishuRegistration.manualSetup.title') }}
+            </h3>
+            <p class="rf-feishu-warning" data-testid="feishu-manual-warning">
+              {{ t('robot.form.feishuRegistration.manualSetup.warning') }}
+            </p>
+            <ol class="rf-feishu-steps">
+              <li>{{ t('robot.form.feishuRegistration.manualSetup.step1') }}</li>
+              <li>{{ t('robot.form.feishuRegistration.manualSetup.step2') }}</li>
+            </ol>
+            <a
+              class="rf-feishu-url"
+              href="https://open.feishu.cn/app"
+              target="_blank"
+              rel="noreferrer"
+              data-testid="feishu-manual-console"
+            >
+              {{ t('robot.form.feishuRegistration.manualSetup.consoleLink') }}
+            </a>
+          </template>
+
+          <template v-else-if="feishuRegistration.phase === 'failed'">
+            <p class="rf-feishu-status" data-testid="feishu-status-failed">
+              {{ t(FEISHU_FAILED_LABELS[feishuRegistration.failedReason ?? 'server_error']) }}
+            </p>
+            <button
+              type="button"
+              class="rf-btn rf-btn-secondary"
+              data-testid="feishu-cancel"
+              @click="close"
+            >
+              {{ t('robot.form.feishuRegistration.cancel.label') }}
+            </button>
+          </template>
+        </div>
 
         <label class="rf-field">
           <span class="rf-label">{{ t('robot.form.appSecret.label') }}</span>
           <input
             v-model="appSecret"
             type="password"
+            :disabled="feishuActive"
             :placeholder="isEdit ? t('robot.form.appSecret.placeholder') : ''"
             data-testid="robot-app-secret"
+            @input="onCredentialEdited"
           />
           <span class="rf-hint">{{ t('robot.form.appSecret.hint') }}</span>
         </label>
@@ -313,7 +606,7 @@ const DM_LABEL = {
       </div>
 
       <footer class="rf-foot">
-        <button type="button" class="rf-btn" @click="emit('cancel')">
+        <button type="button" class="rf-btn" @click="close">
           {{ t('common.action.cancel.label') }}
         </button>
         <button
@@ -424,6 +717,74 @@ textarea {
 .rf-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.rf-btn-secondary {
+  flex: none;
+}
+.rf-app-id-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.rf-feishu-reg {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-bg-subtle, var(--c-input));
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.rf-feishu-title {
+  margin: 0;
+  font-size: 14px;
+}
+.rf-feishu-qr {
+  align-self: center;
+}
+.rf-feishu-url {
+  word-break: break-all;
+  font-size: 12px;
+}
+.rf-feishu-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rf-feishu-countdown {
+  font-variant-numeric: tabular-nums;
+}
+.rf-feishu-scopes {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+}
+.rf-feishu-scopes-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.rf-feishu-scopes ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rf-feishu-warning {
+  margin: 6px 0 0;
+  color: var(--c-warning-text);
+  font-size: 12px;
+}
+.rf-feishu-steps {
+  margin: 0;
+  padding-left: 18px;
+}
+.rf-feishu-status {
+  margin: 0;
 }
 @media (max-width: 767px) {
   .rf-overlay {

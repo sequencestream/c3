@@ -16,6 +16,7 @@ import { useTypedI18n } from '@/i18n'
 import RobotList from './components/robots/RobotList.vue'
 import RobotDetail from './components/robots/RobotDetail.vue'
 import RobotForm from './components/robots/RobotForm.vue'
+import type { FeishuAppRegistrationState } from '@/controls/state'
 import type {
   AgentConfig,
   ImGroupWorkspaceGrant,
@@ -38,6 +39,7 @@ const props = defineProps<{
   toolManifest: Record<string, ToolManifestEntry[] | null>
   toolManifestLoading: boolean
   toolManifestError: string | null
+  feishuRegistration: FeishuAppRegistrationState
   workspaces: WorkspaceInfo[]
   imIdentityBindings: ImIdentityBinding[]
   imGroupWorkspaceScopes: ImGroupWorkspaceGrant[]
@@ -51,6 +53,9 @@ const emit = defineEmits<{
   (e: 'enable', robotId: string): void
   (e: 'disable', robotId: string): void
   (e: 'load-tool-manifest', vendor: string): void
+  (e: 'start-feishu-registration'): void
+  (e: 'cancel-feishu-registration'): void
+  (e: 'clear-feishu-registration'): void
   (e: 'admin-revoke-im-identity', bindingId: string): void
   (
     e: 'load-im-group-scopes',
@@ -115,6 +120,11 @@ function submitCreate(name: string, platform: ImPlatform, config: RobotConfigInp
 function submitUpdate(robotId: string, config: RobotConfigInput): void {
   formOpen.value = false
   emit('update', robotId, config)
+}
+
+/** Close the form; RobotForm emits the cancel-feishu-registration itself. */
+function closeForm(): void {
+  formOpen.value = false
 }
 
 function onLoadGroupScopes(chatId: string): void {
@@ -215,10 +225,14 @@ function onSaveGroupScopes(chatId: string, workspaceNames: string[]): void {
     :tool-manifest="toolManifest"
     :tool-manifest-loading="toolManifestLoading"
     :tool-manifest-error="toolManifestError"
+    :feishu-registration="feishuRegistration"
     @create="submitCreate"
     @update="submitUpdate"
-    @cancel="formOpen = false"
+    @cancel="closeForm"
     @load-tool-manifest="emit('load-tool-manifest', $event)"
+    @start-feishu-registration="emit('start-feishu-registration')"
+    @cancel-feishu-registration="emit('cancel-feishu-registration')"
+    @clear-feishu-registration="emit('clear-feishu-registration')"
   />
 </template>
 

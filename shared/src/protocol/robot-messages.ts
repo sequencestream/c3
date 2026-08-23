@@ -16,6 +16,8 @@
  */
 
 import type {
+  FeishuManualSetupReason,
+  FeishuRegistrationFailedReason,
   ImGroupWorkspaceGrant,
   ImIdentityBinding,
   ImIdentityChallengeCreated,
@@ -185,3 +187,63 @@ export type ServerImGroupWorkspaceScopes = {
   chatId: string
   grants: ImGroupWorkspaceGrant[]
 }
+
+/**
+ * Admin: start a one-click Feishu app registration (device authorization).
+ * The `requestId` is client-generated and echoed on every progress/result
+ * frame for this attempt; the server keeps at most one active task per
+ * connection and rejects a duplicate start with a `server_error` result.
+ */
+export type ClientStartFeishuAppRegistration = {
+  type: 'start_feishu_app_registration'
+  requestId: string
+}
+
+/**
+ * Admin: cancel the connection's active registration, if any. Idempotent —
+ * an unknown or already-finished `requestId` is a no-op.
+ */
+export type ClientCancelFeishuAppRegistration = {
+  type: 'cancel_feishu_app_registration'
+  requestId: string
+}
+
+/**
+ * Connection-directed progress of a `start_feishu_app_registration` attempt.
+ * `waiting_scan` carries the authorization URL and the server-computed expiry;
+ * the URL is public (it is shown as a QR code and link) and never a secret.
+ */
+export type ServerFeishuAppRegistrationProgress = {
+  type: 'feishu_app_registration_progress'
+  requestId: string
+  status: 'starting' | 'waiting_scan' | 'slow_down' | 'configuring'
+  /** Present only when `status` is `waiting_scan`. */
+  verificationUrl?: string
+  /** Server-computed epoch ms expiry, present only when `status` is `waiting_scan`. */
+  expiresAt?: number
+}
+
+/**
+ * Terminal result of a `start_feishu_app_registration` attempt. `ready` and
+ * `manual_setup_required` both mean the Feishu app was created and carry the
+ * full credentials exactly once to the initiating connection; `failed` never
+ * carries credentials.
+ */
+export type ServerFeishuAppRegistrationResult = {
+  type: 'feishu_app_registration_result'
+  requestId: string
+} & (
+  | { outcome: 'ready'; appId: string; appSecret: string }
+  | {
+      outcome: 'manual_setup_required'
+      appId: string
+      appSecret: string
+      reason: FeishuManualSetupReason
+    }
+  | {
+      outcome: 'failed'
+      reason: FeishuRegistrationFailedReason
+      /** Closed, non-secret diagnostic detail; never a credential or token. */
+      detail?: string
+    }
+)

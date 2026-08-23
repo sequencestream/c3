@@ -4028,6 +4028,60 @@
       "edit": {
         "title": "编辑聊天机器人"
       },
+      "feishuRegistration": {
+        "create": {
+          "label": "一键创建飞书应用"
+        },
+        "cancel": {
+          "label": "取消"
+        },
+        "starting": {
+          "label": "正在生成授权码…"
+        },
+        "waitingScan": {
+          "title": "使用飞书扫码",
+          "hint": "在飞书客户端扫码并确认创建应用。",
+          "linkLabel": "授权链接",
+          "copy": {
+            "label": "复制链接",
+            "copied": "已复制"
+          },
+          "expiresIn": "剩余 {seconds} 秒"
+        },
+        "slowDown": {
+          "label": "飞书繁忙，请稍候…"
+        },
+        "configuring": {
+          "label": "正在配置应用（长连接）…"
+        },
+        "ready": {
+          "label": "飞书应用已创建，App ID 与 App Secret 已填入下方。"
+        },
+        "manualSetup": {
+          "title": "需要手动配置",
+          "warning": "未能自动配置长连接。已回填创建的应用凭据，请在开发者后台完成以下步骤后再启用该机器人。",
+          "step1": "事件与回调 → 订阅方式选择「长连接」。",
+          "step2": "确认已订阅 im.message.receive_v1。",
+          "consoleLink": "打开飞书开发者后台"
+        },
+        "failed": {
+          "denied": "已拒绝授权，凭据未变更。",
+          "expired": "授权码已过期，请重试。",
+          "cancelled": "请求已取消。",
+          "unsupportedRegion": "该功能仅支持飞书中国区租户，国际 Lark 租户暂不支持。",
+          "networkError": "网络错误，请重试。",
+          "serverError": "服务端错误，请重试。"
+        },
+        "scopes": {
+          "title": "本次应用将申请的权限",
+          "warning": "请以飞书确认页为准：若出现默认模板或额外业务权限，请拒绝授权。",
+          "sendAsBot": "以机器人身份发送消息",
+          "groupAtRead": "读取群里 \\@机器人的消息",
+          "p2pRead": "读取与机器人的单聊消息",
+          "botBasicInfoRead": "读取机器人基本信息",
+          "event": "接收消息事件"
+        }
+      },
       "name": {
         "label": "名称",
         "hint": "小写字母、数字、- 和 _。同时是工作目录名,创建后不可修改。"

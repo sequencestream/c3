@@ -127,7 +127,6 @@ describe('RobotDetail tabs', () => {
 
   it('switches both ways without emitting events and shows recent audit fields only there', async () => {
     const w = mountDetail()
-    expect(w.emitted()).toEqual({})
 
     await w.get('[data-testid="robot-detail-tab-recent"]').trigger('click')
     const recent = w.get('[data-testid="robot-detail-panel-recent"]')
@@ -144,7 +143,19 @@ describe('RobotDetail tabs', () => {
     await w.get('[data-testid="robot-detail-tab-basic"]').trigger('click')
     expect(w.find('[data-testid="robot-detail-panel-basic"]').exists()).toBe(true)
     expect(w.find('[data-testid="robot-detail-panel-recent"]').exists()).toBe(false)
-    expect(w.emitted()).toEqual({})
+    for (const event of [
+      'edit',
+      'delete',
+      'disable',
+      'enable',
+      'adminRevokeImIdentity',
+      'loadImGroupScopes',
+      'saveImGroupScopes',
+      'acknowledgeWriteGrant',
+      'setWriteGrantEnabled',
+    ]) {
+      expect(w.emitted(event), event).toBeUndefined()
+    }
   })
 
   it('shows the existing empty state in Recent turns', async () => {

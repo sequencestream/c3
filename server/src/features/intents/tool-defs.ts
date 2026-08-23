@@ -46,7 +46,7 @@ const text = (s: string): IntentToolResult['content'] => [{ type: 'text' as cons
 // ---- Zod input shapes (raw shapes; both `tool()` and `registerTool` accept them) ----
 
 // Shared field shapes for one proposed intent. `save_intents`(upsert,带可选 id)与
-// automation 专用的 `save_intent_directly`(create-only,无 id)都复用这一组字段,
+// 直接写路径的 `save_intent_directly`(create-only,无 id)都复用这一组字段,
 // 避免两处 schema 漂移。
 const proposedIntentShape = {
   title: z.string(),
@@ -161,7 +161,7 @@ export const findDesc =
   '返回精简列表(id、title、module、priority、status、dependsOn)。'
 
 export const saveIntentDirectlyDesc =
-  '直接落库一批“新建”意图为草稿(draft):仅供无人值守的自动化使用,无对话方可确认,直接写库。' +
+  '直接落库一批“新建”意图为草稿(draft):仅供管理员明确授权的直接写路径使用,不等待对话确认,直接写库。' +
   '人工确认门由意图列表对 draft 的评审/激活承担。' +
   '仅新建、不更新已有意图(create-only,不接受 id);落库前务必先用 find_intents 去重,' +
   '已被现有意图覆盖的不要重复创建。本批意图之间的先后关系用每条的 dependsOnIndexes(同批数组下标)声明。'
@@ -251,12 +251,12 @@ export function runSaveConfirmed(
 }
 
 /**
- * Persist a batch of NEW intents as `draft`. Used only by the unattended
- * automation MCP profile: an automation has no conversation partner to confirm
- * with, so instead of an interactive confirmation it lands every item as a
- * `draft` and the human confirms later by reviewing/activating it in the intent
- * list. Create-only — never updates an existing intent (de-dup is the caller's
- * job via `find_intents`); `onSaved` lets the caller broadcast the refreshed list.
+ * Persist a batch of NEW intents as `draft`. Direct-write MCP profiles use this
+ * when their administrator-granted capability intentionally does not wait for an
+ * interactive confirmation. The human confirms later by reviewing/activating the
+ * draft in the intent list. Create-only — never updates an existing intent
+ * (de-dup is the caller's job via `find_intents`); `onSaved` lets the caller
+ * broadcast the refreshed list.
  */
 export function runSaveIntentDirectly(
   workspacePath: string,

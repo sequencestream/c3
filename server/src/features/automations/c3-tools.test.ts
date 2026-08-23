@@ -69,6 +69,14 @@ function handlerFor(toolName: string, deps: AutomationMcpDeps, metadata?: Record
 }
 
 describe('save_intent_directly handler', () => {
+  it('keeps the automation schema bound to its execution workspace', () => {
+    const tool = buildAutomationC3Tools(proj, 'exec-1', null).find(
+      (entry) => entry.name === 'save_intent_directly',
+    )
+    expect(Object.keys(tool!.inputSchema)).toEqual(['intents'])
+    expect(tool!.inputSchema).not.toHaveProperty('workspaceName')
+  })
+
   it('lands new intents as draft (gate-free) and fires broadcastIntents', async () => {
     let saved: string | null = null
     const handler = handlerFor(

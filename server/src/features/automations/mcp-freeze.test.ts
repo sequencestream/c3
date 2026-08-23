@@ -152,6 +152,16 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.writeToolNames.has('mcp__c3__publish_event')).toBe(true)
   })
 
+  it('catalogues submit_spec_review as the fourteenth c3 MCP tool and as a write', () => {
+    expect(C3_MCP_TOOLS).toHaveLength(14)
+    expect(C3_MCP_TOOLS).toContainEqual({
+      name: 'mcp__c3__submit_spec_review',
+      isWrite: true,
+    })
+    const frozen = freezeTools([], [], emptyConfig)
+    expect(frozen.writeToolNames.has('mcp__c3__submit_spec_review')).toBe(true)
+  })
+
   it('registers sync_intent_pr_status as a write tool (forge-derived, not model-written)', () => {
     // The sync tool triggers server-side derivation and persists terminal PR
     // states — a write. `sync_` is not a READ_MCP_PREFIXES prefix, so the
@@ -199,14 +209,14 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(hasSelectedC3McpTool(['mcp__c3__continue_discussion'])).toBe(true)
   })
 
-  it('automation route enabledTools cover every c3 allowlist entry except save_intents', () => {
+  it('automation route differs from the c3 catalog only by its two explicit exceptions', () => {
     // Drift lock across the freeze allowlist and the codex route's forwarded tool
     // set: the route exposes exactly the automation c3 profile — every `mcp__c3__*`
-    // capability the freeze recognises, minus the interactive-only `save_intents`
-    // (automations use the gate-bypassing `save_intent_directly` instead). A new c3
-    // tool added to one side but not the other fails here.
+    // capability the freeze recognises, minus interactive `save_intents` and the
+    // internal/robot-only `submit_spec_review`. A new c3 tool added to one side
+    // but not the other fails here.
     const fromFreeze = C3_MCP_TOOLS.map((t) => t.name.replace('mcp__c3__', ''))
-      .filter((name) => name !== 'save_intents')
+      .filter((name) => name !== 'save_intents' && name !== 'submit_spec_review')
       .sort()
     expect([...AUTOMATION_C3_TOOL_NAMES].sort()).toEqual(fromFreeze)
   })

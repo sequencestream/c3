@@ -72,7 +72,7 @@ import { runPublishEvent } from './features/events/tool-defs.js'
 import type { AutomationMcpDeps } from './features/automations/c3-tools.js'
 import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
 import { createAutomationMcp, AUTOMATION_MCP_PATH } from './transport/automation-mcp/index.js'
-import { createRobotMcp, ROBOT_MCP_PATH } from './transport/robot-mcp/index.js'
+import { createRobotMcp, ROBOT_MCP_PATH, type RobotMcpDeps } from './transport/robot-mcp/index.js'
 import { createAdvisorMcp, ADVISOR_MCP_PATH } from './transport/advisor-mcp/index.js'
 import { createAdvisorApproval } from './features/intents/advisor-approval.js'
 import {
@@ -621,13 +621,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
   const specReviewMcp = createSpecReviewMcp(`http://127.0.0.1:${opts.port}`)
 
-  // Robot c3 MCP route. The tool deps (`AutomationMcpDeps`) close over
+  // Robot c3 MCP route. The write-tool deps close over
   // `launchDeps`, which is constructed below, so this route reads them through a
   // lazy getter that is filled once the full deps object exists — the handlers
   // only run during a robot turn, well after startup. Bound per turn with only
   // the tools the robot's allowlist selected (wired via `robotProfile` below).
-  let c3McpDeps: AutomationMcpDeps | null = null
-  const robotMcp = createRobotMcp(`http://127.0.0.1:${opts.port}`, () => c3McpDeps)
+  let robotMcpDeps: RobotMcpDeps | null = null
+  const robotMcp = createRobotMcp(`http://127.0.0.1:${opts.port}`, () => robotMcpDeps)
 
   // ── Sandbox wiring (arapuca process-level isolation) ───────────────────────
   // Probe arapuca once at startup for the "sandbox available?" signal (log only;
@@ -819,9 +819,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     startDiscussionRun: discussionRuns.startDiscussionRun,
     launchRun: (rt, prompt, images, inject) => launchRun(rt, prompt, launchDeps, images, inject),
   }
-  // The robot route resolves the SAME deps object through its lazy getter — both
-  // surfaces run identical tool behaviors from one definition.
-  c3McpDeps = automationMcpDeps
+  // The robot route has its own narrow dependency object. Its six write tools
+  // share domain cores with automation/external surfaces but never inherit an
+  // automation workspace binding or the robot run root.
+  robotMcpDeps = {
+    broadcastIntents: broadcasts.broadcastIntents,
+    broadcastDiscussions: broadcasts.broadcastDiscussions,
+    broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
+    startDiscussionRun: discussionRuns.startDiscussionRun,
+    launchRun: automationMcpDeps.launchRun,
+    legacyAutomationTools: automationMcpDeps,
+  }
   // The automation c3 MCP over loopback HTTP: the dispatcher binds it per execution
   // (Claude and Codex both) when the automation selects a c3 tool. Mounted before
   // the SPA catch-all, same as the intent / event / relay routes.

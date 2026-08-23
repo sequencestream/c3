@@ -2,10 +2,9 @@
  * Localhost HTTP MCP route for the chat-robot c3 tool profile.
  *
  * Per-turn isolation: each `bind()` mints a token → a private {@link McpServer}.
- * L1 read tools use call-level scope (re-read binding / ACL / group whitelist on
- * every handler). The run root is NOT an authorization workspace for ledger
- * tools. Non-L1 selected c3 tools refuse with a Web-only guide — they must not
- * reverse-lookup object ids into registered workspace paths.
+ * L1 reads and the explicitly grantable robot writes use call-level scope
+ * (re-read binding / ACL / group whitelist on every handler). The run root is
+ * never an authorization workspace for ledger tools.
  *
  * External MCP's connection-level `X-C3-Workspace` pin is deliberately not used
  * here.
@@ -20,28 +19,29 @@ import {
   type AutomationC3ToolResult,
   type AutomationMcpDeps,
 } from '../../features/automations/c3-tools.js'
+import { buildRobotL1Tools, type RobotL1AuthContext } from '../../features/im/robot-l1-tools.js'
 import {
-  buildRobotL1Tools,
-  refuseWriteViaObjectId,
-  type RobotL1AuthContext,
-} from '../../features/im/robot-l1-tools.js'
+  buildRobotWriteTools,
+  isRobotWriteTool,
+  type RobotWriteMcpDeps,
+} from '../../features/im/robot-write-tools.js'
 import { isL1ReadTool } from '../../features/im/call-scope.js'
 import type { ImPlatform } from '@ccc/shared/protocol'
 
 /** The loopback path the robot MCP route is mounted at. */
 export const ROBOT_MCP_PATH = '/internal/robot-mcp/v1'
 
-/** Per-turn binding: run root for local tools + IM auth for L1 ledger tools. */
+/** Per-turn binding: run root for local tools + IM auth for scoped ledger tools. */
 export interface RobotMcpBinding {
   /**
    * Robot working directory — `~/.c3/robots/<name>`. Local file tools stay here;
-   * it is never treated as a registered workspace for L1 ledger tools.
+   * it is never treated as a registered workspace for c3 ledger tools.
    */
   workspacePath: string
   getRunId: () => string
   /** Bare c3 tool names the robot's allowlist selected. */
   selectedTools: readonly string[]
-  /** Required for L1 call-level scope. Absent ⇒ L1 tools refuse. */
+  /** Required for call-level ledger scope. Absent ⇒ scoped tools refuse. */
   imAuth?: {
     robotId: string
     senderId: string
@@ -71,6 +71,11 @@ interface Entry {
   ready: Promise<void>
 }
 
+export interface RobotMcpDeps extends RobotWriteMcpDeps {
+  /** Only supplies contracts for non-target legacy Web-only robot tools. */
+  legacyAutomationTools: AutomationMcpDeps
+}
+
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
 export function isLoopback(address: string | undefined): boolean {
@@ -85,9 +90,27 @@ function toCallResult(r: AutomationC3ToolResult): {
   return r.isError ? { content: r.content, isError: true } : { content: r.content }
 }
 
+function authFor(binding: RobotMcpBinding): RobotL1AuthContext | null {
+  if (!binding.imAuth) return null
+  return {
+    robotId: binding.imAuth.robotId,
+    senderId: binding.imAuth.senderId,
+    chat: {
+      chatType: binding.imAuth.chatType,
+      chatId: binding.imAuth.chatId,
+      platform: binding.imAuth.platform,
+      providerAccountKey: binding.imAuth.providerAccountKey,
+    },
+    expectedBindingId: binding.imAuth.expectedBindingId,
+    turnStartScopeHash: binding.imAuth.turnStartScopeHash,
+    displaySignals: binding.imAuth.displaySignals,
+    onScopeChanged: binding.imAuth.onScopeChanged,
+  }
+}
+
 export function createRobotMcp(
   origin: string,
-  deps: () => AutomationMcpDeps | null,
+  deps: () => RobotMcpDeps | null,
   makeToken: () => string = () => crypto.randomUUID(),
 ): ServedRobotMcp {
   const baseUrl = `${origin.replace(/\/$/, '')}${ROBOT_MCP_PATH}`
@@ -97,23 +120,10 @@ export function createRobotMcp(
     const server = new McpServer({ name: 'c3', version: '1.0.0' })
     const selected = binding.selectedTools
     const toolNames: string[] = []
+    const auth = authFor(binding)
 
     const l1Selected = selected.filter(isL1ReadTool)
-    if (l1Selected.length > 0 && binding.imAuth) {
-      const auth: RobotL1AuthContext = {
-        robotId: binding.imAuth.robotId,
-        senderId: binding.imAuth.senderId,
-        chat: {
-          chatType: binding.imAuth.chatType,
-          chatId: binding.imAuth.chatId,
-          platform: binding.imAuth.platform,
-          providerAccountKey: binding.imAuth.providerAccountKey,
-        },
-        expectedBindingId: binding.imAuth.expectedBindingId,
-        turnStartScopeHash: binding.imAuth.turnStartScopeHash,
-        displaySignals: binding.imAuth.displaySignals,
-        onScopeChanged: binding.imAuth.onScopeChanged,
-      }
+    if (l1Selected.length > 0 && auth) {
       for (const t of buildRobotL1Tools(auth)) {
         if (!l1Selected.includes(t.name as (typeof l1Selected)[number])) continue
         server.registerTool(
@@ -135,17 +145,48 @@ export function createRobotMcp(
       }
     }
 
-    // Non-L1 selected tools: never bind to a registered workspace path.
-    const nonL1 = selected.filter((n) => !isL1ReadTool(n))
-    if (nonL1.length > 0) {
-      const all = buildAutomationC3Tools(binding.workspacePath, binding.getRunId, deps())
-      for (const t of all) {
-        if (!nonL1.includes(t.name)) continue
-        // Write / action tools: Web-only guide. Do not close over a registry path.
+    const writeSelected = selected.filter(isRobotWriteTool)
+    if (writeSelected.length > 0 && auth) {
+      for (const t of buildRobotWriteTools(auth, binding.getRunId, deps)) {
+        if (!writeSelected.includes(t.name as (typeof writeSelected)[number])) continue
         server.registerTool(
           t.name,
           { description: t.description, inputSchema: t.inputSchema },
-          async () => toCallResult(refuseWriteViaObjectId()),
+          async (args) => toCallResult(await t.handler(args)),
+        )
+        toolNames.push(t.name)
+      }
+    } else if (writeSelected.length > 0) {
+      for (const name of writeSelected) {
+        server.registerTool(name, { description: 'identity required', inputSchema: {} }, async () =>
+          toCallResult({
+            content: [{ type: 'text', text: JSON.stringify({ code: 'not_visible' }) }],
+            isError: true,
+          }),
+        )
+        toolNames.push(name)
+      }
+    }
+
+    // Non-target action tools keep their established Web-only boundary. Their
+    // contracts are discovered without ever binding a handler to the robot root.
+    const legacySelected = selected.filter((n) => !isL1ReadTool(n) && !isRobotWriteTool(n))
+    if (legacySelected.length > 0) {
+      const all = buildAutomationC3Tools(
+        '',
+        binding.getRunId,
+        deps()?.legacyAutomationTools ?? null,
+      )
+      for (const t of all) {
+        if (!legacySelected.includes(t.name)) continue
+        server.registerTool(
+          t.name,
+          { description: t.description, inputSchema: t.inputSchema },
+          async () =>
+            toCallResult({
+              content: [{ type: 'text', text: JSON.stringify({ code: 'web_only' }) }],
+              isError: true,
+            }),
         )
         toolNames.push(t.name)
       }

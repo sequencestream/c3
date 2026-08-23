@@ -187,11 +187,20 @@ workspace-write,否则只读。勾选 c3 MCP 写工具(如 `mcp__c3__save_intent
 
 ### c3 MCP 工具按回合绑定
 
-勾选的 c3 MCP 工具按线程经回环 HTTP MCP 绑定到机器人运行目录(`~/.c3/robots/<name>/`),只暴露勾选的
-子集:未勾选工具既不出现在 tools/list,直接调用也被拒绝。与自动化 MCP 不同,机器人 c3 工具**不在连接时
-钉定单一工作区**:六个 L1 只读工具在每次 handler 执行时重新读取 active binding、`user_workspace_scopes`
-与群白名单并求交;对象型工具由 id 反查工作区,列举型在全部个人 scope 内枚举并标注 `workspaceName`。
-写类 c3 工具不能借对象 id 反查获得工作区路径。本地文件读取仍只限于运行根,二者互不替代。
+勾选的 c3 MCP 工具按 Conversation 经回环 HTTP MCP 绑定,只注册 `toolAllowlist` 的勾选子集:未勾选工具
+不出现在 `tools/list`,直接调用由 MCP 服务端按未知工具拒绝。机器人 c3 工具不在连接时钉定单一工作区;
+六个 L1 只读工具与下列六个写工具在每次 handler 执行时重新读取 active binding、
+`user_workspace_scopes`、群白名单与授权版本并求交:
+
+- `save_intents`、`save_intent_directly`:必须显式传入详细可见的 `workspaceName`,再由工作区注册表解析根目录。
+- `submit_spec_review`、`start_session_for_intent`:按 `intentId` 反查归属,归属须在详细可见集内。
+- `start_discussion`、`continue_discussion`:按 `discussionId` 反查归属,归属须在详细可见集内。
+
+对象不存在、归属未注册或不在详细可见集时统一返回 `not_visible`;调用中绑定、授权版本或可见集变化时
+返回 `scope_changed`,均不得进入业务 handler。两个保存工具的 upsert 目标与 `dependsOn` 引用必须全部
+属于显式目标工作区,否则整批拒绝。`save_intents` 只在机器人已完整列出本轮意图且用户文字明确确认后
+调用;工具勾选不替代这次对话确认。机器人运行根 `~/.c3/robots/<name>/` 只服务本地工具,永不参与台账
+工作区解析。
 
 ## 与工作区的关系
 
@@ -211,8 +220,10 @@ workspace-write,否则只读。勾选 c3 MCP 写工具(如 `mcp__c3__save_intent
 对 c3 领域数据与业务动作的能力天花板(不替代运行层工具权限):
 
 - **L0 播报** —— 受控通知,只允许注册事件与固定模板;本实现不启用主动播报
-- **L1 只读问答** —— 用户发起的只读查询,每次调用重算作用域;当前仅保留已安全可达的只读行为
-- **L2 定向作答** —— 仅对已指定 actor 与允许答案集合的待办做确定性回应;本实现不提供
-- **L3 重动作** —— 开发启动、设置修改、删除、交付/PR 等不在 IM 内执行,只回 Web 深链
+- **L1 只读问答** —— 用户发起的只读查询,每次调用重算作用域
+- **L2 定向作答** —— 仅对已指定 actor 与允许答案集合的待办做确定性回应,由独立 write-grant 与一次性
+  token 授权,不读取机器人工具勾选
+- **L3 受控写入** —— 上述六个 c3 MCP 写工具按「管理员逐项勾选 + 调用级作用域 + 领域业务门」执行;
+  设置修改、删除、交付/PR 等未列入能力仍只回 Web
 
 该分级不是启用开关;现有默认停用、启用前确认、只读默认与出站守卫基线保持不变。

@@ -96,6 +96,8 @@ describe('intent MCP HTTP route', () => {
         'save_intents',
         'view_intent',
       ])
+      const saveContract = listed.tools.find((tool) => tool.name === 'save_intents')!
+      expect(saveContract.inputSchema.properties).not.toHaveProperty('workspaceName')
 
       const find = await client.callTool({ name: 'find_intents', arguments: {} })
       expect(JSON.stringify(find.content)).toContain('FOUND')
@@ -106,11 +108,13 @@ describe('intent MCP HTTP route', () => {
       const save = await client.callTool({
         name: 'save_intents',
         arguments: {
+          workspaceName: 'must-not-override-binding',
           intents: [{ title: 't', shortEnTitle: 'auto', content: 'c', priority: 'P1' }],
         },
       })
       expect(JSON.stringify(save.content)).toContain('SAVED')
       expect(saved).toHaveLength(1)
+      expect(saved[0]).not.toHaveProperty('workspaceName')
     } finally {
       await client.close()
       dispose()

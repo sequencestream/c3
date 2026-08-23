@@ -12,7 +12,7 @@
  * so this exercises the transport plumbing end-to-end without a vendor binary.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { serve, type ServerType } from '@hono/node-server'
@@ -21,7 +21,40 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import type { AutomationMcpDeps } from '../../features/automations/c3-tools.js'
-import { createRobotMcp, ROBOT_MCP_PATH, isLoopback, type ServedRobotMcp } from './index.js'
+import type { AuthConfig } from '@ccc/shared/protocol'
+import { initTestGitRepo } from '../../../test/git-repo.js'
+import { releaseConfigDb, useConfigDb } from '../../kernel/config/config-fixture.js'
+import {
+  loadSettings,
+  resetSettingsCacheForTests,
+  saveSettings,
+} from '../../kernel/config/index.js'
+import { registerWorkspace } from '../../kernel/config/workspace-store.js'
+import { resetStateCacheForTests } from '../../state.js'
+import { hashPassword } from '../../features/auth/password.js'
+import {
+  putWorkspaceScope,
+  resetWorkspaceScopeStoreForTests,
+} from '../../features/auth/scope-store.js'
+import {
+  findIntents,
+  resetStoreForTests as resetIntentStoreForTests,
+} from '../../features/intents/store.js'
+import {
+  accountNamespaceOf,
+  resetIdentityStoreForTests,
+  seedBindingForTests,
+} from '../../features/im/identity-store.js'
+import { chatContextFor, resolveCallScope } from '../../features/im/call-scope.js'
+import { createRobot, resetRobotStoreForTests } from '../../features/im/robot-store.js'
+import { ROBOT_WRITE_TOOL_NAMES } from '../../features/im/robot-write-tools.js'
+import {
+  createRobotMcp,
+  ROBOT_MCP_PATH,
+  isLoopback,
+  type RobotMcpDeps,
+  type ServedRobotMcp,
+} from './index.js'
 
 describe('isLoopback', () => {
   it.each([
@@ -39,7 +72,7 @@ describe('isLoopback', () => {
 
 describe('robot MCP HTTP route', () => {
   const runRoot = '/abs/c3/robots/helper'
-  const deps: AutomationMcpDeps = {
+  const automationDeps: AutomationMcpDeps = {
     broadcastIntents: () => {},
     normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
     publishEvent: () => {},
@@ -48,6 +81,7 @@ describe('robot MCP HTTP route', () => {
     startDiscussionRun: () => {},
     launchRun: async () => {},
   }
+  const deps: RobotMcpDeps = { ...automationDeps, legacyAutomationTools: automationDeps }
 
   let server: ServerType
   let port: number
@@ -73,12 +107,28 @@ describe('robot MCP HTTP route', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'c3-robot-mcp-'))
     process.env.C3_DB_PATH = join(dir, 'c3.db')
+    process.env.C3_DIR = join(dir, 'c3-home')
+    useConfigDb(dir)
     resetDbForTests()
+    resetStateCacheForTests()
+    resetSettingsCacheForTests()
+    resetWorkspaceScopeStoreForTests()
+    resetIntentStoreForTests()
+    resetIdentityStoreForTests()
+    resetRobotStoreForTests()
   })
 
   afterEach(() => {
+    releaseConfigDb()
     resetDbForTests()
+    resetStateCacheForTests()
+    resetSettingsCacheForTests()
+    resetWorkspaceScopeStoreForTests()
+    resetIntentStoreForTests()
+    resetIdentityStoreForTests()
+    resetRobotStoreForTests()
     delete process.env.C3_DB_PATH
+    delete process.env.C3_DIR
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -90,6 +140,59 @@ describe('robot MCP HTTP route', () => {
   const jsonHeaders = {
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
+  }
+
+  function configureBoundAlice(): {
+    robotId: string
+    senderId: string
+    bindingId: string
+    scopeHash: string
+    workspaceName: string
+    workspacePath: string
+  } {
+    const auth: AuthConfig = {
+      enabled: true,
+      provider: {
+        kind: 'basic',
+        accounts: [
+          { username: 'root', passwordHash: hashPassword('pw') },
+          { username: 'alice', passwordHash: hashPassword('pw') },
+        ],
+        adminUsername: 'root',
+      },
+      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+    }
+    saveSettings({ ...loadSettings(), auth })
+    const workspacePath = join(dir, 'ledger')
+    mkdirSync(workspacePath, { recursive: true })
+    initTestGitRepo(workspacePath)
+    const workspaceName = registerWorkspace(workspacePath, 'ledger', Date.now()).name
+    putWorkspaceScope('alice', 'selected', [workspaceName], 1)
+    const robot = createRobot({
+      name: 'helper',
+      platform: 'feishu',
+      appId: 'cli_app',
+      appSecret: 'secret',
+      vendor: 'claude',
+      agentId: 'agent-1',
+    })
+    const senderId = 'ou_alice'
+    const binding = seedBindingForTests({
+      accountNamespace: accountNamespaceOf('feishu', 'cli_app'),
+      senderId,
+      subject: 'alice',
+    })
+    const chat = chatContextFor('feishu', 'cli_app', 'p2p', senderId)
+    const scope = resolveCallScope({ robotId: robot.id, senderId, chat })
+    if (!scope.ok) throw new Error('scope setup failed')
+    return {
+      robotId: robot.id,
+      senderId,
+      bindingId: binding.id,
+      scopeHash: scope.scope.scopeHash,
+      workspaceName,
+      workspacePath,
+    }
   }
 
   it('rejects an unknown token with 404', async () => {
@@ -144,7 +247,7 @@ describe('robot MCP HTTP route', () => {
     const binding = robotMcp.bind({
       workspacePath: runRoot,
       getRunId: () => 'run-1',
-      // save_intents is deliberately NOT selected.
+      // The six robot writes are deliberately NOT selected.
       selectedTools: ['find_intents'],
     })
     const client = new Client({ name: 'test', version: '1.0.0' })
@@ -153,15 +256,73 @@ describe('robot MCP HTTP route', () => {
     )
     try {
       const listed = await client.listTools()
-      expect(listed.tools.map((t) => t.name)).not.toContain('save_intents')
+      for (const name of ROBOT_WRITE_TOOL_NAMES) {
+        expect(listed.tools.map((t) => t.name)).not.toContain(name)
+      }
 
-      // The MCP SDK refuses a call to a tool the server never registered — the
-      // direct-call rejection half of the spec's "未勾选工具既不出现在 tools/list,
-      // 直接调用也被服务端拒绝" (an error result naming the tool as not found).
-      const refused = await client.callTool({ name: 'save_intents', arguments: { intents: [] } })
-      expect(refused.isError).toBe(true)
-      expect(JSON.stringify(refused.content)).toContain('save_intents')
-      expect(JSON.stringify(refused.content)).toContain('not found')
+      for (const name of ROBOT_WRITE_TOOL_NAMES) {
+        const refused = await client.callTool({ name, arguments: {} })
+        expect(refused.isError).toBe(true)
+        expect(JSON.stringify(refused.content)).toContain(name)
+        expect(JSON.stringify(refused.content)).toContain('not found')
+        expect(JSON.stringify(refused.content)).not.toContain('web_only')
+      }
+    } finally {
+      await client.close()
+      binding.dispose()
+    }
+  })
+
+  it('lists all six selected robot writes and saves through the real scoped handler', async () => {
+    const alice = configureBoundAlice()
+    const binding = robotMcp.bind({
+      workspacePath: runRoot,
+      getRunId: () => 'robot-run-1',
+      selectedTools: ROBOT_WRITE_TOOL_NAMES,
+      imAuth: {
+        robotId: alice.robotId,
+        senderId: alice.senderId,
+        chatType: 'p2p',
+        chatId: alice.senderId,
+        providerAccountKey: 'cli_app',
+        platform: 'feishu',
+        expectedBindingId: alice.bindingId,
+        turnStartScopeHash: alice.scopeHash,
+      },
+    })
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    await client.connect(
+      new StreamableHTTPClientTransport(routeUrl(tokenOf(binding.servers.c3.url))),
+    )
+    try {
+      const listed = await client.listTools()
+      expect(listed.tools.map((tool) => tool.name)).toEqual(ROBOT_WRITE_TOOL_NAMES)
+      const byName = new Map(listed.tools.map((tool) => [tool.name, tool]))
+      for (const name of ['save_intents', 'save_intent_directly']) {
+        expect(byName.get(name)?.inputSchema.required).toContain('workspaceName')
+      }
+      expect(byName.get('submit_spec_review')?.inputSchema.required).toContain('intentId')
+
+      const saved = await client.callTool({
+        name: 'save_intents',
+        arguments: {
+          workspaceName: alice.workspaceName,
+          intents: [
+            {
+              title: 'Confirmed over IM',
+              shortEnTitle: 'confirmed-over-im',
+              content: 'The user confirmed this complete intent in text.',
+              priority: 'P1',
+            },
+          ],
+        },
+      })
+      expect(saved.isError).not.toBe(true)
+      expect(JSON.stringify(saved.content)).not.toContain('web_only')
+      expect(findIntents(alice.workspacePath, {}).map((intent) => intent.title)).toEqual([
+        'Confirmed over IM',
+      ])
+      expect(findIntents(runRoot, {})).toEqual([])
     } finally {
       await client.close()
       binding.dispose()

@@ -1,6 +1,6 @@
 /**
  * Call-level L1 read tools for IM robots: object reverse-lookup, multi-workspace
- * enumeration, group hiddenCount projection, mid-turn scope change, and write refusal.
+ * enumeration, group hiddenCount projection, and mid-turn scope change.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -40,11 +40,7 @@ import {
   NOT_VISIBLE_RESULT,
   resolveCallScope,
 } from './call-scope.js'
-import {
-  buildRobotL1Tools,
-  refuseWriteViaObjectId,
-  type RobotL1AuthContext,
-} from './robot-l1-tools.js'
+import { buildRobotL1Tools, type RobotL1AuthContext } from './robot-l1-tools.js'
 import { createTurnDisplaySignals } from './robot-message-registry.js'
 
 let dir: string
@@ -691,13 +687,5 @@ describe('buildRobotL1Tools — scope freshness', () => {
         detailWorkspaceNames: [],
       }),
     ).toBe(fresh.ok ? fresh.scope.scopeHash : '')
-  })
-})
-
-describe('refuseWriteViaObjectId', () => {
-  it('never grants a workspace path for write-class tools', () => {
-    const result = refuseWriteViaObjectId()
-    expect(JSON.parse(result.content[0]!.text!)).toMatchObject({ code: 'web_only' })
-    expect(result.isError).toBe(true)
   })
 })

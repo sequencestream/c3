@@ -37,15 +37,15 @@ IM 机器人是部署级入口。外部 `senderId`、连接、线程或机器人
 
 ### 调用级求交
 
-`robot-mcp` 绑定不携带已授权 `workspacePath`。每次 L1 handler 重读 active binding、subject、`user_workspace_scopes`、群白名单与 `auth.policyEpoch`，求交：
+`robot-mcp` 绑定不携带已授权 `workspacePath`。每次 L1 handler 与管理员显式勾选的机器人 c3 MCP 写 handler 重读 active binding、subject、`user_workspace_scopes`、群白名单与 `auth.policyEpoch`，求交：
 
 ```
 详细可见 = 个人 scope ∩（私聊？全集 : 群白名单）
 ```
 
-对象型工具先按对象 id 反查真实 `workspaceName`，再判是否在详细可见内；不存在 / 越权 / 群外均返回相同 `{ code: "not_visible" }`。列举型在个人全部有效 scope 内按注册顺序合并，每项带 `workspaceName`；群内仅返回交集明细，群外匹配只允许总 `hiddenCount`（或通用「存在群外结果」标志），不得带对象标识。
+对象型工具先按对象 id 反查候选 `workspaceName`，只有候选位于详细可见集且仍能由注册表解析时才取得路径；不存在 / 越权 / 群外均返回相同 `{ code: "not_visible" }`。列举型在个人全部有效 scope 内按注册顺序合并，每项带 `workspaceName`；群内仅返回交集明细，群外匹配只允许总 `hiddenCount`（或通用「存在群外结果」标志），不得带对象标识。新建型写工具必须显式给出详细可见的 `workspaceName`，不得隐式选择唯一工作区。
 
-群白名单默认空；`chatAllowlist` 只决定是否响应，不是数据可见白名单。写类 c3 工具不得借对象反查获得已注册工作区路径。外部 MCP 继续连接级钉定，二者不得共用「连接选中工作区」语义。
+群白名单默认空；`chatAllowlist` 只决定是否响应，不是数据可见白名单。机器人运行根永远不是台账候选工作区。外部 MCP 继续连接级钉定，二者不得共用「连接选中工作区」语义。
 
 ### 会话键与发送前复核
 
@@ -60,12 +60,13 @@ Conversation 身份含 `(platform, robotId, threadKey, senderId, bindingId, subj
 - 全局 `policyEpoch` 会使无关编辑切断更多机器人上下文（有意取舍）。
 - 绑定消费与平台投递非同一事务：库提交为准，确认消息失败不回滚绑定。
 - 旧四维 Conversation / Context Turn 安全切断，不复制到新主键。
+- 管理员勾选机器人 c3 MCP 写工具会授予真实写能力；风险由默认不勾选、服务端按勾选子集注册、逐调用作用域与领域业务门共同承担。`save_intents` 另保留用户文字确认。
 
 ## Compliance
 
 - 身份挑战、绑定、群范围、审计表与 `im_robot_threads` / `im_robot_context_turns` / `im_robot_turns` 迁移同边界幂等收敛。
 - `ImTurnOutcome` 含 `identity_required` / `scope_changed`。
-- 测试覆盖冒用绑定、逐调用 scope 变化、多工作区枚举、对象反查、群成员更替、上下文隔离与探测。
+- 测试覆盖冒用绑定、逐调用 scope 变化、多工作区枚举、对象反查、群成员更替、上下文隔离与探测，并逐项覆盖六个机器人写工具的勾选注册、未勾选直调拒绝、跨工作区拒绝与零副作用。
 
 ## References
 

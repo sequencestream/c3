@@ -195,12 +195,12 @@ describe('sendGuarded — readiness and target', () => {
 })
 
 describe('sendGuarded — content categories', () => {
-  it('sends a normal final answer through rawSend once', async () => {
+  it('sends a normal final answer through rawSend once, without a replyTo quote', async () => {
     const id = enabledRobot()
     const { sent, rawSend } = rawRecorder()
     const result = await sendGuarded({
       robotId: id,
-      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u' },
       content: { category: 'final_answer', text: 'the build is green' },
       maxOutboundChars: MAX,
       renderContext: CTX,
@@ -211,7 +211,24 @@ describe('sendGuarded — content categories', () => {
       text: 'the build is green',
       outboundChars: 'the build is green'.length,
     })
-    expect(sent).toEqual([{ chatId: 'oc_1', text: 'the build is green', replyTo: 'm1' }])
+    // Default target carries no replyTo, so rawSend receives a direct-send payload.
+    expect(sent).toEqual([{ chatId: 'oc_1', text: 'the build is green' }])
+    expect(sent[0]?.replyTo).toBeUndefined()
+  })
+
+  it('passes replyTo through when the target explicitly sets it', async () => {
+    const id = enabledRobot()
+    const { sent, rawSend } = rawRecorder()
+    const result = await sendGuarded({
+      robotId: id,
+      target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+      content: { category: 'final_answer', text: 'hello' },
+      maxOutboundChars: MAX,
+      renderContext: CTX,
+      rawSend,
+    })
+    expect(result.ok).toBe(true)
+    expect(sent).toEqual([{ chatId: 'oc_1', text: 'hello', replyTo: 'm1' }])
   })
 
   it('swaps a credential-shaped answer for the intercept notice without echoing the secret', async () => {
@@ -265,7 +282,7 @@ describe('sendGuarded — content categories', () => {
       const { sent, rawSend } = rawRecorder()
       const result = await sendGuarded({
         robotId: id,
-        target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u', replyTo: 'm1' },
+        target: { chatId: 'oc_1', chatType: 'group', senderId: 'ou_u' },
         content: {
           category: 'fixed_notice',
           message: {
@@ -281,7 +298,7 @@ describe('sendGuarded — content categories', () => {
         rawSend,
       })
       expect(result.ok).toBe(true)
-      expect(sent).toEqual([{ chatId: 'oc_1', text: expected, replyTo: 'm1' }])
+      expect(sent).toEqual([{ chatId: 'oc_1', text: expected }])
     }
   })
 
@@ -327,7 +344,6 @@ describe('sendGuarded — content categories', () => {
       chatId: 'ou_user',
       chatType: 'p2p' as const,
       senderId: 'ou_user',
-      replyTo: 'm1',
     }
     const expected = renderRobotMessage({ key: 'binding.success', params: {} }, CTX)
     const { sent, rawSend } = rawRecorder()
@@ -353,12 +369,11 @@ describe('sendGuarded — content categories', () => {
       chatId: 'ou_user',
       chatType: 'p2p' as const,
       senderId: 'ou_user',
-      replyTo: 'm1',
     }
     const { sent, rawSend } = rawRecorder()
     const result = await sendGuarded({
       robotId: id,
-      target: { chatId: 'ou_other', chatType: 'p2p', senderId: 'ou_other', replyTo: 'm2' },
+      target: { chatId: 'ou_other', chatType: 'p2p', senderId: 'ou_other' },
       content: {
         category: 'binding_notice',
         message: { key: 'binding.success', params: {} },

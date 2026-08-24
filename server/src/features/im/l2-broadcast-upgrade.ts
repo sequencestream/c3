@@ -97,7 +97,6 @@ export async function tryDeliverL2TodoPrompt(input: {
     chatId: binding.senderId,
     chatType: 'p2p',
     senderId: binding.senderId,
-    replyTo: '',
   }
   return sendGuarded({
     robotId: input.robot.id,

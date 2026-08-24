@@ -37,7 +37,7 @@ import {
   stopImSupervisor,
 } from './supervisor.js'
 import type { ImConnection, ImInboundMessage, ImProvider } from './types.js'
-import type { RobotTurnResult } from '../../wiring/robot-turn.js'
+import type { RobotTurnProgress, RobotTurnResult } from '../../wiring/robot-turn.js'
 
 vi.mock('./registry.js', () => ({ resolveImProvider: vi.fn() }))
 
@@ -160,6 +160,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await stopImSupervisor(0)
   resetDbForTests()
   delete process.env.C3_DB_PATH
@@ -512,6 +513,160 @@ describe('every accepted message ends in a reply or an audited reason', () => {
     expect(log?.error).toContain('[redacted]')
     expect(log?.error).not.toContain(secret)
     expect(JSON.stringify(log)).not.toContain(secret)
+  })
+})
+
+describe('replies go out directly, never as quotes of the inbound message', () => {
+  it('delivers the final answer without a replyTo quote', async () => {
+    await boot()
+    push(message())
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toEqual({ chatId: 'oc_1', text: 'the build is green' })
+    expect(sent[0]?.replyTo).toBeUndefined()
+  })
+
+  it('also keeps the busy notice on the direct path', async () => {
+    await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+    push(message({ messageId: 'm-a', senderId: 'ou_user' }))
+    await settle()
+    push(message({ messageId: 'm-b', senderId: 'ou_user' }))
+    await settle()
+    const busy = sent.find((s) => s.text.includes('Still working'))
+    expect(busy).toBeTruthy()
+    expect(busy?.replyTo).toBeUndefined()
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+  })
+
+  it('keeps the binding notice on the direct path', async () => {
+    await boot({}, { bind: false })
+    push(message())
+    await settle()
+    const guide = sent.find((s) => s.text.includes('Personal settings'))
+    expect(guide).toBeTruthy()
+    expect(guide?.replyTo).toBeUndefined()
+  })
+})
+
+describe('progress feedback during a long turn', () => {
+  it('sends nothing for a turn that finishes inside the grace period', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+    push(message())
+    await settle()
+    const onProgress = (
+      turnResult.mock.calls[0]?.[0] as { onProgress: (f: RobotTurnProgress) => void }
+    ).onProgress
+    onProgress({ kind: 'accepted' })
+    onProgress({ kind: 'step_started', step: 1 })
+    await settle()
+    expect(sent).toHaveLength(0)
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.text).toBe('done')
+    expect(sent[0]?.replyTo).toBeUndefined()
+    vi.useRealTimers()
+  })
+
+  it('delivers a bounded, spaced stream of progress for a long turn, then the full answer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const id = await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+    push(message())
+    await settle()
+    const onProgress = (
+      turnResult.mock.calls[0]?.[0] as { onProgress: (f: RobotTurnProgress) => void }
+    ).onProgress
+
+    // accepted clears the grace period and is delivered.
+    onProgress({ kind: 'accepted' })
+    await vi.advanceTimersByTimeAsync(2100)
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.text).toBe('Received. Working on it.')
+    expect(sent[0]?.replyTo).toBeUndefined()
+
+    // a step frame inside the 5s spacing window is held, then delivered.
+    onProgress({ kind: 'step_started', step: 1 })
+    await settle()
+    expect(sent).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(5000)
+    await settle()
+    expect(sent).toHaveLength(2)
+    expect(sent[1]?.text).toBe('Working on step 1.')
+
+    onProgress({ kind: 'step_done', step: 1 })
+    await vi.advanceTimersByTimeAsync(5000)
+    await settle()
+    expect(sent).toHaveLength(3)
+    expect(sent[2]?.text).toBe('Still working. One moment.')
+
+    // stage-skipping frames are dropped, and the budget caps total progress at 3.
+    onProgress({ kind: 'step_started', step: 2 })
+    onProgress({ kind: 'step_done', step: 2 })
+    await vi.advanceTimersByTimeAsync(5000)
+    await settle()
+    expect(sent).toHaveLength(3)
+
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+    expect(sent).toHaveLength(4)
+    expect(sent[3]?.text).toBe('done')
+
+    // progress is fixed_notice: it never enters the turn audit as outbound chars.
+    const [log] = listTurns(id)
+    expect(log?.outcome).toBe('complete')
+    expect(log?.outboundChars).toBe('done'.length)
+    vi.useRealTimers()
+  })
+
+  it('drops progress frames that skip the strict stage order', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    await boot()
+    let release: (r: RobotTurnResult) => void = () => {}
+    turnResult.mockReturnValueOnce(
+      new Promise<RobotTurnResult>((r) => {
+        release = r
+      }),
+    )
+    push(message())
+    await settle()
+    const onProgress = (
+      turnResult.mock.calls[0]?.[0] as { onProgress: (f: RobotTurnProgress) => void }
+    ).onProgress
+    // a step or done frame before accepted skips a stage and is never sent.
+    onProgress({ kind: 'step_done', step: 1 })
+    onProgress({ kind: 'step_started', step: 1 })
+    await vi.advanceTimersByTimeAsync(2100)
+    await settle()
+    expect(sent).toHaveLength(0)
+    onProgress({ kind: 'accepted' })
+    await vi.advanceTimersByTimeAsync(2100)
+    await settle()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.text).toContain('Received')
+    release({ outcome: 'complete', sessionId: 'sess-1', lastMessage: 'done' })
+    await settle()
+    vi.useRealTimers()
   })
 })
 

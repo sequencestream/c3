@@ -250,4 +250,45 @@ describe('assertSendableCategory', () => {
       true,
     )
   })
+
+  it('allows progress keys as fixed_notice', () => {
+    expect(assertSendableCategory({ key: 'progress.received', params: {} }, 'fixed_notice')).toBe(
+      true,
+    )
+    expect(
+      assertSendableCategory({ key: 'progress.step', params: { step: 1 } }, 'fixed_notice'),
+    ).toBe(true)
+    expect(assertSendableCategory({ key: 'progress.continued', params: {} }, 'fixed_notice')).toBe(
+      true,
+    )
+  })
+})
+
+describe('progress templates', () => {
+  it('renders the step ordinal and rejects invalid step params', () => {
+    const text = renderRobotMessage(
+      { key: 'progress.step', params: { step: 3 } },
+      { personalLocale: 'zh' },
+    )
+    expect(text).toContain('3')
+
+    const bad = renderRobotMessage(
+      { key: 'progress.step', params: { step: 0 } },
+      { personalLocale: 'zh' },
+    )
+    expect(bad).toMatch(/cannot be completed|无法在此完成|Open c3 Web/i)
+  })
+
+  it('renders received and continued without params', () => {
+    const received = renderRobotMessage(
+      { key: 'progress.received', params: {} },
+      { personalLocale: 'zh' },
+    )
+    const continued = renderRobotMessage(
+      { key: 'progress.continued', params: {} },
+      { personalLocale: 'zh' },
+    )
+    expect(received.trim().length).toBeGreaterThan(0)
+    expect(continued.trim().length).toBeGreaterThan(0)
+  })
 })

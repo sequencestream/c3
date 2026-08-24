@@ -37,6 +37,17 @@ import { addViewer, ensureRuntime, removeViewer, stopRun, type Viewer } from '..
 /** How a robot turn ended. */
 export type RobotTurnOutcome = 'complete' | 'error' | 'blocked' | 'timeout'
 
+/**
+ * A real execution-stage event, projected for optional progress feedback. Frames
+ * carry only the phase and a cumulative ordinal — never a tool name, input,
+ * output, path or any content — so "progress reflects the real run" is a
+ * structural property rather than a promise.
+ */
+export type RobotTurnProgress =
+  | { kind: 'accepted' }
+  | { kind: 'step_started'; step: number }
+  | { kind: 'step_done'; step: number }
+
 export interface RobotTurnResult {
   outcome: RobotTurnOutcome
   /** The bound session id — the caller persists it as the thread's session. */
@@ -83,6 +94,13 @@ export interface RunRobotTurnInput {
   /** Wall-clock ceiling for this turn. */
   maxTurnMs: number
   signal: AbortSignal
+  /**
+   * Optional projection of real execution stages. Called at most once per real
+   * event (accepted on launch, step_started/step_done per tool event); never
+   * called after the turn settles. The caller decides whether/how many reach a
+   * chat — this module only reports what actually happened.
+   */
+  onProgress?: (frame: RobotTurnProgress) => void
 }
 
 export interface RobotTurnDeps {
@@ -120,6 +138,14 @@ export function makeRunRobotTurn(
       let lastText = ''
       let settled = false
       let timer: ReturnType<typeof setTimeout> | null = null
+      // Cumulative per-turn tool event ordinals for progress projection.
+      let toolStarted = 0
+      let toolDone = 0
+
+      const emitProgress = (frame: RobotTurnProgress): void => {
+        if (settled) return
+        input.onProgress?.(frame)
+      }
 
       const finish = (r: RobotTurnResult): void => {
         if (settled) return
@@ -144,8 +170,15 @@ export function makeRunRobotTurn(
       }
 
       const viewer: Viewer = (e) => {
+        if (settled) return
         if (e.type === 'assistant_text') {
           lastText = e.text
+        } else if (e.type === 'tool_use') {
+          toolStarted += 1
+          emitProgress({ kind: 'step_started', step: toolStarted })
+        } else if (e.type === 'tool_result') {
+          toolDone += 1
+          emitProgress({ kind: 'step_done', step: toolDone })
         } else if (e.type === 'permission_request') {
           // Nobody can answer this. Waiting would hold the thread until the wall
           // clock expires and leave the chat silent for that whole window, so the
@@ -172,6 +205,8 @@ export function makeRunRobotTurn(
       // turn — an unhandled rejection here would leave the chat waiting forever.
       try {
         const launched = launchRun(rt, input.prompt, launchDeps)
+        // The turn entered execution: report it before anything settles.
+        emitProgress({ kind: 'accepted' })
         if (launched && typeof launched.catch === 'function') {
           launched.catch((err: unknown) =>
             finish({

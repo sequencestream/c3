@@ -4,7 +4,11 @@ import type { ImConnectionStatus, ImRobot, ImTurnOutcome } from '@ccc/shared/pro
 import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/paths.js'
 import { redactSecrets } from '../../kernel/security/index.js'
-import type { RobotTurnResult, RunRobotTurnInput } from '../../wiring/robot-turn.js'
+import type {
+  RobotTurnProgress,
+  RobotTurnResult,
+  RunRobotTurnInput,
+} from '../../wiring/robot-turn.js'
 import {
   accountNamespaceOf,
   consumeChallenge,
@@ -92,7 +96,8 @@ function errText(err: unknown): string {
   return redactSecrets(err instanceof Error ? err.message : String(err)).slice(0, 200)
 }
 function targetOf(m: ImInboundMessage): OutboundTarget {
-  return { chatId: m.chatId, chatType: m.chatType, senderId: m.senderId, replyTo: m.messageId }
+  // Replies are sent directly to the chat, not as quotes of the inbound message.
+  return { chatId: m.chatId, chatType: m.chatType, senderId: m.senderId }
 }
 function accepts(r: ImRobot, m: ImInboundMessage): boolean {
   if (m.chatType === 'group')
@@ -105,6 +110,150 @@ function accepts(r: ImRobot, m: ImInboundMessage): boolean {
 function renderCtx(r: ImRobot, subject?: string | null): RobotRenderContext {
   return resolveRobotRenderContext({ subject, robotLocale: r.locale })
 }
+
+/** Progress delivery tuning — product knobs, concentrated in one place. */
+const PROGRESS_GRACE_MS = 2000
+const PROGRESS_MIN_INTERVAL_MS = 5000
+const PROGRESS_MAX_PER_TURN = 3
+
+function progressStage(frame: RobotTurnProgress): number {
+  switch (frame.kind) {
+    case 'accepted':
+      return 0
+    case 'step_started':
+      return 1
+    case 'step_done':
+      return 2
+  }
+}
+
+function progressRef(frame: RobotTurnProgress): RobotMessageRef {
+  switch (frame.kind) {
+    case 'accepted':
+      return { key: 'progress.received', params: {} }
+    case 'step_started':
+      return { key: 'progress.step', params: { step: frame.step } }
+    case 'step_done':
+      return { key: 'progress.continued', params: {} }
+  }
+}
+
+/**
+ * Per-turn progress delivery gate. Frames are projected by the runner; this
+ * decides whether/how many reach the chat: a short turn inside the grace period
+ * sends nothing, a long turn gets at most PROGRESS_MAX_PER_TURN fixed_notice
+ * frames spaced at least PROGRESS_MIN_INTERVAL_MS apart, consumed in stage
+ * order. Sends ride the existing guard; a failed/refused send is dropped
+ * silently (the guard audits every attempt) and never blocks or retries — the
+ * final answer follows its own path.
+ */
+function createTurnProgress(
+  h: RobotHandle,
+  target: OutboundTarget,
+  ctx: RobotRenderContext,
+): { push: (frame: RobotTurnProgress) => void; end: () => void } {
+  const startedAt = Date.now()
+  let pending: RobotTurnProgress[] = []
+  let stageConsumed = -1
+  let sentCount = 0
+  let lastSentAt = -Infinity
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const clearTimer = (): void => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+  }
+
+  const dispatch = (frame: RobotTurnProgress): void => {
+    stageConsumed = progressStage(frame)
+    sentCount += 1
+    lastSentAt = Date.now()
+    void h
+      .sendOutbound({ category: 'fixed_notice', message: progressRef(frame) }, target, ctx)
+      .catch((err) => console.error('[c3][im] progress send failed:', errText(err)))
+  }
+
+  const armAfter = (delay: number): void => {
+    if (timer) return
+    timer = setTimeout(() => {
+      timer = null
+      flushNow()
+    }, delay)
+    timer.unref?.()
+  }
+
+  const arm = (): void => {
+    if (timer) return
+    if (pending.length === 0 || sentCount >= PROGRESS_MAX_PER_TURN) return
+    const elapsed = Date.now() - startedAt
+    const graceRemain = Math.max(0, PROGRESS_GRACE_MS - elapsed)
+    const intervalRemain =
+      lastSentAt === -Infinity
+        ? 0
+        : Math.max(0, PROGRESS_MIN_INTERVAL_MS - (Date.now() - lastSentAt))
+    armAfter(Math.max(graceRemain, intervalRemain))
+  }
+
+  const flushNow = (): void => {
+    clearTimer()
+    while (pending.length > 0) {
+      const frame = pending[0]
+      // Strict stage order: only the next stage (or a repeat of the current one,
+      // e.g. a later step) is ever sent; anything else is dropped.
+      const stage = progressStage(frame)
+      if (stage !== stageConsumed && stage !== stageConsumed + 1) {
+        pending.shift()
+        continue
+      }
+      if (sentCount >= PROGRESS_MAX_PER_TURN) {
+        pending = []
+        return
+      }
+      if (Date.now() - startedAt < PROGRESS_GRACE_MS) {
+        arm()
+        return
+      }
+      if (lastSentAt !== -Infinity && Date.now() - lastSentAt < PROGRESS_MIN_INTERVAL_MS) {
+        arm()
+        return
+      }
+      pending.shift()
+      dispatch(frame)
+    }
+  }
+
+  return {
+    push: (frame) => {
+      pending.push(frame)
+      arm()
+    },
+    end: () => {
+      clearTimer()
+      if (Date.now() - startedAt < PROGRESS_GRACE_MS) {
+        pending = []
+        return
+      }
+      // Flush whatever is sendable now, then drop the rest (no timers after the
+      // turn has ended — the final answer is about to go out).
+      while (pending.length > 0) {
+        const frame = pending[0]
+        const stage = progressStage(frame)
+        if (stage !== stageConsumed && stage !== stageConsumed + 1) {
+          pending.shift()
+          continue
+        }
+        if (sentCount >= PROGRESS_MAX_PER_TURN) break
+        if (lastSentAt !== -Infinity && Date.now() - lastSentAt < PROGRESS_MIN_INTERVAL_MS) break
+        pending.shift()
+        dispatch(frame)
+      }
+      pending = []
+    },
+  }
+}
+
 function fail(id: string): void {
   try {
     failContextTurn(id)
@@ -312,6 +461,7 @@ async function runOneTurn(
   const displaySignals = createTurnDisplaySignals()
   const c = getConversation(identity)
   const ref = c ? resolvedSessionRef(c, r.vendor) : null
+  const progress = createTurnProgress(h, target, ctx)
   let result: RobotTurnResult
   try {
     result = await runner({
@@ -334,8 +484,11 @@ async function runOneTurn(
       prompt: ref ? m.text : formatContextSeed(loadCommittedContext(identity), m.text),
       maxTurnMs: r.maxTurnMs ?? ROBOT_DEFAULT_MAX_TURN_MS,
       signal: new AbortController().signal,
+      onProgress: progress.push,
     })
+    progress.end()
   } catch (e) {
+    progress.end()
     fail(contextTurnId)
     const s = await fixed(
       h,

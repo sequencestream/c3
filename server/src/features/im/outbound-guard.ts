@@ -51,7 +51,12 @@ export type OutboundTarget = {
   chatType: 'group' | 'p2p'
   /** Needed to re-check dm allowlist at send time. */
   senderId: string
-  replyTo: string
+  /**
+   * Optional platform reply-to message id. Replies no longer quote the inbound
+   * message; when set it is still passed through as a platform hint, and it
+   * participates in the binding origin comparison.
+   */
+  replyTo?: string
 }
 
 export type RawImSend = (chatId: string, out: ImOutbound) => Promise<{ messageId: string }>
@@ -196,7 +201,7 @@ async function deliverRawReply(input: GuardedSendInput, text: string): Promise<G
   try {
     const { messageId } = await input.rawSend(input.target.chatId, {
       text,
-      replyTo: input.target.replyTo,
+      ...(input.target.replyTo ? { replyTo: input.target.replyTo } : {}),
     })
     return { ok: true, messageId, outboundChars: text.length, text }
   } catch (err) {

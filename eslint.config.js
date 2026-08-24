@@ -122,6 +122,13 @@ export default tseslint.config(
     // its own `query` + `canUseTool` and bypassing the gateway. Tests are exempt
     // (they stub the SDK); the three established scheduled-run / MCP-tool files that
     // legitimately use the SDK carry an annotated, justified eslint-disable.
+    // Credential hygiene shares this block (C-SEC-4): `redactSecrets` and
+    // `detectCredentialShape` live in `kernel/security/` — the single entry every
+    // consumer must import them from. The two historical homes (`pr-events/tool-defs`,
+    // `memory/content-guard`) still export PR-pipeline / memory-guard functions, so
+    // the ban is whole-path; the established PR-pipeline imports in `features/intents`
+    // carry an annotated eslint-disable, and same-feature references (`./tool-defs.js`)
+    // are relative and never match these patterns. Tests are exempt.
     files: ['server/src/features/**/*.ts', 'server/src/transport/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: {
@@ -133,6 +140,16 @@ export default tseslint.config(
               group: ['@anthropic-ai/claude-agent-sdk'],
               message:
                 'C-SEC: features/transport must not import the Claude Agent SDK directly — run the agent via kernel/agent and decide every tool through kernel/permission (the single gateway). Annotate a justified exception only for an established scheduled-run / MCP-tool path.',
+            },
+            {
+              group: ['**/pr-events/tool-defs*'],
+              message:
+                'C-SEC-4: credential primitives (redactSecrets) live in kernel/security — import them from that single entry instead of a feature-internal file.',
+            },
+            {
+              group: ['**/memory/content-guard*'],
+              message:
+                'C-SEC-4: credential primitives (detectCredentialShape) live in kernel/security — import them from that single entry instead of a feature-internal file.',
             },
           ],
         },

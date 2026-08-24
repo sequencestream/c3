@@ -15,7 +15,6 @@ import {
   normalizePrGenericEvent,
   prArgsToGenericEvent,
   projectPrOperationEvent,
-  redactSecrets,
 } from './tool-defs.js'
 
 /** A registry with only the PR normalizer, mirroring the composition root. */
@@ -226,13 +225,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
   })
 })
 
-describe('redactSecrets / normalizeErrorSummary — safety normalization', () => {
-  it('redacts GitHub / generic tokens from free text', () => {
-    const out = redactSecrets('token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 leaked')
-    expect(out).not.toContain('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345')
-    expect(out).toContain('[redacted]')
-  })
-
+describe('normalizeErrorSummary — safety normalization', () => {
   it('strips absolute paths and collapses whitespace in the error summary', () => {
     const raw = 'fatal: push failed\n  at /Users/alice/secret/repo/.git\n\nstderr dump'
     const out = normalizeErrorSummary(raw)!

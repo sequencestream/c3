@@ -16,8 +16,7 @@
  */
 import type { ImBroadcastType } from '@ccc/shared/protocol'
 import type { ImRobot } from '@ccc/shared/protocol'
-import { detectCredentialShape } from '../memory/content-guard.js'
-import { redactSecrets } from '../pr-events/tool-defs.js'
+import { detectCredentialShape, redactSecrets } from '../../kernel/security/index.js'
 import { renderBroadcastTemplate, type TemplateFieldValues } from './broadcast-templates.js'
 import type { BroadcastDeliveryTarget } from './broadcast-recipients.js'
 import { logImOutbound } from './im-log.js'

@@ -37,6 +37,7 @@
 import type { IntentPr, IntentPrStatus } from '@ccc/shared/protocol'
 import type { GenericEventEnvelope } from '@ccc/shared'
 import { activeIntentPrs } from '@ccc/shared'
+// eslint-disable-next-line no-restricted-imports -- PR 事件管线导出 projectPrOperationEvent,非安全原语(凭据原语已归 kernel/security)
 import { projectPrOperationEvent } from '../pr-events/tool-defs.js'
 
 /** PR statuses that an `update/success` event may reset back to `reviewing`. */

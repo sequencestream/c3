@@ -4,7 +4,7 @@
  * no run, no body write.
  */
 import { ROBOT_CONTEXT_MAX_CODEPOINTS, type ImInputRejectReason } from '@ccc/shared/protocol'
-import { detectCredentialShape } from '../memory/content-guard.js'
+import { detectCredentialShape } from '../../kernel/security/index.js'
 
 export function codePointCount(value: string): number {
   return Array.from(value).length

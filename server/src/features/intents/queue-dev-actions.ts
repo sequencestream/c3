@@ -50,6 +50,7 @@ import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { JudgeUnavailableError, judgeCompletion, type JudgeVerdict } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
+// eslint-disable-next-line no-restricted-imports -- PR 事件管线导出 runServerSidePrCreate,非安全原语(凭据原语已归 kernel/security)
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import {
   getDevSkill,

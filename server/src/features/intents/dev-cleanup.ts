@@ -43,6 +43,7 @@ import { activeIntentPrs } from '@ccc/shared'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'
+// eslint-disable-next-line no-restricted-imports -- PR 事件管线导出 runServerSidePrCreate,非安全原语(凭据原语已归 kernel/security)
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import { parsePrIdentity } from './pr-identity.js'
 import { prTargetFailureText, type PrTargetResolution } from './pr-target.js'

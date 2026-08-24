@@ -18,27 +18,10 @@
  * A rejection names the CATEGORY and never echoes the matched text — an error
  * message that quotes the secret defeats the check that produced it.
  */
+import { detectCredentialShape } from '../../kernel/security/index.js'
 
 /** Why a write was refused. Carried to the caller instead of the matched text. */
 export type MemoryGuardReason = 'credential' | 'artifact'
-
-/**
- * Credential shapes: private-key blocks, bearer tokens, vendor access tokens and
- * credential-name assignments. The assignment rule demands a secret-LOOKING
- * value (12+ token characters), so ordinary prose that merely mentions a
- * credential by name — "token 由环境变量注入" — stays writable.
- */
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/,
-  /\bbearer\s+[A-Za-z0-9._~+/-]{16,}=*/i,
-  /\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/,
-  /\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\b/,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
-  /\bAKIA[0-9A-Z]{16}\b/,
-  /\bc3k_[A-Za-z0-9_-]{16,}\b/,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
-  /\b(?:api[_-]?key|secret|password|passwd|token|credential|private[_-]?key)\b\s*[:=]\s*["']?[A-Za-z0-9_\-./+]{12,}/i,
-]
 
 /**
  * Artifact shapes: markdown code fences, XML-ish tool-call framing (the MCP /
@@ -55,26 +38,13 @@ const ARTIFACT_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
- * Whether the text carries something shaped like a credential.
- *
- * Split out from {@link detectMemoryGuardViolation} because the two rule sets
- * answer different questions and not every caller wants both. The artifact rules
- * ask "is this a transcript rather than a conclusion", which is a memory
- * concern; the credential rules ask "would sending this leak a secret", which
- * applies anywhere text leaves the machine — the IM outbound path uses these
- * alone, since an answer legitimately containing a code fence must still be
- * deliverable.
- */
-export function detectCredentialShape(value: string): boolean {
-  return CREDENTIAL_PATTERNS.some((p) => p.test(value))
-}
-
-/**
  * Inspect one user-supplied field. Returns the category that refused it, or
  * `null` when the text is acceptable. Never returns the matched substring.
+ * The credential half is delegated to {@link detectCredentialShape} (owned by
+ * `kernel/security`); this guard only adds the memory-specific artifact rules.
  */
 export function detectMemoryGuardViolation(value: string): MemoryGuardReason | null {
-  for (const p of CREDENTIAL_PATTERNS) if (p.test(value)) return 'credential'
+  if (detectCredentialShape(value)) return 'credential'
   for (const p of ARTIFACT_PATTERNS) if (p.test(value)) return 'artifact'
   return null
 }

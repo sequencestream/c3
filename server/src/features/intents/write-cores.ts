@@ -20,6 +20,7 @@ import type {
 import { CREATE_PR_STAGES } from '@ccc/shared/protocol'
 import { closeForgePr, commitAndPush, createForgePr, hasDiffAgainstBase } from '../../git.js'
 import { getForgeOverride, getGitBranchMode } from '../../kernel/config/index.js'
+// eslint-disable-next-line no-restricted-imports -- PR 事件管线导出 runServerSidePrCreate,非安全原语(凭据原语已归 kernel/security)
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import { resolvePrTarget } from './pr-target.js'
 import type { GenericEvent } from '@ccc/shared'

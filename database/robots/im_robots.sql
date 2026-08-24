@@ -1,6 +1,6 @@
 -- im_robots — IM 聊天机器人配置 (执行身份 + 预设权限 + 响应面 + 外发授权)
 -- 所属模块: robots
--- 对应 Store: server/src/features/im/robot-store.ts
+-- 对应 Store: server/src/features/im/robot-config-store.ts
 -- 迁移: migrate/2026/08/20/044-im-robots.sql
 --
 -- 存在理由: 让 c3 的 agent 能力延伸到办公 IM —— 群里 @机器人 提问, c3 跑一轮会话把答案发回群里。

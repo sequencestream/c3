@@ -1,6 +1,6 @@
 -- im_robot_threads — 绑定主体 + scope_hash 的机器人 Conversation
 -- 所属模块: robots
--- 对应 Store: server/src/features/im/robot-store.ts
+-- 对应 Store: server/src/features/im/robot-context-store.ts
 -- 迁移: migrate/2026/08/20/044-im-robots.sql, 046-im-robot-sender-isolation.sql, 047-im-identity-and-call-level-scope.sql
 --
 -- 会话身份是 (platform, robot_id, thread_key, sender_id, binding_id, subject, scope_hash)。

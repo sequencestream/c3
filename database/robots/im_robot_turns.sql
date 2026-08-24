@@ -1,6 +1,6 @@
 -- im_robot_turns — 机器人回合审计 (每一次把 agent 产出发往第三方云都留一行)
 -- 所属模块: robots
--- 对应 Store: server/src/features/im/robot-store.ts
+-- 对应 Store: server/src/features/im/robot-turn-store.ts
 -- 迁移: migrate/2026/08/20/044-im-robots.sql … 047-im-identity-and-call-level-scope.sql
 --
 -- 只记元数据, 不记正文。outcome 含 identity_required / scope_changed (ADR-0049)。

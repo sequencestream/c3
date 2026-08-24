@@ -238,3 +238,11 @@ Conversation 的下一条消息可带着上次绑定的原生会话 id 进入,�
 `robots` 模块下除机器人/线程/上下文/审计四表外,还有 IM 身份绑定、一次性挑战、群工作区白名单与授权
 审计表(`database/robots/` 与 `database/auth/` 边界)。均由 store 在首次访问时惰性、幂等地建表(与全库
 一致的收敛方式)。密钥经既有的配置加密落库,读取只经一个专用访问器,其余读路径只见到「是否已配置」。
+
+机器人四表(`im_robots` / `im_robot_threads` / `im_robot_context_turns` / `im_robot_turns`)的持久化按
+职责拆分:`robot-schema.ts` 持有表 DDL、整表重塑迁移与 `ensureSchema`;`robot-config-store.ts` /
+`robot-context-store.ts` / `robot-turn-store.ts` 分别是配置 CRUD、会话上下文生命周期、回合审计三类
+读写入口;`robot-db.ts` 是共享基础(连接获取、事务、测试用时钟)。`robot-store.ts` 保留为对外 barrel,
+外部 import 路径不变。SQLite 不能 `ALTER` 一个 `CHECK`,整表重塑(重命名归档 → 建新表 → 投影搬数据 →
+重建索引)因此由 `table-rebuild.ts` 的 `rebuildTable` 统一承担,替代此前四表各自手写、曾两次因索引
+误挂旧表复发同一缺陷的重塑套路。

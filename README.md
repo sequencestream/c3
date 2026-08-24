@@ -67,6 +67,7 @@ flowchart LR
 - **Automations** — run agent work on a cron or on system events, chained, each in its own session.
 - **Sandboxed runs** — opt-in process-level isolation via [arapuca](https://github.com/sergio-correia/arapuca): kernel MAC, deny-by-default paths, no containers.
 - **Code browsing** — read-only branches, commits, diffs and Git status in the browser, with an embedded session to ask about the code.
+- **Chat robots** — `@` an agent in a Feishu group (or DM) and get an answer back from an unattended c3 turn; only the final answer ever leaves c3.
 - **Workcenter** — cross-workspace dashboard plus a notification inbox for answering permission prompts in one place.
 - **Optional account auth** — username/password accounts with an admin gate (off by default; loopback-only otherwise).
 - **External MCP access** — let your _own_ agents (an independent Claude Code / Codex session, a CI job) read this c3 over MCP with a long-lived API key, scoped to the workspaces you grant.
@@ -201,6 +202,42 @@ env_http_headers = { "X-C3-Workspace" = "C3_MCP_WORKSPACE" }
 > headers cannot use this endpoint, and there is no fallback. Claude.ai custom
 > connectors need an OAuth-capable server, which c3 is not, so they are not
 > supported by this static-key endpoint.
+
+### Connect a Feishu bot
+
+Bring c3's agents into a Feishu group: `@` the bot with a question, c3 runs one
+unattended turn in the bot's own directory, and only the final answer goes back
+to the chat — tool calls, intermediate reasoning, and file contents never leave
+c3. Manage it in **Workcenter → Chat robots** (the "New robot" action is
+admin-only).
+
+1. **Create the app.**
+   - **One-click (Feishu China region only).** Pick platform Feishu, click
+     _Create Feishu app_, and scan the QR with an admin account (official Device
+     Authorization). c3 registers a bot-only app with the minimum scope —
+     `im:message:send_as_bot`, `im:message.group_at_msg:readonly`,
+     `im:message.p2p_msg:readonly`, `application:bot.basic_info:read`, event
+     `im.message.receive_v1` — and switches it to long-connection automatically.
+     If that last step can't complete, you land in `manual_setup_required` with
+     the credentials already filled in; finish step 2 by hand.
+   - **Manual.** Create a bot app yourself at open.feishu.cn/app, grant the four
+     scopes and the event above, then paste its App ID / App Secret into the form.
+2. **Long connection, not a webhook.** In the app's _Event & Callback_ settings,
+   set the subscription method to **long connection** and add the
+   `im.message.receive_v1` event — the one-click path does this for you; a
+   manually created app needs it checked by hand, or the bot connects but never
+   receives messages.
+3. **Pick vendor, agent, and tools.** Choose which vendor/agent runs the turn and
+   tick its tool allowlist. A new robot defaults to read-only; write/exec tools
+   need an explicit admin tick, one at a time.
+4. **Enable it.** A new robot is created disabled. Enabling asks an admin to
+   confirm the outbound reach (which chats/DMs it may answer in) once, on the
+   record — skip that and the server refuses to enable it.
+5. **Bind your IM identity.** Each sender links their Feishu account to their c3
+   account once, from _Personal settings → IM identity_, before the bot will
+   answer them; an unbound sender only gets a fixed instruction to bind.
+6. **Talk to it.** Group chats require `@mention` by default; DMs are closed by
+   default (`disabled` — switch to `allowlist` or `open` if you want them).
 
 ## Documentation
 

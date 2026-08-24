@@ -9,7 +9,7 @@
  * keeps the credentials it already owns.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { configureAppWebsocket, FeishuApiError } from './api.js'
+import { configureAppWebsocket, FeishuApi, FeishuApiError } from './api.js'
 
 vi.mock('../../../../kernel/infra/proxy-fetch.js', () => ({
   outboundFetch: vi.fn(),
@@ -131,5 +131,53 @@ describe('configureAppWebsocket (application v7)', () => {
 
     expect(await outcome).toBe('config_network_error')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('FeishuApi.sendText (outbound send)', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+  })
+
+  it('sends directly to the chat when no replyTo is given', async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenOk())
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { message_id: 'om_1' } }))
+    const api = new FeishuApi('cli_app', 'secret')
+    const messageId = await api.sendText('oc_chat', 'the build is green')
+    expect(messageId).toBe('om_1')
+
+    const [tokenCall, sendCall] = calls()
+    expect(tokenCall.url).toContain('/auth/v3/tenant_access_token/internal')
+    expect(sendCall.url).toBe(
+      'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id',
+    )
+    expect(sendCall.method).toBe('POST')
+    expect(JSON.parse(String(sendCall.body))).toEqual({
+      receive_id: 'oc_chat',
+      msg_type: 'text',
+      content: JSON.stringify({ text: 'the build is green' }),
+    })
+  })
+
+  it('posts to the reply endpoint only when replyTo is set', async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenOk())
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { message_id: 'om_2' } }))
+    const api = new FeishuApi('cli_app', 'secret')
+    await api.sendText('oc_chat', 'ok', 'om_orig')
+
+    const [, sendCall] = calls()
+    expect(sendCall.url).toBe('https://open.feishu.cn/open-apis/im/v1/messages/om_orig/reply')
+    const body = JSON.parse(String(sendCall.body)) as Record<string, unknown>
+    expect(body).not.toHaveProperty('receive_id')
+  })
+
+  it('throws on a non-zero business code without returning a partial id', async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenOk())
+      .mockResolvedValueOnce(jsonResponse({ code: 10015, msg: 'no permission' }))
+    const api = new FeishuApi('cli_app', 'secret')
+    await expect(api.sendText('oc_chat', 'hi')).rejects.toBeInstanceOf(FeishuApiError)
   })
 })

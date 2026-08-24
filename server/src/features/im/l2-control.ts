@@ -61,7 +61,6 @@ export async function handleTodoControl(
     chatId: msg.chatId,
     chatType: msg.chatType,
     senderId: msg.senderId,
-    replyTo: msg.messageId,
   }
   const ctx = deps.renderCtx()
 

@@ -67,6 +67,9 @@ export type RobotMessageParams = {
   'runtime.inputRejectedCredential': Record<string, never>
   'runtime.inputRejectedTooLong': { maxChars: number }
   'runtime.securityError': Record<string, never>
+  'progress.received': Record<string, never>
+  'progress.step': { step: number }
+  'progress.continued': Record<string, never>
   'navigation.webEntry.linked': { link: string }
   'navigation.webEntry.plain': Record<string, never>
   'navigation.objectDeepLink.linked': { link: string }
@@ -131,6 +134,9 @@ const MESSAGE_USAGE: Record<RobotMessageKey, MessageUsagePolicy> = {
   'runtime.inputRejectedCredential': 'fixed_notice',
   'runtime.inputRejectedTooLong': 'fixed_notice',
   'runtime.securityError': 'fixed_notice',
+  'progress.received': 'fixed_notice',
+  'progress.step': 'fixed_notice',
+  'progress.continued': 'fixed_notice',
   'navigation.webEntry.linked': 'fixed_notice',
   'navigation.webEntry.plain': 'fixed_notice',
   'navigation.objectDeepLink.linked': 'fixed_notice',
@@ -327,6 +333,8 @@ function validateParams(
     'runtime.storeUnavailable',
     'runtime.inputRejectedCredential',
     'runtime.securityError',
+    'progress.received',
+    'progress.continued',
     'navigation.webEntry.plain',
     'navigation.objectDeepLink.plain',
   ])
@@ -372,6 +380,15 @@ function validateParams(
       return null
     }
     out.maxChars = max
+    return out
+  }
+
+  if (key === 'progress.step') {
+    const step = rec.step
+    if (typeof step !== 'number' || !Number.isInteger(step) || step < 1 || step > MAX_TOTAL_COUNT) {
+      return null
+    }
+    out.step = step
     return out
   }
 

@@ -10,7 +10,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { launchRun } from '../kernel/run/run-lifecycle.js'
 import { addViewer, ensureRuntime, stopRun, removeViewer } from '../runs.js'
-import { makeRunRobotTurn, type RunRobotTurnInput } from './robot-turn.js'
+import { makeRunRobotTurn, type RobotTurnProgress, type RunRobotTurnInput } from './robot-turn.js'
 
 vi.mock('../kernel/run/run-lifecycle.js', () => ({
   launchRun: vi.fn(() => Promise.resolve()),
@@ -153,6 +153,83 @@ describe('runRobotTurn — a failed launch still answers', () => {
       outcome: 'error',
       detail: 'wiring missing',
     })
+  })
+})
+
+describe('runRobotTurn — progress projection', () => {
+  it('projects accepted on launch, then step frames from real tool events', async () => {
+    const frames: RobotTurnProgress[] = []
+    const p = run(input({ onProgress: (f) => frames.push(f) }))
+    const viewer = registeredViewer()
+    viewer({ type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: {} } as ServerToClient)
+    viewer({
+      type: 'tool_result',
+      toolUseId: 't1',
+      content: 'ok',
+      isError: false,
+    } as ServerToClient)
+    viewer({ type: 'tool_use', toolUseId: 't2', toolName: 'Grep', input: {} } as ServerToClient)
+    viewer({ type: 'assistant_text', text: 'answer' } as ServerToClient)
+    viewer({ type: 'turn_end', reason: 'complete' } as ServerToClient)
+
+    await expect(p).resolves.toMatchObject({ outcome: 'complete', lastMessage: 'answer' })
+    expect(frames).toEqual([
+      { kind: 'accepted' },
+      { kind: 'step_started', step: 1 },
+      { kind: 'step_done', step: 1 },
+      { kind: 'step_started', step: 2 },
+    ])
+  })
+
+  it('emits an accepted frame even on a short turn that settles immediately', async () => {
+    const frames: RobotTurnProgress[] = []
+    const p = run(input({ onProgress: (f) => frames.push(f) }))
+    const viewer = registeredViewer()
+    viewer({ type: 'turn_end', reason: 'complete' } as ServerToClient)
+
+    await expect(p).resolves.toMatchObject({ outcome: 'complete' })
+    expect(frames).toEqual([{ kind: 'accepted' }])
+  })
+
+  it('emits no frames after the turn settles', async () => {
+    const frames: RobotTurnProgress[] = []
+    const p = run(input({ onProgress: (f) => frames.push(f) }))
+    const viewer = registeredViewer()
+    viewer({ type: 'turn_end', reason: 'complete' } as ServerToClient)
+    // A late tool event after settle must not produce a progress frame.
+    viewer({ type: 'tool_use', toolUseId: 't-late', toolName: 'Bash', input: {} } as ServerToClient)
+
+    await expect(p).resolves.toMatchObject({ outcome: 'complete' })
+    expect(frames).toEqual([{ kind: 'accepted' }])
+  })
+
+  it('never leaks tool names, inputs or results into progress frames', async () => {
+    const frames: RobotTurnProgress[] = []
+    const p = run(
+      input({
+        onProgress: (f) => frames.push(f),
+      }),
+    )
+    const viewer = registeredViewer()
+    viewer({
+      type: 'tool_use',
+      toolUseId: 't1',
+      toolName: 'Bash',
+      input: { secret: 'ghp_secret' },
+    } as ServerToClient)
+    viewer({
+      type: 'tool_result',
+      toolUseId: 't1',
+      content: 'the secret result',
+      isError: false,
+    } as ServerToClient)
+    viewer({ type: 'turn_end', reason: 'complete' } as ServerToClient)
+
+    await expect(p).resolves.toMatchObject({ outcome: 'complete' })
+    expect(frames).toHaveLength(3)
+    expect(JSON.stringify(frames)).not.toContain('Bash')
+    expect(JSON.stringify(frames)).not.toContain('ghp_secret')
+    expect(JSON.stringify(frames)).not.toContain('secret result')
   })
 })
 

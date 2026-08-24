@@ -33,7 +33,9 @@
 
 ## 每条被接受的消息都以回复或审计原因结束
 
-进入回合的消息一定得到某种回复:
+进入回合的消息一定得到某种回复。长时间回合在执行期间可能先发几条固定进度提示(「已收到」「正在执行步骤 N」
+「仍在处理」)作主动回馈,由 supervisor 按宽限、间隔与预算门控;进度是固定文案,不进上下文、不落回合审计,
+最终答复仍会完整发出:
 
 - 回合正常结束且有文本 → 发出该文本,投递成功后提交 Context Turn
 - `input_rejected` → 固定拒绝说明(凭据或过长)
@@ -79,7 +81,7 @@
 
 一切 IM 外发经**唯一出站守卫**(`sendGuarded` / `sendGuardedBroadcast`)。封闭类别:
 
-- 一轮回合结束时的**最终 assistant 文本**
+- 一轮回合结束时的**最终 assistant 文本** —— 直接发送到会话,不复述或引用入站原文
 - 已注册**固定控制提示**(`fixed_notice` / `binding_notice`)
 - 已注册 **L0 事件模板播报**(`broadcast_template`) —— 七种强类型 `im:broadcast_candidate` 事件,
   严格字段白名单,不含 agent 文本或自由 metadata
@@ -89,9 +91,10 @@
 
 固定提示分两类:
 
-- **普通 `fixed_notice`:** 超时/阻塞/错误/忙碌/入站拒绝/存储不可用/凭据拦截、可见性降级等运行期提示。
+- **普通 `fixed_notice`:** 超时/阻塞/错误/忙碌/入站拒绝/存储不可用/凭据拦截、可见性降级等运行期提示,以及长回合
+  执行期间的固定进度提示(`progress.received`/`progress.step`/`progress.continued`)。
 - **专用 `binding_notice`:** 绑定引导、私聊引导、绑定成败、令牌不可用与 `scope_changed`。仅可在触发该控制流程的
-  原始私聊(或群内允许的 `binding.useDm`/`binding.identityRequired*`)发送;`chatId`/`senderId`/`replyTo` 必须与
+  原始私聊(或群内允许的 `binding.useDm`/`binding.identityRequired*`)发送;`chatId`/`senderId` 必须与
   入站一致,不能改投其它聊天或冒充普通 `fixed_notice`。P2p 上可窄豁免 `dmMode`/`dmAllowlist`,其余出站
   约束(启用、外发确认、截断、审计)不变。
 

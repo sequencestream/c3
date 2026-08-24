@@ -43,6 +43,9 @@ export const ROBOT_MESSAGE_KEYS = [
   'runtime.inputRejectedCredential',
   'runtime.inputRejectedTooLong',
   'runtime.securityError',
+  'progress.received',
+  'progress.step',
+  'progress.continued',
   'navigation.webEntry.linked',
   'navigation.webEntry.plain',
   'navigation.objectDeepLink.linked',
@@ -383,6 +386,36 @@ export const ROBOT_MESSAGE_CATALOG: Record<RobotMessageKey, MessageCatalogEntry>
       ja: 'このリクエストは安全に完了できませんでした。',
       ko: '이 요청을 안전하게 완료할 수 없습니다.',
       ru: 'Этот запрос нельзя безопасно выполнить.',
+    },
+  },
+  'progress.received': {
+    placeholders: [],
+    templates: {
+      en: 'Received. Working on it.',
+      zh: '已收到,正在处理。',
+      ja: '受信しました。処理中です。',
+      ko: '접수했습니다. 처리 중입니다.',
+      ru: 'Принято. Обрабатываю.',
+    },
+  },
+  'progress.step': {
+    placeholders: ['step'],
+    templates: {
+      en: 'Working on step {step}.',
+      zh: '正在执行步骤 {step}。',
+      ja: 'ステップ {step} を処理中です。',
+      ko: '단계 {step} 처리 중입니다.',
+      ru: 'Выполняю шаг {step}.',
+    },
+  },
+  'progress.continued': {
+    placeholders: [],
+    templates: {
+      en: 'Still working. One moment.',
+      zh: '仍在处理,请稍候。',
+      ja: '引き続き処理中です。少々お待ちください。',
+      ko: '계속 처리 중입니다. 잠시만 기다려 주세요.',
+      ru: 'Всё ещё работаю. Момент.',
     },
   },
   'navigation.webEntry.linked': {

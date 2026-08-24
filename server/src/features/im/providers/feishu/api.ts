@@ -16,7 +16,7 @@
  * The tenant access token is short-lived, so it is cached and refreshed a little
  * before it expires rather than fetched per message.
  */
-import type { FeishuManualSetupReason } from '@ccc/shared/protocol'
+import type { AppRegistrationManualSetupReason } from '@ccc/shared/protocol'
 import { outboundFetch } from '../../../../kernel/infra/proxy-fetch.js'
 
 const FEISHU_BASE = 'https://open.feishu.cn/open-apis'
@@ -175,7 +175,7 @@ export class FeishuApi {
  * `configured` is the only success; every other value is a closed reason the
  * caller surfaces as `manual_setup_required` together with the credentials.
  */
-export type AppConfigOutcome = 'configured' | FeishuManualSetupReason
+export type AppConfigOutcome = 'configured' | AppRegistrationManualSetupReason
 
 /**
  * Configure a just-created Feishu app for c3's inbound long connection, using

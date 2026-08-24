@@ -1,6 +1,6 @@
 -- im_robot_context_turns — 绑定主体 + scope_hash 归属的可恢复 IM 可见上下文
 -- 所属模块: robots
--- 对应 Store: server/src/features/im/robot-store.ts
+-- 对应 Store: server/src/features/im/robot-context-store.ts
 -- 迁移: migrate/2026/08/21/046-im-robot-sender-isolation.sql, 047-im-identity-and-call-level-scope.sql
 --
 -- 只存通过入站守卫的用户文本与平台确认投递的最终 assistant 文本。裁决见 ADR-0048 / ADR-0049。

@@ -16,8 +16,12 @@ export function imSenderDigest(senderId: string): string {
   return createHash('sha256').update(senderId, 'utf8').digest('hex').slice(0, 16)
 }
 
-function robotTag(robot: Pick<ImRobot, 'id' | 'name' | 'platform'>): string {
-  return `robot=${robot.name} id=${robot.id} platform=${robot.platform}`
+/** Robot identity in a log line; platform is optional (outbound guard fallback). */
+type RobotLogTag = Pick<ImRobot, 'id' | 'name'> & { platform?: ImRobot['platform'] }
+
+function robotTag(robot: RobotLogTag): string {
+  const platform = robot.platform ? ` platform=${robot.platform}` : ''
+  return `robot=${robot.name} id=${robot.id}${platform}`
 }
 
 function shortId(id: string): string {
@@ -25,34 +29,25 @@ function shortId(id: string): string {
   return `${id.slice(0, 6)}…${id.slice(-4)}`
 }
 
-export function formatImConnecting(robot: Pick<ImRobot, 'id' | 'name' | 'platform'>): string {
+export function formatImConnecting(robot: RobotLogTag): string {
   return `[im] connecting ${robotTag(robot)}`
 }
 
-export function formatImConnected(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  status: ImConnectionStatus,
-): string {
+export function formatImConnected(robot: RobotLogTag, status: ImConnectionStatus): string {
   return `[im] connected ${robotTag(robot)} state=${status.state} reconnects=${status.reconnectAttempts}`
 }
 
-export function formatImConnectionState(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  status: ImConnectionStatus,
-): string {
+export function formatImConnectionState(robot: RobotLogTag, status: ImConnectionStatus): string {
   const err = status.lastError ? ` error=${status.lastError.slice(0, 120)}` : ''
   return `[im] connection ${robotTag(robot)} state=${status.state} reconnects=${status.reconnectAttempts}${err}`
 }
 
-export function formatImConnectFailed(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  detail: string,
-): string {
+export function formatImConnectFailed(robot: RobotLogTag, detail: string): string {
   return `[im] connect_failed ${robotTag(robot)} error=${detail.slice(0, 200)}`
 }
 
 export type ImInboundLogFields = {
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>
+  robot: RobotLogTag
   message: ImInboundMessage
 }
 
@@ -66,16 +61,12 @@ export function formatImInbound(fields: ImInboundLogFields): string {
   )
 }
 
-export function formatImInboundIgnored(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  reason: string,
-  extra?: string,
-): string {
+export function formatImInboundIgnored(robot: RobotLogTag, reason: string, extra?: string): string {
   return `[im] inbound_ignored ${robotTag(robot)} reason=${reason}${extra ? ` ${extra}` : ''}`
 }
 
 export type ImOutboundLogFields = {
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>
+  robot: RobotLogTag
   category: string
   chatType: 'group' | 'p2p' | 'dm' | 'broadcast'
   noticeKey?: string
@@ -147,7 +138,7 @@ export function formatImChallengeConsume(fields: {
 }
 
 export function formatImBindingControl(fields: {
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>
+  robot: RobotLogTag
   chatType: 'group' | 'p2p'
   path: 'use_dm' | 'consume'
   result?: 'ok' | 'failed' | 'rate_limited'
@@ -170,28 +161,19 @@ export function formatImProviderSkip(fields: {
   return `[im] provider_skip robotId=${fields.robotId} reason=${fields.reason}${type}${chat}`
 }
 
-export function logImConnecting(robot: Pick<ImRobot, 'id' | 'name' | 'platform'>): void {
+export function logImConnecting(robot: RobotLogTag): void {
   console.log(formatImConnecting(robot))
 }
 
-export function logImConnected(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  status: ImConnectionStatus,
-): void {
+export function logImConnected(robot: RobotLogTag, status: ImConnectionStatus): void {
   console.log(formatImConnected(robot, status))
 }
 
-export function logImConnectionState(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  status: ImConnectionStatus,
-): void {
+export function logImConnectionState(robot: RobotLogTag, status: ImConnectionStatus): void {
   console.log(formatImConnectionState(robot, status))
 }
 
-export function logImConnectFailed(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  detail: string,
-): void {
+export function logImConnectFailed(robot: RobotLogTag, detail: string): void {
   console.error(formatImConnectFailed(robot, detail))
 }
 
@@ -199,11 +181,7 @@ export function logImInbound(fields: ImInboundLogFields): void {
   console.log(formatImInbound(fields))
 }
 
-export function logImInboundIgnored(
-  robot: Pick<ImRobot, 'id' | 'name' | 'platform'>,
-  reason: string,
-  extra?: string,
-): void {
+export function logImInboundIgnored(robot: RobotLogTag, reason: string, extra?: string): void {
   console.log(formatImInboundIgnored(robot, reason, extra))
 }
 

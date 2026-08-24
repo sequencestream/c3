@@ -10,7 +10,9 @@
  *    skips because the old index name rode the RENAME onto an archive.
  *  - **Idempotent.** Re-ensuring a converged database is a no-op; a DB that
  *    predates these tables converges in place without touching other tables.
- *  - **`im_robots` never rebuilds.** Its evolution is the ADD COLUMN path below.
+ *  - **`im_robots` mostly evolves via ADD COLUMN**, not rebuilds — except the
+ *    one-time platform CHECK removal below, which SQLite cannot express as an
+ *    ALTER.
  *
  * The schema lifecycle is registered into `robot-db.ts` at module load so the
  * shared `db()` entrypoint runs it once per fresh connection.
@@ -34,12 +36,16 @@ const CONFIG_REVISION_MIGRATION = 'robots.config_revision.v1'
 
 // ---- DDL (table bodies + IF NOT EXISTS + fresh CREATE for rebuilds) ----
 
-const ROBOTS_TABLE = `
-CREATE TABLE IF NOT EXISTS im_robots (
+/**
+ * The FULL im_robots column set, platform CHECK-free. The base create and the
+ * platform-check rebuild both shape the table from this body, so a rebuilt
+ * table is never left missing a column that a marker-gated ALTER migration
+ * would have added only once (those markers stay set across a rebuild).
+ */
+const IM_ROBOTS_TABLE_BODY = `
   id               TEXT PRIMARY KEY,
   name             TEXT NOT NULL,
-  platform         TEXT NOT NULL
-                   CHECK(platform IN ('feishu')),
+  platform         TEXT NOT NULL,
   app_id           TEXT NOT NULL,
   app_secret       TEXT NOT NULL DEFAULT '',
   vendor           TEXT NOT NULL,
@@ -55,9 +61,45 @@ CREATE TABLE IF NOT EXISTS im_robots (
   enabled          INTEGER NOT NULL DEFAULT 0,
   outbound_ack_at  INTEGER,
   locale           TEXT CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
+  outbound_ack_hash TEXT,
+  broadcast_event_types TEXT NOT NULL DEFAULT '[]',
+  broadcast_to_bound_users INTEGER NOT NULL DEFAULT 0,
+  broadcast_group_chat_ids TEXT NOT NULL DEFAULT '[]',
+  config_revision  INTEGER NOT NULL DEFAULT 0,
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER NOT NULL
-);`
+`
+
+const ROBOTS_TABLE = `CREATE TABLE IF NOT EXISTS im_robots (${IM_ROBOTS_TABLE_BODY});`
+const ROBOTS_TABLE_FRESH = `CREATE TABLE im_robots (${IM_ROBOTS_TABLE_BODY});`
+
+/** All `im_robots` columns, in DDL order — the platform-check rebuild copy projection. */
+const ALL_ROBOT_COLS = [
+  'id',
+  'name',
+  'platform',
+  'app_id',
+  'app_secret',
+  'vendor',
+  'agent_id',
+  'mode',
+  'tool_allowlist',
+  'require_mention',
+  'chat_allowlist',
+  'dm_mode',
+  'dm_allowlist',
+  'max_turn_ms',
+  'enabled',
+  'outbound_ack_at',
+  'locale',
+  'outbound_ack_hash',
+  'broadcast_event_types',
+  'broadcast_to_bound_users',
+  'broadcast_group_chat_ids',
+  'config_revision',
+  'created_at',
+  'updated_at',
+]
 
 const THREADS_TABLE_BODY = `
   platform         TEXT NOT NULL,
@@ -295,7 +337,7 @@ function migrateIdentityScope(d: Db): void {
   })
 }
 
-// ---- ADD COLUMN migrations (im_robots never rebuilds) ----
+// ---- ADD COLUMN migrations ----
 
 function ensureColumn(d: Db, table: string, column: string, ddl: string): void {
   const cols = tableColumns(d, table)
@@ -346,6 +388,51 @@ function migrateBroadcastConfig(d: Db): void {
   })
 }
 
+/**
+ * Drop the platform-specific `CHECK(platform IN ('feishu'))` that leaked a
+ * provider name into the neutral robots table. SQLite cannot ALTER a CHECK, so
+ * this rebuilds through the shared helper: rename aside, create the fresh table
+ * from {@link IM_ROBOTS_TABLE_BODY} — which already carries EVERY column — then
+ * copy each row and drop the archive.
+ *
+ * Shape-gated like {@link migrateTurnsOutcomeBusy}, not marker-gated: it runs
+ * after the column-adding migrations, so an old table always has the full
+ * column set to copy; a mid-flight table that skipped one falls back to that
+ * column's DEFAULT so the NOT NULL copy still succeeds.
+ */
+function migrateImRobotsPlatformCheck(d: Db): void {
+  tx(d, () => {
+    rebuildTable(d, {
+      table: 'im_robots',
+      archive: 'im_robots_pre_platform_check',
+      newDdl: ROBOTS_TABLE_FRESH,
+      copy: (dd, source) => {
+        const cols = tableColumns(dd, source)
+        const fallback: Record<string, string> = {
+          locale: 'NULL',
+          outbound_ack_hash: 'NULL',
+          broadcast_event_types: "'[]'",
+          broadcast_to_bound_users: '0',
+          broadcast_group_chat_ids: "'[]'",
+          config_revision: '0',
+        }
+        return {
+          columns: ALL_ROBOT_COLS,
+          select: ALL_ROBOT_COLS.map((c) => (cols.has(c) ? c : (fallback[c] ?? c))),
+        }
+      },
+      indexDdl: ROBOTS_INDEXES,
+      keepArchive: false,
+      needs: (dd) => {
+        const row = dd.get<{ sql: string }>(
+          `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robots'`,
+        )
+        return row?.sql ? row.sql.includes("CHECK(platform IN ('feishu'))") : false
+      },
+    })
+  })
+}
+
 // ---- Idempotent schema ensure ----
 
 function ensureSchema(d: Db): void {
@@ -361,6 +448,8 @@ function ensureSchema(d: Db): void {
   migrateIdentityScope(d)
   migrateBroadcastConfig(d)
   migrateConfigRevision(d)
+  // After the column migrations so an old table has the full set to copy.
+  migrateImRobotsPlatformCheck(d)
   // Re-create after rebuild migrations (tables may have been rebuilt).
   d.exec(THREADS_TABLE)
   d.exec(CONTEXT_TURNS_TABLE)

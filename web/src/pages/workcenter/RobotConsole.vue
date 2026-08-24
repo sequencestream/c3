@@ -53,7 +53,7 @@ const emit = defineEmits<{
   (e: 'enable', robotId: string): void
   (e: 'disable', robotId: string): void
   (e: 'load-tool-manifest', vendor: string): void
-  (e: 'start-feishu-registration'): void
+  (e: 'start-feishu-registration', platform: ImPlatform): void
   (e: 'cancel-feishu-registration'): void
   (e: 'clear-feishu-registration'): void
   (e: 'admin-revoke-im-identity', bindingId: string): void
@@ -230,7 +230,7 @@ function onSaveGroupScopes(chatId: string, workspaceNames: string[]): void {
     @update="submitUpdate"
     @cancel="closeForm"
     @load-tool-manifest="emit('load-tool-manifest', $event)"
-    @start-feishu-registration="emit('start-feishu-registration')"
+    @start-feishu-registration="emit('start-feishu-registration', $event)"
     @cancel-feishu-registration="emit('cancel-feishu-registration')"
     @clear-feishu-registration="emit('clear-feishu-registration')"
   />

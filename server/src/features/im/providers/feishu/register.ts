@@ -29,7 +29,10 @@
  * closed progress/result vocabulary below.
  */
 import { registerApp as sdkRegisterApp } from '@larksuiteoapi/node-sdk'
-import type { FeishuManualSetupReason, FeishuRegistrationFailedReason } from '@ccc/shared/protocol'
+import type {
+  AppRegistrationFailedReason,
+  AppRegistrationManualSetupReason,
+} from '@ccc/shared/protocol'
 import { configureAppWebsocket } from './api.js'
 import { installSdkHttpAgent } from './sdk-http.js'
 
@@ -66,9 +69,9 @@ export type FeishuRegistrationOutcome =
       kind: 'manual_setup_required'
       appId: string
       appSecret: string
-      reason: FeishuManualSetupReason
+      reason: AppRegistrationManualSetupReason
     }
-  | { kind: 'failed'; reason: FeishuRegistrationFailedReason; detail?: string }
+  | { kind: 'failed'; reason: AppRegistrationFailedReason; detail?: string }
 
 export interface FeishuRegistrationRunOptions {
   /** The owning task's cancellation signal (manager-owned AbortController). */

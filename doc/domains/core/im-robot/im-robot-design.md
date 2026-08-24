@@ -34,6 +34,10 @@ SDK 只负责**入站长连接**:建连、心跳、重连、解码平台私有�
 
 代价是平台无关的策略要自己写——但它们本来就该写在中性层。
 
+一键建应用是一条**平台中性的能力**:客户端以 `start_app_registration` 携带 `platform` 发起,
+服务端经注册工厂表 `IM_APP_REGISTRATION_FACTORIES` 解析到对应平台实现,未注册的平台收到显式的
+不支持结果。当前注册表中只有飞书一个实现,下述细则即该实现的行为。
+
 ### 设备授权与一键建应用的窄例外
 
 一键建应用是「SDK 只负责入站」边界的唯一例外,且只覆盖**官方 Device Authorization 的设备码
@@ -97,7 +101,7 @@ addons 受飞书平台灰度控制:未开灰时平台会忽略整个 addons 并�
 2. **已添加事件** `im.message.receive_v1`(接收消息)。
 3. 应用具备机器人能力,且凭据与 c3 中配置的 `appId`/`appSecret` 一致。
 
-一键建应用(仅飞书、仅新建表单)自动完成 1–3 中的凭据与长连接配置;`manual_setup_required`
+一键建应用(当前仅飞书有实现,且仅新建表单)自动完成 1–3 中的凭据与长连接配置;`manual_setup_required`
 降级结果仍须管理员手工补齐 1–2。手工填写凭据、编辑既有机器人及只写密钥语义不变。
 
 `WSClient.start()` 在握手完成前就会返回;c3 会等到 SDK `onReady`(或终端失败/超时)后才记
@@ -234,3 +238,11 @@ Conversation 的下一条消息可带着上次绑定的原生会话 id 进入,�
 `robots` 模块下除机器人/线程/上下文/审计四表外,还有 IM 身份绑定、一次性挑战、群工作区白名单与授权
 审计表(`database/robots/` 与 `database/auth/` 边界)。均由 store 在首次访问时惰性、幂等地建表(与全库
 一致的收敛方式)。密钥经既有的配置加密落库,读取只经一个专用访问器,其余读路径只见到「是否已配置」。
+
+机器人四表(`im_robots` / `im_robot_threads` / `im_robot_context_turns` / `im_robot_turns`)的持久化按
+职责拆分:`robot-schema.ts` 持有表 DDL、整表重塑迁移与 `ensureSchema`;`robot-config-store.ts` /
+`robot-context-store.ts` / `robot-turn-store.ts` 分别是配置 CRUD、会话上下文生命周期、回合审计三类
+读写入口;`robot-db.ts` 是共享基础(连接获取、事务、测试用时钟)。`robot-store.ts` 保留为对外 barrel,
+外部 import 路径不变。SQLite 不能 `ALTER` 一个 `CHECK`,整表重塑(重命名归档 → 建新表 → 投影搬数据 →
+重建索引)因此由 `table-rebuild.ts` 的 `rebuildTable` 统一承担,替代此前四表各自手写、曾两次因索引
+误挂旧表复发同一缺陷的重塑套路。

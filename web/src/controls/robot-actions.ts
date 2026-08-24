@@ -71,12 +71,13 @@ export function installRobotActions(ctx: AppCtx): void {
   }
 
   /**
-   * Start a one-click Feishu app registration. The requestId is generated here
-   * and echoed on every server frame for this attempt; the form only sees the
-   * derived state. No-op while a request is already active — the server refuses
-   * a duplicate anyway, but the client must not even mint a second requestId.
+   * Start a one-click app registration on `platform`. The requestId is generated
+   * here and echoed on every server frame for this attempt; the form only sees
+   * the derived state. No-op while a request is already active — the server
+   * refuses a duplicate anyway, but the client must not even mint a second
+   * requestId.
    */
-  ctx.startFeishuAppRegistration = (): void => {
+  ctx.startFeishuAppRegistration = (platform: ImPlatform): void => {
     const current = ctx.feishuAppRegistration.value
     if (isFeishuRegistrationActive(current)) return
     const requestId = crypto.randomUUID()
@@ -85,14 +86,14 @@ export function installRobotActions(ctx: AppCtx): void {
       requestId,
       phase: 'starting',
     }
-    send({ type: 'start_feishu_app_registration', requestId })
+    send({ type: 'start_app_registration', requestId, platform })
   }
 
   /** Cancel the active request and clear the QR/status immediately. */
   ctx.cancelFeishuAppRegistration = (): void => {
     const current = ctx.feishuAppRegistration.value
     if (current.requestId) {
-      send({ type: 'cancel_feishu_app_registration', requestId: current.requestId })
+      send({ type: 'cancel_app_registration', requestId: current.requestId })
     }
     ctx.feishuAppRegistration.value = idleFeishuAppRegistration()
   }

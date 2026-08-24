@@ -44,11 +44,8 @@ import {
   setWriteGrantEnabled,
   isWriteGrantStoreAvailable,
 } from './write-grant-store.js'
-export { abortFeishuAppRegistrationForConn } from './feishu-app-registration.js'
-export {
-  cancelFeishuAppRegistrationHandler,
-  startFeishuAppRegistrationHandler,
-} from './feishu-app-registration.js'
+export { abortAppRegistrationForConn } from './app-registration.js'
+export { cancelAppRegistrationHandler, startAppRegistrationHandler } from './app-registration.js'
 
 /** Map a store refusal onto the wire error vocabulary. */
 const ERROR_CODES: Record<RobotStoreError['code'], UiErrorCode> = {

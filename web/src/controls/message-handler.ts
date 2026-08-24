@@ -1787,7 +1787,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Ignore a reply for a robot the user has since navigated away from.
         if (msg.robotId === ctx.selectedRobotId.value) ctx.robotTurns.value = msg.turns
         break
-      case 'feishu_app_registration_progress': {
+      case 'app_registration_progress': {
         // Only the frame for the CURRENT request is applied; a late frame from
         // a cancelled/replaced attempt is ignored, never applied to a new one.
         if (feishuAppRegistration.value.requestId !== msg.requestId) break
@@ -1803,7 +1803,7 @@ export function installMessageHandler(ctx: AppCtx): void {
             : { ...current, phase: msg.status }
         break
       }
-      case 'feishu_app_registration_result': {
+      case 'app_registration_result': {
         if (feishuAppRegistration.value.requestId !== msg.requestId) break
         if (msg.outcome === 'ready') {
           feishuAppRegistration.value = {

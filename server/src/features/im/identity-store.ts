@@ -7,13 +7,14 @@
  * `user_workspace_scopes` and group whitelists on every tool call.
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import type {
-  ImChallengeStatus,
-  ImGroupWorkspaceGrant,
-  ImIdentityBinding,
-  ImIdentityChallengeCreated,
-  ImIdentityChallengeSummary,
-  ImPlatform,
+import {
+  IM_PLATFORMS,
+  type ImChallengeStatus,
+  type ImGroupWorkspaceGrant,
+  type ImIdentityBinding,
+  type ImIdentityChallengeCreated,
+  type ImIdentityChallengeSummary,
+  type ImPlatform,
 } from '@ccc/shared/protocol'
 import { resolveAuthSubject, LOCAL_SUBJECT } from '../auth/authorization.js'
 import { configuredAdmin } from '../auth/authz.js'
@@ -87,7 +88,7 @@ export function seedBindingForTests(input: {
       t,
     )
     bumpPolicyEpoch()
-    return toBinding({
+    const binding = toBinding({
       id: bindingId,
       account_namespace: input.accountNamespace,
       sender_id: input.senderId,
@@ -97,6 +98,8 @@ export function seedBindingForTests(input: {
       revoked_by: null,
       revoke_reason: null,
     })
+    if (!binding) throw new IdentityStoreError('invalid', 'seed namespace unparseable')
+    return binding
   })
 }
 
@@ -104,7 +107,7 @@ function now(): number {
   return nowFn()
 }
 
-/** Feishu (and future providers): stable account namespace = platform + app id. */
+/** Stable account namespace = platform + provider app id. */
 export function accountNamespaceOf(platform: ImPlatform, appId: string): string {
   return `${platform}:${appId.trim()}`
 }
@@ -114,6 +117,10 @@ export function providerAccountKeyOf(platform: ImPlatform, appId: string): strin
   return appId.trim()
 }
 
+function isImPlatform(v: string): v is ImPlatform {
+  return (IM_PLATFORMS as readonly string[]).includes(v)
+}
+
 export function parseAccountNamespace(
   ns: string,
 ): { platform: ImPlatform; providerAccountKey: string } | null {
@@ -121,7 +128,8 @@ export function parseAccountNamespace(
   if (i <= 0) return null
   const platform = ns.slice(0, i)
   const key = ns.slice(i + 1).trim()
-  if (platform !== 'feishu' || !key) return null
+  // The namespace prefix is a protocol-declared platform, never a hardcoded one.
+  if (!isImPlatform(platform) || !key) return null
   return { platform, providerAccountKey: key }
 }
 
@@ -231,12 +239,18 @@ interface BindingRow {
   revoke_reason: string | null
 }
 
-function toBinding(r: BindingRow): ImIdentityBinding {
+/**
+ * A stored binding whose account namespace does not parse is corrupt data — the
+ * neutral layer must not guess a platform for it. It maps to null and is
+ * filtered out of every listing; construction sites refuse it.
+ */
+function toBinding(r: BindingRow): ImIdentityBinding | null {
   const parsed = parseAccountNamespace(r.account_namespace)
+  if (!parsed) return null
   return {
     id: r.id,
     accountNamespace: r.account_namespace,
-    platform: parsed?.platform ?? 'feishu',
+    platform: parsed.platform,
     senderId: r.sender_id,
     subject: r.subject,
     verifiedAt: r.verified_at,
@@ -300,7 +314,7 @@ export function listMyActiveBindings(rawSubject: string | null): ImIdentityBindi
      ORDER BY verified_at DESC`,
     subject,
   )
-  return rows.map(toBinding)
+  return rows.map(toBinding).filter((b): b is ImIdentityBinding => b !== null)
 }
 
 export function getMyPendingChallenge(
@@ -595,18 +609,22 @@ export function consumeChallenge(input: {
         bindingId,
         actor: row.subject,
       })
+      const binding = toBinding({
+        id: bindingId,
+        account_namespace: input.accountNamespace,
+        sender_id: input.senderId,
+        subject: row.subject,
+        verified_at: t,
+        revoked_at: null,
+        revoked_by: null,
+        revoke_reason: null,
+      })
+      // The namespace just matched a challenge created via accountNamespaceOf, so
+      // this only trips on corrupt data; roll the whole consume back.
+      if (!binding) throw new IdentityStoreError('invalid', 'binding namespace unparseable')
       return {
         ok: true,
-        binding: toBinding({
-          id: bindingId,
-          account_namespace: input.accountNamespace,
-          sender_id: input.senderId,
-          subject: row.subject,
-          verified_at: t,
-          revoked_at: null,
-          revoked_by: null,
-          revoke_reason: null,
-        }),
+        binding,
       }
     })
     if (!result.ok) recordFail(input.robotId, input.senderId)
@@ -677,7 +695,9 @@ function revokeBindingRow(
     reasonCode: reason,
     actor,
   })
-  return toBinding({ ...row, revoked_at: t, revoked_by: actor, revoke_reason: reason })
+  const binding = toBinding({ ...row, revoked_at: t, revoked_by: actor, revoke_reason: reason })
+  if (!binding) throw new IdentityStoreError('not_found', 'binding namespace unparseable')
+  return binding
 }
 
 export function revokeMyBinding(rawSubject: string | null, bindingId: string): void {
@@ -715,12 +735,14 @@ export function listActiveBindings(accountNamespace?: string): ImIdentityBinding
         accountNamespace,
       )
       .map(toBinding)
+      .filter((b): b is ImIdentityBinding => b !== null)
   }
   return d
     .all<BindingRow>(
       `SELECT * FROM im_identity_bindings WHERE revoked_at IS NULL ORDER BY verified_at DESC`,
     )
     .map(toBinding)
+    .filter((b): b is ImIdentityBinding => b !== null)
 }
 
 export function listGroupWorkspaceScopes(

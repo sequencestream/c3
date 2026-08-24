@@ -30,7 +30,7 @@ import { listStatuses, removeViewer } from '../runs.js'
 import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
 import { isAdminConn } from '../features/auth/authz.js'
-import { abortFeishuAppRegistrationForConn } from '../features/im/index.js'
+import { abortAppRegistrationForConn } from '../features/im/index.js'
 import { listWorkspacesForSubject, resolveAuthSubject } from '../features/auth/authorization.js'
 import { releaseWorkspaceDirectoryPicker } from '../features/workspaces/directory-picker.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
@@ -204,9 +204,9 @@ export function createWsHandler(deps: {
         // A native directory chooser is owned by the connection that opened it:
         // nobody is left to answer, so kill it and free the slot.
         releaseWorkspaceDirectoryPicker(conn)
-        // A one-click Feishu app registration is owned by the connection that
-        // started it: nobody is left to answer the QR, so abort and drop it.
-        abortFeishuAppRegistrationForConn(conn)
+        // A one-click app registration is owned by the connection that started
+        // it: nobody is left to answer the QR, so abort and drop it.
+        abortAppRegistrationForConn(conn)
         sock = null
       },
     }

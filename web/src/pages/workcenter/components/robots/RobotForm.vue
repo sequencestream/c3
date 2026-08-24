@@ -51,7 +51,7 @@ const emit = defineEmits<{
   (e: 'update', robotId: string, config: RobotConfigInput): void
   (e: 'cancel'): void
   (e: 'load-tool-manifest', vendor: string): void
-  (e: 'start-feishu-registration'): void
+  (e: 'start-feishu-registration', platform: ImPlatform): void
   (e: 'cancel-feishu-registration'): void
   (e: 'clear-feishu-registration'): void
 }>()
@@ -377,7 +377,7 @@ const DM_LABEL = {
               class="rf-btn rf-btn-secondary"
               :disabled="feishuActive"
               data-testid="feishu-one-click"
-              @click="emit('start-feishu-registration')"
+              @click="emit('start-feishu-registration', platform)"
             >
               {{ t('robot.form.feishuRegistration.create.label') }}
             </button>

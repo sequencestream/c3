@@ -518,19 +518,20 @@
 
 **字段：** `vendor: VendorId`, `workspaceName?: string`, `scope?: 'automation' | 'robot'`
 
-### `start_feishu_app_registration`
+### `start_app_registration`
 
-管理员在新建飞书机器人表单点击「一键创建飞书应用」时发起。服务器再次执行管理员鉴权（按钮可见性
-不是权限边界），然后经飞书官方 SDK 的设备授权流程创建企业自建应用并预置凭据。`requestId` 由客户端
-生成，之后的每条进度/结果帧都回显它；每个连接同时至多一个活动任务，重复发起以 `server_error`
-结果拒绝，不创建并行应用。
+管理员在新建机器人表单点击「一键创建应用」时发起。`platform` 选择实现：服务端经注册工厂表把消息
+解析到对应平台的一键建应用实现，没有实现的平台收到显式的不支持结果。服务器再次执行管理员鉴权
+（按钮可见性不是权限边界），然后经对应平台官方 SDK 的设备授权流程创建企业自建应用并预置凭据。
+`requestId` 由客户端生成，之后的每条进度/结果帧都回显它；每个连接同时至多一个活动任务，重复发起
+以 `server_error` 结果拒绝，不创建并行应用。
 
-请求不携带任何飞书凭据、addons 或域名：`createOnly`、最小权限模板与中国区域名都由服务端固定，
+请求不携带任何平台凭据、addons 或域名：`createOnly`、最小权限模板与区域名都由服务端按平台固定，
 客户端不能扩大权限面或把既有 App ID 当作更新目标。
 
-**字段：** `requestId: string`
+**字段：** `requestId: string`, `platform: ImPlatform`
 
-### `cancel_feishu_app_registration`
+### `cancel_app_registration`
 
 取消本连接的活动注册任务（按 `requestId` 匹配）。幂等：未知或已收敛的 `requestId` 是无操作；
 只有发起连接能取消自己的任务，取消后仍会收到一条 `cancelled` 结果。任务在连接关闭时被服务端
@@ -1001,9 +1002,9 @@ automation 的执行日志。
 
 **字段：** `vendor: VendorId`, `tools: ToolManifestEntry[]`, `scope?: 'automation' | 'robot'`
 
-### `feishu_app_registration_progress`
+### `app_registration_progress`
 
-一次 `start_feishu_app_registration` 的进度，**只发往发起连接**，且只在该帧的 `requestId` 仍是该
+一次 `start_app_registration` 的进度，**只发往发起连接**，且只在该帧的 `requestId` 仍是该
 连接的活动任务时投递——迟到的或不匹配的帧一律丢弃，绝不广播。状态机为
 `starting → waiting_scan → configuring → ready | manual_setup_required`，轮询中可穿插 `slow_down`；
 取得凭据前任一非终态都可转入 `failed`。
@@ -1017,7 +1018,7 @@ automation 的执行日志。
 **字段：** `requestId: string`, `status: 'starting' | 'waiting_scan' | 'slow_down' | 'configuring'`,
 `verificationUrl?: string`, `expiresAt?: number`（后两项仅 `waiting_scan` 携带）
 
-### `feishu_app_registration_result`
+### `app_registration_result`
 
 一次注册的终态结果，同样只发往发起连接并校验 `requestId`。三类结果互斥：
 

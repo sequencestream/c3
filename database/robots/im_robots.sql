@@ -27,8 +27,7 @@
 CREATE TABLE IF NOT EXISTS im_robots (
   id               TEXT PRIMARY KEY,   -- uuid
   name             TEXT NOT NULL,      -- 机器人名, 同时是工作目录名; 全局唯一, 创建后不可改
-  platform         TEXT NOT NULL       -- IM 平台; 新增平台在 registry 加一行实现即可, 不改本约束以外的分支
-                   CHECK(platform IN ('feishu')),
+  platform         TEXT NOT NULL       -- IM 平台; 新增平台在 registry 加一行实现即可, 中性层不按平台名分支
   app_id           TEXT NOT NULL,      -- 平台应用 ID (非机密, 明文)
   app_secret       TEXT NOT NULL       -- 平台应用密钥, encryption.ts 的 c3secretv1: 密文; 永不出现在线上/日志
                    DEFAULT '',
@@ -60,6 +59,8 @@ CREATE TABLE IF NOT EXISTS im_robots (
                    DEFAULT 0,
   broadcast_group_chat_ids TEXT NOT NULL -- JSON 数组: 允许接收播报的群 id (亦须过 chat_allowlist)
                    DEFAULT '[]',
+  config_revision  INTEGER NOT NULL    -- 受哈希约束的配置修订号; 每次配置 update 自增
+                   DEFAULT 0,
   created_at       INTEGER NOT NULL,   -- epoch ms
   updated_at       INTEGER NOT NULL    -- epoch ms
 );

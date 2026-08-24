@@ -754,6 +754,167 @@ describe('identity-scope migration (robots.identity_scope.v1)', () => {
   })
 })
 
+describe('platform-check removal (im_robots rebuild)', () => {
+  function imRobotsSql(d: ReturnType<typeof getDb>): string | undefined {
+    return d?.get<{ sql: string }>(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robots'`,
+    )?.sql
+  }
+
+  function imRobotsColumns(d: ReturnType<typeof getDb>): string[] {
+    return (d?.all<{ name: string }>('PRAGMA table_info(im_robots)') ?? []).map((c) => c.name)
+  }
+
+  it('fresh install: table carries no platform CHECK and the full column set', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    const d = getDb()!
+    const sql = imRobotsSql(d)!
+    expect(sql).not.toMatch(/CHECK\s*\(\s*platform\s+IN\s+\(\s*'feishu'\s*\)\s*\)/)
+    const cols = imRobotsColumns(d)
+    expect(cols).toEqual(
+      expect.arrayContaining([
+        'config_revision',
+        'outbound_ack_hash',
+        'broadcast_event_types',
+        'broadcast_to_bound_users',
+        'broadcast_group_chat_ids',
+        'locale',
+      ]),
+    )
+    // feishu remains a valid value — the platform name lives in the registry,
+    // not in the table constraint.
+    const robot = createRobot(input())
+    expect(robot.configRevision).toBe(0)
+    // Idempotent: re-ensuring on the same database is a no-op.
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(listRobots().map((r) => r.id)).toEqual([robot.id])
+  })
+
+  it('old install: rebuilds once the CHECK is gone and preserves rows', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    // A pre-change database: full column set (migrations already marked) but the
+    // feishu CHECK still baked into the table. The marker-gated ALTER migrations
+    // will NOT re-run, so the rebuilt table must carry every column itself.
+    ensureMigrationsTable(d)
+    markMigration(d, 'robots.sender_isolation.v1')
+    markMigration(d, 'robots.identity_scope.v1')
+    markMigration(d, 'robots.locale.v1')
+    markMigration(d, 'robots.broadcast_config.v1')
+    markMigration(d, 'robots.config_revision.v1')
+    d.exec(`
+      CREATE TABLE im_robots (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('feishu')),
+        app_id TEXT NOT NULL, app_secret TEXT NOT NULL DEFAULT '',
+        vendor TEXT NOT NULL, agent_id TEXT NOT NULL, mode TEXT NOT NULL DEFAULT '',
+        tool_allowlist TEXT NOT NULL DEFAULT '[]', require_mention INTEGER NOT NULL DEFAULT 1,
+        chat_allowlist TEXT NOT NULL DEFAULT '[]', dm_mode TEXT NOT NULL DEFAULT 'disabled',
+        dm_allowlist TEXT NOT NULL DEFAULT '[]', max_turn_ms INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0, outbound_ack_at INTEGER,
+        locale TEXT, outbound_ack_hash TEXT,
+        broadcast_event_types TEXT NOT NULL DEFAULT '[]',
+        broadcast_to_bound_users INTEGER NOT NULL DEFAULT 0,
+        broadcast_group_chat_ids TEXT NOT NULL DEFAULT '[]',
+        config_revision INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_im_robot_name ON im_robots(name);
+      CREATE INDEX idx_im_robot_enabled ON im_robots(enabled);
+    `)
+    d.run(
+      `INSERT INTO im_robots
+         (id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+          require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms,
+          enabled, outbound_ack_at, locale, outbound_ack_hash, broadcast_event_types,
+          broadcast_to_bound_users, broadcast_group_chat_ids, config_revision,
+          created_at, updated_at)
+       VALUES ('rb-old-check','old','feishu','app','','claude','a','','[]',1,'[]','disabled',
+               '[]',NULL,0,NULL,'zh','h1','[]',1,'[]',3,1,1)`,
+    )
+
+    expect(ensureRobotSchema()).toBe(true)
+    const sql = imRobotsSql(d)!
+    expect(sql).not.toMatch(/CHECK\s*\(\s*platform\s+IN\s*\(\s*'feishu'\s*\)\s*\)/)
+    // Archive dropped; its indexes did not stay behind on a renamed table.
+    expect(
+      d.get("SELECT name FROM sqlite_master WHERE name='im_robots_pre_platform_check'"),
+    ).toBeUndefined()
+    // Full column set survived the rebuild even though the ALTER migrations skipped.
+    expect(imRobotsColumns(d)).toEqual(
+      expect.arrayContaining([
+        'config_revision',
+        'broadcast_event_types',
+        'locale',
+        'outbound_ack_hash',
+      ]),
+    )
+    const robot = getRobot('rb-old-check')
+    expect(robot?.configRevision).toBe(3)
+    expect(robot?.broadcastToBoundUsers).toBe(true)
+    expect(robot?.locale).toBe('zh')
+    // Indexes recreated on the fresh table.
+    const nameIndex = d.get<{ tbl_name: string }>(
+      `SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = 'idx_im_robot_name'`,
+    )
+    expect(nameIndex?.tbl_name).toBe('im_robots')
+
+    // Idempotent: a second ensure keeps the row and does not rebuild again.
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(getRobot('rb-old-check')?.name).toBe('old')
+    expect(imRobotsSql(d)!).not.toMatch(/CHECK\s*\(\s*platform\s+IN\s*\(\s*'feishu'\s*\)\s*\)/)
+  })
+
+  it('mid-flight install: CHECK removed and late columns land with defaults', () => {
+    resetDbForTests()
+    resetRobotStoreForTests()
+    const d = getDb()!
+    // Base columns only (predates locale / broadcast / config_revision), still
+    // carrying the feishu CHECK. The column migrations run, then the rebuild.
+    d.exec(`
+      CREATE TABLE im_robots (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('feishu')),
+        app_id TEXT NOT NULL, app_secret TEXT NOT NULL DEFAULT '',
+        vendor TEXT NOT NULL, agent_id TEXT NOT NULL, mode TEXT NOT NULL DEFAULT '',
+        tool_allowlist TEXT NOT NULL DEFAULT '[]', require_mention INTEGER NOT NULL DEFAULT 1,
+        chat_allowlist TEXT NOT NULL DEFAULT '[]', dm_mode TEXT NOT NULL DEFAULT 'disabled',
+        dm_allowlist TEXT NOT NULL DEFAULT '[]', max_turn_ms INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0, outbound_ack_at INTEGER,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+    `)
+    d.run(
+      `INSERT INTO im_robots
+         (id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+          require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms,
+          enabled, outbound_ack_at, created_at, updated_at)
+       VALUES ('rb-mid','mid','feishu','app','','claude','a','','[]',1,'[]','disabled',
+               '[]',NULL,0,NULL,1,1)`,
+    )
+
+    expect(ensureRobotSchema()).toBe(true)
+    expect(imRobotsSql(d)!).not.toMatch(/CHECK\s*\(\s*platform\s+IN\s*\(\s*'feishu'\s*\)\s*\)/)
+    expect(imRobotsColumns(d)).toEqual(
+      expect.arrayContaining(['config_revision', 'broadcast_event_types', 'locale']),
+    )
+    const robot = getRobot('rb-mid')
+    expect(robot?.configRevision).toBe(0)
+    expect(robot?.broadcastEventTypes).toEqual([])
+    expect(robot?.broadcastToBoundUsers).toBe(false)
+    expect(robot?.locale).toBe('zh')
+
+    resetRobotStoreForTests()
+    expect(ensureRobotSchema()).toBe(true)
+    expect(getRobot('rb-mid')?.name).toBe('mid')
+  })
+})
+
 describe('schema', () => {
   it('is idempotent — re-ensuring on the same database is a no-op', () => {
     expect(ensureRobotSchema()).toBe(true)

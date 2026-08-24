@@ -405,7 +405,7 @@ describe('robot turns reply routing', () => {
   })
 })
 
-describe('feishu app registration routing', () => {
+describe('app registration routing', () => {
   function makeRegCtx() {
     const result = makeCtx()
     const feishuAppRegistration = result.ctx.feishuAppRegistration
@@ -420,14 +420,14 @@ describe('feishu app registration routing', () => {
   it('applies progress only for the current requestId', () => {
     const r = makeRegCtx()
     r.ctx.handleMessage({
-      type: 'feishu_app_registration_progress',
+      type: 'app_registration_progress',
       requestId: 'req-other',
       status: 'configuring',
     })
     expect(r.feishuAppRegistration.value.phase).toBe('waiting_scan')
 
     r.ctx.handleMessage({
-      type: 'feishu_app_registration_progress',
+      type: 'app_registration_progress',
       requestId: 'req-1',
       status: 'waiting_scan',
       verificationUrl: 'https://accounts.feishu.cn/x',
@@ -441,7 +441,7 @@ describe('feishu app registration routing', () => {
   it('ignores a late or mismatched result and only backfills on a matching one', () => {
     const r = makeRegCtx()
     r.ctx.handleMessage({
-      type: 'feishu_app_registration_result',
+      type: 'app_registration_result',
       requestId: 'req-old',
       outcome: 'ready',
       appId: 'cli_late',
@@ -451,7 +451,7 @@ describe('feishu app registration routing', () => {
     expect(r.feishuAppRegistration.value.phase).toBe('waiting_scan')
 
     r.ctx.handleMessage({
-      type: 'feishu_app_registration_result',
+      type: 'app_registration_result',
       requestId: 'req-1',
       outcome: 'ready',
       appId: 'cli_new',
@@ -465,7 +465,7 @@ describe('feishu app registration routing', () => {
   it('records manual_setup_required with the reason and never lets a failed frame inject credentials', () => {
     const r = makeRegCtx()
     r.ctx.handleMessage({
-      type: 'feishu_app_registration_result',
+      type: 'app_registration_result',
       requestId: 'req-1',
       outcome: 'manual_setup_required',
       appId: 'cli_new',
@@ -477,7 +477,7 @@ describe('feishu app registration routing', () => {
 
     const denied = makeRegCtx()
     denied.ctx.handleMessage({
-      type: 'feishu_app_registration_result',
+      type: 'app_registration_result',
       requestId: 'req-1',
       outcome: 'failed',
       reason: 'denied',

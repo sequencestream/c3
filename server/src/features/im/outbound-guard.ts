@@ -244,7 +244,7 @@ export async function sendGuarded(input: GuardedSendInput): Promise<GuardedSendR
       ? input.content.message.key
       : undefined
   logImOutbound({
-    robot: robot ?? { id: input.robotId, name: input.robotId, platform: 'feishu' },
+    robot: robot ?? { id: input.robotId, name: input.robotId },
     category: input.content.category,
     chatType: input.target.chatType,
     noticeKey,
@@ -336,7 +336,7 @@ export async function sendGuardedBroadcast(
   const result = await sendGuardedBroadcastInner(input)
   const robot = getRobot(input.robotId)
   logImOutbound({
-    robot: robot ?? { id: input.robotId, name: input.robotId, platform: 'feishu' },
+    robot: robot ?? { id: input.robotId, name: input.robotId },
     category: 'broadcast_template',
     chatType: input.target.kind === 'group' ? 'group' : 'dm',
     templateKey: result.ok ? result.templateKey : result.templateKey,

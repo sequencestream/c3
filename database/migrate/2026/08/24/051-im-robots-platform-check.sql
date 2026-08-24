@@ -1,0 +1,69 @@
+-- 051 — im_robots 移除 platform CHECK(平台中立层回收)
+-- 对应 DDL: database/robots/im_robots.sql
+-- 实际迁移逻辑在 robot-store.ts 的 migrateImRobotsPlatformCheck(整表重建)。
+--
+-- 背景: 一键建应用把 feishu 平台名带进了中性层, DB 一侧是 im_robots.platform 的
+-- CHECK(platform IN ('feishu')) —— 一个平台名被写死在表约束里。平台特定部分应只存在于
+-- providers/feishu/ 与 registry.ts 的工厂映射, 本迁移把该 CHECK 从表定义中去掉。
+--
+-- SQLite 不能 ALTER 一个 CHECK, 因此走整表重建: rename-aside → fresh CREATE(全列,
+-- 含 locale / outbound_ack_hash / broadcast_* / config_revision)→ 投影复制 →
+-- drop 旧表(连同其同名索引)。重建后的表一次成型为全量列, 不依赖已置位的列迁移标记
+-- (标记迁移在重建后不会重跑)。旧表缺失后加列时按默认值补位。
+--
+-- 以下是本次迁移的完整 DDL 形态(代码迁移对缺列做补位, 实际执行以代码为准):
+
+-- ALTER TABLE im_robots RENAME TO im_robots_pre_platform_check;
+-- CREATE TABLE im_robots (
+--   id               TEXT PRIMARY KEY,   -- uuid
+--   name             TEXT NOT NULL,      -- 机器人名, 同时是工作目录名; 全局唯一, 创建后不可改
+--   platform         TEXT NOT NULL,      -- IM 平台; 新增平台在 registry 加一行实现即可, 中性层不按平台名分支
+--   app_id           TEXT NOT NULL,      -- 平台应用 ID (非机密, 明文)
+--   app_secret       TEXT NOT NULL
+--                    DEFAULT '',         -- 平台应用密钥, c3secretv1 密文; 永不出现在线上/日志
+--   vendor           TEXT NOT NULL,      -- 执行 vendor (claude/codex/cursor)
+--   agent_id         TEXT NOT NULL,      -- 真实 agent id, 或 _c3_<vendor>_<group> 组引用
+--   mode             TEXT NOT NULL
+--                    DEFAULT '',         -- 预设动作模式, 与 automations.mode 同口径
+--   tool_allowlist   TEXT NOT NULL
+--                    DEFAULT '[]',       -- JSON 数组: 显式放开的写/执行类工具; 空 = 只读
+--   require_mention  INTEGER NOT NULL
+--                    DEFAULT 1,          -- 1 = 群消息必须 @机器人 才响应; 0 = 群内任意消息都响应
+--   chat_allowlist   TEXT NOT NULL
+--                    DEFAULT '[]',       -- JSON 数组: 允许的群 id; 空 = 不限群
+--   dm_mode          TEXT NOT NULL
+--                    DEFAULT 'disabled'
+--                    CHECK(dm_mode IN ('disabled','allowlist','open')),
+--   dm_allowlist     TEXT NOT NULL
+--                    DEFAULT '[]',       -- JSON 数组: dm_mode=allowlist 时允许发起单聊的用户 id
+--   max_turn_ms      INTEGER,            -- 单回合墙钟上限 (ms); NULL = 用默认值
+--   enabled          INTEGER NOT NULL
+--                    DEFAULT 0,          -- 0 = 停用 (默认); 1 = 已授权外发并连接
+--   outbound_ack_at  INTEGER,            -- 确认外发内容范围的时刻 (epoch ms); 为空则拒绝启用
+--   locale           TEXT
+--                    CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
+--   outbound_ack_hash TEXT,              -- 外发确认时刻的配置规范化哈希
+--   broadcast_event_types TEXT NOT NULL
+--                    DEFAULT '[]',       -- JSON 数组: 允许的 L0 播报事件类型; 空 = 无主动播报
+--   broadcast_to_bound_users INTEGER NOT NULL
+--                    DEFAULT 0,          -- 1 = 向绑定用户私聊播报
+--   broadcast_group_chat_ids TEXT NOT NULL
+--                    DEFAULT '[]',       -- JSON 数组: 允许接收播报的群 id
+--   config_revision  INTEGER NOT NULL
+--                    DEFAULT 0,          -- 受哈希约束的配置修订号
+--   created_at       INTEGER NOT NULL,   -- epoch ms
+--   updated_at       INTEGER NOT NULL    -- epoch ms
+-- );
+-- INSERT INTO im_robots
+--   (id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+--    require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms, enabled,
+--    outbound_ack_at, locale, outbound_ack_hash, broadcast_event_types,
+--    broadcast_to_bound_users, broadcast_group_chat_ids, config_revision,
+--    created_at, updated_at)
+-- SELECT id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+--        require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms, enabled,
+--        outbound_ack_at, locale, outbound_ack_hash, broadcast_event_types,
+--        broadcast_to_bound_users, broadcast_group_chat_ids, config_revision,
+--        created_at, updated_at
+-- FROM im_robots_pre_platform_check;
+-- DROP TABLE im_robots_pre_platform_check;

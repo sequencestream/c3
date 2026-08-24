@@ -11,12 +11,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import {
-  abortFeishuAppRegistrationForConn,
-  cancelFeishuAppRegistration,
-  cancelFeishuAppRegistrationHandler,
-  startFeishuAppRegistration,
-  startFeishuAppRegistrationHandler,
-} from './feishu-app-registration.js'
+  abortAppRegistrationForConn,
+  cancelAppRegistration,
+  cancelAppRegistrationHandler,
+  startAppRegistration,
+  startAppRegistrationHandler,
+} from './app-registration.js'
 import { runFeishuAppRegistration } from './providers/feishu/register.js'
 
 const authStore = vi.hoisted(() => ({
@@ -38,6 +38,9 @@ const authStore = vi.hoisted(() => ({
 
 vi.mock('../../kernel/config/index.js', () => ({
   loadSettings: () => authStore.value,
+  // The feishu provider module installs its SDK HTTP agent at import; give it
+  // the proxy config it reads so the registry can load in the test.
+  getProxyConfig: () => ({ enabled: false, httpProxy: '', httpsProxy: '' }),
 }))
 
 vi.mock('./providers/feishu/register.js', () => ({
@@ -71,12 +74,13 @@ beforeEach(() => {
   runMock.mockResolvedValue(undefined)
 })
 
-describe('feishu app registration lifecycle', () => {
-  it('refuses a non-admin start without touching the SDK', async () => {
+describe('app registration lifecycle', () => {
+  it('refuses a non-admin start without touching the provider runner', async () => {
     const { conn, sent } = makeConn('bob')
-    startFeishuAppRegistrationHandler({} as never, conn, {
-      type: 'start_feishu_app_registration',
+    startAppRegistrationHandler({} as never, conn, {
+      type: 'start_app_registration',
       requestId: 'req-1',
+      platform: 'feishu',
     })
     expect(runMock).not.toHaveBeenCalled()
     expect(sent).toEqual([{ type: 'error', error: { code: 'auth.adminOnly' } }])
@@ -85,28 +89,28 @@ describe('feishu app registration lifecycle', () => {
   it('starts a task and delivers progress + credential result only to the initiator', async () => {
     const { conn, sent } = makeConn('alice')
     const { conn: other, sent: otherSent } = makeConn('alice')
-    startFeishuAppRegistration(conn, 'req-1')
+    startAppRegistration(conn, 'feishu', 'req-1')
     const opts = runMock.mock.calls[0][0]
     opts.onProgress({ status: 'starting' })
     opts.onProgress({
       status: 'waiting_scan',
-      verificationUrl: 'https://accounts.feishu.cn/qr',
+      verificationUrl: 'https://example.com/qr',
       expiresAt: 1234,
     })
     opts.onResult({ kind: 'ready', appId: 'cli_new', appSecret: 'new-secret' })
     await flush()
 
     expect(sent).toEqual([
-      { type: 'feishu_app_registration_progress', requestId: 'req-1', status: 'starting' },
+      { type: 'app_registration_progress', requestId: 'req-1', status: 'starting' },
       {
-        type: 'feishu_app_registration_progress',
+        type: 'app_registration_progress',
         requestId: 'req-1',
         status: 'waiting_scan',
-        verificationUrl: 'https://accounts.feishu.cn/qr',
+        verificationUrl: 'https://example.com/qr',
         expiresAt: 1234,
       },
       {
-        type: 'feishu_app_registration_result',
+        type: 'app_registration_result',
         requestId: 'req-1',
         outcome: 'ready',
         appId: 'cli_new',
@@ -118,14 +122,15 @@ describe('feishu app registration lifecycle', () => {
 
   it('refuses a duplicate start with server_error and runs a single task', async () => {
     const { conn, sent } = makeConn('alice')
-    startFeishuAppRegistration(conn, 'req-1')
-    startFeishuAppRegistrationHandler({} as never, conn, {
-      type: 'start_feishu_app_registration',
+    startAppRegistration(conn, 'feishu', 'req-1')
+    startAppRegistrationHandler({} as never, conn, {
+      type: 'start_app_registration',
       requestId: 'req-2',
+      platform: 'feishu',
     })
     expect(runMock).toHaveBeenCalledTimes(1)
     expect(sent).toContainEqual({
-      type: 'feishu_app_registration_result',
+      type: 'app_registration_result',
       requestId: 'req-2',
       outcome: 'failed',
       reason: 'server_error',
@@ -135,19 +140,19 @@ describe('feishu app registration lifecycle', () => {
 
   it('cancel aborts only the matching requestId and still delivers the cancelled result', async () => {
     const { conn, sent } = makeConn('alice')
-    startFeishuAppRegistration(conn, 'req-1')
+    startAppRegistration(conn, 'feishu', 'req-1')
     const opts = runMock.mock.calls[0][0]
 
     // A wrong requestId is an idempotent no-op.
-    cancelFeishuAppRegistration(conn, 'req-other')
+    cancelAppRegistration(conn, 'req-other')
     expect(opts.signal.aborted).toBe(false)
 
-    cancelFeishuAppRegistration(conn, 'req-1')
+    cancelAppRegistration(conn, 'req-1')
     expect(opts.signal.aborted).toBe(true)
     opts.onResult({ kind: 'failed', reason: 'cancelled' })
     await flush()
     expect(sent).toContainEqual({
-      type: 'feishu_app_registration_result',
+      type: 'app_registration_result',
       requestId: 'req-1',
       outcome: 'failed',
       reason: 'cancelled',
@@ -156,9 +161,9 @@ describe('feishu app registration lifecycle', () => {
 
   it('socket close aborts the task and drops any later result frame', async () => {
     const { conn, sent } = makeConn('alice')
-    startFeishuAppRegistration(conn, 'req-1')
+    startAppRegistration(conn, 'feishu', 'req-1')
     const opts = runMock.mock.calls[0][0]
-    abortFeishuAppRegistrationForConn(conn)
+    abortAppRegistrationForConn(conn)
     expect(opts.signal.aborted).toBe(true)
 
     const before = sent.length
@@ -169,8 +174,8 @@ describe('feishu app registration lifecycle', () => {
 
   it('the wire cancel handler also enforces the admin gate', async () => {
     const { conn, sent } = makeConn('bob')
-    cancelFeishuAppRegistrationHandler({} as never, conn, {
-      type: 'cancel_feishu_app_registration',
+    cancelAppRegistrationHandler({} as never, conn, {
+      type: 'cancel_app_registration',
       requestId: 'req-1',
     })
     expect(sent).toEqual([{ type: 'error', error: { code: 'auth.adminOnly' } }])

@@ -21,7 +21,7 @@ features/memory/tool-defs                           │
         └───────────────┬───────────────────────────┘
                         ▼
 features/memory/store      ── 隔离、校验、去重、生命周期、SQLite 可用性降级
-        │                        └─ features/memory/content-guard ── 集中的拒绝规则
+        │                        └─ features/memory/content-guard ── 产物形状拒绝 + 组合 kernel/security 凭据形状检测
         ▼
 kernel/infra/db            ── 单文件 SQLite ~/.c3/c3.db
 ```
@@ -36,7 +36,8 @@ kernel/infra/db            ── 单文件 SQLite ~/.c3/c3.db
 | 文件                                          | 职责                                                                    |
 | --------------------------------------------- | ----------------------------------------------------------------------- |
 | `server/src/features/memory/store.ts`         | 表与索引的惰性收敛、校验、归一化去重、生命周期写入、检索                |
-| `server/src/features/memory/content-guard.ts` | 凭据形状与产物形状的集中拒绝规则 + 安全的拒绝文案                       |
+| `server/src/features/memory/content-guard.ts` | 产物形状拒绝规则 + 安全的拒绝文案;凭据形状检测组合自 kernel/security    |
+| `server/src/kernel/security/index.ts`         | 凭据形状检测与脱敏原语的中立归属(redactSecrets / detectCredentialShape) |
 | `server/src/features/memory/tool-defs.ts`     | 两个工具的 zod 入参、描述与核心 handler(框架无关)                       |
 | `server/src/features/memory/handlers.ts`      | 设置页两条消息的 handler:工作区解析、摘要投影、store 拒绝映射为 UiError |
 | `shared/src/protocol/memory.ts`               | 公共模型:两个闭集与 `WorkspaceMemoryListItem`(闭集的单一数据源)         |

@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import type { ImConnectionStatus, ImRobot, ImTurnOutcome } from '@ccc/shared/protocol'
 import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/paths.js'
+import { redactSecrets } from '../../kernel/security/index.js'
 import type { RobotTurnResult, RunRobotTurnInput } from '../../wiring/robot-turn.js'
-import { redactSecrets } from '../pr-events/tool-defs.js'
 import {
   accountNamespaceOf,
   consumeChallenge,

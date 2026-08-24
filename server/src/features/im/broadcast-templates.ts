@@ -7,7 +7,7 @@
  */
 import type { ImBroadcastFieldKey, ImBroadcastType } from '@ccc/shared/protocol'
 import { IM_BROADCAST_FIELD_KEYS } from '@ccc/shared/protocol'
-import { detectCredentialShape } from '../memory/content-guard.js'
+import { detectCredentialShape } from '../../kernel/security/index.js'
 
 export const BROADCAST_TITLE_MAX_CODEPOINTS = 120
 

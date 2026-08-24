@@ -36,6 +36,7 @@ import {
   type PrRepo,
 } from '@ccc/shared'
 import type { EventNormalizer, NormalizeResult } from '../../kernel/events/generic-event.js'
+import { redactSecrets } from '../../kernel/security/index.js'
 
 /** Internal args shape the PR normalizer reconstructs from an untrusted generic core. */
 type PublishPrEventArgs = {
@@ -54,36 +55,11 @@ const REDACTED = '[redacted]'
 const MAX_ERROR_SUMMARY_LEN = 500
 const MAX_FIELD_LEN = 256
 
-/** Token / secret patterns redacted from any free-text field before it leaves c3. */
-const SECRET_PATTERNS: RegExp[] = [
-  // GitHub / GitLab personal-access & app tokens.
-  /\bgh[opusr]_[A-Za-z0-9]{16,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bglpat-[A-Za-z0-9_-]{16,}\b/g,
-  // OpenAI / Anthropic-style keys.
-  /\bsk-[A-Za-z0-9_-]{16,}\b/g,
-  // key=value / key: value secrets.
-  /\b(?:token|secret|password|passwd|api[-_]?key|authorization)\b\s*[:=]\s*\S+/gi,
-  // `bearer <token>` (space-separated).
-  /\bbearer\s+[A-Za-z0-9._~+/=-]+/gi,
-  // JWTs.
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
-  // Long hex blobs (e.g. raw OAuth/40+ char hashes).
-  /\b[0-9a-fA-F]{40,}\b/g,
-]
-
 /** Absolute-path patterns stripped from the error summary (POSIX home + Windows). */
 const ABS_PATH_PATTERNS: RegExp[] = [
   /(?:\/Users\/|\/home\/|\/root\/|\/var\/folders\/)\S+/g,
   /[A-Za-z]:\\[^\s]+/g,
 ]
-
-/** Redact secret-shaped substrings from a free-text value. */
-export function redactSecrets(s: string): string {
-  let out = s
-  for (const re of SECRET_PATTERNS) out = out.replace(re, REDACTED)
-  return out
-}
 
 /** Normalize a short structural field: redact secrets + cap length. */
 function normalizeField(s: string | undefined): string | undefined {

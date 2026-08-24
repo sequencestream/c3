@@ -14,7 +14,7 @@
  */
 import type { GenericEvent, JsonObject, JsonValue } from '@ccc/shared'
 import type { EventNormalizer } from '../../kernel/events/generic-event.js'
-import { redactSecrets } from '../pr-events/tool-defs.js'
+import { redactSecrets } from '../../kernel/security/index.js'
 
 const REDACTED = '[redacted]'
 /** Cap on any single free-text string; defuses pasted raw stdout/stderr blobs. */

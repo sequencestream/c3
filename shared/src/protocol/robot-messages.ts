@@ -16,8 +16,8 @@
  */
 
 import type {
-  FeishuManualSetupReason,
-  FeishuRegistrationFailedReason,
+  AppRegistrationFailedReason,
+  AppRegistrationManualSetupReason,
   ImGroupWorkspaceGrant,
   ImIdentityBinding,
   ImIdentityChallengeCreated,
@@ -189,32 +189,36 @@ export type ServerImGroupWorkspaceScopes = {
 }
 
 /**
- * Admin: start a one-click Feishu app registration (device authorization).
- * The `requestId` is client-generated and echoed on every progress/result
- * frame for this attempt; the server keeps at most one active task per
- * connection and rejects a duplicate start with a `server_error` result.
+ * Admin: start a one-click app registration (device authorization). The
+ * `platform` selects the implementation through the server's registration
+ * factory map; a platform with no implementation gets an explicit
+ * unsupported result. The `requestId` is client-generated and echoed on every
+ * progress/result frame for this attempt; the server keeps at most one active
+ * task per connection and rejects a duplicate start with a `server_error`
+ * result.
  */
-export type ClientStartFeishuAppRegistration = {
-  type: 'start_feishu_app_registration'
+export type ClientStartAppRegistration = {
+  type: 'start_app_registration'
   requestId: string
+  platform: ImPlatform
 }
 
 /**
  * Admin: cancel the connection's active registration, if any. Idempotent —
  * an unknown or already-finished `requestId` is a no-op.
  */
-export type ClientCancelFeishuAppRegistration = {
-  type: 'cancel_feishu_app_registration'
+export type ClientCancelAppRegistration = {
+  type: 'cancel_app_registration'
   requestId: string
 }
 
 /**
- * Connection-directed progress of a `start_feishu_app_registration` attempt.
+ * Connection-directed progress of a `start_app_registration` attempt.
  * `waiting_scan` carries the authorization URL and the server-computed expiry;
  * the URL is public (it is shown as a QR code and link) and never a secret.
  */
-export type ServerFeishuAppRegistrationProgress = {
-  type: 'feishu_app_registration_progress'
+export type ServerAppRegistrationProgress = {
+  type: 'app_registration_progress'
   requestId: string
   status: 'starting' | 'waiting_scan' | 'slow_down' | 'configuring'
   /** Present only when `status` is `waiting_scan`. */
@@ -224,13 +228,13 @@ export type ServerFeishuAppRegistrationProgress = {
 }
 
 /**
- * Terminal result of a `start_feishu_app_registration` attempt. `ready` and
- * `manual_setup_required` both mean the Feishu app was created and carry the
- * full credentials exactly once to the initiating connection; `failed` never
+ * Terminal result of a `start_app_registration` attempt. `ready` and
+ * `manual_setup_required` both mean the app was created and carry the full
+ * credentials exactly once to the initiating connection; `failed` never
  * carries credentials.
  */
-export type ServerFeishuAppRegistrationResult = {
-  type: 'feishu_app_registration_result'
+export type ServerAppRegistrationResult = {
+  type: 'app_registration_result'
   requestId: string
 } & (
   | { outcome: 'ready'; appId: string; appSecret: string }
@@ -238,11 +242,11 @@ export type ServerFeishuAppRegistrationResult = {
       outcome: 'manual_setup_required'
       appId: string
       appSecret: string
-      reason: FeishuManualSetupReason
+      reason: AppRegistrationManualSetupReason
     }
   | {
       outcome: 'failed'
-      reason: FeishuRegistrationFailedReason
+      reason: AppRegistrationFailedReason
       /** Closed, non-secret diagnostic detail; never a credential or token. */
       detail?: string
     }

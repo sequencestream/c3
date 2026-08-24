@@ -279,10 +279,10 @@ export interface RobotConfigInput {
   locale?: RobotMessageLocale | null
 }
 
-/** Why automatic Feishu long-connection configuration could not be completed. */
-export type FeishuManualSetupReason =
+/** Why automatic long-connection configuration could not be completed. */
+export type AppRegistrationManualSetupReason =
   'config_unavailable' | 'config_forbidden' | 'config_rejected' | 'config_network_error'
 
 /** Closed failed-outcome vocabulary; `failed` frames never carry credentials. */
-export type FeishuRegistrationFailedReason =
+export type AppRegistrationFailedReason =
   'denied' | 'expired' | 'cancelled' | 'unsupported_region' | 'network_error' | 'server_error'

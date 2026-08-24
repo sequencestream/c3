@@ -94,12 +94,16 @@ function now(): number {
 
 // ---- Schema ----
 
-const ROBOTS_TABLE = `
-CREATE TABLE IF NOT EXISTS im_robots (
+/**
+ * The FULL im_robots column set, platform CHECK-free. The base create and the
+ * platform-check rebuild both shape the table from this body, so a rebuilt
+ * table is never left missing a column that a marker-gated ALTER migration
+ * would have added only once (those markers stay set across a rebuild).
+ */
+const IM_ROBOTS_TABLE_BODY = `
   id               TEXT PRIMARY KEY,
   name             TEXT NOT NULL,
-  platform         TEXT NOT NULL
-                   CHECK(platform IN ('feishu')),
+  platform         TEXT NOT NULL,
   app_id           TEXT NOT NULL,
   app_secret       TEXT NOT NULL DEFAULT '',
   vendor           TEXT NOT NULL,
@@ -115,9 +119,17 @@ CREATE TABLE IF NOT EXISTS im_robots (
   enabled          INTEGER NOT NULL DEFAULT 0,
   outbound_ack_at  INTEGER,
   locale           TEXT CHECK(locale IS NULL OR locale IN ('en','zh','ja','ko','ru')),
+  outbound_ack_hash TEXT,
+  broadcast_event_types TEXT NOT NULL DEFAULT '[]',
+  broadcast_to_bound_users INTEGER NOT NULL DEFAULT 0,
+  broadcast_group_chat_ids TEXT NOT NULL DEFAULT '[]',
+  config_revision  INTEGER NOT NULL DEFAULT 0,
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER NOT NULL
-);`
+`
+
+const ROBOTS_TABLE = `CREATE TABLE IF NOT EXISTS im_robots (${IM_ROBOTS_TABLE_BODY});`
+const ROBOTS_TABLE_FRESH = `CREATE TABLE im_robots (${IM_ROBOTS_TABLE_BODY});`
 
 const THREADS_TABLE = `
 CREATE TABLE IF NOT EXISTS im_robot_threads (
@@ -465,6 +477,51 @@ function migrateBroadcastConfig(d: Db): void {
   })
 }
 
+/**
+ * Drop the platform-specific `CHECK(platform IN ('feishu'))` that leaked a
+ * provider name into the neutral robots table. SQLite cannot ALTER a CHECK, so
+ * this is a full rebuild (the same shape as the `busy` outcome migration):
+ * rename aside, create the fresh table from {@link IM_ROBOTS_TABLE_BODY} — which
+ * already carries EVERY column — then copy each row and drop the archive.
+ *
+ * It runs after the column-adding migrations (locale / broadcast / config
+ * revision), so an old table always has the full column set to copy; the
+ * per-column fallbacks cover a state that somehow skipped one. Detection-based
+ * and naturally idempotent: the rebuilt table has no `feishu` CHECK, so the
+ * next run returns immediately.
+ */
+function migrateImRobotsPlatformCheck(d: Db): void {
+  const row = d.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'im_robots'`,
+  )
+  if (!row?.sql || !row.sql.includes("CHECK(platform IN ('feishu'))")) return
+  const cols = tableColumns(d, 'im_robots')
+  d.exec('ALTER TABLE im_robots RENAME TO im_robots_pre_platform_check')
+  d.exec(ROBOTS_TABLE_FRESH)
+  // A column added by a later migration might be absent in a mid-flight state;
+  // fall back to its DEFAULT so NOT NULL columns still copy.
+  const pick = (name: string, fallback: string): string => (cols.has(name) ? name : fallback)
+  d.exec(`
+    INSERT INTO im_robots
+      (id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+       require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms, enabled,
+       outbound_ack_at, locale, outbound_ack_hash, broadcast_event_types,
+       broadcast_to_bound_users, broadcast_group_chat_ids, config_revision,
+       created_at, updated_at)
+    SELECT id, name, platform, app_id, app_secret, vendor, agent_id, mode, tool_allowlist,
+           require_mention, chat_allowlist, dm_mode, dm_allowlist, max_turn_ms, enabled,
+           outbound_ack_at, ${pick('locale', 'NULL')}, ${pick('outbound_ack_hash', 'NULL')},
+           ${pick('broadcast_event_types', "'[]'")}, ${pick('broadcast_to_bound_users', '0')},
+           ${pick('broadcast_group_chat_ids', "'[]'")}, ${pick('config_revision', '0')},
+           created_at, updated_at
+    FROM im_robots_pre_platform_check
+  `)
+  // DROP the archive so its indexes (same names as INDEXES) go with it;
+  // otherwise CREATE INDEX IF NOT EXISTS would skip and the fresh table stays
+  // unindexed.
+  d.exec('DROP TABLE im_robots_pre_platform_check')
+}
+
 function ensureSchema(d: Db): void {
   d.exec(ROBOTS_TABLE)
   migrateSenderIsolation(d)
@@ -478,6 +535,8 @@ function ensureSchema(d: Db): void {
   migrateIdentityScope(d)
   migrateBroadcastConfig(d)
   migrateConfigRevision(d)
+  // After the column migrations so the old table has the full set to copy.
+  migrateImRobotsPlatformCheck(d)
   // Re-create after identity migration (tables may have been rebuilt).
   d.exec(THREADS_TABLE)
   d.exec(CONTEXT_TURNS_TABLE)

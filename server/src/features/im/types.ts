@@ -17,7 +17,12 @@
  * Providers live under `features/`, never `kernel/`: they reach the network and
  * the platform SDKs, which the kernel boundary forbids (ADR-0009 R1).
  */
-import type { ImConnectionStatus, ImPlatform } from '@ccc/shared/protocol'
+import type {
+  AppRegistrationFailedReason,
+  AppRegistrationManualSetupReason,
+  ImConnectionStatus,
+  ImPlatform,
+} from '@ccc/shared/protocol'
 
 /**
  * One inbound chat message, normalized. Platform-specific shapes (mention
@@ -100,3 +105,39 @@ export interface ImProvider {
   readonly capabilities: ImProviderCapabilities
   connect(input: ImConnectInput): Promise<ImConnection>
 }
+
+// ---- One-click app registration (platform-neutral orchestration) ----
+
+/**
+ * Connection-directed progress of one app registration attempt. The status
+ * vocabulary is closed and platform-neutral; providers map their own flow onto
+ * it.
+ */
+export type AppRegistrationProgress =
+  | { status: 'starting' }
+  | { status: 'waiting_scan'; verificationUrl: string; expiresAt: number }
+  | { status: 'slow_down' }
+  | { status: 'configuring' }
+
+/** Terminal outcome of one app registration attempt. */
+export type AppRegistrationOutcome =
+  | { kind: 'ready'; appId: string; appSecret: string }
+  | {
+      kind: 'manual_setup_required'
+      appId: string
+      appSecret: string
+      reason: AppRegistrationManualSetupReason
+    }
+  | { kind: 'failed'; reason: AppRegistrationFailedReason; detail?: string }
+
+export interface AppRegistrationRunOptions {
+  /** The owning task's cancellation signal (manager-owned AbortController). */
+  signal: AbortSignal
+  /** Abort the owning task — a provider may kill the flow on its own domain switch. */
+  abort: () => void
+  onProgress: (progress: AppRegistrationProgress) => void
+  onResult: (outcome: AppRegistrationOutcome) => void
+}
+
+/** One registration implementation: a provider that runs one attempt to its end. */
+export type AppRegistrationRunner = (opts: AppRegistrationRunOptions) => Promise<void>

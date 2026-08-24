@@ -87,8 +87,8 @@ import type {
   ImIdentityChallengeCreated,
   ImIdentityChallengeSummary,
   ImGroupWorkspaceGrant,
-  FeishuManualSetupReason,
-  FeishuRegistrationFailedReason,
+  AppRegistrationManualSetupReason,
+  AppRegistrationFailedReason,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import { useTypedI18n } from '@/i18n'
@@ -128,8 +128,8 @@ export interface FeishuAppRegistrationState {
   expiresAt: number | null
   appId: string | null
   appSecret: string | null
-  manualSetupReason: FeishuManualSetupReason | null
-  failedReason: FeishuRegistrationFailedReason | null
+  manualSetupReason: AppRegistrationManualSetupReason | null
+  failedReason: AppRegistrationFailedReason | null
   detail: string | null
 }
 

@@ -8,7 +8,8 @@
  */
 import type { ImPlatform } from '@ccc/shared/protocol'
 import { createFeishuProvider } from './providers/feishu/index.js'
-import type { ImProvider } from './types.js'
+import { runFeishuAppRegistration } from './providers/feishu/register.js'
+import type { AppRegistrationRunner, ImProvider } from './types.js'
 
 type ImProviderFactory = () => ImProvider
 
@@ -25,4 +26,20 @@ export const IM_PROVIDER_FACTORIES: Partial<Record<ImPlatform, ImProviderFactory
 export function resolveImProvider(platform: ImPlatform): ImProvider | null {
   const factory = IM_PROVIDER_FACTORIES[platform]
   return factory ? factory() : null
+}
+
+/**
+ * One-click app registration runners, keyed by platform — the same shape as the
+ * provider factories above. A platform with no implementation is simply absent:
+ * the client gates the entry off it, and a request that somehow arrives gets an
+ * explicit unsupported result rather than a branch in the neutral layer.
+ */
+export const IM_APP_REGISTRATION_FACTORIES: Partial<Record<ImPlatform, AppRegistrationRunner>> = {
+  feishu: runFeishuAppRegistration,
+}
+
+/** The registration runner for a platform, or null when this build cannot serve it. */
+export function resolveAppRegistration(platform: ImPlatform): AppRegistrationRunner | null {
+  const runner = IM_APP_REGISTRATION_FACTORIES[platform]
+  return runner ?? null
 }

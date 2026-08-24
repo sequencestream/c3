@@ -72,7 +72,7 @@ describe('C4 — permission gateway defaults to deny', () => {
   it('a human allow flows through (the gateway is not allow-by-default the other way)', async () => {
     const ac = new AbortController()
     const p = waitForDecision('req-c4-allow', ac.signal)
-    expect(resolveDecision('req-c4-allow', 'allow')).toBe(true)
+    expect(resolveDecision('req-c4-allow', 'allow')).toEqual({ status: 'resolved' })
     await expect(p).resolves.toEqual({ decision: 'allow', answers: undefined })
   })
 

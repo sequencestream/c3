@@ -15,6 +15,7 @@ import {
   VENDOR_IDS,
   deriveConfigMode,
   hasProviderConfig,
+  providerSupportsVendor,
 } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
@@ -269,7 +270,12 @@ const emit = defineEmits<{
     },
   ]
   'provider-probe': [
-    payload: { providerId: string; vendor: VendorId; baseUrl?: string; apiKey?: string },
+    payload: {
+      providerId: string
+      protocolType: import('@ccc/shared/protocol').ProtocolType
+      baseUrl?: string
+      apiKey?: string
+    },
   ]
 }>()
 
@@ -681,9 +687,9 @@ const NEW_PROVIDER_OPTION = '_c3_new'
 
 const providers = computed<ModelProvider[]>(() => draft.value.modelProviders ?? [])
 
-/** 该 vendor 真正接得上的 provider —— 只列声明了这条 vendor 连接的。 */
+/** 该 vendor 真正接得上的 provider —— 只列其支持协议中至少有一条 URL 的。 */
 function providersFor(vendor: VendorId): ModelProvider[] {
-  return providers.value.filter((p) => !!p.connections[vendor]?.baseUrl)
+  return providers.value.filter((p) => providerSupportsVendor(p, vendor))
 }
 
 /** 仍在用旧内联三元组的 agent:没选 provider,但自己带着 baseUrl。 */

@@ -119,14 +119,14 @@ describe('launchSegment — what a single launch can actually serve', () => {
         id: 'p-ok',
         displayName: 'ok',
         apiKey: 'k',
-        connections: { claude: { baseUrl: 'https://ok.example/anthropic' } },
+        urls: { anthropic: 'https://ok.example/anthropic' },
       },
       {
         id: 'p-paused',
         displayName: 'paused',
         apiKey: 'k',
         paused: true,
-        connections: { claude: { baseUrl: 'https://paused.example/anthropic' } },
+        urls: { anthropic: 'https://paused.example/anthropic' },
       },
     ]
     const lead = {
@@ -149,7 +149,7 @@ describe('launchSegment — what a single launch can actually serve', () => {
         displayName: 'paused',
         apiKey: 'k',
         paused: true,
-        connections: { claude: { baseUrl: 'https://paused.example/anthropic' } },
+        urls: { anthropic: 'https://paused.example/anthropic' },
       },
     ]
     const lead = {

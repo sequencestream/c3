@@ -2,8 +2,9 @@
 /*
  * ModelProviders.vue — 系统设置 ·「模型提供方」页签。
  *
- * 一个 provider 就是一条具名上游(Base URL + Key),多个 agent 共用它。把连接从 agent 里
- * 提出来之后,轮换 key 或迁移端点只改这一处,而不是逐个 agent 改到漏。
+ * 一个 provider 就是一条具名上游(按 protocolType 填 OpenAI / Anthropic URL + 一把账户
+ * Key),多个 agent 共用它。Agent 绑定时按自己 vendor 的协议支持列表取第一个有 URL 的槽,
+ * 从而得到 baseUrl。把连接从 agent 里提出来之后,轮换 key 或迁移端点只改这一处。
  *
  * 本组件直接改 props.providers 里的对象(与 agent 列表同一种写法):它们是父级草稿的一部分,
  * 保存与脏检测都由父面板统一负责,这里不发任何消息、也不落库。只有两类动作是例外——迁移与
@@ -16,14 +17,13 @@ import { computed, ref } from 'vue'
 import type {
   AgentConfig,
   ModelProvider,
+  ProtocolType,
   ProviderMigrationPlan,
-  VendorId,
 } from '@ccc/shared/protocol'
-import { effectiveApiKey } from '@ccc/shared/protocol'
-import { PROVIDER_TEMPLATES, VENDOR_IDS, checkProviderBaseUrl } from '@ccc/shared'
+import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
+import { PROVIDER_TEMPLATES, checkProviderBaseUrl } from '@ccc/shared'
 import type { BaseUrlIssue } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
-import { VENDOR_LABEL } from '@/lib/vendor'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import type { ProviderProbeState } from '@/lib/model-provider'
 import { providerProbeKey } from '@/lib/model-provider'
@@ -38,7 +38,7 @@ const props = withDefaults(
     agents?: AgentConfig[]
     /** 迁移报告;null = 还没取到。 */
     plan?: ProviderMigrationPlan | null
-    /** 探测状态,键为 `${providerId}:${vendor}`。 */
+    /** 探测状态,键为 `${providerId}:${protocolType}`。 */
     probes?: Record<string, ProviderProbeState>
     isAdmin?: boolean
   }>(),
@@ -49,17 +49,21 @@ const emit = defineEmits<{
   /** 列表整体替换(新增/删除);单字段编辑就地改,不走这里。 */
   change: [providers: ModelProvider[]]
   /**
-   * 连通性探测。带上草稿里的 baseUrl / 有效 key,这样未保存的编辑(或尚未落库的新建)
+   * 连通性探测。带上草稿里的 baseUrl / 账户 key,这样未保存的编辑(或尚未落库的新建)
    * 探到的是表单上正在改的值,而不是上次保存的旧记录;providerId 仍带回包匹配用。
    */
-  probe: [payload: { providerId: string; vendor: VendorId; baseUrl: string; apiKey: string }]
+  probe: [
+    payload: { providerId: string; protocolType: ProtocolType; baseUrl: string; apiKey: string },
+  ]
   migrate: [
     payload: { action: 'apply' | 'revert' | 'clear'; providerIds?: string[]; agentIds?: string[] },
   ]
 }>()
 
-// cursor 只认自己的 CLI 登录,既不能引用 provider 也无处注入连接,所以连接编辑器里不出现它。
-const CONNECTABLE_VENDORS = computed(() => VENDOR_IDS.filter((v) => v !== 'cursor'))
+const PROTOCOL_LABEL: Record<ProtocolType, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+}
 
 // ---- 新建 ----
 
@@ -78,19 +82,14 @@ function uniqueName(base: string): string {
 
 function addProvider(templateId: string): void {
   const template = PROVIDER_TEMPLATES.find((x) => x.id === templateId)
-  const connections: ModelProvider['connections'] = {}
-  for (const [vendor, conn] of Object.entries(template?.connections ?? {})) {
-    connections[vendor as VendorId] = {
-      baseUrl: conn.baseUrl,
-      ...(conn.wireApi ? { wireApi: conn.wireApi } : {}),
-    }
-  }
+  const urls: ModelProvider['urls'] = { ...(template?.urls ?? {}) }
   const created: ModelProvider = {
     id: mintId(),
     displayName: uniqueName(template?.displayName ?? t('settings.providers.name.placeholder')),
     ...(template ? { template: template.id } : {}),
     apiKey: '',
-    connections,
+    urls,
+    ...(template?.wireApi ? { wireApi: template.wireApi } : {}),
   }
   emit('change', [...props.providers, created])
   expanded.value = created.id
@@ -109,24 +108,26 @@ function toggle(id: string): void {
   expanded.value = expanded.value === id ? null : id
 }
 
-// ---- 连接编辑 ----
+// ---- 协议 URL 编辑 ----
 
-function connectionOf(p: ModelProvider, vendor: VendorId) {
-  return p.connections[vendor]
+function urlOf(p: ModelProvider, protocol: ProtocolType): string {
+  return p.urls[protocol] ?? ''
 }
 
-/** 勾选=为该 vendor 建一条空连接;取消=删除该条(连同它的 key 覆盖)。 */
-function setConnected(p: ModelProvider, vendor: VendorId, on: boolean): void {
+/** 勾选=为该协议建一条空 URL;取消=删除该槽。 */
+function setProtocolEnabled(p: ModelProvider, protocol: ProtocolType, on: boolean): void {
   if (on) {
-    if (!p.connections[vendor]) {
-      p.connections[vendor] = {
-        baseUrl: '',
-        ...(vendor === 'codex' ? { wireApi: 'chat' as const } : {}),
-      }
-    }
+    if (!p.urls[protocol]) p.urls[protocol] = ''
+    if (protocol === 'openai' && p.wireApi === undefined) p.wireApi = 'chat'
   } else {
-    delete p.connections[vendor]
+    delete p.urls[protocol]
+    if (protocol === 'openai') delete p.wireApi
   }
+  touch(p)
+}
+
+function setUrl(p: ModelProvider, protocol: ProtocolType, value: string): void {
+  p.urls[protocol] = value
   touch(p)
 }
 
@@ -178,8 +179,8 @@ function usedBy(id: string): AgentConfig[] {
 
 // ---- 探测 ----
 
-function probeState(providerId: string, vendor: VendorId): ProviderProbeState | undefined {
-  return props.probes[providerProbeKey(providerId, vendor)]
+function probeState(providerId: string, protocol: ProtocolType): ProviderProbeState | undefined {
+  return props.probes[providerProbeKey(providerId, protocol)]
 }
 /** 探测结论的一行说明。401/403 也算「可达」——URL 是对的,只是 key 没过。 */
 function probeText(state: ProviderProbeState): string {
@@ -194,15 +195,15 @@ function probeText(state: ProviderProbeState): string {
   })
 }
 
-/** 上抛当前草稿连接,让服务端按表单内容探测(未保存编辑 / 新建未落库都走这条)。 */
-function requestProbe(p: ModelProvider, vendor: VendorId): void {
-  const conn = p.connections[vendor]
-  if (!conn) return
+/** 上抛当前草稿 URL,让服务端按表单内容探测(未保存编辑 / 新建未落库都走这条)。 */
+function requestProbe(p: ModelProvider, protocol: ProtocolType): void {
+  const baseUrl = p.urls[protocol]
+  if (baseUrl === undefined) return
   emit('probe', {
     providerId: p.id,
-    vendor,
-    baseUrl: conn.baseUrl,
-    apiKey: effectiveApiKey(conn.apiKey, p.apiKey),
+    protocolType: protocol,
+    baseUrl,
+    apiKey: p.apiKey,
   })
 }
 
@@ -374,38 +375,29 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
         <p class="settings-hint">{{ t('settings.providers.apiKey.hint') }}</p>
 
         <h4 class="provider-section">{{ t('settings.providers.connection.title') }}</h4>
-        <div v-for="v in CONNECTABLE_VENDORS" :key="v" class="provider-conn">
+        <div v-for="protocol in PROTOCOL_TYPES" :key="protocol" class="provider-conn">
           <label class="provider-conn-toggle">
             <input
               type="checkbox"
-              :checked="!!connectionOf(p, v)"
+              :checked="p.urls[protocol] !== undefined"
               :disabled="!isAdmin"
-              :data-testid="`provider-conn-${v}`"
-              @change="setConnected(p, v, ($event.target as HTMLInputElement).checked)"
+              :data-testid="`provider-conn-${protocol}`"
+              @change="setProtocolEnabled(p, protocol, ($event.target as HTMLInputElement).checked)"
             />
-            <span>{{ VENDOR_LABEL[v] }}</span>
+            <span>{{ PROTOCOL_LABEL[protocol] }}</span>
           </label>
-          <template v-if="connectionOf(p, v)">
+          <template v-if="p.urls[protocol] !== undefined">
             <input
-              v-model="p.connections[v]!.baseUrl"
               class="agent-field provider-url"
+              :value="urlOf(p, protocol)"
               :placeholder="t('settings.providers.connection.baseUrl.placeholder')"
               :disabled="!isAdmin"
-              :data-testid="`provider-baseurl-${v}`"
-              @input="touch(p)"
-            />
-            <input
-              v-model="p.connections[v]!.apiKey"
-              class="agent-field provider-key"
-              type="password"
-              autocomplete="off"
-              :placeholder="t('settings.providers.connection.apiKey.placeholder')"
-              :disabled="!isAdmin"
-              @input="touch(p)"
+              :data-testid="`provider-baseurl-${protocol}`"
+              @input="setUrl(p, protocol, ($event.target as HTMLInputElement).value)"
             />
             <select
-              v-if="v === 'codex'"
-              v-model="p.connections[v]!.wireApi"
+              v-if="protocol === 'openai'"
+              v-model="p.wireApi"
               class="agent-field provider-wireapi"
               :title="t('settings.providers.connection.wireApi.label')"
               :disabled="!isAdmin"
@@ -417,19 +409,19 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
             <button
               class="ghost provider-probe"
               :disabled="!isAdmin"
-              :data-testid="`provider-probe-${v}`"
-              @click="requestProbe(p, v)"
+              :data-testid="`provider-probe-${protocol}`"
+              @click="requestProbe(p, protocol)"
             >
               {{ t('settings.providers.probe.label') }}
             </button>
             <span
-              v-if="baseUrlIssue(p.connections[v]!.baseUrl)"
+              v-if="baseUrlIssue(urlOf(p, protocol))"
               class="provider-issue"
-              :class="baseUrlIssue(p.connections[v]!.baseUrl)!.severity"
-              >{{ baseUrlIssue(p.connections[v]!.baseUrl)!.text }}</span
+              :class="baseUrlIssue(urlOf(p, protocol))!.severity"
+              >{{ baseUrlIssue(urlOf(p, protocol))!.text }}</span
             >
-            <span v-if="probeState(p.id, v)" class="provider-probe-result">{{
-              probeText(probeState(p.id, v)!)
+            <span v-if="probeState(p.id, protocol)" class="provider-probe-result">{{
+              probeText(probeState(p.id, protocol)!)
             }}</span>
           </template>
         </div>
@@ -609,9 +601,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
 }
 .provider-url {
   flex: 1 1 240px;
-}
-.provider-key {
-  flex: 0 0 160px;
 }
 .provider-num {
   flex: 0 0 130px;

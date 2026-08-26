@@ -829,16 +829,13 @@
       },
       "apiKey": {
         "label": "アカウントキー",
-        "placeholder": "全接続で共有する API キー",
-        "hint": "個別のキーを持たない接続がこれを使います。"
+        "placeholder": "すべてのプロトコル URL で共有する API キー",
+        "hint": "このプロバイダーの OpenAI / Anthropic URL すべてで同じアカウントキーを使います。"
       },
       "connection": {
-        "title": "接続",
+        "title": "プロトコル URL",
         "baseUrl": {
           "placeholder": "https://api.example.com"
-        },
-        "apiKey": {
-          "placeholder": "キーの上書き(任意)"
         },
         "wireApi": {
           "label": "API プロトコル"

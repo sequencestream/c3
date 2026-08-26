@@ -1,20 +1,16 @@
 /**
- * Named model-provider entities: the upstream connection (baseUrl / apiKey /
+ * Named model-provider entities: the upstream connection (base URL / apiKey /
  * wireApi) lifted OUT of per-agent inline config so multiple agents can share one
  * provider, and key rotation / endpoint changes touch a single record.
  *
  * Part of the `@ccc/shared/protocol` contract; re-exported by `../protocol.ts`.
  *
  * Relationship to agents: an agent carries an optional `providerId`; when set, the
- * runtime resolves the provider's connection for that agent's vendor instead of
- * reading the agent's inline `config.baseUrl`/`config.apiKey`. An empty `providerId`
- * keeps the legacy inline path (or the vendor CLI's own system login).
- *
- * Key layering: a provider has one account-level `apiKey` (the default for every
- * vendor connection) plus an optional per-vendor `apiKey` override inside each
- * `ProviderConnection`. The effective key for a vendor is `effectiveApiKey(
- * connection.apiKey, provider.apiKey)` — a blank override falls back to the account
- * key; at least one must be non-empty for the connection to be usable.
+ * runtime picks a {@link ProtocolType} from the agent's vendor support list (first
+ * protocol that the provider has a non-empty URL for) and uses that URL + the
+ * account-level key — instead of reading the agent's inline `config.baseUrl` /
+ * `config.apiKey`. An empty `providerId` keeps the legacy inline path (or the
+ * vendor CLI's own system login).
  *
  * Zero-runtime wire module: no zod, no vendor SDK. The runtime schema lives
  * server-side in `kernel/agent-config/model-provider-schema.ts`.
@@ -23,29 +19,57 @@
 import type { VendorId } from './vendor.js'
 
 /**
- * One vendor's connection inside a {@link ModelProvider}. A provider may declare
- * connections for a subset of vendors; an agent whose vendor has no entry here
- * falls back to the legacy inline config (or system login).
+ * Upstream wire-protocol style — what the provider's docs call "OpenAI-compatible"
+ * vs "Anthropic-compatible". Distinct from {@link VendorId} (which CLI c3 launches).
  */
-export interface ProviderConnection {
-  /** The upstream base URL for this vendor. Empty ⇒ no override (the provider's
-   *  account-level key alone is not enough — a base URL is required to point the
-   *  agent at a non-default upstream). */
-  baseUrl: string
-  /**
-   * Per-vendor API key override. When non-empty it takes priority over the
-   * provider's account-level {@link ModelProvider.apiKey}; when empty the account
-   * key is used. Encrypted at rest with the same scheme as agent apiKeys
-   * (`c3secretvN:` prefix); plaintext on the wire / in memory.
-   */
-  apiKey?: string
-  /**
-   * Codex-only: which wire protocol the upstream speaks (`'responses'` ⇒ direct,
-   * `'chat'` ⇒ via the c3 Responses→Chat relay). Irrelevant for non-codex vendors;
-   * omitted on their connections. Defaults to `'chat'` when a codex connection is
-   * created without it (the relay default for third-party providers).
-   */
-  wireApi?: 'responses' | 'chat'
+export type ProtocolType = 'openai' | 'anthropic'
+
+/** Runtime list of every known {@link ProtocolType}; pinned against the union below. */
+export const PROTOCOL_TYPES = ['openai', 'anthropic'] as const satisfies readonly ProtocolType[]
+
+type _PinProtocolTypesCoverUnion =
+  Exclude<ProtocolType, (typeof PROTOCOL_TYPES)[number]> extends never
+    ? true
+    : [
+        'PROTOCOL_TYPES is missing a ProtocolType',
+        Exclude<ProtocolType, (typeof PROTOCOL_TYPES)[number]>,
+      ]
+const _pinProtocolTypesCoverUnion: _PinProtocolTypesCoverUnion = true
+void _pinProtocolTypesCoverUnion
+
+/**
+ * Each vendor's preferred protocol list, in selection order. When an agent binds a
+ * provider, the runtime walks this list and takes the **first** protocol for which
+ * the provider has a non-empty URL — that URL is the agent's base URL.
+ *
+ *  - `claude` speaks Anthropic Messages.
+ *  - `codex` speaks OpenAI (Chat / Responses; see {@link ModelProvider.wireApi}).
+ *  - `cursor` can speak either; openai is preferred when both are present.
+ */
+export const VENDOR_PROTOCOL_TYPES = {
+  claude: ['anthropic'],
+  codex: ['openai'],
+  cursor: ['openai', 'anthropic'],
+} as const satisfies Record<VendorId, readonly ProtocolType[]>
+
+/** The ordered protocol list a vendor supports. */
+export function protocolsForVendor(vendor: VendorId): readonly ProtocolType[] {
+  return VENDOR_PROTOCOL_TYPES[vendor]
+}
+
+/**
+ * Pick the protocol an agent of `vendor` should use against `urls`: the first entry
+ * in {@link VENDOR_PROTOCOL_TYPES} whose URL is non-empty. `null` ⇒ this provider
+ * cannot supply a base URL for that vendor.
+ */
+export function selectProtocol(
+  vendor: VendorId,
+  urls: Partial<Record<ProtocolType, string>>,
+): ProtocolType | null {
+  for (const protocol of VENDOR_PROTOCOL_TYPES[vendor]) {
+    if (urls[protocol]?.trim()) return protocol
+  }
+  return null
 }
 
 /**
@@ -64,8 +88,8 @@ export interface ModelProviderModel {
 
 /**
  * A named model-provider entity — the shared upstream connection record agents
- * reference via `providerId`. Lifting the connection triple out of per-agent config
- * means a key rotation or endpoint migration edits one row instead of N agents.
+ * reference via `providerId`. Lifting the connection out of per-agent config means
+ * a key rotation or endpoint migration edits one row instead of N agents.
  *
  * Persisted in `SystemSettings.modelProviders` (alongside `agents`), encrypted at
  * rest for the key fields, plaintext on the wire.
@@ -87,19 +111,24 @@ export interface ModelProvider {
    */
   template?: string
   /**
-   * Account-level API key — the default key for every vendor connection that does
-   * not declare its own override. Encrypted at rest (`c3secretvN:` prefix);
-   * plaintext on the wire / in memory. May be empty when every connection carries
-   * its own key, but at least one key (account or per-vendor) must be non-empty for
-   * the provider to be usable.
+   * Account-level API key shared by every protocol URL on this provider. Encrypted
+   * at rest (`c3secretvN:` prefix); plaintext on the wire / in memory. Must be
+   * non-empty for the provider to be usable.
    */
   apiKey: string
   /**
-   * Per-vendor connection map. Only vendors with a non-empty `baseUrl` entry are
-   * "connected"; an agent whose vendor is absent falls back to inline/system. A
-   * provider with zero usable connections is valid but cannot launch any agent.
+   * Per-protocol base URLs. A protocol with a non-empty URL is "connected"; an
+   * agent whose vendor support list never hits a filled slot cannot launch through
+   * this provider. A provider with zero usable URLs is valid but cannot launch any
+   * agent.
    */
-  connections: Partial<Record<VendorId, ProviderConnection>>
+  urls: Partial<Record<ProtocolType, string>>
+  /**
+   * OpenAI-slot wire dialect (`'responses'` ⇒ direct, `'chat'` ⇒ via the c3
+   * Responses→Chat relay). Only meaningful when `urls.openai` is set; defaults to
+   * `'chat'` (the third-party-gateway default).
+   */
+  wireApi?: 'responses' | 'chat'
   /**
    * Optional model catalog — pre-fill suggestions for new agents bound to this
    * provider. NOT a runtime default; an agent's own `config.model` always wins.
@@ -158,59 +187,64 @@ export interface ProviderMigrationPlan {
   /** Pending groups: agents still on an inline triple, grouped by identical tuple. */
   groups: ProviderMigrationGroup[]
   /**
-   * Agents already pointed at a provider that ALSO still carry a non-empty inline
-   * `baseUrl` — the leftovers the one-way cleanup step would erase.
+   * Agents already pointed at a provider that ALSO still carry a leftover inline
+   * `baseUrl` and/or `apiKey` — the residue the one-way cleanup step would erase.
    */
   clearableAgentIds: string[]
 }
 
-/**
- * Merge a per-vendor `apiKey` override with the provider's account-level key: a
- * BLANK override (empty or whitespace-only) does not count and falls back to the
- * account key, same as an override the user never touched. This matters because the
- * console's connection-key input is a plain `v-model` text field — clearing it
- * stores `""`, not `undefined` — so a plain `??` merge would keep that empty string
- * and silently send a keyless request instead of falling back. Exported so every
- * merge site (resolution, migration matching, the connectivity probe) shares one
- * rule instead of drifting.
- */
-export function effectiveApiKey(override: string | undefined, accountKey: string): string {
-  return override?.trim() || accountKey
+/** Resolved upstream for one agent against one provider. */
+export interface ResolvedProviderUrl {
+  baseUrl: string
+  apiKey: string
+  /** Which protocol slot supplied the URL. */
+  protocol: ProtocolType
+  /** Present only when the selected protocol is `openai`. */
+  wireApi?: 'responses' | 'chat'
 }
 
 /**
- * Resolve the effective connection for a vendor from a provider: the vendor's
- * `ProviderConnection` if present, otherwise `null` (caller falls back to inline
- * config / system login). The returned connection's `apiKey` is already merged with
- * the provider's account-level key via {@link effectiveApiKey}.
- *
- * Pure function — no IO, no mutation. Exported so both the server runtime and web
- * console can compute "what would this agent actually connect to" without duplicating
- * the layering rule.
+ * Resolve the effective URL for a vendor from a provider: walk the vendor's
+ * protocol list, take the first non-empty URL, pair it with the account key.
+ * Returns `null` when no protocol slot is filled (caller falls back to inline /
+ * system login). Pure — no IO, no mutation.
  */
-export function resolveProviderConnection(
+export function resolveProviderUrl(
   provider: ModelProvider,
   vendor: VendorId,
-): (ProviderConnection & { apiKey: string }) | null {
-  const conn = provider.connections[vendor]
-  if (!conn || !conn.baseUrl) return null
+): ResolvedProviderUrl | null {
+  const protocol = selectProtocol(vendor, provider.urls)
+  if (!protocol) return null
+  const baseUrl = provider.urls[protocol]?.trim() ?? ''
+  if (!baseUrl) return null
   return {
-    baseUrl: conn.baseUrl,
-    apiKey: effectiveApiKey(conn.apiKey, provider.apiKey),
-    ...(conn.wireApi !== undefined ? { wireApi: conn.wireApi } : {}),
+    baseUrl,
+    apiKey: provider.apiKey,
+    protocol,
+    ...(protocol === 'openai' && provider.wireApi !== undefined
+      ? { wireApi: provider.wireApi }
+      : {}),
   }
 }
 
 /**
- * Whether a provider has at least one usable vendor connection (non-empty baseUrl
- * and a resolvable key — either per-vendor override or the account-level key). A
- * provider that returns `false` cannot launch any agent; the console marks it
- * "incomplete" and offers to fill in the missing fields.
+ * Whether a provider has at least one usable protocol URL (non-empty base URL and
+ * a non-empty account key). A provider that returns `false` cannot launch any
+ * agent; the console marks it "incomplete".
  */
 export function hasUsableConnection(provider: ModelProvider): boolean {
-  for (const vendor of Object.keys(provider.connections) as VendorId[]) {
-    const conn = provider.connections[vendor]
-    if (conn && conn.baseUrl && effectiveApiKey(conn.apiKey, provider.apiKey)) return true
+  if (!provider.apiKey.trim()) return false
+  for (const protocol of PROTOCOL_TYPES) {
+    if (provider.urls[protocol]?.trim()) return true
   }
   return false
+}
+
+/**
+ * Whether this provider can supply a base URL for `vendor` — i.e.
+ * {@link selectProtocol} finds a filled slot. Used by the agent-form provider
+ * picker to hide providers the vendor cannot reach.
+ */
+export function providerSupportsVendor(provider: ModelProvider, vendor: VendorId): boolean {
+  return selectProtocol(vendor, provider.urls) !== null
 }

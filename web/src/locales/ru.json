@@ -829,16 +829,13 @@
       },
       "apiKey": {
         "label": "Ключ аккаунта",
-        "placeholder": "Ключ API для всех подключений",
-        "hint": "Используется подключениями без собственного ключа."
+        "placeholder": "API-ключ для всех URL протоколов",
+        "hint": "Один ключ аккаунта покрывает все URL OpenAI / Anthropic у этого провайдера."
       },
       "connection": {
-        "title": "Подключения",
+        "title": "URL протоколов",
         "baseUrl": {
           "placeholder": "https://api.example.com"
-        },
-        "apiKey": {
-          "placeholder": "Свой ключ (необязательно)"
         },
         "wireApi": {
           "label": "Протокол API"

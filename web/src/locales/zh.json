@@ -828,16 +828,13 @@
       },
       "apiKey": {
         "label": "账户 Key",
-        "placeholder": "各连接共用的 API Key",
-        "hint": "未单独填 Key 的连接都用它。"
+        "placeholder": "各协议 URL 共用的 API key",
+        "hint": "一把账户级 key 覆盖本 provider 上所有 OpenAI / Anthropic URL。"
       },
       "connection": {
-        "title": "连接",
+        "title": "协议 URL",
         "baseUrl": {
           "placeholder": "https://api.example.com"
-        },
-        "apiKey": {
-          "placeholder": "Key 覆盖(可选)"
         },
         "wireApi": {
           "label": "API 协议"

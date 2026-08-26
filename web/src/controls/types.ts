@@ -16,7 +16,7 @@ import type {
   IntentSpecMode,
   IntentStatus,
   ModeToken,
-  VendorId,
+  ProtocolType,
   PromptImage,
   Automation,
   ServerToClient,
@@ -407,7 +407,7 @@ export interface AppMethods {
    *  `baseUrl`/`apiKey` carry the console draft so an unsaved edit is what gets dialled. */
   probeModelProvider(payload: {
     providerId: string
-    vendor: VendorId
+    protocolType: ProtocolType
     baseUrl?: string
     apiKey?: string
   }): void

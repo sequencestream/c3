@@ -71,7 +71,7 @@ describe('planProviderMigration', () => {
       id: 'mine',
       displayName: 'Mine',
       apiKey: 'sk-1',
-      connections: { claude: { baseUrl: 'https://api.deepseek.com' } },
+      urls: { anthropic: 'https://api.deepseek.com' },
     }
     const plan = planProviderMigration(
       [inlineAgent('a1', 'https://api.deepseek.com', 'sk-1')],
@@ -120,7 +120,7 @@ describe('applyProviderMigration', () => {
     expect(provider).toMatchObject({
       apiKey: 'sk-1',
       synthesized: true,
-      connections: { claude: { baseUrl: 'https://api.deepseek.com' } },
+      urls: { anthropic: 'https://api.deepseek.com' },
     })
     expect(after.agents.map((a) => a.providerId)).toEqual([provider.id, provider.id])
     // Dual track: the inline triple is untouched, so the step stays reversible.
@@ -141,7 +141,7 @@ describe('applyProviderMigration', () => {
       id: 'mine',
       displayName: 'Mine',
       apiKey: 'sk-1',
-      connections: { claude: { baseUrl: 'https://api.deepseek.com' } },
+      urls: { anthropic: 'https://api.deepseek.com' },
     }
     const { settings: after } = applyProviderMigration(
       settings([inlineAgent('a1', 'https://api.deepseek.com', 'sk-1')], [existing]),
@@ -177,7 +177,7 @@ describe('revertProviderMigration', () => {
       id: 'mine',
       displayName: 'Mine',
       apiKey: 'sk-1',
-      connections: { claude: { baseUrl: 'https://api.deepseek.com' } },
+      urls: { anthropic: 'https://api.deepseek.com' },
     }
     const s = settings([agent({ id: 'a1', providerId: 'mine' })], [existing])
     expect(revertProviderMigration(s)).toEqual(s)
@@ -194,8 +194,28 @@ describe('clearInlineConnections', () => {
     expect(cleared.agents[0].providerId).toBe(applied.agents[0].providerId)
   })
 
-  it('leaves un-migrated agents alone', () => {
+  it('leaves un-migrated agents alone and returns the same settings reference', () => {
     const s = settings([inlineAgent('a1', 'https://api.deepseek.com', 'sk-1')])
-    expect(clearInlineConnections(s)).toEqual(s)
+    expect(clearInlineConnections(s)).toBe(s)
+  })
+
+  it('returns the same settings reference when every target is already clean', () => {
+    const s = settings([
+      agent({ id: 'a1', providerId: 'p1', config: { baseUrl: '', apiKey: '', model: 'm' } }),
+    ])
+    expect(clearInlineConnections(s)).toBe(s)
+  })
+
+  it('clears an apiKey-only residue that the plan also lists as clearable', () => {
+    const s = settings([
+      agent({
+        id: 'a1',
+        providerId: 'p1',
+        config: { baseUrl: '', apiKey: 'leftover', model: 'm' },
+      }),
+    ])
+    expect(planProviderMigration(s.agents, []).clearableAgentIds).toEqual(['a1'])
+    const cleared = clearInlineConnections(s)
+    expect(cleared.agents[0].config).toEqual({ baseUrl: '', apiKey: '', model: 'm' })
   })
 })

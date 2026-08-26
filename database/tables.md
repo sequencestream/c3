@@ -163,9 +163,9 @@ Schema 版本: 5。v1→v2 把工作区主键列 `project_path` 就地改名为 
 记录集合以 id 作为一段 (`agents.<id>.vendor`，附一条 `<path>._order` 保序)，只有「多值且无稳定
 身份」的子树才整体落 JSON (`degradationChain`、`sandbox.extraMounts`、以路径为键的 skill 挂载索引)。
 `secret` 类型的值是 `encryption.ts` 的 `c3secretv1:` 密文 (agent apiKey、modelProvider 的账户级
-与逐 vendor apiKey、auth 口令哈希、MCP 密钥摘要)，读时解密、写时加密；内存缓存始终明文，落库始终
+apiKey、auth 口令哈希、MCP 密钥摘要)，读时解密、写时加密；内存缓存始终明文，落库始终
 密文。modelProvider 与 agent 同为「有稳定 id 的记录集合」，落在 `modelProviders.<id>.*`，其中逐
-vendor 的连接再逐字段展开 (`modelProviders.<id>.connections.<vendor>.baseUrl`)。
+协议 URL 再逐字段展开 (`modelProviders.<id>.urls.<protocolType>`)。
 
 一字段一行带来的结构性后果：保存工作区配置与保存系统设置在存储层不再相交，写入方不必再带上它并
 不拥有的字段，因此文件时代那套「反覆盖合并 + 把兄弟键挂回去」的补救逻辑连同它所补救的缺陷一起消失

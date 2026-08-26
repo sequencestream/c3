@@ -25,7 +25,6 @@ export const SYSTEM_RULES: ConfigRules = {
   secrets: [
     'agents.*.config.apiKey',
     'modelProviders.*.apiKey',
-    'modelProviders.*.connections.*.apiKey',
     'auth.provider.accounts.*.passwordHash',
   ],
   json: [

@@ -900,8 +900,8 @@ export function installMessageHandler(ctx: AppCtx): void {
         providerMigrationPlan.value = msg.plan
         break
       case 'model_provider_probe_result': {
-        // 探测是逐条连接的瞬时结论,按 provider×vendor 覆盖写入,不累积历史。
-        const key = providerProbeKey(msg.providerId ?? '', msg.vendor)
+        // 探测是逐条协议 URL 的瞬时结论,按 provider×protocolType 覆盖写入,不累积历史。
+        const key = providerProbeKey(msg.providerId ?? '', msg.protocolType)
         providerProbes.value = {
           ...providerProbes.value,
           [key]: {

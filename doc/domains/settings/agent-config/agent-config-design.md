@@ -16,7 +16,7 @@ web console 中的完整设置视图页面。
 ## 持久化
 
 - **`system_configs`** —— 智能体注册表(`agents.<id>.*`)、modelProvider 注册表
-  (`modelProviders.<id>.*`,账户级与逐 vendor 的 apiKey 均以 `secret` 类型落库)与
+  (`modelProviders.<id>.*`,账户级 apiKey 以 `secret` 类型落库)与
   默认智能体 id;按工作区的配置在 `workspace_configs`(见
   [workspace-setting](../workspace-setting/workspace-setting-spec.md))。
 - **`session_configs`** —— 双键绑定(ADR-0015):带 `pendingCreatedAt` 的作用域是可变的意图

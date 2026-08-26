@@ -60,7 +60,12 @@ defineEmits<{
     },
   ]
   'provider-probe': [
-    payload: { providerId: string; vendor: VendorId; baseUrl?: string; apiKey?: string },
+    payload: {
+      providerId: string
+      protocolType: import('@ccc/shared/protocol').ProtocolType
+      baseUrl?: string
+      apiKey?: string
+    },
   ]
 }>()
 </script>

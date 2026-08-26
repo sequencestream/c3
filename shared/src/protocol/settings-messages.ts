@@ -7,7 +7,7 @@
  * `@ccc/shared/protocol` surface.
  */
 
-import type { ProviderMigrationPlan } from './model-provider.js'
+import type { ProviderMigrationPlan, ProtocolType } from './model-provider.js'
 import type {
   ExternalMcpToolDescriptor,
   McpApiKeyMeta,
@@ -112,26 +112,27 @@ export type ServerProviderMigrationPlan = {
 }
 
 /**
- * Probe one provider connection for reachability — the "is this endpoint alive"
+ * Probe one provider protocol URL for reachability — the "is this endpoint alive"
  * half of the health check whose cheap half (`checkProviderBaseUrl`) the console
  * already runs locally. The console may send a DRAFT (`baseUrl` + optional
  * `apiKey`) so an unsaved edit or a brand-new provider is dialled as typed; a
- * named `providerId` alone falls back to the stored connection (key stays
- * server-side). When both are present, the draft URL wins and a blank draft key
- * falls back to the stored effective key.
+ * named `providerId` alone falls back to the stored URL (key stays server-side).
+ * When both are present, the draft URL wins and a blank draft key falls back to
+ * the stored account key.
  *
  * Admin-only: it reads a stored credential and dials an arbitrary URL from the
  * server, both of which are administrator territory.
  */
 export type ClientProbeModelProvider = {
   type: 'probe_model_provider'
-  vendor: VendorId
+  /** Which protocol slot is being probed (`openai` / `anthropic`). */
+  protocolType: ProtocolType
   /**
    * Saved provider id — echoed in the reply for matching, and used to look up a
-   * stored connection when `baseUrl` is absent (or to fill in a blank draft key).
+   * stored URL when `baseUrl` is absent (or to fill in a blank draft key).
    */
   providerId?: string
-  /** Draft base URL. When set, takes priority over any stored connection. */
+  /** Draft base URL. When set, takes priority over any stored URL. */
   baseUrl?: string
   /** Draft API key paired with `baseUrl`. Empty falls back to the saved key when
    *  `providerId` is set. */
@@ -147,7 +148,7 @@ export type ClientProbeModelProvider = {
  */
 export type ServerModelProviderProbeResult = {
   type: 'model_provider_probe_result'
-  vendor: VendorId
+  protocolType: ProtocolType
   /** Echoed so a console with several probes in flight can match the reply. */
   providerId?: string
   reachable: boolean

@@ -249,14 +249,14 @@ export interface McpApiKeyMeta {
 export interface SystemSettings {
   agents: AgentConfig[]
   /**
-   * Named model-provider registry — shared upstream connections agents reference via
-   * `providerId`. Lifting the connection triple (baseUrl/apiKey/wireApi) out of
-   * per-agent inline config means a key rotation or endpoint migration edits one row
-   * instead of N agents. Empty/absent ⇒ no providers configured (all agents use the
-   * legacy inline config or system login).
+   * Named model-provider registry — shared upstream URLs agents reference via
+   * `providerId`. Lifting the protocol URLs + account key out of per-agent inline
+   * config means a key rotation or endpoint migration edits one row instead of N
+   * agents. Empty/absent ⇒ no providers configured (all agents use the legacy
+   * inline config or system login).
    *
-   * Persisted alongside `agents` in settings.json; apiKey fields are encrypted at
-   * rest with the same `c3secretvN:` scheme as agent apiKeys.
+   * Persisted alongside `agents` in settings.json; the account `apiKey` is
+   * encrypted at rest with the same `c3secretvN:` scheme as agent apiKeys.
    */
   modelProviders?: ModelProvider[]
   /** Id of the agent new/unassigned sessions launch with. */

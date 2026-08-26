@@ -16,7 +16,7 @@
 - **`displayName`**(text): 展示名称
 - **`enabled`**(bool,可选): 启用标志;缺省/`true` ⇒ 启用,只有显式 `false` 才禁用。禁用的智能体会从所有列表消费方(参与者、投票者、降级链、默认选择器)中退出,但仍可作为有效的启动兜底(AC-R10)
 - **`icon`**(text,可选): 可选展示图标(表情符号/短文本)。空/缺省 ⇒ 无自定义图标。会被去除首尾空白并截断到 16 字符;不校验是否为真实的表情符号。没有该字段的配置加载为 `''`(AC-R11)
-- **`providerId`**(text,可选): 引用一条 [ModelProvider](#modelprovider模型提供方) 的 id,该 provider 为本 agent 的 vendor 提供上游连接(base URL / key / codex 的 wireApi)。为空 ⇒ 使用 vendor CLI 自身登录态,或(尚未迁移时)自身的内联连接。cursor 永不携带该字段。悬挂引用(指向不存在的 provider)fail-soft 回落并告警,不阻断启动
+- **`providerId`**(text,可选): 引用一条 [ModelProvider](#modelprovider模型提供方) 的 id;绑定时按本 vendor 的协议支持列表取第一个有 URL 的槽作为上游(base URL / 账户 key / openai 的 wireApi)。为空 ⇒ 使用 vendor CLI 自身登录态,或(尚未迁移时)自身的内联连接。cursor 永不携带该字段。悬挂引用(指向不存在的 provider)fail-soft 回落并告警,不阻断启动
 - **`modelOverrides`**(列表,可选): 逐模型的能力覆盖 `{ model, contextWindow?, maxOutputTokens? }`。运行时按 agent 选中的 `config.model` 匹配一条生效,优先于 provider 的模型目录
 - **`configMode`**(`'system' | 'custom'`): **只读派生字段**,不是独立的状态源。规则:cursor 恒 `'system'`;`providerId` 非空 ⇒ `'custom'`;否则看存储值——`'custom'` 且内联 `baseUrl` 非空 ⇒ `'custom'`(未迁移的内联连接),其余 ⇒ `'system'`。存储值的唯一作用是回答「残留的内联三元组还算不算数」,因此清掉 `providerId` 就回到迁移前的状态,迁移可逆
 - **`group`**(text,可选): 分组名。非空 ⇒ 该 agent 归入 `(vendor, group)` 组;相同 `(vendor, group)` 的 enabled agent 按 `order_seq` 优先级构成一个可 failover 的候选集,暴露为虚拟 group agent `_c3_<vendor>_<group>`。虚拟引用编码 vendor,故**不同 vendor 可复用同一分组名**(各成独立组)。成员可混 `custom` 与 `system` 配置模式。为空/缺省 ⇒ 不参与任何组,控制台把这批 agent 归入名为 `default` 的容器展示。设计见 [relay-architecture](../../../architecture/relay-architecture.md) §6–§8
@@ -70,17 +70,20 @@
 - **`id`**(text): 稳定 id,铸造规则与 agent id 相同(AC-R3);迁移合成的记录用由三元组派生的确定性 id,与手工创建的可区分
 - **`displayName`**(text): 展示名称(去首尾空白)
 - **`template`**(text,可选): 创建时所用目录模板的 id。纯信息性,运行时从不读取
-- **`apiKey`**(text): **账户级** key,是各条连接的默认凭据;落库为 `secret` 类型
-- **`connections`**(map `vendorId → ProviderConnection`): 逐 vendor 的连接。只有 `baseUrl` 非空的 vendor 才算「已连接」;cursor 不参与(无 relay 讲它的协议)
+- **`apiKey`**(text): **账户级** key,覆盖本 provider 上所有协议 URL;落库为 `secret` 类型
+- **`urls`**(map `protocolType → string`): 逐协议风格的上游 base URL。`protocolType` 为 `openai` | `anthropic`(上游文档所说的兼容风格,不是 c3 的 VendorId)。非空才算该协议已连接
+- **`wireApi`**(`'responses' | 'chat'`,可选): 仅 `urls.openai` 有意义;缺省按 `'chat'` 处理
 - **`models`**(列表,可选): 模型目录 `{ id, contextWindow?, maxOutputTokens? }`。用于新建 agent 时预填与能力解析,**不是**运行时默认模型——agent 自己的 `config.model` 始终优先
 - **`synthesized`**(bool,可选): 由内联配置迁移合成、因而可一键撤销的记录。用户手改后该标记清除,它就成为普通 provider
 - **`paused`**(bool,可选): 运维暂停。为真时引用它的 agent 在启动处明确失败(而不是稍后以晦涩的鉴权错误暴露);可恢复,数据不丢
 
-### ProviderConnection
+### ProtocolType 与 vendor 支持列表
 
-- **`baseUrl`**(text, url): 该 vendor 的上游地址。为空 ⇒ 该连接不可用
-- **`apiKey`**(text,可选): 逐 vendor 的 key 覆盖。非空时优先于账户级 key;为空则用账户级 key。同样落库为 `secret`
-- **`wireApi`**(`'responses' | 'chat'`,可选): 仅 codex 有意义,含义同 codex 配置子对象;缺省按 `'chat'` 处理
+每个 vendor 有一份**有序**的默认协议支持列表;agent 绑定 provider 时按该列表取**第一个**在 `urls` 中有非空 URL 的协议,从而得到 baseUrl:
+
+- `claude` → `['anthropic']`
+- `codex` → `['openai']`
+- `cursor` → `['openai', 'anthropic']`(列表已声明;当前仍无讲 Cursor 协议的 relay,故 cursor agent 仍不绑定 provider)
 
 关系:一个 provider 被零个或多个 agent 引用;一个 agent 至多引用一个 provider。
 

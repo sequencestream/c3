@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
-import { resolveAgentConnection, resolveModelCaps } from './provider-resolve.js'
+import {
+  resolveAgentConnection,
+  resolveModelCaps,
+  takeFreshConnectionWarnings,
+} from './provider-resolve.js'
 
 function claudeAgent(over: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -30,7 +34,7 @@ const provider = (over: Partial<ModelProvider> = {}): ModelProvider => ({
   id: 'p1',
   displayName: 'DeepSeek',
   apiKey: 'account-key',
-  connections: { claude: { baseUrl: 'https://api.deepseek.com/anthropic' } },
+  urls: { anthropic: 'https://api.deepseek.com/anthropic' },
   ...over,
 })
 
@@ -66,34 +70,30 @@ describe('resolveAgentConnection — no provider reference', () => {
 })
 
 describe('resolveAgentConnection — provider reference', () => {
-  it('uses the provider connection for the agent vendor, falling back to the account key', () => {
+  it('uses the first supported protocol URL and the account key', () => {
     const r = resolveAgentConnection(claudeAgent({ providerId: 'p1' }), [provider()])
     expect(r.source).toBe('provider')
     expect(r.connection).toEqual({
       baseUrl: 'https://api.deepseek.com/anthropic',
       apiKey: 'account-key',
+      protocol: 'anthropic',
     })
   })
 
-  it('a per-vendor apiKey overrides the account-level key', () => {
+  it('codex picks the openai URL (first in its support list)', () => {
     const p = provider({
-      connections: { claude: { baseUrl: 'https://x.example', apiKey: 'vendor-key' } },
+      urls: {
+        openai: 'https://api.deepseek.com',
+        anthropic: 'https://api.deepseek.com/anthropic',
+      },
+      wireApi: 'chat',
     })
-    expect(resolveAgentConnection(claudeAgent({ providerId: 'p1' }), [p]).connection?.apiKey).toBe(
-      'vendor-key',
-    )
-  })
-
-  it('a blank per-vendor apiKey override falls back to the account-level key', () => {
-    // The console's v-model stores "" (not undefined) when the override box is
-    // cleared — a plain `??` merge would keep that empty string and send a
-    // keyless request. `effectiveApiKey` trims blanks so the account key wins.
-    const p = provider({
-      connections: { claude: { baseUrl: 'https://x.example', apiKey: '   ' } },
+    const r = resolveAgentConnection(codexAgent({ providerId: 'p1' }), [p])
+    expect(r.connection).toMatchObject({
+      baseUrl: 'https://api.deepseek.com',
+      protocol: 'openai',
+      wireApi: 'chat',
     })
-    expect(resolveAgentConnection(claudeAgent({ providerId: 'p1' }), [p]).connection?.apiKey).toBe(
-      'account-key',
-    )
   })
 
   it('a dangling providerId fails soft to the inline triple with a warning', () => {
@@ -122,44 +122,38 @@ describe('resolveAgentConnection — provider reference', () => {
     expect(r.warnings).toEqual([{ kind: 'provider-paused', providerId: 'p1' }])
   })
 
-  it('degrades to another vendor connection when the agent vendor has none', () => {
-    const p = provider({ connections: { codex: { baseUrl: 'https://codex.example' } } })
+  it('does not borrow across protocols when the vendor slot is empty', () => {
+    // A claude agent needs anthropic; an openai-only provider is unusable for it.
+    const p = provider({ urls: { openai: 'https://codex.example' } })
     const r = resolveAgentConnection(claudeAgent({ providerId: 'p1' }), [p])
-    expect(r.source).toBe('provider')
-    expect(r.connection?.baseUrl).toBe('https://codex.example')
-    expect(r.warnings).toEqual([
-      {
-        kind: 'vendor-connection-missing',
-        providerId: 'p1',
-        vendor: 'claude',
-        borrowedFrom: 'codex',
-      },
-    ])
+    expect(r.source).toBe('system')
+    expect(r.warnings).toEqual([{ kind: 'provider-unusable', providerId: 'p1', vendor: 'claude' }])
   })
 
-  it('a provider with no usable connection falls back to inline with a warning', () => {
+  it('a provider with no usable URL falls back to inline with a warning', () => {
     const agent = claudeAgent({
       providerId: 'p1',
       configMode: 'custom',
       config: { baseUrl: 'https://inline.example', apiKey: 'k', model: 'm' },
     })
-    const r = resolveAgentConnection(agent, [provider({ connections: {} })])
+    const r = resolveAgentConnection(agent, [provider({ urls: {} })])
     expect(r.source).toBe('inline')
     expect(r.warnings).toEqual([{ kind: 'provider-unusable', providerId: 'p1', vendor: 'claude' }])
   })
 })
 
 describe('resolveAgentConnection — codex wireApi', () => {
-  it("takes the connection's wireApi first", () => {
+  it("takes the provider's wireApi first", () => {
     const p = provider({
-      connections: { codex: { baseUrl: 'https://c.example', wireApi: 'responses' } },
+      urls: { openai: 'https://c.example' },
+      wireApi: 'responses',
     })
     const r = resolveAgentConnection(codexAgent({ providerId: 'p1' }), [p])
     expect(r.connection?.wireApi).toBe('responses')
   })
 
   it("falls back to the agent's own wireApi, then to chat", () => {
-    const p = provider({ connections: { codex: { baseUrl: 'https://c.example' } } })
+    const p = provider({ urls: { openai: 'https://c.example' } })
     const agent = codexAgent({
       providerId: 'p1',
       config: { baseUrl: '', apiKey: '', model: '', wireApi: 'responses' },
@@ -178,7 +172,7 @@ describe('resolveAgentConnection — codex wireApi', () => {
 
 describe('resolveModelCaps', () => {
   const p = provider({
-    connections: { codex: { baseUrl: 'https://c.example' } },
+    urls: { openai: 'https://c.example' },
     models: [{ id: 'm1', contextWindow: 100, maxOutputTokens: 200 }],
   })
 
@@ -195,7 +189,6 @@ describe('resolveModelCaps', () => {
         maxOutputTokens: 2,
       },
     })
-    // contextWindow from the override, maxOutputTokens from the catalog.
     expect(resolveModelCaps(agent, [p], 'm1')).toEqual({ contextWindow: 999, maxOutputTokens: 200 })
   })
 
@@ -209,5 +202,29 @@ describe('resolveModelCaps', () => {
 
   it('yields nothing when no source carries capabilities', () => {
     expect(resolveModelCaps(claudeAgent({ providerId: 'p1' }), [provider()], 'm')).toEqual({})
+  })
+})
+
+describe('takeFreshConnectionWarnings', () => {
+  const dangling = { kind: 'dangling-provider' as const, providerId: 'gone' }
+
+  it('reports once while the same fingerprint persists', () => {
+    const reported = new Set<string>()
+    expect(takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')).toEqual([dangling])
+    expect(takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')).toEqual([])
+  })
+
+  it('re-alerts after the condition clears, even with the same fingerprint', () => {
+    const reported = new Set<string>()
+    takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')
+    // Healthy resolution: no warnings ⇒ forget the episode.
+    expect(takeFreshConnectionWarnings(reported, 'a1', [], 'fp-ok')).toEqual([])
+    expect(takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')).toEqual([dangling])
+  })
+
+  it('re-alerts when the config fingerprint changes without a healthy gap', () => {
+    const reported = new Set<string>()
+    takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')
+    expect(takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp2')).toEqual([dangling])
   })
 })

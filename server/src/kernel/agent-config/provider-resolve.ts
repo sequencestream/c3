@@ -13,24 +13,16 @@
  *  3. The provider is PAUSED ⇒ no connection and a `provider-paused` warning; the
  *     launch path turns that into a loud {@link ModelProviderPausedError} instead of
  *     letting the run fail later with a cryptic auth error.
- *  4. The provider has a connection for this agent's vendor ⇒ use it (per-vendor
- *     `apiKey` overriding the account-level key).
- *  5. The provider has connections, but none for this vendor ⇒ DEGRADE to the first
- *     other usable connection and report it, rather than silently dropping to the
- *     CLI login the user did not ask for.
- *  6. Nothing usable on the provider ⇒ inline / system, with a warning.
+ *  4. The provider has a URL for this agent's vendor (first matching protocol in the
+ *     vendor's support list) ⇒ use it with the account-level key.
+ *  5. Nothing usable on the provider ⇒ inline / system, with a warning.
  *
  * Pure: no IO, no mutation, no throwing. Callers pass the provider registry in
  * (`loadSettings().modelProviders`), which keeps this unit-testable and lets the
  * console resolve a hypothetical edit before it is saved.
  */
-import type { AgentConfig, ModelProvider, VendorId } from '@ccc/shared/protocol'
-import {
-  VENDOR_IDS,
-  hasProviderConfig,
-  resolveModelOverride,
-  resolveProviderConnection,
-} from '@ccc/shared/protocol'
+import type { AgentConfig, ModelProvider, ProtocolType, VendorId } from '@ccc/shared/protocol'
+import { hasProviderConfig, resolveModelOverride, resolveProviderUrl } from '@ccc/shared/protocol'
 
 /** The upstream a resolution landed on. `null` connection ⇒ the vendor CLI's own login. */
 export interface ResolvedConnection {
@@ -38,29 +30,24 @@ export interface ResolvedConnection {
   apiKey: string
   /** Codex-only; absent for other vendors (they have no wire-protocol choice). */
   wireApi?: 'responses' | 'chat'
+  /** Which protocol slot supplied the URL when source is `provider`. */
+  protocol?: ProtocolType
 }
 
 /**
- * Why a resolution is not the straightforward "the provider's own connection for
- * this vendor". Every arm is actionable in the console: each names the provider the
+ * Why a resolution is not the straightforward "the provider's own URL for this
+ * vendor". Every arm is actionable in the console: each names the provider the
  * user has to fix.
  */
 export type ConnectionWarning =
   | { kind: 'dangling-provider'; providerId: string }
   | { kind: 'provider-paused'; providerId: string }
-  | {
-      kind: 'vendor-connection-missing'
-      providerId: string
-      vendor: VendorId
-      borrowedFrom: VendorId
-    }
   | { kind: 'provider-unusable'; providerId: string; vendor: VendorId }
 
 /**
  * A resolved agent connection plus how it was reached.
  *
- *  - `provider` — the referenced provider supplied it (possibly a borrowed vendor
- *    connection, see {@link ConnectionWarning}).
+ *  - `provider` — the referenced provider supplied it via {@link resolveProviderUrl}.
  *  - `inline`   — the legacy per-agent triple on `agent.config`.
  *  - `system`   — no connection at all: the vendor CLI's own login runs the agent.
  */
@@ -100,46 +87,23 @@ function inlineResolution(agent: AgentConfig, warnings: ConnectionWarning[]): Co
 }
 
 /**
- * Stamp the codex-only `wireApi` onto a provider connection: the connection's own
- * value wins, then the agent's inline choice, then the relay default (`chat`, what
- * third-party providers speak). Non-codex vendors get no field at all.
+ * Stamp the codex-only `wireApi` onto a provider URL: the provider's own value
+ * wins, then the agent's inline choice, then the relay default (`chat`). Non-codex
+ * vendors get no field at all.
  */
 function withWireApi(
   agent: AgentConfig,
-  conn: { baseUrl: string; apiKey: string; wireApi?: 'responses' | 'chat' },
+  conn: { baseUrl: string; apiKey: string; wireApi?: 'responses' | 'chat'; protocol: ProtocolType },
 ): ResolvedConnection {
-  if (agent.vendor !== 'codex') return { baseUrl: conn.baseUrl, apiKey: conn.apiKey }
+  if (agent.vendor !== 'codex') {
+    return { baseUrl: conn.baseUrl, apiKey: conn.apiKey, protocol: conn.protocol }
+  }
   return {
     baseUrl: conn.baseUrl,
     apiKey: conn.apiKey,
+    protocol: conn.protocol,
     wireApi: conn.wireApi ?? agent.config.wireApi ?? 'chat',
   }
-}
-
-/**
- * The first connection on `provider` OTHER than `exclude`'s that carries a base URL
- * — the degradation target when the agent's own vendor has no entry. Scanned in the
- * fixed {@link VENDOR_IDS} order so the choice is stable across reloads (an object
- * key order would depend on how the record was last written).
- */
-function borrowConnection(
-  provider: ModelProvider,
-  exclude: VendorId,
-): { vendor: VendorId; conn: ResolvedConnection } | null {
-  for (const vendor of VENDOR_IDS) {
-    if (vendor === exclude) continue
-    const conn = resolveProviderConnection(provider, vendor)
-    if (conn)
-      return {
-        vendor,
-        conn: {
-          baseUrl: conn.baseUrl,
-          apiKey: conn.apiKey,
-          ...(conn.wireApi !== undefined ? { wireApi: conn.wireApi } : {}),
-        },
-      }
-  }
-  return null
 }
 
 /**
@@ -152,7 +116,8 @@ export function resolveAgentConnection(
   providers: readonly ModelProvider[],
 ): ConnectionResolution {
   // Cursor authenticates only through its own CLI login: no relay speaks its
-  // protocol, so it never reaches a provider or an inline triple.
+  // protocol, so it never reaches a provider or an inline triple — even though
+  // its vendor support list names openai/anthropic for a future binding path.
   if (!hasProviderConfig(agent)) return systemResolution()
 
   const providerId = agent.providerId?.trim() ?? ''
@@ -162,26 +127,42 @@ export function resolveAgentConnection(
   if (!provider) return inlineResolution(agent, [{ kind: 'dangling-provider', providerId }])
   if (provider.paused) return systemResolution([{ kind: 'provider-paused', providerId }])
 
-  const direct = resolveProviderConnection(provider, agent.vendor)
+  const direct = resolveProviderUrl(provider, agent.vendor)
   if (direct) return { source: 'provider', connection: withWireApi(agent, direct), warnings: [] }
 
-  const borrowed = borrowConnection(provider, agent.vendor)
-  if (borrowed) {
-    return {
-      source: 'provider',
-      connection: withWireApi(agent, borrowed.conn),
-      warnings: [
-        {
-          kind: 'vendor-connection-missing',
-          providerId,
-          vendor: agent.vendor,
-          borrowedFrom: borrowed.vendor,
-        },
-      ],
-    }
-  }
-
   return inlineResolution(agent, [{ kind: 'provider-unusable', providerId, vendor: agent.vendor }])
+}
+
+/**
+ * Dedup connection warnings across launches. Returns the warnings that have not
+ * yet been reported for this (agent, warning, fingerprint) episode; remembers
+ * them in `reported`. Keys for this agent that are no longer active are dropped
+ * so a later recurrence (after a fix, or after the config fingerprint moves)
+ * re-alerts instead of staying silent for the process lifetime.
+ *
+ * `fingerprint` is whatever identifies the current resolution-relevant config
+ * (provider id + urls/key/paused + leftover inline triple) — the caller builds it.
+ */
+export function takeFreshConnectionWarnings(
+  reported: Set<string>,
+  agentId: string,
+  warnings: readonly ConnectionWarning[],
+  fingerprint: string,
+): ConnectionWarning[] {
+  const prefix = `${agentId}:`
+  const activeKeys = new Set<string>()
+  const fresh: ConnectionWarning[] = []
+  for (const w of warnings) {
+    const key = `${agentId}:${w.kind}:${w.providerId}:${fingerprint}`
+    activeKeys.add(key)
+    if (reported.has(key)) continue
+    reported.add(key)
+    fresh.push(w)
+  }
+  for (const key of [...reported]) {
+    if (key.startsWith(prefix) && !activeKeys.has(key)) reported.delete(key)
+  }
+  return fresh
 }
 
 /**

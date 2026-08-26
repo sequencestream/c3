@@ -19,8 +19,8 @@
  *
  * De-duplication: agents sharing an identical `(vendor, baseUrl, apiKey, wireApi)`
  * tuple collapse onto ONE provider — the whole point of the abstraction. An
- * existing hand-made provider whose connection matches that tuple is reused instead
- * of minting a near-duplicate.
+ * existing hand-made provider whose URL matches that tuple is reused instead of
+ * minting a near-duplicate.
  *
  * Pure: every function takes what it reads and returns a new object. No IO, no
  * mutation of the input.
@@ -29,12 +29,13 @@ import { createHash } from 'node:crypto'
 import type {
   AgentConfig,
   ModelProvider,
+  ProtocolType,
   ProviderMigrationGroup,
   ProviderMigrationPlan,
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
-import { effectiveApiKey, hasProviderConfig } from '@ccc/shared/protocol'
+import { VENDOR_PROTOCOL_TYPES, hasProviderConfig } from '@ccc/shared/protocol'
 
 /** The tuple identity two agents must share to collapse onto one provider. */
 function tupleKey(vendor: VendorId, baseUrl: string, apiKey: string, wireApi?: string): string {
@@ -61,12 +62,10 @@ function nameFromBaseUrl(baseUrl: string, vendor: VendorId): string {
   try {
     host = new URL(baseUrl).hostname
   } catch {
-    // 手改过的配置里什么都可能有:退化成「协议头之后、第一个斜杠之前」的那一段。
     host = baseUrl.replace(/^[a-z]+:\/+/i, '').split('/')[0] ?? ''
   }
   if (!host) return vendor
   const parts = host.split('.').filter(Boolean)
-  // `api.deepseek.com` yields `deepseek`; `localhost` stays whole; an IP stays whole.
   const label = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
   if (!label || /^\d+$/.test(label)) return host
   return label.charAt(0).toUpperCase() + label.slice(1)
@@ -104,11 +103,26 @@ function inlineTuple(
   }
 }
 
+/** Protocol slot a vendor's inline URL lands in when synthesized into a provider. */
+function protocolForVendor(vendor: VendorId): ProtocolType | null {
+  return VENDOR_PROTOCOL_TYPES[vendor][0] ?? null
+}
+
 /**
- * An existing provider whose connection for `vendor` is byte-identical to the
- * tuple — the reuse target that stops the migration from minting a duplicate of a
- * provider the user already made by hand. The effective key must match too
- * (per-vendor override or account-level), or the two are not the same upstream.
+ * A migrated agent that still carries leftover inline connection fields — the
+ * plan's `clearableAgentIds` and {@link clearInlineConnections} share this
+ * predicate so the console's "what would clear" list matches what clear actually
+ * erases (baseUrl alone, apiKey alone, or both).
+ */
+function hasClearableInlineResidue(agent: AgentConfig): boolean {
+  if (!agent.providerId || !hasProviderConfig(agent)) return false
+  return !!(agent.config.baseUrl || agent.config.apiKey)
+}
+
+/**
+ * An existing provider whose URL for `vendor` is byte-identical to the tuple —
+ * the reuse target that stops the migration from minting a duplicate of a
+ * provider the user already made by hand.
  */
 function findMatchingProvider(
   providers: readonly ModelProvider[],
@@ -117,12 +131,14 @@ function findMatchingProvider(
   apiKey: string,
   wireApi?: string,
 ): ModelProvider | undefined {
+  const protocol = protocolForVendor(vendor)
+  if (!protocol) return undefined
   return providers.find((p) => {
-    const conn = p.connections[vendor]
-    if (!conn || conn.baseUrl !== baseUrl) return false
-    if (effectiveApiKey(conn.apiKey, p.apiKey) !== apiKey) return false
-    if (vendor === 'codex' && wireApi !== undefined && (conn.wireApi ?? 'chat') !== wireApi)
+    if (p.urls[protocol] !== baseUrl) return false
+    if (p.apiKey !== apiKey) return false
+    if (protocol === 'openai' && wireApi !== undefined && (p.wireApi ?? 'chat') !== wireApi) {
       return false
+    }
     return true
   })
 }
@@ -141,7 +157,7 @@ export function planProviderMigration(
   const clearableAgentIds: string[] = []
 
   for (const agent of agents) {
-    if (agent.providerId && hasProviderConfig(agent) && agent.config.baseUrl) {
+    if (hasClearableInlineResidue(agent)) {
       clearableAgentIds.push(agent.id)
     }
     const tuple = inlineTuple(agent)
@@ -196,18 +212,20 @@ export function applyProviderMigration(
 
   const created: ModelProvider[] = selected
     .filter((g) => !g.reusesExisting)
-    .map((g) => ({
-      id: g.providerId,
-      displayName: g.displayName,
-      apiKey: g.apiKey,
-      connections: {
-        [g.vendor]: {
-          baseUrl: g.baseUrl,
-          ...(g.wireApi !== undefined ? { wireApi: g.wireApi } : {}),
-        },
-      } as ModelProvider['connections'],
-      synthesized: true,
-    }))
+    .map((g) => {
+      const protocol = protocolForVendor(g.vendor)
+      if (!protocol) {
+        throw new Error(`migration cannot synthesize a provider for vendor ${g.vendor}`)
+      }
+      return {
+        id: g.providerId,
+        displayName: g.displayName,
+        apiKey: g.apiKey,
+        urls: { [protocol]: g.baseUrl },
+        ...(g.wireApi !== undefined ? { wireApi: g.wireApi } : {}),
+        synthesized: true,
+      }
+    })
 
   const agentToProvider = new Map<string, string>()
   for (const g of selected) for (const id of g.agentIds) agentToProvider.set(id, g.providerId)
@@ -250,8 +268,6 @@ export function revertProviderMigration(
     return rest as AgentConfig
   })
 
-  // Only drop a provider nothing points at anymore — an agent the caller excluded
-  // could still reference it.
   const stillReferenced = new Set(agents.map((a) => a.providerId).filter(Boolean) as string[])
   const modelProviders = providers.filter((p) => !revertable.has(p.id) || stillReferenced.has(p.id))
   return { ...settings, agents, modelProviders }
@@ -271,11 +287,14 @@ export function clearInlineConnections(
   settings: SystemSettings,
   only?: readonly string[],
 ): SystemSettings {
+  let changed = false
   const agents = settings.agents.map((a) => {
-    if (!a.providerId || !hasProviderConfig(a)) return a
     if (only && !only.includes(a.id)) return a
-    if (!a.config.baseUrl && !a.config.apiKey) return a
+    if (!hasClearableInlineResidue(a)) return a
+    changed = true
     return { ...a, config: { ...a.config, baseUrl: '', apiKey: '' } } as AgentConfig
   })
-  return { ...settings, agents }
+  // Same reference when nothing was erased — the migration handler keys off
+  // `next !== current` to decide whether to persist and echo `changed: true`.
+  return changed ? { ...settings, agents } : settings
 }

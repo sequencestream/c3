@@ -15,7 +15,7 @@ function provider(over: Partial<ModelProvider> = {}): ModelProvider {
     id: 'p1',
     displayName: 'DeepSeek',
     apiKey: 'sk-1',
-    connections: { claude: { baseUrl: 'https://api.deepseek.com/anthropic' } },
+    urls: { anthropic: 'https://api.deepseek.com/anthropic' },
     ...over,
   }
 }
@@ -49,7 +49,11 @@ describe('provider 列表', () => {
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({
       template: 'deepseek',
-      connections: { claude: { baseUrl: 'https://api.deepseek.com/anthropic' } },
+      urls: {
+        openai: 'https://api.deepseek.com',
+        anthropic: 'https://api.deepseek.com/anthropic',
+      },
+      wireApi: 'chat',
     })
   })
 
@@ -58,7 +62,7 @@ describe('provider 列表', () => {
     await w.find('[data-testid="provider-add"]').trigger('click')
     const [list] = w.emitted('change')![0] as [ModelProvider[]]
     expect(list[0].template).toBeUndefined()
-    expect(list[0].connections).toEqual({})
+    expect(list[0].urls).toEqual({})
   })
 
   it('显示有多少 agent 在用它', () => {
@@ -71,7 +75,6 @@ describe('删除', () => {
   it('被引用时先说明后果,确认后只删 provider', async () => {
     const w = render({ providers: [provider()], agents: [agent({ providerId: 'p1' })] })
     await w.find('[data-testid="provider-remove"]').trigger('click')
-    // 确认框点名受影响的 agent 数,并把主按钮降级为「仍然删除」。
     expect(w.text()).toContain('1 agents still reference it')
     expect(w.text()).toContain('Remove anyway')
     await w.findComponent({ name: 'ConfirmDialog' }).vm.$emit('confirm')
@@ -121,7 +124,6 @@ describe('迁移横幅', () => {
     })
     await w.find('[data-testid="provider-migration-clear"]').trigger('click')
     expect(w.emitted('migrate')).toBeUndefined()
-    // 两个确认框:第一个是删除,第二个才是清理。
     await w.findAllComponents({ name: 'ConfirmDialog' })[1].vm.$emit('confirm')
     expect(w.emitted('migrate')![0]).toEqual([{ action: 'clear' }])
   })
@@ -142,40 +144,40 @@ describe('编辑一条 provider', () => {
     expect(providers[0].synthesized).toBeUndefined()
   })
 
-  it('勾选/取消一个 vendor 连接即建立/删除那条连接', async () => {
+  it('勾选/取消一个协议槽即建立/删除那条 URL', async () => {
     const providers = [provider()]
     const w = render({ providers })
     await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
-    await w.find('[data-testid="provider-conn-codex"]').setValue(true)
-    expect(providers[0].connections.codex).toEqual({ baseUrl: '', wireApi: 'chat' })
-    await w.find('[data-testid="provider-conn-claude"]').setValue(false)
-    expect(providers[0].connections.claude).toBeUndefined()
+    await w.find('[data-testid="provider-conn-openai"]').setValue(true)
+    expect(providers[0].urls.openai).toBe('')
+    expect(providers[0].wireApi).toBe('chat')
+    await w.find('[data-testid="provider-conn-anthropic"]').setValue(false)
+    expect(providers[0].urls.anthropic).toBeUndefined()
   })
 
   it('就地标注 base URL 的结构性问题', async () => {
-    const providers = [provider({ connections: { claude: { baseUrl: 'http://gw.example' } } })]
+    const providers = [provider({ urls: { anthropic: 'http://gw.example' } })]
     const w = render({ providers })
     await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
     expect(w.find('.provider-issue').text()).toContain('Plain http')
   })
 
-  it('探测按连接上抛草稿 URL/key,不改任何配置', async () => {
+  it('探测按协议槽上抛草稿 URL/key,不改任何配置', async () => {
     const w = render({
       providers: [
         provider({
           apiKey: 'account-key',
-          connections: { claude: { baseUrl: 'https://draft.example/anthropic', apiKey: '' } },
+          urls: { anthropic: 'https://draft.example/anthropic' },
         }),
       ],
     })
     await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
-    await w.find('[data-testid="provider-probe-claude"]').trigger('click')
+    await w.find('[data-testid="provider-probe-anthropic"]').trigger('click')
     expect(w.emitted('probe')![0]).toEqual([
       {
         providerId: 'p1',
-        vendor: 'claude',
+        protocolType: 'anthropic',
         baseUrl: 'https://draft.example/anthropic',
-        // 空的 per-vendor 覆盖回落到账户 key —— 与运行时 effectiveApiKey 同规则。
         apiKey: 'account-key',
       },
     ])
@@ -185,7 +187,7 @@ describe('编辑一条 provider', () => {
   it('把探测结论渲染成一句话,401 记作「可达但 key 被拒」', async () => {
     const w = render({
       providers: [provider()],
-      probes: { 'p1:claude': { reachable: true, status: 401 } },
+      probes: { 'p1:anthropic': { reachable: true, status: 401 } },
     })
     await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
     expect(w.find('.provider-probe-result').text()).toContain('key rejected')

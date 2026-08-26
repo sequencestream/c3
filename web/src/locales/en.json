@@ -828,16 +828,13 @@
       },
       "apiKey": {
         "label": "Account key",
-        "placeholder": "API key shared by every connection",
-        "hint": "Used by any connection that declares no key of its own."
+        "placeholder": "API key for every protocol URL",
+        "hint": "One account key covers every OpenAI / Anthropic URL on this provider."
       },
       "connection": {
-        "title": "Connections",
+        "title": "Protocol URLs",
         "baseUrl": {
           "placeholder": "https://api.example.com"
-        },
-        "apiKey": {
-          "placeholder": "Key override (optional)"
         },
         "wireApi": {
           "label": "Wire API"

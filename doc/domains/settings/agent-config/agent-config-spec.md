@@ -31,7 +31,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 
 ## 核心实体
 
-- **modelProvider** — 一条具名上游连接(账户级 key + 逐 vendor 的 `{baseUrl, apiKey?, wireApi?}`),多个智能体通过 `providerId` 共用;凭证轮换与端点迁移因此只改一条记录
+- **modelProvider** — 一条具名上游(账户级 key + 按 `protocolType` 的 `urls` + 可选 openai `wireApi`),多个智能体通过 `providerId` 共用;凭证轮换与端点迁移因此只改一条记录。agent 绑定时按 vendor 的协议支持列表取第一个有 URL 的槽作为 baseUrl
 - **configMode** — 连接来源的只读派生标签:`'custom'`(经 provider 或未迁移的内联连接)/ `'system'`(厂商 CLI 自身登录态)。与 `vendor` 正交(2026-07-02-001);`model` 在两种取值下都是独立覆盖项
 - **兜底智能体** — 合成的 `{ vendor: 'claude', configMode: 'system' }` 智能体(id 为 `'system'`),仅在首次启动时或 settings 为空/损坏时用作默认种子——**不是**受保护的单例
 - **系统设置** — 整个配置:智能体 + 默认智能体 id(按项目的旋钮 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 已移到 `projectConfigs` map 下的 workspace setting 中,见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))
@@ -91,7 +91,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   - **零结果必须说明原因**:回包 `auto_configure_agents_result` 同时带 `created` 与 `availableVendors`,因为 `created: 0` 有两种成因——无可用厂商(指引到运行时页签诊断)与既有配置已覆盖。只回一个计数会把两者混为一谈。
   - **与 `save_settings` 同一道管理员门**:它写系统配置。
 
-- **AC-R30** — **连接解析。** 一次启动的上游连接按固定顺序解析,单一实现同时服务启动路径、控制台的试算与健康探测:(1)cursor 无连接可解析,恒走自身 CLI 登录;(2)`providerId` 为空 ⇒ 内联三元组(仅当 `configMode` 为 `'custom'`),它为空则走 CLI 登录;(3)`providerId` 指向不存在的 provider ⇒ **fail-soft**:回落到内联/CLI 登录并给出可见告警,而不是让启动失败在一条陈旧引用上;(4)provider 处于 `paused` ⇒ 启动**明确失败**并点名该 provider——运维已把该上游停用,静默换一条连接会让「停用」失去意义;(5)provider 有本 vendor 的连接 ⇒ 用它(逐 vendor key 覆盖账户级 key);(6)provider 有连接但没有本 vendor 的 ⇒ 降级到该 provider 第一条可用连接并告警,而不是无声掉到用户没要求的 CLI 登录;(7)provider 无任何可用连接 ⇒ 回落内联/CLI 登录并告警。同一 (agent, 告警) 只报一次,避免每次启动重复刷屏。模型能力(`contextWindow`/`maxOutputTokens`)按 agent `modelOverrides` > provider 模型目录 > codex 内联字段逐字段解析。
+- **AC-R30** — **连接解析。** 一次启动的上游连接按固定顺序解析,单一实现同时服务启动路径、控制台的试算与健康探测:(1)cursor 无连接可解析,恒走自身 CLI 登录(其协议支持列表已声明,但当前无 relay);(2)`providerId` 为空 ⇒ 内联三元组(仅当 `configMode` 为 `'custom'`),它为空则走 CLI 登录;(3)`providerId` 指向不存在的 provider ⇒ **fail-soft**:回落到内联/CLI 登录并给出可见告警,而不是让启动失败在一条陈旧引用上;(4)provider 处于 `paused` ⇒ 启动**明确失败**并点名该 provider——运维已把该上游停用,静默换一条连接会让「停用」失去意义;(5)provider 按该 vendor 的协议支持列表取**第一个**有非空 URL 的 `protocolType` 槽 ⇒ 用该 URL + 账户级 key(openai 槽另带 `wireApi`);(6)本 vendor 支持的协议在 provider 上全无 URL ⇒ 回落内联/CLI 登录并告警。不做跨协议借连。同一 (agent, 告警, 配置指纹) 在条件持续期间只报一次,避免每次启动重复刷屏;条件清除或配置指纹变化后再次出现会再报。模型能力(`contextWindow`/`maxOutputTokens`)按 agent `modelOverrides` > provider 模型目录 > codex 内联字段逐字段解析。
 - **AC-R31** — **内联连接迁移(双轨)。** 内联三元组与 provider 引用并存一个大版本,期间**不改动**任何未经用户确认的配置:未迁移的智能体照常按内联连接运行(AC-R30)。服务端只提供一份**报告**——把仍在用内联连接的智能体按 `(vendor, baseUrl, apiKey, wireApi)` 全等分组,每组映射到一个待创建的合成 provider,或映射到连接与之全等的**既有** provider(复用而非造重复)。报告之上有三步显式写入:**迁移**(创建/复用 provider 并写 `providerId`,内联字段原样保留)、**撤销**(清 `providerId`,删除已无人引用的合成 provider,智能体回到内联连接)、**清理**(擦除已失效的内联 `baseUrl`/`apiKey`,保留 `model`)。前两步互为逆操作;清理是**单向**的,只在用户确认后执行——清理之后再撤销,智能体会落到 CLI 登录态而不是旧上游。合成 provider 的 id 由三元组派生,因此重复迁移幂等。
 
 ## 用户场景

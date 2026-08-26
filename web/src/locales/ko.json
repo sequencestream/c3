@@ -829,16 +829,13 @@
       },
       "apiKey": {
         "label": "계정 키",
-        "placeholder": "모든 연결이 공유하는 API 키",
-        "hint": "자체 키가 없는 연결이 이 키를 사용합니다."
+        "placeholder": "모든 프로토콜 URL에 공유되는 API 키",
+        "hint": "이 제공자의 모든 OpenAI / Anthropic URL에 하나의 계정 키를 사용합니다."
       },
       "connection": {
-        "title": "연결",
+        "title": "프로토콜 URL",
         "baseUrl": {
           "placeholder": "https://api.example.com"
-        },
-        "apiKey": {
-          "placeholder": "키 재정의(선택)"
         },
         "wireApi": {
           "label": "API 프로토콜"

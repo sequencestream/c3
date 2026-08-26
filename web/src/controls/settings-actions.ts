@@ -1,7 +1,7 @@
 import type {
   ActionTarget,
+  ProtocolType,
   SystemSettings,
-  VendorId,
   UiLang,
   UiTheme,
   WorkspaceScopeMode,
@@ -272,14 +272,14 @@ export function installSettingsActions(ctx: AppCtx): void {
    */
   ctx.probeModelProvider = (payload: {
     providerId: string
-    vendor: VendorId
+    protocolType: ProtocolType
     baseUrl?: string
     apiKey?: string
   }): void => {
     // 先落 pending,按钮点下去立刻有反馈;回包会整条覆盖这个键。
     providerProbes.value = {
       ...providerProbes.value,
-      [providerProbeKey(payload.providerId, payload.vendor)]: { pending: true },
+      [providerProbeKey(payload.providerId, payload.protocolType)]: { pending: true },
     }
     send({ type: 'probe_model_provider', ...payload })
   }

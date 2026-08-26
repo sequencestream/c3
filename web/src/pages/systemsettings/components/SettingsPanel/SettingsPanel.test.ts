@@ -173,14 +173,14 @@ describe('SettingsPanel.vue — agent 的连接来源三态', () => {
         id: 'p1',
         displayName: 'DeepSeek',
         apiKey: 'sk-1',
-        connections: { claude: { baseUrl: 'https://api.deepseek.com/anthropic' } },
+        urls: { anthropic: 'https://api.deepseek.com/anthropic' },
       },
       // codex-only:claude agent 的下拉里不该出现它。
       {
         id: 'p2',
         displayName: 'CodexOnly',
         apiKey: 'sk-2',
-        connections: { codex: { baseUrl: 'https://codex.example' } },
+        urls: { openai: 'https://codex.example' },
       },
     ],
     agents: [

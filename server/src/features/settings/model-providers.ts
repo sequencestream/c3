@@ -10,8 +10,7 @@
  * (a server-side rule over the whole registry) and dial an endpoint from the
  * server (the browser cannot, and the stored key must not travel to it).
  */
-import type { ModelProvider, VendorId } from '@ccc/shared/protocol'
-import { effectiveApiKey } from '@ccc/shared/protocol'
+import type { ModelProvider, ProtocolType } from '@ccc/shared/protocol'
 import { checkProviderBaseUrl } from '@ccc/shared'
 import {
   applyProviderMigration,
@@ -64,37 +63,31 @@ export const providerMigrationHandler: Handler<'provider_migration'> = (_ctx, co
 const PROBE_TIMEOUT_MS = 6000
 
 /**
- * The effective connection to dial. Draft fields win when the console sent a
- * `baseUrl` — that is what lets an unsaved edit (or a brand-new provider not yet
- * on disk) be probed as typed, rather than whatever the last save left behind (or
- * nothing). A named `providerId` without a draft URL falls back to the stored
- * connection so a re-probe of an unchanged row never needs the browser to re-send
- * the key. Returns null when neither path yields a base URL — the caller turns
- * that into a structural verdict rather than dialling something arbitrary.
+ * The effective URL to dial. Draft fields win when the console sent a `baseUrl`
+ * — that is what lets an unsaved edit (or a brand-new provider not yet on disk)
+ * be probed as typed. A named `providerId` without a draft URL falls back to the
+ * stored protocol slot. Returns null when neither path yields a base URL.
  */
 function probeTarget(
   providers: readonly ModelProvider[],
-  vendor: VendorId,
+  protocolType: ProtocolType,
   providerId: string | undefined,
   draftBaseUrl: string | undefined,
   draftApiKey: string | undefined,
 ): { baseUrl: string; apiKey: string } | null {
   if (draftBaseUrl) {
-    // Blank draft key + a named provider ⇒ fall back to the stored effective key
-    // so probing a URL-only edit still authenticates with the saved credential.
     let apiKey = draftApiKey ?? ''
     if (!apiKey.trim() && providerId) {
       const provider = providers.find((p) => p.id === providerId)
-      const conn = provider?.connections[vendor]
-      if (provider && conn) apiKey = effectiveApiKey(conn.apiKey, provider.apiKey)
+      if (provider) apiKey = provider.apiKey
     }
     return { baseUrl: draftBaseUrl, apiKey }
   }
   if (providerId) {
     const provider = providers.find((p) => p.id === providerId)
-    const conn = provider?.connections[vendor]
-    if (!provider || !conn) return null
-    return { baseUrl: conn.baseUrl, apiKey: effectiveApiKey(conn.apiKey, provider.apiKey) }
+    const baseUrl = provider?.urls[protocolType]?.trim()
+    if (!provider || !baseUrl) return null
+    return { baseUrl, apiKey: provider.apiKey }
   }
   return null
 }
@@ -119,11 +112,11 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
 ) => {
   // Reads a stored credential and dials an operator-supplied URL from the server.
   if (!requireAdmin(conn)) return
-  const { vendor, providerId } = msg
+  const { protocolType, providerId } = msg
   const settings = loadSettings()
   const target = probeTarget(
     settings.modelProviders ?? [],
-    vendor,
+    protocolType,
     providerId,
     msg.baseUrl,
     msg.apiKey,
@@ -131,7 +124,7 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
   if (!target) {
     conn.send({
       type: 'model_provider_probe_result',
-      vendor,
+      protocolType,
       ...(providerId ? { providerId } : {}),
       reachable: false,
       issue: 'empty',
@@ -143,7 +136,7 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
   if (structural.severity === 'error') {
     conn.send({
       type: 'model_provider_probe_result',
-      vendor,
+      protocolType,
       ...(providerId ? { providerId } : {}),
       reachable: false,
       issue: structural.issue ?? 'not-a-url',
@@ -172,7 +165,7 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
     })
     conn.send({
       type: 'model_provider_probe_result',
-      vendor,
+      protocolType,
       ...(providerId ? { providerId } : {}),
       reachable: true,
       status: resp.status,
@@ -184,7 +177,7 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
     const error = err instanceof Error ? err.message : String(err)
     conn.send({
       type: 'model_provider_probe_result',
-      vendor,
+      protocolType,
       ...(providerId ? { providerId } : {}),
       reachable: false,
       error: controller.signal.aborted ? `timeout after ${PROBE_TIMEOUT_MS}ms` : error,

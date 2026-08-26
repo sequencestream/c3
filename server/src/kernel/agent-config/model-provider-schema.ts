@@ -1,14 +1,18 @@
 /**
- * Runtime (zod) validation for {@link ModelProvider} / {@link ProviderConnection}
- * / {@link ModelProviderModel}. The **types** live in `shared/protocol/model-provider.ts`
- * (zero-runtime, SDK-free); the **runtime schema** lives here so zod never enters the
- * wire module. A type-level assertion at the bottom pins the two together so they
- * cannot drift (the same discipline `agentConfigSchema` ↔ `AgentConfig` uses).
+ * Runtime (zod) validation for {@link ModelProvider} / {@link ModelProviderModel}.
+ * The **types** live in `shared/protocol/model-provider.ts` (zero-runtime, SDK-free);
+ * the **runtime schema** lives here so zod never enters the wire module. A type-level
+ * assertion at the bottom pins the two together so they cannot drift (the same
+ * discipline `agentConfigSchema` ↔ `AgentConfig` uses).
+ *
+ * Also accepts the legacy `connections: Record<VendorId, { baseUrl, apiKey?, wireApi? }>`
+ * shape on load and folds it into `urls` + account `apiKey` + `wireApi`, so a config
+ * written before the protocol-keyed rewrite still boots.
  */
 
 import { z } from 'zod'
-import type { ModelProvider, ProviderConnection } from '@ccc/shared/protocol'
-import { VENDOR_IDS } from '@ccc/shared/protocol'
+import type { ModelProvider, ProtocolType } from '@ccc/shared/protocol'
+import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
 
 /** One model entry in a provider's optional model catalog. */
 export const modelProviderModelSchema = z.object({
@@ -17,44 +21,41 @@ export const modelProviderModelSchema = z.object({
   maxOutputTokens: z.number().int().positive().optional(),
 })
 
+/** Per-protocol URL map. Unknown keys are dropped in {@link parseModelProvider}. */
+const urlsRecordSchema = z.record(z.string(), z.string()).default({})
+
 /**
- * One vendor's connection inside a provider. `baseUrl` is required for the
- * connection to be "usable"; `apiKey` is optional (falls back to the provider's
- * account-level key); `wireApi` is codex-only and defaults to `'chat'` when absent.
+ * Legacy per-vendor connection blob. Kept only so load can migrate it; never written
+ * back. `z.record` accepts any string key — filtered below.
  */
-export const providerConnectionSchema = z.object({
+const legacyConnectionSchema = z.object({
   baseUrl: z.string(),
   apiKey: z.string().optional(),
   wireApi: z.enum(['responses', 'chat']).optional(),
 })
 
 /**
- * The vendor-keyed connections map. Only known vendors may appear; an unknown vendor
- * key is dropped (fail-soft) rather than rejecting the whole provider. The value is
- * a {@link ProviderConnection}; `z.record` accepts any string key, so we filter to
- * known vendors in `parseModelProvider` below.
- */
-const connectionsRecordSchema = z.record(z.string(), providerConnectionSchema)
-
-/**
- * The full {@link ModelProvider} schema. `id` and `displayName` are required;
- * `apiKey` may be empty (when every connection carries its own key); `connections`
- * defaults to an empty map; `models` is optional; `paused` defaults to false.
- *
- * The zod layer does NOT enforce "at least one usable connection" — that is a
- * business invariant the console warns about but the store accepts (a provider may
- * be saved half-configured and completed later).
+ * The full {@link ModelProvider} schema. `connections` is accepted as a legacy alias
+ * for migration and stripped before the typed result is returned.
  */
 export const modelProviderSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   template: z.string().optional(),
   apiKey: z.string().default(''),
-  connections: connectionsRecordSchema.default({}),
+  urls: urlsRecordSchema,
+  connections: z.record(z.string(), legacyConnectionSchema).optional(),
+  wireApi: z.enum(['responses', 'chat']).optional(),
   models: z.array(modelProviderModelSchema).optional(),
   synthesized: z.boolean().optional(),
   paused: z.boolean().optional(),
 })
+
+/** Map a legacy VendorId connection key onto a ProtocolType. */
+const LEGACY_VENDOR_TO_PROTOCOL: Record<string, ProtocolType> = {
+  claude: 'anthropic',
+  codex: 'openai',
+}
 
 /**
  * Validate + normalize one candidate model-provider object. Returns the typed
@@ -63,25 +64,48 @@ export const modelProviderSchema = z.object({
  *
  * Post-processing:
  *  - trims `displayName` and `template`
- *  - filters `connections` to known vendors only (unknown keys dropped with a warning)
- *  - trims each connection's `baseUrl`
- *  - ensures `apiKey` is a string (zod default handles missing, but a non-string
- *    from a hand-edited file is caught by safeParse)
+ *  - folds legacy `connections` into `urls` / account `apiKey` / `wireApi`
+ *  - filters `urls` to known protocol types only
+ *  - trims each URL
  */
 export function parseModelProvider(raw: unknown): ModelProvider | null {
   const result = modelProviderSchema.safeParse(raw)
   if (!result.success) return null
   const p = result.data
 
-  // Filter connections to known vendors; warn about unknown keys (hand-edited file).
-  const filtered: Partial<Record<string, ProviderConnection>> = {}
-  for (const [vendor, conn] of Object.entries(p.connections)) {
-    if ((VENDOR_IDS as readonly string[]).includes(vendor)) {
-      filtered[vendor] = { ...conn, baseUrl: conn.baseUrl.trim() }
+  const urls: Partial<Record<ProtocolType, string>> = {}
+  let apiKey = p.apiKey
+  let wireApi = p.wireApi
+
+  // New shape first.
+  for (const [key, value] of Object.entries(p.urls)) {
+    if ((PROTOCOL_TYPES as readonly string[]).includes(key)) {
+      const trimmed = value.trim()
+      if (trimmed) urls[key as ProtocolType] = trimmed
     } else {
       console.warn(
-        `[c3] modelProvider "${p.id}" carries connection for unknown vendor "${vendor}" — dropping.`,
+        `[c3] modelProvider "${p.id}" carries url for unknown protocol "${key}" — dropping.`,
       )
+    }
+  }
+
+  // Legacy connections → urls. Only fills slots the new shape left empty; folds a
+  // blank account key from the first non-empty per-vendor override.
+  if (p.connections) {
+    for (const [vendor, conn] of Object.entries(p.connections)) {
+      const protocol = LEGACY_VENDOR_TO_PROTOCOL[vendor]
+      if (!protocol) {
+        console.warn(
+          `[c3] modelProvider "${p.id}" carries legacy connection for unknown vendor "${vendor}" — dropping.`,
+        )
+        continue
+      }
+      const trimmed = conn.baseUrl.trim()
+      if (trimmed && !urls[protocol]) urls[protocol] = trimmed
+      if (!apiKey.trim() && conn.apiKey?.trim()) apiKey = conn.apiKey.trim()
+      if (protocol === 'openai' && wireApi === undefined && conn.wireApi) {
+        wireApi = conn.wireApi
+      }
     }
   }
 
@@ -89,16 +113,18 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
     id: p.id,
     displayName: p.displayName.trim(),
     ...(p.template !== undefined ? { template: p.template.trim() } : {}),
-    apiKey: p.apiKey,
-    connections: filtered,
+    apiKey,
+    urls,
+    ...(wireApi !== undefined ? { wireApi } : {}),
     ...(p.models !== undefined ? { models: p.models } : {}),
     ...(p.synthesized !== undefined ? { synthesized: p.synthesized } : {}),
     ...(p.paused !== undefined ? { paused: p.paused } : {}),
   }
 }
 
-// ---- Type pin: the zod schema's inferred type IS the wire ModelProvider ----
+// ---- Type pin: the zod schema's inferred type IS a SUPERSET of the wire ModelProvider
+// (it still carries the optional legacy `connections` arm). The parse function above
+// is what narrows to the public shape — pin the output, not the raw infer.
 type _AssertExtends<A extends B, B> = A & B
-type _PinSchemaIsWire = _AssertExtends<z.infer<typeof modelProviderSchema>, ModelProvider>
-type _PinWireIsSchema = _AssertExtends<ModelProvider, z.infer<typeof modelProviderSchema>>
-export type __ModelProviderSchemaPin = [_PinSchemaIsWire, _PinWireIsSchema]
+type _PinParsedIsWire = _AssertExtends<ReturnType<typeof parseModelProvider>, ModelProvider | null>
+export type __ModelProviderSchemaPin = _PinParsedIsWire

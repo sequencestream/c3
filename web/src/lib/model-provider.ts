@@ -6,7 +6,7 @@
  * 与渲染它的组件共用一份定义,而组件不必反过来依赖 controls 层。
  */
 
-/** 一条连接的探测状态;`pending` 与已有结论互斥地渲染。 */
+/** 一条协议 URL 的探测状态;`pending` 与已有结论互斥地渲染。 */
 export interface ProviderProbeState {
   /** 请求已发出、还没回包。 */
   pending?: boolean
@@ -22,7 +22,7 @@ export interface ProviderProbeState {
   latencyMs?: number
 }
 
-/** 探测状态表的键:一个 provider 的每个 vendor 连接各自独立。 */
-export function providerProbeKey(providerId: string, vendor: string): string {
-  return `${providerId}:${vendor}`
+/** 探测状态表的键:一个 provider 的每个 protocol 槽各自独立。 */
+export function providerProbeKey(providerId: string, protocolType: string): string {
+  return `${providerId}:${protocolType}`
 }

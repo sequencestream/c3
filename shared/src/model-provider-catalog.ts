@@ -1,6 +1,6 @@
 /**
  * The read-only PROVIDER DIRECTORY — a pre-fill catalog of well-known upstreams and
- * their per-vendor endpoints, plus the base-URL sanity check both the console and
+ * their per-protocol endpoints, plus the base-URL sanity check both the console and
  * the server probe apply.
  *
  * A template is a STARTING POINT, never a constraint: creating a provider from one
@@ -15,14 +15,7 @@
  * NO model ids are listed: model catalogs churn far faster than endpoints, and a
  * stale suggestion is worse than an empty field the user fills in once.
  */
-import type { VendorId } from './protocol.js'
-
-/** One template's endpoint for a single vendor. Mirrors `ProviderConnection`'s shape. */
-export interface ProviderTemplateConnection {
-  baseUrl: string
-  /** Codex-only wire protocol; omitted for other vendors. */
-  wireApi?: 'responses' | 'chat'
-}
+import type { ProtocolType } from './protocol.js'
 
 /** One entry of the provider directory. */
 export interface ProviderTemplate {
@@ -30,8 +23,10 @@ export interface ProviderTemplate {
   id: string
   /** Directory display name; the created provider's initial `displayName`. */
   displayName: string
-  /** Per-vendor endpoints this upstream serves. A vendor absent here has no known endpoint. */
-  connections: Partial<Record<VendorId, ProviderTemplateConnection>>
+  /** Per-protocol base URLs this upstream serves. A protocol absent here has no known endpoint. */
+  urls: Partial<Record<ProtocolType, string>>
+  /** OpenAI-slot wire dialect; omitted when the template has no openai URL. */
+  wireApi?: 'responses' | 'chat'
   /** Where the endpoints were transcribed from — the page to re-check on maintenance. */
   docs?: string
 }
@@ -39,54 +34,56 @@ export interface ProviderTemplate {
 /**
  * The directory itself. Ordered as the console lists it: first-party vendors first,
  * then third-party gateways alphabetically.
- *
- * `cursor` never appears: it authenticates only through its own CLI login, so it can
- * neither reference a provider nor be pointed at a third-party endpoint.
  */
 export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
   {
     id: 'anthropic',
     displayName: 'Anthropic',
-    connections: { claude: { baseUrl: 'https://api.anthropic.com' } },
+    urls: { anthropic: 'https://api.anthropic.com' },
     docs: 'https://docs.anthropic.com/en/api/overview',
   },
   {
     id: 'openai',
     displayName: 'OpenAI',
-    connections: { codex: { baseUrl: 'https://api.openai.com/v1', wireApi: 'responses' } },
+    urls: { openai: 'https://api.openai.com/v1' },
+    wireApi: 'responses',
     docs: 'https://platform.openai.com/docs/api-reference',
   },
   {
     id: 'deepseek',
     displayName: 'DeepSeek',
-    connections: {
-      claude: { baseUrl: 'https://api.deepseek.com/anthropic' },
-      codex: { baseUrl: 'https://api.deepseek.com/v1', wireApi: 'chat' },
+    urls: {
+      openai: 'https://api.deepseek.com',
+      anthropic: 'https://api.deepseek.com/anthropic',
     },
+    wireApi: 'chat',
     docs: 'https://api-docs.deepseek.com/',
   },
   {
     id: 'moonshot',
     displayName: 'Moonshot (Kimi)',
-    connections: {
-      claude: { baseUrl: 'https://api.moonshot.cn/anthropic' },
-      codex: { baseUrl: 'https://api.moonshot.cn/v1', wireApi: 'chat' },
+    urls: {
+      openai: 'https://api.moonshot.cn/v1',
+      anthropic: 'https://api.moonshot.cn/anthropic',
     },
+    wireApi: 'chat',
     docs: 'https://platform.moonshot.cn/docs',
   },
   {
     id: 'zhipu',
     displayName: 'Zhipu (GLM)',
-    connections: {
-      claude: { baseUrl: 'https://open.bigmodel.cn/api/anthropic' },
-      codex: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', wireApi: 'chat' },
+    urls: {
+      openai: 'https://open.bigmodel.cn/api/paas/v4',
+      anthropic: 'https://open.bigmodel.cn/api/anthropic',
     },
+    wireApi: 'chat',
     docs: 'https://docs.bigmodel.cn/',
   },
   {
     id: 'openrouter',
     displayName: 'OpenRouter',
-    connections: { codex: { baseUrl: 'https://openrouter.ai/api/v1', wireApi: 'chat' } },
+    urls: { openai: 'https://openrouter.ai/api/v1' },
+    wireApi: 'chat',
     docs: 'https://openrouter.ai/docs',
   },
 ]

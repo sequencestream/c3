@@ -25,7 +25,11 @@ import type {
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
 import type { ConnectionWarning } from './provider-resolve.js'
-import { resolveAgentConnection, resolveModelCaps } from './provider-resolve.js'
+import {
+  resolveAgentConnection,
+  resolveModelCaps,
+  takeFreshConnectionWarnings,
+} from './provider-resolve.js'
 import { groupAgentRef, isGroupAgentRef, parseGroupAgentRef } from '@ccc/shared'
 import type { RelayCandidate } from '../relay/contract.js'
 import { getRelay, withLoopbackNoProxy } from '../relay/runtime.js'
@@ -429,21 +433,52 @@ function providerRegistry(): readonly ModelProvider[] {
 }
 
 /**
- * Report a connection resolution's warnings once per (agent, warning) pair. A
- * dangling or half-configured provider is a configuration mistake the operator must
- * see, but it is re-resolved on every single launch — logging it unthrottled would
- * bury the rest of the log within minutes.
+ * Report a connection resolution's warnings once while the misconfiguration
+ * persists. The same (agent, warning, config fingerprint) is logged once so a
+ * busy launch path cannot bury the rest of the log; when the condition clears —
+ * or the underlying provider/inline config actually changes — the remembered key
+ * is dropped so a later recurrence re-alerts.
  */
 const reportedConnectionWarnings = new Set<string>()
+
+/**
+ * Fingerprint of the resolution-relevant config: provider identity + its current
+ * urls/key/paused bit + the agent's leftover inline triple. Two resolutions with
+ * the same warning kind but a different fingerprint (e.g. dangling id rewritten,
+ * urls emptied again after a brief fix) are treated as a new episode.
+ */
+function connectionWarningFingerprint(
+  agent: AgentConfig,
+  providers: readonly ModelProvider[],
+): string {
+  const providerId = agent.providerId?.trim() ?? ''
+  const provider = providerId ? providers.find((p) => p.id === providerId) : undefined
+  const providerPart = provider
+    ? [
+        provider.paused ? '1' : '0',
+        provider.apiKey,
+        // Manual join — kernel must not JSON.stringify (transport concern).
+        `openai=${provider.urls.openai ?? ''}`,
+        `anthropic=${provider.urls.anthropic ?? ''}`,
+        provider.wireApi ?? '',
+      ].join('\0')
+    : 'missing'
+  const inline = hasProviderConfig(agent) ? `${agent.config.baseUrl}\0${agent.config.apiKey}` : ''
+  return `${providerId}\0${providerPart}\0${inline}`
+}
 
 function reportConnectionWarnings(
   agent: AgentConfig,
   warnings: readonly ConnectionWarning[],
+  providers: readonly ModelProvider[],
 ): void {
-  for (const w of warnings) {
-    const key = `${agent.id}:${w.kind}:${w.providerId}`
-    if (reportedConnectionWarnings.has(key)) continue
-    reportedConnectionWarnings.add(key)
+  const fresh = takeFreshConnectionWarnings(
+    reportedConnectionWarnings,
+    agent.id,
+    warnings,
+    connectionWarningFingerprint(agent, providers),
+  )
+  for (const w of fresh) {
     switch (w.kind) {
       case 'dangling-provider':
         console.warn(
@@ -455,14 +490,9 @@ function reportConnectionWarnings(
           `[c3] agent "${agent.id}" references paused model provider "${w.providerId}" — launches will fail until it is resumed.`,
         )
         break
-      case 'vendor-connection-missing':
-        console.warn(
-          `[c3] model provider "${w.providerId}" has no "${w.vendor}" connection — agent "${agent.id}" degraded to its "${w.borrowedFrom}" connection.`,
-        )
-        break
       case 'provider-unusable':
         console.warn(
-          `[c3] model provider "${w.providerId}" has no usable connection for agent "${agent.id}" (${w.vendor}) — falling back to its inline config / CLI login.`,
+          `[c3] model provider "${w.providerId}" has no usable URL for agent "${agent.id}" (${w.vendor}) — falling back to its inline config / CLI login.`,
         )
         break
     }
@@ -492,7 +522,7 @@ function agentToRelayCandidate(
   // default and failing with an unrelated error.
   if (!hasProviderConfig(agent)) return null
   const resolved = resolveAgentConnection(agent, providers)
-  reportConnectionWarnings(agent, resolved.warnings)
+  reportConnectionWarnings(agent, resolved.warnings, providers)
   const paused = resolved.warnings.find((w) => w.kind === 'provider-paused')
   if (paused) throw new ModelProviderPausedError(paused.providerId, agent.id)
   if (!resolved.connection) return null

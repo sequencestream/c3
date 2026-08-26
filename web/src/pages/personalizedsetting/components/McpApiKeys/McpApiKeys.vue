@@ -52,7 +52,7 @@ const keys = computed(() => props.mcpApiKeys ?? [])
 const baseUrlConfigured = computed(() => (props.baseUrl ?? '').trim().length > 0)
 
 /** 公开端点。同一个地址服务每一把 key 和每一个工作区,所以它不含任何凭据。 */
-const createdUrl = computed(() => {
+const endpointUrl = computed(() => {
   const base = (props.baseUrl ?? '').trim().replace(/\/+$/, '')
   return base ? `${base}${EXTERNAL_MCP_PATH}` : ''
 })
@@ -63,7 +63,7 @@ const createdUrl = computed(() => {
  * 自己被授予的范围决定。
  */
 const createdCommand = computed(() => {
-  const url = createdUrl.value
+  const url = endpointUrl.value
   if (!url) return ''
   return (
     `claude mcp add --transport http c3 "${url}"` +
@@ -137,18 +137,6 @@ function when(ms: number | null): string {
     <p class="settings-hint">{{ t('personalizedSetting.mcpKeys.hint') }}</p>
     <p class="settings-hint">{{ t('personalizedSetting.mcpKeys.scope.hint') }}</p>
 
-    <!-- baseUrl 没配就拼不出可复制的地址:说清楚,不猜浏览器 Host。key 仍可生成。 -->
-    <div
-      v-if="!baseUrlConfigured"
-      class="mcp-key-guide"
-      data-testid="personal-mcp-keys-no-base-url"
-    >
-      <p class="settings-hint">{{ t('personalizedSetting.mcpKeys.noBaseUrl') }}</p>
-      <button class="ghost" @click="emit('gotoSystemSettings')">
-        {{ t('personalizedSetting.mcpKeys.goto.label') }}
-      </button>
-    </div>
-
     <!-- 一次性明文揭示:只在刚新建/重置时出现,关闭后不可恢复。 -->
     <div v-if="created" class="mcp-key-reveal" data-testid="personal-mcp-keys-reveal">
       <p class="mcp-key-reveal-title">
@@ -169,8 +157,8 @@ function when(ms: number | null): string {
       <template v-if="baseUrlConfigured">
         <div class="mcp-key-value">
           <span class="settings-hint">{{ t('personalizedSetting.mcpKeys.url.label') }}</span>
-          <code class="mcp-key-code" data-testid="personal-mcp-keys-url">{{ createdUrl }}</code>
-          <button data-testid="personal-mcp-keys-copy-url" @click="copy('url', createdUrl)">
+          <code class="mcp-key-code" data-testid="personal-mcp-keys-url">{{ endpointUrl }}</code>
+          <button data-testid="personal-mcp-keys-copy-url" @click="copy('url', endpointUrl)">
             {{ copied === 'url' ? t('common.action.copied.label') : t('common.action.copy.label') }}
           </button>
         </div>
@@ -283,6 +271,34 @@ function when(ms: number | null): string {
       </button>
     </div>
 
+    <!-- 访问地址常挂在 key 配置下方:不依赖新建/重置揭示,配好即可复制。 -->
+    <div class="mcp-key-endpoint" data-testid="personal-mcp-keys-endpoint">
+      <p class="settings-section-title">
+        {{ t('personalizedSetting.mcpKeys.endpoint.title.label') }}
+      </p>
+      <p class="settings-hint">{{ t('personalizedSetting.mcpKeys.endpoint.hint') }}</p>
+      <div v-if="baseUrlConfigured" class="mcp-key-value">
+        <code class="mcp-key-code" data-testid="personal-mcp-keys-endpoint-url">{{
+          endpointUrl
+        }}</code>
+        <button
+          data-testid="personal-mcp-keys-copy-endpoint"
+          @click="copy('endpoint', endpointUrl)"
+        >
+          {{
+            copied === 'endpoint' ? t('common.action.copied.label') : t('common.action.copy.label')
+          }}
+        </button>
+      </div>
+      <!-- baseUrl 没配就拼不出可复制的地址:说清楚,不猜浏览器 Host。key 仍可生成。 -->
+      <div v-else class="mcp-key-guide" data-testid="personal-mcp-keys-no-base-url">
+        <p class="settings-hint">{{ t('personalizedSetting.mcpKeys.noBaseUrl') }}</p>
+        <button class="ghost" @click="emit('gotoSystemSettings')">
+          {{ t('personalizedSetting.mcpKeys.goto.label') }}
+        </button>
+      </div>
+    </div>
+
     <!-- 重置:立刻作废旧密钥并切断已建立的会话,没有宽限期。 -->
     <ConfirmDialog
       :open="resettingId !== null"
@@ -310,6 +326,15 @@ function when(ms: number | null): string {
 </template>
 
 <style scoped>
+.mcp-key-endpoint {
+  border-top: 1px solid var(--c-border);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
 .mcp-key-guide {
   display: flex;
   flex-direction: column;

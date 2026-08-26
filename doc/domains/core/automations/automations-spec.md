@@ -19,10 +19,9 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 这意味着自动化运行时使用该工作区的 `cwd`、环境变量、项目设置、会话与智能体配置——
 就像来自该工作区的一次用户发起的运行一样。
 
-用户在 web-console 中查看自动化及其日志,并通过确认队列
-(生效前的「待处理变更」)来管理它们。
+用户在 web-console 中查看自动化及其日志,并通过 CRUD 消息即时创建/编辑/启停它们。
 
-**范围:** 自动化的增删改查、时序/状态管理、执行分发、日志记录、写入确认队列。
+**范围:** 自动化的增删改查、时序/状态管理、执行分发、日志记录。
 **边界:** 它不运行智能体(`agent-session`),不决定单次调用的权限
 (`permission-gateway`),也不渲染 UI(`web-console`)。
 
@@ -39,11 +38,11 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 
 - **SCH-R1** — 自动化在创建时**必须**引用一个已存在于 session-registry 中的工作区。删除该工作区会导致其所有自动化被**归档**(而非删除——日志会被保留);已归档的自动化不再被调度器评估。
 - **SCH-R2** — 自动化的任务恰好是两种类型之一:`command`(一个 shell 命令字符串)或 `llm_prompt`(发送给智能体会话的 prompt 文本)。类型在创建后不可变。
-- **SCH-R3** — 时序要么是**一次性**(一个具体的 `triggerAt` 时间戳),要么是**周期性**(一个 `cronExpression`)。恰好设置其中一个时序字段;两者都设置或都未设置的自动化会在创建时被拒绝。(周期性自动化**在 v1 中未实现**;见 v1 排除清单。)
+- **SCH-R3** — 时序要么是**一次性**(一个具体的 `triggerAt` 时间戳),要么是**周期性**(一个 `cronExpression`)。恰好设置其中一个时序字段;两者都设置或都未设置的自动化会在创建时被拒绝。
 - **SCH-R3a** — 周期性自动化的 `cronExpression` 按**系统级 IANA 时区**(`SystemSettings.timezone`,默认使用服务器本地时区)解释,**而非** UTC:`0 11 * * *` 表示该时区的 11:00。计算出的 `next_run_at` 仍是一个绝对时刻,并感知夏令时。更改系统时区会移动现有自动化的实际触发时刻(在其下一次创建/更新/运行时重新计算)。见 [automations-design.md](automations-design.md) § automations table → Time zone。
 - **SCH-R4** — 自动化的**执行身份**是 `read-only`、`sandboxed` 或 `full-access` 之一(见 § 执行身份模型)。它是可变的,并适用于该自动化的每一次执行。
 - **SCH-R5** — 处于 `active` 状态的自动化会被调度器评估。处于 `paused` 状态的自动化仍然存在但**不会**被评估——其触发会被跳过,直到恢复。手动「立即运行」是例外:`active` 和 `paused` 的自动化均可被分发执行一次,且不改变 `status` 或 `nextRunAt`;`archived` 的自动化始终不可分发。处于 `archived` 状态的自动化被冻结用于留档;它不会被评估,其状态也不能回退到 `paused` 或 `active`。
-- **SCH-R6** — 写入一个自动化(创建 / 更新字段 / 变更状态)会在 web-console 中产生一条可见的**待处理变更**。该变更只有在用户从队列中显式确认后才会生效。队列会阻塞,直到用户接受或拒绝——没有自动批准。(例外:`archive` 与 `delete` 在确认后立即生效——它们不可延迟。)
+- **SCH-R6** — 写入一个自动化(创建 / 更新字段 / 变更状态 / 删除)经 `create_automation` / `update_automation` / `delete_automation` **即时落库并广播**;破坏性操作(归档/删除)由 web-console 的二次确认对话框门控,无线上待确认写队列。运行时敏感工具权限靠创建/编辑时冻结的 allowlist/denylist,不经浏览器 HITL 审批。
 - **SCH-R7** — 一个自动化的执行是**逐个串行的**:同一时刻同一自动化最多只能有一次执行在进行中。**在途触发不再被直接丢弃,而是合并标脏**(2026-07-31):当一个周期性自动化的下一次触发在前一次执行仍在运行时到来,该触发不排队、也不并发,而是把该自动化标记为「需要重新检查」;同一对象在同一执行窗口内的重复触发**合并为一次**,并在当前执行结束后由下一次评估统一处理。因此事件风暴仍被限流(至多一次跟进,而非 N 次),但一个到来的触发不再被静默丢失 —— 它最多被推迟到下一轮。这与自动化队列的调度内核采用同一条规则(RM-A15:事件只标脏、重复合并、处理期间到达的标脏留待下一轮不得丢弃)。
 - **SCH-R7a** — 一个 cron 自动化如果其 `nextRunAt` 逾期超过五分钟,则不会被补跑。调度器会记录一次带有 `missed_trigger_window` 的失败执行,基于当前时间重新计算 `nextRunAt`,并使该自动化保持 `active`;逾期触发不得自动使自动化失效。内部的智能体配额恢复自动化保留其独立的迟到恢复行为(SCH-R20)。
 - **SCH-R28** — **工作区级自动化总闸**(`WorkspaceSetting.automationEnabled`,2026-07-13)。每个工作区有一个持久化的自动化总开关,缺省为**开启**——规范化只把显式布尔 `false` 视为关闭,缺省 / 非布尔 / 旧的非法值一律归一为 `true`,因此现有工作区升级后行为不变(无需数据库迁移,值进入既有 workspace 配置 JSON)。关闭时,tick 循环与事件分发器都**在派发前短路**该工作区的一切自动触发(cron 与全部 `event` 主题):cron 到期项在进入宽限窗口判断(SCH-R7a)与 `dispatchAndTrack` 之前被丢弃,并以当前 tick 时间按其 cron 表达式重算 `nextRunAt`——**不**补跑、**不**记 `missed_trigger_window`、**不**产生任何执行日志(用户主动静音不是系统错过);事件在检查后整次直接返回,被抑制的事件**不排队**,重开后只处理新到达事件。总闸**只**阻止此后新产生的自动派发:它**不**改写任何单条自动化的 `active` / `paused` 状态,**不**取消已在途执行,也**不**影响手动「立即运行」(SCH-R5 的 run-now 仍可执行 `active` 与 `paused` 的自动化)。设置读取失败或缺失时按开启处理,避免瞬时配置故障静默关闭既有自动化。
@@ -54,9 +53,8 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 - **SCH-R12** — 一个 `command` 类型自动化的执行会在工作区目录中生成一个**无头 shell 进程**。不会显示任何权限提示——该命令以工作区的项目级 `allow`/`deny` 规则以及该自动化的 `executionIdentity` 模式运行。如果命令返回非零退出码,日志会记录为 `failed`。
 - **SCH-R13** — 一个 `llm_prompt` 类型自动化的执行会以工作区上下文启动一个智能体会话(通过 `agent-session`)。该 prompt 作为第一个用户回合提交。运行过程中的 `assistant_text` 与 `tool_use`/`tool_result` 会被记录进日志。执行的智能体 `sessionId` 从第一个 SDK 事件中捕获,并立即持久化到执行日志上(这样即使运行之后超时或失败,transcript 仍然可达)。运行期间的权限提示会根据执行身份自动解决(见 § 执行身份模型)。运行的终止状态(`complete` / `error`)会映射为日志中的 `success` / `failed`。
 - **SCH-R14** — `archive` 与 `delete` 是终态操作。一个已归档的自动化只能被删除;它不能变回 `paused` 或 `active`。删除一个自动化也会级联删除其**执行日志**。这是一次硬删除——日志被永久移除。
-- **SCH-R15** — 写入确认队列是**按用户**(按 WebSocket 连接)划分的,而不是按工作区划分的。未确认的变更只对创建它们的用户可见,并且在确认之前保持可编辑(可被替换或丢弃)。确认操作会原子性地提交该用户的全部待处理变更——在自动化层面没有部分确认(SCH-R6 的例外:archive/delete)。
 - **SCH-R16** — 每个 `llm_prompt` 类型执行的智能体会话 transcript 都可以从其历史记录行按需查看(对 `assistant_text` / `tool_use` / `tool_result` 的只读回放)。`command` 类型的执行没有智能体会话,也不暴露任何 transcript 条目。transcript 按该自动化的 `vendor` 从对应 vendor 的原生 session store 读取(与交互式会话查看共用同一读取路径,codex 的 store scope 定位见 [ADR-0030](../../../architecture/adr/0030-session-store-scope-vendor-neutral-data-root.md));一个无会话、工作区已注销或已被删除的会话会产生一个空回放,而不是错误。
-- **SCH-R17** — 自动化的**触发器**是 `cron`(基于时间;默认方式,也是该字段引入之前迁移的旧行的唯一模式)或 `event` 之一。`event` 触发器声明一个 **`eventFilter`**(`GenericEventFilter { type, statuses?, metadata? }`,2026-07-13,取代了每 topic 一个专属过滤器字段的旧模型):`type` 是订阅的事件类型(开放字符串——运行生命周期 `run:started`/`run:settled`、模型/服务端发布的 `pr:operation`、`intent:lifecycle`,以及任何未来注册的通用事件),在内核事件总线(ADR-0018)上发布匹配事件时触发其执行——复用与 cron 运行**相同**的分发路径、三层 MCP 安全模型与写入审批队列。纯匹配器只读取可信最小视图 `{ workspacePath, event }`(`GenericEventEnvelope` 直接满足),按 workspace → `event.type === filter.type` → status → metadata 顺序判断(见 SCH-R18/R22)。事件类自动化不携带 `cronExpression` / `nextRunAt`,并且**永远不会**被 tick 循环评估。创建/更新一个 `eventFilter` 缺少合法 `type` 的 `event` 自动化会被拒绝(`automation.invalidEventTrigger`)——不能保存为"匹配全部类型"。
+- **SCH-R17** — 自动化的**触发器**是 `cron`(基于时间;默认方式,也是该字段引入之前迁移的旧行的唯一模式)或 `event` 之一。`event` 触发器声明一个 **`eventFilter`**(`GenericEventFilter { type, statuses?, metadata? }`):`type` 是订阅的事件类型(开放字符串——运行生命周期 `run:started`/`run:settled`、模型/服务端发布的 `pr:operation`、`intent:lifecycle`,以及任何未来注册的通用事件),在内核事件总线(ADR-0018)上发布匹配事件时触发其执行——复用与 cron 运行**相同**的分发路径与三层 MCP 安全模型。纯匹配器只读取可信最小视图 `{ workspacePath, event }`(`GenericEventEnvelope` 直接满足),按 workspace → `event.type === filter.type` → status → metadata 顺序判断(见 SCH-R18/R22)。事件类自动化不携带 `cronExpression` / `nextRunAt`,并且**永远不会**被 tick 循环评估。创建/更新一个 `eventFilter` 缺少合法 `type` 的 `event` 自动化会被拒绝(`automation.invalidEventTrigger`)——不能保存为"匹配全部类型"。
 - **SCH-R18** — `eventFilter` 的通用匹配语义:事件的 `workspacePath` 等于该自动化的工作区;`event.type === eventFilter.type`;`eventFilter.statuses` 缺省/空 = 任意 status,非空时 `event.status` 必须**精确、区分大小写**地属于其中(事件无 status 则不命中);`eventFilter.metadata` 缺省 = 不过滤,否则键值精确区分大小写,`AND` 要求每个条件都等于 `event.metadata[key]`、`OR` 至少一个满足(见 SCH-R25)。**额外**地,对于**运行生命周期**类型(`eventFilter.type` = `run:started` / `run:settled`),`eventSessionKindFilter` 是**可选**的会话类型过滤维度:缺失、`null` 和 `[]` 语义等价,均表示**不按会话类型过滤**(跳过该维度,覆盖当前及未来所有 `SessionKind`,含无会话来源的事件);当其**非空**时,在通用匹配之前先执行 `sessionKind` 白名单——事件的 `sessionKind` 必须属于该集合才命中,无会话来源的事件不匹配非空过滤器。可空语义在服务端持久化时统一规范化为数据库 `NULL`,读回后 `null` 与空数组行为一致。创建/更新缺失或为空的过滤器**被接受**(不再返回 `automation.missingSessionKindFilter`,前端也不再强制至少选一项)。旧的运行生命周期行迁移为显式 `['work']`,继续精确保留其原有行为(**不会**被通用 metadata 过滤放宽到其他来源)。由于 `sessionKind='automation'` 可被选中,一个自动化的完成**可以**触发另一个——流水线链的探测器。事件风暴节流复用 SCH-R7 的串行执行:自动化已有一次在途执行时,到来事件被**跳过**而非排队。**没有**环检测或链深度限制(见 § v1 排除清单)。单条候选过滤器评估失败时 fail closed 并记录 automation id,不影响同事件其他候选。
 - **SCH-R25** — **自动化 metadata + metadata 条件过滤器**(2026-07-04)。每个自动化都携带一个自由形式的 **`metadata`** map(`Record<string,string>`,无预设 key,无 schema——只做长度/字符集卫生检查:去除首尾空白、丢弃空 key/value、上限 32 项、key ≤64 / value ≤256 字符)。只有调度器**自身**为该自动化发布的 `run:started` / `run:settled` 会把其 `metadata` 印到事件负载上;其他一切发布点(手动 work 运行、intent 交接、discussion)都让负载的可选 `metadata` 保持 `undefined`,因此现有运行不会被隐式打标签。任意 `event` 触发器都可以在其 `eventFilter` 上声明 **`metadata`**(即 `eventFilter.metadata`)= `{ conditions: {key,value}[]; combinator: 'AND'| 'OR' }`:`null`/空条件匹配任意事件;`AND`要求**每一个**条件都精确等于事件的`metadata[key]`,`OR` 要求**至少一个**匹配(精确字符串相等——不做大小写折叠、正则或子串匹配)。一个没有 metadata 的事件永远不满足非空过滤器。自动化自身的 **`metadata`** 标注 map 仍只由调度器的运行生命周期事件写入;而 `eventFilter.metadata`过滤器现在适用于**所有**事件类型(不再限于运行生命周期)——PR 的 operation 多选就是用`metadata.operation`的`OR` 条件表达的。`cron`触发器没有`eventFilter`。
 - **SCH-R22** — 一个 **`pr:operation`** 的 `event` 触发器(`eventFilter.type='pr:operation'`)按 SCH-R18 的通用语义匹配:事件的 `workspacePath` 等于工作区;`event.status`(= PR result `success` / `failure` / `error`)属于 `eventFilter.statuses`(空 = 任意结果);PR operation 通过 `eventFilter.metadata` 表达——前端旧的多选 operation 迁移为一组 `OR` 条件 `{key:'operation', value:<op>}`(`operation` ∈ `create`/`review`/`merge`/`close`/`comment`/`update`),空 = 任意操作。`error` 结果代表执行异常(CI 流水线超时、工具异常),区别于评审未通过。sessionKind 安全边界(SCH-R18)**不**适用——PR 事件不携带 sessionKind(该维度仅对运行生命周期类型生效)。`intent:lifecycle` 同理走通用语义:`event.status` = phase。节流复用 SCH-R7(一次在途执行会跳过新事件)。
@@ -75,12 +73,12 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Active: 创建 + 已确认
-    Active --> Paused: 暂停(通过队列确认)
-    Paused --> Active: 恢复(通过队列确认)
-    Active --> Archived: 归档(立即;终态)
-    Paused --> Archived: 归档(立即;终态)
-    Active --> [*]: 删除(立即;级联日志)
+    [*] --> Active: 创建
+    Active --> Paused: 暂停
+    Paused --> Active: 恢复
+    Active --> Archived: 归档(终态)
+    Paused --> Archived: 归档(终态)
+    Active --> [*]: 删除(级联日志)
     Paused --> [*]: 删除
     Archived --> [*]: 删除(仅此路径)
 ```
@@ -329,7 +327,6 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 | 编辑自动化字段     | ✓     | ✓      | —      |
 | 暂停 / 恢复        | ✓     | ✓      | —      |
 | 归档 / 删除        | ✓     | —      | —      |
-| 确认写入队列       | ✓     | —      | —      |
 | 手动触发(立即运行) | ✓     | ✓      | —      |
 | 取消在途执行       | ✓     | ✓      | —      |
 
@@ -374,28 +371,6 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 
 在传输层面,自动化发起的运行不会有任何 `permission_request` 到达 web-console——它们
 完全在服务端被解决。
-
-## 写入确认队列
-
-所有自动化写操作(创建、编辑字段、变更状态,archive/delete 除外)遵循一个两阶段
-流程:
-
-1. **阶段 1(提议):** 用户的变更被捕获为一条**待处理变更**,并显示在
-   web-console 的写入队列面板中。此时尚未持久化或纳入调度。
-2. **阶段 2(确认):** 用户审阅所有待处理变更并点击「确认」。变更会作为一个
-   原子批次一并提交。在确认之前,用户可以丢弃单个条目或
-   整个队列。
-
-理由:自动化控制着自主执行。一次误操作的保存不应该在凌晨 3 点立即引发一次
-破坏性运行。确认队列给用户一个审慎审阅的步骤。
-
-**按用户隔离**(SCH-R15):每个 WebSocket 连接都有自己的队列。如果用户刷新页面
-或重新连接,队列会丢失——变更必须重新提议。这是刻意为之:队列
-是短暂的、不持久化的,以避免过期的待处理变更跨会话残留。
-
-**例外:** `archive` 与 `delete` 绕过队列——它们在用户操作后立即生效
-(但仍需要用户在一个单条提示对话框中确认,而不是一个多条目队列)。这些操作是
-破坏性的,用户期望它们立即生效。
 
 ## v1 排除清单
 
@@ -584,21 +559,19 @@ cursor 的自动化与 claude 的自动化看到的是同一份 c3 MCP 服务契
 
 ## 领域事件(wire)
 
-被 automations 领域消费:
+被 automations 领域消费(消息形状见共享协议):
 
-| 事件                          | 负载                                 | 说明                                                    |
-| ----------------------------- | ------------------------------------ | ------------------------------------------------------- |
-| `automation_create`           | AutomationFields                     | 提议一个新自动化(→ 待处理变更)                          |
-| `automation_update`           | `{ id, fields }`                     | 提议对一个已有自动化的编辑                              |
-| `automation_pause`            | `{ id }`                             | 提议暂停(SCH-R5)                                        |
-| `automation_resume`           | `{ id }`                             | 提议恢复(SCH-R5)                                        |
-| `automation_archive`          | `{ id }`                             | 立即归档(SCH-R14)                                       |
-| `automation_delete`           | `{ id }`                             | 立即删除(级联日志)                                      |
-| `automation_confirm_queue`    | `—`                                  | 原子性地确认所有待处理变更                              |
-| `automation_discard_queue`    | `—`                                  | 丢弃所有待处理变更                                      |
-| `automation_run_now`          | `{ id }`                             | 手动触发:在常规自动化时序之外执行                       |
-| `automation_cancel_execution` | `{ executionId }`                    | 取消一次在途执行                                        |
-| `get_tool_manifest`           | `{ vendor, workspaceName?, scope? }` | 获取一个 vendor 的静态工具清单(共享消息,机器人表单也发) |
+| 事件                                               | 说明                                              |
+| -------------------------------------------------- | ------------------------------------------------- |
+| `create_automation`                                | 创建并即时落库(SCH-R6)                            |
+| `update_automation`                                | 更新字段/状态并即时落库                           |
+| `delete_automation`                                | 删除(级联日志;UI 二次确认)(SCH-R14)               |
+| `list_automations`                                 | 列出工作区自动化                                  |
+| `get_automation_detail`                            | 取详情 + 执行日志                                 |
+| `get_execution_transcript`                         | 回放 llm 执行 transcript                          |
+| `automation_run_now`                               | 手动触发:在常规时序之外执行一次                   |
+| `get_tool_manifest`                                | 获取 vendor 静态工具清单(共享消息,机器人表单也发) |
+| `list_wait_user_events` / `update_wait_user_event` | 工作台用户通知读写                                |
 
 除了上述 wire 事件之外,该领域还在组合根中订阅了**内核
 事件总线**的生命周期事件(`run:started` / `run:settled`,ADR-0018)以及 `pr:operation` 事件,
@@ -610,20 +583,14 @@ automation / 手动 create_pr),后者在成功创建
 
 由 automations 领域发出:
 
-| 事件                          | 负载                        | 说明                                                              |
-| ----------------------------- | --------------------------- | ----------------------------------------------------------------- |
-| `automation_created`          | AutomationFull              | 自动化已持久化并激活                                              |
-| `automation_updated`          | AutomationFull              | 自动化字段已变更                                                  |
-| `automation_paused`           | `{ id }`                    | 状态 → `paused`                                                   |
-| `automation_resumed`          | `{ id }`                    | 状态 → `active`                                                   |
-| `automation_archived`         | `{ id }`                    | 状态 → `archived`                                                 |
-| `automation_deleted`          | `{ id }`                    | 自动化已移除 + 日志已级联                                         |
-| `automation_pending_changes`  | `PendingChange[]`           | 当前的待处理变更(连接时同步)                                      |
-| `automation_queue_confirmed`  | `—`                         | 待处理变更已应用                                                  |
-| `automation_queue_discarded`  | `—`                         | 待处理变更已丢弃                                                  |
-| `automation_execution_log`    | ExecutionLog                | 新的或已更新的执行日志条目                                        |
-| `automation_execution_stream` | ExecutionStreamEvent        | 执行期间的实时流式事件                                            |
-| `tool_manifest`               | `{ vendor, tools, scope? }` | 对 `get_tool_manifest` 的回复(共享消息,由 tool-manifest 模块应答) |
+| 事件                        | 说明                          |
+| --------------------------- | ----------------------------- |
+| `automations`               | 工作区自动化列表广播          |
+| `automation_detail`         | 详情 + 执行日志               |
+| `execution_transcript`      | transcript 回放               |
+| `automation_execution_logs` | 执行日志片段                  |
+| `wait_user_events`          | 用户通知列表                  |
+| `tool_manifest`             | 对 `get_tool_manifest` 的回复 |
 
 Wire 结构定义在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中。
 
@@ -631,7 +598,7 @@ Wire 结构定义在[共享协议](../../../shared/api-conventions/websocket-pro
 
 - **创建一个一次性命令:** 给定一个工作区,当用户填写自动化表单
   (任务类型 `command`/`llm` 及其正文,通过 Advanced 分段构建器设置的自动化时序——
-  频率 / 间隔 / 时间 / 星期——以及执行身份)并确认队列后,则一个
+  频率 / 间隔 / 时间 / 星期——以及执行身份)并保存后,则一个
   自动化以 `active` 状态被创建,并被调度器评估。展示用的 `name` 在创建时
   由服务端根据任务内容(命令 / prompt)生成——表单既不收集
   名称也不收集描述。生成的标题遵循**agent 输出语言**,
@@ -646,15 +613,14 @@ Wire 结构定义在[共享协议](../../../shared/api-conventions/websocket-pro
   则一次执行会被立即分发(绕过调度器 tick),一条新的 `running`
   执行日志出现,而一个已暂停的自动化仍保持暂停,其 `nextRunAt` 不变。
   已归档的自动化不能被立即运行。
-- **暂停与恢复:** 给定一个激活的自动化,当用户暂停它(通过队列)时,则它
+- **暂停与恢复:** 给定一个激活的自动化,当用户暂停它时,则它
   不再被评估。恢复会使它回到被评估的状态。在 web-console 的自动化列表中,每一行
   都带有一个**启用/禁用开关**(开 = `active`,关 = `paused`;一个处于 `error` 状态的行显示为
   关),它映射到这个暂停/恢复迁移——切换它会发出一个带目标 `status` 的
   `update_automation`。`archived` 不在该开关的取值范围内(它是终态,SCH-R14)。
 - **归档一个自动化:** 给定一个自动化,当用户归档它时,则它被冻结,
   其日志被保留,并且不能被反归档。
-- **写入队列安全性(反场景):** 更改一个自动化的触发时间或命令
-  **永远不能**在用户显式确认队列之前生效(SCH-R6)。
+- **即时写入:** 创建/编辑/启停经对应消息立即落库并广播(SCH-R6);破坏性操作另经 UI 二次确认。
 - **工作区删除(反场景):** 移除工作区**永远不能**静默删除自动化——
   它们会被归档,而不是删除,从而保留其日志(SCH-R1)。
 - **并发执行(反场景):** 当同一个自动化的第一次运行仍在途时,针对它的第二次触发
@@ -711,7 +677,7 @@ i18n 错误,不打开确认态、不发送任何写消息;合法空数组进入�
 - **permission-gateway** —— 自动化执行不咨询它;执行身份逻辑是
   一个服务端覆盖,可能会为 `read-only` 的强制执行而经过网关 API,但
   永远不会阻塞在一个人工决策上。
-- **web-console** —— 渲染自动化列表、自动化详情/日志视图、写入队列面板、
+- **web-console** —— 渲染自动化列表、自动化详情/日志视图、
   创建/编辑表单,以及实时执行流。
 - **SQLite** —— 自动化与执行日志被持久化在既有的项目级 SQLite
   数据库中。

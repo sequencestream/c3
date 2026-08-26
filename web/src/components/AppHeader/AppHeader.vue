@@ -6,12 +6,11 @@ import type { WorkcenterPage } from '@/controls/state'
  *
  * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
  * 三横条;工作台=屏内会话气泡),生效模式蓝、另一个灰;桌面与移动端共用同一份图标标记。
- * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,右侧设置/账户/状态/许可
+ * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,
  *   右侧两个设置入口:个人化设置(人形齿轮,任何账户可见)与系统设置(齿轮,仅管理员可见)。
  *   工作台图标(切换器右侧)在 workcenterBadgeCount>0 时挂待处理角标,让用户不进工作台也能感知。
- * - workcenter 模式:左侧切换器 + 工作台页面入口(总览 / 用户通知,tab 语义),中间区域隐藏,右侧同上
- *   工作台页面入口占据原「工作台」标题位置;待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上。
- *   此模式下工作台切换图标不再挂角标(改由「用户通知」入口承载),避免同页重复。
+ * - workcenter 模式:左侧切换器 + 工作台页面入口(用户通知 / Dashboard / 聊天机器人),中间区域隐藏,右侧同上。
+ *   待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上;此模式下工作台切换图标不再挂角标。
  * 待处理角标全部同源 workcenterBadgeCount(与「用户通知」入口共用),0/缺省不渲染,桌面 + 移动端同步。
  * 移动端底部 tab 与桌面共用 tabs 数据(工作台入口已上移到顶部切换器)。
  *
@@ -45,9 +44,9 @@ const logsHref = logsUrl(window.location)
 // 移动操作菜单展示「当前登录的是谁」;未登录时为 null(此时 showLogout 亦为 false)。
 const { isAdmin, subject } = useAuth()
 
-// 受控 <details> 浮层(移动端「⋯」操作菜单 + 桌面许可状态下拉 + 桌面账户下拉):原生
+// 受控 <details> 浮层(移动端「⋯」操作菜单 + 桌面账户下拉):原生
 // details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet/页面之上。
-// 三个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
+// 两个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
 const actionsEl = ref<HTMLDetailsElement | null>(null)
 const accountEl = ref<HTMLDetailsElement | null>(null)
 

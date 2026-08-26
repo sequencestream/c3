@@ -171,7 +171,7 @@ c3
 │   │   ├── 代码域会话                            # 内嵌 session 就代码提问(含「+ 新建」「↻ 重置」)
 │   │   └── 只读保证                              # 此视图绝不改动仓库(含 Git 状态查询)
 │   │
-│   ├── workcenter 工作台                         # 全局运行总览与用户通知的聚合处理中心(页内导航 Dashboard/用户通知)
+│   ├── workcenter 工作台                         # 全局运行总览与用户通知的聚合处理中心(顶栏三页:用户通知/Dashboard/聊天机器人)
 │   │   ├── Workspace Dashboard                   # 一次聚合快照展示全部 workspace 的运行规模与总闸
 │   │   │   ├── 规模统计                          # 每行:运行中 session/session 总数(全 kind)/intent/讨论/自动化总数
 │   │   │   ├── 自动化总闸状态                     # 每行展示 workspace 自动化总闸(归一,缺省为开);非管理员为只读 on/off 徽标

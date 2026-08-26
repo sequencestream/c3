@@ -4,7 +4,7 @@
 | ---- | -------------------------------------------------------------------------- |
 | 职责 | 管理跨工作区的命令与 LLM 提示的 cron 触发与事件触发执行;记录并查看执行日志 |
 | API  | WebSocket `/ws`(见共享协议);订阅内核运行生命周期事件(ADR-0018)             |
-| 状态 | 已规划 — 首个规格迭代                                                      |
+| 状态 | 活跃                                                                       |
 
 automations 领域为 c3 增加了**任务执行**能力。一个 **Automation**(自动化)是一个任务 — 一条 shell 命令或一段 LLM
 提示 — 会在配置的时间点(cron)触发,或在订阅的**运行生命周期事件**
@@ -23,6 +23,6 @@ automations 领域为 c3 增加了**任务执行**能力。一个 **Automation**
 
 ## 索引
 
-- [automations-spec.md](automations-spec.md) — 实体、状态机、任务类型、权限、执行身份、写入队列、v1 排除项
+- [automations-spec.md](automations-spec.md) — 实体、状态机、任务类型、权限、执行身份、v1 排除项
 - [automations-design.md](automations-design.md) — 数据库表、CRUD 存储、调度引擎、执行流程
 - [automations-models.md](automations-models.md) — Automation 与 ExecutionLog 实体字段定义

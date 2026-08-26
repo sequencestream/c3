@@ -11,9 +11,9 @@
   工具,默认拒绝其余工具);`session-registry`(把沟通会话从常规会话列表中隐藏);一个位于
   `~/.c3/c3.db` 的本地 SQLite 存储;本地 `git` CLI(自动化编排器在验证完成后提交并推送)。
 - **被依赖方:** `web-console`(渲染意图视图:列表 + 沟通聊天 + 自动化控件)。
-- **exposes-api:** true —— 在 WebSocket `/ws` 上有八个客户端到服务端消息、两个服务端到
-  客户端消息(`intents`、`automation_status`)。聊天收发与历史回放**复用**已有的协议事件;
-  意图列表/发起/自动化相关消息是新增的。消息形状定义在共享协议中,不在本文档中重复定义。
+- **exposes-api:** true —— 在 WebSocket `/ws` 上暴露意图 CRUD/会话/规格/开发/队列控制等客户端消息,
+  以及 `intents`、`intent_sessions`、`workflow_status`、`queue_detail` 等服务端推送。聊天收发与历史回放**复用**已有的协议事件;
+  消息形状定义在共享协议中,不在本文档中重复定义。
 - **ADRs:** [0007](../../../architecture/adr/0007-read-only-intent-agent.md)、
   [0034](../../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)
 

@@ -76,20 +76,6 @@
 关系:恰好属于一个 Automation(通过 `automationId`)。父自动化删除时级联删除。
 `startedAt` 一旦设置即只追加(append-only)。
 
-## Pending Change
-
-写入队列中等待用户确认的一次变更(SCH-R6、SCH-R15)。
-
-| 属性           | 类型                                             | 说明                                                             |
-| -------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| `id`           | text (UUID)                                      | 本次待确认变更的唯一标识符                                       |
-| `type`         | 枚举 `create \| update_field \| pause \| resume` | 变更的种类(archive/delete 是即时生效的,不进入队列)               |
-| `automationId` | text (UUID) \| null                              | 目标自动化 id;`create` 类型时为 null                             |
-| `payload`      | JSON                                             | 拟议的变更内容(create 为完整 AutomationFields;update 为部分字段) |
-| `createdAt`    | timestamp                                        | 变更被提出的时间                                                 |
-
-关系:归属于单个 WebSocket 连接;不持久化。确认前由所有者替换或丢弃。
-
 ## 领域类型取值
 
 各枚举属性的允许取值:

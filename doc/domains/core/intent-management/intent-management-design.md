@@ -463,10 +463,10 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
 
 - **接线分支。** `set_intent_automate` → 设置 automate 标志 + 广播
   `intents`(`set_intent_spec_mode` 同形:写 `spec_mode` + 广播,
-  广播时重算 `effectiveSpecMode`)。`start_automation` → 启动编排器(若已在运行则为
-  no-op),然后广播状态。`stop_automation` → 停止编排器(中止正在进行的
+  广播时重算 `effectiveSpecMode`)。`start_workflow` → 启动编排器(若已在运行则为
+  no-op),然后广播状态。`stop_workflow` → 停止编排器(中止正在进行的
   运行)。进入意图视图(`open_intent_session`)也会推送当前的
-  `automation_status`,以便一个新连接恢复按钮状态。
+  `workflow_status`,以便一个新连接恢复按钮状态。
 - **依赖注入。** 编排器直接 import store/judge/git,但通过注入式钩子
   获取服务端接线:一个开发轮运行器(绑定到 WS-server 闭包)、
   一个 intents 广播器、一个状态 emitter、一个会话是否存在的磁盘检查(与手动启动
@@ -820,7 +820,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   一个 set-automate 事件(切换该标志);按钮发出 start/stop-automation。
 - **意图数据:** app 保存按工作区路径为键的 intents,
   由 `intents` 消息刷新;以及按工作区路径为键的自动化状态,
-  由 `automation_status` 消息刷新;意图列表以 prop 形式接收当前项目的
+  由 `workflow_status` 消息刷新;意图列表以 prop 形式接收当前项目的
   状态。
 - **工程进度:** 意图详情头部按意图字段派生只读进度。意图、规范、工作依次展示,
   SDD 关闭时省略规范;有效规格模式为 `fast` 且该意图尚无规范数据(`specPath`、

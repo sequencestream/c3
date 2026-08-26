@@ -201,37 +201,27 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 只暴露当前的 spec 条目作为其跳回目标。意图台账仍然是当前 spec 会话、`specStatus`(raw/pending/approved)
 与批准状态的唯一真实来源(SoT);该投影是可重建的 Sessions 页面缓存。
 
-## Automation Status
+## Workflow Status
 
-一个项目的自动化编排器的实时状态(RM-A1–RM-A9)。仅存于内存中(每个项目一份;不持久化 ——
-服务器重启会将其重置为 `idle`)。作为 `automation_status` 线上事件推送给每个连接。
+一个工作区自动化队列(意图编排器)的实时摘要(RM-A1–RM-A9)。控制状态
+(`running` / `paused` / `idle` 与强制跳过集合)持久化于 `queue_workspace_state`;
+线上推送为 `workflow_status`(`WorkflowStatus`)。`queue_detail` 承载逐意图投影,不并入本摘要。
 
-| 属性                 | 类型              | 说明                                                                        |
-| -------------------- | ----------------- | --------------------------------------------------------------------------- |
-| `workspaceName`      | text              | 不可变且唯一的工作区名称(RM-R10)                                            |
-| `state`              | enum              | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                            |
-| `currentIntentId`    | id \| null        | 当前正在开发的意图(未运行时为 null)                                         |
-| `currentSessionId`   | text \| null      | 当前意图的开发会话,用于反向链接                                             |
-| `awaitingPermission` | boolean           | 当当前开发轮次因权限提示而暂停、等待人工回答时为 true(RM-A9);轮次结束时清除 |
-| `error`              | text \| null      | 异常停止的原因;除非 `state = error` 否则为 null(RM-A6/A7)                   |
-| `completedIds`       | `id[]`            | 本次运行中已完成(已提交 + 已推送)的意图 id 列表                             |
-| `startedAt`          | timestamp \| null | 编排器启动的时间;从未启动时为 null                                          |
+| 属性                 | 类型              | 说明                                                                                  |
+| -------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| `workspaceName`      | text              | 不可变且唯一的工作区名称(RM-R10)                                                      |
+| `state`              | enum              | `idle`\|`running`\|`paused`\|`awaiting_gate`\|`developing`\|`fixing`\|`done`\|`error` |
+| `currentIntentId`    | id \| null        | 当前正在开发的意图(未运行时为 null)                                                   |
+| `currentSessionId`   | text \| null      | 当前意图的开发会话,用于反向链接                                                       |
+| `awaitingPermission` | boolean           | 当当前开发轮次因权限提示而暂停、等待人工回答时为 true(RM-A9);轮次结束时清除           |
+| `error`              | text \| null      | 最近一次 park 原因摘要;无 park 时为 null                                              |
+| `completedIds`       | `id[]`            | 本次运行中已完成(已提交 + 已推送)的意图 id 列表                                       |
+| `startedAt`          | timestamp \| null | 编排器启动的时间;从未启动时为 null                                                    |
 
 ## 持久化存储(c3.db)
 
 位于 `~/.c3/c3.db` 的 SQLite 台账(与工作区注册表同库,不同表)。Schema 版本通过
-`PRAGMA user_version` 管理(目前为 `19` —— v2 新增 `intents.module` 列,v3 新增可空的
-`intents.completed_at` 列,v4 新增 `intents.automate` INTEGER NOT NULL DEFAULT 0,v6 把
-遗留的 requirement- 前缀表重命名为 intent- 前缀,v7 新增可空的 `intent_chats.title` 列,
-v8 新增 git 追踪字段,v9 新增 `intent_deps.dep_type` + `created_at`,v10 新增
-`intent_sessions` 审计表,v11 把工作区键列 `project_path` → `workspace_name` 原地重命名到
-`intents` + `intent_chats` 上,并把复合索引重建为 `idx_intent_workspace_status`,v12 新增
-可空的 `intents.short_en_title` 列(派生分支/worktree 名称的稳定 ASCII 来源;历史行保持
-null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectConfigs` 协议键
-产生分歧,该键保留其历史名称 —— 见 2026-06-14 的 workspace-path 迁移记录)。v18→v19
-新增可空的 `intents.spec_mode` 列(CHECK(sdd/fast),三态:NULL=继承工作区、'sdd'=显式固定
-规格先行、'fast'=显式固定规格延后;存量不回填继续派生)与 `intent_fast_turns` 结算表
-(fast 模式每 turn 反向补轨的基线 + 幂等键,resume 复用同一 session 时重建 baseline 并重开可结算周期;详见迁移记录 `migrate/2026/08/06/030`)。表:
+`PRAGMA user_version` 管理(当前为 `22`)。表:
 `intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
 `tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
 共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,

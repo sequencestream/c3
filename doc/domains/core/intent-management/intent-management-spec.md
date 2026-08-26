@@ -352,8 +352,8 @@ stateDiagram-v2
 `refine_intent`、`discussion_to_intent`、`list_intent_sessions`、
 `rename_intent_session`、`delete_intent_session`、`delete_intent`、`start_development`、
 `update_intent_content`、`update_spec_content`、`update_intent_status`、`set_intent_automate`、
-`set_intent_spec_mode`、`start_automation`、`stop_automation`。发出(新增):`intents`、`intent_sessions`、
-`automation_status`。
+`set_intent_spec_mode`、`start_workflow`、`stop_workflow`、`queue_control`、`get_queue_detail`。发出(新增):`intents`、`intent_sessions`、
+`workflow_status`、`queue_detail`。
 
 `discussion_to_intent` 由 [discussion 领域](../discussion/discussion-overview.md)的触发器持有,
 但与**增加意图**(RM-R45)共用同一个创建原语和同一条会话绑定序列,差别只在载荷:它落的是

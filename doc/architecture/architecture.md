@@ -124,8 +124,8 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   `work_session_metadata` 改名/泛化后的继任者。它为各会话类型（work / intent / spec /
   spec_review / discussion / automation / tool / robot）携带寻址与生命周期元数据，包括用于跳回的
   可选逻辑归属字段。
-  它是可重建的，且刻意做到无内容：转录、prompt、工具调用或工具结果都不属于这里。目前写入
-  覆盖的是 work + intent；其他类型在各自领域的写入方接入之前，先用同一份契约作为占位。
+  它是可重建的，且刻意做到无内容：转录、prompt、工具调用或工具结果都不属于这里。
+  work / intent / spec / spec_review / discussion / automation / tool / robot 均由对应领域写入投影。
 - **DB 迁移必须幂等、绝不删表、只能向前修正（硬性规则）。** 每一次 c3.db 的 schema 变更都要
   经过某个领域存储的一次性 schema-ensure，并遵守这条项目级的迁移纪律：
   - **幂等 + 可从部分状态重入。** 每一步都要靠*探测实际 schema 状态*

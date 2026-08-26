@@ -12,8 +12,8 @@
 - 系统的形态以及各部分如何连接 — [`architecture/architecture.md`](architecture/architecture.md)
 - 为什么做出某个关键决策 — [`architecture/adr/`](architecture/adr/)
 - 某个场景的端到端路径 — [`flows/flows.md`](flows/flows.md)
-- WebSocket 通信契约 — [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
-- 前端视觉风格指南 — [`style/style-spec.md`](style/style-spec.md)
+- WebSocket 通信契约 — 编译期真源 [`shared/src/protocol.ts`](../shared/src/protocol.ts);人类目录与约定见 [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
+- 前端视觉风格指南 — [`style/color-style-spec.md`](style/color-style-spec.md)
 - 性能 / 安全 / 可用性目标 — [`non-functional/`](non-functional/)
 - 某个具体能力的行为 — [`features.md`](features.md) 中的领域索引
 
@@ -47,9 +47,11 @@ c3 有两个业务组:`core`(工作台业务能力)、`settings`(用户配置)�
 1. **先写规格,后写代码。** 新行为先在这里描述,然后再实现。
 2. **WHAT 与 HOW。** `<domain>-spec.md` 文件陈述业务行为;`<domain>-design.md` 文件陈述
    技术实现。两者要分开。
-3. **通信格式的唯一真源。** WebSocket 协议只在
-   [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
-   中记录一次。领域文档引用该文档;不重新定义消息形状。
+3. **通信格式的唯一真源。** WebSocket 消息联合与载荷形状只在
+   [`shared/src/protocol.ts`](../shared/src/protocol.ts) /
+   [`shared/src/protocol/`](../shared/src/protocol/) 中定义一次。
+   [`websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) 是人类可读的约定与目录;
+   领域文档引用 `type` 名,不重新定义消息形状。
 4. **引用,不要复制。** 共享规则只存在一处,并通过编号引用。
 5. **日期一律使用 `YYYY-MM-DD`。** 业务语义类型优先于技术类型。
 6. **保持设计高度,而非代码堆砌。** 规格清晰地解释变更——方式、流程、逻辑、状态与规则——

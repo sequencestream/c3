@@ -6,7 +6,7 @@
 
 所有工作区关联统一使用 `workspace_name`，其值引用 `workspaces.name`；绝对路径只保存在注册表并用于文件系统操作。迁移 `039-workspace-name-identity.sql` 由配置 store 在单事务内把历史 workspace UUID 和各业务表路径映射为名称。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 42 张表，14 个模块。
+> `~/.c3/c3.db` 是单实例本地文件。共 **49** 张表，**13** 个模块(见下方一览)。
 
 ## 基础设施
 

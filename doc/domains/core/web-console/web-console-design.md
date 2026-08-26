@@ -62,7 +62,7 @@ JSON 美化与单行格式化;发送队列逻辑(合并 / 是否应刷新 / comp
 - **Vendor modes**: 按厂商的模式目录,由 `settings.vendorModes` 播种。驱动选择器中按厂商区分的模式选项
 - **Actionable permission**: 用户仍可操作的那一个权限的请求 id,或 none;从逐会话状态 + transcript 派生(WC-R16)
 - **Intents**: 按项目的 intent 列表;在 `intents` 推送或 `list_intents` 回复时更新
-- **Automation**: 按项目的自动化编排器状态;在 `automation_status` 推送时更新
+- **Automation**: 按项目的自动化编排器状态;在 `workflow_status` 推送时更新
 - **Active tab**: 驱动内容区渲染哪个页面的显式顶部栏 tab 选择(WC-R18)。由一个数据驱动的 tab 列表支撑(可扩展——未来的「讨论」tab 只是多一个条目 + 一个正文分支)。本地持久化(键为 `c3.viewMode`),硬刷新后恢复该 tab
 - **Intents project**: 当前打开的 intent 页面所属的项目路径;与当前 tab 一同持久化
 - **Console session**: 「会话」tab 自己的最后查看会话指针,独立于 intent tab 的通讯会话——因此切换 tab 永远不会跨污聊天内容。驱动会话 tab 的重新绑定。内存态(WS 重连后存活,刷新页面后丢失,与 transcript 一致)。见下文 _按 tab 分别记忆的会话_
@@ -99,7 +99,7 @@ tool-result · permission · consensus · system,各自带一个数字 id。
 - **`consensus_auto`**: 追加共识消息
 - **`turn_end`**: 仅在 `error` 时追加一条系统提示;运行状态通过 `session_status` 解锁(WC-R5)
 - **`intents`**: 用推送的列表替换该项目的 intent 列表(WC-R10)
-- **`automation_status`**: 用推送的状态替换该项目的自动化编排器状态(WC-R11)
+- **`workflow_status`**: 用推送的状态替换该项目的自动化编排器状态(WC-R11)
 - **`workspace_setting`**: 把当前工作区设置设为返回的配置,把检测到的主分支设为回复中探测到的分支;供工作区设置草稿消费
 
 ## Intent runStatus 指示器
@@ -187,12 +187,12 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 - **Set intent spec mode**
   - 前置条件: 已连接
   - 发送: `set_intent_spec_mode`(`mode` 显式携带,`null` 恢复继承工作区);广播带回重算的 `effectiveSpecMode`
-- **Start automation**
+- **Start workflow**
   - 前置条件: intents project 已设置
-  - 发送: `start_automation`——启动该项目的编排器循环
-- **Stop automation**
+  - 发送: `start_workflow`——启动该项目的编排器循环
+- **Stop workflow**
   - 前置条件: intents project 已设置
-  - 发送: `stop_automation`——中止当前编排运行
+  - 发送: `stop_workflow`——中止当前编排运行
 - **Open workspace setting**
   - 前置条件: 已选中工作区
   - 发送: 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`
@@ -490,7 +490,7 @@ reducer 是共享任务模型中唯一的真实来源(reducer、空模型、
 ## 视觉风格
 
 会话的观感遵循项目风格指南
-[`doc/style/style-spec.md`](../../../style/style-spec.md)(沉浸式深色底、半透明
+[`doc/style/color-style-spec.md`](../../../style/color-style-spec.md)(沉浸式深色底、半透明
 材质、克制的强调色、低信息密度)。组件样式应当遵循它,
 而不是在此重复其规则。
 

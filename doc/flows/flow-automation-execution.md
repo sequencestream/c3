@@ -8,15 +8,13 @@ prompt),并把结果记录到执行日志中。
 
 自动化是**工作区范围内**的:一个自动化以其工作区的 `cwd`、设置、会话和智能体配置运行——就像
 从该工作区发起的一次用户运行一样。执行以**该自动化自身**的执行身份运行,而非创建者的身份
-(`SCH-R*` 边界)。写操作会先经过一个确认队列,*之后*才会生效。
+(`SCH-R*` 边界)。CRUD 即时落库;运行时敏感工具靠 allowlist 冻结,不经浏览器 HITL。
 
 ## 流程图
 
 ```mermaid
 flowchart TD
-    W[automation_create / update] --> Q[per-connection pending queue]
-    Q --> CF[confirm_queue → persist]
-    CF --> SCHED[active automation]
+    W[create_automation / update_automation] --> SCHED[active automation]
     SCHED --> TRIG{trigger}
     TRIG -- cron tick --> DISP[dispatch & track]
     TRIG -- run lifecycle event --> DISP
@@ -28,16 +26,10 @@ flowchart TD
     LLM --> SM[(session_metadata projection)]
 ```
 
-## 写路径 —— 提议 → 确认
+## 写路径
 
-1. **web-console → automations。** 任何变更(`automation_create` / `automation_update` /
-   `automation_pause` / `automation_resume`)都会被捕获为按连接维护的写队列中的一条**待处理
-   变更**,且**尚未**被持久化或纳入调度(`SCH-R6`、`SCH-R15`)。
-2. **确认。** `automation_confirm_queue` 会原子性地提交所有待处理变更(`SCH-R6`)。该队列是
-   临时的——刷新/重连会丢失它(`SCH-R15`)。
-3. **例外。** `automation_archive` / `automation_delete` 绕过该队列——单次 prompt 确认后立即
-   生效(`SCH-R6`、`SCH-R14`);删除会级联删除日志(硬删除)。
-4. **校验。** 一个自动化在创建时必须引用一个已存在的工作区(`SCH-R1`);任务类型
+1. **web-console → automations。** `create_automation` / `update_automation` / `delete_automation` 即时落库并广播(`SCH-R6`)。归档/删除另经 UI 二次确认对话框(`SCH-R14`)。
+2. **校验。** 一个自动化在创建时必须引用一个已存在的工作区(`SCH-R1`);任务类型
    `command | llm_prompt` 一经创建不可变(`SCH-R2`);没有合法 `eventFilter.type` 的 `event` 触发器
    会被拒绝(`SCH-R17`)。
 
@@ -57,7 +49,7 @@ flowchart TD
   (事件 `sessionKind` 必须在其中,否则不命中;过滤器空/缺失表示不限制会话类型,`SCH-R18`)。事件型自动化不携带 `cronExpression`/`nextRunAt`,也从不参与 tick 评估
   (`SCH-R17`)。
 
-两者都复用**同一套**“调度并跟踪 → 执行”路径、三层执行身份体系,以及写队列(`SCH-R17`)。
+两者都复用**同一套**“调度并跟踪 → 执行”路径与三层执行身份体系(`SCH-R17`)。
 
 意图生命周期订阅只匹配相同的工作区,以及在配置了的情况下匹配所选阶段。负载中包含一个稳定的
 意图身份、标题、模块、阶段和最终状态。这些事件是进程本地的、尽力而为的、非持久化的,且从不

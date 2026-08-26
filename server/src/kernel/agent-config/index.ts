@@ -78,7 +78,11 @@ import {
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { systemAgent } from './normalize.js'
-import { AgentGroupUnavailableError, ModelProviderPausedError } from './errors.js'
+import {
+  AgentGroupUnavailableError,
+  ModelProviderPausedError,
+  isModelProviderPausedError,
+} from './errors.js'
 
 export {
   AGENT_ICON_MAX_CHARS,
@@ -498,6 +502,28 @@ function agentToRelayCandidate(
 }
 
 /**
+ * Non-throwing sibling of {@link agentToRelayCandidate}, for a candidate being only
+ * PROBED — a group failover peer behind the leading member, or a degradation-chain
+ * fallback that may never actually run. A paused provider there must not abort
+ * resolution for the leading/currently-attempted agent: it is reported the same as
+ * "no connection" (the peer drops out of consideration), exactly like a peer with a
+ * missing base URL. {@link agentToRelayCandidate} keeps the throw for the ONE
+ * candidate actually being selected to launch — that case must surface loudly, not
+ * degrade to system mode.
+ */
+function probeRelayCandidate(
+  agent: AgentConfig,
+  providers: readonly ModelProvider[],
+): RelayCandidate | null {
+  try {
+    return agentToRelayCandidate(agent, providers)
+  } catch (err) {
+    if (isModelProviderPausedError(err)) return null
+    throw err
+  }
+}
+
+/**
  * The LEADING SEGMENT of a candidate list — the part one launch can actually serve
  * (ADR-0029). Whether a run goes through the relay is decided once, at spawn: the
  * provider endpoint is baked into the subprocess env (`ANTHROPIC_BASE_URL`, codex's
@@ -513,6 +539,13 @@ function agentToRelayCandidate(
  * would silently skip a leading `system` member and run somewhere the user did not
  * put first — the visible order would stop matching what runs. Crossing the segment
  * boundary is the resume path's job (the session's group cursor).
+ *
+ * Only `candidates[0]` — the leading member, the one actually selected to launch —
+ * is probed with the throwing {@link agentToRelayCandidate}: a paused provider there
+ * is a real launch failure and must surface as one. Every other member is scanned
+ * with the non-throwing {@link probeRelayCandidate}, so a paused PEER further down
+ * the list just ends the segment there (same as a peer with no connection at all)
+ * instead of aborting resolution for the healthy leading member.
  */
 export function launchSegment(
   candidates: AgentConfig[],
@@ -520,7 +553,7 @@ export function launchSegment(
 ): AgentConfig[] {
   if (candidates.length === 0) return candidates
   if (!agentToRelayCandidate(candidates[0], providers)) return [candidates[0]]
-  const end = candidates.findIndex((a) => !agentToRelayCandidate(a, providers))
+  const end = candidates.findIndex((a) => !probeRelayCandidate(a, providers))
   return end < 0 ? candidates : candidates.slice(0, end)
 }
 

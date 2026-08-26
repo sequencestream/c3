@@ -268,7 +268,9 @@ const emit = defineEmits<{
       agentIds?: string[]
     },
   ]
-  'provider-probe': [payload: { providerId: string; vendor: VendorId }]
+  'provider-probe': [
+    payload: { providerId: string; vendor: VendorId; baseUrl?: string; apiKey?: string },
+  ]
 }>()
 
 // A default, empty SystemSettings — the shape both `draft` and `committed` start

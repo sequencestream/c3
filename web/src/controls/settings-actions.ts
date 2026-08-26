@@ -270,7 +270,12 @@ export function installSettingsActions(ctx: AppCtx): void {
    * (cross-origin, and the stored key must never reach it), so the answer comes
    * back as its own frame rather than riding the settings echo.
    */
-  ctx.probeModelProvider = (payload: { providerId: string; vendor: VendorId }): void => {
+  ctx.probeModelProvider = (payload: {
+    providerId: string
+    vendor: VendorId
+    baseUrl?: string
+    apiKey?: string
+  }): void => {
     // 先落 pending,按钮点下去立刻有反馈;回包会整条覆盖这个键。
     providerProbes.value = {
       ...providerProbes.value,

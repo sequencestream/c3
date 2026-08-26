@@ -19,6 +19,7 @@ import type {
   ProviderMigrationPlan,
   VendorId,
 } from '@ccc/shared/protocol'
+import { effectiveApiKey } from '@ccc/shared/protocol'
 import { PROVIDER_TEMPLATES, VENDOR_IDS, checkProviderBaseUrl } from '@ccc/shared'
 import type { BaseUrlIssue } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
@@ -47,7 +48,11 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** 列表整体替换(新增/删除);单字段编辑就地改,不走这里。 */
   change: [providers: ModelProvider[]]
-  probe: [payload: { providerId: string; vendor: VendorId }]
+  /**
+   * 连通性探测。带上草稿里的 baseUrl / 有效 key,这样未保存的编辑(或尚未落库的新建)
+   * 探到的是表单上正在改的值,而不是上次保存的旧记录;providerId 仍带回包匹配用。
+   */
+  probe: [payload: { providerId: string; vendor: VendorId; baseUrl: string; apiKey: string }]
   migrate: [
     payload: { action: 'apply' | 'revert' | 'clear'; providerIds?: string[]; agentIds?: string[] },
   ]
@@ -186,6 +191,18 @@ function probeText(state: ProviderProbeState): string {
   }
   return t('settings.providers.probe.fail', {
     reason: state.error ?? (state.issue ? issueText(state.issue) : ''),
+  })
+}
+
+/** 上抛当前草稿连接,让服务端按表单内容探测(未保存编辑 / 新建未落库都走这条)。 */
+function requestProbe(p: ModelProvider, vendor: VendorId): void {
+  const conn = p.connections[vendor]
+  if (!conn) return
+  emit('probe', {
+    providerId: p.id,
+    vendor,
+    baseUrl: conn.baseUrl,
+    apiKey: effectiveApiKey(conn.apiKey, p.apiKey),
   })
 }
 
@@ -401,7 +418,7 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
               class="ghost provider-probe"
               :disabled="!isAdmin"
               :data-testid="`provider-probe-${v}`"
-              @click="emit('probe', { providerId: p.id, vendor: v })"
+              @click="requestProbe(p, v)"
             >
               {{ t('settings.providers.probe.label') }}
             </button>

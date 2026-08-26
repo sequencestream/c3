@@ -84,6 +84,18 @@ describe('resolveAgentConnection — provider reference', () => {
     )
   })
 
+  it('a blank per-vendor apiKey override falls back to the account-level key', () => {
+    // The console's v-model stores "" (not undefined) when the override box is
+    // cleared — a plain `??` merge would keep that empty string and send a
+    // keyless request. `effectiveApiKey` trims blanks so the account key wins.
+    const p = provider({
+      connections: { claude: { baseUrl: 'https://x.example', apiKey: '   ' } },
+    })
+    expect(resolveAgentConnection(claudeAgent({ providerId: 'p1' }), [p]).connection?.apiKey).toBe(
+      'account-key',
+    )
+  })
+
   it('a dangling providerId fails soft to the inline triple with a warning', () => {
     const agent = claudeAgent({
       providerId: 'gone',

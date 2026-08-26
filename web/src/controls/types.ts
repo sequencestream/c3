@@ -403,8 +403,14 @@ export interface AppMethods {
     providerIds?: string[]
     agentIds?: string[]
   }): void
-  /** Dial one provider connection from the server and report whether it answers. */
-  probeModelProvider(payload: { providerId: string; vendor: VendorId }): void
+  /** Dial one provider connection from the server and report whether it answers.
+   *  `baseUrl`/`apiKey` carry the console draft so an unsaved edit is what gets dialled. */
+  probeModelProvider(payload: {
+    providerId: string
+    vendor: VendorId
+    baseUrl?: string
+    apiKey?: string
+  }): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void

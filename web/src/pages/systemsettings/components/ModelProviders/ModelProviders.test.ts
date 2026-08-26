@@ -159,11 +159,26 @@ describe('编辑一条 provider', () => {
     expect(w.find('.provider-issue').text()).toContain('Plain http')
   })
 
-  it('探测按连接上抛,不改任何配置', async () => {
-    const w = render({ providers: [provider()] })
+  it('探测按连接上抛草稿 URL/key,不改任何配置', async () => {
+    const w = render({
+      providers: [
+        provider({
+          apiKey: 'account-key',
+          connections: { claude: { baseUrl: 'https://draft.example/anthropic', apiKey: '' } },
+        }),
+      ],
+    })
     await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
     await w.find('[data-testid="provider-probe-claude"]').trigger('click')
-    expect(w.emitted('probe')![0]).toEqual([{ providerId: 'p1', vendor: 'claude' }])
+    expect(w.emitted('probe')![0]).toEqual([
+      {
+        providerId: 'p1',
+        vendor: 'claude',
+        baseUrl: 'https://draft.example/anthropic',
+        // 空的 per-vendor 覆盖回落到账户 key —— 与运行时 effectiveApiKey 同规则。
+        apiKey: 'account-key',
+      },
+    ])
     expect(w.emitted('change')).toBeUndefined()
   })
 

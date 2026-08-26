@@ -114,9 +114,11 @@ export type ServerProviderMigrationPlan = {
 /**
  * Probe one provider connection for reachability — the "is this endpoint alive"
  * half of the health check whose cheap half (`checkProviderBaseUrl`) the console
- * already runs locally. Names either a SAVED provider (`providerId` + `vendor`, so
- * the key never leaves the server) or a DRAFT the user is still typing
- * (`baseUrl` + `apiKey`), which is what lets the form warn before the first save.
+ * already runs locally. The console may send a DRAFT (`baseUrl` + optional
+ * `apiKey`) so an unsaved edit or a brand-new provider is dialled as typed; a
+ * named `providerId` alone falls back to the stored connection (key stays
+ * server-side). When both are present, the draft URL wins and a blank draft key
+ * falls back to the stored effective key.
  *
  * Admin-only: it reads a stored credential and dials an arbitrary URL from the
  * server, both of which are administrator territory.
@@ -124,11 +126,15 @@ export type ServerProviderMigrationPlan = {
 export type ClientProbeModelProvider = {
   type: 'probe_model_provider'
   vendor: VendorId
-  /** A saved provider to probe. When set, `baseUrl`/`apiKey` are ignored. */
+  /**
+   * Saved provider id — echoed in the reply for matching, and used to look up a
+   * stored connection when `baseUrl` is absent (or to fill in a blank draft key).
+   */
   providerId?: string
-  /** Draft base URL, used when `providerId` is absent. */
+  /** Draft base URL. When set, takes priority over any stored connection. */
   baseUrl?: string
-  /** Draft API key, used when `providerId` is absent. May be empty. */
+  /** Draft API key paired with `baseUrl`. Empty falls back to the saved key when
+   *  `providerId` is set. */
   apiKey?: string
 }
 

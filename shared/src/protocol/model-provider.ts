@@ -12,8 +12,9 @@
  *
  * Key layering: a provider has one account-level `apiKey` (the default for every
  * vendor connection) plus an optional per-vendor `apiKey` override inside each
- * `ProviderConnection`. The effective key for a vendor is `connection.apiKey ??
- * provider.apiKey`; at least one must be non-empty for the connection to be usable.
+ * `ProviderConnection`. The effective key for a vendor is `effectiveApiKey(
+ * connection.apiKey, provider.apiKey)` — a blank override falls back to the account
+ * key; at least one must be non-empty for the connection to be usable.
  *
  * Zero-runtime wire module: no zod, no vendor SDK. The runtime schema lives
  * server-side in `kernel/agent-config/model-provider-schema.ts`.
@@ -164,10 +165,24 @@ export interface ProviderMigrationPlan {
 }
 
 /**
+ * Merge a per-vendor `apiKey` override with the provider's account-level key: a
+ * BLANK override (empty or whitespace-only) does not count and falls back to the
+ * account key, same as an override the user never touched. This matters because the
+ * console's connection-key input is a plain `v-model` text field — clearing it
+ * stores `""`, not `undefined` — so a plain `??` merge would keep that empty string
+ * and silently send a keyless request instead of falling back. Exported so every
+ * merge site (resolution, migration matching, the connectivity probe) shares one
+ * rule instead of drifting.
+ */
+export function effectiveApiKey(override: string | undefined, accountKey: string): string {
+  return override?.trim() || accountKey
+}
+
+/**
  * Resolve the effective connection for a vendor from a provider: the vendor's
  * `ProviderConnection` if present, otherwise `null` (caller falls back to inline
  * config / system login). The returned connection's `apiKey` is already merged with
- * the provider's account-level key (`connection.apiKey ?? provider.apiKey`).
+ * the provider's account-level key via {@link effectiveApiKey}.
  *
  * Pure function — no IO, no mutation. Exported so both the server runtime and web
  * console can compute "what would this agent actually connect to" without duplicating
@@ -181,7 +196,7 @@ export function resolveProviderConnection(
   if (!conn || !conn.baseUrl) return null
   return {
     baseUrl: conn.baseUrl,
-    apiKey: conn.apiKey ?? provider.apiKey,
+    apiKey: effectiveApiKey(conn.apiKey, provider.apiKey),
     ...(conn.wireApi !== undefined ? { wireApi: conn.wireApi } : {}),
   }
 }
@@ -195,7 +210,7 @@ export function resolveProviderConnection(
 export function hasUsableConnection(provider: ModelProvider): boolean {
   for (const vendor of Object.keys(provider.connections) as VendorId[]) {
     const conn = provider.connections[vendor]
-    if (conn && conn.baseUrl && (conn.apiKey || provider.apiKey)) return true
+    if (conn && conn.baseUrl && effectiveApiKey(conn.apiKey, provider.apiKey)) return true
   }
   return false
 }

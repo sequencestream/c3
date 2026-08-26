@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { AgentConfig } from '@ccc/shared/protocol'
+import { ModelProviderPausedError } from '../agent-config/errors.js'
 import { buildAgentsToTry } from './build-chain.js'
 
 const agent = (id: string, vendor: AgentConfig['vendor']): AgentConfig =>
@@ -94,6 +95,24 @@ describe('buildAgentsToTry — vendor-homogeneous chain', () => {
     )
     expect(agentsToTry.map((a) => a.agentId)).toEqual(['c1'])
     expect(crossVendorSkipped.map((a) => a.agentId)).toEqual(['cx'])
+  })
+
+  it('skips a paused-provider fallback without aborting the chain ahead of it', () => {
+    const launchOrPause = (a: AgentConfig): { model?: string } => {
+      if (a.id === 'c2') throw new ModelProviderPausedError('p-paused', a.id)
+      return launch(a)
+    }
+    const { agentsToTry, crossVendorSkipped, pausedSkipped } = buildAgentsToTry(
+      first,
+      'claude',
+      ['c2', 'c1'],
+      resolve,
+      launchOrPause,
+    )
+    // c2 is paused → dropped; c1 is self → dropped. Attempt 0 (session agent) remains.
+    expect(agentsToTry.map((a) => a.agentId)).toEqual(['c1'])
+    expect(crossVendorSkipped).toEqual([])
+    expect(pausedSkipped).toEqual([{ agentId: 'c2', agentName: 'C2', vendor: 'claude' }])
   })
 
   it('anchors on the session vendor — a codex session keeps codex fallbacks', () => {

@@ -11,6 +11,7 @@
  * server (the browser cannot, and the stored key must not travel to it).
  */
 import type { ModelProvider, VendorId } from '@ccc/shared/protocol'
+import { effectiveApiKey } from '@ccc/shared/protocol'
 import { checkProviderBaseUrl } from '@ccc/shared'
 import {
   applyProviderMigration,
@@ -63,10 +64,13 @@ export const providerMigrationHandler: Handler<'provider_migration'> = (_ctx, co
 const PROBE_TIMEOUT_MS = 6000
 
 /**
- * The effective connection to dial: a saved provider's (so its key stays server-side)
- * or the draft the console sent. Returns null when a named provider or its vendor
- * connection does not exist — the caller turns that into a structural verdict rather
- * than dialling something arbitrary.
+ * The effective connection to dial. Draft fields win when the console sent a
+ * `baseUrl` — that is what lets an unsaved edit (or a brand-new provider not yet
+ * on disk) be probed as typed, rather than whatever the last save left behind (or
+ * nothing). A named `providerId` without a draft URL falls back to the stored
+ * connection so a re-probe of an unchanged row never needs the browser to re-send
+ * the key. Returns null when neither path yields a base URL — the caller turns
+ * that into a structural verdict rather than dialling something arbitrary.
  */
 function probeTarget(
   providers: readonly ModelProvider[],
@@ -75,14 +79,24 @@ function probeTarget(
   draftBaseUrl: string | undefined,
   draftApiKey: string | undefined,
 ): { baseUrl: string; apiKey: string } | null {
+  if (draftBaseUrl) {
+    // Blank draft key + a named provider ⇒ fall back to the stored effective key
+    // so probing a URL-only edit still authenticates with the saved credential.
+    let apiKey = draftApiKey ?? ''
+    if (!apiKey.trim() && providerId) {
+      const provider = providers.find((p) => p.id === providerId)
+      const conn = provider?.connections[vendor]
+      if (provider && conn) apiKey = effectiveApiKey(conn.apiKey, provider.apiKey)
+    }
+    return { baseUrl: draftBaseUrl, apiKey }
+  }
   if (providerId) {
     const provider = providers.find((p) => p.id === providerId)
     const conn = provider?.connections[vendor]
     if (!provider || !conn) return null
-    return { baseUrl: conn.baseUrl, apiKey: conn.apiKey ?? provider.apiKey }
+    return { baseUrl: conn.baseUrl, apiKey: effectiveApiKey(conn.apiKey, provider.apiKey) }
   }
-  if (!draftBaseUrl) return null
-  return { baseUrl: draftBaseUrl, apiKey: draftApiKey ?? '' }
+  return null
 }
 
 /**
@@ -146,11 +160,15 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
       headers.authorization = `Bearer ${target.apiKey}`
       headers['x-api-key'] = target.apiKey
     }
+    // 'manual': a misconfigured or malicious baseUrl's 30x must not carry the
+    // Authorization / x-api-key headers on to a redirect target the operator never
+    // typed. The redirect response's own status still answers "does this endpoint
+    // exist" — this probe never needed to follow it.
     const resp = await fetch(target.baseUrl, {
       method: 'GET',
       headers,
       signal: controller.signal,
-      redirect: 'follow',
+      redirect: 'manual',
     })
     conn.send({
       type: 'model_provider_probe_result',

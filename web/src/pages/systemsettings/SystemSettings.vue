@@ -59,7 +59,9 @@ defineEmits<{
       agentIds?: string[]
     },
   ]
-  'provider-probe': [payload: { providerId: string; vendor: VendorId }]
+  'provider-probe': [
+    payload: { providerId: string; vendor: VendorId; baseUrl?: string; apiKey?: string },
+  ]
 }>()
 </script>
 

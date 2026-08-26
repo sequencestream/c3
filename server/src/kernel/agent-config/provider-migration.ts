@@ -34,7 +34,7 @@ import type {
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
-import { hasProviderConfig } from '@ccc/shared/protocol'
+import { effectiveApiKey, hasProviderConfig } from '@ccc/shared/protocol'
 
 /** The tuple identity two agents must share to collapse onto one provider. */
 function tupleKey(vendor: VendorId, baseUrl: string, apiKey: string, wireApi?: string): string {
@@ -120,7 +120,7 @@ function findMatchingProvider(
   return providers.find((p) => {
     const conn = p.connections[vendor]
     if (!conn || conn.baseUrl !== baseUrl) return false
-    if ((conn.apiKey ?? p.apiKey) !== apiKey) return false
+    if (effectiveApiKey(conn.apiKey, p.apiKey) !== apiKey) return false
     if (vendor === 'codex' && wireApi !== undefined && (conn.wireApi ?? 'chat') !== wireApi)
       return false
     return true

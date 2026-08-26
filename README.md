@@ -3,16 +3,17 @@
 An **AI workbench** that centrally manages and drives the work of multiple AI coding agents — Claude Code, Codex, and more — from one browser UI.
 
 ```
-┌────────────┐       /ws        ┌──────────────────────────┐
-│  Browser   │ ───────────────► │  Hono server (this app)  │
-│  (Vue3)    │ ◄─── ws ───────  │   ↓ canUseTool callback  │
-│            │                  │   ↓                      │
-│ Allow/Deny │                  │  claude-agent-sdk        │
-│  dialog    │                  │  codex-sdk               │
-└────────────┘                  └──────────────────────────┘
-                                          │ spawns
-                                          ▼
-                             `claude/codex` CLI binary
+┌────────────┐       /ws        ┌──────────────────────────────┐
+│  Browser   │ ───────────────► │  Hono server (this app)      │
+│  (Vue 3)   │ ◄─── ws ───────  │  sessions / workflows / gate │
+│            │                  │              │               │
+│  Control   │                  │   vendor-neutral adapters    │
+└────────────┘                  └──────────────┬───────────────┘
+                                              │ spawns
+                                  ┌───────────┼───────────┐
+                                  ▼           ▼           ▼
+                               Claude       Codex       Cursor
+                                CLI          CLI      cursor-agent
 ```
 
 ## Core workflow

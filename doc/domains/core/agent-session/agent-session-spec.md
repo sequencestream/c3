@@ -2,9 +2,9 @@
 
 ## Overview
 
-一个 agent session 把用户 prompt 转变为一次 Claude Agent SDK `query()` 运行,流式传输该运行的
-活动,通过 [permission-gateway](../permission-gateway/permission-gateway-spec.md) 门控敏感工具,
-并让用户通过权限模式和中断来引导这次运行。
+一个 agent session 把用户 prompt 转变为一次由 vendor adapter 驱动的智能体运行,流式传输该
+运行的活动,通过 [permission-gateway](../permission-gateway/permission-gateway-spec.md) 执行该
+vendor 支持的工具门控,并让用户通过可用的权限模式和运行控制来引导这次运行。
 
 一次运行**并不**绑定于启动它的浏览器连接。每个会话都有一个
 进程范围的 **Session Runtime** 拥有其运行;连接只是对某个
@@ -14,10 +14,10 @@
 **串行的**(一次一个 turn)——但持久化的 **agent team** 会话除外,其中 lead
 进程在各 turn 之间保持存活,用户可以向其中继续推入更多 turn(AS-R13/R14)。
 
-每次运行都以**流式输入模式**(一个受控的 async-iterable prompt)驱动 SDK,
-而非一次性字符串。一个普通会话在 `result` 上通过关闭流来结束每个 turn 的
-底层进程(因此下一个 turn 会恢复一个全新的进程——即一次性行为);一个
-team 会话则保持流打开,使 lead 进程比该 turn 存活得更久(ADR 0008)。
+Claude 运行以**流式输入模式**(一个受控的 async-iterable prompt)驱动 SDK,
+而非一次性字符串。一个普通 Claude 会话在 `result` 上通过关闭流来结束每个 turn 的
+底层进程;一个 Claude team 会话则保持流打开,使 lead 进程比该 turn 存活得更久
+(ADR 0008)。其他 vendor 由各自 adapter 按能力台账实现运行与续接,上层生命周期保持一致。
 
 运行的上下文——工作目录(`cwd`)、起始权限模式、以及 `resume`
 session id——来自 runtime,由
@@ -32,7 +32,7 @@ session id——来自 runtime,由
 ## Core entities
 
 - **Session Runtime**: 进程范围内某个会话执行的所有者:其运行、用于回放的 `baseline + buffer`、当前 viewers、以及状态
-- **Agent Run**: 由一个用户 prompt 驱动的一次 `query()` 调用
+- **Agent Run**: 由一个用户 prompt 驱动的一次 vendor 运行
 - **Run Handle**: 对进行中运行的实时控制:设置权限模式,以及把下一个用户 turn 推入实时 team 会话
 - **Connection View**: 一个 WebSocket 连接对其当前观察会话的订阅(分发实时事件;加入时回放)
 

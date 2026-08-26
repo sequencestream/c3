@@ -15,19 +15,24 @@
 - WebSocket 通信契约 — [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
 - 前端视觉风格指南 — [`style/style-spec.md`](style/style-spec.md)
 - 性能 / 安全 / 可用性目标 — [`non-functional/`](non-functional/)
-- 某个具体能力的行为 — [`domains/core/`](domains/core/)
+- 某个具体能力的行为 — [`features.md`](features.md) 中的领域索引
 
 ## 领域(Domains)
 
-c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
+c3 有两个业务组:`core`(工作台业务能力)、`settings`(用户配置)。完整领域树以
+[`features.md`](features.md) 为准;这里列出主要入口。
 
 ### 组 `core`
 
-- [`permission-gateway`](domains/core/permission-gateway/): 拦截 SDK 权限请求,将其路由到浏览器,阻塞直到用户做出决定(运行中止则视为拒绝)
-- [`agent-session`](domains/core/agent-session/): 驱动 SDK 的 `query()` 循环,把 SDK 消息映射为通信协议,管理权限模式与运行生命周期
+- [`permission-gateway`](domains/core/permission-gateway/): 按 vendor 能力执行敏感工具门控,将需要人工决策的请求路由到浏览器
+- [`agent-session`](domains/core/agent-session/): 通过统一适配层驱动不同 vendor,规范化消息并管理运行生命周期
 - [`session-registry`](domains/core/session-registry/): 管理工作区与会话;负责每个会话的模式、最近访问顺序、历史回放
 - [`web-console`](domains/core/web-console/): 浏览器 UI:prompt 输入、活动流、权限对话框、模式切换
 - [`intent-management`](domains/core/intent-management/): 一个项目范围的意图台账,以及一个只读的意图沟通智能体,负责把想法拆解为可验证的条目,并启动可配置的开发技能
+- [`discussion`](domains/core/discussion/): 组织多智能体讨论,把结论沉淀为可执行意图
+- [`automations`](domains/core/automations/): 按计划或事件触发智能体工作与业务动作
+- [`delivery`](domains/core/delivery/): 聚合意图 PR,验证并推进批次交付
+- [`external-mcp`](domains/core/external-mcp/): 向外部智能体和自动化暴露受工作区授权约束的 MCP 能力
 - [`im-robot`](domains/core/im-robot/): 聊天机器人:把 agent 能力延伸到办公 IM,群里 @机器人 提问、无人值守跑一轮、把最终回答发回群里;部署级出入口(全局管理 ≠ 无边界访问),外发只经唯一出站守卫
 
 ### 组 `settings`
@@ -35,6 +40,7 @@ c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
 - [`agent-config`](domains/settings/agent-config/): 管理智能体配置(url/key/model + 名称)、默认智能体、专用 agent 路由、按会话绑定
 - [`system-setting`](domains/settings/system-setting/system-setting-spec.md): 管理员全局配置(显示/时区/baseUrl、vendor CLI 版本、系统沙箱定义、代理、鉴权、诊断)
 - [`workspace-setting`](domains/settings/workspace-setting/workspace-setting-spec.md): 按工作区配置(默认模式、dev 技能、Git 分支策略、沙箱引用、共识、讨论上限、SDD、技能仓库)
+- [`personalized-setting`](domains/settings/personalized-setting/personalized-setting-spec.md): 管理账号自己的显示、工作区范围与外部接入配置
 
 ## 使用规则
 
@@ -54,6 +60,5 @@ c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
 
 ## 维护
 
-- 初始化于 2026-05-29。
-- 每个领域都有 `<domain>-overview.md`、`<domain>-spec.md`、`<domain>-design.md`、`<domain>-models.md`。
-- 废弃内容移动到 `archived/`;ADR 从不删除,只会被取代(superseded)。
+- 领域按实际需要提供 overview、spec、design、models 或 feature 文档,不创建空壳文件。
+- ADR 从不删除;被后续决策替代时标记为 superseded。

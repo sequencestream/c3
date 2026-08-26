@@ -50,12 +50,7 @@ export const VENDOR_PROTOCOL_TYPES = {
   claude: ['anthropic'],
   codex: ['openai'],
   cursor: ['openai', 'anthropic'],
-} as const satisfies Record<VendorId, readonly ProtocolType[]>
-
-/** The ordered protocol list a vendor supports. */
-export function protocolsForVendor(vendor: VendorId): readonly ProtocolType[] {
-  return VENDOR_PROTOCOL_TYPES[vendor]
-}
+} as const satisfies Record<VendorId, readonly [ProtocolType, ...ProtocolType[]]>
 
 /**
  * Pick the protocol an agent of `vendor` should use against `urls`: the first entry
@@ -225,19 +220,6 @@ export function resolveProviderUrl(
       ? { wireApi: provider.wireApi }
       : {}),
   }
-}
-
-/**
- * Whether a provider has at least one usable protocol URL (non-empty base URL and
- * a non-empty account key). A provider that returns `false` cannot launch any
- * agent; the console marks it "incomplete".
- */
-export function hasUsableConnection(provider: ModelProvider): boolean {
-  if (!provider.apiKey.trim()) return false
-  for (const protocol of PROTOCOL_TYPES) {
-    if (provider.urls[protocol]?.trim()) return true
-  }
-  return false
 }
 
 /**

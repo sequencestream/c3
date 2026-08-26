@@ -458,6 +458,7 @@ const {
   fetchWorkspaceAccessors,
   userWorkspaceAccess,
   providerMigrationPlan,
+  providerMigrationEcho,
   providerProbes,
   fetchUserWorkspaceAccess,
   saveUserWorkspaceAccess,
@@ -1154,6 +1155,7 @@ function onFilesChatWidth(px: number): void {
       :user-access-accounts="userWorkspaceAccess?.accounts ?? null"
       :user-access-workspaces="userWorkspaceAccess?.workspaces ?? []"
       :provider-migration-plan="providerMigrationPlan"
+      :provider-migration-echo="providerMigrationEcho"
       :provider-probes="providerProbes"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"

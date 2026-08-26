@@ -26,6 +26,7 @@ import type {
   SystemSettings,
   ModelProvider,
   ProviderMigrationPlan,
+  ProtocolType,
   VendorHostStatus,
   VendorId,
   UserWorkspaceAccessAccount,
@@ -91,6 +92,8 @@ const props = withDefaults(
     userAccessWorkspaces?: WorkspaceInfo[]
     /** 内联配置 → provider 的迁移报告;`null` = 尚未取到。 */
     providerMigrationPlan?: ProviderMigrationPlan | null
+    /** 最近一次 provider_migration_plan 回包的 `changed` 标记(单调 seq 触发 watch)。 */
+    providerMigrationEcho?: { seq: number; changed: boolean } | null
     /** provider 连接探测结果,键为 `${providerId}:${vendor}`。 */
     providerProbes?: Record<string, ProviderProbeState>
   }>(),
@@ -104,6 +107,7 @@ const props = withDefaults(
     userAccessAccounts: null,
     userAccessWorkspaces: () => [],
     providerMigrationPlan: null,
+    providerMigrationEcho: null,
     providerProbes: () => ({}),
   },
 )
@@ -272,7 +276,7 @@ const emit = defineEmits<{
   'provider-probe': [
     payload: {
       providerId: string
-      protocolType: import('@ccc/shared/protocol').ProtocolType
+      protocolType: ProtocolType
       baseUrl?: string
       apiKey?: string
     },
@@ -496,7 +500,9 @@ function onAutoConfigureAgents(): void {
 
 // provider 迁移(apply/revert/clear)同样是即时落库:会改 agents 与 modelProviders。
 // 脏页签若不被强制 reseed,下一次 Save 会用旧草稿整体覆盖,抹掉刚写入的 provider
-// 或 providerId,留下悬挂引用。
+// 或 providerId,留下悬挂引用。`provider_migration_plan.changed` 说本次是否
+// 实际写入;空操作迁移只回 plan 不回 settings,须在此清位,否则会滞留到任意
+// 一次无关 settings 回推才误触发 reseed。
 const pendingMigrationReseed = ref(false)
 function onProviderMigrate(payload: {
   action: 'plan' | 'apply' | 'revert' | 'clear'
@@ -506,6 +512,14 @@ function onProviderMigrate(payload: {
   if (payload.action !== 'plan') pendingMigrationReseed.value = true
   emit('provider-migrate', payload)
 }
+
+watch(
+  () => props.providerMigrationEcho,
+  (echo) => {
+    if (!props.open || !echo || !pendingMigrationReseed.value) return
+    if (!echo.changed) pendingMigrationReseed.value = false
+  },
+)
 
 // Re-seed on open, then reconcile field-by-field on every later server pushback.
 // The shared layer owns the merge rules; the panel only supplies the canonical seed

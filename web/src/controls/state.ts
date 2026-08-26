@@ -923,6 +923,9 @@ export function createState(deps: StateDeps) {
   // registry, not a field of it: a settings save must not be able to carry it.
   // `null` = not fetched yet (distinct from "nothing left to migrate").
   const providerMigrationPlan = ref<ProviderMigrationPlan | null>(null)
+  // Monotonic echo of the last provider_migration_plan frame — carries `changed` so
+  // the settings panel can tell a no-op apply (no settings pushback) from a write.
+  const providerMigrationEcho = ref<{ seq: number; changed: boolean } | null>(null)
   // Connection probe results, keyed `${providerId}:${vendor}`. Transient UI state:
   // a probe answers "is this endpoint alive right now", so it is never persisted
   // and is dropped on reconnect along with the rest of the session view.
@@ -1377,6 +1380,7 @@ export function createState(deps: StateDeps) {
     imGroupScopeChatId,
     userWorkspaceAccess,
     providerMigrationPlan,
+    providerMigrationEcho,
     providerProbes,
     workspaceAccessors,
     sessionCapabilities,

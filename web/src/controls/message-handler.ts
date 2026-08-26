@@ -143,6 +143,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     imGroupScopeChatId,
     userWorkspaceAccess,
     providerMigrationPlan,
+    providerMigrationEcho,
     providerProbes,
     workspaceAccessors,
     sessionCapabilities,
@@ -898,6 +899,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         // 服务端在每次 provider 动作后重算的迁移报告。写动作本身还会跟一条 `settings`
         // 回包,注册表由那条统一刷新,这里只更新「还剩什么要迁移」。
         providerMigrationPlan.value = msg.plan
+        providerMigrationEcho.value = {
+          seq: (providerMigrationEcho.value?.seq ?? 0) + 1,
+          changed: msg.changed,
+        }
         break
       case 'model_provider_probe_result': {
         // 探测是逐条协议 URL 的瞬时结论,按 provider×protocolType 覆盖写入,不累积历史。

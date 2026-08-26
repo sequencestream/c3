@@ -22,7 +22,13 @@ export const modelProviderModelSchema = z.object({
 })
 
 /** Per-protocol URL map. Unknown keys are dropped in {@link parseModelProvider}. */
-const urlsRecordSchema = z.record(z.string(), z.string()).default({})
+const urlsRecordSchema = z
+  .object({
+    openai: z.string().optional(),
+    anthropic: z.string().optional(),
+  })
+  .catchall(z.string())
+  .default({})
 
 /**
  * Legacy per-vendor connection blob. Kept only so load can migrate it; never written
@@ -77,11 +83,10 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
   let apiKey = p.apiKey
   let wireApi = p.wireApi
 
-  // New shape first.
+  // New shape first — preserve empty slots so「勾选协议、稍后填 URL」 survives save.
   for (const [key, value] of Object.entries(p.urls)) {
     if ((PROTOCOL_TYPES as readonly string[]).includes(key)) {
-      const trimmed = value.trim()
-      if (trimmed) urls[key as ProtocolType] = trimmed
+      urls[key as ProtocolType] = value.trim()
     } else {
       console.warn(
         `[c3] modelProvider "${p.id}" carries url for unknown protocol "${key}" — dropping.`,
@@ -102,7 +107,16 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
       }
       const trimmed = conn.baseUrl.trim()
       if (trimmed && !urls[protocol]) urls[protocol] = trimmed
-      if (!apiKey.trim() && conn.apiKey?.trim()) apiKey = conn.apiKey.trim()
+      const connKey = conn.apiKey?.trim()
+      if (connKey) {
+        if (!apiKey.trim()) {
+          apiKey = connKey
+        } else if (apiKey !== connKey) {
+          console.warn(
+            `[c3] modelProvider "${p.id}" legacy connections carry different apiKeys (vendor "${vendor}") — keeping the first, dropping the override.`,
+          )
+        }
+      }
       if (protocol === 'openai' && wireApi === undefined && conn.wireApi) {
         wireApi = conn.wireApi
       }
@@ -122,9 +136,10 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
   }
 }
 
-// ---- Type pin: the zod schema's inferred type IS a SUPERSET of the wire ModelProvider
-// (it still carries the optional legacy `connections` arm). The parse function above
-// is what narrows to the public shape — pin the output, not the raw infer.
+// ---- Type pin: parsed output and wire `ModelProvider` must stay aligned ----
 type _AssertExtends<A extends B, B> = A & B
+type _ModelProviderSchemaCore = Omit<z.infer<typeof modelProviderSchema>, 'connections'>
+type _PinSchemaIsWire = _AssertExtends<_ModelProviderSchemaCore, ModelProvider>
+type _PinWireIsSchema = _AssertExtends<ModelProvider, _ModelProviderSchemaCore>
 type _PinParsedIsWire = _AssertExtends<ReturnType<typeof parseModelProvider>, ModelProvider | null>
-export type __ModelProviderSchemaPin = _PinParsedIsWire
+export type __ModelProviderSchemaPin = [_PinSchemaIsWire, _PinWireIsSchema, _PinParsedIsWire]

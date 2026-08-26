@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
 import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import type {
   ProviderMigrationPlan,
+  ProtocolType,
   SessionBindingStats,
   SandboxHostStatus,
   SystemSettings,
@@ -37,6 +38,8 @@ defineProps<{
   userAccessWorkspaces?: WorkspaceInfo[]
   /** 内联配置 → provider 的迁移报告;`null` = 尚未取到。 */
   providerMigrationPlan?: ProviderMigrationPlan | null
+  /** 最近一次 provider_migration_plan 回包的 `changed` 标记。 */
+  providerMigrationEcho?: { seq: number; changed: boolean } | null
   /** provider 连接探测结果,键为 `${providerId}:${vendor}`。 */
   providerProbes?: Record<string, ProviderProbeState>
 }>()
@@ -62,7 +65,7 @@ defineEmits<{
   'provider-probe': [
     payload: {
       providerId: string
-      protocolType: import('@ccc/shared/protocol').ProtocolType
+      protocolType: ProtocolType
       baseUrl?: string
       apiKey?: string
     },
@@ -83,6 +86,7 @@ defineEmits<{
     :user-access-accounts="userAccessAccounts"
     :user-access-workspaces="userAccessWorkspaces"
     :provider-migration-plan="providerMigrationPlan"
+    :provider-migration-echo="providerMigrationEcho"
     :provider-probes="providerProbes"
     @close="$emit('close')"
     @target-consumed="$emit('target-consumed')"

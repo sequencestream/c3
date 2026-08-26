@@ -104,8 +104,8 @@ function inlineTuple(
 }
 
 /** Protocol slot a vendor's inline URL lands in when synthesized into a provider. */
-function protocolForVendor(vendor: VendorId): ProtocolType | null {
-  return VENDOR_PROTOCOL_TYPES[vendor][0] ?? null
+function protocolForVendor(vendor: VendorId): ProtocolType {
+  return VENDOR_PROTOCOL_TYPES[vendor][0]
 }
 
 /**
@@ -132,7 +132,6 @@ function findMatchingProvider(
   wireApi?: string,
 ): ModelProvider | undefined {
   const protocol = protocolForVendor(vendor)
-  if (!protocol) return undefined
   return providers.find((p) => {
     if (p.urls[protocol] !== baseUrl) return false
     if (p.apiKey !== apiKey) return false
@@ -212,20 +211,14 @@ export function applyProviderMigration(
 
   const created: ModelProvider[] = selected
     .filter((g) => !g.reusesExisting)
-    .map((g) => {
-      const protocol = protocolForVendor(g.vendor)
-      if (!protocol) {
-        throw new Error(`migration cannot synthesize a provider for vendor ${g.vendor}`)
-      }
-      return {
-        id: g.providerId,
-        displayName: g.displayName,
-        apiKey: g.apiKey,
-        urls: { [protocol]: g.baseUrl },
-        ...(g.wireApi !== undefined ? { wireApi: g.wireApi } : {}),
-        synthesized: true,
-      }
-    })
+    .map((g) => ({
+      id: g.providerId,
+      displayName: g.displayName,
+      apiKey: g.apiKey,
+      urls: { [protocolForVendor(g.vendor)]: g.baseUrl },
+      ...(g.wireApi !== undefined ? { wireApi: g.wireApi } : {}),
+      synthesized: true,
+    }))
 
   const agentToProvider = new Map<string, string>()
   for (const g of selected) for (const id of g.agentIds) agentToProvider.set(id, g.providerId)

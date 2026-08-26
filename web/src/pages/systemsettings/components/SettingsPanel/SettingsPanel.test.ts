@@ -2678,12 +2678,34 @@ describe('SettingsPanel.vue — provider migration reseed', () => {
     await w.find('[data-testid="provider-migration-apply"]').trigger('click')
     expect(w.emitted('provider-migrate')).toEqual([[{ action: 'apply' }]])
     expect(w.emitted('save')).toBeUndefined()
-    await w.setProps({ settings: postMigration })
+    await w.setProps({
+      providerMigrationEcho: { seq: 1, changed: true },
+      settings: postMigration,
+    })
     expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(false)
     expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
     await w.find(SAVE.provider).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.modelProviders?.some((p) => p.id === 'mp-syn-legacy')).toBe(true)
     expect(saved.agents[0].providerId).toBe('mp-syn-legacy')
+  })
+
+  it('keeps dirty drafts after a no-op migration echo', async () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: postMigration,
+        providerMigrationPlan: migrationPlan,
+      },
+    })
+    await w.find('[data-testid="settings-tab-btn-agent"]').trigger('click')
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    await w.find('[data-testid="settings-tab-btn-provider"]').trigger('click')
+    await w.find('[data-testid="provider-migration-apply"]').trigger('click')
+    await w.setProps({ providerMigrationEcho: { seq: 1, changed: false } })
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    await w.setProps({ settings: { ...postMigration, voiceLang: 'en-US' } })
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parseModelProvider } from './model-provider-schema.js'
 
 describe('parseModelProvider', () => {
@@ -45,5 +45,31 @@ describe('parseModelProvider', () => {
       wireApi: 'chat',
     })
     expect(p).not.toHaveProperty('connections')
+  })
+
+  it('preserves an enabled protocol slot with an empty url', () => {
+    const p = parseModelProvider({
+      id: 'p1',
+      displayName: 'Draft',
+      apiKey: 'sk',
+      urls: { openai: '' },
+      wireApi: 'chat',
+    })
+    expect(p?.urls).toEqual({ openai: '' })
+  })
+
+  it('warns when legacy connections carry different apiKeys', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    parseModelProvider({
+      id: 'p1',
+      displayName: 'Legacy',
+      apiKey: 'sk-first',
+      connections: {
+        claude: { baseUrl: 'https://a.example', apiKey: 'sk-claude' },
+        codex: { baseUrl: 'https://b.example', apiKey: 'sk-codex' },
+      },
+    })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('different apiKeys'))
+    warn.mockRestore()
   })
 })

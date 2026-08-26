@@ -7,6 +7,7 @@
  * `@ccc/shared/protocol` surface.
  */
 
+import type { ProviderMigrationPlan } from './model-provider.js'
 import type {
   ExternalMcpToolDescriptor,
   McpApiKeyMeta,
@@ -68,6 +69,90 @@ export type ServerAutoConfigureAgentsResult = {
   availableVendors: number
   /** The vendors an agent was created for, in canonical order; empty when none. */
   vendors: VendorId[]
+}
+
+/**
+ * Drive the inline-config → {@link ModelProvider} migration. One arm for all four
+ * steps because they operate on the same report and differ only in which side of it
+ * they write — splitting them into four message types would duplicate the same
+ * `providerIds` plumbing four times without making any of them clearer.
+ *
+ *  - `plan`   — read-only: recompute and return the report. The other three actions
+ *               also reply with a fresh plan, so the console never has to re-ask.
+ *  - `apply`  — create/reuse the providers in `providerIds` (all pending groups when
+ *               omitted) and point their agents at them; the inline triple stays.
+ *  - `revert` — undo an apply for the SYNTHESIZED providers in `providerIds` (all of
+ *               them when omitted); agents return to their inline triple.
+ *  - `clear`  — the ONE-WAY cleanup: erase the leftover inline connection on
+ *               `agentIds` (every clearable agent when omitted). Reverting after this
+ *               drops the agent to its vendor CLI login, so the console must confirm.
+ *
+ * Admin-only, like every other system-configuration mutation. `apply`/`revert`/`clear`
+ * also emit the usual `settings` echo.
+ */
+export type ClientProviderMigration = {
+  type: 'provider_migration'
+  action: 'plan' | 'apply' | 'revert' | 'clear'
+  /** Target providers for `apply` / `revert`; omitted ⇒ every eligible one. */
+  providerIds?: string[]
+  /** Target agents for `clear`; omitted ⇒ every clearable one. */
+  agentIds?: string[]
+}
+
+/**
+ * The migration report — the reply to every {@link ClientProviderMigration} action,
+ * recomputed AFTER the write so the console renders what is now true rather than
+ * what it asked for. `changed` says whether the settings were actually written (an
+ * apply with nothing pending is a no-op, and the console should not claim otherwise).
+ */
+export type ServerProviderMigrationPlan = {
+  type: 'provider_migration_plan'
+  plan: ProviderMigrationPlan
+  changed: boolean
+}
+
+/**
+ * Probe one provider connection for reachability — the "is this endpoint alive"
+ * half of the health check whose cheap half (`checkProviderBaseUrl`) the console
+ * already runs locally. Names either a SAVED provider (`providerId` + `vendor`, so
+ * the key never leaves the server) or a DRAFT the user is still typing
+ * (`baseUrl` + `apiKey`), which is what lets the form warn before the first save.
+ *
+ * Admin-only: it reads a stored credential and dials an arbitrary URL from the
+ * server, both of which are administrator territory.
+ */
+export type ClientProbeModelProvider = {
+  type: 'probe_model_provider'
+  vendor: VendorId
+  /** A saved provider to probe. When set, `baseUrl`/`apiKey` are ignored. */
+  providerId?: string
+  /** Draft base URL, used when `providerId` is absent. */
+  baseUrl?: string
+  /** Draft API key, used when `providerId` is absent. May be empty. */
+  apiKey?: string
+}
+
+/**
+ * The probe verdict. `reachable` is deliberately narrow: it means the endpoint
+ * answered, NOT that the key is valid — an auth rejection still proves the URL is
+ * right, so it is reported as `reachable: true` with the status, and the console
+ * distinguishes them. `issue` carries the structural verdict when the URL never got
+ * as far as a request.
+ */
+export type ServerModelProviderProbeResult = {
+  type: 'model_provider_probe_result'
+  vendor: VendorId
+  /** Echoed so a console with several probes in flight can match the reply. */
+  providerId?: string
+  reachable: boolean
+  /** HTTP status when the endpoint answered; absent on a transport failure. */
+  status?: number
+  /** Structural problem with the base URL; absent when it was well-formed. */
+  issue?: string
+  /** Transport error summary (never the URL's credentials); absent on success. */
+  error?: string
+  /** Round-trip time in milliseconds when a request was actually made. */
+  latencyMs?: number
 }
 
 /**

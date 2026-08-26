@@ -44,6 +44,7 @@ import {
   freezeSessionAgent,
   bindClaudeRelay,
   unbindRelay,
+  usesVendorLogin,
 } from '../agent-config/index.js'
 import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
 import { launchSandbox, sandboxEligible, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
@@ -680,7 +681,7 @@ export async function launchRun(
             ? {
                 sandboxPaths: rt.sandboxPaths,
                 sandboxTmpDir: rt.sandboxTmpDir,
-                sandboxAllowKeychain: resolveAgent(agentCfg.agentId).configMode === 'system',
+                sandboxAllowKeychain: usesVendorLogin(resolveAgent(agentCfg.agentId)),
               }
             : {}),
           ...(isIntent
@@ -768,7 +769,7 @@ export async function launchRun(
                 // its store is `host` even under sandbox.
                 const codexSystemRun =
                   resolveAgent(agentCfg.agentId).vendor === 'codex' &&
-                  resolveAgent(agentCfg.agentId).configMode === 'system'
+                  usesVendorLogin(resolveAgent(agentCfg.agentId))
                 freezeSessionAgent(
                   prev,
                   sid,

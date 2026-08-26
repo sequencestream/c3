@@ -17,12 +17,15 @@
 import type {
   AgentConfig,
   ConsensusConfig,
+  ModelProvider,
   SessionAgentSwitch,
   StoreScope,
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
+import type { ConnectionWarning } from './provider-resolve.js'
+import { resolveAgentConnection, resolveModelCaps } from './provider-resolve.js'
 import { groupAgentRef, isGroupAgentRef, parseGroupAgentRef } from '@ccc/shared'
 import type { RelayCandidate } from '../relay/contract.js'
 import { getRelay, withLoopbackNoProxy } from '../relay/runtime.js'
@@ -75,7 +78,7 @@ import {
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { systemAgent } from './normalize.js'
-import { AgentGroupUnavailableError } from './errors.js'
+import { AgentGroupUnavailableError, ModelProviderPausedError } from './errors.js'
 
 export {
   AGENT_ICON_MAX_CHARS,
@@ -86,10 +89,14 @@ export {
 } from './normalize.js'
 export {
   AgentGroupUnavailableError,
+  ModelProviderPausedError,
   isAgentGroupUnavailableError,
+  isModelProviderPausedError,
   isDegradableError,
   isSocketDisconnect,
 } from './errors.js'
+export { resolveAgentConnection, resolveModelCaps } from './provider-resolve.js'
+export type { ConnectionResolution, ConnectionWarning } from './provider-resolve.js'
 export { parseQuotaResetAt } from './quota-reset.js'
 
 export function getDefaultAgentId(): string {
@@ -408,24 +415,86 @@ export function resolveSpecReviewAgent(): AgentConfig {
 }
 
 /**
- * Map one agent's `custom` provider config to a relay candidate — the real upstream
- * `{baseUrl, apiKey, model, wireApi?}` the relay binds behind a per-run token
- * (ADR-0029). Returns null for a `system`-mode agent or an empty base URL ⇒ no
- * relay, the vendor CLI's own login applies. `wireApi` rides only for codex (it
- * selects the relay's translate-vs-passthrough); claude is anthropic passthrough.
+ * The provider registry every launch resolution reads. Split out so the resolution
+ * helpers below stay one `loadSettings()` away from the pure
+ * {@link resolveAgentConnection} — which takes the registry as an argument, so it
+ * can also answer "what WOULD this agent connect to" for an unsaved console edit.
  */
-function agentToRelayCandidate(agent: AgentConfig): RelayCandidate | null {
-  if (agent.configMode !== 'custom') return null
+function providerRegistry(): readonly ModelProvider[] {
+  return loadSettings().modelProviders ?? []
+}
+
+/**
+ * Report a connection resolution's warnings once per (agent, warning) pair. A
+ * dangling or half-configured provider is a configuration mistake the operator must
+ * see, but it is re-resolved on every single launch — logging it unthrottled would
+ * bury the rest of the log within minutes.
+ */
+const reportedConnectionWarnings = new Set<string>()
+
+function reportConnectionWarnings(
+  agent: AgentConfig,
+  warnings: readonly ConnectionWarning[],
+): void {
+  for (const w of warnings) {
+    const key = `${agent.id}:${w.kind}:${w.providerId}`
+    if (reportedConnectionWarnings.has(key)) continue
+    reportedConnectionWarnings.add(key)
+    switch (w.kind) {
+      case 'dangling-provider':
+        console.warn(
+          `[c3] agent "${agent.id}" references unknown model provider "${w.providerId}" — falling back to its inline config / CLI login.`,
+        )
+        break
+      case 'provider-paused':
+        console.warn(
+          `[c3] agent "${agent.id}" references paused model provider "${w.providerId}" — launches will fail until it is resumed.`,
+        )
+        break
+      case 'vendor-connection-missing':
+        console.warn(
+          `[c3] model provider "${w.providerId}" has no "${w.vendor}" connection — agent "${agent.id}" degraded to its "${w.borrowedFrom}" connection.`,
+        )
+        break
+      case 'provider-unusable':
+        console.warn(
+          `[c3] model provider "${w.providerId}" has no usable connection for agent "${agent.id}" (${w.vendor}) — falling back to its inline config / CLI login.`,
+        )
+        break
+    }
+  }
+}
+
+/**
+ * Map one agent's upstream connection to a relay candidate — the real upstream
+ * `{baseUrl, apiKey, model, wireApi?}` the relay binds behind a per-run token
+ * (ADR-0029). The connection comes from the referenced {@link ModelProvider} when
+ * the agent carries a `providerId`, else from its legacy inline triple
+ * ({@link resolveAgentConnection}). Returns null when neither yields a base URL ⇒
+ * no relay, the vendor CLI's own login applies. `wireApi` rides only for codex (it
+ * selects the relay's translate-vs-passthrough); claude is anthropic passthrough.
+ *
+ * Throws {@link ModelProviderPausedError} when the referenced provider is paused:
+ * an operator took that upstream out of service, so a launch through it must fail
+ * with the provider named rather than degrade to somewhere unintended.
+ */
+function agentToRelayCandidate(
+  agent: AgentConfig,
+  providers: readonly ModelProvider[],
+): RelayCandidate | null {
   // Cursor has no relay: c3 speaks neither its wire protocol nor its auth, and
   // its config carries no provider triple. Refusing here is what stops a
   // mis-tagged agent from being handed the Anthropic relay by the endpoint
   // default and failing with an unrelated error.
   if (!hasProviderConfig(agent)) return null
-  const { baseUrl, apiKey, model } = agent.config
-  if (!baseUrl) return null
-  return agent.vendor === 'codex'
-    ? { baseUrl, apiKey, model, wireApi: agent.config.wireApi }
-    : { baseUrl, apiKey, model }
+  const resolved = resolveAgentConnection(agent, providers)
+  reportConnectionWarnings(agent, resolved.warnings)
+  const paused = resolved.warnings.find((w) => w.kind === 'provider-paused')
+  if (paused) throw new ModelProviderPausedError(paused.providerId, agent.id)
+  if (!resolved.connection) return null
+  const { baseUrl, apiKey, wireApi } = resolved.connection
+  const model = agent.config.model
+  return agent.vendor === 'codex' ? { baseUrl, apiKey, model, wireApi } : { baseUrl, apiKey, model }
 }
 
 /**
@@ -445,10 +514,13 @@ function agentToRelayCandidate(agent: AgentConfig): RelayCandidate | null {
  * put first — the visible order would stop matching what runs. Crossing the segment
  * boundary is the resume path's job (the session's group cursor).
  */
-export function launchSegment(candidates: AgentConfig[]): AgentConfig[] {
+export function launchSegment(
+  candidates: AgentConfig[],
+  providers: readonly ModelProvider[] = providerRegistry(),
+): AgentConfig[] {
   if (candidates.length === 0) return candidates
-  if (!agentToRelayCandidate(candidates[0])) return [candidates[0]]
-  const end = candidates.findIndex((a) => !agentToRelayCandidate(a))
+  if (!agentToRelayCandidate(candidates[0], providers)) return [candidates[0]]
+  const end = candidates.findIndex((a) => !agentToRelayCandidate(a, providers))
   return end < 0 ? candidates : candidates.slice(0, end)
 }
 
@@ -473,9 +545,10 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
   // (2026-08-08-013); a system member (no candidate) has none, so no catalog is
   // ever produced for a system launch.
   let firstRelayAgent: AgentConfig | undefined
-  const segment = launchSegment(candidates)
+  const providers = providerRegistry()
+  const segment = launchSegment(candidates, providers)
   for (const agent of segment) {
-    const cand = agentToRelayCandidate(agent)
+    const cand = agentToRelayCandidate(agent, providers)
     if (!cand) continue
     if (!firstRelayAgent) firstRelayAgent = agent
     relayCandidates.push(cand)
@@ -484,14 +557,13 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
   // model: the CLI's fixed launch model — the first candidate's real model, else the
   // leading agent's standalone model override (read in both system and custom mode).
   const model = relayCandidates[0]?.model || segment[0]?.config.model || undefined
-  // Only a `codex` agent carries the optional capability fields; other vendors have
-  // none, so the spread below stays empty for them.
+  // Only a `codex` agent carries model capability fields; other vendors have none,
+  // so the spread below stays empty for them. The values are resolved most-specific
+  // first — the agent's own `modelOverrides`, then the provider's model catalog,
+  // then the legacy inline codex config (see `resolveModelCaps`).
   const codexCaps =
     firstRelayAgent?.vendor === 'codex'
-      ? {
-          contextWindow: firstRelayAgent.config.contextWindow,
-          maxOutputTokens: firstRelayAgent.config.maxOutputTokens,
-        }
+      ? resolveModelCaps(firstRelayAgent, providers, model ?? firstRelayAgent.config.model)
       : {}
 
   if (hasCustomClaude) {
@@ -530,6 +602,24 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
       ? { maxOutputTokens: codexCaps.maxOutputTokens }
       : {}),
   }
+}
+
+/**
+ * Whether this agent runs on the VENDOR CLI's OWN login (a subscription / the
+ * vendor's system config) rather than an upstream c3 relays for it. The question
+ * every sandbox and transcript-location decision actually asks — a run on the
+ * vendor's own login needs the host credential store opened and writes its
+ * transcript where the vendor's host config lives.
+ *
+ * NOT the same as `configMode === 'system'` anymore: `configMode` is derived from
+ * `providerId` alone, so an un-migrated legacy agent (empty `providerId`, a real
+ * inline `baseUrl`) reads as `'system'` while actually connecting to a third-party
+ * upstream. Asking the resolver keeps the dual-track migration invisible to these
+ * call sites.
+ */
+export function usesVendorLogin(agent: AgentConfig): boolean {
+  if (!hasProviderConfig(agent)) return true
+  return resolveAgentConnection(agent, providerRegistry()).connection === null
 }
 
 /** Back-compat single-agent launch — a length-1 candidate list. */

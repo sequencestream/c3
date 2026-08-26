@@ -13,6 +13,7 @@ import {
   GROUP_AGENT_PREFIX,
   SYSTEM_AGENT_ID,
   VENDOR_IDS,
+  deriveConfigMode,
   hasProviderConfig,
 } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
@@ -22,6 +23,8 @@ import type {
   SessionBindingStats,
   SandboxHostStatus,
   SystemSettings,
+  ModelProvider,
+  ProviderMigrationPlan,
   VendorHostStatus,
   VendorId,
   UserWorkspaceAccessAccount,
@@ -44,6 +47,8 @@ import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import TabNav from '@/components/TabNav/TabNav.vue'
 import EmojiPicker from './EmojiPicker.vue'
 import UserAccess from '../UserAccess/UserAccess.vue'
+import ModelProviders from '../ModelProviders/ModelProviders.vue'
+import type { ProviderProbeState } from '@/lib/model-provider'
 
 const { t } = useTypedI18n()
 
@@ -83,6 +88,10 @@ const props = withDefaults(
     userAccessAccounts?: UserWorkspaceAccessAccount[] | null
     /** 「用户与访问」勾选项的工作区来源 —— 由该名册回包携带,而非侧栏可见列表。 */
     userAccessWorkspaces?: WorkspaceInfo[]
+    /** 内联配置 → provider 的迁移报告;`null` = 尚未取到。 */
+    providerMigrationPlan?: ProviderMigrationPlan | null
+    /** provider 连接探测结果,键为 `${providerId}:${vendor}`。 */
+    providerProbes?: Record<string, ProviderProbeState>
   }>(),
   {
     hostStatus: () => [],
@@ -93,6 +102,8 @@ const props = withDefaults(
     target: null,
     userAccessAccounts: null,
     userAccessWorkspaces: () => [],
+    providerMigrationPlan: null,
+    providerProbes: () => ({}),
   },
 )
 
@@ -107,10 +118,14 @@ const props = withDefaults(
 // which workspace), which lives in its own store and is saved per account by its
 // own message. Listing it with no fields is what keeps it out of every
 // whole-object settings save — in both directions.
-type SettingsTab = 'agent' | 'runtime' | 'security' | 'general' | 'access'
-const TABS: SettingsTab[] = ['agent', 'runtime', 'security', 'general', 'access']
+type SettingsTab = 'agent' | 'provider' | 'runtime' | 'security' | 'general' | 'access'
+const TABS: SettingsTab[] = ['agent', 'provider', 'runtime', 'security', 'general', 'access']
 const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   access: [],
+  // provider 与 agent 分属两个页签,却互相引用:agent 上的 providerId 指向这里的记录。
+  // 各自只保存自己的字段,所以「在 agent 页签选一个还没保存的 provider」需要先保存 provider
+  // 页签 —— 表单的新建入口因此是跳到本页签,而不是就地造一条草稿记录。
+  provider: ['modelProviders'],
   agent: [
     'agents',
     'defaultAgentId',
@@ -244,6 +259,16 @@ const emit = defineEmits<{
   // Replace ONE account's workspace policy. Never part of `save`: authorization
   // state and system configuration are saved by different messages on purpose.
   'save-user-access': [payload: { subject: string; mode: WorkspaceScopeMode; workspaces: string[] }]
+  // 迁移与探测都不是「保存一份配置」:前者要服务端对整个注册表算,后者要服务端替我们拨号。
+  // 它们各自即时生效,不进草稿、也不参与任何 Save。
+  'provider-migrate': [
+    payload: {
+      action: 'plan' | 'apply' | 'revert' | 'clear'
+      providerIds?: string[]
+      agentIds?: string[]
+    },
+  ]
+  'provider-probe': [payload: { providerId: string; vendor: VendorId }]
 }>()
 
 // A default, empty SystemSettings — the shape both `draft` and `committed` start
@@ -251,6 +276,7 @@ const emit = defineEmits<{
 function emptySettings(): SystemSettings {
   return {
     agents: [],
+    modelProviders: [],
     defaultAgentId: SYSTEM_AGENT_ID,
     // '' ⇒ background tool sessions follow the default agent.
     toolAgentId: '',
@@ -589,12 +615,9 @@ watch(
   },
 )
 
-// The agent-type (vendor) options and the per-agent config-source options
-// (2026-06-06-007). Vendor decides which client launches; configMode decides
-// whether the provider triple (baseUrl/apiKey/model) is applied or the vendor
-// CLI's own system config is used.
+// Agent 类型(vendor)选项。vendor 决定启动哪个客户端;连接来源则由 providerId 决定
+// —— 见下方的 provider 三态。
 const VENDORS: readonly VendorId[] = VENDOR_ORDER
-const CONFIG_MODES = ['system', 'custom'] as const
 
 /**
  * Whether a vendor can be chosen for a new/edited agent. Gated purely on the
@@ -624,15 +647,6 @@ const unavailableVendorNotes = computed(() =>
     .filter((n) => n.reason !== ''),
 )
 
-/**
- * Which config modes a vendor offers. Cursor is fixed at `system` — it
- * authenticates through its own CLI login and has no relay, so `custom` (which
- * injects a provider triple) has nothing to inject. Offering it would be a lie.
- */
-function configModesFor(vendor: VendorId): readonly ('system' | 'custom')[] {
-  return vendor === 'cursor' ? ['system'] : CONFIG_MODES
-}
-
 // Vendor display names are product identifiers (do-not-translate, see
 // specs/style/i18n-terms.md) rendered as bound data — same exemption pattern as
 // UI_LANG_LABELS — so they don't go through `t`.
@@ -647,6 +661,101 @@ function configModeLabel(m: 'system' | 'custom'): string {
   return m === 'system'
     ? t('settings.agents.configMode.system.label')
     : t('settings.agents.configMode.custom.label')
+}
+
+// ---- Provider 引用(agent 连接来源的三态)----
+//
+// 一个 agent 的连接来自三处之一,下拉里就是这三态:
+//   1. 具名 provider —— 选中它的 id;
+//   2. vendor CLI 自带登录 —— 空值;
+//   3. 旧的内联三元组 —— 还没迁移的历史配置,只读地显示为一个独占选项。
+// configMode 不再由用户直接选:它由前两态派生(deriveConfigMode),第三态是迁移前的过渡。
+// 让用户改的是「连接从哪来」,而不是一个抽象的模式名。
+
+/** 旧内联残留的下拉取值。以 `_` 开头,不可能与真实 provider id 冲突。 */
+const INLINE_OPTION = '_c3_inline'
+/** 「去新建一个 provider」的下拉取值。同样不会与真实 id 冲突。 */
+const NEW_PROVIDER_OPTION = '_c3_new'
+
+const providers = computed<ModelProvider[]>(() => draft.value.modelProviders ?? [])
+
+/** 该 vendor 真正接得上的 provider —— 只列声明了这条 vendor 连接的。 */
+function providersFor(vendor: VendorId): ModelProvider[] {
+  return providers.value.filter((p) => !!p.connections[vendor]?.baseUrl)
+}
+
+/** 仍在用旧内联三元组的 agent:没选 provider,但自己带着 baseUrl。 */
+function isLegacyInline(a: AgentConfig): boolean {
+  return hasProviderConfig(a) && !a.providerId && a.configMode === 'custom' && !!a.config.baseUrl
+}
+
+/** 引用了一个已不存在的 provider。服务端 fail-soft 回落,这里只做可见提示。 */
+function isDanglingProvider(a: AgentConfig): boolean {
+  return !!a.providerId && !providers.value.some((p) => p.id === a.providerId)
+}
+
+function providerSelectValue(a: AgentConfig): string {
+  if (a.providerId) return a.providerId
+  return isLegacyInline(a) ? INLINE_OPTION : ''
+}
+
+/**
+ * 改连接来源。选 provider ⇒ 记下 id 并把 configMode 置为 custom;选「CLI 自带登录」⇒
+ * 清掉 id 并置为 system —— 存的 configMode 此时的唯一作用,是让旧的内联字段不再被使用
+ * (它们仍留在草稿里,直到用户在 provider 页签明确清理)。
+ */
+function setAgentProvider(a: AgentConfig, value: string): void {
+  // 内联残留是状态的展示,不是可选项:选它没有任何新含义。
+  if (value === INLINE_OPTION) return
+  // 「新建 provider」不在这里就地造一条草稿记录:provider 与 agent 分属两个页签、各存各的
+  // 字段,就地新建会让用户在 agent 页签 Save 之后发现新 provider 没被保存。改为把他送到
+  // provider 页签(走既有的脏页签确认),回来时下拉里就有那条记录了。
+  if (value === NEW_PROVIDER_OPTION) {
+    requestTab('provider')
+    return
+  }
+  if (!value) {
+    delete a.providerId
+    a.configMode = 'system'
+    return
+  }
+  a.providerId = value
+  a.configMode = 'custom'
+}
+
+/** 只读的派生模式标签 —— 与服务端 normalize 用的是同一条规则。 */
+function derivedModeLabel(a: AgentConfig): string {
+  return configModeLabel(deriveConfigMode(a))
+}
+
+/**
+ * model 输入框的候选:选了 provider 就是它的目录,否则是所有能服务该 vendor 的 provider 的
+ * 目录合起来 —— 后者就是「先想好用哪个模型,再反查谁提供它」的入口。
+ */
+function modelSuggestions(a: AgentConfig): { value: string; label: string }[] {
+  const pool = a.providerId
+    ? providers.value.filter((p) => p.id === a.providerId)
+    : providersFor(a.vendor)
+  const out: { value: string; label: string }[] = []
+  for (const p of pool) {
+    for (const m of p.models ?? []) {
+      if (m.id) out.push({ value: m.id, label: `${m.id} — ${p.displayName}` })
+    }
+  }
+  return out
+}
+
+/**
+ * model-first 反查:在还没选 provider 的 agent 上填了一个只有某一个 provider 提供的模型,
+ * 就把那个 provider 一并选上。有歧义(多个 provider 都提供)时什么也不做 —— 替用户在两个
+ * 上游之间做选择,比让他多点一下要糟。
+ */
+function onModelPicked(a: AgentConfig): void {
+  if (a.providerId || !hasProviderConfig(a)) return
+  const model = a.config.model.trim()
+  if (!model) return
+  const owners = providersFor(a.vendor).filter((p) => (p.models ?? []).some((m) => m.id === model))
+  if (owners.length === 1) setAgentProvider(a, owners[0].id)
 }
 
 /**
@@ -805,20 +914,17 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   }
 }
 
-// The base URL is only meaningful in `custom` mode, and only for vendors c3 can
-// redirect at all; `system` mode defers to the vendor CLI's own config. `model` is
-// a standalone override visible in BOTH modes (2026-07-02-001) — it does NOT go
-// through this gate.
+// 内联的 baseUrl/apiKey 只在「还没迁移」时出现,而且是只读的:它们是历史残留,改它们只会
+// 让两套配置继续并存。要换上游就选 provider,要清掉残留就去 provider 页签的清理入口。
+// `model` 不受此门控 —— 它在任何一态下都是独立的覆盖项。
 function showBaseUrl(a: AgentConfig): boolean {
-  return hasProviderConfig(a) && a.configMode === 'custom'
+  return isLegacyInline(a)
 }
 
-// The API key follows the base URL for redirectable vendors, and cursor offers it
-// in `system` mode too: its CLI accepts either a key or the `cursor-agent login`
-// credential, so the field has to be reachable — while staying optional, which is
-// what `apiKeyPlaceholder` says.
+// cursor 的 key 走自己的路:它的 CLI 认 key 或 `cursor-agent login` 任一种,所以这一栏
+// 必须可达且可编辑(留空即用登录态)。其它 vendor 只在内联残留时只读地显示 key。
 function showApiKey(a: AgentConfig): boolean {
-  return a.vendor === 'cursor' || a.configMode === 'custom'
+  return a.vendor === 'cursor' || isLegacyInline(a)
 }
 
 // Cursor is the one vendor whose key is optional: left empty, the run uses the
@@ -834,16 +940,12 @@ function apiKeyPlaceholder(a: AgentConfig): string {
 function baseUrlOf(a: AgentConfig): string {
   return hasProviderConfig(a) ? a.config.baseUrl : ''
 }
-function setBaseUrl(a: AgentConfig, value: string): void {
-  if (hasProviderConfig(a)) a.config.baseUrl = value
-}
 
-// The `wireApi` selector is codex-only and custom-only (2026-06-12-006): it
-// declares the provider's upstream protocol the driver routes on. A `system`-mode
-// codex (or any other vendor) has no such field.
+// wireApi 只属于 codex,而且只在内联残留里还看得见:选了 provider 之后,协议是那条连接的
+// 属性,在 provider 页签上编辑。
 const WIRE_APIS = ['chat', 'responses'] as const
 function showWireApi(a: AgentConfig): boolean {
-  return a.vendor === 'codex' && a.configMode === 'custom'
+  return a.vendor === 'codex' && isLegacyInline(a)
 }
 function wireApiLabel(w: 'responses' | 'chat'): string {
   return w === 'responses'
@@ -853,9 +955,6 @@ function wireApiLabel(w: 'responses' | 'chat'): string {
 // Narrow the union for template read/write — `wireApi` lives only on the codex arm.
 function wireApiOf(a: AgentConfig): 'responses' | 'chat' {
   return a.vendor === 'codex' ? a.config.wireApi : 'chat'
-}
-function setWireApi(a: AgentConfig, w: 'responses' | 'chat'): void {
-  if (a.vendor === 'codex') a.config.wireApi = w
 }
 
 function removeAgent(id: string) {
@@ -1714,22 +1813,55 @@ function selectAdmin(username: string) {
                   </option>
                 </select>
                 <select
-                  v-model="a.configMode"
-                  class="agent-field agent-configmode"
-                  :title="t('settings.agents.configMode.tooltip')"
-                  data-testid="agent-configmode"
+                  v-if="hasProviderConfig(a)"
+                  class="agent-field agent-provider"
+                  :value="providerSelectValue(a)"
+                  :title="t('settings.agents.provider.tooltip')"
+                  data-testid="agent-provider"
+                  @change="setAgentProvider(a, ($event.target as HTMLSelectElement).value)"
                 >
-                  <option v-for="m in configModesFor(a.vendor)" :key="m" :value="m">
-                    {{ configModeLabel(m) }}
+                  <option value="">{{ t('settings.agents.provider.systemLogin.label') }}</option>
+                  <option v-for="p in providersFor(a.vendor)" :key="p.id" :value="p.id">
+                    {{ p.displayName }}
+                  </option>
+                  <!-- 悬挂引用仍要显示出来,否则下拉会自己跳到别的值,把问题掩盖掉。 -->
+                  <option v-if="isDanglingProvider(a)" :value="a.providerId">
+                    {{ t('settings.agents.provider.missing.label', { id: a.providerId ?? '' }) }}
+                  </option>
+                  <!-- 引用了存在、但没有这条 vendor 连接的 provider:可选,运行时会降级。 -->
+                  <option
+                    v-else-if="
+                      a.providerId && !providersFor(a.vendor).some((p) => p.id === a.providerId)
+                    "
+                    :value="a.providerId"
+                  >
+                    {{
+                      t('settings.agents.provider.noConnection.label', {
+                        name: providers.find((p) => p.id === a.providerId)?.displayName ?? '',
+                        vendor: a.vendor,
+                      })
+                    }}
+                  </option>
+                  <option v-if="isLegacyInline(a)" :value="INLINE_OPTION" disabled>
+                    {{ t('settings.agents.provider.legacy.label') }}
+                  </option>
+                  <option :value="NEW_PROVIDER_OPTION">
+                    {{ t('settings.agents.provider.create.label') }}
                   </option>
                 </select>
+                <span
+                  class="agent-configmode-derived"
+                  :title="t('settings.agents.configMode.derived.tooltip')"
+                  data-testid="agent-configmode"
+                  >{{ derivedModeLabel(a) }}</span
+                >
                 <input
                   v-if="showBaseUrl(a)"
                   :value="baseUrlOf(a)"
                   class="agent-field agent-url"
-                  :title="t('settings.agents.col.baseUrl.label')"
+                  readonly
+                  :title="t('settings.agents.provider.legacy.notice')"
                   :placeholder="t('settings.agents.baseUrl.placeholder')"
-                  @input="setBaseUrl(a, ($event.target as HTMLInputElement).value)"
                 />
                 <input
                   v-if="showApiKey(a)"
@@ -1737,27 +1869,30 @@ function selectAdmin(username: string) {
                   class="agent-field agent-key"
                   type="password"
                   autocomplete="off"
+                  :readonly="a.vendor !== 'cursor'"
                   :title="t('settings.agents.col.apiKey.label')"
                   :placeholder="apiKeyPlaceholder(a)"
                 />
                 <input
                   v-model="a.config.model"
                   class="agent-field agent-model"
+                  :list="`agent-models-${a.id}`"
                   :title="t('settings.agents.col.model.label')"
                   :placeholder="t('settings.agents.model.placeholder')"
+                  @change="onModelPicked(a)"
                 />
+                <datalist :id="`agent-models-${a.id}`">
+                  <option v-for="m in modelSuggestions(a)" :key="m.value" :value="m.value">
+                    {{ m.label }}
+                  </option>
+                </datalist>
                 <select
                   v-if="showWireApi(a)"
                   class="agent-field agent-wireapi"
                   :value="wireApiOf(a)"
-                  :title="t('settings.agents.wireApi.tooltip')"
+                  disabled
+                  :title="t('settings.agents.provider.legacy.notice')"
                   data-testid="agent-wireapi"
-                  @change="
-                    setWireApi(
-                      a,
-                      ($event.target as HTMLSelectElement).value as 'responses' | 'chat',
-                    )
-                  "
                 >
                   <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
                 </select>
@@ -2407,6 +2542,24 @@ function selectAdmin(username: string) {
            Field-less: it edits authorization state, saved per account by its own
            message, so there is no draft here and no Save button in the footer. -->
       <div
+        v-show="activeTab === 'provider'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-provider"
+      >
+        <ModelProviders
+          :providers="draft.modelProviders ?? []"
+          :agents="draft.agents"
+          :plan="providerMigrationPlan"
+          :probes="providerProbes"
+          :is-admin="isAdmin"
+          @change="(list) => (draft.modelProviders = list)"
+          @probe="(p) => emit('provider-probe', p)"
+          @migrate="(p) => emit('provider-migrate', p)"
+        />
+      </div>
+
+      <div
         v-show="activeTab === 'access'"
         class="settings-tab-panel"
         role="tabpanel"
@@ -2431,6 +2584,21 @@ function selectAdmin(username: string) {
           >{{ t('settings.tabs.unsaved.label') }}</span
         >
         <button data-testid="settings-save-agent" :disabled="!isAdmin" @click="saveTab('agent')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'provider'" class="settings-tab-actions">
+        <span
+          v-if="tabDirtyMap.provider"
+          class="settings-unsaved"
+          data-testid="settings-unsaved-provider"
+          >{{ t('settings.tabs.unsaved.label') }}</span
+        >
+        <button
+          data-testid="settings-save-provider"
+          :disabled="!isAdmin"
+          @click="saveTab('provider')"
+        >
           {{ t('common.action.save.label') }}
         </button>
       </div>

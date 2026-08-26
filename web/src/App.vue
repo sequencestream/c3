@@ -425,6 +425,8 @@ const {
   bindingStats,
   saveSettings,
   autoConfigureAgents,
+  providerMigration,
+  probeModelProvider,
   setLocale,
   setTheme,
   setFontScale,
@@ -455,6 +457,8 @@ const {
   workspaceAccessors,
   fetchWorkspaceAccessors,
   userWorkspaceAccess,
+  providerMigrationPlan,
+  providerProbes,
   fetchUserWorkspaceAccess,
   saveUserWorkspaceAccess,
   openSettingsFromWorkspaceSetting,
@@ -1149,6 +1153,8 @@ function onFilesChatWidth(px: number): void {
       :target="settingsTarget"
       :user-access-accounts="userWorkspaceAccess?.accounts ?? null"
       :user-access-workspaces="userWorkspaceAccess?.workspaces ?? []"
+      :provider-migration-plan="providerMigrationPlan"
+      :provider-probes="providerProbes"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
       @save="saveSettings"
@@ -1158,6 +1164,8 @@ function onFilesChatWidth(px: number): void {
       @set-admin-account="setAdminAccount"
       @reload-user-access="fetchUserWorkspaceAccess"
       @save-user-access="saveUserWorkspaceAccess"
+      @provider-migrate="providerMigration"
+      @provider-probe="probeModelProvider"
     />
 
     <PersonalizedSettingPage

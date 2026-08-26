@@ -51,6 +51,7 @@ import {
   resolveAgent,
   resolveSessionLaunch,
   resolveSessionStoreScope,
+  usesVendorLogin,
 } from '../agent-config/index.js'
 import { askQuestions } from '../../consensus-tally.js'
 import { waitForAskAnswers, waitForDecision } from '../permission/index.js'
@@ -599,7 +600,7 @@ export async function runViaDriver(
   const sandboxWrapperPath =
     rt.sandboxPaths && VENDOR_AUTH_PROFILES[adapter.vendor]
       ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
-          allowKeychain: resolveAgent(agentId).configMode === 'system',
+          allowKeychain: usesVendorLogin(resolveAgent(agentId)),
         })
       : undefined
   // A spec session has TWO roots, and they are not the same directory: the code
@@ -834,7 +835,7 @@ export async function runViaDriver(
       // and cursor writes its chats into the host ~/.cursor on every run.
       const hostStoreRun =
         adapter.vendor === 'cursor' ||
-        (adapter.vendor === 'codex' && resolveAgent(agentId).configMode === 'system')
+        (adapter.vendor === 'codex' && usesVendorLogin(resolveAgent(agentId)))
       freezeSessionAgent(
         prev,
         sid,

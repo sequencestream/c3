@@ -85,6 +85,10 @@ vi.mock('../agent-config/index.js', () => ({
     model: (a.vendor === 'cursor' ? '' : a.config.model) || undefined,
   })),
   freezeSessionAgent: vi.fn(),
+  // The real helper asks the connection resolver; the fixture agents carry no
+  // provider, so "runs on the vendor's own login" reduces to "not a custom agent
+  // with a real inline base URL" — the same answer for every case here.
+  usesVendorLogin: vi.fn((a: AgentConfig) => (a.providerId ? false : a.configMode !== 'custom')),
   bindClaudeRelay: vi.fn(() => null),
   unbindRelay: vi.fn(),
 }))

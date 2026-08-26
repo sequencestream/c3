@@ -308,20 +308,35 @@ export function hasProviderConfig(
 }
 
 /**
- * Derive the effective `configMode` from an agent's `providerId` and vendor —
- * the single source of truth the server `normalize` applies on every load/save.
+ * Derive the effective `configMode` — the single source of truth the server
+ * `normalize` applies on every load/save, and the same rule the console uses to
+ * label an agent.
  *
- * Rule: a non-empty `providerId` ⇒ `'custom'` (provider supplies the connection);
- * empty ⇒ `'system'` (vendor CLI login / legacy inline). Cursor is always
- * `'system'` — it cannot reference a provider, so a non-empty `providerId` is
- * stripped by normalize and this function returns `'system'` regardless.
+ * Order:
+ *  1. Cursor is ALWAYS `'system'`: it cannot reference a provider and has no
+ *     relay speaking its protocol.
+ *  2. A non-empty {@link AgentConfigBase.providerId} ⇒ `'custom'` — the named
+ *     provider supplies the connection.
+ *  3. No `providerId`, but the STORED mode is `'custom'` and the legacy inline
+ *     `baseUrl` is non-empty ⇒ `'custom'`: an un-migrated agent from before the
+ *     provider registry, still connecting through its own inline triple. This is
+ *     the dual-track arm — without it, every pre-migration custom agent would
+ *     silently drop to the vendor CLI's login.
+ *  4. Otherwise `'system'` — the vendor CLI's own login. Note this covers "the
+ *     user switched an agent back to system but the form kept the old baseUrl
+ *     text": the stored mode, not the leftover field, decides.
  *
- * Pure function — no IO, no mutation. Exported so both the server normalize layer
- * and the web console can compute the displayed mode without duplicating the rule.
+ * So the stored value is not a second source of truth for "which provider" — it
+ * only answers "may the leftover inline triple still be used", which is exactly
+ * what makes the migration reversible: clearing `providerId` returns the agent to
+ * its legacy inline connection instead of breaking it.
+ *
+ * Pure function — no IO, no mutation.
  */
-export function deriveConfigMode(agent: Pick<AgentConfigBase, 'vendor' | 'providerId'>): 'system' | 'custom' {
+export function deriveConfigMode(agent: AgentConfig): 'system' | 'custom' {
   if (agent.vendor === 'cursor') return 'system'
-  return agent.providerId ? 'custom' : 'system'
+  if (agent.providerId) return 'custom'
+  return agent.configMode === 'custom' && agent.config.baseUrl ? 'custom' : 'system'
 }
 
 /**

@@ -106,6 +106,16 @@ export interface ModelProvider {
    */
   models?: ModelProviderModel[]
   /**
+   * Set on a provider that the MIGRATION synthesized from legacy inline agent
+   * configs, rather than one a user created by hand. It marks the record as
+   * reversible: `revertProviderMigration` deletes exactly these (and only while no
+   * agent still references them), returning the agents to their inline triple —
+   * which is still there, because migration never erases it. A user edit of a
+   * synthesized provider is expected to clear the flag (it is a hand-maintained
+   * record from then on).
+   */
+  synthesized?: boolean
+  /**
    * Operator pause flag. When `true`, the provider is marked "under maintenance":
    * agents referencing it fail loudly at launch with a clear error (rather than a
    * cryptic auth failure), and the console greys out the provider in pickers. A
@@ -113,6 +123,44 @@ export interface ModelProvider {
    * `false`. Absent/`false` ⇒ active.
    */
   paused?: boolean
+}
+
+/**
+ * One group of agents that share an identical legacy inline connection tuple
+ * `(vendor, baseUrl, apiKey, wireApi)`, mapped to the provider they collapse onto.
+ * Part of the migration REPORT the console renders — computed server-side, never
+ * sent upward by a client.
+ */
+export interface ProviderMigrationGroup {
+  /** The provider the agents would point at — an existing one, or a to-be-created synthesized one. */
+  providerId: string
+  /** True ⇒ `providerId` names an existing provider whose connection matches this tuple exactly. */
+  reusesExisting: boolean
+  /** The name the synthesized provider would carry (the existing one's name when reused). */
+  displayName: string
+  vendor: VendorId
+  baseUrl: string
+  /** The tuple's key, so the console can show a masked hint next to the group. */
+  apiKey: string
+  /** Codex-only wire protocol carried over from the agents' inline config. */
+  wireApi?: 'responses' | 'chat'
+  /** The agents that would be re-pointed, in settings order. */
+  agentIds: string[]
+}
+
+/**
+ * The migration report: what is still on a legacy inline triple, and what leftover
+ * inline fields could be cleaned up. An empty `groups` with an empty
+ * `clearableAgentIds` means the registry is fully migrated.
+ */
+export interface ProviderMigrationPlan {
+  /** Pending groups: agents still on an inline triple, grouped by identical tuple. */
+  groups: ProviderMigrationGroup[]
+  /**
+   * Agents already pointed at a provider that ALSO still carry a non-empty inline
+   * `baseUrl` — the leftovers the one-way cleanup step would erase.
+   */
+  clearableAgentIds: string[]
 }
 
 /**

@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod'
-import type { ModelProvider, ModelProviderModel, ProviderConnection } from '@ccc/shared/protocol'
+import type { ModelProvider, ProviderConnection } from '@ccc/shared/protocol'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 
 /** One model entry in a provider's optional model catalog. */
@@ -52,6 +52,7 @@ export const modelProviderSchema = z.object({
   apiKey: z.string().default(''),
   connections: connectionsRecordSchema.default({}),
   models: z.array(modelProviderModelSchema).optional(),
+  synthesized: z.boolean().optional(),
   paused: z.boolean().optional(),
 })
 
@@ -91,6 +92,7 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
     apiKey: p.apiKey,
     connections: filtered,
     ...(p.models !== undefined ? { models: p.models } : {}),
+    ...(p.synthesized !== undefined ? { synthesized: p.synthesized } : {}),
     ...(p.paused !== undefined ? { paused: p.paused } : {}),
   }
 }

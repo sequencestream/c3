@@ -78,6 +78,7 @@ import type {
   VendorId,
   VendorRuntimeStatus,
   WaitUserInvolveEvent,
+  ProviderMigrationPlan,
   UserWorkspaceAccessAccount,
   WorkspaceInfo,
   WorkspaceDashboardRow,
@@ -95,6 +96,7 @@ import { useTypedI18n } from '@/i18n'
 import { useModeLabel, CLAUDE_MODE_FALLBACK } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
 import type { ApprovalRequest } from '@/components/SkillApprovalModal/SkillApprovalModal.vue'
+import type { ProviderProbeState } from '@/lib/model-provider'
 
 export type TypedT = ReturnType<typeof useTypedI18n>['t']
 export type ModeLabel = ReturnType<typeof useModeLabel>
@@ -915,6 +917,17 @@ export function createState(deps: StateDeps) {
     accounts: UserWorkspaceAccessAccount[]
   } | null>(null)
 
+  // ---- Model providers (system settings) ----
+  // The inline-config migration report, recomputed server-side on every provider
+  // action. Held outside `serverSettings` because it is a DERIVED view of the
+  // registry, not a field of it: a settings save must not be able to carry it.
+  // `null` = not fetched yet (distinct from "nothing left to migrate").
+  const providerMigrationPlan = ref<ProviderMigrationPlan | null>(null)
+  // Connection probe results, keyed `${providerId}:${vendor}`. Transient UI state:
+  // a probe answers "is this endpoint alive right now", so it is never persisted
+  // and is dropped on reconnect along with the rest of the session view.
+  const providerProbes = ref<Record<string, ProviderProbeState>>({})
+
   // ---- Workspace accessors (workspace settings, read-only) ----
   // Who can reach the CURRENT workspace, derived server-side. `null` until the
   // first answer arrives, so "not loaded yet" is distinguishable from "nobody".
@@ -1363,6 +1376,8 @@ export function createState(deps: StateDeps) {
     imGroupWorkspaceScopes,
     imGroupScopeChatId,
     userWorkspaceAccess,
+    providerMigrationPlan,
+    providerProbes,
     workspaceAccessors,
     sessionCapabilities,
     skillSupport,

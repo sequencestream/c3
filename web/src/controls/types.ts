@@ -16,6 +16,7 @@ import type {
   IntentSpecMode,
   IntentStatus,
   ModeToken,
+  VendorId,
   PromptImage,
   Automation,
   ServerToClient,
@@ -396,6 +397,14 @@ export interface AppMethods {
   saveSettings(settings: SystemSettings): void
   /** Probe runnable vendors and persist a system-mode agent for each without one. */
   autoConfigureAgents(): void
+  /** Run one step of the inline-config → model-provider migration (plan/apply/revert/clear). */
+  providerMigration(payload: {
+    action: 'plan' | 'apply' | 'revert' | 'clear'
+    providerIds?: string[]
+    agentIds?: string[]
+  }): void
+  /** Dial one provider connection from the server and report whether it answers. */
+  probeModelProvider(payload: { providerId: string; vendor: VendorId }): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void

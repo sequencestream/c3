@@ -824,6 +824,12 @@
       "goto": {
         "label": "Configure it in System Settings"
       },
+      "endpoint": {
+        "title": {
+          "label": "MCP endpoint"
+        },
+        "hint": "Clients connect here. The same address serves every key and workspace; put the key in the Authorization header."
+      },
       "reveal": {
         "title": "Key for “{name}”",
         "onceOnly": "Shown once. It is not stored anywhere and cannot be recovered — copy it now.",

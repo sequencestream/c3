@@ -133,5 +133,21 @@ describe('the one-time reveal', () => {
     )
     // Nothing to copy that would be wrong: the endpoint is omitted, not guessed.
     expect(w.find('[data-testid="personal-mcp-keys-url"]').exists()).toBe(false)
+    expect(w.find('[data-testid="personal-mcp-keys-endpoint-url"]').exists()).toBe(false)
+  })
+})
+
+describe('the always-on endpoint', () => {
+  it('lists the MCP address below the key roster when baseUrl is set', () => {
+    const w = render()
+    expect(w.get('[data-testid="personal-mcp-keys-endpoint-url"]').text()).toBe(
+      'http://192.168.1.10:3000/mcp',
+    )
+  })
+
+  it('says the public address is missing instead of guessing the browser Host', () => {
+    const w = render({ baseUrl: null })
+    expect(w.find('[data-testid="personal-mcp-keys-no-base-url"]').exists()).toBe(true)
+    expect(w.find('[data-testid="personal-mcp-keys-endpoint-url"]').exists()).toBe(false)
   })
 })

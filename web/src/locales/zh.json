@@ -824,6 +824,12 @@
       "goto": {
         "label": "去系统设置里配置"
       },
+      "endpoint": {
+        "title": {
+          "label": "访问地址"
+        },
+        "hint": "客户端连这里。同一地址服务每一把 key 和每一个工作区;凭据放在 Authorization 头。"
+      },
       "reveal": {
         "title": "「{name}」的 key",
         "onceOnly": "只显示这一次。它不落任何存储,也无法找回 —— 请现在复制走。",

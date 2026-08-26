@@ -64,23 +64,22 @@ export interface AgentConfigBase {
    * {@link vendor}.
    *
    * **Derived field (read-only on the wire):** the server `normalize` recomputes
-   * this from {@link providerId} on every load/save — a non-empty `providerId`
-   * yields `'custom'` (the provider supplies the connection), an empty one yields
-   * `'system'` (the vendor CLI's own login / legacy inline config). The console
-   * renders this as a read-only label; editing it means editing `providerId`
-   * instead. Cursor is always `'system'` (it cannot reference a provider).
+   * this via {@link deriveConfigMode} on every load/save. The console renders this
+   * as a read-only label; editing it means editing `providerId` instead. Cursor is
+   * always `'system'` (it cannot reference a provider).
    *
-   * Retained as a stored field for backward compatibility with old configs and
-   * consumers that have not migrated to reading `providerId`; the normalize layer
-   * is the single source of truth and overwrites any stale value.
+   * Retained as a stored field for consumers that read it directly; the normalize
+   * layer overwrites any stale value. See {@link deriveConfigMode} for the full
+   * derivation order (cursor, `providerId`, legacy inline triple).
    *
    *  - `'system'` — use the vendor CLI's own system config / login (or the legacy
    *    inline `config` triple when `providerId` is empty but `config` has values);
    *    the `config` connection fields (`baseUrl`/`apiKey`) are **ignored** when
    *    `providerId` is set, but `model` IS a standalone override read in both modes.
    *  - `'custom'` — resolve the connection from the referenced {@link ModelProvider}
-   *    (`providerId` non-empty); the inline `config.baseUrl`/`config.apiKey` are
-   *    ignored in favour of the provider's connection.
+   *    (`providerId` non-empty) or, during migration, from the legacy inline triple;
+   *    the inline `config.baseUrl`/`config.apiKey` are ignored in favour of the
+   *    provider's connection when `providerId` is set.
    */
   configMode: 'system' | 'custom'
   /**

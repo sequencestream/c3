@@ -5,7 +5,12 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import SettingsPanel from './SettingsPanel.vue'
 import { SYSTEM_AGENT_ID, VENDOR_IDS } from '@ccc/shared/protocol'
-import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
+import type {
+  SystemSettings,
+  VendorId,
+  VendorRuntimeStatus,
+  ProviderMigrationPlan,
+} from '@ccc/shared/protocol'
 import { useAuth } from '@/composables/useAuth'
 import { applyLocale } from '@/i18n'
 import { VENDOR_COLOR } from '@/lib/vendor'
@@ -52,6 +57,7 @@ const baseSettings: SystemSettings = {
 // activating the tab first.
 const SAVE = {
   agent: '[data-testid="settings-save-agent"]',
+  provider: '[data-testid="settings-save-provider"]',
   runtime: '[data-testid="settings-save-runtime"]',
   security: '[data-testid="settings-save-security"]',
   general: '[data-testid="settings-save-general"]',
@@ -2601,5 +2607,83 @@ describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
     expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
     expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
     expect(w.find(BLOCK).exists()).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — provider migration reseed', () => {
+  const migrationPlan: ProviderMigrationPlan = {
+    groups: [
+      {
+        providerId: 'mp-syn-legacy',
+        reusesExisting: false,
+        displayName: 'Legacy upstream',
+        vendor: 'claude' as VendorId,
+        baseUrl: 'https://old.example',
+        apiKey: 'k',
+        agentIds: ['legacy'],
+      },
+    ],
+    clearableAgentIds: [],
+  }
+
+  const preMigration: SystemSettings = {
+    ...baseSettings,
+    modelProviders: [
+      {
+        id: 'p1',
+        displayName: 'DeepSeek',
+        apiKey: 'sk-1',
+        urls: { anthropic: 'https://api.deepseek.com/anthropic' },
+      },
+    ],
+    agents: [
+      {
+        id: 'legacy',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Legacy',
+        enabled: true,
+        config: { baseUrl: 'https://old.example', apiKey: 'k', model: 'm' },
+      },
+    ],
+  }
+
+  const postMigration: SystemSettings = {
+    ...preMigration,
+    modelProviders: [
+      ...(preMigration.modelProviders ?? []),
+      {
+        id: 'mp-syn-legacy',
+        displayName: 'Legacy upstream',
+        apiKey: 'k',
+        synthesized: true,
+        urls: { anthropic: 'https://old.example' },
+      },
+    ],
+    agents: [
+      {
+        ...preMigration.agents[0],
+        providerId: 'mp-syn-legacy',
+      },
+    ],
+  }
+
+  it('resets dirty provider and agent drafts after a migration echo', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: preMigration, providerMigrationPlan: migrationPlan },
+    })
+    await w.find('[data-testid="settings-tab-btn-provider"]').trigger('click')
+    await w.find('[data-testid="provider-name"]').setValue('Draft rename')
+    expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(true)
+    await w.find('[data-testid="provider-migration-apply"]').trigger('click')
+    expect(w.emitted('provider-migrate')).toEqual([[{ action: 'apply' }]])
+    expect(w.emitted('save')).toBeUndefined()
+    await w.setProps({ settings: postMigration })
+    expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
+    await w.find(SAVE.provider).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.modelProviders?.some((p) => p.id === 'mp-syn-legacy')).toBe(true)
+    expect(saved.agents[0].providerId).toBe('mp-syn-legacy')
   })
 })

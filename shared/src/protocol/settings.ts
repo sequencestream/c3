@@ -255,7 +255,7 @@ export interface SystemSettings {
    * agents. Empty/absent ⇒ no providers configured (all agents use the legacy
    * inline config or system login).
    *
-   * Persisted alongside `agents` in settings.json; the account `apiKey` is
+   * Persisted in `system_configs` alongside `agents`; the account `apiKey` is
    * encrypted at rest with the same `c3secretvN:` scheme as agent apiKeys.
    */
   modelProviders?: ModelProvider[]

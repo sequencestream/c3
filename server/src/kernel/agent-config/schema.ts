@@ -152,9 +152,8 @@ export const agentConfigSchema = z.discriminatedUnion('vendor', [
  * Post-processing:
  *  - Cursor agents: strip `providerId` (cursor cannot reference a provider) and
  *    force `configMode: 'system'`.
- *  - All agents: recompute `configMode` via `deriveConfigMode` (the single source
- *    of truth: `providerId` first, the stored mode only deciding whether a legacy
- *    inline triple still counts).
+ *  - All agents: recompute `configMode` via {@link deriveConfigMode} (the single
+ *    source of truth — see that function for the full derivation order).
  */
 export function parseAgentConfig(raw: unknown): AgentConfig | null {
   const result = agentConfigSchema.safeParse(raw)

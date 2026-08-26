@@ -15,8 +15,8 @@
  * A chain member whose provider is PAUSED is dropped the same way: `launch(agent)`
  * is called eagerly here, for every same-vendor member, before any attempt actually
  * runs — so a paused member three entries down the chain must not blow up
- * resolution for the healthy entries ahead of it (2026-08-26). It is reported
- * alongside the cross-vendor skips rather than thrown.
+ * resolution for the healthy entries ahead of it. It is reported alongside the
+ * cross-vendor skips rather than thrown.
  *
  * Pure: no IO/registry/SDK. The resolver and launch mapper are injected so the
  * builder is unit-tested directly (`build-chain.test.ts`).

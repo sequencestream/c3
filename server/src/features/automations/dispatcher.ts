@@ -35,6 +35,7 @@ import { resolveWorkspaceRoot } from '../../state.js'
 import {
   bindClaudeRelay,
   freezeSessionAgent,
+  isModelProviderPausedError,
   launchForAgent,
   setAgentEnabled,
   unbindRelay,
@@ -652,7 +653,22 @@ async function executeLlmPrompt(
     })
     return
   }
-  const { model, envOverrides: launchEnv, relayCandidates } = launchForAgent(launchAgent)
+  let launchOverrides: ReturnType<typeof launchForAgent>
+  try {
+    launchOverrides = launchForAgent(launchAgent)
+  } catch (err) {
+    clearTimeout(timeoutTimer)
+    if (isModelProviderPausedError(err)) {
+      updateLog(logId, {
+        finishedAt: Date.now(),
+        status: 'failed',
+        error: 'automation_provider_paused',
+      })
+      return
+    }
+    throw err
+  }
+  const { model, envOverrides: launchEnv, relayCandidates } = launchOverrides
 
   // A vendor with no execution path must fail loudly here — never fall through to
   // the claude SDK and run under the wrong engine. The set is the shared

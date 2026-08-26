@@ -494,6 +494,19 @@ function onAutoConfigureAgents(): void {
   emit('auto-configure-agents')
 }
 
+// provider 迁移(apply/revert/clear)同样是即时落库:会改 agents 与 modelProviders。
+// 脏页签若不被强制 reseed,下一次 Save 会用旧草稿整体覆盖,抹掉刚写入的 provider
+// 或 providerId,留下悬挂引用。
+const pendingMigrationReseed = ref(false)
+function onProviderMigrate(payload: {
+  action: 'plan' | 'apply' | 'revert' | 'clear'
+  providerIds?: string[]
+  agentIds?: string[]
+}): void {
+  if (payload.action !== 'plan') pendingMigrationReseed.value = true
+  emit('provider-migrate', payload)
+}
+
 // Re-seed on open, then reconcile field-by-field on every later server pushback.
 // The shared layer owns the merge rules; the panel only supplies the canonical seed
 // and re-mirrors `proxyCfg`, whose form binding lives outside the draft.
@@ -508,12 +521,21 @@ watch(
     if (!prevOpen) {
       seedAll(seed)
       pendingAgentReseed.value = false
+      pendingMigrationReseed.value = false
     } else {
       // The auto-configure echo: only when the registry actually grew does the
       // agent tab yield its draft (see `pendingAgentReseed` above).
       const grew = pendingAgentReseed.value && seed.agents.length > committed.value.agents.length
-      reconcile(seed, grew ? new Set<SettingsTab>(['agent']) : undefined)
+      const forceReseed = new Set<SettingsTab>()
+      if (grew) forceReseed.add('agent')
+      // Migration echo: both tabs that migration writes must yield stale drafts.
+      if (pendingMigrationReseed.value) {
+        forceReseed.add('agent')
+        forceReseed.add('provider')
+      }
+      reconcile(seed, forceReseed.size > 0 ? forceReseed : undefined)
       pendingAgentReseed.value = false
+      pendingMigrationReseed.value = false
     }
     syncProxyRef()
     syncCleanupRef()
@@ -2563,7 +2585,7 @@ function selectAdmin(username: string) {
           :is-admin="isAdmin"
           @change="(list) => (draft.modelProviders = list)"
           @probe="(p) => emit('provider-probe', p)"
-          @migrate="(p) => emit('provider-migrate', p)"
+          @migrate="onProviderMigrate"
         />
       </div>
 

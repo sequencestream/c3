@@ -1078,7 +1078,7 @@ function readProjectConfigsFromDb(): Record<string, WorkspaceSetting> {
  *  - `projectConfigs` — per-project map; `undefined` in `next` ⇒ keep disk wholesale;
  *    present ⇒ shallow-merged per key so another process's newly-added project
  *    survives while `next`'s explicit entries win.
- *  - `degradationChain` / `socketAutoResume` / `proxy` — `undefined` ⇒ keep disk; present ⇒ use `next`.
+ *  - `degradationChain` / `socketAutoResume` / `proxy` / `modelProviders` — `undefined` ⇒ keep disk; present ⇒ use `next`.
  *  - `vendorCliVersions` — `undefined` ⇒ keep disk; present ⇒ use `next`.
  */
 function mergeSettingsOverDisk(
@@ -1095,6 +1095,7 @@ function mergeSettingsOverDisk(
   const socketAutoResume =
     next.socketAutoResume !== undefined ? next.socketAutoResume : d.socketAutoResume
   const proxy = next.proxy !== undefined ? next.proxy : d.proxy
+  const modelProviders = next.modelProviders !== undefined ? next.modelProviders : d.modelProviders
   const vendorCliVersions =
     next.vendorCliVersions !== undefined ? next.vendorCliVersions : d.vendorCliVersions
   return {
@@ -1103,6 +1104,7 @@ function mergeSettingsOverDisk(
     ...(degradationChain !== undefined ? { degradationChain } : {}),
     ...(socketAutoResume !== undefined ? { socketAutoResume } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
+    ...(modelProviders !== undefined ? { modelProviders } : {}),
     ...(vendorCliVersions !== undefined ? { vendorCliVersions } : {}),
   }
 }

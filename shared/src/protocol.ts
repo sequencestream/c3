@@ -10,6 +10,7 @@
  */
 
 export * from './protocol/agent-config.js'
+export * from './protocol/model-provider.js'
 export * from './protocol/auth.js'
 export * from './protocol/automation.js'
 export * from './protocol/file.js'

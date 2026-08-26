@@ -7,6 +7,24 @@
 import type { VendorId } from './vendor.js'
 
 /**
+ * A per-agent model-level override — fine-tunes a specific model's capability
+ * fields without editing the provider's shared model catalog. An agent may carry
+ * several overrides (one per model id); the runtime applies the override whose
+ * `model` matches the agent's selected `config.model`.
+ *
+ * This is the agent-side counterpart to {@link ModelProviderModel} (the provider's
+ * pre-fill catalog). Provider values are suggestions; agent overrides win.
+ */
+export interface ModelOverride {
+  /** Model id this override applies to (matches `config.model`). */
+  model: string
+  /** Override context window (tokens). Absent ⇒ use the provider catalog value or default. */
+  contextWindow?: number
+  /** Override max output tokens. Absent ⇒ use the provider catalog value or default. */
+  maxOutputTokens?: number
+}
+
+/**
  * The id the **synthesized fallback agent** and the **legacy system-agent
  * migration** use (2026-06-06-007). Historically `'system'` was a reserved,
  * undeletable singleton; that special-casing is gone — `configMode: 'system'`
@@ -43,21 +61,51 @@ export interface AgentConfigBase {
   vendor: VendorId
   /**
    * Where this agent's *provider* connection comes from — orthogonal to
-   * {@link vendor} (2026-06-06-007):
-   *  - `'system'` — use the vendor CLI's own system config / login; the
-   *    `config` connection fields (`baseUrl`/`apiKey`) are **ignored**, but
-   *    `model` IS a standalone override read in both modes (2026-07-02-001).
-   *    For `claude` this means first-party (no `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING`
-   *    workaround).
-   *  - `'custom'` — apply the full `config` provider triple (baseUrl, apiKey,
-   *    model) as launch overrides.
-   * This governs ONLY the provider connection uniformly across vendors — model
-   * is an independent override in both modes.
-   * Back-compat: a legacy config without this field defaults to `'custom'` on
-   * load (so previously-configured agents surface with editable provider fields);
-   * `'system'` is only ever set explicitly in the console.
+   * {@link vendor}.
+   *
+   * **Derived field (read-only on the wire):** the server `normalize` recomputes
+   * this from {@link providerId} on every load/save — a non-empty `providerId`
+   * yields `'custom'` (the provider supplies the connection), an empty one yields
+   * `'system'` (the vendor CLI's own login / legacy inline config). The console
+   * renders this as a read-only label; editing it means editing `providerId`
+   * instead. Cursor is always `'system'` (it cannot reference a provider).
+   *
+   * Retained as a stored field for backward compatibility with old configs and
+   * consumers that have not migrated to reading `providerId`; the normalize layer
+   * is the single source of truth and overwrites any stale value.
+   *
+   *  - `'system'` — use the vendor CLI's own system config / login (or the legacy
+   *    inline `config` triple when `providerId` is empty but `config` has values);
+   *    the `config` connection fields (`baseUrl`/`apiKey`) are **ignored** when
+   *    `providerId` is set, but `model` IS a standalone override read in both modes.
+   *  - `'custom'` — resolve the connection from the referenced {@link ModelProvider}
+   *    (`providerId` non-empty); the inline `config.baseUrl`/`config.apiKey` are
+   *    ignored in favour of the provider's connection.
    */
   configMode: 'system' | 'custom'
+  /**
+   * Reference to a named {@link ModelProvider} that supplies this agent's upstream
+   * connection (baseUrl / apiKey / wireApi). When non-empty, the runtime resolves
+   * the provider's connection for this agent's vendor instead of reading the inline
+   * `config` triple. Empty ⇒ use the vendor CLI's own login (system mode) or the
+   * legacy inline `config` values.
+   *
+   * A dangling `providerId` (referencing a deleted/unknown provider) fails soft:
+   * the runtime falls back to system mode and surfaces a visible warning, rather
+   * than crashing the launch.
+   *
+   * Cursor never carries a `providerId`: it has no relay speaking its protocol and
+   * cannot be pointed at a third-party provider. The normalize layer strips a
+   * non-empty value on cursor agents.
+   */
+  providerId?: string
+  /**
+   * Optional per-model overrides — fine-tunes context window / max output tokens
+   * for specific models without editing the provider's shared catalog. Applied at
+   * runtime when the agent's selected `config.model` matches an entry's `model`.
+   * Absent/empty ⇒ no agent-level overrides (use the provider catalog or defaults).
+   */
+  modelOverrides?: ModelOverride[]
   /** Display name. */
   displayName: string
   /**
@@ -257,4 +305,33 @@ export function hasProviderConfig(
     { vendor: 'claude'; config: ClaudeAgentConfig } | { vendor: 'codex'; config: CodexAgentConfig }
   ) {
   return agent.vendor !== 'cursor'
+}
+
+/**
+ * Derive the effective `configMode` from an agent's `providerId` and vendor —
+ * the single source of truth the server `normalize` applies on every load/save.
+ *
+ * Rule: a non-empty `providerId` ⇒ `'custom'` (provider supplies the connection);
+ * empty ⇒ `'system'` (vendor CLI login / legacy inline). Cursor is always
+ * `'system'` — it cannot reference a provider, so a non-empty `providerId` is
+ * stripped by normalize and this function returns `'system'` regardless.
+ *
+ * Pure function — no IO, no mutation. Exported so both the server normalize layer
+ * and the web console can compute the displayed mode without duplicating the rule.
+ */
+export function deriveConfigMode(agent: Pick<AgentConfigBase, 'vendor' | 'providerId'>): 'system' | 'custom' {
+  if (agent.vendor === 'cursor') return 'system'
+  return agent.providerId ? 'custom' : 'system'
+}
+
+/**
+ * Resolve the effective model override for an agent's selected model — scans
+ * `modelOverrides` for an entry whose `model` matches and returns it, or
+ * `undefined` when no override applies. Pure, no mutation.
+ */
+export function resolveModelOverride(
+  agent: Pick<AgentConfigBase, 'modelOverrides'>,
+  model: string,
+): ModelOverride | undefined {
+  return agent.modelOverrides?.find((m) => m.model === model)
 }

@@ -52,6 +52,7 @@ import type {
   CodexPolicy,
   ConsensusConfig,
   GitBranchMode,
+  ModelProvider,
   ModeToken,
   WorkspaceSetting,
   WorkspaceSandboxConfig,
@@ -75,6 +76,7 @@ import {
 } from '../agent-config/normalize.js'
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
+import { parseModelProvider } from '../agent-config/model-provider-schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
 import { DEFAULT_SESSION_RETENTION_DAYS, MIN_SESSION_RETENTION_DAYS } from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
@@ -480,6 +482,26 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Regularize the user-controlled order: pin the system agent, sort by explicit
   // `order_seq`, append missing ones by array order, stamp a dense 0..n sequence.
   const agents: AgentConfig[] = guardReservedAgentIds(canonicalizeAgentOrder(entries))
+  // ---- Model providers ----
+  // Named provider registry (shared upstream connections agents reference via
+  // `providerId`). Each record is validated through the zod schema; invalid ones
+  // are dropped (fail-soft). Duplicate ids are de-duped (first wins). An empty
+  // or absent list normalizes to an empty array (NOT undefined) so the field is
+  // always present on the normalized object — consumers may iterate without a
+  // null-check.
+  const incomingProviders: unknown[] = Array.isArray(raw?.modelProviders)
+    ? (raw.modelProviders as unknown[])
+    : []
+  const modelProviders: ModelProvider[] = []
+  const seenProviderIds = new Set<string>()
+  for (const p of incomingProviders) {
+    if (!p || typeof p !== 'object') continue
+    const parsed = parseModelProvider(p)
+    if (!parsed) continue
+    if (seenProviderIds.has(parsed.id)) continue
+    seenProviderIds.add(parsed.id)
+    modelProviders.push(parsed)
+  }
   // The default must reference an existing *enabled* agent; an unknown, removed,
   // or now-disabled default falls through to the next enabled agent in order_seq
   // (rewrite-on-store, AC-R2/AC-R10) — `resolveDefaultAgentId` returns SYSTEM_AGENT_ID
@@ -566,6 +588,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const sessionCleanup = normalizeSessionCleanupConfig(raw?.sessionCleanup)
   return {
     agents,
+    modelProviders,
     defaultAgentId,
     toolAgentId,
     intentAgentId,

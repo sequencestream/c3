@@ -158,6 +158,7 @@ export function guardReservedAgentIds(agents: AgentConfig[]): AgentConfig[] {
 export function defaultSettings(): SystemSettings {
   return {
     agents: [systemAgent()],
+    modelProviders: [],
     defaultAgentId: SYSTEM_AGENT_ID,
     toolAgentId: '',
     intentAgentId: '',

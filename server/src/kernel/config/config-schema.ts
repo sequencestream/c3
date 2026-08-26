@@ -17,11 +17,17 @@ import type { ConfigRules } from './config-codec.js'
 export const SYSTEM_RULES: ConfigRules = {
   recordArrays: {
     agents: 'id',
+    modelProviders: 'id',
     'auth.provider.accounts': 'username',
     // Deprecated top-level mirror of the per-workspace list; still read for migration.
     skillRepos: 'id',
   },
-  secrets: ['agents.*.config.apiKey', 'auth.provider.accounts.*.passwordHash'],
+  secrets: [
+    'agents.*.config.apiKey',
+    'modelProviders.*.apiKey',
+    'modelProviders.*.connections.*.apiKey',
+    'auth.provider.accounts.*.passwordHash',
+  ],
   json: [
     'degradationChain',
     'consensus.agentIds',

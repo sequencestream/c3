@@ -15,8 +15,16 @@ describe('agent-config schema — claude arm', () => {
     const parsed = parseAgentConfig(validClaude)
     expect(parsed).not.toBeNull()
     expect(parsed?.vendor).toBe('claude')
-    // The config sub-object is routed to the claude arm and preserved.
+    // Leftover connection fields still parse; they are not a source (no providerId
+    // ⇒ derived mode is system). Normalize lifts them later.
     expect(parsed?.config).toEqual({ baseUrl: 'https://x', apiKey: 'k', model: 'claude-opus-4' })
+    expect(parsed?.configMode).toBe('system')
+  })
+
+  it('derives custom only when providerId is set', () => {
+    const parsed = parseAgentConfig({ ...validClaude, providerId: 'mp-1' })
+    expect(parsed?.configMode).toBe('custom')
+    expect(parsed?.providerId).toBe('mp-1')
   })
 
   it('accepts the optional shell fields (enabled / icon)', () => {

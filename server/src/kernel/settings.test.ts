@@ -835,8 +835,8 @@ describe('enabled flag (AC-R10)', () => {
 
   it('an agent with the legacy system id is editable like any other (AC-R1 retired)', () => {
     // 2026-06-06-007: the undeletable, override-ignoring system singleton is gone.
-    // An agent that carries the legacy `system` id is now a normal agent — its
-    // provider overrides are kept (a non-empty baseUrl ⇒ configMode `custom`).
+    // An agent that carries the legacy `system` id is now a normal agent — a leftover
+    // custom triple is lifted to a named provider (`configMode` stays `custom`).
     const saved = saveAgents([
       {
         id: SYSTEM_AGENT_ID,
@@ -851,9 +851,15 @@ describe('enabled flag (AC-R10)', () => {
     expect(sys.enabled).toBe(false)
     expect(sys.configMode).toBe('custom')
     if (!hasProviderConfig(sys)) throw new Error('expected a provider-backed agent')
-    expect(sys.config.baseUrl).toBe('https://one')
-    expect(sys.config.apiKey).toBe('k')
+    expect(sys.providerId).toBeTruthy()
+    expect(sys.config.baseUrl).toBe('')
+    expect(sys.config.apiKey).toBe('')
     expect(sys.config.model).toBe('m')
+    const provider = saved.modelProviders?.find((p) => p.id === sys.providerId)
+    expect(provider).toMatchObject({
+      apiKey: 'k',
+      urls: { anthropic: 'https://one' },
+    })
   })
 
   it('enabledAgents() returns only enabled agents', () => {
@@ -1405,8 +1411,8 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
   })
 
   it('honours an icon on an agent carrying the legacy system id (AC-R1 retired)', () => {
-    // 2026-06-06-007: the system id is no longer special — both the icon and the
-    // provider overrides are kept (non-empty baseUrl ⇒ configMode `custom`).
+    // 2026-06-06-007: the system id is no longer special — the icon is kept and a
+    // leftover custom triple is lifted to a named provider.
     const saved = saveAgents([
       {
         id: SYSTEM_AGENT_ID,
@@ -1421,7 +1427,8 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
     expect(sys.icon).toBe('🛡️')
     expect(sys.configMode).toBe('custom')
     if (!hasProviderConfig(sys)) throw new Error('expected a provider-backed agent')
-    expect(sys.config.baseUrl).toBe('https://one')
+    expect(sys.providerId).toBeTruthy()
+    expect(sys.config.baseUrl).toBe('')
   })
 
   it('truncates an over-long icon on save', () => {
@@ -1453,7 +1460,14 @@ describe('vendor discriminated-union migration (legacy-flat → claude)', () => 
     const a1 = saved.agents.find((a) => a.id === 'a1')!
     expect(a1.vendor).toBe('claude')
     expect(a1.displayName).toBe('One')
-    expect(a1.config).toEqual({ baseUrl: 'https://one', apiKey: 'k1', model: 'm1' })
+    expect(a1.configMode).toBe('custom')
+    expect(a1.providerId).toBeTruthy()
+    expect(a1.config).toEqual({ baseUrl: '', apiKey: '', model: 'm1' })
+    const provider = saved.modelProviders?.find((p) => p.id === a1.providerId)
+    expect(provider).toMatchObject({
+      apiKey: 'k1',
+      urls: { anthropic: 'https://one' },
+    })
     // The flat fields do not survive at the top level.
     expect((a1 as unknown as Record<string, unknown>).baseUrl).toBeUndefined()
     expect((a1 as unknown as Record<string, unknown>).name).toBeUndefined()
@@ -1476,7 +1490,9 @@ describe('vendor discriminated-union migration (legacy-flat → claude)', () => 
       },
     ])
     const a1 = saved.agents.find((a) => a.id === 'a1')!
-    expect(a1.config).toEqual({ baseUrl: 'https://one', apiKey: 'k', model: '' })
+    expect(a1.configMode).toBe('custom')
+    expect(a1.providerId).toBeTruthy()
+    expect(a1.config).toEqual({ baseUrl: '', apiKey: '', model: '' })
     expect(a1.displayName).toBe('One')
   })
 
@@ -1499,7 +1515,8 @@ describe('vendor discriminated-union migration (legacy-flat → claude)', () => 
     const a1 = loadSettings().agents.find((a) => a.id === 'a1')!
     expect(a1.vendor).toBe('claude')
     if (!hasProviderConfig(a1)) throw new Error('expected a provider-backed agent')
-    expect(a1.config.baseUrl).toBe('https://one')
+    expect(a1.providerId).toBeTruthy()
+    expect(a1.config.baseUrl).toBe('')
   })
 })
 
@@ -1536,57 +1553,69 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
 
   it('save writes ciphertext to disk (prefix, no plaintext); load restores plaintext for both vendors', () => {
     saveTwoVendorAgents()
-    // Storage: both apiKeys are prefixed ciphertext under `secret` rows, and the raw
-    // plaintext appears in no row at all.
+    // Storage: leftover agent triples are lifted, so both keys live on the provider
+    // rows as prefixed ciphertext, and the raw plaintext appears in no row at all.
     expect(anyRowContains(CLAUDE_KEY)).toBe(false)
     expect(anyRowContains(CODEX_KEY)).toBe(false)
-    const rows = readRawSystemRows()
-    for (const id of ['cl', 'cx']) {
-      const row = rows.find((r) => r.key === `agents.${id}.config.apiKey`)!
+    const providerKeyRows = readRawSystemRows().filter((r) =>
+      /^modelProviders\.[^.]+\.apiKey$/.test(r.key),
+    )
+    expect(providerKeyRows).toHaveLength(2)
+    for (const row of providerKeyRows) {
       expect(row.type).toBe('secret')
       expect(row.value?.startsWith('c3secretv1:')).toBe(true)
     }
 
-    // Load (fresh, cache cleared): both back to plaintext, and launch env injection too.
+    // Load (fresh, cache cleared): keys sit on the providers, and launch reads them.
     resetSettingsCacheForTests()
     const loaded = loadSettings()
     const cl = loaded.agents.find((a) => a.id === 'cl')!
     const cx = loaded.agents.find((a) => a.id === 'cx')!
-    expect(cl.config.apiKey).toBe(CLAUDE_KEY)
-    expect(cx.config.apiKey).toBe(CODEX_KEY)
+    expect(cl.config.apiKey).toBe('')
+    expect(cx.config.apiKey).toBe('')
+    expect(loaded.modelProviders?.find((p) => p.id === cl.providerId)?.apiKey).toBe(CLAUDE_KEY)
+    expect(loaded.modelProviders?.find((p) => p.id === cx.providerId)?.apiKey).toBe(CODEX_KEY)
     // The decrypted key now rides the relay candidate (never the vendor subprocess env).
     expect(launchForAgent(cl).relayCandidates?.[0]?.apiKey).toBe(CLAUDE_KEY)
     expect(launchForAgent(cx).relayCandidates?.[0]?.apiKey).toBe(CODEX_KEY)
   })
 
-  it('legacy no-prefix plaintext loads fine and is upgraded to ciphertext on next save', () => {
-    // Hand-write a legacy row shape: a PLAINTEXT apiKey stored as a plain string.
+  it('legacy no-prefix plaintext on a provider loads and is upgraded to ciphertext on next save', () => {
+    // Hand-write a legacy row shape: a PLAINTEXT provider apiKey stored as a string.
     seedSystemSettings({
       agents: [
         {
           id: 'cl',
           vendor: 'claude',
           configMode: 'custom',
+          providerId: 'mp1',
           displayName: 'Cl',
-          config: { baseUrl: '', model: '' },
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      modelProviders: [
+        {
+          id: 'mp1',
+          displayName: 'P',
+          apiKey: '',
+          urls: { anthropic: 'https://anthropic.example' },
         },
       ],
       defaultAgentId: 'cl',
     })
-    seedRawSystemRows([{ key: 'agents.cl.config.apiKey', value: CLAUDE_KEY, type: 'string' }])
+    seedRawSystemRows([{ key: 'modelProviders.mp1.apiKey', value: CLAUDE_KEY, type: 'string' }])
     resetSettingsCacheForTests()
     // Load: legacy plaintext used as-is.
-    const cl = loadSettings().agents.find((a) => a.id === 'cl')!
-    expect(cl.config.apiKey).toBe(CLAUDE_KEY)
+    expect(loadSettings().modelProviders?.find((p) => p.id === 'mp1')?.apiKey).toBe(CLAUDE_KEY)
     // Save back the (plaintext) loaded settings → storage upgrades to ciphertext.
     saveSettings(loadSettings())
-    const row = readRawSystemRows().find((r) => r.key === 'agents.cl.config.apiKey')!
+    const row = readRawSystemRows().find((r) => r.key === 'modelProviders.mp1.apiKey')!
     expect(row.type).toBe('secret')
     expect(row.value?.startsWith('c3secretv1:')).toBe(true)
     expect(anyRowContains(CLAUDE_KEY)).toBe(false)
     // And it still loads back to the original plaintext.
     resetSettingsCacheForTests()
-    expect(loadSettings().agents.find((a) => a.id === 'cl')!.config.apiKey).toBe(CLAUDE_KEY)
+    expect(loadSettings().modelProviders?.find((p) => p.id === 'mp1')?.apiKey).toBe(CLAUDE_KEY)
   })
 
   it('empty apiKey (system mode) is never encrypted — no prefix on disk', () => {
@@ -1619,7 +1648,9 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
     expect(anyRowContains(CODEX_KEY)).toBe(false)
     // ...and the in-memory cache still serves plaintext (launch must not get ciphertext).
     const cl = loadSettings().agents.find((a) => a.id === 'cl')!
-    expect(cl.config.apiKey).toBe(CLAUDE_KEY)
+    expect(loadSettings().modelProviders?.find((p) => p.id === cl.providerId)?.apiKey).toBe(
+      CLAUDE_KEY,
+    )
   })
 })
 

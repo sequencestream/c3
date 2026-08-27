@@ -16,22 +16,22 @@
 - **`displayName`**(text): 展示名称
 - **`enabled`**(bool,可选): 启用标志;缺省/`true` ⇒ 启用,只有显式 `false` 才禁用。禁用的智能体会从所有列表消费方(参与者、投票者、降级链、默认选择器)中退出,但仍可作为有效的启动兜底(AC-R10)
 - **`icon`**(text,可选): 可选展示图标(表情符号/短文本)。空/缺省 ⇒ 无自定义图标。会被去除首尾空白并截断到 16 字符;不校验是否为真实的表情符号。没有该字段的配置加载为 `''`(AC-R11)
-- **`providerId`**(text,可选): 引用一条 [ModelProvider](#modelprovider模型提供方) 的 id;绑定时按本 vendor 的协议支持列表取第一个有 URL 的槽作为上游(base URL / 账户 key / openai 的 wireApi)。为空 ⇒ 使用 vendor CLI 自身登录态,或(尚未迁移时)自身的内联连接。cursor 永不携带该字段。悬挂引用(指向不存在的 provider)fail-soft 回落并告警,不阻断启动
+- **`providerId`**(text,可选): 引用一条 [ModelProvider](#modelprovider模型提供方) 的 id;绑定时按本 vendor 的协议支持列表取第一个有 URL 的槽作为上游(base URL / 账户 key / openai 的 wireApi)。为空 ⇒ 使用 vendor CLI 自身登录态。cursor 永不携带该字段。悬挂引用(指向不存在的 provider)fail-soft 回落并告警,不阻断启动
 - **`modelOverrides`**(列表,可选): 逐模型的能力覆盖 `{ model, contextWindow?, maxOutputTokens? }`。运行时按 agent 选中的 `config.model` 匹配一条生效,优先于 provider 的模型目录
-- **`configMode`**(`'system' | 'custom'`): **只读派生字段**,不是独立的状态源。规则:cursor 恒 `'system'`;`providerId` 非空 ⇒ `'custom'`;否则看存储值——`'custom'` 且内联 `baseUrl` 非空 ⇒ `'custom'`(未迁移的内联连接),其余 ⇒ `'system'`。存储值的唯一作用是回答「残留的内联三元组还算不算数」,因此清掉 `providerId` 就回到迁移前的状态,迁移可逆
+- **`configMode`**(`'system' | 'custom'`): **只读派生字段**,不是独立的状态源。规则:cursor 恒 `'system'`;`providerId` 非空 ⇒ `'custom'`;否则 `'system'`。残留的 `config.baseUrl`/`apiKey` 不参与派生
 - **`group`**(text,可选): 分组名。非空 ⇒ 该 agent 归入 `(vendor, group)` 组;相同 `(vendor, group)` 的 enabled agent 按 `order_seq` 优先级构成一个可 failover 的候选集,暴露为虚拟 group agent `_c3_<vendor>_<group>`。虚拟引用编码 vendor,故**不同 vendor 可复用同一分组名**(各成独立组)。成员可混 `custom` 与 `system` 配置模式。为空/缺省 ⇒ 不参与任何组,控制台把这批 agent 归入名为 `default` 的容器展示。设计见 [relay-architecture](../../../architecture/relay-architecture.md) §6–§8
 
 ### Claude 配置子对象(`vendor === 'claude'`)
 
-`baseUrl`/`apiKey` 是**内联连接**:provider 抽象之前的连接位置,只在该 agent 尚未
-迁移(`providerId` 为空且存储 `configMode` 为 `'custom'`)时仍被消费。`model` 与连接
-来源无关,任何一态下都是独立覆盖项。
+`baseUrl`/`apiKey` 是**未使用的残留字段**:连接只来自 `providerId` 指向的
+provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空串;schema 仍要求这两个字符串,
+以便旧记录能解析。`model` 与连接来源无关,任何一态下都是独立覆盖项。
 
-| 属性      | 类型       | 说明                                                 |
-| --------- | ---------- | ---------------------------------------------------- |
-| `baseUrl` | text (url) | 未迁移时的上游地址;为空 ⇒ 无内联连接(AC-R5)          |
-| `apiKey`  | text       | 未迁移时的 API key / 鉴权 token;为空 ⇒ 不覆盖(AC-R5) |
-| `model`   | text       | 模型别名或 id;为空 ⇒ 不覆盖(AC-R5)                   |
+| 属性      | 类型 | 说明                               |
+| --------- | ---- | ---------------------------------- |
+| `baseUrl` | text | 残留;归一化写成空串。不是连接来源  |
+| `apiKey`  | text | 残留;归一化写成空串。不是连接来源  |
+| `model`   | text | 模型别名或 id;为空 ⇒ 不覆盖(AC-R5) |
 
 ### Codex 配置子对象(`vendor === 'codex'`)
 
@@ -39,10 +39,10 @@
 (`sandboxMode`/`approvalPolicy`)**不**持久化在这里——它是在启动时根据
 会话 `defaultMode` 通过中立映射表推导出来的(2026-06-06-008)。
 
-- **`baseUrl`**(text, url): 未迁移时的 OpenAI 兼容 base URL;为空 ⇒ 无内联连接
-- **`apiKey`**(text): 未迁移时的 API key / 鉴权 token;为空 ⇒ 不覆盖
+- **`baseUrl`**(text): 残留;归一化写成空串。不是连接来源
+- **`apiKey`**(text): 残留;归一化写成空串。不是连接来源
 - **`model`**(text): 模型别名或 id;为空 ⇒ 不覆盖
-- **`wireApi`**(`'responses' | 'chat'`): 未迁移时的线上协议(迁移后由 provider 连接携带同名字段)——codex 自身的 wire-api 术语。所有 custom codex 都走 relay(ADR-0029),`wireApi` 是**候选级**的 relay 内部适配选择:`'chat'` ⇒ 仅支持 Chat-Completions ⇒ relay 做 Responses↔Chat **翻译**;`'responses'` ⇒ 厂商原生 Responses ⇒ relay **透传**(仅换 key、覆盖 model)。缺该字段的记录读为 `'chat'`。与 `system` 模式的 codex 无关(无 custom 上游 ⇒ codex 自身登录)。见 [relay-architecture](../../../architecture/relay-architecture.md) §9。
+- **`wireApi`**(`'responses' | 'chat'`): 残留的线上协议字段。连接解析读 provider 上的同名字段(缺省 `'chat'`),不读此处。schema 仍要求该字段,缺省的记录读为 `'chat'`。所有 custom codex 都走 relay(ADR-0029),provider 上的 `wireApi` 是**候选级**的 relay 内部适配选择:`'chat'` ⇒ 仅支持 Chat-Completions ⇒ relay 做 Responses↔Chat **翻译**;`'responses'` ⇒ 厂商原生 Responses ⇒ relay **透传**(仅换 key、覆盖 model)。与 `system` 模式的 codex 无关(无 custom 上游 ⇒ codex 自身登录)。见 [relay-architecture](../../../architecture/relay-architecture.md) §9。
 - **`contextWindow`**(正整数,可选): 模型的上下文窗口(token)声明,能力解析链中优先级最低(agent `modelOverrides` > provider 模型目录 > 此处)。仅在有上游连接(codex 走 relay)时消费:codex driver 的 relay 分支把它与 `maxOutputTokens` 一起注册进本地 model catalog(`model_catalog_json`),让 codex 不再对三方模型 id 回退默认元数据(消「Model metadata not found」告警)。缺省 ⇒ 不生成 catalog。请按模型**真实能力**填写——值大于真实窗口可能引发上游截断/报错。见 [relay-architecture](../../../architecture/relay-architecture.md) §10。
 - **`maxOutputTokens`**(正整数,可选): 模型单次输出上限(token)声明,与 `contextWindow` 同一机制。注意:**`max_output_tokens` 被 codex serde 接受,但是否被实际消费为生成上限未经真实上游验证**,当前仅作声明、**尽力而为**,不保证截断行为;不受支持时该声明无副作用。
 
@@ -67,14 +67,13 @@
 轮换 key 或迁移端点就只改一条记录,而不是逐个 agent 改。持久化在 `system_configs` 的
 `modelProviders.<id>.*` 键空间。
 
-- **`id`**(text): 稳定 id,铸造规则与 agent id 相同(AC-R3);迁移合成的记录用由三元组派生的确定性 id,与手工创建的可区分
+- **`id`**(text): 稳定 id,铸造规则与 agent id 相同(AC-R3);归一化提起残留内联三元组时用由三元组派生的确定性 id(`mp-<hash>`),与手工创建的可区分
 - **`displayName`**(text): 展示名称(去首尾空白)
 - **`template`**(text,可选): 创建时所用目录模板的 id。纯信息性,运行时从不读取
 - **`apiKey`**(text): **账户级** key,覆盖本 provider 上所有协议 URL;落库为 `secret` 类型
 - **`urls`**(map `protocolType → string`): 逐协议风格的上游 base URL。`protocolType` 为 `openai` | `anthropic`(上游文档所说的兼容风格,不是 c3 的 VendorId)。非空才算该协议已连接
 - **`wireApi`**(`'responses' | 'chat'`,可选): 仅 `urls.openai` 有意义;缺省按 `'chat'` 处理
 - **`models`**(列表,可选): 模型目录 `{ id, contextWindow?, maxOutputTokens? }`。用于新建 agent 时预填与能力解析,**不是**运行时默认模型——agent 自己的 `config.model` 始终优先
-- **`synthesized`**(bool,可选): 由内联配置迁移合成、因而可一键撤销的记录。用户手改后该标记清除,它就成为普通 provider
 - **`paused`**(bool,可选): 运维暂停。为真时引用它的 agent 在启动处明确失败(而不是稍后以晦涩的鉴权错误暴露);可恢复,数据不丢
 
 ### ProtocolType 与 vendor 支持列表
@@ -101,7 +100,7 @@
 整个配置,持久化在 `system_configs` 的 `agents.<id>.*` 键空间。
 
 - **`agents`**(智能体列表): 注册表;始终包含系统智能体(AC-R1)
-- **`modelProviders`**(provider 列表,可选): 具名上游注册表;缺省/空 ⇒ 没有 provider(各 agent 走 CLI 登录态或自身内联连接)
+- **`modelProviders`**(provider 列表,可选): 具名上游注册表;缺省/空 ⇒ 没有 provider(各 agent 走 CLI 登录态)
 - **`defaultAgentId`**(text): 某个已存在智能体的 id;找不到时回退到系统智能体(AC-R2)
 - **`toolAgentId`**(text): 运行后台工具会话(完成度判定、自动化/会话命名推导;异常处理尚未由智能体驱动)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R21)。
 - **`intentAgentId`**(text): 运行意图沟通会话(意图分析师的需求拆解对话)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R23)。

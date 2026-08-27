@@ -77,6 +77,7 @@ import {
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 import { parseModelProvider } from '../agent-config/model-provider-schema.js'
+import { liftInlineConnections } from '../agent-config/lift-inline-connections.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
 import { DEFAULT_SESSION_RETENTION_DAYS, MIN_SESSION_RETENTION_DAYS } from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
@@ -454,6 +455,10 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // (the zod default would otherwise erase that distinction).
   const entries: AgentOrderEntry[] = []
   const seenIds = new Set<string>()
+  // Leftover per-agent connection triples (stored custom + a real baseUrl, no
+  // providerId) are lifted into named providers below. Ids are collected from the
+  // RAW record because deriveConfigMode already treats leftover fields as inert.
+  const liftInlineIds = new Set<string>()
   // Fallback id for a record that carries none: the current millisecond plus a
   // counter monotonic within this pass, matching the web console's minting rule
   // (an id reads as its creation time and never carries placeholder words).
@@ -477,6 +482,15 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     // ⇒ `null` ⇒ dropped (fail-soft, same policy as a dup id).
     const parsed = parseAgentConfig(migrateAgentCandidate(id, rec))
     if (!parsed) continue
+    const vendor = typeof rec.vendor === 'string' ? rec.vendor : 'claude'
+    const storedMode = inferConfigMode(rec.configMode)
+    const hasPid = typeof rec.providerId === 'string' && rec.providerId.trim() !== ''
+    const configSrc =
+      rec.config && typeof rec.config === 'object' ? (rec.config as Record<string, unknown>) : rec
+    const leftoverUrl = typeof configSrc.baseUrl === 'string' ? configSrc.baseUrl.trim() : ''
+    if (storedMode === 'custom' && !hasPid && leftoverUrl && vendor !== 'cursor') {
+      liftInlineIds.add(id)
+    }
     seenIds.add(id)
     const rawOrder =
       typeof rec.order_seq === 'number' && Number.isFinite(rec.order_seq)
@@ -489,7 +503,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   if (entries.length === 0) entries.push({ agent: systemAgent(), rawOrder: 0 })
   // Regularize the user-controlled order: pin the system agent, sort by explicit
   // `order_seq`, append missing ones by array order, stamp a dense 0..n sequence.
-  const agents: AgentConfig[] = guardReservedAgentIds(canonicalizeAgentOrder(entries))
+  let agents: AgentConfig[] = guardReservedAgentIds(canonicalizeAgentOrder(entries))
   // ---- Model providers ----
   // Named provider registry (shared upstream connections agents reference via
   // `providerId`). Each record is validated through the zod schema; invalid ones
@@ -500,7 +514,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const incomingProviders: unknown[] = Array.isArray(raw?.modelProviders)
     ? (raw.modelProviders as unknown[])
     : []
-  const modelProviders: ModelProvider[] = []
+  let modelProviders: ModelProvider[] = []
   const seenProviderIds = new Set<string>()
   for (const p of incomingProviders) {
     if (!p || typeof p !== 'object') continue
@@ -510,6 +524,13 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     seenProviderIds.add(parsed.id)
     modelProviders.push(parsed)
   }
+  // Agents do not carry a connection of their own. Leftover triples become
+  // named providers; leftover baseUrl/apiKey are erased on every redirectable
+  // agent (model stays). Idempotent: a second normalize of an already-lifted
+  // registry is a no-op besides the strip.
+  const lifted = liftInlineConnections(agents, modelProviders, liftInlineIds)
+  agents = lifted.agents
+  modelProviders = lifted.modelProviders
   // The default must reference an existing *enabled* agent; an unknown, removed,
   // or now-disabled default falls through to the next enabled agent in order_seq
   // (rewrite-on-store, AC-R2/AC-R10) — `resolveDefaultAgentId` returns SYSTEM_AGENT_ID

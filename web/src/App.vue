@@ -425,7 +425,6 @@ const {
   bindingStats,
   saveSettings,
   autoConfigureAgents,
-  providerMigration,
   probeModelProvider,
   setLocale,
   setTheme,
@@ -457,8 +456,6 @@ const {
   workspaceAccessors,
   fetchWorkspaceAccessors,
   userWorkspaceAccess,
-  providerMigrationPlan,
-  providerMigrationEcho,
   providerProbes,
   fetchUserWorkspaceAccess,
   saveUserWorkspaceAccess,
@@ -1154,8 +1151,6 @@ function onFilesChatWidth(px: number): void {
       :target="settingsTarget"
       :user-access-accounts="userWorkspaceAccess?.accounts ?? null"
       :user-access-workspaces="userWorkspaceAccess?.workspaces ?? []"
-      :provider-migration-plan="providerMigrationPlan"
-      :provider-migration-echo="providerMigrationEcho"
       :provider-probes="providerProbes"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
@@ -1166,7 +1161,6 @@ function onFilesChatWidth(px: number): void {
       @set-admin-account="setAdminAccount"
       @reload-user-access="fetchUserWorkspaceAccess"
       @save-user-access="saveUserWorkspaceAccess"
-      @provider-migrate="providerMigration"
       @provider-probe="probeModelProvider"
     />
 

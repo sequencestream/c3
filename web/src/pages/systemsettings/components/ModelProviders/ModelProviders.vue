@@ -7,19 +7,14 @@
  * 从而得到 baseUrl。把连接从 agent 里提出来之后,轮换 key 或迁移端点只改这一处。
  *
  * 本组件直接改 props.providers 里的对象(与 agent 列表同一种写法):它们是父级草稿的一部分,
- * 保存与脏检测都由父面板统一负责,这里不发任何消息、也不落库。只有两类动作是例外——迁移与
- * 连通性探测,它们不是「编辑一份配置」,而是要服务端算或替我们去拨号,所以上抛给父级发消息。
+ * 保存与脏检测都由父面板统一负责,这里不发任何消息、也不落库。连通性探测是例外——不是
+ * 「编辑一份配置」,而是要服务端替我们去拨号,所以上抛给父级发消息。
  *
  * 删除被引用的 provider 默认阻断:确认框先说明有几个 agent 会退回 CLI 登录态,用户仍可强制
  * 删除(逃生口)。悬挂引用在服务端是 fail-soft 的,所以这里挡的是「误删」,不是「不一致」。
  */
 import { computed, ref } from 'vue'
-import type {
-  AgentConfig,
-  ModelProvider,
-  ProtocolType,
-  ProviderMigrationPlan,
-} from '@ccc/shared/protocol'
+import type { AgentConfig, ModelProvider, ProtocolType } from '@ccc/shared/protocol'
 import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
 import { PROVIDER_TEMPLATES, checkProviderBaseUrl } from '@ccc/shared'
 import type { BaseUrlIssue } from '@ccc/shared'
@@ -36,13 +31,11 @@ const props = withDefaults(
     providers?: ModelProvider[]
     /** 草稿里的 agent 列表,只用来算「谁在用它」。 */
     agents?: AgentConfig[]
-    /** 迁移报告;null = 还没取到。 */
-    plan?: ProviderMigrationPlan | null
     /** 探测状态,键为 `${providerId}:${protocolType}`。 */
     probes?: Record<string, ProviderProbeState>
     isAdmin?: boolean
   }>(),
-  { providers: () => [], agents: () => [], plan: null, probes: () => ({}), isAdmin: true },
+  { providers: () => [], agents: () => [], probes: () => ({}), isAdmin: true },
 )
 
 const emit = defineEmits<{
@@ -54,9 +47,6 @@ const emit = defineEmits<{
    */
   probe: [
     payload: { providerId: string; protocolType: ProtocolType; baseUrl: string; apiKey: string },
-  ]
-  migrate: [
-    payload: { action: 'apply' | 'revert' | 'clear'; providerIds?: string[]; agentIds?: string[] },
   ]
 }>()
 
@@ -128,27 +118,16 @@ function setProtocolEnabled(p: ModelProvider, protocol: ProtocolType, on: boolea
     delete p.urls[protocol]
     if (protocol === 'openai') delete p.wireApi
   }
-  touch(p)
 }
 
 function setUrl(p: ModelProvider, protocol: ProtocolType, value: string): void {
   p.urls[protocol] = value
-  touch(p)
 }
 
 /** 滑动开关开=启用(清 paused),关=运维暂停。不写 `paused: false`,缺省就是启用。 */
 function setEnabled(p: ModelProvider, on: boolean): void {
   if (on) delete p.paused
   else p.paused = true
-  touch(p)
-}
-
-/**
- * 用户一旦手改过迁移生成的 provider,它就不再是「可一键撤销的中间产物」——撤销会删掉用户的
- * 编辑。清掉标记,让它变成普通 provider。
- */
-function touch(p: ModelProvider): void {
-  if (p.synthesized) delete p.synthesized
 }
 
 function baseUrlIssue(baseUrl: string): { text: string; severity: 'error' | 'warning' } | null {
@@ -176,11 +155,9 @@ function issueText(issue: BaseUrlIssue | string): string {
 
 function addModel(p: ModelProvider): void {
   p.models = [...(p.models ?? []), { id: '' }]
-  touch(p)
 }
 function removeModel(p: ModelProvider, index: number): void {
   p.models = (p.models ?? []).filter((_, i) => i !== index)
-  touch(p)
 }
 
 // ---- 引用关系 ----
@@ -235,81 +212,11 @@ function confirmRemove(): void {
   // 顺手改了另一个页签的草稿。
   removeTarget.value = null
 }
-
-// ---- 迁移 ----
-
-const pendingGroups = computed(() => props.plan?.groups ?? [])
-const pendingAgentCount = computed(() =>
-  pendingGroups.value.reduce((sum, g) => sum + g.agentIds.length, 0),
-)
-const clearableCount = computed(() => props.plan?.clearableAgentIds.length ?? 0)
-const showClearConfirm = ref(false)
-
-function applyMigration(): void {
-  emit('migrate', { action: 'apply' })
-}
-function revertMigration(): void {
-  emit('migrate', { action: 'revert' })
-}
-function confirmClear(): void {
-  showClearConfirm.value = false
-  emit('migrate', { action: 'clear' })
-}
-
-/** 至少有一个迁移生成的 provider 时才给「撤销迁移」——否则这个按钮什么也不会做。 */
-const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized))
 </script>
 
 <template>
   <div class="providers-tab">
     <p class="settings-hint">{{ t('settings.providers.hint.text') }}</p>
-
-    <!-- 迁移横幅:只在真有旧内联配置或可清理的残留时出现。 -->
-    <section
-      v-if="pendingGroups.length > 0 || clearableCount > 0 || hasSynthesized"
-      class="provider-migration"
-      data-testid="provider-migration"
-    >
-      <strong>{{ t('settings.providers.migration.title') }}</strong>
-      <p v-if="pendingGroups.length > 0" class="settings-hint">
-        {{
-          t('settings.providers.migration.body', {
-            agents: pendingAgentCount,
-            groups: pendingGroups.length,
-          })
-        }}
-      </p>
-      <p v-else class="settings-hint">{{ t('settings.providers.migration.none') }}</p>
-      <div class="provider-migration-actions">
-        <button
-          v-if="pendingGroups.length > 0"
-          class="agent-add"
-          :disabled="!isAdmin"
-          data-testid="provider-migration-apply"
-          @click="applyMigration"
-        >
-          {{ t('settings.providers.migration.apply') }}
-        </button>
-        <button
-          v-if="hasSynthesized"
-          class="ghost"
-          :disabled="!isAdmin"
-          data-testid="provider-migration-revert"
-          @click="revertMigration"
-        >
-          {{ t('settings.providers.migration.revert') }}
-        </button>
-        <button
-          v-if="clearableCount > 0"
-          class="ghost"
-          :disabled="!isAdmin"
-          data-testid="provider-migration-clear"
-          @click="showClearConfirm = true"
-        >
-          {{ t('settings.providers.migration.clear') }}
-        </button>
-      </div>
-    </section>
 
     <p v-if="providers.length === 0" class="settings-hint" data-testid="provider-empty">
       {{ t('settings.providers.empty.text') }}
@@ -331,7 +238,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
           :placeholder="t('settings.providers.name.placeholder')"
           :disabled="!isAdmin"
           data-testid="provider-name"
-          @input="touch(p)"
         />
         <span
           v-if="expanded !== p.id && enabledProtocols(p).length > 0"
@@ -350,12 +256,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
         <span v-if="p.template" class="provider-badge">{{
           t('settings.providers.template.label', { name: p.template })
         }}</span>
-        <span
-          v-if="p.synthesized"
-          class="provider-badge"
-          :title="t('settings.providers.synthesized.tooltip')"
-          >{{ t('settings.providers.synthesized.label') }}</span
-        >
         <span class="provider-usage">{{
           usedBy(p.id).length > 0
             ? t('settings.providers.usedBy.label', { count: usedBy(p.id).length })
@@ -398,7 +298,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
             :placeholder="t('settings.providers.apiKey.placeholder')"
             :disabled="!isAdmin"
             data-testid="provider-account-key"
-            @input="touch(p)"
           />
         </label>
         <p class="settings-hint">{{ t('settings.providers.apiKey.hint') }}</p>
@@ -436,7 +335,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
               :title="t('settings.providers.connection.wireApi.label')"
               :disabled="!isAdmin"
               data-testid="provider-wireapi"
-              @change="touch(p)"
             >
               <option value="chat">{{ t('settings.agents.wireApi.chat.label') }}</option>
               <option value="responses">{{ t('settings.agents.wireApi.responses.label') }}</option>
@@ -473,7 +371,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
             class="agent-field"
             :placeholder="t('settings.providers.models.id.placeholder')"
             :disabled="!isAdmin"
-            @input="touch(p)"
           />
           <input
             v-model.number="m.contextWindow"
@@ -482,7 +379,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
             min="1"
             :placeholder="t('settings.providers.models.contextWindow.placeholder')"
             :disabled="!isAdmin"
-            @input="touch(p)"
           />
           <input
             v-model.number="m.maxOutputTokens"
@@ -491,7 +387,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
             min="1"
             :placeholder="t('settings.providers.models.maxOutput.placeholder')"
             :disabled="!isAdmin"
-            @input="touch(p)"
           />
           <button
             class="icon-btn"
@@ -543,16 +438,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
       @confirm="confirmRemove"
       @cancel="removeTarget = null"
     />
-
-    <ConfirmDialog
-      :open="showClearConfirm"
-      :title="t('settings.providers.migration.clearConfirm.title')"
-      :message="t('settings.providers.migration.clearConfirm.body', { count: clearableCount })"
-      :confirm-label="t('settings.providers.migration.clearConfirm.confirm')"
-      :cancel-label="t('common.action.cancel.label')"
-      @confirm="confirmClear"
-      @cancel="showClearConfirm = false"
-    />
   </div>
 </template>
 
@@ -561,18 +446,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.provider-migration {
-  border: 1px solid var(--c-warning);
-  border-radius: 6px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.provider-migration-actions {
-  display: flex;
-  gap: 8px;
 }
 .provider-card {
   border: 1px solid var(--c-border);

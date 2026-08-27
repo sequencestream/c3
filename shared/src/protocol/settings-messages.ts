@@ -7,7 +7,7 @@
  * `@ccc/shared/protocol` surface.
  */
 
-import type { ProviderMigrationPlan, ProtocolType } from './model-provider.js'
+import type { ProtocolType } from './model-provider.js'
 import type {
   ExternalMcpToolDescriptor,
   McpApiKeyMeta,
@@ -69,46 +69,6 @@ export type ServerAutoConfigureAgentsResult = {
   availableVendors: number
   /** The vendors an agent was created for, in canonical order; empty when none. */
   vendors: VendorId[]
-}
-
-/**
- * Drive the inline-config → {@link ModelProvider} migration. One arm for all four
- * steps because they operate on the same report and differ only in which side of it
- * they write — splitting them into four message types would duplicate the same
- * `providerIds` plumbing four times without making any of them clearer.
- *
- *  - `plan`   — read-only: recompute and return the report. The other three actions
- *               also reply with a fresh plan, so the console never has to re-ask.
- *  - `apply`  — create/reuse the providers in `providerIds` (all pending groups when
- *               omitted) and point their agents at them; the inline triple stays.
- *  - `revert` — undo an apply for the SYNTHESIZED providers in `providerIds` (all of
- *               them when omitted); agents return to their inline triple.
- *  - `clear`  — the ONE-WAY cleanup: erase the leftover inline connection on
- *               `agentIds` (every clearable agent when omitted). Reverting after this
- *               drops the agent to its vendor CLI login, so the console must confirm.
- *
- * Admin-only, like every other system-configuration mutation. `apply`/`revert`/`clear`
- * also emit the usual `settings` echo.
- */
-export type ClientProviderMigration = {
-  type: 'provider_migration'
-  action: 'plan' | 'apply' | 'revert' | 'clear'
-  /** Target providers for `apply` / `revert`; omitted ⇒ every eligible one. */
-  providerIds?: string[]
-  /** Target agents for `clear`; omitted ⇒ every clearable one. */
-  agentIds?: string[]
-}
-
-/**
- * The migration report — the reply to every {@link ClientProviderMigration} action,
- * recomputed AFTER the write so the console renders what is now true rather than
- * what it asked for. `changed` says whether the settings were actually written (an
- * apply with nothing pending is a no-op, and the console should not claim otherwise).
- */
-export type ServerProviderMigrationPlan = {
-  type: 'provider_migration_plan'
-  plan: ProviderMigrationPlan
-  changed: boolean
 }
 
 /**

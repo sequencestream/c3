@@ -39,8 +39,8 @@ const baseShellSchema = z.object({
   // Optional on the wire.
   group: z.string().optional(),
   // Reference to a named ModelProvider that supplies this agent's upstream
-  // connection. Empty/absent ⇒ use the vendor CLI's own login or legacy inline
-  // config. Cursor never carries a providerId (stripped by normalize).
+  // connection. Empty/absent ⇒ use the vendor CLI's own login. Cursor never
+  // carries a providerId (stripped by normalize).
   providerId: z.string().optional(),
   // Optional per-model overrides (context window / max output tokens).
   modelOverrides: z.array(modelOverrideSchema).optional(),

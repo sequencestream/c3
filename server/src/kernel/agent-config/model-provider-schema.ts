@@ -68,7 +68,6 @@ export const modelProviderSchema = z.object({
   connections: z.record(z.string(), legacyConnectionSchema).optional(),
   wireApi: z.enum(['responses', 'chat']).optional(),
   models: z.array(modelProviderModelSchema).optional(),
-  synthesized: z.boolean().optional(),
   paused: z.boolean().optional(),
 })
 
@@ -146,7 +145,6 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
     urls,
     ...(wireApi !== undefined ? { wireApi } : {}),
     ...(p.models !== undefined ? { models: p.models } : {}),
-    ...(p.synthesized !== undefined ? { synthesized: p.synthesized } : {}),
     ...(p.paused !== undefined ? { paused: p.paused } : {}),
   }
 }

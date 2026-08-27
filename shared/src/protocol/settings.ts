@@ -250,10 +250,9 @@ export interface SystemSettings {
   agents: AgentConfig[]
   /**
    * Named model-provider registry — shared upstream URLs agents reference via
-   * `providerId`. Lifting the protocol URLs + account key out of per-agent inline
-   * config means a key rotation or endpoint migration edits one row instead of N
-   * agents. Empty/absent ⇒ no providers configured (all agents use the legacy
-   * inline config or system login).
+   * `providerId`. A key rotation or endpoint change edits one row instead of N
+   * agents. Empty/absent ⇒ no providers configured (agents use the vendor CLI's
+   * own login).
    *
    * Persisted in `system_configs` alongside `agents`; the account `apiKey` is
    * encrypted at rest with the same `c3secretvN:` scheme as agent apiKeys.

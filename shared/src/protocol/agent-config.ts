@@ -69,25 +69,21 @@ export interface AgentConfigBase {
    * always `'system'` (it cannot reference a provider).
    *
    * Retained as a stored field for consumers that read it directly; the normalize
-   * layer overwrites any stale value. See {@link deriveConfigMode} for the full
-   * derivation order (cursor, `providerId`, legacy inline triple).
+   * layer overwrites any stale value. See {@link deriveConfigMode} for the
+   * derivation (cursor, then `providerId`).
    *
-   *  - `'system'` — use the vendor CLI's own system config / login (or the legacy
-   *    inline `config` triple when `providerId` is empty but `config` has values);
-   *    the `config` connection fields (`baseUrl`/`apiKey`) are **ignored** when
-   *    `providerId` is set, but `model` IS a standalone override read in both modes.
+   *  - `'system'` — use the vendor CLI's own system config / login. The `config`
+   *    connection fields (`baseUrl`/`apiKey`) are not a connection source;
+   *    `model` IS a standalone override read in both modes.
    *  - `'custom'` — resolve the connection from the referenced {@link ModelProvider}
-   *    (`providerId` non-empty) or, during migration, from the legacy inline triple;
-   *    the inline `config.baseUrl`/`config.apiKey` are ignored in favour of the
-   *    provider's connection when `providerId` is set.
+   *    (`providerId` non-empty).
    */
   configMode: 'system' | 'custom'
   /**
    * Reference to a named {@link ModelProvider} that supplies this agent's upstream
    * connection (baseUrl / apiKey / wireApi). When non-empty, the runtime resolves
-   * the provider's connection for this agent's vendor instead of reading the inline
-   * `config` triple. Empty ⇒ use the vendor CLI's own login (system mode) or the
-   * legacy inline `config` values.
+   * the provider's connection for this agent's vendor. Empty ⇒ use the vendor CLI's
+   * own login (system mode).
    *
    * A dangling `providerId` (referencing a deleted/unknown provider) fails soft:
    * the runtime falls back to system mode and surfaces a visible warning, rather
@@ -166,12 +162,16 @@ export interface AgentConfigBase {
  * Each empty field ⇒ no override (the system agent's config is all-empty).
  */
 export interface ClaudeAgentConfig {
-  /** ANTHROPIC_BASE_URL override. Empty ⇒ no override. */
+  /**
+   * Leftover field. Not a connection source — normalize always writes `''`.
+   * Kept on the wire so old records still parse.
+   */
   baseUrl: string
   /**
-   * API key / auth token override. Empty ⇒ no override.
+   * Leftover field on claude (normalize writes `''`). Cursor's `apiKey` is the
+   * live vendor-login overlay — see {@link CursorAgentConfig}.
    *
-   * Encrypted at rest: a non-empty value is stored in settings.json as
+   * Encrypted at rest when a leftover non-empty value is still on disk: stored as
    * `c3secretvN:` + base64url(AES-256-GCM) and decrypted back to plaintext on load
    * (SEC-13; primitives in `server/src/kernel/config/encryption.ts`). On the wire /
    * in memory it is always plaintext — encryption is a disk-boundary concern only.
@@ -194,10 +194,14 @@ export interface ClaudeAgentConfig {
  * separate sandbox/approval configuration.
  */
 export interface CodexAgentConfig {
-  /** OpenAI-compatible base URL override. Empty ⇒ no override. */
+  /**
+   * Leftover field. Not a connection source — normalize always writes `''`.
+   * Kept on the wire so old records still parse.
+   */
   baseUrl: string
   /**
-   * API key / auth token override. Empty ⇒ no override.
+   * Leftover field (normalize writes `''`). The live key lives on the
+   * referenced {@link ModelProvider}.
    *
    * Encrypted at rest with the same scheme as {@link ClaudeAgentConfig.apiKey}
    * (`c3secretvN:` prefix, SEC-13) — plaintext on the wire / in memory, ciphertext
@@ -207,16 +211,15 @@ export interface CodexAgentConfig {
   /** Model alias or id. Empty ⇒ no override. */
   model: string
   /**
-   * Which wire protocol the (custom) provider speaks — codex's own `wire_api`
-   * term (2026-06-12-006). It declares the upstream's REAL API surface so the
-   * driver routes deterministically instead of guessing from `baseUrl`:
+   * Leftover wire-protocol field. Connection resolution reads `wireApi` from the
+   * referenced provider (then `'chat'`), not from here. Still required on the
+   * wire so old records parse; a missing value migrates to `'chat'`.
+   *
+   * Historical meaning (now on the provider):
    *  - `'responses'` ⇒ the provider natively serves OpenAI Responses
    *    (`/responses`); codex connects DIRECT, no relay translation.
    *  - `'chat'` ⇒ the provider is Chat-Completions-only (most third parties);
    *    codex is pointed at c3's in-process Responses→Chat relay (ADR-0014).
-   * Legacy records without the field migrate to `'chat'` (the relay default —
-   * preserves the pre-existing third-party-via-relay behaviour). Irrelevant to
-   * `system`-mode codex (no provider override ⇒ DIRECT regardless).
    */
   wireApi: 'responses' | 'chat'
   /**
@@ -316,26 +319,16 @@ export function hasProviderConfig(
  *     relay speaking its protocol.
  *  2. A non-empty {@link AgentConfigBase.providerId} ⇒ `'custom'` — the named
  *     provider supplies the connection.
- *  3. No `providerId`, but the STORED mode is `'custom'` and the legacy inline
- *     `baseUrl` is non-empty ⇒ `'custom'`: an un-migrated agent from before the
- *     provider registry, still connecting through its own inline triple. This is
- *     the dual-track arm — without it, every pre-migration custom agent would
- *     silently drop to the vendor CLI's login.
- *  4. Otherwise `'system'` — the vendor CLI's own login. Note this covers "the
- *     user switched an agent back to system but the form kept the old baseUrl
- *     text": the stored mode, not the leftover field, decides.
+ *  3. Otherwise `'system'` — the vendor CLI's own login.
  *
- * So the stored value is not a second source of truth for "which provider" — it
- * only answers "may the leftover inline triple still be used", which is exactly
- * what makes the migration reversible: clearing `providerId` returns the agent to
- * its legacy inline connection instead of breaking it.
- *
- * Pure function — no IO, no mutation.
+ * Agents do not carry a connection of their own: leftover `config.baseUrl` /
+ * `config.apiKey` are not a source, and normalize strips them. Pure function —
+ * no IO, no mutation.
  */
 export function deriveConfigMode(agent: AgentConfig): 'system' | 'custom' {
   if (agent.vendor === 'cursor') return 'system'
   if (agent.providerId) return 'custom'
-  return agent.configMode === 'custom' && agent.config.baseUrl ? 'custom' : 'system'
+  return 'system'
 }
 
 /**

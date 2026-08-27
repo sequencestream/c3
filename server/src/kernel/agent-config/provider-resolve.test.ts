@@ -49,23 +49,15 @@ describe('resolveAgentConnection — no provider reference', () => {
     expect(r).toEqual({ source: 'system', connection: null, warnings: [] })
   })
 
-  it('a legacy custom agent (no providerId) keeps using its inline triple', () => {
+  it('an agent without providerId uses the vendor CLI login, ignoring leftover fields', () => {
     const agent = claudeAgent({
       configMode: 'custom',
       config: { baseUrl: 'https://inline.example', apiKey: 'inline-key', model: 'm' },
     })
     const r = resolveAgentConnection(agent, [])
-    expect(r.source).toBe('inline')
-    expect(r.connection).toEqual({ baseUrl: 'https://inline.example', apiKey: 'inline-key' })
+    expect(r.source).toBe('system')
+    expect(r.connection).toBeNull()
     expect(r.warnings).toEqual([])
-  })
-
-  it('a system-mode agent ignores leftover inline baseUrl/apiKey', () => {
-    const agent = claudeAgent({
-      configMode: 'system',
-      config: { baseUrl: 'https://leftover.example', apiKey: 'stale', model: 'm' },
-    })
-    expect(resolveAgentConnection(agent, []).connection).toBeNull()
   })
 })
 
@@ -96,22 +88,16 @@ describe('resolveAgentConnection — provider reference', () => {
     })
   })
 
-  it('a dangling providerId fails soft to the inline triple with a warning', () => {
+  it('a dangling providerId fails soft to system login with a warning', () => {
     const agent = claudeAgent({
       providerId: 'gone',
       configMode: 'custom',
       config: { baseUrl: 'https://inline.example', apiKey: 'k', model: 'm' },
     })
     const r = resolveAgentConnection(agent, [provider()])
-    expect(r.source).toBe('inline')
-    expect(r.warnings).toEqual([{ kind: 'dangling-provider', providerId: 'gone' }])
-  })
-
-  it('a dangling providerId on an agent with no inline triple lands on system', () => {
-    const r = resolveAgentConnection(claudeAgent({ providerId: 'gone' }), [])
     expect(r.source).toBe('system')
     expect(r.connection).toBeNull()
-    expect(r.warnings[0].kind).toBe('dangling-provider')
+    expect(r.warnings).toEqual([{ kind: 'dangling-provider', providerId: 'gone' }])
   })
 
   it('a paused provider yields no connection and a paused warning', () => {
@@ -123,21 +109,9 @@ describe('resolveAgentConnection — provider reference', () => {
   })
 
   it('does not borrow across protocols when the vendor slot is empty', () => {
-    // A claude agent needs anthropic; an openai-only provider is unusable for it.
     const p = provider({ urls: { openai: 'https://codex.example' } })
     const r = resolveAgentConnection(claudeAgent({ providerId: 'p1' }), [p])
     expect(r.source).toBe('system')
-    expect(r.warnings).toEqual([{ kind: 'provider-unusable', providerId: 'p1', vendor: 'claude' }])
-  })
-
-  it('a provider with no usable URL falls back to inline with a warning', () => {
-    const agent = claudeAgent({
-      providerId: 'p1',
-      configMode: 'custom',
-      config: { baseUrl: 'https://inline.example', apiKey: 'k', model: 'm' },
-    })
-    const r = resolveAgentConnection(agent, [provider({ urls: {} })])
-    expect(r.source).toBe('inline')
     expect(r.warnings).toEqual([{ kind: 'provider-unusable', providerId: 'p1', vendor: 'claude' }])
   })
 })
@@ -152,13 +126,8 @@ describe('resolveAgentConnection — codex wireApi', () => {
     expect(r.connection?.wireApi).toBe('responses')
   })
 
-  it("falls back to the agent's own wireApi, then to chat", () => {
+  it('defaults to chat when the provider has no wireApi', () => {
     const p = provider({ urls: { openai: 'https://c.example' } })
-    const agent = codexAgent({
-      providerId: 'p1',
-      config: { baseUrl: '', apiKey: '', model: '', wireApi: 'responses' },
-    })
-    expect(resolveAgentConnection(agent, [p]).connection?.wireApi).toBe('responses')
     expect(resolveAgentConnection(codexAgent({ providerId: 'p1' }), [p]).connection?.wireApi).toBe(
       'chat',
     )
@@ -176,7 +145,7 @@ describe('resolveModelCaps', () => {
     models: [{ id: 'm1', contextWindow: 100, maxOutputTokens: 200 }],
   })
 
-  it('prefers the agent override, then the provider catalog, then the inline config', () => {
+  it('prefers the agent override, then the provider catalog, then the agent config', () => {
     const agent = codexAgent({
       providerId: 'p1',
       modelOverrides: [{ model: 'm1', contextWindow: 999 }],
@@ -192,7 +161,7 @@ describe('resolveModelCaps', () => {
     expect(resolveModelCaps(agent, [p], 'm1')).toEqual({ contextWindow: 999, maxOutputTokens: 200 })
   })
 
-  it('falls back to the inline codex config for a model absent from every catalog', () => {
+  it('falls back to the agent config for a model absent from every catalog', () => {
     const agent = codexAgent({
       providerId: 'p1',
       config: { baseUrl: '', apiKey: '', model: 'other', wireApi: 'chat', contextWindow: 7 },
@@ -217,7 +186,6 @@ describe('takeFreshConnectionWarnings', () => {
   it('re-alerts after the condition clears, even with the same fingerprint', () => {
     const reported = new Set<string>()
     takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')
-    // Healthy resolution: no warnings ⇒ forget the episode.
     expect(takeFreshConnectionWarnings(reported, 'a1', [], 'fp-ok')).toEqual([])
     expect(takeFreshConnectionWarnings(reported, 'a1', [dangling], 'fp1')).toEqual([dangling])
   })

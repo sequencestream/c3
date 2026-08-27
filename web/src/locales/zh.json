@@ -395,7 +395,7 @@
         "tooltip": "Agent 类型——决定启动哪个客户端"
       },
       "configMode": {
-        "tooltip": "参数来源:system(用 CLI 自身配置)或 custom(自填 Base URL / API Key / Model)",
+        "tooltip": "参数来源:system(用 CLI 自身登录)或 custom(绑定具名模型提供方)",
         "system": {
           "label": "系统配置"
         },
@@ -477,10 +477,6 @@
         "tooltip": "该 agent 的连接由哪个具名提供方提供。留空 = 使用 vendor CLI 自带登录态。",
         "systemLogin": {
           "label": "CLI 自带登录"
-        },
-        "legacy": {
-          "label": "内联配置(未迁移)",
-          "notice": "该 agent 仍自带 Base URL 与 Key,可在「模型提供方」页签迁移。"
         },
         "create": {
           "label": "+ 新建提供方…"
@@ -866,10 +862,6 @@
       "enabled": {
         "label": "启用"
       },
-      "synthesized": {
-        "label": "迁移生成",
-        "tooltip": "由旧内联配置迁移生成。编辑后即成为普通提供方。"
-      },
       "usedBy": {
         "label": "{count} 个 agent 使用",
         "none": "未被使用"
@@ -897,19 +889,6 @@
           "confirm": "删除",
           "force": "仍然删除"
         }
-      },
-      "migration": {
-        "title": "发现旧的内联配置",
-        "body": "还有 {agents} 个 agent 自带 Base URL 与 Key,可归并为 {groups} 个提供方。",
-        "apply": "迁移",
-        "revert": "撤销迁移",
-        "clear": "清理残留内联字段",
-        "clearConfirm": {
-          "title": "清理内联字段",
-          "body": "将清空 {count} 个 agent 上的旧 Base URL 与 Key。此操作不可撤销,之后再撤销迁移,这些 agent 会退回 vendor CLI 登录态。",
-          "confirm": "清理"
-        },
-        "none": "所有 agent 都已使用提供方。"
       }
     }
   },

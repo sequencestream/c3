@@ -1,13 +1,12 @@
 /**
  * 「模型提供方」页签。
  *
- * 这里守的是三条不该被顺手破坏的性质:删除一个仍被引用的 provider 必须先说清后果、
- * 手改迁移生成的记录会让它不再可一键撤销、以及迁移与探测这两个动作永远走 emit 而不是
- * 混进草稿的字段编辑里。
+ * 这里守的是两条不该被顺手破坏的性质:删除一个仍被引用的 provider 必须先说清后果,
+ * 以及探测这个动作永远走 emit 而不是混进草稿的字段编辑里。
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { AgentConfig, ModelProvider, ProviderMigrationPlan } from '@ccc/shared/protocol'
+import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
 import ModelProviders from './ModelProviders.vue'
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
@@ -113,61 +112,7 @@ describe('删除', () => {
   })
 })
 
-describe('迁移横幅', () => {
-  const plan: ProviderMigrationPlan = {
-    groups: [
-      {
-        providerId: 'mp-syn-1',
-        reusesExisting: false,
-        displayName: 'Deepseek',
-        vendor: 'claude',
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk-1',
-        agentIds: ['a1', 'a2'],
-      },
-    ],
-    clearableAgentIds: [],
-  }
-
-  it('没有待迁移也没有残留时不出现', () => {
-    const w = render({ plan: { groups: [], clearableAgentIds: [] } })
-    expect(w.find('[data-testid="provider-migration"]').exists()).toBe(false)
-  })
-
-  it('按报告说明规模并上抛 apply', async () => {
-    const w = render({ plan })
-    expect(w.find('[data-testid="provider-migration"]').text()).toContain('2 agents')
-    await w.find('[data-testid="provider-migration-apply"]').trigger('click')
-    expect(w.emitted('migrate')![0]).toEqual([{ action: 'apply' }])
-  })
-
-  it('清理是二次确认之后才上抛的单向动作', async () => {
-    const w = render({
-      providers: [provider({ synthesized: true })],
-      plan: { groups: [], clearableAgentIds: ['a1'] },
-    })
-    await w.find('[data-testid="provider-migration-clear"]').trigger('click')
-    expect(w.emitted('migrate')).toBeUndefined()
-    await w.findAllComponents({ name: 'ConfirmDialog' })[1].vm.$emit('confirm')
-    expect(w.emitted('migrate')![0]).toEqual([{ action: 'clear' }])
-  })
-
-  it('只有存在迁移生成的记录时才给「撤销迁移」', () => {
-    const withSynth = render({ providers: [provider({ synthesized: true })], plan })
-    expect(withSynth.find('[data-testid="provider-migration-revert"]').exists()).toBe(true)
-    const handMade = render({ providers: [provider()], plan })
-    expect(handMade.find('[data-testid="provider-migration-revert"]').exists()).toBe(false)
-  })
-})
-
 describe('编辑一条 provider', () => {
-  it('改名会清掉 synthesized 标记 —— 它不再是可一键撤销的中间产物', async () => {
-    const providers = [provider({ synthesized: true })]
-    const w = render({ providers })
-    await w.find('[data-testid="provider-name"]').setValue('My gateway')
-    expect(providers[0].synthesized).toBeUndefined()
-  })
-
   it('勾选/取消一个协议槽即建立/删除那条 URL', async () => {
     const providers = [provider()]
     const w = render({ providers })

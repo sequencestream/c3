@@ -52,7 +52,8 @@ const SYS = agent({ id: 'sys' })
 const CUSTOM = agent({
   id: 'custom-claude',
   configMode: 'custom',
-  config: { baseUrl: 'https://gw.example', apiKey: 'k', model: 'm' },
+  providerId: 'mp-1',
+  config: { baseUrl: '', apiKey: '', model: 'm' },
 })
 
 vi.mock('../agent/index.js', () => ({
@@ -85,10 +86,9 @@ vi.mock('../agent-config/index.js', () => ({
     model: (a.vendor === 'cursor' ? '' : a.config.model) || undefined,
   })),
   freezeSessionAgent: vi.fn(),
-  // The real helper asks the connection resolver; the fixture agents carry no
-  // provider, so "runs on the vendor's own login" reduces to "not a custom agent
-  // with a real inline base URL" — the same answer for every case here.
-  usesVendorLogin: vi.fn((a: AgentConfig) => (a.providerId ? false : a.configMode !== 'custom')),
+  // The real helper asks the connection resolver; fixtures here only distinguish
+  // "named provider" vs "vendor CLI login" by whether `providerId` is set.
+  usesVendorLogin: vi.fn((a: AgentConfig) => !a.providerId),
   bindClaudeRelay: vi.fn(() => null),
   unbindRelay: vi.fn(),
 }))

@@ -396,7 +396,7 @@
         "tooltip": "에이전트 유형 — 실행할 클라이언트"
       },
       "configMode": {
-        "tooltip": "프로바이더 설정 출처: system(CLI 자체 설정) 또는 custom(Base URL / API Key / Model 지정)",
+        "tooltip": "프로바이더 설정 출처: system(CLI 자체 로그인) 또는 custom(이름 있는 모델 프로바이더)",
         "system": {
           "label": "시스템 설정"
         },
@@ -478,10 +478,6 @@
         "tooltip": "이 에이전트의 연결을 제공하는 프로바이더입니다. 비워 두면 벤더 CLI의 로그인을 사용합니다.",
         "systemLogin": {
           "label": "CLI 로그인"
-        },
-        "legacy": {
-          "label": "인라인 설정(미마이그레이션)",
-          "notice": "이 에이전트는 아직 자체 Base URL과 키를 갖고 있습니다. 「프로바이더」 탭에서 마이그레이션하세요."
         },
         "create": {
           "label": "+ 프로바이더 새로 만들기…"
@@ -867,10 +863,6 @@
       "enabled": {
         "label": "활성"
       },
-      "synthesized": {
-        "label": "마이그레이션 생성",
-        "tooltip": "기존 인라인 설정에서 마이그레이션으로 생성되었습니다. 편집하면 일반 프로바이더가 됩니다."
-      },
       "usedBy": {
         "label": "에이전트 {count}개가 사용",
         "none": "사용 안 함"
@@ -898,19 +890,6 @@
           "confirm": "삭제",
           "force": "그래도 삭제"
         }
-      },
-      "migration": {
-        "title": "기존 인라인 설정 발견",
-        "body": "에이전트 {agents}개가 자체 Base URL과 키를 갖고 있으며 프로바이더 {groups}개로 합칠 수 있습니다.",
-        "apply": "마이그레이션",
-        "revert": "마이그레이션 취소",
-        "clear": "남은 인라인 항목 정리",
-        "clearConfirm": {
-          "title": "인라인 항목 정리",
-          "body": "에이전트 {count}개의 기존 Base URL과 키를 지웁니다. 되돌릴 수 없으며, 이후 마이그레이션을 취소하면 해당 에이전트는 벤더 CLI 로그인으로 돌아갑니다.",
-          "confirm": "정리"
-        },
-        "none": "모든 에이전트가 이미 프로바이더를 사용합니다."
       }
     }
   },

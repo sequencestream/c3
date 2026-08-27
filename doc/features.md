@@ -267,8 +267,7 @@ c3
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
 │   │   ├── agent 档案                            # 持久化档案(vendor/provider 引用/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl;apiKey 可留空,回落 cursor-agent 登录态)
 │   │   ├── modelProvider 具名上游                # 连接从 agent 上提为具名 provider,多 agent 共用一条:账户级 key + 按 protocolType(openai/anthropic)的 urls + 可选 openai wireApi;agent 绑定时按 vendor 协议支持列表取第一个有 URL 的槽;可挂模型目录(仅预填与能力解析)、可暂停、可从只读目录模板预填;删除被引用者需二次确认,悬挂引用 fail-soft 回落并告警
-│   │   ├── 连接三态与 model 反查                 # agent 表单选「provider / CLI 自带登录 / 未迁移的内联残留(只读)」三态,configMode 只读派生;model 输入按所选 provider 或全部同 vendor provider 的目录给候选,填入只有唯一 provider 提供的模型时自动选上它
-│   │   ├── 内联配置迁移双轨                      # 未迁移的 agent 照常按内联连接运行;provider 页给出报告(按 vendor+baseUrl+key+wireApi 全等归并,连接全等的既有 provider 直接复用),三步显式写入:迁移(内联字段保留)⇄ 撤销,以及单向的残留清理(二次确认后才擦)
+│   │   ├── 连接两态与 model 反查                 # agent 表单选「provider / CLI 自带登录」两态,configMode 只读派生;model 输入按所选 provider 或全部同 vendor provider 的目录给候选,填入只有唯一 provider 提供的模型时自动选上它
 │   │   ├── 连接可达性探测                        # 服务端按已存 provider(key 不出服务端)或表单草稿拨一次端点:结构性问题(空/非法 URL/非 http(s)/带查询串/明文 http)就地标注,401/403 记为「可达但 key 被拒」而非不可达,不消耗 token
 │   │   ├── 分组容器编辑                          # agent 列表按分组容器渲染,group 为空的归入 default 容器;拖动跨容器移动、组内箭头调优先级(可见顺序即故障转移顺序),容器可重命名/解散;一个组只装一种 vendor,空容器不落盘
 │   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(统一的宿主 CLI 探测);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑

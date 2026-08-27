@@ -8,7 +8,6 @@
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
 import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import type {
-  ProviderMigrationPlan,
   ProtocolType,
   SessionBindingStats,
   SandboxHostStatus,
@@ -36,10 +35,6 @@ defineProps<{
   userAccessAccounts?: UserWorkspaceAccessAccount[] | null
   /** 「用户与访问」勾选项的工作区来源(随名册回包,不是侧栏可见列表)。 */
   userAccessWorkspaces?: WorkspaceInfo[]
-  /** 内联配置 → provider 的迁移报告;`null` = 尚未取到。 */
-  providerMigrationPlan?: ProviderMigrationPlan | null
-  /** 最近一次 provider_migration_plan 回包的 `changed` 标记。 */
-  providerMigrationEcho?: { seq: number; changed: boolean } | null
   /** provider 连接探测结果,键为 `${providerId}:${vendor}`。 */
   providerProbes?: Record<string, ProviderProbeState>
 }>()
@@ -55,13 +50,6 @@ defineEmits<{
   'target-consumed': []
   'reload-user-access': []
   'save-user-access': [payload: { subject: string; mode: WorkspaceScopeMode; workspaces: string[] }]
-  'provider-migrate': [
-    payload: {
-      action: 'plan' | 'apply' | 'revert' | 'clear'
-      providerIds?: string[]
-      agentIds?: string[]
-    },
-  ]
   'provider-probe': [
     payload: {
       providerId: string
@@ -85,8 +73,6 @@ defineEmits<{
     :target="target"
     :user-access-accounts="userAccessAccounts"
     :user-access-workspaces="userAccessWorkspaces"
-    :provider-migration-plan="providerMigrationPlan"
-    :provider-migration-echo="providerMigrationEcho"
     :provider-probes="providerProbes"
     @close="$emit('close')"
     @target-consumed="$emit('target-consumed')"
@@ -97,7 +83,6 @@ defineEmits<{
     @set-admin-account="(p) => $emit('set-admin-account', p)"
     @reload-user-access="$emit('reload-user-access')"
     @save-user-access="(p) => $emit('save-user-access', p)"
-    @provider-migrate="(p) => $emit('provider-migrate', p)"
     @provider-probe="(p) => $emit('provider-probe', p)"
   />
 </template>

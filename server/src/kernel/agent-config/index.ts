@@ -2,12 +2,14 @@
  * Agent resolution + degradation chain (server refactor 3/3, ADR-0009 — sunk from
  * the old root `settings.ts`).
  *
- * An *agent* is a vendor-agnostic shell + a `vendor`-discriminated `config`
- * (claude ⇒ baseUrl / apiKey / model). A session launches using its assigned
- * agent, or the default agent when unassigned (see {@link resolveSessionLaunch}).
- * The built-in system agent ({@link SYSTEM_AGENT_ID}) always exists as a claude
- * agent with an empty default config, and cannot be removed — binding to it
- * means "no overrides, use the SDK defaults".
+ * An *agent* is a vendor-agnostic shell + a `vendor`-discriminated `config`.
+ * Connection comes from a named {@link ModelProvider} (`providerId`) or the
+ * vendor CLI's own login — agents do not carry their own baseUrl/apiKey.
+ * A session launches using its assigned agent, or the default agent when
+ * unassigned (see {@link resolveSessionLaunch}). The built-in system agent
+ * ({@link SYSTEM_AGENT_ID}) always exists as a claude agent with an empty
+ * default config, and cannot be removed — binding to it means "no overrides,
+ * use the SDK defaults".
  *
  * These readers call `loadSettings` / `getSessionAgentId` from `kernel/config`
  * (the persistence store); the pure agent-shape normalizers come from
@@ -437,16 +439,16 @@ function providerRegistry(): readonly ModelProvider[] {
  * Report a connection resolution's warnings once while the misconfiguration
  * persists. The same (agent, warning, config fingerprint) is logged once so a
  * busy launch path cannot bury the rest of the log; when the condition clears —
- * or the underlying provider/inline config actually changes — the remembered key
+ * or the underlying provider config actually changes — the remembered key
  * is dropped so a later recurrence re-alerts.
  */
 const reportedConnectionWarnings = new Set<string>()
 
 /**
  * Fingerprint of the resolution-relevant config: provider identity + its current
- * urls/key/paused bit + the agent's leftover inline triple. Two resolutions with
- * the same warning kind but a different fingerprint (e.g. dangling id rewritten,
- * urls emptied again after a brief fix) are treated as a new episode.
+ * urls/key/paused bit. Two resolutions with the same warning kind but a different
+ * fingerprint (e.g. dangling id rewritten, urls emptied again after a brief fix)
+ * are treated as a new episode.
  */
 function connectionWarningFingerprint(
   agent: AgentConfig,
@@ -464,8 +466,7 @@ function connectionWarningFingerprint(
         provider.wireApi ?? '',
       ].join('\0')
     : 'missing'
-  const inline = hasProviderConfig(agent) ? `${agent.config.baseUrl}\0${agent.config.apiKey}` : ''
-  const raw = `${providerId}\0${providerPart}\0${inline}`
+  const raw = `${providerId}\0${providerPart}`
   // Hashed so the account/provider keys embedded above never sit in plaintext in
   // this module-level, process-lifetime `Set` — a heap dump or debug print of it
   // would otherwise hand out live credentials for free. Collision-freedom is not
@@ -488,7 +489,7 @@ function reportConnectionWarnings(
     switch (w.kind) {
       case 'dangling-provider':
         console.warn(
-          `[c3] agent "${agent.id}" references unknown model provider "${w.providerId}" — falling back to its inline config / CLI login.`,
+          `[c3] agent "${agent.id}" references unknown model provider "${w.providerId}" — falling back to CLI login.`,
         )
         break
       case 'provider-paused':
@@ -498,7 +499,7 @@ function reportConnectionWarnings(
         break
       case 'provider-unusable':
         console.warn(
-          `[c3] model provider "${w.providerId}" has no usable URL for agent "${agent.id}" (${w.vendor}) — falling back to its inline config / CLI login.`,
+          `[c3] model provider "${w.providerId}" has no usable URL for agent "${agent.id}" (${w.vendor}) — falling back to CLI login.`,
         )
         break
     }
@@ -509,10 +510,10 @@ function reportConnectionWarnings(
  * Map one agent's upstream connection to a relay candidate — the real upstream
  * `{baseUrl, apiKey, model, wireApi?}` the relay binds behind a per-run token
  * (ADR-0029). The connection comes from the referenced {@link ModelProvider} when
- * the agent carries a `providerId`, else from its legacy inline triple
- * ({@link resolveAgentConnection}). Returns null when neither yields a base URL ⇒
- * no relay, the vendor CLI's own login applies. `wireApi` rides only for codex (it
- * selects the relay's translate-vs-passthrough); claude is anthropic passthrough.
+ * the agent carries a `providerId` ({@link resolveAgentConnection}). Returns null
+ * when the provider yields no base URL ⇒ no relay, the vendor CLI's own login
+ * applies. `wireApi` rides only for codex (it selects the relay's
+ * translate-vs-passthrough); claude is anthropic passthrough.
  *
  * Throws {@link ModelProviderPausedError} when the referenced provider is paused:
  * an operator took that upstream out of service, so a launch through it must fail
@@ -629,7 +630,7 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
   // Only a `codex` agent carries model capability fields; other vendors have none,
   // so the spread below stays empty for them. The values are resolved most-specific
   // first — the agent's own `modelOverrides`, then the provider's model catalog,
-  // then the legacy inline codex config (see `resolveModelCaps`).
+  // then the agent's own codex config (see `resolveModelCaps`).
   const codexCaps =
     firstRelayAgent?.vendor === 'codex'
       ? resolveModelCaps(firstRelayAgent, providers, model ?? firstRelayAgent.config.model)
@@ -680,11 +681,9 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
  * vendor's own login needs the host credential store opened and writes its
  * transcript where the vendor's host config lives.
  *
- * NOT the same as `configMode === 'system'` anymore: `configMode` is derived from
- * `providerId` alone, so an un-migrated legacy agent (empty `providerId`, a real
- * inline `baseUrl`) reads as `'system'` while actually connecting to a third-party
- * upstream. Asking the resolver keeps the dual-track migration invisible to these
- * call sites.
+ * Asking the resolver, not `configMode === 'system'`: a dangling or paused
+ * provider still reads as `'custom'` but has no connection, and those runs must
+ * follow the vendor-login path (or fail loudly) rather than invent an upstream.
  */
 export function usesVendorLogin(agent: AgentConfig): boolean {
   if (!hasProviderConfig(agent)) return true

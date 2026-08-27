@@ -397,12 +397,6 @@ export interface AppMethods {
   saveSettings(settings: SystemSettings): void
   /** Probe runnable vendors and persist a system-mode agent for each without one. */
   autoConfigureAgents(): void
-  /** Run one step of the inline-config → model-provider migration (plan/apply/revert/clear). */
-  providerMigration(payload: {
-    action: 'plan' | 'apply' | 'revert' | 'clear'
-    providerIds?: string[]
-    agentIds?: string[]
-  }): void
   /** Dial one provider connection from the server and report whether it answers.
    *  `baseUrl`/`apiKey` carry the console draft so an unsaved edit is what gets dialled. */
   probeModelProvider(payload: {

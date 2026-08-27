@@ -5,16 +5,16 @@
 agent-config 领域管理会话据以启动的**智能体**。一个智能体是一个厂商无关的
 公共外壳(`id`、`vendor`、`configMode`、`displayName`、`enabled?`、`icon?`)加上一个按
 `vendor` 判别的 `config` 子对象。有三个厂商拥有真正的适配器 + 配置形态:
-`claude`(厂商三元组 `baseUrl`/`apiKey`/`model`)、`codex`(同样的三元组 + `wireApi`)
+`claude`(`model` 覆盖;`baseUrl`/`apiKey` 为残留空字段)、`codex`(同样的 `model` 覆盖 + 模型能力字段;`baseUrl`/`apiKey` 为残留空字段)
 与 `cursor`(仅 `{apiKey, model}`,无 `baseUrl`,`configMode` 恒为 `'system'`)。
 Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 替代其缺失的逐工具审批——**不**持久化在智能体上:它是在启动时根据
 会话 `defaultMode` 通过中立映射表推导出来的(AC-R14,2026-06-06-008)。`vendor` 决定
 启动哪个客户端(ADR-0011);一个会话可以由这三者中的任意一个**主驱动**(2026-06-06-007)。
 
-与 `vendor` 正交,一个智能体的厂商连接来自三处之一(AC-R30):它引用的
-**modelProvider**(`providerId` 非空)、厂商 CLI 自身的登录态,或尚未迁移的**内联连接**。
-`configMode` 是这三态的**只读派生标签**而非独立状态源(AC-R13);`model` 在任何一态下都
+与 `vendor` 正交,一个智能体的厂商连接来自两处之一(AC-R30):它引用的
+**modelProvider**(`providerId` 非空),或厂商 CLI 自身的登录态。
+`configMode` 是这两态的**只读派生标签**而非独立状态源(AC-R13);`model` 在任何一态下都
 是**独立覆盖项**(2026-07-02-001)。每个智能体都可删除 + 可编辑,唯一的不变式是注册表永不为
 空,且恰好有一个智能体是**默认**的。配置持久化在 `c3.db` 的 `system_configs`;
 按会话的智能体绑定持久化在 `session_configs`,作为一个**双键空间**(ADR-0015):可变的
@@ -31,7 +31,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 ## 核心实体
 
 - **modelProvider** — 一条具名上游(账户级 key + 按 `protocolType` 的 `urls` + 可选 openai `wireApi`),多个智能体通过 `providerId` 共用;凭证轮换与端点迁移因此只改一条记录。agent 绑定时按 vendor 的协议支持列表取第一个有 URL 的槽作为 baseUrl
-- **configMode** — 连接来源的只读派生标签:`'custom'`(经 provider 或未迁移的内联连接)/ `'system'`(厂商 CLI 自身登录态)。规则见 [models](./agent-config-models.md) 的 `configMode` 条目;`model` 在两种取值下都是独立覆盖项
+- **configMode** — 连接来源的只读派生标签:`'custom'`(经 provider)/ `'system'`(厂商 CLI 自身登录态)。规则见 [models](./agent-config-models.md) 的 `configMode` 条目;`model` 在两种取值下都是独立覆盖项
 - **兜底智能体** — 合成的 `{ vendor: 'claude', configMode: 'system' }` 智能体(id 为 `'system'`),仅在首次启动时或 settings 为空/损坏时用作默认种子——**不是**受保护的单例
 - **系统设置** — 整个配置:智能体 + 默认智能体 id(按项目的旋钮 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 已移到 `projectConfigs` map 下的 workspace setting 中,见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))
 - **待定意图** — 一个 `pendingId → { agentId, createdAt }` 条目:尚未运行的会话希望使用哪个智能体。可变;在首次绑定时被复制为一个事实,否则由清理任务回收(AC-R17)
@@ -43,14 +43,14 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 
 - **AC-R1** — 不存在受保护/不可删除/忽略覆盖项的系统智能体单例。每个智能体——包括 id 为 `'system'` 的合成兜底——都可删除 + 可编辑。`configMode: 'system'`(AC-R13)是逐智能体设定的、以无厂商覆盖项方式启动的方法;id `'system'` 仅作为**合成兜底** id 存续(AC-R3)。
 - **AC-R2** — `defaultAgentId` 必须指向一个存在且**已启用**的智能体。在保存时(以及每次加载归一化时),一个未知、已被移除,或现在**已禁用**的默认值会被**改写**为按顺序号顺序的**下一个已启用**智能体——共享的解析规则从已禁用默认值的所在位置向前扫描,再折回到整体第一个已启用的智能体;当**没有**任何智能体启用时,回退到合成兜底 id `'system'`(AC-R3)。这是**存储时改写**(持久化的值发生变化,2026-06-15-001),而不仅是运行时解析;web console 在一个智能体被禁用/移除的瞬间就应用同样的规则,使选择器立即反映出来。注册表永不为空(AC-R3),因此默认值总能解析出来。**启动兜底不受影响(AC-R10):** 启动解析按 id 解析一个已绑定会话的智能体,从不按 enabled 过滤,因此绑定到一个已禁用智能体的会话仍能启动——只有**未绑定的**默认值才会被改写。
-- **AC-R3** — `save_settings` 在服务端被归一化:每条记录都由其 `vendor` 分支迁移 + 校验,没有 id 的智能体会得到一个新铸造的 id(当前毫秒时间戳基底 + 本次归一化内单调递增的数字后缀,不含 `new`/`copy` 等语义词),重复的 id 会被丢弃。系统智能体**不会**被重新注入;取而代之的是,如果没有任何有效智能体幸存,就会合成一个单一兜底(`{ id: 'system', vendor: 'claude', configMode: 'system' }`),使注册表永不为空。归一化后的结果会作为 `settings` 回传。
+- **AC-R3** — `save_settings` 在服务端被归一化:每条记录都由其 `vendor` 分支迁移 + 校验,没有 id 的智能体会得到一个新铸造的 id(当前毫秒时间戳基底 + 本次归一化内单调递增的数字后缀,不含 `new`/`copy` 等语义词),重复的 id 会被丢弃。系统智能体**不会**被重新注入;取而代之的是,如果没有任何有效智能体幸存,就会合成一个单一兜底(`{ id: 'system', vendor: 'claude', configMode: 'system' }`),使注册表永不为空。智能体**不携带自己的连接**:存储 `configMode: 'custom'`、带真实 `baseUrl`、且无 `providerId` 的 claude/codex 记录会被一次性提起为具名 provider(相同 `(vendor, baseUrl, apiKey, wireApi)` 归并;匹配既有未暂停 provider 则复用,否则铸造由三元组派生的确定性 id),写上 `providerId`,擦除残留 `baseUrl`/`apiKey`(保留 `model`),再重算 `configMode`。存储为 `'system'` 的残留表单文本、以及空 `baseUrl` 上的残留 `apiKey`,只擦除、不提起。归一化后的结果会作为 `settings` 回传。
 - **AC-R6** — 新的(待定)会话默认是未绑定的,因此它们以默认智能体启动(AC-R4)。一个待定会话**可以**携带一个*意图*(AC-R16)——首次运行前选定的期望智能体——此时它会以该智能体启动。启动解析会读取两个键空间,因此一个待定 id 解析为其意图,一个真实 id 解析为其事实。**没有事实的真实会话读投影兜底:** 绑定解析(展示用的厂商、标题栏切换器、c3 会话 id 派生)在事实缺失时先读该会话自己的 `session_metadata` 行——它由运行该会话的那次执行写入,记录同一次绑定的智能体与厂商——仍无行才落到默认智能体。厂商以行为准(行不带智能体 id 时同样如此),否则一个会话会顶着默认智能体的厂商呈现,与会话列表自相矛盾。待定 id 不走这条兜底(它的意图有自己的读通道)。
 - **AC-R7** — 配置持久化在 `c3.db`:注册表在 `system_configs`,按会话的绑定在 `session_configs`。两者都在事务内写入,并失败降级为默认值,使 c3 仍能启动。
 - **AC-R8** — `defaultMode` 是一个按厂商的权限模式 map(按项目,以厂商 id → 模式 token 的 map 形式存储在 workspace setting 中)。每个厂商 key(含 `claude` / `codex` / `cursor`)持有一个经该厂商 `VendorModeCatalog` 校验的模式 token(或 Codex 的 `CodexPolicy` 对象);非法/缺失回退该厂商的 `defaultToken`。会话启动时读取其厂商的条目。旧版单一模式 token 在规范化时 fan-out 到全部厂商键,并按各目录接受或回退。它为一个新会话的模式做种(SR-R6);此后按会话的模式变更(SR-R5)不会改动它。选中已有会话时,若持久化 mode 已不在该会话厂商目录内,下发前降级并写回;合法历史 mode 不改写。
 - **AC-R9** — `maxRoundsPerStage` 是多智能体讨论每阶段的轮次上限(按项目,存储在 workspace setting 中)。保存时会被归一化:一个 ≥ 8 的有限值会被向下取整并保留;一个低于 8 的正值会被夹紧提升到 8;其他情况(缺失、非有限、≤ 0)回退到默认值 12。讨论引擎读取它。
 - **AC-R10** — 每个智能体都有一个可选的 `enabled` 标志。归一化时它以显式布尔值持久化;**缺省/`true` ⇒ 启用**(向后兼容:没有该字段的旧配置视为启用),只有显式 `false` 才禁用。任何智能体的 enabled 标志都被统一遵守(不再有系统智能体的特殊处理——AC-R1 已淘汰)。每个**智能体列表消费方**只取已启用的智能体:讨论参与者、共识投票者、降级链(链的归一化会剔除已禁用的 id),以及默认智能体选择器(一个已禁用的智能体不能被选为默认)。一个已禁用的智能体会在被禁用的瞬间从这些池中移除,重新启用时恢复。**启动兜底不受影响:** 启动解析从不按 enabled 过滤,因此一个绑定到已禁用智能体——或其默认/系统兜底已被禁用——的会话仍能启动。**该保证的边界(AC-R27):** “永不锁死”覆盖的是**具体智能体**的解析与设置整体为空/损坏时的合成兜底;当角色指向一个**虚拟组**而该组无可用成员时,解析明确失败而不降级——那是一个应当暴露给用户的配置错误,不是需要被兜住的运行时空洞。
 - **AC-R11** — 每个智能体都有一个可选的 `icon` 字段(一个表情符号或短文本),用于多说话者场景下的展示身份识别。归一化时该值会被**去除首尾空白,去除后为空则 ⇒ `''`,并截断到 16 字符**;任何非字符串值都回退到 `''`(无自定义图标)。**向后兼容:** 没有 `icon` 的旧配置无错误地加载为 `''`。任何智能体的图标都以同样的方式被遵守(不再有系统智能体的特殊处理——AC-R1 已淘汰)。图标**不会**影响任何启动/列表行为:它是一个纯展示字段,因此智能体列表消费方(参与者、投票者、链、选择器)和启动兜底的行为与没有该字段时完全一致。
-- **AC-R13** — 每个智能体在公共外壳上携带 **`configMode: 'system' | 'custom'`**,与 `vendor` 正交,但它是**派生值**:归一化在每次加载/保存时按 `deriveConfigMode` 重算并覆盖存储的陈旧值(完整顺序见 [models](./agent-config-models.md) 的 `configMode` 条目)。存储值因此只回答一件事——**残留的内联三元组还算不算数**,这既让把智能体切回 CLI 登录态后遗留在表单里的旧 base URL 不会被悄悄复活,也让清掉 `providerId` 就能回到迁移前的连接(AC-R31 的可逆性由此而来)。`'system'` ⇒ 以厂商 CLI 自身的登录态启动;`'custom'` ⇒ 连接由 provider 或内联三元组提供(AC-R30)。`model` 在两种取值下都是独立覆盖项。
+- **AC-R13** — 每个智能体在公共外壳上携带 **`configMode: 'system' | 'custom'`**,与 `vendor` 正交,但它是**派生值**:归一化在每次加载/保存时按 `deriveConfigMode` 重算并覆盖存储的陈旧值(完整顺序见 [models](./agent-config-models.md) 的 `configMode` 条目)。规则:cursor 恒 `'system'`;非空 `providerId` ⇒ `'custom'`;否则 `'system'`。残留的 `config.baseUrl`/`apiKey` **不是**派生输入。`'system'` ⇒ 以厂商 CLI 自身的登录态启动;`'custom'` ⇒ 连接由所引用的 modelProvider 提供(AC-R30)。`model` 在两种取值下都是独立覆盖项。
 - **AC-R15** — 处于 `configMode: 'custom'` 的 **codex** 智能体通过 c3 的 **vendor 中立 relay**(ADR-0029)访问其厂商,因为 codex 0.137 只讲 Responses API(上游已移除了 chat wire-api 选项),而 DeepSeek/Kimi/MiMo/MiniMax 都只支持 Chat-Completions。该 relay 托管在 c3 自己的 HTTP 服务器上(一个回环端点);每次运行时,驱动器把真实的 base URL + key 注册在一个不透明 token 之后,并针对一个自定义的 model provider 启动 codex(base URL = 该 relay,responses wire-api,禁用 web-sockets 以强制走 HTTP POST + SSE),以该 token 作为 codex 的 API-key 环境变量,并在 no-proxy 列表中增补回环主机。该 relay 把 codex 的 Responses 请求改写为 Chat Completions 请求,并把上游的 Chat SSE 改写回 codex 能解析的 Responses 事件(每个输出作为一个完整的 item,流以一个 completed 事件收尾)。真实的 key 永远不会到达 codex 子进程;该绑定在运行结束时被清除。转换器 + 处理器是**传输层**(ADR-0009 R2);内核只持有一个注入到驱动器中的惰性 relay 句柄。用户的配置不受影响——他们仍然设置真实的厂商 URL。
 - **AC-R16** — 按会话的绑定是一个**双键空间**(ADR-0015)。一个仍处于待定状态的会话持有一个可变的**意图**(`pendingId → { agentId, createdAt }`);一个真实会话持有一个**事实**(`realId → { agentId, vendor }`)。在**首次绑定**时(待定 → 真实会话 id,与运行时重新赋键同时触发),该意图会被复制为一个事实,记录**实际运行所用**的智能体(已应用默认兜底)及其**被冻结的厂商**;随后该意图被丢弃。该冻结操作是**幂等的**——对一个已存在事实的重试/重新绑定永远不会重新冻结厂商。存储层是厂商无关的(厂商作为一个参数跨界传入),因此存储 → agent-config 的边界保持无环(ADR-0009)。
 - **AC-R17** — 一旦被冻结(AC-R16),一个会话的**厂商是不可变的**——它的记录只存放在该厂商自身的原生存储中,而且**c3 永不存储任何会话内容**。重新定向一个真实会话的智能体**只在同厂商内**才会成功;跨厂商变更会被拒绝(事实不受影响)。本周期**不支持**跨厂商的 Fork / 回放种子(依 ADR-0011 推迟)。**意图消亡永不产生孤儿事实:** 清除一个意图(重新定向为无)与**清理任务**(在启动时以及每小时扫清超过 7 天的待定意图)只触及意图空间。**迁移:** 一个旧版 v1 单一 map 按 key 形态拆分——`pending:` 开头的 key → 意图,其余的 → 冻结为 `vendor: 'claude'` 的事实(多厂商之前唯一的厂商)。
@@ -90,8 +90,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   - **零结果必须说明原因**:回包 `auto_configure_agents_result` 同时带 `created` 与 `availableVendors`,因为 `created: 0` 有两种成因——无可用厂商(指引到运行时页签诊断)与既有配置已覆盖。只回一个计数会把两者混为一谈。
   - **与 `save_settings` 同一道管理员门**:它写系统配置。
 
-- **AC-R30** — **连接解析。** 一次启动的上游连接按固定顺序解析,单一实现同时服务启动路径、控制台的试算与健康探测:(1)cursor 无连接可解析,恒走自身 CLI 登录(其协议支持列表已声明,但当前无 relay);(2)`providerId` 为空 ⇒ 内联三元组(仅当 `configMode` 为 `'custom'`),它为空则走 CLI 登录;(3)`providerId` 指向不存在的 provider ⇒ **fail-soft**:回落到内联/CLI 登录并给出可见告警,而不是让启动失败在一条陈旧引用上;(4)provider 处于 `paused` ⇒ 启动**明确失败**并点名该 provider——运维已把该上游停用,静默换一条连接会让「停用」失去意义;(5)provider 按该 vendor 的协议支持列表取**第一个**有非空 URL 的 `protocolType` 槽 ⇒ 用该 URL + 账户级 key(openai 槽另带 `wireApi`);(6)本 vendor 支持的协议在 provider 上全无 URL ⇒ 回落内联/CLI 登录并告警。不做跨协议借连。同一 (agent, 告警, 配置指纹) 在条件持续期间只报一次,避免每次启动重复刷屏;条件清除或配置指纹变化后再次出现会再报。模型能力(`contextWindow`/`maxOutputTokens`)按 agent `modelOverrides` > provider 模型目录 > codex 内联字段逐字段解析。
-- **AC-R31** — **内联连接迁移(双轨)。** 内联三元组与 provider 引用并存一个大版本,期间**不改动**任何未经用户确认的配置:未迁移的智能体照常按内联连接运行(AC-R30)。服务端只提供一份**报告**——把仍在用内联连接的智能体按 `(vendor, baseUrl, apiKey, wireApi)` 全等分组,每组映射到一个待创建的合成 provider,或映射到连接与之全等的**既有** provider(复用而非造重复)。报告之上有三步显式写入:**迁移**(创建/复用 provider 并写 `providerId`,内联字段原样保留)、**撤销**(清 `providerId`,删除已无人引用的合成 provider,智能体回到内联连接)、**清理**(擦除已失效的内联 `baseUrl`/`apiKey`,保留 `model`)。前两步互为逆操作;清理是**单向**的,只在用户确认后执行——清理之后再撤销,智能体会落到 CLI 登录态而不是旧上游。合成 provider 的 id 由三元组派生,因此重复迁移幂等。
+- **AC-R30** — **连接解析。** 一次启动的上游连接按固定顺序解析,单一实现同时服务启动路径、控制台的试算与健康探测:(1)cursor 无连接可解析,恒走自身 CLI 登录(其协议支持列表已声明,但当前无 relay);(2)`providerId` 为空 ⇒ 厂商 CLI 自身登录;(3)`providerId` 指向不存在的 provider ⇒ **fail-soft**:回落到 CLI 登录并给出可见告警,而不是让启动失败在一条陈旧引用上;(4)provider 处于 `paused` ⇒ 启动**明确失败**并点名该 provider——运维已把该上游停用,静默换一条连接会让「停用」失去意义;(5)provider 按该 vendor 的协议支持列表取**第一个**有非空 URL 的 `protocolType` 槽 ⇒ 用该 URL + 账户级 key(openai 槽另带 `wireApi`);(6)本 vendor 支持的协议在 provider 上全无 URL ⇒ 回落 CLI 登录并告警。不做跨协议借连。同一 (agent, 告警, 配置指纹) 在条件持续期间只报一次,避免每次启动重复刷屏;条件清除或配置指纹变化后再次出现会再报。模型能力(`contextWindow`/`maxOutputTokens`)按 agent `modelOverrides` > provider 模型目录 > codex 配置上的能力字段逐字段解析。agent 上残留的 `config.baseUrl`/`apiKey` **不是**连接来源。
 
 ## 用户场景
 
@@ -135,9 +134,11 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   使 `defaultAgentId` 悬空——它会回退到**第一个**剩余的智能体(AC-R2)。
 - **旧版配置迁移(向后兼容):** 给定一条在厂商重构之前写入的智能体记录
   (扁平的 `name`/`baseUrl`/`apiKey`/`model`,无 `vendor`/`configMode`),当 c3 加载它时,
-  每个智能体都会被迁移到 `claude` 分支(`name → displayName`,扁平字段 → `config`),
-  `configMode` 默认为 `custom`(因此该智能体已保存的 url/key/model 仍可编辑),并像之前一样启动
-  (AC-R12/R13)。
+  每个智能体都会被迁移到 `claude` 分支(`name → displayName`,扁平字段 → `config`);
+  若存储为 custom 且带真实 baseUrl、尚无 `providerId`,归一化把该三元组提起为具名
+  provider 并写上 `providerId`,擦除 agent 上的残留 `baseUrl`/`apiKey`(保留 `model`),
+  再派生 `configMode: 'custom'`。此后连接只走 provider,不再以内联三元组启动
+  (AC-R3/R12/R13)。
 - **未知厂商被丢弃(反例场景):** 给定一个 `vendor` 没有注册 schema 的智能体
   (拼写错误 / 未来厂商),当设置被归一化时,该智能体会被**丢弃**,其
 - **首次运行时厂商被冻结:** 给定一个新会话被(通过意图或默认)绑定到一个 codex 智能体,

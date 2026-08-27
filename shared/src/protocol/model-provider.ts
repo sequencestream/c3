@@ -8,9 +8,7 @@
  * Relationship to agents: an agent carries an optional `providerId`; when set, the
  * runtime picks a {@link ProtocolType} from the agent's vendor support list (first
  * protocol that the provider has a non-empty URL for) and uses that URL + the
- * account-level key — instead of reading the agent's inline `config.baseUrl` /
- * `config.apiKey`. An empty `providerId` keeps the legacy inline path (or the
- * vendor CLI's own system login).
+ * account-level key. An empty `providerId` uses the vendor CLI's own system login.
  *
  * Zero-runtime wire module: no zod, no vendor SDK. The runtime schema lives
  * server-side in `kernel/agent-config/model-provider-schema.ts`.
@@ -131,16 +129,6 @@ export interface ModelProvider {
    */
   models?: ModelProviderModel[]
   /**
-   * Set on a provider that the MIGRATION synthesized from legacy inline agent
-   * configs, rather than one a user created by hand. It marks the record as
-   * reversible: `revertProviderMigration` deletes exactly these (and only while no
-   * agent still references them), returning the agents to their inline triple —
-   * which is still there, because migration never erases it. A user edit of a
-   * synthesized provider is expected to clear the flag (it is a hand-maintained
-   * record from then on).
-   */
-  synthesized?: boolean
-  /**
    * Operator pause flag. When `true`, the provider is marked "under maintenance":
    * agents referencing it fail loudly at launch with a clear error (rather than a
    * cryptic auth failure), and the console greys out the provider in pickers. A
@@ -148,44 +136,6 @@ export interface ModelProvider {
    * `false`. Absent/`false` ⇒ active.
    */
   paused?: boolean
-}
-
-/**
- * One group of agents that share an identical legacy inline connection tuple
- * `(vendor, baseUrl, apiKey, wireApi)`, mapped to the provider they collapse onto.
- * Part of the migration REPORT the console renders — computed server-side, never
- * sent upward by a client.
- */
-export interface ProviderMigrationGroup {
-  /** The provider the agents would point at — an existing one, or a to-be-created synthesized one. */
-  providerId: string
-  /** True ⇒ `providerId` names an existing provider whose connection matches this tuple exactly. */
-  reusesExisting: boolean
-  /** The name the synthesized provider would carry (the existing one's name when reused). */
-  displayName: string
-  vendor: VendorId
-  baseUrl: string
-  /** The tuple's key, so the console can show a masked hint next to the group. */
-  apiKey: string
-  /** Codex-only wire protocol carried over from the agents' inline config. */
-  wireApi?: 'responses' | 'chat'
-  /** The agents that would be re-pointed, in settings order. */
-  agentIds: string[]
-}
-
-/**
- * The migration report: what is still on a legacy inline triple, and what leftover
- * inline fields could be cleaned up. An empty `groups` with an empty
- * `clearableAgentIds` means the registry is fully migrated.
- */
-export interface ProviderMigrationPlan {
-  /** Pending groups: agents still on an inline triple, grouped by identical tuple. */
-  groups: ProviderMigrationGroup[]
-  /**
-   * Agents already pointed at a provider that ALSO still carry a leftover inline
-   * `baseUrl` and/or `apiKey` — the residue the one-way cleanup step would erase.
-   */
-  clearableAgentIds: string[]
 }
 
 /** Resolved upstream for one agent against one provider. */
@@ -201,8 +151,8 @@ export interface ResolvedProviderUrl {
 /**
  * Resolve the effective URL for a vendor from a provider: walk the vendor's
  * protocol list, take the first non-empty URL, pair it with the account key.
- * Returns `null` when no protocol slot is filled (caller falls back to inline /
- * system login). Pure — no IO, no mutation.
+ * Returns `null` when no protocol slot is filled (caller falls back to system
+ * login). Pure — no IO, no mutation.
  */
 export function resolveProviderUrl(
   provider: ModelProvider,

@@ -395,7 +395,7 @@
         "tooltip": "Agent type — which client launches this agent"
       },
       "configMode": {
-        "tooltip": "Provider config source: system (use the CLI’s own config) or custom (set Base URL / API Key / Model)",
+        "tooltip": "Provider config source: system (the vendor CLI’s own login) or custom (a named model provider)",
         "system": {
           "label": "System config"
         },
@@ -477,10 +477,6 @@
         "tooltip": "Which named provider supplies this agent's connection. Empty ⇒ the vendor CLI's own login.",
         "systemLogin": {
           "label": "Vendor CLI login"
-        },
-        "legacy": {
-          "label": "Inline config (not migrated)",
-          "notice": "This agent still carries its own base URL and key. Migrate it on the Providers tab."
         },
         "create": {
           "label": "+ New provider…"
@@ -866,10 +862,6 @@
       "enabled": {
         "label": "Enabled"
       },
-      "synthesized": {
-        "label": "Migrated",
-        "tooltip": "Created by the migration from a legacy inline agent config. Editing it makes it an ordinary provider."
-      },
       "usedBy": {
         "label": "{count} agents",
         "none": "Unused"
@@ -897,19 +889,6 @@
           "confirm": "Remove",
           "force": "Remove anyway"
         }
-      },
-      "migration": {
-        "title": "Legacy inline configs found",
-        "body": "{agents} agents still carry their own base URL and key; they would collapse into {groups} providers.",
-        "apply": "Migrate",
-        "revert": "Undo migration",
-        "clear": "Clear leftover inline fields",
-        "clearConfirm": {
-          "title": "Clear inline fields",
-          "body": "The old base URL and key on {count} agents will be erased. This cannot be undone, and undoing the migration afterwards drops those agents to their vendor CLI login.",
-          "confirm": "Clear"
-        },
-        "none": "Every agent already uses a provider."
       }
     }
   },

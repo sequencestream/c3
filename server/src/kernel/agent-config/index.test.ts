@@ -47,6 +47,7 @@ const mockSettings: SystemSettings = {
   specReviewAgentId: '',
   automationAgentId: '',
   degradationChain: [],
+  modelProviders: [],
 }
 
 vi.mock('../config/index.js', () => ({
@@ -85,28 +86,45 @@ import type { AgentConfig } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 
 describe('group agents + candidate resolution (ADR-0029)', () => {
-  // A custom claude agent factory for group tests.
+  // A custom claude agent factory for group tests — connection lives on a named
+  // provider (`p-<id>`), not leftover agent fields.
   function claudeCustom(id: string, order: number, group: string, model: string): AgentConfig {
+    const providers = mockSettings.modelProviders ?? []
+    if (!providers.some((p) => p.id === `p-${id}`)) {
+      mockSettings.modelProviders = [
+        ...providers,
+        {
+          id: `p-${id}`,
+          displayName: id,
+          apiKey: `sk-${id}`,
+          urls: { anthropic: `https://${id}.example/anthropic` },
+        },
+      ]
+    }
     return {
       id,
       vendor: 'claude',
       configMode: 'custom',
+      providerId: `p-${id}`,
       displayName: id,
       order_seq: order,
       group,
-      config: { baseUrl: `https://${id}.example/anthropic`, apiKey: `sk-${id}`, model },
+      config: { baseUrl: '', apiKey: '', model },
       enabled: true,
     }
   }
 
   const originalAgents = mockSettings.agents
+  const originalProviders = mockSettings.modelProviders
   beforeEach(() => {
     mockSettings.agents = originalAgents
+    mockSettings.modelProviders = []
   })
   afterEach(() => {
     // Restore the shared fixture so later describes (which have no beforeEach of
     // their own for `agents`) are not polluted by this block's mutations.
     mockSettings.agents = originalAgents
+    mockSettings.modelProviders = originalProviders
   })
 
   it('groupAgents(vendor, group) returns that vendor+group enabled members in order', () => {
@@ -168,6 +186,9 @@ describe('group agents + candidate resolution (ADR-0029)', () => {
 })
 
 describe('launchForAgent — system mode model override + relay candidates (ADR-0029)', () => {
+  afterEach(() => {
+    mockSettings.modelProviders = []
+  })
   it('claude + system + model non-empty → model passed, no relay candidates', () => {
     const launch = launchForAgent({
       id: 'cl-sys-m',
@@ -225,16 +246,26 @@ describe('launchForAgent — system mode model override + relay candidates (ADR-
   })
 
   it('custom codex → a relay candidate carries the real upstream + wireApi; model placeholder', () => {
+    mockSettings.modelProviders = [
+      {
+        id: 'p-cx-cust',
+        displayName: 'Codex Cust',
+        apiKey: 'sk-test',
+        urls: { openai: 'https://api.example.com' },
+        wireApi: 'responses',
+      },
+    ]
     const launch = launchForAgent({
       id: 'cx-cust',
       vendor: 'codex',
       configMode: 'custom',
+      providerId: 'p-cx-cust',
       displayName: 'Codex Cust',
       config: {
-        baseUrl: 'https://api.example.com',
-        apiKey: 'sk-test',
+        baseUrl: '',
+        apiKey: '',
         model: 'test-model',
-        wireApi: 'responses',
+        wireApi: 'chat',
       },
       enabled: true,
     })
@@ -250,14 +281,23 @@ describe('launchForAgent — system mode model override + relay candidates (ADR-
   })
 
   it('custom claude → a relay candidate (no wireApi) + the adaptive-thinking workaround flag', () => {
+    mockSettings.modelProviders = [
+      {
+        id: 'p-cl-cust',
+        displayName: 'Claude Cust',
+        apiKey: 'sk-real',
+        urls: { anthropic: 'https://api.deepseek.com/anthropic' },
+      },
+    ]
     const launch = launchForAgent({
       id: 'cl-cust',
       vendor: 'claude',
       configMode: 'custom',
+      providerId: 'p-cl-cust',
       displayName: 'Claude Cust',
       config: {
-        baseUrl: 'https://api.deepseek.com/anthropic',
-        apiKey: 'sk-real',
+        baseUrl: '',
+        apiKey: '',
         model: 'deepseek-v4',
       },
       enabled: true,
@@ -432,14 +472,27 @@ describe('resolveSpecReviewAgent — the single reviewer slot, no sandbox varian
 describe('roles pointing at a group — bind the group, run its first enabled member', () => {
   /** Members of the claude `default` group, deliberately given out of order. */
   function member(id: string, order: number, group = 'default'): AgentConfig {
+    const providers = mockSettings.modelProviders ?? []
+    if (!providers.some((p) => p.id === `p-${id}`)) {
+      mockSettings.modelProviders = [
+        ...providers,
+        {
+          id: `p-${id}`,
+          displayName: id,
+          apiKey: `sk-${id}`,
+          urls: { anthropic: `https://${id}.example/anthropic` },
+        },
+      ]
+    }
     return {
       id,
       vendor: 'claude',
       configMode: 'custom',
+      providerId: `p-${id}`,
       displayName: id,
       order_seq: order,
       group,
-      config: { baseUrl: `https://${id}.example/anthropic`, apiKey: `sk-${id}`, model: id },
+      config: { baseUrl: '', apiKey: '', model: id },
       enabled: true,
     }
   }
@@ -458,6 +511,7 @@ describe('roles pointing at a group — bind the group, run its first enabled me
 
   const original = { ...mockSettings, agents: mockSettings.agents }
   beforeEach(() => {
+    mockSettings.modelProviders = []
     mockSettings.agents = [member('m2', 1), member('m1', 0), member('m3', 2)]
     mockSettings.defaultAgentId = GROUP
     mockSettings.toolAgentId = ''
@@ -467,6 +521,7 @@ describe('roles pointing at a group — bind the group, run its first enabled me
   })
   afterEach(() => {
     mockSettings.agents = original.agents
+    mockSettings.modelProviders = original.modelProviders
     mockSettings.defaultAgentId = original.defaultAgentId
     mockSettings.toolAgentId = original.toolAgentId
     mockSettings.intentAgentId = original.intentAgentId
@@ -547,17 +602,30 @@ describe('roles pointing at a group — bind the group, run its first enabled me
 })
 
 describe('launchForAgent — codex wireApi rides the relay candidate (ADR-0029)', () => {
+  afterEach(() => {
+    mockSettings.modelProviders = []
+  })
   it('a custom codex agent carries baseUrl/apiKey + wireApi into the relay candidate', () => {
+    mockSettings.modelProviders = [
+      {
+        id: 'p-cx',
+        displayName: 'Codex',
+        apiKey: 'sk',
+        urls: { openai: 'https://api.deepseek.com' },
+        wireApi: 'responses',
+      },
+    ]
     const launch = launchForAgent({
       id: 'cx',
       vendor: 'codex',
       configMode: 'custom',
+      providerId: 'p-cx',
       displayName: 'Codex',
       config: {
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk',
+        baseUrl: '',
+        apiKey: '',
         model: 'm',
-        wireApi: 'responses',
+        wireApi: 'chat',
       },
       enabled: true,
     })

@@ -57,14 +57,29 @@ function custom(
   group = GROUP,
   baseUrl = `https://${id}.example/anthropic`,
 ): AgentConfig {
+  if (baseUrl) {
+    const providers = mockSettings.modelProviders ?? []
+    if (!providers.some((p) => p.id === `p-${id}`)) {
+      mockSettings.modelProviders = [
+        ...providers,
+        {
+          id: `p-${id}`,
+          displayName: id,
+          apiKey: `sk-${id}`,
+          urls: { anthropic: baseUrl },
+        },
+      ]
+    }
+  }
   return {
     id,
     vendor: 'claude',
     configMode: 'custom',
+    ...(baseUrl ? { providerId: `p-${id}` } : {}),
     displayName: id,
     order_seq: order,
     group,
-    config: { baseUrl, apiKey: `sk-${id}`, model },
+    config: { baseUrl: '', apiKey: '', model },
     enabled: true,
   }
 }

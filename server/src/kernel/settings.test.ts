@@ -220,6 +220,45 @@ describe('defaultAgentId rewrite-on-store — fall through to next enabled (AC-R
     // the migrate whitelist, then via the cross-vendor field-clear).
     expect(loaded.find((a) => a.id === 'cx1')?.group).toBe('codex-grp')
   })
+
+  it('preserves providerId and modelOverrides across a save/load round-trip', () => {
+    // Same whitelist hole as `group`: omitting them here made every agent Save
+    // echo back with no provider binding, so the console reverted to CLI login.
+    const providers = [
+      {
+        id: 'p1',
+        displayName: 'DeepSeek',
+        apiKey: 'sk-1',
+        urls: {
+          anthropic: 'https://api.deepseek.com/anthropic',
+          openai: 'https://api.deepseek.com',
+        },
+      },
+    ]
+    const overrides = [{ model: 'm1', contextWindow: 128000 }]
+    saveSettings({
+      agents: [
+        { ...(agent('a1', 0) as object), providerId: 'p1', modelOverrides: overrides },
+        {
+          id: 'cx1',
+          vendor: 'codex',
+          configMode: 'custom',
+          displayName: 'cx1',
+          order_seq: 1,
+          providerId: 'p1',
+          modelOverrides: overrides,
+          config: { baseUrl: 'https://cx1', apiKey: 'k', model: 'm', wireApi: 'chat' },
+        },
+      ],
+      defaultAgentId: 'a1',
+      modelProviders: providers,
+    } as unknown as SystemSettings)
+    const loaded = loadSettings()
+    expect(loaded.agents.find((a) => a.id === 'a1')?.providerId).toBe('p1')
+    expect(loaded.agents.find((a) => a.id === 'cx1')?.providerId).toBe('p1')
+    expect(loaded.agents.find((a) => a.id === 'a1')?.modelOverrides).toEqual(overrides)
+    expect(loaded.agents.find((a) => a.id === 'cx1')?.modelOverrides).toEqual(overrides)
+  })
 })
 
 describe('toolAgentId rewrite-on-store — empty=follow-default, set=fall-through (2026-06-15-001)', () => {

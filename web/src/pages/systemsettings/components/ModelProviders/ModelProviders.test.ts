@@ -69,6 +69,30 @@ describe('provider 列表', () => {
     const w = render({ providers: [provider()], agents: [agent({ providerId: 'p1' })] })
     expect(w.find('[data-testid="provider-row"]').text()).toContain('1 agents')
   })
+
+  it('收缩时标题行标出已启用的协议', () => {
+    const w = render({
+      providers: [
+        provider({
+          urls: {
+            openai: 'https://api.example.com',
+            anthropic: 'https://api.example.com/anthropic',
+          },
+        }),
+      ],
+    })
+    const chips = w.find('[data-testid="provider-protocols"]')
+    expect(chips.find('[data-testid="provider-protocol-openai"]').text()).toBe('OpenAI')
+    expect(chips.find('[data-testid="provider-protocol-anthropic"]').text()).toBe('Anthropic')
+  })
+
+  it('收缩时不标未勾选的协议;展开后标题行不再重复', async () => {
+    const w = render({ providers: [provider()] })
+    expect(w.find('[data-testid="provider-protocol-anthropic"]').exists()).toBe(true)
+    expect(w.find('[data-testid="provider-protocol-openai"]').exists()).toBe(false)
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    expect(w.find('[data-testid="provider-protocols"]').exists()).toBe(false)
+  })
 })
 
 describe('删除', () => {
@@ -155,6 +179,30 @@ describe('编辑一条 provider', () => {
     expect(providers[0].urls.anthropic).toBeUndefined()
   })
 
+  it('协议槽把 type、url、wireApi、测试按钮放在同一行容器里', async () => {
+    const w = render({
+      providers: [
+        provider({
+          urls: {
+            openai: 'https://api.example.com',
+            anthropic: 'https://api.example.com/anthropic',
+          },
+          wireApi: 'chat',
+        }),
+      ],
+    })
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    const openai = w.find('[data-testid="provider-conn-row-openai"]')
+    expect(openai.find('[data-testid="provider-conn-openai"]').exists()).toBe(true)
+    expect(openai.find('[data-testid="provider-baseurl-openai"]').exists()).toBe(true)
+    expect(openai.find('[data-testid="provider-wireapi"]').exists()).toBe(true)
+    expect(openai.find('[data-testid="provider-probe-openai"]').exists()).toBe(true)
+    const anthropic = w.find('[data-testid="provider-conn-row-anthropic"]')
+    expect(anthropic.find('[data-testid="provider-baseurl-anthropic"]').exists()).toBe(true)
+    expect(anthropic.find('[data-testid="provider-wireapi"]').exists()).toBe(false)
+    expect(anthropic.find('[data-testid="provider-probe-anthropic"]').exists()).toBe(true)
+  })
+
   it('就地标注 base URL 的结构性问题', async () => {
     const providers = [provider({ urls: { anthropic: 'http://gw.example' } })]
     const w = render({ providers })
@@ -194,11 +242,40 @@ describe('编辑一条 provider', () => {
   })
 })
 
+describe('启用滑动开关', () => {
+  it('开着=未暂停,关上写入 paused 并改标签', async () => {
+    const providers = [provider()]
+    const w = render({ providers })
+    const sw = w.find('[data-testid="provider-enabled-switch"]')
+    expect(sw.attributes('role')).toBe('switch')
+    expect((sw.element as HTMLInputElement).checked).toBe(true)
+    expect(sw.attributes('aria-checked')).toBe('true')
+    expect(w.find('.provider-pause').text()).toContain('Enabled')
+    await sw.setValue(false)
+    expect(providers[0].paused).toBe(true)
+    expect(sw.attributes('aria-checked')).toBe('false')
+    expect(w.find('.provider-pause').text()).toContain('Paused')
+    await sw.setValue(true)
+    expect(providers[0].paused).toBeUndefined()
+    expect(w.find('.provider-pause').text()).toContain('Enabled')
+  })
+
+  it('已暂停的 provider 开关默认关上', () => {
+    const w = render({ providers: [provider({ paused: true })] })
+    const sw = w.find<HTMLInputElement>('[data-testid="provider-enabled-switch"]')
+    expect(sw.element.checked).toBe(false)
+    expect(w.find('.provider-pause').text()).toContain('Paused')
+  })
+})
+
 describe('非管理员', () => {
   it('每个写入控件都禁用', async () => {
     const w = render({ providers: [provider()], isAdmin: false })
     expect(w.find<HTMLInputElement>('[data-testid="provider-name"]').element.disabled).toBe(true)
     expect(w.find<HTMLButtonElement>('[data-testid="provider-add"]').element.disabled).toBe(true)
     expect(w.find<HTMLButtonElement>('[data-testid="provider-remove"]').element.disabled).toBe(true)
+    expect(
+      w.find<HTMLInputElement>('[data-testid="provider-enabled-switch"]').element.disabled,
+    ).toBe(true)
   })
 })

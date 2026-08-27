@@ -860,8 +860,11 @@
         "hint": "仅用于新建 agent 时预填模型,不作为运行时默认值。"
       },
       "paused": {
-        "label": "已暂停",
+        "label": "暂停",
         "tooltip": "运维暂停:引用该提供方的 agent 在恢复前会明确启动失败。"
+      },
+      "enabled": {
+        "label": "启用"
       },
       "synthesized": {
         "label": "迁移生成",

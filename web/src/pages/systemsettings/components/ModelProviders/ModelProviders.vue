@@ -114,6 +114,11 @@ function urlOf(p: ModelProvider, protocol: ProtocolType): string {
   return p.urls[protocol] ?? ''
 }
 
+/** 已勾选的协议槽,顺序与 PROTOCOL_TYPES 一致;收缩标题行用它标出这条 provider 讲哪些协议。 */
+function enabledProtocols(p: ModelProvider): ProtocolType[] {
+  return PROTOCOL_TYPES.filter((protocol) => p.urls[protocol] !== undefined)
+}
+
 /** 勾选=为该协议建一条空 URL;取消=删除该槽。 */
 function setProtocolEnabled(p: ModelProvider, protocol: ProtocolType, on: boolean): void {
   if (on) {
@@ -128,6 +133,13 @@ function setProtocolEnabled(p: ModelProvider, protocol: ProtocolType, on: boolea
 
 function setUrl(p: ModelProvider, protocol: ProtocolType, value: string): void {
   p.urls[protocol] = value
+  touch(p)
+}
+
+/** 滑动开关开=启用(清 paused),关=运维暂停。不写 `paused: false`,缺省就是启用。 */
+function setEnabled(p: ModelProvider, on: boolean): void {
+  if (on) delete p.paused
+  else p.paused = true
   touch(p)
 }
 
@@ -321,6 +333,20 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
           data-testid="provider-name"
           @input="touch(p)"
         />
+        <span
+          v-if="expanded !== p.id && enabledProtocols(p).length > 0"
+          class="provider-protocols"
+          data-testid="provider-protocols"
+        >
+          <span
+            v-for="protocol in enabledProtocols(p)"
+            :key="protocol"
+            class="provider-badge"
+            :title="urlOf(p, protocol) || PROTOCOL_LABEL[protocol]"
+            :data-testid="`provider-protocol-${protocol}`"
+            >{{ PROTOCOL_LABEL[protocol] }}</span
+          >
+        </span>
         <span v-if="p.template" class="provider-badge">{{
           t('settings.providers.template.label', { name: p.template })
         }}</span>
@@ -337,15 +363,18 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
         }}</span>
         <label class="provider-pause" :title="t('settings.providers.paused.tooltip')">
           <input
+            class="agent-enabled-switch"
             type="checkbox"
-            :checked="!!p.paused"
+            role="switch"
+            :checked="!p.paused"
+            :aria-checked="!p.paused"
             :disabled="!isAdmin"
-            data-testid="provider-paused"
-            @change="
-              ;((p.paused = ($event.target as HTMLInputElement).checked || undefined), touch(p))
-            "
+            data-testid="provider-enabled-switch"
+            @change="setEnabled(p, ($event.target as HTMLInputElement).checked)"
           />
-          <span>{{ t('settings.providers.paused.label') }}</span>
+          <span>{{
+            p.paused ? t('settings.providers.paused.label') : t('settings.providers.enabled.label')
+          }}</span>
         </label>
         <button
           class="icon-btn"
@@ -375,7 +404,12 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
         <p class="settings-hint">{{ t('settings.providers.apiKey.hint') }}</p>
 
         <h4 class="provider-section">{{ t('settings.providers.connection.title') }}</h4>
-        <div v-for="protocol in PROTOCOL_TYPES" :key="protocol" class="provider-conn">
+        <div
+          v-for="protocol in PROTOCOL_TYPES"
+          :key="protocol"
+          class="provider-conn-row"
+          :data-testid="`provider-conn-row-${protocol}`"
+        >
           <label class="provider-conn-toggle">
             <input
               type="checkbox"
@@ -401,6 +435,7 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
               class="agent-field provider-wireapi"
               :title="t('settings.providers.connection.wireApi.label')"
               :disabled="!isAdmin"
+              data-testid="provider-wireapi"
               @change="touch(p)"
             >
               <option value="chat">{{ t('settings.agents.wireApi.chat.label') }}</option>
@@ -418,11 +453,15 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
               v-if="baseUrlIssue(urlOf(p, protocol))"
               class="provider-issue"
               :class="baseUrlIssue(urlOf(p, protocol))!.severity"
+              :title="baseUrlIssue(urlOf(p, protocol))!.text"
               >{{ baseUrlIssue(urlOf(p, protocol))!.text }}</span
             >
-            <span v-if="probeState(p.id, protocol)" class="provider-probe-result">{{
-              probeText(probeState(p.id, protocol)!)
-            }}</span>
+            <span
+              v-if="probeState(p.id, protocol)"
+              class="provider-probe-result"
+              :title="probeText(probeState(p.id, protocol)!)"
+              >{{ probeText(probeState(p.id, protocol)!) }}</span
+            >
           </template>
         </div>
 
@@ -542,11 +581,19 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
 }
 .provider-head {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
+  overflow-x: auto;
 }
 .provider-name {
   flex: 0 0 200px;
+}
+.provider-protocols {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
 }
 .provider-badge {
   font-size: 11px;
@@ -554,6 +601,7 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
   border: 1px solid currentColor;
   border-radius: 4px;
   padding: 0 4px;
+  white-space: nowrap;
 }
 .provider-usage {
   font-size: 12px;
@@ -565,6 +613,12 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
   align-items: center;
   gap: 4px;
   font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.provider-pause .agent-enabled-switch:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 .provider-body {
   margin-top: 10px;
@@ -585,28 +639,62 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
   margin: 6px 0 0;
   font-size: 13px;
 }
-.provider-conn,
 .provider-model {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
+}
+/* protocol type + URL + wireApi + 测试(及结论) 同一行,不换行;窄时横向滚动。
+ * `.agent-field` 默认 width:100% 会把 URL / select 各自撑成整行,这里压回按列宽。 */
+.provider-conn-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--sp-2);
+  overflow-x: auto;
+}
+.provider-conn-row > .agent-field {
+  width: auto;
 }
 .provider-conn-toggle {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 120px;
-  font-size: 12px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
 }
 .provider-url {
   flex: 1 1 240px;
+  min-width: 160px;
+}
+.provider-wireapi {
+  flex: 0 0 148px;
+  width: 148px;
+}
+.provider-probe {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 var(--sp-3);
+  white-space: nowrap;
+  background: transparent;
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  font-size: var(--fs-code);
+  font-weight: 500;
 }
 .provider-num {
   flex: 0 0 130px;
 }
-.provider-issue {
-  font-size: 12px;
+.provider-issue,
+.provider-probe-result {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
 }
 .provider-issue.error {
   color: var(--c-danger-text);
@@ -615,7 +703,6 @@ const hasSynthesized = computed(() => props.providers.some((p) => p.synthesized)
   color: var(--c-warning-text);
 }
 .provider-probe-result {
-  font-size: 12px;
   opacity: 0.8;
 }
 .provider-list-actions {

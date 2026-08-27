@@ -258,6 +258,49 @@ describe('SettingsPanel.vue — agent 的连接来源三态', () => {
   })
 })
 
+describe('SettingsPanel.vue — provider tab Save overlays the draft registry', () => {
+  const withProviders: SystemSettings = {
+    ...baseSettings,
+    modelProviders: [
+      {
+        id: 'p1',
+        displayName: 'DeepSeek',
+        apiKey: 'sk-1',
+        urls: { anthropic: 'https://api.deepseek.com/anthropic' },
+      },
+      {
+        id: 'p2',
+        displayName: 'Keep',
+        apiKey: 'sk-2',
+        urls: { openai: 'https://keep.example' },
+      },
+    ],
+  }
+
+  it('ships in-place provider edits, not the committed snapshot', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProviders } })
+    await w.find('[data-testid="settings-tab-btn-provider"]').trigger('click')
+    await w.findAll('[data-testid="provider-name"]')[0].setValue('Renamed')
+    expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(true)
+    await w.find(SAVE.provider).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.modelProviders?.find((p) => p.id === 'p1')?.displayName).toBe('Renamed')
+    expect(saved.modelProviders?.find((p) => p.id === 'p2')?.displayName).toBe('Keep')
+  })
+
+  it('ships a deleted provider as gone, not restored from committed', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProviders } })
+    await w.find('[data-testid="settings-tab-btn-provider"]').trigger('click')
+    await w.findAll('[data-testid="provider-remove"]')[0].trigger('click')
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+    expect(w.findAll('[data-testid="provider-row"]')).toHaveLength(1)
+    expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(true)
+    await w.find(SAVE.provider).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.modelProviders?.map((p) => p.id)).toEqual(['p2'])
+  })
+})
+
 describe('SettingsPanel.vue — agent enable/disable', () => {
   const twoAgents: SystemSettings = {
     ...baseSettings,

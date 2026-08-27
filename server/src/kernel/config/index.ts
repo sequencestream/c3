@@ -392,10 +392,18 @@ function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknow
   // for legacy records: the old reserved system singleton, or an all-empty
   // provider triple, means "use system config" — everything else is custom.
   const configMode = inferConfigMode(rec.configMode)
-  // Group membership (ADR-0029): a shared shell field carried through verbatim so it
-  // survives the load/save normalize round-trip (this migrate whitelists fields, so
-  // an omitted `group` would be silently dropped on every save).
+  // Shared shell fields this migrate copies verbatim. It is a whitelist: an omitted
+  // field is silently dropped on every save (`group` used to vanish this way;
+  // `providerId` / `modelOverrides` are the same class of field).
   const group = typeof rec.group === 'string' ? { group: rec.group } : {}
+  const providerId =
+    typeof rec.providerId === 'string' && rec.providerId.trim()
+      ? { providerId: rec.providerId.trim() }
+      : {}
+  const modelOverrides = Array.isArray(rec.modelOverrides)
+    ? { modelOverrides: rec.modelOverrides }
+    : {}
+  const shell = { ...group, ...providerId, ...modelOverrides }
   if (vendor === 'claude') {
     return {
       id,
@@ -404,13 +412,13 @@ function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknow
       displayName,
       enabled,
       icon,
-      ...group,
+      ...shell,
       config: buildClaudeConfig(configSrc),
     }
   }
   // codex (and any unknown vendor): pass the nested config through for the
   // schema to validate + route by tag; an unknown vendor / bad config ⇒ dropped.
-  return { id, vendor, configMode, displayName, enabled, icon, ...group, config: configSrc }
+  return { id, vendor, configMode, displayName, enabled, icon, ...shell, config: configSrc }
 }
 
 /**

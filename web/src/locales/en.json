@@ -863,6 +863,9 @@
         "label": "Paused",
         "tooltip": "Under maintenance: agents referencing this provider refuse to launch until it is resumed."
       },
+      "enabled": {
+        "label": "Enabled"
+      },
       "synthesized": {
         "label": "Migrated",
         "tooltip": "Created by the migration from a legacy inline agent config. Editing it makes it an ordinary provider."

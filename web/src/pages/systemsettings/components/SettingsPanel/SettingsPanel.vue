@@ -1421,6 +1421,13 @@ function buildTabPayload(
       payload.automationAgentId = src.automationAgentId
       break
     }
+    case 'provider': {
+      // Overlay the draft registry even when it is empty: omitting the field
+      // would let mergeSettingsOverDisk keep the disk copy, so a delete would
+      // come back on the next echo and in-place edits would never ship.
+      payload.modelProviders = deepCopy(src.modelProviders ?? [])
+      break
+    }
     case 'runtime': {
       payload.vendorCliVersions = { ...(src.vendorCliVersions ?? {}) }
       payload.proxy = { ...proxyCfg.value }

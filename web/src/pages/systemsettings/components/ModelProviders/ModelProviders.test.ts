@@ -224,3 +224,26 @@ describe('非管理员', () => {
     ).toBe(true)
   })
 })
+
+describe('模型目录', () => {
+  it('每条只展示名称与删除,且在同一行容器里', async () => {
+    const w = render({
+      providers: [provider({ models: [{ id: 'gpt-4o', contextWindow: 128000 }] })],
+    })
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    const row = w.find('[data-testid="provider-model-row"]')
+    expect(row.find('[data-testid="provider-model-name"]').exists()).toBe(true)
+    expect(row.find('[data-testid="provider-model-remove"]').exists()).toBe(true)
+    expect(row.findAll('input')).toHaveLength(1)
+    expect((row.element as HTMLElement).classList.contains('provider-model')).toBe(true)
+  })
+
+  it('删除一条模型只改草稿,不发 change', async () => {
+    const providers = [provider({ models: [{ id: 'a' }, { id: 'b' }] })]
+    const w = render({ providers })
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    await w.findAll('[data-testid="provider-model-remove"]')[0]!.trigger('click')
+    expect(providers[0].models).toEqual([{ id: 'b' }])
+    expect(w.emitted('change')).toBeUndefined()
+  })
+})

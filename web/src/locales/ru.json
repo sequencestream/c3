@@ -395,18 +395,6 @@
       "vendor": {
         "tooltip": "Тип агента — какой клиент запускается"
       },
-      "configMode": {
-        "tooltip": "Источник настроек провайдера: system (вход вендорского CLI) или custom (именованный провайдер моделей)",
-        "system": {
-          "label": "Системная конфигурация"
-        },
-        "custom": {
-          "label": "Пользовательская"
-        },
-        "derived": {
-          "tooltip": "Выводится из выбранного провайдера: указан — custom, иначе system."
-        }
-      },
       "wireApi": {
         "tooltip": "Какой API использует провайдер: Chat Completions (через релей c3) или Responses (прямое подключение)",
         "chat": {
@@ -842,14 +830,8 @@
         "add": {
           "label": "+ Добавить модель"
         },
-        "id": {
-          "placeholder": "Идентификатор модели"
-        },
-        "contextWindow": {
-          "placeholder": "Окно контекста"
-        },
-        "maxOutput": {
-          "placeholder": "Максимум вывода"
+        "name": {
+          "placeholder": "Название модели"
         },
         "remove": {
           "tooltip": "Удалить модель"

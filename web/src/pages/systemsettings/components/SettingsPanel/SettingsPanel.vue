@@ -13,7 +13,6 @@ import {
   GROUP_AGENT_PREFIX,
   SYSTEM_AGENT_ID,
   VENDOR_IDS,
-  deriveConfigMode,
   hasProviderConfig,
   providerSupportsVendor,
 } from '@ccc/shared/protocol'
@@ -655,19 +654,12 @@ const VENDOR_LABELS: Record<VendorId, string> = {
   cursor: 'Cursor',
 }
 
-// configMode is a c3 concept, so it IS localized.
-function configModeLabel(m: 'system' | 'custom'): string {
-  return m === 'system'
-    ? t('settings.agents.configMode.system.label')
-    : t('settings.agents.configMode.custom.label')
-}
-
 // ---- Provider 引用(agent 连接来源:具名 provider,或 vendor CLI 自带登录)----
 //
 // 一个 agent 的连接来自两处之一,下拉里就是这两态:
 //   1. 具名 provider —— 选中它的 id;
 //   2. vendor CLI 自带登录 —— 空值。
-// configMode 不再由用户直接选:它由这两态派生(deriveConfigMode)。
+// configMode 不再由用户直接选,也不单独展示:它由这两态派生写入。
 // 让用户改的是「连接从哪来」,而不是一个抽象的模式名。
 
 /** 「去新建一个 provider」的下拉取值。以 `_` 开头,不可能与真实 provider id 冲突。 */
@@ -707,11 +699,6 @@ function setAgentProvider(a: AgentConfig, value: string): void {
   }
   a.providerId = value
   a.configMode = 'custom'
-}
-
-/** 只读的派生模式标签 —— 与服务端 normalize 用的是同一条规则。 */
-function derivedModeLabel(a: AgentConfig): string {
-  return configModeLabel(deriveConfigMode(a))
 }
 
 /**
@@ -1808,12 +1795,6 @@ function selectAdmin(username: string) {
                     {{ t('settings.agents.provider.create.label') }}
                   </option>
                 </select>
-                <span
-                  class="agent-configmode-derived"
-                  :title="t('settings.agents.configMode.derived.tooltip')"
-                  data-testid="agent-configmode"
-                  >{{ derivedModeLabel(a) }}</span
-                >
                 <input
                   v-if="showApiKey(a)"
                   v-model="a.config.apiKey"

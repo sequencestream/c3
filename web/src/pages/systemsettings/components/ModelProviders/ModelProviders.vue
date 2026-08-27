@@ -365,33 +365,24 @@ function confirmRemove(): void {
 
         <h4 class="provider-section">{{ t('settings.providers.models.title') }}</h4>
         <p class="settings-hint">{{ t('settings.providers.models.hint') }}</p>
-        <div v-for="(m, i) in p.models ?? []" :key="i" class="provider-model">
+        <div
+          v-for="(m, i) in p.models ?? []"
+          :key="i"
+          class="provider-model"
+          data-testid="provider-model-row"
+        >
           <input
             v-model="m.id"
             class="agent-field"
-            :placeholder="t('settings.providers.models.id.placeholder')"
+            :placeholder="t('settings.providers.models.name.placeholder')"
             :disabled="!isAdmin"
-          />
-          <input
-            v-model.number="m.contextWindow"
-            class="agent-field provider-num"
-            type="number"
-            min="1"
-            :placeholder="t('settings.providers.models.contextWindow.placeholder')"
-            :disabled="!isAdmin"
-          />
-          <input
-            v-model.number="m.maxOutputTokens"
-            class="agent-field provider-num"
-            type="number"
-            min="1"
-            :placeholder="t('settings.providers.models.maxOutput.placeholder')"
-            :disabled="!isAdmin"
+            data-testid="provider-model-name"
           />
           <button
             class="icon-btn"
             :title="t('settings.providers.models.remove.tooltip')"
             :disabled="!isAdmin"
+            data-testid="provider-model-remove"
             @click="removeModel(p, i)"
           >
             🗑
@@ -514,9 +505,14 @@ function confirmRemove(): void {
 }
 .provider-model {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--sp-2);
-  flex-wrap: wrap;
+}
+.provider-model > .agent-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 /* protocol type + URL + wireApi + 测试(及结论) 同一行,不换行;窄时横向滚动。
  * `.agent-field` 默认 width:100% 会把 URL / select 各自撑成整行,这里压回按列宽。 */
@@ -556,9 +552,6 @@ function confirmRemove(): void {
   border: 1px solid var(--c-border);
   font-size: var(--fs-code);
   font-weight: 500;
-}
-.provider-num {
-  flex: 0 0 130px;
 }
 .provider-issue,
 .provider-probe-result {

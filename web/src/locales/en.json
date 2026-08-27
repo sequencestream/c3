@@ -394,18 +394,6 @@
       "vendor": {
         "tooltip": "Agent type — which client launches this agent"
       },
-      "configMode": {
-        "tooltip": "Provider config source: system (the vendor CLI’s own login) or custom (a named model provider)",
-        "system": {
-          "label": "System config"
-        },
-        "custom": {
-          "label": "Custom"
-        },
-        "derived": {
-          "tooltip": "Derived from the selected provider — custom when one is set, system otherwise."
-        }
-      },
       "wireApi": {
         "tooltip": "Which API the provider speaks: Chat Completions (routed through c3’s relay) or Responses (connected directly)",
         "chat": {
@@ -841,14 +829,8 @@
         "add": {
           "label": "+ Add model"
         },
-        "id": {
-          "placeholder": "Model id"
-        },
-        "contextWindow": {
-          "placeholder": "Context window"
-        },
-        "maxOutput": {
-          "placeholder": "Max output"
+        "name": {
+          "placeholder": "Model name"
         },
         "remove": {
           "tooltip": "Remove this model"

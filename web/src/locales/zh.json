@@ -394,18 +394,6 @@
       "vendor": {
         "tooltip": "Agent 类型——决定启动哪个客户端"
       },
-      "configMode": {
-        "tooltip": "参数来源:system(用 CLI 自身登录)或 custom(绑定具名模型提供方)",
-        "system": {
-          "label": "系统配置"
-        },
-        "custom": {
-          "label": "自定义"
-        },
-        "derived": {
-          "tooltip": "由所选提供方派生:选了提供方为 custom,否则为 system。"
-        }
-      },
       "wireApi": {
         "tooltip": "provider 讲哪种 API:Chat Completions(经 c3 relay 中转)或 Responses(直连)",
         "chat": {
@@ -841,14 +829,8 @@
         "add": {
           "label": "+ 添加模型"
         },
-        "id": {
-          "placeholder": "模型 id"
-        },
-        "contextWindow": {
-          "placeholder": "上下文窗口"
-        },
-        "maxOutput": {
-          "placeholder": "最大输出"
+        "name": {
+          "placeholder": "模型名称"
         },
         "remove": {
           "tooltip": "删除该模型"

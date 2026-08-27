@@ -2944,7 +2944,7 @@ button.deny:hover:not(:disabled) {
   flex-direction: column;
   gap: var(--sp-2);
 }
-/* Single-row-per-agent layout (2026-06-06-007): identity + vendor/configMode +
+/* Single-row-per-agent layout (2026-06-06-007): identity + vendor +
  * provider fields + codex policy all inline on ONE row; the row scrolls
  * horizontally if it outgrows the panel rather than wrapping to a second line. */
 .agent-list {
@@ -3134,17 +3134,14 @@ button.deny:hover:not(:disabled) {
 .agent-row > .agent-field {
   width: auto;
 }
-/* agent name 不参与弹性伸缩,固定 160px:长度多变的 displayName 不会撑爆该列,
+/* agent name 不参与弹性伸缩,固定 320px:长度多变的 displayName 不会撑爆该列,
  * 也不会被挤到看不见;剩余空间由 .agent-url 弹性项吸收。 */
 .agent-name {
-  flex: 0 0 160px;
-  width: 160px;
+  flex: 0 0 320px;
+  width: 320px;
 }
 .agent-vendor {
   flex: 0 0 132px;
-}
-.agent-configmode {
-  flex: 0 0 124px;
 }
 .agent-url {
   flex: 1 1 190px;
@@ -3154,7 +3151,8 @@ button.deny:hover:not(:disabled) {
   flex: 0 0 150px;
 }
 .agent-model {
-  flex: 0 0 150px;
+  flex: 0 0 300px;
+  width: 300px;
 }
 .agent-row > .col-drag {
   flex: 0 0 18px;
@@ -3611,7 +3609,6 @@ select.agent-field {
   .agent-row > .col-actions,
   .agent-name,
   .agent-vendor,
-  .agent-configmode,
   .agent-url,
   .agent-key,
   .agent-model,

@@ -73,7 +73,7 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 - **`apiKey`**(text): **账户级** key,覆盖本 provider 上所有协议 URL;落库为 `secret` 类型
 - **`urls`**(map `protocolType → string`): 逐协议风格的上游 base URL。`protocolType` 为 `openai` | `anthropic`(上游文档所说的兼容风格,不是 c3 的 VendorId)。非空才算该协议已连接
 - **`wireApi`**(`'responses' | 'chat'`,可选): 仅 `urls.openai` 有意义;缺省按 `'chat'` 处理
-- **`models`**(列表,可选): 模型目录 `{ id, contextWindow?, maxOutputTokens? }`。用于新建 agent 时预填与能力解析,**不是**运行时默认模型——agent 自己的 `config.model` 始终优先
+- **`models`**(列表,可选): 模型目录 `{ id, contextWindow?, maxOutputTokens? }`。提供方表单只编辑 `id`(展示为模型名称),每条与删除按钮同一行;`contextWindow`/`maxOutputTokens` 仍被 schema 接受并参与能力解析,但不在表单上暴露。用于新建 agent 时预填与能力解析,**不是**运行时默认模型——agent 自己的 `config.model` 始终优先
 - **`paused`**(bool,可选): 运维暂停。为真时引用它的 agent 在启动处明确失败(而不是稍后以晦涩的鉴权错误暴露);可恢复,数据不丢
 
 ### ProtocolType 与 vendor 支持列表

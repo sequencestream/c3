@@ -78,12 +78,8 @@ flowchart LR
 See [`doc/features.md`](doc/features.md) for the full feature tree.
 
 <p align="center">
+  <img src="handbook/images/c3-model-provider.png" alt="Model provider" width="49%" />
   <img src="handbook/images/c3-agents.png" alt="Agents" width="49%" />
-  <img src="handbook/images/c3-intent-work.png" alt="Intent work" width="49%" />
-</p>
-<p align="center">
-  <img src="handbook/images/c3-automation-pr-fix.png" alt="Automation PR fix" width="49%" />
-  <img src="handbook/images/c3-consensus-example.png" alt="Consensus example" width="49%" />
 </p>
 
 ## Usage

@@ -395,18 +395,6 @@
       "vendor": {
         "tooltip": "エージェントの種類 — 起動するクライアント"
       },
-      "configMode": {
-        "tooltip": "プロバイダー設定の取得元:system(CLI 自身のログイン)または custom(名前付きモデルプロバイダー)",
-        "system": {
-          "label": "システム設定"
-        },
-        "custom": {
-          "label": "カスタム"
-        },
-        "derived": {
-          "tooltip": "選択したプロバイダーから導出されます。指定時は custom、未指定なら system。"
-        }
-      },
       "wireApi": {
         "tooltip": "プロバイダーが話す API：Chat Completions（c3 のリレー経由）または Responses（直接接続）",
         "chat": {
@@ -842,14 +830,8 @@
         "add": {
           "label": "+ モデルを追加"
         },
-        "id": {
-          "placeholder": "モデル id"
-        },
-        "contextWindow": {
-          "placeholder": "コンテキスト長"
-        },
-        "maxOutput": {
-          "placeholder": "最大出力"
+        "name": {
+          "placeholder": "モデル名"
         },
         "remove": {
           "tooltip": "このモデルを削除"

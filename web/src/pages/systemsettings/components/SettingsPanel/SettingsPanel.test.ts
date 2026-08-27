@@ -204,6 +204,7 @@ describe('SettingsPanel.vue — agent 的连接来源', () => {
       .map((o) => o.element.value)
     // 空值 = CLI 自带登录;p2 只有 codex 连接,不进 claude agent 的下拉。
     expect(options).toEqual(['', 'p1', '_c3_new'])
+    expect(w.find('[data-testid="agent-configmode"]').exists()).toBe(false)
   })
 
   it('选「新建 provider」只切页签,不动这一行的配置', async () => {
@@ -223,6 +224,7 @@ describe('SettingsPanel.vue — agent 的连接来源', () => {
     const saved = (w.emitted('save') as [SystemSettings][])[0][0].agents[0]
     expect(saved.providerId).toBe('p1')
     expect(saved.configMode).toBe('custom')
+    expect(w.find('[data-testid="agent-configmode"]').exists()).toBe(false)
   })
 
   it('切回 CLI 登录清掉 providerId,并把存储的 configMode 落到 system', async () => {
@@ -1823,15 +1825,14 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     expect(agent.config).not.toHaveProperty('baseUrl')
   })
 
-  it('a cursor agent has no provider picker, reads as system, and shows apiKey + model', async () => {
+  it('a cursor agent has no provider picker and shows apiKey + model', async () => {
     const w = mount(SettingsPanel, {
       props: { open: true, settings: baseSettings, vendorAvailability: availability() },
     })
     await w.find('[data-testid="agent-vendor"]').setValue('cursor')
     // Cursor cannot reference a provider — the picker is absent, not an empty one.
     expect(w.find('[data-testid="agent-provider"]').exists()).toBe(false)
-    // The derived mode label still says where the connection comes from.
-    expect(w.find('[data-testid="agent-configmode"]').text()).toBe('System config')
+    expect(w.find('[data-testid="agent-configmode"]').exists()).toBe(false)
     expect(w.find('.agent-key').exists()).toBe(true)
     expect(w.find('.agent-model').exists()).toBe(true)
     // No path produces a baseUrl input for cursor.

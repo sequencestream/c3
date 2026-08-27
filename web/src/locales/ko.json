@@ -395,18 +395,6 @@
       "vendor": {
         "tooltip": "에이전트 유형 — 실행할 클라이언트"
       },
-      "configMode": {
-        "tooltip": "프로바이더 설정 출처: system(CLI 자체 로그인) 또는 custom(이름 있는 모델 프로바이더)",
-        "system": {
-          "label": "시스템 설정"
-        },
-        "custom": {
-          "label": "사용자 지정"
-        },
-        "derived": {
-          "tooltip": "선택한 프로바이더에서 파생됩니다. 지정하면 custom, 아니면 system."
-        }
-      },
       "wireApi": {
         "tooltip": "프로바이더가 사용하는 API: Chat Completions(c3 릴레이 경유) 또는 Responses(직접 연결)",
         "chat": {
@@ -842,14 +830,8 @@
         "add": {
           "label": "+ 모델 추가"
         },
-        "id": {
-          "placeholder": "모델 id"
-        },
-        "contextWindow": {
-          "placeholder": "컨텍스트 창"
-        },
-        "maxOutput": {
-          "placeholder": "최대 출력"
+        "name": {
+          "placeholder": "모델 이름"
         },
         "remove": {
           "tooltip": "이 모델 삭제"

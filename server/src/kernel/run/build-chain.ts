@@ -12,11 +12,18 @@
  * would need the deferred **replay-seed path** (open a new target-vendor session
  * seeded with the canonical transcript as a prompt) — out of scope here.
  *
+ * A chain member whose provider is PAUSED is dropped the same way: `launch(agent)`
+ * is called eagerly here, for every same-vendor member, before any attempt actually
+ * runs — so a paused member three entries down the chain must not blow up
+ * resolution for the healthy entries ahead of it. It is reported alongside the
+ * cross-vendor skips rather than thrown.
+ *
  * Pure: no IO/registry/SDK. The resolver and launch mapper are injected so the
  * builder is unit-tested directly (`build-chain.test.ts`).
  */
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 import type { RelayCandidate } from '../relay/contract.js'
+import { isModelProviderPausedError } from '../agent-config/errors.js'
 
 /** One agent attempt the launcher runs (entry 0 = session agent, rest = chain). */
 export interface AgentAttempt {
@@ -40,6 +47,9 @@ export interface BuiltChain {
   agentsToTry: AgentAttempt[]
   /** Chain agents of a different vendor, dropped (context cannot be carried). */
   crossVendorSkipped: SkippedAgent[]
+  /** Chain agents referencing a paused model provider, dropped (never attempted;
+   *  see the file header). */
+  pausedSkipped: SkippedAgent[]
 }
 
 /**
@@ -66,6 +76,7 @@ export function buildAgentsToTry(
 ): BuiltChain {
   const agentsToTry: AgentAttempt[] = [firstLaunch]
   const crossVendorSkipped: SkippedAgent[] = []
+  const pausedSkipped: SkippedAgent[] = []
   if (chain && chain.length > 0) {
     for (const id of chain) {
       const agent = resolve(id)
@@ -81,8 +92,22 @@ export function buildAgentsToTry(
         })
         continue
       }
-      agentsToTry.push({ agentId: agent.id, ...launch(agent) })
+      try {
+        agentsToTry.push({ agentId: agent.id, ...launch(agent) })
+      } catch (err) {
+        // A paused-provider fallback must not abort the chain for the entries
+        // ahead of it (see the file header) — drop it and keep building.
+        if (isModelProviderPausedError(err)) {
+          pausedSkipped.push({
+            agentId: agent.id,
+            agentName: agent.displayName,
+            vendor: agent.vendor,
+          })
+          continue
+        }
+        throw err
+      }
     }
   }
-  return { agentsToTry, crossVendorSkipped }
+  return { agentsToTry, crossVendorSkipped, pausedSkipped }
 }

@@ -86,6 +86,7 @@ beforeEach(() => {
   boundRef = REF
   cursor = null
   mockSettings.agents = []
+  mockSettings.modelProviders = []
 })
 
 describe('launchSegment — what a single launch can actually serve', () => {
@@ -107,6 +108,56 @@ describe('launchSegment — what a single launch can actually serve', () => {
   it('a custom member with no baseUrl cannot be relayed, so it ends the segment', () => {
     const blank = custom('c2', 1, 'b', GROUP, '')
     expect(launchSegment([custom('c1', 0, 'a'), blank]).map((a) => a.id)).toEqual(['c1'])
+  })
+
+  it('a paused-provider peer ends the segment without aborting a healthy leader', () => {
+    // Peer c2 points at a paused provider. Resolving it must NOT throw out of
+    // launchSegment — that would abort the healthy leader. It ends the segment
+    // the same way a peer with no baseUrl does.
+    mockSettings.modelProviders = [
+      {
+        id: 'p-ok',
+        displayName: 'ok',
+        apiKey: 'k',
+        urls: { anthropic: 'https://ok.example/anthropic' },
+      },
+      {
+        id: 'p-paused',
+        displayName: 'paused',
+        apiKey: 'k',
+        paused: true,
+        urls: { anthropic: 'https://paused.example/anthropic' },
+      },
+    ]
+    const lead = {
+      ...custom('c1', 0, 'a'),
+      providerId: 'p-ok',
+      config: { baseUrl: '', apiKey: '', model: 'a' },
+    } as AgentConfig
+    const pausedPeer = {
+      ...custom('c2', 1, 'b'),
+      providerId: 'p-paused',
+      config: { baseUrl: '', apiKey: '', model: 'b' },
+    } as AgentConfig
+    expect(launchSegment([lead, pausedPeer]).map((a) => a.id)).toEqual(['c1'])
+  })
+
+  it('a paused-provider LEADER throws so the selected agent fails loudly', () => {
+    mockSettings.modelProviders = [
+      {
+        id: 'p-paused',
+        displayName: 'paused',
+        apiKey: 'k',
+        paused: true,
+        urls: { anthropic: 'https://paused.example/anthropic' },
+      },
+    ]
+    const lead = {
+      ...custom('c1', 0, 'a'),
+      providerId: 'p-paused',
+      config: { baseUrl: '', apiKey: '', model: 'a' },
+    } as AgentConfig
+    expect(() => launchSegment([lead])).toThrow(/paused/)
   })
 })
 

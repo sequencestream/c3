@@ -36,6 +36,28 @@ export function isAgentGroupUnavailableError(err: unknown): err is AgentGroupUna
 }
 
 /**
+ * An agent references a model provider its operator has PAUSED (maintenance). The
+ * launch fails here, loudly and with the provider named, instead of dialling a
+ * knowingly-broken upstream and surfacing as an auth/connection error three layers
+ * down. Pausing is reversible, so this is a configuration state to resolve — never
+ * a reason to silently fall back to another connection.
+ */
+export class ModelProviderPausedError extends Error {
+  readonly providerId: string
+
+  constructor(providerId: string, agentId: string) {
+    super(`model provider "${providerId}" is paused; agent "${agentId}" cannot launch`)
+    this.name = 'ModelProviderPausedError'
+    this.providerId = providerId
+  }
+}
+
+/** Whether an unknown error is the paused-provider failure (narrowing guard). */
+export function isModelProviderPausedError(err: unknown): err is ModelProviderPausedError {
+  return err instanceof ModelProviderPausedError
+}
+
+/**
  * Heuristic check: does this error message describe a transient / degradable
  * failure that warrants switching to a different agent? Matches rate-limit,
  * session-limit, authentication, and connection errors — the kinds of errors

@@ -5,6 +5,7 @@
  */
 
 import type { AgentConfig } from './agent-config.js'
+import type { ModelProvider } from './model-provider.js'
 import type { AuthConfig } from './auth.js'
 import type { ConsensusConfig } from './consensus.js'
 import type { SkillRepoConfig } from './skill.js'
@@ -247,6 +248,17 @@ export interface McpApiKeyMeta {
  */
 export interface SystemSettings {
   agents: AgentConfig[]
+  /**
+   * Named model-provider registry — shared upstream URLs agents reference via
+   * `providerId`. Lifting the protocol URLs + account key out of per-agent inline
+   * config means a key rotation or endpoint migration edits one row instead of N
+   * agents. Empty/absent ⇒ no providers configured (all agents use the legacy
+   * inline config or system login).
+   *
+   * Persisted in `system_configs` alongside `agents`; the account `apiKey` is
+   * encrypted at rest with the same `c3secretvN:` scheme as agent apiKeys.
+   */
+  modelProviders?: ModelProvider[]
   /** Id of the agent new/unassigned sessions launch with. */
   defaultAgentId: string
   /**

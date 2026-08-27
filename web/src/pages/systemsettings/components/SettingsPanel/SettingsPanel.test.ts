@@ -5,7 +5,12 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import SettingsPanel from './SettingsPanel.vue'
 import { SYSTEM_AGENT_ID, VENDOR_IDS } from '@ccc/shared/protocol'
-import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
+import type {
+  SystemSettings,
+  VendorId,
+  VendorRuntimeStatus,
+  ProviderMigrationPlan,
+} from '@ccc/shared/protocol'
 import { useAuth } from '@/composables/useAuth'
 import { applyLocale } from '@/i18n'
 import { VENDOR_COLOR } from '@/lib/vendor'
@@ -52,6 +57,7 @@ const baseSettings: SystemSettings = {
 // activating the tab first.
 const SAVE = {
   agent: '[data-testid="settings-save-agent"]',
+  provider: '[data-testid="settings-save-provider"]',
   runtime: '[data-testid="settings-save-runtime"]',
   security: '[data-testid="settings-save-security"]',
   general: '[data-testid="settings-save-general"]',
@@ -162,6 +168,93 @@ describe('SettingsPanel.vue — model input visibility by configMode (2026-07-02
     const emitted = w.emitted('save') as [SystemSettings][]
     const savedAgent = emitted[0][0].agents.find((a) => a.id === SYSTEM_AGENT_ID)
     expect(savedAgent?.config.model).toBe('claude-sonnet-5')
+  })
+})
+
+describe('SettingsPanel.vue — agent 的连接来源三态', () => {
+  const withProvider: SystemSettings = {
+    ...baseSettings,
+    modelProviders: [
+      {
+        id: 'p1',
+        displayName: 'DeepSeek',
+        apiKey: 'sk-1',
+        urls: { anthropic: 'https://api.deepseek.com/anthropic' },
+      },
+      // codex-only:claude agent 的下拉里不该出现它。
+      {
+        id: 'p2',
+        displayName: 'CodexOnly',
+        apiKey: 'sk-2',
+        urls: { openai: 'https://codex.example' },
+      },
+    ],
+    agents: [
+      {
+        id: 'legacy',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Legacy',
+        enabled: true,
+        config: { baseUrl: 'https://old.example', apiKey: 'k', model: 'm' },
+      },
+    ],
+  }
+
+  it('只列得上该 vendor 的 provider,外加 CLI 登录、未迁移占位与新建入口', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProvider } })
+    const options = w
+      .find('[data-testid="agent-provider"]')
+      .findAll('option')
+      .map((o) => o.element.value)
+    // 空值 = CLI 自带登录;p2 只有 codex 连接,不进 claude agent 的下拉。
+    expect(options).toEqual(['', 'p1', '_c3_inline', '_c3_new'])
+  })
+
+  it('选「新建 provider」只切页签,不动这一行的配置', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProvider } })
+    await w.find('[data-testid="agent-provider"]').setValue('_c3_new')
+    expect(panelHidden(w, 'settings-tab-provider')).toBe(false)
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0].agents[0]
+    expect(saved.providerId).toBeUndefined()
+    expect(saved.configMode).toBe('custom')
+  })
+
+  it('选一个 provider 即写 providerId,内联字段原样留着(迁移可逆)', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProvider } })
+    await w.find('[data-testid="agent-provider"]').setValue('p1')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0].agents[0]
+    expect(saved.providerId).toBe('p1')
+    expect(saved.config).toMatchObject({ baseUrl: 'https://old.example', apiKey: 'k' })
+  })
+
+  it('切回 CLI 登录清掉 providerId,并把存储的 configMode 落到 system', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProvider } })
+    await w.find('[data-testid="agent-provider"]').setValue('p1')
+    await w.find('[data-testid="agent-provider"]').setValue('')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0].agents[0]
+    expect(saved.providerId).toBeUndefined()
+    // 存储的 configMode 是「残留的内联三元组还算不算数」的唯一开关。
+    expect(saved.configMode).toBe('system')
+  })
+
+  it('未迁移时内联 baseUrl 只读展示,不是可编辑字段', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withProvider } })
+    expect(w.find<HTMLInputElement>('.agent-url').element.readOnly).toBe(true)
+  })
+
+  it('悬挂引用仍显示为选中项,不静默跳到别的值', () => {
+    const dangling: SystemSettings = {
+      ...withProvider,
+      agents: [{ ...withProvider.agents[0], providerId: 'gone' }],
+    }
+    const w = mount(SettingsPanel, { props: { open: true, settings: dangling } })
+    const select = w.find<HTMLSelectElement>('[data-testid="agent-provider"]')
+    expect(select.element.value).toBe('gone')
+    expect(select.text()).toContain('Unknown provider (gone)')
   })
 })
 
@@ -1344,16 +1437,17 @@ describe('SettingsPanel.vue — non-admin is read-only (ADR-0023 authz)', () => 
 })
 
 describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
-  it('renders five tabs in order for an administrator, ending with Users and access', () => {
+  it('renders six tabs in order for an administrator, ending with Users and access', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const labels = w
       .findAll('[data-testid="settings-tabs"] .settings-tab span')
       .map((s) => s.text())
     // Each tab has a label span (and an optional dirty dot span); take the label texts.
     const tabButtons = w.findAll('[data-testid^="settings-tab-btn-"]')
-    expect(tabButtons).toHaveLength(5)
-    expect(labels.slice(0, 5)).toEqual([
+    expect(tabButtons).toHaveLength(6)
+    expect(labels.slice(0, 6)).toEqual([
       'Agent',
+      'Providers',
       'Runtime',
       'Security',
       'General',
@@ -1367,7 +1461,7 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
     const labels = w
       .findAll('[data-testid="settings-tabs"] .settings-tab span')
       .map((s) => s.text())
-    expect(w.findAll('[data-testid^="settings-tab-btn-"]')).toHaveLength(4)
+    expect(w.findAll('[data-testid^="settings-tab-btn-"]')).toHaveLength(5)
     expect(labels).not.toContain('Users and access')
     useAuth().setIsAdmin(true)
   })
@@ -1697,16 +1791,15 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     expect(agent.config).not.toHaveProperty('baseUrl')
   })
 
-  it('a cursor agent offers only the system config mode, and shows apiKey + model', async () => {
+  it('a cursor agent has no provider picker, reads as system, and shows apiKey + model', async () => {
     const w = mount(SettingsPanel, {
       props: { open: true, settings: baseSettings, vendorAvailability: availability() },
     })
     await w.find('[data-testid="agent-vendor"]').setValue('cursor')
-    const modes = w
-      .find('[data-testid="agent-configmode"]')
-      .findAll('option')
-      .map((o) => o.element.value)
-    expect(modes).toEqual(['system'])
+    // Cursor cannot reference a provider — the picker is absent, not an empty one.
+    expect(w.find('[data-testid="agent-provider"]').exists()).toBe(false)
+    // The derived mode label still says where the connection comes from.
+    expect(w.find('[data-testid="agent-configmode"]').text()).toBe('System config')
     expect(w.find('.agent-key').exists()).toBe(true)
     expect(w.find('.agent-model').exists()).toBe(true)
     // No path produces a baseUrl input for cursor.
@@ -2514,5 +2607,105 @@ describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
     expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
     expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
     expect(w.find(BLOCK).exists()).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — provider migration reseed', () => {
+  const migrationPlan: ProviderMigrationPlan = {
+    groups: [
+      {
+        providerId: 'mp-syn-legacy',
+        reusesExisting: false,
+        displayName: 'Legacy upstream',
+        vendor: 'claude' as VendorId,
+        baseUrl: 'https://old.example',
+        apiKey: 'k',
+        agentIds: ['legacy'],
+      },
+    ],
+    clearableAgentIds: [],
+  }
+
+  const preMigration: SystemSettings = {
+    ...baseSettings,
+    modelProviders: [
+      {
+        id: 'p1',
+        displayName: 'DeepSeek',
+        apiKey: 'sk-1',
+        urls: { anthropic: 'https://api.deepseek.com/anthropic' },
+      },
+    ],
+    agents: [
+      {
+        id: 'legacy',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Legacy',
+        enabled: true,
+        config: { baseUrl: 'https://old.example', apiKey: 'k', model: 'm' },
+      },
+    ],
+  }
+
+  const postMigration: SystemSettings = {
+    ...preMigration,
+    modelProviders: [
+      ...(preMigration.modelProviders ?? []),
+      {
+        id: 'mp-syn-legacy',
+        displayName: 'Legacy upstream',
+        apiKey: 'k',
+        synthesized: true,
+        urls: { anthropic: 'https://old.example' },
+      },
+    ],
+    agents: [
+      {
+        ...preMigration.agents[0],
+        providerId: 'mp-syn-legacy',
+      },
+    ],
+  }
+
+  it('resets dirty provider and agent drafts after a migration echo', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: preMigration, providerMigrationPlan: migrationPlan },
+    })
+    await w.find('[data-testid="settings-tab-btn-provider"]').trigger('click')
+    await w.find('[data-testid="provider-name"]').setValue('Draft rename')
+    expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(true)
+    await w.find('[data-testid="provider-migration-apply"]').trigger('click')
+    expect(w.emitted('provider-migrate')).toEqual([[{ action: 'apply' }]])
+    expect(w.emitted('save')).toBeUndefined()
+    await w.setProps({
+      providerMigrationEcho: { seq: 1, changed: true },
+      settings: postMigration,
+    })
+    expect(w.find('[data-testid="settings-tab-dirty-provider"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
+    await w.find(SAVE.provider).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.modelProviders?.some((p) => p.id === 'mp-syn-legacy')).toBe(true)
+    expect(saved.agents[0].providerId).toBe('mp-syn-legacy')
+  })
+
+  it('keeps dirty drafts after a no-op migration echo', async () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: postMigration,
+        providerMigrationPlan: migrationPlan,
+      },
+    })
+    await w.find('[data-testid="settings-tab-btn-agent"]').trigger('click')
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    await w.find('[data-testid="settings-tab-btn-provider"]').trigger('click')
+    await w.find('[data-testid="provider-migration-apply"]').trigger('click')
+    await w.setProps({ providerMigrationEcho: { seq: 1, changed: false } })
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    await w.setProps({ settings: { ...postMigration, voiceLang: 'en-US' } })
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
   })
 })

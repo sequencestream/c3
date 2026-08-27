@@ -83,7 +83,7 @@ interface WorkspaceSandboxConfig {
 6. 固定放行：执行根始终读写，workspace specs root 以宿主相同绝对路径读写；当执行根**不同于**源工作区时（worktree run），源工作区只读；当执行根**就是**源工作区时（current-branch），二者规范化后同路径，只保留一条读写授权，不产生互相冲突的 ro/rw 挂载。其中**工作区可派生**的两项（项目原目录 ro、specs root rw）由单一来源 `sysExtraMounts(workspace)` 产出——**同一函数**既在 sandbox 启动时被 `resolvePaths()` 取用并入放行集（同路径时把项目原目录 ro 合并入执行根 rw），又随工作区设置回复下发前端。执行根为**逐 run** 放行（无法仅由工作区路径派生），不在 `sysExtraMounts` 内，由 `resolvePaths()` 单独加入。这些固定放行在 workspace 设置的「补充放行目录」区域**只读列出（默认嵌入目录列表）**，供用户了解始终生效的放行集：不可修改、不可删除；逐 run 的执行根按当前分支模式展示为源工作区读写或独立 worktree 读写，界面文案不承诺源工作区恒为只读。
 7. 补充放行：workspace 可配置 `extraMounts`，每项同路径放行、默认只读、可逐项声明 rw；补充目录不得覆盖执行根、项目原目录、specsBase 等保留路径，放行前须 canonicalize 并做 allowlist / denylist 校验，拒绝软链逃逸；独立 worktree 的源工作区只读是强制边界，不得通过父子路径重叠把它提升为读写。
 8. deny-by-default 是安全底座：未显式放行的目录（其它项目、`~/.ssh`、`~/.aws` 等 home 内敏感目录）一律不可见，无需额外配置即隔离凭证与无关代码。
-9. 认证按 agent 的 `configMode` 分流：custom agent 的 provider 凭证由 driver 经子进程 env 显式注入（wrapper 逐项 `--env "KEY=$KEY"` 透传），不触碰宿主 keychain；system agent（订阅态，如 Claude Pro/Max、ChatGPT 登录）走 vendor CLI 自身登录，wrapper 为其追加 `--allow-keychain`（arapuca ≥ 0.2.5）打开宿主凭证访问面。除此之外仍无凭证注入，home 内其它敏感目录不放行。各 vendor 的具体分流规则集中在一份 per-vendor 认证策略里（§9.1），wrapper 生成逻辑本身不含 vendor 分支——新增一个 vendor 只新增一条策略。
+9. 认证按「该 agent 是否解析出上游连接」分流（连接解析见 [agent-config-design](../../settings/agent-config/agent-config-design.md)）：解析出上游的 agent，其凭证由 driver 经子进程 env 显式注入（wrapper 逐项 `--env "KEY=$KEY"` 透传），不触碰宿主 keychain；解析为空连接的 agent（订阅态，如 Claude Pro/Max、ChatGPT 登录）走 vendor CLI 自身登录，wrapper 为其追加 `--allow-keychain`（arapuca ≥ 0.2.5）打开宿主凭证访问面。除此之外仍无凭证注入，home 内其它敏感目录不放行。各 vendor 的具体分流规则集中在一份 per-vendor 认证策略里（§9.1），wrapper 生成逻辑本身不含 vendor 分支——新增一个 vendor 只新增一条策略。
 10. 网络当前全开，不施加网络约束。宿主若设有标准代理变量，wrapper 追加 `--allow-proxy-env` 让 arapuca 转发该组变量（网络模型不变，只是让沙箱内 CLI 看得见宿主代理端点）。网络禁用 / 出站白名单列为后续阶段。
 11. sandbox 启用时 run **始终**保留其正常解析出的 agent：沙箱不参与 agent 选择，没有 sandbox 专属角色配置，也没有换绑分支。该 agent 的 vendor 决定入口命令（宿主 PATH 中的 CLI）与 provider 接线。system agent 不构成 sandbox 冲突。
 12. 启用即硬隔离：arapuca fail-closed（任一隔离层失效即非零退出），与 deny-by-default 一致；探测缺失 / 平台不支持 / 放行路径非法 / 启动失败时该 run 硬失败，绝不回落宿主裸跑。
@@ -197,7 +197,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 ### 9.1 per-vendor 认证策略
 
-一个 vendor 在沙箱内**怎样认证、把状态写到哪里**，集中在一份按 vendor 注册的策略里（`kernel/sandbox/vendor-auth.ts`）。解析输入是：vendor、**本次实际解析并绑定的 agent 是否订阅态**（`configMode === 'system'`）、宿主事实（平台、home、登录名、uid、路径是否存在）、已解析的放行路径集。输出是纯数据的 profile，不含任何 shell 片段：
+一个 vendor 在沙箱内**怎样认证、把状态写到哪里**，集中在一份按 vendor 注册的策略里（`kernel/sandbox/vendor-auth.ts`）。解析输入是：vendor、**本次实际解析并绑定的 agent 是否订阅态**（连接解析结果为空 ⇒ 走 vendor 自身登录）、宿主事实（平台、home、登录名、uid、路径是否存在）、已解析的放行路径集。输出是纯数据的 profile，不含任何 shell 片段：
 
 - `entryCommand`：`--` 之后 exec 的宿主 CLI 名。
 - `literalEnv`：内联的非机密变量（数据根、登录身份），值是固定宿主事实。

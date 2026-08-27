@@ -23,6 +23,7 @@ import {
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
 import { autoConfigureAgentsHandler } from './settings/auto-configure-agents.js'
+import { probeModelProviderHandler, providerMigrationHandler } from './settings/model-providers.js'
 import {
   applySelfUpdateHandler,
   cancelSelfUpdateHandler,
@@ -200,6 +201,8 @@ export const handlerMap: HandlerMap = {
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
   auto_configure_agents: autoConfigureAgentsHandler,
+  provider_migration: providerMigrationHandler,
+  probe_model_provider: probeModelProviderHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,
   list_mcp_api_keys: listMcpApiKeysHandler,

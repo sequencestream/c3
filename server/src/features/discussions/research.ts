@@ -29,6 +29,7 @@ import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
 import {
   bindClaudeRelay,
   enabledAgents,
+  isModelProviderPausedError,
   launchForAgent,
   resolveAgent,
   resolveFirstAgentOfVendor,
@@ -216,7 +217,16 @@ export async function researchDiscussionContext(
   // launch path does — the follow-up turns run through that path on this same
   // (caller-resolved, session-frozen) agent, so the first (unattended) turn must
   // connect the same way.
-  const launch = launchForAgent(agent)
+  let launch
+  try {
+    launch = launchForAgent(agent)
+  } catch (err) {
+    if (isModelProviderPausedError(err)) {
+      console.warn(`[c3] discussion research skipped (${discussion.id}): ${err.message}`)
+      return { ok: false, researchResult: '' }
+    }
+    throw err
+  }
   const claudeRelay = bindClaudeRelay(launch.relayCandidates)
   const envOverrides = claudeRelay
     ? { ...launch.envOverrides, ...claudeRelay.envOverrides }

@@ -15,7 +15,8 @@ web console 中的完整设置视图页面。
 
 ## 持久化
 
-- **`system_configs`** —— 智能体注册表(`agents.<id>.*`,apiKey 以 `secret` 类型落库)与
+- **`system_configs`** —— 智能体注册表(`agents.<id>.*`)、modelProvider 注册表
+  (`modelProviders.<id>.*`,账户级 apiKey 以 `secret` 类型落库)与
   默认智能体 id;按工作区的配置在 `workspace_configs`(见
   [workspace-setting](../workspace-setting/workspace-setting-spec.md))。
 - **`session_configs`** —— 双键绑定(ADR-0015):带 `pendingCreatedAt` 的作用域是可变的意图
@@ -167,24 +168,45 @@ System——那正是本轮修复的缺陷:用户把默认/意图配成组,新�
   真实 id 通过 session-agent 事实解析——AC-R6/R16)。
 - 该智能体是匹配该 id 的智能体,否则是匹配默认智能体 id 的智能体,否则是系统
   智能体。
-- 覆盖项随后按厂商推导。对于 `claude` 智能体:配置中的 base URL 映射到
+- 上游连接由**连接解析器**给出(见下节),而不是直接读 agent 的内联字段:它可能来自
+  被引用的 provider,也可能来自尚未迁移的内联三元组,或者根本没有(走厂商 CLI 登录态)。
+- 覆盖项随后按厂商推导。对于 `claude` 智能体:解析出的 base URL 映射到
   Anthropic base-URL 环境变量;API key 同时映射到 Anthropic API-key 和
-  auth-token 环境变量;model 映射到模型覆盖项。对于任何**非系统**智能体,
-  会设置自适应思维变通方案的环境变量(见下文)。一个 codex 智能体的中立厂商三元组
-  在此处原样传递,随后在其驱动器内部被重新路由通过 relay(AC-R15)。
+  auth-token 环境变量;model 取自 agent 自身的 `config.model`。对于任何经 relay 连接
+  三方上游的 claude 智能体,会设置自适应思维变通方案的环境变量(见下文)。codex 的
+  连接同样原样传递,随后在其驱动器内部被重新路由通过 relay(AC-R15)。
 
 解析器原样返回中立覆盖项;把自定义厂商重新路由通过 c3 进程内 Responses→Chat
 relay 的是**codex 驱动器**(它把真实的 base URL + key 注册在一个 token 之后,
 并把 codex 指向回环 relay;AC-R15 / ADR-0029)。relay 的转换器 + HTTP 处理器
 是传输层,不是内核层(ADR-0009 R2)。
 
-当 `baseUrl`/`apiKey` 为空时,system 模式的智能体不产生任何连接覆盖项,因此
-运行会保留厂商 CLI 自身的配置。然而 `model` 是一个**独立的覆盖项**,在
+当连接解析不出上游时,智能体不产生任何连接覆盖项,因此运行会保留厂商 CLI 自身的配置。然而 `model` 是一个**独立的覆盖项**,在
 `system` 和 `custom` 两种模式下都会被读取(2026-07-02-001):非空时它**会**被
 传递,即使是 system 模式的智能体。空的 model 字段不产生任何贡献,因此
 system 模式且 model 为空的智能体也不产生 `model` 覆盖项——此时应用 SDK 自身的
 默认解析(AC-R4/R5)。当存在环境覆盖项时,它们会合并在完整的进程环境之上,
 使得被启动的进程保留其完整环境;当不存在时,启动会完全省略 `env`。
+
+### 连接解析(AC-R30)
+
+一个纯函数吃下 `(agent, provider 注册表)`,吐出 `{ 来源, 连接, 告警[] }`,三处消费:启动
+路径把它变成 relay 候选、控制台用它试算一次尚未保存的编辑、健康探测用它决定拨哪个地址。
+它**不抛异常**——`paused` 只是一条告警,由启动路径升格为点名该 provider 的错误,这样
+「试算」不会因为一条运维状态而中断。
+
+**「是否走厂商自身登录」不再等价于 `configMode === 'system'`**:派生规则下,一个未迁移的
+内联智能体读作 `'custom'` 而它的连接确实来自内联字段,但一个刚被切回 CLI 登录态的智能体
+读作 `'system'` 却仍留着旧 base URL 文本。沙箱是否打开宿主钥匙串、transcript 落在宿主还是
+沙箱,都改问解析器「解析结果是否为空连接」,双轨迁移对这些调用点因此完全不可见。
+
+### 内联配置迁移(AC-R31)
+
+迁移是一份**报告**加三步显式写入(计划 / 迁移 / 撤销 / 清理),全部是纯函数,由一条
+`provider_migration` 消息驱动,每次动作后回传重算的报告,写入动作另外回传 `settings`。
+报告不进 `SystemSettings`——它是注册表的派生视图,一次整对象保存不该能捎带或抹掉它。
+分组键是 `(vendor, baseUrl, apiKey, wireApi)` 全等,合成 provider 的 id 由该键哈希派生,
+因此重复计划得到同一份结果、重复迁移幂等。
 
 ### 自适应思维变通方案(临时)
 
@@ -200,8 +222,8 @@ system 模式且 model 为空的智能体也不产生 `model` 覆盖项——此
   额外禁用 CLAUDE.md/自动记忆、Skills 和 hooks,并简化系统提示词,
   削弱了 Claude Code 系统提示词预设中的工作目录/git 上下文。禁用自适应思维的
   标志是更精准的选择,也是我们采用的方案。
-- **范围:** 仅限非系统智能体;系统智能体与第一方 Anthropic 通信,
-  不需要任何兜底。
+- **范围:** 仅限经 relay 连接三方上游的 claude 智能体;走 Anthropic 第一方登录态的
+  智能体不需要任何兜底。
 - **移除时机:** 当第三方厂商支持自适应思维消息格式后——
   就可以去掉这个环境变量注入。(另一个长期方案是用一个请求改写代理,
   把内联的 `system` 消息提升到顶层的 `system` 字段。)

@@ -1849,6 +1849,34 @@ describe('session process proxy config — normalizeProxyConfig + getProxyConfig
     expect(cfg.httpsProxy).toBe('http://s:3128')
   })
 
+  it('saveSettings WITHOUT modelProviders preserves the registry on disk (mergeSettingsOverDisk)', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      modelProviders: [
+        {
+          id: 'p-keep',
+          displayName: 'Keep',
+          apiKey: 'sk-keep',
+          urls: { anthropic: 'https://keep.example' },
+        },
+      ],
+    } as unknown as SystemSettings)
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+    } as unknown as SystemSettings)
+    const stored = loadSettings()
+    expect(stored.modelProviders).toEqual([
+      {
+        id: 'p-keep',
+        displayName: 'Keep',
+        apiKey: 'sk-keep',
+        urls: { anthropic: 'https://keep.example' },
+      },
+    ])
+  })
+
   it('saveSettings WITH explicit proxy overwrites the disk value', () => {
     saveSettings({
       agents: [],

@@ -10,6 +10,7 @@
  */
 
 export * from './protocol/agent-config.js'
+export * from './protocol/model-provider.js'
 export * from './protocol/auth.js'
 export * from './protocol/automation.js'
 export * from './protocol/file.js'
@@ -72,6 +73,8 @@ export type ClientToServer =
   | SettingsMsg.ClientGetSettings
   | SettingsMsg.ClientSaveSettings
   | SettingsMsg.ClientAutoConfigureAgents
+  | SettingsMsg.ClientProviderMigration
+  | SettingsMsg.ClientProbeModelProvider
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
   | SettingsMsg.ClientListMcpApiKeys
@@ -218,6 +221,8 @@ export type ServerToClient =
   | SessionMsg.ServerCommands
   | SettingsMsg.ServerSettings
   | SettingsMsg.ServerAutoConfigureAgentsResult
+  | SettingsMsg.ServerProviderMigrationPlan
+  | SettingsMsg.ServerModelProviderProbeResult
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys
   | SettingsMsg.ServerMyMcpApiKeys

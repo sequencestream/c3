@@ -259,6 +259,9 @@
       },
       "access": {
         "label": "ユーザーとアクセス"
+      },
+      "provider": {
+        "label": "プロバイダー"
       }
     },
     "agents": {
@@ -399,6 +402,9 @@
         },
         "custom": {
           "label": "カスタム"
+        },
+        "derived": {
+          "tooltip": "選択したプロバイダーから導出されます。指定時は custom、未指定なら system。"
         }
       },
       "wireApi": {
@@ -466,6 +472,25 @@
           "created": "{n} 個のエージェントを作成しました。",
           "noVendor": "実行可能な vendor CLI が見つかりません。CLI をインストールまたはログインしてから、「ランタイム」タブで診断を確認してください。",
           "alreadyConfigured": "実行可能なすべての vendor に既にエージェントがあります。"
+        }
+      },
+      "provider": {
+        "tooltip": "このエージェントの接続を提供する名前付きプロバイダー。空欄ならベンダー CLI 自身のログインを使います。",
+        "systemLogin": {
+          "label": "CLI のログイン"
+        },
+        "legacy": {
+          "label": "インライン設定(未移行)",
+          "notice": "このエージェントは独自の Base URL とキーを保持しています。「プロバイダー」タブで移行できます。"
+        },
+        "create": {
+          "label": "+ プロバイダーを新規作成…"
+        },
+        "missing": {
+          "label": "不明なプロバイダー({id})"
+        },
+        "noConnection": {
+          "label": "{name} — {vendor} の接続なし"
         }
       }
     },
@@ -781,6 +806,108 @@
       },
       "hiddenSelected": {
         "hint": "検索で隠れている選択済みワークスペースが {count} 件あります。保存時にも含まれます。"
+      }
+    },
+    "providers": {
+      "hint": {
+        "text": "プロバイダーは名前付きの上流接続(Base URL と API キー)で、複数のエージェントで共有できます。キーの更新やエンドポイントの移行は一箇所の編集で済みます。プロバイダーを選ばないエージェントは、各ベンダー CLI 自身のログインで動作します。"
+      },
+      "add": {
+        "label": "+ プロバイダーを追加"
+      },
+      "template": {
+        "blank": {
+          "label": "空白"
+        },
+        "label": "テンプレート:{name}"
+      },
+      "empty": {
+        "text": "プロバイダーがありません。作成してからエージェントで選択してください。"
+      },
+      "name": {
+        "placeholder": "プロバイダー名"
+      },
+      "apiKey": {
+        "label": "アカウントキー",
+        "placeholder": "すべてのプロトコル URL で共有する API キー",
+        "hint": "このプロバイダーの OpenAI / Anthropic URL すべてで同じアカウントキーを使います。"
+      },
+      "connection": {
+        "title": "プロトコル URL",
+        "baseUrl": {
+          "placeholder": "https://api.example.com"
+        },
+        "wireApi": {
+          "label": "API プロトコル"
+        }
+      },
+      "models": {
+        "title": "モデル",
+        "add": {
+          "label": "+ モデルを追加"
+        },
+        "id": {
+          "placeholder": "モデル id"
+        },
+        "contextWindow": {
+          "placeholder": "コンテキスト長"
+        },
+        "maxOutput": {
+          "placeholder": "最大出力"
+        },
+        "remove": {
+          "tooltip": "このモデルを削除"
+        },
+        "hint": "新規エージェントのモデル欄を埋めるための候補です。実行時の既定値ではありません。"
+      },
+      "paused": {
+        "label": "一時停止中",
+        "tooltip": "メンテナンス中:このプロバイダーを参照するエージェントは、再開するまで起動に失敗します。"
+      },
+      "synthesized": {
+        "label": "移行生成",
+        "tooltip": "旧インライン設定から移行で生成されました。編集すると通常のプロバイダーになります。"
+      },
+      "usedBy": {
+        "label": "{count} 件のエージェントが使用",
+        "none": "未使用"
+      },
+      "probe": {
+        "label": "テスト",
+        "running": "テスト中…",
+        "ok": "到達可能({ms} ms)",
+        "auth": "到達可能、キーが拒否されました({status})",
+        "fail": "到達不可:{reason}"
+      },
+      "issue": {
+        "empty": "Base URL が未入力",
+        "notAUrl": "URL の形式が不正",
+        "badScheme": "http または https のみ",
+        "hasQuery": "クエリ文字列は破棄されます",
+        "insecure": "平文 http はキーを露出します"
+      },
+      "remove": {
+        "tooltip": "このプロバイダーを削除",
+        "confirm": {
+          "title": "プロバイダーを削除",
+          "body": "「{name}」を削除します。",
+          "inUse": "まだ {count} 件のエージェントが参照しており、削除後はベンダー CLI のログインに戻ります。",
+          "confirm": "削除",
+          "force": "それでも削除"
+        }
+      },
+      "migration": {
+        "title": "旧インライン設定が見つかりました",
+        "body": "{agents} 件のエージェントが独自の Base URL とキーを保持しており、{groups} 件のプロバイダーにまとめられます。",
+        "apply": "移行する",
+        "revert": "移行を取り消す",
+        "clear": "残ったインライン項目を消去",
+        "clearConfirm": {
+          "title": "インライン項目を消去",
+          "body": "{count} 件のエージェントの旧 Base URL とキーを消去します。取り消せません。その後で移行を取り消すと、これらのエージェントはベンダー CLI のログインに戻ります。",
+          "confirm": "消去"
+        },
+        "none": "すべてのエージェントがプロバイダーを使用しています。"
       }
     }
   },

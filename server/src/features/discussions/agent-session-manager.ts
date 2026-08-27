@@ -29,7 +29,12 @@
 
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 import type { AgentDriver, AgentRun, VendorAdapter } from '../../kernel/agent/adapters/types.js'
-import { bindClaudeRelay, launchForAgent, unbindRelay } from '../../kernel/agent-config/index.js'
+import {
+  bindClaudeRelay,
+  isModelProviderPausedError,
+  launchForAgent,
+  unbindRelay,
+} from '../../kernel/agent-config/index.js'
 import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { AgentSessionRow } from './store.js'
 
@@ -128,7 +133,8 @@ export class AgentSessionManager {
           signal,
           async () => await this.resumeSession(stored, agent, prompt, cwd, signal),
         )
-      } catch {
+      } catch (err) {
+        if (isModelProviderPausedError(err)) throw err
         // Resume failed — clean up the stale DB entry and fall through to
         // the create-new path (full prompt, fresh session).
         this.deleteProjection(stored)

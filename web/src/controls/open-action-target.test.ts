@@ -3,7 +3,7 @@
  * Pins that each wire target type navigates exactly one way.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { installSettingsActions } from './settings-actions'
 import type { AppCtx } from './types'
 
@@ -78,6 +78,7 @@ function makeCtx() {
     requestedWorkcenterEventId,
     workcenterPage,
     send,
+    isAdmin: ctx.auth.isAdmin as unknown as Ref<boolean>,
   }
 }
 

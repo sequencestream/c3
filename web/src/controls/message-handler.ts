@@ -38,6 +38,7 @@ import {
   type SessionPageKind,
 } from './state'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
+import { providerProbeKey } from '@/lib/model-provider'
 
 /** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
 const DEEP_LINK_TIMEOUT_MS = 10_000
@@ -141,6 +142,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     imGroupWorkspaceScopes,
     imGroupScopeChatId,
     userWorkspaceAccess,
+    providerMigrationPlan,
+    providerMigrationEcho,
+    providerProbes,
     workspaceAccessors,
     sessionCapabilities,
     vendorCapabilities,
@@ -891,6 +895,30 @@ export function installMessageHandler(ctx: AppCtx): void {
           evaluateWorkspaceOnboarding()
         }
         break
+      case 'provider_migration_plan':
+        // 服务端在每次 provider 动作后重算的迁移报告。写动作本身还会跟一条 `settings`
+        // 回包,注册表由那条统一刷新,这里只更新「还剩什么要迁移」。
+        providerMigrationPlan.value = msg.plan
+        providerMigrationEcho.value = {
+          seq: (providerMigrationEcho.value?.seq ?? 0) + 1,
+          changed: msg.changed,
+        }
+        break
+      case 'model_provider_probe_result': {
+        // 探测是逐条协议 URL 的瞬时结论,按 provider×protocolType 覆盖写入,不累积历史。
+        const key = providerProbeKey(msg.providerId ?? '', msg.protocolType)
+        providerProbes.value = {
+          ...providerProbes.value,
+          [key]: {
+            reachable: msg.reachable,
+            ...(msg.status !== undefined ? { status: msg.status } : {}),
+            ...(msg.issue !== undefined ? { issue: msg.issue } : {}),
+            ...(msg.error !== undefined ? { error: msg.error } : {}),
+            ...(msg.latencyMs !== undefined ? { latencyMs: msg.latencyMs } : {}),
+          },
+        }
+        break
+      }
       case 'auto_configure_agents_result': {
         // The registry itself arrives on the `settings` echo that follows; this
         // frame only explains the outcome. `created: 0` has two very different

@@ -1,5 +1,6 @@
 import type {
   ActionTarget,
+  ProtocolType,
   SystemSettings,
   UiLang,
   UiTheme,
@@ -16,6 +17,7 @@ import {
 import { applyTheme, DEFAULT_THEME } from '@/lib/theme'
 import { applyFontScale, DEFAULT_FONT_SCALE } from '@/lib/font-scale'
 import type { AppCtx } from './types'
+import { providerProbeKey } from '@/lib/model-provider'
 
 // Install system/workspace/personalized settings, skill-install, locale, and
 // view-mode actions.
@@ -36,11 +38,19 @@ export function installSettingsActions(ctx: AppCtx): void {
     savedTab,
     activeTab,
     flags,
+    providerProbes,
   } = ctx
 
   ctx.openSettings = (): void => {
     settingsOpen.value = true
     send({ type: 'get_settings' })
+    // 迁移报告是注册表的派生视图,不随 settings 回包一起来。开面板时顺带问一次,
+    // 「还有旧内联配置没迁」这件事才会在用户真正看得到的地方出现。
+    // 回包带 provider 明文 key,服务端只放行管理员;非管理员发这条只会换来一条自己
+    // 没请求过的 auth.adminOnly 拒绝 toast,干脆不发(同 access 页签的 reload 时机)。
+    if (ctx.auth.isAdmin.value) {
+      send({ type: 'provider_migration', action: 'plan' })
+    }
   }
 
   /**
@@ -243,6 +253,39 @@ export function installSettingsActions(ctx: AppCtx): void {
    */
   ctx.autoConfigureAgents = (): void => {
     send({ type: 'auto_configure_agents' })
+  }
+
+  /**
+   * Drive one step of the inline-config → provider migration. Never part of a
+   * settings save: the report is computed server-side over the whole registry, and
+   * the write it performs is exactly the one the user asked for — an ordinary save
+   * carrying a half-migrated draft would be a different, silent, change.
+   */
+  ctx.providerMigration = (payload: {
+    action: 'plan' | 'apply' | 'revert' | 'clear'
+    providerIds?: string[]
+    agentIds?: string[]
+  }): void => {
+    send({ type: 'provider_migration', ...payload })
+  }
+
+  /**
+   * Ask the server to dial one provider connection. The browser cannot do it
+   * (cross-origin, and the stored key must never reach it), so the answer comes
+   * back as its own frame rather than riding the settings echo.
+   */
+  ctx.probeModelProvider = (payload: {
+    providerId: string
+    protocolType: ProtocolType
+    baseUrl?: string
+    apiKey?: string
+  }): void => {
+    // 先落 pending,按钮点下去立刻有反馈;回包会整条覆盖这个键。
+    providerProbes.value = {
+      ...providerProbes.value,
+      [providerProbeKey(payload.providerId, payload.protocolType)]: { pending: true },
+    }
+    send({ type: 'probe_model_provider', ...payload })
   }
 
   /** Set/change the admin password (ADR-0023). Plaintext is sent once and hashed

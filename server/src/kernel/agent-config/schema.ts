@@ -12,13 +12,21 @@
  */
 import { z } from 'zod'
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
+import { deriveConfigMode } from '@ccc/shared/protocol'
+
+/** Per-model override schema — matches the wire `ModelOverride` type. */
+const modelOverrideSchema = z.object({
+  model: z.string(),
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+})
 
 /** The vendor-agnostic public shell shared by every agent arm. */
 const baseShellSchema = z.object({
   id: z.string(),
-  // Provider-config source, orthogonal to vendor (2026-06-06-007): `system` ⇒ use
-  // the vendor CLI's own config (no provider overrides); `custom` ⇒ apply the
-  // config provider triple. The migrate layer infers it for legacy records.
+  // Provider-config source, orthogonal to vendor. Derived from `providerId` by
+  // normalize but retained on the wire for back-compat readers; zod accepts either
+  // value and normalize overwrites with the derived one.
   configMode: z.enum(['system', 'custom']),
   displayName: z.string(),
   enabled: z.boolean().optional(),
@@ -27,9 +35,15 @@ const baseShellSchema = z.object({
   // the server `normalize`). Optional on the wire — a legacy record without it is
   // backfilled by array order; the matching wire field is `order_seq?: number`.
   order_seq: z.number().optional(),
-  // Group membership (ADR-0029): non-empty ⇒ this agent joins the `(group, vendor)`
-  // group exposed as the virtual `_c3_<group>` agent. Optional on the wire.
+  // Group membership: non-empty ⇒ this agent joins the `(group, vendor)` group.
+  // Optional on the wire.
   group: z.string().optional(),
+  // Reference to a named ModelProvider that supplies this agent's upstream
+  // connection. Empty/absent ⇒ use the vendor CLI's own login or legacy inline
+  // config. Cursor never carries a providerId (stripped by normalize).
+  providerId: z.string().optional(),
+  // Optional per-model overrides (context window / max output tokens).
+  modelOverrides: z.array(modelOverrideSchema).optional(),
 })
 
 /** The `claude` vendor's config sub-object (the Claude Code launch overrides). */
@@ -134,16 +148,28 @@ export const agentConfigSchema = z.discriminatedUnion('vendor', [
  * Validate + route one candidate agent object by its `vendor` tag. Returns the
  * typed {@link AgentConfig} on success, or `null` when the vendor is unknown or
  * the config fails its arm (the normalize layer drops a `null`, fail-soft).
+ *
+ * Post-processing:
+ *  - Cursor agents: strip `providerId` (cursor cannot reference a provider) and
+ *    force `configMode: 'system'`.
+ *  - All agents: recompute `configMode` via {@link deriveConfigMode} (the single
+ *    source of truth — see that function for the full derivation order).
  */
 export function parseAgentConfig(raw: unknown): AgentConfig | null {
   const result = agentConfigSchema.safeParse(raw)
   if (!result.success) return null
   const agent = result.data
-  // Cursor authenticates only through its own CLI login; there is no provider to
-  // inject and no relay that speaks its protocol, so `custom` cannot be honoured.
-  // Correcting it here keeps the invariant true for every downstream reader.
-  if (agent.vendor === 'cursor' && agent.configMode !== 'system') {
-    return { ...agent, configMode: 'system' }
+
+  // Cursor cannot reference a provider — strip providerId and force system mode.
+  if (agent.vendor === 'cursor') {
+    const { providerId: _providerId, ...rest } = agent
+    return { ...rest, configMode: 'system' }
+  }
+
+  // Recompute configMode from providerId (single source of truth).
+  const derivedMode = deriveConfigMode(agent)
+  if (agent.configMode !== derivedMode) {
+    return { ...agent, configMode: derivedMode }
   }
   return agent
 }

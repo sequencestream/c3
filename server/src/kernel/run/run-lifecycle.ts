@@ -44,6 +44,8 @@ import {
   freezeSessionAgent,
   bindClaudeRelay,
   unbindRelay,
+  usesVendorLogin,
+  isModelProviderPausedError,
 } from '../agent-config/index.js'
 import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
 import { launchSandbox, sandboxEligible, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
@@ -482,7 +484,31 @@ export async function launchRun(
     // A record with no vendor at all predates multi-vendor support, so it can
     // only be claude. This back-compat default is for MISSING data only — a
     // present, known vendor (`cursor`, `codex`) is never folded into it.
-    const vendor: VendorId = resolveAgent(resolveSessionLaunch(runId).agentId).vendor ?? 'claude'
+    //
+    // `resolveSessionLaunch` resolves the SELECTED agent (or group leading
+    // member) to launch, and throws `ModelProviderPausedError` when it points at
+    // a paused provider (agent-config/index.ts). That must settle the turn the
+    // same way `vendor-unavailable` below does — never propagate past `run:started`
+    // uncaught, or the run is left started-but-never-settled.
+    let vendor: VendorId
+    try {
+      vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor ?? 'claude'
+    } catch (err) {
+      if (!isModelProviderPausedError(err)) throw err
+      const error = errMsg(err)
+      logRunFailure(runLogIdentity(), 'provider-paused', error)
+      emit(runId, { type: 'user_text', text: prompt })
+      emit(runId, { type: 'turn_end', reason: 'error', error })
+      finalizeRun(runId)
+      deps.eventBus.publish('run:settled', {
+        sessionId: runId,
+        workspacePath,
+        reason: 'error',
+        sessionKind: rt.sessionKind,
+        runKind: rt.runKind,
+      })
+      return
+    }
     // A research session is always bound to a claude agent (the research pass is
     // claude-hardwired), so this can only be reached if that binding was lost. The
     // driver path has no `discussion-research` gate, so running there would silently
@@ -550,7 +576,7 @@ export async function launchRun(
   const chain = getDegradationChain()
   const firstLaunch = resolveSessionLaunch(runId)
   const firstVendor = resolveAgent(firstLaunch.agentId).vendor
-  const { agentsToTry, crossVendorSkipped } = buildAgentsToTry(
+  const { agentsToTry, crossVendorSkipped, pausedSkipped } = buildAgentsToTry(
     firstLaunch,
     firstVendor,
     chain,
@@ -562,6 +588,15 @@ export async function launchRun(
       `[c3] degradation chain skipped ${crossVendorSkipped.length} cross-vendor agent(s) ` +
         `(session vendor: ${firstVendor}; cannot carry context across vendors): ` +
         crossVendorSkipped.map((a) => `${a.agentId}/${a.vendor}`).join(', '),
+    )
+  }
+  if (pausedSkipped.length > 0) {
+    // The SELECTED agent (firstLaunch, above) already fails loudly when paused —
+    // this is only about fallback entries further down the chain, which simply
+    // drop out rather than aborting the whole degradation chain (see build-chain.ts).
+    console.warn(
+      `[c3] degradation chain skipped ${pausedSkipped.length} agent(s) with a paused model provider: ` +
+        pausedSkipped.map((a) => `${a.agentId}/${a.vendor}`).join(', '),
     )
   }
   const hasDegradation = agentsToTry.length > 1
@@ -680,7 +715,7 @@ export async function launchRun(
             ? {
                 sandboxPaths: rt.sandboxPaths,
                 sandboxTmpDir: rt.sandboxTmpDir,
-                sandboxAllowKeychain: resolveAgent(agentCfg.agentId).configMode === 'system',
+                sandboxAllowKeychain: usesVendorLogin(resolveAgent(agentCfg.agentId)),
               }
             : {}),
           ...(isIntent
@@ -768,7 +803,7 @@ export async function launchRun(
                 // its store is `host` even under sandbox.
                 const codexSystemRun =
                   resolveAgent(agentCfg.agentId).vendor === 'codex' &&
-                  resolveAgent(agentCfg.agentId).configMode === 'system'
+                  usesVendorLogin(resolveAgent(agentCfg.agentId))
                 freezeSessionAgent(
                   prev,
                   sid,

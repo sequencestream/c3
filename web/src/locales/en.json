@@ -258,6 +258,9 @@
       },
       "access": {
         "label": "Users and access"
+      },
+      "provider": {
+        "label": "Providers"
       }
     },
     "agents": {
@@ -398,6 +401,9 @@
         },
         "custom": {
           "label": "Custom"
+        },
+        "derived": {
+          "tooltip": "Derived from the selected provider — custom when one is set, system otherwise."
         }
       },
       "wireApi": {
@@ -465,6 +471,25 @@
           "created": "Created {n} agent(s).",
           "noVendor": "No runnable vendor CLI found. Install or log in to a CLI, then check the Runtime tab for diagnostics.",
           "alreadyConfigured": "Every runnable vendor already has an agent."
+        }
+      },
+      "provider": {
+        "tooltip": "Which named provider supplies this agent's connection. Empty ⇒ the vendor CLI's own login.",
+        "systemLogin": {
+          "label": "Vendor CLI login"
+        },
+        "legacy": {
+          "label": "Inline config (not migrated)",
+          "notice": "This agent still carries its own base URL and key. Migrate it on the Providers tab."
+        },
+        "create": {
+          "label": "+ New provider…"
+        },
+        "missing": {
+          "label": "Unknown provider ({id})"
+        },
+        "noConnection": {
+          "label": "{name} — no {vendor} connection"
         }
       }
     },
@@ -780,6 +805,108 @@
       },
       "hiddenSelected": {
         "hint": "{count} selected workspace(s) are hidden by the search and will still be saved."
+      }
+    },
+    "providers": {
+      "hint": {
+        "text": "A provider is one named upstream (base URL + API key) that any number of agents can share. Rotating a key or moving an endpoint is then a single edit instead of one per agent. An agent with no provider runs on its vendor CLI's own login."
+      },
+      "add": {
+        "label": "+ New provider"
+      },
+      "template": {
+        "blank": {
+          "label": "Blank"
+        },
+        "label": "Template: {name}"
+      },
+      "empty": {
+        "text": "No providers yet. Create one, then pick it on an agent."
+      },
+      "name": {
+        "placeholder": "Provider name"
+      },
+      "apiKey": {
+        "label": "Account key",
+        "placeholder": "API key for every protocol URL",
+        "hint": "One account key covers every OpenAI / Anthropic URL on this provider."
+      },
+      "connection": {
+        "title": "Protocol URLs",
+        "baseUrl": {
+          "placeholder": "https://api.example.com"
+        },
+        "wireApi": {
+          "label": "Wire API"
+        }
+      },
+      "models": {
+        "title": "Models",
+        "add": {
+          "label": "+ Add model"
+        },
+        "id": {
+          "placeholder": "Model id"
+        },
+        "contextWindow": {
+          "placeholder": "Context window"
+        },
+        "maxOutput": {
+          "placeholder": "Max output"
+        },
+        "remove": {
+          "tooltip": "Remove this model"
+        },
+        "hint": "Suggestions used to pre-fill a new agent's model field. Never a runtime default."
+      },
+      "paused": {
+        "label": "Paused",
+        "tooltip": "Under maintenance: agents referencing this provider refuse to launch until it is resumed."
+      },
+      "synthesized": {
+        "label": "Migrated",
+        "tooltip": "Created by the migration from a legacy inline agent config. Editing it makes it an ordinary provider."
+      },
+      "usedBy": {
+        "label": "{count} agents",
+        "none": "Unused"
+      },
+      "probe": {
+        "label": "Test",
+        "running": "Testing…",
+        "ok": "Reachable ({ms} ms)",
+        "auth": "Reachable, key rejected ({status})",
+        "fail": "Unreachable: {reason}"
+      },
+      "issue": {
+        "empty": "No base URL",
+        "notAUrl": "Not a valid URL",
+        "badScheme": "Must be http or https",
+        "hasQuery": "Query string will be dropped",
+        "insecure": "Plain http sends the key in clear text"
+      },
+      "remove": {
+        "tooltip": "Remove this provider",
+        "confirm": {
+          "title": "Remove provider",
+          "body": "\"{name}\" will be removed.",
+          "inUse": "{count} agents still reference it and will fall back to their vendor CLI login.",
+          "confirm": "Remove",
+          "force": "Remove anyway"
+        }
+      },
+      "migration": {
+        "title": "Legacy inline configs found",
+        "body": "{agents} agents still carry their own base URL and key; they would collapse into {groups} providers.",
+        "apply": "Migrate",
+        "revert": "Undo migration",
+        "clear": "Clear leftover inline fields",
+        "clearConfirm": {
+          "title": "Clear inline fields",
+          "body": "The old base URL and key on {count} agents will be erased. This cannot be undone, and undoing the migration afterwards drops those agents to their vendor CLI login.",
+          "confirm": "Clear"
+        },
+        "none": "Every agent already uses a provider."
       }
     }
   },

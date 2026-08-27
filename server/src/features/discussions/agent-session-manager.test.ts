@@ -3,8 +3,9 @@
  * degradation), close, error handling, and text collection.
  */
 
-import { describe, expect, it } from 'vitest'
-import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentConfig, ModelProvider, VendorId } from '@ccc/shared/protocol'
+import * as config from '../../kernel/config/index.js'
 import type {
   AgentDriver,
   AgentRun,
@@ -739,15 +740,38 @@ describe('AgentSessionManager', () => {
 
   // ── codex capability passthrough ────────────────────────────────────────
   describe('codex capability fields (2026-08-08-013)', () => {
+    // Caps only ride a relay-reachable custom agent (providerId → registry).
+    // Inline config.baseUrl/apiKey is not a connection source.
+    const capsProvider: ModelProvider = {
+      id: 'p-caps',
+      displayName: 'Caps Provider',
+      apiKey: 'sk-real',
+      urls: { openai: 'https://api.deepseek.com' },
+      wireApi: 'chat',
+    }
+    const origLoadSettings = config.loadSettings
+
+    beforeEach(() => {
+      vi.spyOn(config, 'loadSettings').mockImplementation(() => ({
+        ...origLoadSettings(),
+        modelProviders: [capsProvider],
+      }))
+    })
+
+    afterEach(() => {
+      vi.mocked(config.loadSettings).mockRestore()
+    })
+
     const codexCapsAgent: AgentConfig = {
       id: 'agent-caps',
       vendor: 'codex',
       configMode: 'custom',
+      providerId: 'p-caps',
       displayName: 'Codex Caps',
       enabled: true,
       config: {
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk-real',
+        baseUrl: '',
+        apiKey: '',
         model: 'deepseek-v4-flash',
         wireApi: 'chat',
         contextWindow: 65536,

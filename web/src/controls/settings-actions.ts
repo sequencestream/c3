@@ -46,7 +46,11 @@ export function installSettingsActions(ctx: AppCtx): void {
     send({ type: 'get_settings' })
     // 迁移报告是注册表的派生视图,不随 settings 回包一起来。开面板时顺带问一次,
     // 「还有旧内联配置没迁」这件事才会在用户真正看得到的地方出现。
-    send({ type: 'provider_migration', action: 'plan' })
+    // 回包带 provider 明文 key,服务端只放行管理员;非管理员发这条只会换来一条自己
+    // 没请求过的 auth.adminOnly 拒绝 toast,干脆不发(同 access 页签的 reload 时机)。
+    if (ctx.auth.isAdmin.value) {
+      send({ type: 'provider_migration', action: 'plan' })
+    }
   }
 
   /**

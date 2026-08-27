@@ -122,7 +122,10 @@ function hasClearableInlineResidue(agent: AgentConfig): boolean {
 /**
  * An existing provider whose URL for `vendor` is byte-identical to the tuple —
  * the reuse target that stops the migration from minting a duplicate of a
- * provider the user already made by hand.
+ * provider the user already made by hand. A `paused` provider is excluded: an
+ * agent that was running fine on its inline triple must not be silently pointed
+ * at a connection the operator has taken offline — migration would then be the
+ * thing that breaks its next launch instead of leaving it alone.
  */
 function findMatchingProvider(
   providers: readonly ModelProvider[],
@@ -133,6 +136,7 @@ function findMatchingProvider(
 ): ModelProvider | undefined {
   const protocol = protocolForVendor(vendor)
   return providers.find((p) => {
+    if (p.paused) return false
     if (p.urls[protocol] !== baseUrl) return false
     if (p.apiKey !== apiKey) return false
     if (protocol === 'openai' && wireApi !== undefined && (p.wireApi ?? 'chat') !== wireApi) {
@@ -255,8 +259,15 @@ export function revertProviderMigration(
   )
   if (revertable.size === 0) return settings
 
+  // Only unbind agents the migration itself pointed here — they still carry the
+  // inline triple `applyProviderMigration` preserved (`hasClearableInlineResidue`).
+  // An agent hand-bound to the same synthesized provider afterward (the console's
+  // provider dropdown does not distinguish synthesized from hand-made) has no
+  // inline fallback of its own; unbinding it would strand it on CLI login with no
+  // way back, so it keeps its reference and the provider survives for it.
   const agents = settings.agents.map((a) => {
     if (!a.providerId || !revertable.has(a.providerId)) return a
+    if (!hasClearableInlineResidue(a)) return a
     const { providerId: _dropped, ...rest } = a
     return rest as AgentConfig
   })

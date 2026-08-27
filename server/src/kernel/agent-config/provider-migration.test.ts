@@ -80,6 +80,23 @@ describe('planProviderMigration', () => {
     expect(plan.groups[0]).toMatchObject({ providerId: 'mine', reusesExisting: true })
   })
 
+  it('does not reuse a paused provider even when its connection matches the tuple', () => {
+    const paused: ModelProvider = {
+      id: 'mine',
+      displayName: 'Mine',
+      apiKey: 'sk-1',
+      urls: { anthropic: 'https://api.deepseek.com' },
+      paused: true,
+    }
+    const plan = planProviderMigration(
+      [inlineAgent('a1', 'https://api.deepseek.com', 'sk-1')],
+      [paused],
+    )
+    // A fresh (non-paused) provider is synthesized instead of pointing the agent
+    // at an upstream the operator has taken offline.
+    expect(plan.groups[0]).toMatchObject({ reusesExisting: false })
+  })
+
   it('ignores system-mode agents, cursor agents and already-migrated ones', () => {
     const plan = planProviderMigration(
       [
@@ -181,6 +198,28 @@ describe('revertProviderMigration', () => {
     }
     const s = settings([agent({ id: 'a1', providerId: 'mine' })], [existing])
     expect(revertProviderMigration(s)).toEqual(s)
+  })
+
+  it('keeps a synthesized provider and its hand-bound agent, unbinding only the migrated one', () => {
+    const { settings: applied } = applyProviderMigration(
+      settings([inlineAgent('a1', 'https://api.deepseek.com', 'sk-1')]),
+    )
+    const providerId = applied.agents[0].providerId!
+    // A3 is hand-bound to the synthesized provider afterward — the console's
+    // provider dropdown does not distinguish synthesized from hand-made, and A3
+    // never had an inline triple of its own to fall back to.
+    const withHandBound: SystemSettings = {
+      ...applied,
+      agents: [
+        ...applied.agents,
+        agent({ id: 'a3', providerId, config: { baseUrl: '', apiKey: '', model: '' } }),
+      ],
+    }
+    const reverted = revertProviderMigration(withHandBound)
+    expect(reverted.agents.find((a) => a.id === 'a1')!.providerId).toBeUndefined()
+    expect(reverted.agents.find((a) => a.id === 'a3')!.providerId).toBe(providerId)
+    // The provider survives because a3 still references it.
+    expect(reverted.modelProviders!.map((p) => p.id)).toEqual([providerId])
   })
 })
 

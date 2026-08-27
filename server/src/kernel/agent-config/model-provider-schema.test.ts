@@ -58,6 +58,21 @@ describe('parseModelProvider', () => {
     expect(p?.urls).toEqual({ openai: '' })
   })
 
+  it('tolerates a cleared numeric model-catalog field instead of dropping the whole provider', () => {
+    // `v-model.number` writes back '' when a number input is cleared (Vue's
+    // looseToNumber leaves a non-numeric string alone) — the schema must accept
+    // that shape rather than fail the whole provider on one blanked field.
+    const p = parseModelProvider({
+      id: 'p1',
+      displayName: 'DeepSeek',
+      apiKey: 'sk',
+      urls: { openai: 'https://api.deepseek.com' },
+      models: [{ id: 'gpt', contextWindow: '', maxOutputTokens: '' }],
+    })
+    expect(p).not.toBeNull()
+    expect(p?.models).toEqual([{ id: 'gpt' }])
+  })
+
   it('warns when legacy connections carry different apiKeys', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     parseModelProvider({

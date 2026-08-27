@@ -14,11 +14,26 @@ import { z } from 'zod'
 import type { ModelProvider, ProtocolType } from '@ccc/shared/protocol'
 import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
 
+/**
+ * `v-model.number` on a cleared `<input type="number">` writes back `''` (Vue's
+ * `looseToNumber` leaves non-numeric strings alone rather than coercing to
+ * `undefined`), so a positive-int schema must tolerate the empty string the
+ * console can legitimately produce — otherwise one cleared field fails the whole
+ * `modelProviderSchema` parse and normalize's fail-soft branch drops the entire
+ * provider (URL + account key included), not just the one bad field.
+ */
+function optionalPositiveInt() {
+  return z.preprocess(
+    (v) => (v === '' || v === undefined || v === null ? undefined : v),
+    z.number().int().positive().optional(),
+  )
+}
+
 /** One model entry in a provider's optional model catalog. */
 export const modelProviderModelSchema = z.object({
   id: z.string(),
-  contextWindow: z.number().int().positive().optional(),
-  maxOutputTokens: z.number().int().positive().optional(),
+  contextWindow: optionalPositiveInt(),
+  maxOutputTokens: optionalPositiveInt(),
 })
 
 /** Per-protocol URL map. Unknown keys are dropped in {@link parseModelProvider}. */

@@ -14,6 +14,7 @@
  * `./normalize` (a leaf). config → normalize and readers → config + normalize,
  * so the boundary stays acyclic.
  */
+import { createHash } from 'node:crypto'
 import type {
   AgentConfig,
   ConsensusConfig,
@@ -464,7 +465,12 @@ function connectionWarningFingerprint(
       ].join('\0')
     : 'missing'
   const inline = hasProviderConfig(agent) ? `${agent.config.baseUrl}\0${agent.config.apiKey}` : ''
-  return `${providerId}\0${providerPart}\0${inline}`
+  const raw = `${providerId}\0${providerPart}\0${inline}`
+  // Hashed so the account/provider keys embedded above never sit in plaintext in
+  // this module-level, process-lifetime `Set` — a heap dump or debug print of it
+  // would otherwise hand out live credentials for free. Collision-freedom is not
+  // the point here (only de-duping a warning), so a short digest is enough.
+  return createHash('sha256').update(raw).digest('hex').slice(0, 32)
 }
 
 function reportConnectionWarnings(

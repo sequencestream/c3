@@ -9,11 +9,30 @@ web/src/
 │
 ├── controls/                                        # App 控制器:拆分自原 App.vue 的状态 + 消息路由 + 各域动作,经共享 ctx 对象晚绑定串联
 │   ├── index.ts                                     # useAppController():建 state、装 runtime(client/send/reconnect/t/auth)、依次 install 各域、管理 WebSocket 生命周期(onMounted 建连/心跳/可见性/onReopen 重选),返回 ctx 供 App.vue 解构
-│   ├── state.ts                                     # createState():全部 ref/computed + 纯状态辅助(含 vendorRuntime ref 与派生 vendorAvailability——全前端唯一的「vendor 能不能跑」判定,旧服务端缺字段时回落 hostStatus)(statusOf/add/setQueue/showToast/sessionTitleById/clearSideEffectPending/sumSessionCounts/emptyOwnerCounts/runningSessionsFingerprint)、计数器、localStorage 键常量;HEADER_TABS 两套角标口径:「会话」tab badgeCount=六类 sessionCounts 之和,「意图/讨论/自动化」tab badgeCount=ownerRunningCounts 对应项(服务端按 owner 去重后的进行中条目数,一个条目的多个关联会话只计 1),各 tab 另带 badgeAriaLabel;导出 AppState 类型
-│   ├── types.ts                                     # ctx 类型契约:AppRuntime(client/send/reconnect/t/auth)+ AppMethods(全部域方法签名),AppCtx = AppState & AppRuntime & AppMethods
+│   ├── state.ts                                     # 桶出口:re-export state/types 常量与辅助 + state/create 的 createState/AppState;页面 import 路径不变
+│   ├── state/                                       # 共享 reactive 状态层(按领域切片 + cross-domain 合并)
+│   │   ├── types.ts                                 # TabKey/SessionPageKind/localStorage 键/角标指纹纯函数/Feishu 注册态类型等
+│   │   ├── create.ts                                # createState() 薄封装 → buildAppState
+│   │   ├── body.ts                                  # buildAppState():合并各领域 slice + cross-domain computed
+│   │   ├── session.ts                               # 会话/工作区/WorkCenter/Dashboard/聊天队列
+│   │   ├── navigation.ts                            # 顶栏 tab/深链/一次性跳转请求/视图模式
+│   │   ├── delivery.ts                              # 交付列表与详情态
+│   │   ├── intent.ts                                # 意图/队列/overlay/toast/PR 关联
+│   │   ├── discussion.ts                            # 讨论页只读路径
+│   │   ├── automation.ts                            # 自动化页只读路径
+│   │   ├── files.ts                                 # 文件浏览器态
+│   │   ├── settings.ts                              # 系统/个人/工作区设置与 MCP/IM
+│   │   └── cross-domain.ts                          # HEADER_TABS 等跨域 computed
+│   ├── handler-registry.ts                          # ServerToClient HandlerMap 完备注册表 + createHandlerRegistry(缺条目 typecheck 失败)
+│   ├── handlers/                                      # 入站 WS 按领域拆分的处理器
+│   │   ├── register.ts                              # buildHandlerMap():合并各领域 build*Handlers
+│   │   ├── context.ts                               # createMessageHandlerLocals():冷启动守卫与会话列表 helper
+│   │   ├── shared.ts                                # DASHBOARD_REFRESH_TYPES、CREATE_INTENT_REFUSAL_CODES 等常量
+│   │   └── *.ts                                     # auth/session/workspace/settings/intent/delivery/…/error/noop
+│   ├── types.ts                                     # ctx 类型契约:AppRuntime + AppMethods,AppCtx = AppState & AppRuntime & AppMethods
 │   ├── transcript.ts                               # transcriptToChat():TranscriptItem→ChatBody 纯映射(会话历史回放)
 │   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/自动化
-│   ├── message-handler.ts                          # installMessageHandler():唯一入站 WS switch(handleMessage)折叠所有 ServerToClient 事件 + applyStatuses/notifyAwaitingPermission;session_selected 的 owner 元数据派生会话标题栏跳回目标;session_counts 仅接受当前 workspace 的响应(丢弃切换后到达的旧包),session_status 的运行集合变化触发一次 get_session_counts 重取,顶部角标据此无刷新收敛;error 分发按前缀分流:intent.* 走意图动作错误弹框,queue.* 走全局 toast(队列页不渲染聊天流,被拒控制必须可见),其余落聊天流系统行
+│   ├── message-handler.ts                          # installMessageHandler():注册表一行 dispatch + applyStatuses/notifyAwaitingPermission
 │   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多;selectSession 任意行统一 enterConsole+select_session 在右侧展示详情(无跳走分支),已是活动会话时不重复发送;selectSessionKind 清空视图+设置 pending bind,新类型列表回包后自动选首条(空列表保持空态);openSourceTarget 单一路径按 resolveSessionJumpTarget 目标打开意图详情/intent session 子 tab/spec session 子 tab(无 owner 的独立 chat 经 requestedIntentSessionId 在意图页右栏打开该会话)/讨论/自动化页,供 jumpSessionSource(行 ↗,传 row)与 jumpActiveSessionSource(标题栏溯源按钮,读 activeSessionSource+活动会话)复用;六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── queue-actions.ts                            # installQueueActions():自动化队列页动作。openQueuePage/closeQueuePage 切换意图页与队列页(queuePageOpen),打开时发一次 get_queue_detail;refreshQueueDetail 手动重取;queueControl(action, intentId?) 原样发 queue_control(pause/resume/force_skip/unskip/unpark/override_continue/override_block),客户端不预测结果——后续刷新一律由服务端在每轮对账与每次人工控制后推送的 queue_detail 驱动;被拒绝的控制以 queue.* 错误码回包,message-handler 分流到全局 toast,不会看起来像成功

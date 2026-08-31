@@ -1325,12 +1325,15 @@
     },
     "prLink": {
       "success": "기존 PR을 연결했습니다.",
+      "contextMissing": "PR을 연결할 수 없습니다 — PR 생성 실패 대화상자에서 다시 열어 주세요.",
+      "workspaceMissing": "PR을 연결할 수 없습니다 — 의도 워크스페이스가 선택되지 않았습니다.",
       "action": {
         "label": "기존 PR 연결"
       },
       "dialog": {
         "title": "기존 PR 연결",
         "placeholder": "PR 번호 또는 URL",
+        "submitting": "연결 중…",
         "confirm": {
           "label": "연결"
         }

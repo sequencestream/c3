@@ -18,6 +18,10 @@ const props = defineProps<{
   placeholder: string
   confirmLabel: string
   cancelLabel: string
+  /** Inline error shown below the input (e.g. a rejected link_intent_pr). */
+  errorMessage?: string
+  /** When true, confirm is disabled and inputs are locked while a request is in flight. */
+  submitting?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +31,7 @@ const emit = defineEmits<{
 
 const text = ref('')
 const input = ref<HTMLInputElement | null>(null)
-const canConfirm = computed<boolean>(() => text.value.trim().length > 0)
+const canConfirm = computed<boolean>(() => text.value.trim().length > 0 && !props.submitting)
 
 // 每次打开:清空上次输入并聚焦输入框(便于直接键入)。
 watch(
@@ -63,10 +67,17 @@ function onConfirm(): void {
         type="text"
         data-testid="input-field"
         :placeholder="placeholder"
+        :disabled="submitting"
         @keydown.enter="onConfirm"
       />
+      <p v-if="errorMessage" class="id-error" data-testid="input-error">{{ errorMessage }}</p>
       <div class="id-foot">
-        <button class="id-cancel" data-testid="input-cancel" @click="emit('cancel')">
+        <button
+          class="id-cancel"
+          data-testid="input-cancel"
+          :disabled="submitting"
+          @click="emit('cancel')"
+        >
           {{ cancelLabel }}
         </button>
         <button
@@ -121,6 +132,12 @@ function onConfirm(): void {
 .id-input:focus {
   outline: none;
   border-color: var(--c-accent, var(--c-text));
+}
+.id-error {
+  margin: calc(-1 * var(--sp-3)) 0 var(--sp-4);
+  font-size: var(--fs-caption);
+  color: var(--c-danger, #c0392b);
+  white-space: pre-wrap;
 }
 .id-foot {
   display: flex;

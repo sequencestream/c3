@@ -449,7 +449,12 @@ export function installIntentActions(ctx: AppCtx): void {
   }
 
   ctx.linkIntentPr = (intentId: string, prReference: string, deliveryId?: string): void => {
-    if (!intentsProject.value) return
+    if (!intentsProject.value) {
+      ctx.failLinkIntentPr(t('intent.prLink.workspaceMissing'))
+      ctx.showToast(t('intent.prLink.workspaceMissing'))
+      console.warn('[c3:web] link_intent_pr skipped: no intents workspace selected')
+      return
+    }
     send({
       type: 'link_intent_pr',
       workspaceName: intentsProject.value,

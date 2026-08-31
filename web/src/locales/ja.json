@@ -1325,12 +1325,15 @@
     },
     "prLink": {
       "success": "既存の PR を関連付けました。",
+      "contextMissing": "PR を関連付けできません — 作成 PR 失敗ダイアログから再度開いてください。",
+      "workspaceMissing": "PR を関連付けできません — 意図ワークスペースが選択されていません。",
       "action": {
         "label": "既存の PR を関連付け"
       },
       "dialog": {
         "title": "既存の PR を関連付け",
         "placeholder": "PR 番号または URL",
+        "submitting": "関連付け中…",
         "confirm": {
           "label": "関連付け"
         }

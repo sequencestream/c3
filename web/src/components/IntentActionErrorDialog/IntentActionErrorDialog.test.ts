@@ -148,7 +148,7 @@ describe('IntentActionErrorDialog.vue — an unknown reason', () => {
       t('intent.prLink.action.label'),
     )
     await w.find('[data-testid="error-dialog-secondary-action"]').trigger('click')
-    expect(w.emitted('close')).toHaveLength(1)
+    expect(w.emitted('close')).toBeUndefined()
     expect(w.emitted('linkExistingPr')).toHaveLength(1)
   })
 })

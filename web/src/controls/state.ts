@@ -1069,6 +1069,10 @@ export function createState(deps: StateDeps) {
     intentId: string
     deliveryId?: string
   } | null>(null)
+  /** Context for the link-existing-PR dialog; survives closing the create-PR error dialog. */
+  const linkIntentPrContext = ref<{ intentId: string; deliveryId?: string } | null>(null)
+  const linkIntentPrPending = ref(false)
+  const linkIntentPrError = ref<string | null>(null)
   const linkIntentPrDialogOpen = ref(false)
   /**
    * The ESCAPE a refused launch left the user, when it left one (see
@@ -1124,11 +1128,25 @@ export function createState(deps: StateDeps) {
     intentActionErrorGuidance.value = null
     createPrFailureContext.value = null
   }
-  function openLinkIntentPrDialog(): void {
+  function openLinkIntentPrDialog(ctx: { intentId: string; deliveryId?: string }): void {
+    linkIntentPrContext.value = ctx
+    linkIntentPrPending.value = false
+    linkIntentPrError.value = null
     linkIntentPrDialogOpen.value = true
   }
   function closeLinkIntentPrDialog(): void {
     linkIntentPrDialogOpen.value = false
+    linkIntentPrContext.value = null
+    linkIntentPrPending.value = false
+    linkIntentPrError.value = null
+  }
+  function beginLinkIntentPr(): void {
+    linkIntentPrPending.value = true
+    linkIntentPrError.value = null
+  }
+  function failLinkIntentPr(message: string): void {
+    linkIntentPrPending.value = false
+    linkIntentPrError.value = message
   }
   function showIntentGateEscape(escape: GateEscape, message: string): void {
     intentGateEscape.value = { escape, message }
@@ -1426,9 +1444,14 @@ export function createState(deps: StateDeps) {
     intentActionErrorGuidance,
     intentActionErrorSeq,
     createPrFailureContext,
+    linkIntentPrContext,
+    linkIntentPrPending,
+    linkIntentPrError,
     linkIntentPrDialogOpen,
     openLinkIntentPrDialog,
     closeLinkIntentPrDialog,
+    beginLinkIntentPr,
+    failLinkIntentPr,
     intentGateEscape,
     worktreeBaselineNotices,
     createIntentPending,

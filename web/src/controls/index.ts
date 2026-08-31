@@ -32,10 +32,11 @@ export type { AppCtx } from './types'
  * (reactive state + runtime plumbing + all domain actions), wires the WebSocket
  * client lifecycle, and returns the ctx for the template to bind against.
  *
- * The decomposition lives under `controls/`: `state.ts` owns every ref/computed,
- * each `*-actions.ts` installs its domain's handlers onto the ctx (cross-domain
- * calls resolve through late binding), and `message-handler.ts` owns the inbound
- * WS switch. App.vue stays a thin entry that destructures this object.
+ * The decomposition lives under `controls/`: `state/` owns every ref/computed,
+ * `handlers/` owns the inbound WS registry (compile-time exhaustive over
+ * `ServerToClient`), each `*-actions.ts` installs its domain's handlers onto
+ * the ctx (cross-domain calls resolve through late binding), and
+ * `message-handler.ts` wires registry dispatch. App.vue stays a thin entry.
  */
 export function useAppController(): AppCtx {
   const { t } = useTypedI18n()

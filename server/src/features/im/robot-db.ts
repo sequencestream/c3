@@ -10,7 +10,14 @@
  * dependency-free so config/context/turn can import it without a cycle back into
  * the schema module.
  */
-import { getDb, isDbAvailable, type Db, type SqlParam } from '../../kernel/infra/db.js'
+import {
+  getDb,
+  isDbAvailable,
+  tableColumns,
+  tableExists,
+  type Db,
+  type SqlParam,
+} from '../../kernel/infra/db.js'
 
 // ---- Errors ----
 
@@ -49,16 +56,7 @@ export function now(): number {
 
 // ---- SQLite primitives ----
 
-export function tableColumns(d: Db, table: string): Set<string> {
-  return new Set(d.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name))
-}
-
-export function tableExists(d: Db, table: string): boolean {
-  return !!d.get<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-    table,
-  )
-}
+export { tableColumns, tableExists }
 
 /** Run `fn` inside BEGIN/COMMIT; a throw rolls back and rethrows. */
 export function tx<T>(d: Db, fn: () => T): T {

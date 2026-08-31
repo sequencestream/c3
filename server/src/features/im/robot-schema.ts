@@ -1,6 +1,6 @@
 /**
  * IM robot schema: the four table DDLs, the whole-table rebuild migrations (all
- * routed through `table-rebuild.ts`), the ADD COLUMN migrations, and the
+ * routed through `kernel/infra/table-rebuild.ts`), the ADD COLUMN migrations, and the
  * idempotent `ensureSchema` pass run lazily on the first DB access.
  *
  * Properties the schema keeps true:
@@ -18,13 +18,13 @@
  * shared `db()` entrypoint runs it once per fresh connection.
  */
 import { hasMigration, markMigration, type Db } from '../../kernel/infra/db.js'
+import { rebuildTable } from '../../kernel/infra/table-rebuild.js'
 import { computeOutboundConfigHash } from './outbound-config-hash.js'
 import { execIdentitySchema } from './identity-schema.js'
 import { validateRobotMessageRegistry } from './robot-message-registry.js'
 import { toRobot, type RobotRow } from './robot-config-store.js'
 import { failStalePendingContextTurns } from './robot-context-store.js'
 import { db, registerSchemaSetup, tableColumns, tx } from './robot-db.js'
-import { rebuildTable } from './table-rebuild.js'
 
 // ---- Migration markers ----
 

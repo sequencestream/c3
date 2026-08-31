@@ -288,6 +288,19 @@ export function isDbAvailable(): boolean {
   return available
 }
 
+/** Whether a table exists — used to gate idempotent schema migrations. */
+export function tableExists(d: Db, table: string): boolean {
+  return !!d.get<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+    table,
+  )
+}
+
+/** Column names on `table`, from `PRAGMA table_info`. */
+export function tableColumns(d: Db, table: string): Set<string> {
+  return new Set(d.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name))
+}
+
 /** Test-only: close and forget the connection so the next `getDb()` re-opens. */
 export function resetDbForTests(): void {
   try {

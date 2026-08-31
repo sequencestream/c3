@@ -1,5 +1,5 @@
 /**
- * Shared whole-table rebuild for the IM robot stores.
+ * Shared whole-table rebuild primitive for every c3 persistence domain.
  *
  * SQLite cannot ALTER a CHECK constraint or drop/reorder columns, so schema
  * evolution that touches the table shape rebuilds the table: rename the old rows
@@ -27,9 +27,14 @@
  * The helper never opens a transaction — callers keep their own boundaries
  * (SQLite has no nested BEGIN; the multi-table migrations wrap several rebuilds
  * in one tx). Shape gating stays a caller concern via {@link RebuildOptions.needs}.
+ *
+ * **Not for in-place table renames** (`ALTER TABLE old RENAME TO new` where the
+ * target name differs and the shape is unchanged): indexes correctly stay on the
+ * renamed table and {@link rebuildTable} would needlessly copy rows. Those paths
+ * stay as guarded `RENAME TO` at each callsite (see automations / intents /
+ * session-metadata rename migrations).
  */
-import type { Db } from '../../kernel/infra/db.js'
-import { tableExists } from './robot-db.js'
+import { tableExists, type Db } from './db.js'
 
 /**
  * Column-projection copy. `columns` is the INSERT target list; `select` is the
@@ -106,7 +111,7 @@ export function rebuildTable(d: Db, opts: RebuildOptions): void {
   // ---- Converged: active table is the target shape, nothing to rebuild ----
   if (source === null) {
     if (!tableExists(d, table)) d.exec(newDdl)
-    d.exec(indexDdl)
+    if (indexDdl.trim()) d.exec(indexDdl)
     return
   }
 
@@ -135,5 +140,5 @@ export function rebuildTable(d: Db, opts: RebuildOptions): void {
   }
 
   // ---- Indexes land on the new table ----
-  d.exec(indexDdl)
+  if (indexDdl.trim()) d.exec(indexDdl)
 }

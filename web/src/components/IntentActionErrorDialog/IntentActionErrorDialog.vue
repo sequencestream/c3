@@ -75,7 +75,6 @@ function onRetry(): void {
 }
 
 function onLinkExistingPr(): void {
-  emit('close')
   emit('linkExistingPr')
 }
 </script>

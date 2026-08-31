@@ -1324,12 +1324,15 @@
     },
     "prLink": {
       "success": "已关联已有 PR。",
+      "contextMissing": "无法关联 PR —— 请从创建 PR 失败对话框重新打开此操作。",
+      "workspaceMissing": "无法关联 PR —— 当前未选中意图工作区。",
       "action": {
         "label": "关联已有 PR"
       },
       "dialog": {
         "title": "关联已有 PR",
         "placeholder": "PR 编号或 URL",
+        "submitting": "关联中…",
         "confirm": {
           "label": "关联"
         }

@@ -1754,12 +1754,20 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
 export const linkIntentPrHandler: Handler<'link_intent_pr'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceName)
   if (!proj) {
+    console.warn(`[c3:intents] link_intent_pr refused: unknown workspace ${msg.workspaceName}`)
     conn.send({
       type: 'error',
       error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
     })
     return
   }
+  const intent = getIntent(msg.intentId)
+  console.log(
+    `[c3:intents] link_intent_pr intent=${msg.intentId}` +
+      (intent ? `「${intent.title}」` : '') +
+      ` ref=${msg.prReference}` +
+      (msg.deliveryId ? ` delivery=${msg.deliveryId}` : ''),
+  )
   const result = await linkIntentPrForIntent(
     proj,
     msg.intentId,
@@ -1774,6 +1782,13 @@ export const linkIntentPrHandler: Handler<'link_intent_pr'> = async (ctx, conn, 
     msg.deliveryId,
   )
   if (!result.success) {
+    const detail =
+      result.params && 'detail' in result.params ? String(result.params.detail) : undefined
+    console.warn(
+      `[c3:intents] link_intent_pr failed intent=${msg.intentId}` +
+        (intent ? `「${intent.title}」` : '') +
+        `: ${result.code}${detail ? ` — ${detail}` : ''}`,
+    )
     conn.send({
       type: 'error',
       error: {
@@ -1783,6 +1798,7 @@ export const linkIntentPrHandler: Handler<'link_intent_pr'> = async (ctx, conn, 
     })
     return
   }
+  console.log(`[c3:intents] link_intent_pr ok intent=${msg.intentId} PR #${result.prId}`)
   conn.send({
     type: 'link_intent_pr_response',
     workspaceName: msg.workspaceName,

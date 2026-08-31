@@ -63,4 +63,20 @@ describe('InputDialog.vue', () => {
     await w.setProps({ open: true })
     expect((w.find('[data-testid="input-field"]').element as HTMLInputElement).value).toBe('')
   })
+
+  it('shows inline error and disables confirm while submitting', async () => {
+    const w = mount(InputDialog, {
+      props: {
+        open: true,
+        ...baseProps,
+        errorMessage: 'PR not found',
+        submitting: true,
+      },
+    })
+    await w.find('[data-testid="input-field"]').setValue('42')
+    expect(w.find('[data-testid="input-error"]').text()).toBe('PR not found')
+    expect((w.find('[data-testid="input-accept"]').element as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
 })

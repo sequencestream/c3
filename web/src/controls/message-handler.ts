@@ -224,6 +224,8 @@ export function installMessageHandler(ctx: AppCtx): void {
     workcenterEvents,
     intentActionErrorSeq,
     createPrFailureContext,
+    linkIntentPrPending,
+    linkIntentPrDialogOpen,
     clearSideEffectPending,
     devLaunch,
     specLaunch,
@@ -1662,8 +1664,10 @@ export function installMessageHandler(ctx: AppCtx): void {
             }
           }
         }
-        if (msg.error.code.startsWith('intent.prLink')) {
-          ctx.showToast(translateUiError(msg.error))
+        if (linkIntentPrPending.value || msg.error.code.startsWith('intent.prLink')) {
+          const reason = translateUiError(msg.error)
+          ctx.failLinkIntentPr(reason)
+          ctx.showToast(reason)
           break
         }
         // Machine-readable code translated locally via the web i18n catalog (spec 003).

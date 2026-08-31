@@ -1324,12 +1324,15 @@
     },
     "prLink": {
       "success": "Existing PR linked.",
+      "contextMissing": "Cannot link the PR — reopen it from the create-PR failure dialog.",
+      "workspaceMissing": "Cannot link the PR — no intent workspace is selected.",
       "action": {
         "label": "Link existing PR"
       },
       "dialog": {
         "title": "Link existing PR",
         "placeholder": "PR number or URL",
+        "submitting": "Linking…",
         "confirm": {
           "label": "Link"
         }

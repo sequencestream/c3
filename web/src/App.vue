@@ -203,9 +203,13 @@ const {
   intentActionError,
   intentActionErrorGuidance,
   createPrFailureContext,
+  linkIntentPrContext,
+  linkIntentPrPending,
+  linkIntentPrError,
   linkIntentPrDialogOpen,
   openLinkIntentPrDialog,
   closeLinkIntentPrDialog,
+  beginLinkIntentPr,
   intentGateEscape,
   closeIntentGateEscape,
   repairIntentWorktree,
@@ -574,13 +578,22 @@ const showLinkExistingPr = computed(() =>
 )
 
 function onLinkExistingPr(): void {
-  openLinkIntentPrDialog()
+  const ctx = createPrFailureContext.value
+  closeIntentActionError()
+  if (!ctx) {
+    showToast(t('intent.prLink.contextMissing'))
+    return
+  }
+  openLinkIntentPrDialog(ctx)
 }
 
 function onConfirmLinkIntentPr(prReference: string): void {
-  const ctx = createPrFailureContext.value
-  if (!ctx) return
-  closeLinkIntentPrDialog()
+  const ctx = linkIntentPrContext.value
+  if (!ctx) {
+    showToast(t('intent.prLink.contextMissing'))
+    return
+  }
+  beginLinkIntentPr()
   linkIntentPr(ctx.intentId, prReference, ctx.deliveryId)
 }
 
@@ -1274,8 +1287,14 @@ function onFilesChatWidth(px: number): void {
     :open="linkIntentPrDialogOpen"
     :title="t('intent.prLink.dialog.title')"
     :placeholder="t('intent.prLink.dialog.placeholder')"
-    :confirm-label="t('intent.prLink.dialog.confirm.label')"
+    :confirm-label="
+      linkIntentPrPending
+        ? t('intent.prLink.dialog.submitting')
+        : t('intent.prLink.dialog.confirm.label')
+    "
     :cancel-label="t('common.action.cancel.label')"
+    :error-message="linkIntentPrError ?? undefined"
+    :submitting="linkIntentPrPending"
     @confirm="onConfirmLinkIntentPr"
     @cancel="closeLinkIntentPrDialog"
   />

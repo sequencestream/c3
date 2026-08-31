@@ -58,6 +58,17 @@ function makeCtx() {
   const closeDevLaunch = vi.fn()
   const dispatchSpecLaunch = vi.fn()
   const createPrProgress = ref<unknown>(null)
+  const createPrFailureContext = ref<{ intentId: string; deliveryId?: string } | null>(null)
+  const linkIntentPrPending = ref(false)
+  const linkIntentPrError = ref<string | null>(null)
+  const linkIntentPrDialogOpen = ref(false)
+  const closeLinkIntentPrDialog = vi.fn(() => {
+    linkIntentPrDialogOpen.value = false
+  })
+  const failLinkIntentPr = vi.fn((message: string) => {
+    linkIntentPrPending.value = false
+    linkIntentPrError.value = message
+  })
   const dispatchCreatePr = vi.fn()
   const dispatchCreateIntent = vi.fn()
   const showToast = vi.fn((text: string) => (toast.value = text))
@@ -241,6 +252,12 @@ function makeCtx() {
     devLaunch,
     specLaunch,
     createPrProgress,
+    createPrFailureContext,
+    linkIntentPrPending,
+    linkIntentPrError,
+    linkIntentPrDialogOpen,
+    closeLinkIntentPrDialog,
+    failLinkIntentPr,
     closeDevLaunch,
     dispatchSpecLaunch,
     dispatchCreatePr,
@@ -328,6 +345,12 @@ function makeCtx() {
     closeDevLaunch,
     dispatchSpecLaunch,
     createPrProgress,
+    createPrFailureContext,
+    linkIntentPrPending,
+    linkIntentPrError,
+    linkIntentPrDialogOpen,
+    failLinkIntentPr,
+    closeLinkIntentPrDialog,
     dispatchCreatePr,
     dispatchCreateIntent,
     showToast,
@@ -2234,6 +2257,36 @@ describe('create_pr progress routing', () => {
     result.ctx.handleMessage(error('intent.prCreateFailed', 'r-1'))
 
     expect(result.dispatchCreatePr).not.toHaveBeenCalled()
+  })
+
+  it('surfaces link_intent_pr errors in the dialog and toast', () => {
+    const result = makeCtx()
+    result.linkIntentPrPending.value = true
+
+    result.ctx.handleMessage(error('intent.prLinkNotFound'))
+
+    expect(result.failLinkIntentPr).toHaveBeenCalledOnce()
+    expect(result.linkIntentPrPending.value).toBe(false)
+    expect(result.showToast).toHaveBeenCalledOnce()
+    expect(result.showIntentActionError).not.toHaveBeenCalled()
+  })
+
+  it('closes the link dialog on link_intent_pr_response', () => {
+    const result = makeCtx()
+    result.linkIntentPrDialogOpen.value = true
+    result.createPrFailureContext.value = { intentId: 'i-1' }
+
+    result.ctx.handleMessage({
+      type: 'link_intent_pr_response',
+      workspaceName: 'ws',
+      intentId: 'i-1',
+      prId: '42',
+      prUrl: 'https://example/pull/42',
+    } as ServerToClient)
+
+    expect(result.closeLinkIntentPrDialog).toHaveBeenCalledOnce()
+    expect(result.createPrFailureContext.value).toBeNull()
+    expect(result.showToast).toHaveBeenCalledWith('intent.prLink.success')
   })
 })
 

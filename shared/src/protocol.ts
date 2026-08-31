@@ -134,6 +134,7 @@ export type ClientToServer =
   | IntentMsg.ClientGetParkRecoveryStats
   | IntentMsg.ClientQueueControl
   | IntentMsg.ClientCreatePr
+  | IntentMsg.ClientLinkIntentPr
   | IntentMsg.ClientSyncIntentPrStatus
   | DeliveryMsg.ClientListDeliveries
   | DeliveryMsg.ClientCreateDelivery
@@ -246,6 +247,7 @@ export type ServerToClient =
   | IntentMsg.ServerParkRecoveryStats
   | IntentMsg.ServerCreatePrResponse
   | IntentMsg.ServerCreatePrProgress
+  | IntentMsg.ServerLinkIntentPrResponse
   | IntentMsg.ServerSyncIntentPrStatusResponse
   | DeliveryMsg.ServerDeliveries
   | DeliveryMsg.ServerCreateDeliveryResult

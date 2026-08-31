@@ -462,6 +462,25 @@ export type ClientSyncIntentPrStatus = {
 }
 
 /**
+ * Associate an existing forge PR/MR with one intent target after `create_pr`
+ * failed or was skipped. The server reuses `resolvePrTarget` for the same
+ * `(intentId, deliveryId)` pair, queries the forge for PR facts, and accepts
+ * the link only when the intent worktree HEAD matches the PR head commit SHA.
+ */
+export type ClientLinkIntentPr = {
+  type: 'link_intent_pr'
+  workspaceName: string
+  intentId: string
+  /** PR number (`42`, `#42`) or full PR/MR URL. */
+  prReference: string
+  /**
+   * The delivery this PR targets — same semantics as `create_pr`. Omitted
+   * means let the server resolve from association edges.
+   */
+  deliveryId?: string
+}
+
+/**
  * A project's intent list (reply to `list_intents`/`open_intent_session`, or a push
  * after a change). `sddEnabled` is the workspace's SDD master switch, rebroadcast
  * with every list so the intent action button can render its SDD-aware state
@@ -647,4 +666,13 @@ export type ServerSyncIntentPrStatusResponse = {
   changed?: boolean
   message?: string
   error?: string
+}
+
+/** Reply to a `link_intent_pr` request. On failure the server sends `error`. */
+export type ServerLinkIntentPrResponse = {
+  type: 'link_intent_pr_response'
+  workspaceName: string
+  intentId: string
+  prId: string
+  prUrl?: string
 }

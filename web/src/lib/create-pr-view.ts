@@ -45,6 +45,8 @@ export type CreatePrStepStatus = 'pending' | 'active' | 'done'
 export interface CreatePrModel {
   /** The intent whose PR creation this overlay tracks. */
   intentId: string
+  /** The delivery target this run named, when the UI could see one. */
+  deliveryId?: string
   /**
    * The token sent with this run's `create_pr`, echoed back on its progress and
    * terminal frames. Every frame is matched against it, so an unrelated error on
@@ -90,8 +92,20 @@ export type CreatePrEvent =
   | { kind: 'timeout'; now: number }
 
 /** Build the initial visible model for a just-clicked PR creation. */
-export function beginCreatePr(intentId: string, requestId: string, now: number): CreatePrModel {
-  return { intentId, requestId, phase: 'analyzing-changes', startedAt: now, visibleAt: now }
+export function beginCreatePr(
+  intentId: string,
+  requestId: string,
+  now: number,
+  deliveryId?: string,
+): CreatePrModel {
+  return {
+    intentId,
+    deliveryId,
+    requestId,
+    phase: 'analyzing-changes',
+    startedAt: now,
+    visibleAt: now,
+  }
 }
 
 /** Whether the elapsed time has reached the safety-timeout ceiling. */

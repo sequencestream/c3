@@ -1322,6 +1322,19 @@
       "success": "PR 状态已同步。",
       "failed": "同步 PR 状态失败。"
     },
+    "prLink": {
+      "success": "已关联已有 PR。",
+      "action": {
+        "label": "关联已有 PR"
+      },
+      "dialog": {
+        "title": "关联已有 PR",
+        "placeholder": "PR 编号或 URL",
+        "confirm": {
+          "label": "关联"
+        }
+      }
+    },
     "deps": {
       "status": {
         "done": "已完成",
@@ -2513,6 +2526,13 @@
       "prCreateNotWorktree": "仅 worktree 模式可创建 PR。请先将工作区切换为 worktree 模式。",
       "prCreateNoBranch": "该意图尚无分支。请先开始工作生成分支后再创建 PR。",
       "prCreateNoChanges": "worktree 中没有可提交的改动。请先产生改动后再创建 PR。",
+      "prLinkFailed": "关联 PR 失败: {detail}。",
+      "prLinkCommitMismatch": "worktree HEAD ({worktreeHead}) 与 PR head commit ({prHead}) 不一致。请将 PR 指向本分支最新提交后再试。",
+      "prLinkPrOccupied": "该 PR 已归属其他意图: {detail}。",
+      "prLinkNotFound": "找不到 PR: {detail}。",
+      "prLinkForgeUnavailable": "无法访问 forge: {detail}。请安装或登录 CLI 后重试。",
+      "prLinkActivePrExists": "该意图目标已有活跃 PR (#{number})。",
+      "prLinkInvalidReference": "请输入 PR 编号或完整 PR/MR URL。",
       "prCloseFailed": "PR 自动关闭失败: {detail}。请手动关闭后重试取消。",
       "gitCleanupNoChanges": "工作会话结束但没有可提交的改动。请手动提交、推送并创建 PR。",
       "gitCleanupCommitPushFailed": "工作会话结束后自动提交/推送失败: {detail}。请手动处理。",

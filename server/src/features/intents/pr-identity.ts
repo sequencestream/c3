@@ -22,6 +22,26 @@ export interface PrIdentity {
 const CHANGE_REQUEST_MARKERS = ['/pull/', '/-/merge_requests/', '/merge_requests/']
 
 /**
+ * Parse a user-supplied PR reference — bare number (`42`, `#42`) or a forge URL —
+ * into the repository-local PR/MR number string. Returns `null` when the input
+ * cannot be interpreted.
+ */
+export function parsePrReference(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const numMatch = trimmed.match(/^#?(\d+)$/)
+  if (numMatch) return numMatch[1]
+  for (const marker of CHANGE_REQUEST_MARKERS) {
+    const at = trimmed.indexOf(marker)
+    if (at < 0) continue
+    const rest = trimmed.slice(at + marker.length)
+    const num = rest.match(/^(\d+)/)
+    if (num) return num[1]
+  }
+  return null
+}
+
+/**
  * Parse `forge` and `repo` out of a PR/MR URL. GitHub is identified by its
  * hostname; every other host — including self-hosted GitLab — reads as GitLab,
  * matching `detectForge`'s origin-based rule so the two never disagree about the

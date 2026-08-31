@@ -1323,6 +1323,19 @@
       "success": "PR 状態を同期しました。",
       "failed": "PR 状態の同期に失敗しました。"
     },
+    "prLink": {
+      "success": "既存の PR を関連付けました。",
+      "action": {
+        "label": "既存の PR を関連付け"
+      },
+      "dialog": {
+        "title": "既存の PR を関連付け",
+        "placeholder": "PR 番号または URL",
+        "confirm": {
+          "label": "関連付け"
+        }
+      }
+    },
     "deps": {
       "status": {
         "done": "完了",
@@ -2514,6 +2527,13 @@
       "prCreateNotWorktree": "PRを作成できるのはworktreeモードのみです。先にワークスペースをworktreeモードに切り替えてください。",
       "prCreateNoBranch": "このインテントにはまだブランチがありません。PRを作成する前に開発を開始してブランチを作成してください。",
       "prCreateNoChanges": "worktreeにコミットできる変更がありません。PRを作成する前に変更を加えてください。",
+      "prLinkFailed": "PR を関連付けできませんでした: {detail}。",
+      "prLinkCommitMismatch": "worktree の HEAD ({worktreeHead}) が PR の head commit ({prHead}) と一致しません。PR をこのブランチの最新コミットに合わせてから再試行してください。",
+      "prLinkPrOccupied": "その PR は別の意図に既に関連付けられています: {detail}。",
+      "prLinkNotFound": "PR が見つかりません: {detail}。",
+      "prLinkForgeUnavailable": "forge に接続できません: {detail}。CLI をインストールまたはログインしてから再試行してください。",
+      "prLinkActivePrExists": "この意図ターゲットには既にアクティブな PR (#{number}) があります。",
+      "prLinkInvalidReference": "PR 番号または完全な PR/MR URL を入力してください。",
       "prCloseFailed": "PRの自動クローズに失敗しました: {detail}。手動でクローズしてから取り消しを再試行してください。",
       "gitCleanupNoChanges": "作業セッションが終了しましたが、コミットする変更がありません。手動でコミット・プッシュし、PRを作成してください。",
       "gitCleanupCommitPushFailed": "作業セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",

@@ -1064,6 +1064,12 @@ export function createState(deps: StateDeps) {
   // can never show one failure's text next to another failure's retry button.
   const intentActionErrorGuidance = ref<GitActionFailureGuidance | null>(null)
   const intentActionErrorSeq = ref(0)
+  /** Set when a manual `create_pr` run fails; drives the link-existing-PR entry. */
+  const createPrFailureContext = ref<{
+    intentId: string
+    deliveryId?: string
+  } | null>(null)
+  const linkIntentPrDialogOpen = ref(false)
   /**
    * The ESCAPE a refused launch left the user, when it left one (see
    * `lib/gate-escape.ts`). Held next to — never merged into — the plain error
@@ -1116,6 +1122,13 @@ export function createState(deps: StateDeps) {
   function closeIntentActionError(): void {
     intentActionError.value = null
     intentActionErrorGuidance.value = null
+    createPrFailureContext.value = null
+  }
+  function openLinkIntentPrDialog(): void {
+    linkIntentPrDialogOpen.value = true
+  }
+  function closeLinkIntentPrDialog(): void {
+    linkIntentPrDialogOpen.value = false
   }
   function showIntentGateEscape(escape: GateEscape, message: string): void {
     intentGateEscape.value = { escape, message }
@@ -1412,6 +1425,10 @@ export function createState(deps: StateDeps) {
     intentActionError,
     intentActionErrorGuidance,
     intentActionErrorSeq,
+    createPrFailureContext,
+    linkIntentPrDialogOpen,
+    openLinkIntentPrDialog,
+    closeLinkIntentPrDialog,
     intentGateEscape,
     worktreeBaselineNotices,
     createIntentPending,

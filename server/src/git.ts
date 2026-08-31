@@ -1081,6 +1081,20 @@ export interface ForgePrStatusResult {
   unavailable?: boolean
 }
 
+/** Live PR facts needed to link an external change request to an intent. */
+export interface ForgePrLinkFactsResult {
+  ok: boolean
+  number?: string
+  status?: IntentPrStatus
+  prUrl?: string
+  headSha?: string
+  headBranch?: string
+  baseBranch?: string
+  error?: string
+  unavailable?: boolean
+  notFound?: boolean
+}
+
 // `gh` prints these when no usable auth token is configured.
 const GH_NOT_LOGGED_IN_MARKERS = [
   'gh auth login',
@@ -1320,6 +1334,117 @@ export async function getForgePrStatus(
 ): Promise<ForgePrStatusResult> {
   const provider = providerOverride ?? (await detectForge(cwd))
   return provider === 'github' ? getGhPrStatus(cwd, prId) : getGlabMrStatus(cwd, prId)
+}
+
+const PR_NOT_FOUND_MARKERS = ['not found', 'could not resolve', 'no merge requests', '404']
+
+function isPrNotFoundOutput(out: string): boolean {
+  const lower = out.toLowerCase()
+  return PR_NOT_FOUND_MARKERS.some((m) => lower.includes(m))
+}
+
+function normalizeGithubPrLinkFacts(row: Record<string, unknown>): ForgePrLinkFactsResult {
+  const base = normalizeGithubPrStatus(row)
+  if (!base.ok) return base
+  const number =
+    typeof row.number === 'number'
+      ? String(row.number)
+      : typeof row.number === 'string'
+        ? row.number
+        : undefined
+  const headSha =
+    typeof row.headRefOid === 'string'
+      ? row.headRefOid
+      : typeof row.headRefOid === 'number'
+        ? String(row.headRefOid)
+        : undefined
+  const headBranch = typeof row.headRefName === 'string' ? row.headRefName : undefined
+  const baseBranch = typeof row.baseRefName === 'string' ? row.baseRefName : undefined
+  return {
+    ok: true,
+    number,
+    status: base.status,
+    prUrl: base.prUrl,
+    headSha,
+    headBranch,
+    baseBranch,
+  }
+}
+
+function normalizeGitlabPrLinkFacts(row: Record<string, unknown>): ForgePrLinkFactsResult {
+  const base = normalizeGitlabMrStatus(row)
+  if (!base.ok) return base
+  const number =
+    typeof row.iid === 'number'
+      ? String(row.iid)
+      : typeof row.iid === 'string'
+        ? row.iid
+        : undefined
+  const headSha = typeof row.sha === 'string' ? row.sha : undefined
+  const headBranch =
+    typeof row.source_branch === 'string'
+      ? row.source_branch
+      : typeof row.sourceBranch === 'string'
+        ? row.sourceBranch
+        : undefined
+  const baseBranch =
+    typeof row.target_branch === 'string'
+      ? row.target_branch
+      : typeof row.targetBranch === 'string'
+        ? row.targetBranch
+        : undefined
+  return {
+    ok: true,
+    number,
+    status: base.status,
+    prUrl: base.prUrl,
+    headSha,
+    headBranch,
+    baseBranch,
+  }
+}
+
+/**
+ * Read a PR/MR's identity and head commit from the forge. Used when linking an
+ * externally created change request to an intent ledger row.
+ */
+export async function getForgePrLinkFacts(
+  cwd: string,
+  prId: string,
+  providerOverride?: ForgeProvider,
+): Promise<ForgePrLinkFactsResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  const [bin, args, markers] =
+    provider === 'github'
+      ? ([
+          'gh',
+          [
+            'pr',
+            'view',
+            prId,
+            '--json',
+            'number,state,mergedAt,url,headRefOid,headRefName,baseRefName',
+          ],
+          GH_NOT_LOGGED_IN_MARKERS,
+        ] as const)
+      : (['glab', ['mr', 'view', prId, '--output', 'json'], GLAB_NOT_LOGGED_IN_MARKERS] as const)
+
+  const { code, stdout, stderr } = await run(bin, cwd, [...args])
+  if (code === -1) return { ok: false, unavailable: true, error: `${bin} CLI 未安装` }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = markers.some((m) => out.toLowerCase().includes(m))
+    const notFound = isPrNotFoundOutput(out)
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      ...(notFound ? { notFound: true } : {}),
+      error: out || `${bin} 读取 PR 失败`,
+    }
+  }
+  const row = parseJsonObject(stdout)
+  if (!row) return { ok: false, error: `${bin} 读取 PR 的输出不是有效 JSON` }
+  return provider === 'github' ? normalizeGithubPrLinkFacts(row) : normalizeGitlabPrLinkFacts(row)
 }
 
 // ---------------------------------------------------------------------------

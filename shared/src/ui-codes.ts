@@ -104,6 +104,31 @@ export const UI_ERROR_CODES = {
   'intent.prCreateNotWorktree': { key: 'error.intent.prCreateNotWorktree' },
   'intent.prCreateNoBranch': { key: 'error.intent.prCreateNoBranch' },
   'intent.prCreateNoChanges': { key: 'error.intent.prCreateNoChanges' },
+  'intent.prLinkFailed': {
+    key: 'error.intent.prLinkFailed',
+    params: ['detail'],
+  },
+  'intent.prLinkCommitMismatch': {
+    key: 'error.intent.prLinkCommitMismatch',
+    params: ['worktreeHead', 'prHead'],
+  },
+  'intent.prLinkPrOccupied': {
+    key: 'error.intent.prLinkPrOccupied',
+    params: ['detail'],
+  },
+  'intent.prLinkNotFound': {
+    key: 'error.intent.prLinkNotFound',
+    params: ['detail'],
+  },
+  'intent.prLinkForgeUnavailable': {
+    key: 'error.intent.prLinkForgeUnavailable',
+    params: ['detail'],
+  },
+  'intent.prLinkActivePrExists': {
+    key: 'error.intent.prLinkActivePrExists',
+    params: ['number'],
+  },
+  'intent.prLinkInvalidReference': { key: 'error.intent.prLinkInvalidReference' },
   'intent.prCloseFailed': {
     key: 'error.intent.prCloseFailed',
     params: ['detail'],

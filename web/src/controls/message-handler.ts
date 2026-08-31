@@ -26,6 +26,7 @@ import { applyTheme } from '@/lib/theme'
 import { applyFontScale } from '@/lib/font-scale'
 import { translateUiError } from '@/i18n/errors'
 import { normalizeGuidance } from '@/lib/git-failure-guidance'
+import { isCreatePrFailureCode } from '@/lib/create-pr-failure'
 import { gateEscapeFor } from '@/lib/gate-escape'
 import { defaultDeliveryBranchName } from '@/lib/delivery-view'
 import { transcriptToChat } from './transcript'
@@ -222,6 +223,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeTab,
     workcenterEvents,
     intentActionErrorSeq,
+    createPrFailureContext,
     clearSideEffectPending,
     devLaunch,
     specLaunch,
@@ -1073,6 +1075,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         // overlay just closes (after its minimum dwell) — but only for the run it
         // belongs to; a reply outliving its overlay is dropped by the reducer.
         ctx.dispatchCreatePr({ kind: 'done', requestId: msg.requestId, now: Date.now() })
+        createPrFailureContext.value = null
+        break
+      case 'link_intent_pr_response':
+        ctx.closeLinkIntentPrDialog()
+        createPrFailureContext.value = null
+        ctx.showToast(t('intent.prLink.success'))
         break
       case 'spec_launch_progress':
         ctx.dispatchSpecLaunch({
@@ -1644,8 +1652,20 @@ export function installMessageHandler(ctx: AppCtx): void {
         // request on this connection carry no token (or an older one) and leave
         // the overlay alone, which then converges on its safety timeout. The
         // reason is shown by the dialog / chat line below, never in the overlay.
-        if (createPrProgress.value)
+        if (createPrProgress.value) {
+          const progress = createPrProgress.value
           ctx.dispatchCreatePr({ kind: 'failed', requestId: msg.requestId, now: Date.now() })
+          if (msg.requestId === progress.requestId && isCreatePrFailureCode(msg.error.code)) {
+            createPrFailureContext.value = {
+              intentId: progress.intentId,
+              deliveryId: progress.deliveryId,
+            }
+          }
+        }
+        if (msg.error.code.startsWith('intent.prLink')) {
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
         // Machine-readable code translated locally via the web i18n catalog (spec 003).
         // Intent action errors (start_development gates, approve/write spec, deps, …)
         // surface as a persistent global dialog so they are visible on the intents page. They used

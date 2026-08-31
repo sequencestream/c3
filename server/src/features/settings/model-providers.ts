@@ -20,8 +20,10 @@ const PROBE_TIMEOUT_MS = 6000
 /**
  * The effective URL to dial. Draft fields win when the console sent a `baseUrl`
  * — that is what lets an unsaved edit (or a brand-new provider not yet on disk)
- * be probed as typed. A named `providerId` without a draft URL falls back to the
- * stored protocol slot. Returns null when neither path yields a base URL.
+ * be probed as typed. A draft URL is paired only with the draft key from the
+ * same request; stored account keys are never sent to an operator-typed host.
+ * A named `providerId` without a draft URL falls back to the stored protocol
+ * slot and its stored key. Returns null when neither path yields a base URL.
  */
 function probeTarget(
   providers: readonly ModelProvider[],
@@ -31,12 +33,7 @@ function probeTarget(
   draftApiKey: string | undefined,
 ): { baseUrl: string; apiKey: string } | null {
   if (draftBaseUrl) {
-    let apiKey = draftApiKey ?? ''
-    if (!apiKey.trim() && providerId) {
-      const provider = providers.find((p) => p.id === providerId)
-      if (provider) apiKey = provider.apiKey
-    }
-    return { baseUrl: draftBaseUrl, apiKey }
+    return { baseUrl: draftBaseUrl, apiKey: draftApiKey ?? '' }
   }
   if (providerId) {
     const provider = providers.find((p) => p.id === providerId)
@@ -65,7 +62,8 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
   conn,
   msg,
 ) => {
-  // Reads a stored credential and dials an operator-supplied URL from the server.
+  // Dials an operator-supplied or stored URL from the server; stored keys only
+  // pair with stored URLs (see probeTarget).
   if (!requireAdmin(conn)) return
   const { protocolType, providerId } = msg
   const settings = loadSettings()

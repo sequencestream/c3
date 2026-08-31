@@ -76,12 +76,12 @@ export type ServerAutoConfigureAgentsResult = {
  * half of the health check whose cheap half (`checkProviderBaseUrl`) the console
  * already runs locally. The console may send a DRAFT (`baseUrl` + optional
  * `apiKey`) so an unsaved edit or a brand-new provider is dialled as typed; a
- * named `providerId` alone falls back to the stored URL (key stays server-side).
- * When both are present, the draft URL wins and a blank draft key falls back to
- * the stored account key.
+ * named `providerId` alone falls back to the stored URL + stored account key.
+ * When both are present, the draft URL wins and is paired only with the draft
+ * `apiKey` from the same request — a blank draft key probes without auth headers;
+ * stored keys are never sent to an operator-typed host.
  *
- * Admin-only: it reads a stored credential and dials an arbitrary URL from the
- * server, both of which are administrator territory.
+ * Admin-only: it may read a stored credential and dials from the server.
  */
 export type ClientProbeModelProvider = {
   type: 'probe_model_provider'
@@ -89,13 +89,12 @@ export type ClientProbeModelProvider = {
   protocolType: ProtocolType
   /**
    * Saved provider id — echoed in the reply for matching, and used to look up a
-   * stored URL when `baseUrl` is absent (or to fill in a blank draft key).
+   * stored URL when `baseUrl` is absent.
    */
   providerId?: string
   /** Draft base URL. When set, takes priority over any stored URL. */
   baseUrl?: string
-  /** Draft API key paired with `baseUrl`. Empty falls back to the saved key when
-   *  `providerId` is set. */
+  /** Draft API key paired with `baseUrl`. Empty ⇒ probe without auth headers. */
   apiKey?: string
 }
 

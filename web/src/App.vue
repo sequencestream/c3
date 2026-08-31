@@ -98,6 +98,9 @@ const GateEscapeDialog = asyncOverlay(
 const CreateIntentDialog = asyncOverlay(
   () => import('./pages/intents/components/CreateIntentDialog/CreateIntentDialog.vue'),
 )
+const InputDialog = asyncOverlay(() => import('./components/InputDialog/InputDialog.vue'))
+
+import { canOfferLinkExistingPr } from './lib/create-pr-failure'
 
 const { t } = useTypedI18n()
 
@@ -199,6 +202,10 @@ const {
   intentActionErrorSeq,
   intentActionError,
   intentActionErrorGuidance,
+  createPrFailureContext,
+  linkIntentPrDialogOpen,
+  openLinkIntentPrDialog,
+  closeLinkIntentPrDialog,
   intentGateEscape,
   closeIntentGateEscape,
   repairIntentWorktree,
@@ -233,6 +240,7 @@ const {
   saveSpecContent,
   updateIntentDeps,
   createPr,
+  linkIntentPr,
   syncIntentPrStatus,
   startWorkflow,
   stopWorkflow,
@@ -560,6 +568,21 @@ const gateEscapeDeliveries = computed(() => {
   if (!id) return []
   return currentIntents.value.find((i) => i.id === id)?.linkedDeliveries ?? []
 })
+
+const showLinkExistingPr = computed(() =>
+  canOfferLinkExistingPr(createPrFailureContext.value, currentIntents.value),
+)
+
+function onLinkExistingPr(): void {
+  openLinkIntentPrDialog()
+}
+
+function onConfirmLinkIntentPr(prReference: string): void {
+  const ctx = createPrFailureContext.value
+  if (!ctx) return
+  closeLinkIntentPrDialog()
+  linkIntentPr(ctx.intentId, prReference, ctx.deliveryId)
+}
 
 function onForceDependencyGate(intentId: string): void {
   closeIntentGateEscape()
@@ -1240,8 +1263,21 @@ function onFilesChatWidth(px: number): void {
     :open="intentActionError !== null"
     :message="intentActionError ?? ''"
     :guidance="intentActionErrorGuidance"
+    :show-link-existing-pr="showLinkExistingPr"
     @close="closeIntentActionError"
     @retry="retryIntentAction"
+    @link-existing-pr="onLinkExistingPr"
+  />
+
+  <InputDialog
+    v-if="linkIntentPrDialogOpen"
+    :open="linkIntentPrDialogOpen"
+    :title="t('intent.prLink.dialog.title')"
+    :placeholder="t('intent.prLink.dialog.placeholder')"
+    :confirm-label="t('intent.prLink.dialog.confirm.label')"
+    :cancel-label="t('common.action.cancel.label')"
+    @confirm="onConfirmLinkIntentPr"
+    @cancel="closeLinkIntentPrDialog"
   />
 
   <!-- The EXIT a refused launch left the user. Shown instead of the plain error

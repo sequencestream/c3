@@ -89,6 +89,7 @@ import {
   startDevelopment,
   stopWorkflowHandler,
   createPrHandler,
+  linkIntentPrHandler,
   syncIntentPrStatusHandler,
   updateIntentContent,
   updateIntentDepsHandler,
@@ -281,6 +282,7 @@ export const handlerMap: HandlerMap = {
   get_park_recovery_stats: getParkRecoveryStatsHandler,
   queue_control: queueControlHandler,
   create_pr: createPrHandler,
+  link_intent_pr: linkIntentPrHandler,
   sync_intent_pr_status: syncIntentPrStatusHandler,
   // deliveries (交付 — 作为集成单元, ADR-0036)
   list_deliveries: listDeliveriesHandler,

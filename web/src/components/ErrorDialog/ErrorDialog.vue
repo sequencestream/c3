@@ -23,11 +23,14 @@ const props = defineProps<{
   detailLabel?: string
   /** 可选动作按钮的文案;缺失即不渲染按钮。 */
   actionLabel?: string
+  /** 可选次要动作按钮的文案;缺失即不渲染。 */
+  secondaryActionLabel?: string
 }>()
 
 const emit = defineEmits<{
   close: []
   action: []
+  secondaryAction: []
 }>()
 
 const hasDetail = computed(() => !!props.detail && props.detail.trim() !== '')
@@ -57,6 +60,14 @@ watch(
         <pre class="ed-detail-text">{{ detail }}</pre>
       </div>
       <div class="ed-foot">
+        <button
+          v-if="secondaryActionLabel"
+          class="ed-action"
+          data-testid="error-dialog-secondary-action"
+          @click="emit('secondaryAction')"
+        >
+          {{ secondaryActionLabel }}
+        </button>
         <button
           v-if="actionLabel"
           class="ed-action"

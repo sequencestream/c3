@@ -1323,6 +1323,19 @@
       "success": "Статус PR синхронизирован.",
       "failed": "Не удалось синхронизировать статус PR."
     },
+    "prLink": {
+      "success": "Существующий PR привязан.",
+      "action": {
+        "label": "Привязать существующий PR"
+      },
+      "dialog": {
+        "title": "Привязать существующий PR",
+        "placeholder": "Номер PR или URL",
+        "confirm": {
+          "label": "Привязать"
+        }
+      }
+    },
     "deps": {
       "status": {
         "done": "Завершено",
@@ -2514,6 +2527,13 @@
       "prCreateNotWorktree": "Создать PR можно только в режиме worktree. Сначала переключите рабочее пространство в режим worktree.",
       "prCreateNoBranch": "У этого замысла ещё нет ветки. Начните разработку, чтобы создать её, прежде чем открывать PR.",
       "prCreateNoChanges": "В worktree нет изменений для коммита. Внесите изменения, прежде чем открывать PR.",
+      "prLinkFailed": "Не удалось привязать PR: {detail}.",
+      "prLinkCommitMismatch": "HEAD worktree ({worktreeHead}) не совпадает с head commit PR ({prHead}). Укажите PR на последний коммит этой ветки и повторите попытку.",
+      "prLinkPrOccupied": "Этот PR уже привязан к другому намерению: {detail}.",
+      "prLinkNotFound": "PR не найден: {detail}.",
+      "prLinkForgeUnavailable": "Нет доступа к forge: {detail}. Установите или войдите в CLI и повторите попытку.",
+      "prLinkActivePrExists": "У этой цели намерения уже есть активный PR (#{number}).",
+      "prLinkInvalidReference": "Введите номер PR или полный URL PR/MR.",
       "prCloseFailed": "Не удалось автоматически закрыть PR: {detail}. Закройте его вручную и повторите отмену.",
       "gitCleanupNoChanges": "Сессия работы завершилась без изменений для коммита. Закоммитьте, отправьте и создайте PR вручную.",
       "gitCleanupCommitPushFailed": "Не удалось автоматически закоммитить/отправить изменения после сессии работы: {detail}. Решите вручную.",

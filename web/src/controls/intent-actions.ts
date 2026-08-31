@@ -404,7 +404,7 @@ export function installIntentActions(ctx: AppCtx): void {
     // clicked twice) from this instant until the response, an action error, or —
     // if neither ever arrives — the safety timeout.
     ctx.clearCreatePrTimers()
-    ctx.createPrProgress.value = beginCreatePr(intentId, requestId, Date.now())
+    ctx.createPrProgress.value = beginCreatePr(intentId, requestId, Date.now(), deliveryId)
     ctx.createPrTimers.safety = setTimeout(() => {
       ctx.dispatchCreatePr({ kind: 'timeout', now: Date.now() })
     }, CREATE_PR_SAFETY_TIMEOUT_MS)
@@ -445,6 +445,17 @@ export function installIntentActions(ctx: AppCtx): void {
       type: 'sync_intent_pr_status',
       workspaceName: intentsProject.value,
       intentId,
+    })
+  }
+
+  ctx.linkIntentPr = (intentId: string, prReference: string, deliveryId?: string): void => {
+    if (!intentsProject.value) return
+    send({
+      type: 'link_intent_pr',
+      workspaceName: intentsProject.value,
+      intentId,
+      prReference,
+      ...(deliveryId ? { deliveryId } : {}),
     })
   }
 

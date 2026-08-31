@@ -1322,6 +1322,19 @@
       "success": "PR status synced.",
       "failed": "Failed to sync PR status."
     },
+    "prLink": {
+      "success": "Existing PR linked.",
+      "action": {
+        "label": "Link existing PR"
+      },
+      "dialog": {
+        "title": "Link existing PR",
+        "placeholder": "PR number or URL",
+        "confirm": {
+          "label": "Link"
+        }
+      }
+    },
     "deps": {
       "status": {
         "done": "Completed",
@@ -2513,6 +2526,13 @@
       "prCreateNotWorktree": "Can only create a PR in worktree mode. Switch the workspace to worktree mode first.",
       "prCreateNoBranch": "This intent has no branch yet. Start development to create one before opening a PR.",
       "prCreateNoChanges": "No committable changes in the worktree. Make some changes before opening a PR.",
+      "prLinkFailed": "Could not link the PR: {detail}.",
+      "prLinkCommitMismatch": "The worktree HEAD ({worktreeHead}) does not match the PR head commit ({prHead}). Point the PR at this branch's latest commit, then try again.",
+      "prLinkPrOccupied": "That PR is already linked to another intent: {detail}.",
+      "prLinkNotFound": "PR not found: {detail}.",
+      "prLinkForgeUnavailable": "Cannot reach the forge: {detail}. Install or log in to the CLI, then try again.",
+      "prLinkActivePrExists": "This intent target already has an active PR (#{number}).",
+      "prLinkInvalidReference": "Enter a PR number or full PR/MR URL.",
       "prCloseFailed": "Automatic PR close failed: {detail}. Close it manually, then retry the cancellation.",
       "gitCleanupNoChanges": "The work session ended with no changes to commit. Commit, push, and open a PR manually.",
       "gitCleanupCommitPushFailed": "Auto commit/push after the work session failed: {detail}. Resolve it manually.",

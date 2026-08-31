@@ -18,7 +18,14 @@ import type {
   IntentStatus,
 } from '@ccc/shared/protocol'
 import { CREATE_PR_STAGES } from '@ccc/shared/protocol'
-import { closeForgePr, commitAndPush, createForgePr, hasDiffAgainstBase } from '../../git.js'
+import {
+  closeForgePr,
+  commitAndPush,
+  createForgePr,
+  getForgePrLinkFacts,
+  getHeadCommit,
+  hasDiffAgainstBase,
+} from '../../git.js'
 import { getForgeOverride, getGitBranchMode } from '../../kernel/config/index.js'
 // eslint-disable-next-line no-restricted-imports -- PR 事件管线导出 runServerSidePrCreate,非安全原语(凭据原语已归 kernel/security)
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
@@ -39,7 +46,7 @@ import {
   updateStatus,
   upsertIntentPr,
 } from './store.js'
-import { parsePrIdentity } from './pr-identity.js'
+import { parsePrIdentity, parsePrReference } from './pr-identity.js'
 import { getWorktreePath } from './worktree.js'
 
 /** A structured outcome both surfaces can frame. */
@@ -280,6 +287,146 @@ function buildPrBody(req: Intent): string {
     }
   }
   return parts.join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// link_intent_pr
+// ---------------------------------------------------------------------------
+
+export interface LinkIntentPrDeps {
+  broadcastIntents: (workspacePath: string) => void
+  normalizeEvent: (core: GenericEvent) => NormalizeResult
+  publishEvent: (workspacePath: string, sessionId: string, event: GenericEvent) => void
+  actor?: string | null
+}
+
+/**
+ * Link an existing forge PR/MR to one intent target. Reuses `resolvePrTarget`
+ * and the `(intentId, deliveryId)` idempotency key from `create_pr`, then
+ * accepts the link only when the intent worktree HEAD equals the PR head SHA.
+ */
+export async function linkIntentPrForIntent(
+  workspacePath: string,
+  intentId: string,
+  prReference: string,
+  deps: LinkIntentPrDeps,
+  requestedDeliveryId?: string,
+): Promise<IntentWriteResult<{ prId: string; prUrl: string }>> {
+  if (!isStoreAvailable()) return { success: false, code: 'intent.dbUnavailable' }
+  const req = getIntent(intentId)
+  if (!req) return { success: false, code: 'intent.notFound' }
+
+  if (getGitBranchMode(workspacePath) !== 'worktree') {
+    return { success: false, code: 'intent.prCreateNotWorktree' }
+  }
+  if (normalizeBranchName(req.branchName) === null) {
+    return { success: false, code: 'intent.prCreateNoBranch' }
+  }
+
+  const target = resolvePrTarget(workspacePath, req, requestedDeliveryId)
+  if (!target.ok) return { success: false, code: target.code }
+  const { deliveryId, baseBranch } = target
+
+  const conflict = activeIntentPrs(req.prs).find((pr) => pr.deliveryId === deliveryId)
+  if (conflict) {
+    return {
+      success: false,
+      code: 'intent.prLinkActivePrExists',
+      params: { number: conflict.number },
+    }
+  }
+
+  const prNumber = parsePrReference(prReference)
+  if (!prNumber) {
+    return { success: false, code: 'intent.prLinkInvalidReference' }
+  }
+
+  const providerOverride = getForgeOverride(workspacePath)
+  const worktreePath = getWorktreePath(workspacePath, intentId)
+  const headCommit = await getHeadCommit(worktreePath)
+  if (!headCommit) {
+    return {
+      success: false,
+      code: 'intent.prLinkFailed',
+      params: { detail: '无法读取意图 worktree 的 HEAD commit' },
+    }
+  }
+
+  const facts = await getForgePrLinkFacts(worktreePath, prNumber, providerOverride)
+  if (!facts.ok) {
+    if (facts.unavailable) {
+      return {
+        success: false,
+        code: 'intent.prLinkForgeUnavailable',
+        params: { detail: facts.error ?? 'forge CLI 不可用' },
+      }
+    }
+    if (facts.notFound) {
+      return {
+        success: false,
+        code: 'intent.prLinkNotFound',
+        params: { detail: facts.error ?? `PR #${prNumber} 不存在` },
+      }
+    }
+    return {
+      success: false,
+      code: 'intent.prLinkFailed',
+      params: { detail: facts.error ?? '读取 PR 失败' },
+    }
+  }
+
+  if (!facts.headSha || facts.headSha !== headCommit) {
+    return {
+      success: false,
+      code: 'intent.prLinkCommitMismatch',
+      params: {
+        worktreeHead: headCommit.slice(0, 7),
+        prHead: (facts.headSha ?? '').slice(0, 7) || '?',
+      },
+    }
+  }
+
+  const headBranch = req.branchName ?? undefined
+  const identity = parsePrIdentity(facts.prUrl)
+  const linkedNumber = facts.number ?? prNumber
+  const linkedStatus =
+    facts.status === 'merged' || facts.status === 'closed' ? facts.status : 'reviewing'
+
+  try {
+    upsertIntentPr({
+      intentId,
+      deliveryId,
+      number: linkedNumber,
+      status: linkedStatus,
+      forge: identity.forge ?? providerOverride ?? null,
+      repo: identity.repo,
+      url: facts.prUrl ?? null,
+      headBranch: facts.headBranch ?? headBranch ?? null,
+      baseBranch: facts.baseBranch ?? baseBranch,
+    })
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    if (detail.includes('已归属意图')) {
+      return { success: false, code: 'intent.prLinkPrOccupied', params: { detail } }
+    }
+    return { success: false, code: 'intent.prLinkFailed', params: { detail } }
+  }
+
+  safeInsertIntentLog(intentId, 'pr_created', `外部关联 PR #${linkedNumber}`, deps.actor)
+  deps.broadcastIntents(workspacePath)
+  runServerSidePrCreate(
+    {
+      prId: linkedNumber,
+      prUrl: facts.prUrl ?? null,
+      headBranch: facts.headBranch ?? headBranch,
+      baseBranch: facts.baseBranch ?? baseBranch,
+      intentId,
+      deliveryId,
+    },
+    deps.normalizeEvent,
+    (event) => deps.publishEvent(workspacePath, intentId, event),
+  )
+  return { success: true, prId: linkedNumber, prUrl: facts.prUrl ?? linkedNumber }
 }
 
 // ---------------------------------------------------------------------------

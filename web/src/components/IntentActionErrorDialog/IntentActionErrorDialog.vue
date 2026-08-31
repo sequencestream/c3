@@ -30,11 +30,14 @@ const props = defineProps<{
   message: string
   /** 已校验的定向指引;null 表示无指引(或收到的描述符不合法)。 */
   guidance: GitActionFailureGuidance | null
+  /** 是否展示「关联已有 PR」次要动作。 */
+  showLinkExistingPr?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   retry: [guidance: GitActionFailureGuidance]
+  linkExistingPr: []
 }>()
 
 /** 已识别原因的定向指引文案;`unknown` 与无指引都为 null。 */
@@ -70,6 +73,11 @@ function onRetry(): void {
   emit('close')
   emit('retry', guidance)
 }
+
+function onLinkExistingPr(): void {
+  emit('close')
+  emit('linkExistingPr')
+}
 </script>
 
 <template>
@@ -79,9 +87,11 @@ function onRetry(): void {
     :message="dialogMessage"
     :detail="dialogDetail ?? undefined"
     :detail-label="dialogDetail ? t('intent.gitFailure.rawDetail.label') : undefined"
+    :secondary-action-label="showLinkExistingPr ? t('intent.prLink.action.label') : undefined"
     :action-label="retryLabel"
     :close-label="t('common.action.close.label')"
     @close="emit('close')"
     @action="onRetry"
+    @secondary-action="onLinkExistingPr"
   />
 </template>

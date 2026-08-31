@@ -223,6 +223,8 @@ export interface AppMethods {
   /** Fold one create-PR overlay event through the reducer + handle close side-effects. */
   dispatchCreatePr(ev: CreatePrEvent): void
   syncIntentPrStatus(intentId: string): void
+  /** Link an externally created PR to an intent target after `create_pr` failed. */
+  linkIntentPr(intentId: string, prReference: string, deliveryId?: string): void
   startWorkflow(): void
   stopWorkflow(): void
 

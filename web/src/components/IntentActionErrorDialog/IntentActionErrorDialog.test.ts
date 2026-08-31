@@ -134,4 +134,21 @@ describe('IntentActionErrorDialog.vue — an unknown reason', () => {
       t(RETRY_BUTTON_KEYS['create-pr']),
     )
   })
+
+  it('shows the link-existing-PR secondary action when requested', async () => {
+    const w = mount(IntentActionErrorDialog, {
+      props: {
+        open: true,
+        message: 'failed',
+        guidance: null,
+        showLinkExistingPr: true,
+      },
+    })
+    expect(w.find('[data-testid="error-dialog-secondary-action"]').text()).toBe(
+      t('intent.prLink.action.label'),
+    )
+    await w.find('[data-testid="error-dialog-secondary-action"]').trigger('click')
+    expect(w.emitted('close')).toHaveLength(1)
+    expect(w.emitted('linkExistingPr')).toHaveLength(1)
+  })
 })

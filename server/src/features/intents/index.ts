@@ -117,7 +117,7 @@ import type { PromptImage, ServerToClient } from '@ccc/shared/protocol'
 import type { KernelContext } from '../../kernel/types.js'
 import type { Conn, Handler } from '../../transport/handler-registry.js'
 import { launchWorkSession } from './session-launcher.js'
-import { applyIntentStatusChange, createPrForIntent } from './write-cores.js'
+import { applyIntentStatusChange, createPrForIntent, linkIntentPrForIntent } from './write-cores.js'
 
 export { buildResetIntentPrompt }
 
@@ -1748,6 +1748,47 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     prId: result.prId,
     prUrl: result.prUrl,
     ...correlate,
+  })
+}
+
+export const linkIntentPrHandler: Handler<'link_intent_pr'> = async (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
+    })
+    return
+  }
+  const result = await linkIntentPrForIntent(
+    proj,
+    msg.intentId,
+    msg.prReference,
+    {
+      broadcastIntents: ctx.broadcastIntents,
+      normalizeEvent: ctx.normalizeEvent,
+      publishEvent: (workspacePath, sessionId, event) =>
+        ctx.eventBus.publish('event', { workspacePath, sessionId, event }),
+      actor: conn.subject,
+    },
+    msg.deliveryId,
+  )
+  if (!result.success) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: result.code as UiErrorCode,
+        ...(result.params ? { params: result.params } : {}),
+      },
+    })
+    return
+  }
+  conn.send({
+    type: 'link_intent_pr_response',
+    workspaceName: msg.workspaceName,
+    intentId: msg.intentId,
+    prId: result.prId,
+    prUrl: result.prUrl,
   })
 }
 

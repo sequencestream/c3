@@ -247,5 +247,5 @@ Conversation 的下一条消息可带着上次绑定的原生会话 id 进入,�
 `robot-context-store.ts` / `robot-turn-store.ts` 分别是配置 CRUD、会话上下文生命周期、回合审计三类
 读写入口;`robot-db.ts` 是共享基础(连接获取、事务、测试用时钟)。`robot-store.ts` 保留为对外 barrel,
 外部 import 路径不变。SQLite 不能 `ALTER` 一个 `CHECK`,整表重塑(重命名归档 → 建新表 → 投影搬数据 →
-重建索引)因此由 `table-rebuild.ts` 的 `rebuildTable` 统一承担,替代此前四表各自手写、曾两次因索引
+重建索引)因此由 `kernel/infra/table-rebuild.ts` 的 `rebuildTable` 统一承担,替代此前四表各自手写、曾两次因索引
 误挂旧表复发同一缺陷的重塑套路。

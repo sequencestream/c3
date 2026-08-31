@@ -1,0 +1,13 @@
+-- 052 — 整表重塑原语归位 kernel/infra（无 schema 变更）
+--
+-- 纯实现搬迁：`rebuildTable` 从 `server/src/features/im/table-rebuild.ts` 上提到
+-- `server/src/kernel/infra/table-rebuild.ts`，与 `db.ts` 同层；`tableExists` /
+-- `tableColumns` 一并归位到 `db.ts`。
+--
+-- 调用方：
+-- - IM robot 四表整表重塑仍经 robot-schema.ts import kernel 原语；
+-- - config-store 的 workspace_configs workspace_id→workspace_name 重塑改走 rebuildTable；
+-- - automations / intents / session-metadata 的就地 RENAME（源/目标表名不同、形状不变）
+--   保留 guarded `ALTER TABLE … RENAME TO`，并在代码注释中说明为何不适用 rebuildTable。
+--
+-- 磁盘 schema 与数据语义不变；迁移测试补断言索引落在改名/重塑后的活跃表上。

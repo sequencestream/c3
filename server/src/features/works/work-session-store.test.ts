@@ -134,6 +134,7 @@ describe('schema (F-12 column whitelist)', () => {
         state_updated_at INTEGER NOT NULL,
         kind TEXT NOT NULL
       );
+      CREATE INDEX idx_wsm_workspace ON work_session_metadata(workspace_name, kind);
     `)
     d.run(
       `INSERT INTO work_session_metadata
@@ -178,6 +179,11 @@ describe('schema (F-12 column whitelist)', () => {
     expect(rows.find((r) => r.c3Id === 'legacy-real')?.sessionKind).toBe('work')
     expect(rows.find((r) => r.c3Id === 'legacy-real')?.bound).toBe(true)
     expect(rows.find((r) => r.c3Id === 'legacy-pending')?.bound).toBe(false)
+    expect(
+      d.get<{ tbl_name: string }>(
+        "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name='idx_wsm_workspace'",
+      )?.tbl_name,
+    ).toBe('session_metadata')
 
     resetStoreForTests()
     expect(

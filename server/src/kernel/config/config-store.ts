@@ -28,8 +28,11 @@ import {
   hasMigration,
   isDbAvailable,
   markMigration,
+  tableColumns,
+  tableExists,
   type Db,
 } from '../infra/db.js'
+import { rebuildTable } from '../infra/table-rebuild.js'
 import type { ConfigEntry, ConfigType } from './config-codec.js'
 
 const SCHEMA = `
@@ -127,9 +130,14 @@ const WORKSPACE_PATH_TABLES = [
   'funnel_event',
 ] as const
 
-function tableColumns(d: Db, table: string): Set<string> {
-  return new Set(d.all<{ name: string }>(`PRAGMA table_info(${table})`).map((r) => r.name))
-}
+const WORKSPACE_CONFIGS_NEW_DDL = `CREATE TABLE workspace_configs (
+  workspace_name TEXT NOT NULL,
+  config_key TEXT NOT NULL,
+  config_value TEXT,
+  config_type TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (workspace_name, config_key)
+);`
 
 function trimToChars(value: string, max: number): string {
   return Array.from(value).slice(0, max).join('')
@@ -269,24 +277,31 @@ function ensureWorkspaceNameMigration(d: Db): void {
       )
     }
 
-    const configCols = tableColumns(d, 'workspace_configs')
-    if (configCols.has('workspace_id')) {
-      d.exec(`
-        CREATE TABLE workspace_configs_v2 (
-          workspace_name TEXT NOT NULL,
-          config_key TEXT NOT NULL,
-          config_value TEXT,
-          config_type TEXT NOT NULL,
-          updated_at INTEGER NOT NULL,
-          PRIMARY KEY (workspace_name, config_key)
-        );
-        INSERT INTO workspace_configs_v2
-          SELECT m.name, c.config_key, c.config_value, c.config_type, c.updated_at
-          FROM workspace_configs c
-          JOIN workspace_identity_map m ON m.legacy_id=c.workspace_id;
-        DROP TABLE workspace_configs;
-        ALTER TABLE workspace_configs_v2 RENAME TO workspace_configs;
-      `)
+    if (tableExists(d, 'workspace_configs_v2') && !tableExists(d, 'workspace_configs')) {
+      d.exec('ALTER TABLE workspace_configs_v2 RENAME TO workspace_configs')
+    }
+    if (
+      tableExists(d, 'workspace_configs') &&
+      tableColumns(d, 'workspace_configs').has('workspace_id')
+    ) {
+      rebuildTable(d, {
+        table: 'workspace_configs',
+        archive: 'workspace_configs_pre_workspace_id',
+        newDdl: WORKSPACE_CONFIGS_NEW_DDL,
+        copy: (_dd, source) => ({
+          columns: ['workspace_name', 'config_key', 'config_value', 'config_type', 'updated_at'],
+          select: [
+            `(SELECT name FROM workspace_identity_map WHERE legacy_id=${source}.workspace_id)`,
+            'config_key',
+            'config_value',
+            'config_type',
+            'updated_at',
+          ],
+        }),
+        indexDdl: '',
+        keepArchive: false,
+        needs: (dd) => tableColumns(dd, 'workspace_configs').has('workspace_id'),
+      })
     }
 
     for (const table of WORKSPACE_PATH_TABLES) {

@@ -51,6 +51,7 @@ import {
   resolveAgent,
   resolveSessionLaunch,
   resolveSessionStoreScope,
+  sandboxAllowHostKeychain,
   usesVendorLogin,
 } from '../agent-config/index.js'
 import { askQuestions } from '../../consensus-tally.js'
@@ -542,7 +543,9 @@ export async function runViaDriver(
   // neutral subset the vendor's driver understands (2026-06-06-007). Codex's policy
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
   const { agentId, model, envOverrides, relayCandidates, contextWindow, maxOutputTokens } =
-    resolveSessionLaunch(runId)
+    resolveSessionLaunch(runId, {
+      onConnectionNotice: (text) => emit(runId, { type: 'notice', text }),
+    })
 
   // gh stores its token in the OS keyring, which codex's sandbox can't read — so
   // `gh` inside a codex session fails auth even on an authenticated host with
@@ -590,9 +593,9 @@ export async function runViaDriver(
   // from apiKey), which the arapuca child inherits. baseUrl/model ride the
   // wrapper's "$@" argv; the codex RELAY token flows in as CODEX_API_KEY too.
   // `allowKeychain` comes from THIS run's actually-bound agent (`agentId` above):
-  // a subscription (`system`-mode) agent authenticates through the host keychain,
-  // which arapuca only exposes when explicitly allowed; a custom agent keeps the
-  // env-injected credential and no keychain access.
+  // a genuine subscription agent (no `providerId`) authenticates through the host
+  // keychain, which arapuca only exposes when explicitly allowed; a custom agent
+  // keeps the env-injected credential and no keychain access.
   //
   // A vendor with no arapuca auth profile runs on an in-process SDK, so there is
   // no child process to wrap: it gets the neutral `sandboxed` flag below and
@@ -600,7 +603,7 @@ export async function runViaDriver(
   const sandboxWrapperPath =
     rt.sandboxPaths && VENDOR_AUTH_PROFILES[adapter.vendor]
       ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
-          allowKeychain: usesVendorLogin(resolveAgent(agentId)),
+          allowKeychain: sandboxAllowHostKeychain(resolveAgent(agentId)),
         })
       : undefined
   // A spec session has TWO roots, and they are not the same directory: the code

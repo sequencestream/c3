@@ -71,6 +71,12 @@ export interface LaunchOverrides {
   /** Optional max output tokens — same catalog mechanism as {@link LaunchOverrides.contextWindow}. */
   maxOutputTokens?: number
 }
+
+/** Optional hooks when resolving launch overrides for a run. */
+export interface LaunchOptions {
+  /** When set, fresh connection-resolution warnings also reach the run UI stream. */
+  onConnectionNotice?: (text: string) => void
+}
 import {
   bindSessionAgent,
   changeSessionAgentFact,
@@ -474,10 +480,22 @@ function connectionWarningFingerprint(
   return createHash('sha256').update(raw).digest('hex').slice(0, 32)
 }
 
+function connectionWarningText(agent: AgentConfig, w: ConnectionWarning): string {
+  switch (w.kind) {
+    case 'dangling-provider':
+      return `[c3] agent "${agent.id}" references unknown model provider "${w.providerId}" — falling back to CLI login.`
+    case 'provider-paused':
+      return `[c3] agent "${agent.id}" references paused model provider "${w.providerId}" — launches will fail until it is resumed.`
+    case 'provider-unusable':
+      return `[c3] model provider "${w.providerId}" has no usable URL for agent "${agent.id}" (${w.vendor}) — falling back to CLI login.`
+  }
+}
+
 function reportConnectionWarnings(
   agent: AgentConfig,
   warnings: readonly ConnectionWarning[],
   providers: readonly ModelProvider[],
+  onConnectionNotice?: (text: string) => void,
 ): void {
   const fresh = takeFreshConnectionWarnings(
     reportedConnectionWarnings,
@@ -486,22 +504,10 @@ function reportConnectionWarnings(
     connectionWarningFingerprint(agent, providers),
   )
   for (const w of fresh) {
-    switch (w.kind) {
-      case 'dangling-provider':
-        console.warn(
-          `[c3] agent "${agent.id}" references unknown model provider "${w.providerId}" — falling back to CLI login.`,
-        )
-        break
-      case 'provider-paused':
-        console.warn(
-          `[c3] agent "${agent.id}" references paused model provider "${w.providerId}" — launches will fail until it is resumed.`,
-        )
-        break
-      case 'provider-unusable':
-        console.warn(
-          `[c3] model provider "${w.providerId}" has no usable URL for agent "${agent.id}" (${w.vendor}) — falling back to CLI login.`,
-        )
-        break
+    const text = connectionWarningText(agent, w)
+    console.warn(text)
+    if (onConnectionNotice && (w.kind === 'dangling-provider' || w.kind === 'provider-unusable')) {
+      onConnectionNotice(text)
     }
   }
 }
@@ -522,6 +528,7 @@ function reportConnectionWarnings(
 function agentToRelayCandidate(
   agent: AgentConfig,
   providers: readonly ModelProvider[],
+  onConnectionNotice?: (text: string) => void,
 ): RelayCandidate | null {
   // Cursor has no relay: c3 speaks neither its wire protocol nor its auth, and
   // its config carries no provider triple. Refusing here is what stops a
@@ -529,7 +536,7 @@ function agentToRelayCandidate(
   // default and failing with an unrelated error.
   if (!hasProviderConfig(agent)) return null
   const resolved = resolveAgentConnection(agent, providers)
-  reportConnectionWarnings(agent, resolved.warnings, providers)
+  reportConnectionWarnings(agent, resolved.warnings, providers, onConnectionNotice)
   const paused = resolved.warnings.find((w) => w.kind === 'provider-paused')
   if (paused) throw new ModelProviderPausedError(paused.providerId, agent.id)
   if (!resolved.connection) return null
@@ -551,9 +558,10 @@ function agentToRelayCandidate(
 function probeRelayCandidate(
   agent: AgentConfig,
   providers: readonly ModelProvider[],
+  onConnectionNotice?: (text: string) => void,
 ): RelayCandidate | null {
   try {
-    return agentToRelayCandidate(agent, providers)
+    return agentToRelayCandidate(agent, providers, onConnectionNotice)
   } catch (err) {
     if (isModelProviderPausedError(err)) return null
     throw err
@@ -587,10 +595,14 @@ function probeRelayCandidate(
 export function launchSegment(
   candidates: AgentConfig[],
   providers: readonly ModelProvider[] = providerRegistry(),
+  opts?: LaunchOptions,
 ): AgentConfig[] {
   if (candidates.length === 0) return candidates
-  if (!agentToRelayCandidate(candidates[0], providers)) return [candidates[0]]
-  const end = candidates.findIndex((a) => !probeRelayCandidate(a, providers))
+  if (!agentToRelayCandidate(candidates[0], providers, opts?.onConnectionNotice))
+    return [candidates[0]]
+  const end = candidates.findIndex(
+    (a) => !probeRelayCandidate(a, providers, opts?.onConnectionNotice),
+  )
   return end < 0 ? candidates : candidates.slice(0, end)
 }
 
@@ -606,7 +618,10 @@ export function launchSegment(
  * standalone `model` override. Codex's launch-time policy gate is derived from the
  * session `defaultMode` in the driver (2026-06-06-008), not here.
  */
-export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides {
+export function launchForCandidates(
+  candidates: AgentConfig[],
+  opts?: LaunchOptions,
+): LaunchOverrides {
   const env: Record<string, string> = {}
   const relayCandidates: RelayCandidate[] = []
   let hasCustomClaude = false
@@ -616,9 +631,9 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
   // ever produced for a system launch.
   let firstRelayAgent: AgentConfig | undefined
   const providers = providerRegistry()
-  const segment = launchSegment(candidates, providers)
+  const segment = launchSegment(candidates, providers, opts)
   for (const agent of segment) {
-    const cand = agentToRelayCandidate(agent, providers)
+    const cand = agentToRelayCandidate(agent, providers, opts?.onConnectionNotice)
     if (!cand) continue
     if (!firstRelayAgent) firstRelayAgent = agent
     relayCandidates.push(cand)
@@ -676,23 +691,35 @@ export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides 
 
 /**
  * Whether this agent runs on the VENDOR CLI's OWN login (a subscription / the
- * vendor's system config) rather than an upstream c3 relays for it. The question
- * every sandbox and transcript-location decision actually asks — a run on the
- * vendor's own login needs the host credential store opened and writes its
- * transcript where the vendor's host config lives.
+ * vendor's system config) rather than an upstream c3 relay for it. Used for
+ * transcript store scope and codex host-data-root routing — a run on the
+ * vendor's own login writes where the vendor's host config lives.
  *
- * Asking the resolver, not `configMode === 'system'`: a dangling or paused
- * provider still reads as `'custom'` but has no connection, and those runs must
- * follow the vendor-login path (or fail loudly) rather than invent an upstream.
+ * Asking the resolver, not `configMode === 'system'`: fail-soft fallbacks
+ * (dangling or unusable provider) still read as `'custom'` but have no
+ * connection, and those runs follow the vendor-login path rather than invent
+ * an upstream. Sandbox keychain is decided separately by
+ * {@link sandboxAllowHostKeychain}.
  */
 export function usesVendorLogin(agent: AgentConfig): boolean {
   if (!hasProviderConfig(agent)) return true
   return resolveAgentConnection(agent, providerRegistry()).connection === null
 }
 
+/**
+ * Whether a sandbox run may append `--allow-keychain` (host credential store +
+ * real HOME). Only genuine subscription agents — no non-empty `providerId` —
+ * receive this grant. Fail-soft fallbacks that still carry a `providerId` keep
+ * the custom-agent sandbox posture even though launch may omit a relay.
+ */
+export function sandboxAllowHostKeychain(agent: AgentConfig): boolean {
+  if (!hasProviderConfig(agent)) return true
+  return !agent.providerId?.trim()
+}
+
 /** Back-compat single-agent launch — a length-1 candidate list. */
-export function launchForAgent(agent: AgentConfig): LaunchOverrides {
-  return launchForCandidates([agent])
+export function launchForAgent(agent: AgentConfig, opts?: LaunchOptions): LaunchOverrides {
+  return launchForCandidates([agent], opts)
 }
 
 /** A claude relay binding: the ANTHROPIC env pointing the SDK at the relay + the
@@ -791,9 +818,12 @@ export function resolveAgentCandidates(ref: string | null): AgentConfig[] {
  * every run re-resolves the group and re-failovers from its highest-priority member; a
  * real reference binds to the resolved (fallback-applied) id.
  */
-function resolveLaunchForRef(ref: string | null): { agentId: string } & LaunchOverrides {
+function resolveLaunchForRef(
+  ref: string | null,
+  opts?: LaunchOptions,
+): { agentId: string } & LaunchOverrides {
   const target = resolveAgentTarget(ref)
-  return { agentId: target.ref, ...launchForCandidates(target.candidates) }
+  return { agentId: target.ref, ...launchForCandidates(target.candidates, opts) }
 }
 
 /**
@@ -804,10 +834,11 @@ function resolveLaunchForRef(ref: string | null): { agentId: string } & LaunchOv
  */
 export function resolveSessionLaunch(
   sessionId: string | null,
+  opts?: LaunchOptions,
 ): { agentId: string } & LaunchOverrides {
-  if (!sessionId) return resolveLaunchForRef(null)
+  if (!sessionId) return resolveLaunchForRef(null, opts)
   const target = resolveAgentTarget(getSessionAgentId(sessionId), getSessionGroupCursor(sessionId))
-  return { agentId: target.ref, ...launchForCandidates(target.candidates) }
+  return { agentId: target.ref, ...launchForCandidates(target.candidates, opts) }
 }
 
 /**

@@ -190,7 +190,7 @@ c3
 │   │   ├── 补充放行                              # extraMounts 逐项 {path, ro/rw},保留路径不可覆盖、canonicalize 拒软链逃逸
 │   │   ├── 代理透传                              # 宿主设有 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY(含小写)任一非空键时 wrapper 追加 --allow-proxy-env,由 arapuca 转发;零配置、无工作区开关
 │   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
-│   │   ├── 订阅态认证透传                        # 本次 agent 为 system(订阅态)时 wrapper 追加 --allow-keychain 打开宿主 keychain;沙箱不参与 agent 选择,run 保留正常解析出的 agent,无专属角色配置、不弹窗不换绑
+│   │   ├── 订阅态认证透传                        # 本次 agent 为 genuine 订阅态(无 providerId)时 wrapper 追加 --allow-keychain;fail-soft 回落(悬挂 providerId/无 URL)不打开 keychain;沙箱不参与 agent 选择
 │   │   ├── per-vendor 认证策略                   # 入口命令/数据根/凭据变量/额外挂载/身份变量/keychain/启动前目录按 vendor 注册,wrapper 生成不含 vendor 分支;未注册 vendor 生成前 hard-fail
 │   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run;安装尝试无论成败冷却 24 小时(跨进程持久化)
 │   │   └── 硬失败                                # arapuca 两条链皆无/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑

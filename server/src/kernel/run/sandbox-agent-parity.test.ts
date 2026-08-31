@@ -89,6 +89,7 @@ vi.mock('../agent-config/index.js', () => ({
   // The real helper asks the connection resolver; fixtures here only distinguish
   // "named provider" vs "vendor CLI login" by whether `providerId` is set.
   usesVendorLogin: vi.fn((a: AgentConfig) => !a.providerId),
+  sandboxAllowHostKeychain: vi.fn((a: AgentConfig) => !a.providerId),
   bindClaudeRelay: vi.fn(() => null),
   unbindRelay: vi.fn(),
 }))

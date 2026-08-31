@@ -1,844 +1,184 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
-import type { ImConnectionStatus, ImRobot, ImTurnOutcome } from '@ccc/shared/protocol'
-import { ROBOT_DEFAULT_MAX_TURN_MS } from '@ccc/shared/protocol'
-import { c3HomeDir } from '../../kernel/config/paths.js'
-import { redactSecrets } from '../../kernel/security/index.js'
-import type {
-  RobotTurnProgress,
-  RobotTurnResult,
-  RunRobotTurnInput,
-} from '../../wiring/robot-turn.js'
-import {
-  accountNamespaceOf,
-  consumeChallenge,
-  getActiveBindingForSender,
-  isIdentityStoreAvailable,
-  providerAccountKeyOf,
-} from './identity-store.js'
-import { chatContextFor, resolveCallScope } from './call-scope.js'
-import { formatContextSeed } from './context-seed.js'
-import { screenInbound } from './inbound-guard.js'
-import {
-  sendGuarded,
-  type OutboundContent,
-  type OutboundTarget,
-  type RawImSend,
-  type RobotMessageRef,
-  type RobotRenderContext,
-} from './outbound-guard.js'
-import {
-  createTurnDisplaySignals,
-  outcomeToRuntimeMessage,
-  pickSecurityMessage,
-  resolveRobotRenderContext,
-  runtimeInputTooLongRef,
-} from './robot-message-registry.js'
+import type { ImConnectionStatus, ImRobot } from '@ccc/shared/protocol'
+import type { RunRobotTurnInput, RobotTurnResult } from '../../wiring/robot-turn.js'
+import { isIdentityStoreAvailable } from './identity-store.js'
+import { evaluateInboundSyncAdmission, processInboundAdmission } from './inbound-admission.js'
 import { resolveImProvider } from './registry.js'
+import { runOneTurn } from './robot-turn-runner.js'
 import { registerRobotHandleLookup } from './supervisor-access.js'
 import {
   beginTurn,
-  claimGateMessage,
   claimInboundMessage,
-  commitContextTurn,
-  failContextTurn,
   finishTurn,
-  getConversation,
   getRobot,
   isStoreAvailable,
   listEnabledRobots,
-  loadCommittedContext,
-  resolvedSessionRef,
   robotSecret,
   RobotStoreError,
 } from './robot-store.js'
-import { conversationGateKey, conversationIdentityOf, threadKeyFor } from './thread-key.js'
-import { handleTodoControl } from './l2-control.js'
-import { parseTodoInbound } from './todo-token-parse.js'
+import { conversationGateKey } from './thread-key.js'
 import {
-  logImBindingControl,
+  errText,
+  fail,
+  fixed,
+  renderCtx,
+  robotWorkdir,
+  targetOf,
+  wrapHandle,
+  type RobotHandle,
+} from './supervisor-internal.js'
+import {
   logImConnectFailed,
   logImConnected,
   logImConnecting,
   logImConnectionState,
   logImInbound,
-  logImInboundIgnored,
 } from './im-log.js'
-import type { ImInboundMessage, ImProviderCapabilities } from './types.js'
+import type { ImInboundMessage } from './types.js'
 
 export interface ImSupervisorDeps {
   runTurn: (input: RunRobotTurnInput) => Promise<RobotTurnResult>
   broadcastIntents?: (workspacePath: string) => void
 }
-interface RobotHandle {
-  status: () => ImConnectionStatus
-  close: () => Promise<void>
-  maxOutboundChars: number
-  rawSend: RawImSend
-  sendOutbound: (
-    content: OutboundContent,
-    target: OutboundTarget,
-    renderContext: RobotRenderContext,
-  ) => Promise<Awaited<ReturnType<typeof sendGuarded>>>
-}
+
+export { robotWorkdir }
+
 let deps: ImSupervisorDeps | null = null
 let handles: Map<string, RobotHandle> | null = null
 const inFlight = new Map<string, Promise<void>>()
 const failures = new Map<string, string>()
 
-/** Base64url-ish token shape (128-bit ≈ 22 chars; allow a small range). */
-const TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,48}$/
-
-export function robotWorkdir(name: string): string {
-  return join(c3HomeDir(), 'robots', name)
-}
-function errText(err: unknown): string {
-  return redactSecrets(err instanceof Error ? err.message : String(err)).slice(0, 200)
-}
-function targetOf(m: ImInboundMessage): OutboundTarget {
-  // Replies are sent directly to the chat, not as quotes of the inbound message.
-  return { chatId: m.chatId, chatType: m.chatType, senderId: m.senderId }
-}
-function accepts(r: ImRobot, m: ImInboundMessage): boolean {
-  if (m.chatType === 'group')
-    return (
-      (!r.requireMention || m.mentionedBot) &&
-      (!r.chatAllowlist.length || r.chatAllowlist.includes(m.chatId))
-    )
-  return r.dmMode === 'open' || (r.dmMode === 'allowlist' && r.dmAllowlist.includes(m.senderId))
-}
-function renderCtx(r: ImRobot, subject?: string | null): RobotRenderContext {
-  return resolveRobotRenderContext({ subject, robotLocale: r.locale })
-}
-
-/** Progress delivery tuning — product knobs, concentrated in one place. */
-const PROGRESS_GRACE_MS = 2000
-const PROGRESS_MIN_INTERVAL_MS = 5000
-const PROGRESS_MAX_PER_TURN = 3
-
-function progressStage(frame: RobotTurnProgress): number {
-  switch (frame.kind) {
-    case 'accepted':
-      return 0
-    case 'step_started':
-      return 1
-    case 'step_done':
-      return 2
-  }
-}
-
-function progressRef(frame: RobotTurnProgress): RobotMessageRef {
-  switch (frame.kind) {
-    case 'accepted':
-      return { key: 'progress.received', params: {} }
-    case 'step_started':
-      return { key: 'progress.step', params: { step: frame.step } }
-    case 'step_done':
-      return { key: 'progress.continued', params: {} }
-  }
-}
-
-/**
- * Per-turn progress delivery gate. Frames are projected by the runner; this
- * decides whether/how many reach the chat: a short turn inside the grace period
- * sends nothing, a long turn gets at most PROGRESS_MAX_PER_TURN fixed_notice
- * frames spaced at least PROGRESS_MIN_INTERVAL_MS apart, consumed in stage
- * order. Sends ride the existing guard; a failed/refused send is dropped
- * silently (the guard audits every attempt) and never blocks or retries — the
- * final answer follows its own path.
- */
-function createTurnProgress(
-  h: RobotHandle,
-  target: OutboundTarget,
-  ctx: RobotRenderContext,
-): { push: (frame: RobotTurnProgress) => void; end: () => void } {
-  const startedAt = Date.now()
-  let pending: RobotTurnProgress[] = []
-  let stageConsumed = -1
-  let sentCount = 0
-  let lastSentAt = -Infinity
-  let timer: ReturnType<typeof setTimeout> | null = null
-
-  const clearTimer = (): void => {
-    if (timer) {
-      clearTimeout(timer)
-      timer = null
-    }
-  }
-
-  const dispatch = (frame: RobotTurnProgress): void => {
-    stageConsumed = progressStage(frame)
-    sentCount += 1
-    lastSentAt = Date.now()
-    void h
-      .sendOutbound({ category: 'fixed_notice', message: progressRef(frame) }, target, ctx)
-      .catch((err) => console.error('[c3][im] progress send failed:', errText(err)))
-  }
-
-  const armAfter = (delay: number): void => {
-    if (timer) return
-    timer = setTimeout(() => {
-      timer = null
-      flushNow()
-    }, delay)
-    timer.unref?.()
-  }
-
-  const arm = (): void => {
-    if (timer) return
-    if (pending.length === 0 || sentCount >= PROGRESS_MAX_PER_TURN) return
-    const elapsed = Date.now() - startedAt
-    const graceRemain = Math.max(0, PROGRESS_GRACE_MS - elapsed)
-    const intervalRemain =
-      lastSentAt === -Infinity
-        ? 0
-        : Math.max(0, PROGRESS_MIN_INTERVAL_MS - (Date.now() - lastSentAt))
-    armAfter(Math.max(graceRemain, intervalRemain))
-  }
-
-  const flushNow = (): void => {
-    clearTimer()
-    while (pending.length > 0) {
-      const frame = pending[0]
-      // Strict stage order: only the next stage (or a repeat of the current one,
-      // e.g. a later step) is ever sent; anything else is dropped.
-      const stage = progressStage(frame)
-      if (stage !== stageConsumed && stage !== stageConsumed + 1) {
-        pending.shift()
-        continue
-      }
-      if (sentCount >= PROGRESS_MAX_PER_TURN) {
-        pending = []
-        return
-      }
-      if (Date.now() - startedAt < PROGRESS_GRACE_MS) {
-        arm()
-        return
-      }
-      if (lastSentAt !== -Infinity && Date.now() - lastSentAt < PROGRESS_MIN_INTERVAL_MS) {
-        arm()
-        return
-      }
-      pending.shift()
-      dispatch(frame)
-    }
-  }
-
-  return {
-    push: (frame) => {
-      pending.push(frame)
-      arm()
-    },
-    end: () => {
-      clearTimer()
-      if (Date.now() - startedAt < PROGRESS_GRACE_MS) {
-        pending = []
-        return
-      }
-      // Flush whatever is sendable now, then drop the rest (no timers after the
-      // turn has ended — the final answer is about to go out).
-      while (pending.length > 0) {
-        const frame = pending[0]
-        const stage = progressStage(frame)
-        if (stage !== stageConsumed && stage !== stageConsumed + 1) {
-          pending.shift()
-          continue
-        }
-        if (sentCount >= PROGRESS_MAX_PER_TURN) break
-        if (lastSentAt !== -Infinity && Date.now() - lastSentAt < PROGRESS_MIN_INTERVAL_MS) break
-        pending.shift()
-        dispatch(frame)
-      }
-      pending = []
-    },
-  }
-}
-
-function fail(id: string): void {
-  try {
-    failContextTurn(id)
-  } catch (e) {
-    console.error('[c3][im] context failure:', errText(e))
-  }
-}
-async function fixed(
-  h: RobotHandle,
-  message: RobotMessageRef,
-  t: OutboundTarget,
-  ctx: RobotRenderContext,
-) {
-  return h.sendOutbound({ category: 'fixed_notice', message }, t, ctx)
-}
-async function bindingNotice(
-  h: RobotHandle,
-  message: RobotMessageRef,
-  t: OutboundTarget,
-  ctx: RobotRenderContext,
-) {
-  return h.sendOutbound({ category: 'binding_notice', message, origin: t }, t, ctx)
-}
-
-function identityRequiredRef(chatType: 'group' | 'p2p'): RobotMessageRef {
-  if (chatType === 'group') {
-    return {
-      key: 'binding.identityRequiredGroup',
-      params: { nav: { kind: 'webEntry' } },
-    }
-  }
-  return {
-    key: 'binding.identityRequired',
-    params: { nav: { kind: 'webEntry' } },
-  }
-}
-
-async function claimControlMessage(
-  r: ImRobot,
-  h: RobotHandle,
-  m: ImInboundMessage,
-): Promise<'duplicate' | 'claimed' | 'error'> {
-  const ctx = renderCtx(r)
-  try {
-    return claimGateMessage({
-      platform: r.platform,
-      robotId: r.id,
-      threadKey: threadKeyFor(m),
-      senderId: m.senderId,
-      messageId: m.messageId,
-    })
-  } catch (e) {
-    void fixed(
-      h,
-      e instanceof RobotStoreError && e.code === 'db_unavailable'
-        ? { key: 'runtime.storeUnavailable', params: {} }
-        : { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
-      targetOf(m),
-      ctx,
-    )
-    return 'error'
-  }
-}
-
-async function auditedBindingNotice(
-  r: ImRobot,
-  h: RobotHandle,
-  m: ImInboundMessage,
-  message: RobotMessageRef,
-  outcome: ImTurnOutcome,
-): Promise<void> {
-  const tid = beginTurn({
-    robotId: r.id,
-    threadKey: threadKeyFor(m),
-    chatId: m.chatId,
-    senderId: m.senderId,
-    messageId: m.messageId,
-  })
-  const s = await bindingNotice(h, message, targetOf(m), renderCtx(r))
-  finishTurn(tid, {
-    outcome,
-    outboundChars: s.ok ? s.outboundChars : 0,
-    outMessageId: s.ok ? s.messageId : null,
-    error: s.ok ? null : s.reason,
-  })
-}
-
-/**
- * Deterministic bind-control path before ordinary chat. Returns true when the
- * message was fully handled here (no agent run). Claims the inbound messageId
- * first so a redelivery cannot consume twice or send a second notice.
- */
-async function handleBindingControl(
-  r: ImRobot,
-  h: RobotHandle,
-  m: ImInboundMessage,
-): Promise<boolean> {
-  const text = m.text.trim()
-  if (!TOKEN_SHAPE.test(text)) return false
-
-  const gate = await claimControlMessage(r, h, m)
-  if (gate !== 'claimed') return true
-
-  if (m.chatType === 'group') {
-    logImBindingControl({ robot: r, chatType: 'group', path: 'use_dm' })
-    await auditedBindingNotice(r, h, m, { key: 'binding.useDm', params: {} }, 'identity_required')
-    return true
-  }
-
-  const ns = accountNamespaceOf(r.platform, r.appId)
-  const result = consumeChallenge({
-    robotId: r.id,
-    accountNamespace: ns,
-    senderId: m.senderId,
-    token: text,
-  })
-  logImBindingControl({
-    robot: r,
-    chatType: 'p2p',
-    path: 'consume',
-    result: result.ok ? 'ok' : result.reason === 'rate_limited' ? 'rate_limited' : 'failed',
-  })
-  await auditedBindingNotice(
-    r,
-    h,
-    m,
-    result.ok
-      ? { key: 'binding.success', params: {} }
-      : { key: 'binding.tokenUnusable', params: {} },
-    result.ok ? 'complete' : 'identity_required',
-  )
-  return true
-}
-
-async function runOneTurn(
-  r: ImRobot,
-  h: RobotHandle,
-  m: ImInboundMessage,
-  threadKey: string,
-  contextTurnId: string,
-  identity: ReturnType<typeof conversationIdentityOf>,
-  turnScopeHash: string,
-): Promise<void> {
-  const ctx = renderCtx(r, identity.subject)
-  const turnId = beginTurn({
-    robotId: r.id,
-    threadKey,
-    chatId: m.chatId,
-    senderId: m.senderId,
-    messageId: m.messageId,
-  })
-  const target = targetOf(m)
-  const inbound = screenInbound(m.text)
-  if (!inbound.ok) {
-    fail(contextTurnId)
-    const msg: RobotMessageRef =
-      inbound.reason === 'credential'
-        ? { key: 'runtime.inputRejectedCredential', params: {} }
-        : runtimeInputTooLongRef()
-    const s = await fixed(h, msg, target, ctx)
-    finishTurn(turnId, {
-      outcome: 'input_rejected',
-      rejectReason: inbound.reason,
-      outboundChars: s.ok ? s.outboundChars : 0,
-      outMessageId: s.ok ? s.messageId : null,
-      error: s.ok ? null : s.reason,
-    })
-    return
-  }
-  const runner = deps?.runTurn
-  if (!runner) {
-    fail(contextTurnId)
-    const s = await fixed(
-      h,
-      { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
-      target,
-      ctx,
-    )
-    finishTurn(turnId, {
-      outcome: 'error',
-      error: 'runner unavailable',
-      outboundChars: s.ok ? s.outboundChars : 0,
-    })
-    return
-  }
-  try {
-    mkdirSync(robotWorkdir(r.name), { recursive: true })
-  } catch (e) {
-    fail(contextTurnId)
-    const s = await fixed(
-      h,
-      { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
-      target,
-      ctx,
-    )
-    finishTurn(turnId, {
-      outcome: 'error',
-      error: `workdir: ${errText(e)}`,
-      outboundChars: s.ok ? s.outboundChars : 0,
-    })
-    return
-  }
-
-  let scopeChanged = false
-  const displaySignals = createTurnDisplaySignals()
-  const c = getConversation(identity)
-  const ref = c ? resolvedSessionRef(c, r.vendor) : null
-  const progress = createTurnProgress(h, target, ctx)
-  let result: RobotTurnResult
-  try {
-    result = await runner({
-      robotId: r.id,
-      workspacePath: robotWorkdir(r.name),
-      imAuth: {
-        senderId: m.senderId,
-        chatType: m.chatType,
-        chatId: m.chatId,
-        providerAccountKey: providerAccountKeyOf(r.platform, r.appId),
-        platform: r.platform,
-        expectedBindingId: identity.bindingId,
-        turnStartScopeHash: turnScopeHash,
-        displaySignals,
-        onScopeChanged: () => {
-          scopeChanged = true
-        },
-      },
-      ...(ref ? { sessionId: ref.sessionId } : {}),
-      prompt: ref ? m.text : formatContextSeed(loadCommittedContext(identity), m.text),
-      maxTurnMs: r.maxTurnMs ?? ROBOT_DEFAULT_MAX_TURN_MS,
-      signal: new AbortController().signal,
-      onProgress: progress.push,
-    })
-    progress.end()
-  } catch (e) {
-    progress.end()
-    fail(contextTurnId)
-    const s = await fixed(
-      h,
-      { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
-      target,
-      ctx,
-    )
-    finishTurn(turnId, {
-      outcome: 'error',
-      error: `run: ${errText(e)}`,
-      outboundChars: s.ok ? s.outboundChars : 0,
-    })
-    return
-  }
-
-  const chat = chatContextFor(r.platform, r.appId, m.chatType, m.chatId)
-  const live = resolveCallScope({
-    robotId: r.id,
-    senderId: m.senderId,
-    chat,
-    expectedBindingId: identity.bindingId,
-  })
-  if (!live.ok) {
-    fail(contextTurnId)
-    const s = await bindingNotice(h, identityRequiredRef(m.chatType), target, ctx)
-    finishTurn(turnId, {
-      outcome: 'identity_required',
-      sessionId: result.sessionId,
-      outboundChars: s.ok ? s.outboundChars : 0,
-      outMessageId: s.ok ? s.messageId : null,
-      error: s.ok ? null : s.reason,
-    })
-    return
-  }
-  if (scopeChanged || live.scope.scopeHash !== turnScopeHash) {
-    fail(contextTurnId)
-    const s = await bindingNotice(h, { key: 'binding.scopeChanged', params: {} }, target, ctx)
-    finishTurn(turnId, {
-      outcome: 'scope_changed',
-      sessionId: result.sessionId,
-      outboundChars: s.ok ? s.outboundChars : 0,
-      outMessageId: s.ok ? s.messageId : null,
-      error: s.ok ? null : s.reason,
-    })
-    return
-  }
-
-  const securityMsg = pickSecurityMessage(displaySignals, m.chatType)
-  if (securityMsg) {
-    fail(contextTurnId)
-    const s = await fixed(h, securityMsg, target, ctx)
-    finishTurn(turnId, {
-      outcome: 'complete',
-      sessionId: result.sessionId,
-      outboundChars: s.ok ? s.outboundChars : 0,
-      outMessageId: s.ok ? s.messageId : null,
-      error: s.ok ? null : s.reason,
-    })
-    if (s.ok) {
-      commitContextTurn({
-        contextTurnId,
-        userText: m.text,
-        assistantText: s.text,
-        sessionId: result.sessionId,
-        vendor: r.vendor,
-      })
-    }
-    return
-  }
-
-  if (result.outcome !== 'complete' || !result.lastMessage.trim()) {
-    const o: ImTurnOutcome = result.outcome === 'complete' ? 'error' : result.outcome
-    fail(contextTurnId)
-    const runtimeMsg = outcomeToRuntimeMessage(o) ?? {
-      key: 'runtime.error',
-      params: { nav: { kind: 'webEntry' } },
-    }
-    const s = await fixed(h, runtimeMsg, target, ctx)
-    finishTurn(turnId, {
-      outcome: o,
-      sessionId: result.sessionId,
-      error: result.detail ? errText(result.detail) : s.ok ? null : s.reason,
-      outboundChars: s.ok ? s.outboundChars : 0,
-      outMessageId: s.ok ? s.messageId : null,
-    })
-    return
-  }
-  const s = await h.sendOutbound(
-    { category: 'final_answer', text: result.lastMessage },
-    target,
-    ctx,
-  )
-  if (s.ok) {
-    commitContextTurn({
-      contextTurnId,
-      userText: m.text,
-      assistantText: s.text,
-      sessionId: result.sessionId,
-      vendor: r.vendor,
-    })
-    finishTurn(turnId, {
-      outcome: 'complete',
-      sessionId: result.sessionId,
-      outboundChars: s.outboundChars,
-      outMessageId: s.messageId,
-    })
-    return
-  }
-  fail(contextTurnId)
-  finishTurn(turnId, {
-    outcome: s.reason === 'send_failed' ? 'error' : 'guard_refused',
-    sessionId: result.sessionId,
-    outboundChars: s.outboundChars ?? 0,
-    outMessageId: s.messageId ?? null,
-    error: s.reason === 'send_failed' ? `send: ${errText(s.error ?? 'failed')}` : s.reason,
-  })
-}
-
 function onInbound(id: string, m: ImInboundMessage): void {
   const h = handles?.get(id)
   const r = getRobot(id)
-  if (!h || !r || !r.enabled || !m.senderId.trim()) {
-    if (r) logImInboundIgnored(r, !h ? 'not_connected' : !r.enabled ? 'disabled' : 'blank_sender')
-    return
-  }
+  const sync = evaluateInboundSyncAdmission(h, r, m)
+  if (sync.kind === 'reject') return
+
+  logImInbound({ robot: sync.robot, message: m })
+  void dispatchAfterAdmission(sync.robot, sync.handle, m)
+}
+
+async function dispatchAfterAdmission(
+  robot: ImRobot,
+  handle: RobotHandle,
+  m: ImInboundMessage,
+): Promise<void> {
+  const admission = await processInboundAdmission(robot, handle, m, {
+    broadcastIntents: deps?.broadcastIntents,
+  })
+  if (admission.kind !== 'start_turn') return
+
+  const { binding, scope, threadKey, identity } = admission
   const target = targetOf(m)
-  const ctx = renderCtx(r)
-  logImInbound({ robot: r, message: m })
+  const gate = conversationGateKey(identity)
 
-  if (!isStoreAvailable() || !isIdentityStoreAvailable()) {
-    logImInboundIgnored(r, 'store_unavailable')
-    void fixed(h, { key: 'runtime.storeUnavailable', params: {} }, target, ctx)
-    return
-  }
-
-  void (async () => {
-    const tokenText = m.text.trim()
-    if (parseTodoInbound(tokenText)) {
-      if (m.chatType === 'group' && !accepts(r, m)) {
-        logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
-        return
-      }
-      if (
-        await handleTodoControl(r, m, {
-          sendFixed: async (message, t, c) => {
-            const s = await fixed(h, message, t, c)
-            return {
-              ok: s.ok,
-              outboundChars: s.ok ? s.outboundChars : 0,
-              messageId: s.ok ? s.messageId : null,
-              reason: s.ok ? undefined : s.reason,
-            }
-          },
-          renderCtx: (subject) => renderCtx(r, subject),
-          accepts,
-          broadcastIntents: deps?.broadcastIntents,
-        })
-      ) {
-        return
-      }
-    }
-    if (TOKEN_SHAPE.test(tokenText)) {
-      if (m.chatType === 'group' && !accepts(r, m)) {
-        logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
-        return
-      }
-      if (await handleBindingControl(r, h, m)) return
-    }
-
-    const ns = accountNamespaceOf(r.platform, r.appId)
-    const binding = getActiveBindingForSender(ns, m.senderId)
-    if (!binding) {
-      if (m.chatType === 'group' && !accepts(r, m)) {
-        logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
-        return
-      }
-      const gate = await claimControlMessage(r, h, m)
-      if (gate !== 'claimed') {
-        logImInboundIgnored(r, gate)
-        return
-      }
-      await auditedBindingNotice(r, h, m, identityRequiredRef(m.chatType), 'identity_required')
-      return
-    }
-
-    if (!accepts(r, m)) {
-      logImInboundIgnored(r, 'not_accepted', `chat=${m.chatType} mentioned=${m.mentionedBot}`)
-      return
-    }
-
-    const chat = chatContextFor(r.platform, r.appId, m.chatType, m.chatId)
-    const scope = resolveCallScope({
-      robotId: r.id,
-      senderId: m.senderId,
-      chat,
-      expectedBindingId: binding.id,
-    })
-    if (!scope.ok) {
-      const tid = beginTurn({
-        robotId: r.id,
-        threadKey: threadKeyFor(m),
-        chatId: m.chatId,
-        senderId: m.senderId,
-        messageId: m.messageId,
-      })
-      const s = await bindingNotice(
-        h,
-        identityRequiredRef(m.chatType),
-        target,
-        renderCtx(r, binding.subject),
-      )
-      finishTurn(tid, {
-        outcome: 'identity_required',
-        outboundChars: s.ok ? s.outboundChars : 0,
-        outMessageId: s.ok ? s.messageId : null,
-        error: s.ok ? null : s.reason,
-      })
-      return
-    }
-
-    const threadKey = threadKeyFor(m)
-    const identity = conversationIdentityOf(
-      r.platform,
-      r.id,
-      threadKey,
-      m.senderId,
-      binding.id,
-      binding.subject,
-      scope.scope.scopeHash,
-    )
-    const gate = conversationGateKey(identity)
-
-    if (inFlight.has(gate)) {
-      let claim: ReturnType<typeof claimInboundMessage>
-      try {
-        claim = claimInboundMessage({
-          ...identity,
-          chatId: m.chatId,
-          vendor: r.vendor,
-          messageId: m.messageId,
-          forRun: false,
-        })
-      } catch (e) {
-        void fixed(
-          h,
-          e instanceof RobotStoreError && e.code === 'db_unavailable'
-            ? { key: 'runtime.storeUnavailable', params: {} }
-            : { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
-          target,
-          renderCtx(r, binding.subject),
-        )
-        return
-      }
-      if (claim.kind === 'duplicate') return
-      const tid = beginTurn({
-        robotId: r.id,
-        threadKey,
-        chatId: m.chatId,
-        senderId: m.senderId,
-        messageId: m.messageId,
-      })
-      void fixed(h, { key: 'runtime.busy', params: {} }, target, renderCtx(r, binding.subject))
-        .then((s) =>
-          finishTurn(tid, {
-            outcome: 'busy',
-            outboundChars: s.ok ? s.outboundChars : 0,
-            outMessageId: s.ok ? s.messageId : null,
-            error: s.ok ? null : s.reason,
-          }),
-        )
-        .catch((e) => finishTurn(tid, { outcome: 'busy', error: errText(e) }))
-      return
-    }
-
-    let release = () => {}
-    inFlight.set(
-      gate,
-      new Promise<void>((resolve) => {
-        release = resolve
-      }),
-    )
+  if (inFlight.has(gate)) {
     let claim: ReturnType<typeof claimInboundMessage>
     try {
       claim = claimInboundMessage({
         ...identity,
         chatId: m.chatId,
-        vendor: r.vendor,
+        vendor: robot.vendor,
         messageId: m.messageId,
-        forRun: true,
+        forRun: false,
       })
     } catch (e) {
-      inFlight.delete(gate)
-      release()
       void fixed(
-        h,
+        handle,
         e instanceof RobotStoreError && e.code === 'db_unavailable'
           ? { key: 'runtime.storeUnavailable', params: {} }
           : { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
         target,
-        renderCtx(r, binding.subject),
+        renderCtx(robot, binding.subject),
       )
       return
     }
-    if (claim.kind !== 'claimed') {
+    if (claim.kind === 'duplicate') return
+    const tid = beginTurn({
+      robotId: robot.id,
+      threadKey,
+      chatId: m.chatId,
+      senderId: m.senderId,
+      messageId: m.messageId,
+    })
+    void fixed(
+      handle,
+      { key: 'runtime.busy', params: {} },
+      target,
+      renderCtx(robot, binding.subject),
+    )
+      .then((s) =>
+        finishTurn(tid, {
+          outcome: 'busy',
+          outboundChars: s.ok ? s.outboundChars : 0,
+          outMessageId: s.ok ? s.messageId : null,
+          error: s.ok ? null : s.reason,
+        }),
+      )
+      .catch((e) => finishTurn(tid, { outcome: 'busy', error: errText(e) }))
+    return
+  }
+
+  let release = () => {}
+  inFlight.set(
+    gate,
+    new Promise<void>((resolve) => {
+      release = resolve
+    }),
+  )
+  let claim: ReturnType<typeof claimInboundMessage>
+  try {
+    claim = claimInboundMessage({
+      ...identity,
+      chatId: m.chatId,
+      vendor: robot.vendor,
+      messageId: m.messageId,
+      forRun: true,
+    })
+  } catch (e) {
+    inFlight.delete(gate)
+    release()
+    void fixed(
+      handle,
+      e instanceof RobotStoreError && e.code === 'db_unavailable'
+        ? { key: 'runtime.storeUnavailable', params: {} }
+        : { key: 'runtime.error', params: { nav: { kind: 'webEntry' } } },
+      target,
+      renderCtx(robot, binding.subject),
+    )
+    return
+  }
+  if (claim.kind !== 'claimed') {
+    inFlight.delete(gate)
+    release()
+    return
+  }
+  const runner = deps
+  if (!runner) {
+    inFlight.delete(gate)
+    release()
+    return
+  }
+  const running = runOneTurn(
+    robot,
+    handle,
+    m,
+    threadKey,
+    claim.contextTurnId,
+    identity,
+    scope.scopeHash,
+    runner,
+  )
+    .catch((e) => {
+      console.error('[c3][im] turn failed:', errText(e))
+      fail(claim.contextTurnId)
+    })
+    .finally(() => {
       inFlight.delete(gate)
       release()
-      return
-    }
-    const running = runOneTurn(
-      r,
-      h,
-      m,
-      threadKey,
-      claim.contextTurnId,
-      identity,
-      scope.scope.scopeHash,
-    )
-      .catch((e) => {
-        console.error('[c3][im] turn failed:', errText(e))
-        fail(claim.contextTurnId)
-      })
-      .finally(() => {
-        inFlight.delete(gate)
-        release()
-      })
-    inFlight.set(gate, running)
-  })()
+    })
+  inFlight.set(gate, running)
 }
 
-function wrapHandle(
-  robotId: string,
-  c: { status: () => ImConnectionStatus; send: RawImSend; close: () => Promise<void> },
-  capabilities: ImProviderCapabilities,
-): RobotHandle {
-  return {
-    status: c.status,
-    close: c.close,
-    maxOutboundChars: capabilities.maxOutboundChars,
-    rawSend: c.send,
-    sendOutbound: (content, target, renderContext) =>
-      sendGuarded({
-        robotId,
-        target,
-        content,
-        maxOutboundChars: capabilities.maxOutboundChars,
-        renderContext,
-        rawSend: c.send,
-      }),
-  }
-}
 async function connectRobot(r: ImRobot): Promise<void> {
   const p = resolveImProvider(r.platform)
   if (!p) {
@@ -863,6 +203,7 @@ async function connectRobot(r: ImRobot): Promise<void> {
     logImConnectFailed(r, errText(e))
   }
 }
+
 export function startImSupervisor(input: ImSupervisorDeps): void {
   if (handles || !isStoreAvailable() || !isIdentityStoreAvailable()) return
   deps = input
@@ -874,6 +215,7 @@ export function startImSupervisor(input: ImSupervisorDeps): void {
   })
   for (const r of listEnabledRobots()) void connectRobot(r)
 }
+
 export async function reloadRobot(id: string): Promise<void> {
   if (!handles) return
   const h = handles.get(id)
@@ -885,6 +227,7 @@ export async function reloadRobot(id: string): Promise<void> {
   const r = getRobot(id)
   if (r?.enabled) await connectRobot(r)
 }
+
 export async function stopImSupervisor(timeoutMs = 30_000): Promise<void> {
   const open = handles
   handles = null
@@ -900,6 +243,7 @@ export async function stopImSupervisor(timeoutMs = 30_000): Promise<void> {
   ])
   inFlight.clear()
 }
+
 export function robotConnectionStatus(id: string): ImConnectionStatus | undefined {
   const f = failures.get(id)
   return f ? { state: 'failed', reconnectAttempts: 0, lastError: f } : handles?.get(id)?.status()

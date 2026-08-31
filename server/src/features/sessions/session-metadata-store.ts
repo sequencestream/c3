@@ -26,7 +26,7 @@
 import type { SessionKind, VendorId } from '@ccc/shared/protocol'
 import type { Automation } from '@ccc/shared/protocol'
 import { mintC3SessionId, type C3SessionId } from '../../kernel/agent/session/accessor.js'
-import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { getDb, isDbAvailable, tableExists, type Db } from '../../kernel/infra/db.js'
 import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
 
 // ---- Schema ----
@@ -128,15 +128,6 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): void {
   }
 }
 
-function tableExists(d: Db, table: string): boolean {
-  return (
-    d.get<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-      table,
-    ) != null
-  )
-}
-
 /** Date stamp `yyyymmdd` from the (injectable) clock, used for backup table names. */
 function dateStamp(): string {
   const dt = new Date(now())
@@ -156,6 +147,14 @@ function freeBackupName(d: Db): string {
   }
 }
 
+/**
+ * `work_session_metadata` → `session_metadata` 改名与冲突腾挪。
+ *
+ * 不走 `kernel/infra/table-rebuild.ts` 的 `rebuildTable`: 这是同形状的就地
+ * `RENAME TO`（含双表并存时把 stray 表挪到 dated backup 再 promote legacy），索引
+ * 随表一起改名且仍挂在正确表上；后续 SCHEMA 的 `CREATE INDEX IF NOT EXISTS` 只是
+ * 补全新库缺失的索引，不存在 archive + 新建同名表那条陷阱。
+ */
 function ensureSchema(d: Db): void {
   const hasOld = tableExists(d, 'work_session_metadata')
   const hasNew = tableExists(d, 'session_metadata')

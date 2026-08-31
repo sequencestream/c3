@@ -140,6 +140,10 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   - **迁移模板。** 顺序 = 表/列重塑要在 `CREATE TABLE IF NOT EXISTS` 之前执行
     （一个全新的 schema 不能预先创建新名字，从而搁置旧表的数据）；提升 schema 版本号；
     用一个测试覆盖全新 db、旧版 db 和部分迁移 db 这几个起点，并同时断言重跑的幂等性。
+    涉及「rename-aside → 建新同名表 → 复制 → 重建索引」的整表重塑应走
+    `server/src/kernel/infra/table-rebuild.ts` 的 `rebuildTable`，避免索引名随 RENAME 挂到
+    archive 上后 `CREATE INDEX IF NOT EXISTS` 静默跳过；同形状的就地 `RENAME TO`（源表名与
+    目标表名不同）仍留在各 store 内 guarded 执行。
   - **审查清单**（每一次迁移变更）：☐ 幂等重跑是空操作 ☐ 部分迁移重入能收敛
     ☐ 零 `DROP TABLE` ☐ 无数据丢失（行/边都存活） ☐ schema 版本已提升
     ☐ 重塑先于 `CREATE TABLE IF NOT EXISTS` ☐ 全新/旧版/部分起点都已测试。

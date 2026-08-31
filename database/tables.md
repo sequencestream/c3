@@ -10,11 +10,12 @@
 
 ## 基础设施
 
-| 文件                                       | 说明                                                                                                                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/src/kernel/infra/db.ts`            | SQLite 访问层，封装 `getDb()` / `isDbAvailable()` / `resetDbForTests()`，路径解析 `dbPath()` / `setDbPath()`，以及一次性数据迁移的标记读写 `hasMigration()` / `markMigration()` |
-| `server/src/kernel/config/config-store.ts` | 配置表访问层：作用域化 KV 原语 `readScope()` / `writeScope()` / `deleteScope()` + 可重入事务 `configTx()`                                                                       |
-| `server/src/kernel/config/config-codec.ts` | 对象 ⇄ 配置行编解码 (`toEntries()` / `fromEntries()`)，展开规则声明在 `config-schema.ts`                                                                                        |
+| 文件                                       | 说明                                                                                                                                                                                                                          |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/kernel/infra/db.ts`            | SQLite 访问层，封装 `getDb()` / `isDbAvailable()` / `resetDbForTests()`，路径解析 `dbPath()` / `setDbPath()`，表/列探测 `tableExists()` / `tableColumns()`，以及一次性数据迁移的标记读写 `hasMigration()` / `markMigration()` |
+| `server/src/kernel/infra/table-rebuild.ts` | 整表重塑原语 `rebuildTable()` — rename-aside → 建新表 → 投影复制 → 索引落在**新表**上（规避 RENAME 把旧索引带到 archive 后 `CREATE INDEX IF NOT EXISTS` 静默跳过）                                                            |
+| `server/src/kernel/config/config-store.ts` | 配置表访问层：作用域化 KV 原语 `readScope()` / `writeScope()` / `deleteScope()` + 可重入事务 `configTx()`                                                                                                                     |
+| `server/src/kernel/config/config-codec.ts` | 对象 ⇄ 配置行编解码 (`toEntries()` / `fromEntries()`)，展开规则声明在 `config-schema.ts`                                                                                                                                      |
 
 ## 表一览
 

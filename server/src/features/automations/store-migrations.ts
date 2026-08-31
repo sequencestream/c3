@@ -29,6 +29,7 @@ import {
   upgradeV12EventFilter,
 } from '@ccc/shared'
 import type { Db } from '../../kernel/infra/db.js'
+import { tableExists } from '../../kernel/infra/db.js'
 
 const SCHEMA_VERSION = 13
 
@@ -102,14 +103,13 @@ function columnExists(d: Db, table: string, column: string): boolean {
   return rows.some((r) => r.name === column)
 }
 
-/** Whether a table exists (any column) — used to gate legacy-name renames. */
-function tableExists(d: Db, table: string): boolean {
-  return d.all<{ name: string }>(`PRAGMA table_info(${table})`).length > 0
-}
-
 // schedule → automation 改名迁移。历史数据库带旧表名/列名，必须在 base SCHEMA
 // 的 `CREATE TABLE IF NOT EXISTS automations` 之前原地改名，否则会先建出空表导致
 // 旧数据孤立(数据丢失)。全部以 table_info 探测为守卫，重复运行为 no-op。
+//
+// 不走 `kernel/infra/table-rebuild.ts` 的 `rebuildTable`: 这是同形状的就地
+// `RENAME TO`（目标表名与源表名不同），索引随表一起改名且仍挂在正确表上——没有
+// 「archive + 新建同名表 + CREATE INDEX IF NOT EXISTS 静默跳过」那条陷阱。
 function renameLegacyTables(d: Db): void {
   if (tableExists(d, 'schedules') && !tableExists(d, 'automations')) {
     d.exec(`ALTER TABLE schedules RENAME TO automations`)

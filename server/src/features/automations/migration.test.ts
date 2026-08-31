@@ -121,6 +121,7 @@ function seedLegacyNamedTables(d: Db): void {
       output        TEXT NOT NULL DEFAULT '',
       error         TEXT
     );
+    CREATE INDEX idx_sch_workspace ON schedules(workspace_name);
   `)
   d.run(
     `INSERT INTO schedules
@@ -180,6 +181,13 @@ describe('automation store legacy table-name rename migration', () => {
     expect(logs).toHaveLength(1)
     expect(logs[0].id).toBe('log-1')
     expect(logs[0].output).toBe('done')
+
+    // Index survived the in-place rename and still attaches to `automations`, not a stray table.
+    expect(
+      raw!.get<{ tbl_name: string }>(
+        "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name='idx_sch_workspace'",
+      )?.tbl_name,
+    ).toBe('automations')
   })
 })
 

@@ -5,7 +5,8 @@
 ## 分层
 
 ```
-平台长连接  →  provider(平台特定)  →  supervisor(平台中性)  →  回合执行  →  唯一出站守卫  →  provider.rawSend
+平台长连接  →  provider(平台特定)  →  supervisor(分派)  →  inbound-admission(准入链)
+  →  robot-turn-runner(回合执行)  →  唯一出站守卫  →  provider.rawSend
 ```
 
 **provider 很薄,是刻意的。** 它只拥有平台特有的部分:持有连接、解码平台帧、投递消息。其余——是否
@@ -132,6 +133,10 @@ origin 重新应用 c3 的代理决策,账号域的静态 agent 不会错用于�
 重连本身交给 SDK(它内建退避与心跳看门狗),中性层只在连接进入终态失败后做上层重建兜底,
 不重复实现心跳。
 
+`supervisor.ts` 只负责连接生命周期、句柄注册与入站分派;入站准入链在 `inbound-admission.ts`
+(含群聊专用守卫与响应面检查),回合执行与进度渲染在 `robot-turn-runner.ts`。准入模块是阅读
+闸门次序的单一入口;群聊 `not_accepted` 守卫只在 `admission-policy.ts` 实现一次。
+
 连接、入站、出站与绑定挑战各打一行 `[im] …` 诊断日志(只含元数据:机器人、chat 类型、sender 摘要、
 tokenish、notice key、消费成败原因码);不记录验证码明文或消息正文。飞书 SDK 的连接生命周期经
 `[c3][feishu]` 透出。
@@ -141,21 +146,21 @@ tokenish、notice key、消费成败原因码);不记录验证码明文或消息
 机器人回合复用运行启动器已有的「无人值守会话种类」范式(意图/规格/规格评审三个先例),而**不是**
 讨论域的逐 agent 会话管理器——后者底层无条件安装标准权限门,敏感工具会挂在一个无人应答的检查上。
 
-回合执行体与自动化的开发回合是结构上的同胞:内部观察者累积 assistant 文本,收到回合结束即以最终
-文本收敛。三处差异都源于同一个事实——**没有人在看**:
+`robot-turn-runner.ts` 持有回合执行体与自动化的开发回合是结构上的同胞:内部观察者累积 assistant 文本,
+收到回合结束即以最终文本收敛。三处差异都源于同一个事实——**没有人在看**:
 
 - 授权请求不是等待的对象,而是立即以 `blocked` 收敛
 - 有硬墙钟上限
 - 没有附着模式与团队推送分支(同一 Conversation 本就串行,不存在已在运行的回合)
 
 只有最终 assistant 文本作为回复离开这一层;工具调用/结果等其余线事件在此被丢弃——agent 过程不进外发路径。
-执行期间回合层把真实阶段投影成 `accepted`/`step_started`/`step_done` 事件帧交给 supervisor(帧不含工具名、输入或
-正文);supervisor 按宽限(短回合零进度)、间隔与预算门控,经同一出站守卫以固定文案外发。投影在回合 settle 后即
+执行期间回合层把真实阶段投影成 `accepted`/`step_started`/`step_done` 事件帧交给 turn runner(帧不含工具名、输入或
+正文);turn runner 按宽限(短回合零进度)、间隔与预算门控,经同一出站守卫以固定文案外发。投影在回合 settle 后即
 停止,投递失败只落审计,不阻塞也不重试;最终答复由独立路径完整发出。
 
-supervisor 在启动回合前按七维 Conversation 身份认领消息、校验 `scope_hash`、加载已提交上下文,并把可选的已验证原生
-会话引用或数据库恢复种子交给回合执行体。最终回答发送前再复核 binding 与 scope;不一致则丢弃 agent 文本,
-只发绑定引导或 `scope_changed` 提示。投递成功后同事务提交 Context Turn;失败则清空正文并失效
+`inbound-admission.ts` 在启动回合前按七维 Conversation 身份认领消息、校验 `scope_hash`,supervisor 据此
+把可选的已验证原生会话引用或数据库恢复种子交给 turn runner。最终回答发送前 turn runner 再复核 binding 与 scope;
+不一致则丢弃 agent 文本,只发绑定引导或 `scope_changed` 提示。投递成功后同事务提交 Context Turn;失败则清空正文并失效
 原生会话缓存。
 
 机器人身份挂在运行时上(与规格评审挂载被评审意图同理),其启动画像由该身份解析而来;缺身份或缺画像
@@ -247,5 +252,5 @@ Conversation 的下一条消息可带着上次绑定的原生会话 id 进入,�
 `robot-context-store.ts` / `robot-turn-store.ts` 分别是配置 CRUD、会话上下文生命周期、回合审计三类
 读写入口;`robot-db.ts` 是共享基础(连接获取、事务、测试用时钟)。`robot-store.ts` 保留为对外 barrel,
 外部 import 路径不变。SQLite 不能 `ALTER` 一个 `CHECK`,整表重塑(重命名归档 → 建新表 → 投影搬数据 →
-重建索引)因此由 `table-rebuild.ts` 的 `rebuildTable` 统一承担,替代此前四表各自手写、曾两次因索引
+重建索引)因此由 `kernel/infra/table-rebuild.ts` 的 `rebuildTable` 统一承担,替代此前四表各自手写、曾两次因索引
 误挂旧表复发同一缺陷的重塑套路。

@@ -38,6 +38,7 @@ import {
   hasMigration,
   isDbAvailable,
   markMigration,
+  tableExists,
   type Db,
 } from '../../kernel/infra/db.js'
 import { getSddEnabled } from '../../kernel/config/index.js'
@@ -236,10 +237,6 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): boolean 
   return true
 }
 
-function tableExists(d: Db, name: string): boolean {
-  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", name)
-}
-
 function columnExists(d: Db, table: string, col: string): boolean {
   return d.all<{ name: string }>(`PRAGMA table_info(${table})`).some((c) => c.name === col)
 }
@@ -265,6 +262,10 @@ function indexExists(d: Db, name: string): boolean {
  * migration discipline, this NEVER drops a table — table renames use `ALTER … RENAME
  * TO`; the index rename uses `DROP INDEX` (an index, not a table) and lets SCHEMA's
  * `CREATE INDEX IF NOT EXISTS` rebuild it. Rollback is forward-fix only.
+ *
+ * 不走 `kernel/infra/table-rebuild.ts` 的 `rebuildTable`: 表/列/索引都是同形状
+ * 的就地改名（源表名与目标表名不同），索引仍挂在改名后的表上；`idx_req_*` 则显式
+ * `DROP INDEX` 后由 SCHEMA 重建，不涉及 archive + 新建同名表那条陷阱。
  */
 function migrateLegacyTablesToIntents(d: Db): void {
   // Tables: rename only when the legacy name exists and the new one doesn't yet.

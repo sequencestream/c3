@@ -7,8 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
-import { tableColumns } from './robot-db.js'
+import { getDb, resetDbForTests, tableColumns, type Db } from './db.js'
 import { rebuildTable, type RebuildOptions } from './table-rebuild.js'
 
 let home: string
@@ -173,6 +172,15 @@ describe('re-entry converges from an interrupted state', () => {
     expect(d().all(`SELECT id FROM ${parked[0]}`)).toEqual([{ id: 'a' }])
     expect(d().all('SELECT id FROM t_pre')).toEqual([{ id: 'old' }])
     expect(d().all('SELECT id FROM t')).toEqual([])
+    expect(indexOwner('idx_t_seq')).toBe('t')
+  })
+})
+
+describe('fresh db / converged db entry points', () => {
+  it('creates the table when neither active nor archive exists', () => {
+    rebuild({ needs: () => false, copy: null, indexDdl: IDX })
+
+    expect(tableNames()).toContain('t')
     expect(indexOwner('idx_t_seq')).toBe('t')
   })
 })

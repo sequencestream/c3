@@ -1,6 +1,6 @@
 -- 051 — im_robots 移除 platform CHECK(平台中立层回收)
 -- 对应 DDL: database/robots/im_robots.sql
--- 实际迁移逻辑在 robot-schema.ts 的 migrateImRobotsPlatformCheck(整表重建, 复用 table-rebuild.ts 的 rebuildTable)。
+-- 实际迁移逻辑在 robot-schema.ts 的 migrateImRobotsPlatformCheck(整表重建, 复用 kernel/infra/table-rebuild.ts 的 rebuildTable)。
 --
 -- 背景: 一键建应用把 feishu 平台名带进了中性层, DB 一侧是 im_robots.platform 的
 -- CHECK(platform IN ('feishu')) —— 一个平台名被写死在表约束里。平台特定部分应只存在于

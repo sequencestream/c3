@@ -59,6 +59,13 @@ function userVersion(raw: Db): number {
   return raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version ?? -1
 }
 
+function indexOwner(raw: Db, name: string): string | undefined {
+  return raw.get<{ tbl_name: string }>(
+    "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name=?",
+    name,
+  )?.tbl_name
+}
+
 /** Build a full v5-era legacy db (requirements* tables, requirement_id col, idx_req_*). */
 function seedLegacyV5(raw: Db): void {
   raw.exec(`
@@ -126,6 +133,8 @@ function expectTerminalSchema(raw: Db): void {
   expect(idx.has('idx_intent_workspace_status')).toBe(true)
   expect(idx.has('idx_intent_project_status')).toBe(false)
   expect(idx.has('idx_req_project_status')).toBe(false)
+  expect(indexOwner(raw, 'idx_intent_workspace_status')).toBe('intents')
+  expect(indexOwner(raw, 'idx_chat_project')).toBe('intent_chats')
   // v10 → v11 column rename: intents/intent_chats key on workspace_name now.
   expect(cols(raw, 'intents').has('workspace_name')).toBe(true)
   expect(cols(raw, 'intents').has('project_path')).toBe(false)

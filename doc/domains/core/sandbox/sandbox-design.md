@@ -83,7 +83,7 @@ interface WorkspaceSandboxConfig {
 6. 固定放行：执行根始终读写，workspace specs root 以宿主相同绝对路径读写；当执行根**不同于**源工作区时（worktree run），源工作区只读；当执行根**就是**源工作区时（current-branch），二者规范化后同路径，只保留一条读写授权，不产生互相冲突的 ro/rw 挂载。其中**工作区可派生**的两项（项目原目录 ro、specs root rw）由单一来源 `sysExtraMounts(workspace)` 产出——**同一函数**既在 sandbox 启动时被 `resolvePaths()` 取用并入放行集（同路径时把项目原目录 ro 合并入执行根 rw），又随工作区设置回复下发前端。执行根为**逐 run** 放行（无法仅由工作区路径派生），不在 `sysExtraMounts` 内，由 `resolvePaths()` 单独加入。这些固定放行在 workspace 设置的「补充放行目录」区域**只读列出（默认嵌入目录列表）**，供用户了解始终生效的放行集：不可修改、不可删除；逐 run 的执行根按当前分支模式展示为源工作区读写或独立 worktree 读写，界面文案不承诺源工作区恒为只读。
 7. 补充放行：workspace 可配置 `extraMounts`，每项同路径放行、默认只读、可逐项声明 rw；补充目录不得覆盖执行根、项目原目录、specsBase 等保留路径，放行前须 canonicalize 并做 allowlist / denylist 校验，拒绝软链逃逸；独立 worktree 的源工作区只读是强制边界，不得通过父子路径重叠把它提升为读写。
 8. deny-by-default 是安全底座：未显式放行的目录（其它项目、`~/.ssh`、`~/.aws` 等 home 内敏感目录）一律不可见，无需额外配置即隔离凭证与无关代码。
-9. 认证按「该 agent 是否解析出上游连接」分流（连接解析见 [agent-config-design](../../settings/agent-config/agent-config-design.md)）：解析出上游的 agent，其凭证由 driver 经子进程 env 显式注入（wrapper 逐项 `--env "KEY=$KEY"` 透传），不触碰宿主 keychain；解析为空连接的 agent（订阅态，如 Claude Pro/Max、ChatGPT 登录）走 vendor CLI 自身登录，wrapper 为其追加 `--allow-keychain`（arapuca ≥ 0.2.5）打开宿主凭证访问面。除此之外仍无凭证注入，home 内其它敏感目录不放行。各 vendor 的具体分流规则集中在一份 per-vendor 认证策略里（§9.1），wrapper 生成逻辑本身不含 vendor 分支——新增一个 vendor 只新增一条策略。
+9. 认证按 agent 是否**真正走厂商 CLI 订阅态**分流（连接解析见 [agent-config-design](../../settings/agent-config/agent-config-design.md)）：`providerId` 非空且解析出上游连接的 agent，其凭证由 driver 经子进程 env 显式注入（wrapper 逐项 `--env "KEY=$KEY"` 透传），不触碰宿主 keychain；`providerId` 为空的 genuine 订阅态 agent（如 Claude Pro/Max、ChatGPT 登录）走 vendor CLI 自身登录，wrapper 为其追加 `--allow-keychain`（arapuca ≥ 0.2.5）打开宿主凭证访问面。连接解析 fail-soft 回落（悬挂 `providerId`、provider 无可用 URL）仍可能无 relay 地启动，但 agent 仍携带非空 `providerId`，沙箱 posture 与 custom agent 一致，**不**授予 `--allow-keychain`。除此之外仍无凭证注入，home 内其它敏感目录不放行。各 vendor 的具体分流规则集中在一份 per-vendor 认证策略里（§9.1），wrapper 生成逻辑本身不含 vendor 分支——新增一个 vendor 只新增一条策略。
 10. 网络当前全开，不施加网络约束。宿主若设有标准代理变量，wrapper 追加 `--allow-proxy-env` 让 arapuca 转发该组变量（网络模型不变，只是让沙箱内 CLI 看得见宿主代理端点）。网络禁用 / 出站白名单列为后续阶段。
 11. sandbox 启用时 run **始终**保留其正常解析出的 agent：沙箱不参与 agent 选择，没有 sandbox 专属角色配置，也没有换绑分支。该 agent 的 vendor 决定入口命令（宿主 PATH 中的 CLI）与 provider 接线。system agent 不构成 sandbox 冲突。
 12. 启用即硬隔离：arapuca fail-closed（任一隔离层失效即非零退出），与 deny-by-default 一致；探测缺失 / 平台不支持 / 放行路径非法 / 启动失败时该 run 硬失败，绝不回落宿主裸跑。
@@ -197,7 +197,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 ### 9.1 per-vendor 认证策略
 
-一个 vendor 在沙箱内**怎样认证、把状态写到哪里**，集中在一份按 vendor 注册的策略里（`kernel/sandbox/vendor-auth.ts`）。解析输入是：vendor、**本次实际解析并绑定的 agent 是否订阅态**（连接解析结果为空 ⇒ 走 vendor 自身登录）、宿主事实（平台、home、登录名、uid、路径是否存在）、已解析的放行路径集。输出是纯数据的 profile，不含任何 shell 片段：
+一个 vendor 在沙箱内**怎样认证、把状态写到哪里**，集中在一份按 vendor 注册的策略里（`kernel/sandbox/vendor-auth.ts`）。解析输入是：vendor、**本次实际绑定的 agent 是否为 genuine 订阅态**（无非空 `providerId` ⇒ 可走 vendor 自身登录并打开宿主 keychain；fail-soft 回落虽也可能无 relay，但非空 `providerId` 时不打开 keychain）、宿主事实（平台、home、登录名、uid、路径是否存在）、已解析的放行路径集。输出是纯数据的 profile，不含任何 shell 片段：
 
 - `entryCommand`：`--` 之后 exec 的宿主 CLI 名。
 - `literalEnv`：内联的非机密变量（数据根、登录身份），值是固定宿主事实。
@@ -206,9 +206,9 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 - `preRunDirs`：arapuca 收窄前需 `mkdir -p` 的宿主目录。
 - `allowKeychain`：是否追加 `--allow-keychain`。
 
-注册表以受限的 vendor 类型为键：**新增一个 vendor 等于新增一条策略**，wrapper 主体不动；未注册的 vendor 在生成 wrapper 前即以 `SandboxLaunchError` 硬失败，绝不退化成没有数据根、没有凭据通道的"通用"脚本。策略之间互不交叉——一个 vendor 的凭据变量、数据根与运行目录不出现在另一个 vendor 的 wrapper 里；宿主 keychain 只对实际绑定的订阅态 agent 打开。
+注册表以受限的 vendor 类型为键：**新增一个 vendor 等于新增一条策略**，wrapper 主体不动；未注册的 vendor 在生成 wrapper 前即以 `SandboxLaunchError` 硬失败，绝不退化成没有数据根、没有凭据通道的"通用"脚本。策略之间互不交叉——一个 vendor 的凭据变量、数据根与运行目录不出现在另一个 vendor 的 wrapper 里；宿主 keychain 只对 genuine 订阅态 agent（无 `providerId`）打开。
 
-订阅态（`system`）与自备凭证（`custom`）的分流由策略自己完成：custom agent 的 provider 凭证经 `forwardEnv` 注入，不触碰宿主凭证库；system agent 的认证在宿主 keychain / vendor CLI 自身登录态里，deny-by-default 下不可见，故策略要求 `--allow-keychain`（arapuca ≥ 0.2.5）。该模式必须取自本次实际绑定的 agent（两条启动入口——通用 driver 路径与 claude 直接 query 路径——都显式传入），不得由 CLI 名称、平台或全局默认 agent 推断，否则 session agent 切换、角色 agent、vendor 分支会产生错配。
+订阅态（`system`）与自备凭证（`custom`）的分流由策略自己完成：custom agent 的 provider 凭证经 `forwardEnv` 注入，不触碰宿主凭证库；genuine system agent 的认证在宿主 keychain / vendor CLI 自身登录态里，deny-by-default 下不可见，故策略要求 `--allow-keychain`（arapuca ≥ 0.2.5）。该模式必须取自本次实际绑定的 agent 是否为 genuine 订阅态（无 `providerId`；两条启动入口——通用 driver 路径与 claude 直接 query 路径——都显式传入），不得由 CLI 名称、平台、连接解析是否为空或全局默认 agent 推断，否则 session agent 切换、角色 agent、fail-soft 回落与 vendor 分支会产生错配。
 
 **claude 策略**：数据根是**宿主 claude config dir**（`getSandboxClaudeConfigDir(workspace)` = `hostClaudeConfigDir()`，即 `CLAUDE_CONFIG_DIR` 或 `~/.claude`），恒以独立 rw volume 传入。**与 codex 的隔离目录策略不同**：claude transcript 由 server 经 SDK `getSessionMessages` 读取，其 projects 根恒取 **server 进程的** `CLAUDE_CONFIG_DIR`（多工作区 server 无法按调用改写）；若给 claude 每工作区隔离目录，宿主侧将读不到。故 sandbox 复用宿主 config dir，transcript 落在 server 读取端同一处，查看零改动即生效。安全：claude 凭证走 env/keychain，不落在 config dir 内（唯一带凭证的 `~/.claude.json` 是 `~/.claude` 的**兄弟**，不在其内）。
 
@@ -245,13 +245,13 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 sandbox run **不做任何 agent 挑选**：它使用该 run 正常解析链得出的 agent——session 上有显式绑定就用绑定的，否则按 session kind 走现有的 `default` / `tool` / `intent` / `spec` 入口经 `resolveAgent` 回退。沙箱开关只决定该 vendor 的 CLI 是否被包进 arapuca，同一 session 在开/关沙箱两种模式下解析出的 agent 完全一致。
 
 - 不存在 sandbox 专属的角色配置（`sandbox*AgentId` 五个键在加载时按未知字段直接丢弃，不迁移、不校验、不覆盖统一角色，下一次保存后自然从存储中消失）。
-- system / custom agent 一视同仁进入沙箱：不弹窗、不换绑、不因缺少 custom agent 而失败。system agent（订阅态）在沙箱内通过 wrapper 打开的宿主 keychain 完成登录（见 §9）。
+- system / custom agent 一视同仁进入沙箱：不弹窗、不换绑、不因缺少 custom agent 而失败。genuine system agent（无 `providerId`）在沙箱内通过 wrapper 打开的宿主 keychain 完成登录（见 §9）；fail-soft 回落（悬挂 `providerId` 或无可用 URL）不打开 keychain。
 - automation 仍使用创建时保存的 agent 快照；统一的 `automationAgentId` 只负责新建表单预选，不参与运行期解析。
 
 provider 接线：
 
 - Claude / Codex custom agent：真实 upstream 由回环 relay 持有，wrapper 透传的是 per-run token（`ANTHROPIC_*` / `CODEX_API_KEY`），真实 key 不进沙箱。
-- Claude / Codex system agent：走 vendor CLI 自身登录（宿主 keychain，经 `--allow-keychain` 放行），c3 不注入任何凭证。
+- Claude / Codex system agent（无 `providerId`）：走 vendor CLI 自身登录（宿主 keychain，经 `--allow-keychain` 放行），c3 不注入任何凭证。
 - Codex DIRECT：base URL / model 由 SDK 生成 argv，经 wrapper `"$@"` 进入进程；网络全开下直连 provider 天然可用。
 - Codex RELAY：agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接回连宿主 loopback relay，无需 host-gateway、内部网络或 sidecar。
 - Cursor：没有 relay 可指（恒 `system` 模式），凭据要么是 agent 自带的 `CURSOR_API_KEY`（经 `forwardEnv` 透传），要么是宿主 keychain 里的 CLI 登录态（经 `--allow-keychain` 放行）。

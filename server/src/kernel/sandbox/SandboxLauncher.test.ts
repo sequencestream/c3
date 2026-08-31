@@ -66,7 +66,8 @@ import {
   SandboxLaunchError,
 } from './SandboxLauncher.js'
 import { VENDOR_AUTH_PROFILES, type SandboxAuthResolver } from './vendor-auth.js'
-import type { VendorId } from '@ccc/shared/protocol'
+import { sandboxAllowHostKeychain } from '../agent-config/index.js'
+import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -618,6 +619,50 @@ describe('createSandboxWrapper — keychain passthrough', () => {
       expect(script.indexOf('--allow-keychain')).toBeLessThan(separator)
       expect(script.indexOf('--seccomp baseline')).toBeLessThan(separator)
     }
+  })
+
+  function danglingAgent(vendor: 'claude' | 'codex'): AgentConfig {
+    return {
+      id: `dangling-${vendor}`,
+      vendor,
+      configMode: 'custom',
+      providerId: 'deleted-provider',
+      displayName: 'Dangling',
+      enabled: true,
+      config:
+        vendor === 'codex'
+          ? { baseUrl: '', apiKey: '', model: 'm', wireApi: 'chat' as const }
+          : { baseUrl: '', apiKey: '', model: 'm' },
+    } as AgentConfig
+  }
+
+  it('claude agent with dangling providerId omits --allow-keychain', () => {
+    const agent = danglingAgent('claude')
+    expect(sandboxAllowHostKeychain(agent)).toBe(false)
+    expect(wrapperScript('claude', sandboxAllowHostKeychain(agent))).not.toContain(
+      '--allow-keychain',
+    )
+  })
+
+  it('codex agent with dangling providerId omits --allow-keychain', () => {
+    const agent = danglingAgent('codex')
+    expect(sandboxAllowHostKeychain(agent)).toBe(false)
+    expect(wrapperScript('codex', sandboxAllowHostKeychain(agent))).not.toContain(
+      '--allow-keychain',
+    )
+  })
+
+  it('system agent without providerId still includes --allow-keychain', () => {
+    const agent = {
+      id: 'system-claude',
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: 'System',
+      enabled: true,
+      config: { baseUrl: '', apiKey: '', model: '' },
+    } as AgentConfig
+    expect(sandboxAllowHostKeychain(agent)).toBe(true)
+    expect(wrapperScript('claude', sandboxAllowHostKeychain(agent))).toContain('--allow-keychain')
   })
 
   it('keeps CLAUDE_CONFIG_DIR and injects no USER/LOGNAME for a custom (API-key) claude run', () => {

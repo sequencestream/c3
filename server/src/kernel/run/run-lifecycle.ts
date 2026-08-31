@@ -44,6 +44,7 @@ import {
   freezeSessionAgent,
   bindClaudeRelay,
   unbindRelay,
+  sandboxAllowHostKeychain,
   usesVendorLogin,
   isModelProviderPausedError,
 } from '../agent-config/index.js'
@@ -574,14 +575,15 @@ export async function launchRun(
   // `resume` into Codex), so it is skipped, not launched under the wrong vendor
   // (2026-06-06-006).
   const chain = getDegradationChain()
-  const firstLaunch = resolveSessionLaunch(runId)
+  const onConnectionNotice = (text: string) => emit(runId, { type: 'notice', text })
+  const firstLaunch = resolveSessionLaunch(runId, { onConnectionNotice })
   const firstVendor = resolveAgent(firstLaunch.agentId).vendor
   const { agentsToTry, crossVendorSkipped, pausedSkipped } = buildAgentsToTry(
     firstLaunch,
     firstVendor,
     chain,
     resolveAgent,
-    launchForAgent,
+    (agent) => launchForAgent(agent, { onConnectionNotice }),
   )
   if (crossVendorSkipped.length > 0) {
     console.warn(
@@ -709,13 +711,13 @@ export async function launchRun(
           currentAgentId: agentCfg.agentId,
           // Forward the arapuca allow set so the claude path wraps the CLI in arapuca.
           // `sandboxAllowKeychain` is derived from THIS attempt's agent (degradation
-          // may land on a different one): only a subscription (`system`-mode) agent
-          // needs the host keychain opened inside the sandbox.
+          // may land on a different one): only a genuine subscription agent (no
+          // `providerId`) needs the host keychain opened inside the sandbox.
           ...(rt.sandboxPaths
             ? {
                 sandboxPaths: rt.sandboxPaths,
                 sandboxTmpDir: rt.sandboxTmpDir,
-                sandboxAllowKeychain: usesVendorLogin(resolveAgent(agentCfg.agentId)),
+                sandboxAllowKeychain: sandboxAllowHostKeychain(resolveAgent(agentCfg.agentId)),
               }
             : {}),
           ...(isIntent

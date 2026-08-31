@@ -80,6 +80,8 @@ import {
   resolveToolSessionLaunch,
   tryResolveAgentTarget,
   tryResolveRoleAgentTarget,
+  sandboxAllowHostKeychain,
+  usesVendorLogin,
 } from './index.js'
 import type { AgentRole } from './index.js'
 import type { AgentConfig } from '@ccc/shared/protocol'
@@ -647,6 +649,112 @@ describe('launchForAgent — codex wireApi rides the relay candidate (ADR-0029)'
     expect(launch.model).toBe('m')
     // provider connection stays custom-only ⇒ no relay candidate
     expect(launch.relayCandidates).toBeUndefined()
+  })
+})
+
+describe('sandboxAllowHostKeychain — subscription vs fail-soft fallback', () => {
+  it('grants keychain for a genuine subscription claude agent (no providerId)', () => {
+    const agent = {
+      id: 'claude-sub',
+      vendor: 'claude' as const,
+      configMode: 'system' as const,
+      displayName: 'Claude Sub',
+      config: { baseUrl: '', apiKey: '', model: '' },
+      enabled: true,
+    }
+    expect(sandboxAllowHostKeychain(agent)).toBe(true)
+  })
+
+  it('denies keychain when providerId is set even if connection resolves null (dangling)', () => {
+    mockSettings.modelProviders = []
+    const agent = {
+      id: 'claude-dangling',
+      vendor: 'claude' as const,
+      configMode: 'custom' as const,
+      providerId: 'gone',
+      displayName: 'Broken Claude',
+      config: { baseUrl: '', apiKey: '', model: 'm' },
+      enabled: true,
+    }
+    expect(sandboxAllowHostKeychain(agent)).toBe(false)
+    expect(usesVendorLogin(agent)).toBe(true)
+  })
+
+  it('denies keychain when provider exists but has no usable URL', () => {
+    mockSettings.modelProviders = [
+      {
+        id: 'empty-urls',
+        displayName: 'Empty',
+        apiKey: 'sk',
+        urls: { anthropic: '' },
+      },
+    ]
+    const agent = {
+      id: 'claude-unusable',
+      vendor: 'claude' as const,
+      configMode: 'custom' as const,
+      providerId: 'empty-urls',
+      displayName: 'Unusable Claude',
+      config: { baseUrl: '', apiKey: '', model: 'm' },
+      enabled: true,
+    }
+    expect(sandboxAllowHostKeychain(agent)).toBe(false)
+    expect(usesVendorLogin(agent)).toBe(true)
+  })
+
+  it('denies keychain for a provider-connected custom agent', () => {
+    mockSettings.modelProviders = [
+      {
+        id: 'p1',
+        displayName: 'P1',
+        apiKey: 'sk',
+        urls: { anthropic: 'https://api.example.com' },
+      },
+    ]
+    const agent = {
+      id: 'claude-custom',
+      vendor: 'claude' as const,
+      configMode: 'custom' as const,
+      providerId: 'p1',
+      displayName: 'Custom Claude',
+      config: { baseUrl: '', apiKey: '', model: 'm' },
+      enabled: true,
+    }
+    expect(sandboxAllowHostKeychain(agent)).toBe(false)
+    expect(usesVendorLogin(agent)).toBe(false)
+  })
+})
+
+describe('connection warning UI notices on launch', () => {
+  const danglingAgent = {
+    id: 'notice-dangling-agent',
+    vendor: 'claude' as const,
+    configMode: 'custom' as const,
+    providerId: 'missing-provider',
+    displayName: 'Notice Test',
+    config: { baseUrl: '', apiKey: '', model: 'm' },
+    enabled: true,
+  }
+
+  beforeEach(() => {
+    mockSettings.modelProviders = []
+  })
+
+  it('pushes a session notice on first dangling-provider launch', () => {
+    const notices: string[] = []
+    launchForAgent(danglingAgent, { onConnectionNotice: (t) => notices.push(t) })
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toContain('missing-provider')
+    expect(notices[0]).toContain('falling back to CLI login')
+  })
+
+  it('does not duplicate the notice on a second launch with unchanged config', () => {
+    const notices: string[] = []
+    const emit = (t: string) => notices.push(t)
+    launchForAgent(danglingAgent, { onConnectionNotice: emit })
+    notices.length = 0
+    launchForAgent(danglingAgent, { onConnectionNotice: emit })
+    expect(notices).toHaveLength(0)
   })
 })
 

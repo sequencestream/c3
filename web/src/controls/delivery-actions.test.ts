@@ -78,6 +78,8 @@ function makeCtx() {
     // Refs the generic `error` branch walks past on its way to the toast.
     createPrProgress: ref(null),
     dispatchCreatePr: vi.fn(),
+    linkIntentPrPending: ref(false),
+    failLinkIntentPr: vi.fn(),
     showIntentActionError: vi.fn(),
     showIntentGateEscape: vi.fn(),
     createIntentPending: ref(false),

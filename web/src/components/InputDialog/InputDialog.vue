@@ -136,7 +136,7 @@ function onConfirm(): void {
 .id-error {
   margin: calc(-1 * var(--sp-3)) 0 var(--sp-4);
   font-size: var(--fs-caption);
-  color: var(--c-danger, #c0392b);
+  color: var(--c-error-text);
   white-space: pre-wrap;
 }
 .id-foot {

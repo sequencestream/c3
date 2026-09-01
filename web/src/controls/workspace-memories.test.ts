@@ -58,6 +58,8 @@ function makeCtx(workspace: string | null = 'ws-1') {
     activeDeliveryPr: ref(null),
     activeDeliveryPrBusy: ref(false),
     createPrProgress: ref(null),
+    linkIntentPrPending: ref(false),
+    failLinkIntentPr: vi.fn(),
     createIntentPending: ref(false),
     automationSaving: ref(false),
     automationEnabledSaving: ref(false),

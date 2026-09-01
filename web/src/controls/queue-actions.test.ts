@@ -64,6 +64,8 @@ function makeCtx(opts: { project?: string | null } = {}) {
     ),
     queuePageOpen: ref(false),
     createPrProgress: ref(null),
+    linkIntentPrPending: ref(false),
+    failLinkIntentPr: vi.fn(),
     createIntentPending: ref(false),
     automationSaving: ref(false),
     automationEnabledSaving: ref(false),

@@ -879,11 +879,18 @@
           "force": "Remove anyway"
         }
       },
-      "vendor": {
-        "label": "Provider vendor",
-        "hint": "Which upstream this provider speaks to. It selects the model list c3 ships for this provider and can be changed on its own — connection fields, key and your own model entries are left alone.",
+      "modelVendor": {
+        "label": "Model vendor",
+        "hint": "Which upstream vendor this provider speaks to. It selects the model list c3 ships for this provider and can be changed on its own — connection fields, key and your own model entries are left alone.",
         "custom": {
           "label": "Custom"
+        },
+        "group": {
+          "model": "Model vendors",
+          "cloud": "Inference clouds",
+          "gateway": "Gateways",
+          "local": "Local runtimes",
+          "custom": "Other"
         }
       }
     }

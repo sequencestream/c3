@@ -2,13 +2,13 @@
  * 「模型提供方」页签。
  *
  * 这里守的是几条不该被顺手破坏的性质:删除一个仍被引用的 provider 必须先说清后果,
- * 探测这个动作永远走 emit 而不是混进草稿的字段编辑里,以及改 Provider Vendor 只换内置模型建议,
+ * 探测这个动作永远走 emit 而不是混进草稿的字段编辑里,以及改 Model Vendor 只换内置模型建议,
  * 连接字段与用户自己的模型条目一概不动。
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
-import { providerVendorModels } from '@ccc/shared'
+import { modelVendorModels } from '@ccc/shared'
 import ModelProviders from './ModelProviders.vue'
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
@@ -252,7 +252,7 @@ describe('模型目录', () => {
   })
 })
 
-describe('Provider Vendor', () => {
+describe('Model Vendor', () => {
   /** 展开第一条 provider —— 编辑面板里的字段都在展开后才渲染。 */
   async function expand(w: ReturnType<typeof render>) {
     await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
@@ -275,7 +275,7 @@ describe('Provider Vendor', () => {
       render({ providers: [provider({ vendor: 'moonshot', models: [{ id: 'house-model' }] })] }),
     )
     const shipped = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
-    expect(shipped).toEqual(providerVendorModels('moonshot').map((m) => m.id))
+    expect(shipped).toEqual(modelVendorModels('moonshot').map((m) => m.id))
     expect(shipped).not.toContain('house-model')
     const custom = w
       .findAll('[data-testid="provider-model-name"]')
@@ -310,7 +310,7 @@ describe('Provider Vendor', () => {
       paused: true,
     })
     const shipped = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
-    expect(shipped).toEqual(providerVendorModels('doubao').map((m) => m.id))
+    expect(shipped).toEqual(modelVendorModels('doubao').map((m) => m.id))
   })
 
   it('非管理员看得到身份与两份清单,但一个都改不了', async () => {

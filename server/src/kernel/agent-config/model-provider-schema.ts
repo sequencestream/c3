@@ -13,7 +13,7 @@
 import { z } from 'zod'
 import type { ModelProvider, ProtocolType } from '@ccc/shared/protocol'
 import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
-import { normalizeProviderVendor, providerVendorForTemplate } from '@ccc/shared'
+import { normalizeModelVendor, modelVendorForTemplate } from '@ccc/shared'
 
 /**
  * `v-model.number` on a cleared `<input type="number">` writes back `''` (Vue's
@@ -70,7 +70,7 @@ export const modelProviderSchema = z.object({
   // "unset" so it falls through to template inference below.
   vendor: z
     .string()
-    .transform((v) => (v.trim() === '' ? undefined : normalizeProviderVendor(v)))
+    .transform((v) => (v.trim() === '' ? undefined : normalizeModelVendor(v)))
     .optional(),
   apiKey: z.string().default(''),
   urls: urlsRecordSchema,
@@ -153,7 +153,7 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
     ...(p.template !== undefined ? { template: p.template.trim() } : {}),
     // Identity comes from the stored vendor, else from the template that created the
     // record — never from a display name or a URL, which users rename and re-point freely.
-    vendor: p.vendor ?? providerVendorForTemplate(p.template),
+    vendor: p.vendor ?? modelVendorForTemplate(p.template),
     apiKey,
     urls,
     ...(wireApi !== undefined ? { wireApi } : {}),

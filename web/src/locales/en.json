@@ -835,7 +835,14 @@
         "remove": {
           "tooltip": "Remove this model"
         },
-        "hint": "Suggestions used to pre-fill a new agent's model field. Never a runtime default."
+        "hint": "Suggestions for an agent’s model field: the models c3 ships for this vendor plus your own entries. Advisory only — any model id can still be typed by hand, and none of these is a runtime default.",
+        "shipped": {
+          "title": "Shipped with c3",
+          "empty": "No models ship for this vendor. Add your own below, or type any model id on the agent."
+        },
+        "custom": {
+          "title": "Your models"
+        }
       },
       "paused": {
         "label": "Paused",
@@ -870,6 +877,13 @@
           "inUse": "{count} agents still reference it and will fall back to their vendor CLI login.",
           "confirm": "Remove",
           "force": "Remove anyway"
+        }
+      },
+      "vendor": {
+        "label": "Provider vendor",
+        "hint": "Which upstream this provider speaks to. It selects the model list c3 ships for this provider and can be changed on its own — connection fields, key and your own model entries are left alone.",
+        "custom": {
+          "label": "Custom"
         }
       }
     }

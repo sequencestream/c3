@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { PROVIDER_TEMPLATES, PROVIDER_VENDORS } from '@ccc/shared'
 import { parseModelProvider } from './model-provider-schema.js'
 
 describe('parseModelProvider', () => {
@@ -71,6 +72,68 @@ describe('parseModelProvider', () => {
     })
     expect(p).not.toBeNull()
     expect(p?.models).toEqual([{ id: 'gpt' }])
+  })
+
+  it.each(PROVIDER_VENDORS.map((v) => v.id))('round-trips the vendor id %s', (vendor) => {
+    const p = parseModelProvider({ id: 'p1', displayName: 'X', apiKey: 'sk', urls: {}, vendor })
+    expect(p?.vendor).toBe(vendor)
+    // Re-parsing a normalized record changes nothing — the field is stable across saves.
+    expect(parseModelProvider(p)?.vendor).toBe(vendor)
+  })
+
+  it.each(PROVIDER_TEMPLATES.map((t) => [t.id, t.vendor] as const))(
+    'infers the vendor of template %s when none is stored',
+    (template, vendor) => {
+      const p = parseModelProvider({ id: 'p1', displayName: 'X', apiKey: 'sk', urls: {}, template })
+      expect(p?.vendor).toBe(vendor)
+    },
+  )
+
+  it.each([
+    ['no template at all', {}],
+    ['a blank template', { template: '  ' }],
+    ['a template this build never shipped', { template: 'retired-preset' }],
+    ['a blank vendor', { vendor: '' }],
+    ['a vendor id from a newer c3', { vendor: 'some-future-vendor' }],
+  ])('normalizes %s to custom', (_label, over) => {
+    const p = parseModelProvider({ id: 'p1', displayName: 'X', apiKey: 'sk', urls: {}, ...over })
+    expect(p?.vendor).toBe('custom')
+  })
+
+  it('a stored vendor wins over the template that created the record', () => {
+    const p = parseModelProvider({
+      id: 'p1',
+      displayName: 'X',
+      apiKey: 'sk',
+      urls: {},
+      template: 'anthropic',
+      vendor: 'moonshot',
+    })
+    expect(p?.vendor).toBe('moonshot')
+    expect(p?.template).toBe('anthropic')
+  })
+
+  // A vendor c3 cannot resolve must cost the provider its suggestions, nothing else: the
+  // key, the endpoints and the operator's own model entries all survive intact.
+  it('degrading an unknown vendor never touches the secret, urls or custom models', () => {
+    const p = parseModelProvider({
+      id: 'p1',
+      displayName: 'House gateway',
+      apiKey: 'sk-secret',
+      urls: { openai: 'https://gw.example/v1' },
+      wireApi: 'chat',
+      models: [{ id: 'house-model', contextWindow: 4096 }],
+      paused: true,
+      vendor: 'not-a-vendor',
+    })
+    expect(p).toMatchObject({
+      vendor: 'custom',
+      apiKey: 'sk-secret',
+      urls: { openai: 'https://gw.example/v1' },
+      wireApi: 'chat',
+      models: [{ id: 'house-model', contextWindow: 4096 }],
+      paused: true,
+    })
   })
 
   it('warns when legacy connections carry different apiKeys', () => {

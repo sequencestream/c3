@@ -268,8 +268,9 @@ c3
 │   │
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
 │   │   ├── agent 档案                            # 持久化档案(vendor/provider 引用/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl;apiKey 可留空,回落 cursor-agent 登录态)
-│   │   ├── modelProvider 具名上游                # 连接从 agent 上提为具名 provider,多 agent 共用一条:账户级 key + 按 protocolType(openai/anthropic)的 urls + 可选 openai wireApi;agent 绑定时按 vendor 协议支持列表取第一个有 URL 的槽;可挂模型目录(仅预填与能力解析)、可暂停、可从只读目录模板预填;删除被引用者需二次确认,悬挂引用 fail-soft 回落并告警
-│   │   ├── 连接两态与 model 反查                 # agent 表单选「provider / CLI 自带登录」两态,configMode 由所选派生、表单不单独展示;model 输入按所选 provider 或全部同 vendor provider 的目录给候选,填入只有唯一 provider 提供的模型时自动选上它
+│   │   ├── modelProvider 具名上游                # 连接从 agent 上提为具名 provider,多 agent 共用一条:账户级 key + 按 protocolType(openai/anthropic)的 urls + 可选 openai wireApi;agent 绑定时按 vendor 协议支持列表取第一个有 URL 的槽;可暂停、可从只读目录模板预填;删除被引用者需二次确认,悬挂引用 fail-soft 回落并告警
+│   │   ├── Provider Vendor 与模型清单            # provider 声明上游厂商身份(anthropic/openai/deepseek/moonshot/doubao/zhipu/openrouter/custom),决定 c3 随版本内置、离线可用、不发任何发现请求的模型清单;与创建来源 template 分离且可单独改,缺失时从已知 template 推断、未知一律读为 custom;自有模型条目按 id 覆盖同名内置条目,合并结果仅作候选与能力解析,不校验、不兜底、不做白名单
+│   │   ├── 连接两态与 model 反查                 # agent 表单选「provider / CLI 自带登录」两态,configMode 由所选派生、表单不单独展示;model 输入按所选 provider 或全部同 vendor provider 的有效模型清单给候选,清单外的 id 照样可手输并保存,换 provider 只换候选不动已填值;填入只有唯一 provider 提供的模型时自动选上它
 │   │   ├── 连接可达性探测                        # 服务端拨一次端点(草稿 URL 只配草稿 key;已存 URL 才用已存 key):结构性问题就地标注,401/403 记为可达而非不可达,不消耗 token;出网面见 SEC-15
 │   │   ├── 分组容器编辑                          # agent 列表按分组容器渲染,group 为空的归入 default 容器;拖动跨容器移动、组内箭头调优先级(可见顺序即故障转移顺序),容器可重命名/解散;一个组只装一种 vendor,空容器不落盘
 │   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(统一的宿主 CLI 探测);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑

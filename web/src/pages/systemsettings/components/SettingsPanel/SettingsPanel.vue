@@ -16,7 +16,7 @@ import {
   hasProviderConfig,
   providerSupportsVendor,
 } from '@ccc/shared/protocol'
-import { resolveDefaultAgentId } from '@ccc/shared'
+import { effectiveProviderModels, resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,
@@ -702,20 +702,27 @@ function setAgentProvider(a: AgentConfig, value: string): void {
 }
 
 /**
- * model 输入框的候选:选了 provider 就是它的目录,否则是所有能服务该 vendor 的 provider 的
- * 目录合起来 —— 后者就是「先想好用哪个模型,再反查谁提供它」的入口。
+ * model 输入框的候选:选了 provider 就是它的**有效模型清单**(该 Provider Vendor 随版本内置的
+ * 模型 + 这条 provider 自己的条目,同名以后者为准),否则是所有能服务该 vendor 的 provider 的
+ * 清单合起来 —— 后者就是「先想好用哪个模型,再反查谁提供它」的入口。
+ *
+ * 纯建议:输入框仍是自由文本,清单里没有的 id 照样存得下去;换 provider 只换候选,不动已填的值。
  */
 function modelSuggestions(a: AgentConfig): { value: string; label: string }[] {
-  const pool = a.providerId
-    ? providers.value.filter((p) => p.id === a.providerId)
-    : providersFor(a.vendor)
   const out: { value: string; label: string }[] = []
-  for (const p of pool) {
-    for (const m of p.models ?? []) {
-      if (m.id) out.push({ value: m.id, label: `${m.id} — ${p.displayName}` })
+  for (const p of suggestionPool(a)) {
+    for (const m of effectiveProviderModels(p)) {
+      out.push({ value: m.id, label: `${m.id} — ${p.displayName}` })
     }
   }
   return out
+}
+
+/** 候选来源的 provider 集合:选中的那一条,或所有能服务该 vendor 的。 */
+function suggestionPool(a: AgentConfig): ModelProvider[] {
+  return a.providerId
+    ? providers.value.filter((p) => p.id === a.providerId)
+    : providersFor(a.vendor)
 }
 
 /**
@@ -727,7 +734,9 @@ function onModelPicked(a: AgentConfig): void {
   if (a.providerId || !hasProviderConfig(a)) return
   const model = a.config.model.trim()
   if (!model) return
-  const owners = providersFor(a.vendor).filter((p) => (p.models ?? []).some((m) => m.id === model))
+  const owners = providersFor(a.vendor).filter((p) =>
+    effectiveProviderModels(p).some((m) => m.id === model),
+  )
   if (owners.length === 1) setAgentProvider(a, owners[0].id)
 }
 

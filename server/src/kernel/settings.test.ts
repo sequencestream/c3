@@ -1941,6 +1941,9 @@ describe('session process proxy config — normalizeProxyConfig + getProxyConfig
       {
         id: 'p-keep',
         displayName: 'Keep',
+        // A record naming no template and no vendor resolves to `custom` — identity is
+        // never guessed from a display name or a URL.
+        vendor: 'custom',
         apiKey: 'sk-keep',
         urls: { anthropic: 'https://keep.example' },
       },

@@ -9,6 +9,7 @@ import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/
 import { useAuth } from '@/composables/useAuth'
 import { applyLocale } from '@/i18n'
 import { VENDOR_COLOR } from '@/lib/vendor'
+import { effectiveProviderModels } from '@ccc/shared'
 
 /** Read a shipped locale catalog — the copy assertions live here, not on rendered
  *  text, so translating a string never turns a component test red (i18n-spec §4.1). */
@@ -2640,5 +2641,113 @@ describe('SettingsPanel.vue — one-click agent bootstrap (cold start)', () => {
     expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
     expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
     expect(w.find(BLOCK).exists()).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — agent 模型候选来自 provider 的有效清单', () => {
+  /** 两条能服务 claude 的 provider:一条只有内置模型,一条内置 + 自己的条目。 */
+  const withProviders: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      ...baseSettings.agents,
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'A1',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ],
+    modelProviders: [
+      {
+        id: 'p-anthropic',
+        displayName: 'Anthropic',
+        vendor: 'anthropic',
+        apiKey: 'sk-a',
+        urls: { anthropic: 'https://api.anthropic.com' },
+      },
+      {
+        id: 'p-kimi',
+        displayName: 'Kimi',
+        vendor: 'moonshot',
+        apiKey: 'sk-k',
+        urls: { anthropic: 'https://api.moonshot.cn/anthropic' },
+        models: [{ id: 'house-model' }],
+      },
+    ],
+  }
+
+  /** agent 行的模型候选(datalist 的 option value)。第 0 行是系统智能体。 */
+  function suggestions(w: ReturnType<typeof mount>, row = 1): string[] {
+    return w
+      .findAll('datalist')
+      [row].findAll('option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+  }
+
+  function open() {
+    return mount(SettingsPanel, {
+      props: { open: true, settings: withProviders, vendorAvailability: availability() },
+    })
+  }
+
+  it('选中 provider 后,候选只来自那一条 provider —— 内置模型加它自己的条目', async () => {
+    const w = open()
+    await w.findAll('[data-testid="agent-provider"]')[1].setValue('p-kimi')
+    const listed = suggestions(w)
+    expect(listed).toEqual(
+      effectiveProviderModels(withProviders.modelProviders![1]).map((m) => m.id),
+    )
+    expect(listed).toContain('house-model')
+    expect(listed).toContain('kimi-k3')
+    expect(listed).not.toContain('claude-opus-5')
+  })
+
+  it('选中候选里的一个 id 就照原样存进 config.model', async () => {
+    const w = open()
+    await w.findAll('[data-testid="agent-provider"]')[1].setValue('p-anthropic')
+    await w.findAll('.agent-model')[1].setValue('claude-opus-5')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[1].config.model).toBe('claude-opus-5')
+  })
+
+  it('清单里没有的 id 照样存得下去 —— 候选是建议,不是白名单', async () => {
+    const w = open()
+    await w.findAll('[data-testid="agent-provider"]')[1].setValue('p-anthropic')
+    await w.findAll('.agent-model')[1].setValue('claude-opus-4-5-unreleased')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[1].config.model).toBe('claude-opus-4-5-unreleased')
+  })
+
+  it('换 provider 只换候选,已经填好的模型一个字都不改', async () => {
+    const w = open()
+    await w.findAll('[data-testid="agent-provider"]')[1].setValue('p-anthropic')
+    await w.findAll('.agent-model')[1].setValue('claude-sonnet-5')
+    await w.findAll('[data-testid="agent-provider"]')[1].setValue('p-kimi')
+    expect((w.findAll('.agent-model')[1].element as HTMLInputElement).value).toBe('claude-sonnet-5')
+    expect(suggestions(w)).not.toContain('claude-sonnet-5')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[1].config.model).toBe('claude-sonnet-5')
+    expect(saved.agents[1].providerId).toBe('p-kimi')
+  })
+
+  it('还没选 provider 时,候选是所有能服务该 vendor 的 provider 合起来', () => {
+    const listed = suggestions(open())
+    expect(listed).toContain('claude-opus-5')
+    expect(listed).toContain('kimi-k3')
+    expect(listed).toContain('house-model')
+  })
+
+  it('内置模型也参与 model-first 反查:只有一家提供它时顺手选上那条 provider', async () => {
+    const w = open()
+    await w.findAll('.agent-model')[1].setValue('kimi-k3')
+    await w.findAll('.agent-model')[1].trigger('change')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[1].providerId).toBe('p-kimi')
+    expect(saved.agents[1].config.model).toBe('kimi-k3')
   })
 })

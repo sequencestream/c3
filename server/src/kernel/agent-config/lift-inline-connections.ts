@@ -177,6 +177,9 @@ export function liftInlineConnections(
     .map((g) => ({
       id: g.providerId,
       displayName: g.displayName,
+      // A lifted record's upstream identity is unknown: it is reconstructed from a base
+      // URL, and guessing a vendor from a host would hand it someone else's model list.
+      vendor: 'custom' as const,
       apiKey: g.apiKey,
       urls: { [protocolForVendor(g.vendor)]: g.baseUrl },
       ...(g.wireApi !== undefined ? { wireApi: g.wireApi } : {}),

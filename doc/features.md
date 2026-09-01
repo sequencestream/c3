@@ -261,7 +261,8 @@ c3
 │       ├── id 归属校验                          # save_intents 的 upsert 目标与持久化依赖引用、submit_spec_review、start_session_for_intent、continue_discussion 先全库反查归属工作区并比对,不符即在落库/广播/事件/拉起之前拒绝,绝不静默改到 id 真实归属的工作区
 │       ├── 范围自检工具                          # list_workspaces 返回有效范围内的工作区名(无路径),whoami 回显 keyId/归属账号/本会话工作区/可访问工作区/已授权工具(无密钥、哈希、认证头、路径)
 │       ├── 事件归属                              # publish_event 的 envelope workspace 取自校验后的工作区,sessionId 固定 external-mcp:<key-id>@<工作区名>,载荷里的 workspace/session/source 不进 envelope;save_intents 剥掉调用方传入的 intentSessionId
-│       └── 写调用审计                            # 每次已知写工具调用尝试(success/failure/rejected)落且只落一行 external_mcp_write_audits(keyId/归属/工作区/工具/结果/时间,无入参、输出与任何密钥材料);先定业务结果、等审计写入再回响应,落库失败保持业务结果不变但发脱敏运维错误;读操作与速率限制是已知缺口
+│       ├── 写调用审计                            # 每次已知写工具调用尝试(success/failure/rejected)落且只落一行 external_mcp_write_audits(keyId/归属/工作区/工具/结果/时间,无入参、输出与任何密钥材料);先定业务结果、等审计写入再回响应,落库失败保持业务结果不变但发脱敏运维错误;读操作与速率限制是已知缺口
+│       └── MCP 规范合规                          # 8 条路由(7 内部 + /mcp)统一 Streamable HTTP;对标规范 2026-07-28 的差距矩阵、SDK 升级路径与路线图见 [mcp-spec-compliance](domains/core/mcp/mcp-spec-compliance.md)
 │
 ├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │

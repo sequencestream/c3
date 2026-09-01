@@ -1,12 +1,14 @@
 /**
  * 「模型提供方」页签。
  *
- * 这里守的是两条不该被顺手破坏的性质:删除一个仍被引用的 provider 必须先说清后果,
- * 以及探测这个动作永远走 emit 而不是混进草稿的字段编辑里。
+ * 这里守的是几条不该被顺手破坏的性质:删除一个仍被引用的 provider 必须先说清后果,
+ * 探测这个动作永远走 emit 而不是混进草稿的字段编辑里,以及改 Provider Vendor 只换内置模型建议,
+ * 连接字段与用户自己的模型条目一概不动。
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
+import { providerVendorModels } from '@ccc/shared'
 import ModelProviders from './ModelProviders.vue'
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
@@ -48,6 +50,7 @@ describe('provider 列表', () => {
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({
       template: 'deepseek',
+      vendor: 'deepseek',
       urls: {
         openai: 'https://api.deepseek.com',
         anthropic: 'https://api.deepseek.com/anthropic',
@@ -61,6 +64,7 @@ describe('provider 列表', () => {
     await w.find('[data-testid="provider-add"]').trigger('click')
     const [list] = w.emitted('change')![0] as [ModelProvider[]]
     expect(list[0].template).toBeUndefined()
+    expect(list[0].vendor).toBe('custom')
     expect(list[0].urls).toEqual({})
   })
 
@@ -245,5 +249,80 @@ describe('模型目录', () => {
     await w.findAll('[data-testid="provider-model-remove"]')[0]!.trigger('click')
     expect(providers[0].models).toEqual([{ id: 'b' }])
     expect(w.emitted('change')).toBeUndefined()
+  })
+})
+
+describe('Provider Vendor', () => {
+  /** 展开第一条 provider —— 编辑面板里的字段都在展开后才渲染。 */
+  async function expand(w: ReturnType<typeof render>) {
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    return w
+  }
+
+  it('收缩时标题行就标出身份;缺失的 vendor 读成 Custom', () => {
+    const w = render({ providers: [provider()] })
+    expect(w.find('[data-testid="provider-vendor-badge"]').text()).toBe('Custom')
+  })
+
+  it('未知 vendor(更新版 c3 写下的)退化为 Custom,而不是空白', () => {
+    // 只有手改配置或更新版 c3 写得出这个值,类型上不存在 —— 断言的正是它不该炸。
+    const w = render({ providers: [provider({ vendor: 'from-the-future' as never })] })
+    expect(w.find('[data-testid="provider-vendor-badge"]').text()).toBe('Custom')
+  })
+
+  it('选中的 vendor 决定内置模型清单,并与自定义条目分开展示', async () => {
+    const w = await expand(
+      render({ providers: [provider({ vendor: 'moonshot', models: [{ id: 'house-model' }] })] }),
+    )
+    const shipped = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
+    expect(shipped).toEqual(providerVendorModels('moonshot').map((m) => m.id))
+    expect(shipped).not.toContain('house-model')
+    const custom = w
+      .findAll('[data-testid="provider-model-name"]')
+      .map((n) => (n.element as HTMLInputElement).value)
+    expect(custom).toEqual(['house-model'])
+  })
+
+  it('没有内置模型的 vendor 说明情况,而不是留一片空白', async () => {
+    const w = await expand(render({ providers: [provider({ vendor: 'custom' })] }))
+    expect(w.find('[data-testid="provider-shipped-empty"]').exists()).toBe(true)
+    expect(w.find('[data-testid="provider-shipped-model"]').exists()).toBe(false)
+  })
+
+  it('改 vendor 只换内置那一半:连接字段、账户 key、暂停位、自定义条目都不动', async () => {
+    const providers = [
+      provider({
+        displayName: 'House gateway',
+        vendor: 'anthropic',
+        apiKey: 'sk-secret',
+        models: [{ id: 'house-model' }],
+        paused: true,
+      }),
+    ]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-vendor"]').setValue('doubao')
+    expect(providers[0]).toMatchObject({
+      vendor: 'doubao',
+      displayName: 'House gateway',
+      apiKey: 'sk-secret',
+      urls: { anthropic: 'https://api.deepseek.com/anthropic' },
+      models: [{ id: 'house-model' }],
+      paused: true,
+    })
+    const shipped = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
+    expect(shipped).toEqual(providerVendorModels('doubao').map((m) => m.id))
+  })
+
+  it('非管理员看得到身份与两份清单,但一个都改不了', async () => {
+    const w = await expand(
+      render({
+        providers: [provider({ vendor: 'deepseek', models: [{ id: 'house-model' }] })],
+        isAdmin: false,
+      }),
+    )
+    expect(w.find('[data-testid="provider-vendor"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="provider-vendor-badge"]').text()).toBe('DeepSeek')
+    expect(w.find('[data-testid="provider-shipped-model"]').exists()).toBe(true)
+    expect(w.find('[data-testid="provider-model-name"]').attributes('disabled')).toBeDefined()
   })
 })

@@ -14,6 +14,7 @@
  * server-side in `kernel/agent-config/model-provider-schema.ts`.
  */
 
+import type { ProviderVendorId } from '../model-provider-catalog.js'
 import type { VendorId } from './vendor.js'
 
 /**
@@ -104,6 +105,18 @@ export interface ModelProvider {
    */
   template?: string
   /**
+   * Which upstream this connection speaks to — `anthropic`, `openai`, `moonshot`,
+   * `doubao`, …, or `custom` for anything c3 has no directory entry for. Unlike
+   * `template` (creation provenance, never read again) this is read continuously: it
+   * selects the shipped model ids offered as suggestions for this provider, and stays
+   * editable on its own so a hand-built endpoint can identify with a known vendor
+   * without adopting its URLs. Absent ⇒ normalized to the vendor its `template` names,
+   * else `custom`.
+   *
+   * Distinct from {@link VendorId}, which selects the agent CLI c3 launches.
+   */
+  vendor?: ProviderVendorId
+  /**
    * Account-level API key shared by every protocol URL on this provider. Encrypted
    * at rest (`c3secretvN:` prefix); plaintext on the wire / in memory. Must be
    * non-empty for the provider to be usable.
@@ -123,9 +136,10 @@ export interface ModelProvider {
    */
   wireApi?: 'responses' | 'chat'
   /**
-   * Optional model catalog — pre-fill suggestions for new agents bound to this
-   * provider. NOT a runtime default; an agent's own `config.model` always wins.
-   * Absent/empty ⇒ no pre-fill (the agent form offers free-text model entry).
+   * This provider's OWN model entries — additions to, and overrides of, the models
+   * `vendor` ships. `effectiveProviderModels` merges the two into the suggestions the
+   * agent form offers. NOT a runtime default and NOT an allowlist; an agent's own
+   * `config.model` is always the selected model, listed here or not.
    */
   models?: ModelProviderModel[]
   /**

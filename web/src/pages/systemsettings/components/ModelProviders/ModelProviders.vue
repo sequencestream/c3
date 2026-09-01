@@ -6,6 +6,11 @@
  * Key),多个 agent 共用它。Agent 绑定时按自己 vendor 的协议支持列表取第一个有 URL 的槽,
  * 从而得到 baseUrl。把连接从 agent 里提出来之后,轮换 key 或迁移端点只改这一处。
  *
+ * Provider Vendor(上游厂商)是这条 provider 的身份声明,与 template(创建来源、之后再不读)
+ * 是两件事:它被持续读取,决定这条 provider 给出哪些随版本内置的模型建议,并且可以单独改——
+ * 自建端点也能认领一个已知厂商,而不必被重置连接字段。内置模型只读,与用户自己的模型条目分区
+ * 展示;两者合并后才是 agent 表单看到的候选,而候选永远只是建议,不校验、不兜底、不做白名单。
+ *
  * 本组件直接改 props.providers 里的对象(与 agent 列表同一种写法):它们是父级草稿的一部分,
  * 保存与脏检测都由父面板统一负责,这里不发任何消息、也不落库。连通性探测是例外——不是
  * 「编辑一份配置」,而是要服务端替我们去拨号,所以上抛给父级发消息。
@@ -14,9 +19,21 @@
  * 删除(逃生口)。悬挂引用在服务端是 fail-soft 的,所以这里挡的是「误删」,不是「不一致」。
  */
 import { computed, ref } from 'vue'
-import type { AgentConfig, ModelProvider, ProtocolType } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  ModelProvider,
+  ModelProviderModel,
+  ProtocolType,
+} from '@ccc/shared/protocol'
 import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
-import { PROVIDER_TEMPLATES, checkProviderBaseUrl } from '@ccc/shared'
+import {
+  PROVIDER_TEMPLATES,
+  PROVIDER_VENDORS,
+  checkProviderBaseUrl,
+  normalizeProviderVendor,
+  providerVendorLabel,
+  providerVendorModels,
+} from '@ccc/shared'
 import type { BaseUrlIssue } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -77,6 +94,7 @@ function addProvider(templateId: string): void {
     id: mintId(),
     displayName: uniqueName(template?.displayName ?? t('settings.providers.name.placeholder')),
     ...(template ? { template: template.id } : {}),
+    vendor: template?.vendor ?? 'custom',
     apiKey: '',
     urls,
     ...(template?.wireApi ? { wireApi: template.wireApi } : {}),
@@ -151,7 +169,30 @@ function issueText(issue: BaseUrlIssue | string): string {
   }
 }
 
+// ---- Provider Vendor ----
+
+/** 落库值可能缺失或来自更新版本的 c3;一律归一化后再显示,未知即 `custom`。 */
+function vendorOf(p: ModelProvider): string {
+  return normalizeProviderVendor(p.vendor)
+}
+
+/** 展示名。厂商名是品牌、不翻译;只有兜底的 `custom` 是一句普通措辞,走 i18n。 */
+function vendorText(vendor: unknown): string {
+  const id = normalizeProviderVendor(vendor)
+  return id === 'custom' ? t('settings.providers.vendor.custom.label') : providerVendorLabel(id)
+}
+
+/** 只改身份。连接字段、账户 key、暂停位、用户自己的模型条目一概不动。 */
+function setVendor(p: ModelProvider, value: string): void {
+  p.vendor = normalizeProviderVendor(value)
+}
+
 // ---- 模型目录 ----
+
+/** 该厂商随版本内置的模型:只读,用户改不了,也删不掉。 */
+function shippedModels(p: ModelProvider): readonly ModelProviderModel[] {
+  return providerVendorModels(p.vendor)
+}
 
 function addModel(p: ModelProvider): void {
   p.models = [...(p.models ?? []), { id: '' }]
@@ -253,6 +294,9 @@ function confirmRemove(): void {
             >{{ PROTOCOL_LABEL[protocol] }}</span
           >
         </span>
+        <span class="provider-badge" data-testid="provider-vendor-badge">{{
+          vendorText(p.vendor)
+        }}</span>
         <span v-if="p.template" class="provider-badge">{{
           t('settings.providers.template.label', { name: p.template })
         }}</span>
@@ -288,6 +332,22 @@ function confirmRemove(): void {
       </div>
 
       <div v-if="expanded === p.id" class="provider-body">
+        <label class="provider-field">
+          <span class="provider-label">{{ t('settings.providers.vendor.label') }}</span>
+          <select
+            class="agent-field"
+            :value="vendorOf(p)"
+            :disabled="!isAdmin"
+            data-testid="provider-vendor"
+            @change="setVendor(p, ($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="v in PROVIDER_VENDORS" :key="v.id" :value="v.id">
+              {{ vendorText(v.id) }}
+            </option>
+          </select>
+        </label>
+        <p class="settings-hint">{{ t('settings.providers.vendor.hint') }}</p>
+
         <label class="provider-field">
           <span class="provider-label">{{ t('settings.providers.apiKey.label') }}</span>
           <input
@@ -365,6 +425,26 @@ function confirmRemove(): void {
 
         <h4 class="provider-section">{{ t('settings.providers.models.title') }}</h4>
         <p class="settings-hint">{{ t('settings.providers.models.hint') }}</p>
+
+        <h5 class="provider-subsection">{{ t('settings.providers.models.shipped.title') }}</h5>
+        <p
+          v-if="shippedModels(p).length === 0"
+          class="settings-hint"
+          data-testid="provider-shipped-empty"
+        >
+          {{ t('settings.providers.models.shipped.empty') }}
+        </p>
+        <div v-else class="provider-shipped">
+          <span
+            v-for="m in shippedModels(p)"
+            :key="m.id"
+            class="provider-badge"
+            data-testid="provider-shipped-model"
+            >{{ m.id }}</span
+          >
+        </div>
+
+        <h5 class="provider-subsection">{{ t('settings.providers.models.custom.title') }}</h5>
         <div
           v-for="(m, i) in p.models ?? []"
           :key="i"
@@ -502,6 +582,17 @@ function confirmRemove(): void {
 .provider-section {
   margin: 6px 0 0;
   font-size: 13px;
+}
+.provider-subsection {
+  margin: 4px 0 0;
+  font-size: var(--fs-caption);
+  opacity: 0.8;
+}
+/* 内置模型是只读徽标而不是输入行 —— 形状上就与下面可编辑的自定义条目区分开。 */
+.provider-shipped {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .provider-model {
   display: flex;

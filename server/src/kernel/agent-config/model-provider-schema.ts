@@ -13,6 +13,7 @@
 import { z } from 'zod'
 import type { ModelProvider, ProtocolType } from '@ccc/shared/protocol'
 import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
+import { normalizeProviderVendor, providerVendorForTemplate } from '@ccc/shared'
 
 /**
  * `v-model.number` on a cleared `<input type="number">` writes back `''` (Vue's
@@ -63,6 +64,14 @@ export const modelProviderSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   template: z.string().optional(),
+  // Coerced rather than enumerated: an id this build does not know (a config written by a
+  // NEWER c3, or hand-edited) must degrade to `custom`, not fail the parse — a rejected
+  // parse drops the whole provider, API key and URLs included. A blank string reads as
+  // "unset" so it falls through to template inference below.
+  vendor: z
+    .string()
+    .transform((v) => (v.trim() === '' ? undefined : normalizeProviderVendor(v)))
+    .optional(),
   apiKey: z.string().default(''),
   urls: urlsRecordSchema,
   connections: z.record(z.string(), legacyConnectionSchema).optional(),
@@ -84,6 +93,7 @@ const LEGACY_VENDOR_TO_PROTOCOL: Record<string, ProtocolType> = {
  *
  * Post-processing:
  *  - trims `displayName` and `template`
+ *  - resolves `vendor`, inferring it from a recognized `template` when unset
  *  - folds legacy `connections` into `urls` / account `apiKey` / `wireApi`
  *  - filters `urls` to known protocol types only
  *  - trims each URL
@@ -141,6 +151,9 @@ export function parseModelProvider(raw: unknown): ModelProvider | null {
     id: p.id,
     displayName: p.displayName.trim(),
     ...(p.template !== undefined ? { template: p.template.trim() } : {}),
+    // Identity comes from the stored vendor, else from the template that created the
+    // record — never from a display name or a URL, which users rename and re-point freely.
+    vendor: p.vendor ?? providerVendorForTemplate(p.template),
     apiKey,
     urls,
     ...(wireApi !== undefined ? { wireApi } : {}),

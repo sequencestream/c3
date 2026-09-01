@@ -14,7 +14,7 @@
  * server-side in `kernel/agent-config/model-provider-schema.ts`.
  */
 
-import type { ProviderVendorId } from '../model-provider-catalog.js'
+import type { ModelVendorId } from '../model-vendor-catalog.js'
 import type { VendorId } from './vendor.js'
 
 /**
@@ -115,7 +115,7 @@ export interface ModelProvider {
    *
    * Distinct from {@link VendorId}, which selects the agent CLI c3 launches.
    */
-  vendor?: ProviderVendorId
+  vendor?: ModelVendorId
   /**
    * Account-level API key shared by every protocol URL on this provider. Encrypted
    * at rest (`c3secretvN:` prefix); plaintext on the wire / in memory. Must be

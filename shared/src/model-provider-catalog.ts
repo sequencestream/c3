@@ -3,15 +3,13 @@
  * endpoints, the model ids each one currently serves, and the base-URL sanity check both
  * the console and the server probe apply.
  *
- * Two different things live here, and they are deliberately not the same field:
+ * A TEMPLATE is a STARTING POINT for creating a provider: it copies endpoints into an
+ * ordinary editable record and is never consulted again at runtime
+ * (`ModelProvider.template` is creation provenance). Each template also names the Model
+ * Vendor it speaks to, which is what the created provider starts out identifying as.
  *
- *  - A TEMPLATE is a STARTING POINT for creating a provider. It copies endpoints into an
- *    ordinary editable record and is never consulted again at runtime
- *    (`ModelProvider.template` is creation provenance).
- *  - A PROVIDER VENDOR is the provider's declared upstream identity
- *    (`ModelProvider.vendor`). It is read continuously — it selects which shipped model
- *    ids this provider suggests — and stays editable on its own, so a hand-built endpoint
- *    can identify with a known vendor without having its connection fields reset.
+ * The vendor directory and its model catalogs live next door in `model-vendor-catalog.ts`
+ * — that file is release-maintained data, this one is endpoints and the merge rule.
  *
  * That is why this lives in `shared/` as a plain constant rather than in the wire contract
  * or a database table — an endpoint that moves, or a model that ships, is a documentation
@@ -22,78 +20,23 @@
  * any model id can be typed by hand and saved unchanged, which is also the escape hatch for
  * a catalog that has fallen behind an upstream release.
  *
- * MAINTENANCE: every URL and model id here is transcribed from the vendor's public
- * documentation and must be re-verified against a live account before a release — a wrong
- * endpoint costs the user a confusing auth failure, and a retired model id costs them a 404.
- * Shipped models carry no capability metadata (`contextWindow` / `maxOutputTokens`) on
- * purpose: a guessed window larger than the real one makes upstreams truncate or error, so
- * those numbers stay with the operator, who declares them on the provider's own entries.
+ * MAINTENANCE: every URL here is transcribed from the vendor's public documentation and must
+ * be re-verified against a live account before a release — a wrong endpoint costs the user a
+ * confusing auth failure. A vendor whose base URL could not be verified gets a directory
+ * identity but NO template: an absent preset costs one paste, a wrong one costs a debugging
+ * session. Templates only prefill the protocol slot whose dialect the endpoint actually
+ * speaks, so an OpenAI-compatible upstream never seeds the anthropic slot.
  */
 import type { ModelProvider, ModelProviderModel, ProtocolType } from './protocol.js'
-
-/**
- * Stable Provider Vendor ids — the value space of `ModelProvider.vendor`. `custom` is the
- * catch-all every provider lands on when it names no vendor c3 knows; it is a legitimate
- * choice, not an error state.
- *
- * Distinct from `VendorId` (`claude` / `codex` / `cursor`), which selects the agent
- * executable c3 launches.
- */
-export type ProviderVendorId =
-  'anthropic' | 'openai' | 'deepseek' | 'moonshot' | 'doubao' | 'zhipu' | 'openrouter' | 'custom'
-
-/** One entry of the Provider Vendor selector. */
-export interface ProviderVendor {
-  id: ProviderVendorId
-  /** Selector label; carries the consumer-facing brand where it differs from the company name. */
-  displayName: string
-}
-
-/** Every Provider Vendor, in selector order: first-party model vendors, gateway, then `custom`. */
-export const PROVIDER_VENDORS = [
-  { id: 'anthropic', displayName: 'Anthropic' },
-  { id: 'openai', displayName: 'OpenAI (ChatGPT)' },
-  { id: 'deepseek', displayName: 'DeepSeek' },
-  { id: 'moonshot', displayName: 'Moonshot (Kimi)' },
-  { id: 'doubao', displayName: 'Doubao (Volcengine Ark)' },
-  { id: 'zhipu', displayName: 'Zhipu (GLM)' },
-  { id: 'openrouter', displayName: 'OpenRouter' },
-  { id: 'custom', displayName: 'Custom' },
-] as const satisfies readonly ProviderVendor[]
-
-type _PinVendorsCoverUnion =
-  Exclude<ProviderVendorId, (typeof PROVIDER_VENDORS)[number]['id']> extends never
-    ? true
-    : [
-        'PROVIDER_VENDORS is missing a ProviderVendorId',
-        Exclude<ProviderVendorId, (typeof PROVIDER_VENDORS)[number]['id']>,
-      ]
-const _pinVendorsCoverUnion: _PinVendorsCoverUnion = true
-void _pinVendorsCoverUnion
-
-/**
- * Coerce anything persisted in the `vendor` slot to a known id. A blank, unknown, or
- * non-string value — including a vendor id minted by a NEWER c3 than this build — becomes
- * `custom`, so a provider degrades to "no shipped suggestions" instead of being dropped.
- */
-export function normalizeProviderVendor(value: unknown): ProviderVendorId {
-  if (typeof value !== 'string') return 'custom'
-  const id = value.trim()
-  return PROVIDER_VENDORS.some((v) => v.id === id) ? (id as ProviderVendorId) : 'custom'
-}
-
-/** Look up one vendor's label; `custom` for an unknown id, so this never returns undefined. */
-export function providerVendorLabel(vendor: unknown): string {
-  const id = normalizeProviderVendor(vendor)
-  return PROVIDER_VENDORS.find((v) => v.id === id)!.displayName
-}
+import type { ModelVendorId } from './model-vendor-catalog.js'
+import { modelVendorModels } from './model-vendor-catalog.js'
 
 /** One entry of the provider directory. */
 export interface ProviderTemplate {
   /** Stable template id — persisted on the created provider as `template`. */
   id: string
-  /** Provider Vendor this preset speaks to; the created provider's initial `vendor`. */
-  vendor: ProviderVendorId
+  /** Model Vendor this preset speaks to; the created provider's initial `vendor`. */
+  vendor: ModelVendorId
   /** Directory display name; the created provider's initial `displayName`. */
   displayName: string
   /** Per-protocol base URLs this upstream serves. A protocol absent here has no known endpoint. */
@@ -160,6 +103,9 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     docs: 'https://www.volcengine.com/docs/82379/1795150',
   },
   {
+    // The China endpoint. Z.AI's global host (api.z.ai) and both Coding Plan paths are
+    // separate subscriptions, so they stay a manual edit rather than four near-identical
+    // presets.
     id: 'zhipu',
     vendor: 'zhipu',
     displayName: 'Zhipu (GLM)',
@@ -171,12 +117,171 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     docs: 'https://docs.bigmodel.cn/',
   },
   {
+    // DashScope's OpenAI-compatible mode (China). The Coding Plan and Token Plan hosts are
+    // separate subscriptions; the global host swaps in `dashscope-intl`.
+    id: 'qwen',
+    vendor: 'qwen',
+    displayName: 'Qwen (Alibaba DashScope)',
+    urls: { openai: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    wireApi: 'chat',
+    docs: 'https://help.aliyun.com/zh/model-studio/',
+  },
+  {
+    // MiniMax publishes an Anthropic-compatible endpoint, so this preset fills the
+    // anthropic slot rather than the openai one. The China host is api.minimaxi.com.
+    id: 'minimax',
+    vendor: 'minimax',
+    displayName: 'MiniMax',
+    urls: { anthropic: 'https://api.minimax.io/anthropic' },
+    docs: 'https://platform.minimax.io/docs',
+  },
+  {
+    // Pay-as-you-go host. The Token Plan endpoints are per-region subscriptions.
+    id: 'xiaomi',
+    vendor: 'xiaomi',
+    displayName: 'Xiaomi (MiMo)',
+    urls: { openai: 'https://api.xiaomimimo.com/v1' },
+    wireApi: 'chat',
+    docs: 'https://platform.xiaomimimo.com/docs',
+  },
+  {
+    id: 'tencent',
+    vendor: 'tencent',
+    displayName: 'Tencent (Hunyuan TokenHub)',
+    urls: { openai: 'https://tokenhub.tencentmaas.com/v1' },
+    wireApi: 'chat',
+    docs: 'https://cloud.tencent.com/document/product/1729',
+  },
+  {
+    id: 'qianfan',
+    vendor: 'qianfan',
+    displayName: 'Baidu Qianfan (ERNIE)',
+    urls: { openai: 'https://qianfan.baidubce.com/v2' },
+    wireApi: 'chat',
+    docs: 'https://cloud.baidu.com/doc/qianfan-api/index.html',
+  },
+  {
+    id: 'stepfun',
+    vendor: 'stepfun',
+    displayName: 'StepFun',
+    urls: { openai: 'https://api.stepfun.com/v1' },
+    wireApi: 'chat',
+    docs: 'https://platform.stepfun.com/docs',
+  },
+  {
+    id: 'longcat',
+    vendor: 'longcat',
+    displayName: 'LongCat',
+    urls: { openai: 'https://api.longcat.chat/openai' },
+    wireApi: 'chat',
+    docs: 'https://longcat.chat/platform/docs',
+  },
+  {
+    id: 'xai',
+    vendor: 'xai',
+    displayName: 'xAI (Grok)',
+    urls: { openai: 'https://api.x.ai/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.x.ai/docs/api-reference',
+  },
+  {
+    id: 'mistral',
+    vendor: 'mistral',
+    displayName: 'Mistral',
+    urls: { openai: 'https://api.mistral.ai/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.mistral.ai/api/',
+  },
+  {
+    // Cohere's native API is not OpenAI-shaped; the compatibility path is.
+    id: 'cohere',
+    vendor: 'cohere',
+    displayName: 'Cohere',
+    urls: { openai: 'https://api.cohere.ai/compatibility/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.cohere.com/docs/compatibility-api',
+  },
+  {
+    id: 'groq',
+    vendor: 'groq',
+    displayName: 'Groq',
+    urls: { openai: 'https://api.groq.com/openai/v1' },
+    wireApi: 'chat',
+    docs: 'https://console.groq.com/docs/openai',
+  },
+  {
+    id: 'cerebras',
+    vendor: 'cerebras',
+    displayName: 'Cerebras',
+    urls: { openai: 'https://api.cerebras.ai/v1' },
+    wireApi: 'chat',
+    docs: 'https://inference-docs.cerebras.ai/',
+  },
+  {
+    id: 'together',
+    vendor: 'together',
+    displayName: 'Together AI',
+    urls: { openai: 'https://api.together.xyz/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.together.ai/docs/openai-api-compatibility',
+  },
+  {
+    id: 'fireworks',
+    vendor: 'fireworks',
+    displayName: 'Fireworks',
+    urls: { openai: 'https://api.fireworks.ai/inference/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.fireworks.ai/tools-sdks/openai-compatibility',
+  },
+  {
+    id: 'novita',
+    vendor: 'novita',
+    displayName: 'NovitaAI',
+    urls: { openai: 'https://api.novita.ai/openai/v1' },
+    wireApi: 'chat',
+    docs: 'https://novita.ai/docs/api-reference',
+  },
+  {
+    id: 'nvidia',
+    vendor: 'nvidia',
+    displayName: 'NVIDIA',
+    urls: { openai: 'https://integrate.api.nvidia.com/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.api.nvidia.com/',
+  },
+  {
     id: 'openrouter',
     vendor: 'openrouter',
     displayName: 'OpenRouter',
     urls: { openai: 'https://openrouter.ai/api/v1' },
     wireApi: 'chat',
     docs: 'https://openrouter.ai/docs',
+  },
+  {
+    // Local runtimes listen on loopback, so the default ports are the whole preset. The
+    // base-URL check treats plain http to loopback as normal rather than a leaked key.
+    id: 'lmstudio',
+    vendor: 'lmstudio',
+    displayName: 'LM Studio (local)',
+    urls: { openai: 'http://localhost:1234/v1' },
+    wireApi: 'chat',
+    docs: 'https://lmstudio.ai/docs/app/api/endpoints/openai',
+  },
+  {
+    id: 'vllm',
+    vendor: 'vllm',
+    displayName: 'vLLM (local)',
+    urls: { openai: 'http://127.0.0.1:8000/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html',
+  },
+  {
+    id: 'sglang',
+    vendor: 'sglang',
+    displayName: 'SGLang (local)',
+    urls: { openai: 'http://127.0.0.1:30000/v1' },
+    wireApi: 'chat',
+    docs: 'https://docs.sglang.ai/backend/openai_api_completions.html',
   },
 ]
 
@@ -186,58 +291,16 @@ export function findProviderTemplate(id: string): ProviderTemplate | undefined {
 }
 
 /**
- * The Provider Vendor a template creates its provider with. Unknown / blank template ⇒
+ * The Model Vendor a template creates its provider with. Unknown / blank template ⇒
  * `custom`: identity is inferred from the template id alone, never from a display name or
  * a URL, so a hand-named "DeepSeek proxy" is not silently given DeepSeek's model list.
  */
-export function providerVendorForTemplate(templateId: string | undefined): ProviderVendorId {
+export function modelVendorForTemplate(templateId: string | undefined): ModelVendorId {
   return findProviderTemplate((templateId ?? '').trim())?.vendor ?? 'custom'
 }
 
 /**
- * The models each Provider Vendor currently serves — conversational models callable through
- * the preset's endpoint only, so no image, video, or embedding products. Ordered most-capable
- * first, which is the order the console offers them in.
- *
- * `openrouter` ships empty on purpose: it is a gateway onto hundreds of `author/model` ids
- * from every other vendor, and any subset c3 picked would mislead more than it helped. Its
- * providers fall back to free-form entry and their own model entries, like `custom`.
- */
-export const PROVIDER_VENDOR_MODELS: Readonly<
-  Record<ProviderVendorId, readonly ModelProviderModel[]>
-> = {
-  anthropic: [
-    { id: 'claude-fable-5' },
-    { id: 'claude-opus-5' },
-    { id: 'claude-sonnet-5' },
-    { id: 'claude-haiku-4-5' },
-  ],
-  openai: [{ id: 'gpt-5.6-sol' }, { id: 'gpt-5.6-terra' }, { id: 'gpt-5.6-luna' }],
-  deepseek: [{ id: 'deepseek-v4-pro' }, { id: 'deepseek-v4-flash' }],
-  moonshot: [
-    { id: 'kimi-k3' },
-    { id: 'kimi-k2.7-code' },
-    { id: 'kimi-k2.7-code-highspeed' },
-    { id: 'kimi-k2.6' },
-  ],
-  doubao: [
-    { id: 'doubao-seed-2-0-pro-260215' },
-    { id: 'doubao-seed-2-0-code-preview-260215' },
-    { id: 'doubao-seed-2-0-lite-260215' },
-    { id: 'doubao-seed-2-0-mini-260215' },
-  ],
-  zhipu: [{ id: 'glm-5.3' }, { id: 'glm-5.2' }],
-  openrouter: [],
-  custom: [],
-}
-
-/** The shipped models for a vendor id, coercing an unknown id to `custom` (⇒ empty). */
-export function providerVendorModels(vendor: unknown): readonly ModelProviderModel[] {
-  return PROVIDER_VENDOR_MODELS[normalizeProviderVendor(vendor)]
-}
-
-/**
- * One provider's effective model suggestions: its vendor's shipped models followed by its
+ * One provider's effective model suggestions: its Model Vendor's shipped models followed by its
  * own entries, de-duplicated by trimmed id. A persisted entry OVERRIDES the shipped one it
  * collides with — keeping the operator's capability metadata — but stays in the shipped
  * entry's position, so the list order depends only on the vendor and the provider's own
@@ -253,7 +316,7 @@ export function effectiveProviderModels(
 ): ModelProviderModel[] {
   const out: ModelProviderModel[] = []
   const at = new Map<string, number>()
-  for (const model of [...providerVendorModels(provider.vendor), ...(provider.models ?? [])]) {
+  for (const model of [...modelVendorModels(provider.vendor), ...(provider.models ?? [])]) {
     const id = model.id.trim()
     if (!id) continue
     const seen = at.get(id)

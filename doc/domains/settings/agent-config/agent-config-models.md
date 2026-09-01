@@ -70,30 +70,42 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 - **`id`**(text): 稳定 id,铸造规则与 agent id 相同(AC-R3);归一化提起残留内联三元组时用由三元组派生的确定性 id(`mp-<hash>`),与手工创建的可区分
 - **`displayName`**(text): 展示名称(去首尾空白)
 - **`template`**(text,可选): 创建时所用目录模板的 id。纯创建溯源,运行时从不读取
-- **`vendor`**(Provider Vendor,可选): 上游厂商身份,取值 `anthropic` | `openai` | `deepseek` | `moonshot` | `doubao` | `zhipu` | `openrouter` | `custom`。见 [Provider Vendor 与模型清单](#provider-vendor-与模型清单)
+- **`vendor`**(Model Vendor,可选): 上游模型厂商身份。见 [Model Vendor 与模型清单](#model-vendor-与模型清单)
 - **`apiKey`**(text): **账户级** key,覆盖本 provider 上所有协议 URL;落库为 `secret` 类型
 - **`urls`**(map `protocolType → string`): 逐协议风格的上游 base URL。`protocolType` 为 `openai` | `anthropic`(上游文档所说的兼容风格,不是 c3 的 VendorId)。非空才算该协议已连接
 - **`wireApi`**(`'responses' | 'chat'`,可选): 仅 `urls.openai` 有意义;缺省按 `'chat'` 处理
 - **`models`**(列表,可选): 本 provider **自有**的模型条目 `{ id, contextWindow?, maxOutputTokens? }`,是对内置清单的补充与覆盖。提供方表单只编辑 `id`(展示为模型名称),每条与删除按钮同一行;`contextWindow`/`maxOutputTokens` 仍被 schema 接受并参与能力解析,但不在表单上暴露
 - **`paused`**(bool,可选): 运维暂停。为真时引用它的 agent 在启动处明确失败(而不是稍后以晦涩的鉴权错误暴露);可恢复,数据不丢
 
-### Provider Vendor 与模型清单
+### Model Vendor 与模型清单
 
-`vendor` 声明这条上游是谁,`template` 只记录它由哪个目录模板创建:前者被持续读取以决定模型
-建议,后者创建后再不读取。两者因此分开——自建端点可以认领一个已知厂商而不被重置连接字段。
-归一化只从**已知的 template id** 推断身份,绝不从展示名或 URL 猜;缺失、空白、以及更新版
-c3 写下的未知 id 一律读为 `custom`,provider 本身连同 key、URL、自有条目完整保留。
-`custom` 与暂无内置条目的厂商都只是「没有内置建议」,不是错误。
+`vendor` 声明这条上游的模型来自谁,`template` 只记录它由哪个端点模板创建:前者被持续读取以
+决定模型建议,后者创建后再不读取。两者因此分开——自建端点可以认领一个已知厂商而不被重置连接
+字段。与 `AgentConfig.vendor`(claude / codex / cursor,决定启动哪个客户端)也是两回事:一个
+说启动谁,一个说线那头是谁家的模型。
 
-每个已知厂商的模型清单随 c3 版本内置在 `shared/src/model-provider-catalog.ts`,发布维护时对
-照厂商官方 API 文档核验,运行时**不发任何网络请求**去发现模型。内置条目只有模型 id:上下文
-窗口一类的能力元数据由运维在自有条目上声明,猜大了会引发上游截断或报错。
+归一化只从**已知的 template id** 推断身份,绝不从展示名或 URL 猜;缺失、空白、以及更新版 c3
+写下的未知 id 一律读为 `custom`,provider 本身连同 key、URL、自有条目完整保留。`custom` 与暂无
+内置条目的厂商都只是「没有内置建议」,不是错误。
+
+厂商目录与各家模型清单单独放在 `shared/src/model-vendor-catalog.ts`——它是纯数据文件,加一家
+厂商或刷新一份清单只改这一处;端点模板与合并规则留在 `model-provider-catalog.ts`。目录按
+**模型厂商 / 推理云平台 / 聚合网关 / 本地运行时 / 其他** 五组呈现,下拉按组分节。
+
+清单随 c3 版本内置,发布维护时对照厂商官方文档核验,运行时**不发任何网络请求**去发现模型。
+几条取舍:
+
+- 模型 id 照上游 API `model` 字段的原样写,故聚合平台的条目保留斜杠(`meta-llama/Llama-3.3-70B-Instruct-Turbo`),一线厂商的不带前缀
+- 核验不到清单的厂商**留空**而不是猜:空清单只多一次手输,错清单是一次失败的运行
+- 聚合网关与本地运行时按其性质恒为空:前者转发别家成百上千个 id,后者只有运维自己拉了什么
+- 条目不带 `contextWindow`/`maxOutputTokens`:猜大了会引发上游截断或报错,这两个数由运维填在自有条目上
+- 端点模板同理,核验不到 base URL 的厂商只进目录、不给模板
 
 **有效模型清单** = 内置条目 + 自有条目,按去空白后的 id 去重,空 id 丢弃;同名以自有条目为准
 (保住运维填的能力元数据),但留在内置条目的位置上,故顺序只取决于厂商与自有条目的次序。
 它是**建议**:agent 表单的 model 输入始终是自由文本,清单外的 id 照样保存;它不校验、不作运行
 时兜底、不是白名单。运行时能力解析仍走既有优先级(agent `modelOverrides` > provider 模型条目)。
-换 vendor 只替换内置那一半,不动自有条目、名称、key、URL、wireApi、暂停位,也不动任何 agent 的模型。
+换厂商只替换内置那一半,不动自有条目、名称、key、URL、wireApi、暂停位,也不动任何 agent 的模型。
 
 ### ProtocolType 与 vendor 支持列表
 

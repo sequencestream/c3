@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PROVIDER_TEMPLATES, PROVIDER_VENDORS } from '@ccc/shared'
+import { PROVIDER_TEMPLATES, MODEL_VENDORS } from '@ccc/shared'
 import { parseModelProvider } from './model-provider-schema.js'
 
 describe('parseModelProvider', () => {
@@ -74,7 +74,7 @@ describe('parseModelProvider', () => {
     expect(p?.models).toEqual([{ id: 'gpt' }])
   })
 
-  it.each(PROVIDER_VENDORS.map((v) => v.id))('round-trips the vendor id %s', (vendor) => {
+  it.each(MODEL_VENDORS.map((v) => v.id))('round-trips the vendor id %s', (vendor) => {
     const p = parseModelProvider({ id: 'p1', displayName: 'X', apiKey: 'sk', urls: {}, vendor })
     expect(p?.vendor).toBe(vendor)
     // Re-parsing a normalized record changes nothing — the field is stable across saves.

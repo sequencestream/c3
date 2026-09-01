@@ -6,7 +6,7 @@
  * Key),多个 agent 共用它。Agent 绑定时按自己 vendor 的协议支持列表取第一个有 URL 的槽,
  * 从而得到 baseUrl。把连接从 agent 里提出来之后,轮换 key 或迁移端点只改这一处。
  *
- * Provider Vendor(上游厂商)是这条 provider 的身份声明,与 template(创建来源、之后再不读)
+ * Model Vendor(上游厂商)是这条 provider 的身份声明,与 template(创建来源、之后再不读)
  * 是两件事:它被持续读取,决定这条 provider 给出哪些随版本内置的模型建议,并且可以单独改——
  * 自建端点也能认领一个已知厂商,而不必被重置连接字段。内置模型只读,与用户自己的模型条目分区
  * 展示;两者合并后才是 agent 表单看到的候选,而候选永远只是建议,不校验、不兜底、不做白名单。
@@ -27,13 +27,14 @@ import type {
 } from '@ccc/shared/protocol'
 import { PROTOCOL_TYPES } from '@ccc/shared/protocol'
 import {
+  MODEL_VENDORS,
   PROVIDER_TEMPLATES,
-  PROVIDER_VENDORS,
   checkProviderBaseUrl,
-  normalizeProviderVendor,
-  providerVendorLabel,
-  providerVendorModels,
+  modelVendorLabel,
+  modelVendorModels,
+  normalizeModelVendor,
 } from '@ccc/shared'
+import type { ModelVendorGroup } from '@ccc/shared'
 import type { BaseUrlIssue } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -169,29 +170,54 @@ function issueText(issue: BaseUrlIssue | string): string {
   }
 }
 
-// ---- Provider Vendor ----
+// ---- Model Vendor ----
 
 /** 落库值可能缺失或来自更新版本的 c3;一律归一化后再显示,未知即 `custom`。 */
 function vendorOf(p: ModelProvider): string {
-  return normalizeProviderVendor(p.vendor)
+  return normalizeModelVendor(p.vendor)
 }
 
 /** 展示名。厂商名是品牌、不翻译;只有兜底的 `custom` 是一句普通措辞,走 i18n。 */
 function vendorText(vendor: unknown): string {
-  const id = normalizeProviderVendor(vendor)
-  return id === 'custom' ? t('settings.providers.vendor.custom.label') : providerVendorLabel(id)
+  const id = normalizeModelVendor(vendor)
+  return id === 'custom' ? t('settings.providers.modelVendor.custom.label') : modelVendorLabel(id)
+}
+
+/**
+ * 下拉按分组呈现。目录有五十来家,平铺一列谁也找不到自己要的那个;分组名走 i18n,
+ * 因为它们是普通措辞而不是品牌。
+ */
+const VENDOR_GROUPS: readonly ModelVendorGroup[] = ['model', 'cloud', 'gateway', 'local', 'custom']
+
+function vendorsOf(group: ModelVendorGroup) {
+  return MODEL_VENDORS.filter((v) => v.group === group)
+}
+
+function groupLabel(group: ModelVendorGroup): string {
+  switch (group) {
+    case 'model':
+      return t('settings.providers.modelVendor.group.model')
+    case 'cloud':
+      return t('settings.providers.modelVendor.group.cloud')
+    case 'gateway':
+      return t('settings.providers.modelVendor.group.gateway')
+    case 'local':
+      return t('settings.providers.modelVendor.group.local')
+    default:
+      return t('settings.providers.modelVendor.group.custom')
+  }
 }
 
 /** 只改身份。连接字段、账户 key、暂停位、用户自己的模型条目一概不动。 */
 function setVendor(p: ModelProvider, value: string): void {
-  p.vendor = normalizeProviderVendor(value)
+  p.vendor = normalizeModelVendor(value)
 }
 
 // ---- 模型目录 ----
 
 /** 该厂商随版本内置的模型:只读,用户改不了,也删不掉。 */
 function shippedModels(p: ModelProvider): readonly ModelProviderModel[] {
-  return providerVendorModels(p.vendor)
+  return modelVendorModels(p.vendor)
 }
 
 function addModel(p: ModelProvider): void {
@@ -333,7 +359,7 @@ function confirmRemove(): void {
 
       <div v-if="expanded === p.id" class="provider-body">
         <label class="provider-field">
-          <span class="provider-label">{{ t('settings.providers.vendor.label') }}</span>
+          <span class="provider-label">{{ t('settings.providers.modelVendor.label') }}</span>
           <select
             class="agent-field"
             :value="vendorOf(p)"
@@ -341,12 +367,14 @@ function confirmRemove(): void {
             data-testid="provider-vendor"
             @change="setVendor(p, ($event.target as HTMLSelectElement).value)"
           >
-            <option v-for="v in PROVIDER_VENDORS" :key="v.id" :value="v.id">
-              {{ vendorText(v.id) }}
-            </option>
+            <optgroup v-for="g in VENDOR_GROUPS" :key="g" :label="groupLabel(g)">
+              <option v-for="v in vendorsOf(g)" :key="v.id" :value="v.id">
+                {{ vendorText(v.id) }}
+              </option>
+            </optgroup>
           </select>
         </label>
-        <p class="settings-hint">{{ t('settings.providers.vendor.hint') }}</p>
+        <p class="settings-hint">{{ t('settings.providers.modelVendor.hint') }}</p>
 
         <label class="provider-field">
           <span class="provider-label">{{ t('settings.providers.apiKey.label') }}</span>

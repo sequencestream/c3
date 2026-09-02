@@ -107,8 +107,18 @@ describe('resolveSubpath', () => {
 })
 
 describe('skillRepoCacheDir — vendor-shared cache (ADR-0016)', () => {
-  it('lives under ~/.c3/repo/', () => {
-    expect(skillRepoCacheRoot()).toBe(join(homedir(), '.c3', 'repo'))
+  it('lives under the c3 home — ~/.c3/repo by default, $C3_DIR/repo when relocated', () => {
+    const saved = process.env.C3_DIR
+    try {
+      delete process.env.C3_DIR
+      expect(skillRepoCacheRoot()).toBe(join(homedir(), '.c3', 'repo'))
+      const relocated = join(tmpdir(), 'c3-home-probe')
+      process.env.C3_DIR = relocated
+      expect(skillRepoCacheRoot()).toBe(join(relocated, 'repo'))
+    } finally {
+      if (saved === undefined) delete process.env.C3_DIR
+      else process.env.C3_DIR = saved
+    }
     expect(skillRepoCacheDir('https://x/y', 'main').startsWith(skillRepoCacheRoot())).toBe(true)
   })
 

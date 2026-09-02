@@ -26,7 +26,11 @@ export default defineConfig({
       'server/test/**/*.test.ts',
       'scripts/**/*.test.mjs',
     ],
-    setupFiles: ['./web/src/test-setup.ts', './server/test/git-env-setup.ts'],
+    setupFiles: [
+      './web/src/test-setup.ts',
+      './server/test/git-env-setup.ts',
+      './server/test/db-isolation-setup.ts',
+    ],
     globals: false,
   },
 })

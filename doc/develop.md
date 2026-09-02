@@ -25,6 +25,19 @@ pnpm format      # prettier --write . (--check via format:check)
 pnpm test        # vitest run
 ```
 
+### 测试数据库隔离
+
+测试永远不写开发者自己的 `~/.c3/c3.db`。`server/test/db-isolation-setup.ts`
+(vitest `setupFiles`) 在每个用例前后兜底把 `C3_DIR` 指向一个一次性目录:
+用例自己设 `C3_DB_PATH` 时按其指定,一旦用例在 teardown 里删掉该变量,
+后续仍在途的异步代码(pending launch、订阅回调、定时器)也只会落到临时目录。
+
+默认位置是 `<tmpdir>/c3-test-home/w<worker>`,可用 `C3_TEST_DIR` 改写:
+
+```bash
+C3_TEST_DIR=/tmp/.c3-test pnpm test
+```
+
 ## Production build
 
 ```bash

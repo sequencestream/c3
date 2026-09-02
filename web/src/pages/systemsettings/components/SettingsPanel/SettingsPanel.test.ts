@@ -9,7 +9,7 @@ import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/
 import { useAuth } from '@/composables/useAuth'
 import { applyLocale } from '@/i18n'
 import { VENDOR_COLOR } from '@/lib/vendor'
-import { effectiveProviderModels } from '@ccc/shared'
+import { effectiveProviderModels, modelVendorModels } from '@ccc/shared'
 
 /** Read a shipped locale catalog — the copy assertions live here, not on rendered
  *  text, so translating a string never turns a component test red (i18n-spec §4.1). */
@@ -2749,5 +2749,77 @@ describe('SettingsPanel.vue — agent 模型候选来自 provider 的有效清�
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.agents[1].providerId).toBe('p-kimi')
     expect(saved.agents[1].config.model).toBe('kimi-k3')
+  })
+})
+
+// Cursor 接不了 provider,列 provider 的模型对它全是够不着的候选;它的候选只能来自同名
+// Model Vendor 的内置清单。
+describe('SettingsPanel.vue — 接不了 provider 的 vendor 从 Model Vendor 目录取候选', () => {
+  const withCursor: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      ...baseSettings.agents,
+      {
+        id: 'c1',
+        vendor: 'cursor',
+        configMode: 'system',
+        displayName: 'C1',
+        config: { apiKey: '', model: '' },
+      },
+    ],
+    modelProviders: [
+      {
+        id: 'p-kimi',
+        displayName: 'Kimi',
+        vendor: 'moonshot',
+        apiKey: 'sk-k',
+        urls: {
+          openai: 'https://api.moonshot.cn/v1',
+          anthropic: 'https://api.moonshot.cn/anthropic',
+        },
+        models: [{ id: 'house-model' }],
+      },
+    ],
+  }
+
+  /** agent 列表按 vendor 分子页签,Cursor 那条只在自己的页签里 —— 进去后它是唯一一行。 */
+  async function openCursor() {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: withCursor, vendorAvailability: availability() },
+    })
+    await w.find('[data-testid="agent-vendor-tab-btn-cursor"]').trigger('click')
+    return w
+  }
+
+  function cursorSuggestions(w: ReturnType<typeof mount>): string[] {
+    return w
+      .findAll('datalist')[0]
+      .findAll('option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+  }
+
+  it('候选正是 Cursor 厂商的内置清单,provider 的模型一条都不掺', async () => {
+    const listed = cursorSuggestions(await openCursor())
+    expect(listed).toEqual(modelVendorModels('cursor').map((m) => m.id))
+    expect(listed).toContain('composer-2.5')
+    expect(listed).not.toContain('house-model')
+  })
+
+  it('清单外的 id 照样存得下去 —— 这里也只是建议', async () => {
+    const w = await openCursor()
+    await w.findAll('.agent-model')[0].setValue('composer-9-unreleased')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[1].config.model).toBe('composer-9-unreleased')
+  })
+
+  it('选了内置候选也不会被 model-first 反查捎上一条它连不上的 provider', async () => {
+    const w = await openCursor()
+    await w.findAll('.agent-model')[0].setValue('composer-2.5')
+    await w.findAll('.agent-model')[0].trigger('change')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[1].providerId).toBeUndefined()
+    expect(saved.agents[1].configMode).toBe('system')
   })
 })

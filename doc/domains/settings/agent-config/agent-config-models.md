@@ -57,7 +57,7 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 登录态兜底,与其他厂商的 `system` 模式含义一致。
 
 - **`apiKey`**(text): Cursor API key。为空 ⇒ 回落到服务端环境变量 `CURSOR_API_KEY`;两者皆空 ⇒ 运行在启动处即以可行动错误失败(同时点名这两处)
-- **`model`**(text): 模型别名或 id(如 `auto`、`claude-4.5-sonnet`);为空 ⇒ 沿用 Cursor 的 `auto`
+- **`model`**(text): 模型别名或 id(如 `auto`、`composer-2.5`);为空 ⇒ 沿用 Cursor 的 `auto`
 
 关系:零个或多个 Session(会话)绑定到一个 Agent;未绑定的会话使用默认智能体。
 
@@ -96,6 +96,7 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 几条取舍:
 
 - 模型 id 照上游 API `model` 字段的原样写,故聚合平台的条目保留斜杠(`meta-llama/Llama-3.3-70B-Instruct-Turbo`),一线厂商的不带前缀
+- 上游把档位/通道编进 id 的,照它的写法收:Cursor 的推理档与 fast 通道就是 id 的一部分(`cursor-grok-4.6-xhigh-fast`),它转售的别家模型也用它自己铸的 id
 - 核验不到清单的厂商**留空**而不是猜:空清单只多一次手输,错清单是一次失败的运行
 - 聚合网关与本地运行时按其性质恒为空:前者转发别家成百上千个 id,后者只有运维自己拉了什么
 - 条目不带 `contextWindow`/`maxOutputTokens`:猜大了会引发上游截断或报错,这两个数由运维填在自有条目上
@@ -104,7 +105,9 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 **有效模型清单** = 内置条目 + 自有条目,按去空白后的 id 去重,空 id 丢弃;同名以自有条目为准
 (保住运维填的能力元数据),但留在内置条目的位置上,故顺序只取决于厂商与自有条目的次序。
 它是**建议**:agent 表单的 model 输入始终是自由文本,清单外的 id 照样保存;它不校验、不作运行
-时兜底、不是白名单。运行时能力解析仍走既有优先级(agent `modelOverrides` > provider 模型条目)。
+时兜底、不是白名单。接不了 provider 的 vendor(Cursor)不走这条合并:它的候选直接取同名
+Model Vendor 的内置清单——它连不到任何 provider,列 provider 的模型只会给出一堆够不着的
+候选;这类 vendor 若不在厂商目录里,得到的是空候选而不是别人的清单。运行时能力解析仍走既有优先级(agent `modelOverrides` > provider 模型条目)。
 换厂商只替换内置那一半,不动自有条目、名称、key、URL、wireApi、暂停位,也不动任何 agent 的模型。
 
 ### ProtocolType 与 vendor 支持列表

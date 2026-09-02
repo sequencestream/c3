@@ -11,6 +11,9 @@
  *
  * Distinct from `VendorId` (`claude` / `codex` / `cursor`), which selects the agent
  * executable c3 launches. A Model Vendor says whose models are on the other end of the wire.
+ * The two spaces share the name `cursor` and mean different things there: the `VendorId` one
+ * launches `cursor-agent`, the Model Vendor one names Cursor as the upstream a provider's
+ * models come from. Neither is derived from the other.
  *
  * Suggestions are ADVISORY. Never validation, never a runtime fallback, never an allowlist —
  * any model id can be typed by hand and saved unchanged, which is also the escape hatch for
@@ -43,6 +46,7 @@ export type ModelVendorId =
   | 'openai'
   | 'google'
   | 'xai'
+  | 'cursor'
   | 'mistral'
   | 'cohere'
   | 'deepseek'
@@ -157,6 +161,41 @@ export const MODEL_VENDORS = [
     displayName: 'xAI (Grok)',
     group: 'model',
     models: [{ id: 'grok-4.6' }, { id: 'grok-4.5' }, { id: 'grok-4.3' }, { id: 'grok-build-0.1' }],
+  },
+  {
+    // Cursor serves its own Composer models plus a hosted slice of other labs', under ids
+    // of its own minting: the effort tier and the fast lane are part of the id
+    // (`cursor-grok-4.6-xhigh-fast`) rather than separate parameters, and the hosted
+    // third-party ids are Cursor's, not the originating lab's. Deliberately no endpoint
+    // template next door: c3 has no relay that speaks Cursor's protocol, so a Cursor agent
+    // is always `configMode: 'system'` and never points at a provider.
+    id: 'cursor',
+    displayName: 'Cursor',
+    group: 'model',
+    models: [
+      { id: 'composer-2.5' },
+      { id: 'composer-2.5-fast' },
+      { id: 'cursor-grok-4.6-xhigh' },
+      { id: 'cursor-grok-4.6-xhigh-fast' },
+      { id: 'cursor-grok-4.6-high' },
+      { id: 'cursor-grok-4.6-high-fast' },
+      { id: 'cursor-grok-4.6-medium' },
+      { id: 'cursor-grok-4.6-medium-fast' },
+      { id: 'cursor-grok-4.6-low' },
+      { id: 'cursor-grok-4.6-low-fast' },
+      { id: 'cursor-grok-4.5-high' },
+      { id: 'cursor-grok-4.5-high-fast' },
+      { id: 'cursor-grok-4.5-medium' },
+      { id: 'cursor-grok-4.5-medium-fast' },
+      { id: 'cursor-grok-4.5-low' },
+      { id: 'cursor-grok-4.5-low-fast' },
+      { id: 'kimi-k3-max' },
+      { id: 'kimi-k3-high' },
+      { id: 'kimi-k3-low' },
+      { id: 'kimi-k2.7-code' },
+      { id: 'glm-5.2-max' },
+      { id: 'glm-5.2-high' },
+    ],
   },
   {
     id: 'mistral',

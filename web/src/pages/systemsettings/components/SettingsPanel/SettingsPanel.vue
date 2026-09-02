@@ -16,7 +16,12 @@ import {
   hasProviderConfig,
   providerSupportsVendor,
 } from '@ccc/shared/protocol'
-import { effectiveProviderModels, resolveDefaultAgentId } from '@ccc/shared'
+import {
+  effectiveProviderModels,
+  modelVendorLabel,
+  modelVendorModels,
+  resolveDefaultAgentId,
+} from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,
@@ -706,10 +711,22 @@ function setAgentProvider(a: AgentConfig, value: string): void {
  * 模型 + 这条 provider 自己的条目,同名以后者为准),否则是所有能服务该 vendor 的 provider 的
  * 清单合起来 —— 后者就是「先想好用哪个模型,再反查谁提供它」的入口。
  *
+ * 接不了 provider 的 vendor(Cursor)是另一条路:它的模型只可能来自它自己,候选就取同名
+ * Model Vendor 随版本内置的清单。走 hasProviderConfig 而不是写死 `=== 'cursor'`,是为了让
+ * 下一个同类 vendor 自动落到这条分支;它的 vendor id 若不在厂商目录里,modelVendorModels 归一
+ * 为 custom 得到空清单 —— 没有候选,而不是把一堆它根本连不上的 provider 的模型列出来。
+ *
  * 纯建议:输入框仍是自由文本,清单里没有的 id 照样存得下去;换 provider 只换候选,不动已填的值。
  */
 function modelSuggestions(a: AgentConfig): { value: string; label: string }[] {
   const out: { value: string; label: string }[] = []
+  if (!hasProviderConfig(a)) {
+    const vendorLabel = modelVendorLabel(a.vendor)
+    for (const m of modelVendorModels(a.vendor)) {
+      out.push({ value: m.id, label: `${m.id} — ${vendorLabel}` })
+    }
+    return out
+  }
   for (const p of suggestionPool(a)) {
     for (const m of effectiveProviderModels(p)) {
       out.push({ value: m.id, label: `${m.id} — ${p.displayName}` })

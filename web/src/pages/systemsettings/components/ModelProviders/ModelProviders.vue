@@ -314,16 +314,16 @@ function confirmRemove(): void {
           <span
             v-for="protocol in enabledProtocols(p)"
             :key="protocol"
-            class="provider-badge"
+            class="provider-badge provider-badge--protocol"
             :title="urlOf(p, protocol) || PROTOCOL_LABEL[protocol]"
             :data-testid="`provider-protocol-${protocol}`"
             >{{ PROTOCOL_LABEL[protocol] }}</span
           >
         </span>
-        <span class="provider-badge" data-testid="provider-vendor-badge">{{
+        <span class="provider-badge provider-badge--vendor" data-testid="provider-vendor-badge">{{
           vendorText(p.vendor)
         }}</span>
-        <span v-if="p.template" class="provider-badge">{{
+        <span v-if="p.template" class="provider-badge provider-badge--template">{{
           t('settings.providers.template.label', { name: p.template })
         }}</span>
         <span class="provider-usage">{{
@@ -574,6 +574,25 @@ function confirmRemove(): void {
   border-radius: 4px;
   padding: 0 4px;
   white-space: nowrap;
+}
+/* 折叠行上的三类信息各占一种底色:协议 / 厂商 / 模板,避免挤在一起分不清。 */
+.provider-badge--protocol,
+.provider-badge--vendor,
+.provider-badge--template {
+  opacity: 1;
+  color: var(--c-text);
+}
+.provider-badge--protocol {
+  background: var(--c-primary-soft);
+  border-color: var(--c-primary);
+}
+.provider-badge--vendor {
+  background: var(--c-purple-soft);
+  border-color: var(--c-primary-2);
+}
+.provider-badge--template {
+  background: var(--c-hover-strong);
+  border-color: var(--c-border);
 }
 .provider-usage {
   font-size: 12px;

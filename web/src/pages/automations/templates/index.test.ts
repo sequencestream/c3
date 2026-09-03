@@ -274,6 +274,8 @@ describe('PR review runner automation template', () => {
         'Grep',
         'Glob',
         'Bash',
+        'mcp__c3__find_intents',
+        'mcp__c3__view_intent',
         'mcp__c3__sync_intent_pr_status',
         'mcp__c3__publish_event',
       ]),
@@ -285,11 +287,16 @@ describe('PR review runner automation template', () => {
     expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intent_directly')
   })
 
-  it('prompt retains review-only identity — never modify files', () => {
+  it('reviews only when needed, comments the result, and merges a passing PR', () => {
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('pr:review')
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('publish_event')
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr diff')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('Do not modify any files')
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr list --state open')
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('[review]')
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('[error]')
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('newer commit')
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr merge')
+    expect(PR_REVIEW_RUNNER_PROMPT).toContain('Never edit files')
     // A forge-observed terminal state is reconciled through the sync tool, and the
     // tool name must match what the allowlist actually grants.
     expect(PR_REVIEW_RUNNER_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
@@ -321,21 +328,27 @@ describe('PR review fix automation template', () => {
         'Bash',
         'Edit',
         'Write',
+        'mcp__c3__view_intent',
         'mcp__c3__sync_intent_pr_status',
         'mcp__c3__publish_event',
       ]),
     )
   })
 
-  it('prompt retains fix identity — publish pr:update on success', () => {
+  it('evaluates findings, comments every decision, and publishes pr:update', () => {
     expect(PR_REVIEW_FIX_PROMPT).toContain('pr:update')
     expect(PR_REVIEW_FIX_PROMPT).toContain('publish_event')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('diagnose')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('fix')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('associated intent')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('relevant spec')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('git worktree list --porcelain')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('worth changing')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('[fix]')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('commit the changes')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('do not create an empty commit')
     // A forge-observed terminal state is reconciled through the sync tool.
     expect(PR_REVIEW_FIX_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
     // Fix prompt must allow editing unlike the runner.
-    expect(PR_REVIEW_FIX_PROMPT).toContain('editing files')
+    expect(PR_REVIEW_FIX_PROMPT).toContain('Perform edits')
     expect(PR_REVIEW_FIX_PROMPT).not.toContain('Do not modify any files')
   })
 })

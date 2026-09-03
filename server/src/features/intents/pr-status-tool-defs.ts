@@ -9,11 +9,10 @@
  *
  * The tool deliberately takes ONLY `intentId`. It does NOT accept a status value,
  * a PR id or a delivery id: the terminal `merged` / `closed` state is always
- * derived server-side from the forge's own answer. That structural absence is what
- * keeps the old `save_intent_pr_info` failure mode out of reach — an intent can
- * hold several PR rows, so a model cannot address one by intent id, and it must
- * never be allowed to write a status by hand. The model triggers; c3 reconciles;
- * the forge decides.
+ * derived server-side from the forge's own answer. An intent can hold several PR
+ * rows, so a model cannot address one by intent id anyway, and it must never be
+ * allowed to write a status by hand. The model triggers; c3 reconciles; the forge
+ * decides.
  *
  * This module is framing-free: it owns the zod input shape, the description
  * advertised in the system prompt, and the dispatch to the shared core. The MCP

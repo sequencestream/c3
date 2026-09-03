@@ -187,15 +187,6 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     ])
   })
 
-  it('no longer offers the deprecated save_intent_pr_info anywhere', () => {
-    // Removed from the allowlist surface entirely: it cannot be ticked in the
-    // form, and it can never enter a frozen set.
-    expect(C3_MCP_TOOLS.map((t) => t.name)).not.toContain('mcp__c3__save_intent_pr_info')
-    const frozen = freezeTools([], [], emptyConfig)
-    expect(frozen.writeToolNames.has('mcp__c3__save_intent_pr_info')).toBe(false)
-    expect(frozen.readToolNames.has('mcp__c3__save_intent_pr_info')).toBe(false)
-  })
-
   it('includes the four discussion tools with find/view read and start/continue write', () => {
     const frozen = freezeTools([], [], emptyConfig)
     expect(frozen.readToolNames.has('mcp__c3__find_discussions')).toBe(true)

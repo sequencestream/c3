@@ -4,9 +4,7 @@
  *
  * These two are deliberately different questions, and this file is where the
  * difference is pinned: the delivery read tools are grantable but NOT default, so
- * a new key cannot silently gain the ability to read a workspace's delivery plan;
- * and `save_intent_pr_info` is in neither, because it is deprecated and no new
- * authorization to call it may be created.
+ * a new key cannot silently gain the ability to read a workspace's delivery plan.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -41,14 +39,13 @@ describe('external MCP catalog', () => {
     expect(EXTERNAL_MCP_WRITE_TOOLS.some((n) => n.includes('deliver'))).toBe(false)
   })
 
-  it('no longer offers the deprecated save_intent_pr_info — it cannot be granted at all', () => {
-    expect(names()).not.toContain('save_intent_pr_info')
-    expect(isExternalMcpToolName('save_intent_pr_info')).toBe(false)
-    // A scope that still names it fails as a WHOLE, so a stale authorization can
+  it('refuses a scope naming a tool outside the catalog', () => {
+    expect(isExternalMcpToolName('reconcile_intent_pr')).toBe(false)
+    // A scope with one unknown name fails as a WHOLE, so a stale authorization can
     // never be half-applied.
-    expect(normalizeExternalMcpToolScope(['find_intents', 'save_intent_pr_info'])).toEqual({
+    expect(normalizeExternalMcpToolScope(['find_intents', 'reconcile_intent_pr'])).toEqual({
       ok: false,
-      offender: 'save_intent_pr_info',
+      offender: 'reconcile_intent_pr',
     })
   })
 })

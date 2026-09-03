@@ -450,12 +450,9 @@ worktree、本地分支与不可逆性,`in_progress` 额外提示工作产物(�
   `closed` 终态落库并写意图日志,仍 `open` 的行不变,终态唯一由 forge 裁决。外部可授权目录不授此
   工具。模型侧的路径是只读的 `find_intents` / `view_intent` 读现状,检测到终态与台账不一致时调用
   该同步工具显式触发落库,复位(`rejected`/`failed`/`closed → reviewing`)则由携带
-  `association.deliveryId` 或 `pr.number` 的 `pr:update` 事件处理(RM-R29)。过渡期核心
-  `runSaveIntentPrInfo` 只在无授权面的内部路径上可达,并守住两条拒绝:它只能**更新既有** PR 行的
-  生命周期状态,并对一个已合并的 PR 将关联意图标记为完成;该意图没有 PR 行时拒绝(它拿不到 PR 的
-  来源,不具备凭空造出一条 PR 事实的资格),存在多条活跃 PR 时**明确报错并列出各 PR 编号**、绝不猜
-  一条——猜错会污染一条真实 PR 的状态,比不写严重得多。这条拒绝有单测钉死,防止后续改动把它退化
-  成猜测。
+  `association.deliveryId` 或 `pr.number` 的 `pr:update` 事件处理(RM-R29)。**不存在**任何让模型
+  按 `intentId` 直写 PR 状态的工具:那样的入口拿不到 PR 的来源,既能凭空造出无来源的 PR 事实,又
+  在多条活跃 PR 时只能靠猜,猜错会污染一条真实 PR 的状态。
   **模型 update 事件触发的 PR 状态复位(RM-R29):** 当模型为其拥有的一条意图(同一工作区)发布
   一个携带 `association.intentId` 的 `pr:operation` `update`/`success` 事件时,消费者定位事件
   所指的 PR 行(带 `data.pr.number` 即精确定位;不带则回退到该意图唯一的未合并行,有多条则忽略

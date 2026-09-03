@@ -76,17 +76,14 @@ describe('PR status poller automation template', () => {
   })
 
   it('grants the sync tool as the only PR-status write surface, decided by the forge', () => {
-    // `save_intent_pr_info` is deprecated and ungrantable. The replacement is the
-    // forge-derived `sync_intent_pr_status`: dropping the deprecated tool WITHOUT
-    // granting its successor would leave the automation calling a tool it does not
-    // have — a silent loss of the reconciliation it advertises. The allowlist and
-    // the prompt are one fact and must move together.
+    // The forge-derived `sync_intent_pr_status` is the only PR-status write the
+    // template grants: the allowlist and the prompt are one fact and must move
+    // together, or the automation calls a tool it does not have — a silent loss of
+    // the reconciliation it advertises.
     const input = getAutomationTemplate('pr-status-poller')?.build({
       workspaceName: '/workspace',
       agentId: 'a1',
     })
-    expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intent_pr_info')
-    expect(PR_STATUS_POLLER_PROMPT).not.toContain('save_intent_pr_info')
     expect(input?.toolAllowlist).toContain('mcp__c3__sync_intent_pr_status')
     expect(PR_STATUS_POLLER_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
     // The prompt still never writes a status itself — c3 derives it from the forge

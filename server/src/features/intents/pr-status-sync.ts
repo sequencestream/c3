@@ -4,6 +4,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { getForgeOverride } from '../../kernel/config/index.js'
 import { getForgePrStatus } from '../../git.js'
 import { pathToName } from '../../state.js'
+import { completeIntentOnPrsMerged } from './pr-merge-completion.js'
 import {
   getIntent,
   listIntentPrs,
@@ -20,6 +21,8 @@ export interface IntentPrSyncResult {
   prStatus?: IntentPrStatus
   /** True when at least one PR row moved to a terminal state. */
   changed: boolean
+  /** True when the pass also auto-completed the intent (all its PRs merged). */
+  autoCompleted?: boolean
   message?: string
   error?: string
 }
@@ -38,6 +41,12 @@ export interface IntentPrSyncResult {
  * persisted through the single write entry point and logged. A row whose query
  * fails does not stop the others — the failures are reported together, and the
  * successes are already durable.
+ *
+ * A pass that leaves the intent with an all-merged PR set auto-completes it
+ * (`completeIntentOnPrsMerged`). The check runs on every pass, not only when a
+ * row moved: an intent whose PRs merged before this rule existed — or whose row
+ * was set to `merged` through another path — is corrected the next time anyone
+ * syncs it, instead of sitting at `in_progress` forever.
  */
 export async function syncIntentPrStatus(input: {
   workspacePath: string
@@ -63,12 +72,17 @@ export async function syncIntentPrStatus(input: {
     if (aggregate === null) {
       return { ok: false, intentId: intent.id, changed: false, error: '意图没有关联 PR/MR' }
     }
+    const autoCompleted = completeIntentOnPrsMerged(input.workspacePath, intent.id)
+    if (autoCompleted) input.broadcastIntents?.(input.workspacePath)
     return {
       ok: false,
       intentId: intent.id,
       prStatus: aggregate,
       changed: false,
-      message: `没有处于 reviewing 的 PR/MR(当前为 ${aggregate})`,
+      autoCompleted,
+      message: `没有处于 reviewing 的 PR/MR(当前为 ${aggregate})${
+        autoCompleted ? ',PR 已全部合并,意图自动标记为完成' : ''
+      }`,
     }
   }
 
@@ -92,7 +106,8 @@ export async function syncIntentPrStatus(input: {
   }
 
   const aggregate = deriveIntentPrAggregate(listIntentPrs(intent.id)) ?? undefined
-  if (changed) input.broadcastIntents?.(input.workspacePath)
+  const autoCompleted = completeIntentOnPrsMerged(input.workspacePath, intent.id)
+  if (changed || autoCompleted) input.broadcastIntents?.(input.workspacePath)
 
   if (errors.length > 0 && !changed) {
     return {
@@ -100,6 +115,7 @@ export async function syncIntentPrStatus(input: {
       intentId: intent.id,
       prStatus: aggregate,
       changed: false,
+      autoCompleted,
       error: errors.join('; '),
     }
   }
@@ -108,8 +124,11 @@ export async function syncIntentPrStatus(input: {
     intentId: intent.id,
     prStatus: aggregate,
     changed,
+    autoCompleted,
     ...(errors.length > 0 ? { error: errors.join('; ') } : {}),
-    message: changed ? 'PR/MR 状态已更新' : 'PR/MR 仍在审核中',
+    message: `${changed ? 'PR/MR 状态已更新' : 'PR/MR 仍在审核中'}${
+      autoCompleted ? ',PR 已全部合并,意图自动标记为完成' : ''
+    }`,
   }
 }
 

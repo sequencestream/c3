@@ -76,13 +76,14 @@ c3
 │   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析;目标 pair 已有 merged PR 时标题栏不渲染该按钮(仅前端、仅 merged,closed 仍留重提入口)
 │   │   ├── 关联外部 PR                           # create_pr 失败且目标 (intent_id, delivery_id) 仍无活跃 PR 行时,错误弹窗提供「关联已有 PR」;`link_intent_pr` 复用目标解析、向 forge 查询 PR 事实并以 worktree HEAD 与 PR head SHA 一致性为唯一硬性判据后 upsert 账本
 │   │   ├── PR 更新复位                           # 模型发 pr:update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing;须以 association.deliveryId 或 pr.number 唯一定位,定位不到即拒并落 error 日志,绝不猜测
+│   │   ├── PR 全落地自动完成                     # in_progress 意图的 PR 聚合态为 merged(无 reviewing/failed/rejected 行,至少一行已合并;被放弃的 closed 行不拦)时自动置 done 并打 completedAt;判据只读账本不查 forge,每条把 PR 写成 merged 的路径(同步/关联外部已合并 PR/交付解绑观察到合并)写完即求值;todo/blocked/failed 不自动完成
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
 │   │   │   ├── base 可达判据                     # 判据是「依赖产出在不在我的 base 上」而非「PR 合了没」:同交付看该交付的 PR 行、跨交付看依赖所属交付是否 delivered、无交付沿用旧判据;唯一一份共享纯函数,手动/队列/投影共用(ADR-0038)
 │   │   │   ├── 可解释阻塞 + 强制放行             # 阻塞文案明示「依赖在交付 X,X 未合入主线」并可跳转;依赖闸门是建议,可一次性强制放行(二次确认+风险说明+intent_logs 审计),只跳依赖一道,队列不提供
 │   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
 │   │   ├── 危险动作收进溢出层                    # 意图详情标题栏只留核心动作,「取消」「删除」收进末位常驻「…」菜单(Esc/点击外部收起),两项各走 danger 二次确认;done 两项皆无则「…」整体不渲染,cancelled 只留「删除」
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
-│   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(唯一自动 done 路径之一)
+│   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(三条自动 done 路径之一)
 │   │   │   ├── 确定性调度内核                    # 10s tick 全量对账:从意图账本+run 存活探测+少量调度元数据重推导动作;纯逻辑在 kernel/queue,不 import features/transport
 │   │   │   ├── 事件合并标脏                      # 生命周期事件只标记「需重查」并合并去重,不携带决策依据/不重放;丢事件只延迟一轮,不再卡死
 │   │   │   ├── 单意图失败隔离                    # 失败只计该意图:指数退避(30s 起翻倍,上限 15min),连续 3 次 park;队列继续跑无依赖关系的其他意图

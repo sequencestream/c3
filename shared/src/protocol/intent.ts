@@ -17,7 +17,11 @@ export type IntentPriority = 'P0' | 'P1' | 'P2' | 'P3'
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
  * - `in_progress` — work launched (work session running).
- * - `done` / `cancelled` — terminal, set by the user (never auto-set).
+ * - `done` / `cancelled` — terminal. `cancelled` is only ever set by the user;
+ *   `done` is normally the user's call too, but three documented server paths
+ *   derive it: the automation queue after a verified completion judgement, the
+ *   on-enter reconcile of a dead work session, and an intent whose PRs have all
+ *   merged.
  * - `blocked` — interrupted by a dependency rollback, rebase conflict, etc.
  *   May re-enter `todo` once unblocked.
  * - `failed` — CI / build / test failure hit while `in_progress`.
@@ -95,7 +99,9 @@ export type IntentRunStatus = 'running' | 'dangling' | 'idle'
  * - `merged` — PR merged into target branch.
  * - `closed` — PR closed without merging.
  * - `null` — no PR has been created yet (or PR status is unknown).
- * Independent of the intent's own `status` — a PR has its own lifecycle.
+ * A PR has its own lifecycle and never follows the intent's status; the single
+ * edge in the other direction is the all-merged derivation, which completes an
+ * `in_progress` intent once no PR of its is still open.
  */
 export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged' | 'closed'
 

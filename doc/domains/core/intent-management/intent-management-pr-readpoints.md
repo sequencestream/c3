@@ -36,7 +36,8 @@
 - `write-cores.ts: createPrForIntent`(门禁→写): 有活跃 PR 拒绝重建;成功后写入编号、来源、head/base、URL
 - `dev-cleanup.ts: runManualDevCleanup`(门禁→写): 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入
 - `queue-dev-actions.ts: maybeCreatePr`(门禁→写): 自动化队列:`done` 写入后按目标解析建 PR(未关联则向 `baseBranch`)
-- `pr-status-sync.ts: syncIntentPrStatus`(读→写): 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志
+- `pr-status-sync.ts: syncIntentPrStatus`(读→写): 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志;每次同步收尾都求值一次完成派生
+- `pr-merge-completion.ts: completeIntentOnPrsMerged`(读→写): 聚合态为 `merged` 时把 `in_progress` 意图置 `done`;由同步、关联外部 PR、交付解绑三处在写完 PR 行后调用
 - `pr-status-sync.ts: depsWithUnconfirmedPr`(读): 依赖意图存在 `reviewing` 行即触发后台补同步
 - `write-cores.ts: applyIntentStatusChange`(读→写): 取消意图:遍历全部活跃 PR 逐条关闭,全成功才放行
 - `pr-update-consumer.ts: handlePrUpdateEvent`(读→写): `pr:update` 事件把指定行从 `rejected`/`failed`/`closed` 复位
@@ -66,7 +67,7 @@
 
 夹具与断言集中在:`intent-prs.test.ts`(回填 / 唯一键 / upsert 语义 / URL 解析)、
 `shared/src/intent-pr-model.test.ts`(聚合态梯子)、`pr-status-sync.test.ts`、
-`cancel-close-pr.test.ts`、`pr-update-consumer.test.ts`、`create-pr-handler.test.ts`、
+`cancel-close-pr.test.ts`、`pr-update-consumer.test.ts`、`pr-merge-completion.test.ts`、`create-pr-handler.test.ts`、
 `dev-cleanup.test.ts`、`queue-dev-actions.test.ts`,以及前端的
 `intent-engineering-progress.test.ts` / `intent-list-view.test.ts` / IntentDetail 组件测试。
 `intent-pr-fixture.ts`(server 与 web 各一份)构造 `Intent.prs` 夹具。以旧 schema 为夹具的

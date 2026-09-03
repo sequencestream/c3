@@ -36,6 +36,7 @@ import { normalizeBranchName } from './dependency-gate.js'
 import { buildGitFailureGuidance } from './git-failure.js'
 import type { GitFailureStage } from './git-failure.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
+import { completeIntentOnPrsMerged } from './pr-merge-completion.js'
 import { clearJudgedSession, clearRunStatus } from './run-status.js'
 import { activeIntentPrs } from '@ccc/shared'
 import {
@@ -413,6 +414,9 @@ export async function linkIntentPrForIntent(
   }
 
   safeInsertIntentLog(intentId, 'pr_created', `外部关联 PR #${linkedNumber}`, deps.actor)
+  // Linking a PR the forge already merged settles the intent just as a sync pass
+  // would; the broadcast below carries both writes.
+  completeIntentOnPrsMerged(workspacePath, intentId)
   deps.broadcastIntents(workspacePath)
   runServerSidePrCreate(
     {

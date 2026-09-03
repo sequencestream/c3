@@ -102,6 +102,42 @@ describe('syncIntentPrStatus', () => {
     expect(broadcastIntents).toHaveBeenCalledWith(proj)
   })
 
+  it('auto-completes an in_progress intent once the forge confirms every PR merged', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Landing', shortEnTitle: 'landing', content: '', priority: 'P1' },
+    ])
+    updateStatus(intent.id, 'in_progress')
+    upsertIntentPr({ intentId: intent.id, number: '50', status: 'reviewing' })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+    const broadcastIntents = vi.fn()
+
+    await expect(
+      syncIntentPrStatus({ workspacePath: proj, intentId: intent.id, broadcastIntents }),
+    ).resolves.toMatchObject({ ok: true, changed: true, autoCompleted: true })
+
+    expect(getIntent(intent.id)?.status).toBe('done')
+    expect(broadcastIntents).toHaveBeenCalledWith(proj)
+  })
+
+  it('auto-completes on a pass that moved no row, so an already-merged PR still settles', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Stale', shortEnTitle: 'stale', content: '', priority: 'P1' },
+    ])
+    updateStatus(intent.id, 'in_progress')
+    upsertIntentPr({ intentId: intent.id, number: '51', status: 'merged' })
+    const broadcastIntents = vi.fn()
+
+    // No reviewing row ⇒ the forge is never queried; the completion check is what
+    // this pass is for.
+    await expect(
+      syncIntentPrStatus({ workspacePath: proj, intentId: intent.id, broadcastIntents }),
+    ).resolves.toMatchObject({ changed: false, autoCompleted: true, prStatus: 'merged' })
+
+    expect(getForgePrStatus).not.toHaveBeenCalled()
+    expect(getIntent(intent.id)?.status).toBe('done')
+    expect(broadcastIntents).toHaveBeenCalledWith(proj)
+  })
+
   it('can persist closed without unblocking as merged', async () => {
     const [intent] = insertIntents(proj, [
       { title: 'Done', shortEnTitle: 'done', content: '', priority: 'P1' },

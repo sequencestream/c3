@@ -55,6 +55,7 @@ import type { Conn, Handler } from '../../transport/handler-registry.js'
 import { resolveWorkspaceBaseBranch } from '../intents/base-branch.js'
 import { parsePrIdentity } from '../intents/pr-identity.js'
 import { getIntent, upsertIntentPr } from '../intents/store.js'
+import { completeIntentOnPrsMerged } from '../intents/pr-merge-completion.js'
 import { markQueueDirty } from '../intents/workflow.js'
 import { maybePublishDeliveryReviewRequired } from '../im/broadcast-hooks.js'
 import { deliveryMergeActionable } from './merge-attention.js'
@@ -982,6 +983,10 @@ export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delive
         number: pr.number,
         status: 'merged',
       })
+      // The merge just observed may be the intent's last open PR — settle its
+      // status here too, so the refusal below is not the only thing this pass
+      // records about a finished intent.
+      completeIntentOnPrsMerged(abs, msg.intentId)
       ctx.broadcastIntents(abs)
       conn.send({ type: 'error', error: { code: 'delivery.unlinkMergedPrDenied' } })
       return

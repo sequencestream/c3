@@ -280,7 +280,7 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   `lastWorkSessionId` 会与进程表比对:一个**已死**的进程,若其最后 3 条助手
   消息被完成度判定确认为 `done`,则被**自动完成**(提交 + 推送 +
   状态置为 `done`) — 手动**与**自动化运行都适用;一个存活的进程派生出
-  `runStatus = 'running'`;否则为 `dangling`。这是两条自动 `done` 路径之一。
+  `runStatus = 'running'`;否则为 `dangling`。这是三条自动 `done` 路径之一。
 - **会话结束时的 Git/PR 清理(手动,`RM-R26`)。** 当一个**手动启动**的工作会话落定
   (完成 / 出错 / 终止)时,服务端会在**不**改变状态的情况下闭合 Git/PR 环节。在
   `worktree` 模式(或 `current-branch` 且偏离 `defaultMainBranch`)且存在变更时,
@@ -345,7 +345,9 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   `todo`/`in_progress`/`done` 均可),可以从详情头部或 Git/PR 元数据处刷新一次。该同步
   查询 forge CLI,只有在 forge 确认 PR/MR 已合并时才把该行写为 `merged`。
   一个已关闭的 PR/MR 可能被记录为 `closed`,失败或 CLI/认证不可用则保持
-  既有状态不变;`merged` 只解除**同交付**与**无交付**两态的依赖闸门 —— 跨交付
+  既有状态不变。同步收尾求值一次完成派生:该意图的 PR 全部落地(聚合态 `merged`)
+  且它仍处于 `in_progress` 时,自动转 `done`(`RM-R48`)——这是第三条自动 `done` 路径。
+  依赖闸门方面,`merged` 只解除**同交付**与**无交付**两态的依赖闸门 —— 跨交付
   依赖要等它所属的交付 `delivered`(`RM-R40`)。合并确认触发
   `requestPass` 后,对账内核在下一轮对**因失败阶梯而 park 的依赖方**执行自动恢复
   (RM-A17):park 原因属于失败阶梯显式分类集且全部已知依赖已满足时,产出 `unpark`

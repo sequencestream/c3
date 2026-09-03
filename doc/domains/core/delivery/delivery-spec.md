@@ -84,7 +84,7 @@ flowchart LR
 - **DR-R16**: `branch_ready=false` 时,`planned → integrating`(以及 `integrating → verifying`、`verifying → verified`)被 `delivery.guard.branchNotReady` 守卫拦截;面向该交付的意图 PR 创建同样被拒并返回可读原因
 - **DR-R17**: 交付进入 `delivered`/`cancelled` 后分支不自动删除;手动清理入口需二次确认(ConfirmDialog danger),确认后仅删除本地分支引用(若存在),不删除远端分支;清理仅限终态交付(`delivery.cleanupForbidden` 拒非终态)
 - **DR-R18**: 意图↔交付关联是一条独立的边,不由 PR 事实推断;一对(交付, 意图)至多一条,同一意图对多个交付各一条是允许的。关联不改投任何已有 PR;**首次**关联到分支已就绪的交付时,与建边同事务把意图基准分支改为该交付分支(第二条关联保持已设值,解除最后一条回退主分支,规则见 RM-R44)
-- **DR-R19**: 该意图对本交付的 PR 已 merged 时**禁止解除关联**:先看本地状态,本地非 merged 时再向 forge 查实时状态,任一为 merged 即拒(`delivery.unlinkMergedPrDenied`)并把本地状态同步为 merged。forge 状态读不到时同样拒(`delivery.unlinkPrStatusCheckFailed`)——无法确认「不是 merged」即按「可能 merged」处理
+- **DR-R19**: 该意图对本交付的 PR 已 merged 时**禁止解除关联**:先看本地状态,本地非 merged 时再向 forge 查实时状态,任一为 merged 即拒(`delivery.unlinkMergedPrDenied`)并把本地状态同步为 merged(该意图的 PR 因此全部落地时,它随即按 intent 域的 RM-R48 自动完成)。forge 状态读不到时同样拒(`delivery.unlinkPrStatusCheckFailed`)——无法确认「不是 merged」即按「可能 merged」处理
 - **DR-R20**: 解除未合并关联时先关闭该 PR,**PR 已是关闭态视为成功**;关闭成功后删除该 `intent_prs` 行再删边。关闭失败整个解除被阻塞(`delivery.unlinkClosePrFailed`),关联边与 PR 行都不动
 - **DR-R21**: 关联时若意图提交基于主线而非交付分支(判据见 models 的分叉点检测),关联**仍然成功**并附带 diff 膨胀警告;检测失败一律不报警
 - **DR-R22**: 永久删除意图时同事务清除其关联边,远端 PR 不动;取消交付**不删**关联边,终态交付的关联意图仍可查

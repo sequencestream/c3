@@ -16,13 +16,13 @@
 - **`content`**(text): 完整的意图描述
 - **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 需求级别;P0 最高
 - **`module`**(text): 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)
-- **`status`**(enum): `draft`|`todo`|`in_progress`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9)
+- **`status`**(enum): `draft`|`todo`|`in_progress`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)
 - **`dependsOn`**(`id[]`): 该条目所依赖的项目内其他意图 id(聚合;RM-R1)
 - **`lastWorkSessionId`**(text | null): 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)
 - **`automate`**(boolean): 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)
 - **`createdAt`**(timestamp): 创建时间
 - **`updatedAt`**(timestamp): 最近一次变更时间
-- **`completedAt`**(timestamp | null): 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9)
+- **`completedAt`**(timestamp | null): 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9/RM-R48)
 - **`specMode`**(`'sdd'`|`'fast'`| null): 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化。**仅在规范与开发均未起步前可改**:`specPath` 空白且 `specStatus === 'raw'`、`specSessionId`/`specReviewSessionId` 均为空、`lastWorkSessionId` 为空,三条同时成立才允许写入(判据 = `canEditIntentSpecMode`);否则概览页降级为只读、`set_intent_spec_mode` 返回 `intent.specModeLocked`(RM-R43)
 - **`effectiveSpecMode`**(`'sdd'`|`'fast'`): 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R43)
 - **`actionDescriptor`**(ActionDescriptor | null): 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)
@@ -63,7 +63,7 @@ session-registry 所有)。
 - **`repo`**(text | null): 仓库标识(`owner/name`);`null` 表示来源未知
 - **`number`**(text): 仓库内 PR/MR 编号,由 gh/glab 创建输出解析
 - **`url`**(text | null): 可跳转链接;与 `latestCommitHash` 语义不同(链接指向变更请求,哈希指向提交)
-- **`status`**(enum): `reviewing`|`rejected`|`failed`|`merged`|`closed`;与意图自身 `status` 相互独立
+- **`status`**(enum): `reviewing`|`rejected`|`failed`|`merged`|`closed`;有自己的生命周期,不随意图状态变化,反向则派生一条边:PR 行全部落地时 `in_progress` 意图自动转 `done`(RM-R48)
 - **`headBranch` / `baseBranch`**(text | null): 源分支 / 目标分支,每行独立记录
 - **`createdAt` / `updatedAt`**(timestamp): 创建 / 最近更新时间
 

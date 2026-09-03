@@ -678,6 +678,18 @@ Automation 分发与该 consumer 是**同一个**总线事件的两个独立副�
 事件都是空操作——不会重复记录日志或广播。所有 store/广播能力都是被注入的,因此该
 handler 用假实现做单元测试(无需实时 DB 或总线)。
 
+## PR 全落地的完成派生(RM-R48)
+
+`features/intents/pr-merge-completion.ts` 只导出 `completeIntentOnPrsMerged(workspacePath, intentId)`:
+重新读取意图,`status === 'in_progress'` 且 `deriveIntentPrAggregate(intent.prs) === 'merged'` 时
+调用 `updateStatus(id, 'done')`(actor 落 `automation`)与 `publishIntentStatusTransition`,
+返回状态是否真的移动,让调用方决定要不要广播。
+
+判据是**账本聚合态**而非 forge 往返:`merged` 已经表示没有 `reviewing`/`failed`/`rejected` 行,
+一次派生就覆盖单 PR 与多交付 PR 两种形态,`closed` 行按聚合规则不拦。调用点是三条现役的 `merged` 写入路径 —— `syncIntentPrStatus`(每一轮收尾都求值,因此早于该规则合并的意图也会在下一次
+同步时被纠正)、`linkIntentPr`、交付解绑时的合并观察。放在这三处而非 `upsertIntentPr` 内部,
+是因为写入口是纯存储语义,广播与生命周期事件属于领域动作,不该被存储层承担。
+
 ## 列出 / 重命名 / 删除沟通会话
 
 意图本体的永久删除由 `delete_intent` 编排为“读取快照 → 停止运行时并删除关联会话 → 清理本地

@@ -13,19 +13,10 @@
  */
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import type { IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
-import { activeIntentPrs, pickPrimaryIntentPr } from '@ccc/shared'
+import type { IntentStatus } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { publishIntentLifecycle } from './lifecycle-events.js'
-import {
-  findIntents,
-  getIntent,
-  insertIntents,
-  isStoreAvailable,
-  updateStatus,
-  upsertIntentPr,
-  upsertIntents,
-} from './store.js'
+import { findIntents, getIntent, insertIntents, isStoreAvailable, upsertIntents } from './store.js'
 
 const INTENT_STATUSES = [
   'draft',
@@ -147,12 +138,6 @@ export const findSchema = {
 
 export const viewSchema = { id: z.string().describe('意图 id') }
 
-export const saveIntentPrInfoSchema = {
-  intentId: z.string().describe('要回填 PR 状态的本项目意图 id(该意图必须已有 PR)'),
-  prStatus: z.enum(['reviewing', 'rejected', 'failed', 'merged', 'closed']),
-  done: z.boolean().optional().describe('仅 PR 已合并时传 true，将意图标记为 done'),
-}
-
 export type SaveArgs = { intents: Parameters<typeof upsertIntents>[1] }
 // create-only:每条都是新建草稿,不携带 id(insertIntents 总是 mint 新 id)。
 export type SaveIntentDirectlyArgs = {
@@ -160,7 +145,6 @@ export type SaveIntentDirectlyArgs = {
 }
 export type FindArgs = { keyword?: string; module?: string; status?: IntentStatus }
 export type ViewArgs = { id: string }
-export type SaveIntentPrInfoArgs = { intentId: string; prStatus: IntentPrStatus; done?: boolean }
 
 // ---- Description strings (advertised in the system prompt) ----
 
@@ -196,16 +180,6 @@ export const saveIntentDirectlyDesc =
   intentContentGuidance
 
 export const viewDesc = '按 id 查看本项目单条意图的完整详情(只读,含 content、dependsOn 等)。'
-export const saveIntentPrInfoDesc =
-  '【已废弃,勿再使用】回填本项目一条意图**既有** PR 的状态。' +
-  '一个意图可能同时持有多条 PR(每个交付一条),仅凭 intentId 无法确定要回填哪一条,' +
-  '因此本工具已从所有 allowlist 移除、不再可授权,仅为过渡期存量调用保留。' +
-  '替代路径:用只读的 find_intents / view_intent 读取 PR 现状;' +
-  '需要把被拒/失败/关闭的 PR 复位为 reviewing 时,发布 pr:update 事件并携带 ' +
-  'association.deliveryId 或 pr.number 精确定位该 PR;终态(merged/closed)由 c3 自己' +
-  '从 forge 事实落库(「同步 PR 状态」),不再由模型回填。' +
-  '过渡期行为:可写入 reviewing/rejected/failed/merged/closed;PR 已合并时传 done=true 将意图标记为 done;' +
-  '只更新已存在的 PR 记录,意图尚无 PR 时拒绝;意图有多条活跃 PR 时**明确报错并列出各 PR 编号**,绝不猜一条。'
 
 // ---- Core logic (framing-free; bound to ONE project via `workspacePath`) ----
 
@@ -302,84 +276,6 @@ export function runSaveIntentDirectly(
     return {
       content: text(
         `已落库 ${saved.length} 条草稿意图(待人工确认):${saved.map((r) => r.title).join('、')}`,
-      ),
-    }
-  } catch (err) {
-    return { content: text(`保存失败:${String(err)}`), isError: true }
-  }
-}
-
-/**
- * Reconcile the status of an intent's EXISTING PR.
- *
- * DEPRECATED — and removed from every allowlist (the automation tool set, the
- * built-in templates, and the externally-grantable catalog), so no NEW
- * authorization to call it can be created. The reason is structural: an intent
- * may now hold several PRs (one per delivery), and this tool's only locator is
- * the intent id, which addresses a set rather than a row. The replacements are a
- * `pr:update` event carrying `association.deliveryId` / `pr.number` (for a reset
- * back to `reviewing`) and c3's own forge-driven `syncIntentPrStatus` (for the
- * terminal `merged` / `closed`).
- *
- * The core stays as the TRANSITIONAL implementation for whatever call path can
- * still reach it, with the two refusals that make it safe:
- *
- * It cannot create a PR. The tool only ever receives a status — no forge, no
- * repo, no URL — so letting it insert would make it the one entry point capable
- * of minting a PR row with no verifiable origin, which is exactly what the
- * ledger's identity key exists to prevent. An intent with no PR is therefore
- * rejected with an instruction to create one first.
- *
- * Several active PRs are rejected too, by NAMING them: with only an intent id in
- * hand the tool cannot say WHICH PR the caller reconciled, and picking one would
- * be a guess — a guess that would corrupt a real PR's status. This refusal is
- * pinned by a unit test so no later change can soften it back into a guess.
- */
-export function runSaveIntentPrInfo(
-  workspacePath: string,
-  args: SaveIntentPrInfoArgs,
-  onSaved: (workspacePath: string) => void,
-): IntentToolResult {
-  if (!isStoreAvailable()) return { content: text('意图库不可用,未保存。'), isError: true }
-  const intent = getIntent(args.intentId)
-  if (!intent || resolveWorkspaceRoot(intent.workspaceName) !== resolve(workspacePath)) {
-    return { content: text(`未找到 id 为 ${args.intentId} 的意图(本项目)。`), isError: true }
-  }
-  if (intent.prs.length === 0) {
-    return {
-      content: text(`意图 ${intent.id} 尚无 PR,本工具只能更新既有 PR 的状态,请先创建 PR。`),
-      isError: true,
-    }
-  }
-  const active = activeIntentPrs(intent.prs)
-  if (active.length > 1) {
-    return {
-      content: text(
-        `意图 ${intent.id} 有 ${active.length} 条活跃 PR(${active
-          .map((pr) => `#${pr.number}`)
-          .join('、')}),无法确定要回填哪一条。`,
-      ),
-      isError: true,
-    }
-  }
-  // The single PR to reconcile: the live one, or — when every PR is finished — the
-  // one the intent has, so a merged/closed row can still be corrected.
-  const target = active[0] ?? pickPrimaryIntentPr(intent.prs)
-  if (!target) return { content: text(`意图 ${intent.id} 尚无 PR。`), isError: true }
-  try {
-    upsertIntentPr({
-      intentId: intent.id,
-      deliveryId: target.deliveryId,
-      forge: target.forge,
-      repo: target.repo,
-      number: target.number,
-      status: args.prStatus,
-    })
-    if (args.done === true) updateStatus(intent.id, 'done')
-    onSaved(workspacePath)
-    return {
-      content: text(
-        `已回填意图 ${intent.id} 的 PR 状态为 ${args.prStatus}${args.done ? '，并标记为完成' : ''}。`,
       ),
     }
   } catch (err) {

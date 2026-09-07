@@ -86,16 +86,29 @@ See [`doc/features.md`](doc/features.md) for the full feature tree.
 
 ### CLI single binary
 
-#### Homebrew
+#### Homebrew (macOS / Linux)
 
 ```bash
 brew install sequencestream/tap/c3   # install
 brew upgrade sequencestream/tap/c3   # update to the latest release
 ```
 
+#### Install script (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sequencestream/c3/main/install.sh | sh
+```
+
+#### Install script (Windows, PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/sequencestream/c3/main/install.ps1 | iex
+```
+
 #### Download
 
-Release binaries are published on **GitHub Releases**.
+Release binaries are published on **GitHub Releases** — `.tar.gz` for macOS and
+Linux, `.zip` for Windows. Verify the checksum before running:
 
 ```bash
 shasum -a 256 -c c3-cli-v0.18.0-macos-arm64.tar.gz.sha256
@@ -104,12 +117,20 @@ shasum -a 256 -c c3-cli-v0.18.0-macos-arm64.tar.gz.sha256
 shasum -a 256 -c SHA256SUMS
 ```
 
+```powershell
+# Windows: compare against the .sha256 file shipped next to the zip
+(Get-FileHash c3-cli-v0.18.0-windows-x64.zip -Algorithm SHA256).Hash
+```
+
 #### Run
 
 ```bash
 ./c3 --port 3000 --daemon
 # open http://localhost:3000
 ```
+
+Installed via Homebrew or an install script, the binary is on your `PATH`: run
+`c3 --port 3000 --daemon` (`c3.exe` on Windows) from anywhere.
 
 c3 listens on **`127.0.0.1` only** unless you say otherwise. To accept LAN or
 remote connections, choose the interface explicitly:

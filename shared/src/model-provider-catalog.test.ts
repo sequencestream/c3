@@ -15,6 +15,7 @@ import {
   checkProviderBaseUrl,
   effectiveProviderModels,
   findProviderTemplate,
+  modelVendorDefaultUrls,
   modelVendorForTemplate,
 } from './model-provider-catalog.js'
 
@@ -76,6 +77,49 @@ describe('端点模板', () => {
     expect(tpl.urls.anthropic).toBe('https://api.minimax.io/anthropic')
     expect(tpl.urls.openai).toBeUndefined()
     expect(tpl.wireApi).toBeUndefined()
+  })
+})
+
+describe('按 vendor 取默认端点', () => {
+  it('双协议模板的两个槽都有默认值', () => {
+    expect(modelVendorDefaultUrls('deepseek')).toEqual({
+      openai: 'https://api.deepseek.com',
+      anthropic: 'https://api.deepseek.com/anthropic',
+    })
+  })
+
+  it('模板只填一个槽时,另一个槽没有默认值', () => {
+    expect(modelVendorDefaultUrls('qwen')).toEqual({
+      openai: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    })
+    expect(modelVendorDefaultUrls('minimax')).toEqual({
+      anthropic: 'https://api.minimax.io/anthropic',
+    })
+  })
+
+  it('无模板的厂商、custom、未知值都是空对象 —— 空槽由用户手填,不是错误', () => {
+    expect(modelVendorDefaultUrls('google')).toEqual({})
+    expect(modelVendorDefaultUrls('ollama')).toEqual({})
+    expect(modelVendorDefaultUrls('custom')).toEqual({})
+    expect(modelVendorDefaultUrls('from-the-future')).toEqual({})
+    expect(modelVendorDefaultUrls(undefined)).toEqual({})
+  })
+
+  it('每个模板的 vendor 都能查回它自己的端点', () => {
+    for (const tpl of PROVIDER_TEMPLATES) {
+      expect(modelVendorDefaultUrls(tpl.vendor), `模板 ${tpl.id}`).toEqual(tpl.urls)
+    }
+  })
+
+  it('返回的是副本:改它既不动模板目录,也不影响下一次查询', () => {
+    const urls = modelVendorDefaultUrls('deepseek')
+    urls.openai = 'https://evil.example'
+    delete urls.anthropic
+    expect(findProviderTemplate('deepseek')!.urls).toEqual({
+      openai: 'https://api.deepseek.com',
+      anthropic: 'https://api.deepseek.com/anthropic',
+    })
+    expect(modelVendorDefaultUrls('deepseek').openai).toBe('https://api.deepseek.com')
   })
 })
 

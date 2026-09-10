@@ -3,12 +3,13 @@
  *
  * 这里守的是几条不该被顺手破坏的性质:删除一个仍被引用的 provider 必须先说清后果,
  * 探测这个动作永远走 emit 而不是混进草稿的字段编辑里,以及改 Model Vendor 只换内置模型建议,
- * 连接字段与用户自己的模型条目一概不动。
+ * 连接字段与用户自己的模型条目一概不动;
+ * 以及按厂商补默认端点只补空槽,任何已填的 URL 都不被它改写。
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
-import { modelVendorModels } from '@ccc/shared'
+import { modelVendorDefaultUrls, modelVendorModels } from '@ccc/shared'
 import ModelProviders from './ModelProviders.vue'
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
@@ -214,6 +215,103 @@ describe('启用滑动开关', () => {
     const sw = w.find<HTMLInputElement>('[data-testid="provider-enabled-switch"]')
     expect(sw.element.checked).toBe(false)
     expect(w.find('.provider-pause').text()).toContain('Paused')
+  })
+})
+
+describe('按厂商与协议补默认端点', () => {
+  /** 展开第一条 provider —— 协议槽与 vendor 下拉都在展开后才渲染。 */
+  async function expand(w: ReturnType<typeof render>) {
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    return w
+  }
+
+  it('先选厂商再勾协议:两种协议都填入该厂商的默认端点', async () => {
+    const providers = [provider({ vendor: 'custom', urls: {} })]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-vendor"]').setValue('deepseek')
+    await w.find('[data-testid="provider-conn-openai"]').setValue(true)
+    await w.find('[data-testid="provider-conn-anthropic"]').setValue(true)
+    expect(providers[0].urls).toEqual(modelVendorDefaultUrls('deepseek'))
+    // 只带 URL,不顺手套用模板的 wireApi:勾选 openai 仍是既有缺省。
+    expect(providers[0].wireApi).toBe('chat')
+  })
+
+  it('先勾协议再换厂商:空槽被新厂商的默认端点补上', async () => {
+    const providers = [provider({ vendor: 'custom', urls: {} })]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-conn-anthropic"]').setValue(true)
+    expect(providers[0].urls.anthropic).toBe('')
+    await w.find('[data-testid="provider-vendor"]').setValue('moonshot')
+    expect(providers[0].urls.anthropic).toBe('https://api.moonshot.cn/anthropic')
+  })
+
+  it('换厂商只补已勾选的空槽:未勾选的协议不会凭空多出一条 URL', async () => {
+    const providers = [provider({ vendor: 'custom', urls: { openai: '' } })]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-vendor"]').setValue('deepseek')
+    expect(providers[0].urls).toEqual({ openai: 'https://api.deepseek.com' })
+  })
+
+  it('一槽已填、一槽为空时只补空的那个', async () => {
+    const providers = [
+      provider({ vendor: 'custom', urls: { openai: 'https://house.example/v1', anthropic: '' } }),
+    ]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-vendor"]').setValue('zhipu')
+    expect(providers[0].urls).toEqual({
+      openai: 'https://house.example/v1',
+      anthropic: 'https://open.bigmodel.cn/api/anthropic',
+    })
+  })
+
+  it('勾选一个协议只动那一个槽,另一槽已填的 URL 原样留下', async () => {
+    const providers = [
+      provider({ vendor: 'deepseek', urls: { anthropic: 'https://house.example' } }),
+    ]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-conn-openai"]').setValue(true)
+    expect(providers[0].urls).toEqual({
+      anthropic: 'https://house.example',
+      openai: 'https://api.deepseek.com',
+    })
+  })
+
+  it('厂商没有该协议的预设时保持空槽,而不是塞一个猜出来的端点', async () => {
+    const providers = [provider({ vendor: 'custom', urls: {} })]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-vendor"]').setValue('google')
+    await w.find('[data-testid="provider-conn-openai"]').setValue(true)
+    expect(providers[0].urls.openai).toBe('')
+    // doubao 只有 openai 预设,anthropic 槽仍留空。
+    await w.find('[data-testid="provider-conn-anthropic"]').setValue(true)
+    await w.find('[data-testid="provider-vendor"]').setValue('doubao')
+    expect(providers[0].urls).toEqual({
+      openai: 'https://ark.cn-beijing.volces.com/api/v3',
+      anthropic: '',
+    })
+  })
+
+  it('自动填入之后仍是普通字段:手改能生效,且不会被回填', async () => {
+    const providers = [provider({ vendor: 'qwen', urls: {} })]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-conn-openai"]').setValue(true)
+    await w.find('[data-testid="provider-baseurl-openai"]').setValue('https://proxy.example/v1')
+    expect(providers[0].urls.openai).toBe('https://proxy.example/v1')
+    await w.find('[data-testid="provider-vendor"]').setValue('qwen')
+    expect(providers[0].urls.openai).toBe('https://proxy.example/v1')
+  })
+
+  it('换厂商不改写已有的 wireApi', async () => {
+    const providers = [provider({ vendor: 'custom', urls: { openai: '' }, wireApi: 'responses' })]
+    const w = await expand(render({ providers }))
+    await w.find('[data-testid="provider-vendor"]').setValue('deepseek')
+    expect(providers[0].wireApi).toBe('responses')
+  })
+
+  it('打开面板本身不补任何东西', async () => {
+    const providers = [provider({ vendor: 'deepseek', urls: { openai: '' } })]
+    await expand(render({ providers }))
+    expect(providers[0].urls).toEqual({ openai: '' })
   })
 })
 

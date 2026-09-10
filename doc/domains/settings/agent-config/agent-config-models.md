@@ -72,7 +72,7 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 - **`template`**(text,可选): 创建时所用目录模板的 id。纯创建溯源,运行时从不读取
 - **`vendor`**(Model Vendor,可选): 上游模型厂商身份。见 [Model Vendor 与模型清单](#model-vendor-与模型清单)
 - **`apiKey`**(text): **账户级** key,覆盖本 provider 上所有协议 URL;落库为 `secret` 类型
-- **`urls`**(map `protocolType → string`): 逐协议风格的上游 base URL。`protocolType` 为 `openai` | `anthropic`(上游文档所说的兼容风格,不是 c3 的 VendorId)。非空才算该协议已连接
+- **`urls`**(map `protocolType → string`): 逐协议风格的上游 base URL。`protocolType` 为 `openai` | `anthropic`(上游文档所说的兼容风格,不是 c3 的 VendorId)。键存在即该协议已在面板上启用,空串是待填的空槽;非空才算该协议已连接
 - **`wireApi`**(`'responses' | 'chat'`,可选): 仅 `urls.openai` 有意义;缺省按 `'chat'` 处理
 - **`models`**(列表,可选): 本 provider **自有**的模型条目 `{ id, contextWindow?, maxOutputTokens? }`,是对内置清单的补充与覆盖。提供方表单只编辑 `id`(展示为模型名称),每条与删除按钮同一行;`contextWindow`/`maxOutputTokens` 仍被 schema 接受并参与能力解析,但不在表单上暴露
 - **`paused`**(bool,可选): 运维暂停。为真时引用它的 agent 在启动处明确失败(而不是稍后以晦涩的鉴权错误暴露);可恢复,数据不丢
@@ -100,7 +100,7 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 - 核验不到清单的厂商**留空**而不是猜:空清单只多一次手输,错清单是一次失败的运行
 - 聚合网关与本地运行时按其性质恒为空:前者转发别家成百上千个 id,后者只有运维自己拉了什么
 - 条目不带 `contextWindow`/`maxOutputTokens`:猜大了会引发上游截断或报错,这两个数由运维填在自有条目上
-- 端点模板同理,核验不到 base URL 的厂商只进目录、不给模板
+- 端点模板同理,核验不到 base URL 的厂商只进目录、不给模板,面板上也就没有默认端点可补
 
 **有效模型清单** = 内置条目 + 自有条目,按去空白后的 id 去重,空 id 丢弃;同名以自有条目为准
 (保住运维填的能力元数据),但留在内置条目的位置上,故顺序只取决于厂商与自有条目的次序。
@@ -108,7 +108,7 @@ provider 或厂商 CLI 登录。归一化在加载/保存时把它们写成空�
 时兜底、不是白名单。接不了 provider 的 vendor(Cursor)不走这条合并:它的候选直接取同名
 Model Vendor 的内置清单——它连不到任何 provider,列 provider 的模型只会给出一堆够不着的
 候选;这类 vendor 若不在厂商目录里,得到的是空候选而不是别人的清单。运行时能力解析仍走既有优先级(agent `modelOverrides` > provider 模型条目)。
-换厂商只替换内置那一半,不动自有条目、名称、key、URL、wireApi、暂停位,也不动任何 agent 的模型。
+换厂商只替换内置那一半,不动自有条目、名称、key、wireApi、暂停位,也不动任何 agent 的模型;连接字段上只有**空**的协议槽会补上新厂商的默认端点(AC-R32),已填的 URL 保留。
 
 ### ProtocolType 与 vendor 支持列表
 

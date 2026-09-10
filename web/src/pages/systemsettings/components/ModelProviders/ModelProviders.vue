@@ -30,6 +30,7 @@ import {
   MODEL_VENDORS,
   PROVIDER_TEMPLATES,
   checkProviderBaseUrl,
+  modelVendorDefaultUrls,
   modelVendorLabel,
   modelVendorModels,
   normalizeModelVendor,
@@ -128,10 +129,18 @@ function enabledProtocols(p: ModelProvider): ProtocolType[] {
   return PROTOCOL_TYPES.filter((protocol) => p.urls[protocol] !== undefined)
 }
 
-/** 勾选=为该协议建一条空 URL;取消=删除该槽。 */
+/**
+ * 该 vendor 在该协议上的默认端点,查不到就是空串。目录里没有预设不是错误——空槽照样能手填,
+ * 而猜一个端点换来的是一次晦涩的鉴权失败。
+ */
+function defaultUrl(p: ModelProvider, protocol: ProtocolType): string {
+  return modelVendorDefaultUrls(p.vendor)[protocol] ?? ''
+}
+
+/** 勾选=为该协议建一条 URL(空槽按当前厂商补上默认端点);取消=删除该槽。 */
 function setProtocolEnabled(p: ModelProvider, protocol: ProtocolType, on: boolean): void {
   if (on) {
-    if (!p.urls[protocol]) p.urls[protocol] = ''
+    if (!p.urls[protocol]) p.urls[protocol] = defaultUrl(p, protocol)
     if (protocol === 'openai' && p.wireApi === undefined) p.wireApi = 'chat'
   } else {
     delete p.urls[protocol]
@@ -208,9 +217,16 @@ function groupLabel(group: ModelVendorGroup): string {
   }
 }
 
-/** 只改身份。连接字段、账户 key、暂停位、用户自己的模型条目一概不动。 */
+/**
+ * 改身份,并把已勾选协议里的空槽补上新厂商的默认端点。已填的 URL 一律保留——保住用户填过的
+ * 配置优先于强制一致,代价是换厂商后旧端点可能还指着旧家,由用户自己重填。账户 key、暂停位、
+ * 用户自己的模型条目一概不动,未勾选的协议也不会凭空多出一条 URL。
+ */
 function setVendor(p: ModelProvider, value: string): void {
   p.vendor = normalizeModelVendor(value)
+  for (const protocol of enabledProtocols(p)) {
+    if (!p.urls[protocol]) p.urls[protocol] = defaultUrl(p, protocol)
+  }
 }
 
 // ---- 模型目录 ----

@@ -29,7 +29,7 @@
  */
 import type { ModelProvider, ModelProviderModel, ProtocolType } from './protocol.js'
 import type { ModelVendorId } from './model-vendor-catalog.js'
-import { modelVendorModels } from './model-vendor-catalog.js'
+import { modelVendorModels, normalizeModelVendor } from './model-vendor-catalog.js'
 
 /** One entry of the provider directory. */
 export interface ProviderTemplate {
@@ -297,6 +297,25 @@ export function findProviderTemplate(id: string): ProviderTemplate | undefined {
  */
 export function modelVendorForTemplate(templateId: string | undefined): ModelVendorId {
   return findProviderTemplate((templateId ?? '').trim())?.vendor ?? 'custom'
+}
+
+/**
+ * The default endpoints for one Model Vendor, protocol by protocol — what the console fills
+ * an EMPTY slot with when the operator names a vendor or turns a protocol on, so a known
+ * upstream costs a pick rather than a trip to its API docs.
+ *
+ * Derived from the templates alone, matched on `vendor`: there is one endpoint fact per
+ * vendor and it lives in the directory above. A vendor with no template, and `custom`, have
+ * no default — an absent preset costs one paste, an invented one costs a debugging session.
+ * A template that fills only one protocol slot leaves the other without a default.
+ *
+ * The result is a fresh object: the caller edits it into a provider draft, and nothing it
+ * does can reach the directory. ADVISORY like everything else here — never a validation
+ * rule, an allowlist, or a runtime fallback for a slot the operator left blank.
+ */
+export function modelVendorDefaultUrls(vendor: unknown): Partial<Record<ProtocolType, string>> {
+  const id = normalizeModelVendor(vendor)
+  return { ...PROVIDER_TEMPLATES.find((t) => t.vendor === id)?.urls }
 }
 
 /**

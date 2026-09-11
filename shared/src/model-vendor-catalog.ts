@@ -340,7 +340,7 @@ export const MODEL_VENDORS = [
     id: 'cerebras',
     displayName: 'Cerebras',
     group: 'cloud',
-    models: [{ id: 'gemma-4-31b' }, { id: 'qwen-3.8-27b' }],
+    models: [{ id: 'gpt-oss-120b' }, { id: 'qwen-3.8-27b' }],
   },
   {
     id: 'together',

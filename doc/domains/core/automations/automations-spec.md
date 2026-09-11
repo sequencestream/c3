@@ -118,6 +118,14 @@ stateDiagram-v2
 一条执行日志一旦设置了 `startedAt` 就是**只追加**的,并遵循从 `pending`
 到某个终止状态的只能前进的状态链。
 
+一条执行日志落到 `failed` 时,同一次运行在运行日志里也留下现场:分发器把失败原因写进执行
+日志后**正常返回**(不抛异常),因此明细在记录该 `failed` 的现场就地打出一条
+`[run] failed stage=automation:<自动化 id> …: <原因>`,其后才是这次运行的
+`[run] settled reason=error`——终态由结算行表达,原因由失败行表达,排障不必先查库。
+这类原因是字符串而非异常对象,故该行可以没有 stack;执行向外抛出的异常仍由异常现场记录,
+带 stack。`cancelled`(手动取消)不是错误,不打失败明细。行格式与分级见
+[availability](../../../non-functional/availability.md) RUNLOG-1/RUNLOG-4。
+
 ### 历史展示(读路径)
 
 web-console 对自动化视图使用三栏布局:

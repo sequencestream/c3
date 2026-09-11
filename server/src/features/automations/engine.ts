@@ -9,6 +9,12 @@
  * resident automation subscriptions in `run-domain-subscriptions.ts` react to
  * `run:started` and `run:settled` to broadcast the refreshed automation list;
  * this module adds one more broadcast when the real agent session id is bound.
+ *
+ * 运行日志的分工:退出行只讲终态(由生命周期订阅按 `run:settled` 打出),失败
+ * 明细由现场打出。automation 的失败绝大多数不抛异常 —— dispatcher 把原因写进
+ * 执行日志的 `failed` 记录后正常返回 —— 所以这里在处理 `failed` 更新时就补打
+ * 一条 `[run] failed`,否则运行日志里只有 `reason=error`,失败原因只剩数据库里
+ * 的那条执行日志。
  */
 
 import type { Automation, RunEndReason } from '@ccc/shared/protocol'
@@ -17,7 +23,7 @@ import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 import { getTimezone } from '../../kernel/config/index.js'
-import { logRunFailure } from '../../kernel/run/run-log.js'
+import { logRunFailure, type RunLogIdentity } from '../../kernel/run/run-log.js'
 import { execute, type UpdateLogFn } from './dispatcher.js'
 import { isAgentQuotaRecoveryAutomation } from './store.js'
 
@@ -172,6 +178,14 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
     workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
   })
 
+  /** 本次 run 的日志身份 —— 失败明细与异常明细共用同一套字段。 */
+  const runLogIdentity = (): RunLogIdentity => ({
+    sessionId: logId,
+    workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
+    sessionKind: 'automation',
+    runKind: 'headless',
+  })
+
   // Track execution outcome via the updateLog wrapper so we can set the
   // correct settled reason (complete vs error).
   let success = true
@@ -184,6 +198,15 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
   const trackingUpdateLog: UpdateLogFn = (id, patch) => {
     if (patch.status === 'failed' || patch.status === 'cancelled') success = false
     updateLog(id, patch)
+    // 自动化的绝大多数失败并不抛异常:dispatcher 把原因写进执行日志的 `failed`
+    // 记录后正常返回,下面 `.catch()` 里的明细日志永远不会触发,运行日志就只剩
+    // 一行 `settled reason=error`,「谁、因为什么」失败只能去翻数据库。这里按同一
+    // 条 `[run] failed` 现场补打明细:终态仍由结算行表达,明细由失败现场记录。
+    // 失败原因在这条路径上是字符串(不是异常对象),因此这条明细可以没有 stack。
+    // `cancelled`(用户停止)不是错误,即使带 error 也不打,避免噪声。
+    if (patch.status === 'failed' && typeof patch.error === 'string' && patch.error) {
+      logRunFailure(runLogIdentity(), `automation:${automation.id}`, patch.error)
+    }
     if (!sessionIdBroadcast && typeof patch.sessionId === 'string' && patch.sessionId) {
       sessionIdBroadcast = true
       activeStore.broadcast?.(resolveWorkspaceRoot(automation.workspaceName)!)
@@ -196,16 +219,7 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
   const exec = execute(automation, logId, trackingUpdateLog, triggerEvent)
     .catch((err: unknown) => {
       success = false
-      logRunFailure(
-        {
-          sessionId: logId,
-          workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
-          sessionKind: 'automation',
-          runKind: 'headless',
-        },
-        `automation:${automation.id}`,
-        err,
-      )
+      logRunFailure(runLogIdentity(), `automation:${automation.id}`, err)
     })
     .finally(() => {
       inFlight.delete(automation.id)

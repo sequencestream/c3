@@ -11,7 +11,7 @@ c3
 │   │
 │   ├── agent-session 智能体会话                  # 驱动厂商 SDK 的 query() 循环,单次 run 的引擎室
 │   │   ├── 运行生命周期                          # 接收 prompt → 流式输出 → 收敛(done/error/aborted)
-│   │   ├── 运行生命周期日志                      # 每个 run 成对打印 `[run] started` / `[run] settled`(身份+原因+耗时);异常退出另打 `[run] failed stage=…` + stack;由总线常驻订阅统一产出,新增发布者零改动
+│   │   ├── 运行生命周期日志                      # 每个 run 成对打印 `[run] started` / `[run] settled`(身份+原因+耗时);失败另打 `[run] failed stage=…`(异常带 stack,字符串原因只有消息);由总线常驻订阅统一产出,新增发布者零改动
 │   │   ├── SDK↔协议翻译                          # 把 SDK 消息映射为 wire 层 ServerToClient 事件
 │   │   ├── 权限模式                              # 按会话 vendor 的模式目录切换,统一解释为中立 ActionMode × ToolGate 网格(claude 五档 / codex 双策略 / cursor plan|agent|full-access)
 │   │   ├── 运行态机                              # idle / running / awaiting-permission,每会话单飞(single-flight)

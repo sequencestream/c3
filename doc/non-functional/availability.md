@@ -31,7 +31,7 @@ c3 是一个前台进程。没有集群、没有故障转移、没有 SLA。可�
 - **RUNLOG-1**: 每一个 run 在启动时打印一条 `[run] started`,在退出时打印一条 `[run] settled`。两行携带同一套身份字段:`session`(当前 run id)、`kind=<sessionKind>/<runKind>`、`workspace`,已知时再加 `agent` / `vendor`;退出行另带 `reason`(`complete` / `error` / `aborted`)与 `duration`。
 - **RUNLOG-2**: 日志由**事件总线上的常驻订阅**统一产出,而非各发布点自行打印:凡是发 `run:started` / `run:settled` 的路径(交互式 launcher、driver、automation、discussion 编排与研究、一次性内部调用)都自动获得成对日志,新增发布者无需改日志代码。
 - **RUNLOG-3**: 耗时按 run id 记账。pending→real 绑定会把起始时刻一并迁移到真实会话 id,因此「以 pending id 起、以真实 id 落」的 run 仍能报出正确耗时;没有记到起点时退出行省略 `duration`,而不是打一个假值。
-- **RUNLOG-4**: **异常退出必须留下现场**:抛出的异常、沙箱硬隔离失败、厂商不可用、研究只读闸拒绝、降级链走尽、driver 抛出、automation 执行抛出,都额外打印一条 `[run] failed stage=<阶段> …: <消息>` 并跟随 stack。退出行本身按终态分级——`complete` 走 `log`、`aborted` 走 `warn`、`error` 走 `error`。
+- **RUNLOG-4**: **失败必须留下现场**:抛出的异常、沙箱硬隔离失败、厂商不可用、研究只读闸拒绝、降级链走尽、driver 抛出、automation 执行抛出,以及 automation 那些不抛异常、只把原因写进执行日志 `failed` 记录后正常返回的失败(命令非零退出/超时、缺少可用智能体、挂钟超时、输出校验失败、被捕获的 SDK 错误),都额外打印一条 `[run] failed stage=<阶段> …: <消息>`:消息取自异常时跟随 stack,取自字符串原因时只有消息。退出行本身按终态分级——`complete` 走 `log`、`aborted` 走 `warn`、`error` 走 `error`。
 - **RUNLOG-5**: 终态分级不改变既有的线上帧与控制流:`turn_end`、`all_agents_failed`、降级链决策一律照旧,日志是纯旁路。
 
 **非目标(已记录的限制):** 没有基于大小的轮转(实时文件是持续写入的单一固定名称);30 天保留期与每日节奏都不可由用户配置;没有远程日志投送;范围仅限于 c3 **主进程** 自身的输出——沙箱容器、子进程以及厂商 CLI 的输出均不在采集范围内。run 生命周期日志不含 prompt 正文与模型输出(那是会话记录的职责,不是运行日志的)。浏览器侧的日志可见性只覆盖当前实时文件,不提供归档回看、搜索、级别过滤与内容脱敏改造。

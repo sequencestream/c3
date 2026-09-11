@@ -12,8 +12,9 @@
  * 退出行的耗时由 `run-log` 的登记表算出;`run:bound` 负责把 pending id 上的起点
  * 迁到真实会话 id 上,否则以 pending id 起、以真实 id 落的 run 就没有耗时。
  *
- * 异常的**细节**(stack)不在这里打:总线事件只带终态 `reason`,拿不到异常对象。
- * 抛异常的现场(launcher / driver)自己用 `logRunFailure` 打消息 + stack,这里
+ * 失败的**细节**不在这里打:总线事件只带终态 `reason`,拿不到错误本身。失败现场
+ * (launcher / driver 的异常、automation 写进执行日志的失败原因)自己用
+ * `logRunFailure` 打明细 —— 有异常时带 stack,只有字符串原因时就只有消息 —— 这里
  * 只负责那条统一的 `settled reason=error` 退出行。
  */
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'

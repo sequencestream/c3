@@ -916,6 +916,22 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
     }
   })
 
+  it('keeps the default-agent tab to the inherited-default selector only (no role dropdowns)', () => {
+    const w = mountWs(cfg(), { resolvedSpecRoot: '/home/u/.c3/specs/test' })
+    const panel = w.find('[data-testid="project-config-tab-defaultAgent"]')
+    for (const testid of [
+      'tool-agent-select',
+      'intent-agent-select',
+      'spec-agent-select',
+      'spec-review-agent-select',
+      'automation-agent-select',
+      'review-agent-select',
+      'fix-agent-select',
+    ]) {
+      expect(panel.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    }
+  })
+
   it('defaults to the default-mode tab and switches to a clean tab without confirmation', async () => {
     const w = mountWs(cfg())
     expect(panelHidden(w, 'project-config-tab-defaultMode')).toBe(false)

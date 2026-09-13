@@ -212,9 +212,10 @@ const TABS: WsTab[] = [
   'memories',
 ]
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
-  // 与系统设置的「默认 Agent」页签同构,只多一个居首的「继承系统默认」选项。它只拥有
-  // defaultAgentId 一个字段:空串即继承(服务端归一化时把这个键整个省略,绝不把当时的
-  // 系统默认值写进来 —— 那会把动态继承冻成一次快照)。
+  // 与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;系统页签
+  // 另承载七个角色选择器,工作区页签没有那些角色字段。这里只拥有 defaultAgentId 一个字段:
+  // 空串即继承(服务端归一化时把这个键整个省略,绝不把当时的系统默认值写进来 —— 那会把
+  // 动态继承冻成一次快照)。
   defaultAgent: ['defaultAgentId'],
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
@@ -899,9 +900,10 @@ const parkRecoveryRateText = computed(() => {
 
     <div class="project-config-body">
       <!-- ============ Default Agent tab ============
-           与系统设置的「默认 Agent」页签同构,只多一个居首的「继承系统默认」选项。
-           留在继承态时旁边显示当前继承到谁;系统默认变化时这个提示跟着变,但本页
-           不因此变脏 —— 继承的是关系,不是某一刻的值。 -->
+           与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;
+           系统页签另承载七个角色选择器,工作区页签没有那些角色字段。留在继承态时旁边
+           显示当前继承到谁;系统默认变化时这个提示跟着变,但本页不因此变脏 —— 继承的
+           是关系,不是某一刻的值。 -->
       <div
         v-show="activeTab === 'defaultAgent'"
         class="project-config-tab-panel"

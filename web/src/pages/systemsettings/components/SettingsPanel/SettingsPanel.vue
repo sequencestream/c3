@@ -16,12 +16,7 @@ import {
   hasProviderConfig,
   providerSupportsVendor,
 } from '@ccc/shared/protocol'
-import {
-  effectiveProviderModels,
-  modelVendorLabel,
-  modelVendorModels,
-  normalizeAgentRef,
-} from '@ccc/shared'
+import { effectiveProviderModels, modelVendorLabel, modelVendorModels } from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,
@@ -137,8 +132,16 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   // 各自只保存自己的字段,所以「在 agent 页签选一个还没保存的 provider」需要先保存 provider
   // 页签 —— 表单的新建入口因此是跳到本页签,而不是就地造一条草稿记录。
   provider: ['modelProviders'],
-  agent: [
-    'agents',
+  // Agent 页签只拥有注册表。七个角色字段与 defaultAgentId 同属「未指定执行者时用谁」的
+  // 兜底层,归入「默认 Agent」页签:保存注册表不会顺手改角色/默认值,改角色/默认值也不会
+  // 顺手提交未保存的注册表草稿。
+  agent: ['agents'],
+  // 默认 Agent 独立成页:它是「未指定执行者」的全局兜底,也是工作区覆盖所继承的那一层,
+  // 治理入口因此不该藏在 Agents 列表的下拉里。它拥有 defaultAgentId + 七个角色字段。
+  // 候选来自**已提交**的注册表:新建的 agent 必须先在 Agents 页签保存,才可能成为一个
+  // 存得住的引用。
+  defaultAgent: [
+    'defaultAgentId',
     'toolAgentId',
     'intentAgentId',
     'specAgentId',
@@ -147,11 +150,6 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
     'reviewAgentId',
     'fixAgentId',
   ],
-  // 默认 Agent 独立成页:它是「未指定执行者」的全局兜底,也是工作区覆盖所继承的那一层,
-  // 治理入口因此不该藏在 Agents 列表的下拉里。它只拥有 defaultAgentId 一个字段,故保存
-  // 注册表不会顺手改默认值、改默认值也不会顺手保存注册表草稿。候选来自**已提交**的注册表:
-  // 新建的 agent 必须先在 Agents 页签保存,才可能成为一个存得住的引用。
-  defaultAgent: ['defaultAgentId'],
   runtime: ['vendorCliVersions', 'proxy', 'sessionCleanup'],
   security: ['auth'],
   general: ['voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
@@ -899,20 +897,12 @@ function isEnabled(a: AgentConfig): boolean {
   return a.enabled !== false
 }
 
-// The role dropdowns only offer enabled agents, in the visual grouped order
-// (= the order_seq order before Save stamps it).
-const defaultPickerAgents = computed<AgentConfig[]>(() => flatAgents.value.filter(isEnabled))
-
-// Virtual group agents (`_c3_<group>`, ADR-0029) offered alongside real agents in
-// every agent picker; selecting one binds the session/role to the group (relay
-// failover across its members). Derived client-side from the draft's `group` fields.
-const pickerGroupAgents = computed(() => listGroupAgents(draft.value.agents))
-
 // ---- Default Agent tab -----------------------------------------------------
 // Its candidates come from the COMMITTED registry, not the Agents draft: this tab
-// saves `defaultAgentId` alone, so a reference only this session's unsaved draft
-// knows about could not survive the round trip. Creating an agent therefore means
-// "save the Agents tab first, then pick it here" — stated in the form, not guessed.
+// saves `defaultAgentId` + the seven role references, so a reference only this
+// session's unsaved draft knows about could not survive the round trip. Creating
+// an agent therefore means "save the Agents tab first, then pick it here" —
+// stated in the form, not guessed.
 const committedEnabledAgents = computed<AgentConfig[]>(() =>
   committed.value.agents
     .filter(isEnabled)
@@ -934,41 +924,12 @@ const defaultAgentDraftStale = computed<boolean>(() => {
   return !committed.value.agents.some((a) => a.id === ref)
 })
 
-/** The seven role fields this tab owns — `defaultAgentId` lives on its own tab now. */
-const ROLE_FIELDS = [
-  'toolAgentId',
-  'intentAgentId',
-  'specAgentId',
-  'specReviewAgentId',
-  'automationAgentId',
-  'reviewAgentId',
-  'fixAgentId',
-] as const
-
-/**
- * Re-apply the shared reference rule to THIS tab's role drafts after the registry
- * changed, so the selectors reflect the outcome immediately instead of only after
- * the server echo. Disabling rewrites a non-empty role to the next enabled agent
- * (AC-R2/AC-R10/AC-R20); deleting clears it back to "follow the default", because
- * the agent the user picked is gone and pinning the role to a neighbour would run
- * it somewhere nobody chose. An empty role stays empty either way.
- *
- * Deliberately does NOT touch `draft.defaultAgentId`: that field belongs to the
- * Default Agent tab, and editing the registry must not mark that tab dirty. The
- * server's normalize is what re-pins the default, and the echo reseeds it.
- */
-function reapplyRoleRefs(): void {
-  const order = flatAgents.value
-  for (const field of ROLE_FIELDS) {
-    if (!draft.value[field]) continue
-    draft.value[field] = normalizeAgentRef(order, draft.value[field]) ?? ''
-  }
-}
-
-// Toggle an agent's enabled flag, then re-apply the role rules to this tab's drafts.
+// Toggle an agent's enabled flag. Deliberately does NOT re-write the role drafts:
+// those fields belong to the Default Agent tab, and editing the registry must not
+// mark that tab dirty. The server's normalize re-pins (disable → next enabled) and
+// clears (delete → follow default) the roles, and the echo reseeds the clean tab.
 function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   a.enabled = checked
-  reapplyRoleRefs()
 }
 
 // cursor 的 key 走自己的路:它的 CLI 认 key 或 `cursor-agent login` 任一种,所以这一栏
@@ -998,9 +959,9 @@ function removeAgent(id: string) {
       }),
     )
   }
-  // A role that pointed at the removed agent goes back to following the default —
-  // it is NOT re-pointed at the next enabled agent (that is the *disable* rule).
-  reapplyRoleRefs()
+  // Roles that pointed at the removed agent are NOT re-written here: they belong to
+  // the Default Agent tab, and the server's normalize clears them (→ follow default)
+  // on the echo, reseeding the clean tab.
 }
 
 /** Deep-copy an agent, append "-copy" to its displayName, and insert the copy
@@ -1396,6 +1357,15 @@ function buildTabPayload(
           }),
         )
       }
+      break
+    }
+    case 'defaultAgent': {
+      // The default reference plus the seven role references. The registry rides
+      // along in `payload` from the committed snapshot, so saving here can never
+      // ship an unsaved Agents draft — and the server re-normalizes the picks
+      // against that registry anyway. Role drafts keep their empty-string
+      // "follow the default" sentinel as-is.
+      payload.defaultAgentId = src.defaultAgentId
       payload.toolAgentId = src.toolAgentId
       payload.intentAgentId = src.intentAgentId
       payload.specAgentId = src.specAgentId
@@ -1403,13 +1373,6 @@ function buildTabPayload(
       payload.automationAgentId = src.automationAgentId
       payload.reviewAgentId = src.reviewAgentId
       payload.fixAgentId = src.fixAgentId
-      break
-    }
-    case 'defaultAgent': {
-      // Only the default reference. The registry rides along in `payload` from the
-      // committed snapshot, so saving here can never ship an unsaved Agents draft —
-      // and the server re-normalizes the pick against that registry anyway.
-      payload.defaultAgentId = src.defaultAgentId
       break
     }
     case 'provider': {
@@ -1947,189 +1910,6 @@ function selectAdmin(username: string) {
               {{ n.label }} — {{ n.reason }}
             </li>
           </ul>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="tool-agent-select">
-              {{ t('settings.agents.toolPicker.label') }}
-            </label>
-            <select
-              id="tool-agent-select"
-              v-model="draft.toolAgentId"
-              class="agent-field"
-              data-testid="tool-agent-select"
-              :title="t('settings.agents.tool.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.toolPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="intent-agent-select">
-              {{ t('settings.agents.intentPicker.label') }}
-            </label>
-            <select
-              id="intent-agent-select"
-              v-model="draft.intentAgentId"
-              class="agent-field"
-              data-testid="intent-agent-select"
-              :title="t('settings.agents.intent.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.intentPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="spec-agent-select">
-              {{ t('settings.agents.specPicker.label') }}
-            </label>
-            <select
-              id="spec-agent-select"
-              v-model="draft.specAgentId"
-              class="agent-field"
-              data-testid="spec-agent-select"
-              :title="t('settings.agents.spec.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.specPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="spec-review-agent-select">
-              {{ t('settings.agents.specReviewPicker.label') }}
-            </label>
-            <select
-              id="spec-review-agent-select"
-              v-model="draft.specReviewAgentId"
-              class="agent-field"
-              data-testid="spec-review-agent-select"
-              :title="t('settings.agents.specReview.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.specReviewPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="automation-agent-select">
-              {{ t('settings.agents.automationPicker.label') }}
-            </label>
-            <select
-              id="automation-agent-select"
-              v-model="draft.automationAgentId"
-              class="agent-field"
-              data-testid="automation-agent-select"
-              :title="t('settings.agents.automation.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.automationPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="review-agent-select">
-              {{ t('settings.agents.reviewPicker.label') }}
-            </label>
-            <select
-              id="review-agent-select"
-              v-model="draft.reviewAgentId"
-              class="agent-field"
-              data-testid="review-agent-select"
-              :title="t('settings.agents.review.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.reviewPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="fix-agent-select">
-              {{ t('settings.agents.fixPicker.label') }}
-            </label>
-            <select
-              id="fix-agent-select"
-              v-model="draft.fixAgentId"
-              class="agent-field"
-              data-testid="fix-agent-select"
-              :title="t('settings.agents.fix.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.fixPicker.followDefault') }}</option>
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">
-            {{
-              t('settings.agents.defaultNote', {
-                pending: bindingStats.pending,
-                bound: bindingStats.bound,
-              })
-            }}
-          </p>
         </section>
       </div>
 
@@ -2175,6 +1955,189 @@ function selectAdmin(username: string) {
           </div>
           <p v-if="defaultAgentDraftStale" class="settings-warn" data-testid="default-agent-stale">
             {{ t('settings.defaultAgent.stale') }}
+          </p>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="tool-agent-select">
+              {{ t('settings.agents.toolPicker.label') }}
+            </label>
+            <select
+              id="tool-agent-select"
+              v-model="draft.toolAgentId"
+              class="agent-field"
+              data-testid="tool-agent-select"
+              :title="t('settings.agents.tool.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.toolPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="intent-agent-select">
+              {{ t('settings.agents.intentPicker.label') }}
+            </label>
+            <select
+              id="intent-agent-select"
+              v-model="draft.intentAgentId"
+              class="agent-field"
+              data-testid="intent-agent-select"
+              :title="t('settings.agents.intent.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.intentPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="spec-agent-select">
+              {{ t('settings.agents.specPicker.label') }}
+            </label>
+            <select
+              id="spec-agent-select"
+              v-model="draft.specAgentId"
+              class="agent-field"
+              data-testid="spec-agent-select"
+              :title="t('settings.agents.spec.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.specPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="spec-review-agent-select">
+              {{ t('settings.agents.specReviewPicker.label') }}
+            </label>
+            <select
+              id="spec-review-agent-select"
+              v-model="draft.specReviewAgentId"
+              class="agent-field"
+              data-testid="spec-review-agent-select"
+              :title="t('settings.agents.specReview.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.specReviewPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="automation-agent-select">
+              {{ t('settings.agents.automationPicker.label') }}
+            </label>
+            <select
+              id="automation-agent-select"
+              v-model="draft.automationAgentId"
+              class="agent-field"
+              data-testid="automation-agent-select"
+              :title="t('settings.agents.automation.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.automationPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="review-agent-select">
+              {{ t('settings.agents.reviewPicker.label') }}
+            </label>
+            <select
+              id="review-agent-select"
+              v-model="draft.reviewAgentId"
+              class="agent-field"
+              data-testid="review-agent-select"
+              :title="t('settings.agents.review.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.reviewPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="fix-agent-select">
+              {{ t('settings.agents.fixPicker.label') }}
+            </label>
+            <select
+              id="fix-agent-select"
+              v-model="draft.fixAgentId"
+              class="agent-field"
+              data-testid="fix-agent-select"
+              :title="t('settings.agents.fix.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.fixPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">
+            {{
+              t('settings.agents.defaultNote', {
+                pending: bindingStats.pending,
+                bound: bindingStats.bound,
+              })
+            }}
           </p>
           <p class="settings-hint">{{ t('settings.defaultAgent.newAgentHint') }}</p>
         </section>

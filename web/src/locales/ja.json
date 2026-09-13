@@ -1363,6 +1363,26 @@
         "label": "クローズ済"
       }
     },
+    "prReview": {
+      "title": "PR AI レビュー / 修正",
+      "reviewLabel": "レビュー:",
+      "fixLabel": "修正:",
+      "review": {
+        "unreviewed": "未レビュー",
+        "pending": "レビュー結果待ち",
+        "approved": "承認",
+        "rejected": "問題あり"
+      },
+      "fix": {
+        "unstarted": "修正未開始",
+        "pending": "修正結果待ち",
+        "fixed": "処理済み"
+      },
+      "rounds": "レビューラウンド:",
+      "noReviewNeeded": "影響範囲によりレビュー不要",
+      "openSession": "セッションを開く",
+      "running": "実行中"
+    },
     "prSync": {
       "label": "PR 状態を同期",
       "syncing": "同期中...",

@@ -1362,6 +1362,26 @@
         "label": "Closed"
       }
     },
+    "prReview": {
+      "title": "PR AI review / fix",
+      "reviewLabel": "Review:",
+      "fixLabel": "Fix:",
+      "review": {
+        "unreviewed": "Not reviewed",
+        "pending": "Awaiting review",
+        "approved": "Approved",
+        "rejected": "Issues found"
+      },
+      "fix": {
+        "unstarted": "No fix started",
+        "pending": "Awaiting fix",
+        "fixed": "Resolved"
+      },
+      "rounds": "Review rounds:",
+      "noReviewNeeded": "No review needed at this impact level",
+      "openSession": "Open session",
+      "running": "Running"
+    },
     "prSync": {
       "label": "Sync PR status",
       "syncing": "Syncing...",

@@ -879,6 +879,8 @@ function onFilesChatWidth(px: number): void {
           @revoke-spec-approval="revokeSpecApproval"
           @open-spec-session="openSpecSession"
           @open-spec-review-session="(id: string) => openSpecReviewSession(id)"
+          @open-pr-review-session="selectWorkSession"
+          @open-pr-fix-session="selectWorkSession"
           @open-intent-session="selectIntentSession"
           @read-spec="readIntentSpec"
           @list-intent-logs="listIntentLogs"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
-import type { Intent } from '@ccc/shared/protocol'
+import type { Intent, SessionStatus } from '@ccc/shared/protocol'
 import { i18n } from '@/i18n'
 import IntentOverviewTab from './IntentOverviewTab.vue'
 
@@ -44,6 +44,11 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewFingerprint: null,
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
+    reviewSessionId: null,
+    reviewStatus: null,
+    reviewFixRounds: 0,
+    fixSessionId: null,
+    fixStatus: null,
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
@@ -55,7 +60,13 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
 
 function mountTab(
   current: Intent,
-  opts: { intents?: Intent[]; intentActionErrorSeq?: number; sddEnabled?: boolean } = {},
+  opts: {
+    intents?: Intent[]
+    intentActionErrorSeq?: number
+    sddEnabled?: boolean
+    reviewSessionStatus?: SessionStatus | null
+    fixSessionStatus?: SessionStatus | null
+  } = {},
 ) {
   return mount(IntentOverviewTab, {
     props: {
@@ -63,6 +74,10 @@ function mountTab(
       intents: opts.intents ?? [current],
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
       ...(opts.sddEnabled === undefined ? {} : { sddEnabled: opts.sddEnabled }),
+      ...(opts.reviewSessionStatus === undefined
+        ? {}
+        : { reviewSessionStatus: opts.reviewSessionStatus }),
+      ...(opts.fixSessionStatus === undefined ? {} : { fixSessionStatus: opts.fixSessionStatus }),
     },
     global: { stubs: { MarkdownText: { template: '<div class="md" />' } } },
   })
@@ -101,7 +116,7 @@ function depEditFixture() {
 }
 
 describe('IntentOverviewTab.vue', () => {
-  it('renders meta fields in the stable order ID → impact → spec mode → branch → base → PR → created → completed → updated → deps', () => {
+  it('renders meta fields in the stable order ID → impact → spec mode → branch → base → PR → 评审/修复 → created → completed → updated → deps', () => {
     const current = intent({
       id: 'the-id',
       status: 'done',
@@ -116,7 +131,7 @@ describe('IntentOverviewTab.vue', () => {
     const w = mountTab(current, { intents: [current, intent({ id: 'dep1', title: 'Dep one' })] })
     const labels = w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
     const items = w.findAll('.req-meta > .req-meta-item')
-    expect(labels).toHaveLength(10)
+    expect(labels).toHaveLength(11)
     expect(labels[0]).toContain('the-id')
     expect(items.at(1)!.attributes('data-testid')).toBe('intent-meta-impact-level')
     expect(items.at(2)!.attributes('data-testid')).toBe('intent-meta-spec-mode')
@@ -129,7 +144,9 @@ describe('IntentOverviewTab.vue', () => {
     )
     expect(labels[5]).toContain('#42')
     expect(w.find('.req-meta-pr-link').attributes('href')).toBe('https://x/pull/42')
-    expect(items.at(9)!.classes()).toContain('req-meta-dependencies')
+    // PR AI 评审 / 修复独立于 forge PR 状态,紧随 PR 之后、时间戳之前。
+    expect(items.at(6)!.attributes('data-testid')).toBe('intent-pr-review-fix')
+    expect(items.at(10)!.classes()).toContain('req-meta-dependencies')
   })
 
   it('shows the Edit entry only for draft/todo and runs the save/cancel lifecycle', async () => {
@@ -733,5 +750,84 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
         .find(IMPACT_SELECT)
         .exists(),
     ).toBe(true)
+  })
+})
+
+describe('IntentOverviewTab — PR AI 评审 / 修复', () => {
+  const REVIEW_BLOCK = '[data-testid="intent-pr-review-fix"]'
+  const NO_NEED = '[data-testid="intent-pr-review-fix-no-need"]'
+  const REVIEW_STATUS = '[data-testid="intent-pr-review-status"]'
+  const FIX_STATUS = '[data-testid="intent-pr-fix-status"]'
+  const ROUNDS = '[data-testid="intent-pr-review-fix-rounds"]'
+  const REVIEW_SESSION = '[data-testid="intent-pr-review-session"]'
+  const FIX_SESSION = '[data-testid="intent-pr-fix-session"]'
+
+  it('渲染评审/修复块,按阶段给出状态标签与状态着色 class', () => {
+    const w = mountTab(intent({ id: 'r1', reviewStatus: 'rejected', fixStatus: 'fixed' }))
+    expect(w.find(REVIEW_BLOCK).exists()).toBe(true)
+    expect(w.find(REVIEW_STATUS).find('.req-pr-review-fix-value--rejected').exists()).toBe(true)
+    expect(w.find(FIX_STATUS).find('.req-pr-review-fix-value--fixed').exists()).toBe(true)
+    expect(w.find(NO_NEED).exists()).toBe(false)
+  })
+
+  it('L5 且无结论时给「无需评审」提示,一旦有结论就回到正常展示(不被提示遮蔽)', () => {
+    const w = mountTab(intent({ id: 'r1', impactLevel: 'L5' }))
+    expect(w.find(NO_NEED).exists()).toBe(true)
+    expect(w.find(REVIEW_STATUS).exists()).toBe(false)
+    expect(w.find(FIX_STATUS).exists()).toBe(false)
+
+    // L5 但已有结论:提示不得遮蔽真实结果。
+    const withResult = mountTab(intent({ id: 'r1', impactLevel: 'L5', reviewStatus: 'approved' }))
+    expect(withResult.find(NO_NEED).exists()).toBe(false)
+    expect(withResult.find(REVIEW_STATUS).exists()).toBe(true)
+  })
+
+  it('未定级按需评审(宁可多评审也不漏过)', () => {
+    const w = mountTab(intent({ id: 'r1', impactLevel: null }))
+    expect(w.find(NO_NEED).exists()).toBe(false)
+    expect(w.find(REVIEW_STATUS).exists()).toBe(true)
+  })
+
+  it('只在发生过复审轮次时展示轮次行', () => {
+    expect(
+      mountTab(intent({ id: 'r1' }))
+        .find(ROUNDS)
+        .exists(),
+    ).toBe(false)
+    const w = mountTab(intent({ id: 'r1', reviewFixRounds: 2 }))
+    expect(w.find(ROUNDS).exists()).toBe(true)
+    expect(w.find(ROUNDS).text()).toContain('2')
+  })
+
+  it('只有绑定会话 id 时才渲染跳转入口,点击 emit 对应会话选择事件', async () => {
+    const w = mountTab(intent({ id: 'r1', reviewSessionId: 'rev-1', fixSessionId: 'fix-1' }))
+    await w.find(REVIEW_SESSION).trigger('click')
+    expect(w.emitted('open-pr-review-session')).toEqual([['rev-1']])
+    await w.find(FIX_SESSION).trigger('click')
+    expect(w.emitted('open-pr-fix-session')).toEqual([['fix-1']])
+
+    // 未绑定会话 → 无跳转入口。
+    const bare = mountTab(intent({ id: 'r1' }))
+    expect(bare.find(REVIEW_SESSION).exists()).toBe(false)
+    expect(bare.find(FIX_SESSION).exists()).toBe(false)
+  })
+
+  it('会话非 idle 即视为运行中并给出提示', () => {
+    const runningText = i18n.global.t('intent.prReview.running')
+
+    const running = mountTab(intent({ id: 'r1', reviewSessionId: 'rev-1' }), {
+      reviewSessionStatus: 'running',
+    })
+    expect(running.find(REVIEW_SESSION).text()).toContain(runningText)
+
+    const idle = mountTab(intent({ id: 'r1', reviewSessionId: 'rev-1' }), {
+      reviewSessionStatus: 'idle',
+    })
+    expect(idle.find(REVIEW_SESSION).text()).not.toContain(runningText)
+
+    const fixRunning = mountTab(intent({ id: 'r1', fixSessionId: 'fix-1' }), {
+      fixSessionStatus: 'awaiting_permission',
+    })
+    expect(fixRunning.find(FIX_SESSION).text()).toContain(runningText)
   })
 })

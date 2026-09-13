@@ -16,11 +16,13 @@ import type {
   IntentDeliveryRef,
   IntentDevSession,
   IntentDevSessionExitCode,
+  IntentFixStatus,
   IntentImpactLevel,
   IntentLog,
   IntentLogOperation,
   IntentPr,
   IntentPrForge,
+  IntentReviewStatus,
   IntentSessionInfo,
   ProposedIntent,
   Intent,
@@ -34,7 +36,9 @@ import type {
   SpecStatus,
 } from '@ccc/shared/protocol'
 import {
+  INTENT_FIX_STATUSES,
   INTENT_PR_STATUSES,
+  INTENT_REVIEW_STATUSES,
   INTENT_WORKNOTE_KINDS,
   SPEC_REVIEW_VERDICTS,
   SPEC_STATUSES,
@@ -49,6 +53,7 @@ import {
   markMigration,
   tableExists,
   type Db,
+  type SqlParam,
 } from '../../kernel/infra/db.js'
 import { getSddEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceBaseBranch } from './base-branch.js'
@@ -58,7 +63,7 @@ import { readSpecFingerprint } from './spec-review.js'
 import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
-const SCHEMA_VERSION = 24
+const SCHEMA_VERSION = 25
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -109,6 +114,15 @@ CREATE TABLE IF NOT EXISTS intents (
   spec_review_fingerprint TEXT,
   spec_review_rework_rounds INTEGER NOT NULL DEFAULT 0,
   spec_review_machine_blocked INTEGER NOT NULL DEFAULT 0,
+  -- PR AI review / fix round facts. Nullable status = "never reviewed / never
+  -- fixed"; a stored unknown value narrows to null on read. The terminals are
+  -- written by the sync MCP tools; the transient 'pending' state and the round
+  -- counter are driven by the relay orchestration that runs the review / fix turns.
+  review_session_id   TEXT,
+  review_status       TEXT CHECK(review_status IN ('pending','approved','rejected')),
+  review_fix_rounds   INTEGER NOT NULL DEFAULT 0,
+  fix_session_id      TEXT,
+  fix_status          TEXT CHECK(fix_status IN ('pending','fixed')),
   intent_session_id TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL,
@@ -678,6 +692,19 @@ function db(): Db | null {
     // v23 → v24: intent_worknotes — the append-only content history (work/review/
     // fix). Created by the SCHEMA block above via CREATE TABLE/INDEX IF NOT EXISTS,
     // so fresh and pre-existing dbs converge on the same table with no backfill.
+    // v24 → v25: PR AI review / fix status + session binding. Nullable status with
+    // no backfill — an intent never reviewed stays "never reviewed" (null) rather
+    // than being marked approved/fixed by a default; the round counter defaults 0.
+    ensureColumn(d, 'intents', 'review_session_id', 'TEXT')
+    ensureColumn(
+      d,
+      'intents',
+      'review_status',
+      "TEXT CHECK(review_status IN ('pending','approved','rejected'))",
+    )
+    ensureColumn(d, 'intents', 'review_fix_rounds', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(d, 'intents', 'fix_session_id', 'TEXT')
+    ensureColumn(d, 'intents', 'fix_status', "TEXT CHECK(fix_status IN ('pending','fixed'))")
     // v19 → v20: PR facts move out of the intents row into `intent_prs`. The
     // legacy trio above is FROZEN, not dropped — runtime never reads or writes it
     // again, and it stays as the rollback script's landing site.
@@ -753,6 +780,11 @@ interface Row {
   spec_review_fingerprint: string | null
   spec_review_rework_rounds: number
   spec_review_machine_blocked: number
+  review_session_id: string | null
+  review_status: string | null
+  review_fix_rounds: number
+  fix_session_id: string | null
+  fix_status: string | null
   intent_session_id: string | null
   responsible_subject: string | null
   created_at: number
@@ -800,6 +832,28 @@ function narrowSpecMode(v: string | null): IntentSpecMode | null {
  */
 function narrowImpactLevel(v: string | null): IntentImpactLevel | null {
   return isIntentImpactLevel(v) ? v : null
+}
+
+/**
+ * Narrow a persisted PR review status. An unknown / missing value reads as
+ * "never reviewed" (`null`) rather than being surfaced verbatim — a status the
+ * code cannot interpret must never be treated as an approval.
+ */
+function narrowReviewStatus(v: string | null): IntentReviewStatus | null {
+  return v !== null && (INTENT_REVIEW_STATUSES as readonly string[]).includes(v)
+    ? (v as IntentReviewStatus)
+    : null
+}
+
+/**
+ * Narrow a persisted PR fix status. An unknown / missing value reads as "never
+ * fixed" (`null`) — a status the code cannot interpret must never be treated as
+ * a completed fix.
+ */
+function narrowFixStatus(v: string | null): IntentFixStatus | null {
+  return v !== null && (INTENT_FIX_STATUSES as readonly string[]).includes(v)
+    ? (v as IntentFixStatus)
+    : null
 }
 
 /**
@@ -927,6 +981,11 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
       specReviewFingerprint: r.spec_review_fingerprint,
       specReviewReworkRounds: r.spec_review_rework_rounds ?? 0,
       specReviewMachineApprovalBlocked: r.spec_review_machine_blocked === 1,
+      reviewSessionId: r.review_session_id,
+      reviewStatus: narrowReviewStatus(r.review_status),
+      reviewFixRounds: r.review_fix_rounds ?? 0,
+      fixSessionId: r.fix_session_id,
+      fixStatus: narrowFixStatus(r.fix_status),
       intentSessionId: r.intent_session_id,
       responsibleSubject: r.responsible_subject,
       createdAt: r.created_at,
@@ -1936,6 +1995,89 @@ export function setSpecMode(id: string, mode: IntentSpecMode | null): void {
 export function setImpactLevel(id: string, level: IntentImpactLevel | null): void {
   const d = requireDb()
   d.run('UPDATE intents SET impact_level=?, updated_at=? WHERE id=?', level, Date.now(), id)
+}
+
+/**
+ * The subset of the PR review / fix columns one write may touch. An omitted key
+ * leaves the column untouched; an explicit `null` clears it. Only these five are
+ * writable through this path — a stray field can never reach the ledger.
+ */
+export interface IntentReviewFixPatch {
+  reviewSessionId?: string | null
+  reviewStatus?: IntentReviewStatus | null
+  reviewFixRounds?: number
+  fixSessionId?: string | null
+  fixStatus?: IntentFixStatus | null
+}
+
+/** Reject an illegal enum value or a non-integer / negative round count before any write. */
+function assertReviewFixPatch(patch: IntentReviewFixPatch): void {
+  if (
+    patch.reviewStatus != null &&
+    !(INTENT_REVIEW_STATUSES as readonly string[]).includes(patch.reviewStatus)
+  ) {
+    throw new Error(`非法评审状态: ${patch.reviewStatus}`)
+  }
+  if (
+    patch.fixStatus != null &&
+    !(INTENT_FIX_STATUSES as readonly string[]).includes(patch.fixStatus)
+  ) {
+    throw new Error(`非法修复状态: ${patch.fixStatus}`)
+  }
+  if (
+    patch.reviewFixRounds !== undefined &&
+    (!Number.isInteger(patch.reviewFixRounds) || patch.reviewFixRounds < 0)
+  ) {
+    throw new Error(`非法复审轮次: ${patch.reviewFixRounds}`)
+  }
+}
+
+/**
+ * Atomically write a subset of the PR review / fix columns for one intent and
+ * return the refreshed intent. Only the supplied keys are written — the other
+ * phase, the round counter, spec approval, PRs and every timestamp beyond
+ * `updated_at` are left exactly as they were, so a review-terminal write can
+ * never implicitly clear a fix round (or vice-versa) and a fix write never
+ * increments a round. Throws on an illegal enum / round value or an unknown
+ * intent id; a throw leaves the row untouched.
+ */
+export function updateIntentReviewFixStatus(intentId: string, patch: IntentReviewFixPatch): Intent {
+  assertReviewFixPatch(patch)
+  const d = requireDb()
+  const assignments: string[] = []
+  const params: SqlParam[] = []
+  if (patch.reviewSessionId !== undefined) {
+    assignments.push('review_session_id=?')
+    params.push(patch.reviewSessionId)
+  }
+  if (patch.reviewStatus !== undefined) {
+    assignments.push('review_status=?')
+    params.push(patch.reviewStatus)
+  }
+  if (patch.reviewFixRounds !== undefined) {
+    assignments.push('review_fix_rounds=?')
+    params.push(patch.reviewFixRounds)
+  }
+  if (patch.fixSessionId !== undefined) {
+    assignments.push('fix_session_id=?')
+    params.push(patch.fixSessionId)
+  }
+  if (patch.fixStatus !== undefined) {
+    assignments.push('fix_status=?')
+    params.push(patch.fixStatus)
+  }
+  if (assignments.length > 0) {
+    assignments.push('updated_at=?')
+    params.push(Date.now())
+    tx(d, () => {
+      const row = d.get<{ id: string }>('SELECT id FROM intents WHERE id=?', intentId)
+      if (!row) throw new Error(`意图 ${intentId} 不存在`)
+      d.run(`UPDATE intents SET ${assignments.join(', ')} WHERE id=?`, ...params, intentId)
+    })
+  }
+  const updated = getIntent(intentId)
+  if (!updated) throw new Error(`意图 ${intentId} 不存在`)
+  return updated
 }
 
 /**

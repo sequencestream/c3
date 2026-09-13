@@ -1,0 +1,260 @@
+/**
+ * Business-logic tests for the framing-free PR review / fix sync tool cores
+ * `runSyncIntentReviewStatus` / `runSyncIntentFixStatus`, driven DIRECTLY (no MCP
+ * wrapper). These write ONLY a terminal conclusion + the session that produced it:
+ *  - a success echoes the stored intentId + session id + status as JSON;
+ *  - the terminal-only enum is re-validated at the core even without the transport
+ *    zod gate, so `pending` never reaches the store;
+ *  - an unknown or a cross-workspace id reads as a not-found error (no leak);
+ *  - neither tool writes the other phase, increments the round counter, or touches
+ *    WorkNotes;
+ *  - a store failure surfaces as an `isError` text rather than a receipt.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+// Stub only the registry id↔path mapping (identity): synthetic test workspaces are
+// unregistered, so resolve/pathToName/workspaceNameFor would otherwise return null.
+// This makes `findOwnedIntent`'s cross-workspace guard resolve predictably.
+vi.mock('../../state.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../state.js')>()),
+  resolveWorkspaceRoot: (id: string) => id,
+  pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
+}))
+import { resetDbForTests } from '../../kernel/infra/db.js'
+import { getIntent, insertIntents, resetStoreForTests } from './store.js'
+import {
+  runSyncIntentFixStatus,
+  runSyncIntentReviewStatus,
+  type ReviewFixToolResult,
+  type SyncIntentFixStatusArgs,
+  type SyncIntentReviewStatusArgs,
+} from './review-fix-tool-defs.js'
+
+const proj = '/abs/review-fix-tools-proj'
+const otherProj = '/abs/review-fix-tools-other'
+let dir: string
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'c3-review-fix-tools-'))
+  process.env.C3_DB_PATH = join(dir, 'c3.db')
+  resetDbForTests()
+  resetStoreForTests()
+})
+
+afterEach(() => {
+  resetDbForTests()
+  delete process.env.C3_DB_PATH
+  rmSync(dir, { recursive: true, force: true })
+})
+
+function seedIntent(workspace = proj): string {
+  const [intent] = insertIntents(workspace, [
+    { title: '目标意图', shortEnTitle: 'auto', content: '正文', priority: 'P1' },
+  ])
+  return intent.id
+}
+
+/** Success result: assert !isError and return the parsed JSON. */
+function payload(r: ReviewFixToolResult): Record<string, unknown> {
+  expect(r.isError).toBeFalsy()
+  return JSON.parse(r.content[0].text) as Record<string, unknown>
+}
+
+function errorText(r: ReviewFixToolResult): string {
+  expect(r.isError).toBe(true)
+  return r.content[0].text
+}
+
+describe('sync_intent_review_status core', () => {
+  it('writes an approved terminal and echoes the stored fields', () => {
+    const id = seedIntent()
+    const out = payload(
+      runSyncIntentReviewStatus(proj, {
+        intentId: id,
+        reviewSessionId: 'rev-1',
+        reviewStatus: 'approved',
+      }),
+    )
+    expect(out).toEqual({ intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' })
+    expect(getIntent(id)!.reviewStatus).toBe('approved')
+    expect(getIntent(id)!.reviewSessionId).toBe('rev-1')
+  })
+
+  it('writes a rejected terminal', () => {
+    const id = seedIntent()
+    const out = payload(
+      runSyncIntentReviewStatus(proj, {
+        intentId: id,
+        reviewSessionId: 'rev-2',
+        reviewStatus: 'rejected',
+      }),
+    )
+    expect(out).toEqual({ intentId: id, reviewSessionId: 'rev-2', reviewStatus: 'rejected' })
+    expect(getIntent(id)!.reviewStatus).toBe('rejected')
+  })
+
+  it('re-validates the terminal-only enum even without the transport layer', () => {
+    const id = seedIntent()
+    const args = {
+      intentId: id,
+      reviewSessionId: 'rev-1',
+      reviewStatus: 'pending',
+    } as unknown as SyncIntentReviewStatusArgs
+    const text = errorText(runSyncIntentReviewStatus(proj, args))
+    expect(text).toContain('approved')
+    expect(getIntent(id)!.reviewStatus).toBeNull()
+  })
+
+  it('does not touch the fix phase, the round counter, or WorkNotes', () => {
+    const id = seedIntent()
+    runSyncIntentReviewStatus(proj, {
+      intentId: id,
+      reviewSessionId: 'rev-1',
+      reviewStatus: 'rejected',
+    })
+    const after = getIntent(id)!
+    expect(after.fixSessionId).toBeNull()
+    expect(after.fixStatus).toBeNull()
+    expect(after.reviewFixRounds).toBe(0) // a rejected review does NOT increment rounds here
+  })
+
+  it('reads an unknown id as a not-found error', () => {
+    const text = errorText(
+      runSyncIntentReviewStatus(proj, {
+        intentId: 'nope',
+        reviewSessionId: 'rev-1',
+        reviewStatus: 'approved',
+      }),
+    )
+    expect(text).toContain('未找到')
+    expect(text).toContain('nope')
+  })
+
+  it('refuses an id from another workspace (not found, no leak)', () => {
+    const other = seedIntent(otherProj)
+    const text = errorText(
+      runSyncIntentReviewStatus(proj, {
+        intentId: other,
+        reviewSessionId: 'rev-1',
+        reviewStatus: 'approved',
+      }),
+    )
+    expect(text).toContain('未找到')
+    expect(text).not.toContain('目标意图')
+  })
+
+  it('broadcasts exactly once on success and never on failure', () => {
+    const id = seedIntent()
+    const onBroadcast = vi.fn()
+    runSyncIntentReviewStatus(
+      proj,
+      { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+      onBroadcast,
+    )
+    expect(onBroadcast).toHaveBeenCalledTimes(1)
+    expect(onBroadcast).toHaveBeenCalledWith(proj)
+
+    onBroadcast.mockClear()
+    runSyncIntentReviewStatus(
+      proj,
+      { intentId: 'nope', reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+      onBroadcast,
+    )
+    expect(onBroadcast).not.toHaveBeenCalled()
+  })
+})
+
+describe('sync_intent_fix_status core', () => {
+  it('writes a fixed terminal and echoes the stored fields', () => {
+    const id = seedIntent()
+    const out = payload(
+      runSyncIntentFixStatus(proj, { intentId: id, fixSessionId: 'fix-1', fixStatus: 'fixed' }),
+    )
+    expect(out).toEqual({ intentId: id, fixSessionId: 'fix-1', fixStatus: 'fixed' })
+    expect(getIntent(id)!.fixStatus).toBe('fixed')
+    expect(getIntent(id)!.fixSessionId).toBe('fix-1')
+  })
+
+  it('re-validates the single-terminal enum even without the transport layer', () => {
+    const id = seedIntent()
+    const args = {
+      intentId: id,
+      fixSessionId: 'fix-1',
+      fixStatus: 'pending',
+    } as unknown as SyncIntentFixStatusArgs
+    const text = errorText(runSyncIntentFixStatus(proj, args))
+    expect(text).toContain('fixed')
+    expect(getIntent(id)!.fixStatus).toBeNull()
+  })
+
+  it('does not touch the review phase, the round counter, or WorkNotes', () => {
+    const id = seedIntent()
+    runSyncIntentReviewStatus(proj, {
+      intentId: id,
+      reviewSessionId: 'rev-1',
+      reviewStatus: 'rejected',
+    })
+    runSyncIntentFixStatus(proj, { intentId: id, fixSessionId: 'fix-1', fixStatus: 'fixed' })
+
+    const after = getIntent(id)!
+    expect(after.reviewSessionId).toBe('rev-1') // review phase untouched
+    expect(after.reviewStatus).toBe('rejected') // fixed does NOT imply approved
+    expect(after.reviewFixRounds).toBe(0)
+  })
+
+  it('reads an unknown id as a not-found error', () => {
+    const text = errorText(
+      runSyncIntentFixStatus(proj, { intentId: 'nope', fixSessionId: 'fix-1', fixStatus: 'fixed' }),
+    )
+    expect(text).toContain('未找到')
+    expect(text).toContain('nope')
+  })
+
+  it('broadcasts exactly once on success and never on failure', () => {
+    const id = seedIntent()
+    const onBroadcast = vi.fn()
+    runSyncIntentFixStatus(
+      proj,
+      { intentId: id, fixSessionId: 'fix-1', fixStatus: 'fixed' },
+      onBroadcast,
+    )
+    expect(onBroadcast).toHaveBeenCalledTimes(1)
+    expect(onBroadcast).toHaveBeenCalledWith(proj)
+
+    onBroadcast.mockClear()
+    runSyncIntentFixStatus(
+      proj,
+      { intentId: 'nope', fixSessionId: 'fix-1', fixStatus: 'fixed' },
+      onBroadcast,
+    )
+    expect(onBroadcast).not.toHaveBeenCalled()
+  })
+})
+
+describe('store failure surfaces as an error (not a receipt)', () => {
+  beforeEach(() => {
+    process.env.C3_DB_PATH = '/dev/null/cannot/c3.db'
+    resetDbForTests()
+    resetStoreForTests()
+  })
+
+  it('both sync tools report isError with a store-unavailable reason', () => {
+    expect(
+      errorText(
+        runSyncIntentReviewStatus(proj, {
+          intentId: 'x',
+          reviewSessionId: 'rev-1',
+          reviewStatus: 'approved',
+        }),
+      ),
+    ).toContain('不可用')
+    expect(
+      errorText(
+        runSyncIntentFixStatus(proj, { intentId: 'x', fixSessionId: 'fix-1', fixStatus: 'fixed' }),
+      ),
+    ).toContain('不可用')
+  })
+})

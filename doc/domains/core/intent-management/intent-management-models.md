@@ -227,7 +227,8 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 `intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
 `tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
 共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,
-以及 `intent_sessions`、`intent_logs`、`intent_fast_turns`(每 turn 结算记录)与
+以及 `intent_sessions`、`intent_logs`、`intent_worknotes`(追加式内容历史,见下方 WorkNote)、
+`intent_fast_turns`(每 turn 结算记录)与
 `intent_prs`(PR/MR 关系表,见上方 Intent PR)。
 `tool_sessions` 只是一张标记表;工具会话的来源链接存放在 `session_kind='tool'` 行的
 `session_metadata.owner_kind` / `owner_id` 中,无 owner 的工具行仅用于展示。会话被删除时,
@@ -242,6 +243,17 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 一次性数据迁移的完成与否由跨域标记表 `schema_migrations` 判定,而非列存在性检查或
 `PRAGMA user_version`。跨运行时驱动适配器与迁移处理见
 [intent-management-design.md](intent-management-design.md)。
+
+### WorkNote(追加式内容历史)
+
+意图拥有的**只增不改不删**的内容历史,区别于 `intent_logs` 的简短操作审计:`intent_worknotes`
+每行承载一个 `work` 完成总结 / `review` 问题 / `fix` 修复说明的自由文本正文,供后续 Agent 读取
+前序上下文,不必仅凭 PR diff 推断。字段与共享协议 `IntentWorknote` 一一映射:`id`(uuid)、
+`intentId`、`kind`(`work`/`review`/`fix` 封闭枚举)、`note`(原样保存,含换行与首尾空白)、
+`sessionId`(可选历史引用,null 表示未知或省略)、`createdAt`(epoch-ms)。纠正通过再次追加表达;
+不决定意图、PR 或 Review/Fix 的当前状态,不提供单条更新/删除/覆盖。唯一例外是意图物理删除,
+在删除主记录的同一事务内级联清除。经 MCP 工具 `append_intent_worknote` / `list_intent_worknotes`
+读写(见 spec RM-R50)。
 
 跨领域的 `session_metadata` 投影存在于意图台账的唯一真实来源表之外。intent 的写入操作
 会为列表/计数读取 upsert/delete 投影行,但意图内容、当前会话选择、以及隐藏集合成员资格

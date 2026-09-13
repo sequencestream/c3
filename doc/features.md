@@ -72,6 +72,7 @@ c3
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
+│   │   ├── WorkNote 追加式历史                    # 意图的 work/review/fix 自由文本正文历史,只增不改不删,供后续 Agent 读前序上下文而不必凭 PR diff 推断;经 MCP append_intent_worknote/list_intent_worknotes 读写,物理删除意图同事务级联清除
 │   │   ├── 基准分支快照                          # 「这个意图建在哪个分支上」落库为单值快照:创建取 defaultMainBranch→origin/HEAD 探测→main/master;首关联就绪交付改为该交付分支、该分支由未就绪变就绪追平一次、失去最后一条关联回退主分支,多交付保持已设值;与关联边同事务落定,不追随交付分支后续推进;PR 目标、worktree 基线、详情元信息共读同一值
 │   │   ├── 失败定向修复指引                    # worktree 创建与 PR 创建链失败按当次命令结果(退出码/stderr/失败阶段)分类为闭集原因码,错误弹框展示对应修复指引 + 原始错误诊断详情 + 「重试原动作」入口;证据不足一律 unknown、原样展示原始错误且不臆测步骤;只分类不代劳(不清 worktree/不解冲突/不改凭据/不自动重试)
 │   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析;目标 pair 已有 merged PR 时标题栏不渲染该按钮(仅前端、仅 merged,closed 仍留重提入口)
@@ -162,7 +163,7 @@ c3
 │   │   ├── 会话页 live 状态                       # llm 执行注册真 SessionRuntime,SDK 流译成 wire 事件 fan-out 给 viewer:会话页选中运行中 automation 见细粒度状态栏(思考中/正在执行<工具>/就绪)+ transcript 实时增长,结束收敛 idle,事后选中回放完整 buffer;command 类仅 running/idle 二态
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
 │   │   ├── 执行 vendor                           # claude/codex/cursor 均有 dispatcher 执行路径(共享 AUTOMATION_VENDORS,表单灰显与分派门控同一份);cursor 走 cursor-agent CLI,mode 按 cursor 目录(plan/agent/full-access)解析,CLI 找不到/agent 无效在分派期即失败,不跨 vendor 回退
-│   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ PR 状态同步(sync_intent_pr_status,只接受 intentId,触发服务端从 forge 派生终态落库)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
+│   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ PR 状态同步(sync_intent_pr_status,只接受 intentId,触发服务端从 forge 派生终态落库)+ WorkNote 历史(append_intent_worknote/list_intent_worknotes)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
 │   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网;read-only 沙箱下表单禁用该开关并提示原因
 │   │
 │   ├── files 文件浏览                            # 浏览器里只读浏览 Git 仓库 + 文件域内嵌会话

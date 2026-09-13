@@ -1,6 +1,6 @@
 /**
- * Localhost HTTP MCP route for the WORK-SESSION c3 tool profile: `publish_event`
- * plus the two workspace-memory tools. They are served over this ONE
+ * Localhost HTTP MCP route for the WORK-SESSION c3 tool profile: `publish_event`,
+ * the two workspace-memory tools, and the two intent worknote tools. They are served over this ONE
  * streamable-HTTP MCP route bound to a single run — the SAME transport every
  * vendor consumes (none uses an in-process SDK MCP server for c3 tools). Each
  * tool's logic comes from its shared framing-free definition so every vendor runs
@@ -44,6 +44,15 @@ import {
   type MemoryToolResult,
   type MemoryWriteArgs,
 } from '../../features/memory/tool-defs.js'
+import {
+  appendWorknoteDesc,
+  appendWorknoteSchema,
+  listWorknotesDesc,
+  listWorknotesSchema,
+  type AppendWorknoteArgs,
+  type ListWorknotesArgs,
+  type WorknoteToolResult,
+} from '../../features/intents/worknote-tool-defs.js'
 
 /** The loopback path the event MCP route is mounted at. */
 export const EVENT_MCP_PATH = '/internal/event-mcp/v1'
@@ -66,6 +75,8 @@ export interface EventMcpTools {
   publish(binding: EventMcpBinding, args: PublishEventArgs): EventToolResult
   memorySearch(binding: EventMcpBinding, args: MemorySearchArgs): MemoryToolResult
   memoryWrite(binding: EventMcpBinding, args: MemoryWriteArgs): MemoryToolResult
+  appendWorknote(binding: EventMcpBinding, args: AppendWorknoteArgs): WorknoteToolResult
+  listWorknotes(binding: EventMcpBinding, args: ListWorknotesArgs): WorknoteToolResult
 }
 
 /** The served route: the kernel-facing bind handle plus the HTTP handler the root mounts. */
@@ -122,6 +133,18 @@ const TOOL_DEFS: readonly {
     description: memoryWriteDesc,
     inputSchema: memoryWriteSchema,
     run: (t, b, args) => t.memoryWrite(b, args as MemoryWriteArgs),
+  },
+  {
+    name: 'append_intent_worknote',
+    description: appendWorknoteDesc,
+    inputSchema: appendWorknoteSchema,
+    run: (t, b, args) => t.appendWorknote(b, args as AppendWorknoteArgs),
+  },
+  {
+    name: 'list_intent_worknotes',
+    description: listWorknotesDesc,
+    inputSchema: listWorknotesSchema,
+    run: (t, b, args) => t.listWorknotes(b, args as ListWorknotesArgs),
   },
 ]
 

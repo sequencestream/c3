@@ -160,7 +160,7 @@ describe('impact level — column + historic rows', () => {
     const list = listIntents(proj)
     expect(list).toHaveLength(1)
     expect(list[0].impactLevel).toBeNull()
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(23)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(24)
   })
 
   it('narrows an uninterpretable persisted value to ungraded, not to a middle grade', () => {

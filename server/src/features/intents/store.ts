@@ -28,10 +28,17 @@ import type {
   IntentRunStatus,
   IntentStatus,
   IntentSpecMode,
+  IntentWorknote,
+  IntentWorknoteKind,
   SpecReviewVerdict,
   SpecStatus,
 } from '@ccc/shared/protocol'
-import { INTENT_PR_STATUSES, SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
+import {
+  INTENT_PR_STATUSES,
+  INTENT_WORKNOTE_KINDS,
+  SPEC_REVIEW_VERDICTS,
+  SPEC_STATUSES,
+} from '@ccc/shared/protocol'
 import { isIntentImpactLevel } from '@ccc/shared'
 import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
 import { resolveRunInitiatedBySubject } from '../auth/authorization.js'
@@ -51,7 +58,7 @@ import { readSpecFingerprint } from './spec-review.js'
 import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
-const SCHEMA_VERSION = 23
+const SCHEMA_VERSION = 24
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -156,6 +163,19 @@ CREATE TABLE IF NOT EXISTS intent_logs (
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_intent_log_intent_created ON intent_logs(intent_id, created_at DESC);
+
+-- 追加式内容历史 (work/review/fix 正文)。区别于 intent_logs 的简短操作审计:这里存的是
+-- 「上一轮 work 做了什么 / review 发现了什么 / fix 改了什么」的自由文本正文,供后续 Agent
+-- 读取前序上下文。只增不改不删;kind 与共享协议同一闭集,数据库以 CHECK 约束相同取值。
+CREATE TABLE IF NOT EXISTS intent_worknotes (
+  id              TEXT PRIMARY KEY,
+  intent_id       TEXT NOT NULL,
+  kind            TEXT NOT NULL CHECK(kind IN ('work','review','fix')),
+  note            TEXT NOT NULL,
+  session_id      TEXT,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_worknote_intent_created ON intent_worknotes(intent_id, created_at DESC);
 
 -- Per-turn fast-spec settlement record: the baseline a fast-mode work turn
 -- started from, plus the idempotency marker that stops a replayed settled event
@@ -655,6 +675,9 @@ function db(): Db | null {
       'impact_level',
       "TEXT CHECK(impact_level IN ('L1','L2','L3','L4','L5'))",
     )
+    // v23 → v24: intent_worknotes — the append-only content history (work/review/
+    // fix). Created by the SCHEMA block above via CREATE TABLE/INDEX IF NOT EXISTS,
+    // so fresh and pre-existing dbs converge on the same table with no backfill.
     // v19 → v20: PR facts move out of the intents row into `intent_prs`. The
     // legacy trio above is FROZEN, not dropped — runtime never reads or writes it
     // again, and it stays as the rollback script's landing site.
@@ -993,6 +1016,7 @@ export function deleteIntentRecords(intentId: string): void {
     d.run('DELETE FROM intent_deps WHERE intent_id=? OR depends_on_id=?', intentId, intentId)
     d.run('DELETE FROM intent_sessions WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_logs WHERE intent_id=?', intentId)
+    d.run('DELETE FROM intent_worknotes WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_fast_turns WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_prs WHERE intent_id=?', intentId)
     // 关联边随意图消失,但远端 PR 不动 —— 与本函数其它清理一致:清本地台账/git/会话,
@@ -1519,6 +1543,7 @@ export function deleteEmptyDraftIntent(id: string): void {
   tx(d, () => {
     d.run('DELETE FROM intent_deps WHERE intent_id=? OR depends_on_id=?', id, id)
     d.run('DELETE FROM intent_logs WHERE intent_id=?', id)
+    d.run('DELETE FROM intent_worknotes WHERE intent_id=?', id)
     d.run('DELETE FROM intents WHERE id=?', id)
   })
 }
@@ -2966,4 +2991,115 @@ export function listIntentLogs(intentId: string): IntentLog[] {
       intentId,
     )
     .map(toIntentLog)
+}
+
+// ---- Intent worknotes (追加式内容历史) ----
+// 自由文本的 work/review/fix 正文历史,区别于 intent_logs 的操作审计。只增不改不删,
+// 纠正通过再次追加表达;仅物理删除意图时在同一事务内级联清除(见 deleteIntentRecords /
+// deleteEmptyDraftIntent)。
+
+interface WorknoteRow {
+  id: string
+  intent_id: string
+  kind: string
+  note: string
+  session_id: string | null
+  created_at: number
+}
+
+function toIntentWorknote(r: WorknoteRow): IntentWorknote {
+  return {
+    id: r.id,
+    intentId: r.intent_id,
+    kind: r.kind as IntentWorknoteKind,
+    note: r.note,
+    sessionId: r.session_id,
+    createdAt: r.created_at,
+  }
+}
+
+const WORKNOTE_DEFAULT_LIMIT = 50
+const WORKNOTE_MIN_LIMIT = 1
+const WORKNOTE_MAX_LIMIT = 200
+
+/** Validate the list limit: omitted → 50; explicit values must be integers in 1–200. */
+function normalizeWorknoteLimit(limit: number | undefined): number {
+  const effective = limit ?? WORKNOTE_DEFAULT_LIMIT
+  if (
+    !Number.isInteger(effective) ||
+    effective < WORKNOTE_MIN_LIMIT ||
+    effective > WORKNOTE_MAX_LIMIT
+  ) {
+    throw new Error(`worknote limit 必须为 ${WORKNOTE_MIN_LIMIT}–${WORKNOTE_MAX_LIMIT} 的整数`)
+  }
+  return effective
+}
+
+/**
+ * Append one content-history note to an intent and return the stored record.
+ * Validates kind (closed enum) and a non-blank body, then checks the owning intent
+ * exists and inserts in the SAME transaction, so a concurrent delete cannot leave an
+ * orphan row. `sessionId` is a verbatim historical reference: omitted or `null`
+ * stores null, a provided value is saved as-is (never used for lookup or identity).
+ */
+export function appendIntentWorknote(
+  intentId: string,
+  kind: IntentWorknoteKind,
+  note: string,
+  sessionId?: string | null,
+): IntentWorknote {
+  const d = requireDb()
+  if (!(INTENT_WORKNOTE_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`非法 worknote kind:${String(kind)}`)
+  }
+  if (typeof note !== 'string' || note.trim() === '') {
+    throw new Error('worknote 正文不能为空白')
+  }
+  const id = randomUUID()
+  const createdAt = Date.now()
+  const session = sessionId ?? null
+  tx(d, () => {
+    const row = d.get<{ id: string }>('SELECT id FROM intents WHERE id=?', intentId)
+    if (!row) throw new Error(`意图 ${intentId} 不存在,无法追加 worknote`)
+    d.run(
+      'INSERT INTO intent_worknotes (id, intent_id, kind, note, session_id, created_at) VALUES (?,?,?,?,?,?)',
+      id,
+      intentId,
+      kind,
+      note,
+      session,
+      createdAt,
+    )
+  })
+  return { id, intentId, kind, note, sessionId: session, createdAt }
+}
+
+/**
+ * One intent's content-history notes, newest first (`created_at DESC, rowid DESC` —
+ * the random uuid is no tiebreaker, so same-millisecond rows fall back to insertion
+ * order). Optionally filtered by kind; `limit` defaults to 50 and must be an integer
+ * in 1–200 (an out-of-range value throws rather than being silently clamped). Returns
+ * `[]` when the db is unavailable or no rows match.
+ */
+export function listIntentWorknotes(
+  intentId: string,
+  kind?: IntentWorknoteKind,
+  limit?: number,
+): IntentWorknote[] {
+  const d = db()
+  if (!d) return []
+  const effectiveLimit = normalizeWorknoteLimit(limit)
+  const params: (string | number)[] = [intentId]
+  let where = 'intent_id=?'
+  if (kind !== undefined) {
+    where += ' AND kind=?'
+    params.push(kind)
+  }
+  return d
+    .all<WorknoteRow>(
+      `SELECT * FROM intent_worknotes WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      ...params,
+      effectiveLimit,
+    )
+    .map(toIntentWorknote)
 }

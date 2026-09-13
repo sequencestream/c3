@@ -49,6 +49,16 @@ import {
   type SyncIntentPrStatusArgs,
 } from '../intents/pr-status-tool-defs.js'
 import {
+  appendWorknoteDesc,
+  appendWorknoteSchema,
+  listWorknotesDesc,
+  listWorknotesSchema,
+  runAppendWorknote,
+  runListWorknotes,
+  type AppendWorknoteArgs,
+  type ListWorknotesArgs,
+} from '../intents/worknote-tool-defs.js'
+import {
   publishEventDesc,
   publishEventSchema,
   runPublishEvent,
@@ -186,6 +196,26 @@ export function buildAutomationC3Tools(
         ...runSaveIntentDirectly(workspacePath, args as SaveIntentDirectlyArgs, (path) =>
           deps?.broadcastIntents(path),
         ),
+      }),
+    },
+    // WorkNote history: append-only context (Work summary / Review findings /
+    // Fix notes) that Review/Fix agents read instead of re-inferring from PR
+    // diffs. Binds the execution's workspace only; the note's `sessionId` is
+    // model-supplied and verbatim, never auto-filled from the execution id.
+    {
+      name: 'append_intent_worknote',
+      description: appendWorknoteDesc,
+      inputSchema: appendWorknoteSchema,
+      handler: async (args) => ({
+        ...runAppendWorknote(workspacePath, args as AppendWorknoteArgs),
+      }),
+    },
+    {
+      name: 'list_intent_worknotes',
+      description: listWorknotesDesc,
+      inputSchema: listWorknotesSchema,
+      handler: async (args) => ({
+        ...runListWorknotes(workspacePath, args as ListWorknotesArgs),
       }),
     },
     // PR-status sync: a TRIGGER, not a status write. The tool takes only an

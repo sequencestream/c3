@@ -90,7 +90,8 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 详见迁移记录 `migrate/2026/08/06/031`)。v20→v21 为 `intent_sessions` 增加可空的
 `delivery_id` 会话交付上下文;v21→v22 为 `intents` 增加可空的 `base_branch` 基准分支快照并按
 单一就绪交付分支或工作区主分支一次性回填;v22→v23 为 `intents` 增加可空的 `impact_level`
-影响范围等级,不回填——存量行读作未定级。完整迁移约束以 `database/tables.md` 为准。
+影响范围等级,不回填——存量行读作未定级;v23→v24 新增 `intent_worknotes` 追加式内容历史表
+(惰性 `CREATE TABLE/INDEX IF NOT EXISTS`,无存量回填)。完整迁移约束以 `database/tables.md` 为准。
 
 **Schema 版本与迁移(v1 → v2)。** 新建时的 schema
 已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径
@@ -146,6 +147,14 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
   排序;db 不可用时返回空。`view_intent` 工具复用了仅按 id 的
   get,并由**工具 handler** 守卫该意图归属于绑定的项目,
   因此另一个项目的 id 读到的是「未找到」(不会跨项目泄漏)。
+- **WorkNote 追加与列表(RM-R50)。** `appendIntentWorknote` 校验 kind(封闭枚举)、正文非空白,
+  再在同一事务内校验意图存在并插入一行(避免删除竞争产生孤儿记录),返回完整 `IntentWorknote`;
+  `sessionId` 是可选的逐字历史引用(省略或 null 均存 null,不用于查询或证明身份,也不强制关联
+  `intent_sessions`)。`listIntentWorknotes` 先按 `intent_id` 与可选 `kind` 过滤,再
+  `created_at DESC, rowid DESC` 倒序并应用 limit(省略 50,显式 1–200 整数,非法值抛错不钳制)。
+  二者不复用审计日志的尽力写入包装:追加是本次调用的业务结果,失败必须上抛为 `isError`。物理删除
+  的同一事务里级联清除(`deleteIntentRecords` 与 `deleteEmptyDraftIntent`),取消意图与删除来源会话
+  均保留历史。
 - **批内依赖(RM-R17)。** insert 会预先铸造**所有**行 id,
   这样一个批次可以在任何行拥有 id 之前引用自己的同批成员。随后一个纯函数式的
   批内依赖解析器逐项校验
@@ -873,4 +882,4 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 
 三条路径(新增弹窗、`discussion_to_intent`、`start_intent_session`)共用同一个创建原语、同一段绑定序列与同一处首轮提示词构造(含批次恰好一项携带该 ID 的护栏),措辞不会分叉;运行上下文注入当前 ID、状态、标题和正文,owner 会话保存时必须在同一批次恰好一次更新当前 ID,其余拆分项新建且不继承来源会话。三者只在传给构造器的**用户输入块**上不同:`start_intent_session` 是用户输入的文本,`discussion_to_intent` 是讨论标题 + 结论,新增弹窗则是一句指向「当前内容」前缀的分析/优化指示 —— 弹窗那段正文已经是该意图的正文,再贴一遍会让首轮上下文占两份。
 
-draft 可沿用正文编辑与取消状态迁移。物理删除仅允许无会话、spec、工作、git 或 PR 资产的 draft,并在同一事务删除依赖边和日志。
+draft 可沿用正文编辑与取消状态迁移。物理删除仅允许无会话、spec、工作、git 或 PR 资产的 draft,并在同一事务删除依赖边、日志与 WorkNote 历史。

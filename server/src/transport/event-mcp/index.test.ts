@@ -3,8 +3,8 @@
  * Covers:
  *  - the loopback predicate (non-local peers rejected; defence in depth);
  *  - unknown-token rejection (404) at the route;
- *  - a REAL MCP client over streamable-HTTP listing and calling all three tools
- *    (`publish_event` + the two memory tools);
+ *  - a REAL MCP client over streamable-HTTP listing and calling all five tools
+ *    (`publish_event` + the two memory tools + the two worknote tools);
  *  - the bound descriptor's `enabledTools` covering EXACTLY the registered tools,
  *    which is what stops a Codex-only silent disabling of an omitted name.
  * Tool behavior is injected, so this exercises the transport plumbing end-to-end
@@ -40,6 +40,7 @@ import {
   runMemoryWrite,
   type MemoryScope,
 } from '../../features/memory/tool-defs.js'
+import { runAppendWorknote, runListWorknotes } from '../../features/intents/worknote-tool-defs.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetMemoryStoreForTests } from '../../features/memory/store.js'
 
@@ -83,6 +84,8 @@ describe('event MCP HTTP route', () => {
       ),
     memorySearch: (binding, args) => runMemorySearch(scope(binding), args),
     memoryWrite: (binding, args) => runMemoryWrite(scope(binding), args),
+    appendWorknote: (binding, args) => runAppendWorknote(binding.workspacePath, args),
+    listWorknotes: (binding, args) => runListWorknotes(binding.workspacePath, args),
   }
 
   let server: ServerType
@@ -225,6 +228,8 @@ describe('the memory tools over the same route', () => {
       ),
     memoryWrite: (binding, args) =>
       runMemoryWrite({ workspaceName: binding.workspacePath, sessionId: binding.getRunId() }, args),
+    appendWorknote: (binding, args) => runAppendWorknote(binding.workspacePath, args),
+    listWorknotes: (binding, args) => runListWorknotes(binding.workspacePath, args),
   }
 
   let server: ServerType
@@ -306,6 +311,8 @@ describe('the memory tools over the same route', () => {
         expect(names).toEqual([...EVENT_MCP_TOOL_NAMES])
         expect(names).toContain('memory_search')
         expect(names).toContain('memory_write')
+        expect(names).toContain('append_intent_worknote')
+        expect(names).toContain('list_intent_worknotes')
         expect(enabled).toEqual(names)
 
         const saved = await call(client, 'memory_write', {
@@ -339,6 +346,18 @@ describe('the memory tools over the same route', () => {
     await withClient('/ws-b', 'run-b', async (client) => {
       expect(await call(client, 'memory_search', {})).toMatchObject({ total: 0 })
       expect(await call(client, 'memory_search', { query: 'A 的事实' })).toMatchObject({ total: 0 })
+    })
+  })
+
+  it('routes the worknote tools to the bound workspace (friendly not-found for an unknown id)', async () => {
+    await withClient('/ws-d', 'run-d', async (client) => {
+      const res = (await client.callTool({
+        name: 'list_intent_worknotes',
+        arguments: { intentId: 'no-such-intent' },
+      })) as { isError?: boolean; content: Array<{ text: string }> }
+      expect(res.isError).toBeFalsy()
+      expect(res.content[0].text).toContain('未找到')
+      expect(res.content[0].text).toContain('no-such-intent')
     })
   })
 

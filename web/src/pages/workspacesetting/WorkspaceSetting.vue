@@ -37,6 +37,7 @@ import { translateUiError } from '@/i18n/errors'
 import ExternalMcpAccess from './components/ExternalMcpAccess/ExternalMcpAccess.vue'
 import WorkspaceMemories from './components/WorkspaceMemories/WorkspaceMemories.vue'
 import { useModeLabel } from '@/composables/useModeLabel'
+import { listGroupAgents } from '@/lib/group-agents'
 import { applyTabFields, deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import TabNav from '@/components/TabNav/TabNav.vue'
@@ -98,8 +99,15 @@ const props = defineProps<{
    */
   currentWorkspaceInfo?: WorkspaceInfo | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
-  /** All configured agents — the consensus voter picker shows enabled ones. */
+  /** All configured agents — the consensus voter and default-agent pickers show enabled ones. */
   agents?: AgentConfig[]
+  /**
+   * The SYSTEM `defaultAgentId` — read-only here. It is what this workspace resolves
+   * to while it has no override of its own, so the Default Agent tab names it beside
+   * the "inherit" option. Never copied into the draft: storing it would freeze a live
+   * inheritance into a snapshot that a later system change would not reach.
+   */
+  systemDefaultAgentId?: string | null
   /** Per-skill link status for the current workspace (reply to get_skill_link_status). */
   linkStatuses?: SkillLinkStatus[]
   /** Skill ids whose install is in flight — drives per-row busy/disabled state. */
@@ -183,6 +191,7 @@ const emit = defineEmits<{
 // notebook and offers a delete. Content, not configuration — and the delete takes
 // effect the moment it is confirmed, so there is nothing a Save could carry.
 type WsTab =
+  | 'defaultAgent'
   | 'defaultMode'
   | 'gitSandbox'
   | 'collab'
@@ -192,6 +201,7 @@ type WsTab =
   | 'externalMcp'
   | 'memories'
 const TABS: WsTab[] = [
+  'defaultAgent',
   'defaultMode',
   'gitSandbox',
   'collab',
@@ -202,6 +212,10 @@ const TABS: WsTab[] = [
   'memories',
 ]
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
+  // 与系统设置的「默认 Agent」页签同构,只多一个居首的「继承系统默认」选项。它只拥有
+  // defaultAgentId 一个字段:空串即继承(服务端归一化时把这个键整个省略,绝不把当时的
+  // 系统默认值写进来 —— 那会把动态继承冻成一次快照)。
+  defaultAgent: ['defaultAgentId'],
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
   collab: [
@@ -339,6 +353,10 @@ function buildSeed(
     // server's normalization so an absent value renders as the effective default.
     automationEnabled: config?.automationEnabled ?? true,
     automationConcurrency: config?.automationConcurrency ?? DEFAULT_AUTOMATION_CONCURRENCY,
+    // Absent ⇒ '' ⇒ "inherit the system default". Rendered as the leading option, and
+    // never filled with the inherited value: storing that would turn a live
+    // inheritance into a frozen copy the next system change would not reach.
+    defaultAgentId: config?.defaultAgentId ?? '',
     // sandbox left RAW from `full` (may be undefined) — synthesized into the draft.
   }
 }
@@ -603,6 +621,49 @@ const consensusSelectableAgents = computed<AgentConfig[]>(() =>
   (props.agents ?? []).filter((a) => a.enabled !== false),
 )
 
+// ---- Default Agent tab -----------------------------------------------------
+// Same form as the system page, plus a leading "inherit" option. Candidates are the
+// enabled agents (in order_seq order) and the virtual group agents, so a workspace
+// can point at a group exactly as the system default can.
+const defaultAgentCandidates = computed<AgentConfig[]>(() =>
+  (props.agents ?? [])
+    .filter((a) => a.enabled !== false)
+    .slice()
+    .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0)),
+)
+const defaultAgentGroups = computed(() => listGroupAgents(props.agents ?? []))
+
+/** Display label for one reference — an agent's name, a group's id, else the raw ref. */
+function agentRefLabel(ref: string): string {
+  const agent = (props.agents ?? []).find((a) => a.id === ref)
+  if (agent) return agent.displayName || agent.id
+  const group = defaultAgentGroups.value.find((g) => g.id === ref)
+  return group ? group.id : ref
+}
+
+/**
+ * What "inherit" currently resolves to, for the label beside that option. Purely a
+ * live read of the system value — it follows a system change while the workspace
+ * stays in the inherit state and stays clean, which is exactly the difference
+ * between inheriting and having copied the value.
+ */
+const inheritedDefaultAgentLabel = computed<string>(() => {
+  const ref = props.systemDefaultAgentId?.trim() ?? ''
+  return ref ? agentRefLabel(ref) : ''
+})
+
+/**
+ * The override draft points at an agent that no longer exists. Unlike the system
+ * page — which must have SOME default and therefore demands a re-pick — a workspace
+ * can simply go back to inheriting, so the notice offers that instead of blocking.
+ */
+const defaultAgentDraftStale = computed<boolean>(() => {
+  const ref = draft.value.defaultAgentId?.trim() ?? ''
+  if (!ref) return false
+  if (defaultAgentGroups.value.some((g) => g.id === ref)) return false
+  return !(props.agents ?? []).some((a) => a.id === ref)
+})
+
 /** Whether the given agent id is in the consensus custom allowlist. */
 function isConsensusAgentSelected(id: string): boolean {
   return (draft.value.consensus?.agentIds ?? []).includes(id)
@@ -749,6 +810,12 @@ function buildTabPayload(
       payload.automationConcurrency = src.automationConcurrency
       break
     }
+    case 'defaultAgent': {
+      // '' ⇒ back to inheriting: emitted as an empty string, which the server
+      // normalizes to the key being omitted (so the row is deleted, not blanked).
+      payload.defaultAgentId = src.defaultAgentId?.trim() || ''
+      break
+    }
   }
   return payload
 }
@@ -831,6 +898,62 @@ const parkRecoveryRateText = computed(() => {
     />
 
     <div class="project-config-body">
+      <!-- ============ Default Agent tab ============
+           与系统设置的「默认 Agent」页签同构,只多一个居首的「继承系统默认」选项。
+           留在继承态时旁边显示当前继承到谁;系统默认变化时这个提示跟着变,但本页
+           不因此变脏 —— 继承的是关系,不是某一刻的值。 -->
+      <div
+        v-show="activeTab === 'defaultAgent'"
+        class="project-config-tab-panel"
+        role="tabpanel"
+        data-testid="project-config-tab-defaultAgent"
+      >
+        <section class="project-config-section">
+          <p class="project-config-section-title">
+            {{ t('workspaceSetting.defaultAgent.title.label') }}
+          </p>
+          <p class="project-config-hint">{{ t('workspaceSetting.defaultAgent.hint') }}</p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">
+              {{ t('workspaceSetting.defaultAgent.picker.label') }}
+            </span>
+            <select
+              v-model="draft.defaultAgentId"
+              class="mode-select"
+              data-testid="workspace-default-agent-select"
+            >
+              <option value="">
+                {{
+                  inheritedDefaultAgentLabel
+                    ? t('workspaceSetting.defaultAgent.inheritNamed', {
+                        agent: inheritedDefaultAgentLabel,
+                      })
+                    : t('workspaceSetting.defaultAgent.inherit')
+                }}
+              </option>
+              <option v-for="a in defaultAgentCandidates" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="defaultAgentGroups.length > 0"
+                :label="t('workspaceSetting.defaultAgent.groupPicker.label')"
+              >
+                <option v-for="g in defaultAgentGroups" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <p
+            v-if="defaultAgentDraftStale"
+            class="project-config-warn"
+            data-testid="workspace-default-agent-stale"
+          >
+            {{ t('workspaceSetting.defaultAgent.stale') }}
+          </p>
+        </section>
+      </div>
+
       <!-- ============ Default mode tab ============ -->
       <div
         v-show="activeTab === 'defaultMode'"
@@ -1554,6 +1677,17 @@ const parkRecoveryRateText = computed(() => {
 
     <div class="project-config-foot">
       <!-- Per-tab Save lives beside Close; only the active tab's Save is shown. -->
+      <div v-show="activeTab === 'defaultAgent'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.defaultAgent"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-defaultAgent"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-defaultAgent" @click="saveTab('defaultAgent')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
       <div v-show="activeTab === 'defaultMode'" class="project-config-tab-actions">
         <span
           v-if="tabDirtyMap.defaultMode"
@@ -1786,6 +1920,14 @@ const parkRecoveryRateText = computed(() => {
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--c-text-muted);
+  line-height: 1.5;
+}
+
+/* 草稿里选中的对象已不存在:必须由用户重新决定(这里可以直接退回继承),不静默改成别的。 */
+.project-config-warn {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: var(--c-warning-text);
   line-height: 1.5;
 }
 

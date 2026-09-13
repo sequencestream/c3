@@ -262,6 +262,9 @@
       },
       "provider": {
         "label": "프로바이더"
+      },
+      "defaultAgent": {
+        "label": "기본 Agent"
       }
     },
     "agents": {
@@ -894,6 +897,14 @@
           "custom": "기타"
         }
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "기본 Agent"
+      },
+      "hint": "실행자를 명시하지 않았을 때 사용할 Agent입니다. 각 워크스페이스는 자체 재정의를 설정하기 전까지 이 값을 상속합니다.",
+      "stale": "선택한 Agent가 삭제되었습니다. 저장하기 전에 다시 선택하세요.",
+      "newAgentHint": "후보는 저장된 Agent 레지스트리에서 가져옵니다. 새로 만든 Agent는 Agent 탭에서 저장해야 여기에서 선택할 수 있습니다."
     }
   },
   "personalizedSetting": {
@@ -3352,6 +3363,9 @@
       },
       "memories": {
         "label": "메모리"
+      },
+      "defaultAgent": {
+        "label": "기본 Agent"
       }
     },
     "defaultMode": {
@@ -3667,6 +3681,21 @@
       "deleted": {
         "toast": "메모리 '{title}'을(를) 삭제했습니다."
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "기본 Agent"
+      },
+      "hint": "이 워크스페이스에서 실행자를 명시하지 않았을 때 사용할 Agent입니다. 설정하지 않으면 시스템 설정의 기본 Agent를 상속합니다. 설정하면 이 워크스페이스 안의 대체 대상만 바뀝니다.",
+      "picker": {
+        "label": "기본 Agent"
+      },
+      "groupPicker": {
+        "label": "그룹"
+      },
+      "inherit": "시스템 기본 Agent 상속",
+      "inheritNamed": "시스템 기본 Agent 상속 (현재: {agent})",
+      "stale": "선택한 Agent가 삭제되었습니다. 다시 선택하거나 시스템 기본 상속으로 되돌리세요."
     }
   },
   "codex": {

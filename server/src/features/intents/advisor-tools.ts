@@ -290,7 +290,7 @@ function resetIntentSessionCore(
 ): AdvisorToolResult {
   const intent = getIntent(scope.intentId)!
   // The intent role's agent (possibly a group), resolved before the session exists.
-  const target = sessionAgentTargetForRole('intent')
+  const target = sessionAgentTargetForRole('intent', scope.workspacePath)
   if (!target.ok) {
     return denied('agent_group_unavailable', `agent 组 ${target.groupRef} 无可用成员`, false)
   }
@@ -342,7 +342,7 @@ function resetSpecSessionCore(
   if (!intent.specPath) {
     return denied('session_required', '该意图尚未编写 spec,无法重置 spec 会话', false)
   }
-  const specTarget = sessionAgentTargetForRole('spec')
+  const specTarget = sessionAgentTargetForRole('spec', scope.workspacePath)
   if (!specTarget.ok) {
     return denied('agent_group_unavailable', `agent 组 ${specTarget.groupRef} 无可用成员`, false)
   }

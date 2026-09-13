@@ -262,7 +262,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // explicit pick, or (Auto) the default role. A group with no usable member is a
   // configuration error the user must fix, so the creation is refused whole rather
   // than quietly bound to some other agent.
-  const target = sessionAgentTargetForRef(msg.agentId || null)
+  const target = sessionAgentTargetForRef(msg.agentId || null, msg.workspaceName)
   if (!target.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return

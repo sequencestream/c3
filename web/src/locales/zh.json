@@ -261,6 +261,9 @@
       },
       "provider": {
         "label": "模型提供方"
+      },
+      "defaultAgent": {
+        "label": "默认 Agent"
       }
     },
     "agents": {
@@ -893,6 +896,14 @@
           "custom": "其他"
         }
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "默认 Agent"
+      },
+      "hint": "没有明确指定执行者时用哪个 Agent。它也是各工作区未设置覆盖时所继承的值;工作区可在自己的「默认 Agent」页签中覆盖它。",
+      "stale": "当前选择的 Agent 已被删除,请重新选择后再保存。",
+      "newAgentHint": "候选来自已保存的 Agent 注册表:新建的 Agent 需要先在 Agent 页签保存,才能在这里选中。"
     }
   },
   "personalizedSetting": {
@@ -3351,6 +3362,9 @@
       },
       "memories": {
         "label": "记忆"
+      },
+      "defaultAgent": {
+        "label": "默认 Agent"
       }
     },
     "defaultMode": {
@@ -3666,6 +3680,21 @@
       "deleted": {
         "toast": "已删除记忆「{title}」。"
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "默认 Agent"
+      },
+      "hint": "本工作区在没有明确指定执行者时用哪个 Agent。不设置即继承系统设置里的默认 Agent;设置后本工作区内的兜底改用这里的值,系统级配置与其它工作区不受影响。",
+      "picker": {
+        "label": "默认 Agent"
+      },
+      "groupPicker": {
+        "label": "分组"
+      },
+      "inherit": "继承系统默认 Agent",
+      "inheritNamed": "继承系统默认 Agent（当前：{agent}）",
+      "stale": "当前选择的 Agent 已被删除,请重新选择,或改回继承系统默认。"
     }
   },
   "codex": {

@@ -567,6 +567,36 @@ const intentsWorkspaceMainBranch = computed<string | null>(
     null,
 )
 
+/**
+ * The default agent that applies INSIDE a given workspace: that workspace's own
+ * `defaultAgentId` override when it set one, else the system default. The same chain
+ * the server resolves with, mirrored here so the "Auto" hints, the discussion
+ * organizer pre-pick and the new-automation form all name the agent a launch would
+ * actually use — rather than the system value a workspace has overridden.
+ *
+ * A workspace that stores no override has no key at all (that is what "inherit"
+ * means on the wire), so an absent value legitimately falls through.
+ */
+function defaultAgentForWorkspace(workspaceName: string | null): string {
+  const system = serverSettings.value?.defaultAgentId ?? ''
+  if (!workspaceName) return system
+  const override = serverSettings.value?.projectConfigs?.[workspaceName]?.defaultAgentId
+  return override?.trim() || system
+}
+
+/** The effective default agent of the workspace the session surfaces act on. */
+const currentDefaultAgentId = computed<string>(() =>
+  defaultAgentForWorkspace(currentWorkspace.value),
+)
+/** The effective default agent of the workspace the discussions page is showing. */
+const discussionsDefaultAgentId = computed<string>(() =>
+  defaultAgentForWorkspace(discussionsProject.value),
+)
+/** The effective default agent of the workspace the automations page is showing. */
+const automationsDefaultAgentId = computed<string>(() =>
+  defaultAgentForWorkspace(automationsProject.value),
+)
+
 /** The candidate deliveries the `delivery-context` exit offers, from the ledger. */
 const gateEscapeDeliveries = computed(() => {
   const id = intentGateEscape.value?.escape.intentId
@@ -948,7 +978,7 @@ function onFilesChatWidth(px: number): void {
           :dispatch="activeDiscussionDispatch"
           :input="discussionInput"
           :agents="serverSettings?.agents ?? []"
-          :default-agent-id="serverSettings?.defaultAgentId ?? null"
+          :default-agent-id="discussionsDefaultAgentId || null"
           :active-session="activeSession"
           :session-title="activeTitle"
           :session-has-active="hasActiveSession"
@@ -1013,7 +1043,7 @@ function onFilesChatWidth(px: number): void {
           :vendor-availability="vendorAvailability"
           :agents="serverSettings?.agents ?? []"
           :automation-agent-id="serverSettings?.automationAgentId ?? ''"
-          :default-agent-id="serverSettings?.defaultAgentId ?? ''"
+          :default-agent-id="automationsDefaultAgentId"
           @select="onSelectAutomation"
           @open-form="openAutomationForm"
           @delete-automation="deleteAutomation"
@@ -1170,7 +1200,7 @@ function onFilesChatWidth(px: number): void {
       v-if="newSessionOpen"
       :open="newSessionOpen"
       :agents="serverSettings?.agents ?? []"
-      :default-agent-id="serverSettings?.defaultAgentId ?? null"
+      :default-agent-id="currentDefaultAgentId || null"
       :vendor-availability="vendorAvailability"
       @confirm="confirmNewSession"
       @close="newSessionOpen = false"
@@ -1238,6 +1268,7 @@ function onFilesChatWidth(px: number): void {
       :current-workspace-info="currentWorkspaceInfo"
       :vendor-modes="vendorModes"
       :agents="serverSettings?.agents ?? []"
+      :system-default-agent-id="serverSettings?.defaultAgentId ?? null"
       :link-statuses="skillLinkStatuses"
       :installing-skill-ids="installingSkillIds"
       :park-recovery-stats="parkRecoveryStats"

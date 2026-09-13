@@ -87,3 +87,38 @@ export function resolveDefaultAgentId(agents: AgentConfig[], currentDefaultId: s
   const firstEnabled = agents.find(isEnabled)
   return firstEnabled ? firstEnabled.id : SYSTEM_AGENT_ID
 }
+
+/**
+ * Normalize ONE stored agent *reference* — a system role field or a workspace
+ * default override — against the final registry. This is the rule that separates
+ * **disabling** an agent from **deleting** it:
+ *
+ *  - blank (or not a string) ⇒ `''`, the "follow the default" sentinel, kept as is
+ *    (never auto-filled, so following survives a save);
+ *  - a virtual group reference ⇒ {@link resolveDefaultAgentId}'s group branch: kept
+ *    while the group still has an enabled member, else rewritten to the first
+ *    enabled agent ({@link SYSTEM_AGENT_ID} when none). An emptied group is NOT a
+ *    deleted id — it must not be mistaken for one and cleared;
+ *  - a concrete id that still exists ⇒ {@link resolveDefaultAgentId}'s fall-through:
+ *    kept while enabled, else the next enabled agent in `order_seq` order;
+ *  - a concrete id that no longer exists ⇒ `null`, meaning **"the explicit choice is
+ *    gone, restore the follow relationship"**. The caller decides how following is
+ *    spelled in its own scope: `''` for a system role, an absent key for a workspace
+ *    override.
+ *
+ * `SystemSettings.defaultAgentId` itself is deliberately NOT normalized through
+ * here: it is the end of the follow chain and has nothing to follow, so it keeps
+ * using {@link resolveDefaultAgentId} directly (a removed default falls through to
+ * the next enabled agent rather than becoming empty).
+ *
+ * Idempotent: re-normalizing an already-normalized value returns it unchanged.
+ */
+export function normalizeAgentRef(agents: AgentConfig[], ref: unknown): string | null {
+  const wanted = typeof ref === 'string' ? ref.trim() : ''
+  if (!wanted) return ''
+  // Group refs are virtual (never in `agents`), so this must precede the by-id
+  // lookup — otherwise an emptied group would read as a deleted concrete id.
+  if (isGroupAgentRef(wanted)) return resolveDefaultAgentId(agents, wanted)
+  if (!agents.some((a) => a.id === wanted)) return null
+  return resolveDefaultAgentId(agents, wanted)
+}

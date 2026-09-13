@@ -262,6 +262,9 @@
       },
       "provider": {
         "label": "プロバイダー"
+      },
+      "defaultAgent": {
+        "label": "デフォルト Agent"
       }
     },
     "agents": {
@@ -894,6 +897,14 @@
           "custom": "その他"
         }
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "デフォルト Agent"
+      },
+      "hint": "実行者が明示されていないときに使う Agent です。各ワークスペースは独自の上書きを設定するまでこの値を継承します。",
+      "stale": "選択していた Agent は削除されました。保存する前に選び直してください。",
+      "newAgentHint": "候補は保存済みの Agent レジストリから取得します。新規作成した Agent は Agent タブで保存してからでないとここで選べません。"
     }
   },
   "personalizedSetting": {
@@ -3352,6 +3363,9 @@
       },
       "memories": {
         "label": "メモリ"
+      },
+      "defaultAgent": {
+        "label": "デフォルト Agent"
       }
     },
     "defaultMode": {
@@ -3667,6 +3681,21 @@
       "deleted": {
         "toast": "メモリ「{title}」を削除しました。"
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "デフォルト Agent"
+      },
+      "hint": "このワークスペースで実行者が明示されていないときに使う Agent です。未設定ならシステム設定のデフォルト Agent を継承します。設定するとこのワークスペース内のフォールバックだけが変わります。",
+      "picker": {
+        "label": "デフォルト Agent"
+      },
+      "groupPicker": {
+        "label": "グループ"
+      },
+      "inherit": "システムのデフォルト Agent を継承",
+      "inheritNamed": "システムのデフォルト Agent を継承（現在: {agent}）",
+      "stale": "選択していた Agent は削除されました。選び直すか、システム既定の継承に戻してください。"
     }
   },
   "codex": {

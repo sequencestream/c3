@@ -64,7 +64,7 @@ import type {
   VendorId,
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX, SESSION_KINDS, VENDOR_IDS, isVendorId } from '@ccc/shared/protocol'
-import { resolveDefaultAgentId } from '@ccc/shared'
+import { normalizeAgentRef, resolveDefaultAgentId } from '@ccc/shared'
 import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
   canonicalizeAgentOrder,
@@ -534,44 +534,28 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // The default must reference an existing *enabled* agent; an unknown, removed,
   // or now-disabled default falls through to the next enabled agent in order_seq
   // (rewrite-on-store, AC-R2/AC-R10) — `resolveDefaultAgentId` returns SYSTEM_AGENT_ID
-  // only when every agent is disabled.
+  // only when every agent is disabled. The system default is the END of the follow
+  // chain, so unlike the roles below it is never cleared: it has nothing to follow.
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
   const defaultAgentId = resolveDefaultAgentId(agents, wanted)
-  // toolAgentId: background tool sessions' executor. Empty string ⇒ "follow the
-  // default agent" — kept empty (NOT auto-filled to the first enabled agent, unlike
-  // the default), so the runtime falls back through `resolveAgent` to defaultAgentId.
-  // A *set* toolAgentId that's now removed/disabled is rewritten by the same
-  // order_seq fall-through the default uses (rewrite-on-store, AC-R2/AC-R10).
-  const wantedTool = typeof raw?.toolAgentId === 'string' ? raw.toolAgentId : ''
-  const toolAgentId = wantedTool === '' ? '' : resolveDefaultAgentId(agents, wantedTool)
-  // intentAgentId: intent-communication sessions' executor. Identical semantics to
-  // toolAgentId — empty string ⇒ "follow the default agent" (kept empty, never
-  // auto-filled), and a *set* value pointing at a removed/disabled agent is rewritten
-  // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R23).
-  const wantedIntent = typeof raw?.intentAgentId === 'string' ? raw.intentAgentId : ''
-  const intentAgentId = wantedIntent === '' ? '' : resolveDefaultAgentId(agents, wantedIntent)
-  // specAgentId: spec-authoring sessions' executor. Identical semantics to
-  // intentAgentId — empty string ⇒ "follow the default agent" (kept empty, never
-  // auto-filled), and a *set* value pointing at a removed/disabled agent is rewritten
-  // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R24).
-  const wantedSpec = typeof raw?.specAgentId === 'string' ? raw.specAgentId : ''
-  const specAgentId = wantedSpec === '' ? '' : resolveDefaultAgentId(agents, wantedSpec)
-  // specReviewAgentId: spec-REVIEW sessions' executor. Identical semantics to
-  // specAgentId, and deliberately a single slot: there is no sandbox-specific
-  // reviewer, because whether a review runs in the sandbox is decided by
-  // `sandboxSessionKinds` containing 'spec_review', not by picking another agent.
-  const wantedSpecReview = typeof raw?.specReviewAgentId === 'string' ? raw.specReviewAgentId : ''
-  const specReviewAgentId =
-    wantedSpecReview === '' ? '' : resolveDefaultAgentId(agents, wantedSpecReview)
-  // automationAgentId: default vendor+agent pre-filled into the "new automation" form.
-  // Storage-normalization is identical to specAgentId — empty string ⇒ "follow the
-  // default agent" (kept empty, never auto-filled), and a *set* value pointing at a
-  // removed/disabled agent is rewritten by the same order_seq fall-through
-  // (rewrite-on-store, AC-R2/AC-R10/AC-R25). Unlike the three above it is NOT consumed
-  // by the runtime resolveAgent router — it only seeds the create form's default.
-  const wantedAutomation = typeof raw?.automationAgentId === 'string' ? raw.automationAgentId : ''
-  const automationAgentId =
-    wantedAutomation === '' ? '' : resolveDefaultAgentId(agents, wantedAutomation)
+  // The five ROLE fields share one reference rule (`normalizeAgentRef`), which is
+  // where *disabling* and *deleting* an agent part ways:
+  //   - '' is the "follow the default" sentinel and stays empty (never auto-filled),
+  //     so the runtime keeps resolving it through the workspace/system default chain;
+  //   - a now-DISABLED target is rewritten to the next enabled agent in order_seq
+  //     order (rewrite-on-store, AC-R2/AC-R10/AC-R20), and an emptied virtual group
+  //     to the first enabled agent — a group ref is never mistaken for a deleted id;
+  //   - a DELETED target clears the field back to '', because the agent the user
+  //     explicitly chose no longer exists and pinning the role to an arbitrary
+  //     neighbour would silently execute on something nobody picked.
+  // `automationAgentId` normalizes identically but is NOT read by the runtime
+  // resolveAgent router: it only seeds the "new automation" create form (AC-R25).
+  const roleRef = (value: unknown): string => normalizeAgentRef(agents, value) ?? ''
+  const toolAgentId = roleRef(raw?.toolAgentId)
+  const intentAgentId = roleRef(raw?.intentAgentId)
+  const specAgentId = roleRef(raw?.specAgentId)
+  const specReviewAgentId = roleRef(raw?.specReviewAgentId)
+  const automationAgentId = roleRef(raw?.automationAgentId)
   // Legacy `sandbox*AgentId` keys (the removed sandbox-only role profile) are read
   // as unknown fields: ignored here and absent from the returned object, so they
   // disappear from disk on the next save. A sandbox run reuses the agent this same
@@ -604,8 +588,13 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // `WorkspaceSetting.skillRepos`). The captureLegacyProjectSeed one-shot below handles
   // reading the old global value from disk; the per-project authoritative getter is
   // `getSkillRepos(workspacePath)`, which reads from `loadWorkspaceSetting(workspacePath)`.
-  // Per-project configurations passthrough (project-level knobs).
-  const projectConfigs = raw?.projectConfigs
+  // Per-project configurations: passed through as stored EXCEPT for the one field
+  // that references the registry — each workspace's `defaultAgentId` override. It is
+  // cleaned here, against the final registry, so deleting an agent stops being a
+  // "whatever page happens to be open" cleanup: every stored workspace loses its
+  // dangling override and goes back to inheriting, including ones not currently open
+  // and ones no longer registered but whose configuration still exists.
+  const projectConfigs = cleanProjectConfigAgentRefs(raw?.projectConfigs, agents)
   // Auth config (ADR-0023): validate via the zod schema; a malformed or absent
   // block normalizes to undefined ⇒ "no auth" (the C-SEC-5 localhost-only
   // default). Contract-only — no runtime enforcement exists yet.
@@ -638,6 +627,47 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     ...(projectConfigs ? { projectConfigs } : {}),
     ...(vendorCliVersions ? { vendorCliVersions } : {}),
   }
+}
+
+/**
+ * Re-normalize every stored workspace's `defaultAgentId` override against the final
+ * registry, leaving all other workspace fields exactly as stored.
+ *
+ * A whole-system save carries the map wholesale, so this is what makes "delete an
+ * agent" reach workspaces the console never rendered. The rule is the shared one
+ * (`normalizeAgentRef`): a disabled target moves on to the next enabled agent, an
+ * emptied group to the first enabled one, and a DELETED target drops the key so the
+ * workspace inherits the system default again — never a snapshot of it.
+ *
+ * Returns `undefined` when there is nothing stored, so the normalized settings keep
+ * omitting the key rather than growing an empty map.
+ */
+function cleanProjectConfigAgentRefs(
+  raw: Record<string, WorkspaceSetting> | undefined,
+  agents: readonly AgentConfig[],
+): Record<string, WorkspaceSetting> | undefined {
+  if (!raw) return undefined
+  const out: Record<string, WorkspaceSetting> = {}
+  for (const [workspaceName, cfg] of Object.entries(raw)) {
+    if (!cfg || typeof cfg !== 'object') {
+      out[workspaceName] = cfg
+      continue
+    }
+    const ref = normalizeAgentRef([...agents], cfg.defaultAgentId)
+    if (!ref) {
+      // Inherit: both the blank sentinel and a deleted target drop the key. Avoid
+      // rewriting an entry that already had none — idempotence is what stops a
+      // re-normalize from looking like a change.
+      if (cfg.defaultAgentId === undefined) out[workspaceName] = cfg
+      else {
+        const { defaultAgentId: _dropped, ...rest } = cfg
+        out[workspaceName] = rest
+      }
+      continue
+    }
+    out[workspaceName] = ref === cfg.defaultAgentId ? cfg : { ...cfg, defaultAgentId: ref }
+  }
+  return out
 }
 
 function normalizeVendorCliVersions(raw: unknown): Partial<Record<VendorId, string>> | undefined {
@@ -731,6 +761,12 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  *   clamped to ≥ 1, anything else (absent, non-number, NaN/∞) falls back to 2.
  *   It limits the queue's concurrent DEV intents under `worktree`; `current-branch`
  *   ignores it (shared checkout is always serial).
+ * - `defaultAgentId` is this workspace's default-agent OVERRIDE, normalized by the
+ *   shared `normalizeAgentRef` against `agents`: absent / blank / whitespace-only /
+ *   non-string ⇒ the key is OMITTED (inherit the system default — never a snapshot
+ *   of it), a disabled target moves to the next enabled agent, an emptied group to
+ *   the first enabled one, and a DELETED target drops the key so the workspace
+ *   inherits again.
  */
 export function normalizeWorkspaceSetting(
   raw: unknown,
@@ -761,6 +797,9 @@ export function normalizeWorkspaceSetting(
   const fastSpecMaxFiles = normalizeFastSpecMaxFiles(rec.fastSpecMaxFiles)
   const fastSpecMaxLines = normalizeFastSpecMaxLines(rec.fastSpecMaxLines)
   const forge = normalizeWorkspaceForge(rec.forge)
+  // `null` (the target was deleted) and '' (blank ⇒ inherit) both mean "no override":
+  // the key is omitted below, so a later read falls through to the system default.
+  const defaultAgentId = normalizeAgentRef([...agents], rec.defaultAgentId) || undefined
   return {
     forge,
     defaultMode,
@@ -778,6 +817,7 @@ export function normalizeWorkspaceSetting(
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
     ...(specMachineApprovalEnabled ? { specMachineApprovalEnabled } : {}),
+    ...(defaultAgentId ? { defaultAgentId } : {}),
   }
 }
 

@@ -153,8 +153,9 @@ export async function judgeCompletion(input: {
   signal: AbortSignal
 }): Promise<JudgeVerdict> {
   // Completion judging is a background tool session ⇒ run on the configured tool
-  // agent (falls back to the default agent when toolAgentId is unset).
-  const launch = resolveToolSessionLaunch()
+  // agent (falls back to the judged intent's workspace default, then the system
+  // one, when toolAgentId is unset).
+  const launch = resolveToolSessionLaunch(input.req.workspaceName)
   const { system, user } = buildPrompt(input.req, input.lastMessages, input.evidence)
   let text: string
   try {

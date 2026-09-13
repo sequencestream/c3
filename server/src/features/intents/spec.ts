@@ -426,7 +426,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     return
   }
   // The spec role's agent (possibly a group), resolved before anything is created.
-  const specTarget = sessionAgentTargetForRole('spec')
+  const specTarget = sessionAgentTargetForRole('spec', proj)
   if (!specTarget.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(specTarget.groupRef) })
     return

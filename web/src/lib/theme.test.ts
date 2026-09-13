@@ -18,8 +18,8 @@ afterEach(() => {
 })
 
 describe('theme registry', () => {
-  it('registers exactly the two themes this release ships', () => {
-    expect(THEMES.map((theme) => theme.id)).toEqual(['dark', 'light'])
+  it('registers exactly the three themes this release ships', () => {
+    expect(THEMES.map((theme) => theme.id)).toEqual(['dark', 'light', 'solarized-light'])
   })
 
   it('gives every theme a unique id and a display name', () => {
@@ -52,6 +52,7 @@ describe('theme registry', () => {
   it('accepts only registered ids', () => {
     expect(isUiTheme('dark')).toBe(true)
     expect(isUiTheme('light')).toBe(true)
+    expect(isUiTheme('solarized-light')).toBe(true)
     for (const bad of ['DARK', 'solarized', '', 42, null, undefined, {}]) {
       expect(isUiTheme(bad)).toBe(false)
     }
@@ -59,6 +60,7 @@ describe('theme registry', () => {
 
   it('resolves an unknown value to the default entry', () => {
     expect(resolveTheme('light').id).toBe('light')
+    expect(resolveTheme('solarized-light').id).toBe('solarized-light')
     expect(resolveTheme('solarized').id).toBe('dark')
     expect(resolveTheme(undefined).id).toBe('dark')
   })
@@ -73,6 +75,9 @@ describe('applyTheme', () => {
     expect(applyTheme('dark')).toBe('dark')
     expect(root.dataset.theme).toBe('dark')
     expect(root.style.colorScheme).toBe('dark')
+    expect(applyTheme('solarized-light')).toBe('solarized-light')
+    expect(root.dataset.theme).toBe('solarized-light')
+    expect(root.style.colorScheme).toBe('light')
   })
 
   it('normalizes a missing or unknown value to dark instead of writing it to the DOM', () => {
@@ -106,7 +111,9 @@ describe('stylesheet agreement', () => {
     // The default theme's tokens live on bare `:root`; the others in their own block.
     expect(css).toMatch(/:root \{\s*color-scheme: dark;/)
     expect(css).toMatch(/:root\[data-theme='light'\] \{\s*color-scheme: light;/)
+    expect(css).toMatch(/:root\[data-theme='solarized-light'\] \{\s*color-scheme: light;/)
     expect(THEMES.find((theme) => theme.id === 'light')!.colorScheme).toBe('light')
+    expect(THEMES.find((theme) => theme.id === 'solarized-light')!.colorScheme).toBe('light')
     expect(THEMES.find((theme) => theme.id === 'dark')!.colorScheme).toBe('dark')
   })
 })

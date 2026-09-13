@@ -134,7 +134,7 @@ header h1 {
   font-weight: 600;
   line-height: 1;
   color: #fff;
-  background: var(--c-danger, #e53e3e);
+  background: var(--c-error-text);
   border-radius: 50%;
 }
 
@@ -925,7 +925,7 @@ header h1 {
   font-weight: 600;
   line-height: 16px;
   border-radius: 3px;
-  background: var(--c-bg-inset);
+  background: var(--c-code);
   color: var(--c-text-muted);
   letter-spacing: 0.3px;
 }
@@ -1809,7 +1809,7 @@ main {
   color: var(--c-primary-text);
 }
 .md-body mark {
-  background: var(--c-warning-soft, color-mix(in srgb, var(--c-warning) 22%, transparent));
+  background: var(--c-warning-soft);
   color: var(--c-text);
   padding: 0 3px;
   border-radius: 3px;
@@ -1956,7 +1956,7 @@ footer {
   flex-wrap: wrap;
 }
 .message-input.drag-over {
-  outline: 2px dashed var(--c-accent, var(--c-text-muted));
+  outline: 2px dashed var(--c-primary);
   outline-offset: -4px;
 }
 .message-input .file-input {
@@ -2582,9 +2582,9 @@ button.deny:hover:not(:disabled) {
 .agent-remove {
   height: 36px;
   padding: 0 var(--sp-4);
-  background: var(--c-danger, #e53e3e);
+  background: var(--c-error-text);
   color: #fff;
-  border: 1px solid var(--c-danger, #e53e3e);
+  border: 1px solid var(--c-error);
   border-radius: var(--radius-sm);
   font-size: var(--fs-code);
   font-weight: 500;
@@ -3175,7 +3175,7 @@ button.deny:hover:not(:disabled) {
 }
 /* Drop-target hint while a row is dragged over another. */
 .agent-row.drag-over {
-  outline: 2px dashed var(--c-accent, var(--c-border));
+  outline: 2px dashed var(--c-primary);
   outline-offset: -2px;
 }
 /* Brief "this is the row you were sent to" flash after a deep-link jump. */
@@ -3257,7 +3257,7 @@ button.deny:hover:not(:disabled) {
   transform: translateX(16px);
 }
 .agent-enabled-switch:focus-visible {
-  outline: 2px solid var(--c-accent, #2563eb);
+  outline: 2px solid var(--c-primary);
   outline-offset: 2px;
 }
 .col-icon {
@@ -3348,7 +3348,7 @@ select.agent-field {
   margin-bottom: var(--sp-2);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
-  background: var(--c-bg-card);
+  background: var(--c-card);
 }
 .skill-repo-row .agent-field {
   flex: 1 1 140px;
@@ -4006,16 +4006,16 @@ select.agent-field {
   vertical-align: middle;
 }
 .req-dep-type-badge.dep-type--blocks {
-  background: var(--c-danger-soft, #fde8e8);
-  color: var(--c-danger-text, #c53030);
+  background: var(--c-error-soft);
+  color: var(--c-error-text);
 }
 .req-dep-type-badge.dep-type--informs {
-  background: var(--c-info-soft, #e8f4fd);
-  color: var(--c-info-text, #2b6cb0);
+  background: var(--c-info-soft);
+  color: var(--c-info);
 }
 .req-dep-type-badge.dep-type--soft_after {
-  background: var(--c-muted-soft, #edf2f7);
-  color: var(--c-muted-text, #718096);
+  background: var(--c-muted-soft);
+  color: var(--c-text-muted);
 }
 /* PR status badge – inline with dep-type badge patterns. */
 .req-pr-status {
@@ -4033,24 +4033,24 @@ select.agent-field {
   text-decoration: underline;
 }
 .req-pr-status--reviewing {
-  background: var(--c-info-soft, #e8f4fd);
-  color: var(--c-info-text, #2b6cb0);
+  background: var(--c-info-soft);
+  color: var(--c-info);
 }
 .req-pr-status--rejected {
-  background: var(--c-danger-soft, #fde8e8);
-  color: var(--c-danger-text, #c53030);
+  background: var(--c-error-soft);
+  color: var(--c-error-text);
 }
 .req-pr-status--failed {
-  background: var(--c-danger-soft, #fde8e8);
-  color: var(--c-danger-text, #c53030);
+  background: var(--c-error-soft);
+  color: var(--c-error-text);
 }
 .req-pr-status--merged {
-  background: var(--c-success-soft, #e6f7e6);
+  background: var(--c-success-soft);
   color: var(--c-success-text);
 }
 .req-pr-status--closed {
-  background: var(--c-muted-soft, #edf2f7);
-  color: var(--c-muted-text, #718096);
+  background: var(--c-muted-soft);
+  color: var(--c-text-muted);
 }
 .req-pr-sync-btn {
   margin-left: 6px;
@@ -4065,10 +4065,10 @@ select.agent-field {
   color: var(--c-success-text);
 }
 .req-pr-sync-feedback--error {
-  color: var(--c-danger-text, #c53030);
+  color: var(--c-error-text);
 }
 .req-pr-sync-feedback--syncing {
-  color: var(--c-muted-text, #718096);
+  color: var(--c-text-muted);
 }
 .req-dep-edit-btn {
   font-size: 11px;

@@ -37,7 +37,7 @@ export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
  * Lives in {@link PersonalizedSettings}: a per-person display preference that
  * never leaves the web console (no server-side rendering decision reads it).
  */
-export type UiTheme = 'dark' | 'light'
+export type UiTheme = 'dark' | 'light' | 'solarized-light'
 
 /**
  * Personalized settings — the third settings class, beside {@link SystemSettings}

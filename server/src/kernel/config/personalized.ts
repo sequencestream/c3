@@ -44,7 +44,7 @@ export const DEFAULT_UI_LANG: UiLang = 'en'
  * how a theme reaches the DOM); the server only needs the set of ids it will accept
  * into a stored record, so a corrupt or made-up value never survives a round trip.
  */
-export const UI_THEMES: readonly UiTheme[] = ['dark', 'light']
+export const UI_THEMES: readonly UiTheme[] = ['dark', 'light', 'solarized-light']
 
 /** The theme when a record is missing, malformed, or names an unknown theme. */
 export const DEFAULT_THEME: UiTheme = 'dark'

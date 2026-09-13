@@ -376,7 +376,7 @@ defineExpose({
 .files-col-splitter:hover,
 .files-col-splitter.dragging,
 .files-col-splitter:focus-visible {
-  background: var(--c-accent, var(--c-text));
+  background: var(--c-primary);
   outline: none;
 }
 

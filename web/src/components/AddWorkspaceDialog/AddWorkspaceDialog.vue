@@ -222,7 +222,7 @@ function confirm(): void {
   margin-bottom: var(--sp-3);
   padding: var(--sp-2);
   color: var(--c-text);
-  background: var(--c-bg-elevated, var(--c-bg));
+  background: var(--c-input);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-md, 6px);
   font: inherit;
@@ -239,7 +239,7 @@ function confirm(): void {
 }
 .awd-picker-error {
   margin: calc(-1 * var(--sp-2)) 0 var(--sp-3);
-  color: var(--c-danger, var(--c-text));
+  color: var(--c-error-text);
   font-size: var(--fs-caption);
 }
 .awd-manual {

@@ -32,13 +32,22 @@ export interface ThemeDef {
 export const THEMES: readonly ThemeDef[] = [
   { id: 'dark', labelKey: 'personalizedSetting.theme.dark.label', colorScheme: 'dark' },
   { id: 'light', labelKey: 'personalizedSetting.theme.light.label', colorScheme: 'light' },
+  {
+    id: 'solarized-light',
+    labelKey: 'personalizedSetting.theme.solarized-light.label',
+    colorScheme: 'light',
+  },
 ] as const
 
 /** The theme used when nothing valid is stored anywhere — the existing dark console. */
 export const DEFAULT_THEME: UiTheme = 'dark'
 
 // Fails to compile if `UiTheme` gains a member the registry does not cover.
-const _themesExhaustive: Record<UiTheme, true> = { dark: true, light: true }
+const _themesExhaustive: Record<UiTheme, true> = {
+  dark: true,
+  light: true,
+  'solarized-light': true,
+}
 void _themesExhaustive
 
 export function isUiTheme(value: unknown): value is UiTheme {

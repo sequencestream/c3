@@ -820,7 +820,7 @@ function selectTab(tab: HeaderTab): void {
   font-weight: 600;
   line-height: 1;
   color: #fff;
-  background: var(--c-danger, #e53e3e);
+  background: var(--c-error-text);
   border-radius: 50%;
 }
 
@@ -864,7 +864,7 @@ function selectTab(tab: HeaderTab): void {
 }
 /* 失败态转危险色,和「有新版可装」明确区分 */
 .update-hint-retry {
-  background: var(--c-danger, #e53e3e);
+  background: var(--c-error-text);
 }
 
 /* 个人化设置入口图标:与账户人形图标同尺寸,currentColor 着色随按钮态 */
@@ -1079,7 +1079,7 @@ function selectTab(tab: HeaderTab): void {
     font-weight: 600;
     line-height: 1;
     color: #fff;
-    background: var(--c-danger, #e53e3e);
+    background: var(--c-error-text);
     border-radius: 50%;
   }
 

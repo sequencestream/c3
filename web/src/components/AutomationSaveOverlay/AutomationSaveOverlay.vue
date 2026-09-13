@@ -57,7 +57,7 @@ const { t } = useTypedI18n()
   height: 18px;
   border-radius: 50%;
   border: 2px solid var(--c-border);
-  border-top-color: var(--c-accent, #3b82f6);
+  border-top-color: var(--c-primary);
   animation: sso-spin 0.7s linear infinite;
   flex-shrink: 0;
 }

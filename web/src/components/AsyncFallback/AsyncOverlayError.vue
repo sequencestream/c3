@@ -77,6 +77,6 @@ const dismissed = ref(false)
   cursor: pointer;
 }
 .aoe-close:hover {
-  border-color: var(--c-accent, #3b82f6);
+  border-color: var(--c-primary);
 }
 </style>

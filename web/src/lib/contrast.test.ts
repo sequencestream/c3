@@ -14,6 +14,7 @@ import {
 const css = readFileSync(resolve(__dirname, '../standard.css'), 'utf8')
 const dark = readTokenBlock(css, ':root {')
 const light = { ...dark, ...readTokenBlock(css, ":root[data-theme='light']") }
+const solarized = { ...dark, ...readTokenBlock(css, ":root[data-theme='solarized-light']") }
 
 const WHITE = { r: 255, g: 255, b: 255 }
 const BLACK = { r: 0, g: 0, b: 0 }
@@ -94,22 +95,28 @@ const OVERLAYS: Record<string, [overlay: string, under: string]> = {
   warningSoft: ['rgba(245, 158, 11, 0.15)', '--c-bg'], // 进行中 / 暂停状态徽章
   errorSoft: ['rgba(239, 68, 68, 0.12)', '--c-bg'], // 失败 / 取消状态徽章
   infoSoft: ['rgba(59, 130, 246, 0.15)', '--c-bg'], // 运行中徽章 / vendor 标识
+  // 收敛后的柔和状态底 —— 依赖关系 / PR 状态徽章,以实际令牌取值按主题取色。
+  successTokenSoft: ['--c-success-soft', '--c-bg'],
+  warningTokenSoft: ['--c-warning-soft', '--c-bg'],
+  errorTokenSoft: ['--c-error-soft', '--c-bg'],
+  infoTokenSoft: ['--c-info-soft', '--c-bg'],
+  mutedSoft: ['--c-muted-soft', '--c-bg'],
 }
 
-/** Token name → its light value; anything else is already a literal colour. */
-function value(nameOrLiteral: string): string {
-  return light[nameOrLiteral] ?? nameOrLiteral
+/** Token name → its value in the given theme; anything else is already a literal colour. */
+function value(nameOrLiteral: string, tokens: Record<string, string>): string {
+  return tokens[nameOrLiteral] ?? nameOrLiteral
 }
 
-function surface(name: string) {
+function surface(name: string, tokens: Record<string, string>) {
   const overlay = OVERLAYS[name]
   if (overlay) {
     const [front, under] = overlay
-    return flatten(value(front), flatten(value(under), WHITE))
+    return flatten(value(front, tokens), flatten(value(under, tokens), WHITE))
   }
   const token = SURFACES[name]
   if (!token) throw new Error(`unknown surface: ${name}`)
-  return flatten(value(token), WHITE)
+  return flatten(value(token, tokens), WHITE)
 }
 
 const AUDIT: { token: string; level: 'body' | 'secondary'; on: string[] }[] = [
@@ -132,48 +139,73 @@ const AUDIT: { token: string; level: 'body' | 'secondary'; on: string[] }[] = [
   {
     token: '--c-success-text',
     level: 'body',
-    on: ['bg', 'panel', 'card', 'successSoft', 'successStrong'],
+    on: ['bg', 'panel', 'card', 'successSoft', 'successStrong', 'successTokenSoft'],
   },
-  { token: '--c-warning-text', level: 'body', on: ['bg', 'panel', 'card', 'warningSoft'] },
-  { token: '--c-error-text', level: 'body', on: ['bg', 'panel', 'card', 'errorSoft'] },
-  { token: '--c-info', level: 'body', on: ['bg', 'panel', 'card', 'infoSoft'] },
+  {
+    token: '--c-warning-text',
+    level: 'body',
+    on: ['bg', 'panel', 'card', 'warningSoft', 'warningTokenSoft'],
+  },
+  {
+    token: '--c-error-text',
+    level: 'body',
+    on: ['bg', 'panel', 'card', 'errorSoft', 'errorTokenSoft'],
+  },
+  { token: '--c-info', level: 'body', on: ['bg', 'panel', 'card', 'infoSoft', 'infoTokenSoft'] },
   { token: '--c-purple-text', level: 'body', on: ['bg', 'card', 'purpleSoft'] },
 ]
 
-describe('light theme text contrast', () => {
-  for (const { token, level, on } of AUDIT) {
-    const floor = level === 'body' ? CONTRAST_BODY : CONTRAST_SECONDARY
-    for (const name of on) {
-      it(`${token} on ${name} reaches ${floor}:1`, () => {
-        const ratio = contrastRatio(flatten(light[token]!, WHITE), surface(name))
-        expect(ratio, `${light[token]} on ${name}`).toBeGreaterThanOrEqual(floor)
-      })
+/**
+ * Run the full text-contrast audit for one theme. `light` and `solarized-light` both
+ * render on light canvases, so the same foreground/background matrix applies; only the
+ * token values differ.
+ */
+function auditTextContrast(name: string, tokens: Record<string, string>): void {
+  describe(`${name} theme text contrast`, () => {
+    for (const { token, level, on } of AUDIT) {
+      const floor = level === 'body' ? CONTRAST_BODY : CONTRAST_SECONDARY
+      for (const surf of on) {
+        it(`${token} on ${surf} reaches ${floor}:1`, () => {
+          const ratio = contrastRatio(flatten(tokens[token]!, WHITE), surface(surf, tokens))
+          expect(ratio, `${tokens[token]} on ${surf}`).toBeGreaterThanOrEqual(floor)
+        })
+      }
     }
-  }
 
-  it('keeps the three text levels visually ordered, not just compliant', () => {
-    const onBg = (token: string) => contrastRatio(flatten(light[token]!, WHITE), surface('bg'))
-    expect(onBg('--c-text')).toBeGreaterThan(onBg('--c-text-muted'))
-    expect(onBg('--c-text-muted')).toBeGreaterThan(onBg('--c-text-disabled'))
+    it('keeps the three text levels visually ordered, not just compliant', () => {
+      const onBg = (token: string) =>
+        contrastRatio(flatten(tokens[token]!, WHITE), surface('bg', tokens))
+      expect(onBg('--c-text')).toBeGreaterThan(onBg('--c-text-muted'))
+      expect(onBg('--c-text-muted')).toBeGreaterThan(onBg('--c-text-disabled'))
+    })
+
+    it('carries white and dark ink on the coloured fills that host them', () => {
+      // Destructive confirm and "approve spec" fill with the deeper variant precisely
+      // so their white label clears the body floor; the manual-continue pill keeps the
+      // bright warning fill and puts dark ink on it instead.
+      for (const token of ['--c-error-text', '--c-success-text']) {
+        const fill = flatten(tokens[token]!, WHITE)
+        expect(contrastRatio(WHITE, fill), token).toBeGreaterThanOrEqual(CONTRAST_BODY)
+      }
+      const warningFill = flatten(tokens['--c-warning']!, WHITE)
+      expect(contrastRatio(parseColor('#18181b'), warningFill)).toBeGreaterThanOrEqual(
+        CONTRAST_BODY,
+      )
+      // White never clears the body floor on the warning fill, which is why the pill
+      // keeps dark ink there instead.
+      expect(contrastRatio(WHITE, warningFill)).toBeLessThan(CONTRAST_BODY)
+    })
   })
+}
 
-  it('carries white and dark ink on the coloured fills that host them', () => {
-    // Destructive confirm and "approve spec" fill with the deeper variant precisely
-    // so their white label clears the body floor; the manual-continue pill keeps the
-    // bright warning fill and puts dark ink on it instead.
-    for (const token of ['--c-error-text', '--c-success-text']) {
-      const fill = flatten(light[token]!, WHITE)
-      expect(contrastRatio(WHITE, fill), token).toBeGreaterThanOrEqual(CONTRAST_BODY)
-    }
-    const warningFill = flatten(light['--c-warning']!, WHITE)
-    expect(contrastRatio(parseColor('#18181b'), warningFill)).toBeGreaterThanOrEqual(CONTRAST_BODY)
-    expect(contrastRatio(WHITE, warningFill)).toBeLessThan(CONTRAST_SECONDARY)
-  })
+auditTextContrast('light', light)
+auditTextContrast('solarized', solarized)
 
-  it('rejects the greys and fills that used to stand in for light text colours', () => {
-    // Samples that must stay failing: the previous disabled grey, and the status
-    // base colours — bright enough to read on the dark canvas, far too light to be
-    // text on a white one. This is what the `-text` variants exist for.
+describe('light theme rejects the greys that used to stand in for text', () => {
+  it('keeps the previous disabled grey and bright status bases failing', () => {
+    // Samples that must stay failing on a light canvas: the previous disabled grey, and
+    // the status base colours — bright enough to read on the dark canvas, far too light
+    // to be text on a white one. This is what the `-text` variants exist for.
     const fails = ['#a1a1aa', dark['--c-success']!, dark['--c-warning']!, dark['--c-error']!]
     for (const value of fails) {
       expect(contrastRatio(parseColor(value), WHITE), value).toBeLessThan(CONTRAST_BODY)
@@ -252,9 +284,6 @@ const LITERAL_TEXT_COLORS: Record<string, string> = {
   inherit: 'inherits the surrounding text colour',
 }
 
-/** Undefined vars whose fallback is a hardcoded light pair — same category as above. */
-const LEGACY_BADGE_VARS = ['--c-danger-text', '--c-info-text', '--c-muted-text']
-
 function styleSources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(dir, entry.name)
@@ -280,8 +309,7 @@ describe('text colours go through tokens', () => {
     const allowed = ({ value }: { value: string }) => {
       if (/^var\(--c-[\w-]+(,\s*var\(--c-[\w-]+\))?\)$/.test(value)) return true // pure token
       if (LITERAL_TEXT_COLORS[value]) return true
-      const legacy = /^var\((--c-[\w-]+),\s*#[0-9a-f]{3,6}\)$/i.exec(value)
-      return legacy !== null && LEGACY_BADGE_VARS.includes(legacy[1]!)
+      return false
     }
     const stray = declarations.filter((decl) => !allowed(decl))
     expect(stray.map(({ file, value }) => `${file}: ${value}`)).toEqual([])

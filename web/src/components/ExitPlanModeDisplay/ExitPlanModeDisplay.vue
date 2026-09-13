@@ -112,7 +112,7 @@ function planSteps(): string[] {
   gap: 0.3em;
   margin-bottom: var(--exit-plan-gap);
   padding: 0.5em 0.6em;
-  background: var(--c-bg-soft, rgba(128, 128, 128, 0.06));
+  background: var(--c-hover);
   border-radius: 6px;
 }
 

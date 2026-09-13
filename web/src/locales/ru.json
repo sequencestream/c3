@@ -941,6 +941,9 @@
       },
       "light": {
         "label": "Светлая"
+      },
+      "solarized-light": {
+        "label": "Solarized Light"
       }
     },
     "fontScale": {

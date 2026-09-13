@@ -16,9 +16,9 @@
 
 主题是**可扩展的注册表**，不是页面里的二选一开关。注册表每项声明一个主题的稳定 id、展示名称（走 i18n，主题名是普通 UI 文案）与其 `color-scheme`；界面上的主题选择器由注册表直接生成，不另存一份主题清单。
 
-主题只映射不配色：运行时把选中的 id 归一后写入根元素的 `data-theme`（与该主题的 `color-scheme`），配色取值仍全部留在设计令牌里。默认主题 `dark` 的令牌挂在 `:root`；其余主题各自一个 `:root[data-theme='<id>']` 覆盖块（当前只有 `light`，取值见 2.1 与 `web/src/standard.css`）。未知、缺失或损坏的值先归一为 `dark`，任意字符串不会进入 DOM。
+主题只映射不配色：运行时把选中的 id 归一后写入根元素的 `data-theme`（与该主题的 `color-scheme`），配色取值仍全部留在设计令牌里。默认主题 `dark` 的令牌挂在 `:root`；其余主题各自一个 `:root[data-theme='<id>']` 覆盖块。当前共三套：`dark`、`light`、`solarized-light`，后两者为浅色（`color-scheme: light`），完整取值见 2.1 与 `web/src/standard.css`。未知、缺失或损坏的值先归一为 `dark`，任意字符串不会进入 DOM。
 
-因此新增一个预设主题 = 注册表加一项 + 加一组同名的 CSS 变量覆盖块，无需改动选择器或运行时。
+因此新增一个预设主题 = 注册表加一项 + 加一组同名的 CSS 变量覆盖块，选择器与运行时无需改动；服务端个人化设置另须在其合法 id 集合里接纳同一 id（见 [personalized-setting 规范](../domains/settings/personalized-setting/personalized-setting-spec.md)）。
 
 主题选择是显式的个人化设置（见 [personalized-setting 规范](../domains/settings/personalized-setting/personalized-setting-spec.md)的 `theme` 字段），按账户级 / 浏览器本地存储；不读 `prefers-color-scheme`，不做跟随系统的自动切换。
 
@@ -44,12 +44,13 @@
 | AI 助手信息背景 | `#2D2D5E` (半透明)         | 带靛蓝底色的卡片，体现智能            |
 | 用户消息背景    | `#3C3F6B` (半透明)         | 偏蓝紫，区分对话方向                  |
 
-亮色模式（注册表中的 `light` 主题）沿用同一组基础色相，将背景映射为 `#FFFFFF`、`#F8F8FC` 等；完整取值以 `web/src/standard.css` 的 `:root[data-theme='light']` 块为准，本节不重复列举。浅色覆盖块遵循两条规则：
+亮色模式（注册表中的 `light` 与 `solarized-light` 主题）沿用各自的基础色相：`light` 将背景映射为 `#FFFFFF`、`#F8F8FC` 等，复用暗色的靛蓝 / 紫强调基色；`solarized-light` 取官方 Solarized 调色板，背景锚点为 `#FDF6E3`（base3）、强调基色为 `#268BD2`（blue），面板 / 输入 / 代码 / AI 气泡为 `#EEE8D5`（base2）、用户气泡为 `#E8EAD5`，并独立覆盖全部保留的主题颜色令牌。完整取值以 `web/src/standard.css` 的对应 `:root[data-theme='<id>']` 块为准，本节不重复列举。浅色覆盖块遵循三条规则：
 
-- **文字三档按实际背景重新取值**：主文本、次要文本、禁用文本各自与真实承载它们的背景（页面、面板、输入框、代码块、两类对话气泡及悬停叠加态）比对，满足第 6 节门槛，而不是只在纯白上测一次。次要文本承载说明、路径、时间等真实信息，按正文门槛处理。
+- **文字三档按实际背景重新取值**：主文本、次要文本、禁用文本各自与真实承载它们的背景（页面、面板、输入框、代码块、两类对话气泡及悬停 / 状态叠加态）比对，满足第 6 节门槛，而不是只在纯白上测一次。次要文本承载说明、路径、时间等真实信息，按正文门槛处理。
 - **状态与强调色分基色与深一档变体**：`--c-primary` / `--c-success` / `--c-warning` / `--c-error` / `--c-info` 等基色用于装饰性的填充、描边与图示；`--c-*-text` 变体用于需要自己挣得对比度的位置——浅底上的前景文字，以及必须托住白字的实底。暗色下变体与基色同值，浅色下整体下沉。一个取值托不住深浅两种底色，这是拆分的唯一理由。
+- **柔和状态底 / 中性底 / 弱边框独立保留**：`--c-error-soft` / `--c-info-soft` / `--c-success-soft` / `--c-warning-soft` / `--c-muted-soft` 是依赖关系与 PR 状态徽章的透明状态底，`--c-border-soft` 是弱分隔边框；`dark` / `light` / `solarized-light` 三个主题块都显式声明，不并入同义词别名，透明底按父背景合成后审计。
 
-固定色只在两个主题下底色相同时才成立：白字压主色 / 危险色实底、深墨压警告色实底。其余文字色一律走 `--c-*` 令牌。
+固定色只在实底承载前景的语境下成立：白字压主色 / 危险色实底、深墨压警告色实底。其余文字色一律走 `--c-*` 令牌。
 
 `web/src/lib/contrast.ts` 提供 WCAG 相对亮度与对比度计算（含半透明叠加的合成），`contrast.test.ts` 逐对断言审计清单与门槛，并静态拦截新出现的主题敏感硬编码文字色。
 

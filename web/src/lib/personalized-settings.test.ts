@@ -93,6 +93,11 @@ describe('normalizePersonalized', () => {
       theme: 'light',
       fontScale: 100,
     })
+    expect(normalizePersonalized({ theme: 'solarized-light' })).toEqual({
+      uiLang: 'en',
+      theme: 'solarized-light',
+      fontScale: 100,
+    })
     expect(normalizePersonalized({ theme: 'solarized' })).toEqual({
       uiLang: 'en',
       theme: 'dark',

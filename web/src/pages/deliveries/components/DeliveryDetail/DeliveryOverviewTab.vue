@@ -679,9 +679,9 @@ function saveEdit(payload: {
   padding: var(--sp-1) var(--sp-2);
   font: inherit;
   font-size: var(--fs-caption);
-  color: var(--c-danger-text, #c53030);
+  color: var(--c-error-text);
   background: transparent;
-  border: 1px solid var(--c-danger, #e53e3e);
+  border: 1px solid var(--c-error);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }

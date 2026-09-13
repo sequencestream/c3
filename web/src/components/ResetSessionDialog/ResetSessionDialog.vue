@@ -120,7 +120,7 @@ function onConfirm(): void {
   font: inherit;
   font-size: var(--fs-caption);
   color: var(--c-text);
-  background: var(--c-bg-elevated, var(--c-bg));
+  background: var(--c-input);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-md, 6px);
   padding: var(--sp-2);
@@ -128,7 +128,7 @@ function onConfirm(): void {
 }
 .rs-input:focus {
   outline: none;
-  border-color: var(--c-accent, var(--c-text));
+  border-color: var(--c-primary);
 }
 .rs-foot {
   display: flex;

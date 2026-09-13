@@ -1,7 +1,8 @@
 # Flow — 自动化队列(确定性调度内核)
 
 **场景。** 用户在想要构建的意图上勾选 `automate`,然后点击自动化按钮。一个按工作区划分的
-**确定性调度内核**按优先级/依赖顺序逐一开发它们,评判是否真正完成,提交并推送,然后推进。
+**确定性调度内核**按优先级/依赖顺序逐一开发它们,评判是否真正完成,提交并推送,建 PR,再按影响
+范围驱动 PR 的 AI 评审 → 修复 → 复审闭环,然后推进。
 
 **领域。** intent-management · agent-session · permission-gateway · git。
 
@@ -42,9 +43,21 @@ flowchart TD
     FAIL --> BO{连续 3 次?}
     BO -- 否 --> BACK[指数退避 · 下轮重试]
     BO -- 是 --> PARK[park · 队列继续其他意图<br/>下游仍被依赖闸门挡住]
-    CP --> P
+    CP --> RL{needsReview?<br/>仍有活跃 PR?}
+    RL -- 否 / L5 --> P
+    RL -- 是 --> REV[Review 会话<br/>reviewAgentId · 意图 worktree]
+    REV --> RS{回填了结论?}
+    RS -- 无结论退出 --> FAIL
+    RS -- approved --> P
+    RS -- rejected --> RB{已用满 3 轮修复?}
+    RB -- 是 --> PARKX[park · review_fix_exhausted<br/>转人工 · 普通 unpark 不赠预算]
+    RB -- 否 --> FIX[Fix 会话 · 轮次 +1<br/>fixAgentId · 同一 worktree]
+    FIX --> FS{回填 fixed?}
+    FS -- 无结论退出 --> FAIL
+    FS -- fixed --> REV
     BACK --> P
     PARK --> P
+    PARKX --> P
     FAIL -. majority toggle .-> CC[checkpoint consensus<br/>may override]
 ```
 
@@ -137,6 +150,40 @@ flowchart TD
 7. **耗尽。** 只有当快照中**不存在任何待处理的自动化候选及阻塞链**时,队列才呈现 `done`;
    仍有退避 / park / 被闸门阻塞的候选时呈现 `running`。`stop_workflow` 会中止当前运行并无错误地
    返回 `idle`(`RM-A7`)。
+
+## PR 评审 → 修复 → 复审接力(`RM-A24`/`RM-A25`/`RM-A26`)
+
+建了 PR 不等于这条意图离开了队列。队列继续持有它,直到 PR 拿到一个 AI 评审结论。
+
+1. **接力候选(`RM-A24`)。** `automate` + `status === 'done'` + `worktree` 分支模式 + 仍有
+   **活跃 PR**(非 `merged`/`closed`)+ 接力未结束。`reviewStatus` 为空时由
+   `needsReview(impactLevel)` 决定要不要首次评审(只有 `L5` 跳过);一旦存在任何结论,影响范围
+   再怎么改都不影响接力 —— 否则一次降级就能丢掉未处理的 `rejected`。`approved` 使意图**退出**
+   候选集合,队列因此仍能正常呈现 `done`。接力候选与开发候选**同一条闸门链、同一份并发配额**:
+   规格、交付写入、交付歧义、依赖、退避、冷却、`RM-A12` 一条都不放宽,每轮最多发起**一次**接力
+   会话。`current-branch` 下不接力 —— 评审读、修复改的是 PR 的 head 分支,共享检出里没有这个
+   目录,与自动建 PR 只在 `worktree` 生效同源。
+2. **首次评审。** 队列在同一次条件更新中写入 `reviewStatus='pending'` 与会话占位,轮次保持
+   **0** —— 首次评审不占修复预算。Review 会话只读:没有 `Edit`/`Write`,也没有修复回填工具。
+3. **rejected ⇒ 修复(`RM-A25`)。** 认领下一轮时 `reviewFixRounds + 1`、写 `fixStatus='pending'`
+   并登记会话占位,三件事在**同一条件更新**里落定;`reviewStatus` 保持 `rejected`,那正是修复
+   会话要读的输入。Fix 会话拿受控编辑能力,但**没有** `sync_intent_review_status` —— 修复方不给
+   自己打分。
+4. **fixed ⇒ 复审。** 队列把 Review 切回 `pending` 并**清空 `fixStatus`**,轮次不变,使旧的
+   `fixed` 不能满足下一次 `rejected`。该分支**优先于**预算判定:第三轮修复完成后仍要跑最后一次
+   复审。
+5. **收敛上限。** 只有「已用满三轮修复」且复审仍 `rejected` 时,才以 `review_fix_exhausted`
+   park 并推一条去重的人工待办。正常闭环上限是**三次修复、四次评审**。该原因**不属于**失败阶梯
+   的自动恢复集合(`RM-A17`),普通 unpark 也不赠送新预算。
+6. **结论只由工具调用产生(`RM-A26`)。** 会话退出、崩溃、超时或正文里说「完成」都不是结论:
+   队列释放该阶段的占位与 `pending` 标记、按 `RM-A6` 记一次失败并退避,**但不退还已认领的
+   轮次** —— 失败阶梯与评审收敛预算是两套独立计数。恢复的是**同一个**阶段,不是新一轮。
+7. **身份与上下文(`RM-A26`)。** 认领时一次性选定 vendor/agent(Review 取 `reviewAgentId`、
+   Fix 取 `fixAgentId`,空值沿工作区/系统默认兜底,无可用 Agent 是**明确失败**而不是跳过评审),
+   之后运行中与恢复时都不再重读设置。执行目录是该意图的 **worktree**,不回退主检出。prompt 由
+   服务端组装,携带意图、阶段、轮次与上限、本次 `c3SessionId` 与目标 PR 的仓库/编号/链接与
+   head/base,并要求**先读 WorkNote 历史再读 PR 变更** —— 空历史可以继续,读取报错不得伪装成
+   无历史。过期会话不能覆盖已经换人的阶段;相同终态重复回填幂等。
 
 ## 分支 —— 检查点共识override(`RM-A14`)
 

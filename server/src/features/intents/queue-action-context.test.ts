@@ -25,6 +25,8 @@ const ALL_ACTIONS: QueueAction[] = [
   { kind: 'launch_spec', intentId: 'H', origin: 'queue-kernel', rework: false, reworkRound: 0 },
   { kind: 'launch_spec_review', intentId: 'I', origin: 'queue-kernel', fingerprint: 'fp' },
   { kind: 'machine_approve_spec', intentId: 'J', fingerprint: 'fp' },
+  { kind: 'launch_review', intentId: 'K', origin: 'queue-kernel', round: 0 },
+  { kind: 'launch_fix', intentId: 'L', origin: 'queue-kernel', round: 1 },
 ]
 
 describe('the dispatch table is exhaustive over every QueueAction kind', () => {
@@ -46,6 +48,8 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       launch_spec: register('launch_spec'),
       launch_spec_review: register('launch_spec_review'),
       machine_approve_spec: register('machine_approve_spec'),
+      launch_review: register('launch_review'),
+      launch_fix: register('launch_fix'),
     }
 
     for (const action of ALL_ACTIONS) runQueueAction(table, action, 42)
@@ -73,6 +77,8 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       launch_spec: (a) => void spy(a.kind),
       launch_spec_review: (a) => void spy(a.kind),
       machine_approve_spec: (a) => void spy(a.kind),
+      launch_review: (a) => void spy(a.kind),
+      launch_fix: (a) => void spy(a.kind),
     }
     // A deliberately non-alphabetical order, as a real pass interleaves them.
     const shuffled = [ALL_ACTIONS[8], ALL_ACTIONS[0], ALL_ACTIONS[3], ALL_ACTIONS[4]]

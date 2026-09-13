@@ -102,6 +102,12 @@ c3
 │   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
 │   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒(退避·冷却带剩余倒计时,到点自动取新投影)/最近决策;park 行展示本地化原因(缺失有占位)与一键解除入口;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门,被拒的控制经全局 toast 呈现(不落队列页看不到的聊天流)
 │   │   │   │   └── 并发闸门队列位次              # 只对过了全部闸门仅被并发闸门挡住的候选给 1..N 位次,顺序复用调度排序;派生不落库,下轮重算,闸门释放即清空
+│   │   │   ├── PR 评审/修复接力                  # Work 完成建 PR 后队列继续驱动:needsReview(impactLevel) 为真(仅 L5 免)且未评审→起 Review;rejected→起 Fix(轮次 +1);fixed→复审并清空 fixStatus,使旧 fixed 不能满足下一次 rejected;approved 退出候选,整队仍能正常报 done。仅 worktree 模式(评审读/修复改的是 PR head 分支所在目录);候选与开发共用同一条闸门链、同一份并发配额,每轮最多起一次接力会话;队列详情用同一候选口径,接力中的 done 意图仍在队列里
+│   │   │   │   ├── 收敛上限与转人工              # MAX_REVIEW_FIX_ROUNDS=3:首次评审不占预算,fixed 分支优先于预算判定(第三轮修复仍跑最后一次复审),只有该复审再 rejected 才以 review_fix_exhausted park+人工待办;该原因不在失败阶梯自动恢复集合,普通 unpark 不赠预算
+│   │   │   │   ├── 轮次原子推进                  # 状态转移+轮次+会话占位在同一条件更新中落定(比对期望的 review/fix 状态与轮次),竞争失败即重新对账;轮次只由一次成功的 Fix 认领 +1,模型/WorkNote/同步 MCP 都不能移动它;崩溃恢复的是同一阶段,不退还已认领轮次
+│   │   │   │   ├── 运行身份与执行目录            # 复用 SessionKind='automation' 的执行/日志/权限/厂商启动(不新增 SessionKind、不落 automations 表、不落执行日志);认领时按 reviewAgentId/fixAgentId 一次性选定 vendor+agent 并随占位保存,在途不重读设置,无可用 Agent 是明确失败而非跳过评审;执行目录是该意图 worktree,不回退主检出
+│   │   │   │   ├── 上下文交接与工具面            # 服务端组装 prompt(意图/阶段/轮次与上限/本次 c3SessionId/目标 PR 仓库·编号·链接·head·base),要求先 list_intent_worknotes 再读 PR 变更(空历史可继续,读取报错不得伪装成无历史);Review 只有读取+评审结论工具,Fix 有受控编辑+修复结论但没有 sync_intent_review_status——修复方不给自己打分
+│   │   │   │   └── 结论只由工具调用产生          # 会话退出/崩溃/超时/正文说「完成」都不算结论,一律释放阶段占位与 pending 标记并按失败阶梯退避(与评审收敛预算是两套独立计数);阶段被队列占位时只有仍持有它的会话能回填,相同终态幂等、过期会话不覆盖新阶段,无人驱动的意图仍可人工回填
 │   │   │   └── 顾问 Agent 工具面                 # 决策点按需唤起的顾问专属 MCP 工具组(读 transcript/run 状态、stop_run、reset 会话、非 done 状态流转、建 PR/同步 PR、raise_user_todo)
 │   │   │       ├── propose-then-validate 双保险  # 纯函数校验器接受/拒绝结构化提案(拒绝带稳定原因码+可重试性+约束),每个写工具在副作用前于服务端再校验一次
 │   │   │       ├── 专属作用域                    # 独立注册表+独立 loopback 路由,workspace/intent 由闭包绑定;不进 AUTOMATION_C3_TOOL_NAMES,普通 automation 能力不变

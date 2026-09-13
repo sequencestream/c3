@@ -24,7 +24,7 @@
   - 场景: 一个想法被细化为可验证的意图,再挑一个启动为后台工作会话
   - 领域: intent-management · agent-session · permission-gateway · session-registry · agent-config
 - [自动化队列(确定性调度内核)](flow-automation-orchestrator.md)
-  - 场景: 一批标记为 `automate` 的意图逐一被构建:tick 对账 → 开发、评判、提交/推送、推进;单意图失败隔离(退避 → park),队列不停
+  - 场景: 一批标记为 `automate` 的意图逐一被构建:tick 对账 → 开发、评判、提交/推送、建 PR,再按影响范围驱动 PR 评审 → 修复 → 复审闭环;单意图失败隔离(退避 → park),队列不停
   - 领域: intent-management · agent-session · permission-gateway · git
 - [讨论 → 意图](flow-discussion-to-intent.md)
   - 场景: 对一个目标进行调研,由组织者主持的圆桌讨论得出结论,再转化为多个意图

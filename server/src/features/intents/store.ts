@@ -2080,6 +2080,146 @@ export function updateIntentReviewFixStatus(intentId: string, patch: IntentRevie
   return updated
 }
 
+// ---- PR review / fix relay: the queue's conditional phase claims ----
+
+/**
+ * One conditional claim of a relay phase. The queue is the ONLY writer of these
+ * fields' transient `pending` state and of the round counter, and it writes them
+ * in ONE guarded statement: the expectation, the session placeholder and the
+ * round all land together, or nothing does. A pass that lost the race simply
+ * re-reconciles against the state that won.
+ */
+export interface IntentRelayClaim {
+  /** Which phase this claim starts. */
+  phase: 'review' | 'fix'
+  /** The `review_status` this claim expects to still find. */
+  expectReviewStatus: IntentReviewStatus | null
+  /** The `fix_status` this claim expects to still find. */
+  expectFixStatus: IntentFixStatus | null
+  /** The `review_fix_rounds` this claim expects to still find. */
+  expectRounds: number
+  /**
+   * The counter to persist. Equal to {@link expectRounds} for every review and
+   * for RECOVERING a fix that was already claimed; one higher only when a new fix
+   * round is being claimed. Nothing else in c3 moves this number.
+   */
+  nextRounds: number
+  /** The `pending:` placeholder registered as this phase's session. */
+  pendingSessionId: string
+}
+
+/**
+ * Claim a relay phase for the queue, conditionally. Returns `false` — without
+ * writing anything — when the intent is gone or any expected fact has moved
+ * since the kernel's snapshot, which is exactly what makes a repeated action,
+ * a duplicated tick or a racing pass unable to spend the fix budget twice.
+ *
+ * A `review` claim also CLEARS the fix marker: the round's `fixed` has been
+ * consumed by the re-review it just started, so it can never satisfy the next
+ * rejection as well. A `fix` claim deliberately leaves `review_status='rejected'`
+ * in place — that is the input the fix session reads.
+ */
+export function claimIntentRelayPhase(intentId: string, claim: IntentRelayClaim): boolean {
+  const d = requireDb()
+  let applied = false
+  tx(d, () => {
+    const row = d.get<{
+      review_status: string | null
+      fix_status: string | null
+      review_fix_rounds: number | null
+    }>('SELECT review_status, fix_status, review_fix_rounds FROM intents WHERE id=?', intentId)
+    if (!row) return
+    if ((row.review_status ?? null) !== claim.expectReviewStatus) return
+    if ((row.fix_status ?? null) !== claim.expectFixStatus) return
+    if ((row.review_fix_rounds ?? 0) !== claim.expectRounds) return
+    if (claim.phase === 'review') {
+      d.run(
+        `UPDATE intents SET review_session_id=?, review_status='pending',
+           fix_session_id=NULL, fix_status=NULL, review_fix_rounds=?, updated_at=? WHERE id=?`,
+        claim.pendingSessionId,
+        claim.nextRounds,
+        Date.now(),
+        intentId,
+      )
+    } else {
+      d.run(
+        `UPDATE intents SET fix_session_id=?, fix_status='pending',
+           review_fix_rounds=?, updated_at=? WHERE id=?`,
+        claim.pendingSessionId,
+        claim.nextRounds,
+        Date.now(),
+        intentId,
+      )
+    }
+    applied = true
+  })
+  return applied
+}
+
+/**
+ * Owner-safe write of a relay phase's session id: applies only while the field
+ * still holds `expected`. Both halves of the placeholder lifecycle go through it —
+ * replacing a `pending:` id with the real bound session, and releasing it after a
+ * launch died — so a late callback can never clobber a newer phase's session.
+ * Returns whether the write applied.
+ */
+export function replaceIntentRelaySession(
+  intentId: string,
+  phase: 'review' | 'fix',
+  expected: string,
+  next: string | null,
+): boolean {
+  const d = requireDb()
+  const column = phase === 'review' ? 'review_session_id' : 'fix_session_id'
+  let applied = false
+  tx(d, () => {
+    const row = d.get<Record<string, string | null>>(
+      `SELECT ${column} AS current FROM intents WHERE id=?`,
+      intentId,
+    )
+    if (!row || row.current !== expected) return
+    d.run(`UPDATE intents SET ${column}=?, updated_at=? WHERE id=?`, next, Date.now(), intentId)
+    applied = true
+  })
+  return applied
+}
+
+/**
+ * Release a relay phase the queue claimed but could not launch: the placeholder
+ * is dropped AND the transient `pending` status is cleared, so the next pass sees
+ * the phase as un-started rather than as a review that mysteriously vanished.
+ * The round counter is NOT rolled back — a claimed fix round stays claimed, so a
+ * crash loop cannot refund itself budget. Owner-safe: applies only while the
+ * phase's session still equals `expected`.
+ */
+export function releaseIntentRelayPhase(
+  intentId: string,
+  phase: 'review' | 'fix',
+  expected: string,
+): boolean {
+  const d = requireDb()
+  const sessionColumn = phase === 'review' ? 'review_session_id' : 'fix_session_id'
+  const statusColumn = phase === 'review' ? 'review_status' : 'fix_status'
+  let applied = false
+  tx(d, () => {
+    const row = d.get<{ current: string | null; status: string | null }>(
+      `SELECT ${sessionColumn} AS current, ${statusColumn} AS status FROM intents WHERE id=?`,
+      intentId,
+    )
+    if (!row || row.current !== expected) return
+    // Only the transient marker is cleared. A terminal that arrived while the
+    // session was still finishing is a real conclusion and must survive.
+    const clearStatus = row.status === 'pending'
+    d.run(
+      `UPDATE intents SET ${sessionColumn}=NULL${clearStatus ? `, ${statusColumn}=NULL` : ''}, updated_at=? WHERE id=?`,
+      Date.now(),
+      intentId,
+    )
+    applied = true
+  })
+  return applied
+}
+
 /**
  * Atomically pin a fast-mode intent back to explicit `sdd` after an
  * over-threshold settle. The WHERE guard keeps it from clobbering a concurrent

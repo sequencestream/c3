@@ -6,5 +6,6 @@
  * subscription and broadcasting are assembled outside it.
  */
 export * from './types.js'
-export { reconcileQueue } from './reconcile.js'
+export { reconcileQueue, relayEngaged } from './reconcile.js'
+export type { RelayCandidateFacts } from './reconcile.js'
 export { CoalescingDirtySet, CoalescingRunner } from './dirty-set.js'

@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Intent } from '@ccc/shared/protocol'
-import { deriveIntentPrAggregate } from '@ccc/shared'
+import { activeIntentPrs, deriveIntentPrAggregate } from '@ccc/shared'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { reconcileQueue } from '../../kernel/queue/reconcile.js'
 import type { QueueIntentFact, QueueReconcileInput } from '../../kernel/queue/types.js'
@@ -348,6 +348,12 @@ function toFact(r: Intent, specFingerprint: string | null): QueueIntentFact {
     specReviewFingerprint: r.specReviewFingerprint,
     specReviewReworkRounds: r.specReviewReworkRounds,
     specReviewMachineApprovalBlocked: r.specReviewMachineApprovalBlocked,
+    hasActivePr: activeIntentPrs(r.prs).length > 0,
+    reviewSessionId: r.reviewSessionId,
+    reviewStatus: r.reviewStatus,
+    reviewFixRounds: r.reviewFixRounds,
+    fixSessionId: r.fixSessionId,
+    fixStatus: r.fixStatus,
   }
 }
 
@@ -371,6 +377,8 @@ function reconcileFor(intentId: string, over: Partial<QueueReconcileInput> = {})
     automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],
+    relayRuns: [],
+    relayInFlight: [],
     ...over,
   })
 }

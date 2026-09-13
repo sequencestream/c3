@@ -9,6 +9,8 @@ export type DetailTab =
   | 'specSession'
   | 'specReviewSession'
   | 'workSession'
+  | 'reviewSession'
+  | 'fixSession'
   | 'changelog'
 
 /** The sub-tabs an external one-shot request (jump-to-source / post-Start-Work) may target. */
@@ -25,7 +27,7 @@ export interface DetailTabItem {
  * 只编排页面状态并返回声明式结果:不直接操作 DOM、不持有全局活动会话;打开会话、读取
  * spec、加载日志均通过注入回调交回现有控制层。负责:规范数据 / 评审 / 工作会话的 Tab 可见性、
  * 空正文默认进意图会话、切换意图复位、隐藏 Tab 回退、外部 requestedSubTab 覆盖并恰好消费一次、changelog
- * / spec 的按需加载信号、四类会话 ID 异步回填补发一次 open、活动会话对齐去重、评审 Tab 的
+ * / spec 的按需加载信号、六类会话 ID 异步回填补发一次 open、活动会话对齐去重、规范评审 Tab 的
  * 只读呈现开关,以及「编写 Spec 后待新会话创建再切」的一次性协调。
  */
 export function useIntentDetailTabs(opts: {
@@ -51,6 +53,8 @@ export function useIntentDetailTabs(opts: {
   onOpenSpecSession: (intentId: string) => void
   onOpenSpecReviewSession: (intentId: string) => void
   onOpenWorkSession: (sessionId: string) => void
+  onOpenPrReviewSession: (sessionId: string) => void
+  onOpenPrFixSession: (sessionId: string) => void
   onRequestedSubTabConsumed: () => void
 }) {
   const {
@@ -70,6 +74,8 @@ export function useIntentDetailTabs(opts: {
     onOpenSpecSession,
     onOpenSpecReviewSession,
     onOpenWorkSession,
+    onOpenPrReviewSession,
+    onOpenPrFixSession,
     onRequestedSubTabConsumed,
   } = opts
 
@@ -85,6 +91,8 @@ export function useIntentDetailTabs(opts: {
     { key: 'spec', label: t('intent.tab.spec.label') },
     { key: 'specReviewSession', label: t('intent.tab.specReviewSession.label') },
     { key: 'workSession', label: t('intent.tab.workSession.label') },
+    { key: 'reviewSession', label: t('intent.tab.reviewSession.label') },
+    { key: 'fixSession', label: t('intent.tab.fixSession.label') },
     { key: 'changelog', label: t('intent.tab.changelog.label') },
   ]
 
@@ -104,11 +112,17 @@ export function useIntentDetailTabs(opts: {
   )
   // 工作会话 tab 仅当选中意图存在 lastWorkSessionId(最新工作会话)时可见;不做历史列表。
   const workSessionTabVisible = computed<boolean>(() => !!intent()?.lastWorkSessionId)
+  // PR 评审/修复会话 tab 与工作会话同构:有对应 sessionId 才给入口,无入口不显示空态、不创建会话;
+  // 与 sddEnabled 无关(区别于规范评审会话需要 sddEnabled && specReviewSessionId)。
+  const reviewSessionTabVisible = computed<boolean>(() => !!intent()?.reviewSessionId)
+  const fixSessionTabVisible = computed<boolean>(() => !!intent()?.fixSessionId)
   const visibleTabs = computed<DetailTabItem[]>(() =>
     TABS.filter((tab) => {
       if (tab.key === 'spec' || tab.key === 'specSession') return specTabsVisible.value
       if (tab.key === 'specReviewSession') return specReviewSessionTabVisible.value
       if (tab.key === 'workSession') return workSessionTabVisible.value
+      if (tab.key === 'reviewSession') return reviewSessionTabVisible.value
+      if (tab.key === 'fixSession') return fixSessionTabVisible.value
       return true
     }),
   )
@@ -199,6 +213,19 @@ export function useIntentDetailTabs(opts: {
       activeSession() !== r.lastWorkSessionId
     ) {
       onOpenWorkSession(r.lastWorkSessionId)
+    } else if (
+      activeTab.value === 'reviewSession' &&
+      r.reviewSessionId &&
+      activeSession() !== r.reviewSessionId
+    ) {
+      // PR AI 评审会话直接携带会话 id 走普通会话选择路径(与概览「打开会话」一致)。
+      onOpenPrReviewSession(r.reviewSessionId)
+    } else if (
+      activeTab.value === 'fixSession' &&
+      r.fixSessionId &&
+      activeSession() !== r.fixSessionId
+    ) {
+      onOpenPrFixSession(r.fixSessionId)
     }
   }
 
@@ -257,6 +284,8 @@ export function useIntentDetailTabs(opts: {
         intent()?.specSessionId,
         intent()?.specReviewSessionId,
         intent()?.lastWorkSessionId,
+        intent()?.reviewSessionId,
+        intent()?.fixSessionId,
         activeSession(),
       ] as const,
     openActiveSessionIfNeeded,
@@ -271,6 +300,8 @@ export function useIntentDetailTabs(opts: {
     if (activeTab.value === 'specSession') return r.specSessionId
     if (activeTab.value === 'specReviewSession') return r.specReviewSessionId
     if (activeTab.value === 'workSession') return r.lastWorkSessionId
+    if (activeTab.value === 'reviewSession') return r.reviewSessionId
+    if (activeTab.value === 'fixSession') return r.fixSessionId
     return null
   })
   const chatReady = computed<boolean>(

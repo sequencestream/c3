@@ -7,8 +7,10 @@ const TABS: DetailTabItem[] = [
   { key: 'intent', label: 'Intent' },
   { key: 'intentSession', label: 'Intent session' },
   { key: 'specSession', label: 'Spec session' },
-  { key: 'specReviewSession', label: 'Review' },
+  { key: 'specReviewSession', label: 'Spec review session' },
   { key: 'workSession', label: 'Work session' },
+  { key: 'reviewSession', label: 'Review session' },
+  { key: 'fixSession', label: 'Fix session' },
   { key: 'changelog', label: 'Changelog' },
 ]
 
@@ -35,6 +37,8 @@ describe('IntentDetailTabs.vue', () => {
       'specSession',
       'specReviewSession',
       'workSession',
+      'reviewSession',
+      'fixSession',
       'changelog',
     ])
     expect(w.find('.intent-detail-tab[data-tab="changelog"]').classes()).toContain('active')
@@ -84,6 +88,21 @@ describe('IntentDetailTabs.vue', () => {
     // 未提供状态点(idle/未知)时不渲染。
     await w.setProps({ specReviewSessionStatusDot: null })
     expect(w.find('[data-testid="intent-detail-spec-review-session-status"]').exists()).toBe(false)
+  })
+
+  it('renders review/fix tabs without any status dot', async () => {
+    const w = mountTabs()
+    const reviewTab = w.find('.intent-detail-tab[data-tab="reviewSession"]')
+    const fixTab = w.find('.intent-detail-tab[data-tab="fixSession"]')
+    expect(reviewTab.exists()).toBe(true)
+    expect(fixTab.exists()).toBe(true)
+    expect(reviewTab.find('.session-status').exists()).toBe(false)
+    expect(fixTab.find('.session-status').exists()).toBe(false)
+
+    // 即便其他会话在跑,评审/修复 tab 也不渲染状态点(无对应 prop)。
+    await w.setProps({ workSessionStatusDot: 'running', specReviewSessionStatusDot: 'running' })
+    expect(reviewTab.find('.session-status').exists()).toBe(false)
+    expect(fixTab.find('.session-status').exists()).toBe(false)
   })
 
   it('scopes the spec session dot to the specSession tab, active or not', async () => {

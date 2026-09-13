@@ -67,7 +67,7 @@ c3
 │   │   │   └── 「是否需要规范」开关              # 人工入口在意图详情「概览」tab 元信息区,三档(继承工作区/需要规范/不需要规范)选择即保存,展示服务端派生的 effectiveSpecMode;sddEnabled 关闭时仍可设置并提示此时无行为差异
 │   │   ├── 规格只读审核                          # 独立 spec_review 会话读 spec/源码/本项目意图,写任意路径一律拒绝;结论只经 submit_spec_review 结构化提交
 │   │   │   ├── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过
-│   │   │   └── 评审过程可核验                    # 意图详情「评审」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
+│   │   │   └── 评审过程可核验                    # 意图详情「规范评审会话」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
 │   │   ├── 规格直接编辑                          # 未启动开发且无运行中 spec 会话时行内编辑 spec 源码,覆盖写集中 specs 文件+审批联动重置+写 spec_updated 日志
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)

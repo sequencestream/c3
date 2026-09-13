@@ -1463,10 +1463,16 @@
         "label": "Spec session"
       },
       "specReviewSession": {
-        "label": "Review"
+        "label": "Spec review session"
       },
       "workSession": {
         "label": "Work session"
+      },
+      "reviewSession": {
+        "label": "Review session"
+      },
+      "fixSession": {
+        "label": "Fix session"
       },
       "changelog": {
         "label": "Changelog"

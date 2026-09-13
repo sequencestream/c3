@@ -1464,10 +1464,16 @@
         "label": "사양 작성 세션"
       },
       "specReviewSession": {
-        "label": "검토"
+        "label": "명세 검토 세션"
       },
       "workSession": {
         "label": "작업 세션"
+      },
+      "reviewSession": {
+        "label": "검토 세션"
+      },
+      "fixSession": {
+        "label": "수정 세션"
       },
       "changelog": {
         "label": "변경 이력"

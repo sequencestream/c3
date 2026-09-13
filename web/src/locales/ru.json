@@ -1464,10 +1464,16 @@
         "label": "Сессия спецификации"
       },
       "specReviewSession": {
-        "label": "Ревью"
+        "label": "Сессия ревью спецификации"
       },
       "workSession": {
         "label": "Рабочая сессия"
+      },
+      "reviewSession": {
+        "label": "Сессия ревью"
+      },
+      "fixSession": {
+        "label": "Сессия исправления"
       },
       "changelog": {
         "label": "Журнал изменений"

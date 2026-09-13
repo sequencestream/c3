@@ -190,7 +190,7 @@ describe('IntentOverviewTab.vue', () => {
     expect((w.find(SAVE).element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('emits refine, select-dependency, and one edited dep type within the full group', async () => {
+  it('emits open-refine-dialog (no refine), select-dependency, and one edited dep type within the full group', async () => {
     const current = intent({
       id: 'current',
       dependsOn: ['first', 'second'],
@@ -203,9 +203,11 @@ describe('IntentOverviewTab.vue', () => {
         intent({ id: 'second', title: 'Second' }),
       ],
     })
-    // refine 是 section-actions 内的第一个动作(todo 下 refine 在前、editContent 在后)。
-    await w.findAll('.intent-detail-section-actions .req-btn')[0].trigger('click')
-    expect(w.emitted('refine')).toEqual([['current']])
+    // 「优化」是 section-actions 内的第一个动作(todo 下优化在前、editContent 在后)。
+    // 现在它只请求打开弹框,不再有 refine 直达会话的路径。
+    await w.find('[data-testid="intent-detail-refine"]').trigger('click')
+    expect(w.emitted('open-refine-dialog')).toEqual([['current']])
+    expect(w.emitted('refine')).toBeUndefined()
 
     await w.find('.req-dependency-title').trigger('click')
     expect(w.emitted('select-dependency')).toEqual([['first']])
@@ -222,6 +224,21 @@ describe('IntentOverviewTab.vue', () => {
         ],
       ],
     ])
+  })
+
+  it('renders the 优化 button only for todo and never emits refine', async () => {
+    for (const status of ['draft', 'in_progress', 'done', 'cancelled'] as const) {
+      expect(
+        mountTab(intent({ id: 'i', status }))
+          .find('[data-testid="intent-detail-refine"]')
+          .exists(),
+      ).toBe(false)
+    }
+    const w = mountTab(intent({ id: 'i1', status: 'todo' }))
+    expect(w.find('[data-testid="intent-detail-refine"]').exists()).toBe(true)
+    await w.find('[data-testid="intent-detail-refine"]').trigger('click')
+    expect(w.emitted('open-refine-dialog')).toEqual([['i1']])
+    expect(w.emitted('refine')).toBeUndefined()
   })
 
   it('shows the meta PR sync button for done reviewing PRs and emits sync-pr-status', async () => {

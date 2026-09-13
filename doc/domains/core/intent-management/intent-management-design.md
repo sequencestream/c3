@@ -274,7 +274,10 @@ PR 评审/修复结果列(`review_session_id`/`review_status`/`review_fix_rounds
   `intentSessionId`——与回填 `specSessionId` 的 spec-session 链接机制相同——
   使该 refine 对话之后可以从意图详情的
   「intent session」标签页重新打开(用该 id 调用 `open_intent_session`)。一个绑定前出错的边界情况
-  由 `run:settled`(kind=intent)安全网清理。
+  由 `run:settled`(kind=intent)安全网清理。注:自概览 tab 的「优化」按钮改为先收集修改意见后,
+  `refine_intent` 客户端消息已无前端入口 —— 该按钮现已改走 `reset_intent_session`
+  (见下);本消息保留为存量协议,服务端行为不变。`'intent'` 运行时本身仍由
+  `start_intent_session` / `reset_intent_session` 复用。
 - **来自讨论(`discussion_to_intent`):** 与**增加意图**共用创建原语和绑定序列,而非一个
   游离的种子会话;差别只在载荷 —— 它落的是空白正文、无显式基准选择。
   服务端加载该讨论,除非其为 `completed` 且 `conclusion` 非空,
@@ -841,7 +844,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   依赖列表(无依赖时不显示;已完成依赖灰色、未完成依赖橙色并加 ⚠ 标记);
   时间与依赖格式化由纯函数完成;
   再下方仅当存在未完成依赖时显示简短警告;
-  按状态提供操作:`todo` 为精炼 + 启动开发,已启动的为开发详情,
+  按状态提供操作:`todo` 为优化(先弹输入框收集修改意见,再经 `reset_intent_session` 起会话)+ 启动开发,已启动的为开发详情,
   任意状态可标记完成/取消),然后是一个**尾部的自动化切换图标**
   (渲染于操作按钮排末尾、所有操作按钮之后;`automate` → ⏳ 提示「in auto queue」,
   否则 ✋ 提示「manual trigger mode」;因属于操作区,收缩态随操作区一并隐藏);

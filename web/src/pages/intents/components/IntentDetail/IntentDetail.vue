@@ -149,7 +149,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  refine: [intentId: string]
   // worktree 基线提示的两个显式出口 / 收下提示,由控制层执行。
   'repair-worktree': [intentId: string, mode: 'rebuild' | 'merge']
   'dismiss-worktree-baseline': [intentId: string]
@@ -386,26 +385,48 @@ function onMainAction(): void {
   startDev()
 }
 
-// ── 会话重置弹框(intent session / spec session 共用,按入口分流) ─────────────
+// ── 会话重置弹框(intent session / spec session / refine 共用,按入口分流) ─────
 const resetDialogOpen = ref(false)
-const resetDialogTarget = ref<'intentSession' | 'specSession'>('intentSession')
+const resetDialogTarget = ref<'intentSession' | 'specSession' | 'refine'>('intentSession')
 const canResetIntentSession = computed<boolean>(
   () => !!props.intent && !props.intent.lastWorkSessionId,
 )
 const canResetSpecSession = computed<boolean>(
   () => !!props.intent && !props.intent.lastWorkSessionId && !!props.intent.specPath,
 )
-const resetDialogTitle = computed<string>(() =>
-  resetDialogTarget.value === 'specSession'
-    ? t('intent.resetSession.specSession.title')
-    : t('intent.resetSession.intentSession.title'),
+const resetDialogTitle = computed<string>(() => {
+  switch (resetDialogTarget.value) {
+    case 'specSession':
+      return t('intent.resetSession.specSession.title')
+    case 'refine':
+      return t('intent.refineSession.title')
+    default:
+      return t('intent.resetSession.intentSession.title')
+  }
+})
+const resetDialogMessage = computed<string>(() => {
+  switch (resetDialogTarget.value) {
+    case 'specSession':
+      return t('intent.resetSession.specSession.message')
+    case 'refine':
+      return t('intent.refineSession.message')
+    default:
+      return t('intent.resetSession.intentSession.message')
+  }
+})
+const resetDialogPlaceholder = computed<string>(() =>
+  resetDialogTarget.value === 'refine'
+    ? t('intent.refineSession.placeholder')
+    : t('intent.resetSession.placeholder'),
 )
-const resetDialogMessage = computed<string>(() =>
-  resetDialogTarget.value === 'specSession'
-    ? t('intent.resetSession.specSession.message')
-    : t('intent.resetSession.intentSession.message'),
+const resetDialogConfirmLabel = computed<string>(() =>
+  resetDialogTarget.value === 'refine'
+    ? t('intent.action.refine.label')
+    : t('intent.action.modifySession.label'),
 )
-function openResetDialog(target: 'intentSession' | 'specSession'): void {
+function openResetDialog(target: 'intentSession' | 'specSession' | 'refine'): void {
+  // refine 的打开条件就是「优化」按钮可见(todo),不受「我要修改」那条 canResetIntentSession
+  // (无关联工作会话)判据影响——否则 todo 且已有工作会话的意图会出现点了没反应的按钮。
   if (target === 'intentSession' && !canResetIntentSession.value) return
   if (target === 'specSession' && !canResetSpecSession.value) return
   resetDialogTarget.value = target
@@ -420,6 +441,7 @@ function onResetConfirm(text: string): void {
     markPendingSpecSwitch(r.id, r.specSessionId)
     emit('reset-spec-session', r.id, text)
   } else {
+    // intentSession 与 refine 同一条路:reset_intent_session 以「新输入 + 意图当前内容」起新会话。
     emit('reset-intent-session', r.id, text)
   }
 }
@@ -550,7 +572,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         :sdd-enabled="sddEnabled"
         :review-session-status="reviewSessionStatus"
         :fix-session-status="fixSessionStatus"
-        @refine="(id: string) => emit('refine', id)"
+        @open-refine-dialog="openResetDialog('refine')"
         @save-intent-content="(id: string, c: string) => emit('save-intent-content', id, c)"
         @set-spec-mode="
           (id: string, mode: IntentSpecMode | null) => emit('set-spec-mode', id, mode)
@@ -648,8 +670,8 @@ function submitChat(text: string, images: PromptImage[]): void {
       :open="resetDialogOpen"
       :title="resetDialogTitle"
       :message="resetDialogMessage"
-      :placeholder="t('intent.resetSession.placeholder')"
-      :confirm-label="t('intent.action.modifySession.label')"
+      :placeholder="resetDialogPlaceholder"
+      :confirm-label="resetDialogConfirmLabel"
       :cancel-label="t('common.action.cancel.label')"
       @confirm="onResetConfirm"
       @cancel="resetDialogOpen = false"

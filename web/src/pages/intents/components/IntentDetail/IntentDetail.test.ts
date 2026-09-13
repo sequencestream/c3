@@ -1998,6 +1998,64 @@ describe('IntentDetail.vue — spec review tab', () => {
   })
 })
 
+describe('IntentDetail.vue — PR review/fix session tabs', () => {
+  const reviewTab = '.intent-detail-tab[data-tab="reviewSession"]'
+  const fixTab = '.intent-detail-tab[data-tab="fixSession"]'
+
+  it('renders each tab only when its session id exists, independent of SDD', () => {
+    // 无 id → 不渲染(即便 SDD 开启)。
+    const none = mountDetail(intent({ id: 'i1' }), { sddEnabled: true })
+    expect(none.find(reviewTab).exists()).toBe(false)
+    expect(none.find(fixTab).exists()).toBe(false)
+
+    // SDD 关闭但有 id → 仍显示(区别于规范评审会话)。
+    const sddOff = mountDetail(intent({ id: 'i2', reviewSessionId: 'pr-rev-1' }), {
+      sddEnabled: false,
+    })
+    expect(sddOff.find(reviewTab).exists()).toBe(true)
+    const fixOff = mountDetail(intent({ id: 'i3', fixSessionId: 'pr-fix-1' }), {
+      sddEnabled: false,
+    })
+    expect(fixOff.find(fixTab).exists()).toBe(true)
+  })
+
+  it('emits open-pr-review-session with the session id and waits for alignment to render chat', async () => {
+    const w = mountDetail(intent({ id: 'i1', reviewSessionId: 'pr-rev-1' }))
+    await w.find(reviewTab).trigger('click')
+
+    expect(w.emitted('open-pr-review-session')).toEqual([['pr-rev-1']])
+    // 活动会话尚未对齐 → 不渲染聊天列(不串台)。
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(false)
+
+    await w.setProps({ activeSession: 'pr-rev-1' })
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+    // 已对齐 → 不重复发送打开请求。
+    expect(w.emitted('open-pr-review-session')).toEqual([['pr-rev-1']])
+  })
+
+  it('emits open-pr-fix-session with the session id and renders chat once aligned', async () => {
+    const w = mountDetail(intent({ id: 'i1', fixSessionId: 'pr-fix-1' }))
+    await w.find(fixTab).trigger('click')
+
+    expect(w.emitted('open-pr-fix-session')).toEqual([['pr-fix-1']])
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(false)
+
+    await w.setProps({ activeSession: 'pr-fix-1' })
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+    expect(w.emitted('open-pr-fix-session')).toEqual([['pr-fix-1']])
+  })
+
+  it('falls back to the intent tab when the review/fix session id disappears', async () => {
+    const w = mountDetail(intent({ id: 'i1', reviewSessionId: 'pr-rev-1' }))
+    await w.find(reviewTab).trigger('click')
+    expect(w.find(`${reviewTab}.active`).exists()).toBe(true)
+
+    await w.setProps({ intent: intent({ id: 'i1', reviewSessionId: null }) })
+    expect(w.find(reviewTab).exists()).toBe(false)
+    expect(w.find('.intent-detail-tab[data-tab="intent"].active').exists()).toBe(true)
+  })
+})
+
 describe('IntentDetail.vue — derived next-step banner', () => {
   const BLOCKED = {
     labelCode: 'vendor_auth_invalid',

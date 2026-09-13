@@ -44,6 +44,7 @@ import { probeArapuca, sysExtraMounts } from '../../kernel/sandbox/SandboxLaunch
 import {
   probeAll,
   applyVendorCliChoices,
+  isNpmManagedVendor,
   readVendorCliStatus,
 } from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
@@ -79,6 +80,9 @@ function hostStatus(): VendorHostStatus[] {
       ...(status.lastRemoteCheckAt ? { lastRemoteCheckAt: status.lastRemoteCheckAt } : {}),
       ...(status.lastError ? { lastError: status.lastError } : {}),
       ...(status.degradation ? { degradation: status.degradation } : {}),
+      // Whether c3 distributes this CLI from npm — gates the manual download/check
+      // button, so the console never hard-codes a vendor name.
+      npmManaged: isNpmManagedVendor(p.vendor),
     }
   })
 }

@@ -634,6 +634,14 @@
       "empty": "尚无已安装的自管版本。",
       "degraded": {
         "pinnedVersionUnavailable": "固定版本 {pinnedVersion} 不可用,已回退使用 {resolvedVersion}。"
+      },
+      "sync": {
+        "download": "下载",
+        "checkUpdate": "检查新版本",
+        "syncing": "下载中…",
+        "installed": "已安装 / 已更新。",
+        "alreadyLatest": "已是最新版本。",
+        "failed": "同步失败。"
       }
     },
     "skillRepos": {
@@ -1463,10 +1471,16 @@
         "label": "编写规范会话"
       },
       "specReviewSession": {
-        "label": "评审"
+        "label": "规范评审会话"
       },
       "workSession": {
         "label": "工作会话"
+      },
+      "reviewSession": {
+        "label": "评审会话"
+      },
+      "fixSession": {
+        "label": "修复会话"
       },
       "changelog": {
         "label": "变更日志"

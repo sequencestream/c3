@@ -44,7 +44,7 @@ c3
 │   │   ├── 权限 UI                               # allow/deny 对话框、AskUserQuestion 逐题作答、共识意见展示
 │   │   ├── 控制面                                # 模式切换、agent 切换、停止、继续、刷新;崩溃态(run 停止且末轮出错)状态栏直出一键重试,复用继续链路
 │   │   ├── 会话控制                              # 会话增/删/改名/选择、工作区切换(增删受管理员门控)
-│   │   ├── 冷启动引导                            # 每个客户端会话一次性判定:首条 settings 无真实 agent 打开系统设置;工作区注册表为空且 agent 已配好、身份为管理员时打开新增工作区弹框。两者不叠加,关闭/重连/增删广播都不复弹,整页刷新才重新判定
+│   │   ├── 冷启动引导                            # 每个客户端会话一次性判定:首条 settings 无真实 agent 打开系统设置(agent 页);agent 已配好但两个 npm 托管 CLI(claude+codex)运行时都缺失则打开系统设置并定位 Runtime 页(任一可用即不跳,cursor 不计入);工作区注册表为空且 agent 已配好、身份为管理员时打开新增工作区弹框。三者不叠加,关闭/重连/增删广播都不复弹,整页刷新才重新判定
 │   │   ├── 双视图                                # 工作区(workspace)与工作台(workcenter)两大视图切换
 │   │   ├── 移动端                                # MobileStack drill-down 栈式布局、软键盘/安全区避让
 │   │   ├── 富文本渲染                            # Markdown+DOMPurify 双防线、Shiki 代码高亮、Mermaid 图表渲染(失败降级原代码块)、宽表横滚
@@ -67,7 +67,7 @@ c3
 │   │   │   └── 「是否需要规范」开关              # 人工入口在意图详情「概览」tab 元信息区,三档(继承工作区/需要规范/不需要规范)选择即保存,展示服务端派生的 effectiveSpecMode;sddEnabled 关闭时仍可设置并提示此时无行为差异
 │   │   ├── 规格只读审核                          # 独立 spec_review 会话读 spec/源码/本项目意图,写任意路径一律拒绝;结论只经 submit_spec_review 结构化提交
 │   │   │   ├── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过
-│   │   │   └── 评审过程可核验                    # 意图详情「评审」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
+│   │   │   └── 评审过程可核验                    # 意图详情「规范评审会话」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
 │   │   ├── 规格直接编辑                          # 未启动开发且无运行中 spec 会话时行内编辑 spec 源码,覆盖写集中 specs 文件+审批联动重置+写 spec_updated 日志
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
@@ -299,6 +299,7 @@ c3
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
 │   │   ├── 工具会话显示                          # showToolSessions 独立开关,决定工具类会话是否进聚合页侧栏
 │   │   ├── vendor CLI 多版本生效选择             # 仅托管 vendor(claude/codex):下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退;非托管 vendor(cursor)不进该面板
+│   │   ├── vendor CLI 手动下载/检查新版本        # 每个 npm 受管 vendor 行内一个按钮(未安装「下载」/已安装「检查新版本」/在途「下载中…」),`sync_vendor_cli` 绕过 24h 冷却立即同步,回 settings 快照 + `vendor_cli_sync_result` 结构结论;按 `npmManaged` 渲染、非管理员禁用、并发合并;运行时驱动诊断仍只读
 │   │   ├── 代理                                  # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境;服务端自身出网(版本检查/发行包下载)同样按此路由,回环与 NO_PROXY 直连
 │   │   ├── 会话清理                              # sessionCleanup 开关 + 保留天数(默认关、30 天),每日删除各 vendor 会话存储中超期的会话记录;按目录名约定识别(vendor 中立)、覆盖沙箱与宿主 home,不碰 Cursor 与 IDE 共写的 `~/.cursor/chats`
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图

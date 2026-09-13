@@ -33,6 +33,18 @@
 
 `degradation` 与 `lastError` 互不排斥:固定版本回退成功后,同步/安装可以再失败,两者同时成立。面板必须两条都渲染,不得让其一遮蔽另一条——否则先记录的降级会永久盖住之后发生的失败。
 
+### 手动下载 / 检查新版本
+
+受管 vendor CLI 的下载与升级除启动时后台自动刷新(受 24 小时冷却 `lastRemoteCheckAt` 约束)外,还提供一条**手动**入口:Runtime 页签的「厂商 CLI 版本」区块,每个 npm 受管 vendor(claude、codex)行内渲染一个按钮——未安装时为「下载」,已安装时为「检查新版本」,在途为「下载中…」。点击即对服务端发 `sync_vendor_cli { vendor }`(负载只有 vendor,客户端不能指定包名/版本/URL),由服务端管理员门控后直接 `syncManagedVendorCli(vendor)`,**绕过冷却立即执行一次同步**;完成后先回 `settings` 全量快照刷新面板,再回 `vendor_cli_sync_result { ok, version, installed, error }` 让前端解除 in-flight 并按「已安装 / 已是最新 / 失败」选择提示文案。
+
+边界与语义:
+
+- 按钮仅按 `VendorHostStatus.npmManaged === true` 渲染(`npmManaged` 缺失视为 false,旧服务端自然无按钮),前端不按 vendor 名分支;非 npm 受管 vendor(如 cursor)既不渲染按钮,服务端也直接拒绝且不回包。
+- 按钮在 `!isAdmin` 或在途时禁用;点击只触发同步,**不写入设置草稿**,即使 Runtime 页签存在未保存的版本选择,草稿与脏状态保持不动。
+- 手动触发会刷新 `lastRemoteCheckAt`,从而顺延下一次后台检查——预期行为,避免刚同步完就在下次启动再拉一遍。
+- 同一 vendor 的并发手动触发在服务端合并,后到请求等同一结果,不重复下载。
+- 「运行时驱动」诊断列表仍是纯只读,按钮只出现在「厂商 CLI 版本」区块。
+
 ## 系统沙箱定义 `sandboxes`
 
 系统级沙箱定义(镜像/挂载模板),供各工作区按 name 引用(工作区侧引用见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))。仅管理员经系统设置面板 CRUD;缺省/空 ⇒ 无沙箱定义,工作区配置面板隐藏其沙箱区。沙箱运行语义见 [sandbox](../../core/sandbox/sandbox-design.md)。

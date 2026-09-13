@@ -27,6 +27,7 @@ import type {
   UiLang,
   UiTheme,
   UpdateAutomationInput,
+  VendorId,
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
   WorkspaceInfo,
@@ -406,6 +407,10 @@ export interface AppMethods {
   saveSettings(settings: SystemSettings): void
   /** Probe runnable vendors and persist a system-mode agent for each without one. */
   autoConfigureAgents(): void
+  /** Ask the server to download / check for a new version of one npm-managed vendor CLI.
+   *  Marks the vendor in-flight and fires a single `sync_vendor_cli`; a second click
+   *  while one is in flight is a no-op (the server also merges concurrent triggers). */
+  syncVendorCli(vendor: VendorId): void
   /** Dial one provider connection from the server and report whether it answers.
    *  `baseUrl`/`apiKey` carry the console draft so an unsaved edit is what gets dialled. */
   probeModelProvider(payload: {

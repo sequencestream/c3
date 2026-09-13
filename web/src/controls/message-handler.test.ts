@@ -157,8 +157,10 @@ function makeCtx() {
   // `settings` 分支写入的其余快照 refs —— 测试只断言 settingsOpen,其余仅为避免
   // 处理器写入 undefined 而抛错。
   const settingsOpen = ref(false)
+  const settingsTarget = ref<import('@/lib/action-descriptor').SystemSettingsTarget | null>(null)
   const addWorkspaceOpen = ref(false)
   const hostStatus = ref<unknown>(null)
+  const vendorCliSyncing = ref<unknown>([])
   const vendorRuntime = ref<unknown>(null)
   const sandboxStatus = ref<unknown>(null)
   const bindingStats = ref<unknown>(null)
@@ -205,8 +207,10 @@ function makeCtx() {
   })
   const ctx = {
     settingsOpen,
+    settingsTarget,
     addWorkspaceOpen,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     sandboxStatus,
     bindingStats,
@@ -370,6 +374,7 @@ function makeCtx() {
     researchMessages,
     researchMaxSeq,
     settingsOpen,
+    settingsTarget,
     activeTab,
     savedTab,
     persistViewMode,
@@ -395,6 +400,7 @@ function makeCtx() {
     intentGateEscape,
     showIntentGateEscape,
     closeIntentGateEscape,
+    vendorCliSyncing,
   }
 }
 
@@ -1815,11 +1821,22 @@ describe('automation workspace-gate snapshot (workspace_setting routing)', () =>
 })
 
 // 冷启动引导:首个 settings 快照没有真实 agent 时自动打开系统设置。
+// 默认带一个「claude 已在宿主 PATH 上」的 hostStatus,让「已配置 agent」的用例
+// 落到「有 CLI 可用 → 不跳 Runtime」的基线;要测「双缺失跳 Runtime」用
+// runtimeSettingsMsg 显式给出缺失状态。
 function settingsMsg(agentIds: string[]): ServerToClient {
   return {
     type: 'settings',
     settings: { agents: agentIds.map((id) => ({ id, name: id })) },
-    hostStatus: [],
+    hostStatus: [
+      {
+        vendor: 'claude',
+        present: true,
+        binary: 'claude',
+        path: '/usr/local/bin/claude',
+        installHint: '',
+      },
+    ],
     bindingStats: {},
     sessionCapabilities: {},
   } as unknown as ServerToClient
@@ -1867,11 +1884,130 @@ describe('auto-open settings when no agent is configured', () => {
   })
 })
 
+// 冷启动引导:agent 已配置、但 claude + codex 两个 npm 托管 CLI 都缺失时,打开
+// 系统设置并定位到 Runtime Tab。判定只读服务端 runtime 状态,不额外探测。
+function runtimeSettingsMsg(
+  agentIds: string[],
+  vendorRuntime:
+    | Partial<
+        Record<
+          import('@ccc/shared/protocol').VendorId,
+          import('@ccc/shared/protocol').VendorRuntimeStatus
+        >
+      >
+    | undefined,
+  hostStatus: import('@ccc/shared/protocol').VendorHostStatus[] = [],
+): ServerToClient {
+  return {
+    type: 'settings',
+    settings: { agents: agentIds.map((id) => ({ id, name: id })) },
+    vendorRuntime,
+    hostStatus,
+    bindingStats: {},
+    sessionCapabilities: {},
+  } as unknown as ServerToClient
+}
+
+function missingVendor(
+  vendor: 'claude' | 'codex',
+): import('@ccc/shared/protocol').VendorRuntimeStatus {
+  return { vendor, available: false, runtime: 'host-cli', reason: 'host-cli-missing' }
+}
+
+function presentVendor(
+  vendor: 'claude' | 'codex',
+): import('@ccc/shared/protocol').VendorRuntimeStatus {
+  return { vendor, available: true, runtime: 'host-cli', runtimeId: vendor, origin: 'host-path' }
+}
+
+describe('auto-open settings to Runtime when both managed CLIs are missing', () => {
+  it('jumps to the Runtime Tab when configured and both claude + codex are missing', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(
+      runtimeSettingsMsg(['agent-1'], {
+        claude: missingVendor('claude'),
+        codex: missingVendor('codex'),
+      }),
+    )
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.settingsTarget.value).toEqual({ tab: 'runtime' })
+  })
+
+  it('does not jump when claude is present even though codex is missing', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(
+      runtimeSettingsMsg(['agent-1'], {
+        claude: presentVendor('claude'),
+        codex: missingVendor('codex'),
+      }),
+    )
+    expect(r.settingsOpen.value).toBe(false)
+    expect(r.settingsTarget.value).toBeNull()
+  })
+
+  it('does not jump when codex is present even though claude is missing', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(
+      runtimeSettingsMsg(['agent-1'], {
+        claude: missingVendor('claude'),
+        codex: presentVendor('codex'),
+      }),
+    )
+    expect(r.settingsOpen.value).toBe(false)
+    expect(r.settingsTarget.value).toBeNull()
+  })
+
+  it('does not jump when either CLI is resolvable on the host PATH (hostStatus fallback)', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(
+      runtimeSettingsMsg(['agent-1'], undefined, [
+        {
+          vendor: 'claude',
+          present: true,
+          binary: 'claude',
+          path: '/usr/local/bin/claude',
+          installHint: '',
+        },
+      ]),
+    )
+    expect(r.settingsOpen.value).toBe(false)
+    expect(r.settingsTarget.value).toBeNull()
+  })
+
+  it('does not re-open after the user closes the dialog on a repeated missing snapshot', () => {
+    const r = makeCtx()
+    const missing = {
+      claude: missingVendor('claude'),
+      codex: missingVendor('codex'),
+    }
+    r.ctx.handleMessage(runtimeSettingsMsg(['agent-1'], missing))
+    expect(r.settingsOpen.value).toBe(true)
+
+    // 用户关闭弹窗;随后的重连 / 刷新式重复推送不得再次弹出。
+    r.settingsOpen.value = false
+    r.ctx.handleMessage(runtimeSettingsMsg(['agent-1'], missing))
+    expect(r.settingsOpen.value).toBe(false)
+  })
+
+  it('no-agent still lands on the Agent Tab and never sets a runtime target', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(
+      runtimeSettingsMsg([], {
+        claude: missingVendor('claude'),
+        codex: missingVendor('codex'),
+      }),
+    )
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.settingsTarget.value).toBeNull()
+  })
+})
+
 // 工作区冷启动引导:握手恒为 ready(权威工作区快照)→ settings(agent 是否配置好),
 // 两个输入到齐判定一次。这个 ctx 只需覆盖 ready / settings / workspaces 三条分支。
 function makeWorkspaceOnboardingCtx() {
   const addWorkspaceOpen = ref(false)
   const settingsOpen = ref(false)
+  const settingsTarget = ref<import('@/lib/action-descriptor').SystemSettingsTarget | null>(null)
   const workspaces = ref<import('@ccc/shared/protocol').WorkspaceInfo[]>([])
   const ctx = {
     t: (key: string) => key,
@@ -1880,6 +2016,7 @@ function makeWorkspaceOnboardingCtx() {
     showToast: vi.fn(),
     addWorkspaceOpen,
     settingsOpen,
+    settingsTarget,
     workspaces,
     currentWorkspace: ref<string | null>(null),
     auth: { setIsAdmin: vi.fn(), setSubject: vi.fn() },
@@ -1946,7 +2083,7 @@ function makeWorkspaceOnboardingCtx() {
     maybeRefreshDashboard: vi.fn(),
   } as unknown as AppCtx
   installMessageHandler(ctx)
-  return { ctx, addWorkspaceOpen, settingsOpen, workspaces }
+  return { ctx, addWorkspaceOpen, settingsOpen, settingsTarget, workspaces }
 }
 
 function readyMsg(names: string[], isAdmin = true): ServerToClient {
@@ -2032,6 +2169,20 @@ describe('auto-open add-workspace when the registry is empty', () => {
     const r = makeWorkspaceOnboardingCtx()
     r.ctx.handleMessage(readyMsg([], false))
     r.ctx.handleMessage(settingsMsg(['agent-1']))
+    expect(r.addWorkspaceOpen.value).toBe(false)
+  })
+
+  it('双 CLI 缺失时 Runtime 跳转优先,「新增工作区」模态让位、不叠加', () => {
+    const r = makeWorkspaceOnboardingCtx()
+    r.ctx.handleMessage(readyMsg([]))
+    r.ctx.handleMessage(
+      runtimeSettingsMsg(['agent-1'], {
+        claude: missingVendor('claude'),
+        codex: missingVendor('codex'),
+      }),
+    )
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.settingsTarget.value).toEqual({ tab: 'runtime' })
     expect(r.addWorkspaceOpen.value).toBe(false)
   })
 })
@@ -3106,5 +3257,51 @@ describe('auto_configure_agents_result — the outcome is never silent', () => {
     const r = fire(0, 3)
     expect(r.toast.value).toBe(`${KEY}.alreadyConfigured`)
     expect(r.toast.value).not.toBe(`${KEY}.noVendor`)
+  })
+})
+
+describe('vendor_cli_sync_result — outcome toast + in-flight clear', () => {
+  // `ctx.t` passthrough ⇒ the toast IS the i18n key, enough to pin WHICH branch ran.
+  const KEY = 'settings.vendorCli.sync'
+
+  function fire(result: { ok: boolean; installed?: boolean }) {
+    const r = makeCtx()
+    r.vendorCliSyncing.value = ['claude']
+    r.ctx.handleMessage({
+      type: 'vendor_cli_sync_result',
+      vendor: 'claude',
+      ...result,
+    } as unknown as ServerToClient)
+    return r
+  }
+
+  it('reports an actual install/upgrade and clears the in-flight flag', () => {
+    const r = fire({ ok: true, installed: true })
+    expect(r.toast.value).toBe(`${KEY}.installed`)
+    expect(r.vendorCliSyncing.value).toEqual([])
+  })
+
+  it('reports "already latest" for a no-op sync', () => {
+    const r = fire({ ok: true, installed: false })
+    expect(r.toast.value).toBe(`${KEY}.alreadyLatest`)
+    expect(r.vendorCliSyncing.value).toEqual([])
+  })
+
+  it('reports failure and still clears the in-flight flag', () => {
+    const r = fire({ ok: false })
+    expect(r.toast.value).toBe(`${KEY}.failed`)
+    expect(r.vendorCliSyncing.value).toEqual([])
+  })
+
+  it('clears only the synced vendor, leaving any other in-flight row alone', () => {
+    const r = makeCtx()
+    r.vendorCliSyncing.value = ['claude', 'codex']
+    r.ctx.handleMessage({
+      type: 'vendor_cli_sync_result',
+      vendor: 'claude',
+      ok: true,
+      installed: true,
+    } as unknown as ServerToClient)
+    expect(r.vendorCliSyncing.value).toEqual(['codex'])
   })
 })

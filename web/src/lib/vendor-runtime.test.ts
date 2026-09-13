@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type { VendorHostStatus, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import {
+  allNpmManagedVendorsMissing,
   deriveVendorAvailability,
   vendorCliDegradationKey,
   vendorRuntimeOriginKey,
@@ -79,6 +80,50 @@ describe('deriveVendorAvailability', () => {
     expect(out.codex.available).toBe(true)
     expect(out.claude.available).toBe(true)
     expect(out.cursor.available).toBe(false)
+  })
+})
+
+describe('allNpmManagedVendorsMissing', () => {
+  const missing = (vendor: 'claude' | 'codex'): VendorRuntimeStatus => ({
+    vendor,
+    available: false,
+    runtime: 'host-cli',
+    reason: 'host-cli-missing',
+  })
+  const present = (vendor: 'claude' | 'codex'): VendorRuntimeStatus => ({
+    vendor,
+    available: true,
+    runtime: 'host-cli',
+    runtimeId: vendor,
+    origin: 'host-path',
+  })
+
+  it('true only when both npm-managed vendors are unavailable', () => {
+    expect(
+      allNpmManagedVendorsMissing({ claude: missing('claude'), codex: missing('codex') }),
+    ).toBe(true)
+  })
+
+  it('false when either claude or codex can run, regardless of cursor', () => {
+    expect(
+      allNpmManagedVendorsMissing({ claude: present('claude'), codex: missing('codex') }),
+    ).toBe(false)
+    expect(
+      allNpmManagedVendorsMissing({ claude: missing('claude'), codex: present('codex') }),
+    ).toBe(false)
+    // cursor 的可用性根本不参与判定:它自版本管理,Runtime 页没有可替它下载的东西。
+    expect(
+      allNpmManagedVendorsMissing({
+        claude: missing('claude'),
+        codex: missing('codex'),
+        cursor: { vendor: 'cursor', available: true, runtime: 'host-cli', origin: 'host-path' },
+      }),
+    ).toBe(true)
+  })
+
+  it('treats an absent entry as unavailable, so a partial snapshot cannot hide a missing CLI', () => {
+    expect(allNpmManagedVendorsMissing({})).toBe(true)
+    expect(allNpmManagedVendorsMissing({ claude: present('claude') })).toBe(false)
   })
 })
 

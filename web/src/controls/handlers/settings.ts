@@ -8,6 +8,7 @@ import { normalizePersonalized, writeLocalPersonalized } from '@/lib/personalize
 import { applyTheme } from '@/lib/theme'
 import { applyFontScale } from '@/lib/font-scale'
 import { providerProbeKey } from '@/lib/model-provider'
+import { allNpmManagedVendorsMissing, deriveVendorAvailability } from '@/lib/vendor-runtime'
 import { VIEW_MODE_KEY } from '../state/types'
 
 export function buildSettingsHandlers(
@@ -18,6 +19,7 @@ export function buildSettingsHandlers(
   | 'settings'
   | 'model_provider_probe_result'
   | 'auto_configure_agents_result'
+  | 'vendor_cli_sync_result'
   | 'personalized_settings'
   | 'skill_link_status'
   | 'skill_install_result'
@@ -64,6 +66,7 @@ export function buildSettingsHandlers(
     serverSettings,
     personalizedSettings,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     sandboxStatus,
     bindingStats,
@@ -210,10 +213,22 @@ export function buildSettingsHandlers(
       skillSupport.value = msg.skillSupport ?? null
       // 冷启动引导:首个快照里若没有任何真实(非 system 回退)agent,直接打开
       // 系统设置 —— SettingsPanel 自身默认落在 Agent Tab,这里不引入额外的 Tab 状态。
+      // agent 已配置、但两个 npm 托管的 CLI(claude + codex)都缺失时,落入下一跳:
+      // 打开设置并定位到 Runtime Tab,把「从哪下载」指给用户。判定以服务端 runtime
+      // 状态(host 探测 + managed 探测合并)为准,任一可用即不跳转。
       if (!coldStart.firstSettingsEvaluated) {
         coldStart.firstSettingsEvaluated = true
         const configured = msg.settings.agents.some((agent) => agent.id !== SHARED.SYSTEM_AGENT_ID)
-        if (!configured) settingsOpen.value = true
+        if (!configured) {
+          settingsOpen.value = true
+        } else if (
+          allNpmManagedVendorsMissing(deriveVendorAvailability(msg.vendorRuntime, msg.hostStatus))
+        ) {
+          // 连 CLI 都没有时,先带用户去装 CLI;「新增工作区」引导让位,不叠加第二个模态。
+          coldStart.runtimeMissing = true
+          ctx.settingsTarget.value = { tab: 'runtime' }
+          settingsOpen.value = true
+        }
         // agent 未配置好时不排队、不叠加「新增工作区」:本次会话只留 agent 引导一个
         // 模态,用户配好 agent 后走手动「+」或下一次整页加载的重新判定。
         coldStart.agentsConfigured = configured
@@ -246,6 +261,21 @@ export function buildSettingsHandlers(
         ctx.showToast(t('settings.agents.autoConfigure.result.noVendor'))
       } else {
         ctx.showToast(t('settings.agents.autoConfigure.result.alreadyConfigured'))
+      }
+    },
+    vendor_cli_sync_result: (_ctx, msg) => {
+      // The button's in-flight flag clears no matter the outcome; the settings echo
+      // that precedes this frame already refreshed the panel's row. The toast tells
+      // apart "actually installed/upgraded" from "already latest" from "failed".
+      vendorCliSyncing.value = vendorCliSyncing.value.filter((v) => v !== msg.vendor)
+      if (msg.ok) {
+        ctx.showToast(
+          msg.installed
+            ? t('settings.vendorCli.sync.installed')
+            : t('settings.vendorCli.sync.alreadyLatest'),
+        )
+      } else {
+        ctx.showToast(t('settings.vendorCli.sync.failed'))
       }
     },
     personalized_settings: (_ctx, msg) => {

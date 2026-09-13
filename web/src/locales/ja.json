@@ -635,6 +635,14 @@
       "empty": "インストール済みの管理バージョンはまだありません。",
       "degraded": {
         "pinnedVersionUnavailable": "固定バージョン {pinnedVersion} は利用できないため、{resolvedVersion} を使用しています。"
+      },
+      "sync": {
+        "download": "ダウンロード",
+        "checkUpdate": "更新を確認",
+        "syncing": "ダウンロード中…",
+        "installed": "インストール / 更新しました。",
+        "alreadyLatest": "すでに最新です。",
+        "failed": "同期に失敗しました。"
       }
     },
     "skillRepos": {
@@ -1464,10 +1472,16 @@
         "label": "仕様作成セッション"
       },
       "specReviewSession": {
-        "label": "レビュー"
+        "label": "仕様レビューセッション"
       },
       "workSession": {
         "label": "作業セッション"
+      },
+      "reviewSession": {
+        "label": "レビューセッション"
+      },
+      "fixSession": {
+        "label": "修正セッション"
       },
       "changelog": {
         "label": "変更履歴"

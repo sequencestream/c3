@@ -17,7 +17,19 @@ function localeMessages(locale: string) {
   return JSON.parse(
     readFileSync(resolve(__dirname, `../../../../locales/${locale}.json`), 'utf8'),
   ) as {
-    settings: { vendorCli: { degraded: { pinnedVersionUnavailable: string } } }
+    settings: {
+      vendorCli: {
+        degraded: { pinnedVersionUnavailable: string }
+        sync: {
+          download: string
+          checkUpdate: string
+          syncing: string
+          installed: string
+          alreadyLatest: string
+          failed: string
+        }
+      }
+    }
   }
 }
 
@@ -441,7 +453,7 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
   })
 })
 
-describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', () => {
+describe('SettingsPanel.vue — role pickers: candidates, save boundary, server re-pin (AC-R23)', () => {
   const mk = (id: string, enabled?: boolean): SystemSettings['agents'][number] => ({
     id,
     vendor: 'claude',
@@ -455,6 +467,11 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     agents: [mk('a1'), mk('a2'), mk('a3')],
     defaultAgentId: 'a1',
   }
+  const ROLE = [
+    ['intentAgentId', 'intent-agent-select'],
+    ['specAgentId', 'spec-agent-select'],
+    ['automationAgentId', 'automation-agent-select'],
+  ] as const
 
   it('offers a leading "follow default" option plus enabled agents by order', () => {
     const w = mount(SettingsPanel, {
@@ -463,129 +480,92 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
         settings: { ...threeAgents, agents: [mk('a1'), mk('a2', false), mk('a3')] },
       },
     })
+    for (const [, testid] of ROLE) {
+      const opts = w
+        .findAll(`[data-testid="${testid}"] option`)
+        .map((o) => (o.element as HTMLOptionElement).value)
+      // '' (follow default) + a1 + a3; a2 (disabled) excluded.
+      expect(opts).toEqual(['', 'a1', 'a3'])
+    }
+  })
+
+  it('role dropdown options come from the committed registry, not the Agents draft', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
+    // Disabling a2 is an Agents-draft edit: the role options must keep listing the
+    // committed enabled agents (incl. a2) until the registry is saved.
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+    await checks[1].setValue(false)
     const opts = w
       .findAll('[data-testid="intent-agent-select"] option')
       .map((o) => (o.element as HTMLOptionElement).value)
-    // '' (follow default) + a1 + a3; a2 (disabled) excluded.
-    expect(opts).toEqual(['', 'a1', 'a3'])
+    expect(opts).toEqual(['', 'a1', 'a2', 'a3'])
   })
 
-  it('seeds the dropdown from settings.intentAgentId and carries it through on save', async () => {
+  it.each(ROLE)(
+    'seeds %s and saves a picked value through the Default Agent tab',
+    async (field, testid) => {
+      const w = mount(SettingsPanel, {
+        props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
+      })
+      const sel = w.find(`[data-testid="${testid}"]`)
+      expect((sel.element as HTMLSelectElement).value).toBe('a2')
+      await sel.setValue('a3')
+      await w.find(SAVE.defaultAgent).trigger('click')
+      const emitted = w.emitted('save') as [SystemSettings][]
+      expect(emitted[0][0][field]).toBe('a3')
+    },
+  )
+
+  it.each(ROLE)('keeps an empty %s empty (follow default) on save', async (field, testid) => {
     const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, intentAgentId: 'a2' } },
+      props: { open: true, settings: { ...threeAgents, [field]: '' } },
     })
-    const sel = w.find('[data-testid="intent-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find(SAVE.agent).trigger('click')
+    expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('')
+    await w.find(SAVE.defaultAgent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].intentAgentId).toBe('a2')
+    expect(emitted[0][0][field]).toBe('')
   })
 
-  it('keeps an empty intentAgentId empty (follow default) when an agent is disabled', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, intentAgentId: '' } },
-    })
-    // Disable a2 — an empty ("follow default") intent agent must stay empty.
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[1].setValue(false)
-    const sel = w.find('[data-testid="intent-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].intentAgentId).toBe('')
-  })
+  it.each(ROLE)(
+    'editing the registry never touches the %s draft nor dirties the Default Agent tab',
+    async (field, testid) => {
+      const w = mount(SettingsPanel, {
+        props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
+      })
+      // Disabling a2 is an Agents-tab edit: it must not re-point the role draft.
+      const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+      await checks[1].setValue(false)
+      expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('a2')
+      expect(w.find('[data-testid="settings-unsaved-default-agent"]').exists()).toBe(false)
+      // Saving the registry carries the committed role, not any re-pointed value.
+      await w.find(SAVE.agent).trigger('click')
+      expect((w.emitted('save') as [SystemSettings][])[0][0][field]).toBe('a2')
+    },
+  )
 
-  it('rewrites a non-empty intentAgentId to the next enabled agent when disabled', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, intentAgentId: 'a2' } },
-    })
-    // Disable a2 (the current intent agent) → fall through to a3.
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[1].setValue(false)
-    const sel = w.find('[data-testid="intent-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].intentAgentId).toBe('a3')
-  })
-
-  it('seeds the spec dropdown from settings.specAgentId and carries it through on save', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, specAgentId: 'a2' } },
-    })
-    const sel = w.find('[data-testid="spec-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].specAgentId).toBe('a2')
-  })
-
-  it('keeps an empty specAgentId empty (follow default) when an agent is disabled', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, specAgentId: '' } },
-    })
-    // Disable a2 — an empty ("follow default") spec agent must stay empty.
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[1].setValue(false)
-    const sel = w.find('[data-testid="spec-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].specAgentId).toBe('')
-  })
-
-  it('rewrites a non-empty specAgentId to the next enabled agent when disabled', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, specAgentId: 'a2' } },
-    })
-    // Disable a2 (the current spec agent) → fall through to a3.
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[1].setValue(false)
-    const sel = w.find('[data-testid="spec-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].specAgentId).toBe('a3')
-  })
-
-  it('offers a leading "follow default" option plus enabled agents by order for the automation picker', () => {
-    const w = mount(SettingsPanel, {
-      props: {
-        open: true,
-        settings: { ...threeAgents, agents: [mk('a1'), mk('a2', false), mk('a3')] },
-      },
-    })
-    const opts = w
-      .findAll('[data-testid="automation-agent-select"] option')
-      .map((o) => (o.element as HTMLOptionElement).value)
-    // '' (follow default) + a1 + a3; a2 (disabled) excluded.
-    expect(opts).toEqual(['', 'a1', 'a3'])
-  })
-
-  it('seeds the automation dropdown from settings.automationAgentId and carries it through on save', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, automationAgentId: 'a2' } },
-    })
-    const sel = w.find('[data-testid="automation-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].automationAgentId).toBe('a2')
-  })
-
-  it('keeps an empty automationAgentId empty (follow default) when an agent is disabled', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, automationAgentId: '' } },
-    })
-    // Disable a2 — an empty ("follow default") automation agent must stay empty.
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[1].setValue(false)
-    const sel = w.find('[data-testid="automation-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].automationAgentId).toBe('')
-  })
+  it.each(ROLE)(
+    're-pins a non-empty %s to the next enabled agent on the server echo after disabling',
+    async (field, testid) => {
+      const w = mount(SettingsPanel, {
+        props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
+      })
+      // Disable a2 (the current role agent). The draft is NOT rewritten client-side.
+      const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+      await checks[1].setValue(false)
+      expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('a2')
+      // Save the registry; the server normalizes the role to the next enabled agent
+      // (a3) and echoes it back, reseeding the still-clean Default Agent tab.
+      await w.find(SAVE.agent).trigger('click')
+      await w.setProps({
+        settings: {
+          ...threeAgents,
+          agents: [mk('a1'), mk('a2', false), mk('a3')],
+          [field]: 'a3',
+        },
+      })
+      expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('a3')
+    },
+  )
 
   it('renders no sandbox-role block — sandbox runs share the unified role config', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
@@ -593,7 +573,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     for (const role of ['default', 'tool', 'intent', 'spec', 'automation']) {
       expect(w.find(`[data-testid="sandbox-${role}-agent-select"]`).exists()).toBe(false)
     }
-    await w.find(SAVE.agent).trigger('click')
+    await w.find(SAVE.defaultAgent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0] as unknown as Record<
       string,
       unknown
@@ -607,20 +587,6 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     ]) {
       expect(saved[key]).toBeUndefined()
     }
-  })
-
-  it('rewrites a non-empty automationAgentId to the next enabled agent when disabled', async () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, automationAgentId: 'a2' } },
-    })
-    // Disable a2 (the current automation agent) → fall through to a3.
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[1].setValue(false)
-    const sel = w.find('[data-testid="automation-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].automationAgentId).toBe('a3')
   })
 })
 
@@ -659,49 +625,71 @@ describe('SettingsPanel.vue — review/fix role pickers (AC-R34)', () => {
     }
   })
 
-  it.each(ROLE)('seeds %s and carries it through on save', async (field, testid) => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
-    })
-    const sel = w.find(`[data-testid="${testid}"]`)
-    expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0][field]).toBe('a2')
-  })
-
   it.each(ROLE)(
-    'rewrites a non-empty %s to the next enabled agent when disabled',
+    'seeds %s and saves a picked value through the Default Agent tab',
     async (field, testid) => {
       const w = mount(SettingsPanel, {
         props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
       })
-      // Disable a2 (the current role agent) → fall through to a3.
-      const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-      await checks[1].setValue(false)
       const sel = w.find(`[data-testid="${testid}"]`)
-      expect((sel.element as HTMLSelectElement).value).toBe('a3')
-      await w.find(SAVE.agent).trigger('click')
+      expect((sel.element as HTMLSelectElement).value).toBe('a2')
+      await sel.setValue('a3')
+      await w.find(SAVE.defaultAgent).trigger('click')
       const emitted = w.emitted('save') as [SystemSettings][]
       expect(emitted[0][0][field]).toBe('a3')
     },
   )
 
   it.each(ROLE)(
-    'keeps an empty %s empty (follow default) when an agent is disabled',
+    'editing the registry never touches the %s draft nor dirties the Default Agent tab',
     async (field, testid) => {
       const w = mount(SettingsPanel, {
-        props: { open: true, settings: { ...threeAgents, [field]: '' } },
+        props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
       })
+      // Disabling a2 is an Agents-tab edit: it must not re-point the role draft.
       const checks = w.findAll('[data-testid="agent-enabled-switch"]')
       await checks[1].setValue(false)
-      const sel = w.find(`[data-testid="${testid}"]`)
-      expect((sel.element as HTMLSelectElement).value).toBe('')
+      expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('a2')
+      expect(w.find('[data-testid="settings-unsaved-default-agent"]').exists()).toBe(false)
+      // Saving the registry carries the committed role, not any re-pointed value.
       await w.find(SAVE.agent).trigger('click')
-      const emitted = w.emitted('save') as [SystemSettings][]
-      expect(emitted[0][0][field]).toBe('')
+      expect((w.emitted('save') as [SystemSettings][])[0][0][field]).toBe('a2')
     },
   )
+
+  it.each(ROLE)(
+    're-pins a non-empty %s to the next enabled agent on the server echo after disabling',
+    async (field, testid) => {
+      const w = mount(SettingsPanel, {
+        props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
+      })
+      // Disable a2 (the current role agent). The draft is NOT rewritten client-side.
+      const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+      await checks[1].setValue(false)
+      expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('a2')
+      // Save the registry; the server normalizes the role to the next enabled agent
+      // (a3) and echoes it back, reseeding the still-clean Default Agent tab.
+      await w.find(SAVE.agent).trigger('click')
+      await w.setProps({
+        settings: {
+          ...threeAgents,
+          agents: [mk('a1'), mk('a2', false), mk('a3')],
+          [field]: 'a3',
+        },
+      })
+      expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('a3')
+    },
+  )
+
+  it.each(ROLE)('keeps an empty %s empty (follow default) on save', async (field, testid) => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, [field]: '' } },
+    })
+    expect((w.find(`[data-testid="${testid}"]`).element as HTMLSelectElement).value).toBe('')
+    await w.find(SAVE.defaultAgent).trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0][field]).toBe('')
+  })
 })
 
 describe('SettingsPanel.vue — display language moved out of system settings', () => {
@@ -1259,6 +1247,92 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
   })
 })
 
+describe('SettingsPanel.vue — manual vendor CLI download/check button', () => {
+  afterEach(() => {
+    applyLocale('en')
+    useAuth().setIsAdmin(true)
+  })
+
+  // npmManaged 只在 claude 上为 true;codex 缺省(false)模拟旧服务端 —— 无按钮。
+  const syncingHostStatus = [
+    {
+      vendor: 'claude' as const,
+      present: true,
+      binary: 'claude',
+      path: '/usr/local/bin/claude',
+      source: 'managed',
+      installHint: '',
+      npmManaged: true,
+      installedVersions: [{ version: '1.0.0', status: 'installed' as const }],
+    },
+    {
+      vendor: 'codex' as const,
+      present: false,
+      binary: 'codex',
+      path: null,
+      installHint: 'install codex',
+    },
+  ]
+
+  it('renders the button only for npm-managed vendors', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    expect(w.find('[data-testid="vendor-cli-sync-claude"]').exists()).toBe(true)
+    expect(w.find('[data-testid="vendor-cli-sync-codex"]').exists()).toBe(false)
+  })
+
+  it('labels an installed vendor "check for updates" and a fresh one "download"', () => {
+    const en = localeMessages('en').settings.vendorCli.sync
+    const installed = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    expect(installed.get('[data-testid="vendor-cli-sync-claude"]').text()).toBe(en.checkUpdate)
+
+    const fresh = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        hostStatus: [{ ...syncingHostStatus[0], installedVersions: [] }],
+      },
+    })
+    expect(fresh.get('[data-testid="vendor-cli-sync-claude"]').text()).toBe(en.download)
+  })
+
+  it('shows "downloading…" and disables the button while the vendor is in flight', () => {
+    const en = localeMessages('en').settings.vendorCli.sync
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        hostStatus: syncingHostStatus,
+        vendorCliSyncing: ['claude'],
+      },
+    })
+    const btn = w.get('[data-testid="vendor-cli-sync-claude"]')
+    expect(btn.text()).toBe(en.syncing)
+    expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('disables the button for a non-admin', () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    expect(
+      (w.get('[data-testid="vendor-cli-sync-claude"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
+  it('emits sync-vendor-cli with the vendor on click', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    await w.get('[data-testid="vendor-cli-sync-claude"]').trigger('click')
+    expect(w.emitted('sync-vendor-cli')).toEqual([['claude']])
+  })
+})
+
 // Skill-repo tests moved to WorkspaceSetting.test.ts (ADR-0016/0017 migration)
 
 describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
@@ -1615,6 +1689,13 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
     const membership: Record<string, string> = {
       'settings-add-agent': 'settings-tab-agent',
       'default-agent-select': 'settings-tab-default-agent',
+      'tool-agent-select': 'settings-tab-default-agent',
+      'intent-agent-select': 'settings-tab-default-agent',
+      'spec-agent-select': 'settings-tab-default-agent',
+      'spec-review-agent-select': 'settings-tab-default-agent',
+      'automation-agent-select': 'settings-tab-default-agent',
+      'review-agent-select': 'settings-tab-default-agent',
+      'fix-agent-select': 'settings-tab-default-agent',
       'settings-diagnostics': 'settings-tab-runtime',
       'settings-vendor-cli': 'settings-tab-runtime',
       'settings-proxy': 'settings-tab-runtime',

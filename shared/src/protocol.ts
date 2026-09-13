@@ -73,6 +73,7 @@ export type ClientToServer =
   | SettingsMsg.ClientGetSettings
   | SettingsMsg.ClientSaveSettings
   | SettingsMsg.ClientAutoConfigureAgents
+  | SettingsMsg.ClientSyncVendorCli
   | SettingsMsg.ClientProbeModelProvider
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
@@ -222,6 +223,7 @@ export type ServerToClient =
   | SessionMsg.ServerCommands
   | SettingsMsg.ServerSettings
   | SettingsMsg.ServerAutoConfigureAgentsResult
+  | SettingsMsg.ServerVendorCliSyncResult
   | SettingsMsg.ServerModelProviderProbeResult
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys

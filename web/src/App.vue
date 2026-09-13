@@ -344,6 +344,7 @@ const {
   automationToolManifestError,
   hostStatus,
   vendorAvailability,
+  vendorCliSyncing,
   sandboxStatus,
   onSelectAutomation,
   openAutomationForm,
@@ -438,6 +439,7 @@ const {
   bindingStats,
   saveSettings,
   autoConfigureAgents,
+  syncVendorCli,
   probeModelProvider,
   setLocale,
   setTheme,
@@ -1222,10 +1224,12 @@ function onFilesChatWidth(px: number): void {
       :user-access-accounts="userWorkspaceAccess?.accounts ?? null"
       :user-access-workspaces="userWorkspaceAccess?.workspaces ?? []"
       :provider-probes="providerProbes"
+      :vendor-cli-syncing="vendorCliSyncing"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
       @save="saveSettings"
       @auto-configure-agents="autoConfigureAgents"
+      @sync-vendor-cli="syncVendorCli"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"

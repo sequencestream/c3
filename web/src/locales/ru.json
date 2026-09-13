@@ -635,6 +635,14 @@
       "empty": "Установленных управляемых версий пока нет.",
       "degraded": {
         "pinnedVersionUnavailable": "Закреплённая версия {pinnedVersion} недоступна; вместо неё используется {resolvedVersion}."
+      },
+      "sync": {
+        "download": "Загрузить",
+        "checkUpdate": "Проверить обновления",
+        "syncing": "Загрузка…",
+        "installed": "Установлено / обновлено.",
+        "alreadyLatest": "Уже актуальная версия.",
+        "failed": "Синхронизация не удалась."
       }
     },
     "skillRepos": {
@@ -1464,10 +1472,16 @@
         "label": "Сессия спецификации"
       },
       "specReviewSession": {
-        "label": "Ревью"
+        "label": "Сессия ревью спецификации"
       },
       "workSession": {
         "label": "Рабочая сессия"
+      },
+      "reviewSession": {
+        "label": "Сессия ревью"
+      },
+      "fixSession": {
+        "label": "Сессия исправления"
       },
       "changelog": {
         "label": "Журнал изменений"

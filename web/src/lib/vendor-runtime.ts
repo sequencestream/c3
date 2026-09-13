@@ -56,6 +56,24 @@ export function deriveVendorAvailability(
 }
 
 /**
+ * c3 自己分发的(npm 托管的)vendor —— 只有这两个 CLI 是「缺失就该去下载」的情形。
+ * `cursor` 故意不在这里:它走自己的安装器,自版本管理,Runtime 页没有可替它下载的
+ * 东西,所以「全缺失跳 Runtime」永远不该把它算进来。
+ */
+export const NPM_MANAGED_VENDOR_IDS = ['claude', 'codex'] as const satisfies readonly VendorId[]
+
+/**
+ * 是否「所有 npm 托管的 vendor 都不可用」——冷启动把用户送去 Runtime 页的信号。
+ * 仅当 claude 与 codex 两个都缺失时才为 true;任意一个可用(已下载,或宿主 PATH
+ * 探测可用)即返回 false,因为用户至少有一条能跑的路。
+ */
+export function allNpmManagedVendorsMissing(
+  availability: Partial<Record<VendorId, VendorAvailability>>,
+): boolean {
+  return NPM_MANAGED_VENDOR_IDS.every((vendor) => availability[vendor]?.available !== true)
+}
+
+/**
  * 稳定原因码 → i18n key。服务端只发码不发文案,可行动说明由前端本地化,这样
  * 服务端内部的异常文本永远不会变成 UI 契约的一部分。
  */

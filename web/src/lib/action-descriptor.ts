@@ -159,12 +159,13 @@ export function actionBlockerFallbackKey(labelCode: ActionLabelCode): LocaleKey 
  * what to locate there. It is the panel's own contract, deliberately separate
  * from the wire {@link ActionTarget} — the panel knows about tabs, the protocol
  * does not.
+ *
+ * Two shapes: `agent` names one registry row to scroll to (a blocked-state jump),
+ * `runtime` is a bare tab landing with nothing to locate (the cold-start
+ * "both managed CLIs are missing" jump).
  */
-export interface SystemSettingsTarget {
-  tab: 'agent'
-  vendor: VendorId
-  agentId: string
-}
+export type SystemSettingsTarget =
+  { tab: 'agent'; vendor: VendorId; agentId: string } | { tab: 'runtime' }
 
 /**
  * Turn a `system-settings-agent` wire target into the panel instruction. Callers

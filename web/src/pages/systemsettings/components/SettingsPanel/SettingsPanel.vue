@@ -144,6 +144,8 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
     'specAgentId',
     'specReviewAgentId',
     'automationAgentId',
+    'reviewAgentId',
+    'fixAgentId',
   ],
   // 默认 Agent 独立成页:它是「未指定执行者」的全局兜底,也是工作区覆盖所继承的那一层,
   // 治理入口因此不该藏在 Agents 列表的下拉里。它只拥有 defaultAgentId 一个字段,故保存
@@ -302,6 +304,10 @@ function emptySettings(): SystemSettings {
     specReviewAgentId: '',
     // '' ⇒ the new-automation form pre-fills with the default agent.
     automationAgentId: '',
+    // '' ⇒ the PR-review relay template follows the default agent.
+    reviewAgentId: '',
+    // '' ⇒ the PR-review failure fix template follows the default agent.
+    fixAgentId: '',
     voiceLang: 'zh-CN',
     timezone: BROWSER_TZ,
     baseUrl: '',
@@ -457,8 +463,12 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     specAgentId: settings.specAgentId ?? '',
     // '' ⇒ spec-review sessions follow the default agent.
     specReviewAgentId: settings.specReviewAgentId ?? '',
-    // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
+    // '' ⇒ the new-automation form pre-fills with the default agent.
     automationAgentId: settings.automationAgentId ?? '',
+    // '' ⇒ the PR-review relay template follows the default agent.
+    reviewAgentId: settings.reviewAgentId ?? '',
+    // '' ⇒ the PR-review failure fix template follows the default agent.
+    fixAgentId: settings.fixAgentId ?? '',
     voiceLang: settings.voiceLang ?? 'zh-CN',
     timezone: settings.timezone ?? BROWSER_TZ,
     baseUrl: settings.baseUrl ?? '',
@@ -924,13 +934,15 @@ const defaultAgentDraftStale = computed<boolean>(() => {
   return !committed.value.agents.some((a) => a.id === ref)
 })
 
-/** The five role fields this tab owns — `defaultAgentId` lives on its own tab now. */
+/** The seven role fields this tab owns — `defaultAgentId` lives on its own tab now. */
 const ROLE_FIELDS = [
   'toolAgentId',
   'intentAgentId',
   'specAgentId',
   'specReviewAgentId',
   'automationAgentId',
+  'reviewAgentId',
+  'fixAgentId',
 ] as const
 
 /**
@@ -1389,6 +1401,8 @@ function buildTabPayload(
       payload.specAgentId = src.specAgentId
       payload.specReviewAgentId = src.specReviewAgentId
       payload.automationAgentId = src.automationAgentId
+      payload.reviewAgentId = src.reviewAgentId
+      payload.fixAgentId = src.fixAgentId
       break
     }
     case 'defaultAgent': {
@@ -2045,6 +2059,56 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.automation.tooltip')"
             >
               <option value="">{{ t('settings.agents.automationPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="review-agent-select">
+              {{ t('settings.agents.reviewPicker.label') }}
+            </label>
+            <select
+              id="review-agent-select"
+              v-model="draft.reviewAgentId"
+              class="agent-field"
+              data-testid="review-agent-select"
+              :title="t('settings.agents.review.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.reviewPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="fix-agent-select">
+              {{ t('settings.agents.fixPicker.label') }}
+            </label>
+            <select
+              id="fix-agent-select"
+              v-model="draft.fixAgentId"
+              class="agent-field"
+              data-testid="fix-agent-select"
+              :title="t('settings.agents.fix.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.fixPicker.followDefault') }}</option>
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>

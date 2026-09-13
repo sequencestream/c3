@@ -1,8 +1,10 @@
-import type { AgentConfig, CreateAutomationInput } from '@ccc/shared/protocol'
+import type { AgentConfig, CreateAutomationInput, VendorId } from '@ccc/shared/protocol'
 
 export interface AutomationTemplateBuildArgs {
   workspaceName: string
   agentId: string
+  /** Concrete vendor of the resolved seed agent; omitted ⇒ `claude` (built-in default). */
+  vendor?: VendorId
 }
 
 export interface AutomationTemplate {
@@ -23,6 +25,10 @@ export interface AutomationTemplate {
     | 'automation.list.templates.prReviewRunner.description'
     | 'automation.list.templates.prReviewFix.description'
     | 'automation.list.templates.customEventEcho.description'
+  /** Which `SystemSettings` role field seeds this template's default executor
+   *  (`reviewAgentId` / `fixAgentId`); absent ⇒ the legacy first-enabled-`claude`
+   *  default. Only the two PR-review templates set it. */
+  roleField?: 'reviewAgentId' | 'fixAgentId'
   build(args: AutomationTemplateBuildArgs): CreateAutomationInput
 }
 
@@ -192,13 +198,14 @@ const PR_REVIEW_RUNNER: AutomationTemplate = {
   id: 'pr-review-runner',
   titleKey: 'automation.list.templates.prReviewRunner.title',
   descriptionKey: 'automation.list.templates.prReviewRunner.description',
-  build: ({ workspaceName, agentId }) => ({
+  roleField: 'reviewAgentId',
+  build: ({ workspaceName, agentId, vendor }) => ({
     type: 'llm',
     config: { prompt: PR_REVIEW_RUNNER_PROMPT, embedEventContext: true },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
     workspaceName,
     agentId,
-    vendor: 'claude',
+    vendor: vendor ?? 'claude',
     triggerType: 'event',
     cronExpression: '',
     mode: 'bypassPermissions',
@@ -237,13 +244,14 @@ const PR_REVIEW_FIX: AutomationTemplate = {
   id: 'pr-review-fix',
   titleKey: 'automation.list.templates.prReviewFix.title',
   descriptionKey: 'automation.list.templates.prReviewFix.description',
-  build: ({ workspaceName, agentId }) => ({
+  roleField: 'fixAgentId',
+  build: ({ workspaceName, agentId, vendor }) => ({
     type: 'llm',
     config: { prompt: PR_REVIEW_FIX_PROMPT, embedEventContext: true },
     maxWallClockMs: TEMPLATE_MAX_WALL_CLOCK_MS,
     workspaceName,
     agentId,
-    vendor: 'claude',
+    vendor: vendor ?? 'claude',
     triggerType: 'event',
     cronExpression: '',
     mode: 'bypassPermissions',

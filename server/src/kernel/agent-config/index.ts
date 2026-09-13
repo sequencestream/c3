@@ -122,14 +122,20 @@ export function getDefaultAgentId(): string {
 }
 
 /**
- * The five agent ROLES a session can be launched for. `default` is the fallback
- * every other role follows when its own field is the empty "follow the default"
- * sentinel; the other four are the dedicated slots (background tool sessions,
- * intent communication, spec authoring, spec review). One enum + one field map
- * ({@link ROLE_SETTINGS_FIELD}) is what keeps the four dedicated roles from each
- * re-implementing the resolution rules.
+ * The agent ROLES a session or automation template can be resolved for. `default`
+ * is the fallback every other role follows when its own field is the empty "follow
+ * the default" sentinel; the dedicated slots are background tool sessions, intent
+ * communication, spec authoring, spec review, and the two PR-review automation
+ * template seeds (`review` for the review relay, `fix` for the failure fix). One
+ * enum + one field map ({@link ROLE_SETTINGS_FIELD}) is what keeps the dedicated
+ * roles from each re-implementing the resolution rules.
+ *
+ * `review` and `fix` are agent ROLES, not session types: they seed the two
+ * PR-review built-in automations' default executor and are consumed through the
+ * shared {@link getRoleAgentId} / {@link resolveRoleAgentTarget} entry. They add no
+ * SessionKind and no dedicated session-launch path.
  */
-export type AgentRole = 'default' | 'tool' | 'intent' | 'spec' | 'spec_review'
+export type AgentRole = 'default' | 'tool' | 'intent' | 'spec' | 'spec_review' | 'review' | 'fix'
 
 /** Which `SystemSettings` field carries each role's configured reference. */
 const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
@@ -138,6 +144,8 @@ const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
   intent: 'intentAgentId',
   spec: 'specAgentId',
   spec_review: 'specReviewAgentId',
+  review: 'reviewAgentId',
+  fix: 'fixAgentId',
 }
 
 /**
@@ -281,7 +289,7 @@ export function getRoleAgentId(role: AgentRole): string {
 
 /**
  * A ROLE's agent target — the entry every session-creation path binds from. All
- * five roles share {@link resolveAgentTarget}, so "role field set to a group" and
+ * roles share {@link resolveAgentTarget}, so "role field set to a group" and
  * "role field empty, default is a group" land on the SAME target. Throws
  * {@link AgentGroupUnavailableError} for an unusable group.
  *

@@ -89,6 +89,8 @@ const base = {
   specAgentId: '',
   specReviewAgentId: '',
   automationAgentId: '',
+  reviewAgentId: '',
+  fixAgentId: '',
 } as SystemSettings
 
 function conn(): { conn: Conn; sent: ServerToClient[] } {

@@ -37,6 +37,8 @@ const baseSettings: SystemSettings = {
   specAgentId: '',
   specReviewAgentId: '',
   automationAgentId: '',
+  reviewAgentId: '',
+  fixAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
@@ -620,6 +622,86 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].automationAgentId).toBe('a3')
   })
+})
+
+describe('SettingsPanel.vue — review/fix role pickers (AC-R34)', () => {
+  const mk = (id: string, enabled?: boolean): SystemSettings['agents'][number] => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+  const threeAgents: SystemSettings = {
+    ...baseSettings,
+    agents: [mk('a1'), mk('a2'), mk('a3')],
+    defaultAgentId: 'a1',
+  }
+  const ROLE = [
+    ['reviewAgentId', 'review-agent-select'],
+    ['fixAgentId', 'fix-agent-select'],
+  ] as const
+
+  it('offers a leading "follow default" option plus enabled agents by order', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: { ...threeAgents, agents: [mk('a1'), mk('a2', false), mk('a3')] },
+      },
+    })
+    for (const [, testid] of ROLE) {
+      const opts = w
+        .findAll(`[data-testid="${testid}"] option`)
+        .map((o) => (o.element as HTMLOptionElement).value)
+      // '' (follow default) + a1 + a3; a2 (disabled) excluded.
+      expect(opts).toEqual(['', 'a1', 'a3'])
+    }
+  })
+
+  it.each(ROLE)('seeds %s and carries it through on save', async (field, testid) => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
+    })
+    const sel = w.find(`[data-testid="${testid}"]`)
+    expect((sel.element as HTMLSelectElement).value).toBe('a2')
+    await w.find(SAVE.agent).trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0][field]).toBe('a2')
+  })
+
+  it.each(ROLE)(
+    'rewrites a non-empty %s to the next enabled agent when disabled',
+    async (field, testid) => {
+      const w = mount(SettingsPanel, {
+        props: { open: true, settings: { ...threeAgents, [field]: 'a2' } },
+      })
+      // Disable a2 (the current role agent) → fall through to a3.
+      const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+      await checks[1].setValue(false)
+      const sel = w.find(`[data-testid="${testid}"]`)
+      expect((sel.element as HTMLSelectElement).value).toBe('a3')
+      await w.find(SAVE.agent).trigger('click')
+      const emitted = w.emitted('save') as [SystemSettings][]
+      expect(emitted[0][0][field]).toBe('a3')
+    },
+  )
+
+  it.each(ROLE)(
+    'keeps an empty %s empty (follow default) when an agent is disabled',
+    async (field, testid) => {
+      const w = mount(SettingsPanel, {
+        props: { open: true, settings: { ...threeAgents, [field]: '' } },
+      })
+      const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+      await checks[1].setValue(false)
+      const sel = w.find(`[data-testid="${testid}"]`)
+      expect((sel.element as HTMLSelectElement).value).toBe('')
+      await w.find(SAVE.agent).trigger('click')
+      const emitted = w.emitted('save') as [SystemSettings][]
+      expect(emitted[0][0][field]).toBe('')
+    },
+  )
 })
 
 describe('SettingsPanel.vue — display language moved out of system settings', () => {

@@ -279,7 +279,7 @@ c3
 │   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(统一的宿主 CLI 探测);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑
 │   │   ├── 一键自动配置                          # 注册表无真实 agent(空或仅合成兜底)时 agent 页出「自动配置」入口:按同一条运行时探测为每个可用且尚无 system 型 agent 的 vendor 建一条(displayName 取厂商名、数字自增 id、vendor 自身 config 形状),跳过页签草稿即时落库并走既有归一化;合成兜底计入幂等,零结果按「无可用 vendor」与「已覆盖」分别提示
 │   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId);系统设置独立「默认 Agent」页签治理,工作区可在工作区设置覆盖(空白=继承系统默认,继承态绝不快照)
-│   │   ├── 专用 agent 路由                       # 工具/意图/规格/规格审核/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/specReview/automationAgentId);禁用改写为下一个启用 agent,删除清空回「跟随默认」;审核槽位唯一,无 sandbox 变体
+│   │   ├── 专用 agent 路由                       # 工具/意图/规格/规格审核/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/specReview/automationAgentId);禁用改写为下一个启用 agent,删除清空回「跟随默认」;另有 PR 评审接力/失败修复两个模板的默认执行身份槽位(review/fix),只做模板新建的一次性默认选择、不进运行时路由器;审核槽位唯一,无 sandbox 变体
 │   │   ├── 角色配组与故障转移                    # default/tool/intent/spec/specReview 可指向虚拟组 _c3_<vendor>_<group>;会话绑定保留组引用、代表成员(order_seq 首个 enabled)决定 vendor/展示,每次运行重解析;组无可用成员(全禁用或组 vendor 运行时缺失)时创建/绑定明确报错 agent.groupUnavailable,不回落 System
 │   │   ├── 启动段与组游标                        # 组内可混 custom(经 relay)与 system(CLI 自身登录)成员,一次 run 只服务候选列表的启动段且段首一定被使用;段内由 relay 按序 failover,跨段靠会话游标——run 因可降级错误失败后游标推进,resume 落到下一个候选,组为环不困在尾部
 │   │   ├── 沙箱模式角色                          # 未显式绑定且默认解析为 system 时改用 sandboxDefault/tool/intent/spec/automationAgentId(custom/system 皆可选);空串按 sandboxDefault→第一个启用 agent(同 vendor 优先)顺延,解析不到则保留默认 agent

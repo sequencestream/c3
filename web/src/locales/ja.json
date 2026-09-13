@@ -344,6 +344,20 @@
         "label": "オートメーションエージェント",
         "followDefault": "デフォルトエージェントに従う"
       },
+      "review": {
+        "tooltip": "PR レビューリレー自動化を実行するエージェント(テンプレートから事前選択)"
+      },
+      "reviewPicker": {
+        "label": "レビューエージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
+      "fix": {
+        "tooltip": "PR レビュー失敗修正自動化を実行するエージェント(テンプレートから事前選択)"
+      },
+      "fixPicker": {
+        "label": "修正エージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
       "remove": {
         "tooltip": "エージェントを削除"
       },

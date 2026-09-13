@@ -343,6 +343,20 @@
         "label": "自动化智能体",
         "followDefault": "跟随默认智能体"
       },
+      "review": {
+        "tooltip": "运行 PR 评审接力自动化的智能体(由其模板预填)"
+      },
+      "reviewPicker": {
+        "label": "评审智能体",
+        "followDefault": "跟随默认智能体"
+      },
+      "fix": {
+        "tooltip": "运行 PR 评审失败修复自动化的智能体(由其模板预填)"
+      },
+      "fixPicker": {
+        "label": "修复智能体",
+        "followDefault": "跟随默认智能体"
+      },
       "remove": {
         "tooltip": "移除智能体"
       },

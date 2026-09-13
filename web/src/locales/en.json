@@ -343,6 +343,20 @@
         "label": "Automation agent",
         "followDefault": "Follow default agent"
       },
+      "review": {
+        "tooltip": "Agent that runs the PR-review relay automation, seeded from its template"
+      },
+      "reviewPicker": {
+        "label": "Review agent",
+        "followDefault": "Follow default agent"
+      },
+      "fix": {
+        "tooltip": "Agent that runs the PR-review failure fix automation, seeded from its template"
+      },
+      "fixPicker": {
+        "label": "Fix agent",
+        "followDefault": "Follow default agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },

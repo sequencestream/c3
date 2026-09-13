@@ -463,6 +463,8 @@ function pinVendorCliVersion(vendor: VendorId, version: string | undefined): voi
     specAgentId: '',
     specReviewAgentId: '',
     automationAgentId: '',
+    reviewAgentId: '',
+    fixAgentId: '',
     vendorCliVersions: next,
   })
 }

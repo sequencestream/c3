@@ -69,6 +69,8 @@ beforeEach(() => {
     specAgentId: '',
     specReviewAgentId: '',
     automationAgentId: '',
+    reviewAgentId: '',
+    fixAgentId: '',
   } as SystemSettings
 })
 

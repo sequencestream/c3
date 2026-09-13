@@ -51,6 +51,8 @@ const base: SystemSettings = {
   specAgentId: '',
   specReviewAgentId: '',
   automationAgentId: '',
+  reviewAgentId: '',
+  fixAgentId: '',
 }
 
 /** The synthesized fallback as the server would have persisted it. */

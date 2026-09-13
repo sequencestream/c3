@@ -538,7 +538,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // chain, so unlike the roles below it is never cleared: it has nothing to follow.
   const wanted = typeof raw?.defaultAgentId === 'string' ? raw.defaultAgentId : ''
   const defaultAgentId = resolveDefaultAgentId(agents, wanted)
-  // The five ROLE fields share one reference rule (`normalizeAgentRef`), which is
+  // The seven ROLE fields share one reference rule (`normalizeAgentRef`), which is
   // where *disabling* and *deleting* an agent part ways:
   //   - '' is the "follow the default" sentinel and stays empty (never auto-filled),
   //     so the runtime keeps resolving it through the workspace/system default chain;
@@ -548,14 +548,17 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   //   - a DELETED target clears the field back to '', because the agent the user
   //     explicitly chose no longer exists and pinning the role to an arbitrary
   //     neighbour would silently execute on something nobody picked.
-  // `automationAgentId` normalizes identically but is NOT read by the runtime
-  // resolveAgent router: it only seeds the "new automation" create form (AC-R25).
+  // `automationAgentId`, `reviewAgentId` and `fixAgentId` normalize identically but
+  // are NOT read by the runtime resolveAgent router: they only seed the "new
+  // automation" create form / the two PR-review template defaults (AC-R25).
   const roleRef = (value: unknown): string => normalizeAgentRef(agents, value) ?? ''
   const toolAgentId = roleRef(raw?.toolAgentId)
   const intentAgentId = roleRef(raw?.intentAgentId)
   const specAgentId = roleRef(raw?.specAgentId)
   const specReviewAgentId = roleRef(raw?.specReviewAgentId)
   const automationAgentId = roleRef(raw?.automationAgentId)
+  const reviewAgentId = roleRef(raw?.reviewAgentId)
+  const fixAgentId = roleRef(raw?.fixAgentId)
   // Legacy `sandbox*AgentId` keys (the removed sandbox-only role profile) are read
   // as unknown fields: ignored here and absent from the returned object, so they
   // disappear from disk on the next save. A sandbox run reuses the agent this same
@@ -613,6 +616,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     specAgentId,
     specReviewAgentId,
     automationAgentId,
+    reviewAgentId,
+    fixAgentId,
     voiceLang,
     timezone,
     ...(baseUrlRaw ? { baseUrl: baseUrlRaw } : {}),

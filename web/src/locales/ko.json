@@ -344,6 +344,20 @@
         "label": "자동화 에이전트",
         "followDefault": "기본 에이전트 따르기"
       },
+      "review": {
+        "tooltip": "PR 검토 릴레이 자동화를 실행하는 에이전트(템플릿에서 미리 선택)"
+      },
+      "reviewPicker": {
+        "label": "검토 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
+      "fix": {
+        "tooltip": "PR 검토 실패 수정 자동화를 실행하는 에이전트(템플릿에서 미리 선택)"
+      },
+      "fixPicker": {
+        "label": "수정 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
       "remove": {
         "tooltip": "에이전트 제거"
       },

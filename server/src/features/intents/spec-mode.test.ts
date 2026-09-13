@@ -22,6 +22,24 @@ describe('resolveEffectiveSpecMode', () => {
     expect(resolveEffectiveSpecMode('fast', true)).toBe('fast')
     expect(resolveEffectiveSpecMode('sdd', false)).toBe('sdd')
   })
+
+  it('high impact (L1/L2) forces `sdd` even over a switched-off workspace or an explicit `fast`', () => {
+    expect(resolveEffectiveSpecMode(null, false, 'L1')).toBe('sdd')
+    expect(resolveEffectiveSpecMode('fast', false, 'L2')).toBe('sdd')
+  })
+
+  it('low impact (L4/L5) defaults to `fast` only when unset', () => {
+    expect(resolveEffectiveSpecMode(null, true, 'L4')).toBe('fast')
+    expect(resolveEffectiveSpecMode(undefined, true, 'L5')).toBe('fast')
+    expect(resolveEffectiveSpecMode('sdd', true, 'L4')).toBe('sdd')
+  })
+
+  it('L3 and ungraded inherit the workspace switch unchanged', () => {
+    expect(resolveEffectiveSpecMode(null, true, 'L3')).toBe('sdd')
+    expect(resolveEffectiveSpecMode(null, false, 'L3')).toBe('fast')
+    expect(resolveEffectiveSpecMode(null, true, null)).toBe('sdd')
+    expect(resolveEffectiveSpecMode(null, false, undefined)).toBe('fast')
+  })
 })
 
 describe('isIntentSpecMode — persisted-value guard', () => {

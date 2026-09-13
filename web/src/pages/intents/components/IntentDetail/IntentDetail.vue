@@ -42,6 +42,7 @@ import type { PendingItem } from '../../../../lib/pending-queue'
 import type { TaskListModel } from '../../../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../../../lib/chat-types'
 import { useTypedI18n } from '@/i18n'
+import { specGateBlocks } from '@ccc/shared'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
 import ActionDescriptorBanner from '../../../../components/ActionDescriptorBanner/ActionDescriptorBanner.vue'
 import WorktreeBaselineBanner from '../../../../components/WorktreeBaselineBanner/WorktreeBaselineBanner.vue'
@@ -265,9 +266,26 @@ function startDev(): void {
 // 对 fast 放行未批准的规范。反向规范生成后的 pending 态仍给「批准 Spec」,那正是 fast 的闭环。
 const mainAction = computed<MainAction>(() => {
   const r = props.intent
-  if (!r || !props.sddEnabled) return 'startDev'
-  if (r.specStatus === 'raw') return r.effectiveSpecMode === 'fast' ? 'startDev' : 'writeSpec'
-  if (r.specStatus === 'pending') return 'approveSpec'
+  if (!r) return 'startDev'
+  // 与服务端准入同一条判定(shared 单一纯函数):fast 放行、SDD 开需 approved、高影响(L1/L2)
+  // 需「人工」批准——所以机器批准或被升级为高影响的意图即使 specStatus 已是 approved,也仍被
+  // 闸门拦下,主按钮回到「批准 Spec」(点击只切到 spec 标签,由撤销 → 人工批准闭环),而不是
+  // 给出一个服务端必然拒绝的「开始工作」。
+  const isFast = r.effectiveSpecMode === 'fast'
+  const blocked = specGateBlocks({
+    impactLevel: r.impactLevel,
+    effectiveSpecMode: r.effectiveSpecMode,
+    sddEnabled: props.sddEnabled === true,
+    specStatus: r.specStatus,
+    specApproveUser: r.specApproveUser,
+  })
+  if (blocked) {
+    if (r.specStatus === 'raw') return 'writeSpec'
+    return 'approveSpec'
+  }
+  // spec 闸门放行:唯一例外是 fast 的反向规格进入 pending 后,主按钮仍指向「批准 Spec」
+  // (服务端不以前置批准阻塞 fast,但让用户能批准这份反向生成的规格)。
+  if (isFast && r.specStatus === 'pending') return 'approveSpec'
   return 'startDev'
 })
 const mainActionLabel = computed<string>(() => {
@@ -399,7 +417,11 @@ function onResetConfirm(text: string): void {
 
 // ── Spec tab 顶部操作区可见性(承接四态主按钮 + 防误审门 + Spec 依赖门) ───────
 const showSpecApproveAction = computed<boolean>(
-  () => !!props.intent && props.intent.status === 'todo' && mainAction.value === 'approveSpec',
+  () =>
+    !!props.intent &&
+    props.intent.status === 'todo' &&
+    props.intent.specStatus === 'pending' &&
+    mainAction.value === 'approveSpec',
 )
 const showSpecApprove = computed<boolean>(
   () => showSpecApproveAction.value && !approveGateBlocked.value,

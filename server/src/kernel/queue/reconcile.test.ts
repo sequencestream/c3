@@ -33,6 +33,8 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     dependsOn: [],
     specStatus: 'raw',
     effectiveSpecMode: 'sdd',
+    impactLevel: null,
+    specApproveUser: null,
     prStatus: null,
     branchName: null,
     deliveryIds: [],
@@ -1819,5 +1821,141 @@ describe('reconcileQueue — spec phase', () => {
     )
     expect(out.actions).toHaveLength(0)
     expect(decisionFor(out, 'A')).toMatchObject({ reason: 'queue_paused' })
+  })
+})
+
+describe('reconcileQueue — impact level wiring', () => {
+  /**
+   * The grade (L1–L5) reaches the kernel as two facts: `impactLevel` and a
+   * `effectiveSpecMode` already resolved by the assembly boundary. High impact
+   * (L1/L2) forces the spec phase and a HUMAN approval even when SDD is off;
+   * low impact (L4/L5) defaults to `fast`, which relaxes the spec gate; L3 and
+   * ungraded inherit the workspace default unchanged. These cases pin the two
+   * gates that actually read the grade — admission and machine approval.
+   */
+
+  it('L1 in a non-SDD workspace is still held at the spec gate and authored, never developed', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: false,
+        machineApprovalEnabled: false,
+        intents: [
+          intent({
+            id: 'A',
+            impactLevel: 'L1',
+            effectiveSpecMode: 'sdd',
+            specStatus: 'raw',
+            specPath: null,
+          }),
+        ],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      rework: false,
+      reworkRound: 0,
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'launch_spec', reason: 'spec_authoring' })
+  })
+
+  it('an L2 authored-but-unapproved spec waits for a HUMAN, even with the machine opt-in on and SDD off', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: false,
+        machineApprovalEnabled: true,
+        intents: [
+          intent({
+            id: 'A',
+            impactLevel: 'L2',
+            effectiveSpecMode: 'sdd',
+            specStatus: 'pending',
+            specPath: '/s/spec.md',
+            specFingerprint: 'fp1',
+            specReviewVerdict: 'pass',
+            specReviewFingerprint: 'fp1',
+          }),
+        ],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+    expect(decisionFor(out, 'A')).toMatchObject({
+      action: 'block',
+      reason: 'spec_awaiting_approval',
+    })
+    expect(decisionFor(out, 'A')?.detail).toBe('高影响改动需人工批准 spec')
+  })
+
+  it('a high-impact pass is never machine-approved even with SDD on and the opt-in on', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        machineApprovalEnabled: true,
+        intents: [
+          intent({
+            id: 'A',
+            impactLevel: 'L1',
+            effectiveSpecMode: 'sdd',
+            specStatus: 'pending',
+            specPath: '/s/spec.md',
+            specFingerprint: 'fp1',
+            specReviewVerdict: 'pass',
+            specReviewFingerprint: 'fp1',
+          }),
+        ],
+      }),
+    )
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+    expect(decisionFor(out, 'A')).toMatchObject({
+      action: 'block',
+      reason: 'spec_awaiting_approval',
+    })
+  })
+
+  it('an L3 pass inherits the default and is machine-approved when the opt-in is on', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        machineApprovalEnabled: true,
+        intents: [
+          intent({
+            id: 'A',
+            impactLevel: 'L3',
+            effectiveSpecMode: 'sdd',
+            specStatus: 'pending',
+            specPath: '/s/spec.md',
+            specFingerprint: 'fp1',
+            specReviewVerdict: 'pass',
+            specReviewFingerprint: 'fp1',
+          }),
+        ],
+      }),
+    )
+    expect(out.actions).toContainEqual({
+      kind: 'machine_approve_spec',
+      intentId: 'A',
+      fingerprint: 'fp1',
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({
+      action: 'approve_spec',
+      reason: 'spec_machine_approved',
+    })
+  })
+
+  it('an L4 default-fast intent skips the spec gate and develops directly', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        machineApprovalEnabled: false,
+        intents: [
+          intent({ id: 'A', impactLevel: 'L4', effectiveSpecMode: 'fast', specStatus: 'raw' }),
+        ],
+      }),
+    )
+    expect(launched(out)).toBe('A')
+    expect(out.actions.some((a) => a.kind.startsWith('launch_spec'))).toBe(false)
   })
 })

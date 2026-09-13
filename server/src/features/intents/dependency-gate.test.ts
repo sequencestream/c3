@@ -113,6 +113,8 @@ function toQueueFact(r: Intent): QueueIntentFact {
     dependsOn: r.dependsOn,
     specStatus: r.specStatus,
     effectiveSpecMode: r.effectiveSpecMode,
+    impactLevel: r.impactLevel,
+    specApproveUser: r.specApproveUser,
     prStatus: deriveIntentPrAggregate(r.prs),
     branchName: gate.branchName,
     deliveryIds: gate.deliveryIds,

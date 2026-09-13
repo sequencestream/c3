@@ -38,7 +38,9 @@ import {
   markSpecAuthored,
   recordSpecReview,
   revokeSpecApproval,
+  setImpactLevel,
   setSpecApproved,
+  setSpecMode,
   setSpecPath,
   setSpecSessionId,
   setIntentSessionId,
@@ -1856,6 +1858,62 @@ describe('spec_status 三态机', () => {
     approveSpecIfPending(r.id, 'carol')
     // 人工行内编辑保存 → 写成功后才落这里。
     setSpecApproved(r.id, false, null)
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('pending')
+    expect(got.specApproved).toBe(false)
+    expect(got.specApproveUser).toBeNull()
+  })
+})
+
+describe('impact level wiring', () => {
+  it('hydrate 解析 effectiveSpecMode:高影响强制 sdd,低影响未定级默认 fast', () => {
+    const [hi] = insertIntents(proj, [
+      { title: 'High', shortEnTitle: 'hi', content: '', priority: 'P1' },
+    ])
+    setImpactLevel(hi.id, 'L1')
+    // 高影响无论 SDD 开关、无论是否显式 spec_mode,都落 `sdd`。
+    expect(getIntent(hi.id)!.effectiveSpecMode).toBe('sdd')
+
+    const [lo] = insertIntents(proj, [
+      { title: 'Low', shortEnTitle: 'lo', content: '', priority: 'P1' },
+    ])
+    setImpactLevel(lo.id, 'L4')
+    // 低影响在未显式设定 spec_mode 时默认走 fast(放宽)。
+    expect(getIntent(lo.id)!.effectiveSpecMode).toBe('fast')
+
+    // 未定级继承工作区默认(SDD 默认开启 → sdd)。
+    const [plain] = insertIntents(proj, [
+      { title: 'Plain', shortEnTitle: 'plain', content: '', priority: 'P1' },
+    ])
+    expect(getIntent(plain.id)!.effectiveSpecMode).toBe('sdd')
+  })
+
+  it('显式 spec_mode 优先于等级的低影响默认', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Explicit', shortEnTitle: 'explicit', content: '', priority: 'P1' },
+    ])
+    // 低影响 + 显式 sdd → 尊重用户显式选择,仍走 sdd。
+    setSpecMode(r.id, 'sdd')
+    setImpactLevel(r.id, 'L5')
+    expect(getIntent(r.id)!.effectiveSpecMode).toBe('sdd')
+  })
+
+  it('高影响(L1/L2)意图即使 pending + pass + 指纹齐备也不可机器批准(事务内重读等级)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'High machine', shortEnTitle: 'hi-machine', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    markSpecAuthored(r.id)
+    recordSpecReview({
+      intentId: r.id,
+      sessionId: 'r1',
+      verdict: 'pass',
+      reason: 'ok',
+      fingerprint: 'fp',
+      liveFingerprint: 'fp',
+    })
+    setImpactLevel(r.id, 'L2')
+    expect(machineApproveSpec(r.id, 'fp', 'c3:machine-spec-approver', () => 'fp')).toBe(false)
     const got = getIntent(r.id)!
     expect(got.specStatus).toBe('pending')
     expect(got.specApproved).toBe(false)

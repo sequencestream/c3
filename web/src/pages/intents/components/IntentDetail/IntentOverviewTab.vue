@@ -24,7 +24,12 @@ import type {
   IntentSpecMode,
 } from '@ccc/shared/protocol'
 import { INTENT_IMPACT_LEVELS } from '@ccc/shared/protocol'
-import { canEditIntentImpactLevel, canEditIntentSpecMode } from '@ccc/shared'
+import {
+  canEditIntentImpactLevel,
+  canEditIntentSpecMode,
+  isHighImpactLevel,
+  isLowImpactLevel,
+} from '@ccc/shared'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -111,17 +116,34 @@ const specModeReadonlyLabel = computed(() =>
     : specModeLabel(props.intent.specMode),
 )
 
-/** 继承态下的副标:说明当前实际生效的是哪一档。显式覆盖时该行没有信息量,不渲染。 */
-const specModeDerivedHint = computed<string | null>(() =>
-  props.intent.specMode === null
-    ? t('intent.meta.specMode.derived', { mode: specModeLabel(props.intent.effectiveSpecMode) })
-    : null,
-)
+/** 副标:说明当前实际生效的是哪一档。显式覆盖时该行没有信息量,不渲染。 */
+const specModeDerivedHint = computed<string | null>(() => {
+  const intent = props.intent
+  // 高影响(L1/L2)强制规格先行:无论显式模式或工作区开关如何,都提示等级已强制 sdd,
+  // 避免界面把存储的 fast 显示成生效结果。
+  if (isHighImpactLevel(intent.impactLevel)) {
+    return t('intent.meta.specMode.forcedSdd')
+  }
+  // 低影响(L4/L5)未显式设置时按等级默认 fast,而非「继承工作区」——工作区可能仍开着 sdd。
+  if (intent.specMode === null && isLowImpactLevel(intent.impactLevel)) {
+    return t('intent.meta.specMode.defaultFastByImpact')
+  }
+  if (intent.specMode === null) {
+    return t('intent.meta.specMode.derived', { mode: specModeLabel(intent.effectiveSpecMode) })
+  }
+  return null
+})
 
 function onSpecModeChange(e: Event): void {
   const next = (e.target as HTMLSelectElement).value as SpecModeChoice
   emit('set-spec-mode', props.intent.id, next === SPEC_MODE_INHERIT ? null : next)
 }
+
+// 工作区关闭 SDD 时的「设置无行为差异」提示:高影响(L1/L2)不在此列——等级仍强制规格
+// 先行,该提示会让用户误以为高影响也被放宽,故对高影响隐藏。
+const specModeWorkspaceOffHint = computed<boolean>(
+  () => props.sddEnabled === false && !isHighImpactLevel(props.intent.impactLevel),
+)
 
 // ── 影响范围等级(impactLevel) ─────────────────────────────────────────────
 // 六档:未定级 + L1..L5。与 specMode 同语义:选择即保存,只 emit 不本地改值,成功由
@@ -424,7 +446,7 @@ watch(
           >{{ specModeDerivedHint }}</span
         >
         <span
-          v-if="sddEnabled === false"
+          v-if="specModeWorkspaceOffHint"
           class="req-meta-spec-mode-hint"
           data-testid="intent-meta-spec-mode-off-hint"
           >{{ t('intent.meta.specMode.workspaceOff') }}</span

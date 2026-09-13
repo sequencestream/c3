@@ -1306,6 +1306,8 @@
           "fast": "不需要规范（fast）"
         },
         "derived": "当前生效：{mode}",
+        "forcedSdd": "高影响强制规格先行",
+        "defaultFastByImpact": "按影响等级默认 fast",
         "workspaceOff": "本工作区已关闭规范驱动开发,此设置当前不产生行为差异。"
       },
       "branch": {
@@ -1458,7 +1460,8 @@
         },
         "reworkRounds": "第 {rounds} / {max} 轮返工",
         "approvedBy": "{user} 已批准",
-        "approvedByMachine": "已自动批准(机器)"
+        "approvedByMachine": "已自动批准(机器)",
+        "machineApprovalNeedsHumanConfirm": "机器批准不满足高影响的人工批准要求,请撤销后由人工重新批准。"
       }
     },
     "changelog": {

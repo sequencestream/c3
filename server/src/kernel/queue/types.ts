@@ -7,6 +7,7 @@
  */
 import type {
   GitBranchMode,
+  IntentImpactLevel,
   IntentPrStatus,
   IntentPriority,
   IntentSpecMode,
@@ -84,12 +85,25 @@ export interface QueueIntentFact {
   specStatus: SpecStatus
   /**
    * The intent's RESOLVED spec mode, already reduced from the persisted override
-   * plus the workspace switch at the assembly boundary. `fast` is the one
-   * relaxation of the spec gate below: such an intent may start work without an
-   * approved spec, exactly as the manual admission gate allows, so automation and
-   * the button cannot disagree. Every other gate stays closed for it.
+   * plus the workspace switch AND the impact level at the assembly boundary.
+   * `fast` is the one relaxation of the spec gate below: such an intent may start
+   * work without an approved spec, exactly as the manual admission gate allows,
+   * so automation and the button cannot disagree. Every other gate stays closed
+   * for it.
    */
   effectiveSpecMode: IntentSpecMode
+  /**
+   * The intent's blast-radius grade. The high-impact gate (L1/L2 must be
+   * human-approved, never machine-approved) reads THIS, so the kernel stays pure
+   * while still applying the impact-level policy.
+   */
+  impactLevel: IntentImpactLevel | null
+  /**
+   * Who approved the spec; `null` until approved. High impact needs a HUMAN
+   * identity here (non-null and not the reserved machine approver), so the kernel
+   * gates on the identity as well as the status.
+   */
+  specApproveUser: string | null
   /**
    * The intent's AGGREGATE PR status — one value reduced from every PR it owns
    * (`deriveIntentPrAggregate`), `null` when it owns none. The kernel gates on one

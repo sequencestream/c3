@@ -167,6 +167,15 @@ describe('launchWorkSession', () => {
     expect(r.code).toBe('intent.specNotApproved')
   })
 
+  it('rejects a high-impact (L1) intent even when SDD is switched off', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    const [intent] = insertIntents(proj, [
+      { title: 'High impact', shortEnTitle: 'hi', content: '', priority: 'P1', impactLevel: 'L1' },
+    ])
+    const r = asError(await launchWorkSession(proj, intent.id, mockDeps()))
+    expect(r.code).toBe('intent.specNotApproved')
+  })
+
   it('allows a fast-mode intent to start a manual turn without an approved spec', async () => {
     saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
     const [intent] = insertIntents(proj, [

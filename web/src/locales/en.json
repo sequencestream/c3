@@ -1306,6 +1306,8 @@
           "fast": "Not required (fast)"
         },
         "derived": "currently {mode}",
+        "forcedSdd": "spec-first enforced by high impact",
+        "defaultFastByImpact": "defaults to fast by impact level",
         "workspaceOff": "Spec-driven development is off for this workspace, so this setting makes no behavioural difference right now."
       },
       "branch": {
@@ -1458,7 +1460,8 @@
         },
         "reworkRounds": "Rework round {rounds} of {max}",
         "approvedBy": "Approved by {user}",
-        "approvedByMachine": "Approved automatically (machine)"
+        "approvedByMachine": "Approved automatically (machine)",
+        "machineApprovalNeedsHumanConfirm": "Machine approval does not satisfy the human-approval requirement for high impact. Revoke it, then approve it manually."
       }
     },
     "changelog": {

@@ -60,10 +60,10 @@ c3
 │   │   ├── 意图账本                              # 按工作区持久化意图,追踪 status/生命周期
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
 │   │   ├── MCP 确认保存                           # save_intents 原子新建/upsert,可显式 draft/cancelled→todo 并设置 automate;正文按五维软指引,save_intent_directly 仍固定新建 draft
-│   │   ├── 影响范围等级 L1–L5                    # 每条意图一个与优先级正交的影响面等级(L1 核心流程/资金/数据完整性 … L5 文案/界面微调,null=未定级):创建时由沟通智能体依标题+正文判定并随 save_intents 落库,详情「概览」元信息区下拉手动可调(in_progress/done 锁定,判据 canEditIntentImpactLevel,被拒回 intent.impactLevelLocked 不落库不广播),列表行与详情标题栏以徽标展示;只标注不闸门——不参与排序/分组/准入判定,不撤销 spec 批准;存量意图不回填,未定级是一等状态
+│   │   ├── 影响范围等级 L1–L5                    # 每条意图一个与优先级正交的影响面等级(L1 核心流程/资金/数据完整性 … L5 文案/界面微调,null=未定级):创建时由沟通智能体依标题+正文判定并随 save_intents 落库,详情「概览」元信息区下拉手动可调(in_progress/done 锁定,判据 canEditIntentImpactLevel,被拒回 intent.impactLevelLocked 不落库不广播),列表行与详情标题栏以徽标展示;不参与排序/分组、不撤销 spec 批准,但**联动开发/规格闸门**:L1/L2 强制规格先行+必须人工批准+禁止机器批准,L4/L5 默认 fast+允许机器批准(遵循 opt-in),中间档与未定级继承工作区默认;存量意图不回填,未定级是一等状态
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
-│   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管;该开关**仅在规范与开发均未起步前可改**(无规范内容 + 无规范会话 + 无工作会话,判据 canEditIntentSpecMode),起步后概览页降级为只读文本、set_intent_spec_mode 回 intent.specModeLocked 不落库不广播,无强制解锁入口
+│   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled,并联动影响等级:高影响 L1/L2 强制 sdd、低影响 L4/L5 默认 fast):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管;该开关**仅在规范与开发均未起步前可改**(无规范内容 + 无规范会话 + 无工作会话,判据 canEditIntentSpecMode),起步后概览页降级为只读文本、set_intent_spec_mode 回 intent.specModeLocked 不落库不广播,无强制解锁入口
 │   │   │   └── 「是否需要规范」开关              # 人工入口在意图详情「概览」tab 元信息区,三档(继承工作区/需要规范/不需要规范)选择即保存,展示服务端派生的 effectiveSpecMode;sddEnabled 关闭时仍可设置并提示此时无行为差异
 │   │   ├── 规格只读审核                          # 独立 spec_review 会话读 spec/源码/本项目意图,写任意路径一律拒绝;结论只经 submit_spec_review 结构化提交
 │   │   │   ├── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过
@@ -94,7 +94,7 @@ c3
 │   │   │   ├── 启动对账与恢复                    # 启停意愿持久化;服务启动先全工作区对账,从持久事实恢复,db 不可用时不凭空恢复也不清空
 │   │   │   ├── 规格阶段自治                      # 未过 spec 闸门的意图细分为:撰写→只读审核→需修改则携理由返工(硬上限 3 轮,超限 park+人工待办)→通过后等待批准
 │   │   │   │   ├── 触顶卡点与人工接管            # 返工触顶后列表/详情不再给重试,改示审核卡点原文 + 单一「人工接管」入口跳到该意图 spec 页签
-│   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量
+│   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量;高影响 L1/L2 无论开关都禁止机器批准,须人工批准
 │   │   │   ├── 并发意图数上限                    # 工作区 automationConcurrency(默认 2):worktree 下最多 N 个意图同时开发,达上限其余 eligible 以 blocked_concurrency_gate「已达并发上限 N」阻塞;current-branch 共享检出恒串行(上限恒 1,配置不生效);spec 撰写/审核不计入,人工/MCP 启动不受配额限制,调低不取消在途会话
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
 │   │   │   ├── 静默超时判定                      # 队列在跑却 30 分钟无进展且无任何已知等待态(park/退避/冷却/闸门/强制跳过/权限/spec 阶段)时派生 silent_timeout 提示;重复 tick 的同一结论不续期,时间缺失/未来/回拨一律不报;只读投影,不改内核、不自动重试
@@ -323,7 +323,7 @@ c3
 │       ├── 共识投票                              # consensus 多智能体权限共识配置(一致/多数、投票者集)
 │       ├── 讨论上限                              # maxRoundsPerStage 每阶段轮次(≥8)/ maxSpeechChars 每轮发言字数(≥300)
 │       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效
-│       ├── 机器批准开关                          # specMachineApprovalEnabled 显式 opt-in,默认关闭;开启后审核通过的 spec 由队列以机器身份批准,仍可人工撤销
+│       ├── 机器批准开关                          # specMachineApprovalEnabled 显式 opt-in,默认关闭;开启后审核通过的 spec 由队列以机器身份批准,仍可人工撤销;高影响 L1/L2 无论开关都须人工批准
 │       ├── fast 规格阈值                          # fastSpecMaxFiles/fastSpecMaxLines 小改动上限(默认 3 文件/50 行,严格小于)UI 可调;fast 意图落定 diff 达到任一值即超限,原子切回 sdd
 │       ├── 自动化闸门总开关                      # automationEnabled 自动派发总闸,缺省开;关时 cron/事件派发前短路,各自动化 active/paused 不受影响
 │       ├── 队列并发意图数                        # automationConcurrency 缺省 2:worktree 下最多 N 个意图同时开发,current-branch 恒串行不生效;达上限 blocked_concurrency_gate「已达并发上限 N」,spec 撰写/审核不计入、人工/MCP 启动不受配额限制

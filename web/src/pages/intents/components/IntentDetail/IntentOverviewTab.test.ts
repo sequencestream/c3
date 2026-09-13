@@ -553,6 +553,35 @@ describe('IntentOverviewTab — 是否需要规范(每意图 specMode 覆盖)', 
       )
     }
   })
+
+  it('高影响(L1)未显式设置时副标显示「等级已强制 sdd」而非选项文本', () => {
+    const w = mountTab(
+      intent({ id: 'r1', impactLevel: 'L1', specMode: null, effectiveSpecMode: 'sdd' }),
+    )
+    const hint = w.find(SPEC_MODE_DERIVED)
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toBe(i18n.global.t('intent.meta.specMode.forcedSdd'))
+  })
+
+  it('低影响(L4/L5)未显式设置时副标显示「按等级默认 fast」,即使工作区开着 sdd', () => {
+    for (const level of ['L4', 'L5'] as const) {
+      const w = mountTab(
+        intent({ id: 'r1', impactLevel: level, specMode: null, effectiveSpecMode: 'fast' }),
+        { sddEnabled: true },
+      )
+      const hint = w.find(SPEC_MODE_DERIVED)
+      expect(hint.exists()).toBe(true)
+      expect(hint.text()).toBe(i18n.global.t('intent.meta.specMode.defaultFastByImpact'))
+    }
+  })
+
+  it('高影响(L1)在 SDD 关闭时仍隐藏「无行为差异」提示(等级强制规格)', () => {
+    const w = mountTab(
+      intent({ id: 'r1', impactLevel: 'L1', specMode: null, effectiveSpecMode: 'sdd' }),
+      { sddEnabled: false },
+    )
+    expect(w.find(SPEC_MODE_OFF_HINT).exists()).toBe(false)
+  })
 })
 
 describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为只读', () => {

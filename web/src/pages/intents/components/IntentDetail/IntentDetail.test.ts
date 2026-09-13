@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { MACHINE_SPEC_APPROVER } from '@ccc/shared/protocol'
 import type { Intent, IntentLog, SessionStatus } from '@ccc/shared/protocol'
 import IntentDetail, { __resetWriteSpecGuards } from './IntentDetail.vue'
 
@@ -480,6 +481,69 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
     expect(btn.attributes('data-action')).toBe('startDev')
     await btn.trigger('click')
     expect(w.emitted('start-dev')).toEqual([['i1', false]])
+  })
+})
+
+describe('IntentDetail.vue — impact level main action wiring', () => {
+  // 高影响(L1/L2)在 SDD 关闭的工作区也必须走 spec 撰写/审核/人工批准,而不是像普通意图那样
+  // 直接开始工作。这里验证主按钮随 spec 状态在 writeSpec / approveSpec 间流转。
+  it('high-impact L1 + SDD off + raw → Write Spec (forced SDD)', async () => {
+    const item = intent({
+      id: 'i1',
+      impactLevel: 'L1',
+      effectiveSpecMode: 'sdd',
+      specStatus: 'raw',
+      specPath: null,
+    })
+    const w = mountDetail(item, { sddEnabled: false })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('writeSpec')
+    await btn.trigger('click')
+    expect(w.emitted('write-spec')).toEqual([['i1']])
+    expect(w.emitted('start-dev')).toBeUndefined()
+  })
+
+  it('high-impact L1 + SDD off + pending → Approve Spec (forced SDD)', () => {
+    const item = intent({
+      id: 'i1',
+      impactLevel: 'L1',
+      effectiveSpecMode: 'sdd',
+      specStatus: 'pending',
+      specPath: '.specs/x/spec.md',
+    })
+    const w = mountDetail(item, { sddEnabled: false })
+    expect(w.find('.req-btn.primary').attributes('data-action')).toBe('approveSpec')
+  })
+
+  it('high-impact L1 + machine-approved → Approve Spec (needs human re-confirm)', () => {
+    // 机器批准不满足高影响的人工批准身份要求:即使状态已是 approved,主按钮仍停在
+    // 「批准 Spec」,引导先撤销再人工批准,而不是放行开始工作。
+    const item = intent({
+      id: 'i1',
+      impactLevel: 'L1',
+      effectiveSpecMode: 'sdd',
+      specStatus: 'approved',
+      specApproveUser: MACHINE_SPEC_APPROVER,
+      specPath: '.specs/x/spec.md',
+    })
+    const w = mountDetail(item, { sddEnabled: true })
+    expect(w.find('.req-btn.primary').attributes('data-action')).toBe('approveSpec')
+  })
+
+  it('low-impact L5 + SDD on + raw → Start Work (default fast)', async () => {
+    const item = intent({
+      id: 'i1',
+      impactLevel: 'L5',
+      effectiveSpecMode: 'fast',
+      specStatus: 'raw',
+      specPath: null,
+    })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('startDev')
+    await btn.trigger('click')
+    expect(w.emitted('start-dev')).toEqual([['i1', false]])
+    expect(w.emitted('write-spec')).toBeUndefined()
   })
 })
 

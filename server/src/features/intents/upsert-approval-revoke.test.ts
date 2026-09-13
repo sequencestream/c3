@@ -332,6 +332,8 @@ function toFact(r: Intent, specFingerprint: string | null): QueueIntentFact {
     dependsOn: r.dependsOn,
     specStatus: r.specStatus,
     effectiveSpecMode: r.effectiveSpecMode,
+    impactLevel: r.impactLevel,
+    specApproveUser: r.specApproveUser,
     prStatus: deriveIntentPrAggregate(r.prs),
     branchName: r.branchName,
     deliveryIds: r.linkedDeliveries.map((d) => d.id),

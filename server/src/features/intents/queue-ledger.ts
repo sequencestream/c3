@@ -12,7 +12,7 @@
  * records verdicts.
  */
 import type { Intent } from '@ccc/shared/protocol'
-import { deriveIntentPrAggregate } from '@ccc/shared'
+import { deriveIntentPrAggregate, specGateBlocks } from '@ccc/shared'
 import type {
   QueueIntentFact,
   QueueReconcileOutput,
@@ -38,6 +38,17 @@ import { isSpecOccupancyAlive } from './spec-occupancy.js'
  * kernel treats as "cannot review", never as changed content.
  */
 export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): QueueIntentFact {
+  // Whether the spec gate currently holds this intent back — the same judgement
+  // the kernel applies later. Computing it here drives the fingerprint read: an
+  // intent that is not held back never needs its spec content probed, and a
+  // high-impact intent is held back even under a switched-off workspace.
+  const gateBlocked = specGateBlocks({
+    impactLevel: r.impactLevel,
+    effectiveSpecMode: r.effectiveSpecMode,
+    sddEnabled,
+    specStatus: r.specStatus,
+    specApproveUser: r.specApproveUser,
+  })
   return {
     id: r.id,
     title: r.title,
@@ -46,9 +57,16 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     automate: r.automate,
     dependsOn: r.dependsOn,
     specStatus: r.specStatus,
-    // Already resolved on the read model (persisted override + workspace switch),
-    // so the kernel gate and the manual admission gate read the very same value.
+    // Already resolved on the read model (persisted override + workspace switch +
+    // impact level), so the kernel gate and the manual admission gate read the
+    // very same value.
     effectiveSpecMode: r.effectiveSpecMode,
+    // The grade and the approval identity ride along so the PURE kernel can apply
+    // the high-impact gate (L1/L2 must be human-approved) without touching the
+    // store — the assembly boundary reads live state, the kernel stays a pure
+    // function of its input.
+    impactLevel: r.impactLevel,
+    specApproveUser: r.specApproveUser,
     // The kernel gates on ONE status per intent, so the PR list is reduced HERE,
     // at the assembly boundary, with the same rule the UI uses.
     prStatus: deriveIntentPrAggregate(r.prs),
@@ -68,9 +86,10 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     specPath: r.specPath,
     specSessionId: r.specSessionId,
     specReviewSessionId: r.specReviewSessionId,
-    // Only SDD workspaces run the spec phase, so a non-SDD workspace never pays
-    // the per-intent file read.
-    specFingerprint: sddEnabled ? readSpecFingerprint(workspacePath, r.specPath) : null,
+    // Only intents the spec gate holds back pay the per-intent file read: `fast`
+    // and spec-less-workspace intents never enter the spec phase and never need
+    // their content probed.
+    specFingerprint: gateBlocked ? readSpecFingerprint(workspacePath, r.specPath) : null,
     specReviewVerdict: r.specReviewVerdict,
     specReviewFingerprint: r.specReviewFingerprint,
     specReviewReworkRounds: r.specReviewReworkRounds,

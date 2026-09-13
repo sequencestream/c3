@@ -27,6 +27,7 @@ function intent(over: Partial<Intent> = {}): Intent {
     content: '',
     status: 'todo',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     dependsOn: [],
     prs: [],

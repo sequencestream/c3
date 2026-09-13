@@ -13,6 +13,7 @@ import type {
   CreateIntentBase,
   DeliveryStatus,
   GitActionFailureGuidance,
+  IntentImpactLevel,
   IntentSpecMode,
   IntentStatus,
   ModeToken,
@@ -205,6 +206,12 @@ export interface AppMethods {
    * `effectiveSpecMode` comes back with the next `intents` broadcast.
    */
   setIntentSpecMode(intentId: string, mode: IntentSpecMode | null): void
+  /**
+   * Set (or clear) an intent's impact level. `null` marks it ungraded; the value
+   * is always sent explicitly, so it never means "leave as is". Fire-and-forget:
+   * the stored grade comes back with the next `intents` broadcast.
+   */
+  setIntentImpactLevel(intentId: string, level: IntentImpactLevel | null): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   /**
    * Create a PR for an intent. `deliveryId` names the delivery whose branch the

@@ -13,6 +13,7 @@ import type {
   DepType,
   DevLaunchStage,
   Intent,
+  IntentImpactLevel,
   IntentLog,
   IntentPrStatus,
   IntentSessionInfo,
@@ -357,6 +358,21 @@ export type ClientSetIntentSpecMode = {
   type: 'set_intent_spec_mode'
   intentId: string
   mode: IntentSpecMode | null
+}
+
+/**
+ * Set (or clear) an intent's impact level. `level: null` marks it ungraded; the
+ * field is always carried explicitly, so this never means "leave as is".
+ *
+ * It writes `impact_level` and nothing else — no gate is relaxed or tightened,
+ * spec approval is untouched (a grade is metadata about reach, not a restatement
+ * of the requirement), and queue eligibility is unchanged. The `intents`
+ * broadcast is this message's only ack.
+ */
+export type ClientSetIntentImpactLevel = {
+  type: 'set_intent_impact_level'
+  intentId: string
+  level: IntentImpactLevel | null
 }
 
 /**

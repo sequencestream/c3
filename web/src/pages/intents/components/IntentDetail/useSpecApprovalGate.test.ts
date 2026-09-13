@@ -12,6 +12,7 @@ function intent(id: string): Intent {
     shortEnTitle: null,
     content: 'B',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'todo',
     dependsOn: [],

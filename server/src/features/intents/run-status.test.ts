@@ -53,6 +53,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     shortEnTitle: null,
     content: '',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'draft',
     dependsOn: [],

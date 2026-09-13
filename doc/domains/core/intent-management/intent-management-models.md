@@ -14,7 +14,8 @@
 - **`title`**(text): 简短的意图标题
 - **`shortEnTitle`**(text | null): 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐
 - **`content`**(text): 完整的意图描述
-- **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 需求级别;P0 最高
+- **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 需求级别;P0 最高 —— 排的是**何时做**
+- **`impactLevel`**(enum `L1`|`L2`|`L3`|`L4`|`L5`| null): 影响范围等级 —— 做错了**波及多远**;`L1` 最高(核心流程/资金/数据完整性),`L5` 最低(文案/界面微调);`null` = 未定级。与 `priority` 正交,互不替代也不合并。创建时由沟通智能体判定,`in_progress`/`done` 之外可手改;持久值无法解释时读作未定级而非中间档(RM-R49)
 - **`module`**(text): 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)
 - **`status`**(enum): `draft`|`todo`|`in_progress`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)
 - **`dependsOn`**(`id[]`): 该条目所依赖的项目内其他意图 id(聚合;RM-R1)
@@ -151,6 +152,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 - **`shortEnTitle`**(text,必填): 必填的简短英文 ASCII 短标题 — 派生分支/worktree 名的稳定来源；agent 应产出 ≤64 ASCII 字符，落库前截断到 128。新建与更新均要求传入
 - **`content`**(text): 提议的描述
 - **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 提议的需求级别
+- **`impactLevel`**(enum `L1`…`L5`| null,可选): 判定出的影响范围等级。省略 = 不改动(新建意图为未定级);显式 `null` = 清除为未定级。缺省与显式 `null` 刻意区分,使一次普通意图编辑不会意外抹掉已有判定(RM-R49)
 - **`module`**(text,可选): 推断出的模块名称;省略时 —— 插入场景下落库为 `''`(RM-R14);更新场景下保留原值(RM-R20)
 - **`dependsOn`**(`id[]`,可选): 对**已存在**的项目内意图的提议依赖(按 id);更新场景下,提供它(或 `dependsOnIndexes`)会替换依赖集合,两者都省略则保持不变(RM-R20)
 - **`dependsOnIndexes`**(`number[]`,可选): 对同一批次内**兄弟**条目的提议依赖,按从 0 开始的数组下标;在保存时解析为该兄弟条目的 id(RM-R17)。被下标引用的兄弟条目自身也可能是一个更新目标(RM-R20)。
@@ -221,7 +223,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 ## 持久化存储(c3.db)
 
 位于 `~/.c3/c3.db` 的 SQLite 台账(与工作区注册表同库,不同表)。Schema 版本通过
-`PRAGMA user_version` 管理(当前为 `22`)。表:
+`PRAGMA user_version` 管理(当前为 `23`)。表:
 `intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
 `tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
 共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,

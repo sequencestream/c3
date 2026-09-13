@@ -18,11 +18,13 @@ import { computed, ref, watch } from 'vue'
 import type {
   DepType,
   Intent,
+  IntentImpactLevel,
   IntentPr,
   IntentPrStatus,
   IntentSpecMode,
 } from '@ccc/shared/protocol'
-import { canEditIntentSpecMode } from '@ccc/shared'
+import { INTENT_IMPACT_LEVELS } from '@ccc/shared/protocol'
+import { canEditIntentImpactLevel, canEditIntentSpecMode } from '@ccc/shared'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -44,6 +46,8 @@ const emit = defineEmits<{
   'save-intent-content': [intentId: string, content: string]
   /** 每意图规格模式覆盖:`null` = 恢复继承工作区。选择即保存,由服务端广播回填。 */
   'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
+  /** 影响范围等级:`null` = 未定级。选择即保存,由服务端广播回填。 */
+  'set-impact-level': [intentId: string, level: IntentImpactLevel | null]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
   'sync-pr-status': [intentId: string]
@@ -117,6 +121,40 @@ const specModeDerivedHint = computed<string | null>(() =>
 function onSpecModeChange(e: Event): void {
   const next = (e.target as HTMLSelectElement).value as SpecModeChoice
   emit('set-spec-mode', props.intent.id, next === SPEC_MODE_INHERIT ? null : next)
+}
+
+// ── 影响范围等级(impactLevel) ─────────────────────────────────────────────
+// 六档:未定级 + L1..L5。与 specMode 同语义:选择即保存,只 emit 不本地改值,成功由
+// intents 广播回填;被拒时下拉自然停在服务端的旧值上,不留假的选中态。
+const IMPACT_LEVEL_UNSET = 'unset' as const
+type ImpactLevelChoice = typeof IMPACT_LEVEL_UNSET | IntentImpactLevel
+
+function impactLevelLabel(level: IntentImpactLevel): string {
+  return t(`intent.impactLevel.option.${level}`)
+}
+
+const IMPACT_LEVEL_OPTIONS = computed<{ value: ImpactLevelChoice; label: string }[]>(() => [
+  { value: IMPACT_LEVEL_UNSET, label: t('intent.impactLevel.unset') },
+  ...INTENT_IMPACT_LEVELS.map((level) => ({ value: level, label: impactLevelLabel(level) })),
+])
+
+const impactLevelChoice = computed<ImpactLevelChoice>(
+  () => props.intent.impactLevel ?? IMPACT_LEVEL_UNSET,
+)
+
+// 开发中 / 已完成的意图不可改等级(与账本「不可修改」同一条判据,shared 单一纯函数,
+// 服务端 handler 也调它)。锁定时整行降级为只读文本:仍看得到当前是哪一档。
+const canEditImpactLevel = computed(() => canEditIntentImpactLevel(props.intent))
+
+const impactLevelReadonlyLabel = computed(() =>
+  props.intent.impactLevel === null
+    ? t('intent.impactLevel.unset')
+    : impactLevelLabel(props.intent.impactLevel),
+)
+
+function onImpactLevelChange(e: Event): void {
+  const next = (e.target as HTMLSelectElement).value as ImpactLevelChoice
+  emit('set-impact-level', props.intent.id, next === IMPACT_LEVEL_UNSET ? null : next)
 }
 
 // ── Dep type / PR status 标签 ───────────────────────────────────────────────
@@ -341,6 +379,26 @@ watch(
   <div class="intent-detail-body" data-testid="tab-intent">
     <div class="req-meta">
       <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
+      <!-- 影响范围:L1(最高)~ L5(最低),未定级为一档显式选项而非空白。开发中 / 已完成
+           降级为只读文本,与账本的「不可修改」同一条判据。 -->
+      <span class="req-meta-item" data-testid="intent-meta-impact-level">
+        {{ t('intent.impactLevel.label') }}
+        <select
+          v-if="canEditImpactLevel"
+          class="req-meta-impact-level-select"
+          data-testid="intent-meta-impact-level-select"
+          :value="impactLevelChoice"
+          :title="t('intent.impactLevel.tooltip')"
+          @change="onImpactLevelChange"
+        >
+          <option v-for="opt in IMPACT_LEVEL_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <span v-else data-testid="intent-meta-impact-level-readonly">{{
+          impactLevelReadonlyLabel
+        }}</span>
+      </span>
       <!-- 是否需要规范:选择即保存。工作区关了 SDD 时不隐藏——隐藏会让用户以为功能没了——
            改为附一句提示说明此时设置不产生行为差异。规范或开发已起步时整行降级为只读文本:
            不隐藏(用户仍要看得到当前是哪一档),也不用 disabled 下拉;只读本身已表达不可改,不再附锁定提示。 -->
@@ -626,7 +684,8 @@ watch(
   padding: 0 var(--sp-1);
   color: var(--c-error-text);
 }
-/* 是否需要规范:元信息行内的紧凑下拉,尺寸跟随周围 caption 文字,不抢视线。 */
+/* 影响范围:与「是否需要规范」同款的行内紧凑下拉。 */
+.req-meta-impact-level-select,
 .req-meta-spec-mode-select {
   margin-left: var(--sp-1);
   padding: 0 var(--sp-select-arrow) 0 var(--sp-1);

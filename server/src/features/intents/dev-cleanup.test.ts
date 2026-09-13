@@ -31,6 +31,7 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     shortEnTitle: 'add-feature',
     content: 'do the thing',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     // The PR half of the cleanup only runs for a `done` intent, so the default
     // fixture is the state that exercises it; the not-done skip has its own test.

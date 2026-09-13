@@ -1320,6 +1320,18 @@
         "label": "无交付归属"
       }
     },
+    "impactLevel": {
+      "label": "影响范围:",
+      "tooltip": "该意图出问题时的影响面:L1 最高(核心流程/资金/数据完整性),L5 最低(文案与界面微调)。与优先级是两个维度。",
+      "unset": "未定级",
+      "option": {
+        "L1": "L1 核心流程 / 资金 / 数据完整性",
+        "L2": "L2 主要功能链路",
+        "L3": "L3 一般功能改动",
+        "L4": "L4 边缘 / 局部改动",
+        "L5": "L5 文案 / 界面微调"
+      }
+    },
     "prStatus": {
       "reviewing": {
         "label": "审核中"
@@ -2528,6 +2540,7 @@
       "notFound": "意图不存在。",
       "dbUnavailable": "意图功能不可用 (c3.db)。",
       "specModeLocked": "规范模式已锁定:该意图的规范或开发已经起步。",
+      "impactLevelLocked": "影响范围已锁定:该意图正在开发或已完成。",
       "chatOpenFailed": "打开意图会话失败。",
       "chatSessionNotFound": "意图会话不存在: {sessionId}。",
       "renameChatSessionFailed": "重命名意图会话失败: {detail}。",

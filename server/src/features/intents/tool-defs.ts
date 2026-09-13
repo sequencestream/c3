@@ -55,6 +55,15 @@ const proposedIntentShape = {
     ),
   content: z.string().describe(intentContentGuidance),
   priority: z.enum(['P0', 'P1', 'P2', 'P3']),
+  impactLevel: z
+    .enum(['L1', 'L2', 'L3', 'L4', 'L5'])
+    .nullish()
+    .describe(
+      '影响范围等级(按标题/内容判定):L1=核心流程/资金/数据完整性,出错影响全局或不可逆;' +
+        'L2=主要功能链路,影响一类用户的主要使用;L3=一般功能改动,影响局部场景;' +
+        'L4=边缘/局部改动,影响面很小;L5=文案、界面微调等几乎无功能风险的改动。' +
+        '省略 = 不改动(新建意图为未定级);显式 null = 清除为未定级。',
+    ),
   module: z.string().optional().describe('所属模块名(按标题/内容推断,可留空)'),
   dependsOn: z
     .array(z.string())

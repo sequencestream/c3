@@ -365,6 +365,28 @@ describe('setIntentSpecMode — per-intent spec-mode override', () => {
   })
 })
 
+describe('setIntentImpactLevel — blast-radius grade', () => {
+  it.each(['L1', 'L5'] as const)('sends set_intent_impact_level with an explicit %s', (level) => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.setIntentImpactLevel('i-1', level)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_impact_level',
+      intentId: 'i-1',
+      level,
+    })
+  })
+
+  it('carries an explicit null to clear the grade (never omits the field)', () => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.setIntentImpactLevel('i-1', null)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'set_intent_impact_level',
+      intentId: 'i-1',
+      level: null,
+    })
+  })
+})
+
 describe('syncIntentPrStatus', () => {
   it('marks the intent syncing and sends the sync request', () => {
     const h = makeCtx({ intents: [] })

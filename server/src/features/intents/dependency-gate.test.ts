@@ -55,6 +55,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     shortEnTitle: null,
     content: '',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'done',
     dependsOn: [],

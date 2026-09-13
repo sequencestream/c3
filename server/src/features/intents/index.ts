@@ -29,7 +29,7 @@ import {
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToName, touchWorkspace } from '../../state.js'
 import type { UiError } from '@ccc/shared'
-import { canEditIntentSpecMode } from '@ccc/shared'
+import { canEditIntentImpactLevel, canEditIntentSpecMode } from '@ccc/shared'
 import {
   getDefaultMode,
   getGitBranchMode,
@@ -72,6 +72,7 @@ import {
   setBranchName,
   setChatSession,
   setLatestCommitHash,
+  setImpactLevel,
   setIntentSessionId,
   setSpecMode,
   updateIntent,
@@ -1519,6 +1520,39 @@ export const setIntentSpecMode: Handler<'set_intent_spec_mode'> = (ctx, conn, ms
     return
   }
   setSpecMode(msg.intentId, msg.mode)
+  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
+}
+
+/**
+ * `set_intent_impact_level` handler — the manual blast-radius grade write.
+ *
+ * The grade is a judgement about work not yet done, so it is writable while the
+ * intent itself is still modifiable and locked once development is under way or
+ * finished (`canEditIntentImpactLevel`, shared verbatim with the web console
+ * that hides the control). This guard is the BACKSTOP, not the main path: it
+ * covers direct WS calls, tabs stale on an older state, and future automated
+ * writers.
+ *
+ * Admitted, it persists `impact_level` (`null` = ungraded) and re-broadcasts,
+ * which is the only ack. Nothing else moves — spec approval, gates and queue
+ * eligibility are untouched. Refused, nothing is written and nothing is
+ * broadcast.
+ */
+export const setIntentImpactLevel: Handler<'set_intent_impact_level'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!canEditIntentImpactLevel(req)) {
+    conn.send({ type: 'error', error: { code: 'intent.impactLevelLocked' } })
+    return
+  }
+  setImpactLevel(msg.intentId, msg.level)
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
 }
 

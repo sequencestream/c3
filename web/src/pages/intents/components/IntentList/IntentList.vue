@@ -7,7 +7,13 @@
  * 详情/操作均迁至右栏 IntentDetail 组件。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { ActionTarget, WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  ActionTarget,
+  WorkflowStatus,
+  Intent,
+  IntentImpactLevel,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
@@ -29,6 +35,11 @@ import {
 
 const { t, locale } = useTypedI18n()
 const isMobile = useIsMobile()
+
+/** 影响范围等级的释义文案:徽标只显示 L1..L5,悬浮时给出这一档的含义。 */
+function impactLevelLabel(level: IntentImpactLevel): string {
+  return t(`intent.impactLevel.option.${level}`)
+}
 
 const props = defineProps<{
   project: string
@@ -354,6 +365,13 @@ function automateToneClass(r: Intent): string {
         >
           <div class="req-item-head">
             <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
+            <span
+              v-if="r.impactLevel"
+              class="req-impact"
+              :class="r.impactLevel"
+              :title="t('intent.impactLevel.label') + ' ' + impactLevelLabel(r.impactLevel)"
+              >{{ r.impactLevel }}</span
+            >
             <span class="req-date">{{ datePrefix(r) }}</span>
             <span v-if="rowVis.showModule && r.module" class="req-module" :title="r.module">{{
               r.module

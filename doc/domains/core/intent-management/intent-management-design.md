@@ -47,12 +47,13 @@
 
 ## Schema(`PRAGMA user_version` 迁移)
 
-- `intents` — 账本(`id`、`workspace_name`、`title`、`content`、`priority`、`status`、
-  `module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、`completed_at`,
-  以及 spec 相关列 `spec_path`/`spec_status`/`spec_approved`/`spec_approve_user`/
-  `spec_session_id`/`spec_review_*`/`spec_mode`),按 `(workspace_name, status)` 建索引。
-  `module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为 `INTEGER NOT NULL DEFAULT 0`;
-  `spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,RM-R43)。
+- `intents` — 账本(`id`、`workspace_name`、`title`、`content`、`priority`、`impact_level`、
+  `status`、`module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、
+  `completed_at`,以及 spec 相关列 `spec_path`/`spec_status`/`spec_approved`/
+  `spec_approve_user`/`spec_session_id`/`spec_review_*`/`spec_mode`),按
+  `(workspace_name, status)` 建索引。`module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为
+  `INTEGER NOT NULL DEFAULT 0`;`spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,
+  RM-R43);`impact_level` 可空并由 `CHECK` 限定为 `'L1'`…`'L5'`,`NULL` 即未定级(RM-R49)。
 - `intent_deps` — `(intent_id, depends_on_id)` 边。
 - `intent_fast_turns` — fast 模式每 turn 反向补轨的结算记录(`session_id` 主键、`intent_id`、
   `workspace_name`、`baseline` JSON、`settled_at`/`outcome`/`spec_path`、`created_at` +
@@ -67,7 +68,7 @@
   `updated_at`。一个项目全部行的集合即为隐藏集;`is_current=1` 的那一行
   是未指定具体 `sessionId` 进入意图视图时重新加载的会话。
 
-**Schema 版本(当前:v22)。** Schema 版本为 `22`。每次升级都在旧字段重命名之后、
+**Schema 版本(当前:v23)。** Schema 版本为 `23`。每次升级都在旧字段重命名之后、
 应用 schema 之前追加一个幂等迁移:v2 `module`,v3
 `completed_at`(可空),v4 `automate`(`INTEGER NOT NULL DEFAULT 0`),v6 旧的 `requirement*`
 → `intent*` 重命名,v7 `intent_chats.title`(`TEXT`),v8 git 追踪字段,v9 `intent_deps`
@@ -88,7 +89,8 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 (裁决见 [ADR-0035](../../../architecture/adr/0035-intent-pr-table-split-and-migration-markers.md);
 详见迁移记录 `migrate/2026/08/06/031`)。v20→v21 为 `intent_sessions` 增加可空的
 `delivery_id` 会话交付上下文;v21→v22 为 `intents` 增加可空的 `base_branch` 基准分支快照并按
-单一就绪交付分支或工作区主分支一次性回填。完整迁移约束以 `database/tables.md` 为准。
+单一就绪交付分支或工作区主分支一次性回填;v22→v23 为 `intents` 增加可空的 `impact_level`
+影响范围等级,不回填——存量行读作未定级。完整迁移约束以 `database/tables.md` 为准。
 
 **Schema 版本与迁移(v1 → v2)。** 新建时的 schema
 已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径
@@ -463,7 +465,8 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
 
 - **接线分支。** `set_intent_automate` → 设置 automate 标志 + 广播
   `intents`(`set_intent_spec_mode` 同形:写 `spec_mode` + 广播,
-  广播时重算 `effectiveSpecMode`)。`start_workflow` → 启动编排器(若已在运行则为
+  广播时重算 `effectiveSpecMode`;`set_intent_impact_level` 同形:写 `impact_level` + 广播,
+  锁定判据为 `canEditIntentImpactLevel`,命中即 `intent.impactLevelLocked`,不写不播)。`start_workflow` → 启动编排器(若已在运行则为
   no-op),然后广播状态。`stop_workflow` → 停止编排器(中止正在进行的
   运行)。进入意图视图(`open_intent_session`)也会推送当前的
   `workflow_status`,以便一个新连接恢复按钮状态。

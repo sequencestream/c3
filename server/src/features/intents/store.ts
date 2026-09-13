@@ -16,6 +16,7 @@ import type {
   IntentDeliveryRef,
   IntentDevSession,
   IntentDevSessionExitCode,
+  IntentImpactLevel,
   IntentLog,
   IntentLogOperation,
   IntentPr,
@@ -31,6 +32,7 @@ import type {
   SpecStatus,
 } from '@ccc/shared/protocol'
 import { INTENT_PR_STATUSES, SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
+import { isIntentImpactLevel } from '@ccc/shared'
 import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
 import { resolveRunInitiatedBySubject } from '../auth/authorization.js'
 import {
@@ -49,7 +51,7 @@ import { readSpecFingerprint } from './spec-review.js'
 import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
-const SCHEMA_VERSION = 22
+const SCHEMA_VERSION = 23
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -72,6 +74,9 @@ CREATE TABLE IF NOT EXISTS intents (
   short_en_title  TEXT,
   content         TEXT NOT NULL,
   priority        TEXT NOT NULL,
+  -- How far this intent reaches: 'L1' widest … 'L5' narrowest. Nullable, and NULL
+  -- is a real reading ("ungraded"), not a placeholder for a default grade.
+  impact_level    TEXT CHECK(impact_level IN ('L1','L2','L3','L4','L5')),
   status          TEXT NOT NULL,
   module          TEXT NOT NULL DEFAULT '',
   last_work_session_id TEXT,
@@ -639,6 +644,17 @@ function db(): Db | null {
     // without inventing a default), non-empty by every write path, and backfilled
     // once for rows that predate it.
     ensureColumn(d, 'intents', 'base_branch', 'TEXT')
+    // v22 → v23: the intent's IMPACT LEVEL — how far the change reaches, the
+    // dimension `priority` (when to do it) cannot express. Nullable with no
+    // backfill: an intent created before the field existed was never graded, and
+    // grading thousands of historic rows by model would manufacture judgements
+    // nobody made. They read as ungraded until the next refine or a hand edit.
+    ensureColumn(
+      d,
+      'intents',
+      'impact_level',
+      "TEXT CHECK(impact_level IN ('L1','L2','L3','L4','L5'))",
+    )
     // v19 → v20: PR facts move out of the intents row into `intent_prs`. The
     // legacy trio above is FROZEN, not dropped — runtime never reads or writes it
     // again, and it stays as the rollback script's landing site.
@@ -689,6 +705,7 @@ interface Row {
   short_en_title: string | null
   content: string
   priority: string
+  impact_level: string | null
   status: string
   module: string
   last_work_session_id: string | null
@@ -750,6 +767,16 @@ function narrowSpecStatus(v: string | null): SpecStatus {
  */
 function narrowSpecMode(v: string | null): IntentSpecMode | null {
   return v !== null && isIntentSpecMode(v) ? v : null
+}
+
+/**
+ * Narrow a persisted impact level. An unknown / missing value reads as UNGRADED
+ * (`null`) rather than being surfaced verbatim or rounded to a middle grade: a
+ * value the code cannot interpret is not a judgement anyone made, and claiming
+ * one would be worse than admitting there is none.
+ */
+function narrowImpactLevel(v: string | null): IntentImpactLevel | null {
+  return isIntentImpactLevel(v) ? v : null
 }
 
 /**
@@ -840,6 +867,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
       shortEnTitle: r.short_en_title,
       content: r.content,
       priority: r.priority as Intent['priority'],
+      impactLevel: narrowImpactLevel(r.impact_level),
       module: r.module,
       status: r.status as IntentStatus,
       dependsOn: byId.get(r.id) ?? [],
@@ -1107,14 +1135,15 @@ export function insertIntents(
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, workspace_name, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, spec_mode)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (id, workspace_name, title, short_en_title, content, priority, impact_level, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, spec_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
         it.title,
         truncateShortEnTitle(it.shortEnTitle),
         it.content,
         it.priority,
+        it.impactLevel ?? null,
         initialStatus,
         it.module ?? '',
         null,
@@ -1281,9 +1310,14 @@ export function upsertIntents(
         // from explicit-null via a flag column so `NULL` alone never means both.
         const specModeSupplied = it.specMode !== undefined
         const specModeValue = it.specMode ?? null
+        // Impact level: same three-state treatment as spec mode. ABSENT keeps the
+        // stored grade (a routine edit must not silently ungrade an intent someone
+        // graded on purpose); EXPLICIT `null` clears it back to ungraded.
+        const impactLevelSupplied = it.impactLevel !== undefined
+        const impactLevelValue = it.impactLevel ?? null
         d.run(
           `UPDATE intents
-             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, automate=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?, spec_mode=CASE WHEN ?=1 THEN ? ELSE spec_mode END${revokeApproval}
+             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, automate=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?, spec_mode=CASE WHEN ?=1 THEN ? ELSE spec_mode END, impact_level=CASE WHEN ?=1 THEN ? ELSE impact_level END${revokeApproval}
            WHERE id=?`,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
@@ -1297,6 +1331,8 @@ export function upsertIntents(
           null,
           specModeSupplied ? 1 : 0,
           specModeValue,
+          impactLevelSupplied ? 1 : 0,
+          impactLevelValue,
           ids[i],
         )
         // Audit the revocation in the SAME transaction as the rewrite, so a crash can
@@ -1327,14 +1363,15 @@ export function upsertIntents(
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_name, title, short_en_title, content, priority, status, module, last_work_session_id, automate, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode, responsible_subject)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_name, title, short_en_title, content, priority, impact_level, status, module, last_work_session_id, automate, created_at, updated_at, completed_at, branch_name, base_branch, latest_commit_hash, intent_session_id, spec_mode, responsible_subject)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
           it.content,
           it.priority,
+          it.impactLevel ?? null,
           target.status,
           it.module ?? '',
           null,
@@ -1859,6 +1896,17 @@ export function setSpecApproved(id: string, approved: boolean, approveUser: stri
 export function setSpecMode(id: string, mode: IntentSpecMode | null): void {
   const d = requireDb()
   d.run('UPDATE intents SET spec_mode=?, updated_at=? WHERE id=?', mode, Date.now(), id)
+}
+
+/**
+ * Set an intent's impact level. `null` marks it ungraded — the same reading a
+ * never-graded intent has, so clearing a grade and never having one are one
+ * state, not two. Writes that column alone: a grade describes reach, it does not
+ * restate the requirement, so no approval is revoked and no gate moves.
+ */
+export function setImpactLevel(id: string, level: IntentImpactLevel | null): void {
+  const d = requireDb()
+  d.run('UPDATE intents SET impact_level=?, updated_at=? WHERE id=?', level, Date.now(), id)
 }
 
 /**

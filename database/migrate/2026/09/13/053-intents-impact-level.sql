@@ -1,0 +1,14 @@
+-- intents 新增 impact_level: 意图的影响范围等级 (L1 最高 … L5 最低)
+--
+-- 运行时迁移由 server/src/features/intents/store.ts 的 schema ensure 幂等执行:
+-- 新库直接由 SCHEMA 建列; 旧库按 PRAGMA table_info 判定后 ALTER TABLE ADD COLUMN。
+-- 可重复执行; 从不 DROP。
+--
+-- 为什么要这一列: 台账此前只有 priority(P0–P3) 一个排序维度, 它回答的是「什么时候做」,
+-- 回答不了「做错了波及多远」。核心流程/资金改动与文案微调因此在台账里无法区分,
+-- 人工与自动化只能一刀切对待。
+--
+-- 可空且不回填: NULL = 未定级, 这正是本列出现之前创建的意图的真实状态 —— 由模型对
+-- 历史意图批量补判, 落库的是没人做过的判断, 比承认未定级更坏。存量行待下次 refine
+-- 或手动编辑补上。
+ALTER TABLE intents ADD COLUMN impact_level TEXT CHECK(impact_level IN ('L1','L2','L3','L4','L5'));

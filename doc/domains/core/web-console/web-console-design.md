@@ -187,6 +187,9 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 - **Set intent spec mode**
   - 前置条件: 已连接
   - 发送: `set_intent_spec_mode`(`mode` 显式携带,`null` 恢复继承工作区);广播带回重算的 `effectiveSpecMode`
+- **Set intent impact level**
+  - 前置条件: 已连接,且该意图不在 `in_progress` / `done`
+  - 发送: `set_intent_impact_level`(`level` 显式携带,`null` 即未定级);广播带回落库后的等级
 - **Start workflow**
   - 前置条件: intents project 已设置
   - 发送: `start_workflow`——启动该项目的编排器循环

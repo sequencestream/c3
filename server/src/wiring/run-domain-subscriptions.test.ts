@@ -357,6 +357,7 @@ describe('resident domain subscriptions — discussion + automation', () => {
       title: 'Sandbox work',
       content: '',
       priority: 'medium',
+      impactLevel: null,
       module: '',
       status: 'in_progress',
       dependsOn: [],

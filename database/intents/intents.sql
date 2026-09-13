@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS intents (
   short_en_title      TEXT,                          -- 简短英文 ASCII 短标题, 派生分支/worktree 名的稳定来源 (v11→v12 新增; 文档标注 VARCHAR(128), SQLite 实为 TEXT, 写入侧截断到 128; 历史行为 NULL)
   content             TEXT NOT NULL,                 -- 意图详细描述
   priority            TEXT NOT NULL,                 -- 优先级: 'low' | 'medium' | 'high' | 'critical'
+  impact_level        TEXT CHECK(impact_level IN ('L1','L2','L3','L4','L5')),  -- 影响范围等级: 'L1'(核心流程/资金/数据完整性, 最高) … 'L5'(文案/界面微调, 最低); NULL = 未定级, 与 priority 正交 (v22→v23 新增; 存量不回填, 待下次 refine 或手动编辑补判)
   status              TEXT NOT NULL,                 -- 状态: 'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'
   module              TEXT NOT NULL DEFAULT '',      -- 所属模块名 (v1→v2 新增)
   last_work_session_id TEXT,                         -- 最近一次由 intent 启动的工作会话 c3SessionId (v14→v15 由 last_dev_session_id 改名)

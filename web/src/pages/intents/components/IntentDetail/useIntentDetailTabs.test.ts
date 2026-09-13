@@ -15,6 +15,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     shortEnTitle: null,
     content: 'Body',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'todo',
     dependsOn: [],

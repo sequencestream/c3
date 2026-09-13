@@ -4214,6 +4214,25 @@ select.agent-field {
   background: rgba(245, 158, 11, 0.15);
   color: var(--c-warning-text);
 }
+/* 影响范围徽标:与 .req-priority 同款 pill,只在已定级时渲染 —— 未定级不占位,
+   否则一屏历史意图会挂满同一个「未知」标记。L1/L2 取语义色,其余保持中性。 */
+.req-impact {
+  font-size: var(--fs-badge);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
+  flex-shrink: 0;
+}
+.req-impact.L1 {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--c-error-text);
+}
+.req-impact.L2 {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--c-warning-text);
+}
 .req-date {
   flex-shrink: 0;
   font-size: var(--fs-badge);

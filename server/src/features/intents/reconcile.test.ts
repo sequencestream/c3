@@ -21,6 +21,7 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     shortEnTitle: null,
     content: '实现某个功能',
     priority: 'P0',
+    impactLevel: null,
     module: '',
     status: 'in_progress',
     dependsOn: [],

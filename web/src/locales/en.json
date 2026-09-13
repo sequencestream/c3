@@ -1320,6 +1320,18 @@
         "label": "No delivery"
       }
     },
+    "impactLevel": {
+      "label": "Impact:",
+      "tooltip": "How far this intent reaches if it goes wrong: L1 highest (core flows, money, data integrity), L5 lowest (wording and cosmetic UI). A separate dimension from priority.",
+      "unset": "Ungraded",
+      "option": {
+        "L1": "L1 Core flow / money / data integrity",
+        "L2": "L2 Main feature path",
+        "L3": "L3 Ordinary feature change",
+        "L4": "L4 Peripheral / local change",
+        "L5": "L5 Wording / cosmetic UI"
+      }
+    },
     "prStatus": {
       "reviewing": {
         "label": "Reviewing"
@@ -2528,6 +2540,7 @@
       "notFound": "Intent not found.",
       "dbUnavailable": "Intents feature unavailable (c3.db).",
       "specModeLocked": "Spec mode is locked: spec or development has already started on this intent.",
+      "impactLevelLocked": "Impact level is locked: this intent is in development or already done.",
       "chatOpenFailed": "Failed to open intent session.",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",

@@ -132,7 +132,7 @@ function expectTerminalSchema(raw: Db): void {
   // Single-column index keeps its NAME but now references the renamed column.
   expect(idx.has('idx_chat_project')).toBe(true)
   expect(indexCols(raw, 'idx_chat_project')).toEqual(['workspace_name'])
-  expect(userVersion(raw)).toBe(22)
+  expect(userVersion(raw)).toBe(23)
 }
 
 describe('v10 → v11 rename: fresh db is born at the workspace_name terminal state', () => {

@@ -35,6 +35,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     shortEnTitle: null,
     content: 'Do work',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'todo',
     dependsOn: [],
@@ -92,6 +93,17 @@ function mountList(
     },
   })
 }
+
+describe('IntentList.vue — impact badge', () => {
+  it('renders the L1–L5 badge only for graded rows', () => {
+    const w = mountList([intent({ id: 'graded', impactLevel: 'L2' }), intent({ id: 'ungraded' })])
+    const rows = w.findAll('.req-item-head')
+    expect(rows[0].find('.req-impact').text()).toBe('L2')
+    expect(rows[0].find('.req-impact').classes()).toContain('L2')
+    // 未定级不占位 —— 否则一屏历史意图会挂满同一个「未知」标记。
+    expect(rows[1].find('.req-impact').exists()).toBe(false)
+  })
+})
 
 describe('IntentList.vue — selection model', () => {
   it('emits select-intent with the row id when a row is clicked', async () => {

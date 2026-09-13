@@ -28,6 +28,7 @@ import type {
   WorkflowStatus,
   Intent,
   IntentLog,
+  IntentImpactLevel,
   IntentSpecMode,
   IntentStatus,
   PromptImage,
@@ -146,6 +147,8 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   /** 每意图规格模式覆盖(详情概览 Tab);null = 恢复继承工作区。 */
   'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
+  /** 影响范围等级(详情概览 Tab);null = 未定级。 */
+  'set-impact-level': [intentId: string, level: IntentImpactLevel | null]
   'start-automation': []
   'stop-automation': []
   'open-queue': []
@@ -494,6 +497,9 @@ defineExpose({
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @set-spec-mode="
           (id: string, mode: IntentSpecMode | null) => emit('set-spec-mode', id, mode)
+        "
+        @set-impact-level="
+          (id: string, level: IntentImpactLevel | null) => emit('set-impact-level', id, level)
         "
         @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"

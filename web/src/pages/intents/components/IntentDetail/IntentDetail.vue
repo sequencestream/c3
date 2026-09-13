@@ -24,6 +24,7 @@ import type {
   DepType,
   Intent,
   IntentLog,
+  IntentImpactLevel,
   IntentSpecMode,
   IntentStatus,
 } from '@ccc/shared/protocol'
@@ -58,6 +59,11 @@ import { useIntentDetailTabs, type RequestedDetailSubTab } from './useIntentDeta
 import { useSpecApprovalGate, type MainAction } from './useSpecApprovalGate'
 
 const { t } = useTypedI18n()
+
+/** 影响范围等级的释义文案:徽标只显示 L1..L5,悬浮时给出这一档的含义。 */
+function impactLevelLabel(level: IntentImpactLevel): string {
+  return t(`intent.impactLevel.option.${level}`)
+}
 
 const props = defineProps<{
   /** 当前选中的意图;null 表示无选中(列表为空)→ 渲染空态。 */
@@ -154,6 +160,8 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   // 每意图规格模式覆盖(概览 Tab 开关);null = 恢复继承工作区 sddEnabled。
   'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
+  // 影响范围等级(概览 Tab 下拉);null = 未定级。
+  'set-impact-level': [intentId: string, level: IntentImpactLevel | null]
   'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
@@ -428,6 +436,13 @@ function submitChat(text: string, images: PromptImage[]): void {
               intent.module
             }}</span>
             <span class="req-priority" :class="intent.priority">{{ intent.priority }}</span>
+            <span
+              v-if="intent.impactLevel"
+              class="req-impact"
+              :class="intent.impactLevel"
+              :title="t('intent.impactLevel.label') + ' ' + impactLevelLabel(intent.impactLevel)"
+              >{{ intent.impactLevel }}</span
+            >
             <span class="req-status" :class="intent.status">{{ statusLabel(intent.status) }}</span>
           </div>
           <div class="intent-detail-title-meta">
@@ -506,6 +521,9 @@ function submitChat(text: string, images: PromptImage[]): void {
         @save-intent-content="(id: string, c: string) => emit('save-intent-content', id, c)"
         @set-spec-mode="
           (id: string, mode: IntentSpecMode | null) => emit('set-spec-mode', id, mode)
+        "
+        @set-impact-level="
+          (id: string, level: IntentImpactLevel | null) => emit('set-impact-level', id, level)
         "
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="(id: string) => emit('select-dependency', id)"

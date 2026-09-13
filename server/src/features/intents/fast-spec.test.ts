@@ -42,6 +42,7 @@ function makeIntent(overrides: Partial<Intent> = {}): Intent {
     shortEnTitle: 'test-intent',
     content: 'do something',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'todo',
     dependsOn: [],

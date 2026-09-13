@@ -60,6 +60,7 @@ c3
 │   │   ├── 意图账本                              # 按工作区持久化意图,追踪 status/生命周期
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
 │   │   ├── MCP 确认保存                           # save_intents 原子新建/upsert,可显式 draft/cancelled→todo 并设置 automate;正文按五维软指引,save_intent_directly 仍固定新建 draft
+│   │   ├── 影响范围等级 L1–L5                    # 每条意图一个与优先级正交的影响面等级(L1 核心流程/资金/数据完整性 … L5 文案/界面微调,null=未定级):创建时由沟通智能体依标题+正文判定并随 save_intents 落库,详情「概览」元信息区下拉手动可调(in_progress/done 锁定,判据 canEditIntentImpactLevel,被拒回 intent.impactLevelLocked 不落库不广播),列表行与详情标题栏以徽标展示;只标注不闸门——不参与排序/分组/准入判定,不撤销 spec 批准;存量意图不回填,未定级是一等状态
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
 │   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管;该开关**仅在规范与开发均未起步前可改**(无规范内容 + 无规范会话 + 无工作会话,判据 canEditIntentSpecMode),起步后概览页降级为只读文本、set_intent_spec_mode 回 intent.specModeLocked 不落库不广播,无强制解锁入口

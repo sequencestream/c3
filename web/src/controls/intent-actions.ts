@@ -1,6 +1,7 @@
 import type {
   CreateIntentBase,
   GitActionFailureGuidance,
+  IntentImpactLevel,
   IntentSpecMode,
   IntentStatus,
   PromptImage,
@@ -543,6 +544,13 @@ export function installIntentActions(ctx: AppCtx): void {
   // 生效值由服务端在下一次 intents 广播里算好回填,前端不本地推导。
   ctx.setIntentSpecMode = (intentId: string, mode: IntentSpecMode | null): void => {
     send({ type: 'set_intent_spec_mode', intentId, mode })
+  }
+
+  // 影响范围等级。与 specMode 同形:`null` 显式下发表示未定级(服务端区分「省略」与
+  // 「显式 null」),不本地改值,落库结果由 intents 广播回填;开发中/已完成的锁由服务端
+  // 兜底,UI 侧已收起入口。
+  ctx.setIntentImpactLevel = (intentId: string, level: IntentImpactLevel | null): void => {
+    send({ type: 'set_intent_impact_level', intentId, level })
   }
 
   ctx.updateIntentDeps = (

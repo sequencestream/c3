@@ -13,6 +13,23 @@ import type { VendorId } from './vendor.js'
 export type IntentPriority = 'P0' | 'P1' | 'P2' | 'P3'
 
 /**
+ * How far an intent's blast radius reaches. `L1` widest (core flow, money,
+ * data integrity) … `L5` narrowest (wording, cosmetic UI). Orthogonal to
+ * {@link IntentPriority}: priority orders WHEN the work happens, impact level
+ * says HOW MUCH is at stake if it goes wrong. Neither substitutes for the other.
+ */
+export type IntentImpactLevel = 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
+
+/** All {@link IntentImpactLevel} values, high impact first, for runtime validation + UI order. */
+export const INTENT_IMPACT_LEVELS = [
+  'L1',
+  'L2',
+  'L3',
+  'L4',
+  'L5',
+] as const satisfies readonly IntentImpactLevel[]
+
+/**
  * Intent lifecycle status.
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
@@ -480,6 +497,14 @@ export interface Intent {
   shortEnTitle: string | null
   content: string
   priority: IntentPriority
+  /**
+   * Blast radius of this intent, judged by the comm agent at creation and
+   * adjustable by hand until development starts. `null` means UNGRADED — the
+   * honest reading for every intent created before the field existed and for any
+   * persisted value the code cannot interpret; it is never silently rounded to a
+   * middle grade.
+   */
+  impactLevel: IntentImpactLevel | null
   /** Owning module name, inferred by the comm agent from title/content. `''` when historic/unidentified. */
   module: string
   status: IntentStatus
@@ -949,6 +974,13 @@ export interface ProposedIntent {
   shortEnTitle: string
   content: string
   priority: IntentPriority
+  /**
+   * Blast-radius grade the comm agent judged from title/content. Omit to keep
+   * the stored value on update (ungraded on create); an explicit `null` clears a
+   * grade back to ungraded. Absence and explicit `null` are deliberately
+   * distinct, so a routine edit never drops a grade someone set on purpose.
+   */
+  impactLevel?: IntentImpactLevel | null
   /** Module name the comm agent inferred from title/content; persisted as `''` when omitted. */
   module?: string
   /** Optional ids of existing intents (same project) it depends on. */

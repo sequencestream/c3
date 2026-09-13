@@ -12,6 +12,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     shortEnTitle: null,
     content: 'Body',
     priority: 'P1',
+    impactLevel: null,
     module: '',
     status: 'todo',
     dependsOn: [],
@@ -76,6 +77,8 @@ const SPEC_MODE_DERIVED = '[data-testid="intent-meta-spec-mode-derived"]'
 const SPEC_MODE_OFF_HINT = '[data-testid="intent-meta-spec-mode-off-hint"]'
 const SPEC_MODE_READONLY = '[data-testid="intent-meta-spec-mode-readonly"]'
 const SPEC_MODE_LOCKED_HINT = '[data-testid="intent-meta-spec-mode-locked-hint"]'
+const IMPACT_SELECT = '[data-testid="intent-meta-impact-level-select"]'
+const IMPACT_READONLY = '[data-testid="intent-meta-impact-level-readonly"]'
 const DEP_DELETE = '[data-testid="dep-edit-delete"]'
 const CONFIRM_OVERLAY = '[data-testid="confirm-overlay"]'
 const CONFIRM_ACCEPT = '[data-testid="confirm-accept"]'
@@ -98,7 +101,7 @@ function depEditFixture() {
 }
 
 describe('IntentOverviewTab.vue', () => {
-  it('renders meta fields in the stable order ID → spec mode → branch → base → PR → created → completed → updated → deps', () => {
+  it('renders meta fields in the stable order ID → impact → spec mode → branch → base → PR → created → completed → updated → deps', () => {
     const current = intent({
       id: 'the-id',
       status: 'done',
@@ -112,23 +115,21 @@ describe('IntentOverviewTab.vue', () => {
     })
     const w = mountTab(current, { intents: [current, intent({ id: 'dep1', title: 'Dep one' })] })
     const labels = w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
-    expect(labels).toHaveLength(9)
+    const items = w.findAll('.req-meta > .req-meta-item')
+    expect(labels).toHaveLength(10)
     expect(labels[0]).toContain('the-id')
-    expect(w.findAll('.req-meta > .req-meta-item').at(1)!.attributes('data-testid')).toBe(
-      'intent-meta-spec-mode',
-    )
-    expect(labels[2]).toContain('feature/x')
-    expect(labels[2]).toContain('abcdef1')
+    expect(items.at(1)!.attributes('data-testid')).toBe('intent-meta-impact-level')
+    expect(items.at(2)!.attributes('data-testid')).toBe('intent-meta-spec-mode')
+    expect(labels[3]).toContain('feature/x')
+    expect(labels[3]).toContain('abcdef1')
     // 基准分支是持久快照,与开发分支并列展示,而不是从交付现算。
-    expect(labels[3]).toContain('delivery/alpha')
+    expect(labels[4]).toContain('delivery/alpha')
     expect(w.find('[data-testid="intent-meta-base-branch"]').find('.req-meta-note').exists()).toBe(
       false,
     )
-    expect(labels[4]).toContain('#42')
+    expect(labels[5]).toContain('#42')
     expect(w.find('.req-meta-pr-link').attributes('href')).toBe('https://x/pull/42')
-    expect(w.findAll('.req-meta > .req-meta-item').at(8)!.classes()).toContain(
-      'req-meta-dependencies',
-    )
+    expect(items.at(9)!.classes()).toContain('req-meta-dependencies')
   })
 
   it('shows the Edit entry only for draft/todo and runs the save/cancel lifecycle', async () => {
@@ -661,5 +662,47 @@ describe('IntentOverviewTab — specMode 在规范/开发已起步后锁定为�
       expect(rejected, locale).toBeTruthy()
       expect(rejected, locale).toMatch(reasonPhrases[locale])
     }
+  })
+  // ── 影响范围等级 ────────────────────────────────────────────────────────────
+  it('未定级渲染为一档显式选项而不是空白', () => {
+    const w = mountTab(intent({ id: 'r1', impactLevel: null }))
+    const select = w.find(IMPACT_SELECT).element as HTMLSelectElement
+    expect(select.value).toBe('unset')
+    expect([...select.options].map((o) => o.value)).toEqual(['unset', 'L1', 'L2', 'L3', 'L4', 'L5'])
+  })
+
+  it.each(['L1', 'L3', 'L5'] as const)('已定级 %s 时选中该档', (level) => {
+    const w = mountTab(intent({ id: 'r1', impactLevel: level }))
+    expect((w.find(IMPACT_SELECT).element as HTMLSelectElement).value).toBe(level)
+  })
+
+  it('选择某一档即 emit set-impact-level,且不本地改选中值(等服务端广播回填)', async () => {
+    const w = mountTab(intent({ id: 'r1', impactLevel: null }))
+    await w.find(IMPACT_SELECT).setValue('L2')
+    expect(w.emitted('set-impact-level')).toEqual([['r1', 'L2']])
+    // props 未变 ⇒ 渲染值回到未定级,不留一个服务端没确认过的假选中态。
+    await w.setProps({ intent: intent({ id: 'r1', impactLevel: null }) })
+    expect((w.find(IMPACT_SELECT).element as HTMLSelectElement).value).toBe('unset')
+  })
+
+  it('选回「未定级」emit null 以清除等级', async () => {
+    const w = mountTab(intent({ id: 'r1', impactLevel: 'L1' }))
+    await w.find(IMPACT_SELECT).setValue('unset')
+    expect(w.emitted('set-impact-level')).toEqual([['r1', null]])
+  })
+
+  it.each(['in_progress', 'done'] as const)('%s 时降级为只读文本而非隐藏整行', (status) => {
+    const w = mountTab(intent({ id: 'r1', status, impactLevel: 'L2' }))
+    expect(w.find(IMPACT_SELECT).exists()).toBe(false)
+    expect(w.find(IMPACT_READONLY).text()).toContain('L2')
+    expect(w.find('[data-testid="intent-meta-impact-level"]').exists()).toBe(true)
+  })
+
+  it.each(['draft', 'todo', 'cancelled'] as const)('%s 时可编辑', (status) => {
+    expect(
+      mountTab(intent({ id: 'r1', status }))
+        .find(IMPACT_SELECT)
+        .exists(),
+    ).toBe(true)
   })
 })

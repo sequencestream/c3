@@ -240,6 +240,7 @@ const {
   deleteIntent,
   setIntentAutomate,
   setIntentSpecMode,
+  setIntentImpactLevel,
   updateIntentContent,
   saveSpecContent,
   updateIntentDeps,
@@ -859,6 +860,7 @@ function onFilesChatWidth(px: number): void {
           @delete="deleteIntent"
           @set-automate="setIntentAutomate"
           @set-spec-mode="setIntentSpecMode"
+          @set-impact-level="setIntentImpactLevel"
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"

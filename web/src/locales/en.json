@@ -1492,7 +1492,9 @@
         "intent": "Intent",
         "spec": "Spec",
         "work": "Work",
-        "pr": "PR"
+        "pr": "PR",
+        "review": "Review",
+        "fix": "Fix"
       },
       "state": {
         "notStarted": "Not started",

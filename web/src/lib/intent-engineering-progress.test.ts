@@ -16,6 +16,8 @@ function derive(
       specSessionId: null,
       lastWorkSessionId: null,
       prs: [],
+      // L5 by default: keeps the review segment out of tests that aren't about it.
+      impactLevel: 'L5',
       ...overrides,
     },
     sddEnabled,
@@ -154,5 +156,94 @@ describe('deriveIntentEngineeringProgress', () => {
         .slice(-2)
         .map(({ state }) => state),
     ).toEqual(expected)
+  })
+
+  it.each([
+    ['L1', 'L1'],
+    ['L2', 'L2'],
+    ['L3', 'L3'],
+    ['L4', 'L4'],
+    ['ungraded', null],
+  ] as const)('shows the review segment for %s when a PR exists', (_name, impactLevel) => {
+    const stages = derive({ impactLevel, prs: fakeIntentPrs('reviewing') }, true, 'worktree').map(
+      ({ stage }) => stage,
+    )
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review'])
+  })
+
+  it('skips the review segment for an L5 intent', () => {
+    const stages = derive(
+      { impactLevel: 'L5', prs: fakeIntentPrs('reviewing') },
+      true,
+      'worktree',
+    ).map(({ stage }) => stage)
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr'])
+  })
+
+  it('shows the review segment with a written conclusion even without a PR row', () => {
+    const stages = derive({ impactLevel: 'L3', reviewStatus: 'approved' }, true, 'worktree').map(
+      ({ stage }) => stage,
+    )
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review'])
+  })
+
+  it.each([
+    ['never reviewed', null, 'not_started'],
+    ['in flight', 'pending', 'in_progress'],
+    ['approved', 'approved', 'completed'],
+    ['rejected', 'rejected', 'closed'],
+  ] as const)('maps the review segment state when %s', (_name, reviewStatus, expected) => {
+    const review = derive(
+      { impactLevel: 'L3', prs: fakeIntentPrs('reviewing'), reviewStatus },
+      true,
+      'worktree',
+    ).find(({ stage }) => stage === 'review')
+    expect(review?.state).toBe(expected)
+  })
+
+  it.each([
+    ['a bound fix session only', { fixSessionId: 'fix-session' }, 'not_started'],
+    ['a pending fix', { fixStatus: 'pending' }, 'in_progress'],
+    ['a completed fix', { fixStatus: 'fixed' }, 'completed'],
+  ] as const)('derives the fix segment state for %s', (_name, overrides, expected) => {
+    const items = derive(overrides as Parameters<typeof derive>[0], true, 'worktree')
+    expect(items.map(({ stage }) => stage)).toEqual(['intent', 'spec', 'work', 'pr', 'fix'])
+    expect(items.at(-1)?.state).toBe(expected)
+  })
+
+  it('omits the fix segment when no fix session and no conclusion exist', () => {
+    const stages = derive({}, true, 'worktree').map(({ stage }) => stage)
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr'])
+  })
+
+  it('orders review and fix after the PR segment', () => {
+    const stages = derive(
+      {
+        impactLevel: 'L3',
+        prs: fakeIntentPrs('reviewing'),
+        reviewStatus: 'rejected',
+        fixStatus: 'fixed',
+      },
+      true,
+      'worktree',
+    ).map(({ stage }) => stage)
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review', 'fix'])
+  })
+
+  it.each([
+    ['missing mode', undefined],
+    ['current-branch mode', 'current-branch'],
+  ] as const)('omits review and fix outside worktree mode (%s)', (_name, branchMode) => {
+    const stages = derive(
+      {
+        impactLevel: 'L3',
+        prs: fakeIntentPrs('reviewing'),
+        reviewStatus: 'rejected',
+        fixStatus: 'fixed',
+      },
+      true,
+      branchMode,
+    ).map(({ stage }) => stage)
+    expect(stages).toEqual(['intent', 'spec', 'work'])
   })
 })

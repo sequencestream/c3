@@ -1,8 +1,15 @@
-import type { IntentPr, IntentSpecMode, IntentStatus } from '@ccc/shared/protocol'
-import { deriveIntentPrAggregate } from '@ccc/shared'
+import type {
+  IntentFixStatus,
+  IntentImpactLevel,
+  IntentPr,
+  IntentReviewStatus,
+  IntentSpecMode,
+  IntentStatus,
+} from '@ccc/shared/protocol'
+import { deriveIntentPrAggregate, needsReview } from '@ccc/shared'
 
 export type EngineeringProgressState = 'not_started' | 'in_progress' | 'completed' | 'closed'
-export type EngineeringProgressStage = 'intent' | 'spec' | 'work' | 'pr'
+export type EngineeringProgressStage = 'intent' | 'spec' | 'work' | 'pr' | 'review' | 'fix'
 
 export interface EngineeringProgressInput {
   status: IntentStatus
@@ -18,6 +25,14 @@ export interface EngineeringProgressInput {
   lastWorkSessionId?: string | null
   /** Every PR the intent owns; the PR stage reads its aggregate, never one row. */
   prs?: IntentPr[]
+  /** The intent's impact grade; decides whether the PR review segment appears. */
+  impactLevel?: IntentImpactLevel | null
+  /** The PR AI review conclusion; `null` when the PR was never reviewed. */
+  reviewStatus?: IntentReviewStatus | null
+  /** The session that ran the fix round; non-null binds a fix segment. */
+  fixSessionId?: string | null
+  /** Whether the fix round concluded; `null` when no fix was started. */
+  fixStatus?: IntentFixStatus | null
 }
 
 export interface EngineeringProgressItem {
@@ -27,6 +42,26 @@ export interface EngineeringProgressItem {
 
 function hasValue(value: string | null | undefined): boolean {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+/** `true` when the nullable field is neither `null` nor absent (`undefined`). */
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined
+}
+
+function reviewState(
+  reviewStatus: IntentReviewStatus | null | undefined,
+): EngineeringProgressState {
+  if (reviewStatus === 'pending') return 'in_progress'
+  if (reviewStatus === 'approved') return 'completed'
+  if (reviewStatus === 'rejected') return 'closed'
+  return 'not_started'
+}
+
+function fixState(fixStatus: IntentFixStatus | null | undefined): EngineeringProgressState {
+  if (fixStatus === 'pending') return 'in_progress'
+  if (fixStatus === 'fixed') return 'completed'
+  return 'not_started'
 }
 
 export function deriveIntentEngineeringProgress(
@@ -84,6 +119,24 @@ export function deriveIntentEngineeringProgress(
       else state = 'in_progress'
     }
     progress.push({ stage: 'pr', state })
+
+    // Review follows the PR. It appears only when the intent actually goes through
+    // the review loop (`needsReview` — L5 skips the first review) AND there is PR
+    // evidence to review: a PR row, or a conclusion already written by the relay.
+    // `reviewStatus` alone drives the state.
+    if (
+      needsReview(intent.impactLevel ?? null) &&
+      (prs.length > 0 || isPresent(intent.reviewStatus))
+    ) {
+      progress.push({ stage: 'review', state: reviewState(intent.reviewStatus) })
+    }
+
+    // Fix only exists after a rejected review; a bound fix session or a written
+    // conclusion is what makes the segment appear. `fixStatus` alone drives the
+    // state — there is no separate "fix needed" field.
+    if (hasValue(intent.fixSessionId) || isPresent(intent.fixStatus)) {
+      progress.push({ stage: 'fix', state: fixState(intent.fixStatus) })
+    }
   }
 
   return progress

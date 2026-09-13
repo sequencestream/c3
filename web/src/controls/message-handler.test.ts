@@ -160,6 +160,7 @@ function makeCtx() {
   const settingsTarget = ref<import('@/lib/action-descriptor').SystemSettingsTarget | null>(null)
   const addWorkspaceOpen = ref(false)
   const hostStatus = ref<unknown>(null)
+  const vendorCliSyncing = ref<unknown>([])
   const vendorRuntime = ref<unknown>(null)
   const sandboxStatus = ref<unknown>(null)
   const bindingStats = ref<unknown>(null)
@@ -209,6 +210,7 @@ function makeCtx() {
     settingsTarget,
     addWorkspaceOpen,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     sandboxStatus,
     bindingStats,
@@ -398,6 +400,7 @@ function makeCtx() {
     intentGateEscape,
     showIntentGateEscape,
     closeIntentGateEscape,
+    vendorCliSyncing,
   }
 }
 
@@ -3254,5 +3257,51 @@ describe('auto_configure_agents_result — the outcome is never silent', () => {
     const r = fire(0, 3)
     expect(r.toast.value).toBe(`${KEY}.alreadyConfigured`)
     expect(r.toast.value).not.toBe(`${KEY}.noVendor`)
+  })
+})
+
+describe('vendor_cli_sync_result — outcome toast + in-flight clear', () => {
+  // `ctx.t` passthrough ⇒ the toast IS the i18n key, enough to pin WHICH branch ran.
+  const KEY = 'settings.vendorCli.sync'
+
+  function fire(result: { ok: boolean; installed?: boolean }) {
+    const r = makeCtx()
+    r.vendorCliSyncing.value = ['claude']
+    r.ctx.handleMessage({
+      type: 'vendor_cli_sync_result',
+      vendor: 'claude',
+      ...result,
+    } as unknown as ServerToClient)
+    return r
+  }
+
+  it('reports an actual install/upgrade and clears the in-flight flag', () => {
+    const r = fire({ ok: true, installed: true })
+    expect(r.toast.value).toBe(`${KEY}.installed`)
+    expect(r.vendorCliSyncing.value).toEqual([])
+  })
+
+  it('reports "already latest" for a no-op sync', () => {
+    const r = fire({ ok: true, installed: false })
+    expect(r.toast.value).toBe(`${KEY}.alreadyLatest`)
+    expect(r.vendorCliSyncing.value).toEqual([])
+  })
+
+  it('reports failure and still clears the in-flight flag', () => {
+    const r = fire({ ok: false })
+    expect(r.toast.value).toBe(`${KEY}.failed`)
+    expect(r.vendorCliSyncing.value).toEqual([])
+  })
+
+  it('clears only the synced vendor, leaving any other in-flight row alone', () => {
+    const r = makeCtx()
+    r.vendorCliSyncing.value = ['claude', 'codex']
+    r.ctx.handleMessage({
+      type: 'vendor_cli_sync_result',
+      vendor: 'claude',
+      ok: true,
+      installed: true,
+    } as unknown as ServerToClient)
+    expect(r.vendorCliSyncing.value).toEqual(['codex'])
   })
 })

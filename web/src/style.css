@@ -3478,6 +3478,25 @@ select.agent-field {
   gap: var(--sp-1);
   font-size: var(--fs-code);
 }
+/* 手动「下载 / 检查新版本」按钮:ghost 轮廓,和 settings-foot 的次要按钮同款,并
+   右对齐到 vendor 行首,不与版本选择器混在一起。 */
+.vendor-cli-sync-btn {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 var(--sp-4);
+  background: transparent;
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-code);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.vendor-cli-sync-btn:hover:not(:disabled) {
+  filter: none;
+  background: var(--c-hover);
+  color: var(--c-text);
+}
 .mode-select {
   height: 34px;
   padding: 0 var(--sp-select-arrow) 0 var(--sp-3);

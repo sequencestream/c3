@@ -90,6 +90,8 @@ const props = withDefaults(
     userAccessWorkspaces?: WorkspaceInfo[]
     /** provider 连接探测结果,键为 `${providerId}:${vendor}`。 */
     providerProbes?: Record<string, ProviderProbeState>
+    /** 正在手动「下载 / 检查新版本」的 vendor 列表;按钮据此禁用并显示「下载中…」。 */
+    vendorCliSyncing?: VendorId[]
   }>(),
   {
     hostStatus: () => [],
@@ -101,6 +103,7 @@ const props = withDefaults(
     userAccessAccounts: null,
     userAccessWorkspaces: () => [],
     providerProbes: () => ({}),
+    vendorCliSyncing: () => [],
   },
 )
 
@@ -248,6 +251,18 @@ function vendorColor(v: VendorId): string {
 function vendorLabel(v: VendorId): string {
   return VENDOR_LABEL[v]
 }
+// 该 vendor 是否正在手动下载 / 检查新版本:按钮禁用 + 显示「下载中…」。
+function isVendorCliSyncing(vendor: VendorId): boolean {
+  return props.vendorCliSyncing.includes(vendor)
+}
+// 手动下载按钮文案:in-flight → 「下载中…」;已装过某个版本 → 「检查新版本」;
+// 从未装过 → 「下载」。只对 npm 自管 vendor 渲染,按钮因此永远不发 cursor(无 npm 包)。
+function vendorCliButtonLabel(h: VendorHostStatus): string {
+  if (isVendorCliSyncing(h.vendor)) return t('settings.vendorCli.sync.syncing')
+  return (h.installedVersions?.length ?? 0) > 0
+    ? t('settings.vendorCli.sync.checkUpdate')
+    : t('settings.vendorCli.sync.download')
+}
 
 const emit = defineEmits<{
   close: []
@@ -266,6 +281,9 @@ const emit = defineEmits<{
   // lands server-side at once, so the cold-start user gets a usable agent from one
   // click instead of a click plus a Save they have no reason to trust yet.
   'auto-configure-agents': []
+  // 手动「下载 / 检查新版本」一个 npm 自管 vendor CLI。Panel 只发事件,App 经统一
+  // action 路由到 `sync_vendor_cli`;未装过的 vendor 显示「下载」,已装过显示「检查新版本」。
+  'sync-vendor-cli': [vendor: VendorId]
   // The one-shot `target` was acted on (located, or resolved to its fallback);
   // the owner clears it so reopening the panel does not jump again.
   'target-consumed': []
@@ -2251,6 +2269,15 @@ function selectAdmin(username: string) {
                 :title="vendorLabel(h.vendor)"
               ></span>
               <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
+              <button
+                v-if="h.npmManaged === true"
+                class="vendor-cli-sync-btn"
+                :disabled="!isAdmin || isVendorCliSyncing(h.vendor)"
+                :data-testid="`vendor-cli-sync-${h.vendor}`"
+                @click="emit('sync-vendor-cli', h.vendor)"
+              >
+                {{ vendorCliButtonLabel(h) }}
+              </button>
             </div>
             <div class="vendor-cli-status">
               <span class="vendor-cli-field">

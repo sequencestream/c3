@@ -49,6 +49,18 @@ export type ClientSaveSettings = { type: 'save_settings'; settings: SystemSettin
 export type ClientAutoConfigureAgents = { type: 'auto_configure_agents' }
 
 /**
+ * Manually trigger one npm-managed vendor CLI's download / update check
+ * (reply: `settings`, then `vendor_cli_sync_result`).
+ *
+ * The payload names only the `vendor` — never a package name, version or URL. What
+ * may be fetched is decided entirely by the server's npm-managed whitelist, so a
+ * client cannot point the download at an arbitrary tarball. Bypasses the 24h
+ * cooldown by construction (it calls the sync directly, never the cooldown gate),
+ * and is admin-only like every other system-configuration mutation.
+ */
+export type ClientSyncVendorCli = { type: 'sync_vendor_cli'; vendor: VendorId }
+
+/**
  * What the one-click bootstrap actually did — the counts a console needs to say
  * something true instead of "done".
  *
@@ -69,6 +81,32 @@ export type ServerAutoConfigureAgentsResult = {
   availableVendors: number
   /** The vendors an agent was created for, in canonical order; empty when none. */
   vendors: VendorId[]
+}
+
+/**
+ * The conclusion of one `sync_vendor_cli` trigger — the structured answer the
+ * console needs to clear an in-flight flag and pick a result toast without
+ * diffing settings snapshots or parsing `lastError` text. Rides AFTER the
+ * `settings` echo, so the panel is refreshed before the toast lands.
+ *
+ * `installed` is true only when this trigger actually materialised/upgraded a
+ * version on disk (the download target advanced, or an installed version was
+ * gained) — the server compares the manifest before/after, the console does not
+ * guess. `version` is the resolved download target after the sync. `error`
+ * carries the same free-form reason the panel's `lastError` shows.
+ */
+export type ServerVendorCliSyncResult = {
+  type: 'vendor_cli_sync_result'
+  /** Echo of the triggered vendor. */
+  vendor: VendorId
+  /** Whether the sync succeeded (packument/download/install all good, or a thrown path was caught). */
+  ok: boolean
+  /** Download target version resolved after the sync. */
+  version?: string
+  /** Whether this trigger actually installed/upgraded a version. */
+  installed?: boolean
+  /** Failure reason; same source as the panel's `lastError`. */
+  error?: string
 }
 
 /**

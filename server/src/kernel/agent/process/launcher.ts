@@ -1056,6 +1056,25 @@ export function applyVendorCliChoices(
   resetProbeCache()
 }
 
+/**
+ * Record a manual `sync_vendor_cli` failure into the manifest's `lastError` and
+ * invalidate the probe cache, so the next resolve reflects the failure state.
+ *
+ * This is the entry the settings sync handler calls on the ONE path
+ * `syncManagedVendorCli` does not already record itself: a thrown error (e.g.
+ * `selectNpmVersion` found no compatible version, or a probed version fell out of
+ * range). Those throws are caught by the handler, which forwards the reason here
+ * rather than letting the whole sync path fail unrecorded.
+ */
+export function recordVendorCliSyncError(
+  vendor: VendorId,
+  message: string,
+  deps?: VendorInstallerDeps,
+): void {
+  recordState(vendor, { lastError: message }, deps)
+  resetProbeCache()
+}
+
 /** A selectable installed managed version (failed entries are excluded). */
 export interface VendorCliVersionEntry {
   version: string

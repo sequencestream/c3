@@ -119,6 +119,10 @@ export function buildSettingsSlice() {
   // 「一次性目标」模式),因此重开设置页不会再跳回上一次的 agent 行。
   const settingsTarget = ref<SystemSettingsTarget | null>(null)
   const hostStatus = ref<VendorHostStatus[]>([])
+  // 正在手动「下载 / 检查新版本」的 vendor 列表:按钮据此禁用并显示「下载中…」。
+  // 服务端回 `vendor_cli_sync_result` 时清除对应项(与 installingSkillIds 同一套
+  // in-flight 模式),重复点击在 action 层直接返回,不发第二个请求。
+  const vendorCliSyncing = ref<VendorId[]>([])
   // 服务端给出的、覆盖全部 vendor 的运行时可用性;旧服务端不发此字段,故可为 null。
   const vendorRuntime = ref<Record<VendorId, VendorRuntimeStatus> | null>(null)
   // 全前端唯一的「vendor 能不能跑」判定:所有门控点读它,不各自解读 hostStatus,
@@ -222,6 +226,7 @@ export function buildSettingsSlice() {
     settingsOpen,
     settingsTarget,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     vendorAvailability,
     sandboxStatus,

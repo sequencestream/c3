@@ -17,7 +17,19 @@ function localeMessages(locale: string) {
   return JSON.parse(
     readFileSync(resolve(__dirname, `../../../../locales/${locale}.json`), 'utf8'),
   ) as {
-    settings: { vendorCli: { degraded: { pinnedVersionUnavailable: string } } }
+    settings: {
+      vendorCli: {
+        degraded: { pinnedVersionUnavailable: string }
+        sync: {
+          download: string
+          checkUpdate: string
+          syncing: string
+          installed: string
+          alreadyLatest: string
+          failed: string
+        }
+      }
+    }
   }
 }
 
@@ -1232,6 +1244,92 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
     await w.find(SAVE.runtime).trigger('click')
     const emitted = (w.emitted('save')![0][0] as SystemSettings).vendorCliVersions
     expect(emitted?.claude).toBeUndefined()
+  })
+})
+
+describe('SettingsPanel.vue — manual vendor CLI download/check button', () => {
+  afterEach(() => {
+    applyLocale('en')
+    useAuth().setIsAdmin(true)
+  })
+
+  // npmManaged 只在 claude 上为 true;codex 缺省(false)模拟旧服务端 —— 无按钮。
+  const syncingHostStatus = [
+    {
+      vendor: 'claude' as const,
+      present: true,
+      binary: 'claude',
+      path: '/usr/local/bin/claude',
+      source: 'managed',
+      installHint: '',
+      npmManaged: true,
+      installedVersions: [{ version: '1.0.0', status: 'installed' as const }],
+    },
+    {
+      vendor: 'codex' as const,
+      present: false,
+      binary: 'codex',
+      path: null,
+      installHint: 'install codex',
+    },
+  ]
+
+  it('renders the button only for npm-managed vendors', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    expect(w.find('[data-testid="vendor-cli-sync-claude"]').exists()).toBe(true)
+    expect(w.find('[data-testid="vendor-cli-sync-codex"]').exists()).toBe(false)
+  })
+
+  it('labels an installed vendor "check for updates" and a fresh one "download"', () => {
+    const en = localeMessages('en').settings.vendorCli.sync
+    const installed = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    expect(installed.get('[data-testid="vendor-cli-sync-claude"]').text()).toBe(en.checkUpdate)
+
+    const fresh = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        hostStatus: [{ ...syncingHostStatus[0], installedVersions: [] }],
+      },
+    })
+    expect(fresh.get('[data-testid="vendor-cli-sync-claude"]').text()).toBe(en.download)
+  })
+
+  it('shows "downloading…" and disables the button while the vendor is in flight', () => {
+    const en = localeMessages('en').settings.vendorCli.sync
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        hostStatus: syncingHostStatus,
+        vendorCliSyncing: ['claude'],
+      },
+    })
+    const btn = w.get('[data-testid="vendor-cli-sync-claude"]')
+    expect(btn.text()).toBe(en.syncing)
+    expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('disables the button for a non-admin', () => {
+    useAuth().setIsAdmin(false)
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    expect(
+      (w.get('[data-testid="vendor-cli-sync-claude"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
+  it('emits sync-vendor-cli with the vendor on click', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, hostStatus: syncingHostStatus },
+    })
+    await w.get('[data-testid="vendor-cli-sync-claude"]').trigger('click')
+    expect(w.emitted('sync-vendor-cli')).toEqual([['claude']])
   })
 })
 

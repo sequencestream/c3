@@ -634,6 +634,14 @@
       "empty": "No installed managed versions yet.",
       "degraded": {
         "pinnedVersionUnavailable": "Pinned version {pinnedVersion} is unavailable; using {resolvedVersion} instead."
+      },
+      "sync": {
+        "download": "Download",
+        "checkUpdate": "Check for updates",
+        "syncing": "Downloading…",
+        "installed": "Installed / updated.",
+        "alreadyLatest": "Already up to date.",
+        "failed": "Sync failed."
       }
     },
     "skillRepos": {

@@ -23,6 +23,7 @@ import {
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
 import { autoConfigureAgentsHandler } from './settings/auto-configure-agents.js'
+import { syncVendorCliHandler } from './settings/sync-vendor-cli.js'
 import { probeModelProviderHandler } from './settings/model-providers.js'
 import {
   applySelfUpdateHandler,
@@ -203,6 +204,7 @@ export const handlerMap: HandlerMap = {
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
   auto_configure_agents: autoConfigureAgentsHandler,
+  sync_vendor_cli: syncVendorCliHandler,
   probe_model_provider: probeModelProviderHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,

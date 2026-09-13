@@ -299,6 +299,7 @@ c3
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
 │   │   ├── 工具会话显示                          # showToolSessions 独立开关,决定工具类会话是否进聚合页侧栏
 │   │   ├── vendor CLI 多版本生效选择             # 仅托管 vendor(claude/codex):下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退;非托管 vendor(cursor)不进该面板
+│   │   ├── vendor CLI 手动下载/检查新版本        # 每个 npm 受管 vendor 行内一个按钮(未安装「下载」/已安装「检查新版本」/在途「下载中…」),`sync_vendor_cli` 绕过 24h 冷却立即同步,回 settings 快照 + `vendor_cli_sync_result` 结构结论;按 `npmManaged` 渲染、非管理员禁用、并发合并;运行时驱动诊断仍只读
 │   │   ├── 代理                                  # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境;服务端自身出网(版本检查/发行包下载)同样按此路由,回环与 NO_PROXY 直连
 │   │   ├── 会话清理                              # sessionCleanup 开关 + 保留天数(默认关、30 天),每日删除各 vendor 会话存储中超期的会话记录;按目录名约定识别(vendor 中立)、覆盖沙箱与宿主 home,不碰 Cursor 与 IDE 共写的 `~/.cursor/chats`
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图

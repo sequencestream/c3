@@ -12,9 +12,10 @@
  * records verdicts.
  */
 import type { Intent } from '@ccc/shared/protocol'
-import { deriveIntentPrAggregate, specGateBlocks } from '@ccc/shared'
+import { activeIntentPrs, deriveIntentPrAggregate, specGateBlocks } from '@ccc/shared'
 import type {
   QueueIntentFact,
+  QueueRelayRunFact,
   QueueReconcileOutput,
   QueueRunFact,
   QueueSpecRunFact,
@@ -94,6 +95,16 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     specReviewFingerprint: r.specReviewFingerprint,
     specReviewReworkRounds: r.specReviewReworkRounds,
     specReviewMachineApprovalBlocked: r.specReviewMachineApprovalBlocked,
+    // The relay only ever acts on a PR that is still live. Reduced HERE with the
+    // shared `activeIntentPrs` rule, so the kernel cannot be told a merged or
+    // closed PR is still waiting for an AI review — and so a forge `rejected` row
+    // can never be mistaken for the AI review's own `rejected` conclusion.
+    hasActivePr: activeIntentPrs(r.prs).length > 0,
+    reviewSessionId: r.reviewSessionId,
+    reviewStatus: r.reviewStatus,
+    reviewFixRounds: r.reviewFixRounds,
+    fixSessionId: r.fixSessionId,
+    fixStatus: r.fixStatus,
   }
 }
 
@@ -160,6 +171,37 @@ export function probeSpecRunFacts(
   const seen = new Set<string>()
   for (const r of intents) {
     for (const sid of [r.specSessionId, r.specReviewSessionId]) {
+      if (!sid || seen.has(sid)) continue
+      seen.add(sid)
+      facts.push({ sessionId: sid, alive: isSpecOccupancyAlive(sid, hooks.isRunning, now) })
+    }
+  }
+  return facts
+}
+
+/**
+ * Probe the PR review / fix sessions the ledger points at. Kept apart from both
+ * {@link probeRunFacts} and {@link probeSpecRunFacts} for the same reason those
+ * are apart from each other: a relay session is neither development nor a spec
+ * phase, and letting it into either set would make it read as the wrong kind of
+ * work to the gates that consume them.
+ *
+ * A session counts as "alive" under exactly the rule the spec phase uses
+ * ({@link isSpecOccupancyAlive}): a live run, or a `pending:` placeholder whose
+ * projection row has not aged past the grace window. That is what closes the bind
+ * gap — from the moment a Review / Fix session is claimed until its real session
+ * id replaces the placeholder, the phase must read as occupied, including for a
+ * bounded window after a restart.
+ */
+export function probeRelayRunFacts(
+  intents: readonly Intent[],
+  hooks: Pick<WorkflowHooks, 'isRunning'>,
+  now: number,
+): QueueRelayRunFact[] {
+  const facts: QueueRelayRunFact[] = []
+  const seen = new Set<string>()
+  for (const r of intents) {
+    for (const sid of [r.reviewSessionId, r.fixSessionId]) {
       if (!sid || seen.has(sid)) continue
       seen.add(sid)
       facts.push({ sessionId: sid, alive: isSpecOccupancyAlive(sid, hooks.isRunning, now) })

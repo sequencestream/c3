@@ -32,12 +32,12 @@
 - **`baseBranch`**(text): 意图的**基准分支快照** —— 它建在哪个分支上;非空。PR 目标与 worktree 基线共读此值(见下)
 - **`baseBranchFallback`**(boolean): `baseBranch` 是否为读时派生的主分支回退(持久值缺失或不可用),而非记录下来的事实;界面据此标注,不把回退伪装成历史
 - **`reviewSessionId`**(text | null): 当前或最近一次 PR 评审会话的 `c3SessionId`;与 `specReviewSessionId`(spec 只读审核)分属不同权限域,亦不是厂商 session id 或自动化 execution id
-- **`reviewStatus`**(enum `pending`|`approved`|`rejected`| null): PR AI 评审结论;`null` = 未评审,`pending` = 待结论,`approved` = 通过,`rejected` = 发现问题(表达修复要求)。持久值无法解释时读作 `null`(RM-R52)
-- **`reviewFixRounds`**(number): 闭环复审轮次(一次 `review→fix` 往返计一轮);非负整数,只增不改(RM-R52)
+- **`reviewStatus`**(enum `pending`|`approved`|`rejected`| null): PR AI 评审结论;`null` = 未评审,`pending` = 待结论,`approved` = 通过,`rejected` = 发现问题(表达修复要求)。持久值无法解释时读作 `null`(RM-R52)。`pending` 只表示「等待结论」,是否真的在跑由会话存活派生 —— 队列是它的唯一写入方(RM-A25)
+- **`reviewFixRounds`**(number): 已认领的修复轮次;非负整数,只增不改(RM-R52)。**首次评审保持 0** —— 只有队列成功认领一次 Fix 才 +1,恢复一个崩溃的阶段不再累加,普通 unpark 也不重置;上限 `MAX_REVIEW_FIX_ROUNDS = 3`,即正常闭环最多三次修复、四次评审(RM-A25)
 - **`fixSessionId`**(text | null): 当前或最近一次 Fix 会话的 `c3SessionId`
-- **`fixStatus`**(enum `pending`|`fixed`| null): PR 修复结论;`null` = 尚未进入 Fix,`pending` = 待结论,`fixed` = 已处理。`fixed` 不等于评审通过,不能自动写成 `approved`。持久值无法解释时读作 `null`(RM-R52)
+- **`fixStatus`**(enum `pending`|`fixed`| null): PR 修复结论;`null` = 尚未进入 Fix,`pending` = 待结论,`fixed` = 已处理。`fixed` 不等于评审通过,不能自动写成 `approved`。持久值无法解释时读作 `null`(RM-R52)。进入复审时由队列清空,使旧的 `fixed` 不能满足下一次 `rejected`(RM-A25)
 
-共享纯函数 `needsReview(impactLevel)` 只在 `L5` 时返回 `false`,`L1`~`L4` 与 `null` 均返回 `true`;不读数据库、不改状态,也不依据 priority、spec 模式或既有 Review 结论改变结果。
+共享纯函数 `needsReview(impactLevel)` 只在 `L5` 时返回 `false`,`L1`~`L4` 与 `null` 均返回 `true`;不读数据库、不改状态,也不依据 priority、spec 模式或既有 Review 结论改变结果。它只决定**首次**评审是否需要:已经存在任何评审结论后,接力不再受影响范围改判左右(RM-A24)。
 
 关系:属于一个项目(以 `workspaceName` 标识);拥有零个或多个 Intent
 Dependencies;拥有零个或多个 Intent PR;关联零个或多个 Delivery(关联边见

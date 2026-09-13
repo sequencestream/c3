@@ -48,6 +48,7 @@ import type {
 } from './types.js'
 import {
   AUTO_RECOVERABLE_PARK_REASONS,
+  QUEUE_MAX_REVIEW_FIX,
   QUEUE_MAX_SPEC_REWORK,
   QUEUE_PERMISSION_WAIT_MS,
   QUEUE_RUN_ORIGIN,
@@ -59,6 +60,7 @@ import {
   findWriteBlockingDelivery,
   isHighImpactLevel,
   machineApprovalEligible,
+  needsReview,
   specGateBlocks,
   type DependencyGateFact,
   type DependencyGateVerdict,
@@ -94,6 +96,73 @@ interface SpecVerdict {
    */
   needsSlot: boolean
   wakeAt: number | null
+}
+
+/**
+ * What the PR review / fix relay decided for one intent whose work is `done` but
+ * whose PR has not finished its AI review handover. Shaped like {@link SpecVerdict}
+ * for the same reason: it REPLACES the intent's ordinary gate verdict for this
+ * pass, so the decision log names the actual sub-state (first review, fix,
+ * re-review, waiting, exhausted) instead of an opaque "nothing to do".
+ */
+interface RelayVerdict {
+  action: QueueDecision['action']
+  reason: QueueReasonCode
+  detail: string
+  actions: QueueAction[]
+  /**
+   * True when the verdict starts a Review / Fix SESSION. Such a verdict consumes
+   * the very same automation-concurrency slot a development run does — a PR
+   * review is unattended agent work in the intent's own worktree, not a free
+   * side channel. A park and the merge handoff are not sessions and take none.
+   */
+  needsSlot: boolean
+  /** The relay session this verdict points the queue's `current…` projection at. */
+  sessionId: string | null
+  wakeAt: number | null
+}
+
+/**
+ * The only facts "is this intent in the PR review relay?" depends on. Narrower
+ * than {@link QueueIntentFact} so the queue's READ MODELS can answer the question
+ * from a plain ledger row without re-stating the rule — one predicate, so the
+ * queue page and the scheduler can never disagree about who is still in the queue.
+ */
+export type RelayCandidateFacts = Pick<
+  QueueIntentFact,
+  'automate' | 'status' | 'hasActivePr' | 'reviewStatus' | 'impactLevel'
+> & {
+  /**
+   * Whether the workspace gives each intent its OWN worktree. The relay is a
+   * worktree-mode capability for the same reason automatic PR creation is: a
+   * review reads, and a fix edits and pushes, the PR's head branch, which only
+   * exists as a checked-out directory under `worktree`. Under a shared checkout
+   * the relay does not engage at all — rather than engage and then fail every
+   * attempt until the intent parks.
+   */
+  worktreeMode: boolean
+}
+
+/**
+ * Whether the PR review / fix relay still has something to say about an intent.
+ *
+ * The relay only ever acts on an intent whose WORK is finished (`done` — a
+ * manually opened PR does not mean the work is), that automation owns, and that
+ * still holds a live PR. `L5` (and only `L5`) skips the FIRST review; once any
+ * conclusion exists the relay stays engaged whatever the grade later becomes, so
+ * a regrade can never strand an unhandled `rejected`. An `approved` intent is
+ * still engaged — not to review it again, but so the merge handoff has a place
+ * to be decided from.
+ */
+export function relayEngaged(r: RelayCandidateFacts): boolean {
+  if (!r.worktreeMode) return false
+  if (!r.automate || r.status !== 'done' || !r.hasActivePr) return false
+  // `approved` ENDS the relay. The intent leaves the candidate set entirely, so a
+  // queue whose every intent passed review reports `done` instead of idling
+  // forever on work it has nothing left to do about.
+  if (r.reviewStatus === 'approved') return false
+  if (r.reviewStatus === null) return needsReview(r.impactLevel)
+  return true
 }
 
 /** Reconcile one workspace's queue. Pure. */
@@ -224,7 +293,11 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   if (control.state === 'paused') {
     for (const intent of intents) {
       if (!intent.automate) continue
-      if (intent.status !== 'todo' && intent.status !== 'in_progress') continue
+      // Relay candidates are listed too: an intent whose work is done but whose
+      // PR review has not closed is still queue business, and a paused queue must
+      // not read as "that intent left the queue".
+      const relay = relayEngaged({ ...intent, worktreeMode: gitBranchMode === 'worktree' })
+      if (!relay && intent.status !== 'todo' && intent.status !== 'in_progress') continue
       if (parkedThisPass.has(intent.id)) continue
       pushDecision(intent, 'block', 'queue_paused', '队列已暂停')
     }
@@ -415,8 +488,20 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     return { eligible: true, reason: 'selected', detail: '', wakeAt: null }
   }
 
+  // Two kinds of candidate share ONE gate pass, one ordering and one concurrency
+  // budget: intents still being DEVELOPED (todo / in_progress) and intents whose
+  // work is done but whose PR is still in the review → fix RELAY. Keeping them in
+  // one list is what makes the relay obey the very same spec, delivery,
+  // dependency, backoff, cooldown and concurrency gates as development, instead
+  // of quietly acquiring a second, laxer scheduler.
+  const worktreeMode = gitBranchMode === 'worktree'
+  const relayCandidateIds = new Set(
+    intents.filter((r) => relayEngaged({ ...r, worktreeMode })).map((r) => r.id),
+  )
   const candidates = intents.filter(
-    (r) => r.automate && (r.status === 'todo' || r.status === 'in_progress'),
+    (r) =>
+      (r.automate && (r.status === 'todo' || r.status === 'in_progress')) ||
+      relayCandidateIds.has(r.id),
   )
   candidates.sort(
     (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.createdAt - b.createdAt,
@@ -520,10 +605,19 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   }
 
   /**
-   * Record one candidate's verdict, preferring its spec-phase sub-state over the
-   * raw gate result. Every place that reports on non-selected candidates goes
-   * through here, so the three branches below cannot disagree about what a
-   * spec-phase intent is doing.
+   * The relay sub-state of each intent whose PR is still in review → fix. Declared
+   * here but filled in only once the concurrency budget is known (a relay session
+   * competes for the very same slots development does), so the shared-checkout
+   * branches below — which return while another session holds the workspace — see
+   * an empty map and correctly report those intents as gate-blocked.
+   */
+  const relayVerdictOf = new Map<string, RelayVerdict>()
+
+  /**
+   * Record one candidate's verdict, preferring its spec-phase or relay sub-state
+   * over the raw gate result. Every place that reports on non-selected candidates
+   * goes through here, so the branches below cannot disagree about what a
+   * spec-phase or relay intent is doing.
    */
   const pushGateOrSpec = (
     intent: QueueIntentFact,
@@ -533,6 +627,11 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     const spec = specVerdictOf.get(intent.id)
     if (spec) {
       pushDecision(intent, spec.action, spec.reason, spec.detail, spec.wakeAt)
+      return
+    }
+    const relay = relayVerdictOf.get(intent.id)
+    if (relay) {
+      pushDecision(intent, relay.action, relay.reason, relay.detail, relay.wakeAt)
       return
     }
     pushDecision(
@@ -668,6 +767,21 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     }
   }
 
+  // ── Relay runs already in flight ──────────────────────────────────────────
+  // A Review / Fix session the kernel started occupies its intent and one
+  // concurrency slot exactly as a development run does, in BOTH git modes: it is
+  // unattended agent work in that intent's worktree, and letting it run "for
+  // free" is what would let a queue at its cap silently drive twice the agents.
+  const relayInFlight = new Set(input.relayInFlight)
+  for (const intent of candidates) {
+    if (!relayInFlight.has(intent.id) || busy.has(intent.id)) continue
+    busy.add(intent.id)
+    occupied.add(intent.id)
+    observed.add(intent.id)
+    pushDecision(intent, 'wait', 'running', 'PR 评审/修复接力 run 进行中')
+    driving ??= intent
+  }
+
   // ── Automation concurrency cap (RM-A12 scope) ─────────────────────────────
   // `current-branch` shares ONE checkout, so the effective cap is always 1 and
   // the config is ignored — the serial branches above already enforce that.
@@ -679,12 +793,59 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   const effectiveCap = sharedCheckout ? 1 : input.automationConcurrency
   const capReached = occupied.size >= effectiveCap
 
+  // ── PR review / fix relay ─────────────────────────────────────────────────
+  // Every gate-clear relay candidate gets its sub-state decided here. Two of the
+  // outcomes cost nothing — parking an intent that burned its whole fix budget,
+  // and handing an approved PR back for merging — so they always run. Starting a
+  // Review or Fix SESSION does cost: it takes one automation-concurrency slot and,
+  // like development, at most ONE new relay session is started per pass, so a
+  // workspace that just finished five PRs raises its parallelism one tick at a
+  // time instead of fanning out five agents at once.
+  const relayAlive = new Map(input.relayRuns.map((r) => [r.sessionId, r.alive]))
+  let relayStarted: QueueIntentFact | null = null
+  let relaySlots = Math.max(0, effectiveCap - occupied.size)
+  for (const intent of eligible) {
+    if (!relayCandidateIds.has(intent.id) || busy.has(intent.id)) continue
+    const verdict = evaluateRelayPhase(intent, {
+      now,
+      meta: metaOf(intent.id),
+      alive: (id: string | null) => !!id && relayAlive.get(id) === true,
+    })
+    if (verdict.needsSlot && (relaySlots <= 0 || relayStarted !== null)) {
+      relayVerdictOf.set(intent.id, {
+        action: 'wait',
+        reason: 'blocked_concurrency_gate',
+        detail:
+          relaySlots <= 0
+            ? `已达并发上限 ${effectiveCap},PR 评审/修复接力等待空位`
+            : '每轮最多发起一次 PR 评审/修复接力,下一轮继续',
+        actions: [],
+        needsSlot: false,
+        sessionId: null,
+        wakeAt: null,
+      })
+      continue
+    }
+    relayVerdictOf.set(intent.id, verdict)
+    actions.push(...verdict.actions)
+    noteWake(verdict.wakeAt)
+    if (verdict.needsSlot) {
+      relaySlots -= 1
+      relayStarted = intent
+      busy.add(intent.id)
+      occupied.add(intent.id)
+    }
+  }
+  const capReachedAfterRelay = occupied.size >= effectiveCap
+
   // ── Gate clear → select at most one intent ────────────────────────────────
   // Still ONE new work action per pass in either mode: worktree parallelism is
   // raised one intent per tick, not fanned out all at once. The cap is checked
   // before picking, so a pick can never push occupancy past it (a pick adds at
   // most one slot).
-  const picked = capReached ? null : (eligible.find((r) => !busy.has(r.id)) ?? null)
+  const picked = capReachedAfterRelay
+    ? null
+    : (eligible.find((r) => !busy.has(r.id) && !relayCandidateIds.has(r.id)) ?? null)
   if (picked) {
     // `in_progress` with a session that is NOT alive: resume the existing
     // context. A dead blocking session releases `awaiting_gate` by construction —
@@ -712,7 +873,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       gateOf.get(intent.id)!,
       sharedCheckout
         ? '队列串行执行,等待前序意图结束'
-        : capReached
+        : capReachedAfterRelay
           ? `已达并发上限 ${effectiveCap}`
           : '每轮最多发起一个新的工作动作,下一轮继续挑选',
     )
@@ -727,6 +888,18 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     return finish('developing', actions, decisions, {
       intentId: picked.id,
       sessionId: picked.lastWorkSessionId,
+      awaitingPermission,
+    })
+  }
+
+  // A relay session started this pass is what the queue is driving. Its session
+  // link points at the Review / Fix session — never at `lastWorkSessionId`, whose
+  // meaning stays "the work session", so a jump from the queue page lands on the
+  // turn that is actually running.
+  if (relayStarted) {
+    return finish('developing', actions, decisions, {
+      intentId: relayStarted.id,
+      sessionId: relayVerdictOf.get(relayStarted.id)?.sessionId ?? null,
       awaitingPermission,
     })
   }
@@ -771,6 +944,141 @@ function stampQueuePositions(
     .forEach((d, i) => {
       d.queuePosition = i + 1
     })
+}
+
+/**
+ * Decide the PR review / fix relay for ONE intent whose work is `done` and whose
+ * PR has not finished its AI review handover. Pure, and ordered — like the spec
+ * phase — so that every "something is already happening" case is answered before
+ * anything is started.
+ *
+ * The progression, once nothing is in flight:
+ *   reviewStatus null      → first review (round stays 0; it spends no budget)
+ *   reviewStatus pending   → the review died without a conclusion: recover THIS
+ *                            phase, never advance the round
+ *   rejected + no fix      → claim the next fix round, or park when the budget
+ *                            for `Fix → re-review` is spent
+ *   rejected + fix pending → the fix died without a conclusion: recover it
+ *   rejected + fixed       → re-review the same round's work, and clear the fix
+ *                            marker so an old `fixed` can never satisfy the NEXT
+ *                            rejection
+ *   approved               → the relay is over; hand the merge back
+ *
+ * Two orderings carry real weight. `fixed` is checked BEFORE the budget test, so
+ * the third fix still earns its re-review and only a rejection after it parks the
+ * intent. And a `pending` status with a dead session is a RECOVERY, not a new
+ * round: the failure ladder (owned by the executor) is what bounds those retries,
+ * separately from the review-convergence budget.
+ */
+function evaluateRelayPhase(
+  intent: QueueIntentFact,
+  ctx: {
+    now: number
+    meta: QueueIntentMeta
+    alive: (sessionId: string | null) => boolean
+  },
+): RelayVerdict {
+  const wait = (
+    reason: QueueReasonCode,
+    detail: string,
+    sessionId: string | null = null,
+    wakeAt: number | null = null,
+  ): RelayVerdict => ({
+    action: 'wait',
+    reason,
+    detail,
+    actions: [],
+    needsSlot: false,
+    sessionId,
+    wakeAt,
+  })
+  const startReview = (round: number, detail: string): RelayVerdict => ({
+    action: 'launch_review',
+    reason: 'pr_reviewing',
+    detail,
+    actions: [{ kind: 'launch_review', intentId: intent.id, origin: QUEUE_RUN_ORIGIN, round }],
+    needsSlot: true,
+    sessionId: intent.reviewSessionId,
+    wakeAt: null,
+  })
+  const startFix = (round: number, detail: string): RelayVerdict => ({
+    action: 'launch_fix',
+    reason: 'pr_fixing',
+    detail,
+    actions: [{ kind: 'launch_fix', intentId: intent.id, origin: QUEUE_RUN_ORIGIN, round }],
+    needsSlot: true,
+    sessionId: intent.fixSessionId,
+    wakeAt: null,
+  })
+
+  // A result may be backfilled while its session is still finishing up. Let the
+  // session exit first: starting the next phase underneath a live one would leave
+  // two agents on the same worktree.
+  if (ctx.alive(intent.reviewSessionId)) {
+    return wait('pr_review_waiting', '评审会话仍在运行,等待其结束', intent.reviewSessionId)
+  }
+  if (ctx.alive(intent.fixSessionId)) {
+    return wait('pr_review_waiting', '修复会话仍在运行,等待其结束', intent.fixSessionId)
+  }
+  // The self-excitation guard, shared with development and the spec phase: a tick
+  // and a lifecycle event arriving back-to-back must not start two relay sessions.
+  if (ctx.meta.cooldownUntil !== null && ctx.meta.cooldownUntil > ctx.now) {
+    return {
+      action: 'block',
+      reason: 'blocked_cooldown',
+      detail: '刚发起过一次接力 run,冷却中',
+      actions: [],
+      needsSlot: false,
+      sessionId: null,
+      wakeAt: ctx.meta.cooldownUntil,
+    }
+  }
+
+  if (intent.reviewStatus === null) {
+    return startReview(intent.reviewFixRounds, '需要 PR AI 评审且尚无结论,发起首次评审')
+  }
+
+  if (intent.reviewStatus === 'pending') {
+    // Marked as expected-to-be-running with no live session and no conclusion:
+    // the launch died, the run was aborted, or the process restarted. Re-enter the
+    // SAME phase — an exit without a terminal is never `approved`.
+    return startReview(intent.reviewFixRounds, '评审会话已结束但无结论,恢复本轮评审')
+  }
+
+  if (intent.reviewStatus === 'approved') {
+    // Unreachable through `relayEngaged`, which drops an approved intent from the
+    // candidate set. Kept as a defensive no-op so a future caller cannot make an
+    // approved PR start another agent by accident.
+    return wait('pr_review_waiting', '评审已通过,接力结束', intent.reviewSessionId)
+  }
+
+  // `rejected` — the only state a fix round derives from.
+  if (intent.fixStatus === 'fixed') {
+    return startReview(intent.reviewFixRounds, `第 ${intent.reviewFixRounds} 轮修复已完成,发起复审`)
+  }
+  if (intent.fixStatus === 'pending') {
+    return startFix(
+      intent.reviewFixRounds,
+      `第 ${intent.reviewFixRounds} 轮修复未回填结论,恢复本轮修复`,
+    )
+  }
+  if (intent.reviewFixRounds >= QUEUE_MAX_REVIEW_FIX) {
+    const detail = `PR 评审已修复 ${QUEUE_MAX_REVIEW_FIX} 轮仍未通过,交回人工`
+    return {
+      action: 'park',
+      reason: 'review_fix_exhausted',
+      detail,
+      actions: [
+        { kind: 'park', intentId: intent.id, reason: 'review_fix_exhausted', detail },
+        { kind: 'wait_user_involve', intentId: intent.id, reason: 'review_fix_exhausted', detail },
+      ],
+      needsSlot: false,
+      sessionId: null,
+      wakeAt: null,
+    }
+  }
+  const round = intent.reviewFixRounds + 1
+  return startFix(round, `评审结论为 rejected,发起第 ${round} 轮修复`)
 }
 
 /**

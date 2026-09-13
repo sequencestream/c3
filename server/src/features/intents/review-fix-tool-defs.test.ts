@@ -24,7 +24,13 @@ vi.mock('../../state.js', async (importOriginal) => ({
   workspaceNameFor: (value: string) => value,
 }))
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { getIntent, insertIntents, resetStoreForTests } from './store.js'
+import {
+  claimIntentRelayPhase,
+  getIntent,
+  insertIntents,
+  resetStoreForTests,
+  updateIntentReviewFixStatus,
+} from './store.js'
 import {
   runSyncIntentFixStatus,
   runSyncIntentReviewStatus,
@@ -256,5 +262,80 @@ describe('store failure surfaces as an error (not a receipt)', () => {
         runSyncIntentFixStatus(proj, { intentId: 'x', fixSessionId: 'fix-1', fixStatus: 'fixed' }),
       ),
     ).toContain('不可用')
+  })
+})
+
+describe('a phase the queue holds only accepts its own session (stale backfill)', () => {
+  it('refuses a review conclusion from a session that no longer holds the phase', () => {
+    const id = seedIntent()
+    claimIntentRelayPhase(id, {
+      phase: 'review',
+      expectReviewStatus: null,
+      expectFixStatus: null,
+      expectRounds: 0,
+      nextRounds: 0,
+      pendingSessionId: 'pending:round-3',
+    })
+    const refused = errorText(
+      runSyncIntentReviewStatus(proj, {
+        intentId: id,
+        reviewSessionId: 'pending:round-2',
+        reviewStatus: 'approved',
+      }),
+    )
+    expect(refused).toContain('不再持有')
+    expect(getIntent(id)!.reviewStatus).toBe('pending')
+  })
+
+  it('accepts the holding session, and repeating the same terminal stays idempotent', () => {
+    const id = seedIntent()
+    claimIntentRelayPhase(id, {
+      phase: 'review',
+      expectReviewStatus: null,
+      expectFixStatus: null,
+      expectRounds: 0,
+      nextRounds: 0,
+      pendingSessionId: 'pending:rev-1',
+    })
+    const args: SyncIntentReviewStatusArgs = {
+      intentId: id,
+      reviewSessionId: 'pending:rev-1',
+      reviewStatus: 'rejected',
+    }
+    expect(payload(runSyncIntentReviewStatus(proj, args)).reviewStatus).toBe('rejected')
+    expect(payload(runSyncIntentReviewStatus(proj, args)).reviewStatus).toBe('rejected')
+    expect(getIntent(id)!.reviewFixRounds).toBe(0)
+  })
+
+  it('refuses a fix conclusion from an expired round’s session', () => {
+    const id = seedIntent()
+    updateIntentReviewFixStatus(id, { reviewStatus: 'rejected', reviewSessionId: 'rev-1' })
+    claimIntentRelayPhase(id, {
+      phase: 'fix',
+      expectReviewStatus: 'rejected',
+      expectFixStatus: null,
+      expectRounds: 0,
+      nextRounds: 1,
+      pendingSessionId: 'pending:fix-2',
+    })
+    const refused = errorText(
+      runSyncIntentFixStatus(proj, {
+        intentId: id,
+        fixSessionId: 'pending:fix-1',
+        fixStatus: 'fixed',
+      }),
+    )
+    expect(refused).toContain('不再持有')
+    expect(getIntent(id)!.fixStatus).toBe('pending')
+  })
+
+  it('leaves an intent nobody is driving open to a plain manual backfill', () => {
+    const id = seedIntent()
+    const args: SyncIntentFixStatusArgs = {
+      intentId: id,
+      fixSessionId: 'human-session',
+      fixStatus: 'fixed',
+    }
+    expect(payload(runSyncIntentFixStatus(proj, args)).fixStatus).toBe('fixed')
   })
 })

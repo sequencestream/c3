@@ -7,15 +7,17 @@
  */
 import type {
   GitBranchMode,
+  IntentFixStatus,
   IntentImpactLevel,
   IntentPrStatus,
   IntentPriority,
+  IntentReviewStatus,
   IntentSpecMode,
   IntentStatus,
   SpecReviewVerdict,
   SpecStatus,
 } from '@ccc/shared/protocol'
-import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
+import { MAX_REVIEW_FIX_ROUNDS, MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 import type { DeliveryGateFact } from '@ccc/shared'
 
 // ---------------------------------------------------------------------------
@@ -57,6 +59,14 @@ export const QUEUE_RUN_ORIGIN = 'queue-kernel'
  * keeps its own name so a reader of `reconcile.ts` sees the bound locally.
  */
 export const QUEUE_MAX_SPEC_REWORK = MAX_SPEC_REVIEW_REWORK_ROUNDS
+
+/**
+ * Hard ceiling on `Fix → re-review` rounds of the PR review relay. Mirrors the
+ * protocol constant for the same reason {@link QUEUE_MAX_SPEC_REWORK} does: a
+ * reader of `reconcile.ts` sees the bound locally. The first review is round 0
+ * and spends no budget; only a Fix the queue successfully claims raises it.
+ */
+export const QUEUE_MAX_REVIEW_FIX = MAX_REVIEW_FIX_ROUNDS
 
 /** Exponential backoff for the n-th consecutive failure (n ≥ 1). */
 export function backoffDelayMs(failureCount: number): number {
@@ -148,6 +158,28 @@ export interface QueueIntentFact {
   specReviewReworkRounds: number
   /** A human revoked an approval while THIS conclusion stood — do not re-approve it. */
   specReviewMachineApprovalBlocked: boolean
+  // ── PR review / fix relay facts ──
+  /**
+   * `true` while this intent still owns at least one PR that is neither `merged`
+   * nor `closed` (`activeIntentPrs`), reduced at the assembly boundary. The relay
+   * only ever runs against a live PR: with none left there is nothing to review,
+   * and an AI pass is never invented for work that already landed or was dropped.
+   */
+  hasActivePr: boolean
+  /** The bound PR-review session, or its `pending:` placeholder; `null` when none. */
+  reviewSessionId: string | null
+  /**
+   * The PR AI review conclusion. `pending` means "a review is expected to be
+   * running"; whether one actually IS running is derived from session liveness,
+   * never from this field alone.
+   */
+  reviewStatus: IntentReviewStatus | null
+  /** Fix rounds already claimed; compared against {@link QUEUE_MAX_REVIEW_FIX}. */
+  reviewFixRounds: number
+  /** The bound fix session, or its `pending:` placeholder; `null` when none. */
+  fixSessionId: string | null
+  /** The current fix round's conclusion; `null` when this round has no fix yet. */
+  fixStatus: IntentFixStatus | null
 }
 
 /** Liveness of one work session, probed against the run registry. */
@@ -281,6 +313,15 @@ export const QUEUE_REASON_CODES = [
   // unknown or not linked), so no PR was created. Never a park and never a
   // failure — the work IS done; only the PR is waiting on a human decision.
   'pr_target_unavailable',
+  // PR review / fix relay: the sub-states of an intent whose work is done but
+  // whose PR has not finished its AI review handover yet.
+  'pr_reviewing',
+  'pr_fixing',
+  'pr_review_waiting',
+  // Three `Fix → re-review` rounds spent and the PR is STILL rejected. A human
+  // owns it from here, so this is deliberately absent from
+  // `AUTO_RECOVERABLE_PARK_REASONS` and a plain unpark grants no new budget.
+  'review_fix_exhausted',
   // recovery — the decision reason a failure-ladder park is auto-recovered with
   'auto_unpark',
 ] as const
@@ -326,6 +367,12 @@ export type QueueDecisionAction =
   | 'launch_spec'
   | 'launch_spec_review'
   | 'approve_spec'
+  // Relay-phase actions. Kept distinct from the work and spec verbs for the same
+  // reason those are: a decision log must never read "started developing" when
+  // the queue actually started an AI review of an already-finished PR.
+  //
+  | 'launch_review'
+  | 'launch_fix'
 
 export interface QueueDecision {
   intentId: string
@@ -382,6 +429,20 @@ export type QueueAction =
    * writing, so a spec edited or an approval revoked in between approves nothing.
    */
   | { kind: 'machine_approve_spec'; intentId: string; fingerprint: string }
+  /**
+   * Start a PR AI review. `round` is the fix budget already spent (0 on the first
+   * review, 1..N on a re-review after that many fixes) and rides along purely so
+   * the prompt and the decision log can state where in the loop this pass is —
+   * the counter itself is only ever moved by a `launch_fix` claim.
+   */
+  | { kind: 'launch_review'; intentId: string; origin: string; round: number }
+  /**
+   * Start the fix round that follows a `rejected` review. `round` is the round
+   * this launch CLAIMS (1-based): the executor raises `reviewFixRounds` to it in
+   * the same conditional update that registers the session placeholder, so a
+   * repeated action can never spend the budget twice.
+   */
+  | { kind: 'launch_fix'; intentId: string; origin: string; round: number }
 
 // ---------------------------------------------------------------------------
 // Reconcile I/O
@@ -434,10 +495,29 @@ export interface QueueReconcileInput {
   specRuns: readonly QueueSpecRunFact[]
   /** Intents the kernel currently holds an in-flight SPEC-PHASE run for. */
   specInFlight: readonly string[]
+  /**
+   * Liveness of the PR review / fix sessions, probed the same way as {@link runs}.
+   * An intent with a live relay run is waited on, never re-launched, and a result
+   * already backfilled while its session still runs is left to settle first.
+   */
+  relayRuns: readonly QueueRelayRunFact[]
+  /** Intents the kernel currently holds an in-flight RELAY run for. */
+  relayInFlight: readonly string[]
 }
 
 /** Liveness of one spec-phase session (authoring or review). */
 export interface QueueSpecRunFact {
+  sessionId: string
+  alive: boolean
+}
+
+/**
+ * Liveness of one relay session (PR review or fix). Same shape as
+ * {@link QueueSpecRunFact} and deliberately a separate list: a relay session is
+ * neither development nor a spec phase, and merging the sets would let one read
+ * as the other to the gates that consume them.
+ */
+export interface QueueRelayRunFact {
   sessionId: string
   alive: boolean
 }

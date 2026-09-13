@@ -300,6 +300,16 @@ export const MACHINE_SPEC_APPROVER = 'c3:machine-spec-approver'
  */
 export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
 
+/**
+ * Hard ceiling on `Fix → re-review` rounds for a PR's AI review relay. The FIRST
+ * review is round 0 and never spends budget; each Fix the queue claims raises the
+ * counter by one, and the review that follows the last allowed Fix is still run.
+ * A normal closed loop therefore costs at most three fixes and four reviews —
+ * only a rejection AFTER the third fix's re-review parks the intent as "not
+ * converging". Recovering a crashed phase is not a new round.
+ */
+export const MAX_REVIEW_FIX_ROUNDS = 3
+
 // ---- Action descriptor (derived next-step projection) ----
 
 /**

@@ -11,7 +11,9 @@
  */
 import type { WorkflowStatus } from '@ccc/shared/protocol'
 import type { QueueDecision, QueueReconcileOutput } from '../../kernel/queue/index.js'
-import { emptyQueueIntentMeta } from '../../kernel/queue/index.js'
+import { emptyQueueIntentMeta, relayEngaged } from '../../kernel/queue/index.js'
+import { activeIntentPrs } from '@ccc/shared'
+import { getGitBranchMode } from '../../kernel/config/index.js'
 import { pathToName } from '../../state.js'
 import { isStoreAvailable, listIntents } from './store.js'
 import {
@@ -118,9 +120,25 @@ export function buildQueueDetail(
   const decisions = new Map(live.decisions.map((d) => [d.intentId, d]))
   const skipped = new Set(control.forceSkipped)
   const intents = isStoreAvailable() ? listIntents(workspacePath) : []
+  const worktreeMode = getGitBranchMode(workspacePath) === 'worktree'
 
+  // The SAME candidate rule the scheduler applies: development candidates plus
+  // intents whose work is done but whose PR is still in the review → fix relay.
+  // An intent waiting on (or parked by) its review must keep its row here, or the
+  // page would claim the queue is finished while it is still driving that PR.
   const items: QueueIntentView[] = intents
-    .filter((r) => r.automate && (r.status === 'todo' || r.status === 'in_progress'))
+    .filter(
+      (r) =>
+        (r.automate && (r.status === 'todo' || r.status === 'in_progress')) ||
+        relayEngaged({
+          worktreeMode,
+          automate: r.automate,
+          status: r.status,
+          hasActivePr: activeIntentPrs(r.prs).length > 0,
+          reviewStatus: r.reviewStatus,
+          impactLevel: r.impactLevel,
+        }),
+    )
     .map((r) => {
       const m = meta[r.id] ?? emptyQueueIntentMeta(r.id)
       const d = decisions.get(r.id)

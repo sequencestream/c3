@@ -69,7 +69,13 @@ import {
   type QueueActionExecutors,
   type WorkflowHooks,
 } from './queue-action-context.js'
-import { persistNewDecisions, probeRunFacts, probeSpecRunFacts, toFact } from './queue-ledger.js'
+import {
+  persistNewDecisions,
+  probeRelayRunFacts,
+  probeRunFacts,
+  probeSpecRunFacts,
+  toFact,
+} from './queue-ledger.js'
 import { deliveryGateFacts } from './delivery-context.js'
 import {
   buildQueueDetail,
@@ -79,6 +85,7 @@ import {
 } from './queue-projection.js'
 import { executeMachineApproveSpec, runSpecPhase } from './queue-spec-actions.js'
 import { runDevelopLoop } from './queue-dev-actions.js'
+import { runRelayPhase } from './queue-relay-actions.js'
 import {
   applyHumanOverride,
   clearPark,
@@ -154,6 +161,10 @@ export function pickNext(workspacePath: string): Intent | null {
     automationConcurrency: getAutomationConcurrency(workspacePath),
     specRuns: [],
     specInFlight: [],
+    // A probe answers "which intent would be DEVELOPED next", so the relay is
+    // reported as an empty world too — its phases never yield a launch/resume.
+    relayRuns: [],
+    relayInFlight: [],
   })
   const chosen = out.actions.find((a) => a.kind === 'launch' || a.kind === 'resume')
   if (!chosen) return null
@@ -176,6 +187,14 @@ class QueueController {
    * session appearing there would read as development that never happened.
    */
   private readonly specInFlight = new Map<string, Promise<void>>()
+  /**
+   * PR review / fix runs in flight, keyed by intent id. A third map for the third
+   * kind of work the queue drives: merging it into {@link inFlight} would make a
+   * review read as development to the manual-cleanup skip, and merging it into
+   * {@link specInFlight} would exempt it from the automation concurrency cap it
+   * must obey.
+   */
+  private readonly relayInFlight = new Map<string, Promise<void>>()
   /** sessionId → when this queue FIRST observed the run waiting on a human. */
   private readonly awaitingSince = new Map<string, number>()
   private decisions: QueueDecision[] = []
@@ -221,6 +240,7 @@ class QueueController {
     this.abort = new AbortController()
     this.inFlight.clear()
     this.specInFlight.clear()
+    this.relayInFlight.clear()
     this.awaitingSince.clear()
     this.decisions = []
     this.nextWakeupAt = null
@@ -233,13 +253,19 @@ class QueueController {
     this.abort.abort()
   }
 
-  /** Await every in-flight kernel run — work AND spec phase (tests sequence on this). */
+  /** Await every in-flight kernel run — work, spec phase AND relay (tests sequence on this). */
   async settleRuns(): Promise<void> {
     // A run that finishes may start another (the queue moves on), so drain.
-    for (let i = 0; i < 50 && (this.inFlight.size > 0 || this.specInFlight.size > 0); i++) {
+    for (
+      let i = 0;
+      i < 50 &&
+      (this.inFlight.size > 0 || this.specInFlight.size > 0 || this.relayInFlight.size > 0);
+      i++
+    ) {
       await Promise.allSettled([
         ...[...this.inFlight.values()].map((r) => r.settled),
         ...this.specInFlight.values(),
+        ...this.relayInFlight.values(),
       ])
     }
   }
@@ -294,6 +320,8 @@ class QueueController {
       automationConcurrency: getAutomationConcurrency(this.workspacePath),
       specRuns: probeSpecRunFacts(intents ?? [], this.hooks, now),
       specInFlight: [...this.specInFlight.keys()],
+      relayRuns: probeRelayRunFacts(intents ?? [], this.hooks, now),
+      relayInFlight: [...this.relayInFlight.keys()],
     })
 
     this.decisions = output.decisions
@@ -326,6 +354,8 @@ class QueueController {
       launch_spec: (a, at) => this.startSpecRun(ctx, a, at),
       launch_spec_review: (a, at) => this.startSpecRun(ctx, a, at),
       machine_approve_spec: (a) => executeMachineApproveSpec(ctx, a),
+      launch_review: (a, at) => this.startRelayRun(ctx, a, at),
+      launch_fix: (a, at) => this.startRelayRun(ctx, a, at),
     }
     for (const action of actions) runQueueAction(table, action, now)
   }
@@ -418,6 +448,35 @@ class QueueController {
         title: req.title,
         label: '规格阶段 run',
         unregister: () => this.specInFlight.delete(intentId),
+      }),
+    )
+  }
+
+  /**
+   * Start ONE relay phase (PR review or fix). Tracked in its own in-flight map for
+   * the same reason the spec phase is: the three kinds of work the queue drives
+   * answer three different questions, and a shared map would let one masquerade
+   * as another. The cooldown IS shared — it is a per-intent self-excitation guard,
+   * and an intent in its relay phase is `done`, so development never contends.
+   */
+  private startRelayRun(
+    ctx: QueueActionContext,
+    action: Extract<QueueAction, { kind: 'launch_review' | 'launch_fix' }>,
+    now: number,
+  ): void {
+    const intentId = action.intentId
+    if (this.relayInFlight.has(intentId)) return
+    const req = getIntent(intentId)
+    if (!req) return
+
+    this.writeCooldown(intentId, now)
+    this.relayInFlight.set(
+      intentId,
+      this.observe(ctx, runRelayPhase(ctx, action, req), {
+        intentId,
+        title: req.title,
+        label: action.kind === 'launch_review' ? 'PR 评审 run' : 'PR 修复 run',
+        unregister: () => this.relayInFlight.delete(intentId),
       }),
     )
   }

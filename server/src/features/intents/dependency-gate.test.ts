@@ -134,6 +134,12 @@ function toQueueFact(r: Intent): QueueIntentFact {
     specReviewFingerprint: null,
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
+    hasActivePr: false,
+    reviewSessionId: null,
+    reviewStatus: null,
+    reviewFixRounds: 0,
+    fixSessionId: null,
+    fixStatus: null,
   }
 }
 
@@ -220,6 +226,8 @@ describe('两条路径结论一致', () => {
       automationConcurrency: 1,
       specRuns: [],
       specInFlight: [],
+      relayRuns: [],
+      relayInFlight: [],
     })
     const queueBlocked = queue.decisions
       .find((d) => d.intentId === 'child')!

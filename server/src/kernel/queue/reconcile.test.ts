@@ -49,6 +49,12 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     specReviewFingerprint: null,
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
+    hasActivePr: false,
+    reviewSessionId: null,
+    reviewStatus: null,
+    reviewFixRounds: 0,
+    fixSessionId: null,
+    fixStatus: null,
     ...over,
   }
 }
@@ -76,6 +82,8 @@ function input(over: Partial<QueueReconcileInput> = {}): QueueReconcileInput {
     automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],
+    relayRuns: [],
+    relayInFlight: [],
     ...over,
   }
 }

@@ -25,6 +25,7 @@
  */
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import type { Intent } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { getIntent, isStoreAvailable, updateIntentReviewFixStatus } from './store.js'
 
@@ -112,6 +113,36 @@ function findOwnedIntent(workspacePath: string, intentId: string) {
 }
 
 /**
+ * Reject a backfill that no longer belongs to the phase it names.
+ *
+ * A conclusion is only accepted from the session that CURRENTLY holds the phase.
+ * The check is scoped to the queue-driven relay — an intent whose phase field
+ * still holds a session id the queue put there — so the manual / non-queue entry
+ * points keep their existing shape and an intent nobody is driving still accepts
+ * a plain human backfill.
+ *
+ * Repeating the SAME terminal from the holding session is idempotent and allowed;
+ * what is refused is an EXPIRED session writing over a phase that has since moved
+ * on — the round-two review concluding after round three already started.
+ * Returns the refusal text, or `null` when the write may proceed.
+ */
+function staleRelayBackfill(
+  intent: Intent,
+  phase: 'review' | 'fix',
+  callerSessionId: string,
+): string | null {
+  const holder = phase === 'review' ? intent.reviewSessionId : intent.fixSessionId
+  // Nobody holds this phase (never started, already released, or a purely manual
+  // intent): the existing unguarded behaviour stands.
+  if (!holder) return null
+  if (holder === callerSessionId) return null
+  return (
+    `会话 ${callerSessionId} 不再持有该意图的${phase === 'review' ? '评审' : '修复'}阶段` +
+    `(当前为 ${holder}),已过期的结论不会覆盖新阶段。`
+  )
+}
+
+/**
  * Write a review terminal + session for one project intent and echo the stored
  * fields as JSON. `onBroadcast` refreshes the intent list to every connection
  * after a change. The terminal-only enum is re-validated HERE (not just at the
@@ -128,9 +159,12 @@ export function runSyncIntentReviewStatus(
   if (!(REVIEW_TERMINALS as readonly string[]).includes(args.reviewStatus)) {
     return fail(`非法评审状态 ${args.reviewStatus}:仅接受 approved 或 rejected。`)
   }
-  if (!findOwnedIntent(workspacePath, args.intentId)) {
+  const owned = findOwnedIntent(workspacePath, args.intentId)
+  if (!owned) {
     return fail(`未找到 id 为 ${args.intentId} 的意图(本项目)。`)
   }
+  const stale = staleRelayBackfill(owned, 'review', args.reviewSessionId)
+  if (stale) return fail(stale)
   try {
     const updated = updateIntentReviewFixStatus(args.intentId, {
       reviewSessionId: args.reviewSessionId,
@@ -166,9 +200,12 @@ export function runSyncIntentFixStatus(
   if (!(FIX_TERMINALS as readonly string[]).includes(args.fixStatus)) {
     return fail(`非法修复状态 ${args.fixStatus}:仅接受 fixed。`)
   }
-  if (!findOwnedIntent(workspacePath, args.intentId)) {
+  const owned = findOwnedIntent(workspacePath, args.intentId)
+  if (!owned) {
     return fail(`未找到 id 为 ${args.intentId} 的意图(本项目)。`)
   }
+  const stale = staleRelayBackfill(owned, 'fix', args.fixSessionId)
+  if (stale) return fail(stale)
   try {
     const updated = updateIntentReviewFixStatus(args.intentId, {
       fixSessionId: args.fixSessionId,

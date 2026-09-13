@@ -101,6 +101,24 @@ const SESSION_KIND: SessionKind = 'automation'
 
 export type UpdateLogFn = (id: string, patch: Record<string, unknown>) => void
 
+/**
+ * Per-execution overrides an INTERNAL caller may supply. Nothing here is
+ * reachable from a saved automation, an event payload or a model: the queue's PR
+ * review / fix relay and the merge handoff construct them server-side.
+ *
+ * `cwd` is the one override with teeth. A saved automation always runs at the
+ * workspace root; the relay must run inside the intent's OWN worktree, because
+ * that is where the PR's head branch is checked out. Only the vendor working
+ * directory moves — workspace ownership, MCP closure, tool freeze and permission
+ * handling all stay bound to the original project.
+ */
+export interface ExecuteOverrides {
+  /** Vendor working directory for this execution; default = the workspace root. */
+  cwd?: string
+  /** Replace the saved prompt for THIS execution only; the record is untouched. */
+  promptOverride?: string
+}
+
 interface CommandConfig {
   command: string
   maxRetries?: number // default 0
@@ -163,6 +181,7 @@ export async function execute(
   executionLogId: string,
   updateLog: UpdateLogFn,
   triggerEvent?: GenericEvent,
+  overrides?: ExecuteOverrides,
 ): Promise<void> {
   // A workspace can be removed after a automation is persisted but before its
   // queued execution starts. Do not pass an undefined cwd/path into a runner.
@@ -181,7 +200,7 @@ export async function execute(
   if (automation.type === 'command') {
     await executeCommand(automation, executionLogId, updateLog)
   } else {
-    await executeLlmPrompt(automation, executionLogId, updateLog, triggerEvent)
+    await executeLlmPrompt(automation, executionLogId, updateLog, triggerEvent, overrides)
   }
 }
 
@@ -539,6 +558,7 @@ function registerAutomationRuntime(
   automation: Automation,
   sessionId: string,
   abortController: AbortController,
+  cwd?: string,
 ): void {
   const workspacePath = resolveWorkspaceRoot(automation.workspaceName)!
   const codexPolicy = typeof automation.mode === 'object' ? automation.mode : undefined
@@ -553,6 +573,9 @@ function registerAutomationRuntime(
     'background',
   )
   rt.run = { abort: abortController, handle: null }
+  // A relay execution runs in the intent's worktree, so the viewer must show that
+  // directory rather than the workspace root the runtime defaults to.
+  if (cwd && cwd !== workspacePath) rt.effectiveCwd = cwd
   setStatus(sessionId, 'running')
 }
 
@@ -589,9 +612,18 @@ async function executeLlmPrompt(
   logId: string,
   updateLog: UpdateLogFn,
   triggerEvent?: GenericEvent,
+  overrides?: ExecuteOverrides,
 ): Promise<void> {
   const config = (automation.config ?? {}) as LlmConfig
-  const basePrompt = typeof config.prompt === 'string' ? config.prompt : ''
+  // An internal caller may supply the whole prompt for this ONE execution (the
+  // merge-handoff branch, the relay's server-built review / fix turns). The saved
+  // record is never rewritten — a user's template body stays exactly as they left it.
+  const basePrompt =
+    typeof overrides?.promptOverride === 'string' && overrides.promptOverride.trim()
+      ? overrides.promptOverride
+      : typeof config.prompt === 'string'
+        ? config.prompt
+        : ''
   if (!basePrompt.trim()) {
     const now = Date.now()
     updateLog(logId, {
@@ -619,9 +651,12 @@ async function executeLlmPrompt(
     )
   }
 
-  console.log(
-    `[c3:automations] (${SESSION_KIND}) llm run ${automation.id} @ ${resolveWorkspaceRoot(automation.workspaceName)!}`,
-  )
+  // Where the vendor actually runs. Defaults to the workspace root (every saved
+  // automation); the relay passes the intent's worktree so a fix session edits the
+  // PR's head branch and never the project's main checkout.
+  const effectiveCwd = overrides?.cwd ?? resolveWorkspaceRoot(automation.workspaceName)!
+
+  console.log(`[c3:automations] (${SESSION_KIND}) llm run ${automation.id} @ ${effectiveCwd}`)
 
   const maxWallClockMs = maxWallClockMsFor(automation)
   const outputSchema: Record<string, unknown> | undefined =
@@ -686,13 +721,29 @@ async function executeLlmPrompt(
   }
 
   if (automation.vendor === 'codex') {
-    await executeCodexLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
+    await executeCodexLlmPrompt(
+      automation,
+      logId,
+      updateLog,
+      prompt,
+      abortController,
+      launchAgent,
+      effectiveCwd,
+    )
     clearTimeout(timeoutTimer)
     return
   }
 
   if (automation.vendor === 'cursor') {
-    await executeCursorLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
+    await executeCursorLlmPrompt(
+      automation,
+      logId,
+      updateLog,
+      prompt,
+      abortController,
+      launchAgent,
+      effectiveCwd,
+    )
     clearTimeout(timeoutTimer)
     return
   }
@@ -749,7 +800,7 @@ async function executeLlmPrompt(
   // then fans them out via `emit()`. The `register` callback wires the runtime's
   // `run` pointer to THIS run's abortController and flips the status to running.
   const viewer = new AutomationViewerStream((sid) =>
-    registerAutomationRuntime(automation, sid, abortController),
+    registerAutomationRuntime(automation, sid, abortController, effectiveCwd),
   )
   let settleReason: 'complete' | 'error' = 'complete'
   let settleError: string | undefined
@@ -758,7 +809,7 @@ async function executeLlmPrompt(
     const q = query({
       prompt,
       options: {
-        cwd: resolveWorkspaceRoot(automation.workspaceName)!,
+        cwd: effectiveCwd,
         settingSources: ['user', 'project'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         disallowedTools: [],
@@ -909,6 +960,7 @@ async function runAutomationViaDriver(
   abortController: AbortController,
   start: () => Promise<AgentRun>,
   c3Binding: { dispose(): void } | null,
+  cwd?: string,
 ): Promise<void> {
   // Bound once the driver reports the real session id; used by `finally` to settle
   // the runtime to idle. Null until bound.
@@ -917,7 +969,7 @@ async function runAutomationViaDriver(
   // up-front (`await run.sessionId()`), so the pre-session-id buffer is normally
   // empty, but the same path is used for symmetry with the claude executor.
   const viewer = new AutomationViewerStream((sid) =>
-    registerAutomationRuntime(automation, sid, abortController),
+    registerAutomationRuntime(automation, sid, abortController, cwd),
   )
   const wireEmitter = new WireEmitter((event) => viewer.push(event))
   let settleReason: 'complete' | 'error' = 'complete'
@@ -975,6 +1027,7 @@ async function executeCodexLlmPrompt(
   prompt: string,
   abortController: AbortController,
   agent: AgentConfig,
+  cwd: string,
 ): Promise<void> {
   const policy: CodexPolicy =
     typeof automation.mode === 'object'
@@ -1004,7 +1057,7 @@ async function executeCodexLlmPrompt(
   const c3Binding = bindAutomationC3Mcp(automation, logId)
   const startOptions: DriverStartOptions = {
     prompt,
-    cwd: resolveWorkspaceRoot(automation.workspaceName)!,
+    cwd,
     signal: abortController.signal,
     actionMode,
     toolGate,
@@ -1028,6 +1081,7 @@ async function executeCodexLlmPrompt(
     () =>
       createCodexAdapter(undefined, undefined, getRelay() ?? undefined).driver.start(startOptions),
     c3Binding,
+    cwd,
   )
 }
 
@@ -1056,6 +1110,7 @@ async function executeCursorLlmPrompt(
   prompt: string,
   abortController: AbortController,
   agent: AgentConfig,
+  cwd: string,
 ): Promise<void> {
   if (!resolveVendorCli('cursor')) {
     updateLog(logId, {
@@ -1077,7 +1132,7 @@ async function executeCursorLlmPrompt(
   const c3Binding = bindAutomationC3Mcp(automation, logId)
   const startOptions: DriverStartOptions = {
     prompt,
-    cwd: resolveWorkspaceRoot(automation.workspaceName)!,
+    cwd,
     signal: abortController.signal,
     actionMode,
     toolGate,
@@ -1092,5 +1147,6 @@ async function executeCursorLlmPrompt(
     abortController,
     () => createCursorAdapter().driver.start(startOptions),
     c3Binding,
+    cwd,
   )
 }

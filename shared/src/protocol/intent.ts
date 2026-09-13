@@ -800,6 +800,40 @@ export interface IntentLog {
 }
 
 /**
+ * The phase of an intent's life that produced a {@link IntentWorknote} entry.
+ * - `work`   — a work session's completion summary.
+ * - `review` — a review session's findings.
+ * - `fix`    — a fix session's explanation of what was changed.
+ */
+export const INTENT_WORKNOTE_KINDS = ['work', 'review', 'fix'] as const
+
+export type IntentWorknoteKind = (typeof INTENT_WORKNOTE_KINDS)[number]
+
+/**
+ * One append-only content-history entry an intent owns. Distinct from
+ * {@link IntentLog} (a short operational audit) and from {@link IntentDevSession}
+ * (session metadata): a worknote carries the free-text substance of what a work /
+ * review / fix phase produced, so a later agent can read prior context instead of
+ * re-inferring it from a PR diff. Rows are never edited or deleted — a correction is
+ * a further append — and the only exception is physical intent deletion, which
+ * removes them in the same transaction.
+ */
+export interface IntentWorknote {
+  /** Row id (uuid, server-minted). */
+  id: string
+  /** Owning intent id (uuid). */
+  intentId: string
+  /** Which phase produced this note. */
+  kind: IntentWorknoteKind
+  /** Free-text body, stored verbatim (line breaks and surrounding space included). */
+  note: string
+  /** The session that produced the note; `null` when unknown or omitted. */
+  sessionId: string | null
+  /** When the note was appended (epoch ms). */
+  createdAt: number
+}
+
+/**
  * Lifecycle of the per-project automation queue (the deterministic scheduling
  * kernel that develops `automate` intents by priority + dependencies).
  * - `idle` — not running (never started, or stopped by the user).

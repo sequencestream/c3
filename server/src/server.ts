@@ -132,6 +132,7 @@ import {
 } from './features/session-cleanup/session-janitor.js'
 import { startMemoryJanitor, stopMemoryJanitor } from './features/memory/janitor.js'
 import { runMemorySearch, runMemoryWrite, type MemoryScope } from './features/memory/tool-defs.js'
+import { runAppendWorknote, runListWorknotes } from './features/intents/worknote-tool-defs.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -616,6 +617,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       ),
     memorySearch: (binding, args) => runMemorySearch(memoryScope(binding), args),
     memoryWrite: (binding, args) => runMemoryWrite(memoryScope(binding), args),
+    // WorkNote tools close over the binding's workspace path only; the note's
+    // `sessionId` is model-supplied and verbatim — never derived from the run id,
+    // so an automation execution id is never misrepresented as a session.
+    appendWorknote: (binding, args) => runAppendWorknote(binding.workspacePath, args),
+    listWorknotes: (binding, args) => runListWorknotes(binding.workspacePath, args),
   }
   const eventMcp = createEventMcp(`http://127.0.0.1:${opts.port}`, eventMcpTools)
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)

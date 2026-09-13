@@ -21,10 +21,11 @@ vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
+  workspaceNameFor: (value: string) => value,
 }))
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { listIntents, resetStoreForTests } from '../../features/intents/store.js'
+import { insertIntents, listIntents, resetStoreForTests } from '../../features/intents/store.js'
 import { buildAutomationC3Tools, type AutomationMcpDeps } from './c3-tools.js'
 
 const proj = '/abs/c3-tools-proj'
@@ -115,6 +116,41 @@ describe('sync_intent_pr_status tool shape', () => {
     // The forge verdict is the ONLY status source: structurally, there is nothing
     // in the input a model could use to write a status directly.
     expect(Object.keys(tool!.inputSchema)).toEqual(['intentId'])
+  })
+})
+
+describe('intent worknote tools', () => {
+  it('advertises both tools with a workspace-free input schema', () => {
+    const tools = buildAutomationC3Tools(proj, 'exec-1', null)
+    const append = tools.find((t) => t.name === 'append_intent_worknote')
+    const list = tools.find((t) => t.name === 'list_intent_worknotes')
+    expect(append).toBeDefined()
+    expect(list).toBeDefined()
+    // The workspace and execution are server-derived; a model can name neither.
+    expect(Object.keys(append!.inputSchema)).toEqual(['intentId', 'kind', 'note', 'sessionId'])
+    expect(Object.keys(list!.inputSchema)).toEqual(['intentId', 'kind', 'limit'])
+    expect(append!.inputSchema).not.toHaveProperty('workspaceName')
+    expect(list!.inputSchema).not.toHaveProperty('executionId')
+  })
+
+  it('appends then lists, newest first, bound to the execution workspace', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'T', shortEnTitle: 'auto', content: 'c', priority: 'P0' },
+    ])
+    const append = handlerFor('append_intent_worknote', echoDeps([]))
+    const list = handlerFor('list_intent_worknotes', echoDeps([]))
+
+    const saved = await append({ intentId: intent.id, kind: 'work', note: '开发总结' })
+    expect(saved.isError).toBeFalsy()
+    expect(JSON.parse(saved.content[0].text)).toMatchObject({
+      intentId: intent.id,
+      note: '开发总结',
+    })
+
+    const out = await list({ intentId: intent.id })
+    expect(out.isError).toBeFalsy()
+    const rows = JSON.parse(out.content[0].text) as Array<{ note: string }>
+    expect(rows.map((r) => r.note)).toEqual(['开发总结'])
   })
 })
 

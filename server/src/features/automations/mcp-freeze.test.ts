@@ -200,16 +200,24 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(hasSelectedC3McpTool(['mcp__c3__continue_discussion'])).toBe(true)
   })
 
-  it('automation route differs from the c3 catalog only by its two explicit exceptions', () => {
+  it('automation route differs from the c3 catalog only by its two drops and its two worknote additions', () => {
     // Drift lock across the freeze allowlist and the codex route's forwarded tool
     // set: the route exposes exactly the automation c3 profile — every `mcp__c3__*`
     // capability the freeze recognises, minus interactive `save_intents` and the
-    // internal/robot-only `submit_spec_review`. A new c3 tool added to one side
-    // but not the other fails here.
-    const fromFreeze = C3_MCP_TOOLS.map((t) => t.name.replace('mcp__c3__', ''))
-      .filter((name) => name !== 'save_intents' && name !== 'submit_spec_review')
-      .sort()
-    expect([...AUTOMATION_C3_TOOL_NAMES].sort()).toEqual(fromFreeze)
+    // internal/robot-only `submit_spec_review`, plus the two WorkNote history tools
+    // (`append_intent_worknote` / `list_intent_worknotes`) that are automation +
+    // work-session only and never enter the interactive/robot permission grid.
+    // A new c3 tool added to one side but not the other fails here.
+    const freezeNames = C3_MCP_TOOLS.map((t) => t.name.replace('mcp__c3__', '')).sort()
+    const autoNames = [...AUTOMATION_C3_TOOL_NAMES].sort()
+    expect(freezeNames.filter((n) => !autoNames.includes(n))).toEqual([
+      'save_intents',
+      'submit_spec_review',
+    ])
+    expect(autoNames.filter((n) => !freezeNames.includes(n))).toEqual([
+      'append_intent_worknote',
+      'list_intent_worknotes',
+    ])
   })
 
   it('classifies find_intents and view_intent as read-only', () => {

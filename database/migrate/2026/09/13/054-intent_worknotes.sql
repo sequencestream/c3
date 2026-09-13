@@ -1,0 +1,14 @@
+-- 054 — 新增意图追加式内容历史表 intent_worknotes
+-- 对应 DDL: database/intents/intent_worknotes.sql
+-- 实际迁移逻辑在 intents store 的惰性 schema ensure(CREATE TABLE/INDEX IF NOT EXISTS + user_version 23→24)。
+--
+-- 意图的执行上下文由当前状态、会话元数据与内容历史共同组成。intent_logs 记录简短操作
+-- 审计,intent_sessions 记录会话元数据;Work 的完成总结、Review 的问题与 Fix 的修复说明
+-- 由独立的 WorkNote 历史承载,使后续 Agent 能查询前序工作,不必仅凭 PR diff 推断。
+--
+-- 只增不改不删(纠正通过再次追加表达),仅物理删除意图时在同一事务内级联清除。kind 与
+-- 共享协议 INTENT_WORKNOTE_KINDS 同一闭集,数据库以 CHECK 约束相同取值。session_id 是
+-- 可选的历史引用,不强制关联 intent_sessions,不用于查询或证明身份。
+--
+-- 惰性 schema ensure 以 CREATE TABLE/INDEX IF NOT EXISTS 同时覆盖新库与旧库,并推进意图
+-- schema 版本 23 → 24;此次只有建表与索引,无数据回填,存量意图的初始 WorkNote 列表为空。

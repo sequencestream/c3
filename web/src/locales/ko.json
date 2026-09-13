@@ -1363,6 +1363,26 @@
         "label": "닫힘"
       }
     },
+    "prReview": {
+      "title": "PR AI 검토 / 수정",
+      "reviewLabel": "검토:",
+      "fixLabel": "수정:",
+      "review": {
+        "unreviewed": "미검토",
+        "pending": "검토 결과 대기",
+        "approved": "통과",
+        "rejected": "문제 발견"
+      },
+      "fix": {
+        "unstarted": "수정 미시작",
+        "pending": "수정 결과 대기",
+        "fixed": "처리 완료"
+      },
+      "rounds": "검토 라운드:",
+      "noReviewNeeded": "영향 범위상 검토 불필요",
+      "openSession": "세션 열기",
+      "running": "실행 중"
+    },
     "prSync": {
       "label": "PR 상태 동기화",
       "syncing": "동기화 중...",

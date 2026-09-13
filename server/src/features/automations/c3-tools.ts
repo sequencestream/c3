@@ -59,6 +59,16 @@ import {
   type ListWorknotesArgs,
 } from '../intents/worknote-tool-defs.js'
 import {
+  runSyncIntentFixStatus,
+  runSyncIntentReviewStatus,
+  syncIntentFixStatusDesc,
+  syncIntentFixStatusSchema,
+  syncIntentReviewStatusDesc,
+  syncIntentReviewStatusSchema,
+  type SyncIntentFixStatusArgs,
+  type SyncIntentReviewStatusArgs,
+} from '../intents/review-fix-tool-defs.js'
+import {
   publishEventDesc,
   publishEventSchema,
   runPublishEvent,
@@ -231,6 +241,29 @@ export function buildAutomationC3Tools(
         await runSyncIntentPrStatus(workspacePath, args as SyncIntentPrStatusArgs, (path) =>
           deps?.broadcastIntents(path),
         ),
+    },
+    // PR review / fix terminal backfill: the model writes ONLY the terminal
+    // conclusion + the c3 session that produced it; no `pending`, no round, no
+    // note. The workspace is bound by the run — a caller cannot name another.
+    {
+      name: 'sync_intent_review_status',
+      description: syncIntentReviewStatusDesc,
+      inputSchema: syncIntentReviewStatusSchema,
+      handler: async (args) => ({
+        ...runSyncIntentReviewStatus(workspacePath, args as SyncIntentReviewStatusArgs, (path) =>
+          deps?.broadcastIntents(path),
+        ),
+      }),
+    },
+    {
+      name: 'sync_intent_fix_status',
+      description: syncIntentFixStatusDesc,
+      inputSchema: syncIntentFixStatusSchema,
+      handler: async (args) => ({
+        ...runSyncIntentFixStatus(workspacePath, args as SyncIntentFixStatusArgs, (path) =>
+          deps?.broadcastIntents(path),
+        ),
+      }),
     },
     {
       name: 'publish_event',

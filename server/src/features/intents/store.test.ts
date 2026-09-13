@@ -214,7 +214,7 @@ describe('intents CRUD', () => {
     const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
     expect(cols.some((c) => c.name === 'last_work_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'last_dev_session_id')).toBe(false)
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(24)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(25)
 
     resetStoreForTests()
     expect(() => listIntents(proj)).not.toThrow()
@@ -412,7 +412,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(24)
+    expect(version?.user_version).toBe(25)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -482,7 +482,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(24)
+    expect(version?.user_version).toBe(25)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -692,7 +692,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     expect(cols.some((c) => c.name === 'spec_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'intent_session_id')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(24)
+    expect(version?.user_version).toBe(25)
 
     // Idempotent: re-running the schema-ensure path must not throw or lose data.
     resetStoreForTests()

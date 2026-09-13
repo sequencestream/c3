@@ -152,8 +152,8 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.writeToolNames.has('mcp__c3__publish_event')).toBe(true)
   })
 
-  it('catalogues submit_spec_review as the fourteenth c3 MCP tool and as a write', () => {
-    expect(C3_MCP_TOOLS).toHaveLength(14)
+  it('catalogues submit_spec_review as the sixteenth c3 MCP tool and as a write', () => {
+    expect(C3_MCP_TOOLS).toHaveLength(16)
     expect(C3_MCP_TOOLS).toContainEqual({
       name: 'mcp__c3__submit_spec_review',
       isWrite: true,
@@ -172,6 +172,22 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.writeToolNames.has('mcp__c3__sync_intent_pr_status')).toBe(true)
     expect(frozen.readToolNames.has('mcp__c3__sync_intent_pr_status')).toBe(false)
     expect(isWriteTool('mcp__c3__sync_intent_pr_status', frozen)).toBe(true)
+  })
+
+  it('registers the review/fix sync tools as writes in both the catalogue and the freeze', () => {
+    // Both tools persist terminal review/fix conclusions + their session — writes.
+    // They must appear in the selectable catalogue AND resolve as writes through
+    // the runtime freeze (not via a read-prefix accident).
+    expect(C3_MCP_TOOLS).toContainEqual({
+      name: 'mcp__c3__sync_intent_review_status',
+      isWrite: true,
+    })
+    expect(C3_MCP_TOOLS).toContainEqual({ name: 'mcp__c3__sync_intent_fix_status', isWrite: true })
+    const frozen = freezeTools([], [], emptyConfig)
+    expect(frozen.writeToolNames.has('mcp__c3__sync_intent_review_status')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__sync_intent_fix_status')).toBe(true)
+    expect(isWriteTool('mcp__c3__sync_intent_review_status', frozen)).toBe(true)
+    expect(isWriteTool('mcp__c3__sync_intent_fix_status', frozen)).toBe(true)
   })
 
   it('offers the delivery tools as READ, and no delivery write tool at all', () => {

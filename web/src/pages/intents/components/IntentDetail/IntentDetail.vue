@@ -127,6 +127,10 @@ const props = defineProps<{
   specSessionStatus?: SessionStatus | null
   /** 评审会话(specReviewSessionId)运行状态,用于评审 tab 标签的运行中状态点。 */
   specReviewSessionStatus?: SessionStatus | null
+  /** PR AI 评审会话(reviewSessionId)运行状态,用于概览 Tab「评审」行的运行中提示。 */
+  reviewSessionStatus?: SessionStatus | null
+  /** PR AI 修复会话(fixSessionId)运行状态,用于概览 Tab「修复」行的运行中提示。 */
+  fixSessionStatus?: SessionStatus | null
   // ── 变更日志(changelog tab)──
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
@@ -183,6 +187,9 @@ const emit = defineEmits<{
   'open-spec-session': [intentId: string]
   // 只读评审会话:同样以意图 id 上抛,由服务端按意图当前关联解析并恢复 spec_review runtime。
   'open-spec-review-session': [intentId: string]
+  // PR AI 评审/修复会话跳转:直接携带 sessionId,复用普通会话选择路径(select_session)。
+  'open-pr-review-session': [sessionId: string]
+  'open-pr-fix-session': [sessionId: string]
   'read-spec': [intentId: string, specPath: string]
   // 直接编辑 spec 源码:上抛 id + 新内容,由控制层透传为 update_spec_content。
   'save-spec-content': [intentId: string, content: string]
@@ -539,6 +546,8 @@ function submitChat(text: string, images: PromptImage[]): void {
         :intent-action-error-seq="intentActionErrorSeq"
         :intent-pr-sync="intentPrSync"
         :sdd-enabled="sddEnabled"
+        :review-session-status="reviewSessionStatus"
+        :fix-session-status="fixSessionStatus"
         @refine="(id: string) => emit('refine', id)"
         @save-intent-content="(id: string, c: string) => emit('save-intent-content', id, c)"
         @set-spec-mode="
@@ -555,6 +564,8 @@ function submitChat(text: string, images: PromptImage[]): void {
             emit('unlink-delivery', ws, deliveryId, id)
         "
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
+        @open-pr-review-session="(sessionId: string) => emit('open-pr-review-session', sessionId)"
+        @open-pr-fix-session="(sessionId: string) => emit('open-pr-fix-session', sessionId)"
       />
 
       <!-- spec tab:渲染 spec.md(或纯文本源码直接编辑) -->

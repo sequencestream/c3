@@ -30,6 +30,38 @@ export const INTENT_IMPACT_LEVELS = [
 ] as const satisfies readonly IntentImpactLevel[]
 
 /**
+ * The conclusion of an intent PR's AI review. `pending` is the transient state
+ * while a review session is running but has not yet produced a terminal
+ * conclusion; `approved` / `rejected` are the terminals, the latter also being
+ * what decides a fix round is needed. `null` (not a member of this type) means
+ * the PR was never reviewed. Only the terminal values are accepted by the
+ * `sync_intent_review_status` MCP tool; `pending` is set by the relay
+ * orchestration that drives the review turn.
+ */
+export type IntentReviewStatus = 'pending' | 'approved' | 'rejected'
+
+/** All {@link IntentReviewStatus} values, for runtime validation + UI order. */
+export const INTENT_REVIEW_STATUSES = [
+  'pending',
+  'approved',
+  'rejected',
+] as const satisfies readonly IntentReviewStatus[]
+
+/**
+ * Whether the fix round following a rejected PR review has concluded. `pending`
+ * is the transient state while a fix session is running; `fixed` is the only
+ * terminal and the only value accepted by the `sync_intent_fix_status` MCP tool.
+ * `null` (not a member of this type) means no fix was started.
+ */
+export type IntentFixStatus = 'pending' | 'fixed'
+
+/** All {@link IntentFixStatus} values, for runtime validation + UI order. */
+export const INTENT_FIX_STATUSES = [
+  'pending',
+  'fixed',
+] as const satisfies readonly IntentFixStatus[]
+
+/**
  * Intent lifecycle status.
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
@@ -652,6 +684,38 @@ export interface Intent {
    * Only a fresh valid conclusion or a human approval clears it.
    */
   specReviewMachineApprovalBlocked: boolean
+  /**
+   * The c3SessionId of the session that ran the PR's AI review; `null` until a
+   * review session has been bound. Distinct from {@link specReviewSessionId} (the
+   * read-only spec review) — this reviews the merged work's PR.
+   */
+  reviewSessionId: string | null
+  /**
+   * The PR AI review conclusion. `null` when the PR was never reviewed. `pending`
+   * is a transient in-flight state set by the relay orchestration; `approved` /
+   * `rejected` are terminals written by the `sync_intent_review_status` MCP tool.
+   * A `rejected` conclusion is what decides a fix round is needed — there is no
+   * separate "needs fix" field.
+   */
+  reviewStatus: IntentReviewStatus | null
+  /**
+   * How many closed-loop re-review rounds this PR has been through (a `rejected`
+   * conclusion that sent the work back to a fix session). `0` for unreviewed /
+   * first-review rows. Incremented by the relay orchestration, never by the sync
+   * MCP tools.
+   */
+  reviewFixRounds: number
+  /**
+   * The c3SessionId of the session that ran the fix round following a rejected
+   * review; `null` until a fix session has been bound.
+   */
+  fixSessionId: string | null
+  /**
+   * Whether the fix round has concluded. `null` when no fix was started. `pending`
+   * is a transient in-flight state; `fixed` is the only terminal, written by the
+   * `sync_intent_fix_status` MCP tool.
+   */
+  fixStatus: IntentFixStatus | null
   /**
    * The c3SessionId of the intent's refine / communication session; `null` when
    * none. Distinct from `lastWorkSessionId` (the work session) — this is the

@@ -42,6 +42,11 @@ export const C3_MCP_TOOLS: readonly ToolManifestEntry[] = [
   // PR states — a write, not a read (the model supplies no status value; only the
   // forge verdict lands in the ledger).
   { name: 'mcp__c3__sync_intent_pr_status', isWrite: true },
+  // PR review / fix terminal backfill: write only the terminal conclusion + its
+  // c3 session. `sync_` is not a read prefix, but the manifest pins the write
+  // verdict explicitly so a rename cannot silently flip it to read.
+  { name: 'mcp__c3__sync_intent_review_status', isWrite: true },
+  { name: 'mcp__c3__sync_intent_fix_status', isWrite: true },
   { name: 'mcp__c3__publish_event', isWrite: true },
   // Delivery tools: READ-ONLY on purpose. A delivery status write funnels through
   // the state machine and its guards, so there is no delivery write tool to select

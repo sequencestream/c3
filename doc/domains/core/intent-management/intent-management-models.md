@@ -31,6 +31,13 @@
 - **`linkedDeliveries`**(`{ id, title }[]`): 该意图关联的交付,按建边顺序;无关联时为空数组。发送时由 `intent_deliveries` + `deliveries` 批量挂载,是**只读投影** —— 关联边归 delivery 域写入
 - **`baseBranch`**(text): 意图的**基准分支快照** —— 它建在哪个分支上;非空。PR 目标与 worktree 基线共读此值(见下)
 - **`baseBranchFallback`**(boolean): `baseBranch` 是否为读时派生的主分支回退(持久值缺失或不可用),而非记录下来的事实;界面据此标注,不把回退伪装成历史
+- **`reviewSessionId`**(text | null): 当前或最近一次 PR 评审会话的 `c3SessionId`;与 `specReviewSessionId`(spec 只读审核)分属不同权限域,亦不是厂商 session id 或自动化 execution id
+- **`reviewStatus`**(enum `pending`|`approved`|`rejected`| null): PR AI 评审结论;`null` = 未评审,`pending` = 待结论,`approved` = 通过,`rejected` = 发现问题(表达修复要求)。持久值无法解释时读作 `null`(RM-R52)
+- **`reviewFixRounds`**(number): 闭环复审轮次(一次 `review→fix` 往返计一轮);非负整数,只增不改(RM-R52)
+- **`fixSessionId`**(text | null): 当前或最近一次 Fix 会话的 `c3SessionId`
+- **`fixStatus`**(enum `pending`|`fixed`| null): PR 修复结论;`null` = 尚未进入 Fix,`pending` = 待结论,`fixed` = 已处理。`fixed` 不等于评审通过,不能自动写成 `approved`。持久值无法解释时读作 `null`(RM-R52)
+
+共享纯函数 `needsReview(impactLevel)` 只在 `L5` 时返回 `false`,`L1`~`L4` 与 `null` 均返回 `true`;不读数据库、不改状态,也不依据 priority、spec 模式或既有 Review 结论改变结果。
 
 关系:属于一个项目(以 `workspaceName` 标识);拥有零个或多个 Intent
 Dependencies;拥有零个或多个 Intent PR;关联零个或多个 Delivery(关联边见
@@ -223,7 +230,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 ## 持久化存储(c3.db)
 
 位于 `~/.c3/c3.db` 的 SQLite 台账(与工作区注册表同库,不同表)。Schema 版本通过
-`PRAGMA user_version` 管理(当前为 `23`)。表:
+`PRAGMA user_version` 管理(当前为 `25`)。表:
 `intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
 `tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
 共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,

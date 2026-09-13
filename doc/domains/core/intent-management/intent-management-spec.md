@@ -194,6 +194,9 @@ intent-management 为 c3 提供**项目范围、跨会话的意图账本**。c3 
 
   高影响的强制 `sdd` 覆盖一切:即便工作区 SDD 关闭、或意图显式 `specMode='fast'`,L1/L2 意图仍走 spec 撰写 → 审核 → **人工**批准全链路,机器批准动作对它**根本不产生**。有效模式解析收敛为 `@ccc/shared` 的单一纯函数 `resolveEffectiveSpecMode(specMode, sddEnabled, impactLevel)`(数据进、枚举出,不查库不看时钟),准入层、队列内核、客户端读取同一值;spec 准入判定收敛为 `specGateBlocks(facts)`,机器批准资格收敛为 `machineApprovalEligible(impactLevel, machineApprovalEnabled)`,均无副作用 —— 队列、人工入口与界面不在各处复制映射,只装配事实后调用。**机器批准两层守卫:** ① 队列内核在**规划时**对高影响意图**不产生**机器批准动作(与 opt-in 关闭同口径,不等到落库才拦截);② `machineApproveSpec` 在**落库事务内重读** `impact_level`,高影响直接返回不落库 —— 守卫②是兜底,防直连 WS 或旧事实在规划与落库之间被改写成高影响。有效模式与高影响的正交关系见 RM-R43:高影响强制 `sdd`,因此 L1/L2 从不会是 `fast`;L4/L5 的 `fast` 仅是时序默认,仍可显式 `specMode='sdd'` 覆盖。等级不在任何地方改写 `priority`,也不参与排序/分组(RM-R49)。
 
+- **RM-R52** —— **意图级 PR 评审与修复结果快照(`reviewSessionId`/`reviewStatus`/`reviewFixRounds`/`fixSessionId`/`fixStatus`)与两个同步回填 MCP 工具。** Work 产出 PR 后的 AI 评审与修复结果此前无人持久,用户与后续自动化只能从执行日志或事件里猜结论。为此每条意图持有一组**意图级结果字段**(schema v24→v25,`database/migrate/2026/09/13/055`,迁移见 design 文档):`reviewSessionId`/`review_session_id`(当前或最近一次 Review 会话的 `c3SessionId`,可空)、`reviewStatus`/`review_status`(封闭枚举 `pending`|`approved`|`rejected`,可空:null=未评审、pending=待结论、approved=通过、rejected=发现问题)、`reviewFixRounds`/`review_fix_rounds`(闭环复审轮次,INTEGER NOT NULL DEFAULT 0)、`fixSessionId`/`fix_session_id`(当前或最近一次 Fix 会话,可空)、`fixStatus`/`fix_status`(封闭枚举 `pending`|`fixed`,可空:null=尚未进入 Fix、pending=待结论、fixed=已处理)。**这是意图级最新快照,不是逐 PR/逐交付/逐提交的批准证明,也不把结果复制到 `prs[]`;** 与 `specReview*`(spec 只读审核)、PR 托管平台状态 `IntentPrStatus`(由 forge 同步路径维护)、意图自身生命周期 `status`/`completedAt` 各自独立 —— Review 的 `approved`/`rejected` 不写 PR 行、不执行合并、不改意图状态,也不撤销或授予 spec 批准。会话 ID 使用 c3 的 `c3SessionId`,不是厂商 session id 也不是自动化 execution id;`pending` 表示等待结果,不代表进程存活 —— 运行提示按对应 Review/Fix 会话复用既有会话状态机制派生,不增加持久的 running 枚举,也不改写 Work 的 `runStatus`/`sessionActive` 语义。**状态语义:** 单次 Review 为 `null → pending → approved/rejected`,单次 Fix 为 `null → pending → fixed`;`reviewStatus === 'rejected'` 表达修复要求,结合 `fixStatus` 才能区分尚待处理与本轮已处理,不增加独立 needsFix 字段;`fixed` 不等于 Review 通过,不能自动写成 `approved`。Fix 判断无需修改代码时也记录 `fixed`。**共享判定:** `needsReview(impactLevel)` 纯函数只在 `L5` 时返回 `false`,`L1`~`L4` 与 `null`(含未定级/越界窄化为 null)均返回 `true` —— 影响范围未知沿用 RM-R49 的窄化规则变为 `null`,因此不会跳过评审;函数不读库、不改状态、不依据 priority、spec 模式或已有结论改变结果。**写入:** 仓储层提供限定字段的原子更新(`updateIntentReviewFixStatus`),区分省略字段与显式清空,修改 `updatedAt`,保留正文、规格批准、PR 与其他阶段字段,一次普通意图编辑不清空这些结果;读模型对未知/越界状态窄化为 `null`(不推断成成功),写入侧拒绝非法枚举,轮次仅接受非负整数。本次不安装任何状态推进触发器 —— pending 的设置、下一轮重置、轮次递增、上限与 park 由后续接力编排负责(意图 703e4795);同步回填工具只写终态及对应会话,既不增加轮次,也不顺带清空另一阶段。
+- **MCP 工具**(camelCase 入参):`sync_intent_review_status({ intentId, reviewSessionId, reviewStatus })` 一次原子更新 Review 会话与结论,`reviewStatus` 仅接受 `approved` 或 `rejected`;`sync_intent_fix_status({ intentId, fixSessionId, fixStatus })` 一次原子更新 Fix 会话与结论,`fixStatus` 仅接受 `fixed`。ID 参数必须是非空字符串,工具不接受 `pending`、null、轮次、note 或任意 Intent 补丁作为写入内容;会话 ID 由调用方显式提供,工具说明强调 c3SessionId,不能拿现有自动化绑定的 executionId 代替。执行顺序为参数校验 → 按 id 查意图并校验工作区归属 → 限定字段的 store 更新;未知意图、跨项目目标、非法参数或数据库失败均返回 MCP 错误且不留下单字段成功的部分更新,成功响应回显意图 ID 与实际保存的对应字段,提交后走既有意图广播刷新详情。重复提交同一结果不增加轮次、不生成历史内容,两个工具互不覆盖对方字段。注册与 WorkNote 工具同源:复用 `automations/c3-tools.ts` 的共用构建器,实际注册名与 `enabledTools` 从同一名单派生,并**明确分类为写工具**(贯通自动化工具注册、可选工具清单与运行时权限冻结 `mcp-freeze`);注册不代表自动授权,仍需既有 allowlist 放行,不扩展外部 API key、顾问、只读意图/spec 作者的授权面。两个工具只回填状态元数据,不写 WorkNote、不新增 Review/Fix 生命周期日志、不发布接力事件;既有通用工具调用日志仍按原机制记录。**详情展示:** 意图详情概览的 PR 信息附近显示独立的「PR AI 评审/修复」区域,避免与规格评审入口或各 PR 的 forge 状态混淆;不增加独立页面或人工改状态按钮,也不受 SDD 开关控制。Review 显示「尚未评审/待评审结论/通过/发现问题」,Fix 显示「尚未进入修复/待修复结论/已处理」,并展示闭环复审轮次;`L5` 且无结论提示「按影响范围无需评审」但持久状态仍为 null,不伪造 approved/fixed,已有结果不被跳过提示遮蔽。两个会话 ID 分别提供会话跳转(复用普通会话选择路径),ID 为空时无入口,会话已删除或不可用时给出既有友好反馈、不清除历史结论;运行提示只依据对应 session 状态,停止或崩溃不能自动推导成功。
+
 ### 自动化队列(确定性调度内核)
 
 > 队列由「定时 tick 全量对账 + 事件合并标脏」的确定性内核驱动。
@@ -429,6 +432,12 @@ worktree、本地分支与不可逆性,`in_progress` 额外提示工作产物(�
   未识别时为 `''`(RM-R14)。
 - **Impact level / 影响范围等级** —— 一条意图的封闭枚举 `L1`–`L5`(`L1` 最高),回答「做错了
   波及多远」;`null` 表示未定级。它与 `priority`(何时做)是两个维度,不合并、不互推(RM-R49)。
+- **PR 评审 / 修复结果(reviewStatus / fixStatus)** —— 一条意图上的一组意图级结果快照:
+  `reviewSessionId`/`reviewStatus`(未评审/待结论/通过/发现问题)、`reviewFixRounds`(闭环复审
+  轮次)、`fixSessionId`/`fixStatus`(尚未进入修复/待结论/已处理)。`reviewStatus === 'rejected'`
+  表达修复要求,`fixed` 不等于评审通过;与 spec 只读审核 `specReview*`、PR 托管平台状态
+  `IntentPrStatus`、意图生命周期 `status`/`completedAt` 各自独立(RM-R52)。`needsReview(impactLevel)`
+  仅在 `L5` 时返回 `false`,其余(含未定级)均需评审。
 - **Communication session(沟通会话)** —— 每个项目用于细化意图的隐藏智能体会话;是隐藏集中
   一个真实的 SDK 会话。
 - **Hidden set(隐藏集)** —— 一个项目中从 `list_sessions` 排除的会话 id:所有沟通会话 id 与

@@ -50,6 +50,11 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewFingerprint: null,
     specReviewReworkRounds: 0,
     specReviewMachineApprovalBlocked: false,
+    reviewSessionId: null,
+    reviewStatus: null,
+    reviewFixRounds: 0,
+    fixSessionId: null,
+    fixStatus: null,
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
@@ -964,7 +969,7 @@ describe('IntentDetail.vue — draft ↔ todo status transition buttons', () => 
 })
 
 describe('IntentDetail.vue — meta block position and field order', () => {
-  // 顶部区域字段的稳定顺序:ID → 分支 → 基准分支 → PR → 已创建 → 已完成 → 已更新 → 依赖明细。
+  // 顶部区域字段的稳定顺序:ID → 影响范围 → 是否需要规范 → 分支 → 基准分支 → PR → PR 评审/修复 → 已创建 → 已完成 → 已更新 → 依赖明细。
   function metaLabels(w: ReturnType<typeof mountDetail>): string[] {
     return w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
   }
@@ -1001,7 +1006,7 @@ describe('IntentDetail.vue — meta block position and field order', () => {
     const labels = metaLabels(w)
 
     const items = w.findAll('.req-meta > .req-meta-item')
-    expect(labels).toHaveLength(10)
+    expect(labels).toHaveLength(11)
     expect(labels[0]).toContain('the-intent-id')
     // 「影响范围」与「是否需要规范」都是意图自身的配置,排在 git / PR 这些既成事实与时间戳之前。
     expect(items.at(1)!.attributes('data-testid')).toBe('intent-meta-impact-level')
@@ -1010,10 +1015,12 @@ describe('IntentDetail.vue — meta block position and field order', () => {
     expect(labels[3]).toContain('abcdef1') // commit 前 7 位
     expect(labels[4]).toContain('delivery/alpha')
     expect(labels[5]).toContain('#42')
-    expect(labels[6]).toContain('Created:')
-    expect(labels[7]).toContain('Completed:')
-    expect(labels[8]).toContain('Updated:')
-    expect(items.at(9)!.classes()).toContain('req-meta-dependencies')
+    // PR AI 评审/修复:紧跟 PR 之后、时间戳之前;独立于 forge PR 状态与规格评审。
+    expect(items.at(6)!.attributes('data-testid')).toBe('intent-pr-review-fix')
+    expect(labels[7]).toContain('Created:')
+    expect(labels[8]).toContain('Completed:')
+    expect(labels[9]).toContain('Updated:')
+    expect(items.at(10)!.classes()).toContain('req-meta-dependencies')
   })
 
   it('omits empty branch/PR/completed/deps while keeping the surviving field order', () => {
@@ -1028,17 +1035,18 @@ describe('IntentDetail.vue — meta block position and field order', () => {
     const w = mountDetail(item)
     const labels = metaLabels(w)
 
-    // 仅 ID / 影响范围 / 是否需要规范 / 基准分支 / 已创建 / 已更新 恒显示,空字段不占位。
+    // 仅 ID / 影响范围 / 是否需要规范 / 基准分支 / PR 评审/修复 / 已创建 / 已更新 恒显示,空字段不占位。
     // 影响范围未定级时仍渲染整行(「未定级」是一档显式选项);基准分支永远有答案
     // (缺持久值时读模型派生主分支回退),所以两者都不是可省略的一项。
     const items = w.findAll('.req-meta > .req-meta-item')
-    expect(labels).toHaveLength(6)
+    expect(labels).toHaveLength(7)
     expect(labels[0]).toContain('only-id')
     expect(items.at(1)!.attributes('data-testid')).toBe('intent-meta-impact-level')
     expect(items.at(2)!.attributes('data-testid')).toBe('intent-meta-spec-mode')
     expect(labels[3]).toContain('main')
-    expect(labels[4]).toContain('Created:')
-    expect(labels[5]).toContain('Updated:')
+    expect(items.at(4)!.attributes('data-testid')).toBe('intent-pr-review-fix')
+    expect(labels[5]).toContain('Created:')
+    expect(labels[6]).toContain('Updated:')
     expect(w.find('.req-meta-dependencies').exists()).toBe(false)
     expect(w.find('.req-meta-pr-link').exists()).toBe(false)
   })

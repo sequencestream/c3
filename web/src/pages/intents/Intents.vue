@@ -136,6 +136,9 @@ const emit = defineEmits<{
   'open-spec-session': [intentId: string]
   'open-spec-review-session': [intentId: string]
   'open-intent-session': [sessionId: string]
+  // PR AI 评审/修复会话跳转:直接携带 sessionId,复用普通会话选择路径。
+  'open-pr-review-session': [sessionId: string]
+  'open-pr-fix-session': [sessionId: string]
   'read-spec': [intentId: string, specPath: string]
   'list-intent-logs': [intentId: string]
   'reset-intent-session': [intentId: string, userInput: string]
@@ -279,6 +282,22 @@ const selectedSpecSessionStatus = computed<SessionStatus | null>(() => {
 // 标签状态点。无 specReviewSessionId 或状态未知时为 null(不显示状态点)。
 const selectedSpecReviewSessionStatus = computed<SessionStatus | null>(() => {
   const id = selectedIntent.value?.specReviewSessionId
+  if (!id) return null
+  return props.sessionStatus?.[id] ?? null
+})
+
+// 选中意图的 PR AI 评审会话(reviewSessionId)运行状态,派生给概览 Tab「评审」行的
+// 运行中提示。无 reviewSessionId 或状态未知时为 null(不显示运行中)。
+const selectedReviewSessionStatus = computed<SessionStatus | null>(() => {
+  const id = selectedIntent.value?.reviewSessionId
+  if (!id) return null
+  return props.sessionStatus?.[id] ?? null
+})
+
+// 选中意图的 PR AI 修复会话(fixSessionId)运行状态,派生给概览 Tab「修复」行的
+// 运行中提示。无 fixSessionId 或状态未知时为 null(不显示运行中)。
+const selectedFixSessionStatus = computed<SessionStatus | null>(() => {
+  const id = selectedIntent.value?.fixSessionId
   if (!id) return null
   return props.sessionStatus?.[id] ?? null
 })
@@ -463,6 +482,8 @@ defineExpose({
         :intent-session-status="selectedIntentSessionStatus"
         :spec-session-status="selectedSpecSessionStatus"
         :spec-review-session-status="selectedSpecReviewSessionStatus"
+        :review-session-status="selectedReviewSessionStatus"
+        :fix-session-status="selectedFixSessionStatus"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
@@ -480,6 +501,8 @@ defineExpose({
         @revoke-spec-approval="(id: string) => emit('revoke-spec-approval', id)"
         @open-spec-session="(id: string) => emit('open-spec-session', id)"
         @open-spec-review-session="(id: string) => emit('open-spec-review-session', id)"
+        @open-pr-review-session="(sessionId: string) => emit('open-pr-review-session', sessionId)"
+        @open-pr-fix-session="(sessionId: string) => emit('open-pr-fix-session', sessionId)"
         @open-intent-session="(sessionId: string) => emit('open-intent-session', sessionId)"
         @read-spec="(id: string, specPath: string) => emit('read-spec', id, specPath)"
         @reset-intent-session="

@@ -1362,6 +1362,26 @@
         "label": "已关闭"
       }
     },
+    "prReview": {
+      "title": "PR AI 评审 / 修复",
+      "reviewLabel": "评审:",
+      "fixLabel": "修复:",
+      "review": {
+        "unreviewed": "尚未评审",
+        "pending": "待评审结论",
+        "approved": "通过",
+        "rejected": "发现问题"
+      },
+      "fix": {
+        "unstarted": "尚未进入修复",
+        "pending": "待修复结论",
+        "fixed": "已处理"
+      },
+      "rounds": "闭环复审轮次:",
+      "noReviewNeeded": "按影响范围无需评审",
+      "openSession": "打开会话",
+      "running": "运行中"
+    },
     "prSync": {
       "label": "同步 PR 状态",
       "syncing": "同步中...",

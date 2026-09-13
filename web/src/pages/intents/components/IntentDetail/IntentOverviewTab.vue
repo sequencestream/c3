@@ -18,10 +18,13 @@ import { computed, ref, watch } from 'vue'
 import type {
   DepType,
   Intent,
+  IntentFixStatus,
   IntentImpactLevel,
   IntentPr,
   IntentPrStatus,
+  IntentReviewStatus,
   IntentSpecMode,
+  SessionStatus,
 } from '@ccc/shared/protocol'
 import { INTENT_IMPACT_LEVELS } from '@ccc/shared/protocol'
 import {
@@ -29,6 +32,7 @@ import {
   canEditIntentSpecMode,
   isHighImpactLevel,
   isLowImpactLevel,
+  needsReview,
 } from '@ccc/shared'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
@@ -44,6 +48,10 @@ const props = defineProps<{
   intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   /** 工作区 SDD 总开关;仅用于「关闭时无行为差异」的提示文案,不参与派生(派生值由服务端给)。 */
   sddEnabled?: boolean
+  /** Review 会话(reviewSessionId)运行状态,用于评审行「运行中」提示;非 idle/未知即视为运行中。 */
+  reviewSessionStatus?: SessionStatus | null
+  /** Fix 会话(fixSessionId)运行状态,用于修复行「运行中」提示;非 idle/未知即视为运行中。 */
+  fixSessionStatus?: SessionStatus | null
 }>()
 
 const emit = defineEmits<{
@@ -58,6 +66,10 @@ const emit = defineEmits<{
   'sync-pr-status': [intentId: string]
   'open-delivery': [deliveryId: string]
   'unlink-delivery': [workspaceName: string, deliveryId: string, intentId: string]
+  /** 跳到产生该评审结论的会话;复用普通会话选择路径(select_session)。 */
+  'open-pr-review-session': [sessionId: string]
+  /** 跳到产生该修复结论的会话;复用普通会话选择路径(select_session)。 */
+  'open-pr-fix-session': [sessionId: string]
 }>()
 
 // ── 关联交付:解除入口(自持确认框) ─────────────────────────────────────────
@@ -257,6 +269,48 @@ function syncPrStatus(): void {
   if (!canSyncPrStatus.value || prSyncInFlight.value) return
   emit('sync-pr-status', props.intent.id)
 }
+
+// ── PR AI 评审 / 修复 ──────────────────────────────────────────────────────
+// 状态标签:Review 四态 / Fix 三态,null 都是「尚未」。运行中提示只依据对应会话状态,
+// 非 idle/未知即视为运行中(与各会话 tab 标签状态点同构);停止/崩溃不自动推导成功。
+function reviewStatusLabel(status: IntentReviewStatus | null): string {
+  switch (status) {
+    case 'pending':
+      return t('intent.prReview.review.pending')
+    case 'approved':
+      return t('intent.prReview.review.approved')
+    case 'rejected':
+      return t('intent.prReview.review.rejected')
+    default:
+      return t('intent.prReview.review.unreviewed')
+  }
+}
+
+function fixStatusLabel(status: IntentFixStatus | null): string {
+  switch (status) {
+    case 'pending':
+      return t('intent.prReview.fix.pending')
+    case 'fixed':
+      return t('intent.prReview.fix.fixed')
+    default:
+      return t('intent.prReview.fix.unstarted')
+  }
+}
+
+// L5 且无结论时提示「按影响范围无需评审」;已有结果不能被跳过提示遮蔽,所以只要
+// Review/Fix 任一有结论就回到正常状态展示(持久状态仍为 null,不伪造 approved/fixed)。
+const reviewNeeded = computed(() => needsReview(props.intent.impactLevel))
+const showNoReviewNeeded = computed(
+  () =>
+    !reviewNeeded.value && props.intent.reviewStatus === null && props.intent.fixStatus === null,
+)
+
+const reviewSessionRunning = computed(
+  () => !!props.reviewSessionStatus && props.reviewSessionStatus !== 'idle',
+)
+const fixSessionRunning = computed(
+  () => !!props.fixSessionStatus && props.fixSessionStatus !== 'idle',
+)
 
 // ── Dep edit modal ──────────────────────────────────────────────────────────
 const editingIntentId = ref<string | null>(null)
@@ -527,6 +581,66 @@ watch(
           >{{ currentPrSync.message }}</span
         >
       </span>
+      <!-- PR AI 评审 / 修复:独立于 forge PR 状态与规格评审。不随 SDD 开关隐藏;L5 且无结论
+           时给「按影响范围无需评审」提示,已有结果时正常展示(不被提示遮蔽)。会话跳转复用
+           普通会话选择路径,ID 为空时无入口,会话已删除/不可用的反馈由会话页既有机制给出。 -->
+      <span class="req-meta-item req-pr-review-fix" data-testid="intent-pr-review-fix">
+        <span class="req-pr-review-fix-title">{{ t('intent.prReview.title') }}</span>
+        <span
+          v-if="showNoReviewNeeded"
+          class="req-meta-note"
+          data-testid="intent-pr-review-fix-no-need"
+          >{{ t('intent.prReview.noReviewNeeded') }}</span
+        >
+        <template v-else>
+          <span class="req-pr-review-fix-row" data-testid="intent-pr-review-status">
+            {{ t('intent.prReview.reviewLabel') }}
+            <span
+              class="req-pr-review-fix-value"
+              :class="'req-pr-review-fix-value--' + (intent.reviewStatus ?? 'unreviewed')"
+              >{{ reviewStatusLabel(intent.reviewStatus) }}</span
+            >
+            <button
+              v-if="intent.reviewSessionId"
+              type="button"
+              class="req-pr-review-fix-session"
+              data-testid="intent-pr-review-session"
+              @click="emit('open-pr-review-session', intent.reviewSessionId)"
+            >
+              {{ t('intent.prReview.openSession')
+              }}<span v-if="reviewSessionRunning" class="req-meta-note">
+                · {{ t('intent.prReview.running') }}</span
+              >
+            </button>
+          </span>
+          <span class="req-pr-review-fix-row" data-testid="intent-pr-fix-status">
+            {{ t('intent.prReview.fixLabel') }}
+            <span
+              class="req-pr-review-fix-value"
+              :class="'req-pr-review-fix-value--' + (intent.fixStatus ?? 'unstarted')"
+              >{{ fixStatusLabel(intent.fixStatus) }}</span
+            >
+            <button
+              v-if="intent.fixSessionId"
+              type="button"
+              class="req-pr-review-fix-session"
+              data-testid="intent-pr-fix-session"
+              @click="emit('open-pr-fix-session', intent.fixSessionId)"
+            >
+              {{ t('intent.prReview.openSession')
+              }}<span v-if="fixSessionRunning" class="req-meta-note">
+                · {{ t('intent.prReview.running') }}</span
+              >
+            </button>
+          </span>
+          <span
+            v-if="intent.reviewFixRounds > 0"
+            class="req-pr-review-fix-row req-pr-review-fix-rounds"
+            data-testid="intent-pr-review-fix-rounds"
+            >{{ t('intent.prReview.rounds') }} {{ intent.reviewFixRounds }}</span
+          >
+        </template>
+      </span>
       <span class="req-meta-item"
         >{{ t('intent.meta.created.label') }} {{ formatDate(intent.createdAt, locale) }}</span
       >
@@ -733,6 +847,45 @@ watch(
 }
 /* 读时派生的说明,不能看起来和持久事实同等分量。 */
 .req-meta-note {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+/* PR AI 评审 / 修复:独立区块,评审/修复各占一行,轮次弱化;会话跳转是页内导航按钮。 */
+.req-pr-review-fix {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+.req-pr-review-fix-title {
+  font-weight: 600;
+}
+.req-pr-review-fix-row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.req-pr-review-fix-value {
+  font-weight: 500;
+}
+.req-pr-review-fix-value--approved,
+.req-pr-review-fix-value--fixed {
+  color: var(--c-success-text);
+}
+.req-pr-review-fix-value--rejected {
+  color: var(--c-error-text);
+}
+.req-pr-review-fix-session {
+  padding: 0;
+  font: inherit;
+  color: var(--c-primary-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.req-pr-review-fix-rounds {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
 }

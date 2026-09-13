@@ -50,10 +50,14 @@
 - `intents` — 账本(`id`、`workspace_name`、`title`、`content`、`priority`、`impact_level`、
   `status`、`module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、
   `completed_at`,以及 spec 相关列 `spec_path`/`spec_status`/`spec_approved`/
-  `spec_approve_user`/`spec_session_id`/`spec_review_*`/`spec_mode`),按
+  `spec_approve_user`/`spec_session_id`/`spec_review_*`/`spec_mode`,及 PR 评审/修复结果列
+  `review_session_id`/`review_status`/`review_fix_rounds`/`fix_session_id`/`fix_status`),按
   `(workspace_name, status)` 建索引。`module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为
   `INTEGER NOT NULL DEFAULT 0`;`spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,
   RM-R43);`impact_level` 可空并由 `CHECK` 限定为 `'L1'`…`'L5'`,`NULL` 即未定级(RM-R49)。
+  PR 评审/修复结果列是**意图级结果快照**:`review_status`/`fix_status` 由 `CHECK` 限定封闭取值
+  (与协议 `INTENT_REVIEW_STATUSES`/`INTENT_FIX_STATUSES` 同源),四个可空字段历史行为 `NULL`、
+  `review_fix_rounds` 为 `INTEGER NOT NULL DEFAULT 0`,不回填(RM-R52)。
 - `intent_deps` — `(intent_id, depends_on_id)` 边。
 - `intent_fast_turns` — fast 模式每 turn 反向补轨的结算记录(`session_id` 主键、`intent_id`、
   `workspace_name`、`baseline` JSON、`settled_at`/`outcome`/`spec_path`、`created_at` +
@@ -68,7 +72,7 @@
   `updated_at`。一个项目全部行的集合即为隐藏集;`is_current=1` 的那一行
   是未指定具体 `sessionId` 进入意图视图时重新加载的会话。
 
-**Schema 版本(当前:v23)。** Schema 版本为 `23`。每次升级都在旧字段重命名之后、
+**Schema 版本(当前:v25)。** Schema 版本为 `25`。每次升级都在旧字段重命名之后、
 应用 schema 之前追加一个幂等迁移:v2 `module`,v3
 `completed_at`(可空),v4 `automate`(`INTEGER NOT NULL DEFAULT 0`),v6 旧的 `requirement*`
 → `intent*` 重命名,v7 `intent_chats.title`(`TEXT`),v8 git 追踪字段,v9 `intent_deps`
@@ -91,7 +95,9 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 `delivery_id` 会话交付上下文;v21→v22 为 `intents` 增加可空的 `base_branch` 基准分支快照并按
 单一就绪交付分支或工作区主分支一次性回填;v22→v23 为 `intents` 增加可空的 `impact_level`
 影响范围等级,不回填——存量行读作未定级;v23→v24 新增 `intent_worknotes` 追加式内容历史表
-(惰性 `CREATE TABLE/INDEX IF NOT EXISTS`,无存量回填)。完整迁移约束以 `database/tables.md` 为准。
+(惰性 `CREATE TABLE/INDEX IF NOT EXISTS`,无存量回填);v24→v25 为 `intents` 增加五个可空的
+PR 评审/修复结果列(`review_session_id`/`review_status`/`review_fix_rounds`/`fix_session_id`/
+`fix_status`,幂等 `ALTER TABLE ADD COLUMN`,无回填,RM-R52)。完整迁移约束以 `database/tables.md` 为准。
 
 **Schema 版本与迁移(v1 → v2)。** 新建时的 schema
 已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径

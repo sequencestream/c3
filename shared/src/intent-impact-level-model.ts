@@ -38,3 +38,17 @@ export interface ImpactLevelEditFacts {
 export function canEditIntentImpactLevel(facts: ImpactLevelEditFacts): boolean {
   return facts.status !== 'in_progress' && facts.status !== 'done'
 }
+
+/**
+ * Whether this intent's PR warrants an AI review before it may close the loop.
+ * `L1`–`L4` need review, `L5` (wording / cosmetic) does not, and an UNGRADED
+ * (`null`) intent DOES — the fail-safe reads "when in doubt, review". An
+ * unrecognised persisted grade must be narrowed to `null` by the store before it
+ * reaches this function, so it can never slip through as "no review needed".
+ *
+ * This answers only "is review needed" — whether a FIX is needed is not a second
+ * rule here; it derives from the review conclusion (`reviewStatus === 'rejected'`).
+ */
+export function needsReview(impactLevel: IntentImpactLevel | null): boolean {
+  return impactLevel !== 'L5'
+}

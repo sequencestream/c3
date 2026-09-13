@@ -122,6 +122,8 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       specAgentId: '',
       specReviewAgentId: '',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
     } as SystemSettings)
     expect(loadSettings().projectConfigs?.a).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
@@ -530,6 +532,8 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1)],
       defaultAgentId: 'a1',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('')
   })
@@ -579,6 +583,83 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
   })
 })
 
+describe('reviewAgentId/fixAgentId rewrite-on-store — empty=follow-default, set=fall-through (AC-R34)', () => {
+  /** A minimal custom-claude agent at an explicit `order_seq`. */
+  const agent = (id: string, order: number, enabled?: boolean): unknown => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    order_seq: order,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+
+  it('keeps empty reviewAgentId/fixAgentId empty (follow the default agent, never auto-filled)', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1)],
+      defaultAgentId: 'a1',
+      reviewAgentId: '',
+      fixAgentId: '',
+    } as unknown as SystemSettings)
+    expect(loadSettings().reviewAgentId).toBe('')
+    expect(loadSettings().fixAgentId).toBe('')
+  })
+
+  it('defaults missing reviewAgentId/fixAgentId fields to empty', () => {
+    saveSettings({
+      agents: [agent('a1', 0)],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().reviewAgentId).toBe('')
+    expect(loadSettings().fixAgentId).toBe('')
+  })
+
+  it('keeps an enabled, explicitly-set reviewAgentId/fixAgentId untouched', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      reviewAgentId: 'a2',
+      fixAgentId: 'a3',
+    } as unknown as SystemSettings)
+    expect(loadSettings().reviewAgentId).toBe('a2')
+    expect(loadSettings().fixAgentId).toBe('a3')
+  })
+
+  it('rewrites a now-disabled reviewAgentId/fixAgentId to the next enabled agent by order_seq', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      reviewAgentId: 'a2',
+      fixAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().reviewAgentId).toBe('a3')
+    expect(loadSettings().fixAgentId).toBe('a3')
+  })
+
+  it('rewrites a removed reviewAgentId/fixAgentId to the next enabled agent by order_seq', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      reviewAgentId: 'gone',
+      fixAgentId: 'gone',
+    } as unknown as SystemSettings)
+    expect(loadSettings().reviewAgentId).toBe('a1')
+    expect(loadSettings().fixAgentId).toBe('a1')
+  })
+
+  it('falls back to SYSTEM_AGENT_ID when a set reviewAgentId/fixAgentId has no enabled agent left', () => {
+    saveSettings({
+      agents: [agent('a1', 0, false), agent('a2', 1, false)],
+      defaultAgentId: 'a1',
+      reviewAgentId: 'a1',
+      fixAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().reviewAgentId).toBe(SYSTEM_AGENT_ID)
+    expect(loadSettings().fixAgentId).toBe(SYSTEM_AGENT_ID)
+  })
+})
+
 describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
   const save = (socketAutoResume: boolean | undefined): void => {
     saveSettings({
@@ -589,6 +670,8 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
       specAgentId: '',
       specReviewAgentId: '',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
       socketAutoResume,
     } as SystemSettings)
   }
@@ -1251,6 +1334,8 @@ describe('agent-output language tracking', () => {
       specAgentId: '',
       specReviewAgentId: '',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
       voiceLang: 'en-US',
     } as SystemSettings)
     expect(getAgentLang()).toBe('zh')
@@ -1266,6 +1351,8 @@ describe('agent-output language tracking', () => {
       specAgentId: '',
       specReviewAgentId: '',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
       uiLang: 'zh',
     } as unknown as SystemSettings)
     expect(getAgentLang()).toBe('en')
@@ -1309,6 +1396,8 @@ function saveWithTimezone(timezone: unknown): void {
     specAgentId: '',
     specReviewAgentId: '',
     automationAgentId: '',
+    reviewAgentId: '',
+    fixAgentId: '',
     timezone,
   } as SystemSettings)
 }
@@ -2184,6 +2273,8 @@ describe('legacy sandbox-only role keys are dropped on load and save', () => {
       specAgentId: 'a2',
       specReviewAgentId: '',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
       sandboxDefaultAgentId: 'a2',
       sandboxToolAgentId: 'a1',
       sandboxIntentAgentId: 'a2',

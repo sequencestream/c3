@@ -46,6 +46,8 @@ const mockSettings: SystemSettings = {
   specAgentId: '',
   specReviewAgentId: '',
   automationAgentId: '',
+  reviewAgentId: '',
+  fixAgentId: '',
   degradationChain: [],
   modelProviders: [],
 }
@@ -471,6 +473,49 @@ describe('resolveSpecReviewAgent — the single reviewer slot, no sandbox varian
   })
 })
 
+describe('review/fix template-seed roles — same chain as intent/spec (AC-R34)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('follows the default agent when reviewAgentId/fixAgentId are empty', () => {
+    mockSettings.reviewAgentId = ''
+    mockSettings.fixAgentId = ''
+    expect(resolveRoleAgentTarget('review').agent.id).toBe('claude-pro')
+    expect(resolveRoleAgentTarget('fix').agent.id).toBe('claude-pro')
+  })
+
+  it('resolves an explicitly set, enabled role agent', () => {
+    mockSettings.reviewAgentId = 'claude-sonnet'
+    mockSettings.fixAgentId = 'claude-sonnet'
+    expect(resolveRoleAgentTarget('review').agent.id).toBe('claude-sonnet')
+    expect(resolveRoleAgentTarget('fix').agent.id).toBe('claude-sonnet')
+  })
+
+  it('resolves a cross-vendor role agent (codex) when set', () => {
+    mockSettings.reviewAgentId = 'codex-agent'
+    mockSettings.fixAgentId = 'codex-agent'
+    expect(resolveRoleAgentTarget('review').agent.vendor).toBe('codex')
+    expect(resolveRoleAgentTarget('fix').agent.vendor).toBe('codex')
+  })
+
+  it('falls back to the default agent when the role id is unknown', () => {
+    mockSettings.reviewAgentId = 'gone'
+    mockSettings.fixAgentId = 'gone'
+    expect(resolveRoleAgentTarget('review').agent.id).toBe('claude-pro')
+    expect(resolveRoleAgentTarget('fix').agent.id).toBe('claude-pro')
+  })
+
+  it('is independent of each other and of the intent/spec slots', () => {
+    mockSettings.reviewAgentId = 'claude-sonnet'
+    mockSettings.fixAgentId = 'codex-agent'
+    mockSettings.intentAgentId = 'claude-sonnet'
+    expect(resolveRoleAgentTarget('review').agent.id).toBe('claude-sonnet')
+    expect(resolveRoleAgentTarget('fix').agent.id).toBe('codex-agent')
+    expect(resolveRoleAgentTarget('intent').agent.id).toBe('claude-sonnet')
+  })
+})
+
 describe('roles pointing at a group — bind the group, run its first enabled member', () => {
   /** Members of the claude `default` group, deliberately given out of order. */
   function member(id: string, order: number, group = 'default'): AgentConfig {
@@ -502,12 +547,19 @@ describe('roles pointing at a group — bind the group, run its first enabled me
   const GROUP = '_c3_claude_default'
   const ROLE_FIELD: Record<
     Exclude<AgentRole, 'default'>,
-    'toolAgentId' | 'intentAgentId' | 'specAgentId' | 'specReviewAgentId'
+    | 'toolAgentId'
+    | 'intentAgentId'
+    | 'specAgentId'
+    | 'specReviewAgentId'
+    | 'reviewAgentId'
+    | 'fixAgentId'
   > = {
     tool: 'toolAgentId',
     intent: 'intentAgentId',
     spec: 'specAgentId',
     spec_review: 'specReviewAgentId',
+    review: 'reviewAgentId',
+    fix: 'fixAgentId',
   }
   const DEDICATED_ROLES = Object.keys(ROLE_FIELD) as Array<Exclude<AgentRole, 'default'>>
 
@@ -520,6 +572,8 @@ describe('roles pointing at a group — bind the group, run its first enabled me
     mockSettings.intentAgentId = ''
     mockSettings.specAgentId = ''
     mockSettings.specReviewAgentId = ''
+    mockSettings.reviewAgentId = ''
+    mockSettings.fixAgentId = ''
   })
   afterEach(() => {
     mockSettings.agents = original.agents
@@ -529,6 +583,8 @@ describe('roles pointing at a group — bind the group, run its first enabled me
     mockSettings.intentAgentId = original.intentAgentId
     mockSettings.specAgentId = original.specAgentId
     mockSettings.specReviewAgentId = original.specReviewAgentId
+    mockSettings.reviewAgentId = original.reviewAgentId
+    mockSettings.fixAgentId = original.fixAgentId
   })
 
   it("resolveAgent('') follows a GROUP default to its first enabled member, by order_seq", () => {

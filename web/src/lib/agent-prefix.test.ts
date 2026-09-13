@@ -23,6 +23,8 @@ function settings(over: Partial<SystemSettings> = {}): SystemSettings {
     specAgentId: '',
     specReviewAgentId: '',
     automationAgentId: '',
+    reviewAgentId: '',
+    fixAgentId: '',
     ...over,
   }
 }

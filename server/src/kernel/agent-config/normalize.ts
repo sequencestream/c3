@@ -165,6 +165,8 @@ export function defaultSettings(): SystemSettings {
     specAgentId: '',
     specReviewAgentId: '',
     automationAgentId: '',
+    reviewAgentId: '',
+    fixAgentId: '',
   }
 }
 

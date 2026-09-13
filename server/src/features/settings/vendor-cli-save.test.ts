@@ -92,6 +92,8 @@ const base = {
   specAgentId: '',
   specReviewAgentId: '',
   automationAgentId: '',
+  reviewAgentId: '',
+  fixAgentId: '',
 } as SystemSettings
 
 function connFor(subject: string | null): { conn: Conn; sent: ServerToClient[] } {

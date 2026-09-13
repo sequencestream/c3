@@ -244,6 +244,8 @@ describe('getSessionCounts', () => {
       specAgentId: '',
       specReviewAgentId: '',
       automationAgentId: '',
+      reviewAgentId: '',
+      fixAgentId: '',
       showToolSessions: true,
     })
     const again = fakeConn()

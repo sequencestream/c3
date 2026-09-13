@@ -75,7 +75,7 @@ URL 本身都不触发补齐。
   兜底 id。归一化在顺序正规化之后运行,所以扫描发生时,注册表已经处于
   紧凑的顺序号顺序中。该规则**单一来源地存放于共享协议模块**,
   因此 web console(在禁用/移除时)与服务端(在保存/加载时)会以相同方式改写。
-- 角色字段(`toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`)与工作区覆盖 `WorkspaceSetting.defaultAgentId` 走**同一条**共享校验规则
+- 角色字段(`toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId`)与工作区覆盖 `WorkspaceSetting.defaultAgentId` 走**同一条**共享校验规则
   `normalizeAgentRef`(单一来源,同样存放于共享协议模块),但**删除与禁用语义不同**:空/空白 ⇒“跟随默认”(空串保持为空,工作区覆盖则把键整个省略);非空值指向**已禁用**智能体 ⇒ 改写为按顺序号的下一个已启用智能体(与默认值相同的回退);非空值指向**已删除**智能体 ⇒ **清空**(角色字段清为 `''`,工作区覆盖丢掉键)——删除移除的是用户的显式选择,因此角色/工作区降级回“跟随默认”,而不是被钉到某个用户从未选过的邻居智能体上。`defaultAgentId` 本身是跟随链末端,不受“删除即清空”规则约束(它仍改写)。系统保存时顺带清理**全部**已存工作区的悬空覆盖(`cleanProjectConfigAgentRefs`),包括从未打开过的工作区。
 - 旧版全局默认模式(在系统设置中已废弃)在迁移窗口期内出于向后兼容仍被接受。
   权威来源是按项目的默认模式,从 workspace setting 中读取;相同的校验
@@ -144,11 +144,15 @@ URL 本身都不触发补齐。
 
 ## 角色 → 组的统一解析(AC-R27)
 
-五个角色(default / tool / intent / spec / spec-review)共用一个解析入口,
+七个角色(default / tool / intent / spec / spec-review / review / fix)共用一个解析入口,
 它同时产出两样东西:**要持久化的路由身份**(组引用或具体 id)与
 **代表成员**(组内按顺序号排列的首个已启用智能体)。分成两个返回值是关键——
 调用方过去只能拿到"一个 agent",于是只能用 `resolve*Agent().id` 反推绑定,
 组因此被压平成单个成员,按序故障转移的语义随之丢失。
+
+其中 review / fix 是**模板种子角色**而非会话类型:它们不绑定会话、不加
+SessionKind,消费方(两个 PR 评审内置模板的新建)只取**代表成员**这半个返回值
+(把组引用压平为该组首个启用成员),不做组游标/跨段故障转移。
 
 按 id 查找永远匹配不上虚拟组引用,所以"跟随默认"这条链必须**先**识别
 默认值是不是组,再走 id 查找;否则一个配成组的默认值会一路穿过兜底链落到

@@ -772,6 +772,12 @@ worktree。
 模板的 toolAllowlist 为 `Read` / `Grep` / `Glob` / `Bash` 加
 `mcp__c3__find_intents` / `mcp__c3__view_intent`;它不授予创建或保存意图的工具。
 
+**PR 评审接力**(`pr-review-runner`)由 `pr:create` 或 `pr:update`(status `success`)事件触发,评审一个 GitHub PR(取最新会话消息与最新提交;消息不以 `[review]` 开头,或以 `[review]` 开头但已有更新提交时才评审):对完整 diff 评审正确性/安全/性能/测试/符合意图与 spec,只发一条以 `[review]` 开头的 PASS / CHANGES REQUESTED 结论;发现问题不改码、发 `pr:review`(failure);PASS 则 `gh pr merge` 并 `sync_intent_pr_status` 落 `merged` 后发 `pr:review`(success);合并失败/冲突补 `[error]` 评论并发布 `pr:review`(failure)。它不修改文件、不建提交、不 push、不 approve——唯一允许的仓库写操作是 PASS 后的合并。toolAllowlist:`Read` / `Grep` / `Glob` / `Bash` + `mcp__c3__find_intents` / `mcp__c3__view_intent` / `mcp__c3__sync_intent_pr_status` / `mcp__c3__publish_event`。**默认执行身份取自 `reviewAgentId`**(AC-R34):模板新建时沿 `reviewAgentId → 工作区有效默认(工作区覆盖 `defaultAgentId`,无覆盖则系统默认)→ 第一个已启用的智能体` 解析为该角色的 `vendor`/`agentId`,创建出的记录保存这份具体快照并永远按快照运行。
+
+**PR 评审失败修复**(`pr-review-fix`)由 `pr:review`(status `failure`)事件触发,评估并响应评审问题:读失败描述与 diff、关联意图与 spec,在 PR 头分支对应的 worktree(或安全 checkout)内逐个问题判断是否值得修——值得修的修复、跑测试/检查、commit + push,不值得修的记录理由;无论是否改码都发一条以 `[fix]` 开头的评论(汇总已提交修复 + 解释未改项),随后发 `pr:update`(success;失败则 `failure`),PR 已 merged/closed 时 `sync_intent_pr_status` 落终态。它不改无关代码、不改意图、不改 spec。toolAllowlist:`Read` / `Grep` / `Glob` / `Bash` / `Edit` / `Write` + `mcp__c3__view_intent` / `mcp__c3__sync_intent_pr_status` / `mcp__c3__publish_event`。**默认执行身份取自 `fixAgentId`**(AC-R34),解析链与 `reviewAgentId` 相同。
+
+**自定义事件回显**(`custom-event-echo`)是一个最小示例:由 `my:create-event` 事件触发,执行 `echo hello`(command 任务,无 LLM 执行身份)。
+
 - **工作区范围的唯一性:** 一个自动化由 `(workspaceName, id)` 唯一标识。
   删除工作区会归档自动化,永远不会使其成为孤儿。
 - **单一激活状态:** 一个自动化恰好处于 `active`、`paused` 或 `archived` 三者之一。

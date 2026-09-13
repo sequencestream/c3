@@ -110,12 +110,13 @@ flowchart TD
 
 ## 批准规格(人工检查点)
 
-1. **四态动作按钮。** 当工作区的 SDD 开关(`sddEnabled`)开启时,意图的
+1. **四态动作按钮。** 当工作区的 SDD 开关(`sddEnabled`)开启时 —— 或意图为
+   高影响 L1/L2(无论开关,强制规格先行)—— 意图的
    主动作按钮具备 SDD 感知,以 `specStatus`(`raw`/`pending`/`approved`)为唯一事实源:
    `raw`(无规格,或仅有 `write_spec` 播种的占位)⇒ `Write Spec`;`pending`(已有
    偏离 seed 的真实内容且未批准)⇒ `Approve Spec`;`approved` ⇒ `Start Work`
-   (SDD 关闭 ⇒ 始终为 `Start Work`)。`raw` 即使已有 `spec_path` 也不显示批准入口。
-   `sddEnabled` 随每次意图列表广播下发,因此按钮无需单独获取设置(`RM-R22`、`WC-R25`)。
+   (SDD 关闭且非高影响 ⇒ 始终为 `Start Work`)。`raw` 即使已有 `spec_path` 也不显示批准入口。
+   按钮判定收敛为 `@ccc/shared` 的 `specGateBlocks`(`RM-R22`、`RM-R51`、`WC-R25`)。
 2. **web-console → intent-management。** `Approve Spec` 发送 `approve_spec`。服务端
    设置 `spec_status='approved'`(兼容字段 `spec_approved=true` 同事务双写),并记录
    批准用户(当前登录主体)到 `spec_approve_user`,然后重新广播列表 — 单人确认,
@@ -163,12 +164,15 @@ flowchart TD
    机器批准动作,意图停在「等待人工批准」。显式开启后,通过的结论由队列写入
    `spec_status='approved'`(兼容字段 `spec_approved=true` 同事务双写),批准人记为
    保留常量 `c3:machine-spec-approver` (**不冒充任何登录主体**),开发无需人工点击
-   即可继续。落库是条件事务:写入瞬间复核「状态为 `pending`、结论为 pass、结论
-   绑定当前指纹、未被人工否决」,任一不成立则一无所写,由下一轮从新事实重推导。
+   即可继续 — 但高影响 L1/L2 意图除外,机器批准动作对它**根本不产生**(等级强制
+   人工批准优先于 opt-in,见 `RM-R51`)。落库是条件事务:写入瞬间复核「状态为
+   `pending`、结论为 pass、结论绑定当前指纹、未被人工否决、同一事务内重读
+   `impact_level` 仍非高影响」,任一不成立则一无所写,由下一轮从新事实重推导。
 
 automation orchestrator 使用同一检查点作为准入闸门:SDD 开启时,排队中的
 `automate` 意图在 `spec_status='approved'` 之前不会进入开发;SDD 关闭时,自动化
-不要求规格,规格阶段也完全不启动。
+不要求规格,规格阶段也完全不启动 —— 高影响 L1/L2 意图除外,它无论开关都要求
+`approved` 且批准身份为人工,否则停在 `blocked_spec_not_approved`(`RM-R51`)。
 
 ## fast 模式:规格延后的小改动路径
 
@@ -183,13 +187,16 @@ automation orchestrator 使用同一检查点作为准入闸门:SDD 开启时,�
   「开发前」移到「diff 产出后」。
 
 1. **模式派生。** 意图持久化一个可空 `specMode`。`null` 继承工作区:
-   `sddEnabled` 开启 ⇒ `sdd`、关闭 ⇒ `fast`;显式 `sdd`/`fast` 始终覆盖派生值。
-   `sddEnabled` 关闭时本无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认。
+   `sddEnabled` 开启 ⇒ `sdd`、关闭 ⇒ `fast`;显式 `sdd`/`fast` 始终覆盖派生值;
+   **影响范围等级再联动一档(`RM-R51`):高影响 L1/L2 强制 `sdd`、低影响 L4/L5 在
+   `specMode` 为空时默认 `fast`。** `sddEnabled` 关闭时本无规格闸门与规格阶段,
+   `fast` 只是与现状一致的自然默认(高影响除外 —— 它无论开关都强制规格先行)。
    共享 `Intent` 读模型携带已解析的 `effectiveSpecMode`,客户端、准入层与落定
    处理读取同一值,不再各自推导(`RM-R22`、`WC-R25` 的按钮事实源不变)。
-2. **手动准入。** `checkWorkAdmission` 是 fresh 与 resume 的共同准入点。仅当
-   `sddEnabled` 开启且有效模式为 `fast` 时,跳过 `specStatus !== 'approved'`
-   对应的 `intent.specNotApproved` 拒绝;其余闸门顺序与语义原样保持。自动化队列
+2. **手动准入。** `checkWorkAdmission` 是 fresh 与 resume 的共同准入点,判定
+   收敛为 `@ccc/shared` 的 `specGateBlocks`:有效模式为 `fast` 时跳过
+   `specStatus !== 'approved'` 对应的 `intent.specNotApproved` 拒绝;高影响 L1/L2
+   无论开关都要求 `approved` 且批准身份为人工;其余闸门顺序与语义原样保持。自动化队列
    的规格闸门适用**同一条例外**(见下),因此自动与手动对同一批事实不会给出相反
    结论。fast 不是通用绕过标志:它只打开规格闸门这一项,交付可写性、交付上下文、
    依赖、并发、退避与 park 全部照旧。
@@ -382,8 +389,8 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
 - **机器批准是显式 opt-in,且可撤销。** 工作区开关默认关闭,缺省/非布尔/遗留值
   一律读作关闭;关闭时即使结论为通过,`spec_approved` 也绝不会被自动置真 ——
   内核根本不产生该动作。开启后批准记的是机器身份常量而非登录主体,并且始终
-  可由人撤销;撤销会否决当前结论,使下一个 tick 不能把它反向覆盖回来
-  (`RM-R33`、`RM-R35`、ADR-0032)。
+  可由人撤销;撤销会否决当前结论,使下一个 tick 不能把它反向覆盖回来。
+  **高影响 L1/L2 无论开关都禁止机器批准**,须人工批准(`RM-R33`、`RM-R35`、`RM-R51`、ADR-0032)。
 - **手动启动绝不自动完成。** 开发运行结束不会改变状态;用户
   标记 `done`/`cancelled`(`RM-R9`)。唯一的例外是入口协调(`RM-R18`)与
   automation orchestrator(`RM-A5`)。会话结束时的 Git/PR 清理(`RM-R26`)同样

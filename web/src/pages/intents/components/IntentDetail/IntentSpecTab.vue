@@ -11,6 +11,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Intent, SpecReviewVerdict } from '@ccc/shared/protocol'
 import { MACHINE_SPEC_APPROVER, MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
+import { isHighImpactLevel } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 
@@ -58,6 +59,15 @@ const showRevoke = computed<boolean>(
 // 批准是机器做出的吗?机器身份是保留常量,永不与登录 subject 冲突,因此可据此如实区分。
 const approvedByMachine = computed<boolean>(
   () => props.intent.specApproveUser === MACHINE_SPEC_APPROVER,
+)
+
+// 机器批准 + 高影响(L1/L2):批准记录保留,但不满足「人工批准」准入,需先撤销再人工批准。
+// 此时给出一条明确的重新人工确认路径提示,而不是让「开始工作」去撞服务端闸门。
+const machineApprovalNeedsHumanConfirm = computed<boolean>(
+  () =>
+    props.intent.specStatus === 'approved' &&
+    approvedByMachine.value &&
+    isHighImpactLevel(props.intent.impactLevel),
 )
 
 // 当前审核结论——只在结论仍绑定 spec 现内容时才算数。指纹不匹配说明 spec 在结论之后被
@@ -202,6 +212,12 @@ watch(
             : t('intent.spec.review.approvedBy', { user: intent.specApproveUser ?? '' })
         }}
       </span>
+      <span
+        v-if="machineApprovalNeedsHumanConfirm"
+        class="intent-detail-spec-review-machine-confirm"
+        data-testid="intent-detail-spec-machine-confirm"
+        >{{ t('intent.spec.review.machineApprovalNeedsHumanConfirm') }}</span
+      >
       <!-- 理由由审核智能体自由撰写,常含列表/代码块/mermaid,故与 spec 正文走同一条渲染管线。 -->
       <div
         v-if="reviewVerdict && intent.specReviewReason"
@@ -324,6 +340,13 @@ watch(
 .intent-detail-spec-review-rounds,
 .intent-detail-spec-review-approver {
   color: var(--c-text-muted, var(--c-text));
+}
+/* 机器批准不满足高影响人工批准时的重新确认提示:独占整行,警示色,引导撤销后人工批准。 */
+.intent-detail-spec-review-machine-confirm {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+  color: var(--c-warning-text);
 }
 /* 理由独占整行;换行交给 markdown 管线(.md-body 已 white-space: normal + breaks: true)。 */
 .intent-detail-spec-review-reason {

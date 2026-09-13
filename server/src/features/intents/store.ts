@@ -39,7 +39,7 @@ import {
   SPEC_REVIEW_VERDICTS,
   SPEC_STATUSES,
 } from '@ccc/shared/protocol'
-import { isIntentImpactLevel } from '@ccc/shared'
+import { isHighImpactLevel, isIntentImpactLevel } from '@ccc/shared'
 import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
 import { resolveRunInitiatedBySubject } from '../auth/authorization.js'
 import {
@@ -883,6 +883,8 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
   }
   return rows.map((r) => {
     const persistedBase = r.base_branch?.trim() || null
+    const impactLevel = narrowImpactLevel(r.impact_level)
+    const specMode = narrowSpecMode(r.spec_mode)
     return {
       id: r.id,
       workspaceName: r.workspace_name,
@@ -890,7 +892,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
       shortEnTitle: r.short_en_title,
       content: r.content,
       priority: r.priority as Intent['priority'],
-      impactLevel: narrowImpactLevel(r.impact_level),
+      impactLevel,
       module: r.module,
       status: r.status as IntentStatus,
       dependsOn: byId.get(r.id) ?? [],
@@ -905,13 +907,15 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
       linkedDeliveries: deliveriesById.get(r.id) ?? [],
       specPath: r.spec_path,
       specStatus: narrowSpecStatus(r.spec_status),
-      specMode: narrowSpecMode(r.spec_mode),
+      specMode,
       // The effective mode is resolved HERE — the single read-model boundary — so
       // the admission gate, the settle hook and every client read the SAME value
-      // instead of re-deriving it against a possibly-stale setting snapshot.
+      // instead of re-deriving it against a possibly-stale setting snapshot. The
+      // impact level rides along so L1/L2 force `sdd` and L4/L5 default to `fast`.
       effectiveSpecMode: resolveEffectiveSpecMode(
-        narrowSpecMode(r.spec_mode),
+        specMode,
         getSddEnabled(r.workspace_name),
+        impactLevel,
       ),
       specApproved: r.spec_approved === 1,
       specApproveUser: r.spec_approve_user,
@@ -2281,6 +2285,11 @@ export function machineApproveSpec(
   tx(d, () => {
     const row = d.get<Row>('SELECT * FROM intents WHERE id=?', intentId)
     if (!row) return
+    // High-impact intents (L1/L2) may NEVER be approved by the machine. This is
+    // re-read HERE, inside the transaction, so an intent that was upgraded to
+    // high impact after the kernel planned this approval is still refused at the
+    // write boundary — the snapshot's grade is never trusted over the live row.
+    if (isHighImpactLevel(narrowImpactLevel(row.impact_level))) return
     // Only a `pending` spec may be approved. `raw` is still being authored and
     // `approved` is already there — both fail the guard rather than being nudged
     // through it by the compatibility boolean.

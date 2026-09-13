@@ -19,6 +19,10 @@ vi.mock('./store.js', () => ({
   machineApproveSpec: vi.fn(),
 }))
 
+vi.mock('../../kernel/config/index.js', () => ({
+  getSpecMachineApprovalEnabled: vi.fn(() => true),
+}))
+
 vi.mock('./session-launcher.js', () => ({
   launchSpecSession: vi.fn(),
   launchSpecReviewSession: vi.fn(),
@@ -40,6 +44,7 @@ import { launchSpecReviewSession, launchSpecSession } from './session-launcher.j
 import { readSpecFingerprint } from './spec-review.js'
 import { applySpecApproval } from './spec.js'
 import { recordFailure, recordSuccess } from './queue-outcome-actions.js'
+import { getSpecMachineApprovalEnabled } from '../../kernel/config/index.js'
 
 const WS = '/test/spec-ws'
 
@@ -99,6 +104,7 @@ function makeCtx(): { ctx: QueueActionContext; hooks: WorkflowHooks; requestPass
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(getSpecMachineApprovalEnabled).mockReturnValue(true)
 })
 
 describe('runSpecPhase — authoring and read-only review', () => {
@@ -367,5 +373,43 @@ describe('executeMachineApproveSpec — a conditional write, not a trusted one',
 
     expect(machineApproveSpec).not.toHaveBeenCalled()
     expect(applySpecApproval).not.toHaveBeenCalled()
+  })
+
+  it('an intent upgraded to high impact (L1/L2) since the snapshot loses machine eligibility', () => {
+    const { ctx, requestPass } = makeCtx()
+    vi.mocked(getIntent).mockReturnValue(
+      makeIntent({ id: 'L1', specPath: '/specs/l1.md', impactLevel: 'L1' }),
+    )
+    // The workspace opt-in is still on; the grade alone revokes eligibility.
+    vi.mocked(getSpecMachineApprovalEnabled).mockReturnValue(true)
+
+    executeMachineApproveSpec(ctx, {
+      kind: 'machine_approve_spec',
+      intentId: 'L1',
+      fingerprint: 'fp',
+    })
+
+    expect(machineApproveSpec).not.toHaveBeenCalled()
+    expect(applySpecApproval).not.toHaveBeenCalled()
+    // A revoked eligibility is the guard working, not a failure.
+    expect(recordFailure).not.toHaveBeenCalled()
+    expect(requestPass).toHaveBeenCalledTimes(1)
+  })
+
+  it('the workspace opt-in flipped off since the snapshot also revokes eligibility', () => {
+    const { ctx, requestPass } = makeCtx()
+    vi.mocked(getIntent).mockReturnValue(makeIntent({ id: 'M', specPath: '/specs/m.md' }))
+    vi.mocked(getSpecMachineApprovalEnabled).mockReturnValue(false)
+
+    executeMachineApproveSpec(ctx, {
+      kind: 'machine_approve_spec',
+      intentId: 'M',
+      fingerprint: 'fp',
+    })
+
+    expect(machineApproveSpec).not.toHaveBeenCalled()
+    expect(applySpecApproval).not.toHaveBeenCalled()
+    expect(recordFailure).not.toHaveBeenCalled()
+    expect(requestPass).toHaveBeenCalledTimes(1)
   })
 })

@@ -17,7 +17,7 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { GitActionFailureGuidance, Intent, PromptImage } from '@ccc/shared/protocol'
-import { findWriteBlockingDelivery } from '@ccc/shared'
+import { findWriteBlockingDelivery, specGateBlocks } from '@ccc/shared'
 import { ensureRuntime, getRuntime, isRunning } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
 import { loadHistory, sessionExists } from '../../sessions.js'
@@ -238,17 +238,26 @@ function checkWorkAdmission(
   gate: { deliveryId: string | null; force?: boolean; actor?: string | null },
 ): SessionLaunchResult | null {
   // SDD quality gate — server-side, forced. The authoritative condition is the
-  // spec STATUS: the compatibility boolean is never consulted here, so it can
-  // never become a second way in when the two disagree.
+  // spec STATUS (and, for high impact, the approver identity): the compatibility
+  // boolean is never consulted here, so it can never become a second way in when
+  // the two disagree. A high-impact (L1/L2) intent must be approved BY A HUMAN,
+  // and this holds even when the workspace has SDD switched off — the grade
+  // cannot be dodged by turning the workspace default off.
   //
   // The ONE relaxation is per-intent `fast` mode: a fast intent may start a
   // MANUAL work turn without an approved spec — the spec is reverse-authored
   // from the turn's diff after it settles. Everything else below stays closed,
   // and the automation queue still requires `approved` regardless of mode.
-  if (getSddEnabled(workspacePath) && intent.specStatus !== 'approved') {
-    if (intent.effectiveSpecMode !== 'fast') {
-      return { success: false, code: 'intent.specNotApproved' }
-    }
+  if (
+    specGateBlocks({
+      impactLevel: intent.impactLevel,
+      effectiveSpecMode: intent.effectiveSpecMode,
+      sddEnabled: getSddEnabled(workspacePath),
+      specStatus: intent.specStatus,
+      specApproveUser: intent.specApproveUser,
+    })
+  ) {
+    return { success: false, code: 'intent.specNotApproved' }
   }
 
   const deliveries = deliveryGateFacts(workspacePath)

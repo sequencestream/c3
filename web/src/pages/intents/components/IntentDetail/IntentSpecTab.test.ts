@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import type { Intent } from '@ccc/shared/protocol'
 import { MACHINE_SPEC_APPROVER } from '@ccc/shared/protocol'
+import { i18n } from '@/i18n'
 import IntentSpecTab from './IntentSpecTab.vue'
 
 // 透传 text 的 stub:既让文本类断言照旧成立,也能取到 text / markdown prop——
@@ -183,6 +184,7 @@ const REVIEW = '[data-testid="intent-detail-spec-review"]'
 const VERDICT = '[data-testid="intent-detail-spec-review-verdict"]'
 const APPROVER = '[data-testid="intent-detail-spec-approver"]'
 const REASON = '[data-testid="intent-detail-spec-review-reason"]'
+const MACHINE_CONFIRM = '[data-testid="intent-detail-spec-machine-confirm"]'
 
 describe('IntentSpecTab — review conclusion + revoke', () => {
   it('shows nothing review-related when there is no conclusion and no approval', () => {
@@ -274,5 +276,41 @@ describe('IntentSpecTab — review conclusion + revoke', () => {
     // describes the text being replaced — showing it here would mislead.
     expect(w.find(REVOKE).exists()).toBe(false)
     expect(w.find(REVIEW).exists()).toBe(false)
+  })
+
+  it('shows a human re-confirm hint when a high-impact intent is machine-approved', () => {
+    const w = mountSpec(
+      intent({
+        id: 'i1',
+        specApproved: true,
+        specApproveUser: MACHINE_SPEC_APPROVER,
+        impactLevel: 'L1',
+      }),
+    )
+    expect(w.find(MACHINE_CONFIRM).exists()).toBe(true)
+    expect(w.find(MACHINE_CONFIRM).text()).toBe(
+      i18n.global.t('intent.spec.review.machineApprovalNeedsHumanConfirm'),
+    )
+  })
+
+  it('omits the human re-confirm hint for non-high-impact machine approval', () => {
+    for (const level of ['L4', 'L5', null] as const) {
+      const w = mountSpec(
+        intent({
+          id: 'i1',
+          specApproved: true,
+          specApproveUser: MACHINE_SPEC_APPROVER,
+          impactLevel: level,
+        }),
+      )
+      expect(w.find(MACHINE_CONFIRM).exists()).toBe(false)
+    }
+  })
+
+  it('omits the human re-confirm hint for a human-approved high-impact intent', () => {
+    const w = mountSpec(
+      intent({ id: 'i1', specApproved: true, specApproveUser: 'alice', impactLevel: 'L1' }),
+    )
+    expect(w.find(MACHINE_CONFIRM).exists()).toBe(false)
   })
 })

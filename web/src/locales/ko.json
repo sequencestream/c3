@@ -1307,6 +1307,8 @@
           "fast": "명세 불필요 (fast)"
         },
         "derived": "현재 적용: {mode}",
+        "forcedSdd": "영향도가 높아 명세 우선 강제",
+        "defaultFastByImpact": "영향도에 따라 기본값은 fast",
         "workspaceOff": "이 워크스페이스는 명세 주도 개발이 꺼져 있어 지금은 이 설정이 동작에 영향을 주지 않습니다."
       },
       "branch": {
@@ -1459,7 +1461,8 @@
         },
         "reworkRounds": "재작업 {rounds} / {max} 회차",
         "approvedBy": "{user} 님이 승인",
-        "approvedByMachine": "자동 승인(기계)"
+        "approvedByMachine": "자동 승인(기계)",
+        "machineApprovalNeedsHumanConfirm": "기계 승인은 높은 영향도가 요구하는 사람 승인을 충족하지 못합니다. 승인을 철회한 뒤 수동으로 다시 승인하세요."
       }
     },
     "changelog": {

@@ -15,7 +15,7 @@
 - **`shortEnTitle`**(text | null): 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐
 - **`content`**(text): 完整的意图描述
 - **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 需求级别;P0 最高 —— 排的是**何时做**
-- **`impactLevel`**(enum `L1`|`L2`|`L3`|`L4`|`L5`| null): 影响范围等级 —— 做错了**波及多远**;`L1` 最高(核心流程/资金/数据完整性),`L5` 最低(文案/界面微调);`null` = 未定级。与 `priority` 正交,互不替代也不合并。创建时由沟通智能体判定,`in_progress`/`done` 之外可手改;持久值无法解释时读作未定级而非中间档(RM-R49)
+- **`impactLevel`**(enum `L1`|`L2`|`L3`|`L4`|`L5`| null): 影响范围等级 —— 做错了**波及多远**;`L1` 最高(核心流程/资金/数据完整性),`L5` 最低(文案/界面微调);`null` = 未定级。与 `priority` 正交,互不替代也不合并。创建时由沟通智能体判定,`in_progress`/`done` 之外可手改;持久值无法解释时读作未定级而非中间档(RM-R49)。等级联动 spec 准入与机器审批见 RM-R51:L1/L2 强制规格先行且禁止机器批准,L4/L5 默认规格延后,中间档与未定级不联动。
 - **`module`**(text): 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)
 - **`status`**(enum): `draft`|`todo`|`in_progress`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)
 - **`dependsOn`**(`id[]`): 该条目所依赖的项目内其他意图 id(聚合;RM-R1)
@@ -25,7 +25,7 @@
 - **`updatedAt`**(timestamp): 最近一次变更时间
 - **`completedAt`**(timestamp | null): 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9/RM-R48)
 - **`specMode`**(`'sdd'`|`'fast'`| null): 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化。**仅在规范与开发均未起步前可改**:`specPath` 空白且 `specStatus === 'raw'`、`specSessionId`/`specReviewSessionId` 均为空、`lastWorkSessionId` 为空,三条同时成立才允许写入(判据 = `canEditIntentSpecMode`);否则概览页降级为只读、`set_intent_spec_mode` 返回 `intent.specModeLocked`(RM-R43)
-- **`effectiveSpecMode`**(`'sdd'`|`'fast'`): 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R43)
+- **`effectiveSpecMode`**(`'sdd'`|`'fast'`): 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` + `impactLevel` 经 `resolveEffectiveSpecMode` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认。高影响 L1/L2 强制 `sdd`、低影响 L4/L5 在 `specMode` 为空时默认 `fast`(RM-R51、RM-R43)
 - **`actionDescriptor`**(ActionDescriptor | null): 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)
 - **`prs`**(`IntentPr[]`): 该意图拥有的全部 PR/MR,按 `createdAt` 升序;无 PR 时为空数组。发送时由 `intent_prs` 批量挂载(见下)
 - **`linkedDeliveries`**(`{ id, title }[]`): 该意图关联的交付,按建边顺序;无关联时为空数组。发送时由 `intent_deliveries` + `deliveries` 批量挂载,是**只读投影** —— 关联边归 delivery 域写入

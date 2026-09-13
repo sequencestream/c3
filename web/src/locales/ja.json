@@ -1307,6 +1307,8 @@
           "fast": "仕様は不要（fast）"
         },
         "derived": "現在の適用値：{mode}",
+        "forcedSdd": "影響度が高いため仕様を優先",
+        "defaultFastByImpact": "影響度に応じてデフォルトは fast",
         "workspaceOff": "このワークスペースでは仕様駆動開発が無効のため、この設定は現時点で動作に影響しません。"
       },
       "branch": {
@@ -1459,7 +1461,8 @@
         },
         "reworkRounds": "手戻り {rounds} / {max} 回目",
         "approvedBy": "{user} が承認",
-        "approvedByMachine": "自動承認(機械)"
+        "approvedByMachine": "自動承認(機械)",
+        "machineApprovalNeedsHumanConfirm": "機械承認は高影響の要件である人間の承認を満たしません。承認を取り消して、手動で承認し直してください。"
       }
     },
     "changelog": {

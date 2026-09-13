@@ -57,6 +57,9 @@ import {
 import {
   evaluateDependencyGate,
   findWriteBlockingDelivery,
+  isHighImpactLevel,
+  machineApprovalEligible,
+  specGateBlocks,
   type DependencyGateFact,
   type DependencyGateVerdict,
 } from '@ccc/shared'
@@ -305,9 +308,12 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         wakeAt: null,
       }
     }
-    // The spec gate reads the STATUS and nothing else: `raw` (still being
-    // authored) and `pending` (authored, unapproved) both fail it, and the
-    // spec phase below says which of the two an intent is actually in.
+    // The spec gate reads the STATUS (and, for high impact, the approver
+    // identity): `raw` (still being authored) and `pending` (authored,
+    // unapproved) both fail it, and the spec phase below says which of the two an
+    // intent is actually in. A high-impact intent must be approved BY A HUMAN —
+    // a machine approval is not enough — and this holds even under a switched-off
+    // workspace, so a L1/L2 change cannot dodge the checkpoint by turning SDD off.
     //
     // The ONE relaxation is per-intent `fast` mode, mirroring the manual
     // admission gate verbatim: a fast intent does not write its spec up front, so
@@ -317,11 +323,21 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     // backoff and park all still apply below, and the spec phase never picks a
     // fast intent up (it only sees `blocked_spec_not_approved` ones), so
     // automation never authors a spec for it either.
-    if (sddEnabled && intent.specStatus !== 'approved' && intent.effectiveSpecMode !== 'fast') {
+    if (
+      specGateBlocks({
+        impactLevel: intent.impactLevel,
+        effectiveSpecMode: intent.effectiveSpecMode,
+        sddEnabled,
+        specStatus: intent.specStatus,
+        specApproveUser: intent.specApproveUser,
+      })
+    ) {
       return {
         eligible: false,
         reason: 'blocked_spec_not_approved',
-        detail: 'SDD 已开启但 spec 未批准',
+        detail: isHighImpactLevel(intent.impactLevel)
+          ? '高影响改动需人工批准的 spec'
+          : 'SDD 已开启但 spec 未批准',
         wakeAt: null,
       }
     }
@@ -454,11 +470,15 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   eligibleOrder = eligible
 
   // ── Spec phase ────────────────────────────────────────────────────────────
-  // Everything blocked purely by `blocked_spec_not_approved` is not "stuck": in
-  // an SDD workspace the queue owns the spec's whole life — author it, review it
-  // read-only, rework it up to the cap, and (only under the workspace's explicit
-  // opt-in) approve it. Each such intent's verdict REPLACES its gate verdict
+  // Everything blocked purely by `blocked_spec_not_approved` is not "stuck": the
+  // queue owns the spec's whole life — author it, review it read-only, rework it
+  // up to the cap, and (only under the workspace's explicit opt-in, and never for
+  // high impact) approve it. Each such intent's verdict REPLACES its gate verdict
   // below, so a decision row says which sub-state it is actually in.
+  //
+  // This runs for every held-back intent, not only in SDD-on workspaces: a
+  // high-impact intent under a switched-off workspace is still held back and
+  // still needs its spec authored, reviewed and human-approved.
   //
   // At most ONE session-starting verdict fires per pass, mirroring the work
   // queue's serial execution: writing and reviewing specs costs real tokens, and
@@ -466,12 +486,12 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   // session per pending intent at once. Plain writes (machine approval, the
   // rework-cap escalation) do not take that slot.
   const specVerdictOf = new Map<string, SpecVerdict>()
-  if (sddEnabled) {
+  const specPhase = candidates.filter(
+    (r) => gateOf.get(r.id)?.reason === 'blocked_spec_not_approved',
+  )
+  if (specPhase.length > 0) {
     const specAlive = new Map(input.specRuns.map((r) => [r.sessionId, r.alive]))
     const specInFlight = new Set(input.specInFlight)
-    const specPhase = candidates.filter(
-      (r) => gateOf.get(r.id)?.reason === 'blocked_spec_not_approved',
-    )
     let slotTaken = false
     for (const intent of specPhase) {
       const verdict = evaluateSpecPhase(intent, {
@@ -927,11 +947,16 @@ function evaluateSpecPhase(
     }
   }
 
-  // `pass`. Whether this becomes an approval is decided ONLY by the workspace's
-  // explicit opt-in: with it off, no machine-approval action is produced at all,
-  // so there is no path for one to be executed by mistake.
-  if (!ctx.machineApprovalEnabled) {
-    return block('spec_awaiting_approval', '审核通过,等待人工批准')
+  // `pass`. Whether this becomes a MACHINE approval is decided by the grade and
+  // the workspace's explicit opt-in together: high impact (L1/L2) is NEVER
+  // machine-approved — it waits for a human whatever the opt-in — and every other
+  // grade needs the opt-in on. With either absent, no machine-approval action is
+  // produced at all, so there is no path for one to be executed by mistake.
+  if (!machineApprovalEligible(intent.impactLevel, ctx.machineApprovalEnabled)) {
+    return block(
+      'spec_awaiting_approval',
+      isHighImpactLevel(intent.impactLevel) ? '高影响改动需人工批准 spec' : '审核通过,等待人工批准',
+    )
   }
   if (intent.specReviewMachineApprovalBlocked) {
     return block('spec_awaiting_approval', '人工已撤销该结论对应的批准,等待人工批准')

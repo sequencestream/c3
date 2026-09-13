@@ -1478,7 +1478,9 @@
         "intent": "意图",
         "spec": "规范",
         "work": "工作",
-        "pr": "PR"
+        "pr": "PR",
+        "review": "评审",
+        "fix": "修复"
       },
       "state": {
         "notStarted": "未开始",

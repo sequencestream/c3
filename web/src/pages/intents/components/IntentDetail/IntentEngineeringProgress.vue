@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /*
- * IntentEngineeringProgress.vue — 意图详情头部的只读工程进度条(意图→[规范]→工作→[PR])。
+ * IntentEngineeringProgress.vue — 意图详情头部的只读工程进度条(意图→[规范]→工作→[PR]→[评审]→[修复])。
  *
  * 状态派生唯一以 deriveIntentEngineeringProgress 为规则源;本组件只负责阶段/状态的本地化、
- * 无障碍标注与响应式布局,不复制 PR / Spec / Work 的派生判断。SDD 关闭、或 fast 意图尚无
- * 规范数据时省略规范段,仅 worktree 模式追加 PR 段——均由纯函数按既有字段决定。
+ * 无障碍标注与响应式布局,不复制 PR / Spec / Work / Review / Fix 的派生判断。SDD 关闭、或
+ * fast 意图尚无规范数据时省略规范段;仅 worktree 模式追加 PR / 评审 / 修复段,评审段还受
+ * 影响范围(needsReview)与 PR 证据约束、修复段按需显示——均由纯函数按既有字段决定。
  */
 import { computed } from 'vue'
 import { useTypedI18n } from '@/i18n'
@@ -35,7 +36,9 @@ function progressStageLabel(stage: EngineeringProgressStage): string {
   if (stage === 'intent') return t('intent.engineeringProgress.stage.intent')
   if (stage === 'spec') return t('intent.engineeringProgress.stage.spec')
   if (stage === 'work') return t('intent.engineeringProgress.stage.work')
-  return t('intent.engineeringProgress.stage.pr')
+  if (stage === 'pr') return t('intent.engineeringProgress.stage.pr')
+  if (stage === 'review') return t('intent.engineeringProgress.stage.review')
+  return t('intent.engineeringProgress.stage.fix')
 }
 
 function progressStateLabel(state: EngineeringProgressState): string {

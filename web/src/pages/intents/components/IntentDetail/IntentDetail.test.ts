@@ -192,8 +192,14 @@ describe('IntentDetail.vue — engineering progress', () => {
   })
 
   it('renders the PR label and closed state in worktree mode', () => {
+    // L5 跳过评审,让本用例聚焦 PR 段本身,不被下游 review 段干扰。
     const w = mountDetail(
-      intent({ id: 'i1', status: 'done', prs: [fakeIntentPr('closed', { number: '42' })] }),
+      intent({
+        id: 'i1',
+        status: 'done',
+        impactLevel: 'L5',
+        prs: [fakeIntentPr('closed', { number: '42' })],
+      }),
       {
         sddEnabled: true,
         workspaceGitBranchMode: 'worktree',
@@ -224,9 +230,11 @@ describe('IntentDetail.vue — engineering progress', () => {
   ] as const)(
     'appends the PR stage when the branch mode resolves to worktree (%s → %s)',
     async (prStatus, expected) => {
+      // L5 跳过评审,让本用例聚焦 PR 段随 worktree 模式追加,不被下游 review 段干扰。
       const item = intent({
         id: 'i1',
         status: 'in_progress',
+        impactLevel: 'L5',
         prs: [fakeIntentPr(prStatus, { number: '42' })],
       })
       const w = mountDetail(item, { sddEnabled: true })
@@ -286,6 +294,40 @@ describe('IntentDetail.vue — engineering progress', () => {
         .findAll('[data-testid="intent-engineering-progress"] [data-stage]')
         .map((stage) => stage.attributes('data-state')),
     ).toEqual(['completed', 'completed', 'in_progress'])
+  })
+
+  it('renders the review and fix stages after the PR in worktree mode', () => {
+    const w = mountDetail(
+      intent({
+        id: 'i1',
+        status: 'in_progress',
+        impactLevel: 'L3',
+        prs: [fakeIntentPr('reviewing', { number: '42' })],
+        reviewStatus: 'rejected',
+        fixSessionId: 'fix-session',
+        fixStatus: 'fixed',
+      }),
+      { sddEnabled: true, workspaceGitBranchMode: 'worktree' },
+    )
+
+    const stages = w.findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+    expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+      'review',
+      'fix',
+    ])
+
+    const review = stages.find((stage) => stage.attributes('data-stage') === 'review')
+    const fix = stages.find((stage) => stage.attributes('data-stage') === 'fix')
+    expect(review?.attributes('data-state')).toBe('closed')
+    expect(review?.find('.intent-engineering-progress-name').text()).toBe('Review')
+    expect(review?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
+    expect(fix?.attributes('data-state')).toBe('completed')
+    expect(fix?.find('.intent-engineering-progress-name').text()).toBe('Fix')
+    expect(fix?.find('.intent-engineering-progress-state').text()).toBe('Completed')
   })
 })
 

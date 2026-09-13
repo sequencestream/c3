@@ -1479,7 +1479,9 @@
         "intent": "意図",
         "spec": "仕様",
         "work": "作業",
-        "pr": "PR"
+        "pr": "PR",
+        "review": "レビュー",
+        "fix": "修正"
       },
       "state": {
         "notStarted": "未開始",

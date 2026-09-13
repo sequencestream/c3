@@ -123,7 +123,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   // intent list events
   filter: [status: IntentStatus | null]
-  refine: [intentId: string]
   'repair-worktree': [intentId: string, mode: 'rebuild' | 'merge']
   'dismiss-worktree-baseline': [intentId: string]
   /** 派生「下一步」跳转:列表与详情共用同一条上抛路径,最终落到同一个分发器。 */
@@ -486,7 +485,6 @@ defineExpose({
         :fix-session-status="selectedFixSessionStatus"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
-        @refine="(id: string) => emit('refine', id)"
         @repair-worktree="
           (id: string, mode: 'rebuild' | 'merge') => emit('repair-worktree', id, mode)
         "

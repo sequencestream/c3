@@ -1566,6 +1566,11 @@
       },
       "placeholder": "What should change? Your input is combined with the current content to seed the new session."
     },
+    "refineSession": {
+      "title": "Refine intent",
+      "message": "Tell the agent what to change and how. Your input is combined with this intent's current content to seed a fresh refine session. The previous session stays available under Works but is no longer linked to this intent.",
+      "placeholder": "What should be refined? Your input is combined with the current content to seed the new session."
+    },
     "blocked": {
       "vendorAuthInvalid": "This agent's vendor credentials were rejected. Work stays blocked until they are fixed.",
       "vendorQuotaExhausted": "This agent's vendor has no usable quota left. Work stays blocked until it is restored.",

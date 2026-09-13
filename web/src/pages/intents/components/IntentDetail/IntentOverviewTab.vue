@@ -55,7 +55,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  refine: [intentId: string]
+  /** 请求打开「优化」输入弹框:先收集修改意见,再经 reset_intent_session 起会话,不直达会话。 */
+  'open-refine-dialog': [intentId: string]
   'save-intent-content': [intentId: string, content: string]
   /** 每意图规格模式覆盖:`null` = 恢复继承工作区。选择即保存,由服务端广播回填。 */
   'set-spec-mode': [intentId: string, mode: IntentSpecMode | null]
@@ -686,7 +687,13 @@ watch(
       v-if="!editingContent && (intent.status === 'todo' || canEditContent)"
       class="intent-detail-section-actions"
     >
-      <button v-if="intent.status === 'todo'" class="req-btn" @click="emit('refine', intent.id)">
+      <button
+        v-if="intent.status === 'todo'"
+        type="button"
+        class="req-btn"
+        data-testid="intent-detail-refine"
+        @click="emit('open-refine-dialog', intent.id)"
+      >
         {{ t('intent.action.refine.label') }}
       </button>
       <button

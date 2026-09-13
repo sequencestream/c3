@@ -285,15 +285,6 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
-  ctx.refineIntent = (intentId: string): void => {
-    if (!intentsProject.value) return
-    send({
-      type: 'refine_intent',
-      workspaceName: intentsProject.value,
-      intentId,
-    })
-  }
-
   ctx.writeSpec = (intentId: string): void => {
     if (!intentsProject.value) return
     send({

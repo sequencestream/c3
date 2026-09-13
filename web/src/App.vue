@@ -225,7 +225,6 @@ const {
   intentLogsLoading,
   listIntentLogs,
   setIntentFilter,
-  refineIntent,
   writeSpec,
   approveSpec,
   revokeSpecApproval,
@@ -871,7 +870,6 @@ function onFilesChatWidth(px: number): void {
           @action-target="openActionTarget"
           @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"
-          @refine="refineIntent"
           @repair-worktree="onRepairWorktree"
           @dismiss-worktree-baseline="clearWorktreeBaselineNotice"
           @save-intent-content="updateIntentContent"

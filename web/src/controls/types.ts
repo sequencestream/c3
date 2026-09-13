@@ -134,7 +134,6 @@ export interface AppMethods {
   // tab for `path` and request Intents.vue select `intentId` once its list lands.
   openLinkedIntent(path: string, intentId: string): void
   setIntentFilter(status: IntentStatus | null): void
-  refineIntent(intentId: string): void
   writeSpec(intentId: string): void
   approveSpec(intentId: string): void
   /** Revoke a spec approval (human or machine); returns the intent to awaiting-approval. */

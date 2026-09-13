@@ -1397,6 +1397,52 @@ describe('IntentDetail.vue — session reset', () => {
     expect((accept.element as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('refine button → dialog → input → confirm emits reset-intent-session once and closes', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
+
+    // todo 意图点「优化」只弹输入框,不直达会话。
+    await w.find('[data-testid="intent-detail-refine"]').trigger('click')
+    expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(true)
+    expect(w.emitted('reset-intent-session')).toBeUndefined()
+
+    // 空输入(含纯空白)时确认按钮禁用。
+    const accept = w.find('[data-testid="reset-accept"]')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(true)
+    await w.find('[data-testid="reset-input"]').setValue('   ')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(true)
+
+    await w.find('[data-testid="reset-input"]').setValue('补齐验收条件')
+    expect((accept.element as HTMLButtonElement).disabled).toBe(false)
+    await accept.trigger('click')
+
+    expect(w.emitted('reset-intent-session')).toEqual([['i1', '补齐验收条件']])
+    expect(w.emitted('refine')).toBeUndefined()
+    expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(false)
+  })
+
+  it('refine dialog cancel / mask / Esc does not emit', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
+    for (const dismiss of [
+      () => w.find('[data-testid="reset-cancel"]').trigger('click'),
+      () => w.find('[data-testid="reset-overlay"]').trigger('click'),
+      () => w.find('[data-testid="reset-overlay"]').trigger('keydown.esc'),
+    ]) {
+      await w.find('[data-testid="intent-detail-refine"]').trigger('click')
+      expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(true)
+      await dismiss()
+      expect(w.emitted('reset-intent-session')).toBeUndefined()
+      expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(false)
+    }
+  })
+
+  it('refine dialog opens even with a work session (not gated by canResetIntentSession)', async () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: null, lastWorkSessionId: 'dev-1' }))
+    // 标题栏「我要修改」此时隐藏,但「优化」按钮仍可见且能打开弹框。
+    expect(w.find('[data-testid="intent-detail-intent-modify"]').exists()).toBe(false)
+    await w.find('[data-testid="intent-detail-refine"]').trigger('click')
+    expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(true)
+  })
+
   it('session tabs no longer render the old reset button', async () => {
     const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md' }))
 

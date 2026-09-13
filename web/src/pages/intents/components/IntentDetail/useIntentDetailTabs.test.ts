@@ -68,6 +68,8 @@ interface Calls {
   openSpec: string[]
   openSpecReview: string[]
   openWork: string[]
+  openPrReview: string[]
+  openPrFix: string[]
   consumed: number
 }
 
@@ -79,6 +81,8 @@ function freshCalls(): Calls {
     openSpec: [],
     openSpecReview: [],
     openWork: [],
+    openPrReview: [],
+    openPrFix: [],
     consumed: 0,
   }
 }
@@ -121,6 +125,8 @@ function mountHost(props: Record<string, unknown>) {
         onOpenSpecSession: (id) => calls.openSpec.push(id),
         onOpenSpecReviewSession: (id) => calls.openSpecReview.push(id),
         onOpenWorkSession: (s) => calls.openWork.push(s),
+        onOpenPrReviewSession: (s) => calls.openPrReview.push(s),
+        onOpenPrFixSession: (s) => calls.openPrFix.push(s),
         onRequestedSubTabConsumed: () => (calls.consumed += 1),
       })
       return { tabs }
@@ -472,6 +478,116 @@ describe('useIntentDetailTabs', () => {
     await w.setProps({ intent: intent({ id: 'i2', content: 'body' }) })
     expect(activeTab()).toBe('intent')
     expect(calls.openSpecReview).toEqual([])
+  })
+
+  it('shows review/fix session tabs only when their session ids exist, independent of SDD', async () => {
+    // 无 id → 隐藏。
+    const none = mountHost({ intent: intent({ id: 'i1' }), sddEnabled: true })
+    expect(none.visibleKeys()).not.toContain('reviewSession')
+    expect(none.visibleKeys()).not.toContain('fixSession')
+
+    // SDD 关闭但有 id → 仍显示(区别于规范评审会话需要 sddEnabled)。
+    const sddOff = mountHost({
+      intent: intent({ id: 'i2', reviewSessionId: 'pr-rev-1', fixSessionId: 'pr-fix-1' }),
+      sddEnabled: false,
+    })
+    expect(sddOff.visibleKeys()).toContain('reviewSession')
+    expect(sddOff.visibleKeys()).toContain('fixSession')
+
+    // 只有 reviewSessionId → 只出评审会话 tab。
+    const onlyReview = mountHost({ intent: intent({ id: 'i3', reviewSessionId: 'pr-rev-1' }) })
+    expect(onlyReview.visibleKeys()).toContain('reviewSession')
+    expect(onlyReview.visibleKeys()).not.toContain('fixSession')
+
+    // 两者齐备 → 排在 workSession 之后、changelog 之前。
+    const on = mountHost({
+      intent: intent({
+        id: 'i4',
+        reviewSessionId: 'pr-rev-1',
+        fixSessionId: 'pr-fix-1',
+        lastWorkSessionId: 'w-1',
+      }),
+    })
+    expect(on.visibleKeys()).toEqual([
+      'intent',
+      'intentSession',
+      'workSession',
+      'reviewSession',
+      'fixSession',
+      'changelog',
+    ])
+    await on.w.vm.$nextTick()
+  })
+
+  it('opens the review/fix session with its session id, deduping once aligned', async () => {
+    const { w, calls, tabs, select } = mountHost({
+      intent: intent({ id: 'i1', reviewSessionId: 'pr-rev-1', fixSessionId: 'pr-fix-1' }),
+    })
+    await select('reviewSession')
+    // 携带的是会话 id(普通会话选择路径),不是意图 id。
+    expect(calls.openPrReview).toEqual(['pr-rev-1'])
+    expect(tabs().chatReady.value).toBe(false)
+
+    await w.setProps({ activeSession: 'pr-rev-1' })
+    expect(tabs().chatReady.value).toBe(true)
+    expect(calls.openPrReview).toEqual(['pr-rev-1'])
+
+    // 切到 fixSession,复用同一活动会话模型。
+    await w.setProps({ activeSession: null })
+    await select('fixSession')
+    expect(calls.openPrFix).toEqual(['pr-fix-1'])
+    expect(tabs().chatReady.value).toBe(false)
+
+    await w.setProps({ activeSession: 'pr-fix-1' })
+    expect(tabs().chatReady.value).toBe(true)
+    expect(calls.openPrFix).toEqual(['pr-fix-1'])
+  })
+
+  it('backfills the review/fix open when the id changes to a new session', async () => {
+    const { w, calls, select } = mountHost({
+      intent: intent({ id: 'i1', reviewSessionId: 'pr-rev-1' }),
+    })
+    await select('reviewSession')
+    calls.openPrReview.length = 0
+
+    // 评审会话被换成新一轮的会话 → 补发一次。
+    await w.setProps({ intent: intent({ id: 'i1', reviewSessionId: 'pr-rev-2' }) })
+    expect(calls.openPrReview).toEqual(['pr-rev-2'])
+  })
+
+  it('falls back to the intent tab when the review/fix session id disappears', async () => {
+    const { w, activeTab, select } = mountHost({
+      intent: intent({ id: 'i1', reviewSessionId: 'pr-rev-1', fixSessionId: 'pr-fix-1' }),
+    })
+    await select('reviewSession')
+    expect(activeTab()).toBe('reviewSession')
+
+    await w.setProps({
+      intent: intent({ id: 'i1', reviewSessionId: null, fixSessionId: 'pr-fix-1' }),
+    })
+    expect(activeTab()).toBe('intent')
+
+    await select('fixSession')
+    expect(activeTab()).toBe('fixSession')
+
+    await w.setProps({ intent: intent({ id: 'i1', reviewSessionId: null, fixSessionId: null }) })
+    expect(activeTab()).toBe('intent')
+  })
+
+  it('labels the new tabs from their i18n keys and renames the spec review tab', () => {
+    const { tabs } = mountHost({
+      intent: intent({
+        id: 'i1',
+        specReviewSessionId: 'rev-1',
+        reviewSessionId: 'pr-rev-1',
+        fixSessionId: 'pr-fix-1',
+      }),
+      sddEnabled: true,
+    })
+    const labels = Object.fromEntries(tabs().visibleTabs.value.map((x) => [x.key, x.label]))
+    expect(labels.reviewSession).toBe('Review session')
+    expect(labels.fixSession).toBe('Fix session')
+    expect(labels.specReviewSession).toBe('Spec review session')
   })
 
   it('auto-switches to spec session after a marked pending switch backfills a new id', async () => {

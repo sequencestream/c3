@@ -10,7 +10,7 @@ export function __resetWriteSpecGuards(): void {
 
 <script setup lang="ts">
 /*
- * IntentDetail.vue — 需求页右栏:选中意图的详情面板容器(常驻头部 + 七 tab,评审 tab 条件可见)。
+ * IntentDetail.vue — 需求页右栏:选中意图的详情面板容器(常驻头部 + 九 tab,规范评审/评审/修复会话 tab 条件可见)。
  *
  * 本组件收敛为详情页容器:装配 Tab 状态机(useIntentDetailTabs)与编写 Spec 门 / 延迟切 Tab
  * 组合逻辑(useSpecApprovalGate),编排四态主按钮与会话重置弹框,并把标题栏动作、工程进度、Tab
@@ -357,6 +357,8 @@ const {
   onOpenSpecSession: (id) => emit('open-spec-session', id),
   onOpenSpecReviewSession: (id) => emit('open-spec-review-session', id),
   onOpenWorkSession: (sessionId) => emit('open-work-session', sessionId),
+  onOpenPrReviewSession: (sessionId) => emit('open-pr-review-session', sessionId),
+  onOpenPrFixSession: (sessionId) => emit('open-pr-fix-session', sessionId),
   onRequestedSubTabConsumed: () => emit('requested-subtab-consumed'),
 })
 

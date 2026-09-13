@@ -1463,10 +1463,16 @@
         "label": "编写规范会话"
       },
       "specReviewSession": {
-        "label": "评审"
+        "label": "规范评审会话"
       },
       "workSession": {
         "label": "工作会话"
+      },
+      "reviewSession": {
+        "label": "评审会话"
+      },
+      "fixSession": {
+        "label": "修复会话"
       },
       "changelog": {
         "label": "变更日志"

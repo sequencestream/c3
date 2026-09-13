@@ -635,6 +635,14 @@
       "empty": "설치된 관리 버전이 아직 없습니다.",
       "degraded": {
         "pinnedVersionUnavailable": "고정된 버전 {pinnedVersion}을(를) 사용할 수 없어 {resolvedVersion}(으)로 대체했습니다."
+      },
+      "sync": {
+        "download": "다운로드",
+        "checkUpdate": "업데이트 확인",
+        "syncing": "다운로드 중…",
+        "installed": "설치 / 업데이트되었습니다.",
+        "alreadyLatest": "이미 최신 버전입니다.",
+        "failed": "동기화에 실패했습니다."
       }
     },
     "skillRepos": {

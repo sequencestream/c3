@@ -266,6 +266,13 @@ export interface VendorHostStatus {
    * resolvable at all).
    */
   degradation?: VendorCliDegradation
+  /**
+   * Whether c3 distributes this vendor's CLI from npm — i.e. whether c3 may
+   * download and upgrade it. The console renders the manual download/check
+   * button only when this is `true`, so it never hard-codes a vendor name.
+   * Absent on older servers ⇒ treated as `false` ⇒ no button is shown.
+   */
+  npmManaged?: boolean
 }
 
 /**

@@ -73,6 +73,7 @@ vi.mock('../../kernel/agent/process/launcher.js', () => ({
   readVendorCliStatus: () => ({ installedVersions: [] }),
   isManagedVendor: (vendor: string) =>
     vendor === 'claude' || vendor === 'codex' || vendor === 'cursor',
+  isNpmManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
 }))
 
 vi.mock('../../kernel/agent/adapters/index.js', () => ({

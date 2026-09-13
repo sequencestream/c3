@@ -18,6 +18,7 @@ export function buildSettingsHandlers(
   | 'settings'
   | 'model_provider_probe_result'
   | 'auto_configure_agents_result'
+  | 'vendor_cli_sync_result'
   | 'personalized_settings'
   | 'skill_link_status'
   | 'skill_install_result'
@@ -64,6 +65,7 @@ export function buildSettingsHandlers(
     serverSettings,
     personalizedSettings,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     sandboxStatus,
     bindingStats,
@@ -246,6 +248,21 @@ export function buildSettingsHandlers(
         ctx.showToast(t('settings.agents.autoConfigure.result.noVendor'))
       } else {
         ctx.showToast(t('settings.agents.autoConfigure.result.alreadyConfigured'))
+      }
+    },
+    vendor_cli_sync_result: (_ctx, msg) => {
+      // The button's in-flight flag clears no matter the outcome; the settings echo
+      // that precedes this frame already refreshed the panel's row. The toast tells
+      // apart "actually installed/upgraded" from "already latest" from "failed".
+      vendorCliSyncing.value = vendorCliSyncing.value.filter((v) => v !== msg.vendor)
+      if (msg.ok) {
+        ctx.showToast(
+          msg.installed
+            ? t('settings.vendorCli.sync.installed')
+            : t('settings.vendorCli.sync.alreadyLatest'),
+        )
+      } else {
+        ctx.showToast(t('settings.vendorCli.sync.failed'))
       }
     },
     personalized_settings: (_ctx, msg) => {

@@ -55,6 +55,7 @@ export interface MessageHandlerLocals {
   serverSettings: AppCtx['serverSettings']
   personalizedSettings: AppCtx['personalizedSettings']
   hostStatus: AppCtx['hostStatus']
+  vendorCliSyncing: AppCtx['vendorCliSyncing']
   vendorRuntime: AppCtx['vendorRuntime']
   sandboxStatus: AppCtx['sandboxStatus']
   bindingStats: AppCtx['bindingStats']
@@ -216,6 +217,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     serverSettings,
     personalizedSettings,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     sandboxStatus,
     bindingStats,
@@ -441,6 +443,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     serverSettings,
     personalizedSettings,
     hostStatus,
+    vendorCliSyncing,
     vendorRuntime,
     sandboxStatus,
     bindingStats,

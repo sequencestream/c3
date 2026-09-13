@@ -4,6 +4,7 @@ import type {
   SystemSettings,
   UiLang,
   UiTheme,
+  VendorId,
   WorkspaceScopeMode,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
@@ -39,6 +40,7 @@ export function installSettingsActions(ctx: AppCtx): void {
     activeTab,
     flags,
     providerProbes,
+    vendorCliSyncing,
   } = ctx
 
   ctx.openSettings = (): void => {
@@ -246,6 +248,18 @@ export function installSettingsActions(ctx: AppCtx): void {
    */
   ctx.autoConfigureAgents = (): void => {
     send({ type: 'auto_configure_agents' })
+  }
+
+  /**
+   * Manual "download / check for a new version" for one npm-managed vendor CLI.
+   * The vendor must already be in flight to no-op — a second click never fires a
+   * second download, and the server merges concurrent triggers into one run. The
+   * in-flight flag is cleared by the `vendor_cli_sync_result` handler.
+   */
+  ctx.syncVendorCli = (vendor: VendorId): void => {
+    if (vendorCliSyncing.value.includes(vendor)) return
+    vendorCliSyncing.value = [...vendorCliSyncing.value, vendor]
+    send({ type: 'sync_vendor_cli', vendor })
   }
 
   /**

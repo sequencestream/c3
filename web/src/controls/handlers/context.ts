@@ -12,6 +12,8 @@ export interface ColdStartState {
   agentsConfigured: boolean | null
   onboardingEvaluated: boolean
   firstSettingsEvaluated: boolean
+  /** 两个 npm 托管的 CLI 都缺失——本次会话已跳 Runtime,不再叠加「新增工作区」模态。 */
+  runtimeMissing: boolean
 }
 
 /**
@@ -327,13 +329,19 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     agentsConfigured: null,
     onboardingEvaluated: false,
     firstSettingsEvaluated: false,
+    runtimeMissing: false,
   }
 
   function evaluateWorkspaceOnboarding(): void {
     if (coldStart.onboardingEvaluated) return
     if (coldStart.workspacesEmpty === null || coldStart.agentsConfigured === null) return
     coldStart.onboardingEvaluated = true
-    if (coldStart.workspacesEmpty && coldStart.agentsConfigured && coldStart.isAdmin) {
+    if (
+      coldStart.workspacesEmpty &&
+      coldStart.agentsConfigured &&
+      coldStart.isAdmin &&
+      !coldStart.runtimeMissing
+    ) {
       addWorkspaceOpen.value = true
     }
   }

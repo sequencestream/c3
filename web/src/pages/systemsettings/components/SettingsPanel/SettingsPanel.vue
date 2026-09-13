@@ -569,7 +569,7 @@ function highlight(agentId: string | null): void {
 // configuration context instead of the top of a long list.
 function locateNow(): void {
   const target = pendingLocate.value
-  if (!target) return
+  if (!target || target.tab !== 'agent') return
   const rows = Array.from(agentListEl.value?.querySelectorAll<HTMLElement>('[data-agent-id]') ?? [])
   const exact = rows.find((el) => el.dataset.agentId === target.agentId)
   const fallback = exact ?? rows.find((el) => el.dataset.agentVendor === target.vendor)
@@ -613,9 +613,20 @@ watch(
 watch(
   () => [activeTab.value, draft.value.agents.length, pendingLocate.value] as const,
   ([tab, agentCount, target]) => {
-    if (!target || tab !== target.tab || agentCount === 0) return
+    if (!target || target.tab !== 'agent' || tab !== 'agent' || agentCount === 0) return
     activeAgentVendor.value = target.vendor
     void nextTick(locateNow)
+  },
+)
+
+// A `runtime` target has no row to locate — the jump is a bare tab landing, so the
+// one-shot target is consumed the moment the Runtime tab is showing.
+watch(
+  () => [activeTab.value, pendingLocate.value] as const,
+  ([tab, target]) => {
+    if (!target || target.tab !== 'runtime' || tab !== 'runtime') return
+    pendingLocate.value = null
+    emit('target-consumed')
   },
 )
 

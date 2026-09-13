@@ -47,6 +47,7 @@ const STATUS_KEYS: Record<IntentStatus, LocaleKey> = {
   draft: 'intent.filter.draft.label',
   todo: 'intent.filter.todo.label',
   in_progress: 'intent.filter.inProgress.label',
+  reviewing: 'intent.filter.reviewing.label',
   done: 'intent.filter.done.label',
   cancelled: 'intent.filter.cancelled.label',
   blocked: 'intent.filter.blocked.label',

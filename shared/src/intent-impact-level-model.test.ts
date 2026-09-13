@@ -31,9 +31,12 @@ describe('canEditIntentImpactLevel', () => {
     },
   )
 
-  it.each(['in_progress', 'done'] as const)('locks while %s', (status: IntentStatus) => {
-    expect(canEditIntentImpactLevel({ status })).toBe(false)
-  })
+  it.each(['in_progress', 'reviewing', 'done'] as const)(
+    'locks while %s',
+    (status: IntentStatus) => {
+      expect(canEditIntentImpactLevel({ status })).toBe(false)
+    },
+  )
 })
 
 describe('needsReview', () => {

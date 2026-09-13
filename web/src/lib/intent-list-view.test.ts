@@ -99,10 +99,11 @@ describe('hasDependencyBlockingSpecSession', () => {
 })
 
 describe('statusLabel', () => {
-  it('七种状态各映射到对应英文标签', () => {
+  it('八种状态各映射到对应英文标签', () => {
     expect(statusLabel('draft')).toBe('Draft')
     expect(statusLabel('todo')).toBe('To do')
     expect(statusLabel('in_progress')).toBe('In progress')
+    expect(statusLabel('reviewing')).toBe('Reviewing')
     expect(statusLabel('done')).toBe('Done')
     expect(statusLabel('cancelled')).toBe('Cancelled')
     expect(statusLabel('blocked')).toBe('Blocked')
@@ -208,6 +209,14 @@ describe('visibleIntentActions', () => {
 
   it('in_progress:无 Start work,有 Mark done/Cancel/automate', () => {
     expect(visibleIntentActions(make({ status: 'in_progress' }))).toEqual([
+      'markDone',
+      'cancel',
+      'automate',
+    ])
+  })
+
+  it('reviewing:非终止态,仍显示 Mark done/Cancel(与 in_progress 同)', () => {
+    expect(visibleIntentActions(make({ status: 'reviewing' }))).toEqual([
       'markDone',
       'cancel',
       'automate',

@@ -1210,6 +1210,9 @@
       "inProgress": {
         "label": "В работе"
       },
+      "reviewing": {
+        "label": "На проверке"
+      },
       "done": {
         "label": "Готово"
       },

@@ -60,7 +60,7 @@ c3
 │   │   ├── 意图账本                              # 按工作区持久化意图,追踪 status/生命周期
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
 │   │   ├── MCP 确认保存                           # save_intents 原子新建/upsert,可显式 draft/cancelled→todo 并设置 automate;正文按五维软指引,save_intent_directly 仍固定新建 draft
-│   │   ├── 影响范围等级 L1–L5                    # 每条意图一个与优先级正交的影响面等级(L1 核心流程/资金/数据完整性 … L5 文案/界面微调,null=未定级):创建时由沟通智能体依标题+正文判定并随 save_intents 落库,详情「概览」元信息区下拉手动可调(in_progress/done 锁定,判据 canEditIntentImpactLevel,被拒回 intent.impactLevelLocked 不落库不广播),列表行与详情标题栏以徽标展示;不参与排序/分组、不撤销 spec 批准,但**联动开发/规格闸门**:L1/L2 强制规格先行+必须人工批准+禁止机器批准,L4/L5 默认 fast+允许机器批准(遵循 opt-in),中间档与未定级继承工作区默认;存量意图不回填,未定级是一等状态
+│   │   ├── 影响范围等级 L1–L5                    # 每条意图一个与优先级正交的影响面等级(L1 核心流程/资金/数据完整性 … L5 文案/界面微调,null=未定级):创建时由沟通智能体依标题+正文判定并随 save_intents 落库,详情「概览」元信息区下拉手动可调(in_progress/reviewing/done 锁定,判据 canEditIntentImpactLevel,被拒回 intent.impactLevelLocked 不落库不广播),列表行与详情标题栏以徽标展示;不参与排序/分组、不撤销 spec 批准,但**联动开发/规格闸门**:L1/L2 强制规格先行+必须人工批准+禁止机器批准,L4/L5 默认 fast+允许机器批准(遵循 opt-in),中间档与未定级继承工作区默认;存量意图不回填,未定级是一等状态
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
 │   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled,并联动影响等级:高影响 L1/L2 强制 sdd、低影响 L4/L5 默认 fast):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管;该开关**仅在规范与开发均未起步前可改**(无规范内容 + 无规范会话 + 无工作会话,判据 canEditIntentSpecMode),起步后概览页降级为只读文本、set_intent_spec_mode 回 intent.specModeLocked 不落库不广播,无强制解锁入口
@@ -79,14 +79,14 @@ c3
 │   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析;目标 pair 已有 merged PR 时标题栏不渲染该按钮(仅前端、仅 merged,closed 仍留重提入口)
 │   │   ├── 关联外部 PR                           # create_pr 失败且目标 (intent_id, delivery_id) 仍无活跃 PR 行时,错误弹窗提供「关联已有 PR」;`link_intent_pr` 复用目标解析、向 forge 查询 PR 事实并以 worktree HEAD 与 PR head SHA 一致性为唯一硬性判据后 upsert 账本
 │   │   ├── PR 更新复位                           # 模型发 pr:update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing;须以 association.deliveryId 或 pr.number 唯一定位,定位不到即拒并落 error 日志,绝不猜测
-│   │   ├── PR 全落地自动完成                     # in_progress 意图的 PR 聚合态为 merged(无 reviewing/failed/rejected 行,至少一行已合并;被放弃的 closed 行不拦)时自动置 done 并打 completedAt;判据只读账本不查 forge,每条把 PR 写成 merged 的路径(同步/关联外部已合并 PR/交付解绑观察到合并)写完即求值;todo/blocked/failed 不自动完成
+│   │   ├── PR 全落地自动完成                     # 完成收敛检查:in_progress 意图的 PR 聚合态为 merged 时自动置 done(历史手动规则);reviewing 意图需「评审了结(免评审 或 reviewStatus=approved)且 PR 聚合 merged」才收敛 done 并打 completedAt(评审与合并两条到达顺序都收敛);判据只读账本不查 forge,每条把 PR 写成 merged 的路径(同步/关联外部已合并 PR/交付解绑观察到合并)与评审结论回填路径写完即求值;todo/blocked/failed 不自动完成
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
 │   │   │   ├── base 可达判据                     # 判据是「依赖产出在不在我的 base 上」而非「PR 合了没」:同交付看该交付的 PR 行、跨交付看依赖所属交付是否 delivered、无交付沿用旧判据;唯一一份共享纯函数,手动/队列/投影共用(ADR-0038)
 │   │   │   ├── 可解释阻塞 + 强制放行             # 阻塞文案明示「依赖在交付 X,X 未合入主线」并可跳转;依赖闸门是建议,可一次性强制放行(二次确认+风险说明+intent_logs 审计),只跳依赖一道,队列不提供
 │   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
 │   │   ├── 危险动作收进溢出层                    # 意图详情标题栏只留核心动作,「取消」「删除」收进末位常驻「…」菜单(Esc/点击外部收起),两项各走 danger 二次确认;done 两项皆无则「…」整体不渲染,cancelled 只留「删除」
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
-│   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(三条自动 done 路径之一)
+│   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送,worktree+automate 下写 reviewing、其余写 done(done 的三条派生路径之一)
 │   │   │   ├── 确定性调度内核                    # 10s tick 全量对账:从意图账本+run 存活探测+少量调度元数据重推导动作;纯逻辑在 kernel/queue,不 import features/transport
 │   │   │   ├── 事件合并标脏                      # 生命周期事件只标记「需重查」并合并去重,不携带决策依据/不重放;丢事件只延迟一轮,不再卡死
 │   │   │   ├── 单意图失败隔离                    # 失败只计该意图:指数退避(30s 起翻倍,上限 15min),连续 3 次 park;队列继续跑无依赖关系的其他意图
@@ -102,7 +102,7 @@ c3
 │   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
 │   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒(退避·冷却带剩余倒计时,到点自动取新投影)/最近决策;park 行展示本地化原因(缺失有占位)与一键解除入口;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门,被拒的控制经全局 toast 呈现(不落队列页看不到的聊天流)
 │   │   │   │   └── 并发闸门队列位次              # 只对过了全部闸门仅被并发闸门挡住的候选给 1..N 位次,顺序复用调度排序;派生不落库,下轮重算,闸门释放即清空
-│   │   │   ├── PR 评审/修复接力                  # Work 完成建 PR 后队列继续驱动:needsReview(impactLevel) 为真(仅 L5 免)且未评审→起 Review;rejected→起 Fix(轮次 +1);fixed→复审并清空 fixStatus,使旧 fixed 不能满足下一次 rejected;approved 退出候选,整队仍能正常报 done。仅 worktree 模式(评审读/修复改的是 PR head 分支所在目录);候选与开发共用同一条闸门链、同一份并发配额,每轮最多起一次接力会话;队列详情用同一候选口径,接力中的 done 意图仍在队列里
+│   │   │   ├── PR 评审/修复接力                  # Work 完成建 PR 后(worktree+automate 进入 reviewing)队列继续驱动接力:needsReview(impactLevel) 为真(仅 L5 免)且未评审→起 Review;rejected→起 Fix(轮次 +1);fixed→复审并清空 fixStatus,使旧 fixed 不能满足下一次 rejected;approved 退出候选、意图留在 reviewing 等合并,整队仍能正常报 done。仅 worktree 模式(评审读/修复改的是 PR head 分支所在目录);候选与开发共用同一条闸门链、同一份并发配额,每轮最多起一次接力会话;队列详情用同一候选口径,接力中的 reviewing 意图仍在队列里
 │   │   │   │   ├── 收敛上限与转人工              # MAX_REVIEW_FIX_ROUNDS=3:首次评审不占预算,fixed 分支优先于预算判定(第三轮修复仍跑最后一次复审),只有该复审再 rejected 才以 review_fix_exhausted park+人工待办;该原因不在失败阶梯自动恢复集合,普通 unpark 不赠预算
 │   │   │   │   ├── 轮次原子推进                  # 状态转移+轮次+会话占位在同一条件更新中落定(比对期望的 review/fix 状态与轮次),竞争失败即重新对账;轮次只由一次成功的 Fix 认领 +1,模型/WorkNote/同步 MCP 都不能移动它;崩溃恢复的是同一阶段,不退还已认领轮次
 │   │   │   │   ├── 运行身份与执行目录            # 复用 SessionKind='automation' 的执行/日志/权限/厂商启动(不新增 SessionKind、不落 automations 表、不落执行日志);认领时按 reviewAgentId/fixAgentId 一次性选定 vendor+agent 并随占位保存,在途不重读设置,无可用 Agent 是明确失败而非跳过评审;执行目录是该意图 worktree,不回退主检出

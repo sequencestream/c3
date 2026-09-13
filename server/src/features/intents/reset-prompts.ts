@@ -17,5 +17,5 @@ import type { Intent } from '@ccc/shared/protocol'
 export function buildResetIntentPrompt(intent: Intent, userInput: string): string {
   const steer = userInput.trim()
   const steerBlock = steer ? `我的新输入:\n${steer}\n\n` : ''
-  return `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。\n\n${steerBlock}意图标题:${intent.title}\n当前意图内容:\n${intent.content}\n\n请结合上面的新输入与意图内容,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${intent.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
+  return `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。\n\n${steerBlock}意图标题:${intent.title}\n当前意图内容:\n${intent.content}\n\n请结合上面的新输入与意图内容,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${intent.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress、reviewing 或 done 则无法修改,请告知我。`
 }

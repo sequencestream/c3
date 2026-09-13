@@ -146,17 +146,19 @@ export type RelayCandidateFacts = Pick<
 /**
  * Whether the PR review / fix relay still has something to say about an intent.
  *
- * The relay only ever acts on an intent whose WORK is finished (`done` — a
- * manually opened PR does not mean the work is), that automation owns, and that
- * still holds a live PR. `L5` (and only `L5`) skips the FIRST review; once any
- * conclusion exists the relay stays engaged whatever the grade later becomes, so
- * a regrade can never strand an unhandled `rejected`. An `approved` intent is
- * still engaged — not to review it again, but so the merge handoff has a place
- * to be decided from.
+ * The relay only ever acts on an intent whose WORK is finished (`reviewing` — a
+ * manually opened PR does not mean the work is, and `done` now means the whole
+ * loop already closed), that automation owns, and that still holds a live PR.
+ * `L5` (and only `L5`) skips the FIRST review; once any conclusion exists the
+ * relay stays engaged whatever the grade later becomes, so a regrade can never
+ * strand an unhandled `rejected`. An `approved` intent leaves the candidate set
+ * entirely — the relay has nothing left to do about it, and it stays `reviewing`
+ * until the PR aggregate reports `merged`, when the convergence check writes
+ * `done` (see `completeIntentOnPrsMerged`).
  */
 export function relayEngaged(r: RelayCandidateFacts): boolean {
   if (!r.worktreeMode) return false
-  if (!r.automate || r.status !== 'done' || !r.hasActivePr) return false
+  if (!r.automate || r.status !== 'reviewing' || !r.hasActivePr) return false
   // `approved` ENDS the relay. The intent leaves the candidate set entirely, so a
   // queue whose every intent passed review reports `done` instead of idling
   // forever on work it has nothing left to do about.

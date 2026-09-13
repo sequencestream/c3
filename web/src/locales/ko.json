@@ -1210,6 +1210,9 @@
       "inProgress": {
         "label": "진행 중"
       },
+      "reviewing": {
+        "label": "검토 중"
+      },
       "done": {
         "label": "완료"
       },

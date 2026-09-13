@@ -70,6 +70,21 @@ describe('evaluateDependencyGate — 通用前置', () => {
     })
   })
 
+  it('reviewing 依赖同样以 not_done 阻塞:评审/合并且未了结,不等于 done', () => {
+    const v = evaluateDependencyGate(
+      input({
+        dependencies: [dep({ status: 'reviewing', prAggregate: 'merged' })],
+        sessionDeliveryId: null,
+      }),
+    )
+    expect(v).toEqual({
+      blocked: true,
+      reason: 'not_done',
+      dependency: { id: 'dep-1', title: '依赖 A' },
+      delivery: null,
+    })
+  })
+
   it('current-branch 模式下只要求 done,交付维度一律不参与', () => {
     const v = evaluateDependencyGate(
       input({

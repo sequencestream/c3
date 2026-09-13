@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * End-to-end test for the DEPENDENCY GATE's three states over the real wire.
+ * End-to-end test for the DEPENDENCY GATE's three states (plus the `reviewing`
+ * tightening) over the real wire.
  *
  * The gate no longer asks "is the dependency's PR merged" but "**is the
  * dependency's output on my base**", and the answer depends on the session's
@@ -8,12 +9,19 @@
  * and asserts that each produces its OWN explanation — the whole point of the
  * change is that a user can tell the three apart.
  *
- * Scenario — a throwaway git workspace (no remote), two deliveries, four intents:
+ * Scenario — a throwaway git workspace (no remote), two deliveries, five intents:
  *
  *   DepSame  — `done`, on its own branch, linked to delivery X, PR toward X
  *   DepCross — `done`, on its own branch, linked to delivery Y (not `delivered`)
  *   DepPlain — `done`, on its own branch, no delivery, PR unmerged
+ *   DepReviewing — `reviewing`, linked to delivery X, PR toward X still unmerged
  *   Target   — linked to delivery X; depends on one of the above per section
+ *
+ * The first three carry an UNMERGED PR while `done` — the "historical legacy
+ * `done` row" shape the migration leaves in place, and which still walks the two
+ * finer delivery explanations. `DepReviewing` is the NEW steady-state shape: a
+ * dependency that has not converged yet sits at `reviewing`, and blocks at the
+ * FIRST gate (`not_done`) before the delivery dimension is ever consulted.
  *
  * PASS asserts:
  *
@@ -24,7 +32,10 @@
  *     carries its id so the page can link to it).
  *  3. NO delivery on either side → the historic `intent.dependencyNotMerged`,
  *     unchanged.
- *  4. Each state OPENS on its own terms: the same-delivery PR merging, and the
+ *  4. A `reviewing` dependency blocks at `not_done` with the generic
+ *     `intent.dependencyNotMerged` — NOT the delivery-specific `pr_unmerged`,
+ *     even though its PR points at the delivery both sides share.
+ *  5. Each state OPENS on its own terms: the same-delivery PR merging, and the
  *     cross delivery reaching `delivered`, each clear the block.
  *
  * NO AGENT TOKENS ARE SPENT: no session is ever started. The three BLOCKED states
@@ -129,6 +140,11 @@ const db = (fn) => {
 /** Give an intent its own development branch (what a real work session leaves). */
 const seedBranch = (intentId, branch) =>
   db((c) => c.prepare('UPDATE intents SET branch_name=? WHERE id=?').run(branch, intentId))
+
+/** Set an intent's status directly — `reviewing` has no manual write path, so the
+ * fixture reaches it the same way the migration does: a direct ledger write. */
+const seedStatus = (intentId, status) =>
+  db((c) => c.prepare('UPDATE intents SET status=? WHERE id=?').run(status, intentId))
 
 /** One `intent_prs` row — toward a delivery, or delivery-less when `delivery` is null. */
 const seedPr = (intentId, number, status, delivery) =>
@@ -263,7 +279,7 @@ ws.addEventListener('message', (evt) => {
 })
 
 // ---- Intent + delivery setup ----
-const LABELS = ['DepSame', 'DepCross', 'DepPlain', 'Target']
+const LABELS = ['DepSame', 'DepCross', 'DepPlain', 'DepReviewing', 'Target']
 let created = 0
 
 function seedNextIntent() {
@@ -294,9 +310,9 @@ async function runAssertions() {
 
   // Every dependency is finished and sits on its OWN branch — the state in which
   // "is its output on my base" is a real question rather than a trivial one.
-  // `done` is only reachable via `in_progress` (the 7-state graph), so the
+  // `done` is only reachable via `in_progress` (the 8-state graph), so the
   // promotion is two hops — not a shortcut the ledger would refuse.
-  for (const label of ['DepSame', 'DepCross', 'DepPlain']) {
+  for (const label of ['DepSame', 'DepCross', 'DepPlain', 'DepReviewing']) {
     send({ type: 'update_intent_status', intentId: names[label], status: 'in_progress' })
     seedBranch(names[label], `intent/${label.toLowerCase()}`)
   }
@@ -304,6 +320,9 @@ async function runAssertions() {
   for (const label of ['DepSame', 'DepCross', 'DepPlain']) {
     send({ type: 'update_intent_status', intentId: names[label], status: 'done' })
   }
+  // `reviewing` is derived by automation, never a manual target; the fixture sets
+  // it directly (as the migration does) to exercise the new steady-state gate.
+  seedStatus(names.DepReviewing, 'reviewing')
   await sleep(POLL_MS * 2)
   send({
     type: 'link_intent_to_delivery',
@@ -323,9 +342,16 @@ async function runAssertions() {
     deliveryId: deliveries.Y,
     intentId: names.DepCross,
   })
+  send({
+    type: 'link_intent_to_delivery',
+    workspaceName,
+    deliveryId: deliveries.X,
+    intentId: names.DepReviewing,
+  })
   seedPr(names.DepSame, `${RUN}1`, 'reviewing', deliveries.X)
   seedPr(names.DepCross, `${RUN}2`, 'merged', deliveries.Y)
   seedPr(names.DepPlain, `${RUN}3`, 'reviewing', null)
+  seedPr(names.DepReviewing, `${RUN}4`, 'reviewing', deliveries.X)
   await sleep(POLL_MS * 4)
 
   // ---- 1. SAME delivery: the PR toward MY delivery is not merged ----
@@ -381,7 +407,28 @@ async function runAssertions() {
     'the cross-delivery block clears only when that delivery is delivered',
   )
 
-  // ---- 3. NO delivery: the historic criterion, unchanged ----
+  // ---- 3. REVIEWING dependency: the new steady-state tightening ----
+  // The target is still linked to delivery X, and DepReviewing also holds a PR
+  // toward X. Under the OLD semantics a `done` dependency with an unmerged PR
+  // here would explain itself as `pr_unmerged`; the new steady state is that the
+  // dependency is `reviewing`, so the FIRST gate (`status !== 'done'`) blocks it
+  // before the delivery dimension is consulted.
+  phase = 'reviewing-dependency'
+  send({
+    type: 'update_intent_deps',
+    intentId: names.Target,
+    deps: [{ dependsOnId: names.DepReviewing, depType: 'blocks' }],
+  })
+  await waitForIntents(() => blockedByDependency(names.Target), 'Target blocked by DepReviewing')
+  check(blockedByDependency(names.Target), 'a reviewing dependency blocks the target')
+
+  err = await launchError(names.Target)
+  check(
+    err?.code === 'intent.dependencyNotMerged',
+    `a reviewing dependency blocks at not_done (generic code), not the delivery PR (${err?.code})`,
+  )
+
+  // ---- 4. NO delivery: the historic criterion, unchanged ----
   phase = 'no-delivery'
   send({
     type: 'unlink_intent_from_delivery',
@@ -425,7 +472,7 @@ function finish() {
     for (const f of failures) console.error(`  - ${f}`)
     process.exit(1)
   }
-  console.log('\n[e2e] PASS — dependency gate three states')
+  console.log('\n[e2e] PASS — dependency gate three states + reviewing tightening')
   process.exit(0)
 }
 

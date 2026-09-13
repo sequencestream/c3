@@ -474,6 +474,17 @@ export async function applyIntentStatusChange(
       params: { from: req.status, to: status },
     }
   }
+  // `reviewing` is derived by the automatic completion paths (queue / dead-process
+  // reconcile), never a manual target: a human cannot decree "this is under
+  // review" — the relay alone opens a PR loop. Manual `reviewing → done` (explicit
+  // override) and `reviewing → cancelled` (abandon) remain reachable below.
+  if (status === 'reviewing') {
+    return {
+      success: false,
+      code: 'intent.illegalStatusTransition',
+      params: { from: req.status, to: status },
+    }
+  }
   const toClose = status === 'cancelled' ? activeIntentPrs(req.prs) : []
   const failures: string[] = []
   for (const pr of toClose) {

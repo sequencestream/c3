@@ -23,7 +23,7 @@
  * owns those).
  */
 import { randomUUID } from 'node:crypto'
-import type { Intent } from '@ccc/shared/protocol'
+import type { Intent, IntentStatus } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { QueueAction } from '../../kernel/queue/index.js'
 import {
@@ -171,17 +171,22 @@ export async function runDevelopLoop(
       const committed = await commitWithLintHeal(ctx, fresh, sessionId, record, signal)
       if (committed === 'aborted' || ctx.isDisposed()) return
       if (committed === 'failed') return // recordFailure already applied
-      updateStatus(fresh.id, 'done')
-      publishIntentStatusTransition(ctx.workspacePath, fresh, fresh.status, 'done')
+      // Completion is mode-dependent: a `worktree` + `automate` intent enters
+      // `reviewing` (its PR loop — review/fix/merge — is not settled yet); every
+      // other mode has no PR stage, so `done` keeps its "work finished" meaning.
+      const next: IntentStatus =
+        getGitBranchMode(ctx.workspacePath) === 'worktree' && fresh.automate ? 'reviewing' : 'done'
+      updateStatus(fresh.id, next)
+      publishIntentStatusTransition(ctx.workspacePath, fresh, fresh.status, next)
       ctx.markCompleted(fresh.id)
       ctx.hooks.broadcastIntents(ctx.workspacePath)
       recordSuccess(ctx, fresh.id)
-      // The PR comes AFTER `done` is written, and reads the intent back before
-      // acting: no automatic path may produce a PR for an intent that is still
-      // `in_progress`. Its outcome — created, skipped, or target unavailable —
-      // never changes the `done` this intent already reached.
+      // The PR comes AFTER the status is written, and reads the intent back
+      // before acting: no automatic path may produce a PR for an intent that is
+      // still `in_progress`. Its outcome — created, skipped, or target
+      // unavailable — never changes the status this intent already reached.
       await maybeCreatePr(ctx, fresh.id)
-      console.log(`[c3:queue]「${fresh.title}」已完成 → done`)
+      console.log(`[c3:queue]「${fresh.title}」已完成 → ${next}`)
       return
     }
 
@@ -409,8 +414,8 @@ async function commitWithLintHeal(
  *
  * Three gates before any forge work, in this order:
  *  - git mode: `worktree` creates PRs, `current-branch` never does;
- *  - the intent, re-read, is actually `done` — an automatic path never files a
- *    PR for work that is still in progress;
+ *  - the intent, re-read, is actually `done` or `reviewing` — an automatic path
+ *    never files a PR for work that is still in progress;
  *  - the PR target resolves through the SAME `resolvePrTarget` the human button
  *    uses, so an automatic PR reaches exactly the targets a human could reach.
  *
@@ -424,7 +429,7 @@ async function maybeCreatePr(ctx: QueueActionContext, intentId: string): Promise
   if (getGitBranchMode(ctx.workspacePath) !== 'worktree') return
   const req = getIntent(intentId)
   if (!req) return
-  if (req.status !== 'done') return
+  if (req.status !== 'done' && req.status !== 'reviewing') return
 
   const target = resolvePrTarget(ctx.workspacePath, req, undefined)
   if (!target.ok) {

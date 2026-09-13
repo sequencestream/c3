@@ -598,11 +598,13 @@ describe('queue dev actions — branch-mode git alignment', () => {
       headBranch: 'intent/Z',
       baseBranch: 'delivery/alpha',
     })
-    expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
-    // `done` is written BEFORE the PR is created: no automatic path may produce
-    // a PR for an intent that is still in progress.
-    const doneCall = vi.mocked(updateStatus).mock.calls.findIndex(([, status]) => status === 'done')
-    expect(vi.mocked(updateStatus).mock.invocationCallOrder[doneCall]).toBeLessThan(
+    expect(updateStatus).toHaveBeenCalledWith('Z', 'reviewing')
+    // `reviewing` is written BEFORE the PR is created: no automatic path may
+    // produce a PR for an intent that is still in progress.
+    const reviewingCall = vi
+      .mocked(updateStatus)
+      .mock.calls.findIndex(([, status]) => status === 'reviewing')
+    expect(vi.mocked(updateStatus).mock.invocationCallOrder[reviewingCall]).toBeLessThan(
       vi.mocked(createForgePr).mock.invocationCallOrder[0],
     )
     // The changelog records the automated PR creation exactly once, actor `automation`.
@@ -707,7 +709,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
 
     // Unlinked + resolved baseBranch ⇒ mainline PR with null delivery_id.
     expect(commitAndPush).toHaveBeenCalledWith('/tmp/wt-ND', expect.stringContaining('feat:'))
-    expect(updateStatus).toHaveBeenCalledWith('ND', 'done')
+    expect(updateStatus).toHaveBeenCalledWith('ND', 'reviewing')
     expect(createForgePr).toHaveBeenCalledWith(
       '/tmp/wt-ND',
       expect.any(String),
@@ -786,7 +788,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
     )
   })
 
-  it('worktree: 状态未真正写入 done 时(重读仍为 in_progress)不产生任何 PR', async () => {
+  it('worktree: 状态未真正写入 reviewing 时(重读仍为 in_progress)不产生任何 PR', async () => {
     const proj = '/test/wt-not-done'
     const intent = makeIntent({
       id: 'IP',
@@ -804,10 +806,10 @@ describe('queue dev actions — branch-mode git alignment', () => {
       branchName: 'intent/IP',
     })
     vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-IP')
-    // The `done` write does not land (a concurrent write, a store rejection): the
-    // re-read still says `in_progress`, so the PR step must not run at all.
+    // The `reviewing` write does not land (a concurrent write, a store rejection):
+    // the re-read still says `in_progress`, so the PR step must not run at all.
     vi.mocked(updateStatus).mockImplementation((_id, status) => {
-      intent.status = status === 'done' ? 'in_progress' : status
+      intent.status = status === 'reviewing' ? 'in_progress' : status
     })
     vi.mocked(listIntents).mockReturnValue([intent])
     vi.mocked(getIntent).mockReturnValue(intent)

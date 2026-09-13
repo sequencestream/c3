@@ -1209,6 +1209,9 @@
       "inProgress": {
         "label": "In progress"
       },
+      "reviewing": {
+        "label": "Reviewing"
+      },
       "done": {
         "label": "Done"
       },

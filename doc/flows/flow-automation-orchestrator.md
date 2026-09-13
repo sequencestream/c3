@@ -8,8 +8,9 @@
 
 这是 [意图 → 开发](flow-intent-to-development.md) 的**无人值守**版本兄弟流程。它是“不自动
 完成”规则(`RM-R9`)唯一一个显式的、用户主动选择加入的例外:只有在一个独立的评判者确认**且**
-变更已被提交并推送(`RM-A5`)之后,它才会把一个意图标记为 `done`。自动化是**受监督的**,而非
-无人值守:一次实时的权限 prompt 会等待一位正在盯着的人类(`RM-A9`)。
+变更已被提交并推送(`RM-A5`)之后,它才会把一个意图标记为 `done`——或者在 `worktree` 模式 +
+`automate` 下标记为 `reviewing`(评审/修复/合并尚未了结,接力接管后才收敛为 `done`,见下)。
+自动化是**受监督的**,而非无人值守:一次实时的权限 prompt 会等待一位正在盯着的人类(`RM-A9`)。
 
 **队列如何前进(2026-07-31,ADR-0031)。** 队列**不由事件推动**。它以固定 10s 节拍唤醒并
 **全量对账**:从意图账本快照 + 活跃 run 存活探测 + 少量持久化的单意图调度元数据**重新推导**
@@ -34,7 +35,7 @@ flowchart TD
     PICK --> ACT[launch / resume]
     ACT --> DEVT[dev turn — await + catch]
     DEVT --> J{completion judge}
-    J -- done --> CP[commit & push · mark done]
+    J -- done --> CP[commit & push · mark reviewing/done]
     J -- in_progress --> CONT[continue ≤ cap]
     J -- stuck --> FAIL[记该意图一次失败]
     J -- 判定不可用<br/>judge 跑不通/无法解析 --> FAILU[judge_unavailable<br/>记一次失败 · 不进人工决策通道]
@@ -125,11 +126,12 @@ flowchart TD
    构成 `stuck` 信号。评判者的 provider 连接与其它会话同规:`custom` 模式的工具 agent 经中继
    下发真实上游,只下发模型名而不下发其 provider 会让 CLI 拿着三方模型名去打一方端点。
 2. **`done` ⇒ 提交并推送(`RM-A5`)。** 队列提交任何未提交的工作(`feat: <title>`,若工作树
-   干净则跳过),并**总是**推送(感知多仓库),然后把该意图标记为 `done`,**之后**才建 PR:
-   建 PR 以重读到的意图状态为准(非 `done` 则整体跳过),base 由 `resolvePrTarget` 解析
-   (与手动建 PR 同一份解析):关联就绪交付 ⇒ 该交付分支;未关联 ⇒ 意图 `baseBranch`
+   干净则跳过),并**总是**推送(感知多仓库),然后把该意图标记为 `reviewing`(`worktree` 模式 +
+   `automate`)或 `done`(无 PR 阶段的模式),**之后**才建 PR:
+   建 PR 以重读到的意图状态为准(非 `done`/`reviewing` 则整体跳过),base 由 `resolvePrTarget`
+   解析 (与手动建 PR 同一份解析):关联就绪交付 ⇒ 该交付分支;未关联 ⇒ 意图 `baseBranch`
    (`delivery_id` 为空);目标不可用(分支未就绪 / 多关联 / 交付未知)时不建 PR 并推一条待办
-   说明原因,**绝不另选主线顶替**。建 PR 的结果不改变已达成的 `done`。若提交被
+   说明原因,**绝不另选主线顶替**。建 PR 的结果不改变已达成的 `reviewing`/`done`。若提交被
    **pre-commit lint 钩子**拦截,会通过单次开发智能体修复轮次自愈,再重试一次(`RM-A13`);
    任何其他提交/推送失败(或修复后仍然存在的 lint 失败)都计为**该意图**的一次失败(`RM-A6`),
    队列本身继续。
@@ -155,11 +157,13 @@ flowchart TD
 
 建了 PR 不等于这条意图离开了队列。队列继续持有它,直到 PR 拿到一个 AI 评审结论。
 
-1. **接力候选(`RM-A24`)。** `automate` + `status === 'done'` + `worktree` 分支模式 + 仍有
+1. **接力候选(`RM-A24`)。** `automate` + `status === 'reviewing'` + `worktree` 分支模式 + 仍有
    **活跃 PR**(非 `merged`/`closed`)+ 接力未结束。`reviewStatus` 为空时由
    `needsReview(impactLevel)` 决定要不要首次评审(只有 `L5` 跳过);一旦存在任何结论,影响范围
    再怎么改都不影响接力 —— 否则一次降级就能丢掉未处理的 `rejected`。`approved` 使意图**退出**
-   候选集合,队列因此仍能正常呈现 `done`。接力候选与开发候选**同一条闸门链、同一份并发配额**:
+   候选集合、留在 `reviewing` 等合并(队列因此仍能正常呈现 `done`/idle,因为它对这条意图已无事
+   可做);`done` 只由收敛检查在「评审了结 + PR 全部合并」后写,不由接力自己写。接力候选与开发
+   候选**同一条闸门链、同一份并发配额**:
    规格、交付写入、交付歧义、依赖、退避、冷却、`RM-A12` 一条都不放宽,每轮最多发起**一次**接力
    会话。`current-branch` 下不接力 —— 评审读、修复改的是 PR 的 head 分支,共享检出里没有这个
    目录,与自动建 PR 只在 `worktree` 生效同源。

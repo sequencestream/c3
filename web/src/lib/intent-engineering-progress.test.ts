@@ -78,7 +78,15 @@ describe('deriveIntentEngineeringProgress', () => {
 
   it('marks a draft intent in progress and every other intent status completed', () => {
     expect(derive({ status: 'draft' })[0].state).toBe('in_progress')
-    for (const status of ['todo', 'in_progress', 'blocked', 'failed', 'done', 'cancelled']) {
+    for (const status of [
+      'todo',
+      'in_progress',
+      'reviewing',
+      'blocked',
+      'failed',
+      'done',
+      'cancelled',
+    ]) {
       expect(derive({ status: status as IntentStatus })[0].state).toBe('completed')
     }
   })
@@ -107,6 +115,7 @@ describe('deriveIntentEngineeringProgress', () => {
       'in_progress',
     ],
     ['when done without evidence', { status: 'done' }, 'completed'],
+    ['when reviewing', { status: 'reviewing' }, 'completed'],
   ] as const)('derives the work stage %s', (_name, overrides, expected) => {
     expect(derive(overrides).at(-1)?.state).toBe(expected)
   })

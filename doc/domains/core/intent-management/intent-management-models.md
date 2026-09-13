@@ -15,15 +15,15 @@
 - **`shortEnTitle`**(text | null): 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐
 - **`content`**(text): 完整的意图描述
 - **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 需求级别;P0 最高 —— 排的是**何时做**
-- **`impactLevel`**(enum `L1`|`L2`|`L3`|`L4`|`L5`| null): 影响范围等级 —— 做错了**波及多远**;`L1` 最高(核心流程/资金/数据完整性),`L5` 最低(文案/界面微调);`null` = 未定级。与 `priority` 正交,互不替代也不合并。创建时由沟通智能体判定,`in_progress`/`done` 之外可手改;持久值无法解释时读作未定级而非中间档(RM-R49)。等级联动 spec 准入与机器审批见 RM-R51:L1/L2 强制规格先行且禁止机器批准,L4/L5 默认规格延后,中间档与未定级不联动。
+- **`impactLevel`**(enum `L1`|`L2`|`L3`|`L4`|`L5`| null): 影响范围等级 —— 做错了**波及多远**;`L1` 最高(核心流程/资金/数据完整性),`L5` 最低(文案/界面微调);`null` = 未定级。与 `priority` 正交,互不替代也不合并。创建时由沟通智能体判定,`in_progress`/`reviewing`/`done` 之外可手改(代码已产出,影响范围已成事实,评审期间同样不可改写);持久值无法解释时读作未定级而非中间档(RM-R49)。等级联动 spec 准入与机器审批见 RM-R51:L1/L2 强制规格先行且禁止机器批准,L4/L5 默认规格延后,中间档与未定级不联动。
 - **`module`**(text): 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)
-- **`status`**(enum): `draft`|`todo`|`in_progress`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)
+- **`status`**(enum): `draft`|`todo`|`in_progress`|`reviewing`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)。`reviewing` = 代码已提交、PR 已建立或待建立,评审/修复/合并尚未了结 —— 它是接力候选存在的唯一状态;`done` = 全流程完成 = 评审了结(免评审 或 `reviewStatus === 'approved'`)且该意图 PR 聚合为 `merged`,无 PR 阶段的模式(共享检出/当前分支)下仍等于「工作完成」
 - **`dependsOn`**(`id[]`): 该条目所依赖的项目内其他意图 id(聚合;RM-R1)
 - **`lastWorkSessionId`**(text | null): 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)
 - **`automate`**(boolean): 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)
 - **`createdAt`**(timestamp): 创建时间
 - **`updatedAt`**(timestamp): 最近一次变更时间
-- **`completedAt`**(timestamp | null): 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9/RM-R48)
+- **`completedAt`**(timestamp | null): 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done`(包括进入 `reviewing`)时清空(置为 null)(RM-R6/RM-R9/RM-R48)
 - **`specMode`**(`'sdd'`|`'fast'`| null): 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化。**仅在规范与开发均未起步前可改**:`specPath` 空白且 `specStatus === 'raw'`、`specSessionId`/`specReviewSessionId` 均为空、`lastWorkSessionId` 为空,三条同时成立才允许写入(判据 = `canEditIntentSpecMode`);否则概览页降级为只读、`set_intent_spec_mode` 返回 `intent.specModeLocked`(RM-R43)
 - **`effectiveSpecMode`**(`'sdd'`|`'fast'`): 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` + `impactLevel` 经 `resolveEffectiveSpecMode` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认。高影响 L1/L2 强制 `sdd`、低影响 L4/L5 在 `specMode` 为空时默认 `fast`(RM-R51、RM-R43)
 - **`actionDescriptor`**(ActionDescriptor | null): 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)
@@ -71,7 +71,7 @@ session-registry 所有)。
 - **`repo`**(text | null): 仓库标识(`owner/name`);`null` 表示来源未知
 - **`number`**(text): 仓库内 PR/MR 编号,由 gh/glab 创建输出解析
 - **`url`**(text | null): 可跳转链接;与 `latestCommitHash` 语义不同(链接指向变更请求,哈希指向提交)
-- **`status`**(enum): `reviewing`|`rejected`|`failed`|`merged`|`closed`;有自己的生命周期,不随意图状态变化,反向则派生一条边:PR 行全部落地时 `in_progress` 意图自动转 `done`(RM-R48)
+- **`status`**(enum): `reviewing`|`rejected`|`failed`|`merged`|`closed`;有自己的生命周期,不随意图状态变化,反向则派生一条边:PR 聚合为 `merged` 时,`in_progress` 意图自动转 `done`(手动路径的历史规则)、`reviewing` 意图在「评审了结(免评审 或 `approved`)」后收敛为 `done`(RM-R48)
 - **`headBranch` / `baseBranch`**(text | null): 源分支 / 目标分支,每行独立记录
 - **`createdAt` / `updatedAt`**(timestamp): 创建 / 最近更新时间
 
@@ -175,7 +175,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 | `intentId`    | text (UUID) | 依赖方意图   |
 | `dependsOnId` | text (UUID) | 被依赖的意图 |
 
-仅用于展示 + 警示:任一依赖尚未 `done` 的条目会显示提示,对其发起开发会给出警告但不会被阻止(RM-R11)。
+仅用于展示 + 警示:任一依赖尚未 `done`(含 `reviewing` —— 代码已写完但评审/合并尚未了结)的条目会显示提示,对其发起开发会给出警告但不会被阻止(RM-R11)。
 **对已持久化的图**,v1 中没有拓扑/环检测 —— 但单次 `save_intents` 批次内的批内引用
 (`dependsOnIndexes`)会在插入时被校验(下标越界 / 自引用 / 成环会拒绝整个批次,RM-R17),
 因为它们在任何行写入之前就已被解析为真实 id。

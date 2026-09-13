@@ -61,7 +61,7 @@ describe('IntentEngineeringProgress.vue', () => {
 
   it('renders the PR stage with the closed state and label in worktree mode', () => {
     const w = mountProgress(
-      { status: 'done', prs: fakeIntentPrs('closed') },
+      { status: 'done', prs: fakeIntentPrs('closed'), impactLevel: 'L5' },
       { sddEnabled: true, workspaceGitBranchMode: 'worktree' },
     )
     const s = stages(w)
@@ -75,7 +75,7 @@ describe('IntentEngineeringProgress.vue', () => {
 
   it('appends the PR stage reactively when the branch mode resolves to worktree', async () => {
     const w = mountProgress(
-      { status: 'in_progress', prs: fakeIntentPrs('reviewing') },
+      { status: 'in_progress', prs: fakeIntentPrs('reviewing'), impactLevel: 'L5' },
       { sddEnabled: true },
     )
     expect(stages(w).map((x) => x.attributes('data-stage'))).toEqual(['intent', 'spec', 'work'])

@@ -20,7 +20,7 @@ import {
   effectiveProviderModels,
   modelVendorLabel,
   modelVendorModels,
-  resolveDefaultAgentId,
+  normalizeAgentRef,
 } from '@ccc/shared'
 import type {
   AgentConfig,
@@ -120,8 +120,17 @@ const props = withDefaults(
 // which workspace), which lives in its own store and is saved per account by its
 // own message. Listing it with no fields is what keeps it out of every
 // whole-object settings save — in both directions.
-type SettingsTab = 'agent' | 'provider' | 'runtime' | 'security' | 'general' | 'access'
-const TABS: SettingsTab[] = ['agent', 'provider', 'runtime', 'security', 'general', 'access']
+type SettingsTab =
+  'agent' | 'defaultAgent' | 'provider' | 'runtime' | 'security' | 'general' | 'access'
+const TABS: SettingsTab[] = [
+  'agent',
+  'defaultAgent',
+  'provider',
+  'runtime',
+  'security',
+  'general',
+  'access',
+]
 const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   access: [],
   // provider 与 agent 分属两个页签,却互相引用:agent 上的 providerId 指向这里的记录。
@@ -130,13 +139,17 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   provider: ['modelProviders'],
   agent: [
     'agents',
-    'defaultAgentId',
     'toolAgentId',
     'intentAgentId',
     'specAgentId',
     'specReviewAgentId',
     'automationAgentId',
   ],
+  // 默认 Agent 独立成页:它是「未指定执行者」的全局兜底,也是工作区覆盖所继承的那一层,
+  // 治理入口因此不该藏在 Agents 列表的下拉里。它只拥有 defaultAgentId 一个字段,故保存
+  // 注册表不会顺手改默认值、改默认值也不会顺手保存注册表草稿。候选来自**已提交**的注册表:
+  // 新建的 agent 必须先在 Agents 页签保存,才可能成为一个存得住的引用。
+  defaultAgent: ['defaultAgentId'],
   runtime: ['vendorCliVersions', 'proxy', 'sessionCleanup'],
   security: ['auth'],
   general: ['voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
@@ -876,8 +889,8 @@ function isEnabled(a: AgentConfig): boolean {
   return a.enabled !== false
 }
 
-// The default-agent dropdown only offers enabled agents, in the visual grouped
-// order (= the order_seq order before Save stamps it).
+// The role dropdowns only offer enabled agents, in the visual grouped order
+// (= the order_seq order before Save stamps it).
 const defaultPickerAgents = computed<AgentConfig[]>(() => flatAgents.value.filter(isEnabled))
 
 // Virtual group agents (`_c3_<group>`, ADR-0029) offered alongside real agents in
@@ -885,32 +898,65 @@ const defaultPickerAgents = computed<AgentConfig[]>(() => flatAgents.value.filte
 // failover across its members). Derived client-side from the draft's `group` fields.
 const pickerGroupAgents = computed(() => listGroupAgents(draft.value.agents))
 
-// Toggle an agent's enabled flag. If this disables (or the inverse — never)
-// the current default, fall through to the next enabled agent and persist that
-// rewrite (mirrors the server `normalize`, AC-R2/AC-R10). Recompute against the
-// visual grouped order so the choice tracks order_seq. The tool agent follows the
-// same fall-through, but ONLY when it's explicitly set: an empty toolAgentId
-// ("follow the default") stays empty. The intent agent (AC-R23), spec agent
-// (AC-R24) and automation agent (AC-R25) follow the same rule as the tool agent.
+// ---- Default Agent tab -----------------------------------------------------
+// Its candidates come from the COMMITTED registry, not the Agents draft: this tab
+// saves `defaultAgentId` alone, so a reference only this session's unsaved draft
+// knows about could not survive the round trip. Creating an agent therefore means
+// "save the Agents tab first, then pick it here" — stated in the form, not guessed.
+const committedEnabledAgents = computed<AgentConfig[]>(() =>
+  committed.value.agents
+    .filter(isEnabled)
+    .slice()
+    .sort((a, b) => (a.order_seq ?? 0) - (b.order_seq ?? 0)),
+)
+const committedGroupAgents = computed(() => listGroupAgents(committed.value.agents))
+
+/**
+ * The draft default points at an agent the committed registry no longer has — the
+ * case a save must NOT silently resolve to some other agent. Shown as an explicit
+ * "this选择已失效" notice; the user re-picks. A group reference is never stale here:
+ * an emptied group is a normalization concern, not a deleted id.
+ */
+const defaultAgentDraftStale = computed<boolean>(() => {
+  const ref = draft.value.defaultAgentId?.trim() ?? ''
+  if (!ref) return false
+  if (committedGroupAgents.value.some((g) => g.id === ref)) return false
+  return !committed.value.agents.some((a) => a.id === ref)
+})
+
+/** The five role fields this tab owns — `defaultAgentId` lives on its own tab now. */
+const ROLE_FIELDS = [
+  'toolAgentId',
+  'intentAgentId',
+  'specAgentId',
+  'specReviewAgentId',
+  'automationAgentId',
+] as const
+
+/**
+ * Re-apply the shared reference rule to THIS tab's role drafts after the registry
+ * changed, so the selectors reflect the outcome immediately instead of only after
+ * the server echo. Disabling rewrites a non-empty role to the next enabled agent
+ * (AC-R2/AC-R10/AC-R20); deleting clears it back to "follow the default", because
+ * the agent the user picked is gone and pinning the role to a neighbour would run
+ * it somewhere nobody chose. An empty role stays empty either way.
+ *
+ * Deliberately does NOT touch `draft.defaultAgentId`: that field belongs to the
+ * Default Agent tab, and editing the registry must not mark that tab dirty. The
+ * server's normalize is what re-pins the default, and the echo reseeds it.
+ */
+function reapplyRoleRefs(): void {
+  const order = flatAgents.value
+  for (const field of ROLE_FIELDS) {
+    if (!draft.value[field]) continue
+    draft.value[field] = normalizeAgentRef(order, draft.value[field]) ?? ''
+  }
+}
+
+// Toggle an agent's enabled flag, then re-apply the role rules to this tab's drafts.
 function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   a.enabled = checked
-  const order = flatAgents.value
-  draft.value.defaultAgentId = resolveDefaultAgentId(order, draft.value.defaultAgentId)
-  if (draft.value.toolAgentId) {
-    draft.value.toolAgentId = resolveDefaultAgentId(order, draft.value.toolAgentId)
-  }
-  if (draft.value.intentAgentId) {
-    draft.value.intentAgentId = resolveDefaultAgentId(order, draft.value.intentAgentId)
-  }
-  if (draft.value.specAgentId) {
-    draft.value.specAgentId = resolveDefaultAgentId(order, draft.value.specAgentId)
-  }
-  if (draft.value.specReviewAgentId) {
-    draft.value.specReviewAgentId = resolveDefaultAgentId(order, draft.value.specReviewAgentId)
-  }
-  if (draft.value.automationAgentId) {
-    draft.value.automationAgentId = resolveDefaultAgentId(order, draft.value.automationAgentId)
-  }
+  reapplyRoleRefs()
 }
 
 // cursor 的 key 走自己的路:它的 CLI 认 key 或 `cursor-agent login` 任一种,所以这一栏
@@ -927,9 +973,8 @@ function apiKeyPlaceholder(): string {
 
 function removeAgent(id: string) {
   draft.value.agents = draft.value.agents.filter((a) => a.id !== id)
-  // Invariant: never leave the registry empty, and keep one valid default. If the
-  // removed agent was the default, fall through to the next enabled agent (AC-R2);
-  // if none remain, synthesize a claude+system default (mirrors the server fallback).
+  // Invariant: never leave the registry empty — synthesize a claude+system agent
+  // when the last row goes (mirrors the server fallback).
   if (draft.value.agents.length === 0) {
     draft.value.agents.push(
       makeAgent('claude', {
@@ -941,7 +986,9 @@ function removeAgent(id: string) {
       }),
     )
   }
-  draft.value.defaultAgentId = resolveDefaultAgentId(flatAgents.value, draft.value.defaultAgentId)
+  // A role that pointed at the removed agent goes back to following the default —
+  // it is NOT re-pointed at the next enabled agent (that is the *disable* rule).
+  reapplyRoleRefs()
 }
 
 /** Deep-copy an agent, append "-copy" to its displayName, and insert the copy
@@ -1337,12 +1384,18 @@ function buildTabPayload(
           }),
         )
       }
-      payload.defaultAgentId = src.defaultAgentId
       payload.toolAgentId = src.toolAgentId
       payload.intentAgentId = src.intentAgentId
       payload.specAgentId = src.specAgentId
       payload.specReviewAgentId = src.specReviewAgentId
       payload.automationAgentId = src.automationAgentId
+      break
+    }
+    case 'defaultAgent': {
+      // Only the default reference. The registry rides along in `payload` from the
+      // committed snapshot, so saving here can never ship an unsaved Agents draft —
+      // and the server re-normalizes the pick against that registry anyway.
+      payload.defaultAgentId = src.defaultAgentId
       break
     }
     case 'provider': {
@@ -1881,34 +1934,6 @@ function selectAdmin(username: string) {
             </li>
           </ul>
           <div class="agent-default-picker">
-            <label class="agent-default-label" for="default-agent-select">
-              {{ t('settings.agents.defaultPicker.label') }}
-            </label>
-            <select
-              id="default-agent-select"
-              v-model="draft.defaultAgentId"
-              class="agent-field"
-              data-testid="default-agent-select"
-              :title="t('settings.agents.default.tooltip')"
-              :disabled="defaultPickerAgents.length === 0"
-            >
-              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <optgroup
-                v-if="pickerGroupAgents.length > 0"
-                :label="t('settings.agents.groupPicker.label')"
-              >
-                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
-                  {{ g.id }}
-                </option>
-              </optgroup>
-              <option v-if="defaultPickerAgents.length === 0" value="" disabled>
-                {{ t('settings.agents.defaultPicker.empty') }}
-              </option>
-            </select>
-          </div>
-          <div class="agent-default-picker">
             <label class="agent-default-label" for="tool-agent-select">
               {{ t('settings.agents.toolPicker.label') }}
             </label>
@@ -2041,6 +2066,53 @@ function selectAdmin(username: string) {
               })
             }}
           </p>
+        </section>
+      </div>
+
+      <!-- ============ Default Agent tab ============
+           独立于 Agents 页签:这里配置的是「没有明确指定执行者时用谁」这一层全局兜底,
+           也是工作区未设置覆盖时所继承的值。候选取自已提交的注册表。 -->
+      <div
+        v-show="activeTab === 'defaultAgent'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-default-agent"
+      >
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.defaultAgent.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.defaultAgent.hint') }}</p>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="default-agent-select">
+              {{ t('settings.agents.defaultPicker.label') }}
+            </label>
+            <select
+              id="default-agent-select"
+              v-model="draft.defaultAgentId"
+              class="agent-field"
+              data-testid="default-agent-select"
+              :title="t('settings.agents.default.tooltip')"
+              :disabled="committedEnabledAgents.length === 0"
+            >
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+              <option v-if="committedEnabledAgents.length === 0" value="" disabled>
+                {{ t('settings.agents.defaultPicker.empty') }}
+              </option>
+            </select>
+          </div>
+          <p v-if="defaultAgentDraftStale" class="settings-warn" data-testid="default-agent-stale">
+            {{ t('settings.defaultAgent.stale') }}
+          </p>
+          <p class="settings-hint">{{ t('settings.defaultAgent.newAgentHint') }}</p>
         </section>
       </div>
 
@@ -2529,6 +2601,21 @@ function selectAdmin(username: string) {
           >{{ t('settings.tabs.unsaved.label') }}</span
         >
         <button data-testid="settings-save-agent" :disabled="!isAdmin" @click="saveTab('agent')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'defaultAgent'" class="settings-tab-actions">
+        <span
+          v-if="tabDirtyMap.defaultAgent"
+          class="settings-unsaved"
+          data-testid="settings-unsaved-default-agent"
+          >{{ t('settings.tabs.unsaved.label') }}</span
+        >
+        <button
+          data-testid="settings-save-default-agent"
+          :disabled="!isAdmin"
+          @click="saveTab('defaultAgent')"
+        >
           {{ t('common.action.save.label') }}
         </button>
       </div>

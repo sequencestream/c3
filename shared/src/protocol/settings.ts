@@ -258,7 +258,20 @@ export interface SystemSettings {
    * encrypted at rest with the same `c3secretvN:` scheme as agent apiKeys.
    */
   modelProviders?: ModelProvider[]
-  /** Id of the agent new/unassigned sessions launch with. */
+  /**
+   * Id of the agent new/unassigned sessions launch with — the **system-wide end of
+   * the follow chain**, managed on its own "Default Agent" settings tab.
+   *
+   * It has nothing to follow, so unlike the role fields below it is never emptied: an
+   * unknown, removed or now-disabled value is rewritten on store by
+   * `resolveDefaultAgentId` to the next enabled agent in `order_seq` order, and to
+   * {@link SYSTEM_AGENT_ID} when every agent is disabled. A virtual group reference
+   * (`_c3_<vendor>_<group>`) is kept while that group still has an enabled member.
+   *
+   * A workspace may OVERRIDE it through {@link WorkspaceSetting.defaultAgentId}; this
+   * field is what a workspace without an override inherits. So the chain behind
+   * anything with no explicit agent is: workspace override → this → `system`.
+   */
   defaultAgentId: string
   /**
    * Id of the agent that runs **background tool sessions** (completion judge,
@@ -267,11 +280,15 @@ export interface SystemSettings {
    * main conversation's quota. Semantics mirror {@link defaultAgentId} with ONE
    * difference: an **empty string is "follow the default agent"** (the runtime
    * resolves it through `resolveAgent`, falling back `toolAgentId → defaultAgentId
-   * → system`). A *non-empty* value that points at a removed/now-disabled agent is
+   * → system`). A *non-empty* value that points at a now-**disabled** agent is
    * **rewritten** on store to the next enabled agent in `order_seq` order — the same
    * `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20); when
    * every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
    * is left empty (never auto-filled), so "follow the default" survives a save.
+   * A value pointing at a **deleted** agent is instead **cleared to `''`**: deleting an
+   * agent removes an explicit choice, so the role follows the effective default again
+   * (workspace override → `defaultAgentId` → `system`) instead of being pinned to some
+   * other agent the user never picked.
    */
   toolAgentId: string
   /**
@@ -282,11 +299,15 @@ export interface SystemSettings {
    * from the "default agent for new sessions". Semantics are **identical to
    * {@link toolAgentId}**: an **empty string is "follow the default agent"** (the
    * runtime resolves it through `resolveAgent`, falling back `intentAgentId →
-   * defaultAgentId → system`). A *non-empty* value that points at a removed/now-disabled
+   * defaultAgentId → system`). A *non-empty* value that points at a now-**disabled**
    * agent is **rewritten** on store to the next enabled agent in `order_seq` order —
    * the same `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20);
    * when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
    * is left empty (never auto-filled), so "follow the default" survives a save.
+   * A value pointing at a **deleted** agent is instead **cleared to `''`**: deleting an
+   * agent removes an explicit choice, so the role follows the effective default again
+   * (workspace override → `defaultAgentId` → `system`) instead of being pinned to some
+   * other agent the user never picked.
    */
   intentAgentId: string
   /**
@@ -296,11 +317,15 @@ export interface SystemSettings {
    * agent for new sessions"). Semantics are **identical to {@link intentAgentId}**:
    * an **empty string is "follow the default agent"** (the runtime resolves it
    * through `resolveAgent`, falling back `specAgentId → defaultAgentId → system`).
-   * A *non-empty* value that points at a removed/now-disabled agent is **rewritten**
+   * A *non-empty* value that points at a now-**disabled** agent is **rewritten**
    * on store to the next enabled agent in `order_seq` order — the same
    * `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20); when
    * every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
    * is left empty (never auto-filled), so "follow the default" survives a save.
+   * A value pointing at a **deleted** agent is instead **cleared to `''`**: deleting an
+   * agent removes an explicit choice, so the role follows the effective default again
+   * (workspace override → `defaultAgentId` → `system`) instead of being pinned to some
+   * other agent the user never picked.
    */
   specAgentId: string
   /**
@@ -309,9 +334,13 @@ export interface SystemSettings {
    * are **identical to {@link specAgentId}**: an **empty string is "follow the
    * default agent"** (the runtime resolves it through `resolveAgent`, falling back
    * `specReviewAgentId → defaultAgentId → system`). A *non-empty* value that points
-   * at a removed/now-disabled agent is **rewritten** on store to the next enabled
+   * at a now-**disabled** agent is **rewritten** on store to the next enabled
    * agent in `order_seq` order; an empty string is left empty (never auto-filled),
    * so "follow the default" survives a save.
+   * A value pointing at a **deleted** agent is instead **cleared to `''`**: deleting an
+   * agent removes an explicit choice, so the role follows the effective default again
+   * (workspace override → `defaultAgentId` → `system`) instead of being pinned to some
+   * other agent the user never picked.
    *
    * There is exactly ONE slot — no sandbox-specific reviewer agent exists. Whether
    * a review session runs inside the sandbox is decided solely by whether
@@ -323,11 +352,15 @@ export interface SystemSettings {
    * agent selected the instant the create form opens). Storage-normalization
    * semantics are **identical to {@link specAgentId}**: an **empty string is
    * "follow the default agent"** (the form resolves it `automationAgentId →
-   * defaultAgentId → system`), a *non-empty* value that points at a removed/now-disabled
+   * defaultAgentId → system`), a *non-empty* value that points at a now-**disabled**
    * agent is **rewritten** on store to the next enabled agent in `order_seq` order —
    * the same `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20);
    * when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
    * is left empty (never auto-filled), so "follow the default" survives a save.
+   * A value pointing at a **deleted** agent is instead **cleared to `''`**: deleting an
+   * agent removes an explicit choice, so the role follows the effective default again
+   * (workspace override → `defaultAgentId` → `system`) instead of being pinned to some
+   * other agent the user never picked.
    *
    * UNLIKE {@link toolAgentId}/{@link intentAgentId}/{@link specAgentId}, this value is
    * **not** consumed by the runtime `resolveAgent` router: an automation record stores a

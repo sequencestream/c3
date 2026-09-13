@@ -2928,6 +2928,13 @@ button.deny:hover:not(:disabled) {
   font-family: var(--font-mono);
   font-size: var(--fs-badge);
 }
+/* 一条就地的失效提示:草稿里选中的对象已经不存在,必须由用户重新决定,而不是静默改成别的。 */
+.settings-warn {
+  margin: var(--sp-1) 0 var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-warning-text);
+  line-height: var(--lh-normal);
+}
 /* A section sub-heading inside a settings tab (e.g. the sandbox-mode role group). */
 .settings-subhead {
   margin: var(--sp-4) 0 var(--sp-1);

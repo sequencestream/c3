@@ -1,6 +1,6 @@
 # system-setting 系统设置
 
-`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / runtime / security / general 四页;其中 agent 页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
+`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / 默认 agent / provider / runtime / security / general / 用户与访问 七个顶层页签;其中 agent 页与「默认 agent」页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
 
 配置持久化路径、单一写入路径、`projectConfigs` 分层等**组级共享上下文**见 [settings 组概览](../settings-overview.md)。
 
@@ -96,7 +96,7 @@ c3 代表自己发出的请求(版本检查与自更新下载,`c3 upgrade` 亦�
 
 ## 用户与访问
 
-系统设置的第五个顶层页签「用户与访问」是账号 × 工作区授权的编辑面:它决定每个账号能到达哪些工作区,进而决定这些账号名下的 key 能到达哪些工作区。存储与解析语义见 [工作区范围](../../core/auth/auth-overview.md#工作区范围-user_workspace_scopes)。
+系统设置的第七个顶层页签「用户与访问」是账号 × 工作区授权的编辑面:它决定每个账号能到达哪些工作区,进而决定这些账号名下的 key 能到达哪些工作区。存储与解析语义见 [工作区范围](../../core/auth/auth-overview.md#工作区范围-user_workspace_scopes)。
 
 - **不属于 `SystemSettings`。** 空字段白名单:本页签不进草稿、不出现在任何 `save_settings` 载荷里,按账号逐条保存。授权与系统配置分两条写路径,是为了让一次整对象保存既不可能顺手携带授权,也不可能悄悄把它抹掉。
 - **管理员专属,且是保密边界。** 读(`get_user_workspace_access`)与写(`save_user_workspace_access`)都过 `requireAdmin`。名册列出本部署的全部账号与全部工作区,正是普通账号不应能枚举的清单;在客户端隐藏页签只是呈现,不构成防线。

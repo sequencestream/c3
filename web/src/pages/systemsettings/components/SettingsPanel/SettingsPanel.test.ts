@@ -53,6 +53,7 @@ const baseSettings: SystemSettings = {
 // activating the tab first.
 const SAVE = {
   agent: '[data-testid="settings-save-agent"]',
+  defaultAgent: '[data-testid="settings-save-default-agent"]',
   provider: '[data-testid="settings-save-provider"]',
   runtime: '[data-testid="settings-save-runtime"]',
   security: '[data-testid="settings-save-security"]',
@@ -391,27 +392,50 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
     expect((sel.element as HTMLSelectElement).value).toBe('a2')
   })
 
-  it('rewrites the default to the next enabled agent when the current default is disabled', async () => {
+  it('saves the picked default alone — the Agents draft never rides along', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
-    // Disable a2 (the current default) via its enabled switch (2nd row).
+    // Edit the registry draft (rename a1) without saving the Agents tab.
+    await w.findAll('input.agent-name')[0].setValue('renamed')
+    await w.find('[data-testid="default-agent-select"]').setValue('a3')
+    await w.find(SAVE.defaultAgent).trigger('click')
+    const payload = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(payload.defaultAgentId).toBe('a3')
+    // The committed registry, not the unsaved rename.
+    expect(payload.agents.find((a) => a.id === 'a1')?.displayName).toBe('a1')
+  })
+
+  it('leaves the default alone when an agent is disabled — the server re-pins it', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
+    // Disabling is an Agents-tab edit: it must not touch the Default Agent tab's
+    // field, and must not mark that tab dirty (its Save would otherwise ship a
+    // value the user never chose).
     const checks = w.findAll('[data-testid="agent-enabled-switch"]')
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="default-agent-select"]')
-    expect((sel.element as HTMLSelectElement).value).toBe('a3')
+    expect((sel.element as HTMLSelectElement).value).toBe('a2')
+    expect(w.find('[data-testid="settings-unsaved-default-agent"]').exists()).toBe(false)
     await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].defaultAgentId).toBe('a3')
+    // The Agent tab's payload carries the committed default untouched.
+    expect((w.emitted('save') as [SystemSettings][])[0][0].defaultAgentId).toBe('a2')
   })
 
-  it('falls back to SYSTEM_AGENT_ID when every agent is disabled', async () => {
+  it('warns instead of silently re-pointing when the picked default was deleted', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
-    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
-    await checks[0].setValue(false)
-    await checks[1].setValue(false)
-    await checks[2].setValue(false)
-    await w.find(SAVE.agent).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].defaultAgentId).toBe(SYSTEM_AGENT_ID)
+    expect(w.find('[data-testid="default-agent-stale"]').exists()).toBe(false)
+    // The registry echoes back without a2 (deleted, Agents tab saved) — and the
+    // server already re-pinned the default, because the default is the end of the
+    // follow chain and is never left dangling.
+    await w.setProps({
+      settings: { ...threeAgents, agents: [mk('a1'), mk('a3')], defaultAgentId: 'a3' },
+    })
+    // Clean tab ⇒ reseeded from the server-normalized default, so nothing is stale.
+    expect(w.find('[data-testid="default-agent-stale"]').exists()).toBe(false)
+    // A *dirty* draft pointing at the deleted agent is kept and flagged.
+    await w.find('[data-testid="default-agent-select"]').setValue('a1')
+    await w.setProps({
+      settings: { ...threeAgents, agents: [mk('a3')], defaultAgentId: 'a3' },
+    })
+    expect(w.find('[data-testid="default-agent-stale"]').exists()).toBe(true)
   })
 })
 
@@ -1472,16 +1496,17 @@ describe('SettingsPanel.vue — non-admin is read-only (ADR-0023 authz)', () => 
 })
 
 describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
-  it('renders six tabs in order for an administrator, ending with Users and access', () => {
+  it('renders seven tabs in order for an administrator, ending with Users and access', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const labels = w
       .findAll('[data-testid="settings-tabs"] .settings-tab span')
       .map((s) => s.text())
     // Each tab has a label span (and an optional dirty dot span); take the label texts.
     const tabButtons = w.findAll('[data-testid^="settings-tab-btn-"]')
-    expect(tabButtons).toHaveLength(6)
-    expect(labels.slice(0, 6)).toEqual([
+    expect(tabButtons).toHaveLength(7)
+    expect(labels.slice(0, 7)).toEqual([
       'Agent',
+      'Default Agent',
       'Providers',
       'Runtime',
       'Security',
@@ -1496,7 +1521,7 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
     const labels = w
       .findAll('[data-testid="settings-tabs"] .settings-tab span')
       .map((s) => s.text())
-    expect(w.findAll('[data-testid^="settings-tab-btn-"]')).toHaveLength(5)
+    expect(w.findAll('[data-testid^="settings-tab-btn-"]')).toHaveLength(6)
     expect(labels).not.toContain('Users and access')
     useAuth().setIsAdmin(true)
   })
@@ -1507,7 +1532,7 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
     // must live under.
     const membership: Record<string, string> = {
       'settings-add-agent': 'settings-tab-agent',
-      'default-agent-select': 'settings-tab-agent',
+      'default-agent-select': 'settings-tab-default-agent',
       'settings-diagnostics': 'settings-tab-runtime',
       'settings-vendor-cli': 'settings-tab-runtime',
       'settings-proxy': 'settings-tab-runtime',
@@ -2067,12 +2092,12 @@ describe('SettingsPanel.vue — a Cursor agent is a first-class pick in every ro
     expect(values).toContain('_c3_cursor_squad')
   })
 
-  it('carries a cursor default agent through the Agent tab Save', async () => {
+  it('carries a cursor default agent through the Default Agent tab Save', async () => {
     const w = mount(SettingsPanel, {
       props: { open: true, settings: withCursor, vendorAvailability: availability() },
     })
     await w.find('[data-testid="default-agent-select"]').setValue('cursor-a')
-    await w.find(SAVE.agent).trigger('click')
+    await w.find(SAVE.defaultAgent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.defaultAgentId).toBe('cursor-a')
   })

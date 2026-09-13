@@ -85,6 +85,7 @@ import {
   getSessionGroupCursor,
   getSessionStoreScope,
   loadSettings,
+  loadWorkspaceSetting,
   saveSettings,
   setPendingIntent,
   setSessionGroupCursor,
@@ -206,35 +207,51 @@ function rotateToCursor(members: AgentConfig[], cursor?: string | null): AgentCo
  *
  *  1. a group reference (`_c3_<vendor>_<group>`) ⇒ that group's target;
  *  2. a known concrete agent id ⇒ that agent;
- *  3. empty (the "follow the default" sentinel) or an unknown id ⇒ follow
- *     `defaultAgentId`, applying rules 1–2 to it — so a GROUP default resolves as a
- *     group instead of being skipped by an id lookup that can never match a virtual
- *     reference;
+ *  3. empty (the "follow the default" sentinel) or an unknown id ⇒ follow the
+ *     **effective default for `workspacePath`**: that workspace's
+ *     `defaultAgentId` override when it has one, else the system
+ *     `defaultAgentId`. Rules 1–2 apply to each in turn — so a GROUP default
+ *     resolves as a group instead of being skipped by an id lookup that can never
+ *     match a virtual reference;
  *  4. no usable default ⇒ the system agent, else the synthesized fallback (the
  *     "settings empty/corrupt" safety net that keeps c3 launchable).
  *
- * Throws {@link AgentGroupUnavailableError} when the target — direct or reached via
- * the default — is a group with no enabled member. That failure is deliberately NOT
- * absorbed into rule 4: falling back would hide an actionable misconfiguration
- * behind an agent the user never chose.
+ * `workspacePath` is the task's OWN workspace (name or path — `loadWorkspaceSetting`
+ * canonicalizes either), never "whichever workspace the browser happens to show".
+ * Omitting it — a background task that belongs to no workspace — resolves against
+ * the system default alone.
+ *
+ * Throws {@link AgentGroupUnavailableError} when the target — direct, or reached via
+ * the workspace override or the system default — is a group with no enabled member.
+ * That failure is deliberately NOT absorbed into rule 4 at any link of the chain:
+ * falling back would hide an actionable misconfiguration behind an agent the user
+ * never chose.
  */
-export function resolveAgentTarget(ref: string | null, cursor?: string | null): AgentTarget {
+export function resolveAgentTarget(
+  ref: string | null,
+  cursor?: string | null,
+  workspacePath?: string | null,
+): AgentTarget {
   const settings = loadSettings()
-  const wanted = ref?.trim() ?? ''
-  if (wanted) {
-    const g = parseGroupAgentRef(wanted)
-    if (g) return groupTarget(wanted, g.vendor, g.group, cursor)
-    const byId = settings.agents.find((a) => a.id === wanted)
-    if (byId) return singleTarget(byId)
+  /** Rules 1–2 for one reference: the group/concrete target, or null to keep falling. */
+  const targetFor = (candidate: string | undefined): AgentTarget | null => {
+    const id = candidate?.trim() ?? ''
+    if (!id) return null
+    const g = parseGroupAgentRef(id)
+    if (g) return groupTarget(id, g.vendor, g.group, cursor)
+    const byId = settings.agents.find((a) => a.id === id)
+    return byId ? singleTarget(byId) : null
   }
-  // Follow the default: the empty-role sentinel AND the unknown-id compat chain.
-  const fallbackId = settings.defaultAgentId?.trim() ?? ''
-  if (fallbackId) {
-    const dg = parseGroupAgentRef(fallbackId)
-    if (dg) return groupTarget(fallbackId, dg.vendor, dg.group, cursor)
-    const byDefault = settings.agents.find((a) => a.id === fallbackId)
-    if (byDefault) return singleTarget(byDefault)
+  const explicit = targetFor(ref ?? undefined)
+  if (explicit) return explicit
+  // Follow the default — the empty-role sentinel AND the unknown-id compat chain —
+  // narrowest scope first, so a workspace override actually wins over the system value.
+  if (workspacePath) {
+    const scoped = targetFor(loadWorkspaceSetting(workspacePath).defaultAgentId)
+    if (scoped) return scoped
   }
+  const systemDefault = targetFor(settings.defaultAgentId)
+  if (systemDefault) return systemDefault
   return singleTarget(settings.agents.find((a) => a.id === SYSTEM_AGENT_ID) ?? systemAgent())
 }
 
@@ -246,9 +263,10 @@ export function resolveAgentTarget(ref: string | null, cursor?: string | null): 
 export function tryResolveAgentTarget(
   ref: string | null,
   cursor?: string | null,
+  workspacePath?: string | null,
 ): AgentTargetResult {
   try {
-    return { ok: true, target: resolveAgentTarget(ref, cursor) }
+    return { ok: true, target: resolveAgentTarget(ref, cursor, workspacePath) }
   } catch (err) {
     if (err instanceof AgentGroupUnavailableError) return { ok: false, groupRef: err.groupRef }
     throw err
@@ -266,14 +284,31 @@ export function getRoleAgentId(role: AgentRole): string {
  * five roles share {@link resolveAgentTarget}, so "role field set to a group" and
  * "role field empty, default is a group" land on the SAME target. Throws
  * {@link AgentGroupUnavailableError} for an unusable group.
+ *
+ * `workspacePath` scopes which default a *following* role lands on. The `default`
+ * role deliberately passes NO explicit reference: feeding it `defaultAgentId` would
+ * make the system value an explicit pick and the workspace override could never
+ * win. The other four keep their own field as the explicit pick, so an explicit
+ * system-level role choice still outranks a workspace default.
  */
-export function resolveRoleAgentTarget(role: AgentRole): AgentTarget {
-  return resolveAgentTarget(getRoleAgentId(role) || null)
+export function resolveRoleAgentTarget(
+  role: AgentRole,
+  workspacePath?: string | null,
+): AgentTarget {
+  return resolveAgentTarget(roleRefForResolve(role), null, workspacePath)
 }
 
 /** {@link resolveRoleAgentTarget} without the throw (see {@link tryResolveAgentTarget}). */
-export function tryResolveRoleAgentTarget(role: AgentRole): AgentTargetResult {
-  return tryResolveAgentTarget(getRoleAgentId(role) || null)
+export function tryResolveRoleAgentTarget(
+  role: AgentRole,
+  workspacePath?: string | null,
+): AgentTargetResult {
+  return tryResolveAgentTarget(roleRefForResolve(role), null, workspacePath)
+}
+
+/** The explicit reference a role contributes: none for `default` (see above). */
+function roleRefForResolve(role: AgentRole): string | null {
+  return role === 'default' ? null : getRoleAgentId(role) || null
 }
 
 /**
@@ -387,8 +422,8 @@ export function resolveAgent(agentId: string | null): AgentConfig {
  * defaultAgentId → system → synthesized fallback` and a group on either end
  * resolves to its representative member.
  */
-export function resolveToolAgent(): AgentConfig {
-  return resolveRoleAgentTarget('tool').agent
+export function resolveToolAgent(workspacePath?: string | null): AgentConfig {
+  return resolveRoleAgentTarget('tool', workspacePath).agent
 }
 
 /**
@@ -396,8 +431,10 @@ export function resolveToolAgent(): AgentConfig {
  * mirror of {@link resolveSessionLaunch} (model + provider env), so the completion
  * judge / naming one-shots execute on the configured tool agent.
  */
-export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverrides {
-  return resolveLaunchForRef(getToolAgentId() || null)
+export function resolveToolSessionLaunch(
+  workspacePath?: string | null,
+): { agentId: string } & LaunchOverrides {
+  return resolveLaunchForRef(getToolAgentId() || null, undefined, workspacePath)
 }
 
 /**
@@ -407,8 +444,8 @@ export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverride
  * `intentAgentId → defaultAgentId → system → synthesized fallback` with a group on
  * either end resolving to its representative member.
  */
-export function resolveIntentAgent(): AgentConfig {
-  return resolveRoleAgentTarget('intent').agent
+export function resolveIntentAgent(workspacePath?: string | null): AgentConfig {
+  return resolveRoleAgentTarget('intent', workspacePath).agent
 }
 
 /**
@@ -416,8 +453,8 @@ export function resolveIntentAgent(): AgentConfig {
  * specification). The single-agent view of `resolveRoleAgentTarget('spec')`;
  * mirrors {@link resolveIntentAgent} exactly.
  */
-export function resolveSpecAgent(): AgentConfig {
-  return resolveRoleAgentTarget('spec').agent
+export function resolveSpecAgent(workspacePath?: string | null): AgentConfig {
+  return resolveRoleAgentTarget('spec', workspacePath).agent
 }
 
 /**
@@ -427,8 +464,8 @@ export function resolveSpecAgent(): AgentConfig {
  * `sandboxSessionKinds` alone decides whether a review session runs inside the
  * sandbox.
  */
-export function resolveSpecReviewAgent(): AgentConfig {
-  return resolveRoleAgentTarget('spec_review').agent
+export function resolveSpecReviewAgent(workspacePath?: string | null): AgentConfig {
+  return resolveRoleAgentTarget('spec_review', workspacePath).agent
 }
 
 /**
@@ -821,8 +858,9 @@ export function resolveAgentCandidates(ref: string | null): AgentConfig[] {
 function resolveLaunchForRef(
   ref: string | null,
   opts?: LaunchOptions,
+  workspacePath?: string | null,
 ): { agentId: string } & LaunchOverrides {
-  const target = resolveAgentTarget(ref)
+  const target = resolveAgentTarget(ref, null, workspacePath)
   return { agentId: target.ref, ...launchForCandidates(target.candidates, opts) }
 }
 

@@ -36,17 +36,30 @@ function withVendorGate(result: AgentTargetResult): AgentTargetResult {
  * The agent target a session created for `role` must bind — the group reference
  * (with its representative member) or the concrete agent. `ok: false` carries the
  * group at fault so the caller can name it in the error it reports.
+ *
+ * `workspacePath` is the workspace the session belongs to: a role that follows the
+ * default lands on THAT workspace's `defaultAgentId` override when it has one, and
+ * on the system default otherwise. Callers pass the session's own workspace (never
+ * a globally "current" one); omitting it — a session that belongs to no workspace —
+ * resolves against the system default.
  */
-export function sessionAgentTargetForRole(role: AgentRole): AgentTargetResult {
-  return withVendorGate(tryResolveRoleAgentTarget(role))
+export function sessionAgentTargetForRole(
+  role: AgentRole,
+  workspacePath?: string | null,
+): AgentTargetResult {
+  return withVendorGate(tryResolveRoleAgentTarget(role, workspacePath))
 }
 
 /**
  * The same gate for an explicitly picked reference (the new-session modal's agent
- * / group choice). `null` means "Auto" — follow the default role.
+ * / group choice). `null` means "Auto" — follow the default role, which honours
+ * `workspacePath`'s override exactly as {@link sessionAgentTargetForRole} does.
  */
-export function sessionAgentTargetForRef(ref: string | null): AgentTargetResult {
-  return withVendorGate(tryResolveAgentTarget(ref))
+export function sessionAgentTargetForRef(
+  ref: string | null,
+  workspacePath?: string | null,
+): AgentTargetResult {
+  return withVendorGate(tryResolveAgentTarget(ref, null, workspacePath))
 }
 
 /** The structured error a refused creation reports (localized by the web). */

@@ -125,9 +125,9 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a mode select for each vendor in correct order', () => {
     const w = mountWs(null)
     // 2 codex policy selects (sandbox + approval) + 1 claude + 1 cursor
-    // + 1 git-branch-mode select = 5
+    // + 1 git-branch-mode select + 1 workspace default-agent select = 6
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(5)
+    expect(selects).toHaveLength(6)
     // Claude and Cursor each have a single mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-cursor"]').length).toBe(1)
@@ -188,11 +188,11 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
 
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
-    // 3 vendor row-labels + devSkill + rounds + speechChars + gitBranchMode
-    // + defaultMainBranch + default-visible SDD spec root + fast-spec 两个阈值
-    // + automation cap = 12
+    // 默认 Agent + 3 vendor row-labels + devSkill + rounds + speechChars
+    // + gitBranchMode + defaultMainBranch + default-visible SDD spec root
+    // + fast-spec 两个阈值 + automation cap = 13
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(12)
+    expect(labels).toHaveLength(13)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -876,14 +876,15 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly eight tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 访问 / 记忆', () => {
+  it('renders exactly nine tabs in order: 默认 Agent / 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 访问 / 记忆', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
       .map((s) => s.text())
     const tabButtons = w.findAll('[data-testid^="project-config-tab-btn-"]')
-    expect(tabButtons).toHaveLength(8)
-    expect(labels.slice(0, 8)).toEqual([
+    expect(tabButtons).toHaveLength(9)
+    expect(labels.slice(0, 9)).toEqual([
+      'Default Agent',
       'Default mode',
       'Git & Sandbox',
       'Collaboration',
@@ -900,6 +901,7 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
     // Marker testids that uniquely identify each config block, and the panel each
     // must live under. Each appears exactly once (no duplication) and under its tab.
     const membership: Record<string, string> = {
+      'workspace-default-agent-select': 'project-config-tab-defaultAgent',
       'default-mode-claude': 'project-config-tab-defaultMode',
       'default-mode-codex-sandbox': 'project-config-tab-defaultMode',
       'git-branch-mode': 'project-config-tab-gitSandbox',

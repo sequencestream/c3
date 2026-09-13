@@ -132,14 +132,15 @@ function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
 
 /**
  * The intent role's agent target, resolved once per creation flow BEFORE any
- * session artefact exists. `intentAgentId` empty ⇒ follow the default agent
- * (`intentAgentId → defaultAgentId → system`), so intent-communication sessions can
- * run on a stronger/decoupled agent than "default for new sessions"; either end may
- * be a virtual group, in which case the session binds the GROUP and its first
- * enabled member represents it.
+ * session artefact exists. `intentAgentId` empty ⇒ follow the default agent for
+ * `workspacePath` (`intentAgentId → that workspace's defaultAgentId override →
+ * the system defaultAgentId → system`), so intent-communication sessions can run on
+ * a stronger/decoupled agent than "default for new sessions", and a project can pick
+ * its own default without touching this role. Any link may be a virtual group, in
+ * which case the session binds the GROUP and its first enabled member represents it.
  */
-function intentAgentTarget(): ReturnType<typeof sessionAgentTargetForRole> {
-  return sessionAgentTargetForRole('intent')
+function intentAgentTarget(workspacePath: string): ReturnType<typeof sessionAgentTargetForRole> {
+  return sessionAgentTargetForRole('intent', workspacePath)
 }
 
 /**
@@ -281,7 +282,7 @@ async function bindAndLaunchIntentSession(
   // Refuse before ANY artefact exists (viewer swap, runtime, chat row, link) when
   // the intent role points at a group with no usable member — a half-built session
   // is exactly what the unwind path below cannot fully undo.
-  const target = intentAgentTarget()
+  const target = intentAgentTarget(proj)
   if (!target.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
@@ -558,7 +559,7 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
   // The intent role's target, resolved once up front: an OPEN that has to create
   // (or first-bind) a session needs it, a plain resume of an already-bound session
   // does not — so a broken group config never blocks reopening existing work.
-  const target = intentAgentTarget()
+  const target = intentAgentTarget(proj)
 
   // If a specific sessionId was requested, verify it exists for this project.
   // Otherwise, fall back to is_current (same as before).
@@ -761,7 +762,7 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
     // group changes nothing here: reopening is a READ of an existing session, so it
     // keeps whatever binding it already carries and the configuration error is
     // reported where it matters — the next launch.
-    const specTarget = sessionAgentTargetForRole('spec')
+    const specTarget = sessionAgentTargetForRole('spec', proj)
     if (specTarget.ok) setSessionAgent(chatId, specTarget.target.ref)
   }
   const rt = getRuntime(chatId)
@@ -842,7 +843,7 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
     restored.specReviewFingerprint = fingerprint
     // Same re-pin rule as the spec author's reopen: a group re-pins as its ref, and
     // an unusable group leaves the existing binding untouched.
-    const reviewTarget = sessionAgentTargetForRole('spec_review')
+    const reviewTarget = sessionAgentTargetForRole('spec_review', proj)
     if (reviewTarget.ok) setSessionAgent(chatId, reviewTarget.target.ref)
   }
   const rt = getRuntime(chatId)
@@ -886,7 +887,7 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
-  const target = intentAgentTarget()
+  const target = intentAgentTarget(proj)
   if (!target.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
@@ -950,7 +951,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
-  const target = intentAgentTarget()
+  const target = intentAgentTarget(proj)
   if (!target.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return
@@ -1042,7 +1043,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
-  const target = intentAgentTarget()
+  const target = intentAgentTarget(proj)
   if (!target.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return

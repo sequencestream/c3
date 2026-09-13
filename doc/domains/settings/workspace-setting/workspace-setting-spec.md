@@ -4,6 +4,15 @@
 
 配置持久化与组级共享上下文见 [settings 组概览](../settings-overview.md)。
 
+## 默认智能体覆盖 `defaultAgentId`
+
+本工作区的**默认智能体覆盖**——工作区内所有“未指定执行者”的入口据此解析,**覆盖**系统默认智能体([agent-config](../agent-config/agent-config-spec.md) AC-R33)。它是 `WorkspaceSetting` 里**唯一**的按工作区智能体字段(`tool`/`intent`/`spec`/`spec_review` 仍各只有一个系统级槽位,不提供按工作区覆盖)。页面第一个配置 Tab「默认 Agent」承载它,与系统设置的「默认 Agent」页签同构,只多一个居首的「继承系统默认」选项。
+
+- **继承即省略,绝不快照。** 缺失、空串、纯空白、非字符串都读作“继承系统默认”,`normalizeWorkspaceSetting` 把键整个**省略**(绝不写入当时的系统默认值——那会把动态继承冻成一份快照,系统默认之后的改动就到不了该工作区)。
+- **归一化镜像角色字段(`normalizeAgentRef`)。** 非空值去空白后保留为覆盖引用(具体 id 或虚拟组);指向已**禁用**的目标改写为按 `order_seq` 的下一个已启用智能体;指向已**删除**的具体智能体则**丢键**(工作区回到继承);清空的组同样改写,不误判为删除。
+- **系统保存清理全部工作区。** 系统设置保存时顺带清理 `projectConfigs` 里**每个**已存工作区的悬空覆盖(含从未打开过的)——一次系统保存携带整个映射。
+- **解析顺序。** 显式引用 → 工作区覆盖 → 系统默认 → `system`。显式系统级角色选择(非空 `toolAgentId` 等)先于覆盖命中;覆盖只回答“跟随默认”。工作区覆盖指向空虚拟组时解析**抛出** `agent.groupUnavailable`,不静默回落。
+
 ## 默认权限模式 `defaultMode`
 
 按 vendor 分组的默认权限模式映射(vendor id → 模式),规范化后三个键齐全:
@@ -70,11 +79,11 @@
 - **归一化。** 缺失/非数字/非有限数字回退 `2`;有限数字先取整,小于 1 钳制为 1;合法正整数原值保留。`normalizeWorkspaceSetting` 的返回值始终包含规范化后的数字,保存其他字段时原样保留,无需数据库迁移(存于既有 `projectConfigs` 配置 JSON)。`getAutomationConcurrency(workspacePath)` 是对账内核读取该值的统一访问器,每次 pass 重读,保存后下一 tick 即生效、无需重启队列。
 - **队列语义。** 内核按意图 ID 去重统计本轮占用:内核持有的 work run、队列已挂接观察的活跃自动化会话、本轮刚选中的开发意图;占用数达到上限即不再挑选,其余合格意图以 `blocked_concurrency_gate` 与「已达并发上限 N」阻塞。调低上限**不取消/停止/park** 已在途会话(允许暂时超额,持续阻止新派发);调高上限后按每轮一个动作逐步补足。
 - **默认 2 是有意收敛。** 早期 `worktree` 模式对并行**无上限**,意图一多会瞬间拉起大量 AI 会话;默认 2 把未配置工作区收敛为最多两个意图并行开发,高吞吐用户可显式调高。
-- **界面。** 工作区设置页第五个配置 Tab「自动化」承载 `automationEnabled` 总开关与并发数输入(min 1、步长 1);`automationEnabled` 与自动化页/工作台仪表盘共用同一字段,任一入口保存后经设置回推校准其余入口,不引入镜像字段。
+- **界面。** 工作区设置页第六个配置 Tab「自动化」承载 `automationEnabled` 总开关与并发数输入(min 1、步长 1);`automationEnabled` 与自动化页/工作台仪表盘共用同一字段,任一入口保存后经设置回推校准其余入口,不引入镜像字段。
 
 ## 本机观测(只读,不属于 `WorkspaceSetting`)
 
-工作区设置页的第六个 Tab「本机观测」展示 park 恢复率,用于判断本批 park 指引是否有效、后续 P1/P2 是否值得投入。
+工作区设置页的第七个 Tab「本机观测」展示 park 恢复率,用于判断本批 park 指引是否有效、后续 P1/P2 是否值得投入。
 
 - **不是配置。** 派生统计**不进** `SystemSettings` / `WorkspaceSetting`,也不进任何保存负载;该 Tab 的字段白名单为空,因此永不脏、不参与切换确认、无 Save 按钮,`buildPayload` 对它返回 `null` 使程序化保存也发不出东西。避免设置保存把观测数据回写成配置。
 - **专用只读协议。** `get_park_recovery_stats`(workspaceName)→ `park_recovery_stats`(workspaceName + `{ windowMs, eligible, recovered, pending, rate }` 或结构化 `error`)。服务端沿用既有工作区解析与访问边界,无法解析的工作区一律拒绝;响应不暴露单条事件、intent id、原因码或任意文本。回包按 `workspaceName` 对齐当前工作区,切换后到达的迟到回包被丢弃而非改标。
@@ -87,7 +96,7 @@
 
 ## 谁能访问本工作区(非配置,只读观察)
 
-第七个 Tab「访问」回答一个观察性的问题:现在谁够得到本工作区。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);账号范围的编辑面见 [system-setting](../system-setting/system-setting-spec.md#用户与访问)。
+第八个 Tab「访问」回答一个观察性的问题:现在谁够得到本工作区。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);账号范围的编辑面见 [system-setting](../system-setting/system-setting-spec.md#用户与访问)。
 
 - **非配置。** 本 Tab 不在 `WorkspaceSetting` 里,空字段白名单:永不脏、无 Save 按钮、不出现在任何保存载荷里。
 - **纯只读。** 没有生成、重置、吊销、工具范围、勾选或 Save 控件。key 的生命周期归其持有者(个人化设置),账号范围归管理员(系统设置);本页只展示两者相交后的结果,并指路到那两处。把授权入口留在这里,会让「本页是权威」这个已经被否定的印象继续成立。

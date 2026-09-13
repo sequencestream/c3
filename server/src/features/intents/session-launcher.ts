@@ -565,7 +565,7 @@ export async function launchWorkSession(
   // The agent a fresh work session will bind: the default role, which may be a
   // group. Resolved BEFORE the git branch strategy runs — a refusal here must not
   // leave a worktree behind.
-  const agentTarget = sessionAgentTargetForRole('default')
+  const agentTarget = sessionAgentTargetForRole('default', workspacePath)
   if (!agentTarget.ok) {
     releaseClaim()
     return {
@@ -812,7 +812,7 @@ function createFirstSpecSession(
 
   // The spec role's agent, resolved before the directory is scaffolded: a refusal
   // must not leave a seeded spec file and a backfilled `spec_path` behind.
-  const specTarget = sessionAgentTargetForRole('spec')
+  const specTarget = sessionAgentTargetForRole('spec', workspacePath)
   if (!specTarget.ok) {
     return {
       success: false,
@@ -972,7 +972,7 @@ export async function launchSpecReviewSession(
   }
 
   // The reviewer's agent, resolved before the runtime exists.
-  const reviewTarget = sessionAgentTargetForRole('spec_review')
+  const reviewTarget = sessionAgentTargetForRole('spec_review', workspacePath)
   if (!reviewTarget.ok) {
     return {
       success: false,
@@ -1065,7 +1065,7 @@ function createSpecSessionOnExistingPath(
   const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
   if (blocked) return blocked
 
-  const specTarget = sessionAgentTargetForRole('spec')
+  const specTarget = sessionAgentTargetForRole('spec', workspacePath)
   if (!specTarget.ok) {
     return {
       success: false,
@@ -1194,7 +1194,7 @@ async function resumeSpecSession(
     // Re-pin the spec agent on a restored runtime (a group re-pins as its ref).
     // An unusable group leaves the existing binding alone — this is a resume, and
     // the launch below reports the real cause if it cannot run.
-    const specTarget = sessionAgentTargetForRole('spec')
+    const specTarget = sessionAgentTargetForRole('spec', workspacePath)
     if (specTarget.ok) setSessionAgent(intent.specSessionId, specTarget.target.ref)
   }
   // Set on the live runtime too, not just a freshly restored one: a session

@@ -261,6 +261,9 @@
       },
       "provider": {
         "label": "Providers"
+      },
+      "defaultAgent": {
+        "label": "Default Agent"
       }
     },
     "agents": {
@@ -893,6 +896,14 @@
           "custom": "Other"
         }
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "Default Agent"
+      },
+      "hint": "Which agent runs when no executor is specified. It is also what every workspace inherits until it sets its own override on its Default Agent tab.",
+      "stale": "The agent you picked has been deleted. Choose another one before saving.",
+      "newAgentHint": "Candidates come from the saved agent registry: save a newly created agent on the Agent tab before you can pick it here."
     }
   },
   "personalizedSetting": {
@@ -3338,6 +3349,9 @@
       },
       "memories": {
         "label": "Memories"
+      },
+      "defaultAgent": {
+        "label": "Default Agent"
       }
     },
     "defaultMode": {
@@ -3653,6 +3667,21 @@
       "deleted": {
         "toast": "Deleted the memory “{title}”."
       }
+    },
+    "defaultAgent": {
+      "title": {
+        "label": "Default Agent"
+      },
+      "hint": "Which agent this workspace uses when no executor is specified. Leave it unset to inherit the system default; setting it changes the fallback inside this workspace only — the system setting and every other workspace are untouched.",
+      "picker": {
+        "label": "Default agent"
+      },
+      "groupPicker": {
+        "label": "Groups"
+      },
+      "inherit": "Inherit the system default agent",
+      "inheritNamed": "Inherit the system default agent (currently: {agent})",
+      "stale": "The agent you picked has been deleted. Choose another one, or go back to inheriting the system default."
     }
   },
   "files": {

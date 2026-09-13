@@ -264,6 +264,30 @@ export interface WorkspaceSetting {
    * occupancy drops below the cap.
    */
   automationConcurrency?: number
+  /**
+   * This workspace's **default-agent override** — the agent every entry inside the
+   * workspace that needs an unspecified executor falls back to, instead of
+   * {@link SystemSettings.defaultAgentId}.
+   *
+   * **Absent ⇒ inherit.** A missing key, an empty string and a whitespace-only
+   * string all mean "follow the system default", and normalize to the key being
+   * OMITTED — the system default is never snapshotted in here, or a dynamic
+   * inheritance would silently freeze into a copy. A non-string input reads as
+   * unconfigured. A non-empty value is trimmed and kept as the override reference:
+   * a concrete agent id, or a virtual group reference (`_c3_<vendor>_<group>`),
+   * which resolves through the group exactly like a system-level pick does.
+   *
+   * Normalization mirrors the system role fields (`normalizeAgentRef`): a
+   * **disabled** target is rewritten to the next enabled agent in `order_seq`
+   * order, an **emptied group** to the first enabled agent, and a **deleted**
+   * concrete agent drops the key so the workspace goes back to inheriting.
+   *
+   * Deliberately the ONLY per-workspace agent field: `tool`/`intent`/`spec`/
+   * `spec_review` keep exactly one system-level slot each. A role explicitly set at
+   * system level wins over this override — the workspace default only answers
+   * "follow the default", never "replace every role".
+   */
+  defaultAgentId?: string
 }
 
 /** Workspace-level MCP server connections and denylist configuration. */

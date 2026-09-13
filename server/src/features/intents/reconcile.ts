@@ -8,8 +8,9 @@
  * 2. Otherwise (process dead — server restart, crash, or normal exit) →
  *    load the session transcript's **last 3 assistant messages**, run the
  *    completion judge (`done`/`in_progress`/`stuck`):
- *    - `done` → commit & push, update status to `done` (auto-complete — the
- *      explicit reconcile exception to RM-R9, unified for manual & automation).
+ *    - `done` → commit & push, update status to `reviewing` (worktree + automate)
+ *      or `done` (no PR stage) — auto-complete, the explicit reconcile exception
+ *      to RM-R9, unified for manual & automation.
  *    - `in_progress` / `stuck` → mark `dangling` (keep `in_progress` status).
  *    - the judge could not run at all (provider misconfigured) → also `dangling`,
  *      never a verdict: an unavailable judge says nothing about the intent.
@@ -111,15 +112,22 @@ export async function reconcileInProgress(
         })
 
         if (verdict.verdict === 'done' && !signal.aborted) {
-          // Auto-complete: commit & push, then mark done.
+          // Auto-complete: commit & push, then mark done / reviewing by mode.
           const res = await deps.commitAndPush(cwd, `feat: ${req.title}`)
           if (res.ok) {
-            deps.updateStatus(req.id, 'done')
-            publishIntentStatusTransition(workspacePath, req, req.status, 'done')
+            // `worktree` + `automate` has a PR stage pending, so it enters
+            // `reviewing` (no PR is filed HERE — that is the queue / dev-cleanup
+            // job); every other mode has no PR stage, so `done` keeps its meaning.
+            const next: IntentStatus =
+              deps.getGitBranchMode(workspacePath) === 'worktree' && req.automate
+                ? 'reviewing'
+                : 'done'
+            deps.updateStatus(req.id, next)
+            publishIntentStatusTransition(workspacePath, req, req.status, next)
             runStatus = 'idle'
             autoCompleted = true
             console.log(
-              `[c3:reconcile]「${req.title}」进程已死, judge 判定完成 → auto done (已提交${res.committed ? '' : '(无变更)'}/已推送)`,
+              `[c3:reconcile]「${req.title}」进程已死, judge 判定完成 → auto ${next} (已提交${res.committed ? '' : '(无变更)'}/已推送)`,
             )
           } else {
             // Commit/push failed — keep dangling (don't auto-complete).

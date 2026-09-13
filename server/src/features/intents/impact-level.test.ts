@@ -160,7 +160,7 @@ describe('impact level — column + historic rows', () => {
     const list = listIntents(proj)
     expect(list).toHaveLength(1)
     expect(list[0].impactLevel).toBeNull()
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(25)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(26)
   })
 
   it('narrows an uninterpretable persisted value to ungraded, not to a middle grade', () => {
@@ -308,7 +308,7 @@ describe('set_intent_impact_level — handler', () => {
     expect(getIntent(id)?.impactLevel).toBeNull()
   })
 
-  it.each(['in_progress', 'done'] as const)(
+  it.each(['in_progress', 'reviewing', 'done'] as const)(
     'refuses to write while %s, with nothing persisted and no broadcast',
     (status) => {
       const id = newIntent()

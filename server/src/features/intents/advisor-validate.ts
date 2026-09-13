@@ -103,6 +103,7 @@ export type AdvisorRejectReason =
   | 'session_required'
   | 'status_required'
   | 'target_status_done_forbidden'
+  | 'target_status_reviewing_forbidden'
   | 'illegal_status_transition'
   | 'concurrency_gate'
   | 'pending_question_unanswered'
@@ -281,6 +282,14 @@ export function validateAdvisorProposal(
         '顾问不得把意图标记为 done——自动完成的唯一例外属于队列的评判+提交+推送路径',
         false,
         { targetStatus: 'done' },
+      )
+    }
+    if (proposal.targetStatus === 'reviewing') {
+      return reject(
+        'target_status_reviewing_forbidden',
+        '顾问不得把意图标记为 reviewing——它由开发完成自动派生,不是人工设定项',
+        false,
+        { targetStatus: 'reviewing' },
       )
     }
     if (!canTransition(facts.intent.status, proposal.targetStatus)) {

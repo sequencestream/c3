@@ -1009,7 +1009,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   // making the comm/refine conversation reopenable from the intent detail.
   registerPendingIntentLink(chatId, req.id)
   sendBaselineNotice(conn, req.id, cwd.prepared.baselineDrift)
-  const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
+  const firstPrompt = `开始完善已存在意图 ${req.id}(当前状态:${req.status})。标题:${req.title}。当前内容:${req.content}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${req.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress、reviewing 或 done 则无法修改,请告知我。`
   try {
     await ctx.launchRun(rt, firstPrompt)
   } catch (err) {

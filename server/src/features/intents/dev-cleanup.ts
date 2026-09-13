@@ -209,13 +209,16 @@ export async function runManualDevCleanup(
   const head = await deps.getHeadCommit(cwd)
   if (head) deps.setLatestCommitHash(intentId, head)
 
-  // ③ Only a `done` intent gets a PR. Read the intent back rather than trusting
-  // the snapshot taken before the commit: a session that ends while the work is
-  // still in progress is a NORMAL skip here — commit + push and the Git field
-  // write-back above already happened, and no failure todo is raised. The user
-  // marks the intent `done` (or presses 创建 PR) when the work really is over.
+  // ③ Only a `done` / `reviewing` intent gets a PR. Read the intent back rather
+  // than trusting the snapshot taken before the commit: a session that ends while
+  // the work is still in progress is a NORMAL skip here — commit + push and the
+  // Git field write-back above already happened, and no failure todo is raised.
+  // The user marks the intent `done` (or presses 创建 PR) when the work really is
+  // over. `reviewing` is the automatic path's "work done, PR not yet settled"
+  // state, so this second entry point must also file its PR (idempotently guarded
+  // by step ④), or the relay would wait on an intent with no PR to review.
   const current = deps.getIntent(intentId) ?? req
-  if (current.status !== 'done') {
+  if (current.status !== 'done' && current.status !== 'reviewing') {
     deps.broadcastIntents(workspacePath)
     return { kind: 'success', createdPr: false }
   }

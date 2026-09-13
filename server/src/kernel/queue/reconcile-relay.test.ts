@@ -22,11 +22,11 @@ import {
 
 const NOW = 1_700_000_000_000
 
-/** A `done` intent with one live PR — the relay's starting world. */
+/** A `reviewing` intent with one live PR — the relay's starting world. */
 function relayIntent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFact {
   return {
     title: `intent-${over.id}`,
-    status: 'done',
+    status: 'reviewing',
     priority: 'P2',
     automate: true,
     dependsOn: [],
@@ -141,10 +141,11 @@ describe('relay candidates', () => {
     })
   })
 
-  it('never engages without done + automate + a live PR', () => {
+  it('never engages without reviewing + automate + a live PR', () => {
     const worlds: Array<[string, Partial<QueueIntentFact>]> = [
       ['work still in progress', { status: 'in_progress' }],
       ['work not started', { status: 'todo' }],
+      ['already done (converged)', { status: 'done' }],
       ['cancelled', { status: 'cancelled' }],
       ['not automated', { automate: false }],
       ['every PR merged or closed', { hasActivePr: false }],
@@ -194,7 +195,7 @@ describe('relay candidates', () => {
       relayEngaged({
         worktreeMode: false,
         automate: true,
-        status: 'done',
+        status: 'reviewing',
         hasActivePr: true,
         reviewStatus: null,
         impactLevel: 'L2',
@@ -206,7 +207,7 @@ describe('relay candidates', () => {
     const engaged = relayEngaged({
       worktreeMode: true,
       automate: true,
-      status: 'done',
+      status: 'reviewing',
       hasActivePr: true,
       reviewStatus: null,
       impactLevel: 'L2',
@@ -216,7 +217,7 @@ describe('relay candidates', () => {
       relayEngaged({
         worktreeMode: true,
         automate: true,
-        status: 'done',
+        status: 'reviewing',
         hasActivePr: true,
         reviewStatus: 'approved',
         impactLevel: 'L2',

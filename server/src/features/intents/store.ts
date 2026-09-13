@@ -63,7 +63,7 @@ import { readSpecFingerprint } from './spec-review.js'
 import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
-const SCHEMA_VERSION = 25
+const SCHEMA_VERSION = 26
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -260,6 +260,9 @@ const BACKFILL_INTENT_PRS_MIGRATION = 'intents.backfill_intent_prs.v1'
 
 /** Marker id for the one-shot `base_branch` backfill of pre-existing intents. */
 const BACKFILL_BASE_BRANCH_MIGRATION = 'intents.backfill_base_branch.v1'
+
+/** Marker id for the one-shot `done → reviewing` migration of pre-existing intents. */
+const BACKFILL_REVIEWING_STATUS_MIGRATION = 'intents.backfill_reviewing_status.v1'
 
 let schemaReady = false
 
@@ -590,6 +593,41 @@ function backfillIntentBaseBranch(d: Db): void {
   })
 }
 
+/**
+ * v25 → v26: re-classify pre-existing `done` intents that never finished their
+ * PR loop as `reviewing`, ONCE. Under the new state machine `done` means "review
+ * settled AND PRs merged", so an automated `done` intent that still holds a live
+ * PR row was never really finished — it was marked done before the PR even
+ * existed, which is exactly the ordering bug this refactor exists to fix.
+ *
+ * The gate is (a) `automate` and (b) an ACTIVE PR row (`reviewing` / `failed` /
+ * `rejected`). An active PR row is itself proof the intent was in `worktree` mode
+ * — the PR stage does not exist under `current-branch` — so "workspace is
+ * worktree" needs no separate column. Everything else (no active PR, not
+ * automated) is a legitimate loose completion and stays `done` untouched.
+ *
+ * Guarded by a `schema_migrations` marker: re-running is naturally harmless (a
+ * migrated row no longer matches `status='done'`), but the marker keeps the pass
+ * off every start. `completed_at` is cleared so the row does not claim a
+ * completion moment it has not yet reached; the convergence check stamps it
+ * again when the loop truly closes.
+ */
+function backfillReviewingStatus(d: Db): void {
+  if (hasMigration(d, BACKFILL_REVIEWING_STATUS_MIGRATION)) return
+  tx(d, () => {
+    d.run(
+      `UPDATE intents SET status='reviewing', completed_at=NULL
+       WHERE status='done' AND automate=1
+         AND EXISTS (
+           SELECT 1 FROM intent_prs p
+           WHERE p.intent_id = intents.id
+             AND p.status IN ('reviewing','failed','rejected')
+         )`,
+    )
+    markMigration(d, BACKFILL_REVIEWING_STATUS_MIGRATION)
+  })
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
@@ -710,6 +748,7 @@ function db(): Db | null {
     // again, and it stays as the rollback script's landing site.
     backfillIntentPrs(d)
     backfillIntentBaseBranch(d)
+    backfillReviewingStatus(d)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -1269,8 +1308,8 @@ export function insertIntents(
  * BEFORE any write so the whole batch is atomic — any failure rejects it with nothing
  * persisted:
  *  - an UPDATE `id` must resolve to an intent in THIS project (else throw);
- *  - an UPDATE target in `in_progress` or `done` is immutable → throw (caller surfaces
- *    a "正在开发 / 已完成,不可修改" message);
+ *  - an UPDATE target in `in_progress` / `reviewing` / `done` is immutable → throw
+ *    (caller surfaces a "正在开发 / 评审中 / 已完成,不可修改" message);
  *  - `dependsOnIndexes` out-of-range / self / cyclic → throw (resolveBatchDependencies).
  *
  * Status rules on UPDATE: omitted `status` keeps `draft`/`todo` and reactivates
@@ -1327,8 +1366,9 @@ export function upsertIntents(
     if (!row || row.workspace_name !== proj) {
       throw new Error(`无法更新意图 ${it.id}:它在本项目中不存在`)
     }
-    if (row.status === 'in_progress' || row.status === 'done') {
-      const why = row.status === 'in_progress' ? '正在开发' : '已完成'
+    if (row.status === 'in_progress' || row.status === 'reviewing' || row.status === 'done') {
+      const why =
+        row.status === 'in_progress' ? '正在开发' : row.status === 'reviewing' ? '评审中' : '已完成'
       throw new Error(`意图 ${it.id}(${row.title})${why},不可修改`)
     }
     return row
@@ -1626,11 +1666,17 @@ export function deleteEmptyDraftIntent(id: string): void {
  *   └──→ cancelled
  *
  *              in_progress ──→ done
+ *              in_progress ──→ reviewing ──→ done
+ *              reviewing ──→ cancelled
  * ```
  * `draft ⇄ todo` is bidirectional: `draft → todo` is the normal promotion, and
  * `todo → draft` is a manual revert (the only backward edge into a non-terminal
  * earlier state, exposed by the intent detail title-bar buttons).
- * Terminal states (`done`, `cancelled`) have no outgoing edges.
+ * `reviewing` is entered only by the automatic completion paths (queue / dead-
+ * process reconcile) and leaves only toward `done` (convergence check) or
+ * `cancelled` (the user abandons an unsettled intent); there is no edge back to
+ * `in_progress` — reworking an unsettled PR is the relay's fix loop, not a state
+ * rollback. Terminal states (`done`, `cancelled`) have no outgoing edges.
  * Same-state transitions are always allowed (no-op).
  */
 export function canTransition(from: IntentStatus, to: IntentStatus): boolean {
@@ -1638,7 +1684,8 @@ export function canTransition(from: IntentStatus, to: IntentStatus): boolean {
   const ALLOWED: Record<IntentStatus, readonly IntentStatus[]> = {
     draft: ['todo', 'cancelled', 'blocked'],
     todo: ['draft', 'in_progress', 'cancelled', 'blocked'],
-    in_progress: ['done', 'cancelled', 'blocked', 'failed'],
+    in_progress: ['reviewing', 'done', 'cancelled', 'blocked', 'failed'],
+    reviewing: ['done', 'cancelled'],
     done: [],
     cancelled: [],
     blocked: ['todo', 'cancelled'],

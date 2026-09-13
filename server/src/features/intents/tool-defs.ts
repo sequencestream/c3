@@ -22,6 +22,7 @@ const INTENT_STATUSES = [
   'draft',
   'todo',
   'in_progress',
+  'reviewing',
   'done',
   'cancelled',
 ] as const satisfies readonly IntentStatus[]

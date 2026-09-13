@@ -1209,6 +1209,9 @@
       "inProgress": {
         "label": "进行中"
       },
+      "reviewing": {
+        "label": "评审中"
+      },
       "done": {
         "label": "已完成"
       },

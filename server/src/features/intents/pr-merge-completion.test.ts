@@ -16,6 +16,7 @@ import {
   insertIntents,
   listIntentLogs,
   resetStoreForTests,
+  updateIntentReviewFixStatus,
   updateStatus,
   upsertIntentPr,
 } from './store.js'
@@ -55,6 +56,21 @@ function inProgressIntent(title: string): string {
     { title, shortEnTitle: title.toLowerCase(), content: '', priority: 'P1' },
   ])
   updateStatus(intent.id, 'in_progress')
+  return intent.id
+}
+
+/** One reviewing intent, optionally pre-graded, ready for the convergence check. */
+function reviewingIntent(title: string, impactLevel?: 'L3' | 'L5'): string {
+  const [intent] = insertIntents(proj, [
+    {
+      title,
+      shortEnTitle: title.toLowerCase(),
+      content: '',
+      priority: 'P1',
+      ...(impactLevel ? { impactLevel } : {}),
+    },
+  ])
+  updateStatus(intent.id, 'reviewing')
   return intent.id
 }
 
@@ -126,5 +142,42 @@ describe('completeIntentOnPrsMerged', () => {
     expect(getIntent(todo.id)?.status).toBe('todo')
 
     expect(completeIntentOnPrsMerged(proj, 'no-such-intent')).toBe(false)
+  })
+})
+
+describe('reviewing → done convergence', () => {
+  it('merge-then-approve: a merged PR alone is not enough until the review settles', () => {
+    const id = reviewingIntent('Merge first')
+    upsertIntentPr({ intentId: id, number: '20', status: 'merged' })
+
+    // Review has not yet returned a conclusion → the intent must stay reviewing.
+    expect(completeIntentOnPrsMerged(proj, id)).toBe(false)
+    expect(getIntent(id)?.status).toBe('reviewing')
+
+    updateIntentReviewFixStatus(id, { reviewStatus: 'approved' })
+    expect(completeIntentOnPrsMerged(proj, id)).toBe(true)
+    expect(getIntent(id)?.status).toBe('done')
+  })
+
+  it('approve-then-merge: approval alone is not enough while any PR is still open', () => {
+    const id = reviewingIntent('Approve first')
+    upsertIntentPr({ intentId: id, number: '21', status: 'reviewing' })
+    updateIntentReviewFixStatus(id, { reviewStatus: 'approved' })
+
+    expect(completeIntentOnPrsMerged(proj, id)).toBe(false)
+    expect(getIntent(id)?.status).toBe('reviewing')
+
+    upsertIntentPr({ intentId: id, number: '21', status: 'merged' })
+    expect(completeIntentOnPrsMerged(proj, id)).toBe(true)
+    expect(getIntent(id)?.status).toBe('done')
+  })
+
+  it('L5-direct-merge: an exempt intent converges on the merge alone, no review needed', () => {
+    const id = reviewingIntent('L5 merge', 'L5')
+    upsertIntentPr({ intentId: id, number: '22', status: 'merged' })
+
+    // needsReview(L5) is false, so a merged aggregate converges without approval.
+    expect(completeIntentOnPrsMerged(proj, id)).toBe(true)
+    expect(getIntent(id)?.status).toBe('done')
   })
 })

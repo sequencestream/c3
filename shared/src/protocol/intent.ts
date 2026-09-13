@@ -66,18 +66,25 @@ export const INTENT_FIX_STATUSES = [
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
  * - `in_progress` — work launched (work session running).
+ * - `reviewing` — work is committed and (in `worktree` mode) its PR is filed;
+ *   the review / fix / merge loop is not yet settled. It is the only state the
+ *   PR review/fix relay lives in, and the only state the convergence check can
+ *   move to `done`. An automatic path enters it only for a `worktree` workspace
+ *   and an `automate` intent; every other completion writes `done` directly.
  * - `done` / `cancelled` — terminal. `cancelled` is only ever set by the user;
- *   `done` is normally the user's call too, but three documented server paths
- *   derive it: the automation queue after a verified completion judgement, the
- *   on-enter reconcile of a dead work session, and an intent whose PRs have all
- *   merged.
+ *   `done` means the FULL loop is closed — review settled (exempt or `approved`)
+ *   AND the PR aggregate `merged` — and is normally the user's call too. Three
+ *   documented server paths derive it: the automation queue after a verified
+ *   completion judgement in a no-PR-stage mode, the on-enter reconcile of a dead
+ *   work session in a no-PR-stage mode, and the convergence check on a
+ *   `reviewing` intent whose review settled and whose PRs all merged.
  * - `blocked` — interrupted by a dependency rollback, rebase conflict, etc.
  *   May re-enter `todo` once unblocked.
  * - `failed` — CI / build / test failure hit while `in_progress`.
  *   May re-enter `todo` for a retry.
  */
 export type IntentStatus =
-  'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled' | 'blocked' | 'failed'
+  'draft' | 'todo' | 'in_progress' | 'reviewing' | 'done' | 'cancelled' | 'blocked' | 'failed'
 
 /**
  * Coarse-grained phase of a manual `start_development` launch, carried by the

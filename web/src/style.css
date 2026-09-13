@@ -4307,6 +4307,10 @@ select.agent-field {
   background: rgba(245, 158, 11, 0.15);
   color: var(--c-warning-text);
 }
+.req-status.reviewing {
+  background: var(--c-info-soft);
+  color: var(--c-info);
+}
 .req-status.done {
   background: rgba(34, 197, 94, 0.15);
   color: var(--c-success-text);

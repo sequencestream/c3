@@ -21,6 +21,7 @@ export const STATUS_LABELS: Record<IntentStatus, string> = {
   draft: 'Draft',
   todo: 'To do',
   in_progress: 'In progress',
+  reviewing: 'Reviewing',
   done: 'Done',
   cancelled: 'Cancelled',
   blocked: 'Blocked',

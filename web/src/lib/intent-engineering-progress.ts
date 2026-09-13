@@ -101,7 +101,7 @@ export function deriveIntentEngineeringProgress(
   progress.push({
     stage: 'work',
     state:
-      intent.status === 'done'
+      intent.status === 'done' || intent.status === 'reviewing'
         ? 'completed'
         : hasWorkEvidence || hasActiveWorkStatus
           ? 'in_progress'

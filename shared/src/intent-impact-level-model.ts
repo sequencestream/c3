@@ -31,12 +31,13 @@ export interface ImpactLevelEditFacts {
 
 /**
  * `true` while `impactLevel` may still be changed — i.e. while the intent is
- * still modifiable at all. `in_progress` and `done` are locked, the same pair
- * `save_intents` refuses to upsert, so the grade cannot be edited through one
- * door while the other holds it shut.
+ * still modifiable at all. `in_progress`, `reviewing` and `done` are locked, the
+ * same set `save_intents` refuses to upsert (the code has already shipped, so
+ * its reach is a fact, not a grade someone may still re-declare mid-review), so
+ * the grade cannot be edited through one door while the other holds it shut.
  */
 export function canEditIntentImpactLevel(facts: ImpactLevelEditFacts): boolean {
-  return facts.status !== 'in_progress' && facts.status !== 'done'
+  return facts.status !== 'in_progress' && facts.status !== 'reviewing' && facts.status !== 'done'
 }
 
 /**

@@ -132,11 +132,11 @@ describe('buildQueueDetail — the relay shares the scheduler’s candidate rule
 
   const ids = () => build([]).items.map((i) => i.intentId)
 
-  it('keeps a done intent whose PR is still under review', () => {
+  it('keeps a reviewing intent whose PR is still under review', () => {
     intents.push(
       fake({
         id: 'relaying',
-        status: 'done',
+        status: 'reviewing',
         prs: [{ status: 'reviewing' }],
         reviewStatus: 'pending',
       }),
@@ -148,7 +148,7 @@ describe('buildQueueDetail — the relay shares the scheduler’s candidate rule
     intents.push(
       fake({
         id: 'approved',
-        status: 'done',
+        status: 'reviewing',
         prs: [{ status: 'reviewing' }],
         reviewStatus: 'approved',
       }),
@@ -156,16 +156,26 @@ describe('buildQueueDetail — the relay shares the scheduler’s candidate rule
     expect(ids()).toEqual([])
   })
 
-  it('drops a done L5 intent that needs no review at all', () => {
+  it('drops a reviewing L5 intent that needs no review at all', () => {
     intents.push(
-      fake({ id: 'cosmetic', status: 'done', prs: [{ status: 'reviewing' }], impactLevel: 'L5' }),
+      fake({
+        id: 'cosmetic',
+        status: 'reviewing',
+        prs: [{ status: 'reviewing' }],
+        impactLevel: 'L5',
+      }),
     )
     expect(ids()).toEqual([])
   })
 
-  it('drops a done intent whose PRs all reached a terminal', () => {
+  it('drops a reviewing intent whose PRs all reached a terminal', () => {
     intents.push(
-      fake({ id: 'landed', status: 'done', prs: [{ status: 'merged' }], reviewStatus: 'pending' }),
+      fake({
+        id: 'landed',
+        status: 'reviewing',
+        prs: [{ status: 'merged' }],
+        reviewStatus: 'pending',
+      }),
     )
     expect(ids()).toEqual([])
   })
@@ -174,7 +184,7 @@ describe('buildQueueDetail — the relay shares the scheduler’s candidate rule
     intents.push(
       fake({
         id: 'stuck',
-        status: 'done',
+        status: 'reviewing',
         prs: [{ status: 'reviewing' }],
         reviewStatus: 'rejected',
       }),

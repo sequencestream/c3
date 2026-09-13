@@ -940,6 +940,9 @@
       },
       "light": {
         "label": "浅色"
+      },
+      "solarized-light": {
+        "label": "Solarized Light"
       }
     },
     "fontScale": {

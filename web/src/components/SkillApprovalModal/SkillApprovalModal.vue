@@ -136,7 +136,7 @@ function onCancel() {
   display: block;
   font-family: var(--font-mono);
   font-size: var(--fs-code);
-  background: var(--c-bg-card, var(--c-code-bg));
+  background: var(--c-code);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-sm);
   margin-bottom: var(--sp-4);

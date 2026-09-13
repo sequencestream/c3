@@ -731,7 +731,7 @@ textarea {
   padding: 12px;
   border: 1px solid var(--c-border);
   border-radius: 8px;
-  background: var(--c-bg-subtle, var(--c-input));
+  background: var(--c-input);
   font-size: 13px;
   display: flex;
   flex-direction: column;

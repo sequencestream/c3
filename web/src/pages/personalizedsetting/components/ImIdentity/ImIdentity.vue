@@ -255,7 +255,7 @@ function confirmRevoke(): void {
   word-break: break-all;
   padding: 8px;
   border-radius: 6px;
-  background: var(--c-surface-2, rgba(127, 127, 127, 0.12));
+  background: var(--c-muted-soft);
 }
 .im-actions {
   display: flex;

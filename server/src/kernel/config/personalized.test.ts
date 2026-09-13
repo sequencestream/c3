@@ -82,7 +82,7 @@ describe('normalizePersonalized', () => {
   })
 
   it('keeps every known theme', () => {
-    for (const theme of ['dark', 'light'] as const) {
+    for (const theme of ['dark', 'light', 'solarized-light'] as const) {
       expect(normalizePersonalized({ theme })).toEqual(rec('en', theme))
     }
   })

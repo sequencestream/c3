@@ -117,7 +117,7 @@ const steps = computed(() =>
   width: 14px;
   height: 14px;
   border: 2px solid var(--c-border);
-  border-top-color: var(--c-accent, #3b82f6);
+  border-top-color: var(--c-primary);
   border-radius: 50%;
   animation: sso-spin 0.7s linear infinite;
 }

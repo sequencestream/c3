@@ -717,7 +717,7 @@ function confirmRemove(): void {
   font-size: var(--fs-caption);
 }
 .provider-issue.error {
-  color: var(--c-danger-text);
+  color: var(--c-error-text);
 }
 .provider-issue.warning {
   color: var(--c-warning-text);

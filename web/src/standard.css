@@ -44,6 +44,14 @@
   --c-warning-text: #f59e0b;
   --c-error-text: #ef4444;
 
+  /* 柔和状态底 / 中性底 / 弱边框：独立语义，不并入同义别名。透明底须按实际父背景合成后审计。 */
+  --c-error-soft: rgba(239, 68, 68, 0.12);
+  --c-info-soft: rgba(59, 130, 246, 0.15);
+  --c-success-soft: rgba(34, 197, 94, 0.15);
+  --c-warning-soft: rgba(245, 158, 11, 0.15);
+  --c-muted-soft: rgba(127, 127, 127, 0.12);
+  --c-border-soft: rgba(58, 58, 66, 0.5);
+
   /* 对话气泡 */
   --c-msg-ai: #27272d; /* AI 消息背景 */
   --c-msg-user: #3c3f6b; /* 用户消息背景（偏蓝紫） */
@@ -151,12 +159,84 @@
   --c-info: #1d4ed8;
   --c-purple-text: #7e22ce;
 
+  /* 柔和状态底 / 中性底 / 弱边框：dark/light 同值时也在此显式声明，保持浅色块自足。 */
+  --c-error-soft: rgba(239, 68, 68, 0.12);
+  --c-info-soft: rgba(59, 130, 246, 0.15);
+  --c-success-soft: rgba(34, 197, 94, 0.15);
+  --c-warning-soft: rgba(245, 158, 11, 0.15);
+  --c-muted-soft: rgba(127, 127, 127, 0.12);
+  --c-border-soft: rgba(226, 226, 232, 0.5);
+
   --c-msg-ai: #f1f1f5;
   --c-msg-user: #e0e2f8;
 
   --c-hover: rgba(0, 0, 0, 0.04);
   --c-hover-strong: rgba(0, 0, 0, 0.06);
   --c-hover-stronger: rgba(0, 0, 0, 0.1);
+
+  --shadow-low: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-mid: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-high: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+
+/* ---- Solarized Light 模式 ----
+ * 取官方 Solarized 调色板：背景锚点 #fdf6e3（base3），强调基色 #268bd2（blue）。
+ * 官方前景 #657b83 与 #fdf6e3 仅约 4.13:1，达不到正文门槛，故正文/次要文字进一步加深；
+ * 状态文字、柔和底、渐变、悬停与焦点叠加色全部独立覆盖，阴影沿用浅色层级。 */
+:root[data-theme='solarized-light'] {
+  color-scheme: light;
+
+  /* 表面：页面/卡片同 base3，面板/输入/代码/AI 气泡为 base2，用户气泡偏暖绿。 */
+  --c-bg: #fdf6e3;
+  --c-panel: #eee8d5;
+  --c-card: #fdf6e3;
+  --c-input: #eee8d5;
+  --c-code: #eee8d5;
+  --c-border: #93a1a1;
+
+  /* 文字三档：正文 ≥4.5:1、禁用 ≥3:1，逐对见 lib/contrast.test.ts。 */
+  --c-text: #40565d;
+  --c-text-muted: #455b62;
+  --c-text-disabled: #586e75;
+
+  /* 强调色（blue / violet），渐变 blue → violet。 */
+  --c-primary: #268bd2;
+  --c-primary-2: #6c71c4;
+  --c-gradient: linear-gradient(135deg, #268bd2, #6c71c4);
+
+  /* 状态基色：green / yellow / red；信息文字用加深后的 blue。 */
+  --c-success: #859900;
+  --c-warning: #b58900;
+  --c-error: #dc322f;
+  --c-info: #17618e;
+
+  /* 有色文字整体下沉，保证在暖米白底上可读；实底/描边仍用未加 -text 的基色。 */
+  --c-primary-text: #17618e;
+  --c-primary-2-text: #514a8c;
+  --c-success-text: #436000;
+  --c-warning-text: #765600;
+  --c-error-text: #a52a29;
+  --c-purple-text: #514a8c;
+
+  /* 柔和状态底 / 中性底 / 弱边框：色相取自调色板，透明底须按父背景合成后审计。 */
+  --c-error-soft: rgba(220, 50, 47, 0.12);
+  --c-info-soft: rgba(38, 139, 210, 0.15);
+  --c-success-soft: rgba(133, 153, 0, 0.15);
+  --c-warning-soft: rgba(181, 137, 0, 0.15);
+  --c-muted-soft: rgba(101, 123, 131, 0.12);
+  --c-border-soft: rgba(147, 161, 161, 0.5);
+
+  /* 对话气泡 */
+  --c-msg-ai: #eee8d5;
+  --c-msg-user: #e8ead5;
+
+  /* 透明叠加（悬停 / 选中 / 幽灵态）：浅色层级用黑色，强调叠加用调色板色相。 */
+  --c-hover: rgba(0, 0, 0, 0.04);
+  --c-hover-strong: rgba(0, 0, 0, 0.06);
+  --c-hover-stronger: rgba(0, 0, 0, 0.1);
+  --c-primary-soft: rgba(38, 139, 210, 0.12);
+  --c-primary-glow: rgba(38, 139, 210, 0.25);
+  --c-purple-soft: rgba(108, 113, 196, 0.15);
 
   --shadow-low: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-mid: 0 8px 24px rgba(0, 0, 0, 0.12);

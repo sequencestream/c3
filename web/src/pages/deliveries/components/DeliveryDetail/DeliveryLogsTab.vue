@@ -119,7 +119,7 @@ function opLabel(op: DeliveryLogOperation): string {
   flex: 0 0 auto;
   padding: 0 var(--sp-1);
   border-radius: 4px;
-  background: var(--c-bg-muted, rgba(127, 127, 127, 0.12));
+  background: var(--c-muted-soft);
   color: var(--c-text);
   white-space: nowrap;
 }

@@ -941,6 +941,9 @@
       },
       "light": {
         "label": "라이트"
+      },
+      "solarized-light": {
+        "label": "Solarized Light"
       }
     },
     "fontScale": {

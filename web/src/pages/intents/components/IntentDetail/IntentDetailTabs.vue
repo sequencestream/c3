@@ -98,7 +98,7 @@ const emit = defineEmits<{ select: [tab: DetailTab] }>()
 }
 .intent-detail-tab.active {
   color: var(--c-text);
-  border-bottom-color: var(--c-accent, var(--c-text));
+  border-bottom-color: var(--c-primary);
   font-weight: 600;
 }
 /* 工作/意图/规范会话 tab 标签内联运行中状态点(复用全局 .session-status 视觉,inline 对齐文字)。 */

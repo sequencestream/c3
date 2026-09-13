@@ -321,7 +321,7 @@ watch(
   padding: var(--sp-2);
   border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: var(--c-bg-subtle, var(--c-bg));
+  background: var(--c-panel);
   font-size: var(--fs-caption);
 }
 .intent-detail-spec-review-verdict {
@@ -330,11 +330,11 @@ watch(
   font-weight: 600;
 }
 .intent-detail-spec-review-verdict.is-pass {
-  background: var(--c-success-bg, transparent);
+  background: var(--c-success-soft);
   color: var(--c-success-text);
 }
 .intent-detail-spec-review-verdict.is-changes {
-  background: var(--c-warning-bg, transparent);
+  background: var(--c-warning-soft);
   color: var(--c-warning-text);
 }
 .intent-detail-spec-review-rounds,

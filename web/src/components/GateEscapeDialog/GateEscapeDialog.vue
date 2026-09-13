@@ -187,7 +187,7 @@ const risk = computed(() =>
 }
 
 .ge-option.active {
-  border-color: var(--c-accent, var(--c-text));
+  border-color: var(--c-primary);
 }
 
 .ge-foot {

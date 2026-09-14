@@ -108,6 +108,21 @@ describe('normalizeAgentRef — delete restores following, disable rewrites', ()
     expect(normalizeAgentRef(registry, 'gone')).toBeNull()
   })
 
+  it('preserves the synthesized fallback across repeated normalization', () => {
+    const agents = [agent('a', { enabled: false }), agent('b', { enabled: false })]
+    for (const input of ['a', '_c3_claude_fast', SYSTEM_AGENT_ID]) {
+      const once = normalizeAgentRef(agents, input)
+      expect(once).toBe(SYSTEM_AGENT_ID)
+      expect(normalizeAgentRef(agents, once)).toBe(SYSTEM_AGENT_ID)
+    }
+    expect(normalizeAgentRef([], SYSTEM_AGENT_ID)).toBe(SYSTEM_AGENT_ID)
+    expect(normalizeAgentRef(agents, 'gone')).toBeNull()
+  })
+
+  it('clears a deleted system agent when another agent is enabled', () => {
+    expect(normalizeAgentRef(registry, SYSTEM_AGENT_ID)).toBeNull()
+  })
+
   it('keeps a group reference that still has an enabled member', () => {
     const agents = [agent('a'), agent('b', { group: 'fast' })]
     expect(normalizeAgentRef(agents, '_c3_claude_fast')).toBe('_c3_claude_fast')

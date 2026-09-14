@@ -424,13 +424,13 @@ describe('specReviewAgentId rewrite-on-store — one slot, same semantics as spe
     expect(loadSettings().specReviewAgentId).toBe('a3')
   })
 
-  it('rewrites a REMOVED reviewer the same way', () => {
+  it('clears a removed reviewer to follow the default agent', () => {
     saveSettings({
       agents: [agent('a1', 0), agent('a3', 2)],
       defaultAgentId: 'a1',
       specReviewAgentId: 'deleted-agent',
     } as unknown as SystemSettings)
-    expect(loadSettings().specReviewAgentId).toBe('a1')
+    expect(loadSettings().specReviewAgentId).toBe('')
   })
 
   it('falls back to SYSTEM_AGENT_ID when every agent is disabled', () => {
@@ -565,13 +565,13 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
     expect(loadSettings().automationAgentId).toBe('a3')
   })
 
-  it('rewrites a removed automationAgentId to the next enabled agent by order_seq', () => {
+  it('clears a removed automationAgentId to follow the default agent', () => {
     saveSettings({
       agents: [agent('a1', 0), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'gone',
     } as unknown as SystemSettings)
-    expect(loadSettings().automationAgentId).toBe('a1')
+    expect(loadSettings().automationAgentId).toBe('')
   })
 
   it('falls back to SYSTEM_AGENT_ID when a set automationAgentId has no enabled agent left', () => {
@@ -638,15 +638,15 @@ describe('reviewAgentId/fixAgentId rewrite-on-store — empty=follow-default, se
     expect(loadSettings().fixAgentId).toBe('a3')
   })
 
-  it('rewrites a removed reviewAgentId/fixAgentId to the next enabled agent by order_seq', () => {
+  it('clears removed reviewAgentId/fixAgentId to follow the default agent', () => {
     saveSettings({
       agents: [agent('a1', 0), agent('a3', 2)],
       defaultAgentId: 'a1',
       reviewAgentId: 'gone',
       fixAgentId: 'gone',
     } as unknown as SystemSettings)
-    expect(loadSettings().reviewAgentId).toBe('a1')
-    expect(loadSettings().fixAgentId).toBe('a1')
+    expect(loadSettings().reviewAgentId).toBe('')
+    expect(loadSettings().fixAgentId).toBe('')
   })
 
   it('falls back to SYSTEM_AGENT_ID when a set reviewAgentId/fixAgentId has no enabled agent left', () => {
@@ -659,6 +659,40 @@ describe('reviewAgentId/fixAgentId rewrite-on-store — empty=follow-default, se
     expect(loadSettings().reviewAgentId).toBe(SYSTEM_AGENT_ID)
     expect(loadSettings().fixAgentId).toBe(SYSTEM_AGENT_ID)
   })
+})
+
+it('persists the system fallback for every role across cache resets and repeated saves', () => {
+  const fields = [
+    'toolAgentId',
+    'intentAgentId',
+    'specAgentId',
+    'specReviewAgentId',
+    'automationAgentId',
+    'reviewAgentId',
+    'fixAgentId',
+    'workAgentId',
+  ] as const
+  saveSettings({
+    agents: [
+      {
+        id: 'disabled',
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'Disabled',
+        enabled: false,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ],
+    defaultAgentId: 'disabled',
+    ...Object.fromEntries(fields.map((field) => [field, 'disabled'])),
+  } as unknown as SystemSettings)
+
+  for (let pass = 0; pass < 2; pass++) {
+    resetSettingsCacheForTests()
+    const settings = loadSettings()
+    for (const field of fields) expect(settings[field]).toBe(SYSTEM_AGENT_ID)
+    saveSettings(settings)
+  }
 })
 
 describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {

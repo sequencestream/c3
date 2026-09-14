@@ -125,9 +125,10 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a mode select for each vendor in correct order', () => {
     const w = mountWs(null)
     // 2 codex policy selects (sandbox + approval) + 1 claude + 1 cursor
-    // + 1 git-branch-mode select + 1 workspace default-agent select = 6
+    // + 1 git-branch-mode select + 1 workspace default-agent select
+    // + 1 workspace work-agent select = 7
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(6)
+    expect(selects).toHaveLength(7)
     // Claude and Cursor each have a single mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-cursor"]').length).toBe(1)
@@ -188,11 +189,11 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
 
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
-    // 默认 Agent + 3 vendor row-labels + devSkill + rounds + speechChars
+    // 默认 Agent + 工作 Agent + 3 vendor row-labels + devSkill + rounds + speechChars
     // + gitBranchMode + defaultMainBranch + default-visible SDD spec root
-    // + fast-spec 两个阈值 + automation cap = 13
+    // + fast-spec 两个阈值 + automation cap = 14
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(13)
+    expect(labels).toHaveLength(14)
     expect(labels[0].text()).toBeTruthy()
   })
 

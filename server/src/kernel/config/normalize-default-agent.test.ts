@@ -140,6 +140,24 @@ describe('system role fields — delete clears, disable rewrites', () => {
     // deleted concrete id and cleared.
     expect(s.intentAgentId).toBe('a')
   })
+
+  it('clears the system workAgentId when its agent is DELETED', () => {
+    seedSystemSettings({
+      agents: [agent('a'), agent('b')],
+      defaultAgentId: 'a',
+      workAgentId: 'gone',
+    })
+    expect(loadSettings().workAgentId).toBe('')
+  })
+
+  it('rewrites the system workAgentId to the next enabled agent when DISABLED', () => {
+    seedSystemSettings({
+      agents: [agent('a'), agent('c', { enabled: false }), agent('d')],
+      defaultAgentId: 'a',
+      workAgentId: 'c',
+    })
+    expect(loadSettings().workAgentId).toBe('d')
+  })
 })
 
 describe('workspace defaultAgentId override — inherit, override, cleanup', () => {
@@ -208,6 +226,37 @@ describe('workspace defaultAgentId override — inherit, override, cleanup', () 
     })
     expect(loadWorkspaceSetting(WS_X).defaultAgentId).toBe('_c3_claude_fast')
     expect(loadWorkspaceSetting(WS_Y).defaultAgentId).toBe('a')
+  })
+
+  it('normalizes absent / blank workAgentId to INHERIT (key omitted)', () => {
+    seedSystemSettings({
+      agents: [agent('a')],
+      defaultAgentId: 'a',
+      projectConfigs: { [WS_Y]: { workAgentId: '   ' } },
+    })
+    expect(loadWorkspaceSetting(WS_Y).workAgentId).toBeUndefined()
+  })
+
+  it('keeps a valid workAgentId override, trimmed, and drops a DELETED one', () => {
+    seedSystemSettings({
+      agents: [agent('a'), agent('b')],
+      defaultAgentId: 'a',
+      projectConfigs: {
+        [WS_X]: { workAgentId: ' b ' },
+        [WS_Y]: { workAgentId: 'gone' },
+      },
+    })
+    expect(loadWorkspaceSetting(WS_X).workAgentId).toBe('b')
+    expect(loadWorkspaceSetting(WS_Y).workAgentId).toBeUndefined()
+  })
+
+  it('rewrites a DISABLED workAgentId override to the next enabled agent', () => {
+    seedSystemSettings({
+      agents: [agent('a'), agent('c', { enabled: false }), agent('d')],
+      defaultAgentId: 'a',
+      projectConfigs: { [WS_X]: { workAgentId: 'c' } },
+    })
+    expect(loadWorkspaceSetting(WS_X).workAgentId).toBe('d')
   })
 })
 

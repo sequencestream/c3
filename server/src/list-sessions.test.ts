@@ -226,6 +226,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       automationAgentId: '',
       reviewAgentId: '',
       fixAgentId: '',
+      workAgentId: '',
       showToolSessions: true,
     })
 
@@ -251,6 +252,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       automationAgentId: '',
       reviewAgentId: '',
       fixAgentId: '',
+      workAgentId: '',
       showToolSessions: true,
     })
     recordToolSession('tool-historic')

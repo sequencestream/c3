@@ -125,17 +125,23 @@ export function getDefaultAgentId(): string {
  * The agent ROLES a session or automation template can be resolved for. `default`
  * is the fallback every other role follows when its own field is the empty "follow
  * the default" sentinel; the dedicated slots are background tool sessions, intent
- * communication, spec authoring, spec review, and the two PR-review automation
- * template seeds (`review` for the review relay, `fix` for the failure fix). One
- * enum + one field map ({@link ROLE_SETTINGS_FIELD}) is what keeps the dedicated
- * roles from each re-implementing the resolution rules.
+ * communication, spec authoring, spec review, ordinary work sessions (`work`), and
+ * the two PR-review automation template seeds (`review` for the review relay, `fix`
+ * for the failure fix). One enum + one field map ({@link ROLE_SETTINGS_FIELD}) is
+ * what keeps the dedicated roles from each re-implementing the resolution rules.
  *
  * `review` and `fix` are agent ROLES, not session types: they seed the two
  * PR-review built-in automations' default executor and are consumed through the
  * shared {@link getRoleAgentId} / {@link resolveRoleAgentTarget} entry. They add no
  * SessionKind and no dedicated session-launch path.
+ *
+ * `work` is the one role whose own reference is resolved through a
+ * **workspace-first chain** (workspace `workAgentId` → system `workAgentId` → the
+ * default chain) rather than the plain "role field → default" chain — see
+ * {@link resolveRoleAgentTarget}.
  */
-export type AgentRole = 'default' | 'tool' | 'intent' | 'spec' | 'spec_review' | 'review' | 'fix'
+export type AgentRole =
+  'default' | 'tool' | 'intent' | 'spec' | 'spec_review' | 'review' | 'fix' | 'work'
 
 /** Which `SystemSettings` field carries each role's configured reference. */
 const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
@@ -146,6 +152,7 @@ const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
   spec_review: 'specReviewAgentId',
   review: 'reviewAgentId',
   fix: 'fixAgentId',
+  work: 'workAgentId',
 }
 
 /**
@@ -239,6 +246,7 @@ export function resolveAgentTarget(
   ref: string | null,
   cursor?: string | null,
   workspacePath?: string | null,
+  priorRefs?: ReadonlyArray<string | null | undefined>,
 ): AgentTarget {
   const settings = loadSettings()
   /** Rules 1–2 for one reference: the group/concrete target, or null to keep falling. */
@@ -252,6 +260,14 @@ export function resolveAgentTarget(
   }
   const explicit = targetFor(ref ?? undefined)
   if (explicit) return explicit
+  // Prior references (the work role's workspace→system chain) run AFTER the
+  // explicit pick but BEFORE the default chain. An empty value or an unknown
+  // concrete id keeps falling; an unusable GROUP throws from `targetFor` (an empty
+  // group is a configuration error, never a reason to skip to the next level).
+  for (const prior of priorRefs ?? []) {
+    const hit = targetFor(prior ?? undefined)
+    if (hit) return hit
+  }
   // Follow the default — the empty-role sentinel AND the unknown-id compat chain —
   // narrowest scope first, so a workspace override actually wins over the system value.
   if (workspacePath) {
@@ -272,9 +288,10 @@ export function tryResolveAgentTarget(
   ref: string | null,
   cursor?: string | null,
   workspacePath?: string | null,
+  priorRefs?: ReadonlyArray<string | null | undefined>,
 ): AgentTargetResult {
   try {
-    return { ok: true, target: resolveAgentTarget(ref, cursor, workspacePath) }
+    return { ok: true, target: resolveAgentTarget(ref, cursor, workspacePath, priorRefs) }
   } catch (err) {
     if (err instanceof AgentGroupUnavailableError) return { ok: false, groupRef: err.groupRef }
     throw err
@@ -296,14 +313,21 @@ export function getRoleAgentId(role: AgentRole): string {
  * `workspacePath` scopes which default a *following* role lands on. The `default`
  * role deliberately passes NO explicit reference: feeding it `defaultAgentId` would
  * make the system value an explicit pick and the workspace override could never
- * win. The other four keep their own field as the explicit pick, so an explicit
- * system-level role choice still outranks a workspace default.
+ * win. The other roles keep their own field as the explicit pick, so an explicit
+ * system-level role choice still outranks a workspace default — except `work`,
+ * which resolves through the workspace-first chain {@link workPriorRefs} (workspace
+ * `workAgentId` → system `workAgentId`) before falling back to the default chain.
  */
 export function resolveRoleAgentTarget(
   role: AgentRole,
   workspacePath?: string | null,
 ): AgentTarget {
-  return resolveAgentTarget(roleRefForResolve(role), null, workspacePath)
+  return resolveAgentTarget(
+    roleRefForResolve(role),
+    null,
+    workspacePath,
+    workPriorRefs(role, workspacePath),
+  )
 }
 
 /** {@link resolveRoleAgentTarget} without the throw (see {@link tryResolveAgentTarget}). */
@@ -311,12 +335,35 @@ export function tryResolveRoleAgentTarget(
   role: AgentRole,
   workspacePath?: string | null,
 ): AgentTargetResult {
-  return tryResolveAgentTarget(roleRefForResolve(role), null, workspacePath)
+  return tryResolveAgentTarget(
+    roleRefForResolve(role),
+    null,
+    workspacePath,
+    workPriorRefs(role, workspacePath),
+  )
 }
 
-/** The explicit reference a role contributes: none for `default` (see above). */
+/** The explicit reference a role contributes: none for `default` or `work` (see above). */
 function roleRefForResolve(role: AgentRole): string | null {
-  return role === 'default' ? null : getRoleAgentId(role) || null
+  return role === 'default' || role === 'work' ? null : getRoleAgentId(role) || null
+}
+
+/**
+ * The workspace-first prior reference chain for the `work` role — the ONE role that
+ * owns a per-workspace override. Yields `[workspace workAgentId, system workAgentId]`
+ * (workspace first, then system), so a workspace override wins over the system value
+ * while an empty workspace value still falls through to the system role. Every other
+ * role returns `undefined` — the generic resolver must not read work config for them.
+ */
+function workPriorRefs(
+  role: AgentRole,
+  workspacePath?: string | null,
+): Array<string | null | undefined> | undefined {
+  if (role !== 'work') return undefined
+  const refs: Array<string | null | undefined> = []
+  if (workspacePath) refs.push(loadWorkspaceSetting(workspacePath).workAgentId)
+  refs.push(getRoleAgentId('work'))
+  return refs
 }
 
 /**
@@ -363,6 +410,15 @@ export function getSpecAgentId(): string {
  */
 export function getSpecReviewAgentId(): string {
   return loadSettings().specReviewAgentId
+}
+
+/**
+ * The configured work-agent id (ordinary `SessionKind='work'` sessions' executor).
+ * An empty string means "follow the default agent" — see {@link resolveRoleAgentTarget}
+ * with role `'work'`, which resolves it workspace-first.
+ */
+export function getWorkAgentId(): string {
+  return loadSettings().workAgentId
 }
 
 /**

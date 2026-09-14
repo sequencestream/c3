@@ -22,6 +22,7 @@ const settings: SystemSettings = {
   automationAgentId: '',
   reviewAgentId: '',
   fixAgentId: '',
+  workAgentId: '',
 }
 
 vi.mock('../../kernel/config/index.js', () => ({

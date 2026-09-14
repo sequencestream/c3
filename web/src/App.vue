@@ -1273,6 +1273,7 @@ function onFilesChatWidth(px: number): void {
       :vendor-modes="vendorModes"
       :agents="serverSettings?.agents ?? []"
       :system-default-agent-id="serverSettings?.defaultAgentId ?? null"
+      :system-work-agent-id="serverSettings?.workAgentId ?? null"
       :link-statuses="skillLinkStatuses"
       :installing-skill-ids="installingSkillIds"
       :park-recovery-stats="parkRecoveryStats"

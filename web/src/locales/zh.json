@@ -308,6 +308,13 @@
         "label": "默认智能体",
         "empty": "无已启用的智能体"
       },
+      "work": {
+        "tooltip": "执行工作会话的智能体(spec 驱动交付)。留空即跟随工作区默认,再回落到系统默认。"
+      },
+      "workPicker": {
+        "label": "工作智能体",
+        "followDefault": "跟随默认智能体"
+      },
       "tool": {
         "tooltip": "执行后台工具型会话的智能体(完成判定、总结)"
       },
@@ -3758,7 +3765,16 @@
       },
       "inherit": "继承系统默认 Agent",
       "inheritNamed": "继承系统默认 Agent（当前：{agent}）",
-      "stale": "当前选择的 Agent 已被删除,请重新选择,或改回继承系统默认。"
+      "stale": "当前选择的 Agent 已被删除,请重新选择,或改回继承系统默认。",
+      "workPicker": {
+        "label": "工作智能体"
+      },
+      "work": {
+        "tooltip": "本工作区执行工作会话(spec 驱动交付)的智能体。不设置即继承系统的「工作 Agent」。",
+        "inherit": "继承系统工作智能体",
+        "inheritNamed": "继承系统工作智能体（当前：{agent}）",
+        "stale": "当前选择的工作智能体已被删除,请重新选择,或改回继承系统默认。"
+      }
     }
   },
   "codex": {

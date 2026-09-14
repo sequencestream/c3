@@ -4083,7 +4083,8 @@
       "wait": "待機中",
       "park": "park 済み",
       "block": "ブロック中",
-      "skip": "スキップ済み"
+      "skip": "スキップ済み",
+      "merge_prs": "PR マージ中"
     },
     "reason": {
       "none": "なし",
@@ -4114,7 +4115,10 @@
       "turn_error": "開発ターンがエラー",
       "judge_stuck": "実際には未完了と判定",
       "judge_unavailable": "完了判定が利用不可(ツール agent 設定)",
-      "pr_target_unavailable": "PR のターゲットが利用不可 — PR 未作成"
+      "pr_target_unavailable": "PR のターゲットが利用不可 — PR 未作成",
+      "pr_merging": "意図のアクティブ PR をマージ中",
+      "pr_merge_failed": "PR マージ失敗 — 人に引き渡し",
+      "pr_merge_unconfirmed": "PR マージ結果未確認 — 人に引き渡し"
     }
   },
   "logs": {

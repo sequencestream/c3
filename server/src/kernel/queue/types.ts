@@ -8,6 +8,7 @@
 import type {
   GitBranchMode,
   IntentFixStatus,
+  IntentPrForge,
   IntentImpactLevel,
   IntentPrStatus,
   IntentPriority,
@@ -180,6 +181,23 @@ export interface QueueIntentFact {
   fixSessionId: string | null
   /** The current fix round's conclusion; `null` when this round has no fix yet. */
   fixStatus: IntentFixStatus | null
+  // ── Post-review auto-merge facts ──
+  /**
+   * A VALID, unconsumed merge credential exists for this intent's current review
+   * round, reduced at the assembly boundary from the persisted grant plus the
+   * live PR ledger. `true` is the ONLY thing that turns an `approved` review into
+   * a merge instead of a hand-back: `automate`, `reviewing` and `approved` are
+   * necessary conditions, never sufficient ones, because a human backfill can
+   * produce all three without the queue ever having reviewed anything.
+   */
+  mergeAuthorized: boolean
+  /**
+   * A merge attempt is persisted as IN FLIGHT but this process holds no run for
+   * it — a restart landed between "claimed" and "settled". Such an intent gets a
+   * READ-ONLY forge reconcile, never a re-sent merge command, because the first
+   * command may well have succeeded.
+   */
+  mergeRecovery: boolean
 }
 
 /** Liveness of one work session, probed against the run registry. */
@@ -193,6 +211,76 @@ export interface QueueRunFact {
    */
   awaitingPermissionSince: number | null
 }
+
+/**
+ * One PR's identity as the queue pinned it when it claimed a review round.
+ *
+ * All five fields together are the identity: a number alone is ambiguous across
+ * repositories, and a number + repo alone says nothing about WHICH commit was
+ * reviewed. `headSha` is what makes the approval specific to the code that was
+ * actually read — a commit pushed after the review invalidates it.
+ */
+export interface QueuePrIdentity {
+  forge: IntentPrForge | null
+  repo: string | null
+  number: string
+  headBranch: string | null
+  baseBranch: string | null
+  /** The head commit at review-claim time; `null` when the forge could not be read. */
+  headSha: string | null
+}
+
+/**
+ * The queue's record that IT claimed this review round — the provenance half of
+ * the credential. Written when the review phase is claimed, long before any
+ * conclusion exists, so "did the queue review this?" is answered by a fact the
+ * queue wrote about itself and never by a session id an MCP argument named.
+ */
+export interface QueueReviewClaim {
+  /** The `pending:` placeholder, replaced by the real session id once bound. */
+  sessionId: string
+  /** The PR set this round was claimed against, in the order it was pinned. */
+  prs: readonly QueuePrIdentity[]
+  claimedAt: number
+}
+
+/**
+ * The credential an auto-merge needs: proof that THIS review round, run by the
+ * queue's own session, concluded `approved` over THIS PR set.
+ *
+ * It is deliberately not a boolean "was once auto-reviewed". A new review claim,
+ * a rewritten conclusion, a manual backfill, leaving `reviewing` or switching
+ * automation off all drop it, and consuming it (a merge attempt that ran) does
+ * too — so no credential can authorize a second, unreviewed merge.
+ */
+export interface QueueMergeGrant {
+  /** The session that produced the `approved` conclusion, as the SERVER bound it. */
+  reviewSessionId: string
+  prs: readonly QueuePrIdentity[]
+  grantedAt: number
+}
+
+/**
+ * How far this intent's auto-merge has got. Orchestration state only — it is
+ * never an `IntentStatus` and never a PR business status.
+ *
+ *   none          — no credential, or one that was never issued: manual merge.
+ *   pending       — a credential exists and no attempt has run yet.
+ *   running       — a merge command was claimed and may be in flight externally.
+ *   awaiting_sync — the CLI returned; the forge has not confirmed the terminal yet.
+ *   handed_back   — a human owns it now (failure, or an unconfirmed result).
+ *   completed     — every PR of the credential landed and the sync observed it.
+ */
+export const QUEUE_MERGE_PHASES = [
+  'none',
+  'pending',
+  'running',
+  'awaiting_sync',
+  'handed_back',
+  'completed',
+] as const
+
+export type QueueMergePhase = (typeof QUEUE_MERGE_PHASES)[number]
 
 /**
  * The only scheduling state that is persisted. Everything else (run phase,
@@ -212,6 +300,16 @@ export interface QueueIntentMeta {
   parkDetail: string | null
   /** Self-excitation guard: no kernel run for this intent before this instant. */
   cooldownUntil: number | null
+  // ── Post-review auto-merge ──
+  /** Whose review round the queue currently owns; `null` when it owns none. */
+  reviewClaim: QueueReviewClaim | null
+  /** The merge credential this round produced; `null` when it produced none. */
+  mergeGrant: QueueMergeGrant | null
+  mergePhase: QueueMergePhase
+  /** Displayable summary of the last merge outcome; never a CLI transcript. */
+  mergeDetail: string | null
+  /** When the current `running` attempt was claimed; `null` outside one. */
+  mergeStartedAt: number | null
   updatedAt: number
 }
 
@@ -226,6 +324,11 @@ export function emptyQueueIntentMeta(intentId: string): QueueIntentMeta {
     parkReason: null,
     parkDetail: null,
     cooldownUntil: null,
+    reviewClaim: null,
+    mergeGrant: null,
+    mergePhase: 'none',
+    mergeDetail: null,
+    mergeStartedAt: null,
     updatedAt: 0,
   }
 }
@@ -318,6 +421,19 @@ export const QUEUE_REASON_CODES = [
   'pr_reviewing',
   'pr_fixing',
   'pr_review_waiting',
+  // Post-review auto-merge: the queue holds a valid credential and is landing
+  // this intent's PRs itself.
+  'pr_merging',
+  // The merge was refused or errored (conflict, failing check, missing approval,
+  // forbidden strategy, CLI missing / not logged in, network, timeout). The intent
+  // stays `reviewing` and its review stays `approved` — only the AUTOMATIC merge
+  // is over, and a human owns the landing from here.
+  'pr_merge_failed',
+  // A merge command ran but the forge never confirmed the terminal state (a lost
+  // response, a restart mid-attempt). Deliberately distinct from
+  // `pr_merge_failed`: nothing is known to have failed, so nothing may be
+  // re-sent — a human reads the forge and decides.
+  'pr_merge_unconfirmed',
   // Three `Fix → re-review` rounds spent and the PR is STILL rejected. A human
   // owns it from here, so this is deliberately absent from
   // `AUTO_RECOVERABLE_PARK_REASONS` and a plain unpark grants no new budget.
@@ -373,6 +489,10 @@ export type QueueDecisionAction =
   //
   | 'launch_review'
   | 'launch_fix'
+  // The post-review merge. A verb of its own because it is the only queue action
+  // that changes state on the FORGE, and a decision log must never let it hide
+  // inside a review or a fix.
+  | 'merge_prs'
 
 export interface QueueDecision {
   intentId: string
@@ -443,6 +563,17 @@ export type QueueAction =
    * repeated action can never spend the budget twice.
    */
   | { kind: 'launch_fix'; intentId: string; origin: string; round: number }
+  /**
+   * Land this intent's active PRs on their own recorded base branches, under the
+   * merge credential its queue-driven review produced. The executor re-verifies
+   * the credential, the queue control state and the forge's own facts before it
+   * sends anything — the kernel decides only that a merge is DUE.
+   *
+   * `recover` marks the restart path: a previous attempt is persisted as in
+   * flight, so this pass may only RE-READ the forge. It never re-sends a merge,
+   * because the command it is recovering from may already have landed.
+   */
+  | { kind: 'merge_prs'; intentId: string; origin: string; recover: boolean }
 
 // ---------------------------------------------------------------------------
 // Reconcile I/O

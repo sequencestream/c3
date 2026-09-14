@@ -25,12 +25,21 @@
  * controller owns both), and any decision about WHETHER a phase may run (the
  * kernel owns that).
  */
-import type { Intent } from '@ccc/shared/protocol'
+import { randomUUID } from 'node:crypto'
+import type { Intent, IntentPr } from '@ccc/shared/protocol'
 import { activeIntentPrs } from '@ccc/shared'
-import type { QueueAction } from '../../kernel/queue/index.js'
-import { getGitBranchMode } from '../../kernel/config/index.js'
+import type { QueueAction, QueuePrIdentity } from '../../kernel/queue/index.js'
+import { getGitBranchMode, getForgeOverride } from '../../kernel/config/index.js'
+import { getForgePrLinkFacts } from '../../git.js'
 import type { QueueActionContext } from './queue-action-context.js'
+import {
+  bindQueueReviewClaimSession,
+  orderedActivePrs,
+  prIdentityOf,
+  recordQueueReviewClaim,
+} from './merge-authority.js'
 import { recordFailure, recordSuccess } from './queue-outcome-actions.js'
+import { bindRelayRunSession, registerRelayRun, unregisterRelayRun } from './relay-run-registry.js'
 import { getIntent } from './store.js'
 import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { runRelaySession } from '../automations/relay-session.js'
@@ -132,30 +141,105 @@ export async function runRelayPhase(
   // real session or release the placeholder.
   ctx.hooks.broadcastIntents(ctx.workspacePath)
 
+  // A REVIEW round the queue owns records its own provenance: the session that
+  // will run it and the exact PRs — down to the head commit — it is about to have
+  // reviewed. Written now, before the agent can say anything, so an `approved`
+  // conclusion later has something to be checked against that no caller authored.
+  // A failed pin leaves no claim, which simply means this round grants no merge
+  // authority; the review itself proceeds unchanged.
+  if (phase === 'review') {
+    recordQueueReviewClaim({
+      workspacePath: ctx.workspacePath,
+      intentId: req.id,
+      sessionId: pendingId,
+      prs: await pinReviewedPrs(ctx.workspacePath, cwd, req),
+    })
+  }
+
+  // The execution handle is minted HERE so the run can be registered before it
+  // launches: a tool call may arrive on the very first turn, and a registry that
+  // was populated afterwards would fail to attribute it.
+  const executionId = randomUUID()
+  registerRelayRun(executionId, {
+    intentId: req.id,
+    phase,
+    workspacePath: ctx.workspacePath,
+    sessionId: pendingId,
+  })
+
   const prompt =
     phase === 'review'
       ? buildRelayReviewPrompt({ intent: req, prs, round: action.round, sessionId: pendingId, cwd })
       : buildRelayFixPrompt({ intent: req, prs, round: action.round, sessionId: pendingId, cwd })
 
   let boundSessionId: string | null = null
-  const outcome = await runRelaySession({
-    workspaceName: ctx.workspacePath,
-    vendor: target.target.agent.vendor,
-    agentId: target.target.ref,
-    prompt,
-    toolAllowlist: phase === 'review' ? RELAY_REVIEW_TOOL_ALLOWLIST : RELAY_FIX_TOOL_ALLOWLIST,
-    cwd,
-    maxWallClockMs: RELAY_MAX_WALL_CLOCK_MS,
-    title: `${label}:${req.title}`,
-    onSessionBound: (sessionId) => {
-      boundSessionId = sessionId
-      bindRelayOccupancy(req.id, phase, pendingId, sessionId)
-      ctx.hooks.broadcastIntents(ctx.workspacePath)
-    },
-  })
+  let outcome: { ok: boolean; error: string | null }
+  try {
+    outcome = await runRelaySession({
+      workspaceName: ctx.workspacePath,
+      vendor: target.target.agent.vendor,
+      agentId: target.target.ref,
+      prompt,
+      toolAllowlist: phase === 'review' ? RELAY_REVIEW_TOOL_ALLOWLIST : RELAY_FIX_TOOL_ALLOWLIST,
+      cwd,
+      maxWallClockMs: RELAY_MAX_WALL_CLOCK_MS,
+      title: `${label}:${req.title}`,
+      executionId,
+      onSessionBound: (sessionId) => {
+        boundSessionId = sessionId
+        bindRelayOccupancy(req.id, phase, pendingId, sessionId)
+        bindRelayRunSession(executionId, sessionId)
+        if (phase === 'review') {
+          bindQueueReviewClaimSession(ctx.workspacePath, req.id, pendingId, sessionId)
+        }
+        ctx.hooks.broadcastIntents(ctx.workspacePath)
+      },
+    })
+  } finally {
+    // The registry answers "is this live call the queue's run?", so a run that has
+    // ended must stop answering it — on every path, including a throw.
+    unregisterRelayRun(executionId)
+  }
 
   if (ctx.isDisposed()) return
   settleRelayPhase(ctx, req, phase, label, pendingId, boundSessionId, outcome)
+}
+
+/**
+ * Pin the PR set a review round is about to judge, reading each PR's head commit
+ * from its own forge and repository.
+ *
+ * The head SHA is the part that makes an approval specific to code rather than to
+ * a PR number: a commit pushed after the review must not be merged under it. A PR
+ * the forge cannot be read for is pinned with `headSha: null`, and the merge
+ * executor refuses to send a command it cannot pin to an expected commit — so an
+ * unreadable forge degrades to "a human merges this", never to "merge whatever is
+ * there now".
+ */
+async function pinReviewedPrs(
+  workspacePath: string,
+  cwd: string,
+  req: Intent,
+): Promise<QueuePrIdentity[]> {
+  const fallbackForge = getForgeOverride(workspacePath)
+  const pinned: QueuePrIdentity[] = []
+  for (const pr of orderedActivePrs(req)) {
+    pinned.push(prIdentityOf(pr, await readHeadSha(cwd, pr, fallbackForge)))
+  }
+  return pinned
+}
+
+async function readHeadSha(
+  cwd: string,
+  pr: IntentPr,
+  fallbackForge: ReturnType<typeof getForgeOverride>,
+): Promise<string | null> {
+  try {
+    const facts = await getForgePrLinkFacts(cwd, pr.number, pr.forge ?? fallbackForge, pr.repo)
+    return facts.ok ? (facts.headSha ?? null) : null
+  } catch {
+    return null
+  }
 }
 
 /**

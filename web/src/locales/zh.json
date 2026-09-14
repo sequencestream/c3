@@ -4082,7 +4082,8 @@
       "wait": "等待中",
       "park": "已 park",
       "block": "被阻塞",
-      "skip": "已跳过"
+      "skip": "已跳过",
+      "merge_prs": "合并 PR 中"
     },
     "reason": {
       "none": "无",
@@ -4113,7 +4114,10 @@
       "turn_error": "开发 turn 出错",
       "judge_stuck": "判定未真实完成",
       "judge_unavailable": "完成判定不可用(工具 agent 配置)",
-      "pr_target_unavailable": "PR 目标不可用,未创建 PR"
+      "pr_target_unavailable": "PR 目标不可用,未创建 PR",
+      "pr_merging": "正在合并本意图的活跃 PR",
+      "pr_merge_failed": "PR 合并失败,已交回人工处理",
+      "pr_merge_unconfirmed": "PR 合并结果未确认,交回人工处理"
     }
   },
   "logs": {

@@ -22,8 +22,15 @@ import { randomUUID } from 'node:crypto'
 import { workspaceNameFor } from '../../state.js'
 
 const workspaceKey = workspaceNameFor
-import type { QueueIntentMeta, QueueReasonCode, QueueRunState } from '../../kernel/queue/index.js'
-import { emptyQueueIntentMeta } from '../../kernel/queue/index.js'
+import type {
+  QueueIntentMeta,
+  QueueMergeGrant,
+  QueueMergePhase,
+  QueueReasonCode,
+  QueueReviewClaim,
+  QueueRunState,
+} from '../../kernel/queue/index.js'
+import { QUEUE_MERGE_PHASES, emptyQueueIntentMeta } from '../../kernel/queue/index.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
 /** Keep the decision log bounded; older rows are pruned per workspace. */
@@ -47,6 +54,11 @@ CREATE TABLE IF NOT EXISTS queue_intent_state (
   park_reason    TEXT,
   park_detail    TEXT,
   cooldown_until INTEGER,
+  review_claim     TEXT,
+  merge_grant      TEXT,
+  merge_phase      TEXT NOT NULL DEFAULT 'none',
+  merge_detail     TEXT,
+  merge_started_at INTEGER,
   updated_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_queue_intent_workspace ON queue_intent_state(workspace_name);
@@ -69,12 +81,40 @@ CREATE INDEX IF NOT EXISTS idx_queue_decision_intent ON queue_decision_log(inten
 
 let schemaReady = false
 
+/**
+ * The auto-merge columns, added to an EXISTING `queue_intent_state`.
+ *
+ * Guarded on `PRAGMA table_info` rather than a version counter, so it is
+ * idempotent and re-entrant; a db interrupted halfway simply re-adds the missing
+ * column next time. Nothing is back-filled: a historic row reads as "no review
+ * claim, no credential, phase `none`", which is exactly "this intent is merged by
+ * a human" — the one safe default, since no stored fact could prove otherwise.
+ */
+const MERGE_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['review_claim', 'TEXT'],
+  ['merge_grant', 'TEXT'],
+  ['merge_phase', "TEXT NOT NULL DEFAULT 'none'"],
+  ['merge_detail', 'TEXT'],
+  ['merge_started_at', 'INTEGER'],
+]
+
+function ensureMergeColumns(d: Db): void {
+  const cols = new Set(
+    d.all<{ name: string }>('PRAGMA table_info(queue_intent_state)').map((c) => c.name),
+  )
+  for (const [col, decl] of MERGE_COLUMNS) {
+    if (cols.has(col)) continue
+    d.exec(`ALTER TABLE queue_intent_state ADD COLUMN ${col} ${decl}`)
+  }
+}
+
 function db(): Db | null {
   if (!isDbAvailable()) return null
   const d = getDb()
   if (!d) return null
   if (!schemaReady) {
     d.exec(SCHEMA)
+    ensureMergeColumns(d)
     schemaReady = true
   }
   return d
@@ -199,7 +239,48 @@ interface MetaDbRow {
   park_reason: string | null
   park_detail: string | null
   cooldown_until: number | null
+  review_claim: string | null
+  merge_grant: string | null
+  merge_phase: string | null
+  merge_detail: string | null
+  merge_started_at: number | null
   updated_at: number
+}
+
+/**
+ * Parse one JSON credential column. An unreadable or structurally wrong value
+ * reads as ABSENT, never as a partially trusted credential: the whole point of
+ * the grant is that it proves something, and half a proof authorizes nothing.
+ */
+function parseJsonColumn<T>(raw: string | null, guard: (v: unknown) => v is T): T | null {
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return guard(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function isReviewClaim(v: unknown): v is QueueReviewClaim {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  return typeof r.sessionId === 'string' && Array.isArray(r.prs) && typeof r.claimedAt === 'number'
+}
+
+function isMergeGrant(v: unknown): v is QueueMergeGrant {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  return (
+    typeof r.reviewSessionId === 'string' && Array.isArray(r.prs) && typeof r.grantedAt === 'number'
+  )
+}
+
+/** Narrow a stored phase string onto the closed set; anything else is `none`. */
+function normalizeMergePhase(raw: string | null): QueueMergePhase {
+  return (QUEUE_MERGE_PHASES as readonly string[]).includes(raw ?? '')
+    ? (raw as QueueMergePhase)
+    : 'none'
 }
 
 function toMeta(row: MetaDbRow): QueueIntentMeta {
@@ -212,6 +293,11 @@ function toMeta(row: MetaDbRow): QueueIntentMeta {
     parkReason: (row.park_reason as QueueReasonCode | null) ?? null,
     parkDetail: row.park_detail,
     cooldownUntil: row.cooldown_until,
+    reviewClaim: parseJsonColumn(row.review_claim, isReviewClaim),
+    mergeGrant: parseJsonColumn(row.merge_grant, isMergeGrant),
+    mergePhase: normalizeMergePhase(row.merge_phase),
+    mergeDetail: row.merge_detail,
+    mergeStartedAt: row.merge_started_at,
     updatedAt: row.updated_at,
   }
 }
@@ -270,8 +356,10 @@ export function putQueueIntentMeta(workspacePath: string, meta: QueueIntentMeta)
     d.run(
       `INSERT INTO queue_intent_state
          (intent_id, workspace_name, failure_count, backoff_count, backoff_until,
-          parked, park_reason, park_detail, cooldown_until, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
+          parked, park_reason, park_detail, cooldown_until,
+          review_claim, merge_grant, merge_phase, merge_detail, merge_started_at,
+          updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(intent_id) DO UPDATE SET
          workspace_name=excluded.workspace_name,
          failure_count=excluded.failure_count,
@@ -281,6 +369,11 @@ export function putQueueIntentMeta(workspacePath: string, meta: QueueIntentMeta)
          park_reason=excluded.park_reason,
          park_detail=excluded.park_detail,
          cooldown_until=excluded.cooldown_until,
+         review_claim=excluded.review_claim,
+         merge_grant=excluded.merge_grant,
+         merge_phase=excluded.merge_phase,
+         merge_detail=excluded.merge_detail,
+         merge_started_at=excluded.merge_started_at,
          updated_at=excluded.updated_at`,
       meta.intentId,
       key,
@@ -291,11 +384,88 @@ export function putQueueIntentMeta(workspacePath: string, meta: QueueIntentMeta)
       meta.parkReason,
       meta.parkDetail,
       meta.cooldownUntil,
+      meta.reviewClaim ? JSON.stringify(meta.reviewClaim) : null,
+      meta.mergeGrant ? JSON.stringify(meta.mergeGrant) : null,
+      meta.mergePhase,
+      meta.mergeDetail,
+      meta.mergeStartedAt,
       meta.updatedAt,
     )
     return true
   } catch (err) {
     console.error('[c3:queue] 调度元数据写入失败:', err)
+    return false
+  }
+}
+
+/**
+ * A compare-and-set over the auto-merge fields, and the ONLY way the merge phase
+ * moves to a value that authorizes an external call.
+ *
+ * Why not {@link putQueueIntentMeta}: that is a blind upsert, so two passes — or a
+ * pass and a restart — could each read `pending` and each write `running`, and
+ * both would then send the merge. Here the write is guarded on the phase AND the
+ * serialized credential the caller believed it held, and it is CONFIRMED by a
+ * read-back, because the db driver reports no row count. A guard that cannot be
+ * confirmed fails closed: the caller must not call the forge.
+ *
+ * Returns `false` when the db is unavailable, when the expectation no longer
+ * holds, or when the write could not be confirmed.
+ */
+export function claimQueueMergePhase(
+  workspacePath: string,
+  intentId: string,
+  expect: { phase: QueueMergePhase; grant: QueueMergeGrant | null },
+  next: { phase: QueueMergePhase; detail: string | null; startedAt: number | null },
+): boolean {
+  const d = db()
+  // No durable store ⇒ no claim. An in-memory-only claim would be forgotten by a
+  // restart, and the merge would be sent a second time.
+  if (!d) return false
+  const key = workspaceKey(workspacePath)
+  const expectGrant = expect.grant ? JSON.stringify(expect.grant) : null
+  const now = Date.now()
+  try {
+    // Read FIRST, so a phase that has already moved is refused outright. The
+    // conditional UPDATE alone cannot refuse it: when its WHERE stops matching,
+    // the row is left at `next.phase` (a prior claim's target), which the
+    // read-back below would otherwise misread as "this claim succeeded".
+    const before = d.get<{ merge_phase: string; merge_grant: string | null }>(
+      'SELECT merge_phase, merge_grant FROM queue_intent_state WHERE intent_id=?',
+      intentId,
+    )
+    if (!before) return false
+    if (normalizeMergePhase(before.merge_phase) !== expect.phase) return false
+    if (before.merge_grant !== expectGrant) return false
+
+    d.run(
+      `UPDATE queue_intent_state
+          SET merge_phase=?, merge_detail=?, merge_started_at=?, updated_at=?
+        WHERE intent_id=?
+          AND workspace_name=?
+          AND merge_phase=?
+          AND merge_grant IS ?`,
+      next.phase,
+      next.detail,
+      next.startedAt,
+      now,
+      intentId,
+      key,
+      expect.phase,
+      expectGrant,
+    )
+    const row = d.get<MetaDbRow>('SELECT * FROM queue_intent_state WHERE intent_id=?', intentId)
+    if (!row) return false
+    const confirmed =
+      normalizeMergePhase(row.merge_phase) === next.phase && row.merge_grant === expectGrant
+    if (!confirmed) return false
+    // Keep the mirror consistent with what actually landed, so the same process
+    // cannot re-read a stale phase and claim twice.
+    const mirrored = metaMirror.get(intentId)
+    if (mirrored) metaMirror.set(intentId, { workspacePath: key, meta: toMeta(row) })
+    return true
+  } catch (err) {
+    console.error('[c3:queue] 合并阶段条件认领失败:', err)
     return false
   }
 }

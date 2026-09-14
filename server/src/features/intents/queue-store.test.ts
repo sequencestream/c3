@@ -14,6 +14,7 @@ import { resetDbForTests } from '../../kernel/infra/db.js'
 import { emptyQueueIntentMeta } from '../../kernel/queue/index.js'
 import {
   appendQueueDecisions,
+  claimQueueMergePhase,
   deleteQueueIntentMeta,
   getQueueControl,
   getQueueIntentMeta,
@@ -95,6 +96,37 @@ describe('per-intent scheduling metadata', () => {
       parkReason: 'judge_stuck',
       parkDetail: '未真实完成',
       cooldownUntil: 777,
+      reviewClaim: {
+        sessionId: 'sess-review-1',
+        prs: [
+          {
+            forge: 'github',
+            repo: 'acme/app',
+            number: '42',
+            headBranch: 'intent/a',
+            baseBranch: 'main',
+            headSha: 'abc1234',
+          },
+        ],
+        claimedAt: 900,
+      },
+      mergeGrant: {
+        reviewSessionId: 'sess-review-1',
+        prs: [
+          {
+            forge: 'github',
+            repo: 'acme/app',
+            number: '42',
+            headBranch: 'intent/a',
+            baseBranch: 'main',
+            headSha: 'abc1234',
+          },
+        ],
+        grantedAt: 950,
+      },
+      mergePhase: 'pending',
+      mergeDetail: null,
+      mergeStartedAt: null,
       updatedAt: 999,
     })
     resetQueueStoreForTests()
@@ -108,6 +140,37 @@ describe('per-intent scheduling metadata', () => {
       parkReason: 'judge_stuck',
       parkDetail: '未真实完成',
       cooldownUntil: 777,
+      reviewClaim: {
+        sessionId: 'sess-review-1',
+        prs: [
+          {
+            forge: 'github',
+            repo: 'acme/app',
+            number: '42',
+            headBranch: 'intent/a',
+            baseBranch: 'main',
+            headSha: 'abc1234',
+          },
+        ],
+        claimedAt: 900,
+      },
+      mergeGrant: {
+        reviewSessionId: 'sess-review-1',
+        prs: [
+          {
+            forge: 'github',
+            repo: 'acme/app',
+            number: '42',
+            headBranch: 'intent/a',
+            baseBranch: 'main',
+            headSha: 'abc1234',
+          },
+        ],
+        grantedAt: 950,
+      },
+      mergePhase: 'pending',
+      mergeDetail: null,
+      mergeStartedAt: null,
       updatedAt: 999,
     })
   })
@@ -142,6 +205,60 @@ describe('per-intent scheduling metadata', () => {
 
     expect(getQueueIntentMetaById('gone')).toEqual(emptyQueueIntentMeta('gone'))
     expect(listQueueDecisionsForIntent('gone')).toEqual([])
+  })
+})
+
+describe('claimQueueMergePhase — the compare-and-set the merge executor leans on', () => {
+  const grant = { reviewSessionId: 'rev-1', prs: [], grantedAt: 1 }
+
+  it('claims pending → running and confirms the write', () => {
+    putQueueIntentMeta(proj, {
+      ...emptyQueueIntentMeta('A'),
+      mergeGrant: grant,
+      mergePhase: 'pending',
+    })
+    const ok = claimQueueMergePhase(
+      proj,
+      'A',
+      { phase: 'pending', grant },
+      { phase: 'running', detail: null, startedAt: 123 },
+    )
+    expect(ok).toBe(true)
+    const meta = getQueueIntentMetaById('A')
+    expect(meta.mergePhase).toBe('running')
+    expect(meta.mergeStartedAt).toBe(123)
+  })
+
+  it('fails closed when the phase has already moved, so two passes cannot both claim', () => {
+    putQueueIntentMeta(proj, {
+      ...emptyQueueIntentMeta('A'),
+      mergeGrant: grant,
+      mergePhase: 'running',
+    })
+    const ok = claimQueueMergePhase(
+      proj,
+      'A',
+      { phase: 'pending', grant },
+      { phase: 'running', detail: null, startedAt: 123 },
+    )
+    expect(ok).toBe(false)
+    expect(getQueueIntentMetaById('A').mergePhase).toBe('running')
+  })
+
+  it('fails closed when the credential the caller believed it held is gone', () => {
+    putQueueIntentMeta(proj, {
+      ...emptyQueueIntentMeta('A'),
+      mergeGrant: null,
+      mergePhase: 'pending',
+    })
+    const ok = claimQueueMergePhase(
+      proj,
+      'A',
+      { phase: 'pending', grant },
+      { phase: 'running', detail: null, startedAt: 123 },
+    )
+    expect(ok).toBe(false)
+    expect(getQueueIntentMetaById('A').mergePhase).toBe('pending')
   })
 })
 

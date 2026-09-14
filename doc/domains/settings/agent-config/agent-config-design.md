@@ -11,7 +11,7 @@ web console 中的完整设置视图页面。
 - **配额重置解析**: 一个纯解析器,处理带可解析重置时间(`reset(s) <time>` 挂钟或完整日期 + AM/PM)的配额/会话/usage-limit 错误;通过 `SystemSettings.timezone` 将重置的挂钟时间映射为 Unix 毫秒时间戳(AC-R22)
 - **事件分发 + 运行解析**: 处理 `get_settings` / `save_settings`;按每次运行解析会话启动信息
 - **覆盖项应用**: 将覆盖项映射到 SDK 启动的 `env`(合并在进程环境之上)+ `model`
-- **完整设置视图页面**: 可编辑草稿;智能体列表按已支持 `vendor` 分子 Tab 展示(无「全部」总览 Tab),各 Tab 内沿用 Agent 组容器(default 桶 + 具名组;同 vendor 内拖拽重排/改组),容器身份取 `(vendor, group)` 而非组名——两个 vendor 复用同一组名时各成一个容器、互不影响,跨 vendor 拖拽不可完成;列表行按该行草稿 `vendor` 施加由 `VENDOR_COLOR` 派生的浅 tint 底色;新建智能体默认落在当前 vendor Tab;保存。**默认智能体与七个角色选择器不放在列表下方**——它们独立成「默认 Agent」页签(`defaultAgentId` + 工具/意图/规格/规格审核/自动化/评审/修复七个角色字段,候选均来自**已提交**的注册表:新建的 agent 须先在 Agents 页签保存才可能成为一个存得住的引用)。按项目的控制项(含工作区级默认 Agent 覆盖)属于 workspace-setting 视图
+- **完整设置视图页面**: 可编辑草稿;智能体列表按已支持 `vendor` 分子 Tab 展示(无「全部」总览 Tab),各 Tab 内沿用 Agent 组容器(default 桶 + 具名组;同 vendor 内拖拽重排/改组),容器身份取 `(vendor, group)` 而非组名——两个 vendor 复用同一组名时各成一个容器、互不影响,跨 vendor 拖拽不可完成;列表行按该行草稿 `vendor` 施加由 `VENDOR_COLOR` 派生的浅 tint 底色;新建智能体默认落在当前 vendor Tab;保存。**默认智能体与七个角色选择器不放在列表下方**——它们独立成「默认 Agent」页签(`defaultAgentId` + 工具/意图/规格/规格审核/自动化/评审/修复七个角色字段,候选均来自**已提交**的注册表:新建的 agent 须先在 Agents 页签保存才可能成为一个存得住的引用)。按项目的控制项(含工作区级默认 Agent 覆盖 + 七类角色覆盖)属于 workspace-setting 视图
 
 ## 持久化
 
@@ -75,8 +75,8 @@ URL 本身都不触发补齐。
   兜底 id。归一化在顺序正规化之后运行,所以扫描发生时,注册表已经处于
   紧凑的顺序号顺序中。该规则**单一来源地存放于共享协议模块**,
   因此 web console(在禁用/移除时)与服务端(在保存/加载时)会以相同方式改写。
-- 角色字段(`toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId`)与工作区覆盖 `WorkspaceSetting.defaultAgentId` 走**同一条**共享校验规则
-  `normalizeAgentRef`(单一来源,同样存放于共享协议模块),但**删除与禁用语义不同**:空/空白 ⇒“跟随默认”(空串保持为空,工作区覆盖则把键整个省略);非空值指向**已禁用**智能体 ⇒ 改写为按顺序号的下一个已启用智能体(与默认值相同的回退);非空值指向**已删除**智能体 ⇒ **清空**(角色字段清为 `''`,工作区覆盖丢掉键)——删除移除的是用户的显式选择,因此角色/工作区降级回“跟随默认”,而不是被钉到某个用户从未选过的邻居智能体上。`defaultAgentId` 本身是跟随链末端,不受“删除即清空”规则约束(它仍改写)。系统保存时顺带清理**全部**已存工作区的悬空覆盖(`cleanProjectConfigAgentRefs`),包括从未打开过的工作区。
+- 角色字段(`toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId`)与八个工作区覆盖(`WorkspaceSetting.defaultAgentId` + 同名七类角色字段)走**同一条**共享校验规则
+  `normalizeAgentRef`(单一来源,同样存放于共享协议模块),但**删除与禁用语义不同**:空/空白 ⇒“跟随默认”(系统角色字段空串保持为空,工作区覆盖则把键整个省略);非空值指向**已禁用**智能体 ⇒ 改写为按顺序号的下一个已启用智能体(与默认值相同的回退);非空值指向**已删除**智能体 ⇒ **清空**(角色字段清为 `''`,工作区覆盖丢掉键)——删除移除的是用户的显式选择,因此角色/工作区降级回“跟随默认”,而不是被钉到某个用户从未选过的邻居智能体上。`defaultAgentId` 本身是跟随链末端,不受“删除即清空”规则约束(它仍改写)。系统保存时顺带清理**全部**已存工作区的悬空覆盖(`cleanProjectConfigAgentRefs`),包括从未打开过的工作区。
 - 旧版全局默认模式(在系统设置中已废弃)在迁移窗口期内出于向后兼容仍被接受。
   权威来源是按项目的默认模式,从 workspace setting 中读取;相同的校验
   (五种权限模式取值之一)与兜底值(`default`)按项目适用。它会在会话
@@ -193,7 +193,7 @@ System——那正是本轮修复的缺陷:用户把默认/意图配成组,新�
 - 从绑定中读取智能体 id(待定 id 通过 pending-intent 空间解析;
   真实 id 通过 session-agent 事实解析——AC-R6/R16)。
 - 该智能体按**作用域感知的跟随链**解析:`resolveAgentTarget(ref, cursor, workspacePath)` 依序尝试
-  **显式引用 → 该任务工作区的 `WorkspaceSetting.defaultAgentId` 覆盖 → 系统 `defaultAgentId` → `system`**。
+  **显式系统角色字段 → 该任务工作区的同名角色覆盖 → 工作区 `defaultAgentId` 覆盖 → 系统 `defaultAgentId` → `system`**。
   `default` 角色把显式引用传 `null`——系统默认绝不能当作“显式引用”喂进解析器,否则工作区覆盖永远
   没有胜出的机会。显式引用(绑定/意图/角色非空值)一旦命中即胜出,不往下看工作区覆盖。任一环指向
   空虚拟组时**抛出** `AgentGroupUnavailableError`(不是静默回落),指向一个不存在的具体 id 时则继续下一环
@@ -271,7 +271,7 @@ system 模式且 model 为空的智能体也不产生 `model` 覆盖项——此
 自动填充);一个指向**已禁用**智能体的**非空** id 会被改写为
 按顺序号排列的下一个已启用智能体,而指向**已删除**智能体的非空 id 会被**清空为
 `''`**(角色降级回“跟随默认”,不落到用户从未选过的邻居)。运行时通过通用智能体解析器解析二者,因此
-回退链是 `<显式设置> → 工作区默认覆盖 → 系统默认智能体 → 合成兜底`。web console 在「默认 Agent」页签把它们
+回退链是 `<显式系统角色 → 工作区同名角色覆盖 → 工作区默认覆盖 → 系统默认智能体 → 合成兜底`。web console 在「默认 Agent」页签把它们
 渲染为默认选择器下方的工具/意图下拉框;禁用改写与删除清空由保存注册表时的服务端归一化完成,仅当该 id
 非空时才这样做。意图
 路由只改变**初始**绑定——标题栏的同厂商切换器仍然让用户

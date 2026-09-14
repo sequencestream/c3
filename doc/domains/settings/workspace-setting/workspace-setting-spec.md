@@ -4,14 +4,14 @@
 
 配置持久化与组级共享上下文见 [settings 组概览](../settings-overview.md)。
 
-## 默认智能体覆盖 `defaultAgentId`
+## 智能体覆盖 `defaultAgentId` + 七类角色
 
-本工作区的**默认智能体覆盖**——工作区内所有“未指定执行者”的入口据此解析,**覆盖**系统默认智能体([agent-config](../agent-config/agent-config-spec.md) AC-R33)。它是 `WorkspaceSetting` 里**唯一**的按工作区智能体字段(`tool`/`intent`/`spec`/`spec_review` 仍各只有一个系统级槽位,不提供按工作区覆盖)。页面第一个配置 Tab「默认 Agent」承载它,与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;系统页签另承载七个角色选择器,本页没有那些角色字段。
+本工作区的**智能体覆盖**——工作区内所有“未指定执行者”的入口据此解析,**覆盖**系统默认智能体([agent-config](../agent-config/agent-config-spec.md) AC-R33)。`WorkspaceSetting` 提供八个按工作区智能体字段:`defaultAgentId`(默认执行者)与七个角色覆盖 `toolAgentId`(工具)、`intentAgentId`(意图沟通)、`specAgentId`(规格编写)、`specReviewAgentId`(规格审核)、`automationAgentId`(新建自动化表单)、`reviewAgentId`(`pr-review-runner` 模板)、`fixAgentId`(`pr-review-fix` 模板)。页面第一个配置 Tab「默认 Agent」承载全部八个选择器:一个默认选择器(与系统页签默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项)加七个角色下拉框(按工具、意图、规格、规格审核、自动化、评审、修复的顺序,各框居首同样是「继承系统默认」)。
 
-- **继承即省略,绝不快照。** 缺失、空串、纯空白、非字符串都读作“继承系统默认”,`normalizeWorkspaceSetting` 把键整个**省略**(绝不写入当时的系统默认值——那会把动态继承冻成一份快照,系统默认之后的改动就到不了该工作区)。
-- **归一化镜像角色字段(`normalizeAgentRef`)。** 非空值去空白后保留为覆盖引用(具体 id 或虚拟组);指向已**禁用**的目标改写为按 `order_seq` 的下一个已启用智能体;指向已**删除**的具体智能体则**丢键**(工作区回到继承);清空的组同样改写,不误判为删除。
-- **系统保存清理全部工作区。** 系统设置保存时顺带清理 `projectConfigs` 里**每个**已存工作区的悬空覆盖(含从未打开过的)——一次系统保存携带整个映射。
-- **解析顺序。** 显式引用 → 工作区覆盖 → 系统默认 → `system`。显式系统级角色选择(非空 `toolAgentId` 等)先于覆盖命中;覆盖只回答“跟随默认”。工作区覆盖指向空虚拟组时解析**抛出** `agent.groupUnavailable`,不静默回落。
+- **继承即省略,绝不快照。** 缺失、空串、纯空白、非字符串都读作“继承上级”,`normalizeWorkspaceSetting` 把键整个**省略**(绝不写入当时的系统/默认值——那会把动态继承冻成一份快照,上级配置之后的改动就到不了该工作区)。
+- **归一化镜像 `normalizeAgentRef`。** 八个引用共用同一规则:非空值去空白后保留为覆盖引用(具体 id 或虚拟组);指向已**禁用**的目标改写为按 `order_seq` 的下一个已启用智能体(无启用项则 `system`);指向已**删除**的具体智能体则**丢键**(工作区回到继承);清空的组同样改写,不误判为删除。
+- **系统保存清理全部工作区。** 系统设置保存时顺带清理 `projectConfigs` 里**每个**已存工作区的悬空覆盖(含从未打开过的)——一次系统保存携带整个映射,清理只触及智能体引用,保留其他工作区字段。
+- **解析顺序。** 显式系统角色字段 → 工作区同名角色覆盖 → 工作区 `defaultAgentId` → 系统 `defaultAgentId` → `system`;空项跳过,角色之间不串联。显式系统级角色选择(非空 `toolAgentId` 等)先于工作区同名覆盖命中;工作区覆盖只回答“系统该角色跟随默认”。运行时角色(`tool`/`intent`/`spec`/`spec_review`)通过 `resolveRoleAgentTarget` 消费,命中空虚拟组时解析**抛出** `agent.groupUnavailable`,不静默回落;种子字段(`automation`/`review`/`fix`)通过 `resolveAutomationDefaultAgent` 消费完整链,`review`/`fix` 工作区覆盖只用于模板新建种子、不进入 PR 评审/修复队列解析(AC-R34)。
 
 ## 默认权限模式 `defaultMode`
 

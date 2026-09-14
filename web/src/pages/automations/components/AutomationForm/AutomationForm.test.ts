@@ -57,8 +57,7 @@ function mountForm(
     toolManifestError: string | null
     vendorAvailability: Record<VendorId, VendorRuntimeStatus>
     agents: AgentConfig[]
-    automationAgentId: string
-    defaultAgentId: string
+    seedAgentRefs: string[]
   }> = {},
 ) {
   return mount(AutomationForm, {
@@ -72,8 +71,7 @@ function mountForm(
       toolManifestError: null,
       vendorAvailability: RUNTIME_AVAILABLE,
       agents: AGENTS,
-      automationAgentId: '',
-      defaultAgentId: '',
+      seedAgentRefs: ['', '', '', ''],
       ...props,
     },
   })
@@ -767,7 +765,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   it('automationAgentId 跟随链解析到 cursor 时直接作为默认执行身份', async () => {
     const w = mountForm({
       agents: [CURSOR_AGENT, ...AGENTS],
-      automationAgentId: 'cursor-a',
+      seedAgentRefs: ['cursor-a', '', '', ''],
     })
     const select = w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement
     expect(select.value).toBe('cursor')
@@ -855,7 +853,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   ]
 
   it('create:automationAgentId 指向 codex agent 时,表单预选 codex + 该 agent', async () => {
-    const w = mountForm({ agents: MULTI_AGENTS, automationAgentId: 'codex-custom' })
+    const w = mountForm({ agents: MULTI_AGENTS, seedAgentRefs: ['codex-custom', '', '', ''] })
     // vendor 下拉预选 codex。
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
     // 切到 LLM 类型后 agent 下拉预选该 codex agent。
@@ -866,8 +864,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   it('create:automationAgentId 为空时跟随 defaultAgentId 解析出的 agent', async () => {
     const w = mountForm({
       agents: MULTI_AGENTS,
-      automationAgentId: '',
-      defaultAgentId: 'codex-custom',
+      seedAgentRefs: ['', '', '', 'codex-custom'],
     })
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
     await w.findAll('.sf-seg')[1].trigger('click')
@@ -877,12 +874,34 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   it('edit:已有 automation 使用自身 vendor/agentId,不被系统配置覆盖', () => {
     const w = mountForm({
       agents: MULTI_AGENTS,
-      automationAgentId: 'codex-custom',
+      seedAgentRefs: ['codex-custom', '', '', ''],
       automation: sched({ vendor: 'claude', agentId: 'claude-default', type: 'llm' }),
     })
     // 编辑态保留 automation 记录自身的 claude，忽略指向 codex 的系统配置。
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('claude')
     expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('claude-default')
+  })
+
+  it('create:工作区 automationAgentId 覆盖优先于系统 defaultAgentId', async () => {
+    // 系统角色为空、工作区角色覆盖指向 codex:即使系统默认为 claude-default,也应预选 codex。
+    const w = mountForm({
+      agents: MULTI_AGENTS,
+      seedAgentRefs: ['', 'codex-custom', '', 'claude-default'],
+    })
+    expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
+    await w.findAll('.sf-seg')[1].trigger('click')
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
+  })
+
+  it('create:工作区 defaultAgentId 覆盖优先于系统 defaultAgentId', async () => {
+    // 角色层全部为空,工作区默认为 codex-custom、系统默认为 claude-default:应选工作区默认。
+    const w = mountForm({
+      agents: MULTI_AGENTS,
+      seedAgentRefs: ['', '', 'codex-custom', 'claude-default'],
+    })
+    expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
+    await w.findAll('.sf-seg')[1].trigger('click')
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
   })
 
   // ---- load-tool-manifest event --------------------------------------------

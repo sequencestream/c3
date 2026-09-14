@@ -54,6 +54,7 @@ import type {
   GitBranchMode,
   ModelProvider,
   ModeToken,
+  WorkspaceRoleAgentField,
   WorkspaceSetting,
   WorkspaceSandboxConfig,
   SessionCleanupConfig,
@@ -63,7 +64,14 @@ import type {
   UiLang,
   VendorId,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, SESSION_KINDS, VENDOR_IDS, isVendorId } from '@ccc/shared/protocol'
+import {
+  PENDING_SESSION_PREFIX,
+  SESSION_KINDS,
+  VENDOR_IDS,
+  WORKSPACE_AGENT_REF_FIELDS,
+  WORKSPACE_ROLE_AGENT_FIELDS,
+  isVendorId,
+} from '@ccc/shared/protocol'
 import { normalizeAgentRef, resolveDefaultAgentId } from '@ccc/shared'
 import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
@@ -635,14 +643,15 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
 }
 
 /**
- * Re-normalize every stored workspace's `defaultAgentId` override against the final
- * registry, leaving all other workspace fields exactly as stored.
+ * Re-normalize every stored workspace's agent references — the seven role overrides
+ * and the workspace `defaultAgentId` ({@link WORKSPACE_AGENT_REF_FIELDS}) — against
+ * the final registry, leaving all other workspace fields exactly as stored.
  *
  * A whole-system save carries the map wholesale, so this is what makes "delete an
  * agent" reach workspaces the console never rendered. The rule is the shared one
- * (`normalizeAgentRef`): a disabled target moves on to the next enabled agent, an
- * emptied group to the first enabled one, and a DELETED target drops the key so the
- * workspace inherits the system default again — never a snapshot of it.
+ * (`normalizeAgentRef`), applied identically to all eight: a disabled target moves on
+ * to the next enabled agent, an emptied group to the first enabled one, and a DELETED
+ * target drops the key so the workspace inherits again — never a snapshot.
  *
  * Returns `undefined` when there is nothing stored, so the normalized settings keep
  * omitting the key rather than growing an empty map.
@@ -652,25 +661,29 @@ function cleanProjectConfigAgentRefs(
   agents: readonly AgentConfig[],
 ): Record<string, WorkspaceSetting> | undefined {
   if (!raw) return undefined
+  const list = [...agents]
   const out: Record<string, WorkspaceSetting> = {}
   for (const [workspaceName, cfg] of Object.entries(raw)) {
     if (!cfg || typeof cfg !== 'object') {
       out[workspaceName] = cfg
       continue
     }
-    const ref = normalizeAgentRef([...agents], cfg.defaultAgentId)
-    if (!ref) {
-      // Inherit: both the blank sentinel and a deleted target drop the key. Avoid
-      // rewriting an entry that already had none — idempotence is what stops a
-      // re-normalize from looking like a change.
-      if (cfg.defaultAgentId === undefined) out[workspaceName] = cfg
-      else {
-        const { defaultAgentId: _dropped, ...rest } = cfg
-        out[workspaceName] = rest
+    let next = cfg
+    for (const field of WORKSPACE_AGENT_REF_FIELDS) {
+      const current = next[field]
+      const ref = normalizeAgentRef(list, current)
+      if (!ref) {
+        // Inherit: both the blank sentinel and a deleted target drop the key. Avoid
+        // rewriting an entry that already had none — idempotence is what stops a
+        // re-normalize from looking like a change.
+        if (current === undefined) continue
+        const { [field]: _dropped, ...rest } = next
+        next = rest
+        continue
       }
-      continue
+      if (ref !== current) next = { ...next, [field]: ref }
     }
-    out[workspaceName] = ref === cfg.defaultAgentId ? cfg : { ...cfg, defaultAgentId: ref }
+    out[workspaceName] = next
   }
   return out
 }
@@ -772,6 +785,10 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  *   of it), a disabled target moves to the next enabled agent, an emptied group to
  *   the first enabled one, and a DELETED target drops the key so the workspace
  *   inherits again.
+ * - the seven ROLE overrides (`toolAgentId` … `fixAgentId`) mirror `defaultAgentId`
+ *   key for key — same sentinel, same `normalizeAgentRef` rewrite/drop rules. They
+ *   differ only in who consumes them (runtime route vs. create-time form seed), not
+ *   in how they are stored.
  */
 export function normalizeWorkspaceSetting(
   raw: unknown,
@@ -803,8 +820,16 @@ export function normalizeWorkspaceSetting(
   const fastSpecMaxLines = normalizeFastSpecMaxLines(rec.fastSpecMaxLines)
   const forge = normalizeWorkspaceForge(rec.forge)
   // `null` (the target was deleted) and '' (blank ⇒ inherit) both mean "no override":
-  // the key is omitted below, so a later read falls through to the system default.
-  const defaultAgentId = normalizeAgentRef([...agents], rec.defaultAgentId) || undefined
+  // the key is omitted below, so a later read falls through to the next link.
+  const agentList = [...agents]
+  const defaultAgentId = normalizeAgentRef(agentList, rec.defaultAgentId) || undefined
+  // The seven role overrides take the SAME rule — spreading only the ones that
+  // survived keeps "inherit" spelled as an absent key rather than an empty value.
+  const roleAgentIds: Partial<Record<WorkspaceRoleAgentField, string>> = {}
+  for (const field of WORKSPACE_ROLE_AGENT_FIELDS) {
+    const ref = normalizeAgentRef(agentList, rec[field])
+    if (ref) roleAgentIds[field] = ref
+  }
   return {
     forge,
     defaultMode,
@@ -823,6 +848,7 @@ export function normalizeWorkspaceSetting(
     ...(sandbox !== undefined ? { sandbox } : {}),
     ...(specMachineApprovalEnabled ? { specMachineApprovalEnabled } : {}),
     ...(defaultAgentId ? { defaultAgentId } : {}),
+    ...roleAgentIds,
   }
 }
 

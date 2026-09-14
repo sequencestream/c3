@@ -29,10 +29,16 @@ import type {
   ExternalMcpToolDescriptor,
   ParkRecoveryStats,
   WorkspaceMemoryListItem,
+  WorkspaceRoleAgentField,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
-import { VENDOR_IDS, GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
-import { useTypedI18n } from '@/i18n'
+import {
+  VENDOR_IDS,
+  GIT_BRANCH_MODES,
+  SESSION_KINDS,
+  WORKSPACE_ROLE_AGENT_FIELDS,
+} from '@ccc/shared/protocol'
+import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import ExternalMcpAccess from './components/ExternalMcpAccess/ExternalMcpAccess.vue'
 import WorkspaceMemories from './components/WorkspaceMemories/WorkspaceMemories.vue'
@@ -212,11 +218,11 @@ const TABS: WsTab[] = [
   'memories',
 ]
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
-  // 与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;系统页签
-  // 另承载七个角色选择器,工作区页签没有那些角色字段。这里只拥有 defaultAgentId 一个字段:
-  // 空串即继承(服务端归一化时把这个键整个省略,绝不把当时的系统默认值写进来 —— 那会把
-  // 动态继承冻成一次快照)。
-  defaultAgent: ['defaultAgentId'],
+  // 默认选择器与系统页签部分同构,只多一个居首的「继承系统默认」选项;下方再按工具、意图、
+  // 规格、规格审核、自动化、评审、修复的顺序列出七个角色覆盖下拉框,每个同样以「继承系统
+  // 默认」居首。八个字段共用继承哨兵语义:空串即继承(服务端归一化时把这个键整个省略,绝不
+  // 把当时的系统/默认值写进来 —— 那会把动态继承冻成一次快照)。
+  defaultAgent: ['defaultAgentId', ...WORKSPACE_ROLE_AGENT_FIELDS],
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
   collab: [
@@ -358,6 +364,15 @@ function buildSeed(
     // never filled with the inherited value: storing that would turn a live
     // inheritance into a frozen copy the next system change would not reach.
     defaultAgentId: config?.defaultAgentId ?? '',
+    // The seven role overrides share the same inherit sentinel: absent ⇒ '' ⇒ the
+    // dropdown's leading "inherit" option, never a snapshot of the system value.
+    toolAgentId: config?.toolAgentId ?? '',
+    intentAgentId: config?.intentAgentId ?? '',
+    specAgentId: config?.specAgentId ?? '',
+    specReviewAgentId: config?.specReviewAgentId ?? '',
+    automationAgentId: config?.automationAgentId ?? '',
+    reviewAgentId: config?.reviewAgentId ?? '',
+    fixAgentId: config?.fixAgentId ?? '',
     // sandbox left RAW from `full` (may be undefined) — synthesized into the draft.
   }
 }
@@ -665,6 +680,30 @@ const defaultAgentDraftStale = computed<boolean>(() => {
   return !(props.agents ?? []).some((a) => a.id === ref)
 })
 
+const ROLE_AGENT_LABEL_KEY: Record<WorkspaceRoleAgentField, LocaleKey> = {
+  toolAgentId: 'workspaceSetting.defaultAgent.roles.tool.label',
+  intentAgentId: 'workspaceSetting.defaultAgent.roles.intent.label',
+  specAgentId: 'workspaceSetting.defaultAgent.roles.spec.label',
+  specReviewAgentId: 'workspaceSetting.defaultAgent.roles.specReview.label',
+  automationAgentId: 'workspaceSetting.defaultAgent.roles.automation.label',
+  reviewAgentId: 'workspaceSetting.defaultAgent.roles.review.label',
+  fixAgentId: 'workspaceSetting.defaultAgent.roles.fix.label',
+}
+
+/** The localized label for one of the seven role overrides. */
+function roleAgentLabel(field: WorkspaceRoleAgentField): string {
+  return t(ROLE_AGENT_LABEL_KEY[field])
+}
+
+/** A role override draft points at an agent that no longer exists (same rule as the
+ *  default override: a workspace can go back to inheriting instead of re-picking). */
+function roleAgentDraftStale(field: WorkspaceRoleAgentField): boolean {
+  const ref = draft.value[field]?.trim() ?? ''
+  if (!ref) return false
+  if (defaultAgentGroups.value.some((g) => g.id === ref)) return false
+  return !(props.agents ?? []).some((a) => a.id === ref)
+}
+
 /** Whether the given agent id is in the consensus custom allowlist. */
 function isConsensusAgentSelected(id: string): boolean {
   return (draft.value.consensus?.agentIds ?? []).includes(id)
@@ -814,7 +853,11 @@ function buildTabPayload(
     case 'defaultAgent': {
       // '' ⇒ back to inheriting: emitted as an empty string, which the server
       // normalizes to the key being omitted (so the row is deleted, not blanked).
+      // All eight agent references share the same inherit sentinel semantics.
       payload.defaultAgentId = src.defaultAgentId?.trim() || ''
+      for (const field of WORKSPACE_ROLE_AGENT_FIELDS) {
+        payload[field] = src[field]?.trim() || ''
+      }
       break
     }
   }
@@ -901,9 +944,10 @@ const parkRecoveryRateText = computed(() => {
     <div class="project-config-body">
       <!-- ============ Default Agent tab ============
            与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;
-           系统页签另承载七个角色选择器,工作区页签没有那些角色字段。留在继承态时旁边
+           下面再补七个角色覆盖选择器,各自也可选「继承系统默认」。留在继承态时旁边
            显示当前继承到谁;系统默认变化时这个提示跟着变,但本页不因此变脏 —— 继承的
-           是关系,不是某一刻的值。 -->
+           是关系,不是某一刻的值。系统已明确指定角色时优先系统,工作区角色只在系统
+           角色跟随默认时生效。 -->
       <div
         v-show="activeTab === 'defaultAgent'"
         class="project-config-tab-panel"
@@ -953,6 +997,49 @@ const parkRecoveryRateText = computed(() => {
           >
             {{ t('workspaceSetting.defaultAgent.stale') }}
           </p>
+        </section>
+
+        <section class="project-config-section">
+          <p class="project-config-section-title">
+            {{ t('workspaceSetting.defaultAgent.roleTitle.label') }}
+          </p>
+          <p class="project-config-hint">{{ t('workspaceSetting.defaultAgent.roleHint') }}</p>
+          <div
+            v-for="field in WORKSPACE_ROLE_AGENT_FIELDS"
+            :key="field"
+            class="project-config-role"
+          >
+            <div class="project-config-row">
+              <span class="project-config-row-label">{{ roleAgentLabel(field) }}</span>
+              <select
+                v-model="draft[field]"
+                class="mode-select"
+                :data-testid="`workspace-role-agent-select-${field}`"
+              >
+                <option value="">
+                  {{ t('workspaceSetting.defaultAgent.inheritRole') }}
+                </option>
+                <option v-for="a in defaultAgentCandidates" :key="a.id" :value="a.id">
+                  {{ a.displayName || a.id }}
+                </option>
+                <optgroup
+                  v-if="defaultAgentGroups.length > 0"
+                  :label="t('workspaceSetting.defaultAgent.groupPicker.label')"
+                >
+                  <option v-for="g in defaultAgentGroups" :key="g.id" :value="g.id">
+                    {{ g.id }}
+                  </option>
+                </optgroup>
+              </select>
+            </div>
+            <p
+              v-if="roleAgentDraftStale(field)"
+              class="project-config-warn"
+              :data-testid="`workspace-role-agent-stale-${field}`"
+            >
+              {{ t('workspaceSetting.defaultAgent.stale') }}
+            </p>
+          </div>
         </section>
       </div>
 

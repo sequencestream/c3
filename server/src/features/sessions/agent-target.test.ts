@@ -10,7 +10,7 @@
  *    the session's own availability signal, exactly as before.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import type { AgentConfig, SystemSettings, VendorId } from '@ccc/shared/protocol'
+import type { AgentConfig, SystemSettings, VendorId, WorkspaceSetting } from '@ccc/shared/protocol'
 
 const settings: SystemSettings = {
   agents: [],
@@ -24,8 +24,11 @@ const settings: SystemSettings = {
   fixAgentId: '',
 }
 
+const workspaceSettings: Record<string, WorkspaceSetting> = {}
+
 vi.mock('../../kernel/config/index.js', () => ({
   loadSettings: () => settings,
+  loadWorkspaceSetting: (workspacePath: string) => workspaceSettings[workspacePath] ?? {},
   getSessionAgentId: () => null,
   getProxyConfig: () => ({ enabled: false, httpProxy: '', httpsProxy: '' }),
   getSessionStoreScope: () => 'host',
@@ -65,6 +68,11 @@ beforeEach(() => {
   settings.defaultAgentId = 'plain'
   settings.intentAgentId = ''
   settings.specAgentId = ''
+  settings.specReviewAgentId = ''
+  settings.toolAgentId = ''
+  settings.reviewAgentId = ''
+  settings.fixAgentId = ''
+  for (const k of Object.keys(workspaceSettings)) delete workspaceSettings[k]
 })
 
 describe('sessionAgentTargetForRole', () => {
@@ -129,5 +137,77 @@ describe('groupUnavailableError', () => {
       code: 'agent.groupUnavailable',
       params: { group: '_c3_claude_fast' },
     })
+  })
+})
+
+describe('workspace role overrides in the resolution order (runtime roles)', () => {
+  const WS = 'ws-1'
+
+  it('an explicit system role field wins over the workspace role override', () => {
+    settings.specAgentId = 'plain'
+    workspaceSettings[WS] = { specAgentId: 'a1' }
+    const result = sessionAgentTargetForRole('spec', WS)
+    expect(result.ok && result.target.ref).toBe('plain')
+  })
+
+  it('falls to the workspace role override when the system role follows the default', () => {
+    settings.specAgentId = ''
+    workspaceSettings[WS] = { specAgentId: 'a1', defaultAgentId: 'plain' }
+    const result = sessionAgentTargetForRole('spec', WS)
+    expect(result.ok && result.target.ref).toBe('a1')
+  })
+
+  it('falls to the workspace default before the system default', () => {
+    settings.specAgentId = ''
+    workspaceSettings[WS] = { defaultAgentId: 'a1' }
+    settings.defaultAgentId = 'plain'
+    const result = sessionAgentTargetForRole('spec', WS)
+    expect(result.ok && result.target.ref).toBe('a1')
+  })
+
+  it('ends on the system default when every workspace link is empty', () => {
+    settings.specAgentId = ''
+    workspaceSettings[WS] = {}
+    settings.defaultAgentId = 'plain'
+    const result = sessionAgentTargetForRole('spec', WS)
+    expect(result.ok && result.target.ref).toBe('plain')
+  })
+
+  it('keeps group routing through a workspace role override (ref + representative member)', () => {
+    settings.specAgentId = ''
+    workspaceSettings[WS] = { specAgentId: '_c3_claude_fast' }
+    const result = sessionAgentTargetForRole('spec', WS)
+    expect(result.ok && result.target.ref).toBe('_c3_claude_fast')
+    expect(result.ok && result.target.agent.id).toBe('a1')
+  })
+
+  it('hard-fails an emptied group in the workspace role override instead of falling through', () => {
+    settings.agents = [agent('a1', { group: 'fast', enabled: false }), agent('plain')]
+    settings.specAgentId = ''
+    workspaceSettings[WS] = { specAgentId: '_c3_claude_fast' }
+    expect(sessionAgentTargetForRole('spec', WS)).toEqual({
+      ok: false,
+      groupRef: '_c3_claude_fast',
+    })
+  })
+
+  it('review / fix do NOT read their workspace role override — they fall to the workspace default', () => {
+    settings.reviewAgentId = ''
+    workspaceSettings[WS] = { reviewAgentId: 'a1', defaultAgentId: 'plain' }
+    const result = sessionAgentTargetForRole('review', WS)
+    expect(result.ok && result.target.ref).toBe('plain')
+
+    settings.fixAgentId = ''
+    workspaceSettings[WS] = { fixAgentId: 'a1', defaultAgentId: 'plain' }
+    const fix = sessionAgentTargetForRole('fix', WS)
+    expect(fix.ok && fix.target.ref).toBe('plain')
+  })
+
+  it('roles do not chain: spec review never inherits the spec role', () => {
+    settings.specAgentId = 'a1'
+    settings.specReviewAgentId = ''
+    workspaceSettings[WS] = { defaultAgentId: 'plain' }
+    const result = sessionAgentTargetForRole('spec_review', WS)
+    expect(result.ok && result.target.ref).toBe('plain')
   })
 })

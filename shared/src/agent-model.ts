@@ -116,6 +116,11 @@ export function resolveDefaultAgentId(agents: AgentConfig[], currentDefaultId: s
 export function normalizeAgentRef(agents: AgentConfig[], ref: unknown): string | null {
   const wanted = typeof ref === 'string' ? ref.trim() : ''
   if (!wanted) return ''
+  // With no enabled agents, `system` is a synthesized fallback even when it is
+  // absent from the registry. Preserve it across repeated saves and loads.
+  if (wanted === SYSTEM_AGENT_ID && !agents.some((a) => a.enabled !== false)) {
+    return SYSTEM_AGENT_ID
+  }
   // Group refs are virtual (never in `agents`), so this must precede the by-id
   // lookup — otherwise an emptied group would read as a deleted concrete id.
   if (isGroupAgentRef(wanted)) return resolveDefaultAgentId(agents, wanted)

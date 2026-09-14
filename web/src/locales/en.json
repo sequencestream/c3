@@ -308,6 +308,13 @@
         "label": "Default agent",
         "empty": "No enabled agent"
       },
+      "work": {
+        "tooltip": "Agent that runs work sessions (spec-driven delivery). Leave unset to follow the workspace default, then the system default."
+      },
+      "workPicker": {
+        "label": "Work agent",
+        "followDefault": "Follow default agent"
+      },
       "tool": {
         "tooltip": "Agent that runs background tool sessions (completion judge, summary)"
       },
@@ -3758,7 +3765,16 @@
       },
       "inherit": "Inherit the system default agent",
       "inheritNamed": "Inherit the system default agent (currently: {agent})",
-      "stale": "The agent you picked has been deleted. Choose another one, or go back to inheriting the system default."
+      "stale": "The agent you picked has been deleted. Choose another one, or go back to inheriting the system default.",
+      "workPicker": {
+        "label": "Work agent"
+      },
+      "work": {
+        "tooltip": "Agent that runs work sessions (spec-driven delivery) inside this workspace. Leave unset to inherit the system work agent.",
+        "inherit": "Inherit the system work agent",
+        "inheritNamed": "Inherit the system work agent (currently: {agent})",
+        "stale": "The work agent you picked has been deleted. Choose another one, or go back to inheriting the system default."
+      }
     }
   },
   "files": {

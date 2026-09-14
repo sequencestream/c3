@@ -73,6 +73,7 @@ const base: SystemSettings = {
   automationAgentId: '',
   reviewAgentId: '',
   fixAgentId: '',
+  workAgentId: '',
 }
 
 function connFor(subject: string | null): { conn: Conn; sent: ServerToClient[] } {

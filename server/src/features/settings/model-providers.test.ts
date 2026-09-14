@@ -21,6 +21,7 @@ vi.mock('../../kernel/config/index.js', () => ({
       automationAgentId: '',
       reviewAgentId: '',
       fixAgentId: '',
+      workAgentId: '',
       modelProviders: h.providers,
     }) as SystemSettings,
 }))

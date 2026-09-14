@@ -25,6 +25,7 @@ const base = {
   automationAgentId: '',
   reviewAgentId: '',
   fixAgentId: '',
+  workAgentId: '',
 } as SystemSettings
 
 beforeEach(() => {

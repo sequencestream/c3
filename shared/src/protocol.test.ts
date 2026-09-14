@@ -188,6 +188,7 @@ describe('protocol wire format', () => {
         automationAgentId: '',
         reviewAgentId: '',
         fixAgentId: '',
+        workAgentId: '',
       },
       hostStatus: [
         {

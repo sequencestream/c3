@@ -42,7 +42,11 @@ import {
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
-import { groupUnavailableError, sessionAgentTargetForRef } from '../sessions/agent-target.js'
+import {
+  groupUnavailableError,
+  sessionAgentTargetForRef,
+  sessionAgentTargetForRole,
+} from '../sessions/agent-target.js'
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
@@ -259,10 +263,13 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     return
   }
   // Resolve the agent BEFORE anything is created or the viewer is moved: the
-  // explicit pick, or (Auto) the default role. A group with no usable member is a
-  // configuration error the user must fix, so the creation is refused whole rather
-  // than quietly bound to some other agent.
-  const target = sessionAgentTargetForRef(msg.agentId || null, msg.workspaceName)
+  // explicit pick, or (Auto) the WORK role — ordinary dev sessions now resolve
+  // their own workspace-first chain instead of following the default. A group with
+  // no usable member is a configuration error the user must fix, so the creation
+  // is refused whole rather than quietly bound to some other agent.
+  const target = msg.agentId
+    ? sessionAgentTargetForRef(msg.agentId, msg.workspaceName)
+    : sessionAgentTargetForRole('work', msg.workspaceName)
   if (!target.ok) {
     conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
     return

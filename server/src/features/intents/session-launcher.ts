@@ -571,10 +571,10 @@ export async function launchWorkSession(
     return denied
   }
 
-  // The agent a fresh work session will bind: the default role, which may be a
-  // group. Resolved BEFORE the git branch strategy runs — a refusal here must not
-  // leave a worktree behind.
-  const agentTarget = sessionAgentTargetForRole('default', workspacePath)
+  // The agent a fresh work session will bind: the WORK role (workspace-first
+  // chain), which may be a group. Resolved BEFORE the git branch strategy runs — a
+  // refusal here must not leave a worktree behind.
+  const agentTarget = sessionAgentTargetForRole('work', workspacePath)
   if (!agentTarget.ok) {
     releaseClaim()
     return {

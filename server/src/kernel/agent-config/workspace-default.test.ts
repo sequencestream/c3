@@ -26,6 +26,7 @@ function agent(id: string, extra: Partial<AgentConfig> = {}): AgentConfig {
 const settings: SystemSettings = {
   agents: [agent('d'), agent('a'), agent('b'), agent('c')],
   defaultAgentId: 'a',
+  workAgentId: '',
   toolAgentId: '',
   intentAgentId: '',
   specAgentId: '',
@@ -66,6 +67,7 @@ const WS_Y = 'ws-y'
 beforeEach(() => {
   settings.agents = [agent('d'), agent('a'), agent('b'), agent('c')]
   settings.defaultAgentId = 'a'
+  settings.workAgentId = ''
   settings.toolAgentId = ''
   settings.intentAgentId = ''
   settings.specAgentId = ''
@@ -187,6 +189,45 @@ describe('an empty group stops resolution at every link of the chain', () => {
 
   it('contrasts with a missing CONCRETE reference, which does reach the fallback', () => {
     workspaces[WS_X] = { defaultAgentId: 'gone' }
+    expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('a')
+  })
+})
+
+describe('work — the workspace-first chain resolves workAgentId before the default', () => {
+  it('follows the default chain when no work override is set anywhere', () => {
+    // No workspace work, no system work → workspace default → system default.
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('a')
+    workspaces[WS_X] = { defaultAgentId: 'b' }
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('b')
+  })
+
+  it('uses the workspace workAgentId override before anything else', () => {
+    workspaces[WS_X] = { workAgentId: 'c' }
+    settings.workAgentId = 'd'
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('c')
+    // Other workspaces without their own override fall through to the system work value.
+    expect(resolveRoleAgentTarget('work', WS_Y).ref).toBe('d')
+  })
+
+  it('falls through an empty workspace override to the system workAgentId', () => {
+    workspaces[WS_X] = { workAgentId: '' }
+    settings.workAgentId = 'b'
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('b')
+    // The system work value outranks the workspace default.
+    workspaces[WS_X] = { workAgentId: '', defaultAgentId: 'c' }
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('b')
+  })
+
+  it('falls through to the default chain when both work values are empty', () => {
+    workspaces[WS_X] = { workAgentId: '', defaultAgentId: 'c' }
+    settings.workAgentId = ''
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('c')
+  })
+
+  it('does NOT leak the work chain into other roles', () => {
+    workspaces[WS_X] = { workAgentId: 'c' }
+    settings.workAgentId = 'd'
+    // `spec` still resolves through the default chain, untouched by work overrides.
     expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('a')
   })
 })

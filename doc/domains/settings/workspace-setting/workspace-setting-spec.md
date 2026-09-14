@@ -6,12 +6,21 @@
 
 ## 默认智能体覆盖 `defaultAgentId`
 
-本工作区的**默认智能体覆盖**——工作区内所有“未指定执行者”的入口据此解析,**覆盖**系统默认智能体([agent-config](../agent-config/agent-config-spec.md) AC-R33)。它是 `WorkspaceSetting` 里**唯一**的按工作区智能体字段(`tool`/`intent`/`spec`/`spec_review` 仍各只有一个系统级槽位,不提供按工作区覆盖)。页面第一个配置 Tab「默认 Agent」承载它,与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;系统页签另承载七个角色选择器,本页没有那些角色字段。
+本工作区的**默认智能体覆盖**——工作区内所有“未指定执行者”的入口据此解析,**覆盖**系统默认智能体([agent-config](../agent-config/agent-config-spec.md) AC-R33)。它与 `workAgentId` 是 `WorkspaceSetting` 里**仅有的两个**按工作区智能体字段(`tool`/`intent`/`spec`/`spec_review` 仍各只有一个系统级槽位,不提供按工作区覆盖;`workAgentId` 见下文)。页面第一个配置 Tab「默认 Agent」承载它,与系统页签的默认 Agent 选择器部分同构,只多一个居首的「继承系统默认」选项;系统页签另承载八个角色选择器,本页没有那些角色字段。
 
 - **继承即省略,绝不快照。** 缺失、空串、纯空白、非字符串都读作“继承系统默认”,`normalizeWorkspaceSetting` 把键整个**省略**(绝不写入当时的系统默认值——那会把动态继承冻成一份快照,系统默认之后的改动就到不了该工作区)。
 - **归一化镜像角色字段(`normalizeAgentRef`)。** 非空值去空白后保留为覆盖引用(具体 id 或虚拟组);指向已**禁用**的目标改写为按 `order_seq` 的下一个已启用智能体;指向已**删除**的具体智能体则**丢键**(工作区回到继承);清空的组同样改写,不误判为删除。
 - **系统保存清理全部工作区。** 系统设置保存时顺带清理 `projectConfigs` 里**每个**已存工作区的悬空覆盖(含从未打开过的)——一次系统保存携带整个映射。
 - **解析顺序。** 显式引用 → 工作区覆盖 → 系统默认 → `system`。显式系统级角色选择(非空 `toolAgentId` 等)先于覆盖命中;覆盖只回答“跟随默认”。工作区覆盖指向空虚拟组时解析**抛出** `agent.groupUnavailable`,不静默回落。
+
+## 工作智能体覆盖 `workAgentId`
+
+本工作区的**工作智能体覆盖**——`SessionKind='work'` 的普通开发会话在此工作区内创建且无显式选择(Auto)时的执行智能体,**覆盖**系统 `workAgentId`(见 [agent-config](../agent-config/agent-config-spec.md) AC-R35)。它与 `defaultAgentId` 同处于「默认 Agent」页签,位于默认 Agent 选择器之后,空选项为「继承系统工作智能体」。
+
+- **继承即省略,绝不快照。** 缺失、空串、纯空白、非字符串都读作“继承系统工作智能体”,`normalizeWorkspaceSetting` 把键整个**省略**(绝不写入当时的系统 `workAgentId`——那会把动态继承冻成一份快照,系统 work 之后的改动就到不了该工作区)。
+- **归一化镜像 `defaultAgentId`(`normalizeAgentRef`)。** 非空值去空白后保留为覆盖引用(具体 id 或虚拟组);指向已**禁用**的目标改写为按 `order_seq` 的下一个已启用智能体;指向已**删除**的具体智能体则**丢键**(工作区回到继承);清空的组同样改写,不误判为删除。
+- **系统保存清理全部工作区。** 与 `defaultAgentId` 相同,系统设置保存时顺带清理每个已存工作区的悬空 work 覆盖。
+- **解析顺序。** 工作区 `workAgentId` → 系统 `workAgentId` → 工作区 `defaultAgentId` → 系统 `defaultAgentId` → `system`(AC-R35)。工作区覆盖指向空虚拟组时解析**抛出** `agent.groupUnavailable`,不静默回落。
 
 ## 默认权限模式 `defaultMode`
 

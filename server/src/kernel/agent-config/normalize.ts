@@ -160,6 +160,7 @@ export function defaultSettings(): SystemSettings {
     agents: [systemAgent()],
     modelProviders: [],
     defaultAgentId: SYSTEM_AGENT_ID,
+    workAgentId: '',
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',

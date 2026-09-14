@@ -282,12 +282,31 @@ export interface WorkspaceSetting {
    * order, an **emptied group** to the first enabled agent, and a **deleted**
    * concrete agent drops the key so the workspace goes back to inheriting.
    *
-   * Deliberately the ONLY per-workspace agent field: `tool`/`intent`/`spec`/
-   * `spec_review` keep exactly one system-level slot each. A role explicitly set at
-   * system level wins over this override — the workspace default only answers
-   * "follow the default", never "replace every role".
+   * One of the two per-workspace agent fields (the other is {@link workAgentId}):
+   * `tool`/`intent`/`spec`/`spec_review` keep exactly one system-level slot each. A
+   * role explicitly set at system level wins over this override — the workspace
+   * default only answers "follow the default", never "replace every role".
    */
   defaultAgentId?: string
+  /**
+   * This workspace's **work-agent override** — the agent ordinary work sessions
+   * (`SessionKind='work'`) created inside this workspace without an explicit pick
+   * fall back to, instead of {@link SystemSettings.workAgentId} and then
+   * {@link defaultAgentId}.
+   *
+   * **Absent ⇒ inherit.** A missing key, an empty string and a whitespace-only
+   * string all mean "no workspace override", and normalize to the key being
+   * OMITTED — the inherited value is never snapshotted in here, or a dynamic
+   * inheritance would silently freeze into a copy. A non-string input reads as
+   * unconfigured. A non-empty value is trimmed and kept as the override reference:
+   * a concrete agent id, or a virtual group reference (`_c3_<vendor>_<group>`).
+   *
+   * Normalization mirrors {@link defaultAgentId} (`normalizeAgentRef`): a
+   * **disabled** target is rewritten to the next enabled agent in `order_seq`
+   * order, an **emptied group** to the first enabled agent, and a **deleted**
+   * concrete agent drops the key so the workspace goes back to inheriting.
+   */
+  workAgentId?: string
 }
 
 /** Workspace-level MCP server connections and denylist configuration. */

@@ -44,6 +44,7 @@ const baseSettings: SystemSettings = {
     },
   ],
   defaultAgentId: SYSTEM_AGENT_ID,
+  workAgentId: '',
   toolAgentId: '',
   intentAgentId: '',
   specAgentId: '',

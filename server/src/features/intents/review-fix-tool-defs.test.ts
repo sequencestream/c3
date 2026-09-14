@@ -24,6 +24,8 @@ vi.mock('../../state.js', async (importOriginal) => ({
   workspaceNameFor: (value: string) => value,
 }))
 import { resetDbForTests } from '../../kernel/infra/db.js'
+import { recordQueueReviewClaim } from './merge-authority.js'
+import { getQueueIntentMetaById, resetQueueStoreForTests } from './queue-store.js'
 import {
   claimIntentRelayPhase,
   getIntent,
@@ -37,6 +39,7 @@ import {
   type ReviewFixToolResult,
   type SyncIntentFixStatusArgs,
   type SyncIntentReviewStatusArgs,
+  type TrustedRelayCaller,
 } from './review-fix-tool-defs.js'
 
 const proj = '/abs/review-fix-tools-proj'
@@ -48,10 +51,12 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetQueueStoreForTests()
 })
 
 afterEach(() => {
   resetDbForTests()
+  resetQueueStoreForTests()
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
@@ -337,5 +342,112 @@ describe('a phase the queue holds only accepts its own session (stale backfill)'
       fixStatus: 'fixed',
     }
     expect(payload(runSyncIntentFixStatus(proj, args)).fixStatus).toBe('fixed')
+  })
+})
+
+describe('merge authority — only the server-attributed queue review grants it', () => {
+  const pinned = {
+    forge: 'github' as const,
+    repo: 'acme/app',
+    number: '42',
+    headBranch: 'intent/a',
+    baseBranch: 'main',
+    headSha: 'abc1234',
+  }
+
+  beforeEach(() => resetQueueStoreForTests())
+
+  it('a trusted review run concluding approved turns the claim into a credential', () => {
+    const id = seedIntent()
+    recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
+
+    const trusted: TrustedRelayCaller = { intentId: id, phase: 'review', sessionId: 'rev-1' }
+    payload(
+      runSyncIntentReviewStatus(
+        proj,
+        { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+        undefined,
+        trusted,
+      ),
+    )
+
+    const meta = getQueueIntentMetaById(id)
+    expect(meta.mergeGrant?.reviewSessionId).toBe('rev-1')
+    expect(meta.mergePhase).toBe('pending')
+  })
+
+  it('a manual backfill that merely names the queue session writes the conclusion but grants nothing', () => {
+    const id = seedIntent()
+    recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
+
+    payload(
+      runSyncIntentReviewStatus(
+        proj,
+        { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+        undefined,
+        null,
+      ),
+    )
+
+    expect(getIntent(id)!.reviewStatus).toBe('approved')
+    expect(getQueueIntentMetaById(id).mergeGrant).toBeNull()
+  })
+
+  it('a trusted run for a different intent grants nothing', () => {
+    const id = seedIntent()
+    recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
+
+    const trusted: TrustedRelayCaller = {
+      intentId: 'other-intent',
+      phase: 'review',
+      sessionId: 'rev-1',
+    }
+    payload(
+      runSyncIntentReviewStatus(
+        proj,
+        { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+        undefined,
+        trusted,
+      ),
+    )
+
+    expect(getQueueIntentMetaById(id).mergeGrant).toBeNull()
+  })
+
+  it('a trusted run of the WRONG phase grants nothing', () => {
+    const id = seedIntent()
+    recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
+
+    const trusted: TrustedRelayCaller = { intentId: id, phase: 'fix', sessionId: 'rev-1' }
+    payload(
+      runSyncIntentReviewStatus(
+        proj,
+        { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+        undefined,
+        trusted,
+      ),
+    )
+
+    expect(getQueueIntentMetaById(id).mergeGrant).toBeNull()
+  })
+
+  it('a rejected conclusion drops a credential the same round had earned', () => {
+    const id = seedIntent()
+    recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
+    runSyncIntentReviewStatus(
+      proj,
+      { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
+      undefined,
+      { intentId: id, phase: 'review', sessionId: 'rev-1' },
+    )
+    expect(getQueueIntentMetaById(id).mergeGrant).not.toBeNull()
+
+    runSyncIntentReviewStatus(
+      proj,
+      { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'rejected' },
+      undefined,
+      { intentId: id, phase: 'review', sessionId: 'rev-1' },
+    )
+    expect(getQueueIntentMetaById(id).mergeGrant).toBeNull()
   })
 })

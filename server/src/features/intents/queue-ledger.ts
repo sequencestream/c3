@@ -21,8 +21,13 @@ import type {
   QueueSpecRunFact,
 } from '../../kernel/queue/index.js'
 import type { WorkflowHooks } from './queue-action-context.js'
+import { mergeAuthorized, mergeRecoveryPending } from './merge-authority.js'
 import { readSpecFingerprint } from './spec-review.js'
-import { appendQueueDecisions, latestQueueDecisionByIntent } from './queue-store.js'
+import {
+  appendQueueDecisions,
+  getQueueIntentMetaById,
+  latestQueueDecisionByIntent,
+} from './queue-store.js'
 import { isSpecOccupancyAlive } from './spec-occupancy.js'
 
 // ---------------------------------------------------------------------------
@@ -37,8 +42,20 @@ import { isSpecOccupancyAlive } from './spec-occupancy.js'
  * conclusion by itself: the kernel just compares two strings, so there is no
  * invalidation pass to forget to run. An unreadable spec yields `null`, which the
  * kernel treats as "cannot review", never as changed content.
+ *
+ * `mergeAuthorized` is read the same way and for the same reason: the credential
+ * lives in the queue's own metadata, its validity depends on the live PR ledger,
+ * and reducing it here keeps the kernel a pure function that just reads a boolean.
+ * A probe (`pickNext`) passes `readMergeFacts: false` so it never reports an
+ * authorization — it answers "what would be DEVELOPED next", not "what may land".
  */
-export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): QueueIntentFact {
+export function toFact(
+  r: Intent,
+  workspacePath: string,
+  sddEnabled: boolean,
+  readMergeFacts = true,
+): QueueIntentFact {
+  const meta = readMergeFacts ? getQueueIntentMetaById(r.id) : null
   // Whether the spec gate currently holds this intent back — the same judgement
   // the kernel applies later. Computing it here drives the fingerprint read: an
   // intent that is not held back never needs its spec content probed, and a
@@ -105,6 +122,8 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     reviewFixRounds: r.reviewFixRounds,
     fixSessionId: r.fixSessionId,
     fixStatus: r.fixStatus,
+    mergeAuthorized: meta !== null && mergeAuthorized(r, meta),
+    mergeRecovery: meta !== null && mergeRecoveryPending(meta),
   }
 }
 

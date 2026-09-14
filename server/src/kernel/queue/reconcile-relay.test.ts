@@ -54,6 +54,8 @@ function relayIntent(over: Partial<QueueIntentFact> & { id: string }): QueueInte
     reviewFixRounds: 0,
     fixSessionId: null,
     fixStatus: null,
+    mergeAuthorized: false,
+    mergeRecovery: false,
     ...over,
   }
 }
@@ -100,6 +102,14 @@ function relayAction(
 
 function decisionFor(out: QueueReconcileOutput, id: string) {
   return out.decisions.find((d) => d.intentId === id)
+}
+
+/** The merge action this pass produced for `id`, or null. */
+function mergeAction(out: QueueReconcileOutput, id: string) {
+  return (out.actions.find((a) => a.kind === 'merge_prs' && a.intentId === id) ?? null) as Extract<
+    QueueAction,
+    { kind: 'merge_prs' }
+  > | null
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +209,8 @@ describe('relay candidates', () => {
         hasActivePr: true,
         reviewStatus: null,
         impactLevel: 'L2',
+        mergeAuthorized: false,
+        mergeRecovery: false,
       }),
     ).toBe(false)
   })
@@ -211,6 +223,8 @@ describe('relay candidates', () => {
       hasActivePr: true,
       reviewStatus: null,
       impactLevel: 'L2',
+      mergeAuthorized: false,
+      mergeRecovery: false,
     })
     expect(engaged).toBe(true)
     expect(
@@ -221,6 +235,8 @@ describe('relay candidates', () => {
         hasActivePr: true,
         reviewStatus: 'approved',
         impactLevel: 'L2',
+        mergeAuthorized: false,
+        mergeRecovery: false,
       }),
     ).toBe(false)
   })
@@ -609,5 +625,115 @@ describe('the relay obeys the same gates development does', () => {
     )
     expect(out.currentIntentId).toBe('r')
     expect(out.currentSessionId).toBe('rev-1')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Post-review auto-merge trigger
+// ---------------------------------------------------------------------------
+
+describe('the auto-merge trigger', () => {
+  it('a valid credential turns an approved review into a merge action', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [
+          relayIntent({
+            id: 'r',
+            reviewStatus: 'approved',
+            reviewSessionId: 'rev-1',
+            mergeAuthorized: true,
+          }),
+        ],
+      }),
+    )
+    expect(mergeAction(out, 'r')).toEqual({
+      kind: 'merge_prs',
+      intentId: 'r',
+      origin: 'queue-kernel',
+      recover: false,
+    })
+    expect(decisionFor(out, 'r')?.reason).toBe('pr_merging')
+  })
+
+  it('a persisted in-flight attempt recovers read-only, never re-sends', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [
+          relayIntent({
+            id: 'r',
+            reviewStatus: 'approved',
+            reviewSessionId: 'rev-1',
+            mergeRecovery: true,
+          }),
+        ],
+      }),
+    )
+    expect(mergeAction(out, 'r')).toEqual({
+      kind: 'merge_prs',
+      intentId: 'r',
+      origin: 'queue-kernel',
+      recover: true,
+    })
+  })
+
+  it('recovery wins over a still-present credential, so the attempt is never repeated', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [
+          relayIntent({
+            id: 'r',
+            reviewStatus: 'approved',
+            reviewSessionId: 'rev-1',
+            mergeAuthorized: true,
+            mergeRecovery: true,
+          }),
+        ],
+      }),
+    )
+    expect(mergeAction(out, 'r')?.recover).toBe(true)
+  })
+
+  it('an approved review with NO credential stays out of the candidate set', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [
+          relayIntent({
+            id: 'r',
+            reviewStatus: 'approved',
+            reviewSessionId: 'rev-1',
+            mergeAuthorized: false,
+            mergeRecovery: false,
+          }),
+        ],
+      }),
+    )
+    expect(mergeAction(out, 'r')).toBeNull()
+    expect(out.actions).toHaveLength(0)
+  })
+
+  it('a merge holds a concurrency slot exactly as review and fix do', () => {
+    const out = reconcileQueue(
+      input({
+        automationConcurrency: 1,
+        intents: [
+          relayIntent({
+            id: 'merging',
+            reviewStatus: 'approved',
+            reviewSessionId: 'rev-1',
+            mergeAuthorized: true,
+          }),
+          relayIntent({
+            id: 'waiting',
+            createdAt: 5,
+            reviewStatus: 'approved',
+            reviewSessionId: 'rev-2',
+            mergeAuthorized: true,
+          }),
+        ],
+        relayInFlight: ['merging'],
+      }),
+    )
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'waiting')?.reason).toBe('blocked_concurrency_gate')
   })
 })

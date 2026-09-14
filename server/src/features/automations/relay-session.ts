@@ -42,6 +42,14 @@ export interface RelaySessionSpec {
   maxWallClockMs: number
   /** Shown on the session projection row. */
   title: string
+  /**
+   * The execution handle this phase runs under. Supplied by the caller when it
+   * needs to KNOW the handle up front — the queue registers the relay run against
+   * it before launching, so a c3 MCP tool call arriving on this execution's
+   * binding is attributable to this phase without trusting its arguments. Omitted
+   * elsewhere, in which case a fresh one is minted here.
+   */
+  executionId?: string
   /** Called once, with the real session id the vendor bound. */
   onSessionBound?: (sessionId: string) => void
 }
@@ -69,7 +77,7 @@ function relayMode(): ModeToken {
  * conclusion, and the queue treats it as a failed attempt, never as a pass.
  */
 export async function runRelaySession(spec: RelaySessionSpec): Promise<RelaySessionOutcome> {
-  const executionId = randomUUID()
+  const executionId = spec.executionId ?? randomUUID()
   // The in-memory record the dispatcher executes. `id` is a transient handle: it
   // is never persisted, never listed, and never re-armed — the queue owns this
   // phase's identity through the intent's session field.

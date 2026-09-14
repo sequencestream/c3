@@ -140,6 +140,8 @@ function toQueueFact(r: Intent): QueueIntentFact {
     reviewFixRounds: 0,
     fixSessionId: null,
     fixStatus: null,
+    mergeAuthorized: false,
+    mergeRecovery: false,
   }
 }
 

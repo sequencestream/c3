@@ -2,7 +2,7 @@
 
 **场景。** 用户在想要构建的意图上勾选 `automate`,然后点击自动化按钮。一个按工作区划分的
 **确定性调度内核**按优先级/依赖顺序逐一开发它们,评判是否真正完成,提交并推送,建 PR,再按影响
-范围驱动 PR 的 AI 评审 → 修复 → 复审闭环,然后推进。
+范围驱动 PR 的 AI 评审 → 修复 → 复审闭环,并在评审是队列自己通过时自动合并 PR,然后推进。
 
 **领域。** intent-management · agent-session · permission-gateway · git。
 
@@ -49,7 +49,13 @@ flowchart TD
     RL -- 是 --> REV[Review 会话<br/>reviewAgentId · 意图 worktree]
     REV --> RS{回填了结论?}
     RS -- 无结论退出 --> FAIL
-    RS -- approved --> P
+    RS -- approved --> MG{队列自己评审<br/>且凭据有效 / 有在途合并?}
+    MG -- 否(人工回填/凭据失效) --> P
+    MG -- 是 --> MRG[merge_prs · 占一个并发名额<br/>认领 pending→running · 逐条重读 forge · gh/glab merge]
+    MRG --> SYNC{forge 回读全部 merged?}
+    SYNC -- 是 --> P
+    SYNC -- 否/失败 --> HB[handed_back · pr_merge_failed/unconfirmed<br/>去重待办转人工 · 不重试]
+    HB --> P
     RS -- rejected --> RB{已用满 3 轮修复?}
     RB -- 是 --> PARKX[park · review_fix_exhausted<br/>转人工 · 普通 unpark 不赠预算]
     RB -- 否 --> FIX[Fix 会话 · 轮次 +1<br/>fixAgentId · 同一 worktree]
@@ -153,16 +159,19 @@ flowchart TD
    仍有退避 / park / 被闸门阻塞的候选时呈现 `running`。`stop_workflow` 会中止当前运行并无错误地
    返回 `idle`(`RM-A7`)。
 
-## PR 评审 → 修复 → 复审接力(`RM-A24`/`RM-A25`/`RM-A26`)
+## PR 评审 → 修复 → 复审 → 自动合并接力(`RM-A24`/`RM-A25`/`RM-A26`/`RM-A27`)
 
-建了 PR 不等于这条意图离开了队列。队列继续持有它,直到 PR 拿到一个 AI 评审结论。
+建了 PR 不等于这条意图离开了队列。队列继续持有它,直到 PR 拿到一个 AI 评审结论,并且在评审是
+队列自己通过时把 PR 自动合并。
 
 1. **接力候选(`RM-A24`)。** `automate` + `status === 'reviewing'` + `worktree` 分支模式 + 仍有
    **活跃 PR**(非 `merged`/`closed`)+ 接力未结束。`reviewStatus` 为空时由
    `needsReview(impactLevel)` 决定要不要首次评审(只有 `L5` 跳过);一旦存在任何结论,影响范围
-   再怎么改都不影响接力 —— 否则一次降级就能丢掉未处理的 `rejected`。`approved` 使意图**退出**
+   再怎么改都不影响接力 —— 否则一次降级就能丢掉未处理的 `rejected`。`approved` 通常使意图**退出**
    候选集合、留在 `reviewing` 等合并(队列因此仍能正常呈现 `done`/idle,因为它对这条意图已无事
-   可做);`done` 只由收敛检查在「评审了结 + PR 全部合并」后写,不由接力自己写。接力候选与开发
+   可做);**唯一例外**是评审由队列自己认领并通过 —— 此时意图持有一张合并凭据,接力以 `merge_prs`
+   收尾自动合并后才退出(见第 8 条)。`done` 只由收敛检查在「评审了结 + PR 全部合并」后写,不由
+   接力自己写。接力候选与开发
    候选**同一条闸门链、同一份并发配额**:
    规格、交付写入、交付歧义、依赖、退避、冷却、`RM-A12` 一条都不放宽,每轮最多发起**一次**接力
    会话。`current-branch` 下不接力 —— 评审读、修复改的是 PR 的 head 分支,共享检出里没有这个
@@ -188,6 +197,18 @@ flowchart TD
    服务端组装,携带意图、阶段、轮次与上限、本次 `c3SessionId` 与目标 PR 的仓库/编号/链接与
    head/base,并要求**先读 WorkNote 历史再读 PR 变更** —— 空历史可以继续,读取报错不得伪装成
    无历史。过期会话不能覆盖已经换人的阶段;相同终态重复回填幂等。
+8. **自动合并(`RM-A27`)。** 只有队列自己认领的那轮评审、由服务端按 MCP 执行句柄归因的会话给出
+   `approved`,才签发一张合并凭据(`merge_grant` + `mergePhase='pending'`);人工回填、普通自动化
+   或口头说出会话 id 的参数都只写结论、不给凭据。内核看到 `approved + 凭据有效`(或重启后发现
+   `running`/`awaiting_sync` 的在途合并)就产出 `merge_prs` 动作,占一个与 Review/Fix 相同的并发
+   名额。执行器先 `pending → running` 条件认领(读回确认,认领写不进就一条命令不发),再逐条按
+   identity 键顺序重读 forge、比对 head SHA 仍是评审时 pin 的那一版,发出
+   `gh pr merge --merge --match-head-commit <sha>` / `glab mr merge --yes --auto-merge=false --sha <sha>`;
+   缺 head SHA 是拒绝而非豁免。命令返回 0 不当作成功:`syncIntentPrStatus` 读回 forge,聚合态
+   `merged` 才 `completeIntentOnPrsMerged` 写 `done`;冲突、红检查、缺 CLI、超时或 forge 未确认
+   都**交回人**(phase `handed_back`、凭据清空、去重待办 + 决策行,`pr_merge_failed`/
+   `pr_merge_unconfirmed`),意图停在 `reviewing` + `approved`,队列继续其他意图。**没有重试阶梯**:
+   被恢复的那次尝试可能已经落地,重发等于发出一个没人授权的第二次合并。
 
 ## 分支 —— 检查点共识override(`RM-A14`)
 

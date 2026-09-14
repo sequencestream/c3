@@ -130,7 +130,13 @@ interface RelayVerdict {
  */
 export type RelayCandidateFacts = Pick<
   QueueIntentFact,
-  'automate' | 'status' | 'hasActivePr' | 'reviewStatus' | 'impactLevel'
+  | 'automate'
+  | 'status'
+  | 'hasActivePr'
+  | 'reviewStatus'
+  | 'impactLevel'
+  | 'mergeAuthorized'
+  | 'mergeRecovery'
 > & {
   /**
    * Whether the workspace gives each intent its OWN worktree. The relay is a
@@ -151,18 +157,21 @@ export type RelayCandidateFacts = Pick<
  * loop already closed), that automation owns, and that still holds a live PR.
  * `L5` (and only `L5`) skips the FIRST review; once any conclusion exists the
  * relay stays engaged whatever the grade later becomes, so a regrade can never
- * strand an unhandled `rejected`. An `approved` intent leaves the candidate set
- * entirely — the relay has nothing left to do about it, and it stays `reviewing`
- * until the PR aggregate reports `merged`, when the convergence check writes
- * `done` (see `completeIntentOnPrsMerged`).
+ * strand an unhandled `rejected`.
+ *
+ * `approved` ends the relay UNLESS a merge is still owed: an intent whose review
+ * the queue itself ran and approved holds a merge credential, and landing its PRs
+ * is the last thing the relay does. Without such a credential — a human backfill,
+ * a credential already consumed, one a later push invalidated — `approved` still
+ * leaves the candidate set and the merge stays a human's job, exactly as before.
+ * Either way the intent remains `reviewing` until the PR aggregate reports
+ * `merged`, when the convergence check writes `done`
+ * (see `completeIntentOnPrsMerged`).
  */
 export function relayEngaged(r: RelayCandidateFacts): boolean {
   if (!r.worktreeMode) return false
   if (!r.automate || r.status !== 'reviewing' || !r.hasActivePr) return false
-  // `approved` ENDS the relay. The intent leaves the candidate set entirely, so a
-  // queue whose every intent passed review reports `done` instead of idling
-  // forever on work it has nothing left to do about.
-  if (r.reviewStatus === 'approved') return false
+  if (r.reviewStatus === 'approved') return r.mergeAuthorized || r.mergeRecovery
   if (r.reviewStatus === null) return needsReview(r.impactLevel)
   return true
 }
@@ -964,7 +973,8 @@ function stampQueuePositions(
  *   rejected + fixed       → re-review the same round's work, and clear the fix
  *                            marker so an old `fixed` can never satisfy the NEXT
  *                            rejection
- *   approved               → the relay is over; hand the merge back
+ *   approved + credential  → land the PRs the queue itself reviewed
+ *   approved, no credential→ the relay is over; hand the merge back
  *
  * Two orderings carry real weight. `fixed` is checked BEFORE the budget test, so
  * the third fix still earns its re-review and only a rejection after it parks the
@@ -1012,6 +1022,19 @@ function evaluateRelayPhase(
     sessionId: intent.fixSessionId,
     wakeAt: null,
   })
+  // A merge takes a concurrency slot exactly as a Review / Fix session does. It
+  // runs no agent, but it DOES change the world outside c3 while holding the
+  // intent, and letting it run "for free" would be the one relay action a queue at
+  // its cap could still fan out.
+  const startMerge = (recover: boolean, detail: string): RelayVerdict => ({
+    action: 'merge_prs',
+    reason: 'pr_merging',
+    detail,
+    actions: [{ kind: 'merge_prs', intentId: intent.id, origin: QUEUE_RUN_ORIGIN, recover }],
+    needsSlot: true,
+    sessionId: intent.reviewSessionId,
+    wakeAt: null,
+  })
 
   // A result may be backfilled while its session is still finishing up. Let the
   // session exit first: starting the next phase underneath a live one would leave
@@ -1048,6 +1071,15 @@ function evaluateRelayPhase(
   }
 
   if (intent.reviewStatus === 'approved') {
+    // A restart found a merge persisted as in flight. The ONLY thing allowed here
+    // is a read-only forge reconcile — the command it is recovering from may have
+    // landed, and re-sending it would be a merge nobody authorized twice.
+    if (intent.mergeRecovery) {
+      return startMerge(true, '发现执行中的合并记录,先只读核对 forge 结果')
+    }
+    if (intent.mergeAuthorized) {
+      return startMerge(false, '队列评审已通过且凭据有效,自动合并本意图的活跃 PR')
+    }
     // Unreachable through `relayEngaged`, which drops an approved intent from the
     // candidate set. Kept as a defensive no-op so a future caller cannot make an
     // approved PR start another agent by accident.

@@ -316,3 +316,116 @@ describe('cross-scope cleanup reaches storage, not just the returned object', ()
     expect(loadWorkspaceSetting(WS_X).defaultAgentId).toBe('b')
   })
 })
+
+const ROLE_FIELDS = [
+  'toolAgentId',
+  'intentAgentId',
+  'specAgentId',
+  'specReviewAgentId',
+  'automationAgentId',
+  'reviewAgentId',
+  'fixAgentId',
+] as const
+
+describe('workspace role overrides — the seven fields mirror defaultAgentId', () => {
+  it.each(ROLE_FIELDS.map((f) => [f]))(
+    '%s: absent / blank / whitespace / non-string ⇒ inherit (key omitted)',
+    (field) => {
+      seedSystemSettings({
+        agents: [agent('a')],
+        defaultAgentId: 'a',
+        projectConfigs: {
+          [WS_X]: { [field]: '   ' },
+          [WS_Y]: { [field]: 42 },
+        },
+      })
+      expect(loadWorkspaceSetting(WS_X)[field]).toBeUndefined()
+      expect(loadWorkspaceSetting(WS_Y)[field]).toBeUndefined()
+    },
+  )
+
+  it.each(ROLE_FIELDS.map((f) => [f]))('%s: keeps a valid override, trimmed', (field) => {
+    seedSystemSettings({
+      agents: [agent('a'), agent('b')],
+      defaultAgentId: 'a',
+      projectConfigs: { [WS_X]: { [field]: ' b ' } },
+    })
+    expect(loadWorkspaceSetting(WS_X)[field]).toBe('b')
+  })
+
+  it.each(ROLE_FIELDS.map((f) => [f]))(
+    '%s: drops the override of a DELETED agent, keeps other fields',
+    (field) => {
+      seedSystemSettings({
+        agents: [agent('a'), agent('b')],
+        defaultAgentId: 'a',
+        projectConfigs: { [WS_X]: { [field]: 'gone', devSkill: '/keep' } },
+      })
+      const x = loadWorkspaceSetting(WS_X)
+      expect(x[field]).toBeUndefined()
+      expect(x.devSkill).toBe('/keep')
+    },
+  )
+
+  it.each(ROLE_FIELDS.map((f) => [f]))(
+    '%s: rewrites a DISABLED override to the next enabled agent',
+    (field) => {
+      seedSystemSettings({
+        agents: [agent('a'), agent('c', { enabled: false }), agent('d')],
+        defaultAgentId: 'a',
+        projectConfigs: { [WS_X]: { [field]: 'c' } },
+      })
+      expect(loadWorkspaceSetting(WS_X)[field]).toBe('d')
+    },
+  )
+
+  it.each(ROLE_FIELDS.map((f) => [f]))(
+    '%s: keeps a group override and rewrites an emptied group, never clearing',
+    (field) => {
+      seedSystemSettings({
+        agents: [agent('a'), agent('m', { group: 'fast' })],
+        defaultAgentId: 'a',
+        projectConfigs: {
+          [WS_X]: { [field]: '_c3_claude_fast' },
+          [WS_Y]: { [field]: '_c3_claude_other' },
+        },
+      })
+      expect(loadWorkspaceSetting(WS_X)[field]).toBe('_c3_claude_fast')
+      expect(loadWorkspaceSetting(WS_Y)[field]).toBe('a')
+    },
+  )
+})
+
+describe('cross-scope cleanup reaches all nine workspace agent references', () => {
+  it('deleting an agent drops every workspace’s dangling role override, work override and default', () => {
+    seedSystemSettings({
+      agents: [agent('a'), agent('b')],
+      defaultAgentId: 'a',
+      projectConfigs: {
+        [WS_X]: {
+          defaultAgentId: 'b',
+          workAgentId: 'b',
+          toolAgentId: 'b',
+          intentAgentId: 'b',
+          specAgentId: 'b',
+          specReviewAgentId: 'b',
+          automationAgentId: 'b',
+          reviewAgentId: 'b',
+          fixAgentId: 'b',
+        },
+        [WS_Y]: { fixAgentId: 'b', devSkill: '/keep' },
+      },
+    })
+    const loaded = loadSettings()
+    saveSettings({ ...loaded, agents: loaded.agents.filter((x) => x.id !== 'b') })
+    resetConfigCaches()
+
+    const storedX = readStoredWorkspaceSetting(WS_X) ?? {}
+    for (const field of [...ROLE_FIELDS, 'defaultAgentId', 'workAgentId'] as const) {
+      expect(storedX).not.toHaveProperty(field)
+    }
+    const storedY = readStoredWorkspaceSetting(WS_Y)
+    expect(storedY?.fixAgentId).toBeUndefined()
+    expect(storedY?.devSkill).toBe('/keep')
+  })
+})

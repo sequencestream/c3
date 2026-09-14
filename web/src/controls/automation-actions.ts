@@ -165,21 +165,20 @@ export function installAutomationActions(ctx: AppCtx): void {
     const settings = ctx.serverSettings.value
     const agents = settings?.agents ?? []
     // Templates that declare a role field seed from that role reference along the
-    // `roleRef → effective default → first enabled agent` chain; the rest keep the
-    // legacy first-enabled-`claude` default. The resolved agent's concrete vendor
-    // replaces the template's hard-coded `claude` so a non-claude role agent lands
-    // in the snapshot's vendor/agentId pair.
+    // scoped `system role → workspace role override → workspace default → system
+    // default → first enabled agent` chain; the rest keep the legacy
+    // first-enabled-`claude` default. The resolved agent's concrete vendor replaces
+    // the template's hard-coded `claude` so a non-claude role agent lands in the
+    // snapshot's vendor/agentId pair.
     const roleField = template.roleField
+    const wsCfg = settings?.projectConfigs?.[workspaceName]
     const seed = roleField
       ? resolveAutomationDefaultAgent(
           agents,
           settings?.[roleField] ?? '',
-          // The effective default for THIS workspace: its own override when set, else
-          // the system default (the same chain the create form seeds from, so the
-          // template pre-picks the agent a launch would actually use).
-          settings?.projectConfigs?.[workspaceName]?.defaultAgentId?.trim() ||
-            settings?.defaultAgentId ||
-            '',
+          wsCfg?.[roleField] ?? '',
+          wsCfg?.defaultAgentId ?? '',
+          settings?.defaultAgentId ?? '',
         )
       : findEnabledVendorAgent(agents, 'claude')
     if (!seed) {

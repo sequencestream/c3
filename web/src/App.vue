@@ -593,10 +593,21 @@ const currentDefaultAgentId = computed<string>(() =>
 const discussionsDefaultAgentId = computed<string>(() =>
   defaultAgentForWorkspace(discussionsProject.value),
 )
-/** The effective default agent of the workspace the automations page is showing. */
-const automationsDefaultAgentId = computed<string>(() =>
-  defaultAgentForWorkspace(automationsProject.value),
-)
+/** The scoped candidate chain seeding the new-automation form: system automation
+ *  role → workspace automation override → workspace default → system default. Each
+ *  link is passed UN-folded so a workspace override can win without being snapshotted
+ *  into the system value. */
+const automationsSeedAgentRefs = computed<string[]>(() => {
+  const system = serverSettings.value
+  const ws = automationsProject.value
+  const cfg = ws ? system?.projectConfigs?.[ws] : undefined
+  return [
+    system?.automationAgentId ?? '',
+    cfg?.automationAgentId ?? '',
+    cfg?.defaultAgentId ?? '',
+    system?.defaultAgentId ?? '',
+  ]
+})
 
 /** The candidate deliveries the `delivery-context` exit offers, from the ledger. */
 const gateEscapeDeliveries = computed(() => {
@@ -1044,8 +1055,7 @@ function onFilesChatWidth(px: number): void {
           :tool-manifest-error="automationToolManifestError"
           :vendor-availability="vendorAvailability"
           :agents="serverSettings?.agents ?? []"
-          :automation-agent-id="serverSettings?.automationAgentId ?? ''"
-          :default-agent-id="automationsDefaultAgentId"
+          :seed-agent-refs="automationsSeedAgentRefs"
           @select="onSelectAutomation"
           @open-form="openAutomationForm"
           @delete-automation="deleteAutomation"

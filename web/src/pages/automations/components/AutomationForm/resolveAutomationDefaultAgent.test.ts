@@ -50,4 +50,30 @@ describe('resolveAutomationDefaultAgent — create-form seed follow-chain (AC-R2
     expect(resolveAutomationDefaultAgent([claude('a1', false)], 'a1', '')).toBeUndefined()
     expect(resolveAutomationDefaultAgent([], '', '')).toBeUndefined()
   })
+
+  it('walks the full scoped chain: system role → workspace role → workspace default → system default', () => {
+    // system automation role = a2 wins over everything below it.
+    expect(resolveAutomationDefaultAgent(agents, 'a2', 'a3', 'a1', 'a1')).toMatchObject({
+      id: 'a2',
+    })
+    // system role empty ⇒ workspace role override wins.
+    expect(resolveAutomationDefaultAgent(agents, '', 'a3', 'a1', 'a2')).toMatchObject({
+      id: 'a3',
+    })
+    // role links empty ⇒ workspace default wins over the system default.
+    expect(resolveAutomationDefaultAgent(agents, '', '', 'a2', 'a1')).toMatchObject({
+      id: 'a2',
+    })
+    // every configured link empty ⇒ first enabled agent.
+    expect(resolveAutomationDefaultAgent(agents, '', '', '', '')).toMatchObject({ id: 'a1' })
+  })
+
+  it('trims whitespace on every link and skips dangling ids', () => {
+    expect(resolveAutomationDefaultAgent(agents, '  ', '  a2  ', '', '')).toMatchObject({
+      id: 'a2',
+    })
+    expect(resolveAutomationDefaultAgent(agents, ' gone ', '  ', 'a2', '')).toMatchObject({
+      id: 'a2',
+    })
+  })
 })

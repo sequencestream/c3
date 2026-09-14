@@ -282,12 +282,47 @@ export interface WorkspaceSetting {
    * order, an **emptied group** to the first enabled agent, and a **deleted**
    * concrete agent drops the key so the workspace goes back to inheriting.
    *
-   * One of the two per-workspace agent fields (the other is {@link workAgentId}):
-   * `tool`/`intent`/`spec`/`spec_review` keep exactly one system-level slot each. A
-   * role explicitly set at system level wins over this override — the workspace
-   * default only answers "follow the default", never "replace every role".
+   * The LAST link a workspace-scoped resolution follows: the seven role overrides
+   * below are tried first, and a role explicitly set at SYSTEM level still wins over
+   * all of them — the workspace layer only answers "follow the default", never
+   * "replace an explicit system pick".
    */
   defaultAgentId?: string
+  /**
+   * This workspace's override for the **tool** role (background tool sessions).
+   * Same sentinel semantics as {@link defaultAgentId} — absent / blank ⇒ inherit,
+   * never a snapshot. Consumed at RUNTIME: it sits between the system
+   * `toolAgentId` and this workspace's {@link defaultAgentId} in the resolution
+   * chain, and keeps group routing (an unusable group fails loudly).
+   */
+  toolAgentId?: string
+  /** This workspace's override for the **intent** role (intent-communication
+   *  sessions). Runtime role; semantics identical to {@link toolAgentId}. */
+  intentAgentId?: string
+  /** This workspace's override for the **spec** role (spec authoring sessions).
+   *  Runtime role; semantics identical to {@link toolAgentId}. */
+  specAgentId?: string
+  /** This workspace's override for the **spec_review** role (spec review sessions).
+   *  Runtime role; semantics identical to {@link toolAgentId}. Roles do not chain
+   *  into each other — spec review never inherits the spec role. */
+  specReviewAgentId?: string
+  /**
+   * This workspace's override for the **automation** role. Same sentinel and
+   * normalization semantics as {@link defaultAgentId}, but a DIFFERENT consumer:
+   * it is a create-time form SEED, not a runtime route — it only pre-fills the
+   * new-automation form's `vendor`/`agentId`, and the saved automation keeps its
+   * own concrete snapshot.
+   */
+  automationAgentId?: string
+  /** This workspace's override for the **review** role — seeds the `pr-review-runner`
+   *  template's create-time identity only. Deliberately NOT read by the PR-review
+   *  relay queue, which keeps resolving `reviewAgentId` (system) → workspace
+   *  {@link defaultAgentId} → system default. */
+  reviewAgentId?: string
+  /** This workspace's override for the **fix** role — seeds the `pr-review-fix`
+   *  template's create-time identity only; the relay queue ignores it, exactly as
+   *  it ignores {@link reviewAgentId}. */
+  fixAgentId?: string
   /**
    * This workspace's **work-agent override** — the agent ordinary work sessions
    * (`SessionKind='work'`) created inside this workspace without an explicit pick
@@ -308,6 +343,41 @@ export interface WorkspaceSetting {
    */
   workAgentId?: string
 }
+
+/**
+ * The seven per-workspace ROLE override fields, in the order the Default Agent tab
+ * renders them. `defaultAgentId` is deliberately NOT in this list: it is the chain's
+ * last workspace-level link, not a role, and several call sites treat it separately.
+ *
+ * One list is what keeps normalization, the dangling-reference cleanup and the
+ * settings form from each re-deriving which keys reference the agent registry.
+ */
+export const WORKSPACE_ROLE_AGENT_FIELDS = [
+  'toolAgentId',
+  'intentAgentId',
+  'specAgentId',
+  'specReviewAgentId',
+  'automationAgentId',
+  'reviewAgentId',
+  'fixAgentId',
+] as const
+
+/** One of the seven per-workspace role override keys. */
+export type WorkspaceRoleAgentField = (typeof WORKSPACE_ROLE_AGENT_FIELDS)[number]
+
+/**
+ * Every `WorkspaceSetting` key that references the agent registry — the seven role
+ * overrides plus the workspace default and work role. Normalization and the system-save cleanup
+ * apply the SAME rule to all nine.
+ */
+export const WORKSPACE_AGENT_REF_FIELDS = [
+  ...WORKSPACE_ROLE_AGENT_FIELDS,
+  'defaultAgentId',
+  'workAgentId',
+] as const
+
+/** One of the nine `WorkspaceSetting` keys that reference the agent registry. */
+export type WorkspaceAgentRefField = (typeof WORKSPACE_AGENT_REF_FIELDS)[number]
 
 /** Workspace-level MCP server connections and denylist configuration. */
 export interface WorkspaceMcpConfig {

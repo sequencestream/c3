@@ -78,13 +78,15 @@ const props = defineProps<{
   /** Enabled execution profiles; filtered by the selected vendor. */
   agents?: AgentConfig[]
   /**
-   * System-configured default agent for the new-automation form (AC-R25). Empty
-   * ⇒ follow `defaultAgentId`. Only seeds the create form's initial vendor+agent;
-   * editing an existing automation is unaffected.
+   * The full scoped candidate chain seeding the create form's initial vendor+agent
+   * (AC-R25 + workspace overrides), in priority order:
+   * `[system automationAgentId, workspace automationAgentId, workspace
+   * defaultAgentId, system defaultAgentId]`. Empty entries are skipped; the chain
+   * ends on the first enabled agent. Only seeds the create form — editing an
+   * existing automation is unaffected, and the user's later picks are never
+   * overwritten by this.
    */
-  automationAgentId?: string
-  /** System default agent, the follow-chain fallback for `automationAgentId`. */
-  defaultAgentId?: string
+  seedAgentRefs?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -542,16 +544,12 @@ watch(
       metadataRows.value = []
       metadataConditions.value = []
       metadataCombinator.value = 'AND'
-      // Seed the create form's default vendor+agent from the system-configured
-      // `automationAgentId` (AC-R25): resolve the concrete agent via the follow
-      // chain `automationAgentId → defaultAgentId → first enabled agent`. No enabled
-      // agent ⇒ system fallback (vendor `claude`, empty agent). The user can still
-      // change vendor/agent afterwards.
-      const seed = resolveAutomationDefaultAgent(
-        props.agents ?? [],
-        props.automationAgentId ?? '',
-        props.defaultAgentId ?? '',
-      )
+      // Seed the create form's default vendor+agent along the scoped chain
+      // `system automationAgentId → workspace automationAgentId → workspace
+      // defaultAgentId → system defaultAgentId → first enabled agent` (AC-R25 +
+      // workspace overrides). No enabled agent ⇒ system fallback (vendor `claude`,
+      // empty agent). The user can still change vendor/agent afterwards.
+      const seed = resolveAutomationDefaultAgent(props.agents ?? [], ...(props.seedAgentRefs ?? []))
       // The follow chain answers "which agent does the system point at", not
       // "which agent can run an automation". When it lands on a vendor with no
       // execution path, the form must NOT carry that forward as a submittable

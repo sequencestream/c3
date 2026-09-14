@@ -3766,6 +3766,34 @@
       "inherit": "继承系统默认 Agent",
       "inheritNamed": "继承系统默认 Agent（当前：{agent}）",
       "stale": "当前选择的 Agent 已被删除,请重新选择,或改回继承系统默认。",
+      "roleTitle": {
+        "label": "角色智能体覆盖"
+      },
+      "roleHint": "各角色可单独指定本工作区要用的智能体。系统已明确指定该角色时以系统为准,工作区角色只在系统角色跟随默认时生效;继承即跟随上方的默认 Agent。",
+      "inheritRole": "继承系统默认",
+      "roles": {
+        "tool": {
+          "label": "工具智能体"
+        },
+        "intent": {
+          "label": "意图智能体"
+        },
+        "spec": {
+          "label": "规范智能体"
+        },
+        "specReview": {
+          "label": "规范审核智能体"
+        },
+        "automation": {
+          "label": "自动化智能体"
+        },
+        "review": {
+          "label": "评审智能体"
+        },
+        "fix": {
+          "label": "修复智能体"
+        }
+      },
       "workPicker": {
         "label": "工作智能体"
       },

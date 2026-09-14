@@ -3766,6 +3766,34 @@
       "inherit": "Inherit the system default agent",
       "inheritNamed": "Inherit the system default agent (currently: {agent})",
       "stale": "The agent you picked has been deleted. Choose another one, or go back to inheriting the system default.",
+      "roleTitle": {
+        "label": "Role agent overrides"
+      },
+      "roleHint": "Give each role its own agent for this workspace. A role explicitly set at the system level still wins — the workspace role only applies while the system role follows the default; inheriting follows the default agent above.",
+      "inheritRole": "Inherit system default",
+      "roles": {
+        "tool": {
+          "label": "Tool agent"
+        },
+        "intent": {
+          "label": "Intent agent"
+        },
+        "spec": {
+          "label": "Spec agent"
+        },
+        "specReview": {
+          "label": "Spec review agent"
+        },
+        "automation": {
+          "label": "Automation agent"
+        },
+        "review": {
+          "label": "Review agent"
+        },
+        "fix": {
+          "label": "Fix agent"
+        }
+      },
       "workPicker": {
         "label": "Work agent"
       },

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import WorkspaceSetting from './WorkspaceSetting.vue'
+import { WORKSPACE_ROLE_AGENT_FIELDS } from '@ccc/shared/protocol'
 import type {
   WorkspaceSetting as WorkspaceSettingType,
   SkillRepoConfig,
@@ -126,9 +127,9 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mountWs(null)
     // 2 codex policy selects (sandbox + approval) + 1 claude + 1 cursor
     // + 1 git-branch-mode select + 1 workspace default-agent select
-    // + 1 workspace work-agent select = 7
+    // + 7 workspace role-agent selects + 1 work-agent select = 14
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(7)
+    expect(selects).toHaveLength(14)
     // Claude and Cursor each have a single mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-cursor"]').length).toBe(1)
@@ -189,11 +190,11 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
 
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
-    // 默认 Agent + 工作 Agent + 3 vendor row-labels + devSkill + rounds + speechChars
+    // 默认 Agent + 7 个角色覆盖 + 3 vendor row-labels + devSkill + rounds + speechChars
     // + gitBranchMode + defaultMainBranch + default-visible SDD spec root
-    // + fast-spec 两个阈值 + automation cap = 14
+    // + fast-spec 两个阈值 + automation cap + 工作 Agent = 21
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(14)
+    expect(labels).toHaveLength(21)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -917,20 +918,89 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
     }
   })
 
-  it('keeps the default-agent tab to the inherited-default selector only (no role dropdowns)', () => {
-    const w = mountWs(cfg(), { resolvedSpecRoot: '/home/u/.c3/specs/test' })
+  it('renders all seven role override selects, each leading with the inherit option', () => {
+    const w = mountWs(cfg(), {
+      agents: [
+        {
+          id: 'a1',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'Agent One',
+          enabled: true,
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      resolvedSpecRoot: '/home/u/.c3/specs/test',
+    })
     const panel = w.find('[data-testid="project-config-tab-defaultAgent"]')
-    for (const testid of [
-      'tool-agent-select',
-      'intent-agent-select',
-      'spec-agent-select',
-      'spec-review-agent-select',
-      'automation-agent-select',
-      'review-agent-select',
-      'fix-agent-select',
-    ]) {
-      expect(panel.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    for (const field of WORKSPACE_ROLE_AGENT_FIELDS) {
+      const select = panel.find(`[data-testid="workspace-role-agent-select-${field}"]`)
+      expect(select.exists()).toBe(true)
+      const options = select.findAll('option')
+      expect(options).toHaveLength(2) // inherit + a1
+      expect(options[0].attributes('value')).toBe('') // 居首的「继承系统默认」
     }
+  })
+
+  it('seeds a committed role override and saves an edited one (inherit stays blank)', async () => {
+    const agents = [
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Agent One',
+        enabled: true,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Agent Two',
+        enabled: true,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ]
+    const w = mountWs(cfg({ toolAgentId: 'a1', intentAgentId: '   ' }), {
+      agents,
+      resolvedSpecRoot: '/home/u/.c3/specs/test',
+    })
+    // Committed toolAgentId 'a1' seeds the select; blank intentAgentId stays inherit.
+    const tool = w.find('[data-testid="workspace-role-agent-select-toolAgentId"]')
+      .element as HTMLSelectElement
+    expect(tool.value).toBe('a1')
+    const intent = w.find('[data-testid="workspace-role-agent-select-intentAgentId"]')
+      .element as HTMLSelectElement
+    expect(intent.value).toBe('')
+
+    // Edit the tool role and save; the inherit role emits '' so the server drops the key.
+    await w.find('[data-testid="workspace-role-agent-select-toolAgentId"]').setValue('a2')
+    await w.find('[data-testid="project-config-save-defaultAgent"]').trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.toolAgentId).toBe('a2')
+    expect(payload.intentAgentId).toBe('')
+  })
+
+  it('saving "inherit" for a role emits an empty string so the server drops the override', async () => {
+    const w = mountWs(cfg({ specAgentId: 'a1' }), {
+      agents: [
+        {
+          id: 'a1',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'Agent One',
+          enabled: true,
+          config: { baseUrl: '', apiKey: '', model: '' },
+        },
+      ],
+      resolvedSpecRoot: '/home/u/.c3/specs/test',
+    })
+    const spec = w.find('[data-testid="workspace-role-agent-select-specAgentId"]')
+    expect((spec.element as HTMLSelectElement).value).toBe('a1')
+    await spec.setValue('') // 回到「继承系统默认」
+    await w.find('[data-testid="project-config-save-defaultAgent"]').trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.specAgentId).toBe('')
   })
 
   it('defaults to the default-mode tab and switches to a clean tab without confirmation', async () => {

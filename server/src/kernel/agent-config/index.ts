@@ -25,6 +25,7 @@ import type {
   StoreScope,
   SystemSettings,
   VendorId,
+  WorkspaceRoleAgentField,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
 import type { ConnectionWarning } from './provider-resolve.js'
@@ -156,6 +157,24 @@ const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
 }
 
 /**
+ * Which `WorkspaceSetting` field a role consults for its per-workspace override —
+ * the link between the explicit SYSTEM role field and the workspace `defaultAgentId`.
+ *
+ * Only the four RUNTIME roles are listed. `default` has no role override (it already
+ * ends on the workspace default), and `review` / `fix` are deliberately absent: their
+ * workspace overrides are create-time seeds for the two PR-review templates, consumed
+ * by the console. The relay queue claims its phases through this same resolver, so
+ * listing them here would silently change which agent an in-flight Review / Fix phase
+ * binds — a behaviour change the workspace-override feature does not ask for.
+ */
+const ROLE_WORKSPACE_FIELD: Partial<Record<AgentRole, WorkspaceRoleAgentField>> = {
+  tool: 'toolAgentId',
+  intent: 'intentAgentId',
+  spec: 'specAgentId',
+  spec_review: 'specReviewAgentId',
+}
+
+/**
  * A resolved agent target — the pair every binding site needs:
  *
  *  - `ref` is the **routing identity to persist**: the group reference
@@ -248,6 +267,26 @@ export function resolveAgentTarget(
   workspacePath?: string | null,
   priorRefs?: ReadonlyArray<string | null | undefined>,
 ): AgentTarget {
+  return resolveTargetChain(ref, cursor, workspacePath, null, priorRefs)
+}
+
+/**
+ * The one implementation behind {@link resolveAgentTarget} and
+ * {@link resolveRoleAgentTarget}, with the workspace ROLE override made explicit.
+ *
+ * `workspaceRoleField` names the {@link WorkspaceSetting} key to try between the
+ * explicit reference and the workspace default; `null` skips that link (a plain
+ * reference resolution, or a role with no per-workspace override). Both workspace
+ * links are skipped entirely when the task belongs to no workspace, and the single
+ * `loadWorkspaceSetting` read serves both.
+ */
+function resolveTargetChain(
+  ref: string | null,
+  cursor: string | null | undefined,
+  workspacePath: string | null | undefined,
+  workspaceRoleField: WorkspaceRoleAgentField | null,
+  priorRefs?: ReadonlyArray<string | null | undefined>,
+): AgentTarget {
   const settings = loadSettings()
   /** Rules 1–2 for one reference: the group/concrete target, or null to keep falling. */
   const targetFor = (candidate: string | undefined): AgentTarget | null => {
@@ -271,7 +310,12 @@ export function resolveAgentTarget(
   // Follow the default — the empty-role sentinel AND the unknown-id compat chain —
   // narrowest scope first, so a workspace override actually wins over the system value.
   if (workspacePath) {
-    const scoped = targetFor(loadWorkspaceSetting(workspacePath).defaultAgentId)
+    const workspace = loadWorkspaceSetting(workspacePath)
+    if (workspaceRoleField) {
+      const scopedRole = targetFor(workspace[workspaceRoleField])
+      if (scopedRole) return scopedRole
+    }
+    const scoped = targetFor(workspace.defaultAgentId)
     if (scoped) return scoped
   }
   const systemDefault = targetFor(settings.defaultAgentId)
@@ -310,22 +354,27 @@ export function getRoleAgentId(role: AgentRole): string {
  * "role field empty, default is a group" land on the SAME target. Throws
  * {@link AgentGroupUnavailableError} for an unusable group.
  *
- * `workspacePath` scopes which default a *following* role lands on. The `default`
- * role deliberately passes NO explicit reference: feeding it `defaultAgentId` would
- * make the system value an explicit pick and the workspace override could never
- * win. The other roles keep their own field as the explicit pick, so an explicit
- * system-level role choice still outranks a workspace default — except `work`,
- * which resolves through the workspace-first chain {@link workPriorRefs} (workspace
- * `workAgentId` → system `workAgentId`) before falling back to the default chain.
+ * `workspacePath` scopes the two workspace links a *following* role lands on, so the
+ * full order is **explicit system role field → that workspace's same-named role
+ * override → that workspace's `defaultAgentId` → the system `defaultAgentId` →
+ * `system`**. The `default` role deliberately passes NO explicit reference: feeding it
+ * `defaultAgentId` would make the system value an explicit pick and the workspace
+ * override could never win. The other roles keep their own field as the explicit pick,
+ * so an explicit system-level role choice still outranks every workspace link.
+ *
+ * The work role uses workspace work → system work before the default chain.
+ * Only the four other runtime roles read a workspace role override ({@link
+ * ROLE_WORKSPACE_FIELD}); `review` / `fix` skip straight to the workspace default.
  */
 export function resolveRoleAgentTarget(
   role: AgentRole,
   workspacePath?: string | null,
 ): AgentTarget {
-  return resolveAgentTarget(
+  return resolveTargetChain(
     roleRefForResolve(role),
     null,
     workspacePath,
+    ROLE_WORKSPACE_FIELD[role] ?? null,
     workPriorRefs(role, workspacePath),
   )
 }
@@ -335,12 +384,12 @@ export function tryResolveRoleAgentTarget(
   role: AgentRole,
   workspacePath?: string | null,
 ): AgentTargetResult {
-  return tryResolveAgentTarget(
-    roleRefForResolve(role),
-    null,
-    workspacePath,
-    workPriorRefs(role, workspacePath),
-  )
+  try {
+    return { ok: true, target: resolveRoleAgentTarget(role, workspacePath) }
+  } catch (err) {
+    if (err instanceof AgentGroupUnavailableError) return { ok: false, groupRef: err.groupRef }
+    throw err
+  }
 }
 
 /** The explicit reference a role contributes: none for `default` or `work` (see above). */
@@ -349,8 +398,8 @@ function roleRefForResolve(role: AgentRole): string | null {
 }
 
 /**
- * The workspace-first prior reference chain for the `work` role — the ONE role that
- * owns a per-workspace override. Yields `[workspace workAgentId, system workAgentId]`
+ * The workspace-first prior reference chain for the `work` role, whose workspace override
+ * precedes its system role. Yields `[workspace workAgentId, system workAgentId]`
  * (workspace first, then system), so a workspace override wins over the system value
  * while an empty workspace value still falls through to the system role. Every other
  * role returns `undefined` — the generic resolver must not read work config for them.

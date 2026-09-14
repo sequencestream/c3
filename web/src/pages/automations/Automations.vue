@@ -54,10 +54,8 @@ const props = defineProps<{
   /** 每个 vendor 的运行时可用性(用于灰显跑不起来的 vendor)。 */
   vendorAvailability: Record<VendorId, VendorRuntimeStatus>
   agents: AgentConfig[]
-  /** System-configured default agent for the new-automation form (AC-R25). */
-  automationAgentId: string
-  /** System default agent, the follow-chain fallback for `automationAgentId`. */
-  defaultAgentId: string
+  /** Full scoped candidate chain seeding the new-automation form (AC-R25 + workspace overrides). */
+  seedAgentRefs: string[]
 }>()
 
 const emit = defineEmits<{
@@ -148,8 +146,7 @@ function onImportConfirm(inputs: CreateAutomationInput[]): void {
     :tool-manifest-error="toolManifestError"
     :vendor-availability="vendorAvailability"
     :agents="agents"
-    :automation-agent-id="automationAgentId"
-    :default-agent-id="defaultAgentId"
+    :seed-agent-refs="seedAgentRefs"
     @close="emit('close-form')"
     @create="(input: CreateAutomationInput) => emit('create', input)"
     @update="(id: string, input: UpdateAutomationInput) => emit('update', id, input)"

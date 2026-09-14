@@ -124,6 +124,7 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       automationAgentId: '',
       reviewAgentId: '',
       fixAgentId: '',
+      workAgentId: '',
     } as SystemSettings)
     expect(loadSettings().projectConfigs?.a).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
@@ -672,6 +673,7 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
       automationAgentId: '',
       reviewAgentId: '',
       fixAgentId: '',
+      workAgentId: '',
       socketAutoResume,
     } as SystemSettings)
   }
@@ -1336,6 +1338,7 @@ describe('agent-output language tracking', () => {
       automationAgentId: '',
       reviewAgentId: '',
       fixAgentId: '',
+      workAgentId: '',
       voiceLang: 'en-US',
     } as SystemSettings)
     expect(getAgentLang()).toBe('zh')
@@ -1398,6 +1401,7 @@ function saveWithTimezone(timezone: unknown): void {
     automationAgentId: '',
     reviewAgentId: '',
     fixAgentId: '',
+    workAgentId: '',
     timezone,
   } as SystemSettings)
 }

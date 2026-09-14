@@ -1,5 +1,5 @@
 import type { Intent, IntentPr, IntentPrStatus } from '@ccc/shared/protocol'
-import { deriveIntentPrAggregate } from '@ccc/shared'
+import { activeIntentPrs, deriveIntentPrAggregate } from '@ccc/shared'
 import type { KernelContext } from '../../kernel/types.js'
 import { getForgeOverride } from '../../kernel/config/index.js'
 import { getForgePrStatus } from '../../git.js'
@@ -47,10 +47,19 @@ export interface IntentPrSyncResult {
  * row moved: an intent whose PRs merged before this rule existed — or whose row
  * was set to `merged` through another path — is corrected the next time anyone
  * syncs it, instead of sitting at `in_progress` forever.
+ *
+ * `scope` widens the row gate. The default `reviewing` is the historic behaviour.
+ * `active` covers every row that is neither `merged` nor `closed` — including the
+ * `failed` / `rejected` rows a local write produced while the change request is
+ * still open on the forge. The auto-merge path needs that wider reading: it just
+ * acted on those very rows, and asking only about `reviewing` ones would leave it
+ * unable to observe what it did.
  */
 export async function syncIntentPrStatus(input: {
   workspacePath: string
   intentId: string
+  /** Which rows to query. Default `reviewing`. */
+  scope?: 'reviewing' | 'active'
   broadcastIntents?: (workspacePath: string) => void
 }): Promise<IntentPrSyncResult> {
   const intent = getIntent(input.intentId)
@@ -66,7 +75,8 @@ export async function syncIntentPrStatus(input: {
     }
   }
 
-  const reviewing = listReviewingIntentPrs(intent.id)
+  const reviewing =
+    input.scope === 'active' ? activeIntentPrs(intent.prs) : listReviewingIntentPrs(intent.id)
   if (reviewing.length === 0) {
     const aggregate = deriveIntentPrAggregate(intent.prs)
     if (aggregate === null) {
@@ -80,7 +90,7 @@ export async function syncIntentPrStatus(input: {
       prStatus: aggregate,
       changed: false,
       autoCompleted,
-      message: `没有处于 reviewing 的 PR/MR(当前为 ${aggregate})${
+      message: `没有需要同步的 PR/MR(当前为 ${aggregate})${
         autoCompleted ? ',PR 已全部合并,意图自动标记为完成' : ''
       }`,
     }
@@ -95,6 +105,10 @@ export async function syncIntentPrStatus(input: {
       input.workspacePath,
       pr.number,
       pr.forge ?? getForgeOverride(input.workspacePath),
+      // The repo recorded ON the row. Without it a bare number resolves against
+      // whatever the workspace's origin points at, so two repositories that both
+      // own a `#42` would answer for each other.
+      pr.repo,
     )
     if (!status.ok || !status.status) {
       errors.push(`#${pr.number}: ${status.error ?? 'PR/MR 状态获取失败'}`)

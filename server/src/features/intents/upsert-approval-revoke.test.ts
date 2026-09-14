@@ -354,6 +354,8 @@ function toFact(r: Intent, specFingerprint: string | null): QueueIntentFact {
     reviewFixRounds: r.reviewFixRounds,
     fixSessionId: r.fixSessionId,
     fixStatus: r.fixStatus,
+    mergeAuthorized: false,
+    mergeRecovery: false,
   }
 }
 

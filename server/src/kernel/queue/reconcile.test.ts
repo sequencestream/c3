@@ -55,6 +55,8 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     reviewFixRounds: 0,
     fixSessionId: null,
     fixStatus: null,
+    mergeAuthorized: false,
+    mergeRecovery: false,
     ...over,
   }
 }

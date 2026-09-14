@@ -567,6 +567,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const automationAgentId = roleRef(raw?.automationAgentId)
   const reviewAgentId = roleRef(raw?.reviewAgentId)
   const fixAgentId = roleRef(raw?.fixAgentId)
+  const workAgentId = roleRef(raw?.workAgentId)
   // Legacy `sandbox*AgentId` keys (the removed sandbox-only role profile) are read
   // as unknown fields: ignored here and absent from the returned object, so they
   // disappear from disk on the next save. A sandbox run reuses the agent this same
@@ -626,6 +627,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     automationAgentId,
     reviewAgentId,
     fixAgentId,
+    workAgentId,
     voiceLang,
     timezone,
     ...(baseUrlRaw ? { baseUrl: baseUrlRaw } : {}),
@@ -644,12 +646,12 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
 
 /**
  * Re-normalize every stored workspace's agent references — the seven role overrides
- * and the workspace `defaultAgentId` ({@link WORKSPACE_AGENT_REF_FIELDS}) — against
+ * and the workspace `defaultAgentId` / `workAgentId` ({@link WORKSPACE_AGENT_REF_FIELDS}) — against
  * the final registry, leaving all other workspace fields exactly as stored.
  *
  * A whole-system save carries the map wholesale, so this is what makes "delete an
  * agent" reach workspaces the console never rendered. The rule is the shared one
- * (`normalizeAgentRef`), applied identically to all eight: a disabled target moves on
+ * (`normalizeAgentRef`), applied identically to all nine: a disabled target moves on
  * to the next enabled agent, an emptied group to the first enabled one, and a DELETED
  * target drops the key so the workspace inherits again — never a snapshot.
  *
@@ -823,6 +825,7 @@ export function normalizeWorkspaceSetting(
   // the key is omitted below, so a later read falls through to the next link.
   const agentList = [...agents]
   const defaultAgentId = normalizeAgentRef(agentList, rec.defaultAgentId) || undefined
+  const workAgentId = normalizeAgentRef(agentList, rec.workAgentId) || undefined
   // The seven role overrides take the SAME rule — spreading only the ones that
   // survived keeps "inherit" spelled as an absent key rather than an empty value.
   const roleAgentIds: Partial<Record<WorkspaceRoleAgentField, string>> = {}
@@ -849,6 +852,7 @@ export function normalizeWorkspaceSetting(
     ...(specMachineApprovalEnabled ? { specMachineApprovalEnabled } : {}),
     ...(defaultAgentId ? { defaultAgentId } : {}),
     ...roleAgentIds,
+    ...(workAgentId ? { workAgentId } : {}),
   }
 }
 

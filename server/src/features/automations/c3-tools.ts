@@ -68,6 +68,7 @@ import {
   type SyncIntentFixStatusArgs,
   type SyncIntentReviewStatusArgs,
 } from '../intents/review-fix-tool-defs.js'
+import { lookupRelayRun } from '../intents/relay-run-registry.js'
 import {
   publishEventDesc,
   publishEventSchema,
@@ -250,8 +251,15 @@ export function buildAutomationC3Tools(
       description: syncIntentReviewStatusDesc,
       inputSchema: syncIntentReviewStatusSchema,
       handler: async (args) => ({
-        ...runSyncIntentReviewStatus(workspacePath, args as SyncIntentReviewStatusArgs, (path) =>
-          deps?.broadcastIntents(path),
+        ...runSyncIntentReviewStatus(
+          workspacePath,
+          args as SyncIntentReviewStatusArgs,
+          (path) => deps?.broadcastIntents(path),
+          // The caller's REAL identity, resolved from the execution handle this
+          // binding was created for — never from the tool arguments. `null` for
+          // every execution that is not a queue-started relay run, which is what
+          // keeps a manual or ordinary-automation backfill free of merge authority.
+          lookupRelayRun(typeof executionId === 'function' ? executionId() : executionId),
         ),
       }),
     },

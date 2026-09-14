@@ -308,6 +308,13 @@
         "label": "Default agent",
         "empty": "No enabled agent"
       },
+      "work": {
+        "tooltip": "Agent that runs work sessions (spec-driven delivery). Leave unset to follow the workspace default, then the system default."
+      },
+      "workPicker": {
+        "label": "Work agent",
+        "followDefault": "Follow default agent"
+      },
       "tool": {
         "tooltip": "Agent that runs background tool sessions (completion judge, summary)"
       },
@@ -3786,6 +3793,15 @@
         "fix": {
           "label": "Fix agent"
         }
+      },
+      "workPicker": {
+        "label": "Work agent"
+      },
+      "work": {
+        "tooltip": "Agent that runs work sessions (spec-driven delivery) inside this workspace. Leave unset to inherit the system work agent.",
+        "inherit": "Inherit the system work agent",
+        "inheritNamed": "Inherit the system work agent (currently: {agent})",
+        "stale": "The work agent you picked has been deleted. Choose another one, or go back to inheriting the system default."
       }
     }
   },
@@ -4110,7 +4126,8 @@
       "wait": "Waiting",
       "park": "Parked",
       "block": "Blocked",
-      "skip": "Skipped"
+      "skip": "Skipped",
+      "merge_prs": "Merging PRs"
     },
     "reason": {
       "none": "Nothing",
@@ -4141,7 +4158,10 @@
       "turn_error": "Dev turn errored",
       "judge_stuck": "Judged not really finished",
       "judge_unavailable": "Completion judge unavailable (tool agent config)",
-      "pr_target_unavailable": "PR target unavailable — no PR created"
+      "pr_target_unavailable": "PR target unavailable — no PR created",
+      "pr_merging": "Merging the intent's active PRs",
+      "pr_merge_failed": "PR merge failed — handed back to a human",
+      "pr_merge_unconfirmed": "PR merge unconfirmed — handing back to a human"
     }
   },
   "logs": {

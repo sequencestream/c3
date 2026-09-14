@@ -37,7 +37,7 @@
 | 14  | intents      | `intent_logs`                | [intents/intent_logs.sql](intents/intent_logs.sql)                                       | `server/src/features/intents/store.ts`                      | 意图生命周期变更日志 (操作审计轨迹)                      |
 | 15  | intents      | `intent_fast_turns`          | [intents/intent_fast_turns.sql](intents/intent_fast_turns.sql)                           | `server/src/features/intents/store.ts`                      | fast 模式每 turn 反向补轨结算记录 (基线 + 幂等键)        |
 | 16  | queue        | `queue_workspace_state`      | [queue/queue_workspace_state.sql](queue/queue_workspace_state.sql)                       | `server/src/features/intents/queue-store.ts`                | 自动化队列的工作区级控制状态 (启动/暂停/强制跳过)        |
-| 17  | queue        | `queue_intent_state`         | [queue/queue_intent_state.sql](queue/queue_intent_state.sql)                             | `server/src/features/intents/queue-store.ts`                | 单意图调度元数据 (失败次数/退避/park/冷却)               |
+| 17  | queue        | `queue_intent_state`         | [queue/queue_intent_state.sql](queue/queue_intent_state.sql)                             | `server/src/features/intents/queue-store.ts`                | 单意图调度元数据 (失败/退避/park/冷却/合并凭据)          |
 | 18  | queue        | `queue_decision_log`         | [queue/queue_decision_log.sql](queue/queue_decision_log.sql)                             | `server/src/features/intents/queue-store.ts`                | 逐 tick/intent 的队列调度决策审计                        |
 | 19  | queue        | `funnel_event`               | [queue/funnel_event.sql](queue/funnel_event.sql)                                         | `server/src/features/intents/funnel-store.ts`               | park 状态跃迁的本机观测事件 (恢复率统计, 90 天滚动)      |
 | 20  | intents      | `intent_prs`                 | [intents/intent_prs.sql](intents/intent_prs.sql)                                         | `server/src/features/intents/store.ts`                      | 意图的 PR/MR 关系表 (一意图可多条)                       |
@@ -90,10 +90,19 @@ Schema 版本: 26。v5→v6 完成了 `requirements*` → `intents*` 的就地�
 (不 import features/transport)；本模块只承担「事实之外那一点点必须持久化的状态」。
 
 设计取舍: **不建重型 FSM 表**。队列每轮从意图账本 + run 存活探测重新推导运行阶段、当前会话
-与全部闸门结果，因此这里只保存无法被重推导的三类东西——工作区级的启停意愿
+与全部闸门结果，因此这里只保存无法被重推导的少量东西——工作区级的启停意愿
 (`queue_workspace_state`，让服务重启后能恢复用户真正要的状态而不是静默变 idle)、单意图的失败
-隔离状态 (`queue_intent_state`：连续失败次数、退避截止、park 标记与原因、防自激冷却)，以及
-决策审计 (`queue_decision_log`)。丢一行 `queue_intent_state` 最多导致多重试一次，不会卡死队列。
+隔离状态 (`queue_intent_state`：连续失败次数、退避截止、park 标记与原因、防自激冷却)、评审认领/
+合并授权凭据 (`queue_intent_state` 五列，见下)，以及决策审计 (`queue_decision_log`)。丢一行
+`queue_intent_state` 最多导致多重试一次，不会卡死队列。
+
+`queue_intent_state` 的合并凭据五列 (`review_claim`/`merge_grant`/`merge_phase`/`merge_detail`/
+`merge_started_at`) 支撑「评审通过后自动合并活跃 PR」这一动作的事实依据：`review_claim` 记哪个
+会话以哪一组 PR 的哪一版 head SHA 认领了评审，`merge_grant` 记服务端认定那次评审会话给出
+`approved` 后签发的合并授权凭据。凭据**只由服务端签发**、任何失效条件 (新认领/改写结论/人工回填/
+退出 reviewing/关闭自动化/PR 集合或 head/base 变更) 置 NULL，绝不读 MCP 参数里的 session id；
+合并编排阶段 (`none/pending/running/awaiting_sync/handed_back/completed`) 只作持久化的编排进度，
+完成判定仍只依赖 forge 同步回读。
 
 `queue_decision_log` **刻意不复用** `automation_execution_logs`：后者按「一次自动化执行」计量，
 与「一次 tick 对某条意图的取舍」粒度对不上。日志只记结构化原因码与可展示摘要，绝不写入
@@ -110,12 +119,16 @@ tick 继续对账。
 幂等清理。意图被永久删除时 `queue_intent_state` / `queue_decision_log` 会被清理，本表不清理
 ——观测的是已经发生的事实，留到滚动过期为止。数据只在本机，不外传、不导出。
 
-Schema 版本: 2。纯新增，不改动任何既有表。历史意图没有 `queue_intent_state` 行时按「零次失败、
-未 park、无退避/无冷却」解释，无需回填；决策日志从上线时刻开始记录 (详见迁移记录
+Schema 版本: 3。纯新增，不改动任何既有表。历史意图没有 `queue_intent_state` 行时按「零次失败、
+未 park、无退避/无冷却、无认领/无凭据」解释，无需回填；决策日志从上线时刻开始记录 (详见迁移记录
 `migrate/2026/07/31/026`)。v1→v2 新增 `funnel_event` (`id`、`workspace_name`、`intent_id`、
 `stage`、`reason_code`、`at` 六列 + 三个索引)。不回填 `queue_decision_log`：它限量保留，无法
 可靠证明所有历史 park/unpark 的配对关系，上线前的历史一律不计入基线；旧库首次使用时建空表，
-统计从「暂无足够样本」开始 (详见迁移记录 `migrate/2026/08/05/028`)。
+统计从「暂无足够样本」开始 (详见迁移记录 `migrate/2026/08/05/028`)。v2→v3 新增
+`queue_intent_state` 的合并凭据五列 (`review_claim`/`merge_grant`/`merge_phase`/`merge_detail`/
+`merge_started_at`)。纯新增可空列，存量行读作「无认领、无凭据、phase none」——正是「这条意图由
+人合并」的唯一安全默认，不回填；store 以 `PRAGMA table_info` 列存在性检查惰性补列，可重复执行
+(详见迁移记录 `migrate/2026/09/14/057`)。
 
 ### discussions
 

@@ -309,6 +309,13 @@
         "label": "デフォルトエージェント",
         "empty": "有効なエージェントがありません"
       },
+      "work": {
+        "tooltip": "ワークセッション(スペック駆動デリバリー)を実行するエージェント。未設定ならワークスペースのデフォルト、次いでシステムのデフォルトに従う。"
+      },
+      "workPicker": {
+        "label": "ワークエージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
       "tool": {
         "tooltip": "バックグラウンドのツールセッション(完了判定・要約)を実行するエージェント"
       },
@@ -3787,6 +3794,15 @@
         "fix": {
           "label": "修正エージェント"
         }
+      },
+      "workPicker": {
+        "label": "ワーク Agent"
+      },
+      "work": {
+        "tooltip": "このワークスペースでワークセッション(スペック駆動デリバリー)を実行するエージェント。未設定ならシステムのワーク Agent を継承。",
+        "inherit": "システムのワーク Agent を継承",
+        "inheritNamed": "システムのワーク Agent を継承（現在: {agent}）",
+        "stale": "選択していたワーク Agent は削除されました。選び直すか、システム既定の継承に戻してください。"
       }
     }
   },
@@ -4111,7 +4127,8 @@
       "wait": "待機中",
       "park": "park 済み",
       "block": "ブロック中",
-      "skip": "スキップ済み"
+      "skip": "スキップ済み",
+      "merge_prs": "PR マージ中"
     },
     "reason": {
       "none": "なし",
@@ -4142,7 +4159,10 @@
       "turn_error": "開発ターンがエラー",
       "judge_stuck": "実際には未完了と判定",
       "judge_unavailable": "完了判定が利用不可(ツール agent 設定)",
-      "pr_target_unavailable": "PR のターゲットが利用不可 — PR 未作成"
+      "pr_target_unavailable": "PR のターゲットが利用不可 — PR 未作成",
+      "pr_merging": "意図のアクティブ PR をマージ中",
+      "pr_merge_failed": "PR マージ失敗 — 人に引き渡し",
+      "pr_merge_unconfirmed": "PR マージ結果未確認 — 人に引き渡し"
     }
   },
   "logs": {

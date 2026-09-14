@@ -145,6 +145,7 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   // 存得住的引用。
   defaultAgent: [
     'defaultAgentId',
+    'workAgentId',
     'toolAgentId',
     'intentAgentId',
     'specAgentId',
@@ -324,6 +325,8 @@ function emptySettings(): SystemSettings {
     reviewAgentId: '',
     // '' ⇒ the PR-review failure fix template follows the default agent.
     fixAgentId: '',
+    // '' ⇒ ordinary work sessions follow the default agent (workspace-first chain).
+    workAgentId: '',
     voiceLang: 'zh-CN',
     timezone: BROWSER_TZ,
     baseUrl: '',
@@ -485,6 +488,8 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     reviewAgentId: settings.reviewAgentId ?? '',
     // '' ⇒ the PR-review failure fix template follows the default agent.
     fixAgentId: settings.fixAgentId ?? '',
+    // '' ⇒ ordinary work sessions follow the default agent.
+    workAgentId: settings.workAgentId ?? '',
     voiceLang: settings.voiceLang ?? 'zh-CN',
     timezone: settings.timezone ?? BROWSER_TZ,
     baseUrl: settings.baseUrl ?? '',
@@ -1395,6 +1400,7 @@ function buildTabPayload(
       // against that registry anyway. Role drafts keep their empty-string
       // "follow the default" sentinel as-is.
       payload.defaultAgentId = src.defaultAgentId
+      payload.workAgentId = src.workAgentId
       payload.toolAgentId = src.toolAgentId
       payload.intentAgentId = src.intentAgentId
       payload.specAgentId = src.specAgentId
@@ -1985,6 +1991,31 @@ function selectAdmin(username: string) {
           <p v-if="defaultAgentDraftStale" class="settings-warn" data-testid="default-agent-stale">
             {{ t('settings.defaultAgent.stale') }}
           </p>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="work-agent-select">
+              {{ t('settings.agents.workPicker.label') }}
+            </label>
+            <select
+              id="work-agent-select"
+              v-model="draft.workAgentId"
+              class="agent-field"
+              data-testid="work-agent-select"
+              :title="t('settings.agents.work.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.workPicker.followDefault') }}</option>
+              <option v-for="a in committedEnabledAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="committedGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in committedGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
           <div class="agent-default-picker">
             <label class="agent-default-label" for="tool-agent-select">
               {{ t('settings.agents.toolPicker.label') }}

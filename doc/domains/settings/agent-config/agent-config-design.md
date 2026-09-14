@@ -11,7 +11,7 @@ web console 中的完整设置视图页面。
 - **配额重置解析**: 一个纯解析器,处理带可解析重置时间(`reset(s) <time>` 挂钟或完整日期 + AM/PM)的配额/会话/usage-limit 错误;通过 `SystemSettings.timezone` 将重置的挂钟时间映射为 Unix 毫秒时间戳(AC-R22)
 - **事件分发 + 运行解析**: 处理 `get_settings` / `save_settings`;按每次运行解析会话启动信息
 - **覆盖项应用**: 将覆盖项映射到 SDK 启动的 `env`(合并在进程环境之上)+ `model`
-- **完整设置视图页面**: 可编辑草稿;智能体列表按已支持 `vendor` 分子 Tab 展示(无「全部」总览 Tab),各 Tab 内沿用 Agent 组容器(default 桶 + 具名组;同 vendor 内拖拽重排/改组),容器身份取 `(vendor, group)` 而非组名——两个 vendor 复用同一组名时各成一个容器、互不影响,跨 vendor 拖拽不可完成;列表行按该行草稿 `vendor` 施加由 `VENDOR_COLOR` 派生的浅 tint 底色;新建智能体默认落在当前 vendor Tab;保存。**默认智能体与七个角色选择器不放在列表下方**——它们独立成「默认 Agent」页签(`defaultAgentId` + 工具/意图/规格/规格审核/自动化/评审/修复七个角色字段,候选均来自**已提交**的注册表:新建的 agent 须先在 Agents 页签保存才可能成为一个存得住的引用)。按项目的控制项(含工作区级默认 Agent 覆盖 + 七类角色覆盖)属于 workspace-setting 视图
+- **完整设置视图页面**: 可编辑草稿;智能体列表按已支持 `vendor` 分子 Tab 展示(无「全部」总览 Tab),各 Tab 内沿用 Agent 组容器(default 桶 + 具名组;同 vendor 内拖拽重排/改组),容器身份取 `(vendor, group)` 而非组名——两个 vendor 复用同一组名时各成一个容器、互不影响,跨 vendor 拖拽不可完成;列表行按该行草稿 `vendor` 施加由 `VENDOR_COLOR` 派生的浅 tint 底色;新建智能体默认落在当前 vendor Tab;保存。**默认智能体与八个角色选择器不放在列表下方**——它们独立成「默认 Agent」页签(`defaultAgentId` + 工作/工具/意图/规格/规格审核/自动化/评审/修复八个角色字段,候选均来自**已提交**的注册表:新建的 agent 须先在 Agents 页签保存才可能成为一个存得住的引用)。按项目的控制项(含工作区级默认 Agent、工作 Agent 及七类角色覆盖)属于 workspace-setting 视图
 
 ## 持久化
 
@@ -75,7 +75,7 @@ URL 本身都不触发补齐。
   兜底 id。归一化在顺序正规化之后运行,所以扫描发生时,注册表已经处于
   紧凑的顺序号顺序中。该规则**单一来源地存放于共享协议模块**,
   因此 web console(在禁用/移除时)与服务端(在保存/加载时)会以相同方式改写。
-- 角色字段(`toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId`)与八个工作区覆盖(`WorkspaceSetting.defaultAgentId` + 同名七类角色字段)走**同一条**共享校验规则
+- 角色字段(`workAgentId`/`toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId`)与九个工作区覆盖(`WorkspaceSetting.defaultAgentId` + 同名八类角色字段)走**同一条**共享校验规则
   `normalizeAgentRef`(单一来源,同样存放于共享协议模块),但**删除与禁用语义不同**:空/空白 ⇒“跟随默认”(系统角色字段空串保持为空,工作区覆盖则把键整个省略);非空值指向**已禁用**智能体 ⇒ 改写为按顺序号的下一个已启用智能体(与默认值相同的回退);非空值指向**已删除**智能体 ⇒ **清空**(角色字段清为 `''`,工作区覆盖丢掉键)——删除移除的是用户的显式选择,因此角色/工作区降级回“跟随默认”,而不是被钉到某个用户从未选过的邻居智能体上。`defaultAgentId` 本身是跟随链末端,不受“删除即清空”规则约束(它仍改写)。系统保存时顺带清理**全部**已存工作区的悬空覆盖(`cleanProjectConfigAgentRefs`),包括从未打开过的工作区。
 - 旧版全局默认模式(在系统设置中已废弃)在迁移窗口期内出于向后兼容仍被接受。
   权威来源是按项目的默认模式,从 workspace setting 中读取;相同的校验
@@ -121,7 +121,7 @@ URL 本身都不触发补齐。
 - **降级链** —— 链的归一化只从已启用的智能体中构建有效 id 集合,因此
   已禁用的 id 会从已存储/已加载的链中被剔除;服务端从已过滤的链中组装待尝试的智能体列表,
   第 0 项即为已解析的会话智能体。
-- **默认智能体与角色选择器** —— 「默认 Agent」页签渲染默认智能体下拉与七个角色下拉(工具/意图/规格/
+- **默认智能体与角色选择器** —— 「默认 Agent」页签渲染默认智能体下拉与八个角色下拉(工作/工具/意图/规格/
   规格审核/自动化/评审/修复),候选均为启用中的**已提交**智能体,选项按顺序号顺序;逐行单选按钮已不再存在。
   默认 id 与各角色引用均由**服务端归一化**重钉:保存注册表时,指向**禁用**智能体的非空引用被改写为下一个
   已启用智能体(AC-R2),指向**删除**智能体的非空引用被清空为“跟随默认”;设置回推把这些值重新播种到
@@ -143,7 +143,7 @@ URL 本身都不触发补齐。
 
 ## 角色 → 组的统一解析(AC-R27)
 
-七个角色(default / tool / intent / spec / spec-review / review / fix)共用一个解析入口,
+八个角色(default / tool / intent / spec / spec-review / review / fix / work)共用一个解析入口,
 它同时产出两样东西:**要持久化的路由身份**(组引用或具体 id)与
 **代表成员**(组内按顺序号排列的首个已启用智能体)。分成两个返回值是关键——
 调用方过去只能拿到"一个 agent",于是只能用 `resolve*Agent().id` 反推绑定,

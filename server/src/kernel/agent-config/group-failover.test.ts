@@ -20,6 +20,7 @@ const mockSettings: SystemSettings = {
   automationAgentId: '',
   reviewAgentId: '',
   fixAgentId: '',
+  workAgentId: '',
   degradationChain: [],
 }
 

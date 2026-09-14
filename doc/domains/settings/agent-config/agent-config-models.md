@@ -135,7 +135,7 @@ Model Vendor 的内置清单——它连不到任何 provider,列 provider 的�
 
 - **`agents`**(智能体列表): 注册表;始终包含系统智能体(AC-R1)
 - **`modelProviders`**(provider 列表,可选): 具名上游注册表;缺省/空 ⇒ 没有 provider(各 agent 走 CLI 登录态)
-- **`defaultAgentId`**(text): 某个已存在智能体的 id;**跟随链的末端**——它没有可跟随的上级,因此默认值指向已删除/已禁用的智能体时仍被**改写**为按顺序号的下一个已启用智能体(而非清空,AC-R2)。系统设置中独立成「默认 Agent」页签;工作区可用 `WorkspaceSetting.defaultAgentId` 覆盖它,无覆盖的工作区继承本值(工作区另有 `toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId` 七个同名角色覆盖,AC-R33)。
+- **`defaultAgentId`**(text): 某个已存在智能体的 id;**跟随链的末端**——它没有可跟随的上级,因此默认值指向已删除/已禁用的智能体时仍被**改写**为按顺序号的下一个已启用智能体(而非清空,AC-R2)。系统设置中独立成「默认 Agent」页签;工作区可用 `WorkspaceSetting.defaultAgentId` 覆盖它,无覆盖的工作区继承本值(工作区另有 `toolAgentId`/`intentAgentId`/`specAgentId`/`specReviewAgentId`/`automationAgentId`/`reviewAgentId`/`fixAgentId` 七个同名角色覆盖,AC-R33;工作角色覆盖 `workAgentId` 见 AC-R35)。
 - **`toolAgentId`**(text): 运行后台工具会话(完成度判定、自动化/会话命名推导;异常处理尚未由智能体驱动)的智能体 id。空字符串 ⇒”跟随默认智能体”(存储时保持为空);非空值指向**已禁用**的智能体时改写为按顺序号的下一个已启用智能体,指向**已删除**的智能体时**清空为 `''`**——删除移除的是显式选择,角色随之降级回”跟随默认”(AC-R21)。
 - **`intentAgentId`**(text): 运行意图沟通会话(意图分析师的需求拆解对话)的智能体 id。语义同 `toolAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`(AC-R23)。
 - **`specAgentId`**(text): 运行规格编写会话(编写/完善项目规格)的智能体 id。语义同 `toolAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`(AC-R24)。

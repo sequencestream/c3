@@ -323,6 +323,25 @@ export interface WorkspaceSetting {
    *  template's create-time identity only; the relay queue ignores it, exactly as
    *  it ignores {@link reviewAgentId}. */
   fixAgentId?: string
+  /**
+   * This workspace's **work-agent override** — the agent ordinary work sessions
+   * (`SessionKind='work'`) created inside this workspace without an explicit pick
+   * fall back to, instead of {@link SystemSettings.workAgentId} and then
+   * {@link defaultAgentId}.
+   *
+   * **Absent ⇒ inherit.** A missing key, an empty string and a whitespace-only
+   * string all mean "no workspace override", and normalize to the key being
+   * OMITTED — the inherited value is never snapshotted in here, or a dynamic
+   * inheritance would silently freeze into a copy. A non-string input reads as
+   * unconfigured. A non-empty value is trimmed and kept as the override reference:
+   * a concrete agent id, or a virtual group reference (`_c3_<vendor>_<group>`).
+   *
+   * Normalization mirrors {@link defaultAgentId} (`normalizeAgentRef`): a
+   * **disabled** target is rewritten to the next enabled agent in `order_seq`
+   * order, an **emptied group** to the first enabled agent, and a **deleted**
+   * concrete agent drops the key so the workspace goes back to inheriting.
+   */
+  workAgentId?: string
 }
 
 /**
@@ -348,15 +367,16 @@ export type WorkspaceRoleAgentField = (typeof WORKSPACE_ROLE_AGENT_FIELDS)[numbe
 
 /**
  * Every `WorkspaceSetting` key that references the agent registry — the seven role
- * overrides plus the workspace default. Normalization and the system-save cleanup
- * apply the SAME rule to all eight.
+ * overrides plus the workspace default and work role. Normalization and the system-save cleanup
+ * apply the SAME rule to all nine.
  */
 export const WORKSPACE_AGENT_REF_FIELDS = [
   ...WORKSPACE_ROLE_AGENT_FIELDS,
   'defaultAgentId',
+  'workAgentId',
 ] as const
 
-/** One of the eight `WorkspaceSetting` keys that reference the agent registry. */
+/** One of the nine `WorkspaceSetting` keys that reference the agent registry. */
 export type WorkspaceAgentRefField = (typeof WORKSPACE_AGENT_REF_FIELDS)[number]
 
 /** Workspace-level MCP server connections and denylist configuration. */

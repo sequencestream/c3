@@ -15,6 +15,7 @@ import { emptyQueueIntentMeta, relayEngaged } from '../../kernel/queue/index.js'
 import { activeIntentPrs } from '@ccc/shared'
 import { getGitBranchMode } from '../../kernel/config/index.js'
 import { pathToName } from '../../state.js'
+import { mergeAuthorized, mergeRecoveryPending } from './merge-authority.js'
 import { isStoreAvailable, listIntents } from './store.js'
 import {
   getQueueControl,
@@ -127,8 +128,9 @@ export function buildQueueDetail(
   // An intent waiting on (or parked by) its review must keep its row here, or the
   // page would claim the queue is finished while it is still driving that PR.
   const items: QueueIntentView[] = intents
-    .filter(
-      (r) =>
+    .filter((r) => {
+      const m = meta[r.id] ?? emptyQueueIntentMeta(r.id)
+      return (
         (r.automate && (r.status === 'todo' || r.status === 'in_progress')) ||
         relayEngaged({
           worktreeMode,
@@ -137,8 +139,14 @@ export function buildQueueDetail(
           hasActivePr: activeIntentPrs(r.prs).length > 0,
           reviewStatus: r.reviewStatus,
           impactLevel: r.impactLevel,
-        }),
-    )
+          // An approved intent the queue is still landing stays on the page: the
+          // merge is queue work, and hiding it would claim the queue is finished
+          // while it is talking to a forge.
+          mergeAuthorized: mergeAuthorized(r, m),
+          mergeRecovery: mergeRecoveryPending(m),
+        })
+      )
+    })
     .map((r) => {
       const m = meta[r.id] ?? emptyQueueIntentMeta(r.id)
       const d = decisions.get(r.id)

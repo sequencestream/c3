@@ -22,6 +22,7 @@ const settings: SystemSettings = {
   automationAgentId: '',
   reviewAgentId: '',
   fixAgentId: '',
+  workAgentId: '',
 }
 
 const workspaceSettings: Record<string, WorkspaceSetting> = {}
@@ -201,6 +202,26 @@ describe('workspace role overrides in the resolution order (runtime roles)', () 
     workspaceSettings[WS] = { fixAgentId: 'a1', defaultAgentId: 'plain' }
     const fix = sessionAgentTargetForRole('fix', WS)
     expect(fix.ok && fix.target.ref).toBe('plain')
+  })
+
+  it('keeps work workspace-first while the other runtime roles remain system-first', () => {
+    settings.workAgentId = 'plain'
+    settings.specAgentId = 'plain'
+    workspaceSettings[WS] = {
+      defaultAgentId: 'plain',
+      workAgentId: 'a1',
+      specAgentId: 'a1',
+    }
+    const work = sessionAgentTargetForRole('work', WS)
+    const spec = sessionAgentTargetForRole('spec', WS)
+    expect(work.ok && work.target.ref).toBe('a1')
+    expect(spec.ok && spec.target.ref).toBe('plain')
+    settings.specAgentId = ''
+    const inheritedSpec = sessionAgentTargetForRole('spec', WS)
+    expect(inheritedSpec.ok && inheritedSpec.target.ref).toBe('a1')
+    delete workspaceSettings[WS].workAgentId
+    const inheritedWork = sessionAgentTargetForRole('work', WS)
+    expect(inheritedWork.ok && inheritedWork.target.ref).toBe('plain')
   })
 
   it('roles do not chain: spec review never inherits the spec role', () => {

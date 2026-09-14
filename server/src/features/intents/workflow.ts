@@ -86,6 +86,8 @@ import {
 import { executeMachineApproveSpec, runSpecPhase } from './queue-spec-actions.js'
 import { runDevelopLoop } from './queue-dev-actions.js'
 import { runRelayPhase } from './queue-relay-actions.js'
+import { runMergePhase } from './queue-merge-actions.js'
+import { sweepMergeGrants } from './merge-authority.js'
 import {
   applyHumanOverride,
   clearPark,
@@ -143,7 +145,9 @@ export function pickNext(workspacePath: string): Intent | null {
     workspacePath,
     control: { state: 'running', startedAt: null, forceSkipped: [] },
     snapshotOk: true,
-    intents: intents.map((r) => toFact(r, workspacePath, sddEnabled)),
+    // A probe answers "which intent would be DEVELOPED next", so it also reports
+    // no merge authorization: landing a PR is not a development pick.
+    intents: intents.map((r) => toFact(r, workspacePath, sddEnabled, false)),
     runs: [],
     meta: getQueueIntentMeta(workspacePath),
     inFlight: [],
@@ -169,6 +173,13 @@ export function pickNext(workspacePath: string): Intent | null {
   const chosen = out.actions.find((a) => a.kind === 'launch' || a.kind === 'resume')
   if (!chosen) return null
   return intents.find((r) => r.id === chosen.intentId) ?? null
+}
+
+/** What each relay-family run is called in the queue's own logs. */
+const RELAY_RUN_LABEL: Readonly<Record<'launch_review' | 'launch_fix' | 'merge_prs', string>> = {
+  launch_review: 'PR 评审 run',
+  launch_fix: 'PR 修复 run',
+  merge_prs: 'PR 自动合并',
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +308,11 @@ class QueueController {
     }
     const snapshotOk = intents !== null
 
+    // Revoke merge credentials whose intent moved out from under them BEFORE the
+    // facts are projected, so the very same pass that observes "automation was
+    // switched off" is the one that stops treating its approval as authorization.
+    if (intents) sweepMergeGrants(this.workspacePath, intents)
+
     const sddEnabled = getSddEnabled(this.workspacePath)
     const output = reconcileQueue({
       now,
@@ -356,6 +372,7 @@ class QueueController {
       machine_approve_spec: (a) => executeMachineApproveSpec(ctx, a),
       launch_review: (a, at) => this.startRelayRun(ctx, a, at),
       launch_fix: (a, at) => this.startRelayRun(ctx, a, at),
+      merge_prs: (a, at) => this.startRelayRun(ctx, a, at),
     }
     for (const action of actions) runQueueAction(table, action, now)
   }
@@ -461,7 +478,7 @@ class QueueController {
    */
   private startRelayRun(
     ctx: QueueActionContext,
-    action: Extract<QueueAction, { kind: 'launch_review' | 'launch_fix' }>,
+    action: Extract<QueueAction, { kind: 'launch_review' | 'launch_fix' | 'merge_prs' }>,
     now: number,
   ): void {
     const intentId = action.intentId
@@ -472,13 +489,29 @@ class QueueController {
     this.writeCooldown(intentId, now)
     this.relayInFlight.set(
       intentId,
-      this.observe(ctx, runRelayPhase(ctx, action, req), {
+      this.observe(ctx, this.relayWork(ctx, action, req), {
         intentId,
         title: req.title,
-        label: action.kind === 'launch_review' ? 'PR 评审 run' : 'PR 修复 run',
+        label: RELAY_RUN_LABEL[action.kind],
         unregister: () => this.relayInFlight.delete(intentId),
       }),
     )
+  }
+
+  /**
+   * The work behind one relay-family action. The merge is a relay phase in every
+   * scheduling sense — it occupies the intent, takes a concurrency slot and is
+   * tracked in the same in-flight map — but it runs no agent, so it dispatches to
+   * its own executor rather than to {@link runRelayPhase}.
+   */
+  private relayWork(
+    ctx: QueueActionContext,
+    action: Extract<QueueAction, { kind: 'launch_review' | 'launch_fix' | 'merge_prs' }>,
+    req: Intent,
+  ): Promise<void> {
+    return action.kind === 'merge_prs'
+      ? runMergePhase(ctx, action, req)
+      : runRelayPhase(ctx, action, req)
   }
 
   /**

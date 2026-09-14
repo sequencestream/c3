@@ -63,22 +63,51 @@ function run(
   bin: string,
   cwd: string,
   args: string[],
-): Promise<{ code: number; stdout: string; stderr: string }> {
+  opts?: { timeoutMs?: number },
+): Promise<{ code: number; stdout: string; stderr: string; timedOut?: boolean }> {
   return new Promise((resolve) => {
-    execFile(bin, args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const errno = err as (NodeJS.ErrnoException & { code?: unknown }) | null
-      const code =
-        errno && errno.code === 'ENOENT'
-          ? -1
-          : errno && typeof errno.code === 'number'
-            ? (errno.code as number)
-            : err
-              ? 1
-              : 0
-      resolve({ code, stdout: stdout.toString(), stderr: stderr.toString() })
-    })
+    execFile(
+      bin,
+      args,
+      {
+        cwd,
+        maxBuffer: 16 * 1024 * 1024,
+        ...(opts?.timeoutMs ? { timeout: opts.timeoutMs, killSignal: 'SIGKILL' as const } : {}),
+      },
+      (err, stdout, stderr) => {
+        const errno = err as (NodeJS.ErrnoException & { code?: unknown; killed?: boolean }) | null
+        // `execFile` reports a timeout by KILLING the child: `err.killed` is set and
+        // there is no exit code. Surfacing it as a distinct flag is what lets a
+        // caller say "the forge call timed out" instead of inventing a CLI failure
+        // reason it never actually read.
+        const timedOut = !!errno?.killed && !!opts?.timeoutMs
+        const code = timedOut
+          ? 1
+          : errno && errno.code === 'ENOENT'
+            ? -1
+            : errno && typeof errno.code === 'number'
+              ? (errno.code as number)
+              : err
+                ? 1
+                : 0
+        resolve({
+          code,
+          stdout: stdout.toString(),
+          stderr: stderr.toString(),
+          ...(timedOut ? { timedOut: true } : {}),
+        })
+      },
+    )
   })
 }
+
+/**
+ * Wall-clock ceiling for ONE forge CLI call that c3 makes on its own behalf
+ * (merging a change request, or re-reading one to decide whether a merge landed).
+ * Declared here, beside {@link run}, because an unbounded forge call is what would
+ * let one hung network request hold a queue slot forever.
+ */
+export const FORGE_MERGE_TIMEOUT_MS = 120_000
 
 /** A `.git` marker (dir, file, or worktree pointer) makes `dir` a repo root. */
 function isGitRepo(dir: string): boolean {
@@ -1287,13 +1316,18 @@ function normalizeGitlabMrStatus(row: Record<string, unknown>): ForgePrStatusRes
   return { ok: true, status: 'reviewing', prUrl: url, rawState: state || undefined }
 }
 
-export async function getGhPrStatus(cwd: string, prId: string): Promise<ForgePrStatusResult> {
+export async function getGhPrStatus(
+  cwd: string,
+  prId: string,
+  repo?: string | null,
+): Promise<ForgePrStatusResult> {
   const { code, stdout, stderr } = await run('gh', cwd, [
     'pr',
     'view',
     prId,
     '--json',
     'state,mergedAt,url',
+    ...(repo ? ['--repo', repo] : []),
   ])
   if (code === -1) return { ok: false, unavailable: true, error: 'gh CLI 未安装' }
   if (code !== 0) {
@@ -1310,8 +1344,19 @@ export async function getGhPrStatus(cwd: string, prId: string): Promise<ForgePrS
   return normalizeGithubPrStatus(row)
 }
 
-export async function getGlabMrStatus(cwd: string, prId: string): Promise<ForgePrStatusResult> {
-  const { code, stdout, stderr } = await run('glab', cwd, ['mr', 'view', prId, '--output', 'json'])
+export async function getGlabMrStatus(
+  cwd: string,
+  prId: string,
+  repo?: string | null,
+): Promise<ForgePrStatusResult> {
+  const { code, stdout, stderr } = await run('glab', cwd, [
+    'mr',
+    'view',
+    prId,
+    '--output',
+    'json',
+    ...(repo ? ['--repo', repo] : []),
+  ])
   if (code === -1) return { ok: false, unavailable: true, error: 'glab CLI 未安装' }
   if (code !== 0) {
     const out = oneLine(stderr || stdout)
@@ -1327,13 +1372,20 @@ export async function getGlabMrStatus(cwd: string, prId: string): Promise<ForgeP
   return normalizeGitlabMrStatus(row)
 }
 
+/**
+ * Read a change request's state. `repo` (`owner/name`) addresses it explicitly:
+ * without it the CLIs resolve the number against whatever repository `cwd`'s
+ * origin points at, so two repositories that both own a `#42` would answer for
+ * each other. Callers pass the repo recorded ON the PR row whenever it is known.
+ */
 export async function getForgePrStatus(
   cwd: string,
   prId: string,
   providerOverride?: ForgeProvider,
+  repo?: string | null,
 ): Promise<ForgePrStatusResult> {
   const provider = providerOverride ?? (await detectForge(cwd))
-  return provider === 'github' ? getGhPrStatus(cwd, prId) : getGlabMrStatus(cwd, prId)
+  return provider === 'github' ? getGhPrStatus(cwd, prId, repo) : getGlabMrStatus(cwd, prId, repo)
 }
 
 const PR_NOT_FOUND_MARKERS = ['not found', 'could not resolve', 'no merge requests', '404']
@@ -1412,6 +1464,7 @@ export async function getForgePrLinkFacts(
   cwd: string,
   prId: string,
   providerOverride?: ForgeProvider,
+  repo?: string | null,
 ): Promise<ForgePrLinkFactsResult> {
   const provider = providerOverride ?? (await detectForge(cwd))
   const [bin, args, markers] =
@@ -1429,7 +1482,12 @@ export async function getForgePrLinkFacts(
         ] as const)
       : (['glab', ['mr', 'view', prId, '--output', 'json'], GLAB_NOT_LOGGED_IN_MARKERS] as const)
 
-  const { code, stdout, stderr } = await run(bin, cwd, [...args])
+  const { code, stdout, stderr } = await run(
+    bin,
+    cwd,
+    [...args, ...(repo ? ['--repo', repo] : [])],
+    { timeoutMs: FORGE_MERGE_TIMEOUT_MS },
+  )
   if (code === -1) return { ok: false, unavailable: true, error: `${bin} CLI 未安装` }
   if (code !== 0) {
     const out = oneLine(stderr || stdout)
@@ -1551,6 +1609,147 @@ export async function closeForgePr(
 ): Promise<ClosePrResult> {
   const provider = providerOverride ?? (await detectForge(cwd))
   return provider === 'github' ? closeGhPr(cwd, prId) : closeGlabMr(cwd, prId)
+}
+
+// ---------------------------------------------------------------------------
+// Forge change-request merging
+//
+// The one way c3 itself lands a change request. It exists for the automation
+// queue's post-review merge: everything else (delivery PRs, anything a human
+// owns) is still merged by a person in the forge UI.
+//
+// Three rules the flags encode, and the reason each is a flag rather than a
+// comment:
+//   - PLAIN merge semantics (`--merge` / glab's default). c3 never picks squash
+//     or rebase on a repository's behalf, and never changes strategy after a
+//     refusal — a repository that forbids the strategy is a human's call.
+//   - NO delayed "merge when green". `glab` enables auto-merge by DEFAULT while a
+//     pipeline runs, so `--auto-merge=false` is mandatory; `gh` only arms it for
+//     merge-queue branches, which is the forge's own queue and not a task c3
+//     registered. Registering such a task would mean c3 授权了一次它没有再核验过
+//     的合并.
+//   - The expected head commit rides along whenever it is known
+//     (`--match-head-commit` / `--sha`), so a commit pushed AFTER the review that
+//     approved this PR cannot be merged under that approval.
+//
+// Never: `--admin` (bypassing protections), `--delete-branch` /
+// `--remove-source-branch` (destroying a branch the user may still need), and no
+// local merge-then-push fallback.
+// ---------------------------------------------------------------------------
+
+export interface MergePrResult {
+  ok: boolean
+  /** One-line, displayable failure summary; absent on success. */
+  error?: string
+  /**
+   * The forge CLI is missing or not authenticated, mirroring
+   * {@link ClosePrResult.unavailable}. Still a failure — it just names an
+   * environment problem rather than a refusal about this PR.
+   */
+  unavailable?: boolean
+  /** The CLI was killed by the timeout: the merge outcome is UNKNOWN, not failed. */
+  timedOut?: boolean
+  /** The forge reports the change request as already merged — the desired state. */
+  alreadyMerged?: boolean
+}
+
+/** Forge CLI output fragments meaning "this change request is already merged". */
+const PR_ALREADY_MERGED_MARKERS = [
+  'already merged',
+  'has already been merged',
+  'is already merged',
+  'was merged',
+  'not open', // gh: a merged PR is no longer open; the caller re-reads to tell which
+]
+
+function isAlreadyMergedOutput(out: string): boolean {
+  const lower = out.toLowerCase()
+  return PR_ALREADY_MERGED_MARKERS.some((m) => lower.includes(m))
+}
+
+/** What a merge call may be scoped to, beyond the change-request number itself. */
+export interface MergePrOptions {
+  /** `owner/name`; addresses the PR explicitly so an identical number in the workspace's default repo is never merged instead. */
+  repo?: string | null
+  /** The head commit the approval was granted against; the merge is refused by the forge if HEAD moved. */
+  expectedHeadSha?: string | null
+}
+
+/**
+ * Merge a GitHub Pull Request via `gh pr merge <num> --merge`. A PR the forge
+ * already merged reports success with `alreadyMerged` (the desired state holds);
+ * every other non-zero exit is a failure the caller hands back to a human.
+ */
+export async function mergeGhPr(
+  cwd: string,
+  prId: string,
+  opts: MergePrOptions = {},
+): Promise<MergePrResult> {
+  const args = ['pr', 'merge', prId, '--merge']
+  if (opts.repo) args.push('--repo', opts.repo)
+  if (opts.expectedHeadSha) args.push('--match-head-commit', opts.expectedHeadSha)
+  const { code, stdout, stderr, timedOut } = await run('gh', cwd, args, {
+    timeoutMs: FORGE_MERGE_TIMEOUT_MS,
+  })
+  if (timedOut) return { ok: false, timedOut: true, error: `gh pr merge #${prId} 超时` }
+  if (code === -1) return { ok: false, unavailable: true, error: 'gh CLI 未安装' }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    if (isAlreadyMergedOutput(out)) return { ok: true, alreadyMerged: true }
+    const notLoggedIn = GH_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'gh pr merge 失败',
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Merge a GitLab Merge Request via `glab mr merge <id> --yes --auto-merge=false`.
+ * Shares the {@link mergeGhPr} contract. `--yes` is what keeps the CLI from
+ * blocking on an interactive confirmation no one is there to answer.
+ */
+export async function mergeGlabMr(
+  cwd: string,
+  prId: string,
+  opts: MergePrOptions = {},
+): Promise<MergePrResult> {
+  const args = ['mr', 'merge', prId, '--yes', '--auto-merge=false']
+  if (opts.repo) args.push('--repo', opts.repo)
+  if (opts.expectedHeadSha) args.push('--sha', opts.expectedHeadSha)
+  const { code, stdout, stderr, timedOut } = await run('glab', cwd, args, {
+    timeoutMs: FORGE_MERGE_TIMEOUT_MS,
+  })
+  if (timedOut) return { ok: false, timedOut: true, error: `glab mr merge !${prId} 超时` }
+  if (code === -1) return { ok: false, unavailable: true, error: 'glab CLI 未安装' }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    if (isAlreadyMergedOutput(out)) return { ok: true, alreadyMerged: true }
+    const notLoggedIn = GLAB_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'glab mr merge 失败',
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Merge a change request through the forge the PR itself records. Mirrors
+ * {@link closeForgePr}'s routing, so the provider that created a PR is the one
+ * that lands it.
+ */
+export async function mergeForgePr(
+  cwd: string,
+  prId: string,
+  providerOverride?: ForgeProvider,
+  opts: MergePrOptions = {},
+): Promise<MergePrResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  return provider === 'github' ? mergeGhPr(cwd, prId, opts) : mergeGlabMr(cwd, prId, opts)
 }
 
 // ---------------------------------------------------------------------------

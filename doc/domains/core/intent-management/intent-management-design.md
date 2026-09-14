@@ -702,7 +702,8 @@ handler 用假实现做单元测试(无需实时 DB 或总线)。
 ## PR 全落地的完成派生(RM-R48)
 
 `features/intents/pr-merge-completion.ts` 只导出 `completeIntentOnPrsMerged(workspacePath, intentId)`:
-重新读取意图,`status === 'in_progress'` 且 `deriveIntentPrAggregate(intent.prs) === 'merged'` 时
+重新读取意图,`status ∈ {in_progress, reviewing}` 且 `deriveIntentPrAggregate(intent.prs) === 'merged'`、
+并满足 `intentHasConverged`(一条 `reviewing` 意图还需「评审了结:免评审或 `reviewStatus === 'approved'」)时
 调用 `updateStatus(id, 'done')`(actor 落 `automation`)与 `publishIntentStatusTransition`,
 返回状态是否真的移动,让调用方决定要不要广播。
 
@@ -710,6 +711,35 @@ handler 用假实现做单元测试(无需实时 DB 或总线)。
 一次派生就覆盖单 PR 与多交付 PR 两种形态,`closed` 行按聚合规则不拦。调用点是三条现役的 `merged` 写入路径 —— `syncIntentPrStatus`(每一轮收尾都求值,因此早于该规则合并的意图也会在下一次
 同步时被纠正)、`linkIntentPr`、交付解绑时的合并观察。放在这三处而非 `upsertIntentPr` 内部,
 是因为写入口是纯存储语义,广播与生命周期事件属于领域动作,不该被存储层承担。
+
+## 合并凭据与自动合并(RM-A27)
+
+评审结论、`automate` 与 `reviewing` 状态都能由人在意图详情里敲出来,所以「允许 c3 自己把 PR 落地」
+不能从这三者推导,而要建立在一个单独、正向记录的凭据上。实现分三个模块,职责边界清晰:
+
+- **`merge-authority.ts`** —— 纯规约 + 对 `queue_intent_state` 的写。`recordQueueReviewClaim`
+  在队列认领一轮评审时写 `review_claim`(会话 + pin 的 PR 集合,含 head SHA),并重置上一轮的
+  凭据/尝试/交回;`bindQueueReviewClaimSession` 把 `pending:` 占位跟随厂商绑定为真实会话(owner-safe);
+  `issueMergeGrant` 只在「认领会话 == 调用会话」时签发 `merge_grant` 并置 `mergePhase='pending'`;
+  `invalidateMergeGrant` 在结论被改写/人工回填时清凭据,但放过 `handed_back`/`completed`(那些是
+  已发生的事实,只有新认领能改写);`sweepMergeGrants` 每轮 pass 删除已不成立的 `pending` 凭据。
+  `mergeDenial(intent, meta)` 是唯一判据纯函数,内核、投影与执行器读同一份。
+- **`relay-run-registry.ts`** —— 进程内 Map,按 MCP 执行句柄(`executionId`)记录「这个 run 是队列
+  发起的哪个接力阶段、绑定到哪个会话」。`sync_intent_review_status` 的工具 handler 用
+  `lookupRelayRun(executionId)` 把真实身份(而非工具参数)传给回填核心;进程重启即失效,因此不落库。
+- **`queue-merge-actions.ts`** —— `runMergePhase` 执行 `merge_prs` 动作:先 `claimQueueMergePhase`
+  (带读回确认的条件更新 `pending → running`),再逐条按 identity 键排序、重读 forge 比对 head SHA、
+  发 `gh pr merge --merge --match-head-commit` / `glab mr merge --yes --auto-merge=false --sha`,
+  最后 `syncIntentPrStatus` 读回 forge,聚合态 `merged` 才 `completeIntentOnPrsMerged` 写 `done`;
+  否则 `handBack`(`pr_merge_failed`/`pr_merge_unconfirmed`,phase `handed_back` + 去重待办)。`recover`
+  分支只做只读对账,不发任何命令。
+
+投影层把凭据复证成两个事实供内核读取:`mergeAuthorized = mergeDenial(...) === null`、
+`mergeRecovery = mergePhase ∈ {running, awaiting_sync}`(`queue-projection.ts`/`queue-ledger.ts`),
+`reconcile.ts` 据此在 `approved` 分支产出 `merge_prs`(recover 与否),且该动作与 Review/Fix 一样占一个
+并发名额(`needsSlot: true`)。凭据写入发生在 `applyMergeAuthority`(`review-fix-tool-defs.ts`):
+仅当 `trusted.phase === 'review'` 且 `trusted.intentId` 命中、且结论为 `approved` 时才签发,其余
+(`approved` 但非队列归因,或任何 `rejected`)一律 `invalidateMergeGrant`。
 
 ## 列出 / 重命名 / 删除沟通会话
 

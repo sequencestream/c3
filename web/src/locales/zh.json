@@ -308,6 +308,13 @@
         "label": "默认智能体",
         "empty": "无已启用的智能体"
       },
+      "work": {
+        "tooltip": "执行工作会话的智能体(spec 驱动交付)。留空即跟随工作区默认,再回落到系统默认。"
+      },
+      "workPicker": {
+        "label": "工作智能体",
+        "followDefault": "跟随默认智能体"
+      },
       "tool": {
         "tooltip": "执行后台工具型会话的智能体(完成判定、总结)"
       },
@@ -3786,6 +3793,15 @@
         "fix": {
           "label": "修复智能体"
         }
+      },
+      "workPicker": {
+        "label": "工作智能体"
+      },
+      "work": {
+        "tooltip": "本工作区执行工作会话(spec 驱动交付)的智能体。不设置即继承系统的「工作 Agent」。",
+        "inherit": "继承系统工作智能体",
+        "inheritNamed": "继承系统工作智能体（当前：{agent}）",
+        "stale": "当前选择的工作智能体已被删除,请重新选择,或改回继承系统默认。"
       }
     }
   },
@@ -4110,7 +4126,8 @@
       "wait": "等待中",
       "park": "已 park",
       "block": "被阻塞",
-      "skip": "已跳过"
+      "skip": "已跳过",
+      "merge_prs": "合并 PR 中"
     },
     "reason": {
       "none": "无",
@@ -4141,7 +4158,10 @@
       "turn_error": "开发 turn 出错",
       "judge_stuck": "判定未真实完成",
       "judge_unavailable": "完成判定不可用(工具 agent 配置)",
-      "pr_target_unavailable": "PR 目标不可用,未创建 PR"
+      "pr_target_unavailable": "PR 目标不可用,未创建 PR",
+      "pr_merging": "正在合并本意图的活跃 PR",
+      "pr_merge_failed": "PR 合并失败,已交回人工处理",
+      "pr_merge_unconfirmed": "PR 合并结果未确认,交回人工处理"
     }
   },
   "logs": {

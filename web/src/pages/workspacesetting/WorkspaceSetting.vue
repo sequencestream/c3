@@ -114,6 +114,13 @@ const props = defineProps<{
    * inheritance into a snapshot that a later system change would not reach.
    */
   systemDefaultAgentId?: string | null
+  /**
+   * The SYSTEM `workAgentId` — read-only here, the same role as `systemDefaultAgentId`
+   * but for the work-agent chain. It is what this workspace's work sessions resolve to
+   * while it has no work-agent override of its own, so the Work Agent picker names it
+   * beside the "inherit" option. Never copied into the draft.
+   */
+  systemWorkAgentId?: string | null
   /** Per-skill link status for the current workspace (reply to get_skill_link_status). */
   linkStatuses?: SkillLinkStatus[]
   /** Skill ids whose install is in flight — drives per-row busy/disabled state. */
@@ -218,11 +225,8 @@ const TABS: WsTab[] = [
   'memories',
 ]
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
-  // 默认选择器与系统页签部分同构,只多一个居首的「继承系统默认」选项;下方再按工具、意图、
-  // 规格、规格审核、自动化、评审、修复的顺序列出七个角色覆盖下拉框,每个同样以「继承系统
-  // 默认」居首。八个字段共用继承哨兵语义:空串即继承(服务端归一化时把这个键整个省略,绝不
-  // 把当时的系统/默认值写进来 —— 那会把动态继承冻成一次快照)。
-  defaultAgent: ['defaultAgentId', ...WORKSPACE_ROLE_AGENT_FIELDS],
+  // Empty agent references inherit dynamically; saving never snapshots defaults.
+  defaultAgent: ['defaultAgentId', 'workAgentId', ...WORKSPACE_ROLE_AGENT_FIELDS],
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
   collab: [
@@ -373,6 +377,8 @@ function buildSeed(
     automationAgentId: config?.automationAgentId ?? '',
     reviewAgentId: config?.reviewAgentId ?? '',
     fixAgentId: config?.fixAgentId ?? '',
+    // 与 defaultAgentId 同样的继承语义:缺省 ⇒ '' ⇒ 「继承系统默认」。
+    workAgentId: config?.workAgentId ?? '',
     // sandbox left RAW from `full` (may be undefined) — synthesized into the draft.
   }
 }
@@ -703,6 +709,25 @@ function roleAgentDraftStale(field: WorkspaceRoleAgentField): boolean {
   if (defaultAgentGroups.value.some((g) => g.id === ref)) return false
   return !(props.agents ?? []).some((a) => a.id === ref)
 }
+/**
+ * 「继承」当前解析到的系统工作 Agent,供继承选项旁显示。与 inheritedDefaultAgentLabel
+ * 同理:只是对系统 workAgentId 的实时读取,不写入草稿,继承态保持干净。
+ */
+const inheritedWorkAgentLabel = computed<string>(() => {
+  const ref = props.systemWorkAgentId?.trim() ?? ''
+  return ref ? agentRefLabel(ref) : ''
+})
+
+/**
+ * 工作 Agent 覆盖草稿指向了已被删除的 agent。与 defaultAgentDraftStale 同理:工作区可以
+ * 直接退回继承系统默认,所以这里只提示、不阻塞重新选择。
+ */
+const workAgentDraftStale = computed<boolean>(() => {
+  const ref = draft.value.workAgentId?.trim() ?? ''
+  if (!ref) return false
+  if (defaultAgentGroups.value.some((g) => g.id === ref)) return false
+  return !(props.agents ?? []).some((a) => a.id === ref)
+})
 
 /** Whether the given agent id is in the consensus custom allowlist. */
 function isConsensusAgentSelected(id: string): boolean {
@@ -853,11 +878,12 @@ function buildTabPayload(
     case 'defaultAgent': {
       // '' ⇒ back to inheriting: emitted as an empty string, which the server
       // normalizes to the key being omitted (so the row is deleted, not blanked).
-      // All eight agent references share the same inherit sentinel semantics.
+      // All nine agent references share the same inherit sentinel semantics.
       payload.defaultAgentId = src.defaultAgentId?.trim() || ''
       for (const field of WORKSPACE_ROLE_AGENT_FIELDS) {
         payload[field] = src[field]?.trim() || ''
       }
+      payload.workAgentId = src.workAgentId?.trim() || ''
       break
     }
   }
@@ -996,6 +1022,45 @@ const parkRecoveryRateText = computed(() => {
             data-testid="workspace-default-agent-stale"
           >
             {{ t('workspaceSetting.defaultAgent.stale') }}
+          </p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">
+              {{ t('workspaceSetting.defaultAgent.workPicker.label') }}
+            </span>
+            <select
+              v-model="draft.workAgentId"
+              class="mode-select"
+              data-testid="workspace-work-agent-select"
+              :title="t('workspaceSetting.defaultAgent.work.tooltip')"
+            >
+              <option value="">
+                {{
+                  inheritedWorkAgentLabel
+                    ? t('workspaceSetting.defaultAgent.work.inheritNamed', {
+                        agent: inheritedWorkAgentLabel,
+                      })
+                    : t('workspaceSetting.defaultAgent.work.inherit')
+                }}
+              </option>
+              <option v-for="a in defaultAgentCandidates" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="defaultAgentGroups.length > 0"
+                :label="t('workspaceSetting.defaultAgent.groupPicker.label')"
+              >
+                <option v-for="g in defaultAgentGroups" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <p
+            v-if="workAgentDraftStale"
+            class="project-config-warn"
+            data-testid="workspace-work-agent-stale"
+          >
+            {{ t('workspaceSetting.defaultAgent.work.stale') }}
           </p>
         </section>
 

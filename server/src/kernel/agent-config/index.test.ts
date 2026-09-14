@@ -38,6 +38,7 @@ const mockSettings: SystemSettings = {
     },
   ],
   defaultAgentId: 'claude-pro',
+  workAgentId: '',
   // '' ⇒ tool sessions follow the default agent; tests mutate this per-case.
   toolAgentId: '',
   // '' ⇒ intent comm sessions follow the default agent; tests mutate this per-case.
@@ -553,6 +554,7 @@ describe('roles pointing at a group — bind the group, run its first enabled me
     | 'specReviewAgentId'
     | 'reviewAgentId'
     | 'fixAgentId'
+    | 'workAgentId'
   > = {
     tool: 'toolAgentId',
     intent: 'intentAgentId',
@@ -560,6 +562,7 @@ describe('roles pointing at a group — bind the group, run its first enabled me
     spec_review: 'specReviewAgentId',
     review: 'reviewAgentId',
     fix: 'fixAgentId',
+    work: 'workAgentId',
   }
   const DEDICATED_ROLES = Object.keys(ROLE_FIELD) as Array<Exclude<AgentRole, 'default'>>
 

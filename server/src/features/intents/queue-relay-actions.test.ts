@@ -17,6 +17,14 @@ vi.mock('./store.js', () => ({ getIntent: (id: string) => getIntent(id) }))
 const gitBranchMode = vi.fn(() => 'worktree')
 vi.mock('../../kernel/config/index.js', () => ({
   getGitBranchMode: () => gitBranchMode(),
+  getForgeOverride: () => 'github',
+}))
+
+const getForgePrLinkFacts = vi.fn<() => Promise<{ ok: boolean; headSha: string | null }>>(() =>
+  Promise.resolve({ ok: false, headSha: null }),
+)
+vi.mock('../../git.js', () => ({
+  getForgePrLinkFacts: () => getForgePrLinkFacts(),
 }))
 
 const worktreeExists = vi.fn(() => true)

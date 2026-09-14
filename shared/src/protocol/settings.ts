@@ -402,6 +402,24 @@ export interface SystemSettings {
    * a save.
    */
   fixAgentId: string
+  /**
+   * Id of the agent that runs **ordinary work sessions** (`SessionKind='work'`) —
+   * the everyday dev-execution role — when the session is created without an
+   * explicit agent pick (Auto). Semantics mirror {@link toolAgentId}: an **empty
+   * string is "follow the default agent"**. Unlike the other roles, the effective
+   * pick is resolved through a **workspace-first chain**: the workspace's
+   * {@link WorkspaceSetting.workAgentId} override (when set) → this field → the
+   * workspace's {@link WorkspaceSetting.defaultAgentId} → {@link defaultAgentId} →
+   * `system`. A *non-empty* value pointing at a now-**disabled** agent is
+   * **rewritten** on store to the next enabled agent in `order_seq` order (the same
+   * `resolveDefaultAgentId` fall-through, AC-R2/AC-R10/AC-R20); a value pointing at
+   * a **deleted** agent is **cleared to `''`**, so the role follows the effective
+   * default again (workspace override → `defaultAgentId` → `system`). An empty
+   * string is left empty (never auto-filled), so "follow the default" survives a
+   * save. Only unbound future work sessions are affected — existing sessions keep
+   * their own frozen binding.
+   */
+  workAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /**

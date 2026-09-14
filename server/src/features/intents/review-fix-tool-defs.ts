@@ -18,6 +18,13 @@
  * caller cannot name one, which makes "workspace A cannot write workspace B's
  * status" structural.
  *
+ * One thing the argument explicitly does NOT buy: authority to merge. An
+ * `approved` conclusion only becomes a merge credential when the SERVER can
+ * attribute the call to the queue's own review run ({@link TrustedRelayCaller}),
+ * which is supplied by the surface and never by the model. A backfill that merely
+ * names the queue's session id writes the same conclusion and grants nothing —
+ * that PR stays a human's to merge.
+ *
  * This module is framing-free: it owns the zod input shapes, the descriptions
  * advertised in the system prompt, and the CORE logic. The MCP framing — tool
  * registration + the per-run binding closure that supplies `workspacePath` and
@@ -27,6 +34,7 @@ import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { Intent } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
+import { invalidateMergeGrant, issueMergeGrant } from './merge-authority.js'
 import { getIntent, isStoreAvailable, updateIntentReviewFixStatus } from './store.js'
 
 /** An MCP tool result. Identical shape across the Claude SDK and the MCP SDK. */
@@ -77,6 +85,23 @@ export type SyncIntentReviewStatusArgs = {
   reviewStatus: 'approved' | 'rejected'
 }
 
+/**
+ * What the SERVER knows about the call, independent of what the call claims.
+ *
+ * Supplied only by a surface that can actually attribute the caller — today the
+ * per-execution MCP binding of a queue-started relay run. Its absence is the
+ * normal case (manual backfill, an automation that is not a relay run) and is
+ * never an error: such a call writes its conclusion exactly as before and simply
+ * confers no merge authority.
+ */
+export interface TrustedRelayCaller {
+  /** The intent the server started this run for. */
+  intentId: string
+  phase: 'review' | 'fix'
+  /** The session the server bound to this run — never a model-supplied value. */
+  sessionId: string
+}
+
 export type SyncIntentFixStatusArgs = {
   intentId: string
   fixSessionId: string
@@ -89,7 +114,8 @@ export const syncIntentReviewStatusDesc =
   '把本项目一条意图的 PR AI 评审结论回填为终态。' +
   '必填 intentId、reviewSessionId、reviewStatus;reviewStatus 仅接受 approved(通过)或 rejected(发现问题)。' +
   'reviewSessionId 必须是产生该结论的 c3 会话 c3SessionId,不要用厂商 session id 或 automation executionId 代替。' +
-  '本工具只写评审终态与会话绑定:不写修复阶段、不增加复审轮次、不写 WorkNote、不接受 pending。' +
+  '本工具只写评审终态与会话绑定:不写修复阶段、不增加复审轮次、不写 WorkNote、不接受 pending,也不合并 PR。' +
+  '是否允许队列自动合并由服务端按本次调用的真实归属判定,与你填写的 reviewSessionId 无关,填成队列会话 id 也不会获得合并授权。' +
   '不存在或属于其他项目的 intentId、非法状态或数据库失败均返回错误;成功回显意图 id 与已保存字段。'
 
 export const syncIntentFixStatusDesc =
@@ -154,6 +180,7 @@ export function runSyncIntentReviewStatus(
   workspacePath: string,
   args: SyncIntentReviewStatusArgs,
   onBroadcast?: (workspacePath: string) => void,
+  trusted?: TrustedRelayCaller | null,
 ): ReviewFixToolResult {
   if (!isStoreAvailable()) return fail('意图库不可用,无法回填评审状态。')
   if (!(REVIEW_TERMINALS as readonly string[]).includes(args.reviewStatus)) {
@@ -170,6 +197,7 @@ export function runSyncIntentReviewStatus(
       reviewSessionId: args.reviewSessionId,
       reviewStatus: args.reviewStatus,
     })
+    applyMergeAuthority(workspacePath, args, trusted ?? null)
     onBroadcast?.(workspacePath)
     return {
       content: text(
@@ -183,6 +211,44 @@ export function runSyncIntentReviewStatus(
   } catch (err) {
     return fail(`回填评审状态失败:${String(err)}`)
   }
+}
+
+/**
+ * Move the merge credential in step with the conclusion that was just written.
+ *
+ * Three cases, and only the first can ever grant authority:
+ *   - the server attributed this call to the queue's OWN review run for this
+ *     intent, and the conclusion is `approved` ⇒ the claim becomes a credential;
+ *   - anything else concluding `approved` (manual backfill, another automation, a
+ *     run for a different intent, a call whose `reviewSessionId` argument merely
+ *     NAMES the queue session) ⇒ any existing credential is dropped, because an
+ *     approval c3 cannot attribute is an approval a human owns;
+ *   - `rejected` ⇒ dropped too: the round that earned the credential no longer
+ *     ends in an approval.
+ *
+ * A credential that has already been consumed or handed back is left alone by
+ * `invalidateMergeGrant`, so a repeated backfill cannot resurrect or rewind one.
+ */
+function applyMergeAuthority(
+  workspacePath: string,
+  args: SyncIntentReviewStatusArgs,
+  trusted: TrustedRelayCaller | null,
+): void {
+  const isQueueReview =
+    trusted !== null && trusted.phase === 'review' && trusted.intentId === args.intentId
+  if (args.reviewStatus === 'approved' && isQueueReview) {
+    issueMergeGrant({
+      workspacePath,
+      intentId: args.intentId,
+      callerSessionId: trusted.sessionId,
+    })
+    return
+  }
+  invalidateMergeGrant(
+    workspacePath,
+    args.intentId,
+    args.reviewStatus === 'approved' ? '评审结论由非队列评审会话回填' : '评审结论已改为 rejected',
+  )
 }
 
 /**

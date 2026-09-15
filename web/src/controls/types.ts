@@ -36,6 +36,19 @@ import type {
   QueueControlAction,
 } from '@ccc/shared/protocol'
 import type { AppState, AuthApi, DepType, TypedT, WorkcenterPage } from './state'
+
+/**
+ * 一条测速请求的业务部分——`type` 与 `requestId` 由发送处补齐。
+ *
+ * 必须逐个分支地去字段(裸 `Omit` 会把联合压成一个「各 action 字段都可选」的大对象,
+ * 那正是协议里刻意不采用的形状),新增 action 时这里自动跟着长,不会漏。
+ */
+export type SpeedTestActionPayload =
+  Extract<ClientToServer, { type: 'model_provider_speed_test' }> extends infer M
+    ? M extends { type: unknown; requestId: unknown }
+      ? Omit<M, 'type' | 'requestId'>
+      : never
+    : never
 import type { CreateIntentEvent } from '@/lib/create-intent-view'
 import type { CreatePrEvent } from '@/lib/create-pr-view'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
@@ -418,6 +431,17 @@ export interface AppMethods {
     baseUrl?: string
     apiKey?: string
   }): void
+  /** 发一条测速消息。不带 URL / key / API 方言——这三项一律由服务端从已保存配置读取。 */
+  speedTestAction(action: SpeedTestActionPayload): void
+  /** 打开某 provider 的测速对话框,并向服务端问一次是否已有在跑的轮次。 */
+  openSpeedTestDialog(providerId: string): void
+  /** 关闭对话框。不停止服务端的执行——只有显式中断才停。 */
+  closeSpeedTestDialog(): void
+  /** 打开某 provider 的历史报告并拉最新一页。 */
+  openSpeedTestReport(providerId: string): void
+  /** 打开「历史报告」总入口:先开面板、不预选,候选由服务端给出(含已删除条目)。 */
+  openSpeedTestHistory(): void
+  closeSpeedTestReport(): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void

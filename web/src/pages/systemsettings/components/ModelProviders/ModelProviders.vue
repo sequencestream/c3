@@ -41,6 +41,9 @@ import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import type { ProviderProbeState } from '@/lib/model-provider'
 import { providerProbeKey } from '@/lib/model-provider'
+import type { SpeedTestIntent, SpeedTestUiState } from '@/lib/model-provider-speed-test'
+import SpeedTestDialog from './SpeedTestDialog.vue'
+import SpeedTestReport from './SpeedTestReport.vue'
 
 const { t } = useTypedI18n()
 
@@ -52,9 +55,23 @@ const props = withDefaults(
     agents?: AgentConfig[]
     /** 探测状态,键为 `${providerId}:${protocolType}`。 */
     probes?: Record<string, ProviderProbeState>
+    /**
+     * 已提交的 provider 快照。测速只按服务端已保存的配置拨号,所以对话框的协议、
+     * 模型候选一律取这里,而不是上面那份可编辑的草稿。
+     */
+    savedProviders?: ModelProvider[]
+    /** 测速的可见状态(对话框、进度、报告)。 */
+    speedTest?: SpeedTestUiState
     isAdmin?: boolean
   }>(),
-  { providers: () => [], agents: () => [], probes: () => ({}), isAdmin: true },
+  {
+    providers: () => [],
+    agents: () => [],
+    probes: () => ({}),
+    savedProviders: () => [],
+    speedTest: undefined,
+    isAdmin: true,
+  },
 )
 
 const emit = defineEmits<{
@@ -67,6 +84,11 @@ const emit = defineEmits<{
   probe: [
     payload: { providerId: string; protocolType: ProtocolType; baseUrl: string; apiKey: string },
   ]
+  /**
+   * 测速。与探测同理不是「编辑一份配置」,而是要服务端替我们真去跑,所以整条上抛。
+   * 单一通道承载全部动作(开始/中断/重试保存/报告),判别联合见 SpeedTestIntent。
+   */
+  speedTest: [intent: SpeedTestIntent]
 }>()
 
 const PROTOCOL_LABEL: Record<ProtocolType, string> = {
@@ -279,6 +301,23 @@ function requestProbe(p: ModelProvider, protocol: ProtocolType): void {
   })
 }
 
+// ---- 测速 ----
+
+/** 已提交快照里的同一条 provider;缺失=服务端还不认识它(新建未保存)。 */
+function savedOf(id: string): ModelProvider | null {
+  return props.savedProviders.find((p) => p.id === id) ?? null
+}
+
+/** 草稿里的同一条,供对话框判断「有未保存修改」。 */
+function draftOf(id: string): ModelProvider | null {
+  return props.providers.find((p) => p.id === id) ?? null
+}
+
+/** 未落库的新建行不能测速——服务端只按已保存配置拨号。 */
+function canSpeedTest(p: ModelProvider): boolean {
+  return props.isAdmin && savedOf(p.id) !== null
+}
+
 // ---- 删除 ----
 
 const removeTarget = ref<ModelProvider | null>(null)
@@ -362,6 +401,27 @@ function confirmRemove(): void {
             p.paused ? t('settings.providers.paused.label') : t('settings.providers.enabled.label')
           }}</span>
         </label>
+        <button
+          class="ghost provider-speed"
+          :disabled="!canSpeedTest(p)"
+          :title="
+            canSpeedTest(p)
+              ? t('settings.providers.speedTest.button.tooltip')
+              : t('settings.providers.speedTest.blocked.unsaved')
+          "
+          data-testid="provider-speed-test"
+          @click="emit('speedTest', { kind: 'open', providerId: p.id })"
+        >
+          {{ t('settings.providers.speedTest.button.label') }}
+        </button>
+        <button
+          class="ghost provider-speed"
+          :disabled="!isAdmin"
+          data-testid="provider-speed-report"
+          @click="emit('speedTest', { kind: 'openReport', providerId: p.id })"
+        >
+          {{ t('settings.providers.speedTest.report.button.label') }}
+        </button>
         <button
           class="icon-btn"
           :title="t('settings.providers.remove.tooltip')"
@@ -533,7 +593,43 @@ function confirmRemove(): void {
       <button class="agent-add" :disabled="!isAdmin" data-testid="provider-add" @click="onCreate">
         {{ t('settings.providers.add.label') }}
       </button>
+      <!-- 总入口:历史按 providerId 存,提供方被删后仍能从这里打开。 -->
+      <button
+        class="ghost"
+        :disabled="!isAdmin"
+        data-testid="provider-speed-history"
+        @click="emit('speedTest', { kind: 'listProviders' })"
+      >
+        {{ t('settings.providers.speedTest.history.label') }}
+      </button>
     </div>
+
+    <SpeedTestDialog
+      v-if="speedTest?.dialogProviderId"
+      :provider="savedOf(speedTest.dialogProviderId)"
+      :draft="draftOf(speedTest.dialogProviderId)"
+      :state="speedTest"
+      @start="
+        (payload) =>
+          emit('speedTest', {
+            kind: 'start',
+            providerId: speedTest!.dialogProviderId!,
+            ...payload,
+          })
+      "
+      @interrupt="(runId) => emit('speedTest', { kind: 'interrupt', runId })"
+      @retry-save="(runId) => emit('speedTest', { kind: 'retrySave', runId })"
+      @close="emit('speedTest', { kind: 'close' })"
+    />
+
+    <SpeedTestReport
+      v-if="speedTest?.reportOpen"
+      :state="speedTest"
+      @select="(runId) => emit('speedTest', { kind: 'selectRun', runId })"
+      @load-more="(payload) => emit('speedTest', { kind: 'loadMore', ...payload })"
+      @pick="(providerId) => emit('speedTest', { kind: 'openReport', providerId })"
+      @close="emit('speedTest', { kind: 'closeReport' })"
+    />
 
     <ConfirmDialog
       :open="removeTarget !== null"
@@ -696,7 +792,8 @@ function confirmRemove(): void {
   flex: 0 0 148px;
   width: 148px;
 }
-.provider-probe {
+.provider-probe,
+.provider-speed {
   flex: 0 0 auto;
   height: 34px;
   padding: 0 var(--sp-3);
@@ -706,6 +803,9 @@ function confirmRemove(): void {
   border: 1px solid var(--c-border);
   font-size: var(--fs-code);
   font-weight: 500;
+}
+.provider-speed {
+  height: 28px;
 }
 .provider-issue,
 .provider-probe-result {

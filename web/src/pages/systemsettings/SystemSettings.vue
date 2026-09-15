@@ -8,6 +8,7 @@
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
 import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import type {
+  ModelProvider,
   ProtocolType,
   SessionBindingStats,
   SandboxHostStatus,
@@ -20,6 +21,7 @@ import type {
   WorkspaceScopeMode,
 } from '@ccc/shared/protocol'
 import type { ProviderProbeState } from '@/lib/model-provider'
+import type { SpeedTestIntent, SpeedTestUiState } from '@/lib/model-provider-speed-test'
 
 defineProps<{
   open: boolean
@@ -39,6 +41,10 @@ defineProps<{
   providerProbes?: Record<string, ProviderProbeState>
   /** 正在手动「下载 / 检查新版本」的 vendor 列表。 */
   vendorCliSyncing?: VendorId[]
+  /** 已提交快照里的 provider 列表,只作测速候选(服务端按已保存配置拨号)。 */
+  savedProviders?: ModelProvider[]
+  /** 测速的可见状态。 */
+  speedTest?: SpeedTestUiState
 }>()
 
 defineEmits<{
@@ -61,6 +67,8 @@ defineEmits<{
       apiKey?: string
     },
   ]
+  /** 测速意图上抛(App 负责落到具体动作)。 */
+  'speed-test': [intent: SpeedTestIntent]
 }>()
 </script>
 
@@ -78,6 +86,8 @@ defineEmits<{
     :user-access-workspaces="userAccessWorkspaces"
     :provider-probes="providerProbes"
     :vendor-cli-syncing="vendorCliSyncing"
+    :saved-providers="savedProviders"
+    :speed-test="speedTest"
     @close="$emit('close')"
     @target-consumed="$emit('target-consumed')"
     @save="(s: SystemSettings) => $emit('save', s)"
@@ -89,5 +99,6 @@ defineEmits<{
     @reload-user-access="$emit('reload-user-access')"
     @save-user-access="(p) => $emit('save-user-access', p)"
     @provider-probe="(p) => $emit('provider-probe', p)"
+    @speed-test="(intent) => $emit('speed-test', intent)"
   />
 </template>

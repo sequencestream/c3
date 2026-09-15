@@ -120,6 +120,59 @@ Model Vendor 的内置清单——它连不到任何 provider,列 provider 的�
 
 关系:一个 provider 被零个或多个 agent 引用;一个 agent 至多引用一个 provider。
 
+### 测速运行(SpeedTestRun)
+
+对一条**已保存** provider 发起的一次真实流式生成采样。持久化在
+`model_provider_speed_tests`(运行头)与 `model_provider_speed_test_requests`(逐请求样本),
+收束时同一事务写入,只增不改不删。行为规则见 [spec](./agent-config-spec.md) 的 AC-R36;
+**指标口径的唯一权威定义在本节**,其余位置一律引用此处,不复写公式。
+
+**运行头**:`runId`(唯一)、`providerId`(弱引用,不设外键、读时不 JOIN 配置)、
+`providerDisplayName`(开始时的名称快照)、`startedAt`/`finishedAt`、`plannedCount`(操作者
+要的次数)、`protocolType`(取 URL 的协议槽)、`apiDialect`(实际讲的上游 API)、`model`、
+`calibrationVersion` 与 `maxOutputTokens`/`temperature`(当次校准参数快照)、`outcome`
+(`completed` | `failed` | `interrupted`)、`summary`。
+
+**逐请求样本**(`sequence` 从 1 起,运行内唯一):`startedAt`、`outcome`
+(`success` | `failure` | `cancelled`)、`failureCategory`(`timeout` | `http` | `network` |
+`stream`,仅失败时非空)、`httpStatus`(端点给了才有)、`ttftMs`、`endToEndMs`、
+`outputTokens`、`tokenCountSource`(`usage` | `delta_estimate`)、`tpotMs`。
+
+**计数与成功率**:`completedCount = successCount + failureCount`——被中断的 `cancelled`
+两头都不算,既不入成功率的分子也不入分母,更不进任何延迟样本;计划了但从未拨出的次数**不落行**。
+`successRate = successCount / completedCount`,0..1,无请求完成时为 `null`。中断后它只描述
+已完成的那部分,故报告必须与「已完成 n / 计划 N」同屏呈现。
+
+**单请求指标**(单位均为毫秒,取自服务端单调时钟,覆盖「拨号 → 该事件」,不含排队、落库与推送):
+
+- `ttftMs` — 拨号 → 首个**非空文本增量**到达。单个空格算数;role、心跳、仅含 usage 的事件不算。
+  始终没有文本则为 `null`
+- `endToEndMs` — 拨号 → 流终止。唯一为 `null` 的情形是被中断取消
+- `outputTokens` — 优先取上游**终局用量**(`tokenCountSource: 'usage'`);没有则按收到的非空文本
+  增量事件数估算(`delta_estimate`)。一个增量可能含多个 token,估算误差可能很大,故来源随行落库,
+  报告须对估算值挂标记
+- `tpotMs = (endToEndMs - ttftMs) / (outputTokens - 1)` — 仅**成功**且 `outputTokens >= 2` 时
+  有定义,否则 `null`。首 token 的成本已计入 TTFT,分母用 `outputTokens` 会重复计算;单 token
+  响应也没有可言的「间隔」
+
+**单请求样本集**(`ttft` / `tpot` / `endToEnd` 各一份,`sampleCount` + `avgMs` + `p50Ms` +
+`p95Ms` + `p99Ms`):只收**成功**请求,且只收该指标非 `null` 的那些(故 `tpot` 的样本数通常少于
+`ttft`)。`sampleCount === 0` 时四个值全为 `null`——不画成 0,0 与「没有成功样本」是两件事。
+`avgMs` 为算术平均。百分位取**最近秩、不做插值**:升序样本数组长 `m` 时
+`Pp = x[ceil(p × m) - 1]`,故 10 个样本的 P95 与 P99 都落在最大值——报告显示 `sampleCount`
+正是为了让这件事可见,而不是被误读成尾部估计。所有值不在存储层舍入,只在展示时舍入。
+
+**整轮汇总**:
+
+- `successfulWallTimeMs` = 成功请求的 `endToEndMs` 之和
+- `outputTokensTotal` = 成功请求的 `outputTokens` 之和
+- `tokensPerSecond = outputTokensTotal / (successfulWallTimeMs / 1000)`
+- `requestsPerSecond = successCount / (successfulWallTimeMs / 1000)`
+- 后两者在无成功请求或累计时长为 0 时为 `null`,**绝不出现 `Infinity`/`NaN`**
+
+分母是成功请求**占用**的时间,不含失败、取消与请求之间的间隙,也不是整轮真实耗时,更不是该上游
+的容量上限——串行采样的语义如实写在名字里。
+
 ## System Agent(系统智能体)
 
 内建智能体。与 Agent 使用相同的外壳,但其 id 为 `'system'`,vendor 为 `'claude'`,且其

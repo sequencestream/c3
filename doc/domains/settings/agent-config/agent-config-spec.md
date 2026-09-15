@@ -35,6 +35,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 - **兜底智能体** — 合成的 `{ vendor: 'claude', configMode: 'system' }` 智能体(id 为 `'system'`),仅在首次启动时或 settings 为空/损坏时用作默认种子——**不是**受保护的单例
 - **系统设置** — 整个配置:智能体 + 默认智能体 id(按项目的旋钮 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 已移到 `projectConfigs` map 下的 workspace setting 中,见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))
 - **待定意图** — 一个 `pendingId → { agentId, createdAt }` 条目:尚未运行的会话希望使用哪个智能体。可变;在首次绑定时被复制为一个事实,否则由清理任务回收(AC-R17)
+- **测速运行** — 对一条**已保存** provider 发起的一轮真实流式生成采样:冻结的目标(provider/协议槽/实际方言/模型/端点/账户级 key)、固定的标定报文与参数、逐请求样本、整轮汇总与最终状态。执行归服务端持有,结果只增地落在 `model_provider_speed_tests` 与 `model_provider_speed_test_requests`(AC-R36);指标口径见 [models](./agent-config-models.md) 的「测速运行」一节
 - **会话事实** — 一个 `realId → { agentId, vendor }` 条目:某个真实会话实际运行所用的智能体 + 其**被冻结的**厂商;缺失 ⇒ 回退到会话列表投影行记录的同一次绑定,两者皆无才使用默认智能体(AC-R6)
 
 见 [agent-config-models.md](agent-config-models.md)。
@@ -108,6 +109,16 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   - **不新增 SessionKind。** work 是智能体**角色**而非会话类型:`SessionKind='work'` 早已存在,普通 work 会话与意图「开始工作」仍以既有 `SessionKind` 执行,只是绑定目标从 `'default'` 改为 `'work'`。它不改变 intent/spec/tool/discussion/automation 的解析。
 
 - **AC-R34** — **PR 评审接力与失败修复模板的默认执行身份**。`reviewAgentId` / `fixAgentId` 分别指名从 `pr-review-runner`(PR 评审接力)与 `pr-review-fix`(PR 评审失败修复)两个内置模板新建自动化时的默认执行身份。二者的**存储归一化与消费方式都与 `automationAgentId`(AC-R25)相同**:空字符串是”跟随默认智能体”的哨兵值(归一化保持为空、从不自动填充);指向现已**禁用**智能体的**非空**值在存储时被改写为按 `order_seq` 顺序的下一个已启用智能体(无启用智能体时兜底 id `'system'`),指向已**删除**智能体的非空值被**清空为 `''`**(角色降级回”跟随默认”);且这两个值**不**被运行时 `resolveAgent` 路由器读取——自动化记录在创建时保存具体 `vendor`/`agentId` 快照并永远按快照运行,它们只通过模板侧跟随链 `系统 review/fix 角色 → 工作区 review/fix 角色覆盖 → 工作区 `defaultAgentId`→ 系统`defaultAgentId` → 第一个已启用的智能体` 为**模板新建时的一次性默认选择**做种(组引用压平为该组首个启用成员,若无已启用智能体则提示用户)。web console 在「默认 Agent」页签将其呈现为自动化智能体选择器之后的两个下拉框(按 `order_seq` 排列的已提交启用智能体 + 居首的”跟随默认”选项);禁用改写与删除清空由保存注册表时的服务端归一化完成,仅当字段非空时才这样做。review / fix 是智能体**角色**而非会话类型:不新增 SessionKind、不绑定会话、没有专属启动路径,工作区**提供** `reviewAgentId`/`fixAgentId` 覆盖但只用于模板新建种子、不进入队列解析。**第二个消费方是自动化队列的 PR 评审接力**(RM-A26):队列认领一个 Review / Fix 阶段时,按 `系统 review/fix 角色 → 工作区默认 → 系统默认 → 兜底` 解析一次具体 vendor/agent(**不读工作区 review/fix 角色覆盖**,因为这两个字段仅是创建时的模板种子)并随该阶段的会话占位保存,之后运行中与恢复时都不再重读设置 —— 因此改设置不会改在途阶段的身份。它仍不引入 SessionKind、不引入专属启动路径:阶段以 `SessionKind='automation'` 执行。与模板种子唯一不同的是失败方向:**无可用 Agent 时接力是明确失败**,绝不读作「这条意图不需要评审」。
+
+- **AC-R36** — **模型提供方测速。** 系统设置的 provider 页对每条**已保存**的 provider 提供「测速」与「报告」两个动作,页内另有「历史报告」总入口。它量的是「这条上游此刻跑一次生成有多快」,与连通性探测(AC-R31)是两件事:探测是一次裸 GET,证明端点会应答且不消耗 token;测速是**真实调用**,花额度与 token 并可能触发上游限流,故对话框先讲清代价再让用户确认。
+  - **候选与选择**。协议候选只取该 provider **已保存** `urls` 中去空白后非空的槽,顺序恒为 OpenAI、Anthropic;只有一个槽时自动选中,两个都有时默认 OpenAI,一次运行只测一个槽。模型候选取自有效模型清单(见 [models](./agent-config-models.md) 的「Model Vendor 与模型清单」),默认取合并后的首项,**不提供手输**;清单为空则拒绝开始。OpenAI 槽按其已保存 `wireApi` 派生实际方言(Responses 直连,否则 Chat Completions),Anthropic 槽恒用 Messages 并忽略 `wireApi`;`wireApi` 在对话框内**不可覆盖**。请求数为整数 1–100(默认 10),空、0、负数、小数、非数字、越界一律前后端具名拒绝,且**在发出任何上游请求之前**拒绝。
+  - **目标在开始时冻结**。冻结的是 providerId、展示名快照、协议槽、实际方言、模型、端点与账户级 key。端点由协议槽经单一拼装函数得出(与 relay 代理到同一地址的同一份定义),不做中继、不为 Responses 臆造 `/v1`;鉴权按方言取 Bearer(两种 OpenAI API)或 `x-api-key` + `anthropic-version`;请求一律 `redirect: 'manual'`,避免把账户级 key 带到未配置的主机。provider 的暂停位**不参与判定**——管理员需要能测一条已暂停的上游以确认它是否恢复——也**不被本次测速改动**。
+  - **标定报文固定**。`chat-short-v1`:单条 user 消息 `Count from 1 to 100, separated by commas. Output only the numbers.`,`stream=true`,`temperature=0`,输出上限 128(Chat/Messages 用 `max_tokens`,Responses 用 `max_output_tokens`),并发恒为 1,无预热、无重试、无补跑、不降级参数,单请求超时 60s。报文与参数在界面上只读展示——它们不可编辑,正是两轮之间可比的前提。
+  - **失败分类**。`timeout`(超时)、`http`(端点答了非 2xx;保留状态码,3xx 一律拒绝并按失败记录)、`network`(拨号或传输失败)、`stream`(流内错误、报文畸形、缺终止事件、无任何输出)。失败计入成功率但**永不**进入延迟样本;被中断的 `cancelled` 两头都不算。全程不把上游响应体回显给前端——它可能把 key 原样带回来。
+  - **生命周期归服务端持有**。进度按 `n/N` 推送;关闭对话框、切走页面、socket 断开都**不停**也**不重启**本轮,重新进入时问一次 `active` 复原进度;只有显式「中断」才停止,它紧接着中止在途请求(记为 `cancelled`,不推进完成数,也绝不落一行假样本)。收束状态为 `completed` | `failed` | `interrupted`。`active` 答的是「这条 provider 现由服务端持有什么」而非「什么在跑」:未提交的轮次以 `state='save_failed'` 一并答出,所以重新拿到它不依赖当初那一帧有没有被看见。
+  - **对话框内候选失配即阻断**。候选来自已提交快照,而对话框开着时配置可能被别处改过(另一个标签页、另一位管理员保存)。此时当前选中的协议槽或模型若已从快照中消失,就地说明「刷新配置后重选」并挡住「开始」:既不静默改选到另一个槽——那会让用户量到一个自己没选的端点——也不放任一个必然被服务端以 `protocol_unavailable` / `model_unavailable` 挡回的动作。
+  - **持久化只增**。收束时头行与全部样本在**同一事务**内写入 `model_provider_speed_tests` + `model_provider_speed_test_requests`(字段与指标口径见 [models](./agent-config-models.md));进行中的进度不落库——运行中崩溃丢掉那批内存样本,不承诺断点续跑,已提交历史不受影响。`providerId` 是弱引用,展示名快照使 provider 被改名或删除后历史仍可读、仍可达。历史按 provider 分页读(每页 20,按 `startedAt` 倒序、`runId` 破平局);「历史报告」总入口的候选按历史记录归并,**包含已删除的提供方**,每次仍只看一条——不同协议、不同模型、不同时点的数并排放在一起只会被误读成可比。提交失败不静默:把结果留在内存并就地给「重试保存」,该入口随 `active` 复原、不因关窗或刷新而丢失;重试只重放同一批样本,**不重新调用上游、不产生第二行记录**。存储始终不可用时这条 provider 一直被持有到进程重启——不做崩溃恢复,但也不悄悄丢弃已付费的样本。
+  - **权限与协议**。所有测速动作(含读取与中断)一律过 `requireAdmin`;新增消息按协议分区落在自己的域模块中,不引入任何全局广播。
 
 ## 用户场景
 
@@ -191,6 +202,9 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   参与者,以及共识投票者——而用户编写的降级链保留其自己的
   顺序(AC-R20)。向后兼容:一个没有 `order_seq` 的既有配置会保持其当前的视觉
   顺序,直到第一次拖拽为止。
+- **测速一条 provider(先付代价再跑):** 给定一条已保存的 provider,当用户点「测速」并确认时,服务端按其已保存的端点与 key 串行发出 N 次真实生成,界面显示 `n/N`;关掉对话框或切走页面都不会停,重新打开时进度照旧;只有点「中断」才停止,已完成的样本仍作为一条 `interrupted` 记录落库。
+- **测一条未保存的 provider(反例场景):** 给定一条新建但尚未保存的 provider,当用户试图测速时,动作被拒绝并说明服务端只按已保存的配置拨号——一条测速记录必须归属于一份真实存在的配置。
+- **翻一个已删除 provider 的历史:** 给定一条被删除的 provider 其历史仍在,当用户从「历史报告」总入口选择它时,报告照常打开,展示名回退到记录里的名称快照。
 - **选择一个图标:** 给定设置视图,当用户打开某个智能体行的表情符号选择器并
   点击一个表情符号时,它会被写入该智能体的 `icon` 文本字段并像任何手动
   编辑一样保存;手动文本输入框仍然接受自由输入。该选择器是 web console 中一个**纯展示的输入
@@ -199,7 +213,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 
 ## 领域事件(线上)
 
-消费 `get_settings`、`save_settings`、`auto_configure_agents`、`load_workspace_setting`、`save_workspace_setting`。发出 `settings`、`auto_configure_agents_result`、`workspace_setting`。见
+消费 `get_settings`、`save_settings`、`auto_configure_agents`、`load_workspace_setting`、`save_workspace_setting`,以及测速的一条 `model_provider_speed_test`(按 `action` 判别:start / interrupt / active / retry_save / list / detail / history_providers)。发出 `settings`、`auto_configure_agents_result`、`workspace_setting`,以及测速的 `model_provider_speed_test_result`(按 `event` 判别:accepted / progress / finished / active / list / detail / history_providers / error)。见
 [共享协议](../../../shared/api-conventions/websocket-protocol.md)。
 
 ## 交互
@@ -221,3 +235,4 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 - **待定意图** —— 一个尚未运行的会话的可变期望智能体条目(`pendingIntents`)。
 - **会话事实** —— 一个真实会话的已敲定智能体 + 被冻结的厂商(`sessionAgents`)。
 - **厂商归属** —— 一个会话的厂商在首次绑定时被固定下来的不可变不变式。
+- **测速运行** —— 一轮采样的冻结目标 + 逐请求样本 + 整轮汇总;运行头与样本成对持久化,只增不改不删。

@@ -8,9 +8,10 @@
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
+import type { AgentConfig, ModelProvider, SpeedTestActiveRun } from '@ccc/shared/protocol'
 import { modelVendorDefaultUrls, modelVendorModels } from '@ccc/shared'
 import ModelProviders from './ModelProviders.vue'
+import { emptySpeedTestState } from '@/lib/model-provider-speed-test'
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
   return {
@@ -36,6 +37,25 @@ function agent(over: Record<string, unknown> = {}): AgentConfig {
 
 function render(props: Record<string, unknown> = {}) {
   return mount(ModelProviders, { props: { providers: [], agents: [], ...props } })
+}
+
+/** 服务端此刻持有的那一轮;state 决定它是「在跑」还是「已收束但没提交」。 */
+function activeRun(over: Partial<SpeedTestActiveRun> = {}): SpeedTestActiveRun {
+  return {
+    runId: 'r1',
+    providerId: 'p1',
+    providerDisplayName: 'DeepSeek',
+    protocolType: 'openai',
+    apiDialect: 'chat',
+    model: 'm1',
+    plannedCount: 10,
+    completedCount: 10,
+    successCount: 10,
+    failureCount: 0,
+    startedAt: 1,
+    state: 'running',
+    ...over,
+  }
 }
 
 describe('provider 列表', () => {
@@ -422,5 +442,135 @@ describe('Model Vendor', () => {
     expect(w.find('[data-testid="provider-vendor-badge"]').text()).toBe('DeepSeek')
     expect(w.find('[data-testid="provider-shipped-model"]').exists()).toBe(true)
     expect(w.find('[data-testid="provider-model-name"]').attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('测速入口', () => {
+  it('每行的「测速」「报告」都带上这一行的 providerId 上抛意图', async () => {
+    const w = render({ providers: [provider()], savedProviders: [provider()] })
+    await w.find('[data-testid="provider-speed-test"]').trigger('click')
+    expect(w.emitted('speedTest')).toEqual([[{ kind: 'open', providerId: 'p1' }]])
+
+    await w.find('[data-testid="provider-speed-report"]').trigger('click')
+    expect(w.emitted('speedTest')?.[1]).toEqual([{ kind: 'openReport', providerId: 'p1' }])
+  })
+
+  it('不在已提交快照里的 provider 不能测速:服务端只按已保存的配置拨号', async () => {
+    // 草稿里有、已保存的快照里没有 —— 正是「新建还没保存」的样子。
+    const w = render({ providers: [provider()], savedProviders: [] })
+    const button = w.find('[data-testid="provider-speed-test"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe(
+      'Save this provider first: the server only dials a saved configuration.',
+    )
+    await button.trigger('click')
+    expect(w.emitted('speedTest')).toBeUndefined()
+    // 报告是只读的历史,不受「有没有保存」影响。
+    expect(w.find('[data-testid="provider-speed-report"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('「历史报告」总入口不带 providerId:候选由服务端按历史记录给出', async () => {
+    const w = render({ providers: [provider()] })
+    await w.find('[data-testid="provider-speed-history"]').trigger('click')
+    expect(w.emitted('speedTest')).toEqual([[{ kind: 'listProviders' }]])
+  })
+
+  it('非管理员一个测速动作都发不出去', async () => {
+    const w = render({ providers: [provider()], savedProviders: [provider()], isAdmin: false })
+    expect(w.find('[data-testid="provider-speed-test"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="provider-speed-report"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="provider-speed-history"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('对话框与报告只在各自打开时挂载', async () => {
+    const closed = render({ providers: [provider()], savedProviders: [provider()] })
+    expect(closed.find('[data-testid="speed-test-overlay"]').exists()).toBe(false)
+    expect(closed.find('[data-testid="speed-test-report-overlay"]').exists()).toBe(false)
+
+    const dialog = render({
+      providers: [provider()],
+      savedProviders: [provider()],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    expect(dialog.find('[data-testid="speed-test-overlay"]').exists()).toBe(true)
+
+    // 总入口先开面板、还没选中任何一条时,报告也必须能立起来。
+    const report = render({
+      providers: [provider()],
+      savedProviders: [provider()],
+      speedTest: { ...emptySpeedTestState(), reportOpen: true },
+    })
+    expect(report.find('[data-testid="speed-test-report-overlay"]').exists()).toBe(true)
+    expect(report.find('[data-testid="speed-test-report-empty"]').text()).toBe(
+      'Pick a provider to see its history.',
+    )
+  })
+
+  it('对话框的候选只取已保存快照:草稿里的新端点不作为可测目标', async () => {
+    const saved = provider({ displayName: 'Saved', urls: { openai: 'https://saved.example/v1' } })
+    const draft = provider({ displayName: 'Draft', urls: { openai: 'https://draft.example/v1' } })
+    const w = render({
+      providers: [draft],
+      savedProviders: [saved],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    expect(w.find('[data-testid="speed-test-overlay"]').text()).toContain('Saved')
+    expect(w.find('[data-testid="speed-test-draft-note"]').exists()).toBe(true)
+  })
+
+  it('服务端仍持有的未提交轮次,重开对话框后照样给得出「重试保存」', async () => {
+    // 样本已经付过费:对话框关掉再打开(或整页刷新)只是重新问了一次 active,
+    // 入口必须从服务端的回答里长出来,而不是靠「当时收到过那一帧」。
+    const w = render({
+      providers: [provider()],
+      savedProviders: [provider()],
+      speedTest: {
+        ...emptySpeedTestState(),
+        dialogProviderId: 'p1',
+        active: activeRun({ state: 'save_failed' }),
+      },
+    })
+    const retry = w.find('[data-testid="speed-test-retry-save"]')
+    expect(retry.exists()).toBe(true)
+    await retry.trigger('click')
+    expect(w.emitted('speedTest')).toEqual([[{ kind: 'retrySave', runId: 'r1' }]])
+    // 这一轮占着提供方,「开始」只会换来 busy:不给这个按钮,免得它把注意力
+    // 从真正该做的动作上引开。
+    expect(w.find('[data-testid="speed-test-start"]').exists()).toBe(false)
+  })
+
+  it('没有待提交轮次时不出现「重试保存」', () => {
+    const w = render({
+      providers: [provider()],
+      savedProviders: [provider()],
+      speedTest: {
+        ...emptySpeedTestState(),
+        dialogProviderId: 'p1',
+        active: activeRun({ state: 'running' }),
+      },
+    })
+    expect(w.find('[data-testid="speed-test-unsaved"]').exists()).toBe(false)
+  })
+
+  it('对话框开着时快照换掉了当前协议槽:开始被挡住,不静默改选另一个端点', async () => {
+    const saved = provider({ urls: { openai: 'https://a.example/v1' }, models: [{ id: 'm1' }] })
+    const w = render({
+      providers: [saved],
+      savedProviders: [saved],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    const start = () => w.find('[data-testid="speed-test-start"]')
+    expect(start().attributes('disabled')).toBeUndefined()
+
+    // 同一个 id 的已提交快照在别处被改过:openai 槽没了。
+    await w.setProps({
+      savedProviders: [
+        provider({ urls: { anthropic: 'https://a.example/anthropic' }, models: [{ id: 'm1' }] }),
+      ],
+    })
+    expect(start().attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="speed-test-blocker"]').text()).toBe(
+      'The selected protocol is unavailable. Refresh the configuration and choose again.',
+    )
   })
 })

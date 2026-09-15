@@ -31,6 +31,7 @@ import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
 import { isAdminConn } from '../features/auth/authz.js'
 import { abortAppRegistrationForConn } from '../features/im/index.js'
+import { releaseSpeedTestSubscriber } from '../features/settings/speed-test/index.js'
 import { listWorkspacesForSubject, resolveAuthSubject } from '../features/auth/authorization.js'
 import { releaseWorkspaceDirectoryPicker } from '../features/workspaces/directory-picker.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
@@ -207,6 +208,9 @@ export function createWsHandler(deps: {
         // A one-click app registration is owned by the connection that started
         // it: nobody is left to answer the QR, so abort and drop it.
         abortAppRegistrationForConn(conn)
+        // Speed-test runs keep going in the background; only stop delivering
+        // progress to this socket.
+        releaseSpeedTestSubscriber(conn)
         sock = null
       },
     }

@@ -925,6 +925,142 @@
           "local": "ローカルランタイム",
           "custom": "その他"
         }
+      },
+      "speedTest": {
+        "button": {
+          "label": "速度テスト",
+          "tooltip": "実際のストリーミング要求を送り、このプロバイダーの初回トークン遅延とスループットを計測します。"
+        },
+        "history": {
+          "label": "速度テスト履歴"
+        },
+        "title": "速度テスト — {name}",
+        "cost": "これは実際の呼び出しです。このプロバイダーのクォータとトークンを消費し、上流のレート制限に数えられる場合があります。",
+        "draftNote": "このプロバイダーには未保存の変更があります。テストは「保存済み」の設定を使用し、下書きを勝手に保存することはありません。",
+        "protocol": {
+          "label": "プロトコル"
+        },
+        "model": {
+          "label": "モデル"
+        },
+        "count": {
+          "label": "リクエスト数",
+          "error": {
+            "empty": "送信するリクエスト数を入力してください。",
+            "notANumber": "リクエスト数は数値である必要があります。",
+            "notAnInteger": "リクエスト数は整数である必要があります。",
+            "range": "リクエスト数は {min} から {max} の間で指定してください。"
+          }
+        },
+        "dialect": {
+          "chat": "Chat Completions",
+          "responses": "Responses",
+          "messages": "Messages"
+        },
+        "calibration": "固定キャリブレーション:プロンプト「{prompt}」、temperature 0、出力上限 {maxTokens} トークン、逐次実行。編集不可 — 2 回の実行を比較可能にするための条件です。",
+        "blocked": {
+          "unsaved": "まずこのプロバイダーを保存してください。サーバーは保存済み設定にのみ接続します。",
+          "noProtocol": "少なくとも 1 つのプロトコル URL を設定して保存してください。",
+          "invalidUrl": "選択したプロトコル URL が無効です。修正して保存してください。",
+          "noModels": "利用できるモデルがありません。モデルを追加して保存してください。"
+        },
+        "start": {
+          "label": "開始"
+        },
+        "interrupt": {
+          "label": "中断"
+        },
+        "retrySave": {
+          "label": "保存を再試行"
+        },
+        "progress": {
+          "text": "完了 {done} / {total}",
+          "detail": "成功 {ok}、失敗 {failed}"
+        },
+        "unsaved": "実行は終了しましたが保存に失敗しました。結果はメモリ上に保持されています。",
+        "unavailable": "利用不可",
+        "target": "プロトコル {protocol} · API {dialect} · モデル {model} · キャリブレーション {calibration} · 出力上限 {maxTokens} · temperature {temperature}",
+        "summary": {
+          "outcome": "結果",
+          "completed": "完了 / 計画",
+          "successRate": "成功率",
+          "failed": "失敗",
+          "cancelled": "キャンセル",
+          "tokensPerSecond": "トークン/秒",
+          "requestsPerSecond": "リクエスト/秒",
+          "outputTokens": "出力トークン合計"
+        },
+        "metric": {
+          "ttft": "TTFT(ミリ秒)",
+          "tpot": "TPOT(ミリ秒)",
+          "endToEnd": "エンドツーエンド(ミリ秒)"
+        },
+        "table": {
+          "metric": "指標",
+          "samples": "サンプル数",
+          "avg": "平均",
+          "result": "結果",
+          "failure": "失敗分類",
+          "endToEnd": "エンドツーエンド",
+          "tokens": "トークン",
+          "p50": "P50",
+          "p95": "P95",
+          "p99": "P99",
+          "ttft": "TTFT",
+          "tpot": "TPOT"
+        },
+        "outcome": {
+          "completed": "完了",
+          "failed": "全件失敗",
+          "interrupted": "中断"
+        },
+        "request": {
+          "success": "成功",
+          "failure": "失敗",
+          "cancelled": "キャンセル"
+        },
+        "failure": {
+          "timeout": "タイムアウト",
+          "http": "HTTP",
+          "network": "ネットワーク",
+          "stream": "ストリーム"
+        },
+        "estimated": "{n} 件の成功サンプルは usage ではなく delta イベントからトークン数を推定しています。TPOT とトークン/秒は概算で、課金基準と大きく異なる場合があります。",
+        "sampleCaveat": "サンプル数が少ない場合、P95 と P99 は最大値に一致しがちです。信頼度を主張せず、サンプル数をそのまま表示します。",
+        "requests": {
+          "title": "リクエスト別の明細"
+        },
+        "report": {
+          "button": {
+            "label": "レポート"
+          },
+          "title": "速度テスト履歴 — {name}",
+          "titleAll": "速度テスト履歴",
+          "picker": {
+            "label": "プロバイダー",
+            "option": "{name}({count} 回)",
+            "deleted": "{name}(削除済み · {count} 回)"
+          },
+          "row": "{time} · {model} · {dialect} · {completed}/{planned} · 成功率 {rate}",
+          "empty": "このプロバイダーの速度テスト記録はまだありません。",
+          "loading": "読み込み中…",
+          "more": {
+            "label": "さらに読み込む"
+          },
+          "pick": "履歴を見るプロバイダーを選択してください。"
+        },
+        "error": {
+          "invalidCount": "リクエスト数が範囲外です。1 から 100 の整数を入力してください。",
+          "providerUnknown": "保存済み設定にこのプロバイダーがありません。保存してから再試行してください。",
+          "protocolUnavailable": "選択したプロトコルは利用できません。設定を更新して選び直してください。",
+          "invalidUrl": "選択したプロトコル URL が無効です。修正して保存してください。",
+          "modelsEmpty": "テスト可能なモデルがありません。モデルを追加して保存してください。",
+          "modelUnavailable": "このプロバイダーの現在のカタログからモデルを選んでください。",
+          "busy": "このプロバイダーでは既に実行中の回があります。終了を待つか中断してください。",
+          "notFound": "その実行記録は存在しません。",
+          "dbUnavailable": "データベースが利用できないため開始しませんでした。消費も発生していません。",
+          "saveFailed": "実行は終了しましたが保存に失敗しました。保存を再試行してください。"
+        }
       }
     },
     "defaultAgent": {

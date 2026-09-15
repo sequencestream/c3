@@ -925,6 +925,142 @@
           "local": "로컬 런타임",
           "custom": "기타"
         }
+      },
+      "speedTest": {
+        "button": {
+          "label": "속도 테스트",
+          "tooltip": "실제 스트리밍 요청을 보내 이 공급자의 첫 토큰 지연과 처리량을 측정합니다."
+        },
+        "history": {
+          "label": "속도 테스트 기록"
+        },
+        "title": "속도 테스트 — {name}",
+        "cost": "실제 호출입니다. 이 공급자의 할당량과 토큰을 소모하며 업스트림 속도 제한에 포함될 수 있습니다.",
+        "draftNote": "이 공급자에 저장되지 않은 변경이 있습니다. 테스트는 「저장된」 설정을 사용하며 초안을 대신 저장하지 않습니다.",
+        "protocol": {
+          "label": "프로토콜"
+        },
+        "model": {
+          "label": "모델"
+        },
+        "count": {
+          "label": "요청 수",
+          "error": {
+            "empty": "보낼 요청 수를 입력하세요.",
+            "notANumber": "요청 수는 숫자여야 합니다.",
+            "notAnInteger": "요청 수는 정수여야 합니다.",
+            "range": "요청 수는 {min}에서 {max} 사이여야 합니다."
+          }
+        },
+        "dialect": {
+          "chat": "Chat Completions",
+          "responses": "Responses",
+          "messages": "Messages"
+        },
+        "calibration": "고정 보정: 프롬프트 「{prompt}」, temperature 0, 출력 상한 {maxTokens} 토큰, 순차 실행. 편집 불가 — 두 실행을 비교 가능하게 만드는 조건입니다.",
+        "blocked": {
+          "unsaved": "먼저 이 공급자를 저장하세요. 서버는 저장된 설정으로만 연결합니다.",
+          "noProtocol": "먼저 프로토콜 URL을 하나 이상 설정하고 저장하세요.",
+          "invalidUrl": "선택한 프로토콜 URL이 올바르지 않습니다. 수정 후 저장하세요.",
+          "noModels": "사용 가능한 모델이 없습니다. 모델을 추가하고 저장하세요."
+        },
+        "start": {
+          "label": "시작"
+        },
+        "interrupt": {
+          "label": "중단"
+        },
+        "retrySave": {
+          "label": "저장 재시도"
+        },
+        "progress": {
+          "text": "완료 {done} / {total}",
+          "detail": "성공 {ok}, 실패 {failed}"
+        },
+        "unsaved": "실행은 끝났지만 저장에 실패했습니다. 결과는 메모리에 보관되어 있습니다.",
+        "unavailable": "사용 불가",
+        "target": "프로토콜 {protocol} · API {dialect} · 모델 {model} · 보정 {calibration} · 출력 상한 {maxTokens} · temperature {temperature}",
+        "summary": {
+          "outcome": "결과",
+          "completed": "완료 / 계획",
+          "successRate": "성공률",
+          "failed": "실패",
+          "cancelled": "취소",
+          "tokensPerSecond": "토큰/초",
+          "requestsPerSecond": "요청/초",
+          "outputTokens": "출력 토큰 합계"
+        },
+        "metric": {
+          "ttft": "TTFT(밀리초)",
+          "tpot": "TPOT(밀리초)",
+          "endToEnd": "종단 간(밀리초)"
+        },
+        "table": {
+          "metric": "지표",
+          "samples": "표본 수",
+          "avg": "평균",
+          "result": "결과",
+          "failure": "실패 분류",
+          "endToEnd": "종단 간",
+          "tokens": "토큰",
+          "p50": "P50",
+          "p95": "P95",
+          "p99": "P99",
+          "ttft": "TTFT",
+          "tpot": "TPOT"
+        },
+        "outcome": {
+          "completed": "완료",
+          "failed": "전부 실패",
+          "interrupted": "중단됨"
+        },
+        "request": {
+          "success": "성공",
+          "failure": "실패",
+          "cancelled": "취소됨"
+        },
+        "failure": {
+          "timeout": "타임아웃",
+          "http": "HTTP",
+          "network": "네트워크",
+          "stream": "스트림"
+        },
+        "estimated": "{n}개의 성공 표본은 usage 대신 delta 이벤트로 토큰 수를 추정했습니다. 따라서 TPOT와 토큰/초는 근사치이며 과금 기준과 크게 다를 수 있습니다.",
+        "sampleCaveat": "표본이 적으면 P95와 P99가 최댓값에 놓이는 경우가 많습니다. 신뢰도를 주장하지 않고 표본 수를 그대로 표시합니다.",
+        "requests": {
+          "title": "요청별 상세"
+        },
+        "report": {
+          "button": {
+            "label": "보고서"
+          },
+          "title": "속도 테스트 기록 — {name}",
+          "titleAll": "속도 테스트 기록",
+          "picker": {
+            "label": "공급자",
+            "option": "{name}({count}회)",
+            "deleted": "{name}(삭제됨 · {count}회)"
+          },
+          "row": "{time} · {model} · {dialect} · {completed}/{planned} · 성공률 {rate}",
+          "empty": "이 공급자의 속도 테스트 기록이 아직 없습니다.",
+          "loading": "불러오는 중…",
+          "more": {
+            "label": "더 불러오기"
+          },
+          "pick": "기록을 볼 공급자를 선택하세요."
+        },
+        "error": {
+          "invalidCount": "요청 수가 범위를 벗어났습니다. 1에서 100 사이의 정수를 입력하세요.",
+          "providerUnknown": "저장된 설정에 해당 공급자가 없습니다. 저장 후 다시 시도하세요.",
+          "protocolUnavailable": "선택한 프로토콜을 사용할 수 없습니다. 설정을 새로 고친 뒤 다시 선택하세요.",
+          "invalidUrl": "선택한 프로토콜 URL이 올바르지 않습니다. 수정 후 저장하세요.",
+          "modelsEmpty": "테스트할 모델이 없습니다. 모델을 추가하고 저장하세요.",
+          "modelUnavailable": "이 공급자의 현재 목록에서 모델을 선택하세요.",
+          "busy": "이 공급자에서 이미 실행 중인 회차가 있습니다. 끝날 때까지 기다리거나 먼저 중단하세요.",
+          "notFound": "해당 실행 기록이 없습니다.",
+          "dbUnavailable": "데이터베이스를 사용할 수 없어 시작하지 않았습니다. 소모도 발생하지 않았습니다.",
+          "saveFailed": "실행은 끝났지만 저장에 실패했습니다. 저장을 다시 시도하세요."
+        }
       }
     },
     "defaultAgent": {

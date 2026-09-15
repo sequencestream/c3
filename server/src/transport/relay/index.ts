@@ -36,6 +36,11 @@ import type { VendorId } from '@ccc/shared/protocol'
 import type { Relay, RelayCandidate } from '../../kernel/relay/contract.js'
 import { isDegradableError } from '../../kernel/agent-config/errors.js'
 import {
+  responsesUrl,
+  chatCompletionsUrl,
+  anthropicMessagesUrl,
+} from '../../kernel/relay/endpoints.js'
+import {
   responsesRequestToChat,
   ChatToResponsesConverter,
   SseChunkParser,
@@ -49,6 +54,15 @@ export {
   type Relay,
   type RelayCandidate,
 } from '../../kernel/relay/contract.js'
+
+// The base-URL → endpoint rules moved to kernel so the model-provider speed test
+// dials the SAME address this relay proxies to, from one definition. Re-exported
+// here because the relay is where callers have always imported them from.
+export {
+  responsesUrl,
+  chatCompletionsUrl,
+  anthropicMessagesUrl,
+} from '../../kernel/relay/endpoints.js'
 
 /** The served relay: the kernel handle plus the HTTP handlers the composition root mounts. */
 export interface ServedRelay extends Relay {
@@ -252,38 +266,6 @@ async function fetchWithFailover(
     return { error: lastError }
   }
   return { error: lastError }
-}
-
-/** Resolve a codex-native (Responses) provider base to its `/responses` endpoint. */
-export function responsesUrl(base: string): string {
-  const trimmed = base.replace(/\/+$/, '')
-  if (/\/responses$/.test(trimmed)) return trimmed
-  return `${trimmed}/responses`
-}
-
-/**
- * Resolve a provider base URL to its Chat Completions endpoint. The user configures
- * an OpenAI-style base (`https://api.deepseek.com/`, `https://api.moonshot.ai/v1`,
- * …); normalize to `<base>/chat/completions`, inserting `/v1` only when the base
- * does not already carry a version segment.
- */
-export function chatCompletionsUrl(base: string): string {
-  const trimmed = base.replace(/\/+$/, '')
-  if (/\/chat\/completions$/.test(trimmed)) return trimmed
-  if (/\/v\d+$/.test(trimmed)) return `${trimmed}/chat/completions`
-  return `${trimmed}/v1/chat/completions`
-}
-
-/**
- * Resolve an anthropic-compat provider base to its Messages endpoint. The user
- * configures an anthropic gateway base (`https://api.deepseek.com/anthropic`); the
- * claude SDK would POST `<ANTHROPIC_BASE_URL>/v1/messages`, so mirror that shape
- * onto the real base.
- */
-export function anthropicMessagesUrl(base: string): string {
-  const trimmed = base.replace(/\/+$/, '')
-  if (/\/v1\/messages$/.test(trimmed)) return trimmed
-  return `${trimmed}/v1/messages`
 }
 
 /** Pipe an upstream Chat SSE body through the converter into a Responses SSE body. */

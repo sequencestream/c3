@@ -48,6 +48,7 @@ import { summarize } from './stats.js'
 import {
   ensureSpeedTestSchema,
   getSpeedTestRunDetail,
+  listSpeedTestComparison,
   listSpeedTestHistoryProviders,
   listSpeedTestRuns,
   saveSpeedTestRun,
@@ -435,19 +436,36 @@ export const modelProviderSpeedTestHandler: Handler<'model_provider_speed_test'>
       return
     }
 
-    case 'history_providers': {
-      const names = new Map(
-        (loadSettings().modelProviders ?? []).map((p) => [p.id, p.displayName] as const),
-      )
+    case 'history_providers':
       send(conn, {
         type: 'model_provider_speed_test_result',
         requestId,
         event: 'history_providers',
-        providers: listSpeedTestHistoryProviders(names),
+        providers: listSpeedTestHistoryProviders(currentProviderNames()),
       })
       return
-    }
+
+    case 'compare':
+      // Same projection as the report's provider picker, one step wider: each
+      // provider brings its newest runs along, so a row can switch records — and
+      // the view re-sort — without another round trip.
+      send(conn, {
+        type: 'model_provider_speed_test_result',
+        requestId,
+        event: 'compare',
+        entries: listSpeedTestComparison(currentProviderNames()),
+      })
+      return
   }
+}
+
+/**
+ * The live configuration as an id → name map, for reads that must name a provider
+ * as the operator currently sees it. History stores its own snapshot; this is what
+ * lets a rename show through without rewriting the record.
+ */
+function currentProviderNames(): Map<string, string> {
+  return new Map((loadSettings().modelProviders ?? []).map((p) => [p.id, p.displayName] as const))
 }
 
 /**

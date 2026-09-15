@@ -19,9 +19,11 @@
  * writes throw, so a failed save can never come back as a receipt.
  */
 import {
+  SPEED_TEST_COMPARE_CHOICE_LIMIT,
   SPEED_TEST_HISTORY_PAGE_SIZE,
   type ProtocolType,
   type SpeedTestApiDialect,
+  type SpeedTestComparisonEntry,
   type SpeedTestFailureCategory,
   type SpeedTestHistoryPage,
   type SpeedTestHistoryProvider,
@@ -144,6 +146,12 @@ interface RunRow {
   temperature: number
   outcome: string
   summary_json: string
+}
+
+/** A run row plus the two window columns the comparison query adds. */
+interface ComparisonRow extends RunRow {
+  run_count: number
+  rn: number
 }
 
 interface RequestRow {
@@ -320,6 +328,67 @@ export function getSpeedTestRunDetail(runId: string): SpeedTestRunDetail | null 
     runId,
   )
   return { run: toRun(row), requests: requests.map(toRequest) }
+}
+
+/**
+ * Every provider that has history, each with its newest runs — the side-by-side
+ * comparison's input.
+ *
+ * One grouped pass answers the whole view: the window functions give each run its
+ * position within its provider and that provider's total, so a provider with a
+ * thousand runs costs the same read as one with two, and no per-provider query
+ * loop is needed. Rows beyond the choice limit are dropped here rather than in the
+ * client, so the payload stays bounded no matter how much history accumulates.
+ *
+ * `currentNames` resolves the display name exactly as `listSpeedTestHistoryProviders`
+ * does — a present provider shows its current name, an absent one its newest
+ * snapshot. Entries come back newest-activity first; that order is the neutral
+ * starting point only, since the view sorts by a chosen metric.
+ */
+export function listSpeedTestComparison(
+  currentNames: ReadonlyMap<string, string>,
+  choiceLimit: number = SPEED_TEST_COMPARE_CHOICE_LIMIT,
+): SpeedTestComparisonEntry[] {
+  const d = db()
+  if (!d) return []
+  const limit = Math.max(1, Math.trunc(choiceLimit))
+  const rows = d.all<ComparisonRow>(
+    `SELECT *, COUNT(*) OVER (PARTITION BY provider_id) AS run_count,
+            ROW_NUMBER() OVER (PARTITION BY provider_id
+                               ORDER BY started_at DESC, run_id DESC) AS rn
+       FROM model_provider_speed_tests
+      ORDER BY provider_id ASC, rn ASC`,
+  )
+
+  const byProvider = new Map<string, SpeedTestComparisonEntry>()
+  for (const row of rows) {
+    if (row.rn > limit) continue
+    const entry = byProvider.get(row.provider_id)
+    if (entry) {
+      entry.runs.push(toRun(row))
+      continue
+    }
+    const current = currentNames.get(row.provider_id)
+    byProvider.set(row.provider_id, {
+      providerId: row.provider_id,
+      displayName: current ?? row.provider_display_name,
+      present: current !== undefined,
+      runCount: row.run_count,
+      // The head row of a provider is its newest, which is also the name snapshot
+      // an absent provider falls back to — hence no second query for it.
+      runs: [toRun(row)],
+    })
+  }
+
+  // Newest activity first, id as the tie-break so two providers last measured in
+  // the same millisecond keep a stable order across reads. The tie-break compares
+  // code points rather than collating: the order must not depend on the host's
+  // locale, or the same database would read differently on two machines.
+  return [...byProvider.values()].sort((a, b) => {
+    const diff = (b.runs[0]?.startedAt ?? 0) - (a.runs[0]?.startedAt ?? 0)
+    if (diff !== 0) return diff
+    return a.providerId < b.providerId ? -1 : a.providerId > b.providerId ? 1 : 0
+  })
 }
 
 /**

@@ -117,7 +117,13 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
   - **失败分类**。`timeout`(超时)、`http`(端点答了非 2xx;保留状态码,3xx 一律拒绝并按失败记录)、`network`(拨号或传输失败)、`stream`(流内错误、报文畸形、缺终止事件、无任何输出)。失败计入成功率但**永不**进入延迟样本;被中断的 `cancelled` 两头都不算。全程不把上游响应体回显给前端——它可能把 key 原样带回来。
   - **生命周期归服务端持有**。进度按 `n/N` 推送;关闭对话框、切走页面、socket 断开都**不停**也**不重启**本轮,重新进入时问一次 `active` 复原进度;只有显式「中断」才停止,它紧接着中止在途请求(记为 `cancelled`,不推进完成数,也绝不落一行假样本)。收束状态为 `completed` | `failed` | `interrupted`。`active` 答的是「这条 provider 现由服务端持有什么」而非「什么在跑」:未提交的轮次以 `state='save_failed'` 一并答出,所以重新拿到它不依赖当初那一帧有没有被看见。
   - **对话框内候选失配即阻断**。候选来自已提交快照,而对话框开着时配置可能被别处改过(另一个标签页、另一位管理员保存)。此时当前选中的协议槽或模型若已从快照中消失,就地说明「刷新配置后重选」并挡住「开始」:既不静默改选到另一个槽——那会让用户量到一个自己没选的端点——也不放任一个必然被服务端以 `protocol_unavailable` / `model_unavailable` 挡回的动作。
-  - **持久化只增**。收束时头行与全部样本在**同一事务**内写入 `model_provider_speed_tests` + `model_provider_speed_test_requests`(字段与指标口径见 [models](./agent-config-models.md));进行中的进度不落库——运行中崩溃丢掉那批内存样本,不承诺断点续跑,已提交历史不受影响。`providerId` 是弱引用,展示名快照使 provider 被改名或删除后历史仍可读、仍可达。历史按 provider 分页读(每页 20,按 `startedAt` 倒序、`runId` 破平局);「历史报告」总入口的候选按历史记录归并,**包含已删除的提供方**,每次仍只看一条——不同协议、不同模型、不同时点的数并排放在一起只会被误读成可比。提交失败不静默:把结果留在内存并就地给「重试保存」,该入口随 `active` 复原、不因关窗或刷新而丢失;重试只重放同一批样本,**不重新调用上游、不产生第二行记录**。存储始终不可用时这条 provider 一直被持有到进程重启——不做崩溃恢复,但也不悄悄丢弃已付费的样本。
+  - **持久化只增**。收束时头行与全部样本在**同一事务**内写入 `model_provider_speed_tests` + `model_provider_speed_test_requests`(字段与指标口径见 [models](./agent-config-models.md));进行中的进度不落库——运行中崩溃丢掉那批内存样本,不承诺断点续跑,已提交历史不受影响。`providerId` 是弱引用,展示名快照使 provider 被改名或删除后历史仍可读、仍可达。历史按 provider 分页读(每页 20,按 `startedAt` 倒序、`runId` 破平局);「历史报告」总入口的候选按历史记录归并,**包含已删除的提供方**,报告面板内每次仍只看一条。并排只发生在专门的**横向对比视图**里,且必须连同它的口径提示一起出现(见下条)。提交失败不静默:把结果留在内存并就地给「重试保存」,该入口随 `active` 复原、不因关窗或刷新而丢失;重试只重放同一批样本,**不重新调用上游、不产生第二行记录**。存储始终不可用时这条 provider 一直被持有到进程重启——不做崩溃恢复,但也不悄悄丢弃已付费的样本。
+  - **跨提供方横向对比**。报告页另有对比视图,一次列出**所有**存在测速记录的提供方(含已删除的),每行取该提供方的一轮汇总并排展示:成功率、TTFT / TPOT / 端到端各自的 P50 与 P95、tokens/sec、测量时间与结果状态。它回答的是「该用哪家」,与单提供方报告回答的「这条历史长什么样」是两件事,故两者是两个面板而非一个面板的两种模式。
+    - **一轮的选取**。每行默认为该提供方**最近一次**测速,可在该行切换到更早的轮次;备选随取数一次带回(每方最近 10 条,单条 SQL 一次读全),切换与排序都在本地完成,不再往返服务端。备选条数有上限而 `runCount` 报真实总数,故「更早的记录」始终可回到单提供方报告里去翻。
+    - **排序**。按 TTFT P50 升序(默认)或降序,由该列表头驱动;TTFT P50 **不可用**的行(样本数为 0,如整体失败或未完成任何请求的轮次)恒排在最后,不随方向翻转——方向反转的是「谁更快」,不是「谁没测到」。同值时按展示名、再按 providerId 定序,排序结果与输入顺序、与宿主 locale 无关。
+    - **口径提示固定展示**。视图内恒定摆出「这些提供方不是同一时刻测的,网络与上游负载不同,数字只能作参考」。这是对一条取舍的显式声明:**不做同时并发对打**——同一时刻互相争抢本地带宽与上游配额,反而会扭曲每一家的真实速度。
+    - **不重算、不聚合**。对比行是存储记录的**原样投影**:指标仍由服务端按同一套公式算好,对比视图不重算、不做统计显著性检验、不做多次记录聚合(如最近 5 次均值);某一轮的估算标记仍随行显示。整体失败的一行成功率为 0,延迟列显示为「不可用」而非 0 或空白。
+    - **空态**。一条测速记录都没有时,视图显示空态而不是报错或空表;取数被拒时显示被拒原因与一次重试,不停留在加载中。
   - **权限与协议**。所有测速动作(含读取与中断)一律过 `requireAdmin`;新增消息按协议分区落在自己的域模块中,不引入任何全局广播。
 
 ## 用户场景
@@ -205,6 +211,8 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 - **测速一条 provider(先付代价再跑):** 给定一条已保存的 provider,当用户点「测速」并确认时,服务端按其已保存的端点与 key 串行发出 N 次真实生成,界面显示 `n/N`;关掉对话框或切走页面都不会停,重新打开时进度照旧;只有点「中断」才停止,已完成的样本仍作为一条 `interrupted` 记录落库。
 - **测一条未保存的 provider(反例场景):** 给定一条新建但尚未保存的 provider,当用户试图测速时,动作被拒绝并说明服务端只按已保存的配置拨号——一条测速记录必须归属于一份真实存在的配置。
 - **翻一个已删除 provider 的历史:** 给定一条被删除的 provider 其历史仍在,当用户从「历史报告」总入口选择它时,报告照常打开,展示名回退到记录里的名称快照。
+- **并排选一家:** 给定多条有过测速的提供方,当用户打开对比视图时,每个提供方各占一行、默认取最近一次测速的汇总指标,按 TTFT P50 升序排列并固定展示口径提示;把某一行切到更早的轮次后,该行的数字与名次随该轮重排。
+- **没测过的提供方不占位:** 给定某条提供方从未测速,当用户打开对比视图时,它不出现在表里——这一行没有任何可比的数,占位只会让人以为它测出过什么。
 - **选择一个图标:** 给定设置视图,当用户打开某个智能体行的表情符号选择器并
   点击一个表情符号时,它会被写入该智能体的 `icon` 文本字段并像任何手动
   编辑一样保存;手动文本输入框仍然接受自由输入。该选择器是 web console 中一个**纯展示的输入
@@ -213,7 +221,7 @@ Codex 的启动时策略闸门(`sandboxMode`/`approvalPolicy`)——用来
 
 ## 领域事件(线上)
 
-消费 `get_settings`、`save_settings`、`auto_configure_agents`、`load_workspace_setting`、`save_workspace_setting`,以及测速的一条 `model_provider_speed_test`(按 `action` 判别:start / interrupt / active / retry_save / list / detail / history_providers)。发出 `settings`、`auto_configure_agents_result`、`workspace_setting`,以及测速的 `model_provider_speed_test_result`(按 `event` 判别:accepted / progress / finished / active / list / detail / history_providers / error)。见
+消费 `get_settings`、`save_settings`、`auto_configure_agents`、`load_workspace_setting`、`save_workspace_setting`,以及测速的一条 `model_provider_speed_test`(按 `action` 判别:start / interrupt / active / retry_save / list / detail / history_providers / compare)。发出 `settings`、`auto_configure_agents_result`、`workspace_setting`,以及测速的 `model_provider_speed_test_result`(按 `event` 判别:accepted / progress / finished / active / list / detail / history_providers / compare / error)。见
 [共享协议](../../../shared/api-conventions/websocket-protocol.md)。
 
 ## 交互

@@ -442,6 +442,9 @@ export interface AppMethods {
   /** 打开「历史报告」总入口:先开面板、不预选,候选由服务端给出(含已删除条目)。 */
   openSpeedTestHistory(): void
   closeSpeedTestReport(): void
+  /** 打开跨提供方对比视图;取数一次拿全,此后行内切换与排序都在本地。 */
+  openSpeedTestCompare(): void
+  closeSpeedTestCompare(): void
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void

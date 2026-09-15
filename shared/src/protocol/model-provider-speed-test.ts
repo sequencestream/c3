@@ -66,6 +66,19 @@ export const SPEED_TEST_MAX_REQUESTS = 100
 /** Report page size for one provider's history. */
 export const SPEED_TEST_HISTORY_PAGE_SIZE = 20
 
+/**
+ * How many of a provider's newest runs the comparison view offers to switch
+ * between.
+ *
+ * The whole point of the comparison is the side-by-side summary, so each
+ * provider's recent runs travel WITH the comparison rather than behind a second
+ * round trip: switching a row's record must re-render — and re-sort — without a
+ * network wait. That is only affordable while the payload stays bounded, hence a
+ * limit. It is a ceiling on CHOICES, not on history: `runCount` still reports the
+ * full total, and older runs stay reachable in the single-provider report.
+ */
+export const SPEED_TEST_COMPARE_CHOICE_LIMIT = 10
+
 // ---- Closed sets ----
 
 /**
@@ -379,6 +392,37 @@ export interface SpeedTestHistoryProvider {
   /** `startedAt` of the newest run. */
   lastStartedAt: number
   present: boolean
+}
+
+// ---- Cross-provider comparison ----
+
+/**
+ * One provider's column in the side-by-side view: who it is, and the runs the
+ * operator may choose between for it.
+ *
+ * Present is `false` when the id no longer matches a saved provider — those stay
+ * listed, because dropping them is what would make the record unreachable.
+ *
+ * `runs` is newest-first and never empty (a provider reaches this list only by
+ * having a run), and holds at most {@link SPEED_TEST_COMPARE_CHOICE_LIMIT} entries
+ * while `runCount` reports the true total. Each run carries its own frozen target
+ * and summary, so the row can show — and the client can sort by — values measured
+ * at different moments against possibly different models without a second fetch.
+ *
+ * Nothing here is a new measurement: an entry is a projection of stored runs, and
+ * no summary is recomputed or averaged across runs. That is deliberate. Two
+ * providers are never measured at the same instant, so the honest shape of this
+ * data is "here is each one's most recent reading", never a merged ranking.
+ */
+export interface SpeedTestComparisonEntry {
+  providerId: string
+  /** Current provider name when it still exists, else the newest snapshot. */
+  displayName: string
+  present: boolean
+  /** Total runs on record, including any older than `runs`. */
+  runCount: number
+  /** Newest first; at least one, at most {@link SPEED_TEST_COMPARE_CHOICE_LIMIT}. */
+  runs: SpeedTestRun[]
 }
 
 // ---- Live run ----

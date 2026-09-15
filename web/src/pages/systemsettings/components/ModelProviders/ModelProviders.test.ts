@@ -475,6 +475,28 @@ describe('测速入口', () => {
     expect(w.emitted('speedTest')).toEqual([[{ kind: 'listProviders' }]])
   })
 
+  it('「对比」入口同样不带 providerId:它看的是所有有记录的提供方', async () => {
+    const w = render({ providers: [provider()] })
+    await w.find('[data-testid="provider-speed-compare"]').trigger('click')
+    expect(w.emitted('speedTest')).toEqual([[{ kind: 'openCompare' }]])
+  })
+
+  it('非管理员打不开对比视图', async () => {
+    const w = render({ providers: [provider()], isAdmin: false })
+    expect(w.find('[data-testid="provider-speed-compare"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('对比视图只在自己打开时挂载', () => {
+    const closed = render({ providers: [provider()] })
+    expect(closed.find('[data-testid="speed-test-compare-overlay"]').exists()).toBe(false)
+
+    const open = render({
+      providers: [provider()],
+      speedTest: { ...emptySpeedTestState(), compareOpen: true, compare: [] },
+    })
+    expect(open.find('[data-testid="speed-test-compare-overlay"]').exists()).toBe(true)
+  })
+
   it('非管理员一个测速动作都发不出去', async () => {
     const w = render({ providers: [provider()], savedProviders: [provider()], isAdmin: false })
     expect(w.find('[data-testid="provider-speed-test"]').attributes('disabled')).toBeDefined()

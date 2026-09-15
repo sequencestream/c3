@@ -1030,6 +1030,42 @@
         "requests": {
           "title": "リクエスト別の明細"
         },
+        "compare": {
+          "button": {
+            "label": "比較"
+          },
+          "title": "プロバイダー比較",
+          "note": "これらは同時刻に測定したものではありません。ネットワーク状況も上流の負荷も異なるため、数値は参考値であり、同条件の対戦結果ではありません。",
+          "empty": "速度テストの記録がまだありません。まずいずれかのプロバイダーで実行してください。",
+          "loading": "読み込み中…",
+          "failed": "比較データを取得できませんでした。",
+          "retry": {
+            "label": "再試行"
+          },
+          "deleted": "{name}(削除済み)",
+          "choice": {
+            "label": "記録",
+            "option": "{time} · {model} · {completed}/{planned}"
+          },
+          "column": {
+            "provider": "プロバイダー",
+            "run": "測定時刻",
+            "outcome": "結果",
+            "successRate": "成功率",
+            "ttftP50": "TTFT P50(ミリ秒)",
+            "ttftP95": "TTFT P95(ミリ秒)",
+            "tpotP50": "TPOT P50(ミリ秒)",
+            "tpotP95": "TPOT P95(ミリ秒)",
+            "endToEndP50": "エンドツーエンド P50(ミリ秒)",
+            "endToEndP95": "エンドツーエンド P95(ミリ秒)",
+            "tokensPerSecond": "トークン/秒"
+          },
+          "sort": {
+            "ascending": "TTFT P50 の昇順で並んでいます。クリックすると降順になります。",
+            "descending": "TTFT P50 の降順で並んでいます。クリックすると昇順になります。"
+          },
+          "estimated": "* の付いた行は delta イベントからトークン数を推定しており、TPOT とトークン/秒は概算です。"
+        },
         "report": {
           "button": {
             "label": "レポート"

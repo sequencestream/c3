@@ -2,8 +2,9 @@
 /*
  * SpeedTestReport.vue — 单个提供方的测速历史报告。
  *
- * 只读、只增、只看一个提供方:横向对比是另一条意图的事,这里绝不把两家的数并排放——
- * 不同协议、不同模型、不同时点的数摆在一起,读者一定会去比,而它们并不可比。
+ * 只读、只增、只看一个提供方:面板里绝不把两家的数并排放——不同协议、不同模型、不同
+ * 时点的数摆在同一张表里,读者一定会去比,而它们并不可比。要横向看就走 SpeedTestCompare:
+ * 那边每一行都带着自己的测量时间与口径提示,比较是被明说的,不是被顺手做出来的。
  *
  * 历史不因提供方被删而消失:入口按 providerId 取,展示名缺失时回退记录里的名称快照。
  * 因此这个面板既能从某行打开,也能从「历史报告」总入口选到一个已经不存在的提供方。
@@ -23,6 +24,7 @@ const emit = defineEmits<{
   select: [runId: string]
   loadMore: [payload: { providerId: string; offset: number }]
   pick: [providerId: string]
+  compare: []
   close: []
 }>()
 
@@ -131,6 +133,10 @@ function onLoadMore(): void {
       <SpeedTestSummaryView v-if="state.detail" :detail="state.detail" />
 
       <div class="str-foot">
+        <!-- 正在看一条历史的人,下一个问题多半是「那别家呢」——把对比摆在手边。 -->
+        <button class="ghost" data-testid="speed-test-report-compare" @click="emit('compare')">
+          {{ t('settings.providers.speedTest.compare.button.label') }}
+        </button>
         <button class="str-cancel" data-testid="speed-test-report-close" @click="emit('close')">
           {{ t('common.action.close.label') }}
         </button>
@@ -210,6 +216,7 @@ function onLoadMore(): void {
 .str-foot {
   display: flex;
   justify-content: flex-end;
+  gap: var(--sp-2);
   margin-top: var(--sp-3);
 }
 .str-cancel {

@@ -24,7 +24,11 @@ import {
 } from '@ccc/shared/protocol'
 import { checkProviderBaseUrl, effectiveProviderModels } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
-import { pendingSaveRun, type SpeedTestUiState } from '@/lib/model-provider-speed-test'
+import {
+  pendingSaveRun,
+  SPEED_TEST_ERROR_KEYS,
+  type SpeedTestUiState,
+} from '@/lib/model-provider-speed-test'
 import SpeedTestSummaryView from './SpeedTestSummary.vue'
 
 const { t } = useTypedI18n()
@@ -156,30 +160,9 @@ const progressText = computed(() =>
     : '',
 )
 
-/** 服务端拒绝原因的本地化;每条都指出下一步做什么。 */
+/** 服务端拒绝原因的本地化;每条都指出下一步做什么。文案表与对比视图共用一份。 */
 function errorText(code: SpeedTestErrorCode): string {
-  switch (code) {
-    case 'invalid_count':
-      return t('settings.providers.speedTest.error.invalidCount')
-    case 'provider_unknown':
-      return t('settings.providers.speedTest.error.providerUnknown')
-    case 'protocol_unavailable':
-      return t('settings.providers.speedTest.error.protocolUnavailable')
-    case 'invalid_url':
-      return t('settings.providers.speedTest.error.invalidUrl')
-    case 'models_empty':
-      return t('settings.providers.speedTest.error.modelsEmpty')
-    case 'model_unavailable':
-      return t('settings.providers.speedTest.error.modelUnavailable')
-    case 'busy':
-      return t('settings.providers.speedTest.error.busy')
-    case 'not_found':
-      return t('settings.providers.speedTest.error.notFound')
-    case 'db_unavailable':
-      return t('settings.providers.speedTest.error.dbUnavailable')
-    case 'save_failed':
-      return t('settings.providers.speedTest.error.saveFailed')
-  }
+  return t(SPEED_TEST_ERROR_KEYS[code])
 }
 
 function onStart(): void {

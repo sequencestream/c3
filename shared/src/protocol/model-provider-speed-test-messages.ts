@@ -25,6 +25,7 @@
 import type { ProtocolType } from './model-provider.js'
 import type {
   SpeedTestActiveRun,
+  SpeedTestComparisonEntry,
   SpeedTestErrorCode,
   SpeedTestHistoryPage,
   SpeedTestHistoryProvider,
@@ -82,6 +83,15 @@ type SpeedTestDetail = SpeedTestRequestBase & { action: 'detail'; runId: string 
 /** Every provider id that has history, including ones no longer configured. */
 type SpeedTestHistoryProviders = SpeedTestRequestBase & { action: 'history_providers' }
 
+/**
+ * Every provider that has history, each with its newest runs — the side-by-side
+ * view's whole input. Takes no arguments on purpose: the comparison is over
+ * everything on record, and letting the client name a subset would only invent a
+ * second way to say what the picker already says. Each row then switches between
+ * the runs that came back with it, locally.
+ */
+type SpeedTestCompare = SpeedTestRequestBase & { action: 'compare' }
+
 /** Client → server speed-test frame. */
 export type ClientModelProviderSpeedTest =
   | SpeedTestStart
@@ -91,6 +101,7 @@ export type ClientModelProviderSpeedTest =
   | SpeedTestList
   | SpeedTestDetail
   | SpeedTestHistoryProviders
+  | SpeedTestCompare
 
 /** Fields shared by every S→C arm. */
 type SpeedTestResultBase = {
@@ -140,6 +151,15 @@ type SpeedTestHistoryProvidersReply = SpeedTestResultBase & {
 }
 
 /**
+ * Answer to `compare`. `entries` is empty when nothing has been measured yet —
+ * an empty comparison is a state the view renders, not an error.
+ */
+type SpeedTestCompareReply = SpeedTestResultBase & {
+  event: 'compare'
+  entries: SpeedTestComparisonEntry[]
+}
+
+/**
  * A refusal or a failure. `code` is machine-readable and localized by the console;
  * no upstream response body is ever forwarded, because one can echo a key back.
  */
@@ -170,4 +190,5 @@ export type ServerModelProviderSpeedTestResult =
   | SpeedTestListReply
   | SpeedTestDetailReply
   | SpeedTestHistoryProvidersReply
+  | SpeedTestCompareReply
   | SpeedTestError

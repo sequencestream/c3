@@ -14,7 +14,6 @@ import type {
   SpeedTestErrorCode,
   SpeedTestHistoryPage,
   SpeedTestHistoryProvider,
-  SpeedTestRun,
   SpeedTestRunDetail,
 } from '@ccc/shared/protocol'
 
@@ -31,12 +30,16 @@ export interface SpeedTestUiState {
   reportOpen: boolean
   /** 报告面板当前查看的 provider;null=已打开但尚未选中。 */
   reportProviderId: string | null
-  /** 服务端确认正在跑的那一轮(含进度);null=当前 provider 没有在跑的轮次。 */
+  /**
+   * 服务端此刻持有的那一轮(含进度);null=当前 provider 没有被持有的轮次。
+   *
+   * 「持有」不等于「正在跑」:`save_failed` 的轮次采样已经结束、只是没提交,服务端仍
+   * 攥着它等 `retry_save`。它照样走这个字段,所以对话框不需要另记一份「未保存」状态
+   * ——那一份会随对话框关闭、页面刷新一起消失,而重开对话框时会重新问一次 active。
+   */
   active: SpeedTestActiveRun | null
   /** 刚刚收束并落库的结果,供对话框就地展示。 */
   lastResult: SpeedTestRunDetail | null
-  /** 已跑完但事务没提交的结果;非空时对话框给「重试保存」。 */
-  unsaved: { runId: string; run: SpeedTestRun } | null
   /** 最近一次被服务端拒绝的原因;每次新动作前清空。 */
   error: SpeedTestErrorCode | null
   /** 报告列表当前页(累加加载更多后的全量)。 */
@@ -57,13 +60,23 @@ export function emptySpeedTestState(): SpeedTestUiState {
     reportProviderId: null,
     active: null,
     lastResult: null,
-    unsaved: null,
     error: null,
     history: null,
     detail: null,
     historyProviders: null,
     loading: false,
   }
+}
+
+/**
+ * 服务端还攥着、只等一次重试提交的那一轮;null=没有待保存的结果。
+ *
+ * 判据取 `active` 快照自己的 state,而不是另存一份「收到过 save_failed」的标记:那一帧
+ * 可能发给了一个已经关掉的对话框,或发在刷新之前。重开对话框会重新问一次 active,而
+ * 服务端对未提交轮次的回答就是这个 state——恢复路径因此不依赖「当时在看」。
+ */
+export function pendingSaveRun(state: SpeedTestUiState): SpeedTestActiveRun | null {
+  return state.active?.state === 'save_failed' ? state.active : null
 }
 
 /**

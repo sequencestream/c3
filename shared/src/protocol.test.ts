@@ -659,13 +659,16 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
         ],
       },
       // A refusal names a reason and nothing else — no upstream body is forwarded.
+      // A `save_failed` carries the held run as the SAME snapshot `active` answers
+      // with, so a console that missed the frame can rebuild the retry from
+      // `active` instead of remembering this one.
       {
         type: 'model_provider_speed_test_result',
         requestId: 'q9',
         event: 'error',
         code: 'save_failed',
         runId: 'run-1',
-        run,
+        run: { ...active, state: 'save_failed' },
       },
     ]
     expect(JSON.parse(JSON.stringify(frames))).toEqual(frames)

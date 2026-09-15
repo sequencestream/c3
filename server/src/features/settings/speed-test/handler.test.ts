@@ -377,9 +377,29 @@ describe('run lifecycle', () => {
     const failure = c.sent.find((f) => f.event === 'error')
     if (failure?.event !== 'error') throw new Error('unreachable')
     expect(failure.code).toBe('save_failed')
-    // The measured result is still handed back, so the dialog can show it.
-    expect(failure.run?.summary.successCount).toBe(1)
+    // The held run comes back as the snapshot the console renders from, marked
+    // for what it is — the frame is not the only carrier of the retry.
+    expect(failure.run).toMatchObject({
+      runId: failure.runId,
+      successCount: 1,
+      state: 'save_failed',
+    })
     expect(urls).toHaveLength(1)
+
+    // A dialog that was closed (or a page that was reloaded) asks again on reopen
+    // and must still find the retry: the samples are paid for, so losing the frame
+    // must not lose the way to save them.
+    const reopened = conn()
+    dispatch(reopened.conn, {
+      type: 'model_provider_speed_test',
+      requestId: 'q10a',
+      action: 'active',
+      providerId: 'p1',
+    })
+    expect(reopened.sent[0]).toMatchObject({
+      event: 'active',
+      run: { runId: failure.runId, state: 'save_failed' },
+    })
 
     // Storage comes back; the retry commits the SAME samples.
     resetSpeedTestStoreForTests()
@@ -409,6 +429,51 @@ describe('run lifecycle', () => {
       })
       expect(c.sent[0]).toMatchObject({ event: 'error', code: 'not_found' })
     }
+  })
+
+  it('answers a malformed read rather than throwing on it', () => {
+    // The frame is typed by declaration, not validated on arrival: a field that
+    // reaches a SQL binding with the wrong type makes the driver throw, and a
+    // handler throw is a console warning with NO reply — the report panel would
+    // spin forever on a page that can never arrive.
+    const c = conn()
+    dispatch(c.conn, {
+      type: 'model_provider_speed_test',
+      requestId: 'q9a',
+      action: 'list',
+      providerId: 'p1',
+      offset: Number.NaN,
+    })
+    expect(c.sent[0]).toMatchObject({ event: 'list', page: { runs: [], hasMore: false } })
+
+    const wide = conn()
+    dispatch(wide.conn, {
+      type: 'model_provider_speed_test',
+      requestId: 'q9b',
+      action: 'list',
+      providerId: 'p1',
+      // Finite and integral, but far too wide for SQLite to bind.
+      offset: 1e30,
+    })
+    expect(wide.sent[0]).toMatchObject({ event: 'list' })
+
+    const foreign = conn()
+    dispatch(foreign.conn, {
+      type: 'model_provider_speed_test',
+      requestId: 'q9c',
+      action: 'list',
+      providerId: { toString: () => 'p1' },
+    })
+    expect(foreign.sent[0]).toMatchObject({ event: 'list', page: { runs: [] } })
+
+    const detail = conn()
+    dispatch(detail.conn, {
+      type: 'model_provider_speed_test',
+      requestId: 'q9d',
+      action: 'detail',
+      runId: 42,
+    })
+    expect(detail.sent[0]).toMatchObject({ event: 'error', code: 'not_found' })
   })
 
   it('lists providers with history, including one no longer configured', async () => {

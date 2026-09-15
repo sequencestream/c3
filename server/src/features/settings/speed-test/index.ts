@@ -126,7 +126,7 @@ function fail(
   conn: Conn,
   requestId: string,
   code: SpeedTestErrorCode,
-  extra: { providerId?: string; runId?: string; run?: SpeedTestRun } = {},
+  extra: { providerId?: string; runId?: string; run?: SpeedTestActiveRun } = {},
 ): void {
   send(conn, {
     type: 'model_provider_speed_test_result',
@@ -203,6 +203,30 @@ function validCount(value: unknown): value is number {
   )
 }
 
+/**
+ * A wire string that will be bound to a query. The frame is parsed JSON typed by
+ * declaration, not by validation, so a field's TYPE proves nothing at runtime; a
+ * non-string reaching the driver makes it throw, and a throw in a handler is a
+ * logged warning and NO reply — the report panel would wait forever for an answer
+ * that cannot come. An unusable value becomes "no such provider / no such run",
+ * which is the truthful answer and one the console already renders.
+ */
+function asLookupKey(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * The history page's `offset`, normalised before it reaches `OFFSET`. Anything the
+ * driver cannot bind — a non-number, NaN, `Infinity`, or an integer too wide for
+ * SQLite — is not an offset this capability ever issues, so it reads as "first
+ * page" rather than becoming an error the client never sees.
+ */
+function safeOffset(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
+  const offset = Math.trunc(value)
+  return Number.isSafeInteger(offset) && offset > 0 ? offset : 0
+}
+
 // ---- Sealing ----
 
 /** Fold a finished execution into the record that will be written. */
@@ -237,6 +261,11 @@ function sealDetail(entry: ActiveEntry, outcome: SpeedTestRun['outcome']): Speed
  * A commit failure keeps the entry alive in `save_failed` with the result held in
  * memory: the operator has already paid for these samples, so the answer is a
  * visible "finished but not saved" plus a retry, never a silent drop.
+ *
+ * The frame carries the live SNAPSHOT, not the sealed record. The snapshot is what
+ * `active` answers with, so a console that missed this frame — dialog closed,
+ * page reloaded, socket dropped — re-attaches to the same retry instead of
+ * depending on having been on screen at the right moment.
  */
 function commit(entry: ActiveEntry, detail: SpeedTestRunDetail): void {
   try {
@@ -250,7 +279,7 @@ function commit(entry: ActiveEntry, detail: SpeedTestRunDetail): void {
       code: 'save_failed',
       providerId: entry.plan.providerId,
       runId: entry.plan.runId,
-      run: detail.run,
+      run: snapshot(entry),
     })
     return
   }
@@ -390,12 +419,12 @@ export const modelProviderSpeedTestHandler: Handler<'model_provider_speed_test'>
         type: 'model_provider_speed_test_result',
         requestId,
         event: 'list',
-        page: listSpeedTestRuns(msg.providerId, msg.offset ?? 0),
+        page: listSpeedTestRuns(asLookupKey(msg.providerId), safeOffset(msg.offset ?? 0)),
       })
       return
 
     case 'detail': {
-      const detail = getSpeedTestRunDetail(msg.runId)
+      const detail = getSpeedTestRunDetail(asLookupKey(msg.runId))
       if (!detail) return fail(conn, requestId, 'not_found', { runId: msg.runId })
       send(conn, {
         type: 'model_provider_speed_test_result',

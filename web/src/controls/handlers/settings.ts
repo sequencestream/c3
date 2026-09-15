@@ -258,10 +258,12 @@ export function buildSettingsHandlers(
       switch (msg.event) {
         case 'accepted':
         case 'progress':
-          speedTest.value = { ...s, active: msg.run, error: null, unsaved: null }
+          speedTest.value = { ...s, active: msg.run, error: null }
           return
         case 'active':
           // 重新进入时的复原点:没有在跑就是 null,绝不据此自动重发 start。
+          // 未提交轮次(save_failed)也走这里,所以「重试保存」在重开对话框、
+          // 刷新页面之后仍然找得回来。
           speedTest.value = { ...s, active: msg.run }
           return
         case 'finished':
@@ -269,7 +271,6 @@ export function buildSettingsHandlers(
           speedTest.value = {
             ...s,
             active: null,
-            unsaved: null,
             lastResult: msg.detail,
             // 报告正开在同一个 provider 上时,让新纪录立刻可见。
             history:
@@ -296,19 +297,15 @@ export function buildSettingsHandlers(
         case 'history_providers':
           speedTest.value = { ...s, historyProviders: msg.providers }
           return
-        case 'error':
-          // save_failed 带回内存里的结果,对话框据此给「重试保存」;其余只是拒绝。
-          speedTest.value = {
-            ...s,
-            loading: false,
-            error: msg.code,
-            active: msg.code === 'save_failed' ? null : s.active,
-            unsaved:
-              msg.code === 'save_failed' && msg.run && msg.runId
-                ? { runId: msg.runId, run: msg.run }
-                : s.unsaved,
-          }
+        case 'error': {
+          // save_failed 不是拒绝,而是「跑完了但没存下」:服务端仍持有这一轮,并把它的
+          // 运行快照一并带回。照单收下它,对话框的「重试保存」就有了 runId;若只把它当作
+          // 普通错误清掉 active,这批已经付过费的样本就再没有落库的入口。
+          // 其余错误只是拒绝,既有的运行快照不动。
+          const held = msg.code === 'save_failed' ? (msg.run ?? null) : s.active
+          speedTest.value = { ...s, loading: false, error: msg.code, active: held }
           return
+        }
       }
     },
     auto_configure_agents_result: (_ctx, msg) => {

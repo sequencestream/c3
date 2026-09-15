@@ -28,7 +28,6 @@ import type {
   SpeedTestErrorCode,
   SpeedTestHistoryPage,
   SpeedTestHistoryProvider,
-  SpeedTestRun,
   SpeedTestRunDetail,
 } from './model-provider-speed-test.js'
 
@@ -151,8 +150,15 @@ type SpeedTestError = SpeedTestResultBase & {
   providerId?: string
   /** For `busy`: the run already in flight. For `save_failed`: the unsaved run. */
   runId?: string
-  /** For `save_failed`: the result held in memory, so the dialog can still show it. */
-  run?: SpeedTestRun
+  /**
+   * For `save_failed`: the run the server is still holding, in the SAME shape
+   * `active` answers with — `state` is `save_failed`, `runId` names the entry to
+   * retry. Handing back the snapshot rather than a receipt is what keeps the
+   * retry reachable: the console rebuilds it from `active` when the dialog is
+   * reopened or the page reloaded, so the samples must be describable by that
+   * snapshot and not only by the frame that happened to be on screen.
+   */
+  run?: SpeedTestActiveRun
 }
 
 /** Server → client speed-test frame. */

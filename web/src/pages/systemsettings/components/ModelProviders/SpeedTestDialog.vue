@@ -24,7 +24,7 @@ import {
 } from '@ccc/shared/protocol'
 import { checkProviderBaseUrl, effectiveProviderModels } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
-import type { SpeedTestUiState } from '@/lib/model-provider-speed-test'
+import { pendingSaveRun, type SpeedTestUiState } from '@/lib/model-provider-speed-test'
 import SpeedTestSummaryView from './SpeedTestSummary.vue'
 
 const { t } = useTypedI18n()
@@ -106,12 +106,29 @@ const countError = computed<string | null>(() => {
   return null
 })
 
+/**
+ * 选中的槽/模型已经从已提交快照里消失了。
+ *
+ * 对话框开着时配置在别处被改过(另一个标签页、另一位管理员保存)才会发生。这时既不
+ * 静默改选到另一个槽——那会让用户量到一个自己没选的端点——也不放任「开始」发出去,
+ * 因为它必然被服务端以 protocol_unavailable / model_unavailable 挡回;留着按钮等于
+ * 留一个必定失败的动作。就地说明并请用户刷新重选,与保存时拒绝重选的口径一致。
+ */
+const protocolGone = computed(
+  () => protocols.value.length > 0 && !protocols.value.includes(protocol.value),
+)
+const modelGone = computed(
+  () => models.value.length > 0 && !models.value.some((m) => m.id === model.value),
+)
+
 /** 阻断开始的原因,按严重度排序;null=可以开始。 */
 const blocker = computed<string | null>(() => {
   if (!props.provider) return t('settings.providers.speedTest.blocked.unsaved')
   if (protocols.value.length === 0) return t('settings.providers.speedTest.blocked.noProtocol')
   if (urlBroken.value) return t('settings.providers.speedTest.blocked.invalidUrl')
+  if (protocolGone.value) return t('settings.providers.speedTest.error.protocolUnavailable')
   if (models.value.length === 0) return t('settings.providers.speedTest.blocked.noModels')
+  if (modelGone.value) return t('settings.providers.speedTest.error.modelUnavailable')
   return countError.value
 })
 
@@ -125,6 +142,11 @@ const draftDiffers = computed(() => {
 
 const active = computed(() => props.state.active)
 const running = computed(() => active.value !== null && active.value.state === 'running')
+/**
+ * 已跑完但没提交的那一轮。取自 active 快照,所以关掉对话框、刷新页面后重新问一次
+ * active 就能重新拿到——「重试保存」不会因为那一帧没被看见而消失。
+ */
+const pendingSave = computed(() => pendingSaveRun(props.state))
 const progressText = computed(() =>
   active.value
     ? t('settings.providers.speedTest.progress.text', {
@@ -252,10 +274,14 @@ function onStart(): void {
         }}</span>
       </div>
 
-      <!-- 已跑完但没存下:结果留在内存里,给一条明确的重试路径,不静默丢弃。 -->
-      <div v-if="state.unsaved" class="st-unsaved" data-testid="speed-test-unsaved">
+      <!-- 已跑完但没存下:结果留在服务端内存里,给一条明确的重试路径,不静默丢弃。 -->
+      <div v-if="pendingSave" class="st-unsaved" data-testid="speed-test-unsaved">
         <span>{{ t('settings.providers.speedTest.unsaved') }}</span>
-        <button class="ghost" @click="emit('retrySave', state.unsaved.runId)">
+        <button
+          class="ghost"
+          data-testid="speed-test-retry-save"
+          @click="emit('retrySave', pendingSave.runId)"
+        >
           {{ t('settings.providers.speedTest.retrySave.label') }}
         </button>
       </div>
@@ -278,8 +304,13 @@ function onStart(): void {
         >
           {{ t('settings.providers.speedTest.interrupt.label') }}
         </button>
+        <!--
+          待提交的轮次占着这条提供方:服务端只会以 busy 拒绝新的开始,而「重试保存」
+          就在上面一行。所以这里不给一个必定失败的按钮,也不让「开始」把注意力从真正
+          该做的动作上引开。
+        -->
         <button
-          v-else
+          v-else-if="!pendingSave"
           class="st-confirm"
           :disabled="blocker !== null"
           data-testid="speed-test-start"

@@ -391,7 +391,12 @@ export interface SpeedTestHistoryProvider {
  *
  * `save_failed` is the one non-running state that lingers: the sampling is over
  * but the transaction did not commit, so the result is held in this process for a
- * `retry_save` rather than being lost silently after real money was spent.
+ * `retry_save` rather than being lost silently after real money was spent. It
+ * travels BOTH ways — as this snapshot on the `active` answer and on the
+ * `save_failed` error — precisely so a console that was not looking when the
+ * commit failed can still find the retry: `active` is asked again every time the
+ * dialog opens, and it is the server, not a remembered frame, that decides
+ * whether there is something left to save.
  */
 export interface SpeedTestActiveRun {
   runId: string

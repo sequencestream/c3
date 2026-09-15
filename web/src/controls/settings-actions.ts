@@ -315,6 +315,8 @@ export function installSettingsActions(ctx: AppCtx): void {
       reportOpen: speedTest.value.reportOpen,
       reportProviderId: speedTest.value.reportProviderId,
       historyProviders: speedTest.value.historyProviders,
+      compareOpen: speedTest.value.compareOpen,
+      compare: speedTest.value.compare,
       dialogProviderId: providerId,
     }
     // Re-attach rather than restart: a run started before this dialog was closed
@@ -364,6 +366,20 @@ export function installSettingsActions(ctx: AppCtx): void {
       history: null,
       detail: null,
     }
+  }
+
+  /**
+   * 打开跨提供方对比视图。取数一次拿全:每条有记录的 provider 连同它最近若干轮一起
+   * 回来,此后在行内切换轮次、切换排序都只动本地状态,不再打服务端——一次对比要反复
+   * 换着看,每换一次就往返一趟既慢又没必要。
+   */
+  ctx.openSpeedTestCompare = (): void => {
+    speedTest.value = { ...speedTest.value, compareOpen: true, compare: null, error: null }
+    ctx.speedTestAction({ action: 'compare' })
+  }
+
+  ctx.closeSpeedTestCompare = (): void => {
+    speedTest.value = { ...speedTest.value, compareOpen: false, compare: null }
   }
 
   /** Set/change the admin password (ADR-0023). Plaintext is sent once and hashed

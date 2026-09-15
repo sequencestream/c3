@@ -446,6 +446,8 @@ const {
   openSpeedTestDialog,
   closeSpeedTestDialog,
   openSpeedTestReport,
+  openSpeedTestCompare,
+  closeSpeedTestCompare,
   openSpeedTestHistory,
   closeSpeedTestReport,
   setLocale,
@@ -761,6 +763,12 @@ function onSpeedTest(intent: SpeedTestIntent): void {
     case 'listProviders':
       // 总入口的候选含已删除的 provider,只能由服务端按历史记录归并,前端排不出来。
       openSpeedTestHistory()
+      break
+    case 'openCompare':
+      openSpeedTestCompare()
+      break
+    case 'closeCompare':
+      closeSpeedTestCompare()
       break
   }
 }

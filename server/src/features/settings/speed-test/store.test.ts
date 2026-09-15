@@ -16,6 +16,7 @@ import { summarize } from './stats.js'
 import {
   ensureSpeedTestSchema,
   getSpeedTestRunDetail,
+  listSpeedTestComparison,
   listSpeedTestHistoryProviders,
   listSpeedTestRuns,
   resetSpeedTestStoreForTests,
@@ -204,5 +205,68 @@ describe('speed-test history store', () => {
     const providers = listSpeedTestHistoryProviders(new Map())
     expect(providers.map((p) => p.providerId)).toEqual(['b', 'a'])
     expect(providers.find((p) => p.providerId === 'a')!.runCount).toBe(2)
+  })
+})
+
+/**
+ * The side-by-side view's read. What it must get right is which run represents a
+ * provider by default, and that the payload stays bounded however much history a
+ * provider accumulates — the view may switch records freely, but only among the
+ * ones actually handed to it.
+ */
+describe('speed-test comparison read', () => {
+  it('gives each provider its NEWEST run first, and every one of them', () => {
+    saveSpeedTestRun(detail({ runId: 'a-old', providerId: 'a', startedAt: 1_000 }))
+    saveSpeedTestRun(detail({ runId: 'a-new', providerId: 'a', startedAt: 5_000 }))
+    saveSpeedTestRun(detail({ runId: 'b-only', providerId: 'b', startedAt: 3_000 }))
+
+    const entries = listSpeedTestComparison(new Map())
+
+    // Newest activity first; the default record of each row is runs[0].
+    expect(entries.map((e) => e.providerId)).toEqual(['a', 'b'])
+    expect(entries[0]!.runs.map((r) => r.runId)).toEqual(['a-new', 'a-old'])
+    expect(entries[0]!.runCount).toBe(2)
+    expect(entries[1]!.runs.map((r) => r.runId)).toEqual(['b-only'])
+    expect(entries[1]!.runCount).toBe(1)
+  })
+
+  it('caps each provider’s choices while still counting the whole history', () => {
+    for (let i = 0; i < 4; i++) {
+      saveSpeedTestRun(detail({ runId: `r${i}`, providerId: 'p1', startedAt: 1_000 + i }))
+    }
+
+    const [entry] = listSpeedTestComparison(new Map(), 2)
+    expect(entry!.runs.map((r) => r.runId)).toEqual(['r3', 'r2'])
+    // The total is the true one, so a truncated choice list is visible as such.
+    expect(entry!.runCount).toBe(4)
+  })
+
+  it('names a deleted provider by its newest snapshot and marks it absent', () => {
+    saveSpeedTestRun(detail({ runId: 'r1', providerId: 'gone', displayName: 'First Name' }))
+    saveSpeedTestRun(
+      detail({
+        runId: 'r2',
+        providerId: 'gone',
+        displayName: 'Renamed Before Deletion',
+        startedAt: 9_000,
+      }),
+    )
+
+    expect(listSpeedTestComparison(new Map())[0]).toMatchObject({
+      providerId: 'gone',
+      displayName: 'Renamed Before Deletion',
+      present: false,
+    })
+  })
+
+  it('shows a surviving provider’s current name without rewriting the record', () => {
+    saveSpeedTestRun(detail({ runId: 'r1', providerId: 'p1', displayName: 'Old Name' }))
+    const [entry] = listSpeedTestComparison(new Map([['p1', 'New Name']]))
+    expect(entry).toMatchObject({ displayName: 'New Name', present: true })
+    expect(entry!.runs[0]!.providerDisplayName).toBe('Old Name')
+  })
+
+  it('returns nothing at all when nothing has been measured', () => {
+    expect(listSpeedTestComparison(new Map())).toEqual([])
   })
 })

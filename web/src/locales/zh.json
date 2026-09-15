@@ -1029,6 +1029,42 @@
         "requests": {
           "title": "逐请求明细"
         },
+        "compare": {
+          "button": {
+            "label": "对比"
+          },
+          "title": "提供方横向对比",
+          "note": "这些提供方不是同一时刻测的：网络状况与上游负载各不相同，数字只能作参考，不构成同场对打的结果。",
+          "empty": "还没有任何测速记录。先对一条提供方跑一次，再回来对比。",
+          "loading": "加载中…",
+          "failed": "对比数据没能取回来。",
+          "retry": {
+            "label": "重试"
+          },
+          "deleted": "{name}(已删除)",
+          "choice": {
+            "label": "记录",
+            "option": "{time} · {model} · {completed}/{planned}"
+          },
+          "column": {
+            "provider": "提供方",
+            "run": "测量时间",
+            "outcome": "结果",
+            "successRate": "成功率",
+            "ttftP50": "TTFT P50(毫秒)",
+            "ttftP95": "TTFT P95(毫秒)",
+            "tpotP50": "TPOT P50(毫秒)",
+            "tpotP95": "TPOT P95(毫秒)",
+            "endToEndP50": "端到端 P50(毫秒)",
+            "endToEndP95": "端到端 P95(毫秒)",
+            "tokensPerSecond": "tokens/秒"
+          },
+          "sort": {
+            "ascending": "当前按 TTFT P50 升序。点击改为降序。",
+            "descending": "当前按 TTFT P50 降序。点击改为升序。"
+          },
+          "estimated": "带 * 的行按 delta 事件估算 token 数，其 TPOT 与 tokens/秒 为估算值。"
+        },
         "report": {
           "button": {
             "label": "报告"

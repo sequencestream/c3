@@ -253,7 +253,7 @@ export function buildSettingsHandlers(
     },
     model_provider_speed_test_result: (_ctx, msg) => {
       // 一次只观察一个 provider 的执行:accepted/progress/finished 更新运行态,
-      // list/detail/history_providers 只更新报告面板,两组互不覆盖。
+      // list/detail/history_providers/compare 只更新报告与对比视图,两组互不覆盖。
       const s = speedTest.value
       switch (msg.event) {
         case 'accepted':
@@ -279,6 +279,9 @@ export function buildSettingsHandlers(
           if (s.reportOpen && s.reportProviderId === msg.detail.run.providerId) {
             ctx.speedTestAction({ action: 'list', providerId: s.reportProviderId })
           }
+          // 新落库的一轮会改变对比里那一行的「最近一次」,正开着就顺手重取——
+          // 否则刚测完的那一条要等下次打开才出现,读者会以为它没存进去。
+          if (s.compareOpen) ctx.speedTestAction({ action: 'compare' })
           return
         case 'list':
           speedTest.value = {
@@ -296,6 +299,11 @@ export function buildSettingsHandlers(
           return
         case 'history_providers':
           speedTest.value = { ...s, historyProviders: msg.providers }
+          return
+        case 'compare':
+          // 对比取数只更新对比视图。没有任何记录时它同样是「取回了一个空列表」,
+          // 而不是错误——空态是视图要画出来的一种状态。
+          speedTest.value = { ...s, compare: msg.entries }
           return
         case 'error': {
           // save_failed 不是拒绝,而是「跑完了但没存下」:服务端仍持有这一轮,并把它的

@@ -1029,6 +1029,42 @@
         "requests": {
           "title": "Per-request detail"
         },
+        "compare": {
+          "button": {
+            "label": "Compare"
+          },
+          "title": "Provider comparison",
+          "note": "These providers were not measured at the same moment — the network and the upstream load differed — so the numbers are a rough guide, not a head-to-head result.",
+          "empty": "No speed test has been run yet. Run one against a provider to start comparing.",
+          "loading": "Loading…",
+          "failed": "Could not load the comparison.",
+          "retry": {
+            "label": "Retry"
+          },
+          "deleted": "{name} (deleted)",
+          "choice": {
+            "label": "Record",
+            "option": "{time} · {model} · {completed}/{planned}"
+          },
+          "column": {
+            "provider": "Provider",
+            "run": "Measured at",
+            "outcome": "Outcome",
+            "successRate": "Success rate",
+            "ttftP50": "TTFT P50 (ms)",
+            "ttftP95": "TTFT P95 (ms)",
+            "tpotP50": "TPOT P50 (ms)",
+            "tpotP95": "TPOT P95 (ms)",
+            "endToEndP50": "End-to-end P50 (ms)",
+            "endToEndP95": "End-to-end P95 (ms)",
+            "tokensPerSecond": "Tokens/sec"
+          },
+          "sort": {
+            "ascending": "Sorted by TTFT P50, ascending. Activate to switch to descending.",
+            "descending": "Sorted by TTFT P50, descending. Activate to switch to ascending."
+          },
+          "estimated": "Rows marked * counted tokens from delta events rather than usage, so their TPOT and tokens/sec are approximate."
+        },
         "report": {
           "button": {
             "label": "Report"

@@ -43,6 +43,7 @@ import type { ProviderProbeState } from '@/lib/model-provider'
 import { providerProbeKey } from '@/lib/model-provider'
 import type { SpeedTestIntent, SpeedTestUiState } from '@/lib/model-provider-speed-test'
 import SpeedTestDialog from './SpeedTestDialog.vue'
+import SpeedTestCompare from './SpeedTestCompare.vue'
 import SpeedTestReport from './SpeedTestReport.vue'
 
 const { t } = useTypedI18n()
@@ -602,6 +603,15 @@ function confirmRemove(): void {
       >
         {{ t('settings.providers.speedTest.history.label') }}
       </button>
+      <!-- 横向对比跟着总入口放:它看的也不是某一行,而是所有有记录的提供方。 -->
+      <button
+        class="ghost"
+        :disabled="!isAdmin"
+        data-testid="provider-speed-compare"
+        @click="emit('speedTest', { kind: 'openCompare' })"
+      >
+        {{ t('settings.providers.speedTest.compare.button.label') }}
+      </button>
     </div>
 
     <SpeedTestDialog
@@ -628,7 +638,15 @@ function confirmRemove(): void {
       @select="(runId) => emit('speedTest', { kind: 'selectRun', runId })"
       @load-more="(payload) => emit('speedTest', { kind: 'loadMore', ...payload })"
       @pick="(providerId) => emit('speedTest', { kind: 'openReport', providerId })"
+      @compare="emit('speedTest', { kind: 'openCompare' })"
       @close="emit('speedTest', { kind: 'closeReport' })"
+    />
+
+    <SpeedTestCompare
+      v-if="speedTest?.compareOpen"
+      :state="speedTest"
+      @retry="emit('speedTest', { kind: 'openCompare' })"
+      @close="emit('speedTest', { kind: 'closeCompare' })"
     />
 
     <ConfirmDialog

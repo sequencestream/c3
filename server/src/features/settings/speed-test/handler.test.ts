@@ -494,4 +494,47 @@ describe('run lifecycle', () => {
       expect.objectContaining({ providerId: 'p1', displayName: 'Example', present: false }),
     ])
   })
+
+  it('answers the comparison with every measured provider and its newest run', async () => {
+    const first = conn()
+    dispatch(first.conn, start({ requestCount: 1 }))
+    await settle(first.sent)
+
+    // A second provider, measured later, so the comparison has two columns and the
+    // entry order (newest activity first) is observable.
+    h.providers = [
+      ...h.providers,
+      {
+        id: 'p2',
+        displayName: 'Second',
+        vendor: 'custom',
+        apiKey: 'sk-2',
+        urls: { openai: 'https://api.second.example/v1' },
+        models: [{ id: 'gpt-x' }],
+      },
+    ]
+    const second = conn()
+    dispatch(second.conn, start({ providerId: 'p2', requestId: 'q11', requestCount: 1 }))
+    await settle(second.sent)
+
+    const q = conn()
+    dispatch(q.conn, { type: 'model_provider_speed_test', requestId: 'q12', action: 'compare' })
+    expect(q.sent[0]).toMatchObject({ event: 'compare' })
+    if (q.sent[0].event !== 'compare') throw new Error('unreachable')
+    expect(q.sent[0].entries.map((e) => e.providerId)).toEqual(['p2', 'p1'])
+    for (const entry of q.sent[0].entries) {
+      expect(entry.present).toBe(true)
+      expect(entry.runCount).toBe(1)
+      // Each row arrives with its own record — the view needs no second fetch.
+      expect(entry.runs).toHaveLength(1)
+      expect(entry.runs[0]!.providerId).toBe(entry.providerId)
+      expect(entry.runs[0]!.summary.successCount).toBe(1)
+    }
+  })
+
+  it('answers an empty comparison rather than refusing one', () => {
+    const q = conn()
+    dispatch(q.conn, { type: 'model_provider_speed_test', requestId: 'q13', action: 'compare' })
+    expect(q.sent[0]).toMatchObject({ event: 'compare', entries: [] })
+  })
 })

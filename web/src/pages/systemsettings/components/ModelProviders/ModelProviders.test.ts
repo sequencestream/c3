@@ -11,6 +11,7 @@ import { mount } from '@vue/test-utils'
 import type { AgentConfig, ModelProvider } from '@ccc/shared/protocol'
 import { modelVendorDefaultUrls, modelVendorModels } from '@ccc/shared'
 import ModelProviders from './ModelProviders.vue'
+import { emptySpeedTestState } from '@/lib/model-provider-speed-test'
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
   return {
@@ -422,5 +423,79 @@ describe('Model Vendor', () => {
     expect(w.find('[data-testid="provider-vendor-badge"]').text()).toBe('DeepSeek')
     expect(w.find('[data-testid="provider-shipped-model"]').exists()).toBe(true)
     expect(w.find('[data-testid="provider-model-name"]').attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('测速入口', () => {
+  it('每行的「测速」「报告」都带上这一行的 providerId 上抛意图', async () => {
+    const w = render({ providers: [provider()], savedProviders: [provider()] })
+    await w.find('[data-testid="provider-speed-test"]').trigger('click')
+    expect(w.emitted('speedTest')).toEqual([[{ kind: 'open', providerId: 'p1' }]])
+
+    await w.find('[data-testid="provider-speed-report"]').trigger('click')
+    expect(w.emitted('speedTest')?.[1]).toEqual([{ kind: 'openReport', providerId: 'p1' }])
+  })
+
+  it('不在已提交快照里的 provider 不能测速:服务端只按已保存的配置拨号', async () => {
+    // 草稿里有、已保存的快照里没有 —— 正是「新建还没保存」的样子。
+    const w = render({ providers: [provider()], savedProviders: [] })
+    const button = w.find('[data-testid="provider-speed-test"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe(
+      'Save this provider first: the server only dials a saved configuration.',
+    )
+    await button.trigger('click')
+    expect(w.emitted('speedTest')).toBeUndefined()
+    // 报告是只读的历史,不受「有没有保存」影响。
+    expect(w.find('[data-testid="provider-speed-report"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('「历史报告」总入口不带 providerId:候选由服务端按历史记录给出', async () => {
+    const w = render({ providers: [provider()] })
+    await w.find('[data-testid="provider-speed-history"]').trigger('click')
+    expect(w.emitted('speedTest')).toEqual([[{ kind: 'listProviders' }]])
+  })
+
+  it('非管理员一个测速动作都发不出去', async () => {
+    const w = render({ providers: [provider()], savedProviders: [provider()], isAdmin: false })
+    expect(w.find('[data-testid="provider-speed-test"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="provider-speed-report"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="provider-speed-history"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('对话框与报告只在各自打开时挂载', async () => {
+    const closed = render({ providers: [provider()], savedProviders: [provider()] })
+    expect(closed.find('[data-testid="speed-test-overlay"]').exists()).toBe(false)
+    expect(closed.find('[data-testid="speed-test-report-overlay"]').exists()).toBe(false)
+
+    const dialog = render({
+      providers: [provider()],
+      savedProviders: [provider()],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    expect(dialog.find('[data-testid="speed-test-overlay"]').exists()).toBe(true)
+
+    // 总入口先开面板、还没选中任何一条时,报告也必须能立起来。
+    const report = render({
+      providers: [provider()],
+      savedProviders: [provider()],
+      speedTest: { ...emptySpeedTestState(), reportOpen: true },
+    })
+    expect(report.find('[data-testid="speed-test-report-overlay"]').exists()).toBe(true)
+    expect(report.find('[data-testid="speed-test-report-empty"]').text()).toBe(
+      'Pick a provider to see its history.',
+    )
+  })
+
+  it('对话框的候选只取已保存快照:草稿里的新端点不作为可测目标', async () => {
+    const saved = provider({ displayName: 'Saved', urls: { openai: 'https://saved.example/v1' } })
+    const draft = provider({ displayName: 'Draft', urls: { openai: 'https://draft.example/v1' } })
+    const w = render({
+      providers: [draft],
+      savedProviders: [saved],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    expect(w.find('[data-testid="speed-test-overlay"]').text()).toContain('Saved')
+    expect(w.find('[data-testid="speed-test-draft-note"]').exists()).toBe(true)
   })
 })

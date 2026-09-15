@@ -4,6 +4,15 @@ import {
   AUTOMATION_VENDORS,
   CREATE_PR_STAGES,
   IMAGE_MEDIA_TYPES,
+  SPEED_TEST_CALIBRATION_VERSION,
+  SPEED_TEST_DEFAULT_REQUESTS,
+  SPEED_TEST_ERROR_CATEGORIES,
+  SPEED_TEST_HISTORY_PAGE_SIZE,
+  SPEED_TEST_MAX_OUTPUT_TOKENS,
+  SPEED_TEST_MAX_REQUESTS,
+  SPEED_TEST_MIN_REQUESTS,
+  SPEED_TEST_REQUEST_TIMEOUT_MS,
+  SPEED_TEST_TEMPERATURE,
   SYSTEM_AGENT_ID,
   VENDOR_IDS,
   isVendorId,
@@ -16,6 +25,10 @@ import type {
   ClientToServer,
   CreatePrStage,
   QueueIntentDetail,
+  SpeedTestActiveRun,
+  SpeedTestErrorCode,
+  SpeedTestRun,
+  SpeedTestRunDetail,
   ServerToClient,
   SystemSettings,
 } from './protocol.js'
@@ -467,5 +480,232 @@ describe('queue_detail — queue position', () => {
     expect(JSON.parse(JSON.stringify(frame))).toEqual(frame)
     const positions = frame.detail.items.map((i) => i.queuePosition)
     expect(positions).toEqual([1, 2, null])
+  })
+})
+
+describe('model_provider_speed_test — the speed-test wire contract', () => {
+  const run: SpeedTestRun = {
+    runId: 'run-1',
+    providerId: 'p1',
+    providerDisplayName: 'Example',
+    startedAt: 1_700_000_000_000,
+    finishedAt: 1_700_000_012_000,
+    plannedCount: 10,
+    protocolType: 'openai',
+    apiDialect: 'chat',
+    model: 'gpt-x',
+    calibrationVersion: SPEED_TEST_CALIBRATION_VERSION,
+    maxOutputTokens: SPEED_TEST_MAX_OUTPUT_TOKENS,
+    temperature: SPEED_TEST_TEMPERATURE,
+    outcome: 'completed',
+    summary: {
+      completedCount: 10,
+      successCount: 10,
+      failureCount: 0,
+      cancelledCount: 0,
+      successRate: 1,
+      // A metric with no eligible sample reports null, never 0.
+      ttft: { sampleCount: 10, avgMs: 112.5, p50Ms: 100, p95Ms: 210, p99Ms: 210 },
+      tpot: { sampleCount: 0, avgMs: null, p50Ms: null, p95Ms: null, p99Ms: null },
+      endToEnd: { sampleCount: 10, avgMs: 1_050, p50Ms: 1_000, p95Ms: 1_400, p99Ms: 1_400 },
+      successfulWallTimeMs: 10_500,
+      outputTokensTotal: 100,
+      tokensPerSecond: 9.52,
+      requestsPerSecond: 0.95,
+      estimatedSampleCount: 0,
+    },
+  }
+  const detail: SpeedTestRunDetail = {
+    run,
+    requests: [
+      {
+        sequence: 1,
+        startedAt: 1_700_000_000_000,
+        outcome: 'success',
+        failureCategory: null,
+        httpStatus: 200,
+        ttftMs: 100,
+        endToEndMs: 1_000,
+        outputTokens: 10,
+        tokenCountSource: 'usage',
+        tpotMs: 100,
+      },
+      // A failure keeps its category and status; a cancelled one is neither.
+      {
+        sequence: 2,
+        startedAt: 1_700_000_001_000,
+        outcome: 'failure',
+        failureCategory: 'http',
+        httpStatus: 503,
+        ttftMs: null,
+        endToEndMs: 240,
+        outputTokens: null,
+        tokenCountSource: null,
+        tpotMs: null,
+      },
+    ],
+  }
+  const active: SpeedTestActiveRun = {
+    runId: 'run-1',
+    providerId: 'p1',
+    providerDisplayName: 'Example',
+    protocolType: 'openai',
+    apiDialect: 'chat',
+    model: 'gpt-x',
+    plannedCount: 10,
+    completedCount: 3,
+    successCount: 3,
+    failureCount: 0,
+    startedAt: 1_700_000_000_000,
+    state: 'running',
+  }
+
+  it('accepts every client action, carrying no endpoint, credential or dialect', () => {
+    const messages: ClientToServer[] = [
+      {
+        type: 'model_provider_speed_test',
+        requestId: 'q1',
+        action: 'start',
+        providerId: 'p1',
+        protocolType: 'openai',
+        model: 'gpt-x',
+        requestCount: 10,
+      },
+      { type: 'model_provider_speed_test', requestId: 'q2', action: 'interrupt', runId: 'run-1' },
+      { type: 'model_provider_speed_test', requestId: 'q3', action: 'active', providerId: 'p1' },
+      { type: 'model_provider_speed_test', requestId: 'q4', action: 'retry_save', runId: 'run-1' },
+      {
+        type: 'model_provider_speed_test',
+        requestId: 'q5',
+        action: 'list',
+        providerId: 'p1',
+        offset: 20,
+      },
+      { type: 'model_provider_speed_test', requestId: 'q6', action: 'detail', runId: 'run-1' },
+      { type: 'model_provider_speed_test', requestId: 'q7', action: 'history_providers' },
+    ]
+    expect(JSON.parse(JSON.stringify(messages))).toEqual(messages)
+
+    // The target is never named by the client: a start that could carry a URL or
+    // a key would be a way to aim the account credential at an arbitrary host.
+    type Start = Extract<ClientToServer, { type: 'model_provider_speed_test'; action: 'start' }>
+    const start: Start = {
+      type: 'model_provider_speed_test',
+      requestId: 'q8',
+      action: 'start',
+      providerId: 'p1',
+      protocolType: 'openai',
+      model: 'gpt-x',
+      requestCount: 1,
+    }
+    expect(JSON.parse(JSON.stringify(start))).toEqual(start)
+    // Spelled out rather than inferred: a field quietly added here is exactly the
+    // kind of widening this test exists to catch.
+    expect(Object.keys(start).sort()).toEqual([
+      'action',
+      'model',
+      'protocolType',
+      'providerId',
+      'requestCount',
+      'requestId',
+      'type',
+    ])
+    // @ts-expect-error a start has no endpoint field to aim at another host
+    const endpoint: Start['url'] = 'https://evil.example/v1'
+    expect(endpoint).toBe('https://evil.example/v1')
+  })
+
+  it('accepts every server event and survives the wire unchanged', () => {
+    const frames: ServerToClient[] = [
+      { type: 'model_provider_speed_test_result', requestId: 'q1', event: 'accepted', run: active },
+      // Progress is unsolicited, so it carries no requestId to correlate.
+      { type: 'model_provider_speed_test_result', event: 'progress', run: active },
+      { type: 'model_provider_speed_test_result', event: 'finished', detail },
+      {
+        type: 'model_provider_speed_test_result',
+        requestId: 'q3',
+        event: 'active',
+        providerId: 'p1',
+        run: null,
+      },
+      {
+        type: 'model_provider_speed_test_result',
+        requestId: 'q5',
+        event: 'list',
+        page: { providerId: 'p1', runs: [run], hasMore: true },
+      },
+      { type: 'model_provider_speed_test_result', requestId: 'q6', event: 'detail', detail },
+      {
+        type: 'model_provider_speed_test_result',
+        requestId: 'q7',
+        event: 'history_providers',
+        providers: [
+          {
+            providerId: 'p1',
+            displayName: 'Example',
+            runCount: 3,
+            lastStartedAt: 1,
+            present: true,
+          },
+          // A provider that no longer exists stays listed — dropping it is what
+          // would make its history unreachable.
+          {
+            providerId: 'gone',
+            displayName: 'Removed',
+            runCount: 1,
+            lastStartedAt: 0,
+            present: false,
+          },
+        ],
+      },
+      // A refusal names a reason and nothing else — no upstream body is forwarded.
+      {
+        type: 'model_provider_speed_test_result',
+        requestId: 'q9',
+        event: 'error',
+        code: 'save_failed',
+        runId: 'run-1',
+        run,
+      },
+    ]
+    expect(JSON.parse(JSON.stringify(frames))).toEqual(frames)
+  })
+
+  it('pins the refusal codes the console localizes', () => {
+    const codes: SpeedTestErrorCode[] = [
+      'invalid_count',
+      'provider_unknown',
+      'protocol_unavailable',
+      'invalid_url',
+      'models_empty',
+      'model_unavailable',
+      'busy',
+      'not_found',
+      'db_unavailable',
+      'save_failed',
+    ]
+    const categories = codes.map((code) => SPEED_TEST_ERROR_CATEGORIES[code])
+    expect(categories).toEqual([
+      'validation',
+      'validation',
+      'validation',
+      'validation',
+      'validation',
+      'validation',
+      'conflict',
+      'not_found',
+      'storage',
+      'storage',
+    ])
+  })
+
+  it('keeps the request-count bound and the calibration constants in one place', () => {
+    expect(SPEED_TEST_MIN_REQUESTS).toBe(1)
+    expect(SPEED_TEST_MAX_REQUESTS).toBe(100)
+    expect(SPEED_TEST_DEFAULT_REQUESTS).toBe(10)
+    expect(SPEED_TEST_MAX_OUTPUT_TOKENS).toBe(128)
+    expect(SPEED_TEST_TEMPERATURE).toBe(0)
+    expect(SPEED_TEST_REQUEST_TIMEOUT_MS).toBe(60_000)
+    expect(SPEED_TEST_HISTORY_PAGE_SIZE).toBe(20)
   })
 })

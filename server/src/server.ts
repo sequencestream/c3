@@ -97,6 +97,7 @@ import {
   recordExternalMcpWriteAudit,
 } from './features/external-mcp/audit-store.js'
 import { setExternalMcpSessionCloser } from './features/settings/mcp-api-keys.js'
+import { shutdownSpeedTests } from './features/settings/speed-test/index.js'
 import { setExternalMcpOwnerSessionCloser } from './features/auth/workspace-access.js'
 import {
   revokeUnownedMcpApiKeys,
@@ -1165,6 +1166,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
+    // Interrupt any speed test in flight so its already-measured samples get one
+    // chance to reach the append-only history instead of dying with the process.
+    await shutdownSpeedTests()
     await stopAndRelease()
     process.exit(0)
   }

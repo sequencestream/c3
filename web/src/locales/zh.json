@@ -924,6 +924,142 @@
           "local": "本地运行时",
           "custom": "其他"
         }
+      },
+      "speedTest": {
+        "button": {
+          "label": "测速",
+          "tooltip": "发起真实的流式请求,测这条提供方的首字延迟与吞吐。"
+        },
+        "history": {
+          "label": "历史报告"
+        },
+        "title": "测速 — {name}",
+        "cost": "这是真实调用:会消耗该提供方的额度与 token,并可能计入上游限流。",
+        "draftNote": "这条提供方有未保存的修改。本次使用「已保存」的配置,不会替你保存草稿。",
+        "protocol": {
+          "label": "协议"
+        },
+        "model": {
+          "label": "模型"
+        },
+        "count": {
+          "label": "请求数",
+          "error": {
+            "empty": "请填写本次要发的请求数。",
+            "notANumber": "请求数必须是数字。",
+            "notAnInteger": "请求数必须是整数。",
+            "range": "请求数需在 {min} 到 {max} 之间。"
+          }
+        },
+        "dialect": {
+          "chat": "Chat Completions",
+          "responses": "Responses",
+          "messages": "Messages"
+        },
+        "calibration": "固定标定:提示词「{prompt}」、温度 0、输出上限 {maxTokens} token、串行逐个发出。不可编辑——两轮之间可比正是靠它。",
+        "blocked": {
+          "unsaved": "请先保存这条提供方:服务端只按已保存的配置拨号。",
+          "noProtocol": "请先配置并保存至少一个协议 URL。",
+          "invalidUrl": "所选协议 URL 无效,请修正并保存。",
+          "noModels": "暂无可测速模型,请先在提供方中添加模型并保存。"
+        },
+        "start": {
+          "label": "开始"
+        },
+        "interrupt": {
+          "label": "中断"
+        },
+        "retrySave": {
+          "label": "重试保存"
+        },
+        "progress": {
+          "text": "已完成 {done} / {total}",
+          "detail": "成功 {ok},失败 {failed}"
+        },
+        "unsaved": "测速已结束但保存失败,结果暂存在本进程内存中。",
+        "unavailable": "不可用",
+        "target": "协议 {protocol} · API {dialect} · 模型 {model} · 标定 {calibration} · 输出上限 {maxTokens} · 温度 {temperature}",
+        "summary": {
+          "outcome": "结果",
+          "completed": "已完成 / 计划",
+          "successRate": "成功率",
+          "failed": "失败",
+          "cancelled": "取消",
+          "tokensPerSecond": "tokens/秒",
+          "requestsPerSecond": "请求/秒",
+          "outputTokens": "输出 token 总数"
+        },
+        "metric": {
+          "ttft": "TTFT(毫秒)",
+          "tpot": "TPOT(毫秒)",
+          "endToEnd": "端到端(毫秒)"
+        },
+        "table": {
+          "metric": "指标",
+          "samples": "样本数",
+          "avg": "平均",
+          "result": "结果",
+          "failure": "失败分类",
+          "endToEnd": "端到端",
+          "tokens": "token",
+          "p50": "P50",
+          "p95": "P95",
+          "p99": "P99",
+          "ttft": "TTFT",
+          "tpot": "TPOT"
+        },
+        "outcome": {
+          "completed": "已完成",
+          "failed": "全部失败",
+          "interrupted": "已中断"
+        },
+        "request": {
+          "success": "成功",
+          "failure": "失败",
+          "cancelled": "已取消"
+        },
+        "failure": {
+          "timeout": "超时",
+          "http": "HTTP",
+          "network": "网络",
+          "stream": "流"
+        },
+        "estimated": "有 {n} 个成功样本是按 delta 事件估算 token 数(上游未返回 usage),因此 TPOT 与 tokens/秒 为估算值,与计费口径可能有明显偏差。",
+        "sampleCaveat": "样本数较少时,P95 与 P99 常落在最大值。这里如实标出样本数,不宣称高置信度。",
+        "requests": {
+          "title": "逐请求明细"
+        },
+        "report": {
+          "button": {
+            "label": "报告"
+          },
+          "title": "测速历史 — {name}",
+          "titleAll": "测速历史",
+          "picker": {
+            "label": "提供方",
+            "option": "{name}({count} 次)",
+            "deleted": "{name}(已删除 · {count} 次)"
+          },
+          "row": "{time} · {model} · {dialect} · {completed}/{planned} · 成功率 {rate}",
+          "empty": "这条提供方还没有测速记录。",
+          "loading": "加载中…",
+          "more": {
+            "label": "加载更多"
+          },
+          "pick": "请选择一条提供方查看它的测速历史。"
+        },
+        "error": {
+          "invalidCount": "请求数超出范围,请填写 1 到 100 之间的整数。",
+          "providerUnknown": "已保存的配置里没有这条提供方,请先保存后重试。",
+          "protocolUnavailable": "所选协议不可用,请刷新配置后重新选择。",
+          "invalidUrl": "所选协议 URL 无效,请修正并保存。",
+          "modelsEmpty": "暂无可测速模型,请先在提供方中添加模型并保存。",
+          "modelUnavailable": "请选择当前提供方目录中的模型。",
+          "busy": "这条提供方已有一轮测速在跑,请等它结束或先中断。",
+          "notFound": "这一轮记录已不存在。",
+          "dbUnavailable": "数据库不可用,本次未开始测速,也没有产生任何消耗。",
+          "saveFailed": "测速已结束但保存失败,请重试保存。"
+        }
       }
     },
     "defaultAgent": {

@@ -23,6 +23,7 @@ import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
 import { FILES_CHAT_WIDTH_DEFAULT } from './controls/state'
+import type { SpeedTestIntent } from './lib/model-provider-speed-test'
 
 // ── 懒加载装配约定 ─────────────────────────────────────────────────────────
 // App.vue 是唯一的装配边界:重量级业务页面与低频全局组件都由 defineAsyncComponent
@@ -440,6 +441,13 @@ const {
   autoConfigureAgents,
   syncVendorCli,
   probeModelProvider,
+  speedTest,
+  speedTestAction,
+  openSpeedTestDialog,
+  closeSpeedTestDialog,
+  openSpeedTestReport,
+  openSpeedTestHistory,
+  closeSpeedTestReport,
   setLocale,
   setTheme,
   setFontScale,
@@ -700,6 +708,61 @@ watch(
 function onCloseSettings(): void {
   closeSettings()
   clearActionTarget()
+}
+
+/** 已提交快照里的 provider 列表,单独取一份给测速当候选。 */
+const savedModelProviders = computed(() => serverSettings.value?.modelProviders ?? [])
+
+/**
+ * 测速面板上抛的意图在这里落到具体动作。
+ *
+ * 每条 `start` 都不带 URL、密钥与方言——它们由服务端从已保存的 provider 读出。这里
+ * 只搬运用户明确选中的四件事:哪条 provider、哪个协议槽、哪个模型、跑几次。
+ */
+function onSpeedTest(intent: SpeedTestIntent): void {
+  switch (intent.kind) {
+    case 'open':
+      openSpeedTestDialog(intent.providerId)
+      break
+    case 'close':
+      closeSpeedTestDialog()
+      break
+    case 'start':
+      speedTestAction({
+        action: 'start',
+        providerId: intent.providerId,
+        protocolType: intent.protocolType,
+        model: intent.model,
+        requestCount: intent.requestCount,
+      })
+      break
+    case 'interrupt':
+      speedTestAction({ action: 'interrupt', runId: intent.runId })
+      break
+    case 'retrySave':
+      speedTestAction({ action: 'retry_save', runId: intent.runId })
+      break
+    case 'openReport':
+      openSpeedTestReport(intent.providerId)
+      break
+    case 'closeReport':
+      closeSpeedTestReport()
+      break
+    case 'selectRun':
+      speedTestAction({ action: 'detail', runId: intent.runId })
+      break
+    case 'loadMore':
+      speedTestAction({
+        action: 'list',
+        providerId: intent.providerId,
+        offset: intent.offset,
+      })
+      break
+    case 'listProviders':
+      // 总入口的候选含已删除的 provider,只能由服务端按历史记录归并,前端排不出来。
+      openSpeedTestHistory()
+      break
+  }
 }
 
 function onFilesChatWidth(px: number): void {
@@ -1233,6 +1296,8 @@ function onFilesChatWidth(px: number): void {
       :user-access-workspaces="userWorkspaceAccess?.workspaces ?? []"
       :provider-probes="providerProbes"
       :vendor-cli-syncing="vendorCliSyncing"
+      :saved-providers="savedModelProviders"
+      :speed-test="speedTest"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
       @save="saveSettings"
@@ -1244,6 +1309,7 @@ function onFilesChatWidth(px: number): void {
       @reload-user-access="fetchUserWorkspaceAccess"
       @save-user-access="saveUserWorkspaceAccess"
       @provider-probe="probeModelProvider"
+      @speed-test="onSpeedTest"
     />
 
     <PersonalizedSettingPage

@@ -49,6 +49,7 @@ import EmojiPicker from './EmojiPicker.vue'
 import UserAccess from '../UserAccess/UserAccess.vue'
 import ModelProviders from '../ModelProviders/ModelProviders.vue'
 import type { ProviderProbeState } from '@/lib/model-provider'
+import type { SpeedTestIntent, SpeedTestUiState } from '@/lib/model-provider-speed-test'
 
 const { t } = useTypedI18n()
 
@@ -92,6 +93,16 @@ const props = withDefaults(
     providerProbes?: Record<string, ProviderProbeState>
     /** 正在手动「下载 / 检查新版本」的 vendor 列表;按钮据此禁用并显示「下载中…」。 */
     vendorCliSyncing?: VendorId[]
+    /**
+     * 已提交快照里的 provider 列表。
+     *
+     * 与 `draft.modelProviders` 是两份东西,不能互相顶替:测速由服务端按**已保存**的
+     * 配置拨号,拿草稿当候选会让用户选到一个服务端根本不认的目标。这份只在测速区块
+     * 用作候选与「是否存在」的判据。
+     */
+    savedProviders?: ModelProvider[]
+    /** 测速的可见状态(对话框/报告在跑什么、看到了什么)。 */
+    speedTest?: SpeedTestUiState
   }>(),
   {
     hostStatus: () => [],
@@ -104,6 +115,8 @@ const props = withDefaults(
     userAccessWorkspaces: () => [],
     providerProbes: () => ({}),
     vendorCliSyncing: () => [],
+    savedProviders: () => [],
+    speedTest: undefined,
   },
 )
 
@@ -302,6 +315,9 @@ const emit = defineEmits<{
       apiKey?: string
     },
   ]
+  // 测速的每一个动作(打开、开始、中断、翻页…)都走这一条通道上抛。它同样不是「保存配置」:
+  // 执行在服务端,这里只转述用户意图,因此不进任何草稿、也不参与 Save 的脏判断。
+  'speed-test': [intent: SpeedTestIntent]
 }>()
 
 // A default, empty SystemSettings — the shape both `draft` and `committed` start
@@ -2667,8 +2683,11 @@ function selectAdmin(username: string) {
           :agents="draft.agents"
           :probes="providerProbes"
           :is-admin="isAdmin"
+          :saved-providers="savedProviders"
+          :speed-test="speedTest"
           @change="(list) => (draft.modelProviders = list)"
           @probe="(p) => emit('provider-probe', p)"
+          @speed-test="(intent) => emit('speed-test', intent)"
         />
       </div>
 

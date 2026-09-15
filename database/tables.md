@@ -6,7 +6,7 @@
 
 所有工作区关联统一使用 `workspace_name`，其值引用 `workspaces.name`；绝对路径只保存在注册表并用于文件系统操作。迁移 `039-workspace-name-identity.sql` 由配置 store 在单事务内把历史 workspace UUID 和各业务表路径映射为名称。
 
-> `~/.c3/c3.db` 是单实例本地文件。共 **49** 张表，**13** 个模块(见下方一览)。
+> `~/.c3/c3.db` 是单实例本地文件。共 **52** 张表，**13** 个模块(见下方一览)。
 
 ## 基础设施
 
@@ -19,58 +19,60 @@
 
 ## 表一览
 
-| #   | 模块         | 表名                         | SQL 文件                                                                                 | Store 文件                                                  | 用途                                                     |
-| --- | ------------ | ---------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
-| 1   | intents      | `intents`                    | [intents/intents.sql](intents/intents.sql)                                               | `server/src/features/intents/store.ts`                      | 意图(需求/任务)台账                                      |
-| 2   | intents      | `intent_deps`                | [intents/intent_deps.sql](intents/intent_deps.sql)                                       | `server/src/features/intents/store.ts`                      | 意图依赖关系 (多对多)                                    |
-| 3   | intents      | `intent_chats`               | [intents/intent_chats.sql](intents/intent_chats.sql)                                     | `server/src/features/intents/store.ts`                      | 沟通会话映射 + 隐藏会话集                                |
-| 4   | intents      | `tool_sessions`              | [intents/tool_sessions.sql](intents/tool_sessions.sql)                                   | `server/src/features/intents/store.ts`                      | 工具创建的会话 ID 集合                                   |
-| 5   | discussions  | `discussions`                | [discussions/discussions.sql](discussions/discussions.sql)                               | `server/src/features/discussions/store.ts`                  | 讨论线程元数据                                           |
-| 6   | discussions  | `discussion_messages`        | [discussions/discussion_messages.sql](discussions/discussion_messages.sql)               | `server/src/features/discussions/store.ts`                  | 讨论消息                                                 |
-| 7   | discussions  | `discussion_agent_sessions`  | [discussions/discussion_agent_sessions.sql](discussions/discussion_agent_sessions.sql)   | `server/src/features/discussions/store.ts`                  | 讨论内 agent→vendor 会话映射                             |
-| 8   | automations  | `automations`                | [automations/automations.sql](automations/automations.sql)                               | `server/src/features/automations/store.ts`                  | 自动化 (cron + event)                                    |
-| 9   | automations  | `automation_execution_logs`  | [automations/automation_execution_logs.sql](automations/automation_execution_logs.sql)   | `server/src/features/automations/store.ts`                  | 自动化执行历史                                           |
-| 10  | automations  | `workspace_mcp_configs`      | [automations/workspace_mcp_configs.sql](automations/workspace_mcp_configs.sql)           | `server/src/features/automations/store.ts`                  | 每 workspace 的 MCP 配置                                 |
-| 11  | user-involve | `wait_user_involve_events`   | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql)   | `server/src/features/user-involve/store.ts`                 | 等待用户介入事件                                         |
-| 12  | sessions     | `session_metadata`           | [sessions/session_metadata.sql](sessions/session_metadata.sql)                           | `server/src/features/sessions/session-metadata-store.ts`    | 统一会话列表元数据投影 (由 `work_session_metadata` 改名) |
-| 13  | intents      | `intent_sessions`            | [intents/intent_sessions.sql](intents/intent_sessions.sql)                               | `server/src/features/intents/store.ts`                      | intent work session 执行记录 (审计追踪)                  |
-| 14  | intents      | `intent_logs`                | [intents/intent_logs.sql](intents/intent_logs.sql)                                       | `server/src/features/intents/store.ts`                      | 意图生命周期变更日志 (操作审计轨迹)                      |
-| 15  | intents      | `intent_fast_turns`          | [intents/intent_fast_turns.sql](intents/intent_fast_turns.sql)                           | `server/src/features/intents/store.ts`                      | fast 模式每 turn 反向补轨结算记录 (基线 + 幂等键)        |
-| 16  | queue        | `queue_workspace_state`      | [queue/queue_workspace_state.sql](queue/queue_workspace_state.sql)                       | `server/src/features/intents/queue-store.ts`                | 自动化队列的工作区级控制状态 (启动/暂停/强制跳过)        |
-| 17  | queue        | `queue_intent_state`         | [queue/queue_intent_state.sql](queue/queue_intent_state.sql)                             | `server/src/features/intents/queue-store.ts`                | 单意图调度元数据 (失败/退避/park/冷却/合并凭据)          |
-| 18  | queue        | `queue_decision_log`         | [queue/queue_decision_log.sql](queue/queue_decision_log.sql)                             | `server/src/features/intents/queue-store.ts`                | 逐 tick/intent 的队列调度决策审计                        |
-| 19  | queue        | `funnel_event`               | [queue/funnel_event.sql](queue/funnel_event.sql)                                         | `server/src/features/intents/funnel-store.ts`               | park 状态跃迁的本机观测事件 (恢复率统计, 90 天滚动)      |
-| 20  | intents      | `intent_prs`                 | [intents/intent_prs.sql](intents/intent_prs.sql)                                         | `server/src/features/intents/store.ts`                      | 意图的 PR/MR 关系表 (一意图可多条)                       |
-| 21  | infra        | `schema_migrations`          | [infra/schema_migrations.sql](infra/schema_migrations.sql)                               | `server/src/kernel/infra/db.ts`                             | 已完成的一次性数据迁移标记 (跨域)                        |
-| 22  | deliveries   | `deliveries`                 | [deliveries/deliveries.sql](deliveries/deliveries.sql)                                   | `server/src/features/deliveries/store.ts`                   | 交付 (集成单元) 台账                                     |
-| 23  | deliveries   | `intent_deliveries`          | [deliveries/intent_deliveries.sql](deliveries/intent_deliveries.sql)                     | `server/src/features/deliveries/store.ts`                   | 意图 ↔ 交付关联边 (意图 store 亦声明建表)                |
-| 24  | deliveries   | `delivery_prs`               | [deliveries/delivery_prs.sql](deliveries/delivery_prs.sql)                               | `server/src/features/deliveries/store.ts`                   | 交付 PR (交付分支 → 主线)                                |
-| 25  | deliveries   | `delivery_logs`              | [deliveries/delivery_logs.sql](deliveries/delivery_logs.sql)                             | `server/src/features/deliveries/store.ts`                   | 交付生命周期变更日志 (操作审计轨迹)                      |
-| 26  | config       | `workspaces`                 | [config/workspaces.sql](config/workspaces.sql)                                           | `server/src/kernel/config/workspace-store.ts`               | 工作区注册表 (唯一名称 ↔ 磁盘 path)                      |
-| 27  | config       | `system_configs`             | [config/system_configs.sql](config/system_configs.sql)                                   | `server/src/kernel/config/index.ts`                         | 系统级配置 + `state.*` 全局状态 (一字段一行)             |
-| 28  | config       | `workspace_configs`          | [config/workspace_configs.sql](config/workspace_configs.sql)                             | `server/src/kernel/config/index.ts`                         | 每工作区配置 (原 projectConfigs)                         |
-| 29  | config       | `personalized_configs`       | [config/personalized_configs.sql](config/personalized_configs.sql)                       | `server/src/kernel/config/personalized.ts`                  | 每账号个性化设置                                         |
-| 30  | config       | `session_configs`            | [config/session_configs.sql](config/session_configs.sql)                                 | `server/src/kernel/config/index.ts` + `server/src/state.ts` | 每会话事实 (agent 绑定 / 权限模式 / codex 策略)          |
-| 31  | config       | `mcp_api_keys`               | [config/mcp_api_keys.sql](config/mcp_api_keys.sql)                                       | `server/src/kernel/config/mcp-api-keys.ts`                  | 外部 MCP 访问密钥 (归属账号 + 密钥版本 + scrypt 摘要)    |
-| 32  | auth         | `user_workspace_scopes`      | [auth/user_workspace_scopes.sql](auth/user_workspace_scopes.sql)                         | `server/src/features/auth/scope-store.ts`                   | 账号可访问哪些工作区 (管理员配置, 默认拒绝)              |
-| 33  | auth         | `user_workspace_scope_items` | [auth/user_workspace_scope_items.sql](auth/user_workspace_scope_items.sql)               | `server/src/features/auth/scope-store.ts`                   | mode='selected' 的选定工作区明细                         |
-| 34  | external-mcp | `external_mcp_write_audits`  | [external-mcp/external_mcp_write_audits.sql](external-mcp/external_mcp_write_audits.sql) | `server/src/features/external-mcp/audit-store.ts`           | 外部 MCP 写调用的只增审计轨迹                            |
-| 35  | memory       | `workspace_memories`         | [memory/workspace_memories.sql](memory/workspace_memories.sql)                           | `server/src/features/memory/store.ts`                       | 工作区长期记忆 (偏好/约束/事实/教训)                     |
-| 36  | robots       | `im_robots`                  | [robots/im_robots.sql](robots/im_robots.sql)                                             | `server/src/features/im/robot-config-store.ts`              | IM 聊天机器人配置 (执行身份/预设权限/外发授权)           |
-| 37  | robots       | `im_robot_threads`           | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                               | `server/src/features/im/robot-context-store.ts`             | 发送者隔离 Conversation (七维身份含 binding/scope_hash)  |
-| 38  | robots       | `im_robot_context_turns`     | [robots/im_robot_context_turns.sql](robots/im_robot_context_turns.sql)                   | `server/src/features/im/robot-context-store.ts`             | 有界 IM 可见上下文 (成对用户/回答正文, ADR-0048)         |
-| 39  | robots       | `im_robot_turns`             | [robots/im_robot_turns.sql](robots/im_robot_turns.sql)                                   | `server/src/features/im/robot-turn-store.ts`                | 机器人回合外发审计 (只记元数据, 不记正文)                |
-| 40  | robots       | `im_outbound_audit`          | [robots/im_outbound_audit.sql](robots/im_outbound_audit.sql)                             | `server/src/features/im/outbound-audit-store.ts`            | 统一 IM 外发审计 (reply/broadcast, 不含正文)             |
-| 41  | robots       | `im_broadcast_claims`        | (同 im_outbound_audit.sql)                                                               | `server/src/features/im/outbound-audit-store.ts`            | L0 播报幂等认领                                          |
-| 42  | robots       | `im_identity_challenges`     | [robots/im_identity_challenges.sql](robots/im_identity_challenges.sql)                   | `server/src/features/im/identity-store.ts`                  | IM 身份绑定一次性挑战 (仅存令牌哈希)                     |
-| 43  | robots       | `im_identity_bindings`       | [robots/im_identity_bindings.sql](robots/im_identity_bindings.sql)                       | `server/src/features/im/identity-store.ts`                  | IM 外部发送者 ↔ c3 主体 的 active 绑定                   |
-| 44  | robots       | `im_group_workspace_scopes`  | [robots/im_group_workspace_scopes.sql](robots/im_group_workspace_scopes.sql)             | `server/src/features/im/identity-store.ts`                  | 群聊明细可见工作区白名单                                 |
-| 45  | robots       | `im_identity_audit`          | [robots/im_identity_audit.sql](robots/im_identity_audit.sql)                             | `server/src/features/im/identity-store.ts`                  | IM 身份/群范围变更审计 (只增)                            |
-| 46  | robots       | `im_robot_write_grants`      | [robots/im_robot_write_grants.sql](robots/im_robot_write_grants.sql)                     | `server/src/features/im/write-grant-store.ts`               | IM 机器人 L2 写能力逐项授权 (与外发确认独立)             |
-| 47  | robots       | `im_robot_write_audits`      | [robots/im_robot_write_audits.sql](robots/im_robot_write_audits.sql)                     | `server/src/features/im/write-grant-store.ts`               | L2 待办令牌作答审计 (不含令牌明文/正文)                  |
-| 48  | robots       | `im_todo_tokens`             | [robots/im_todo_tokens.sql](robots/im_todo_tokens.sql)                                   | `server/src/features/im/todo-token-store.ts`                | 私聊待办一次性令牌 (仅存哈希)                            |
-| 49  | user-involve | `im_todo_answer_contracts`   | [user-involve/im_todo_answer_contracts.sql](user-involve/im_todo_answer_contracts.sql)   | `server/src/features/user-involve/answer-contract-store.ts` | L2 可作答契约 (封闭答案集, 不含令牌)                     |
-| 50  | intents      | `intent_worknotes`           | [intents/intent_worknotes.sql](intents/intent_worknotes.sql)                             | `server/src/features/intents/store.ts`                      | 意图追加式内容历史 (work/review/fix 自由文本正文)        |
+| #   | 模块         | 表名                                 | SQL 文件                                                                                       | Store 文件                                                  | 用途                                                     |
+| --- | ------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
+| 1   | intents      | `intents`                            | [intents/intents.sql](intents/intents.sql)                                                     | `server/src/features/intents/store.ts`                      | 意图(需求/任务)台账                                      |
+| 2   | intents      | `intent_deps`                        | [intents/intent_deps.sql](intents/intent_deps.sql)                                             | `server/src/features/intents/store.ts`                      | 意图依赖关系 (多对多)                                    |
+| 3   | intents      | `intent_chats`                       | [intents/intent_chats.sql](intents/intent_chats.sql)                                           | `server/src/features/intents/store.ts`                      | 沟通会话映射 + 隐藏会话集                                |
+| 4   | intents      | `tool_sessions`                      | [intents/tool_sessions.sql](intents/tool_sessions.sql)                                         | `server/src/features/intents/store.ts`                      | 工具创建的会话 ID 集合                                   |
+| 5   | discussions  | `discussions`                        | [discussions/discussions.sql](discussions/discussions.sql)                                     | `server/src/features/discussions/store.ts`                  | 讨论线程元数据                                           |
+| 6   | discussions  | `discussion_messages`                | [discussions/discussion_messages.sql](discussions/discussion_messages.sql)                     | `server/src/features/discussions/store.ts`                  | 讨论消息                                                 |
+| 7   | discussions  | `discussion_agent_sessions`          | [discussions/discussion_agent_sessions.sql](discussions/discussion_agent_sessions.sql)         | `server/src/features/discussions/store.ts`                  | 讨论内 agent→vendor 会话映射                             |
+| 8   | automations  | `automations`                        | [automations/automations.sql](automations/automations.sql)                                     | `server/src/features/automations/store.ts`                  | 自动化 (cron + event)                                    |
+| 9   | automations  | `automation_execution_logs`          | [automations/automation_execution_logs.sql](automations/automation_execution_logs.sql)         | `server/src/features/automations/store.ts`                  | 自动化执行历史                                           |
+| 10  | automations  | `workspace_mcp_configs`              | [automations/workspace_mcp_configs.sql](automations/workspace_mcp_configs.sql)                 | `server/src/features/automations/store.ts`                  | 每 workspace 的 MCP 配置                                 |
+| 11  | user-involve | `wait_user_involve_events`           | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql)         | `server/src/features/user-involve/store.ts`                 | 等待用户介入事件                                         |
+| 12  | sessions     | `session_metadata`                   | [sessions/session_metadata.sql](sessions/session_metadata.sql)                                 | `server/src/features/sessions/session-metadata-store.ts`    | 统一会话列表元数据投影 (由 `work_session_metadata` 改名) |
+| 13  | intents      | `intent_sessions`                    | [intents/intent_sessions.sql](intents/intent_sessions.sql)                                     | `server/src/features/intents/store.ts`                      | intent work session 执行记录 (审计追踪)                  |
+| 14  | intents      | `intent_logs`                        | [intents/intent_logs.sql](intents/intent_logs.sql)                                             | `server/src/features/intents/store.ts`                      | 意图生命周期变更日志 (操作审计轨迹)                      |
+| 15  | intents      | `intent_fast_turns`                  | [intents/intent_fast_turns.sql](intents/intent_fast_turns.sql)                                 | `server/src/features/intents/store.ts`                      | fast 模式每 turn 反向补轨结算记录 (基线 + 幂等键)        |
+| 16  | queue        | `queue_workspace_state`              | [queue/queue_workspace_state.sql](queue/queue_workspace_state.sql)                             | `server/src/features/intents/queue-store.ts`                | 自动化队列的工作区级控制状态 (启动/暂停/强制跳过)        |
+| 17  | queue        | `queue_intent_state`                 | [queue/queue_intent_state.sql](queue/queue_intent_state.sql)                                   | `server/src/features/intents/queue-store.ts`                | 单意图调度元数据 (失败/退避/park/冷却/合并凭据)          |
+| 18  | queue        | `queue_decision_log`                 | [queue/queue_decision_log.sql](queue/queue_decision_log.sql)                                   | `server/src/features/intents/queue-store.ts`                | 逐 tick/intent 的队列调度决策审计                        |
+| 19  | queue        | `funnel_event`                       | [queue/funnel_event.sql](queue/funnel_event.sql)                                               | `server/src/features/intents/funnel-store.ts`               | park 状态跃迁的本机观测事件 (恢复率统计, 90 天滚动)      |
+| 20  | intents      | `intent_prs`                         | [intents/intent_prs.sql](intents/intent_prs.sql)                                               | `server/src/features/intents/store.ts`                      | 意图的 PR/MR 关系表 (一意图可多条)                       |
+| 21  | infra        | `schema_migrations`                  | [infra/schema_migrations.sql](infra/schema_migrations.sql)                                     | `server/src/kernel/infra/db.ts`                             | 已完成的一次性数据迁移标记 (跨域)                        |
+| 22  | deliveries   | `deliveries`                         | [deliveries/deliveries.sql](deliveries/deliveries.sql)                                         | `server/src/features/deliveries/store.ts`                   | 交付 (集成单元) 台账                                     |
+| 23  | deliveries   | `intent_deliveries`                  | [deliveries/intent_deliveries.sql](deliveries/intent_deliveries.sql)                           | `server/src/features/deliveries/store.ts`                   | 意图 ↔ 交付关联边 (意图 store 亦声明建表)                |
+| 24  | deliveries   | `delivery_prs`                       | [deliveries/delivery_prs.sql](deliveries/delivery_prs.sql)                                     | `server/src/features/deliveries/store.ts`                   | 交付 PR (交付分支 → 主线)                                |
+| 25  | deliveries   | `delivery_logs`                      | [deliveries/delivery_logs.sql](deliveries/delivery_logs.sql)                                   | `server/src/features/deliveries/store.ts`                   | 交付生命周期变更日志 (操作审计轨迹)                      |
+| 26  | config       | `workspaces`                         | [config/workspaces.sql](config/workspaces.sql)                                                 | `server/src/kernel/config/workspace-store.ts`               | 工作区注册表 (唯一名称 ↔ 磁盘 path)                      |
+| 27  | config       | `system_configs`                     | [config/system_configs.sql](config/system_configs.sql)                                         | `server/src/kernel/config/index.ts`                         | 系统级配置 + `state.*` 全局状态 (一字段一行)             |
+| 28  | config       | `workspace_configs`                  | [config/workspace_configs.sql](config/workspace_configs.sql)                                   | `server/src/kernel/config/index.ts`                         | 每工作区配置 (原 projectConfigs)                         |
+| 29  | config       | `personalized_configs`               | [config/personalized_configs.sql](config/personalized_configs.sql)                             | `server/src/kernel/config/personalized.ts`                  | 每账号个性化设置                                         |
+| 30  | config       | `session_configs`                    | [config/session_configs.sql](config/session_configs.sql)                                       | `server/src/kernel/config/index.ts` + `server/src/state.ts` | 每会话事实 (agent 绑定 / 权限模式 / codex 策略)          |
+| 31  | config       | `mcp_api_keys`                       | [config/mcp_api_keys.sql](config/mcp_api_keys.sql)                                             | `server/src/kernel/config/mcp-api-keys.ts`                  | 外部 MCP 访问密钥 (归属账号 + 密钥版本 + scrypt 摘要)    |
+| 32  | auth         | `user_workspace_scopes`              | [auth/user_workspace_scopes.sql](auth/user_workspace_scopes.sql)                               | `server/src/features/auth/scope-store.ts`                   | 账号可访问哪些工作区 (管理员配置, 默认拒绝)              |
+| 33  | auth         | `user_workspace_scope_items`         | [auth/user_workspace_scope_items.sql](auth/user_workspace_scope_items.sql)                     | `server/src/features/auth/scope-store.ts`                   | mode='selected' 的选定工作区明细                         |
+| 34  | external-mcp | `external_mcp_write_audits`          | [external-mcp/external_mcp_write_audits.sql](external-mcp/external_mcp_write_audits.sql)       | `server/src/features/external-mcp/audit-store.ts`           | 外部 MCP 写调用的只增审计轨迹                            |
+| 35  | memory       | `workspace_memories`                 | [memory/workspace_memories.sql](memory/workspace_memories.sql)                                 | `server/src/features/memory/store.ts`                       | 工作区长期记忆 (偏好/约束/事实/教训)                     |
+| 36  | robots       | `im_robots`                          | [robots/im_robots.sql](robots/im_robots.sql)                                                   | `server/src/features/im/robot-config-store.ts`              | IM 聊天机器人配置 (执行身份/预设权限/外发授权)           |
+| 37  | robots       | `im_robot_threads`                   | [robots/im_robot_threads.sql](robots/im_robot_threads.sql)                                     | `server/src/features/im/robot-context-store.ts`             | 发送者隔离 Conversation (七维身份含 binding/scope_hash)  |
+| 38  | robots       | `im_robot_context_turns`             | [robots/im_robot_context_turns.sql](robots/im_robot_context_turns.sql)                         | `server/src/features/im/robot-context-store.ts`             | 有界 IM 可见上下文 (成对用户/回答正文, ADR-0048)         |
+| 39  | robots       | `im_robot_turns`                     | [robots/im_robot_turns.sql](robots/im_robot_turns.sql)                                         | `server/src/features/im/robot-turn-store.ts`                | 机器人回合外发审计 (只记元数据, 不记正文)                |
+| 40  | robots       | `im_outbound_audit`                  | [robots/im_outbound_audit.sql](robots/im_outbound_audit.sql)                                   | `server/src/features/im/outbound-audit-store.ts`            | 统一 IM 外发审计 (reply/broadcast, 不含正文)             |
+| 41  | robots       | `im_broadcast_claims`                | (同 im_outbound_audit.sql)                                                                     | `server/src/features/im/outbound-audit-store.ts`            | L0 播报幂等认领                                          |
+| 42  | robots       | `im_identity_challenges`             | [robots/im_identity_challenges.sql](robots/im_identity_challenges.sql)                         | `server/src/features/im/identity-store.ts`                  | IM 身份绑定一次性挑战 (仅存令牌哈希)                     |
+| 43  | robots       | `im_identity_bindings`               | [robots/im_identity_bindings.sql](robots/im_identity_bindings.sql)                             | `server/src/features/im/identity-store.ts`                  | IM 外部发送者 ↔ c3 主体 的 active 绑定                   |
+| 44  | robots       | `im_group_workspace_scopes`          | [robots/im_group_workspace_scopes.sql](robots/im_group_workspace_scopes.sql)                   | `server/src/features/im/identity-store.ts`                  | 群聊明细可见工作区白名单                                 |
+| 45  | robots       | `im_identity_audit`                  | [robots/im_identity_audit.sql](robots/im_identity_audit.sql)                                   | `server/src/features/im/identity-store.ts`                  | IM 身份/群范围变更审计 (只增)                            |
+| 46  | robots       | `im_robot_write_grants`              | [robots/im_robot_write_grants.sql](robots/im_robot_write_grants.sql)                           | `server/src/features/im/write-grant-store.ts`               | IM 机器人 L2 写能力逐项授权 (与外发确认独立)             |
+| 47  | robots       | `im_robot_write_audits`              | [robots/im_robot_write_audits.sql](robots/im_robot_write_audits.sql)                           | `server/src/features/im/write-grant-store.ts`               | L2 待办令牌作答审计 (不含令牌明文/正文)                  |
+| 48  | robots       | `im_todo_tokens`                     | [robots/im_todo_tokens.sql](robots/im_todo_tokens.sql)                                         | `server/src/features/im/todo-token-store.ts`                | 私聊待办一次性令牌 (仅存哈希)                            |
+| 49  | user-involve | `im_todo_answer_contracts`           | [user-involve/im_todo_answer_contracts.sql](user-involve/im_todo_answer_contracts.sql)         | `server/src/features/user-involve/answer-contract-store.ts` | L2 可作答契约 (封闭答案集, 不含令牌)                     |
+| 50  | intents      | `intent_worknotes`                   | [intents/intent_worknotes.sql](intents/intent_worknotes.sql)                                   | `server/src/features/intents/store.ts`                      | 意图追加式内容历史 (work/review/fix 自由文本正文)        |
+| 51  | config       | `model_provider_speed_tests`         | [config/model_provider_speed_tests.sql](config/model_provider_speed_tests.sql)                 | `server/src/features/settings/speed-test/store.ts`          | 模型提供方测速运行头记录 (只增, 展示名快照)              |
+| 52  | config       | `model_provider_speed_test_requests` | [config/model_provider_speed_test_requests.sql](config/model_provider_speed_test_requests.sql) | `server/src/features/settings/speed-test/store.ts`          | 测速逐请求样本明细 (只增, run_id+sequence 主键)          |
 
 ## 模块说明
 
@@ -191,6 +193,26 @@ apiKey、auth 口令哈希、MCP 密钥摘要)，读时解密、写时加密；�
 state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数器 `auth.policyEpoch`。整体保存系统
 设置时以 `preservePrefixes` 保护它们——`auth.policyEpoch` 与 `SystemSettings.auth` 共享键空间但不
 属于它，不保护就会被一次系统设置保存删掉。
+
+另有不成对的两张表承载**模型提供方测速**的历史：`model_provider_speed_tests` 是一次运行的头记录
+(计划次数、完成/成功/失败/取消四类计数、协议槽与实际方言、模型、校准版本与固定参数、最终状态，
+外加整份汇总 `summary_json`)，`model_provider_speed_test_requests` 是这次运行发出的每个请求的样本
+(`run_id` + 从 1 起的 `sequence` 主键)。两者在收束时**同一事务**落定，头行与明细不存在半截事实。
+
+两张表都只增不改不删：没有任何 UPDATE/DELETE 路径。一次测速消耗真实额度与 token，记录是「当时
+测出来是什么样」的证据，后来的改名、暂停、删除提供方都不改写它，纠正只能靠再跑一次新的。
+`provider_id` 是**弱引用**——无外键、无级联、读时不 JOIN 配置，删除提供方绝不连带删掉它的历史，
+因此展示名在开始时快照进 `provider_display_name`，配置没了回退快照、再回退 id；新建一条恰好重名
+的提供方不继承任何东西，身份是 id。
+
+进行中的进度**不落库**：进度帧只在执行器内存里，收束时才写一次。代价写在明处——运行中崩溃会丢掉
+那批内存样本，不承诺断点续跑；已提交的历史不受影响。历史按 provider 分页倒序读，排序列带上
+`run_id`，同一毫秒收束的两轮才有稳定次序、不会在翻页时重复或漏读。
+
+失败行保留它侥幸观测到的值 (文本先到、流随后断的请求仍有 `ttft_ms`)，这些值只在明细里展示，绝不
+进入任何聚合延迟统计；明细里各空值的含义互不相同 (`end_to_end_ms` 为 NULL 专指被中断取消、
+`tpot_ms` 为 NULL 专指非成功或输出不足 2 个 token)，读侧不可一律当 0。`token_count_source` 说明
+`output_tokens` 是上游终局用量还是按文本增量事件估算——估算值的误差可能很大，报告上会挂标记。
 
 旧 JSON 的一次性导入由 `kernel/config/import-legacy.ts` 完成，三条 `schema_migrations` 标记各自
 幂等 (`config.import_workspaces.v1` / `config.import_settings.v1` / `config.import_session_state.v1`)，

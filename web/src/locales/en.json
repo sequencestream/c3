@@ -924,6 +924,142 @@
           "local": "Local runtimes",
           "custom": "Other"
         }
+      },
+      "speedTest": {
+        "button": {
+          "label": "Speed test",
+          "tooltip": "Issue real streaming requests to measure this provider's first-token latency and throughput."
+        },
+        "history": {
+          "label": "Speed test history"
+        },
+        "title": "Speed test — {name}",
+        "cost": "This issues real streaming requests: it spends this provider’s quota and tokens, and may count toward upstream rate limits.",
+        "draftNote": "This provider has unsaved edits. The test uses the SAVED configuration; nothing is saved on your behalf.",
+        "protocol": {
+          "label": "Protocol"
+        },
+        "model": {
+          "label": "Model"
+        },
+        "count": {
+          "label": "Requests",
+          "error": {
+            "empty": "Enter how many requests to issue.",
+            "notANumber": "The request count must be a number.",
+            "notAnInteger": "The request count must be a whole number.",
+            "range": "The request count must be between {min} and {max}."
+          }
+        },
+        "dialect": {
+          "chat": "Chat Completions",
+          "responses": "Responses",
+          "messages": "Messages"
+        },
+        "calibration": "Fixed calibration: prompt “{prompt}”, temperature 0, output limit {maxTokens} tokens, one request at a time. Not editable — this is what makes two runs comparable.",
+        "blocked": {
+          "unsaved": "Save this provider first: the server only dials a saved configuration.",
+          "noProtocol": "Configure and save at least one protocol URL first.",
+          "invalidUrl": "The selected protocol URL is invalid. Fix it and save first.",
+          "noModels": "No model available. Add a model to this provider and save first."
+        },
+        "start": {
+          "label": "Start"
+        },
+        "interrupt": {
+          "label": "Interrupt"
+        },
+        "retrySave": {
+          "label": "Retry save"
+        },
+        "progress": {
+          "text": "Completed {done} / {total}",
+          "detail": "{ok} succeeded, {failed} failed"
+        },
+        "unsaved": "The run finished but could not be saved. The result is held in memory.",
+        "unavailable": "Unavailable",
+        "target": "Protocol {protocol} · API {dialect} · model {model} · calibration {calibration} · output limit {maxTokens} · temperature {temperature}",
+        "summary": {
+          "outcome": "Outcome",
+          "completed": "Completed / planned",
+          "successRate": "Success rate",
+          "failed": "Failed",
+          "cancelled": "Cancelled",
+          "tokensPerSecond": "Tokens/sec",
+          "requestsPerSecond": "Requests/sec",
+          "outputTokens": "Output tokens"
+        },
+        "metric": {
+          "ttft": "TTFT (ms)",
+          "tpot": "TPOT (ms)",
+          "endToEnd": "End-to-end (ms)"
+        },
+        "table": {
+          "metric": "Metric",
+          "samples": "Samples",
+          "avg": "Avg",
+          "result": "Result",
+          "failure": "Failure",
+          "endToEnd": "End-to-end",
+          "tokens": "Tokens",
+          "p50": "P50",
+          "p95": "P95",
+          "p99": "P99",
+          "ttft": "TTFT",
+          "tpot": "TPOT"
+        },
+        "outcome": {
+          "completed": "Completed",
+          "failed": "All failed",
+          "interrupted": "Interrupted"
+        },
+        "request": {
+          "success": "Success",
+          "failure": "Failure",
+          "cancelled": "Cancelled"
+        },
+        "failure": {
+          "timeout": "Timeout",
+          "http": "HTTP",
+          "network": "Network",
+          "stream": "Stream"
+        },
+        "estimated": "{n} successful sample(s) counted tokens from delta events rather than usage, so TPOT and tokens/sec are approximate and may differ noticeably from billing.",
+        "sampleCaveat": "With few samples, P95 and P99 often land on the maximum. The sample count is shown rather than claiming high confidence.",
+        "requests": {
+          "title": "Per-request detail"
+        },
+        "report": {
+          "button": {
+            "label": "Report"
+          },
+          "title": "Speed test history — {name}",
+          "titleAll": "Speed test history",
+          "picker": {
+            "label": "Provider",
+            "option": "{name} ({count})",
+            "deleted": "{name} (deleted · {count})"
+          },
+          "row": "{time} · {model} · {dialect} · {completed}/{planned} · success {rate}",
+          "empty": "No speed test has been run for this provider yet.",
+          "loading": "Loading…",
+          "more": {
+            "label": "Load more"
+          },
+          "pick": "Pick a provider to see its history."
+        },
+        "error": {
+          "invalidCount": "The request count is out of range. Enter a whole number between 1 and 100.",
+          "providerUnknown": "That provider is not in the saved configuration. Save it and try again.",
+          "protocolUnavailable": "The selected protocol is unavailable. Refresh the configuration and choose again.",
+          "invalidUrl": "The selected protocol URL is invalid. Fix it and save first.",
+          "modelsEmpty": "No model available for testing. Add a model to this provider and save first.",
+          "modelUnavailable": "Choose a model from this provider’s current catalog.",
+          "busy": "This provider already has a run in flight. Wait for it or interrupt it first.",
+          "notFound": "That run no longer exists.",
+          "dbUnavailable": "The database is unavailable, so no run was started and nothing was spent.",
+          "saveFailed": "The run finished but saving failed. Retry the save."
+        }
       }
     },
     "defaultAgent": {

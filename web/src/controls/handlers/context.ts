@@ -70,6 +70,7 @@ export interface MessageHandlerLocals {
   imGroupScopeChatId: AppCtx['imGroupScopeChatId']
   userWorkspaceAccess: AppCtx['userWorkspaceAccess']
   providerProbes: AppCtx['providerProbes']
+  speedTest: AppCtx['speedTest']
   workspaceAccessors: AppCtx['workspaceAccessors']
   sessionCapabilities: AppCtx['sessionCapabilities']
   vendorCapabilities: AppCtx['vendorCapabilities']
@@ -232,6 +233,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     imGroupScopeChatId,
     userWorkspaceAccess,
     providerProbes,
+    speedTest,
     workspaceAccessors,
     sessionCapabilities,
     vendorCapabilities,
@@ -464,6 +466,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     imGroupScopeChatId,
     userWorkspaceAccess,
     providerProbes,
+    speedTest,
     workspaceAccessors,
     sessionCapabilities,
     vendorCapabilities,

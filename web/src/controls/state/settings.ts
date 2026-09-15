@@ -93,6 +93,7 @@ import type {
 import type { UiError } from '@ccc/shared/ui-codes'
 import type { ApprovalRequest } from '@/components/SkillApprovalModal/SkillApprovalModal.vue'
 import type { ProviderProbeState } from '@/lib/model-provider'
+import { emptySpeedTestState, type SpeedTestUiState } from '@/lib/model-provider-speed-test'
 
 import {
   type TabKey,
@@ -171,6 +172,11 @@ export function buildSettingsSlice() {
   // and is dropped on reconnect along with the rest of the session view.
   const providerProbes = ref<Record<string, ProviderProbeState>>({})
 
+  // 测速的可见状态。与 probe 同理是瞬时视图,但它观察的是一段服务端持有的执行:
+  // 关掉对话框不会停掉上游调用,所以这里只存「此刻看到了什么」,重新进入时向服务端
+  // 问一次 active 复原,绝不本地续跑或自动重发 start。
+  const speedTest = ref<SpeedTestUiState>(emptySpeedTestState())
+
   // ---- Workspace accessors (workspace settings, read-only) ----
   // Who can reach the CURRENT workspace, derived server-side. `null` until the
   // first answer arrives, so "not loaded yet" is distinguishable from "nobody".
@@ -244,6 +250,7 @@ export function buildSettingsSlice() {
     imGroupScopeChatId,
     userWorkspaceAccess,
     providerProbes,
+    speedTest,
     workspaceAccessors,
     skillApprovalRequest,
     skillLinkStatuses,

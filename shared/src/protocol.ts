@@ -11,6 +11,7 @@
 
 export * from './protocol/agent-config.js'
 export * from './protocol/model-provider.js'
+export * from './protocol/model-provider-speed-test.js'
 export * from './protocol/auth.js'
 export * from './protocol/automation.js'
 export * from './protocol/file.js'
@@ -38,6 +39,7 @@ import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
 import type * as LogMsg from './protocol/log-messages.js'
 import type * as MemoryMsg from './protocol/memory-messages.js'
+import type * as SpeedTestMsg from './protocol/model-provider-speed-test-messages.js'
 import type * as RobotMsg from './protocol/robot-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
 import type * as SettingsMsg from './protocol/settings-messages.js'
@@ -75,6 +77,7 @@ export type ClientToServer =
   | SettingsMsg.ClientAutoConfigureAgents
   | SettingsMsg.ClientSyncVendorCli
   | SettingsMsg.ClientProbeModelProvider
+  | SpeedTestMsg.ClientModelProviderSpeedTest
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
   | SettingsMsg.ClientListMcpApiKeys
@@ -225,6 +228,7 @@ export type ServerToClient =
   | SettingsMsg.ServerAutoConfigureAgentsResult
   | SettingsMsg.ServerVendorCliSyncResult
   | SettingsMsg.ServerModelProviderProbeResult
+  | SpeedTestMsg.ServerModelProviderSpeedTestResult
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys
   | SettingsMsg.ServerMyMcpApiKeys

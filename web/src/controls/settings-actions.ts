@@ -19,6 +19,11 @@ import { applyTheme, DEFAULT_THEME } from '@/lib/theme'
 import { applyFontScale, DEFAULT_FONT_SCALE } from '@/lib/font-scale'
 import type { AppCtx } from './types'
 import { providerProbeKey } from '@/lib/model-provider'
+import { emptySpeedTestState } from '@/lib/model-provider-speed-test'
+import type { SpeedTestActionPayload } from './types'
+
+/** Per-session counter behind each speed-test `requestId` (unique within a tab). */
+let speedTestSeq = 0
 
 // Install system/workspace/personalized settings, skill-install, locale, and
 // view-mode actions.
@@ -40,6 +45,7 @@ export function installSettingsActions(ctx: AppCtx): void {
     activeTab,
     flags,
     providerProbes,
+    speedTest,
     vendorCliSyncing,
   } = ctx
 
@@ -279,6 +285,85 @@ export function installSettingsActions(ctx: AppCtx): void {
       [providerProbeKey(payload.providerId, payload.protocolType)]: { pending: true },
     }
     send({ type: 'probe_model_provider', ...payload })
+  }
+
+  /**
+   * The single egress for every speed-test action. One correlation id per request;
+   * the server answers on `model_provider_speed_test_result`.
+   *
+   * Deliberately carries no URL, key or API dialect: the server reads all three
+   * from the SAVED provider, so an unsaved draft cannot be measured and a browser
+   * can never aim the account key at a host of its choosing. Each dispatch clears
+   * the previous refusal, so a stale error never sits under a fresh action.
+   */
+  ctx.speedTestAction = (action: SpeedTestActionPayload): void => {
+    speedTest.value = { ...speedTest.value, error: null }
+    if (action.action === 'list' || action.action === 'detail') {
+      speedTest.value = { ...speedTest.value, loading: true }
+    }
+    send({
+      type: 'model_provider_speed_test',
+      requestId: `st-${Date.now()}-${speedTestSeq++}`,
+      ...action,
+    })
+  }
+
+  /** Open the run dialog for one provider and ask whether it already has a run live. */
+  ctx.openSpeedTestDialog = (providerId: string): void => {
+    speedTest.value = {
+      ...emptySpeedTestState(),
+      reportOpen: speedTest.value.reportOpen,
+      reportProviderId: speedTest.value.reportProviderId,
+      historyProviders: speedTest.value.historyProviders,
+      dialogProviderId: providerId,
+    }
+    // Re-attach rather than restart: a run started before this dialog was closed
+    // (or before this socket connected) is still executing upstream.
+    ctx.speedTestAction({ action: 'active', providerId })
+  }
+
+  ctx.closeSpeedTestDialog = (): void => {
+    // Closing the window does NOT stop the run — only an explicit interrupt does.
+    speedTest.value = { ...speedTest.value, dialogProviderId: null, lastResult: null }
+  }
+
+  /** Open the history panel for one provider and load its newest page. */
+  ctx.openSpeedTestReport = (providerId: string): void => {
+    speedTest.value = {
+      ...speedTest.value,
+      reportOpen: true,
+      reportProviderId: providerId,
+      history: null,
+      detail: null,
+      error: null,
+    }
+    ctx.speedTestAction({ action: 'list', providerId })
+  }
+
+  /**
+   * 打开「历史报告」总入口:面板先开、不预选任何提供方,候选里含已删除的条目
+   * (服务端按历史记录归并,前端排不出来)。选完一条后走正常的报告路径。
+   */
+  ctx.openSpeedTestHistory = (): void => {
+    speedTest.value = {
+      ...speedTest.value,
+      reportOpen: true,
+      reportProviderId: null,
+      history: null,
+      detail: null,
+      error: null,
+    }
+    ctx.speedTestAction({ action: 'history_providers' })
+  }
+
+  ctx.closeSpeedTestReport = (): void => {
+    speedTest.value = {
+      ...speedTest.value,
+      reportOpen: false,
+      reportProviderId: null,
+      history: null,
+      detail: null,
+    }
   }
 
   /** Set/change the admin password (ADR-0023). Plaintext is sent once and hashed

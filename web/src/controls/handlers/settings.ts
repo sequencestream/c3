@@ -18,6 +18,7 @@ export function buildSettingsHandlers(
   HandlerMap,
   | 'settings'
   | 'model_provider_probe_result'
+  | 'model_provider_speed_test_result'
   | 'auto_configure_agents_result'
   | 'vendor_cli_sync_result'
   | 'personalized_settings'
@@ -79,6 +80,7 @@ export function buildSettingsHandlers(
     imGroupScopeChatId,
     userWorkspaceAccess,
     providerProbes,
+    speedTest,
     workspaceAccessors,
     sessionCapabilities,
     vendorCapabilities,
@@ -247,6 +249,66 @@ export function buildSettingsHandlers(
           ...(msg.error !== undefined ? { error: msg.error } : {}),
           ...(msg.latencyMs !== undefined ? { latencyMs: msg.latencyMs } : {}),
         },
+      }
+    },
+    model_provider_speed_test_result: (_ctx, msg) => {
+      // 一次只观察一个 provider 的执行:accepted/progress/finished 更新运行态,
+      // list/detail/history_providers 只更新报告面板,两组互不覆盖。
+      const s = speedTest.value
+      switch (msg.event) {
+        case 'accepted':
+        case 'progress':
+          speedTest.value = { ...s, active: msg.run, error: null, unsaved: null }
+          return
+        case 'active':
+          // 重新进入时的复原点:没有在跑就是 null,绝不据此自动重发 start。
+          speedTest.value = { ...s, active: msg.run }
+          return
+        case 'finished':
+          // 服务端只在事务提交后才发这一帧,所以「跑完了」与「存下了」是同一件事。
+          speedTest.value = {
+            ...s,
+            active: null,
+            unsaved: null,
+            lastResult: msg.detail,
+            // 报告正开在同一个 provider 上时,让新纪录立刻可见。
+            history:
+              s.reportOpen && s.reportProviderId === msg.detail.run.providerId ? null : s.history,
+          }
+          if (s.reportOpen && s.reportProviderId === msg.detail.run.providerId) {
+            ctx.speedTestAction({ action: 'list', providerId: s.reportProviderId })
+          }
+          return
+        case 'list':
+          speedTest.value = {
+            ...s,
+            loading: false,
+            history:
+              s.history && s.history.providerId === msg.page.providerId && s.history.runs.length > 0
+                ? // 「加载更多」是追加而不是替换:上一页已经在屏幕上了。
+                  { ...msg.page, runs: [...s.history.runs, ...msg.page.runs] }
+                : msg.page,
+          }
+          return
+        case 'detail':
+          speedTest.value = { ...s, loading: false, detail: msg.detail }
+          return
+        case 'history_providers':
+          speedTest.value = { ...s, historyProviders: msg.providers }
+          return
+        case 'error':
+          // save_failed 带回内存里的结果,对话框据此给「重试保存」;其余只是拒绝。
+          speedTest.value = {
+            ...s,
+            loading: false,
+            error: msg.code,
+            active: msg.code === 'save_failed' ? null : s.active,
+            unsaved:
+              msg.code === 'save_failed' && msg.run && msg.runId
+                ? { runId: msg.runId, run: msg.run }
+                : s.unsaved,
+          }
+          return
       }
     },
     auto_configure_agents_result: (_ctx, msg) => {

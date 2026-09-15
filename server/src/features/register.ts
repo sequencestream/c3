@@ -25,6 +25,7 @@ import {
 import { autoConfigureAgentsHandler } from './settings/auto-configure-agents.js'
 import { syncVendorCliHandler } from './settings/sync-vendor-cli.js'
 import { probeModelProviderHandler } from './settings/model-providers.js'
+import { modelProviderSpeedTestHandler } from './settings/speed-test/index.js'
 import {
   applySelfUpdateHandler,
   cancelSelfUpdateHandler,
@@ -206,6 +207,7 @@ export const handlerMap: HandlerMap = {
   auto_configure_agents: autoConfigureAgentsHandler,
   sync_vendor_cli: syncVendorCliHandler,
   probe_model_provider: probeModelProviderHandler,
+  model_provider_speed_test: modelProviderSpeedTestHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,
   list_mcp_api_keys: listMcpApiKeysHandler,

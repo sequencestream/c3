@@ -494,6 +494,7 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
     protocolType: 'openai',
     apiDialect: 'chat',
     model: 'gpt-x',
+    observedModels: ['gpt-x-2026-09-01'],
     calibrationVersion: SPEED_TEST_CALIBRATION_VERSION,
     maxOutputTokens: SPEED_TEST_MAX_OUTPUT_TOKENS,
     temperature: SPEED_TEST_TEMPERATURE,
@@ -524,6 +525,7 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
         outcome: 'success',
         failureCategory: null,
         httpStatus: 200,
+        observedModel: 'gpt-x-2026-09-01',
         ttftMs: 100,
         endToEndMs: 1_000,
         outputTokens: 10,
@@ -537,6 +539,7 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
         outcome: 'failure',
         failureCategory: 'http',
         httpStatus: 503,
+        observedModel: null,
         ttftMs: null,
         endToEndMs: 240,
         outputTokens: null,
@@ -680,8 +683,6 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
       'provider_unknown',
       'protocol_unavailable',
       'invalid_url',
-      'models_empty',
-      'model_unavailable',
       'busy',
       'not_found',
       'db_unavailable',
@@ -689,8 +690,6 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
     ]
     const categories = codes.map((code) => SPEED_TEST_ERROR_CATEGORIES[code])
     expect(categories).toEqual([
-      'validation',
-      'validation',
       'validation',
       'validation',
       'validation',

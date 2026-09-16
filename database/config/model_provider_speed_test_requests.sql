@@ -17,6 +17,7 @@
 --                  分母用 output_tokens 会重复计算；单 token 响应也没有可言的「间隔」)
 -- token_count_source 说明 output_tokens 的来源：usage = 上游终局用量，delta_estimate = 按
 -- 非空文本增量事件数估算 (一个增量可能含多个 token，误差可能很大，报告上会挂标记)。
+-- observed_model 保存上游流中声明的模型；未声明时为 NULL，不以请求模型回填。
 --
 -- 外键关系同头表：run_id 指向本地记录，provider 侧不设外键 (弱引用，见头表注释)。
 
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS model_provider_speed_test_requests (
   outcome            TEXT    NOT NULL CHECK(outcome IN ('success','failure','cancelled')),
   failure_category   TEXT    CHECK(failure_category IS NULL OR failure_category IN ('timeout','http','network','stream')),
   http_status        INTEGER,
+  observed_model     TEXT,
   ttft_ms            REAL,
   end_to_end_ms      REAL,
   output_tokens      INTEGER,

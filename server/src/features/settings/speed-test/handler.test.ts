@@ -75,7 +75,10 @@ function scriptedFetch(clock: { value: number }, urls: string[]): typeof globalT
   return (input) => {
     urls.push(String(input))
     const steps = [
-      { advanceMs: 100, text: sse({ choices: [{ delta: { content: '1,' } }] }) },
+      {
+        advanceMs: 100,
+        text: sse({ model: 'gpt-actual', choices: [{ delta: { content: '1,' } }] }),
+      },
       { advanceMs: 900, text: sse({ choices: [], usage: { completion_tokens: 10 } }) },
       { advanceMs: 0, text: 'data: [DONE]\n\n' },
     ]
@@ -202,18 +205,19 @@ describe('start validation', () => {
     expect(urls).toEqual([])
   })
 
-  it('refuses when the merged model catalog is empty', () => {
+  it('accepts an empty model when the merged catalog is empty', async () => {
     h.providers[0].models = [{ id: '  ' }]
     const c = conn()
-    dispatch(c.conn, start())
-    expect(c.sent[0]).toMatchObject({ event: 'error', code: 'models_empty' })
+    dispatch(c.conn, start({ model: '   ', requestCount: 1 }))
+    expect(c.sent[0]).toMatchObject({ event: 'accepted', run: { model: '' } })
+    await settle(c.sent)
   })
 
-  it('refuses a model outside the merged catalog', () => {
+  it('accepts and trims a model outside the merged catalog', async () => {
     const c = conn()
-    dispatch(c.conn, start({ model: 'not-listed' }))
-    expect(c.sent[0]).toMatchObject({ event: 'error', code: 'model_unavailable' })
-    expect(urls).toEqual([])
+    dispatch(c.conn, start({ model: '  not-listed  ', requestCount: 1 }))
+    expect(c.sent[0]).toMatchObject({ event: 'accepted', run: { model: 'not-listed' } })
+    await settle(c.sent)
   })
 })
 
@@ -241,6 +245,10 @@ describe('run lifecycle', () => {
     expect(finished.detail.run.outcome).toBe('completed')
     expect(finished.detail.run.summary.successRate).toBe(1)
     expect(finished.detail.run.summary.tokensPerSecond).toBe(10)
+    expect(finished.detail.run.observedModels).toEqual(['gpt-actual'])
+    expect(
+      finished.detail.requests.every((request) => request.observedModel === 'gpt-actual'),
+    ).toBe(true)
     expect(finished.detail.requests).toHaveLength(2)
     expect(urls).toEqual([
       'https://api.example.com/v1/chat/completions',

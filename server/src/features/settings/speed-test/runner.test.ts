@@ -38,11 +38,11 @@ type Script =
 const sse = (payload: unknown): string => `data: ${JSON.stringify(payload)}\n\n`
 
 /** A well-formed Chat stream: `ttft` to first text, then `tail` to the terminator. */
-function chatStream(ttftMs: number, tailMs: number, tokens: number): Script {
+function chatStream(ttftMs: number, tailMs: number, tokens: number, model?: string): Script {
   return {
     kind: 'stream',
     steps: [
-      { advanceMs: ttftMs, text: sse({ choices: [{ delta: { content: '1,' } }] }) },
+      { advanceMs: ttftMs, text: sse({ model, choices: [{ delta: { content: '1,' } }] }) },
       { advanceMs: tailMs, text: sse({ choices: [], usage: { completion_tokens: tokens } }) },
       { advanceMs: 0, text: 'data: [DONE]\n\n' },
     ],
@@ -163,7 +163,7 @@ describe('SpeedTestExecution', () => {
   })
 
   it('derives the documented metrics from a stream with known timings', async () => {
-    const h = harness([chatStream(100, 900, 10)])
+    const h = harness([chatStream(100, 900, 10, 'gpt-actual')])
     const exec = new SpeedTestExecution(plan({ plannedCount: 1 }), h.deps)
     await exec.run()
 
@@ -174,6 +174,14 @@ describe('SpeedTestExecution', () => {
     expect(r.outputTokens).toBe(10)
     expect(r.tokenCountSource).toBe('usage')
     expect(r.tpotMs).toBe(100)
+    expect(r.observedModel).toBe('gpt-actual')
+  })
+
+  it('does not fill an undeclared observed model from the requested model', async () => {
+    const h = harness([chatStream(10, 10, 2)])
+    const exec = new SpeedTestExecution(plan({ plannedCount: 1, model: 'requested-only' }), h.deps)
+    await exec.run()
+    expect(exec.records[0].observedModel).toBeNull()
   })
 
   it('marks a single-token response with a null TPOT', async () => {
@@ -241,7 +249,15 @@ describe('SpeedTestExecution', () => {
     const h = harness([
       {
         kind: 'stream',
-        steps: [{ advanceMs: 30, text: sse({ choices: [{ delta: { content: 'partial' } }] }) }],
+        steps: [
+          {
+            advanceMs: 30,
+            text: sse({
+              model: 'observed-before-break',
+              choices: [{ delta: { content: 'partial' } }],
+            }),
+          },
+        ],
       },
     ])
     const exec = new SpeedTestExecution(plan({ plannedCount: 1 }), h.deps)
@@ -249,6 +265,7 @@ describe('SpeedTestExecution', () => {
     expect(exec.records[0]).toMatchObject({ outcome: 'failure', failureCategory: 'stream' })
     // The observation is kept for the detail table even though it scores nothing.
     expect(exec.records[0].ttftMs).toBe(30)
+    expect(exec.records[0].observedModel).toBe('observed-before-break')
   })
 
   it('fails a well-terminated stream that produced no text at all', async () => {

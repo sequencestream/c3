@@ -35,7 +35,7 @@ import {
   type SpeedTestSummary,
   type SpeedTestTokenCountSource,
 } from '@ccc/shared/protocol'
-import { getDb, isDbAvailable, type Db } from '../../../kernel/infra/db.js'
+import { getDb, isDbAvailable, tableColumns, type Db } from '../../../kernel/infra/db.js'
 
 // ---- Schema ----
 
@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS model_provider_speed_test_requests (
   outcome            TEXT    NOT NULL CHECK(outcome IN ('success','failure','cancelled')),
   failure_category   TEXT    CHECK(failure_category IS NULL OR failure_category IN ('timeout','http','network','stream')),
   http_status        INTEGER,
+  observed_model     TEXT,
   ttft_ms            REAL,
   end_to_end_ms      REAL,
   output_tokens      INTEGER,
@@ -91,6 +92,9 @@ function db(): Db | null {
   if (schemaReadyFor !== d) {
     try {
       d.exec(TABLES)
+      if (!tableColumns(d, 'model_provider_speed_test_requests').has('observed_model')) {
+        d.exec('ALTER TABLE model_provider_speed_test_requests ADD COLUMN observed_model TEXT')
+      }
       d.exec(INDEXES)
     } catch {
       return null
@@ -146,6 +150,7 @@ interface RunRow {
   temperature: number
   outcome: string
   summary_json: string
+  observed_models_json?: string
 }
 
 /** A run row plus the two window columns the comparison query adds. */
@@ -160,6 +165,7 @@ interface RequestRow {
   outcome: string
   failure_category: string | null
   http_status: number | null
+  observed_model: string | null
   ttft_ms: number | null
   end_to_end_ms: number | null
   output_tokens: number | null
@@ -167,7 +173,17 @@ interface RequestRow {
   tpot_ms: number | null
 }
 
-function toRun(row: RunRow): SpeedTestRun {
+export function aggregateObservedModels(
+  records: readonly Pick<SpeedTestRequestRecord, 'observedModel'>[],
+): string[] {
+  return [
+    ...new Set(
+      records.flatMap((record) => (record.observedModel === null ? [] : [record.observedModel])),
+    ),
+  ].sort()
+}
+
+function toRun(row: RunRow, observedModels?: readonly string[]): SpeedTestRun {
   return {
     runId: row.run_id,
     providerId: row.provider_id,
@@ -178,6 +194,12 @@ function toRun(row: RunRow): SpeedTestRun {
     protocolType: row.protocol_type as ProtocolType,
     apiDialect: row.api_dialect as SpeedTestApiDialect,
     model: row.model,
+    observedModels:
+      observedModels !== undefined
+        ? [...observedModels]
+        : row.observed_models_json
+          ? (JSON.parse(row.observed_models_json) as string[])
+          : [],
     calibrationVersion: row.calibration_version,
     maxOutputTokens: row.max_output_tokens,
     temperature: row.temperature,
@@ -193,6 +215,7 @@ function toRequest(row: RequestRow): SpeedTestRequestRecord {
     outcome: row.outcome as SpeedTestRequestOutcome,
     failureCategory: (row.failure_category as SpeedTestFailureCategory | null) ?? null,
     httpStatus: row.http_status,
+    observedModel: row.observed_model,
     ttftMs: row.ttft_ms,
     endToEndMs: row.end_to_end_ms,
     outputTokens: row.output_tokens,
@@ -263,14 +286,15 @@ export function saveSpeedTestRun(detail: SpeedTestRunDetail): boolean {
         d.run(
           `INSERT INTO model_provider_speed_test_requests (
              run_id, sequence, started_at, outcome, failure_category, http_status,
-             ttft_ms, end_to_end_ms, output_tokens, token_count_source, tpot_ms
-           ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+             observed_model, ttft_ms, end_to_end_ms, output_tokens, token_count_source, tpot_ms
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
           run.runId,
           r.sequence,
           r.startedAt,
           r.outcome,
           r.failureCategory,
           r.httpStatus,
+          r.observedModel,
           r.ttftMs,
           r.endToEndMs,
           r.outputTokens,
@@ -299,7 +323,13 @@ export function listSpeedTestRuns(providerId: string, offset = 0): SpeedTestHist
   const limit = SPEED_TEST_HISTORY_PAGE_SIZE
   // One extra row answers "is there a next page" without a second COUNT query.
   const rows = d.all<RunRow>(
-    `SELECT * FROM model_provider_speed_tests
+    `SELECT t.*,
+            (SELECT json_group_array(observed_model)
+               FROM (SELECT DISTINCT observed_model
+                       FROM model_provider_speed_test_requests
+                      WHERE run_id = t.run_id AND observed_model IS NOT NULL
+                      ORDER BY observed_model)) AS observed_models_json
+       FROM model_provider_speed_tests AS t
       WHERE provider_id = ?
       ORDER BY started_at DESC, run_id DESC
       LIMIT ? OFFSET ?`,
@@ -309,7 +339,7 @@ export function listSpeedTestRuns(providerId: string, offset = 0): SpeedTestHist
   )
   return {
     providerId,
-    runs: rows.slice(0, limit).map(toRun),
+    runs: rows.slice(0, limit).map((row) => toRun(row)),
     hasMore: rows.length > limit,
   }
 }
@@ -322,12 +352,13 @@ export function getSpeedTestRunDetail(runId: string): SpeedTestRunDetail | null 
   if (!row) return null
   const requests = d.all<RequestRow>(
     `SELECT sequence, started_at, outcome, failure_category, http_status,
-            ttft_ms, end_to_end_ms, output_tokens, token_count_source, tpot_ms
+            observed_model, ttft_ms, end_to_end_ms, output_tokens, token_count_source, tpot_ms
        FROM model_provider_speed_test_requests
       WHERE run_id = ? ORDER BY sequence ASC`,
     runId,
   )
-  return { run: toRun(row), requests: requests.map(toRequest) }
+  const records = requests.map(toRequest)
+  return { run: toRun(row, aggregateObservedModels(records)), requests: records }
 }
 
 /**
@@ -353,10 +384,16 @@ export function listSpeedTestComparison(
   if (!d) return []
   const limit = Math.max(1, Math.trunc(choiceLimit))
   const rows = d.all<ComparisonRow>(
-    `SELECT *, COUNT(*) OVER (PARTITION BY provider_id) AS run_count,
+    `SELECT t.*,
+            (SELECT json_group_array(observed_model)
+               FROM (SELECT DISTINCT observed_model
+                       FROM model_provider_speed_test_requests
+                      WHERE run_id = t.run_id AND observed_model IS NOT NULL
+                      ORDER BY observed_model)) AS observed_models_json,
+            COUNT(*) OVER (PARTITION BY provider_id) AS run_count,
             ROW_NUMBER() OVER (PARTITION BY provider_id
                                ORDER BY started_at DESC, run_id DESC) AS rn
-       FROM model_provider_speed_tests
+       FROM model_provider_speed_tests AS t
       ORDER BY provider_id ASC, rn ASC`,
   )
 

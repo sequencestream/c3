@@ -940,7 +940,10 @@
           "label": "协议"
         },
         "model": {
-          "label": "模型"
+          "label": "模型",
+          "default": "默认/未指定",
+          "unknown": "未知",
+          "emptyHint": "留空仅适用于自带默认模型的端点；若上游拒绝，将按普通 HTTP 失败记录，不会自动回填或重试。"
         },
         "count": {
           "label": "请求数",
@@ -960,8 +963,7 @@
         "blocked": {
           "unsaved": "请先保存这条提供方:服务端只按已保存的配置拨号。",
           "noProtocol": "请先配置并保存至少一个协议 URL。",
-          "invalidUrl": "所选协议 URL 无效,请修正并保存。",
-          "noModels": "暂无可测速模型,请先在提供方中添加模型并保存。"
+          "invalidUrl": "所选协议 URL 无效,请修正并保存。"
         },
         "start": {
           "label": "开始"
@@ -999,6 +1001,7 @@
           "samples": "样本数",
           "avg": "平均",
           "result": "结果",
+          "model": "请求 → 实测模型",
           "failure": "失败分类",
           "endToEnd": "端到端",
           "tokens": "token",
@@ -1089,8 +1092,6 @@
           "providerUnknown": "已保存的配置里没有这条提供方,请先保存后重试。",
           "protocolUnavailable": "所选协议不可用,请刷新配置后重新选择。",
           "invalidUrl": "所选协议 URL 无效,请修正并保存。",
-          "modelsEmpty": "暂无可测速模型,请先在提供方中添加模型并保存。",
-          "modelUnavailable": "请选择当前提供方目录中的模型。",
           "busy": "这条提供方已有一轮测速在跑,请等它结束或先中断。",
           "notFound": "这一轮记录已不存在。",
           "dbUnavailable": "数据库不可用,本次未开始测速,也没有产生任何消耗。",

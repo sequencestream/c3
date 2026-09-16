@@ -72,6 +72,7 @@ interface Sample {
   outcome: SpeedTestRequestRecord['outcome']
   failureCategory: SpeedTestFailureCategory | null
   httpStatus: number | null
+  observedModel: string | null
   ttftMs: number | null
   endToEndMs: number | null
   outputTokens: number | null
@@ -160,6 +161,7 @@ export class SpeedTestExecution {
       outcome: s.outcome,
       failureCategory: s.failureCategory,
       httpStatus: s.httpStatus,
+      observedModel: s.observedModel,
       ttftMs: s.ttftMs,
       endToEndMs: s.endToEndMs,
       outputTokens: s.outputTokens,
@@ -206,6 +208,7 @@ export class SpeedTestExecution {
         outcome: 'failure',
         failureCategory: category,
         httpStatus,
+        observedModel: reader.observedModel,
         ttftMs,
         endToEndMs: elapsed(),
         outputTokens: t.outputTokens,
@@ -216,6 +219,7 @@ export class SpeedTestExecution {
       outcome: 'cancelled',
       failureCategory: null,
       httpStatus: null,
+      observedModel: reader.observedModel,
       ttftMs,
       // A cancelled request has no end to measure to; reporting the abort instant
       // as a duration would put an artificially short sample in the detail table.
@@ -287,6 +291,7 @@ export class SpeedTestExecution {
         outcome: 'success',
         failureCategory: null,
         httpStatus: response.status,
+        observedModel: reader.observedModel,
         ttftMs,
         endToEndMs: elapsed(),
         outputTokens: t.outputTokens,

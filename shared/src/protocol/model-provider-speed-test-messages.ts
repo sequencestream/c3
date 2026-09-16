@@ -50,7 +50,7 @@ type SpeedTestStart = SpeedTestRequestBase & {
   providerId: string
   /** Which saved protocol slot to dial. */
   protocolType: ProtocolType
-  /** Model id, which must be in the provider's merged catalog. */
+  /** Trimmed model id; an empty string means the upstream request omits `model`. */
   model: string
   /** How many requests to issue, serially. */
   requestCount: number

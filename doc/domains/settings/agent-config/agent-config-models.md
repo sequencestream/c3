@@ -130,21 +130,16 @@ Model Vendor 的内置清单——它连不到任何 provider,列 provider 的�
 **运行头**:`runId`(唯一)、`providerId`(弱引用,不设外键、读时不 JOIN 配置)、
 `providerDisplayName`(开始时的名称快照)、`startedAt`/`finishedAt`、`plannedCount`(操作者
 要的次数)、`protocolType`(取 URL 的协议槽)、`apiDialect`(实际讲的上游 API)、`model`(请求
-模型，空串表示请求体未携带 `model`)、`observedModels`(明细中非空实测模型的去重、稳定排序
-只读投影，不落头表)、
+模型,空串表示请求体未携带 `model`)、`observedModels`(明细中非空实测模型的去重、稳定排序
+只读投影,不落头表)、
 `calibrationVersion` 与 `maxOutputTokens`/`temperature`(当次校准参数快照)、`outcome`
 (`completed` | `failed` | `interrupted`)、`summary`。
 
 **逐请求样本**(`sequence` 从 1 起,运行内唯一):`startedAt`、`outcome`
 (`success` | `failure` | `cancelled`)、`failureCategory`(`timeout` | `http` | `network` |
-`stream`,仅失败时非空)、`httpStatus`(端点给了才有)、`observedModel`(上游响应声明的模型，
-未声明为 `null`，不以请求值回填)、`ttftMs`、`endToEndMs`、
+`stream`,仅失败时非空)、`httpStatus`(端点给了才有)、`observedModel`(上游响应声明的模型,
+未声明为 `null`,不以请求值回填)、`ttftMs`、`endToEndMs`、
 `outputTokens`、`tokenCountSource`(`usage` | `delta_estimate`)、`tpotMs`。
-
-测速模型输入可留空、手输或从有效模型清单选择预设，打开对话框时默认留空。非空值 trim 后原样
-进入请求体；空值使 Chat Completions、Responses、Messages 三种请求都省略 `model`。目录为空或
-手输值不在目录中均不阻断。留空只适用于自带默认模型的端点；要求模型必填的端点会返回普通 HTTP
-失败，不自动回填、不重试。报告、汇总与对比统一展示「请求 → 实测」，无实测声明时显示「未知」。
 
 **计数与成功率**:`completedCount = successCount + failureCount`——被中断的 `cancelled`
 两头都不算,既不入成功率的分子也不入分母,更不进任何延迟样本;计划了但从未拨出的次数**不落行**。

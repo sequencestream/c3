@@ -54,6 +54,7 @@ function run(
       estimatedSampleCount: 0,
     },
     ...over,
+    observedModels: over.observedModels ?? [],
   }
 }
 
@@ -112,6 +113,15 @@ describe('对比视图的取数与空态', () => {
 })
 
 describe('对比表的排布', () => {
+  it('显式展示请求模型到实测模型,缺失实测时显示未知', () => {
+    const w = render([
+      entry('observed', [run('r1', { model: '', observedModels: ['actual-b', 'actual-a'] })]),
+      entry('unknown', [run('r2', { model: 'requested', observedModels: [] })]),
+    ])
+    const text = w.text()
+    expect(text).toContain('Default / unspecified → actual-a, actual-b')
+    expect(text).toContain('requested → Unknown')
+  })
   it('每个有记录的提供方一行,默认按 TTFT P50 升序、不可用的那行垫底', () => {
     const w = render([slow, broken, fast])
     // 输入顺序被打乱也照排:升序 100 < 900,整体失败的 broken 恒排最后。

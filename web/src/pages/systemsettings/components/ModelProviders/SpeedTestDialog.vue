@@ -59,19 +59,19 @@ const protocols = computed<ProtocolType[]>(() => {
   return (['openai', 'anthropic'] as ProtocolType[]).filter((slot) => p.urls[slot]?.trim())
 })
 
-/** 厂商内置 + 自有条目合并后的目录;本轮只允许从中选,不提供手填。 */
+/** 厂商内置 + 自有条目合并后的目录;仅作手输控件的预设候选。 */
 const models = computed(() => (props.provider ? effectiveProviderModels(props.provider) : []))
 
 const protocol = ref<ProtocolType>('openai')
 const model = ref('')
 const count = ref<number | string>(SPEED_TEST_DEFAULT_REQUESTS)
 
-// 打开(或换了 provider)时重置为默认:单槽自动选中,双槽默认 OpenAI;模型取合并后首项。
+// 打开(或换了 provider)时重置:单槽自动选中,双槽默认 OpenAI;模型默认留空。
 watch(
   () => props.provider?.id,
   () => {
     protocol.value = protocols.value[0] ?? 'openai'
-    model.value = models.value[0]?.id ?? ''
+    model.value = ''
     count.value = SPEED_TEST_DEFAULT_REQUESTS
   },
   { immediate: true },
@@ -111,18 +111,15 @@ const countError = computed<string | null>(() => {
 })
 
 /**
- * 选中的槽/模型已经从已提交快照里消失了。
+ * 选中的槽已经从已提交快照里消失了。
  *
  * 对话框开着时配置在别处被改过(另一个标签页、另一位管理员保存)才会发生。这时既不
  * 静默改选到另一个槽——那会让用户量到一个自己没选的端点——也不放任「开始」发出去,
- * 因为它必然被服务端以 protocol_unavailable / model_unavailable 挡回;留着按钮等于
+ * 因为它必然被服务端以 protocol_unavailable 挡回;留着按钮等于
  * 留一个必定失败的动作。就地说明并请用户刷新重选,与保存时拒绝重选的口径一致。
  */
 const protocolGone = computed(
   () => protocols.value.length > 0 && !protocols.value.includes(protocol.value),
-)
-const modelGone = computed(
-  () => models.value.length > 0 && !models.value.some((m) => m.id === model.value),
 )
 
 /** 阻断开始的原因,按严重度排序;null=可以开始。 */
@@ -131,8 +128,6 @@ const blocker = computed<string | null>(() => {
   if (protocols.value.length === 0) return t('settings.providers.speedTest.blocked.noProtocol')
   if (urlBroken.value) return t('settings.providers.speedTest.blocked.invalidUrl')
   if (protocolGone.value) return t('settings.providers.speedTest.error.protocolUnavailable')
-  if (models.value.length === 0) return t('settings.providers.speedTest.blocked.noModels')
-  if (modelGone.value) return t('settings.providers.speedTest.error.modelUnavailable')
   return countError.value
 })
 
@@ -208,15 +203,21 @@ function onStart(): void {
 
         <label class="st-field">
           <span class="st-label">{{ t('settings.providers.speedTest.model.label') }}</span>
-          <select
+          <input
             v-model="model"
             class="agent-field"
-            :disabled="running || models.length === 0"
+            type="text"
+            list="speed-test-model-options"
+            :disabled="running"
             data-testid="speed-test-model"
-          >
-            <option v-for="m in models" :key="m.id" :value="m.id">{{ m.id }}</option>
-          </select>
+          />
+          <datalist id="speed-test-model-options">
+            <option v-for="m in models" :key="m.id" :value="m.id" />
+          </datalist>
         </label>
+        <p v-if="model.trim() === ''" class="st-model-note" data-testid="speed-test-model-note">
+          {{ t('settings.providers.speedTest.model.emptyHint') }}
+        </p>
 
         <label class="st-field">
           <span class="st-label">{{ t('settings.providers.speedTest.count.label') }}</span>
@@ -339,6 +340,7 @@ function onStart(): void {
   line-height: var(--lh-normal);
 }
 .st-note,
+.st-model-note,
 .st-calibration {
   margin: 0 0 var(--sp-2);
   font-size: var(--fs-caption);

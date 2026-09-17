@@ -80,13 +80,33 @@ describe('buildRequest', () => {
     expect(at('https://h/v1/responses')).toBe('https://h/v1/responses')
     expect(at('https://h/api')).toBe('https://h/api/responses')
   })
+
+  it.each(['chat', 'responses', 'messages'] as const)(
+    'omits model from an empty %s request and trims a custom value',
+    (dialect) => {
+      expect(
+        JSON.parse(buildRequest(dialect, 'https://api.example.com/v1', 'k', '   ').body),
+      ).not.toHaveProperty('model')
+      expect(
+        JSON.parse(buildRequest(dialect, 'https://api.example.com/v1', 'k', '  custom/x  ').body)
+          .model,
+      ).toBe('custom/x')
+    },
+  )
 })
 
 /** Feed a scripted SSE body through the reader and report what it concluded. */
 function readStream(
   dialect: 'chat' | 'responses' | 'messages',
   chunks: string[],
-): { texts: number; ended: boolean; errored: boolean; usage: number | null; deltas: number } {
+): {
+  texts: number
+  ended: boolean
+  errored: boolean
+  usage: number | null
+  deltas: number
+  observedModel: string | null
+} {
   const reader = createStreamReader(dialect)
   const sse = new SseDataReader()
   let texts = 0
@@ -107,7 +127,14 @@ function readStream(
       }
     }
   }
-  return { texts, ended, errored, usage, deltas: reader.deltaCount }
+  return {
+    texts,
+    ended,
+    errored,
+    usage,
+    deltas: reader.deltaCount,
+    observedModel: reader.observedModel,
+  }
 }
 
 const sse = (payload: unknown): string => `data: ${JSON.stringify(payload)}\n\n`
@@ -160,6 +187,16 @@ describe('Chat Completions stream', () => {
     ])
     expect(r.usage).toBeNull()
     expect(r.deltas).toBe(1)
+    expect(r.observedModel).toBeNull()
+  })
+
+  it('keeps the last model declared by a chunk', () => {
+    const r = readStream('chat', [
+      sse({ model: 'gpt-old', choices: [] }),
+      sse({ model: 'gpt-new', choices: [{ delta: { content: 'a' } }] }),
+      'data: [DONE]\n\n',
+    ])
+    expect(r.observedModel).toBe('gpt-new')
   })
 })
 
@@ -218,6 +255,15 @@ describe('Responses stream', () => {
     expect(r.usage).toBeNull()
     expect(r.deltas).toBe(2)
   })
+
+  it('reads the model from the response object', () => {
+    const r = readStream('responses', [
+      sse({ type: 'response.created', response: { model: 'gateway-routed' } }),
+      sse({ type: 'response.output_text.delta', delta: 'a' }),
+      sse({ type: 'response.completed', response: { model: 'actual-v2' } }),
+    ])
+    expect(r.observedModel).toBe('actual-v2')
+  })
 })
 
 describe('Messages stream', () => {
@@ -248,5 +294,13 @@ describe('Messages stream', () => {
   it('treats an error event as a stream failure', () => {
     const r = readStream('messages', [sse({ type: 'error', error: { type: 'overloaded_error' } })])
     expect(r.errored).toBe(true)
+  })
+
+  it('reads the model from message_start', () => {
+    const r = readStream('messages', [
+      sse({ type: 'message_start', message: { model: 'claude-actual' } }),
+      sse({ type: 'message_stop' }),
+    ])
+    expect(r.observedModel).toBe('claude-actual')
   })
 })

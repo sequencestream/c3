@@ -73,13 +73,15 @@ export function buildRequest(
   model: string,
 ): DialectRequest {
   const json = { 'content-type': 'application/json', accept: 'text/event-stream' }
+  const requestedModel = model.trim()
+  const modelField = requestedModel ? { model: requestedModel } : {}
   switch (dialect) {
     case 'chat':
       return {
         url: chatCompletionsUrl(baseUrl),
         headers: { ...json, authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model,
+          ...modelField,
           stream: true,
           // Ask for the terminal usage block explicitly: without it most Chat
           // gateways send none and every sample degrades to a delta estimate.
@@ -94,7 +96,7 @@ export function buildRequest(
         url: responsesUrl(baseUrl),
         headers: { ...json, authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model,
+          ...modelField,
           stream: true,
           temperature: SPEED_TEST_TEMPERATURE,
           max_output_tokens: SPEED_TEST_MAX_OUTPUT_TOKENS,
@@ -112,7 +114,7 @@ export function buildRequest(
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model,
+          ...modelField,
           stream: true,
           temperature: SPEED_TEST_TEMPERATURE,
           max_tokens: SPEED_TEST_MAX_OUTPUT_TOKENS,
@@ -142,6 +144,8 @@ export interface StreamReader {
   push(data: string): StreamSignal
   /** Non-empty text delta EVENTS seen so far — the `delta_estimate` fallback. */
   readonly deltaCount: number
+  /** Last model id declared by the upstream stream, or `null` when absent. */
+  readonly observedModel: string | null
 }
 
 /** Parse a payload, or `null` when it is not JSON we can read. */
@@ -170,12 +174,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
  */
 class ChatReader implements StreamReader {
   deltaCount = 0
+  observedModel: string | null = null
   private usage: number | null = null
 
   push(data: string): StreamSignal {
     if (data === SSE_DONE) return { kind: 'end', usageTokens: this.usage }
     const event = parse(data)
     if (!event) return { kind: 'ignore' }
+    if (typeof event.model === 'string') this.observedModel = event.model
     if (event.error !== undefined && event.error !== null) return { kind: 'error' }
 
     const usage = asRecord(event.usage)
@@ -212,10 +218,13 @@ class ChatReader implements StreamReader {
  */
 class ResponsesReader implements StreamReader {
   deltaCount = 0
+  observedModel: string | null = null
 
   push(data: string): StreamSignal {
     const event = parse(data)
     if (!event) return { kind: 'ignore' }
+    const response = asRecord(event.response)
+    if (typeof response?.model === 'string') this.observedModel = response.model
     const type = typeof event.type === 'string' ? event.type : ''
 
     if (type === 'response.output_text.delta') {
@@ -255,11 +264,14 @@ class ResponsesReader implements StreamReader {
  */
 class MessagesReader implements StreamReader {
   deltaCount = 0
+  observedModel: string | null = null
   private usage: number | null = null
 
   push(data: string): StreamSignal {
     const event = parse(data)
     if (!event) return { kind: 'ignore' }
+    const message = asRecord(event.message)
+    if (typeof message?.model === 'string') this.observedModel = message.model
     const type = typeof event.type === 'string' ? event.type : ''
 
     if (type === 'error') return { kind: 'error' }

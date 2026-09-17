@@ -940,7 +940,10 @@
           "label": "Protocol"
         },
         "model": {
-          "label": "Model"
+          "label": "Model",
+          "default": "Default / unspecified",
+          "unknown": "Unknown",
+          "emptyHint": "Leave blank only for endpoints with a default model. If the upstream rejects it, the run records a normal HTTP failure; no model is filled in or retried."
         },
         "count": {
           "label": "Requests",
@@ -960,8 +963,7 @@
         "blocked": {
           "unsaved": "Save this provider first: the server only dials a saved configuration.",
           "noProtocol": "Configure and save at least one protocol URL first.",
-          "invalidUrl": "The selected protocol URL is invalid. Fix it and save first.",
-          "noModels": "No model available. Add a model to this provider and save first."
+          "invalidUrl": "The selected protocol URL is invalid. Fix it and save first."
         },
         "start": {
           "label": "Start"
@@ -999,6 +1001,7 @@
           "samples": "Samples",
           "avg": "Avg",
           "result": "Result",
+          "model": "Requested → observed model",
           "failure": "Failure",
           "endToEnd": "End-to-end",
           "tokens": "Tokens",
@@ -1089,8 +1092,6 @@
           "providerUnknown": "That provider is not in the saved configuration. Save it and try again.",
           "protocolUnavailable": "The selected protocol is unavailable. Refresh the configuration and choose again.",
           "invalidUrl": "The selected protocol URL is invalid. Fix it and save first.",
-          "modelsEmpty": "No model available for testing. Add a model to this provider and save first.",
-          "modelUnavailable": "Choose a model from this provider’s current catalog.",
           "busy": "This provider already has a run in flight. Wait for it or interrupt it first.",
           "notFound": "That run no longer exists.",
           "dbUnavailable": "The database is unavailable, so no run was started and nothing was spent.",

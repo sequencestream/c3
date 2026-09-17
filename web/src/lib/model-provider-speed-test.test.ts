@@ -7,7 +7,19 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { SpeedTestComparisonEntry, SpeedTestRun } from '@ccc/shared/protocol'
-import { buildComparisonRows } from './model-provider-speed-test'
+import { buildComparisonRows, formatSpeedTestModelPair } from './model-provider-speed-test'
+
+describe('formatSpeedTestModelPair', () => {
+  it('distinguishes default requests, unknown observations, and multiple observed models', () => {
+    expect(formatSpeedTestModelPair('', [], 'Default', 'Unknown')).toBe('Default → Unknown')
+    expect(formatSpeedTestModelPair('requested', [null], 'Default', 'Unknown')).toBe(
+      'requested → Unknown',
+    )
+    expect(formatSpeedTestModelPair('requested', ['z', 'a', 'z'], 'Default', 'Unknown')).toBe(
+      'requested → a, z',
+    )
+  })
+})
 
 /** 一轮只关心 TTFT P50 的测速记录。 */
 function run(runId: string, ttftP50Ms: number | null, startedAt = 1_000): SpeedTestRun {
@@ -21,6 +33,7 @@ function run(runId: string, ttftP50Ms: number | null, startedAt = 1_000): SpeedT
     protocolType: 'openai',
     apiDialect: 'chat',
     model: 'gpt-x',
+    observedModels: [],
     calibrationVersion: 'chat-short-v1',
     maxOutputTokens: 128,
     temperature: 0,

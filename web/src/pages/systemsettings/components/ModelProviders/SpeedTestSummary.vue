@@ -14,7 +14,12 @@
 import { computed } from 'vue'
 import type { SpeedTestLatencyStats, SpeedTestRunDetail } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
-import { formatMs, formatRate, formatRate01 } from '@/lib/model-provider-speed-test'
+import {
+  formatMs,
+  formatRate,
+  formatRate01,
+  formatSpeedTestModelPair,
+} from '@/lib/model-provider-speed-test'
 
 const { t } = useTypedI18n()
 
@@ -77,6 +82,15 @@ function failureLabel(r: SpeedTestRunDetail['requests'][number]): string {
   const category = t(`settings.providers.speedTest.failure.${r.failureCategory}` as const)
   return r.httpStatus ? `${category} (${r.httpStatus})` : category
 }
+
+function modelPair(observedModels: readonly (string | null)[]): string {
+  return formatSpeedTestModelPair(
+    run.value.model,
+    observedModels,
+    t('settings.providers.speedTest.model.default'),
+    t('settings.providers.speedTest.model.unknown'),
+  )
+}
 </script>
 
 <template>
@@ -87,7 +101,7 @@ function failureLabel(r: SpeedTestRunDetail['requests'][number]): string {
         t('settings.providers.speedTest.target', {
           protocol: run.protocolType,
           dialect: run.apiDialect,
-          model: run.model,
+          model: modelPair(run.observedModels),
           calibration: run.calibrationVersion,
           maxTokens: run.maxOutputTokens,
           temperature: run.temperature,
@@ -169,6 +183,7 @@ function failureLabel(r: SpeedTestRunDetail['requests'][number]): string {
         <tr>
           <th>#</th>
           <th>{{ t('settings.providers.speedTest.table.result') }}</th>
+          <th>{{ t('settings.providers.speedTest.table.model') }}</th>
           <th>{{ t('settings.providers.speedTest.table.failure') }}</th>
           <th>{{ t('settings.providers.speedTest.table.ttft') }}</th>
           <th>{{ t('settings.providers.speedTest.table.endToEnd') }}</th>
@@ -180,6 +195,7 @@ function failureLabel(r: SpeedTestRunDetail['requests'][number]): string {
         <tr v-for="r in detail.requests" :key="r.sequence" data-testid="speed-test-request-row">
           <td>{{ r.sequence }}</td>
           <td>{{ requestOutcomeLabel(r.outcome) }}</td>
+          <td>{{ modelPair([r.observedModel]) }}</td>
           <td>{{ failureLabel(r) }}</td>
           <td>{{ ms(r.ttftMs) }}</td>
           <td>{{ ms(r.endToEndMs) }}</td>

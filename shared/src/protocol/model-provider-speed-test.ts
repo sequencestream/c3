@@ -176,8 +176,6 @@ export const SPEED_TEST_OUTCOMES = [
  *  - `provider_unknown`     — no SAVED provider carries that id (a draft cannot be tested).
  *  - `protocol_unavailable` — the chosen protocol slot is absent or blank on the saved config.
  *  - `invalid_url`          — the chosen slot's URL fails `checkProviderBaseUrl` at `error` severity.
- *  - `models_empty`         — the provider's merged model catalog is empty.
- *  - `model_unavailable`    — the chosen model is blank or absent from that catalog.
  *  - `busy`                 — this provider already has a run in flight (`runId` names it).
  *  - `not_found`            — no such run / no active run to act on.
  *  - `db_unavailable`       — the database cannot be reached, so a run must not start:
@@ -191,8 +189,6 @@ export type SpeedTestErrorCode =
   | 'provider_unknown'
   | 'protocol_unavailable'
   | 'invalid_url'
-  | 'models_empty'
-  | 'model_unavailable'
   | 'busy'
   | 'not_found'
   | 'db_unavailable'
@@ -210,8 +206,6 @@ export const SPEED_TEST_ERROR_CATEGORIES = {
   provider_unknown: 'validation',
   protocol_unavailable: 'validation',
   invalid_url: 'validation',
-  models_empty: 'validation',
-  model_unavailable: 'validation',
   busy: 'conflict',
   not_found: 'not_found',
   db_unavailable: 'storage',
@@ -239,6 +233,8 @@ export interface SpeedTestRequestRecord {
   failureCategory: SpeedTestFailureCategory | null
   /** HTTP status, when the endpoint answered with one. */
   httpStatus: number | null
+  /** Model id declared by the upstream response; `null` when it declared none. */
+  observedModel: string | null
   /**
    * Time to first token: dial → arrival of the first text delta whose string is
    * non-empty (a single space counts; role, heartbeat and usage-only events do
@@ -355,7 +351,10 @@ export interface SpeedTestRun {
   protocolType: ProtocolType
   /** Which upstream API was actually spoken. */
   apiDialect: SpeedTestApiDialect
+  /** Requested model id; an empty string means the request omitted `model`. */
   model: string
+  /** Distinct upstream-declared models from request details, sorted by code point. */
+  observedModels: string[]
   /** {@link SPEED_TEST_CALIBRATION_VERSION} as of the run. */
   calibrationVersion: string
   /** The fixed parameters this calibration used, snapshotted for readability. */

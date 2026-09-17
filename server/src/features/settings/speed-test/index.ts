@@ -38,7 +38,7 @@ import {
   type SpeedTestRun,
   type SpeedTestRunDetail,
 } from '@ccc/shared/protocol'
-import { checkProviderBaseUrl, effectiveProviderModels } from '@ccc/shared'
+import { checkProviderBaseUrl } from '@ccc/shared'
 import { loadSettings } from '../../../kernel/config/index.js'
 import type { Conn, Handler } from '../../../transport/handler-registry.js'
 import { isAdminConn, requireAdmin } from '../../auth/authz.js'
@@ -46,6 +46,7 @@ import { apiDialectFor } from './dialects.js'
 import { SpeedTestExecution, type SpeedTestDeps, type SpeedTestPlan } from './runner.js'
 import { summarize } from './stats.js'
 import {
+  aggregateObservedModels,
   ensureSpeedTestSchema,
   getSpeedTestRunDetail,
   listSpeedTestComparison,
@@ -176,7 +177,6 @@ function resolveTarget(
   providers: readonly ModelProvider[],
   providerId: string,
   protocolType: ProtocolType,
-  model: string,
 ): Resolution {
   const provider = providers.find((p) => p.id === providerId)
   if (!provider) return { ok: false, code: 'provider_unknown' }
@@ -185,12 +185,6 @@ function resolveTarget(
   if (!baseUrl) return { ok: false, code: 'protocol_unavailable' }
   if (checkProviderBaseUrl(baseUrl).severity === 'error') return { ok: false, code: 'invalid_url' }
 
-  const catalog = effectiveProviderModels(provider)
-  if (catalog.length === 0) return { ok: false, code: 'models_empty' }
-  const wanted = model.trim()
-  if (!wanted || !catalog.some((m) => m.id === wanted)) {
-    return { ok: false, code: 'model_unavailable' }
-  }
   return { ok: true, provider, baseUrl }
 }
 
@@ -244,6 +238,7 @@ function sealDetail(entry: ActiveEntry, outcome: SpeedTestRun['outcome']): Speed
       protocolType: plan.protocolType,
       apiDialect: plan.apiDialect,
       model: plan.model,
+      observedModels: aggregateObservedModels(execution.records),
       calibrationVersion: SPEED_TEST_CALIBRATION_VERSION,
       maxOutputTokens: SPEED_TEST_MAX_OUTPUT_TOKENS,
       temperature: SPEED_TEST_TEMPERATURE,
@@ -309,7 +304,7 @@ function startRun(
   }
 
   const providers = loadSettings().modelProviders ?? []
-  const resolved = resolveTarget(providers, providerId, protocolType, model)
+  const resolved = resolveTarget(providers, providerId, protocolType)
   if (!resolved.ok) return fail(conn, requestId, resolved.code, { providerId })
 
   // Refuse before spending anything: producing cost and then discarding the record

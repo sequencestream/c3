@@ -23,6 +23,7 @@ import {
   formatMs,
   formatRate,
   formatRate01,
+  formatSpeedTestModelPair,
   SPEED_TEST_ERROR_KEYS,
   type SpeedTestCompareDirection,
   type SpeedTestUiState,
@@ -89,10 +90,19 @@ function outcomeLabel(run: SpeedTestRun): string {
 function optionLabel(run: SpeedTestRun): string {
   return t('settings.providers.speedTest.compare.choice.option', {
     time: new Date(run.startedAt).toLocaleString(),
-    model: run.model,
+    model: modelPair(run),
     completed: run.summary.completedCount,
     planned: run.plannedCount,
   })
+}
+
+function modelPair(run: SpeedTestRun): string {
+  return formatSpeedTestModelPair(
+    run.model,
+    run.observedModels,
+    t('settings.providers.speedTest.model.default'),
+    t('settings.providers.speedTest.model.unknown'),
+  )
 }
 
 function onSelect(providerId: string, runId: string): void {
@@ -140,6 +150,7 @@ function toggleSort(): void {
               </th>
               <th class="stc-left">{{ t('settings.providers.speedTest.compare.column.run') }}</th>
               <th>{{ t('settings.providers.speedTest.compare.column.outcome') }}</th>
+              <th>{{ t('settings.providers.speedTest.table.model') }}</th>
               <th>{{ t('settings.providers.speedTest.compare.column.successRate') }}</th>
               <!-- 排序只由这一列驱动:默认升序,点一次翻向。 -->
               <th
@@ -193,6 +204,7 @@ function toggleSort(): void {
                 </select>
               </td>
               <td>{{ outcomeLabel(row.run) }}</td>
+              <td>{{ modelPair(row.run) }}</td>
               <td data-testid="speed-test-compare-success-rate">
                 {{ percent(row.run.summary.successRate) }}
               </td>

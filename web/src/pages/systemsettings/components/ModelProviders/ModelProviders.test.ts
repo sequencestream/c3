@@ -540,6 +540,49 @@ describe('测速入口', () => {
     expect(w.find('[data-testid="speed-test-draft-note"]').exists()).toBe(true)
   })
 
+  it('模型目录为空时仍可留空开始,也可手输目录外模型', async () => {
+    const saved = provider({ urls: { openai: 'https://saved.example/v1' }, models: [] })
+    const w = render({
+      providers: [saved],
+      savedProviders: [saved],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    const model = w.find('[data-testid="speed-test-model"]')
+    const start = w.find('[data-testid="speed-test-start"]')
+    expect((model.element as HTMLInputElement).value).toBe('')
+    expect(model.attributes('disabled')).toBeUndefined()
+    expect(start.attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-testid="speed-test-model-note"]').exists()).toBe(true)
+
+    await model.setValue('  gateway/new-model  ')
+    await start.trigger('click')
+    expect(w.emitted('speedTest')).toEqual([
+      [
+        {
+          kind: 'start',
+          providerId: 'p1',
+          protocolType: 'openai',
+          model: '  gateway/new-model  ',
+          requestCount: 10,
+        },
+      ],
+    ])
+  })
+
+  it('模型目录仍作为可输入控件的预设候选,但打开时不自动填首项', () => {
+    const saved = provider({
+      urls: { openai: 'https://saved.example/v1' },
+      models: [{ id: 'preset-model' }],
+    })
+    const w = render({
+      providers: [saved],
+      savedProviders: [saved],
+      speedTest: { ...emptySpeedTestState(), dialogProviderId: 'p1' },
+    })
+    expect((w.find('[data-testid="speed-test-model"]').element as HTMLInputElement).value).toBe('')
+    expect(w.find('datalist option').attributes('value')).toBe('preset-model')
+  })
+
   it('服务端仍持有的未提交轮次,重开对话框后照样给得出「重试保存」', async () => {
     // 样本已经付过费:对话框关掉再打开(或整页刷新)只是重新问了一次 active,
     // 入口必须从服务端的回答里长出来,而不是靠「当时收到过那一帧」。

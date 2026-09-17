@@ -129,13 +129,16 @@ Model Vendor 的内置清单——它连不到任何 provider,列 provider 的�
 
 **运行头**:`runId`(唯一)、`providerId`(弱引用,不设外键、读时不 JOIN 配置)、
 `providerDisplayName`(开始时的名称快照)、`startedAt`/`finishedAt`、`plannedCount`(操作者
-要的次数)、`protocolType`(取 URL 的协议槽)、`apiDialect`(实际讲的上游 API)、`model`、
+要的次数)、`protocolType`(取 URL 的协议槽)、`apiDialect`(实际讲的上游 API)、`model`(请求
+模型,空串表示请求体未携带 `model`)、`observedModels`(明细中非空实测模型的去重、稳定排序
+只读投影,不落头表)、
 `calibrationVersion` 与 `maxOutputTokens`/`temperature`(当次校准参数快照)、`outcome`
 (`completed` | `failed` | `interrupted`)、`summary`。
 
 **逐请求样本**(`sequence` 从 1 起,运行内唯一):`startedAt`、`outcome`
 (`success` | `failure` | `cancelled`)、`failureCategory`(`timeout` | `http` | `network` |
-`stream`,仅失败时非空)、`httpStatus`(端点给了才有)、`ttftMs`、`endToEndMs`、
+`stream`,仅失败时非空)、`httpStatus`(端点给了才有)、`observedModel`(上游响应声明的模型,
+未声明为 `null`,不以请求值回填)、`ttftMs`、`endToEndMs`、
 `outputTokens`、`tokenCountSource`(`usage` | `delta_estimate`)、`tpotMs`。
 
 **计数与成功率**:`completedCount = successCount + failureCount`——被中断的 `cancelled`

@@ -13,7 +13,7 @@ import { computed } from 'vue'
 import type { SpeedTestRun } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import type { SpeedTestUiState } from '@/lib/model-provider-speed-test'
-import { formatRate01 } from '@/lib/model-provider-speed-test'
+import { formatRate01, formatSpeedTestModelPair } from '@/lib/model-provider-speed-test'
 import SpeedTestSummaryView from './SpeedTestSummary.vue'
 
 const { t } = useTypedI18n()
@@ -53,7 +53,12 @@ const emptyText = computed(() => {
 function rowLabel(run: SpeedTestRun): string {
   return t('settings.providers.speedTest.report.row', {
     time: new Date(run.startedAt).toLocaleString(),
-    model: run.model,
+    model: formatSpeedTestModelPair(
+      run.model,
+      run.observedModels,
+      t('settings.providers.speedTest.model.default'),
+      t('settings.providers.speedTest.model.unknown'),
+    ),
     dialect: run.apiDialect,
     completed: run.summary.completedCount,
     planned: run.plannedCount,

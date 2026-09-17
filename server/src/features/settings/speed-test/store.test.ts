@@ -11,9 +11,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SpeedTestRunDetail } from '@ccc/shared/protocol'
-import { resetDbForTests } from '../../../kernel/infra/db.js'
+import { getDb, resetDbForTests, tableColumns } from '../../../kernel/infra/db.js'
 import { summarize } from './stats.js'
 import {
+  aggregateObservedModels,
   ensureSpeedTestSchema,
   getSpeedTestRunDetail,
   listSpeedTestComparison,
@@ -54,6 +55,7 @@ function detail(over: {
       outcome: 'success',
       failureCategory: null,
       httpStatus: 200,
+      observedModel: 'z-model',
       ttftMs: 100,
       endToEndMs: 1_000,
       outputTokens: 10,
@@ -66,6 +68,7 @@ function detail(over: {
       outcome: 'failure',
       failureCategory: 'http',
       httpStatus: 429,
+      observedModel: 'a-model',
       ttftMs: null,
       endToEndMs: 200,
       outputTokens: 0,
@@ -84,6 +87,7 @@ function detail(over: {
       protocolType: 'openai',
       apiDialect: 'chat',
       model: 'gpt-x',
+      observedModels: ['a-model', 'z-model'],
       calibrationVersion: 'chat-short-v1',
       maxOutputTokens: 128,
       temperature: 0,
@@ -95,6 +99,31 @@ function detail(over: {
 }
 
 describe('speed-test history store', () => {
+  it('deduplicates and sorts observed models without filling nulls', () => {
+    expect(
+      aggregateObservedModels([
+        { observedModel: 'z-model' },
+        { observedModel: null },
+        { observedModel: 'a-model' },
+        { observedModel: 'z-model' },
+      ]),
+    ).toEqual(['a-model', 'z-model'])
+  })
+
+  it('migrates an existing request table by adding the observed model column', () => {
+    const d = getDb()!
+    d.exec('DROP TABLE model_provider_speed_test_requests')
+    d.exec(`CREATE TABLE model_provider_speed_test_requests (
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      PRIMARY KEY (run_id, sequence)
+    )`)
+    resetSpeedTestStoreForTests()
+
+    expect(ensureSpeedTestSchema()).toBe(true)
+    expect(tableColumns(d, 'model_provider_speed_test_requests').has('observed_model')).toBe(true)
+  })
+
   it('round-trips a run and every request detail', () => {
     const d = detail({ runId: 'r1' })
     expect(saveSpeedTestRun(d)).toBe(true)
@@ -121,6 +150,7 @@ describe('speed-test history store', () => {
         outcome: 'failure',
         failureCategory: 'timeout',
         httpStatus: null,
+        observedModel: null,
         ttftMs: null,
         endToEndMs: 60_000,
         outputTokens: 0,
@@ -157,6 +187,27 @@ describe('speed-test history store', () => {
     // No row appears on both pages.
     const ids = new Set([...first.runs, ...second.runs].map((r) => r.runId))
     expect(ids.size).toBe(25)
+  })
+
+  it('projects distinct sorted observed models in list and comparison reads', () => {
+    saveSpeedTestRun(detail({ runId: 'models', providerId: 'p1' }))
+    expect(listSpeedTestRuns('p1').runs[0]?.observedModels).toEqual(['a-model', 'z-model'])
+    expect(listSpeedTestComparison(new Map())[0]?.runs[0]?.observedModels).toEqual([
+      'a-model',
+      'z-model',
+    ])
+  })
+
+  it('keeps an unknown observed model distinct from the requested model', () => {
+    const d = detail({ runId: 'legacy' })
+    d.run.model = 'requested-model'
+    d.run.observedModels = []
+    for (const request of d.requests) request.observedModel = null
+    saveSpeedTestRun(d)
+    expect(getSpeedTestRunDetail('legacy')!.run).toMatchObject({
+      model: 'requested-model',
+      observedModels: [],
+    })
   })
 
   it('breaks a same-millisecond tie by run id, so paging cannot duplicate a row', () => {

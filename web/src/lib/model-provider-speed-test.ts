@@ -111,6 +111,19 @@ export function formatRate01(value: number | null): string | null {
   return value === null ? null : `${(value * 100).toFixed(1)}%`
 }
 
+/** Keep requested intent and upstream evidence visibly separate in every view. */
+export function formatSpeedTestModelPair(
+  requested: string,
+  observedModels: readonly (string | null)[],
+  defaultLabel: string,
+  unknownLabel: string,
+): string {
+  const observed = [...new Set(observedModels.filter((model): model is string => model !== null))]
+    .sort()
+    .join(', ')
+  return `${requested.trim() || defaultLabel} → ${observed || unknownLabel}`
+}
+
 /**
  * 服务端每个拒绝原因对应哪条文案,单一来源。
  *
@@ -123,8 +136,6 @@ export const SPEED_TEST_ERROR_KEYS: Record<SpeedTestErrorCode, LocaleKey> = {
   provider_unknown: 'settings.providers.speedTest.error.providerUnknown',
   protocol_unavailable: 'settings.providers.speedTest.error.protocolUnavailable',
   invalid_url: 'settings.providers.speedTest.error.invalidUrl',
-  models_empty: 'settings.providers.speedTest.error.modelsEmpty',
-  model_unavailable: 'settings.providers.speedTest.error.modelUnavailable',
   busy: 'settings.providers.speedTest.error.busy',
   not_found: 'settings.providers.speedTest.error.notFound',
   db_unavailable: 'settings.providers.speedTest.error.dbUnavailable',

@@ -42,6 +42,7 @@ import {
   listIntentLogs,
   resetStoreForTests,
   setBranchName,
+  updateStatus,
   upsertIntentPr,
 } from './store.js'
 import { linkIntentPrHandler } from './index.js'
@@ -186,6 +187,38 @@ describe('linkIntentPrHandler', () => {
       result: 'success',
       association: { intentId: r.id },
     })
+  })
+
+  it('settles a reviewing intent when the linked PR is already merged', async () => {
+    const r = seedQualifying()
+    updateStatus(r.id, 'reviewing')
+    vi.mocked(getHeadCommit).mockResolvedValue('abc123deadbeef')
+    vi.mocked(getForgePrLinkFacts).mockResolvedValue({
+      ok: true,
+      number: '43',
+      status: 'merged',
+      prUrl: 'https://github.com/o/r/pull/43',
+      headSha: 'abc123deadbeef',
+      headBranch: 'intent/link-me',
+      baseBranch: 'main',
+    })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await linkIntentPrHandler(ctx, conn, {
+      type: 'link_intent_pr',
+      workspaceName,
+      intentId: r.id,
+      prReference: 'https://github.com/o/r/pull/43',
+    })
+
+    expect(errorsOf(sent)).toEqual([])
+    const after = getIntent(r.id)!
+    expect(after.prs[0]).toMatchObject({ number: '43', status: 'merged' })
+    // Linking a PR the forge already merged observes a merge like any other path,
+    // so it settles the review and converges in the same pass the ledger grows.
+    expect(after.reviewStatus).toBe('approved')
+    expect(after.status).toBe('done')
   })
 
   it('rejects when worktree HEAD does not match PR head SHA', async () => {

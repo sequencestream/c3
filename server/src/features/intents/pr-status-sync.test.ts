@@ -29,8 +29,10 @@ import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import {
   getIntent,
   insertIntents,
+  listIntentLogs,
   resetStoreForTests,
   setBranchName,
+  updateIntentReviewFixStatus,
   updateStatus,
   upsertIntentPr,
 } from './store.js'
@@ -195,6 +197,79 @@ describe('syncIntentPrStatus', () => {
   )
 })
 
+describe('syncIntentPrStatus — the observed merge settles the review', () => {
+  const SETTLE_SUMMARY = 'PR 已全部合并，评审结论按合并结果落为 approved'
+  const settleRows = (id: string): string[] =>
+    listIntentLogs(id)
+      .filter((log) => log.summary === SETTLE_SUMMARY)
+      .map((log) => `${log.operationType}/${log.actor}`)
+
+  /** A `reviewing` intent holding one PR row the forge has yet to settle. */
+  const reviewingWithPr = (title: string, number: string): string => {
+    const [intent] = insertIntents(proj, [
+      {
+        title,
+        shortEnTitle: title.toLowerCase(),
+        content: '',
+        priority: 'P1',
+        impactLevel: 'L3',
+      },
+    ])
+    updateStatus(intent.id, 'reviewing')
+    upsertIntentPr({ intentId: intent.id, number, status: 'reviewing' })
+    return intent.id
+  }
+
+  it('lands approved when the pass discovers the PR already merged', async () => {
+    const id = reviewingWithPr('Landed', '60')
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+    const broadcastIntents = vi.fn()
+
+    await expect(
+      syncIntentPrStatus({ workspacePath: proj, intentId: id, broadcastIntents }),
+    ).resolves.toMatchObject({ ok: true, changed: true, prStatus: 'merged', autoCompleted: true })
+
+    const got = getIntent(id)
+    // The review session this intent was waiting for can never run — the PR is
+    // gone from under it — so the merge itself is the conclusion.
+    expect(got?.reviewStatus).toBe('approved')
+    expect(got?.status).toBe('done')
+    expect(settleRows(id)).toEqual(['intent_updated/automation'])
+  })
+
+  it('writes no conclusion while the forge still reports the PR open', async () => {
+    const id = reviewingWithPr('Still open', '61')
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'reviewing' })
+
+    await expect(syncIntentPrStatus({ workspacePath: proj, intentId: id })).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      prStatus: 'reviewing',
+    })
+
+    expect(getIntent(id)?.reviewStatus).toBeNull()
+    expect(getIntent(id)?.status).toBe('reviewing')
+    expect(settleRows(id)).toEqual([])
+  })
+
+  it('leaves an existing approval alone — no rewrite, no second row', async () => {
+    const id = reviewingWithPr('Already approved', '62')
+    updateIntentReviewFixStatus(id, { reviewStatus: 'approved' })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+
+    await expect(syncIntentPrStatus({ workspacePath: proj, intentId: id })).resolves.toMatchObject({
+      ok: true,
+      autoCompleted: true,
+    })
+
+    expect(getIntent(id)?.reviewStatus).toBe('approved')
+    expect(getIntent(id)?.status).toBe('done')
+    // The queue's own merge path arrives here after granting the approval; a
+    // second conclusion row would make every auto-merge look like two decisions.
+    expect(settleRows(id)).toEqual([])
+  })
+})
+
 describe('depsWithUnconfirmedPr', () => {
   it('selects a dependency with a reviewing PR regardless of its own status', () => {
     const [dep] = insertIntents(proj, [
@@ -280,6 +355,34 @@ describe('syncUnconfirmedDependencyPrsInBackground', () => {
 
     expect(onComplete).toHaveBeenCalledTimes(1)
     expect(getIntent(depId)?.prs[0].status).toBe('merged')
+  })
+
+  it('settles a reviewing dependency through the background sync it delegates to', async () => {
+    const [dep] = insertIntents(proj, [
+      {
+        title: 'Relay dep',
+        shortEnTitle: 'relay-dep',
+        content: '',
+        priority: 'P1',
+        impactLevel: 'L3',
+      },
+    ])
+    updateStatus(dep.id, 'reviewing')
+    upsertIntentPr({ intentId: dep.id, number: '391', status: 'reviewing' })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+
+    syncUnconfirmedDependencyPrsInBackground({
+      ctx: { broadcastIntents: vi.fn() },
+      workspacePath: proj,
+      dependsOn: [dep.id],
+    })
+    await flush()
+
+    // The background pass runs the same core sync, so it inherits the rule: no
+    // separate implementation, no separate chance of drifting from it.
+    const got = getIntent(dep.id)
+    expect(got?.reviewStatus).toBe('approved')
+    expect(got?.status).toBe('done')
   })
 
   it('does nothing at all when no dependency holds a reviewing PR', async () => {

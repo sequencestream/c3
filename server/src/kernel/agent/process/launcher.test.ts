@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -339,6 +347,106 @@ describe('syncManagedVendorCli failure recovery', () => {
     expect(readFileSync(expected, 'utf-8')).toBe('native executable')
     expect(readFileSync(join(dirname(expected), 'runtime.dll'), 'utf-8')).toBe('sibling dependency')
     expect(readFileSync(join(dirname(expected), 'rg.exe'), 'utf-8')).toBe('helper executable')
+  })
+
+  it('retries transient Windows directory rename failures when publishing', async () => {
+    const tarball = Buffer.from('Windows locked directory tarball')
+    const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+    const packument = {
+      'dist-tags': { latest: '1.2.6' },
+      versions: {
+        '1.2.6': {
+          version: '1.2.6',
+          dist: { tarball: 'https://registry.example/claude.tgz', integrity },
+        },
+      },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => packument })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+      })
+    const rename = vi.fn((from: string, to: string) => {
+      if (rename.mock.calls.length < 3) {
+        throw Object.assign(new Error('directory is temporarily locked'), { code: 'EPERM' })
+      }
+      renameSync(from, to)
+    })
+    const wait = vi.fn(async () => {})
+
+    const result = await syncManagedVendorCli('claude', {
+      platform: 'win32',
+      arch: 'x64',
+      fetch: fetchMock as unknown as typeof fetch,
+      rename,
+      wait,
+      runVersion: () => 'claude 1.2.6',
+      unpack: (_archive, dest) => {
+        const pkg = join(dest, 'package')
+        mkdirSync(join(pkg, 'cli'), { recursive: true })
+        writeFileSync(join(pkg, 'package.json'), '{"bin":{"claude":"cli/claude.js"}}', 'utf-8')
+        writeFileSync(join(pkg, 'cli', 'claude.js'), '#!/usr/bin/env node\n', 'utf-8')
+        const native = join(pkg, 'vendor', 'claude-win32-x64')
+        mkdirSync(native, { recursive: true })
+        writeFileSync(join(native, 'claude.exe'), 'native executable', 'utf-8')
+      },
+    })
+
+    expect(result).toMatchObject({ source: 'managed', version: '1.2.6' })
+    expect(rename).toHaveBeenCalledTimes(3)
+    expect(wait).toHaveBeenNthCalledWith(1, 100)
+    expect(wait).toHaveBeenNthCalledWith(2, 200)
+  })
+
+  it('does not retry a non-transient Windows directory rename failure', async () => {
+    const tarball = Buffer.from('Windows invalid rename tarball')
+    const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+    const packument = {
+      'dist-tags': { latest: '1.2.7' },
+      versions: {
+        '1.2.7': {
+          version: '1.2.7',
+          dist: { tarball: 'https://registry.example/claude.tgz', integrity },
+        },
+      },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => packument })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+      })
+    const rename = vi.fn(() => {
+      throw Object.assign(new Error('invalid source'), { code: 'ENOENT' })
+    })
+    const wait = vi.fn(async () => {})
+
+    const result = await syncManagedVendorCli('claude', {
+      platform: 'win32',
+      arch: 'x64',
+      fetch: fetchMock as unknown as typeof fetch,
+      rename,
+      wait,
+      runVersion: () => 'claude 1.2.7',
+      unpack: (_archive, dest) => {
+        const pkg = join(dest, 'package')
+        mkdirSync(join(pkg, 'cli'), { recursive: true })
+        writeFileSync(join(pkg, 'package.json'), '{"bin":{"claude":"cli/claude.js"}}', 'utf-8')
+        writeFileSync(join(pkg, 'cli', 'claude.js'), '#!/usr/bin/env node\n', 'utf-8')
+        const native = join(pkg, 'vendor', 'claude-win32-x64')
+        mkdirSync(native, { recursive: true })
+        writeFileSync(join(native, 'claude.exe'), 'native executable', 'utf-8')
+      },
+    })
+
+    expect(result.managedError).toContain('invalid source')
+    expect(rename).toHaveBeenCalledOnce()
+    expect(wait).not.toHaveBeenCalled()
   })
 
   it('keeps an old selected managed version when the remote sync fails', async () => {

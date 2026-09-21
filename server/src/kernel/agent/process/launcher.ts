@@ -216,6 +216,8 @@ export interface VendorInstallerDeps {
   runVersion?: (path: string, vendor: VendorId) => string
   unpack?: (archivePath: string, destDir: string) => void
   installPackage?: (packageDir: string, platform: NodeJS.Platform) => Promise<void>
+  rename?: (from: string, to: string) => void
+  wait?: (milliseconds: number) => Promise<void>
   now?: () => Date
   env?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
@@ -225,6 +227,7 @@ export interface VendorInstallerDeps {
 const cache = new Map<VendorId, VendorProbe>()
 const REMOTE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 const HISTORY_LIMIT = 20
+const WINDOWS_RENAME_RETRY_DELAYS_MS = [100, 200, 300, 400, 500, 600, 700, 800]
 
 export function lookupCommand(
   binary: string,
@@ -825,6 +828,36 @@ function installHistory(
   ])
 }
 
+function isTransientWindowsRenameError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY'
+}
+
+async function publishManagedVersion(
+  from: string,
+  to: string,
+  platform: NodeJS.Platform,
+  deps: VendorInstallerDeps,
+): Promise<void> {
+  const rename = deps.rename ?? renameSync
+  const wait =
+    deps.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
+  let retry = 0
+  for (;;) {
+    try {
+      rename(from, to)
+      return
+    } catch (error) {
+      const delay = WINDOWS_RENAME_RETRY_DELAYS_MS[retry]
+      if (platform !== 'win32' || delay === undefined || !isTransientWindowsRenameError(error)) {
+        throw error
+      }
+      retry += 1
+      await wait(delay)
+    }
+  }
+}
+
 export async function syncManagedVendorCli(
   vendor: VendorId,
   deps: VendorInstallerDeps = {},
@@ -951,7 +984,7 @@ export async function syncManagedVendorCli(
       throw new Error(`${vendor} ${version} outside ${spec.compatibleRange}`)
     }
     rmSync(finalDir, { recursive: true, force: true })
-    renameSync(publishTmp, finalDir)
+    await publishManagedVersion(publishTmp, finalDir, platform, deps)
     rmSync(staging, { recursive: true, force: true })
 
     const prior = readState(home).vendors[vendor]

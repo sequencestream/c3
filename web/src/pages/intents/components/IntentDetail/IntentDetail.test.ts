@@ -191,8 +191,8 @@ describe('IntentDetail.vue — engineering progress', () => {
     ).toEqual(['intent', 'work'])
   })
 
-  it('renders the PR label and closed state in worktree mode', () => {
-    // L5 跳过评审,让本用例聚焦 PR 段本身,不被下游 review 段干扰。
+  it('renders a completed PR and a closed merge in worktree mode', () => {
+    // L5 跳过评审,让本用例聚焦 PR 段与合并段本身,不被上游 review 段干扰。
     const w = mountDetail(
       intent({
         id: 'i1',
@@ -206,31 +206,38 @@ describe('IntentDetail.vue — engineering progress', () => {
       },
     )
     const stages = w.findAll('[data-testid="intent-engineering-progress"] [data-stage]')
-    const pr = stages.at(-1)
 
     expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
       'intent',
       'spec',
       'work',
       'pr',
+      'merge',
     ])
-    expect(pr?.attributes('data-state')).toBe('closed')
-    expect(pr?.classes()).toContain('is-closed')
+    // PR 段只回答「提交没提交」:有 PR 行即已完成,失败信号由合并段接管。
+    const pr = stages.find((stage) => stage.attributes('data-stage') === 'pr')
+    expect(pr?.attributes('data-state')).toBe('completed')
+    expect(pr?.classes()).toContain('is-completed')
     expect(pr?.find('.intent-engineering-progress-name').text()).toBe('PR')
-    expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
+    expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Completed')
+    const merge = stages.find((stage) => stage.attributes('data-stage') === 'merge')
+    expect(merge?.attributes('data-state')).toBe('closed')
+    expect(merge?.classes()).toContain('is-closed')
+    expect(merge?.find('.intent-engineering-progress-name').text()).toBe('Merge')
+    expect(merge?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
   })
 
   // The workspace branch mode arrives asynchronously after the detail mounts, so
-  // the already-rendered progress bar must append the PR stage without a remount.
+  // the already-rendered progress bar must append the PR and merge stages without a remount.
   it.each([
-    ['reviewing', 'in_progress'],
+    ['reviewing', 'not_started'],
     ['merged', 'completed'],
     ['closed', 'closed'],
     ['failed', 'closed'],
   ] as const)(
-    'appends the PR stage when the branch mode resolves to worktree (%s → %s)',
-    async (prStatus, expected) => {
-      // L5 跳过评审,让本用例聚焦 PR 段随 worktree 模式追加,不被下游 review 段干扰。
+    'appends the PR and merge stages when the branch mode resolves to worktree (%s → merge %s)',
+    async (prStatus, expectedMerge) => {
+      // L5 跳过评审,让本用例聚焦 PR/合并段随 worktree 模式追加,不被上游 review 段干扰。
       const item = intent({
         id: 'i1',
         status: 'in_progress',
@@ -253,8 +260,16 @@ describe('IntentDetail.vue — engineering progress', () => {
         'spec',
         'work',
         'pr',
+        'merge',
       ])
-      expect(stages.at(-1)?.attributes('data-state')).toBe(expected)
+      expect(
+        stages.find((stage) => stage.attributes('data-stage') === 'pr')?.attributes('data-state'),
+      ).toBe('completed')
+      expect(
+        stages
+          .find((stage) => stage.attributes('data-stage') === 'merge')
+          ?.attributes('data-state'),
+      ).toBe(expectedMerge)
     },
   )
 
@@ -318,16 +333,22 @@ describe('IntentDetail.vue — engineering progress', () => {
       'pr',
       'review',
       'fix',
+      'merge',
     ])
 
     const review = stages.find((stage) => stage.attributes('data-stage') === 'review')
     const fix = stages.find((stage) => stage.attributes('data-stage') === 'fix')
+    const merge = stages.find((stage) => stage.attributes('data-stage') === 'merge')
     expect(review?.attributes('data-state')).toBe('closed')
     expect(review?.find('.intent-engineering-progress-name').text()).toBe('Review')
     expect(review?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
     expect(fix?.attributes('data-state')).toBe('completed')
     expect(fix?.find('.intent-engineering-progress-name').text()).toBe('Fix')
     expect(fix?.find('.intent-engineering-progress-state').text()).toBe('Completed')
+    // 合并段恒居末位:PR 未合并即「未开始」,不表达「正在等待合入」。
+    expect(merge?.attributes('data-state')).toBe('not_started')
+    expect(merge?.find('.intent-engineering-progress-name').text()).toBe('Merge')
+    expect(merge?.find('.intent-engineering-progress-state').text()).toBe('Not started')
   })
 })
 

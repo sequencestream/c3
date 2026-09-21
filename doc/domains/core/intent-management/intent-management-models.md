@@ -92,6 +92,10 @@ session-registry 所有)。
 仅 `worktree` 模式显示 PR、评审、修复与合并段。SDD 关闭时隐藏规范段;
 `fast` 意图尚无规范路径或规范会话时也隐藏规范段。
 
+- 意图:`draft` 为进行中,其余为已完成。
+- 规范:已批准且有规范路径为已完成,有规范路径或规范会话为进行中,其余为未开始。
+- 工作:`done`、`reviewing` 为已完成;否则有工作会话或 PR 行、或状态为 `in_progress`/`blocked`/`failed`
+  时为进行中,其余为未开始。
 - PR:无 PR 行为未开始;只要存在 PR 行即已完成,表示已提交 PR。
 - 评审:仅 `needsReview(impactLevel)` 为真且存在 PR 行或非空 `reviewStatus` 时显示。
   PR 聚合为 `merged` 时已完成;否则 `null`、缺省或 `pending` 为进行中,

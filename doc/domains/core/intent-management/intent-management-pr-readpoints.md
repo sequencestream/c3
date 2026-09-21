@@ -56,7 +56,7 @@
 - `shared/src/protocol/intent.ts`(持久化): `IntentPr` / `IntentPrStatus` / `IntentPrForge` 与 `Intent.prs`
 - `shared/src/intent-pr-model.ts`(派生): `deriveIntentPrAggregate` / `activeIntentPrs` / `pickPrimaryIntentPr`,服务端与前端共用
 - `shared/src/protocol/intent-messages.ts`(读): `create_pr_response`、`sync_intent_pr_status_response`(其 `prStatus` 为聚合态)
-- `web/src/lib/intent-engineering-progress.ts`(派生): 进度条 PR 段读聚合态
+- `web/src/lib/intent-engineering-progress.ts`(派生): 进度条 PR 段按有无 PR 行派生,评审段与合并段读聚合态
 - `web/src/lib/intent-list-view.ts`(派生): 依赖阻塞判定(聚合态)+ 行内 create-pr / prLink 可见性
 - `IntentOverviewTab.vue`(读): 逐条渲染 PR 行与状态徽标;同步按钮看有无 `reviewing` 行
 - `IntentTitleBarActions.vue`(读): 建 PR 按钮按目标 pair 看有无活跃/`merged` PR;主按钮取第一条活跃 PR 跳转/复制;同步按钮同上

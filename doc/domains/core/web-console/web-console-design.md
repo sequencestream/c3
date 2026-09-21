@@ -34,6 +34,7 @@
 - **Workspace-setting page** — 工作区设置全页面浮层,配置按 默认模式 / Git 与沙箱 / 协作 / 技能仓库 四个 Tab 分组(桌面可见 Tab 导航,移动端横向滚动)。每个 Tab 维护独立草稿:打开时以服务端 `workspace_setting` 回复深拷贝生成「已提交快照」,单一 draft 按字段白名单切片、与快照做深层值比较得出各 Tab 脏状态(不使用全局 dirty 标志;`gitSandbox` 的 `sandbox` 按 worktree+启用的有效保存形态比较,填充 deny-by-default 策略并对陈旧/缺失沙箱名对称归一)。一个检测到的主分支值(回复中服务端探测到的默认分支)会在没有已保存值时预填默认主分支,后续回推不覆盖脏草稿。每个 Tab 提供独立保存按钮与未保存标识;保存某 Tab 时仅用该 Tab 白名单字段(经其转换:默认模式组装 Codex 双策略、Git 与沙箱裁剪空白主分支并按 worktree/启用保留或移除 sandbox)覆盖最新已提交快照,构造完整 `WorkspaceSetting` 发送 `save_workspace_setting`,`forge` 等非页面字段原样透传,不携带其他 Tab 草稿,且保存后浮层保持打开。`workspace_setting` 回推按字段归属合并:首次打开整体播种,之后仅刚保存的 Tab 与干净 Tab 重播种,脏 Tab 保留用户草稿;技能安装/链接状态查询走独立事件,不重播种任何 Tab 草稿。切换存在未保存修改的 Tab 时二次确认(ConfirmDialog),确认后仅切换、既不保存也不丢弃草稿,返回可继续编辑。字段归属:默认模式(逐项目默认模式、开发技能)/ Git 与沙箱(git 分支模式、默认主分支、sandbox 区块仅 worktree 显示且含 custom agent 多选)/ 协作(每阶段最大轮次、最大语音字符数、共识、SDD 开关与只读 spec root)/ 技能仓库(external skill repos)。从 app header 中工作区切换器之后进入,无工作区时禁用。
 - **Base dropdown** — 标准自定义下拉框(替代原生下拉框):触发器 + 带图标行的弹出层、键盘导航、点击外部区域关闭
 - **Intent list** — Intent 视图左侧列:intent 列表 + 状态筛选 + 行操作(细化 / 开始开发 / 开发详情 / 设置状态 / 设置自动化)。以 props 形式接收完整的 intent 列表与自动化编排器状态;发出 intent 操作供容器发送。为每一项渲染其生命周期状态角标,以及紧邻进行中项的派生运行状态指示器(运行中绿色脉动 / 悬空琥珀色)。该面板可折叠(窄视图下隐藏次要字段)
+- **Intent engineering progress** — 意图详情头部的只读工程进度条:节点与状态由纯函数派生,组件只做 typed `t` 本地化、无障碍标注与响应式布局,规则见[工程进度条](../intent-management/intent-management-models.md#工程进度条)
 - **WebSocket client** — 打开到 `/ws` 的 WebSocket,把解析后的 server-to-client 消息派发给一个监听器,暴露一个用于 client-to-server 消息的发送方法及关闭方法;心跳 + 自动重连,附带重开时的视图恢复回调
 
 共享辅助模块提供纯的、无 DOM、经过单元测试的逻辑,涵盖:当前工作区
@@ -49,11 +50,6 @@ JSON 美化与单行格式化;发送队列逻辑(合并 / 是否应刷新 / comp
 见下文 _按 tab 分别记忆的会话_ )。
 
 ## 状态(容器)
-
-意图详情头部的 `IntentEngineeringProgress` 展示只读工程进度条,仅负责 typed `t` 本地化、
-无障碍标注与响应式布局。阶段与状态由 `deriveIntentEngineeringProgress` 统一派生,
-规则见[工程进度条](../intent-management/intent-management-models.md#工程进度条)。
-PR 节点表示已提交,末尾的合并节点表达合入结果;评审节点跟随合并完成。
 
 - **Rendered messages**: 有序渲染列表(WC-R1);传递给聊天消息视图
 - **Current workspace**: 唯一的全局当前工作区路径(WC-R8);从持久化选择或最近使用中解析,本地持久化,驱动会话 tab 的会话列表(其在按工作区分组的会话中的切片)。与当前查看会话的工作区解耦

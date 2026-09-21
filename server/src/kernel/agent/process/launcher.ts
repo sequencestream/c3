@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import {
   chmodSync,
   cpSync,
@@ -215,6 +215,7 @@ export interface VendorInstallerDeps {
   fetch?: typeof fetch
   runVersion?: (path: string, vendor: VendorId) => string
   unpack?: (archivePath: string, destDir: string) => void
+  installPackage?: (packageDir: string, platform: NodeJS.Platform) => Promise<void>
   now?: () => Date
   env?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
@@ -748,6 +749,58 @@ function stageWindowsNativeBinary(packageDir: string, binDir: string, binary: st
   }
 }
 
+function installNpmPackage(packageDir: string, platform: NodeJS.Platform): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      'npm',
+      [
+        'install',
+        '--no-save',
+        '--no-audit',
+        '--no-fund',
+        '--omit=dev',
+        '--omit=peer',
+        '--no-package-lock',
+        '--loglevel=error',
+      ],
+      {
+        cwd: packageDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // @anthropic-ai/claude-code postinstall requires this marker before it
+        // downloads the platform-native binary.
+        env: { ...process.env, AUTHORIZED: 'true' },
+        shell: platform === 'win32',
+        windowsHide: true,
+      },
+    )
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    child.stdout.setEncoding('utf-8')
+    child.stderr.setEncoding('utf-8')
+    child.stdout.on('data', (chunk: string) => (stdout += chunk))
+    child.stderr.on('data', (chunk: string) => (stderr += chunk))
+
+    const finish = (error?: Error): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) reject(error)
+      else resolve()
+    }
+    const detail = (): string => (stderr || stdout || 'unknown').trim()
+    const timer = setTimeout(() => {
+      child.kill()
+      finish(new Error(`npm install timed out after 120000ms: ${detail()}`))
+    }, 120_000)
+    child.once('error', (error) => finish(new Error(`npm install failed: ${error.message}`)))
+    child.once('close', (code) => {
+      if (code === 0) finish()
+      else finish(new Error(`npm install failed: ${detail()}`))
+    })
+  })
+}
+
 function findPackageJson(dir: string): string {
   const direct = join(dir, 'package', 'package.json')
   if (existsSync(direct)) return direct
@@ -881,40 +934,10 @@ export async function syncManagedVendorCli(
     // or a postinstall hook — the bare tarball doesn't include it, so we need a
     // full `npm install --omit=dev` to materialise the binary before probing.
     console.log(`[c3] vendor npm-install: ${vendor} v${selected.version} ...`)
-    {
-      const pkgDir = join(publishTmp, 'package')
-      const npmR = spawnSync(
-        'npm',
-        [
-          'install',
-          '--no-save',
-          '--no-audit',
-          '--no-fund',
-          '--omit=dev',
-          '--omit=peer',
-          '--no-package-lock',
-          '--loglevel=error',
-        ],
-        {
-          cwd: pkgDir,
-          encoding: 'utf-8',
-          timeout: 120_000,
-          // @anthropic-ai/claude-code postinstall guards against direct-publish
-          // with a CHECK: `node -e "if (!process.env.AUTHORIZED) process.exit(1)"`.
-          // We set AUTHORIZED=true so the guard passes and the real install.cjs
-          // (which downloads the native binary) actually runs.
-          env: { ...process.env, AUTHORIZED: 'true' },
-          shell: platform === 'win32',
-        },
-      )
-      if (npmR.error || npmR.status !== 0) {
-        throw new Error(
-          `npm install failed: ${(npmR.stderr || npmR.stdout || npmR.error?.message || 'unknown').trim()}`,
-        )
-      }
-    }
+    const packageDir = join(publishTmp, 'package')
+    await (deps.installPackage ?? installNpmPackage)(packageDir, platform)
     if (platform === 'win32') {
-      stageWindowsNativeBinary(join(publishTmp, 'package'), dirname(destBin), spec.binary)
+      stageWindowsNativeBinary(packageDir, dirname(destBin), spec.binary)
     } else {
       writeFileSync(
         destBin,

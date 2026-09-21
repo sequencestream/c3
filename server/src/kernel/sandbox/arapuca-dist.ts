@@ -59,6 +59,7 @@ import {
 import { dirname, join, sep } from 'node:path'
 import { c3HomeDir } from '../config/index.js'
 import { readJsonFile, writeAtomic } from '../config/store.js'
+import { extractWithTar } from '../infra/archive.js'
 
 // ─── Pinned Artifact Table ───────────────────────────────────────────────────
 
@@ -263,9 +264,7 @@ const httpDownload: ArapucaDownloader = async (url, destFile) => {
  * Using the system tool keeps c3 free of an archive dependency.
  */
 const tarExtract: ArapucaExtractor = (archive, destDir) => {
-  const r = spawnSync('tar', ['-xf', archive, '-C', destDir], { encoding: 'utf-8' })
-  if (r.error) throw r.error
-  if (r.status !== 0) throw new Error(`tar exited ${r.status}: ${(r.stderr || '').trim()}`)
+  extractWithTar(archive, destDir)
 }
 
 /** SHA-256 of a file's bytes, lowercase hex. */

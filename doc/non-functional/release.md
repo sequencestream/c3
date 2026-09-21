@@ -34,7 +34,7 @@
 ## 分发契约 — 单一二进制文件并非自包含(ADR-0012)
 
 `c3` 单一二进制文件本身携带 c3,再加上 vendor CLI 的安装器/解析器逻辑。默认的
-智能体执行使用 c3 管理的 vendor 安装,路径为 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`。
+智能体执行使用 c3 管理的 vendor 安装,路径为 `~/.c3/vendor/<vendor>/<version>/bin/<binary>{.exe}`。
 发布文档必须把这一契约写明:
 
 - **解析优先级是固定的。** env override(`CLAUDE_PATH` / `CODEX_PATH` / `CURSOR_PATH`)优先,

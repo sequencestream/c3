@@ -247,6 +247,52 @@ describe('syncManagedVendorCli failure recovery', () => {
     expect(result.version).toBe('1.2.3')
   })
 
+  it('keeps the event loop responsive while npm installation is in flight', async () => {
+    const tarball = Buffer.from('async install tarball')
+    const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+    const packument = {
+      'dist-tags': { latest: '1.2.5' },
+      versions: {
+        '1.2.5': {
+          version: '1.2.5',
+          dist: { tarball: 'https://registry.example/claude.tgz', integrity },
+        },
+      },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => packument })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+      })
+    let finishInstall!: () => void
+    const installPending = new Promise<void>((resolve) => {
+      finishInstall = resolve
+    })
+    const installPackage = vi.fn(() => installPending)
+
+    const sync = syncManagedVendorCli('claude', {
+      fetch: fetchMock as unknown as typeof fetch,
+      installPackage,
+      unpack: (_archive, dest) => {
+        const pkg = join(dest, 'package')
+        mkdirSync(pkg, { recursive: true })
+        writeFileSync(join(pkg, 'package.json'), '{"bin":{"claude":"cli/claude"}}', 'utf-8')
+        fakeBin(join(pkg, 'cli', 'claude'), 'claude 1.2.5')
+      },
+    })
+
+    await vi.waitFor(() => expect(installPackage).toHaveBeenCalledOnce())
+    let timerFired = false
+    setTimeout(() => (timerFired = true), 0)
+    await vi.waitFor(() => expect(timerFired).toBe(true))
+
+    finishInstall()
+    await expect(sync).resolves.toMatchObject({ source: 'managed', version: '1.2.5' })
+  })
+
   it('stages a native executable and its sibling files on Windows', async () => {
     const tarball = Buffer.from('fake Windows tarball')
     const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`

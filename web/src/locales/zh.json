@@ -1677,7 +1677,8 @@
         "work": "工作",
         "pr": "PR",
         "review": "评审",
-        "fix": "修复"
+        "fix": "修复",
+        "merge": "合并"
       },
       "state": {
         "notStarted": "未开始",

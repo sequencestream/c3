@@ -26,6 +26,57 @@ function derive(
 }
 
 describe('deriveIntentEngineeringProgress', () => {
+  it.each([
+    [[], 'not_started'],
+    [fakeIntentPrs('reviewing'), 'not_started'],
+    [fakeIntentPrs('merged'), 'completed'],
+    [fakeIntentPrs('rejected'), 'closed'],
+    [fakeIntentPrs('failed'), 'closed'],
+    [fakeIntentPrs('closed'), 'closed'],
+    [fakeIntentPrs('merged', 'reviewing'), 'not_started'],
+    [fakeIntentPrs('merged', 'failed'), 'closed'],
+    [fakeIntentPrs('merged', 'rejected'), 'closed'],
+    [fakeIntentPrs('merged', 'closed'), 'completed'],
+  ] as const)('derives merge from the aggregate for %j', (prs, expected) => {
+    expect(derive({ prs: [...prs] }, true, 'worktree').at(-1)).toEqual({
+      stage: 'merge',
+      state: expected,
+    })
+  })
+
+  it.each([null, undefined, 'pending', 'approved', 'rejected'] as const)(
+    'completes review after merging regardless of review status %s',
+    (reviewStatus) => {
+      const progress = derive(
+        { impactLevel: 'L3', prs: fakeIntentPrs('merged'), reviewStatus },
+        true,
+        'worktree',
+      )
+      expect(progress.filter(({ stage }) => ['pr', 'review', 'merge'].includes(stage))).toEqual([
+        { stage: 'pr', state: 'completed' },
+        { stage: 'review', state: 'completed' },
+        { stage: 'merge', state: 'completed' },
+      ])
+    },
+  )
+
+  it('keeps review in progress while another PR remains under review', () => {
+    expect(
+      derive(
+        { impactLevel: 'L3', prs: fakeIntentPrs('merged', 'reviewing') },
+        true,
+        'worktree',
+      ).find(({ stage }) => stage === 'review')?.state,
+    ).toBe('in_progress')
+    expect(derive({ impactLevel: 'L3' }, true, 'worktree').map(({ stage }) => stage)).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+      'merge',
+    ])
+  })
+
   it('returns three stages with SDD enabled and two with SDD disabled', () => {
     expect(derive().map(({ stage }) => stage)).toEqual(['intent', 'spec', 'work'])
     expect(
@@ -38,7 +89,7 @@ describe('deriveIntentEngineeringProgress', () => {
   it.each([
     ['missing mode', undefined, ['intent', 'spec', 'work']],
     ['current-branch mode', 'current-branch', ['intent', 'spec', 'work']],
-    ['worktree mode with SDD', 'worktree', ['intent', 'spec', 'work', 'pr']],
+    ['worktree mode with SDD', 'worktree', ['intent', 'spec', 'work', 'pr', 'merge']],
   ] as const)('derives the stage sequence for %s', (_name, branchMode, expected) => {
     expect(derive({}, true, branchMode).map(({ stage }) => stage)).toEqual(expected)
   })
@@ -73,6 +124,7 @@ describe('deriveIntentEngineeringProgress', () => {
       'intent',
       'work',
       'pr',
+      'merge',
     ])
   })
 
@@ -125,29 +177,30 @@ describe('deriveIntentEngineeringProgress', () => {
     // it to `reviewing` on read, so the stage only ever sees the five real ones.
     ['without any PR', {}, 'not_started'],
     ['with an empty PR list', { prs: [] }, 'not_started'],
-    ['while reviewing', { prs: fakeIntentPrs('reviewing') }, 'in_progress'],
+    ['while reviewing', { prs: fakeIntentPrs('reviewing') }, 'completed'],
     ['when merged', { prs: fakeIntentPrs('merged') }, 'completed'],
-    ['when rejected', { prs: fakeIntentPrs('rejected') }, 'closed'],
-    ['when failed', { prs: fakeIntentPrs('failed') }, 'closed'],
-    ['when closed', { prs: fakeIntentPrs('closed') }, 'closed'],
-    // Aggregate ladder: one unsettled PR keeps the whole stage in progress.
+    ['when rejected', { prs: fakeIntentPrs('rejected') }, 'completed'],
+    ['when failed', { prs: fakeIntentPrs('failed') }, 'completed'],
+    ['when closed', { prs: fakeIntentPrs('closed') }, 'completed'],
     [
       'with a merged and a reviewing PR',
       { prs: fakeIntentPrs('merged', 'reviewing') },
-      'in_progress',
+      'completed',
     ],
     ['with a merged and a closed PR', { prs: fakeIntentPrs('merged', 'closed') }, 'completed'],
   ] as const)('derives the PR stage %s', (_name, overrides, expected) => {
-    expect(derive(overrides as Parameters<typeof derive>[0], true, 'worktree').at(-1)?.state).toBe(
-      expected,
-    )
+    expect(
+      derive(overrides as Parameters<typeof derive>[0], true, 'worktree').find(
+        ({ stage }) => stage === 'pr',
+      )?.state,
+    ).toBe(expected)
   })
 
   it.each([
     [
       'done work with reviewing PR',
       { status: 'done', prs: fakeIntentPrs('reviewing') },
-      ['completed', 'in_progress'],
+      ['completed', 'completed'],
     ],
     [
       'unfinished work with merged PR',
@@ -157,12 +210,12 @@ describe('deriveIntentEngineeringProgress', () => {
     [
       'done work with closed PR',
       { status: 'done', prs: fakeIntentPrs('closed') },
-      ['completed', 'closed'],
+      ['completed', 'completed'],
     ],
   ] as const)('keeps work and PR independent: %s', (_name, overrides, expected) => {
     expect(
       derive(overrides, false, 'worktree')
-        .slice(-2)
+        .filter(({ stage }) => stage === 'work' || stage === 'pr')
         .map(({ state }) => state),
     ).toEqual(expected)
   })
@@ -177,7 +230,7 @@ describe('deriveIntentEngineeringProgress', () => {
     const stages = derive({ impactLevel, prs: fakeIntentPrs('reviewing') }, true, 'worktree').map(
       ({ stage }) => stage,
     )
-    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review'])
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review', 'merge'])
   })
 
   it('skips the review segment for an L5 intent', () => {
@@ -186,18 +239,19 @@ describe('deriveIntentEngineeringProgress', () => {
       true,
       'worktree',
     ).map(({ stage }) => stage)
-    expect(stages).toEqual(['intent', 'spec', 'work', 'pr'])
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'merge'])
   })
 
   it('shows the review segment with a written conclusion even without a PR row', () => {
     const stages = derive({ impactLevel: 'L3', reviewStatus: 'approved' }, true, 'worktree').map(
       ({ stage }) => stage,
     )
-    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review'])
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review', 'merge'])
   })
 
   it.each([
-    ['never reviewed', null, 'not_started'],
+    ['never reviewed', null, 'in_progress'],
+    ['missing review status', undefined, 'in_progress'],
     ['in flight', 'pending', 'in_progress'],
     ['approved', 'approved', 'completed'],
     ['rejected', 'rejected', 'closed'],
@@ -216,13 +270,20 @@ describe('deriveIntentEngineeringProgress', () => {
     ['a completed fix', { fixStatus: 'fixed' }, 'completed'],
   ] as const)('derives the fix segment state for %s', (_name, overrides, expected) => {
     const items = derive(overrides as Parameters<typeof derive>[0], true, 'worktree')
-    expect(items.map(({ stage }) => stage)).toEqual(['intent', 'spec', 'work', 'pr', 'fix'])
-    expect(items.at(-1)?.state).toBe(expected)
+    expect(items.map(({ stage }) => stage)).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+      'fix',
+      'merge',
+    ])
+    expect(items.find(({ stage }) => stage === 'fix')?.state).toBe(expected)
   })
 
   it('omits the fix segment when no fix session and no conclusion exist', () => {
     const stages = derive({}, true, 'worktree').map(({ stage }) => stage)
-    expect(stages).toEqual(['intent', 'spec', 'work', 'pr'])
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'merge'])
   })
 
   it('orders review and fix after the PR segment', () => {
@@ -236,7 +297,7 @@ describe('deriveIntentEngineeringProgress', () => {
       true,
       'worktree',
     ).map(({ stage }) => stage)
-    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review', 'fix'])
+    expect(stages).toEqual(['intent', 'spec', 'work', 'pr', 'review', 'fix', 'merge'])
   })
 
   it.each([

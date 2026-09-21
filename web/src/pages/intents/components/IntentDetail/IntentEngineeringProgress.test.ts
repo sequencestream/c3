@@ -59,18 +59,29 @@ describe('IntentEngineeringProgress.vue', () => {
     expect(stages(w).map((x) => x.attributes('data-stage'))).toEqual(['intent', 'work'])
   })
 
-  it('renders the PR stage with the closed state and label in worktree mode', () => {
+  it('renders a completed PR and closed merge in worktree mode', () => {
     const w = mountProgress(
       { status: 'done', prs: fakeIntentPrs('closed'), impactLevel: 'L5' },
       { sddEnabled: true, workspaceGitBranchMode: 'worktree' },
     )
     const s = stages(w)
-    expect(s.map((x) => x.attributes('data-stage'))).toEqual(['intent', 'spec', 'work', 'pr'])
-    const pr = s.at(-1)
-    expect(pr?.attributes('data-state')).toBe('closed')
-    expect(pr?.classes()).toContain('is-closed')
+    expect(s.map((x) => x.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+      'merge',
+    ])
+    const pr = w.get('[data-stage="pr"]')
+    expect(pr.attributes('data-state')).toBe('completed')
+    expect(pr.classes()).toContain('is-completed')
     expect(pr?.find('.intent-engineering-progress-name').text()).toBe('PR')
-    expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
+    expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Completed')
+    const merge = w.get('[data-stage="merge"]')
+    expect(merge.attributes('data-state')).toBe('closed')
+    expect(merge.classes()).toContain('is-closed')
+    expect(merge.find('.intent-engineering-progress-name').text()).toBe('Merge')
+    expect(merge.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
   })
 
   it('appends the PR stage reactively when the branch mode resolves to worktree', async () => {
@@ -82,8 +93,41 @@ describe('IntentEngineeringProgress.vue', () => {
 
     await w.setProps({ workspaceGitBranchMode: 'worktree' })
     const s = stages(w)
-    expect(s.map((x) => x.attributes('data-stage'))).toEqual(['intent', 'spec', 'work', 'pr'])
-    expect(s.at(-1)?.attributes('data-state')).toBe('in_progress')
+    expect(s.map((x) => x.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+      'merge',
+    ])
+    expect(w.get('[data-stage="pr"]').attributes('data-state')).toBe('completed')
+    expect(s.at(-1)?.attributes('data-state')).toBe('not_started')
+  })
+
+  it('reactively completes review and merge after PR synchronization', async () => {
+    const intent: EngineeringProgressInput = {
+      status: 'reviewing',
+      impactLevel: 'L3',
+      reviewStatus: null,
+      prs: fakeIntentPrs('reviewing'),
+      fixStatus: 'fixed',
+    }
+    const wrapper = mountProgress(intent, { sddEnabled: true, workspaceGitBranchMode: 'worktree' })
+    expect(stages(wrapper).map((stage) => stage.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+      'review',
+      'fix',
+      'merge',
+    ])
+    expect(wrapper.get('[data-stage="review"]').attributes('data-state')).toBe('in_progress')
+    expect(wrapper.get('[data-stage="merge"]').attributes('data-state')).toBe('not_started')
+    await wrapper.setProps({ intent: { ...intent, prs: fakeIntentPrs('merged') } })
+    for (const stage of ['pr', 'review', 'merge']) {
+      expect(wrapper.get(`[data-stage="${stage}"]`).attributes('data-state')).toBe('completed')
+    }
   })
 
   it('keeps the PR stage hidden in current-branch mode', async () => {

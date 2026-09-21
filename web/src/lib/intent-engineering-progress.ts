@@ -9,7 +9,8 @@ import type {
 import { deriveIntentPrAggregate, needsReview } from '@ccc/shared'
 
 export type EngineeringProgressState = 'not_started' | 'in_progress' | 'completed' | 'closed'
-export type EngineeringProgressStage = 'intent' | 'spec' | 'work' | 'pr' | 'review' | 'fix'
+export type EngineeringProgressStage =
+  'intent' | 'spec' | 'work' | 'pr' | 'review' | 'fix' | 'merge'
 
 export interface EngineeringProgressInput {
   status: IntentStatus
@@ -23,7 +24,6 @@ export interface EngineeringProgressInput {
    */
   effectiveSpecMode?: IntentSpecMode
   lastWorkSessionId?: string | null
-  /** Every PR the intent owns; the PR stage reads its aggregate, never one row. */
   prs?: IntentPr[]
   /** The intent's impact grade; decides whether the PR review segment appears. */
   impactLevel?: IntentImpactLevel | null
@@ -55,7 +55,7 @@ function reviewState(
   if (reviewStatus === 'pending') return 'in_progress'
   if (reviewStatus === 'approved') return 'completed'
   if (reviewStatus === 'rejected') return 'closed'
-  return 'not_started'
+  return 'in_progress'
 }
 
 function fixState(fixStatus: IntentFixStatus | null | undefined): EngineeringProgressState {
@@ -109,26 +109,20 @@ export function deriveIntentEngineeringProgress(
   })
 
   if (workspaceGitBranchMode === 'worktree') {
-    // One aggregate for the whole stage: an intent with several PRs still shows a
-    // single PR segment, and "still under review" outranks any terminal row.
     const aggregate = deriveIntentPrAggregate(prs)
-    let state: EngineeringProgressState = 'not_started'
-    if (aggregate !== null) {
-      if (aggregate === 'merged') state = 'completed'
-      else if (['rejected', 'failed', 'closed'].includes(aggregate)) state = 'closed'
-      else state = 'in_progress'
-    }
-    progress.push({ stage: 'pr', state })
+    progress.push({ stage: 'pr', state: prs.length > 0 ? 'completed' : 'not_started' })
 
     // Review follows the PR. It appears only when the intent actually goes through
     // the review loop (`needsReview` — L5 skips the first review) AND there is PR
     // evidence to review: a PR row, or a conclusion already written by the relay.
-    // `reviewStatus` alone drives the state.
     if (
       needsReview(intent.impactLevel ?? null) &&
       (prs.length > 0 || isPresent(intent.reviewStatus))
     ) {
-      progress.push({ stage: 'review', state: reviewState(intent.reviewStatus) })
+      progress.push({
+        stage: 'review',
+        state: aggregate === 'merged' ? 'completed' : reviewState(intent.reviewStatus),
+      })
     }
 
     // Fix only exists after a rejected review; a bound fix session or a written
@@ -137,6 +131,15 @@ export function deriveIntentEngineeringProgress(
     if (hasValue(intent.fixSessionId) || isPresent(intent.fixStatus)) {
       progress.push({ stage: 'fix', state: fixState(intent.fixStatus) })
     }
+    progress.push({
+      stage: 'merge',
+      state:
+        aggregate === 'merged'
+          ? 'completed'
+          : aggregate === 'rejected' || aggregate === 'failed' || aggregate === 'closed'
+            ? 'closed'
+            : 'not_started',
+    })
   }
 
   return progress

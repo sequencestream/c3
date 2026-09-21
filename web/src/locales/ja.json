@@ -1678,7 +1678,8 @@
         "work": "作業",
         "pr": "PR",
         "review": "レビュー",
-        "fix": "修正"
+        "fix": "修正",
+        "merge": "マージ"
       },
       "state": {
         "notStarted": "未開始",

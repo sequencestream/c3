@@ -45,9 +45,11 @@ import {
 } from './store.js'
 import {
   deleteIntentRecords,
+  getIntent,
   insertIntents,
   listIntentPrs,
   setLatestCommitHash,
+  updateStatus,
   upsertIntentPr,
   resetStoreForTests as resetIntentStoreForTests,
 } from '../intents/store.js'
@@ -1107,6 +1109,32 @@ describe('link / unlink intent ↔ delivery', () => {
     // The ledger now agrees, so a retry is refused locally without a round trip.
     expect(listIntentPrs(i)[0].status).toBe('merged')
     expect(listAssociatedIntents(d)[0].prStatus).toBe('merged')
+  })
+
+  it('settles a reviewing intent when the unlink pass observes its PR merged', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    updateStatus(i, 'reviewing')
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'reviewing',
+    })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBe('delivery.unlinkMergedPrDenied')
+
+    // The refused unlink is not the only thing this pass learns: it just watched
+    // the intent's last PR land, so the intent settles here rather than staying
+    // `reviewing` until some later sync happens to look at it.
+    const got = getIntent(i)
+    expect(got?.reviewStatus).toBe('approved')
+    expect(got?.status).toBe('done')
   })
 
   it('blocks the unlink when the forge status cannot be read at all', async () => {

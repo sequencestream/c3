@@ -171,7 +171,9 @@ flowchart TD
    候选集合、留在 `reviewing` 等合并(队列因此仍能正常呈现 `done`/idle,因为它对这条意图已无事
    可做);**唯一例外**是评审由队列自己认领并通过 —— 此时意图持有一张合并凭据,接力以 `merge_prs`
    收尾自动合并后才退出(见第 8 条)。`done` 只由收敛检查在「评审了结 + PR 全部合并」后写,不由
-   接力自己写。接力候选与开发
+   接力自己写。**合并本身就是评审了结**:收敛检查观测到 PR 全部合并时,会把台账 `reviewStatus`
+   按合并结果补写为 `approved`(already `approved` 则跳过),因此评审会话缺席、或在 c3 之外先合
+   并的意图不会卡在 `reviewing` —— 这种情况队列不再为它拉起评审会话。接力候选与开发
    候选**同一条闸门链、同一份并发配额**:
    规格、交付写入、交付歧义、依赖、退避、冷却、`RM-A12` 一条都不放宽,每轮最多发起**一次**接力
    会话。`current-branch` 下不接力 —— 评审读、修复改的是 PR 的 head 分支,共享检出里没有这个
@@ -205,7 +207,8 @@ flowchart TD
    identity 键顺序重读 forge、比对 head SHA 仍是评审时 pin 的那一版,发出
    `gh pr merge --merge --match-head-commit <sha>` / `glab mr merge --yes --auto-merge=false --sha <sha>`;
    缺 head SHA 是拒绝而非豁免。命令返回 0 不当作成功:`syncIntentPrStatus` 读回 forge,聚合态
-   `merged` 才 `completeIntentOnPrsMerged` 写 `done`;冲突、红检查、缺 CLI、超时或 forge 未确认
+   `merged` 才 `completeIntentOnPrsMerged` 写 `done`;该路径进入前 `reviewStatus` 必然已是 `approved`,
+   故其中的合并补写是 no-op,同一次合并被同步与二次求值先后观测也不会多写结论;冲突、红检查、缺 CLI、超时或 forge 未确认
    都**交回人**(phase `handed_back`、凭据清空、去重待办 + 决策行,`pr_merge_failed`/
    `pr_merge_unconfirmed`),意图停在 `reviewing` + `approved`,队列继续其他意图。**没有重试阶梯**:
    被恢复的那次尝试可能已经落地,重发等于发出一个没人授权的第二次合并。

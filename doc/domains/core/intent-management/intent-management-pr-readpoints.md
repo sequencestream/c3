@@ -37,7 +37,7 @@
 - `dev-cleanup.ts: runManualDevCleanup`(门禁→写): 手动会话收尾:意图为 `done` 且目标解析成功才建 PR 并写入
 - `queue-dev-actions.ts: maybeCreatePr`(门禁→写): 自动化队列:`done` 写入后按目标解析建 PR(未关联则向 `baseBranch`)
 - `pr-status-sync.ts: syncIntentPrStatus`(读→写): 遍历该意图全部 `reviewing` 行查 forge,终态落库 + 写意图日志;每次同步收尾都求值一次完成派生
-- `pr-merge-completion.ts: completeIntentOnPrsMerged`(读→写): 聚合态为 `merged` 时把 `in_progress` 意图置 `done`;由同步、关联外部 PR、交付解绑三处在写完 PR 行后调用
+- `pr-merge-completion.ts: completeIntentOnPrsMerged`(读→写): 聚合态为 `merged` 时先把 `reviewStatus` 补写为 `approved`(幂等,写一条 `intent_updated` 意图日志),再按 RM-R48 收敛(置 `done`);由同步、关联外部 PR、交付解绑、队列二次求值四处在写完合并事实后调用
 - `pr-status-sync.ts: depsWithUnconfirmedPr`(读): 依赖意图存在 `reviewing` 行即触发后台补同步
 - `write-cores.ts: applyIntentStatusChange`(读→写): 取消意图:遍历全部活跃 PR 逐条关闭,全成功才放行
 - `pr-update-consumer.ts: handlePrUpdateEvent`(读→写): `pr:update` 事件把指定行从 `rejected`/`failed`/`closed` 复位

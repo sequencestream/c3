@@ -701,16 +701,26 @@ handler 用假实现做单元测试(无需实时 DB 或总线)。
 
 ## PR 全落地的完成派生(RM-R48)
 
-`features/intents/pr-merge-completion.ts` 只导出 `completeIntentOnPrsMerged(workspacePath, intentId)`:
-重新读取意图,`status ∈ {in_progress, reviewing}` 且 `deriveIntentPrAggregate(intent.prs) === 'merged'`、
-并满足 `intentHasConverged`(一条 `reviewing` 意图还需「评审了结:免评审或 `reviewStatus === 'approved'」)时
-调用 `updateStatus(id, 'done')`(actor 落 `automation`)与 `publishIntentStatusTransition`,
-返回状态是否真的移动,让调用方决定要不要广播。
+`features/intents/pr-merge-completion.ts` 导出 `completeIntentOnPrsMerged(workspacePath, intentId)`:
+重新读取意图,`status ∈ {in_progress, reviewing}` 且 `deriveIntentPrAggregate(intent.prs) === 'merged'` 时,
+**先把 `reviewStatus` 补写为 `approved`**(仅当当前不是 `approved`;同时写一条 actor 为 `automation`、
+操作类型 `intent_updated` 的意图日志),再满足 `intentHasConverged`(一条 `reviewing` 意图还需「评审了结:
+免评审或 `reviewStatus === 'approved'`」)时调用 `updateStatus(id, 'done')`(actor 落 `automation`)与
+`publishIntentStatusTransition`,返回状态是否真的移动,让调用方决定要不要广播。
+
+补写排在收敛判断**之前**,且判据读到的就是本次刚写下的值,因此一条 `reviewing` 意图只要 PR 已全部
+落地,即便评审会话从未给出结论(合并发生在 c3 之外),或曾给出 `rejected`(合并发生在结论之后),
+也能在**一次调用内**落到 `done`。语义上「合并即视为评审通过」:被覆盖的 `rejected` 不再作为台账终态
+保留,但评审/修复的过程证据仍在 WorkNote 与历史意图日志里。该补写与 `needsReview` 无关 —— L5 等
+免评审意图合并后同样落 `approved`。已是 `approved` 时既不重写字段也不写日志,因此同一合并事实被多条
+路径先后观测(尤其队列自动合并会在同步之后再求值一次)不会堆出重复结论。
 
 判据是**账本聚合态**而非 forge 往返:`merged` 已经表示没有 `reviewing`/`failed`/`rejected` 行,
-一次派生就覆盖单 PR 与多交付 PR 两种形态,`closed` 行按聚合规则不拦。调用点是三条现役的 `merged` 写入路径 —— `syncIntentPrStatus`(每一轮收尾都求值,因此早于该规则合并的意图也会在下一次
-同步时被纠正)、`linkIntentPr`、交付解绑时的合并观察。放在这三处而非 `upsertIntentPr` 内部,
-是因为写入口是纯存储语义,广播与生命周期事件属于领域动作,不该被存储层承担。
+一次派生就覆盖单 PR 与多交付 PR 两种形态,`closed` 行按聚合规则不拦。调用点是四条现役的合并观察
+路径 —— `syncIntentPrStatus`(每一轮收尾都求值,因此早于该规则合并的意图也会在下一次同步时被纠正)、
+`linkIntentPr`、交付解绑时的合并观察、队列自动合并读回 forge 之后的二次求值(该路径进入前必然已是
+`approved`,补写为 no-op)。放在这几处而非 `upsertIntentPr` 内部,是因为写入口是纯存储语义,
+广播与生命周期事件属于领域动作,不该被存储层承担。
 
 ## 合并凭据与自动合并(RM-A27)
 

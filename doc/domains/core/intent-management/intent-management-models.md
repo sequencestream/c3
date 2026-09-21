@@ -17,7 +17,7 @@
 - **`priority`**(enum `P0`|`P1`|`P2`|`P3`): 需求级别;P0 最高 —— 排的是**何时做**
 - **`impactLevel`**(enum `L1`|`L2`|`L3`|`L4`|`L5`| null): 影响范围等级 —— 做错了**波及多远**;`L1` 最高(核心流程/资金/数据完整性),`L5` 最低(文案/界面微调);`null` = 未定级。与 `priority` 正交,互不替代也不合并。创建时由沟通智能体判定,`in_progress`/`reviewing`/`done` 之外可手改(代码已产出,影响范围已成事实,评审期间同样不可改写);持久值无法解释时读作未定级而非中间档(RM-R49)。等级联动 spec 准入与机器审批见 RM-R51:L1/L2 强制规格先行且禁止机器批准,L4/L5 默认规格延后,中间档与未定级不联动。
 - **`module`**(text): 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)
-- **`status`**(enum): `draft`|`todo`|`in_progress`|`reviewing`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)。`reviewing` = 代码已提交、PR 已建立或待建立,评审/修复/合并尚未了结 —— 它是接力候选存在的唯一状态;`done` = 全流程完成 = 评审了结(免评审 或 `reviewStatus === 'approved'`)且该意图 PR 聚合为 `merged`,无 PR 阶段的模式(共享检出/当前分支)下仍等于「工作完成」
+- **`status`**(enum): `draft`|`todo`|`in_progress`|`reviewing`|`done`|`cancelled` (RM-R6, RM-R8, RM-R9, RM-R48)。`reviewing` = 代码已提交、PR 已建立或待建立,评审/修复/合并尚未了结 —— 它是接力候选存在的唯一状态;`done` = 全流程完成 = 评审了结(免评审 或 `reviewStatus === 'approved'`,合并本身即视为了结——见下)且该意图 PR 聚合为 `merged`,无 PR 阶段的模式(共享检出/当前分支)下仍等于「工作完成」
 - **`dependsOn`**(`id[]`): 该条目所依赖的项目内其他意图 id(聚合;RM-R1)
 - **`lastWorkSessionId`**(text | null): 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)
 - **`automate`**(boolean): 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)
@@ -71,7 +71,7 @@ session-registry 所有)。
 - **`repo`**(text | null): 仓库标识(`owner/name`);`null` 表示来源未知
 - **`number`**(text): 仓库内 PR/MR 编号,由 gh/glab 创建输出解析
 - **`url`**(text | null): 可跳转链接;与 `latestCommitHash` 语义不同(链接指向变更请求,哈希指向提交)
-- **`status`**(enum): `reviewing`|`rejected`|`failed`|`merged`|`closed`;有自己的生命周期,不随意图状态变化,反向则派生一条边:PR 聚合为 `merged` 时,`in_progress` 意图自动转 `done`(手动路径的历史规则)、`reviewing` 意图在「评审了结(免评审 或 `approved`)」后收敛为 `done`(RM-R48)
+- **`status`**(enum): `reviewing`|`rejected`|`failed`|`merged`|`closed`;有自己的生命周期,不随意图状态变化,反向则派生一条边:PR 聚合为 `merged` 时,`in_progress` 意图自动转 `done`(手动路径的历史规则)、`reviewing` 意图在「评审了结(免评审 或 `approved`)」后收敛为 `done`(RM-R48);合并本身即视为评审了结 —— 收敛求值会把尚不是 `approved` 的 `reviewStatus` 补写为 `approved`(RM-R48)
 - **`headBranch` / `baseBranch`**(text | null): 源分支 / 目标分支,每行独立记录
 - **`createdAt` / `updatedAt`**(timestamp): 创建 / 最近更新时间
 

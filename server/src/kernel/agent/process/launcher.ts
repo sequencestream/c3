@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -16,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import { c3HomeDir, getVendorCliVersions } from '../../config/index.js'
 import { readJsonFile, withFileLock, writeAtomic } from '../../config/store.js'
+import { extractWithTar } from '../../infra/archive.js'
 import type { VendorCliDegradation } from '@ccc/shared/protocol'
 import type { VendorId } from '../adapters/types.js'
 
@@ -215,6 +217,8 @@ export interface VendorInstallerDeps {
   unpack?: (archivePath: string, destDir: string) => void
   now?: () => Date
   env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  arch?: NodeJS.Architecture
 }
 
 const cache = new Map<VendorId, VendorProbe>()
@@ -228,9 +232,15 @@ export function lookupCommand(
   return platform === 'win32' ? ['where', [binary]] : ['sh', ['-c', `command -v ${binary}`]]
 }
 
-export function managedBinPath(vendor: VendorId, version: string, home = c3HomeDir()): string {
+export function managedBinPath(
+  vendor: VendorId,
+  version: string,
+  home = c3HomeDir(),
+  platform: NodeJS.Platform = process.platform,
+): string {
   const spec = requireManaged(vendor)
-  return join(home, 'vendor', vendor, version, 'bin', spec.binary)
+  const suffix = platform === 'win32' ? '.exe' : ''
+  return join(home, 'vendor', vendor, version, 'bin', `${spec.binary}${suffix}`)
 }
 
 export function vendorManifestPath(home = c3HomeDir()): string {
@@ -387,7 +397,7 @@ function recordState(
 
 function probeManaged(vendor: VendorId, version: string, deps?: VendorInstallerDeps): VendorProbe {
   const spec = requireNpmManaged(vendor)
-  const path = managedBinPath(vendor, version)
+  const path = managedBinPath(vendor, version, c3HomeDir(), deps?.platform)
   const versionText = probeVersion(path, vendor, deps)
   if (!satisfiesRange(versionText, spec.compatibleRange)) {
     throw new Error(`${vendor} ${versionText} is outside compatible range ${spec.compatibleRange}`)
@@ -697,9 +707,45 @@ function verifySRI(data: Buffer, integrity: string): void {
 }
 
 function defaultUnpack(archivePath: string, destDir: string): void {
-  const r = spawnSync('tar', ['-xzf', archivePath, '-C', destDir], { encoding: 'utf-8' })
-  if (r.error || r.status !== 0)
-    throw new Error((r.stderr || r.error?.message || 'tar failed').trim())
+  extractWithTar(archivePath, destDir, true)
+}
+
+function findWindowsExecutables(root: string): string[] {
+  const pending = [root]
+  const matches: string[] = []
+  while (pending.length > 0) {
+    const dir = pending.pop()
+    if (!dir) continue
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) pending.push(path)
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith('.exe')) matches.push(path)
+    }
+  }
+  matches.sort((a, b) => a.length - b.length || a.localeCompare(b))
+  return matches
+}
+
+function findWindowsNativeBinary(root: string, binary: string): string {
+  const wanted = `${binary}.exe`.toLowerCase()
+  const match = findWindowsExecutables(root).find(
+    (candidate) => basename(candidate).toLowerCase() === wanted,
+  )
+  if (!match) throw new Error(`native Windows executable not found: ${binary}.exe`)
+  return match
+}
+
+function stageWindowsNativeBinary(packageDir: string, binDir: string, binary: string): void {
+  const nativeDir = dirname(findWindowsNativeBinary(packageDir, binary))
+  for (const entry of readdirSync(nativeDir, { withFileTypes: true })) {
+    cpSync(join(nativeDir, entry.name), join(binDir, entry.name), {
+      recursive: entry.isDirectory(),
+    })
+  }
+  for (const helper of findWindowsExecutables(packageDir)) {
+    const target = join(binDir, basename(helper))
+    if (!existsSync(target)) cpSync(helper, target)
+  }
 }
 
 function findPackageJson(dir: string): string {
@@ -732,6 +778,8 @@ export async function syncManagedVendorCli(
 ): Promise<VendorProbe> {
   const spec = requireNpmManaged(vendor)
   const home = c3HomeDir()
+  const platform = deps.platform ?? process.platform
+  const arch = deps.arch ?? process.arch
   const state = readState(home)
   // The download target is decoupled from the user's effective-version choice
   // (`vendorCliVersions`): sync always tracks the latest compatible release so
@@ -756,8 +804,8 @@ export async function syncManagedVendorCli(
     return fallback.path ? { ...fallback, managedError: msg } : missingProbe(vendor, undefined, msg)
   }
 
-  const selected = selectNpmVersion(vendor, packument)
-  const path = managedBinPath(vendor, selected.version, home)
+  const selected = selectNpmVersion(vendor, packument, platform, arch)
+  const path = managedBinPath(vendor, selected.version, home, platform)
   if (existsSync(path)) {
     const probe = probeManaged(vendor, selected.version, deps)
     const prior = state.vendors[vendor]
@@ -822,7 +870,7 @@ export async function syncManagedVendorCli(
     const finalDir = join(home, 'vendor', vendor, selected.version)
     mkdirSync(join(publishTmp, 'bin'), { recursive: true })
     cpSync(pkgDir, join(publishTmp, 'package'), { recursive: true })
-    const destBin = join(publishTmp, 'bin', spec.binary)
+    const destBin = join(publishTmp, 'bin', basename(path))
     const relBin = binRelative(pkg, spec.binary)
     const packageBin = join(publishTmp, 'package', relBin)
     chmodSync(packageBin, 0o755)
@@ -856,6 +904,7 @@ export async function syncManagedVendorCli(
           // We set AUTHORIZED=true so the guard passes and the real install.cjs
           // (which downloads the native binary) actually runs.
           env: { ...process.env, AUTHORIZED: 'true' },
+          shell: platform === 'win32',
         },
       )
       if (npmR.error || npmR.status !== 0) {
@@ -864,12 +913,16 @@ export async function syncManagedVendorCli(
         )
       }
     }
-    writeFileSync(
-      destBin,
-      `#!/bin/sh\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$DIR/../package/${relBin}" "$@"\n`,
-      'utf-8',
-    )
-    chmodSync(destBin, 0o755)
+    if (platform === 'win32') {
+      stageWindowsNativeBinary(join(publishTmp, 'package'), dirname(destBin), spec.binary)
+    } else {
+      writeFileSync(
+        destBin,
+        `#!/bin/sh\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$DIR/../package/${relBin}" "$@"\n`,
+        'utf-8',
+      )
+      chmodSync(destBin, 0o755)
+    }
     const version = probeVersion(destBin, vendor, deps)
     if (!satisfiesRange(version, spec.compatibleRange)) {
       throw new Error(`${vendor} ${version} outside ${spec.compatibleRange}`)

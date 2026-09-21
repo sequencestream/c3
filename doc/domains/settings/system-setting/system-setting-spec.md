@@ -21,7 +21,7 @@
 
 ## vendor CLI 生效版本 `vendorCliVersions`
 
-`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。只有受管厂商在此列:`cursor-agent` 不由 c3 分发,没有可选版本,不出现在该字段与面板里。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,固定值仍保留,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
+`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。只有受管厂商在此列:`cursor-agent` 不由 c3 分发,没有可选版本,不出现在该字段与面板里。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>{.exe}`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,固定值仍保留,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
 
 ### 固定版本、实际生效版本与降级提示
 

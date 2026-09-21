@@ -29,7 +29,7 @@ c3 文档中使用的业务与技术术语。在此处统一定义;各领域文�
 - **Run handle**: 交给连接处理器的、对一次在途运行的实时控制(一个设置权限模式的控制),使模式变更可以在运行途中生效。
 - **Interrupt / abort**: 通过 SDK 的中断控制停止一次在途运行。仅由 `stop_run`、`delete_session` 或 `remove_workspace` 触发——绝不会因切换所查看会话或关闭连接而触发。
 - **Static embed**: 内联进已编译二进制文件中的 Web 构建产物(生成且被 gitignore)。当磁盘上不存在文件系统 Web 构建产物时提供服务。
-- **Vendor CLI**: 各厂商用来运行智能体的宿主可执行文件——`claude`、`codex` 与 `cursor-agent`。解析顺序是显式 env override(`CLAUDE_PATH` / `CODEX_PATH` / `CURSOR_PATH`)→ c3 托管安装(`~/.c3/vendor/<vendor>/<version>/bin/<binary>`,仅受管厂商)→ 主机 PATH(ADR-0012)。`cursor-agent` **不由 c3 分发**,只有 env override 与 PATH 两级,版本由 Cursor 官方安装器决定(ADR-0040);二进制名从厂商描述符读取,不由 vendor id 推导。登录状态始终属于该 CLI 自身,而非 c3。
+- **Vendor CLI**: 各厂商用来运行智能体的宿主可执行文件——`claude`、`codex` 与 `cursor-agent`。解析顺序是显式 env override(`CLAUDE_PATH` / `CODEX_PATH` / `CURSOR_PATH`)→ c3 托管安装(`~/.c3/vendor/<vendor>/<version>/bin/<binary>{.exe}`,仅受管厂商)→ 主机 PATH(ADR-0012)。`cursor-agent` **不由 c3 分发**,只有 env override 与 PATH 两级,版本由 Cursor 官方安装器决定(ADR-0040);二进制名从厂商描述符读取,不由 vendor id 推导。登录状态始终属于该 CLI 自身,而非 c3。
 - **turn_end**: 一次 prompt→result 轮次的终止性服务端→客户端事件,`reason` 为 `complete`(含被停止的运行)或 `error`。绝不意味着会话结束——它仍存活以等待下一个 prompt。
 - **Workspace name (工作区名称)**: 工作区全局唯一且不可变的身份。去除首尾空白后为 1–64 个 Unicode 字符,区分大小写；协议、URL、配置和业务台账都用 `workspaceName` / `workspace_name` 关联。磁盘绝对路径只用于文件系统操作与界面辅助展示。
 - **Intent (意图)**: 一个项目范围内的台账条目——`title`、`content`、`priority`(P0–P3)、`status`、可选的项目内依赖关系——持久化在本地 intent 台账中,以 workspace name 为键。intent 列表、精炼、开始工作这些操作所共同作用的单元(ADR 0007)。由 **Requirement** 更名而来(requirements→intents,PR-2)。**歧义说明:** 领域概念 **Intent**(首字母大写,一个持久化的工作单元实体)*不是*其他地方用于无关概念的小写单词 _intent_——例如某个 Vue 子组件的事件 _intent_(一次用户操作 emit)、ADR-0011 中的权限 _intent_、共识投票中厂商中立的 _intent_,以及编排者的下一子话题/广播 _intent_。这些是同词异义(在此交叉引用),本次更名刻意不涉及它们。

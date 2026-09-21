@@ -247,6 +247,54 @@ describe('syncManagedVendorCli failure recovery', () => {
     expect(result.version).toBe('1.2.3')
   })
 
+  it('stages a native executable and its sibling files on Windows', async () => {
+    const tarball = Buffer.from('fake Windows tarball')
+    const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+    const packument = {
+      'dist-tags': { latest: '1.2.4' },
+      versions: {
+        '1.2.4': {
+          version: '1.2.4',
+          dist: { tarball: 'https://registry.example/claude.tgz', integrity },
+        },
+      },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => packument })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+      })
+
+    const result = await syncManagedVendorCli('claude', {
+      platform: 'win32',
+      arch: 'x64',
+      fetch: fetchMock as unknown as typeof fetch,
+      runVersion: () => 'claude 1.2.4',
+      unpack: (_archive, dest) => {
+        const pkg = join(dest, 'package')
+        mkdirSync(join(pkg, 'cli'), { recursive: true })
+        writeFileSync(join(pkg, 'package.json'), '{"bin":{"claude":"cli/claude.js"}}', 'utf-8')
+        writeFileSync(join(pkg, 'cli', 'claude.js'), '#!/usr/bin/env node\n', 'utf-8')
+        const native = join(pkg, 'vendor', 'claude-win32-x64')
+        mkdirSync(native, { recursive: true })
+        writeFileSync(join(native, 'claude.exe'), 'native executable', 'utf-8')
+        writeFileSync(join(native, 'runtime.dll'), 'sibling dependency', 'utf-8')
+        const helpers = join(pkg, 'vendor', 'path')
+        mkdirSync(helpers, { recursive: true })
+        writeFileSync(join(helpers, 'rg.exe'), 'helper executable', 'utf-8')
+      },
+    })
+
+    const expected = managedBinPath('claude', '1.2.4', dir, 'win32')
+    expect(result.path).toBe(expected)
+    expect(readFileSync(expected, 'utf-8')).toBe('native executable')
+    expect(readFileSync(join(dirname(expected), 'runtime.dll'), 'utf-8')).toBe('sibling dependency')
+    expect(readFileSync(join(dirname(expected), 'rg.exe'), 'utf-8')).toBe('helper executable')
+  })
+
   it('keeps an old selected managed version when the remote sync fails', async () => {
     const old = managedBinPath('claude', '1.0.0', dir)
     fakeBin(old, 'claude 1.0.0')

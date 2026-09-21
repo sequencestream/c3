@@ -1504,7 +1504,8 @@
         "work": "Work",
         "pr": "PR",
         "review": "Review",
-        "fix": "Fix"
+        "fix": "Fix",
+        "merge": "Merge"
       },
       "state": {
         "notStarted": "Not started",

@@ -1505,7 +1505,8 @@
         "work": "작업",
         "pr": "PR",
         "review": "검토",
-        "fix": "수정"
+        "fix": "수정",
+        "merge": "병합"
       },
       "state": {
         "notStarted": "시작 전",

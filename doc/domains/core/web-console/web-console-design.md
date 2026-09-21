@@ -50,6 +50,11 @@ JSON 美化与单行格式化;发送队列逻辑(合并 / 是否应刷新 / comp
 
 ## 状态(容器)
 
+意图详情头部的 `IntentEngineeringProgress` 展示只读工程进度条,仅负责 typed `t` 本地化、
+无障碍标注与响应式布局。阶段与状态由 `deriveIntentEngineeringProgress` 统一派生,
+规则见[工程进度条](../intent-management/intent-management-models.md#工程进度条)。
+PR 节点表示已提交,末尾的合并节点表达合入结果;评审节点跟随合并完成。
+
 - **Rendered messages**: 有序渲染列表(WC-R1);传递给聊天消息视图
 - **Current workspace**: 唯一的全局当前工作区路径(WC-R8);从持久化选择或最近使用中解析,本地持久化,驱动会话 tab 的会话列表(其在按工作区分组的会话中的切片)。与当前查看会话的工作区解耦
 - **Connection status**: 连接指示器——connecting / open / closed(WC-R6)

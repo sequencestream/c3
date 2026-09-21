@@ -85,6 +85,23 @@ session-registry 所有)。
 否则有 `rejected` → `rejected`;否则有 `merged` → `merged`;否则(全部 `closed`)→ `closed`。
 需要"跳到哪一条 PR"的读点用 `pickPrimaryIntentPr`:第一条活跃的,全部终态则取最早一条。
 
+## 工程进度条
+
+展示派生的唯一规则源是 `web/src/lib/intent-engineering-progress.ts` 的
+`deriveIntentEngineeringProgress`。阶段顺序为意图 → [规范] → 工作 → PR → [评审] → [修复] → 合并;
+仅 `worktree` 模式显示 PR、评审、修复与合并段。SDD 关闭时隐藏规范段;
+`fast` 意图尚无规范路径或规范会话时也隐藏规范段。
+
+- PR:无 PR 行为未开始;只要存在 PR 行即已完成,表示已提交 PR。
+- 评审:仅 `needsReview(impactLevel)` 为真且存在 PR 行或非空 `reviewStatus` 时显示。
+  PR 聚合为 `merged` 时已完成;否则 `null`、缺省或 `pending` 为进行中,
+  `approved` 为已完成,`rejected` 为已关闭/失败。
+- 修复:有修复会话或非空 `fixStatus` 时显示;`pending` 为进行中,`fixed` 为已完成,其余为未开始。
+- 合并:固定置于末尾;PR 聚合为 `merged` 时已完成,`rejected`、`failed`、`closed` 时已关闭/失败,
+  有 PR 未合并或无 PR 时均为未开始。
+
+该投影不回写台账或改变服务端状态机;评审与合并节点已完成并不要求台账 `reviewStatus` 已是 `approved`。
+
 ## Action Descriptor
 
 一条派生的「下一步」:当意图被某个**不可自动解决**的事实挡住时,告诉用户这是什么情况、

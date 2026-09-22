@@ -1479,6 +1479,16 @@
         "label": "その他の操作"
       }
     },
+    "relay": {
+      "startReview": {
+        "label": "レビューを開始",
+        "tooltip": "エージェントにこの意図の PR を今すぐレビューさせます。承認されても自動マージは行いません。"
+      },
+      "startFix": {
+        "label": "修正を開始",
+        "tooltip": "レビューで指摘された問題を、この意図の worktree でエージェントに修正させます。"
+      }
+    },
     "automate": {
       "queued": {
         "tooltip": "自動キュー内"
@@ -2848,7 +2858,16 @@
       "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。",
       "specNotWritten": "spec がまだ作成されていません。承認する前に作成してください。",
       "specNotApproved": "spec がまだ承認されていません。作業を開始する前に承認してください。",
-      "parkStatsUnavailable": "ローカルの park 復帰統計は利用できません。"
+      "parkStatsUnavailable": "ローカルの park 復帰統計は利用できません。",
+      "relay": {
+        "notWorktree": "レビュー/修正リレーには worktree モードが必要です。PR のヘッドブランチをワークツリーとして読み書きします。",
+        "noActivePr": "この意図にはレビューまたは修正できる有効な PR がありません。",
+        "phaseNotAllowed": "開始できる段階がありません。レビュー承認済みか、修正ラウンドを使い切っています。",
+        "phaseInFlight": "この意図のレビューまたは修正セッションがすでに実行中です。",
+        "agentUnavailable": "この段階に使えるエージェントがありません:エージェントグループ「{group}」に有効なメンバーがいません。",
+        "worktreeUnavailable": "この意図の worktree が利用できないため、リレーを実行できません。",
+        "claimFailed": "段階の登録に失敗しました。何も起動していません。もう一度お試しください。"
+      }
     },
     "agent": {
       "groupUnavailable": "エージェントグループ {group} に利用可能なメンバーがありません。エージェント設定を確認してください。"

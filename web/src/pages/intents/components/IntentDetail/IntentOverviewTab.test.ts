@@ -52,6 +52,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...overrides,
     id: overrides.id,

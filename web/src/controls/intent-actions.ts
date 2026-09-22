@@ -440,6 +440,16 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
+  ctx.startIntentRelay = (intentId: string, phase: 'review' | 'fix'): void => {
+    if (!intentsProject.value) return
+    send({
+      type: 'start_intent_relay',
+      workspaceName: intentsProject.value,
+      intentId,
+      phase,
+    })
+  }
+
   ctx.linkIntentPr = (intentId: string, prReference: string, deliveryId?: string): void => {
     if (!intentsProject.value) {
       ctx.failLinkIntentPr(t('intent.prLink.workspaceMissing'))

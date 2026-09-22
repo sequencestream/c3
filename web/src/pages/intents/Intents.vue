@@ -158,6 +158,8 @@ const emit = defineEmits<{
   'new-intent': []
   'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
+  // 人工发起评审 / 修复轮次(标题栏按钮),交回 App 走控制层。
+  'start-relay': [intentId: string, phase: 'review' | 'fix']
   /** 意图详情「关联交付」跳转:交付页是另一个一级 tab,由 App 切换。 */
   'open-delivery': [deliveryId: string]
   // ── 意图侧交付归属入口(与交付页入口并存,协议消息相同) ──
@@ -524,6 +526,7 @@ defineExpose({
         "
         @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
+        @start-relay="(id: string, phase: 'review' | 'fix') => emit('start-relay', id, phase)"
         @share="(id: string) => emit('share', id)"
         @update-deps="handleUpdateDeps"
         @select-dependency="handleSelectDependency"

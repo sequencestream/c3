@@ -53,6 +53,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...overrides,
     id: overrides.id,
@@ -104,6 +106,9 @@ function mountActions(
     },
   })
 }
+
+const START_REVIEW = '[data-testid="intent-detail-start-review"]'
+const START_FIX = '[data-testid="intent-detail-start-fix"]'
 
 const MORE = '[data-testid="intent-detail-more"]'
 const MORE_MENU = '[data-testid="intent-detail-more-menu"]'
@@ -661,5 +666,131 @@ describe('五语言取消文案', () => {
       expect(i18n.global.t('intent.cancel.title', {}, { locale }), locale).not.toBe('')
       expect(i18n.global.t('intent.cancel.label', {}, { locale }), locale).not.toBe('')
     }
+  })
+})
+
+/**
+ * 人工接力入口 —— 「启动评审」「启动修复」。
+ *
+ * 这两颗按钮是接力唯一的非队列发起路径:能不能出现只由共享判定函数决定,而服务端准入
+ * 读的是同一个函数,所以「按钮在」与「点了能被受理」不可能分叉。这里钉的就是那套判定
+ * 在组件层的接线:工作树 + 活跃 PR 是前提,在途与终局都不给按钮,修复轮次用尽也收起。
+ */
+describe('人工接力入口', () => {
+  const withActivePr = (over: Partial<Intent> & { id: string }) =>
+    intent({ ...over, prs: [fakeIntentPr('reviewing', { number: '7' })] })
+
+  it('worktree + 活跃 PR + 未评审:只给「启动评审」', () => {
+    const w = mountActions(withActivePr({ id: 'r-1', status: 'in_progress' }), {
+      workspaceGitBranchMode: 'worktree',
+    })
+    expect(w.find(START_REVIEW).exists()).toBe(true)
+    expect(w.find(START_FIX).exists()).toBe(false)
+  })
+
+  it('current-branch 模式不给入口 —— 接力无处可运行', () => {
+    const w = mountActions(withActivePr({ id: 'r-2', status: 'in_progress' }), {
+      workspaceGitBranchMode: 'current-branch',
+    })
+    expect(w.find(START_REVIEW).exists()).toBe(false)
+    expect(w.find(START_FIX).exists()).toBe(false)
+  })
+
+  it('没有活跃 PR 不给入口', () => {
+    const w = mountActions(intent({ id: 'r-3', status: 'in_progress' }), {
+      workspaceGitBranchMode: 'worktree',
+    })
+    expect(w.find(START_REVIEW).exists()).toBe(false)
+  })
+
+  it('automate 关闭、status 非 reviewing 也照给 —— 这正是它存在的理由', () => {
+    const w = mountActions(withActivePr({ id: 'r-4', status: 'in_progress', automate: false }), {
+      workspaceGitBranchMode: 'worktree',
+    })
+    expect(w.find(START_REVIEW).exists()).toBe(true)
+  })
+
+  it('评审在途时不渲染按钮(而不是渲染一个点不动的)', () => {
+    const w = mountActions(
+      withActivePr({ id: 'r-5', status: 'in_progress', reviewInFlight: true }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find(START_REVIEW).exists()).toBe(false)
+    expect(w.find(START_FIX).exists()).toBe(false)
+  })
+
+  it('stale 的 pending 评审仍给「启动评审」—— 判定只认真实占用,不看裸状态', () => {
+    const w = mountActions(
+      withActivePr({
+        id: 'r-6',
+        status: 'in_progress',
+        reviewStatus: 'pending',
+        reviewSessionId: 'pending:died',
+        reviewInFlight: false,
+      }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find(START_REVIEW).exists()).toBe(true)
+  })
+
+  it('rejected + 未修复:给「启动修复」', () => {
+    const w = mountActions(
+      withActivePr({ id: 'r-7', status: 'in_progress', reviewStatus: 'rejected' }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find(START_FIX).exists()).toBe(true)
+    expect(w.find(START_REVIEW).exists()).toBe(false)
+  })
+
+  it('rejected + fixed:回到「启动评审」(复审)', () => {
+    const w = mountActions(
+      withActivePr({
+        id: 'r-8',
+        status: 'in_progress',
+        reviewStatus: 'rejected',
+        fixStatus: 'fixed',
+      }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find(START_REVIEW).exists()).toBe(true)
+  })
+
+  it('已 approved:两个入口都收起', () => {
+    const w = mountActions(
+      withActivePr({ id: 'r-9', status: 'in_progress', reviewStatus: 'approved' }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find(START_REVIEW).exists()).toBe(false)
+    expect(w.find(START_FIX).exists()).toBe(false)
+  })
+
+  it('修复轮次用尽:不再给「启动修复」', () => {
+    const w = mountActions(
+      withActivePr({
+        id: 'r-10',
+        status: 'in_progress',
+        reviewStatus: 'rejected',
+        reviewFixRounds: 3,
+      }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    expect(w.find(START_FIX).exists()).toBe(false)
+  })
+
+  it('点击上抛 start-relay,带着阶段', async () => {
+    const w = mountActions(withActivePr({ id: 'r-11', status: 'in_progress' }), {
+      workspaceGitBranchMode: 'worktree',
+    })
+    await w.find(START_REVIEW).trigger('click')
+    expect(w.emitted('start-relay')).toEqual([['r-11', 'review']])
+  })
+
+  it('修复按钮上抛 fix 阶段', async () => {
+    const w = mountActions(
+      withActivePr({ id: 'r-12', status: 'in_progress', reviewStatus: 'rejected' }),
+      { workspaceGitBranchMode: 'worktree' },
+    )
+    await w.find(START_FIX).trigger('click')
+    expect(w.emitted('start-relay')).toEqual([['r-12', 'fix']])
   })
 })

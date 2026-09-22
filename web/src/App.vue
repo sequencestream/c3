@@ -247,6 +247,7 @@ const {
   createPr,
   linkIntentPr,
   syncIntentPrStatus,
+  startIntentRelay,
   startWorkflow,
   stopWorkflow,
   // ---- automation queue page ----
@@ -978,6 +979,7 @@ function onFilesChatWidth(px: number): void {
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"
+          @start-relay="startIntentRelay"
           @open-delivery="
             (id: string) => intentsProject && openDeliveryFromIntent(intentsProject, id)
           "

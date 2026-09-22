@@ -105,6 +105,8 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     completedAt: null,
     runStatus: 'idle',
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...overrides,
   }

@@ -11,6 +11,7 @@
 import type { Intent, IntentRunStatus } from '@ccc/shared/protocol'
 import { isRunning } from '../../runs.js'
 import { deriveActionDescriptor, type WorkspaceIntentsLoader } from './action-descriptor.js'
+import { isSpecOccupancyAlive } from './spec-occupancy.js'
 import { listIntents } from './store.js'
 
 /**
@@ -75,6 +76,28 @@ function deriveSessionActive(r: Intent): boolean {
 }
 
 /**
+ * Whether one relay phase's session field is still held by the relay — the
+ * send-time projection of {@link isSpecOccupancyAlive}, which is verbatim the
+ * rule the queue kernel's `probeRelayRunFacts` consumes.
+ *
+ * It is deliberately NOT `isRunning` (what {@link deriveSessionActive} answers
+ * for the four session kinds): between a phase's claim and the vendor's bind the
+ * field holds a `pending:` placeholder with no live process at all, and that
+ * whole window must read as occupied or the UI would offer a second launch on a
+ * worktree an agent is already about to enter. Reading it through the same
+ * function the kernel uses is what keeps "the button is hidden" and "the queue
+ * considers the phase busy" one fact, never two derivations that can drift.
+ *
+ * A stale `pending:` (row gone, or older than the grace window) reports `false`:
+ * the launch died, the phase is recoverable, and the human must be able to
+ * re-trigger the SAME round.
+ */
+export function deriveRelayPhaseInFlight(sessionId: string | null): boolean {
+  if (!sessionId) return false
+  return isSpecOccupancyAlive(sessionId, isRunning, Date.now())
+}
+
+/**
  * A per-send ledger reader for the dependency projection: the workspace's WHOLE
  * intent list, loaded at most once per workspace per enrich pass and only when an
  * intent actually declares a dependency. The batch being enriched cannot serve as
@@ -99,6 +122,12 @@ function workspaceIntentsLoader(): WorkspaceIntentsLoader {
  * - `sessionActive` — always recomputed from the live registry for EVERY item
  *   regardless of status (see {@link deriveSessionActive}). A transient liveness
  *   signal, never stored or cached.
+ * - `reviewInFlight` / `fixInFlight` — always recomputed for EVERY item from the
+ *   relay occupancy rule (see {@link deriveRelayPhaseInFlight}), so the manual relay
+ *   entry point in the title bar reads occupancy from the SAME boundary that the
+ *   queue kernel derives its own facts at. Without this the client would have to
+ *   guess from `reviewStatus === 'pending'`, which is exactly the value a dead
+ *   launch leaves behind.
  * - `actionDescriptor` — always re-derived for EVERY item from blocked-state
  *   facts (vendor / wait-user / spec approval / dependency gate — see
  *   {@link deriveActionDescriptor}); `null` when nothing blocks the intent.
@@ -117,7 +146,9 @@ export function enrichRunStatus(items: Intent[]): Intent[] {
   return items.map((r) => {
     const sessionActive = deriveSessionActive(r)
     const actionDescriptor = deriveActionDescriptor(r, loadWorkspaceIntents)
-    const base = { ...r, sessionActive, actionDescriptor }
+    const reviewInFlight = deriveRelayPhaseInFlight(r.reviewSessionId)
+    const fixInFlight = deriveRelayPhaseInFlight(r.fixSessionId)
+    const base = { ...r, sessionActive, reviewInFlight, fixInFlight, actionDescriptor }
     if (r.status !== 'in_progress') return base
     if (r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
       return { ...base, runStatus: 'running' as const }

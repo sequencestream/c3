@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent } from '@ccc/shared/protocol'
 import type { QueueAction } from '../../kernel/queue/index.js'
+import type { ClaimedRelayPhase } from './queue-relay-actions.js'
 
 const getIntent = vi.fn<(id: string) => unknown>()
 vi.mock('./store.js', () => ({ getIntent: (id: string) => getIntent(id) }))
@@ -65,6 +66,29 @@ vi.mock('./relay-occupancy.js', () => ({
   bindRelayOccupancy: (...a: unknown[]) => bindRelayOccupancy(...a),
 }))
 
+const orderedActivePrs = vi.fn((req: Intent) => req.prs)
+const prIdentityOf = vi.fn((pr: { number: string }, headSha: string | null) => ({
+  pr: { forge: 'github', repo: 'acme/w', number: pr.number },
+  headSha,
+}))
+const recordQueueReviewClaim = vi.fn<(...a: unknown[]) => boolean>(() => true)
+const bindQueueReviewClaimSession = vi.fn<(...a: unknown[]) => void>()
+vi.mock('./merge-authority.js', () => ({
+  orderedActivePrs: (req: Intent) => orderedActivePrs(req),
+  prIdentityOf: (pr: { number: string }, headSha: string | null) => prIdentityOf(pr, headSha),
+  recordQueueReviewClaim: (...a: unknown[]) => recordQueueReviewClaim(...a),
+  bindQueueReviewClaimSession: (...a: unknown[]) => bindQueueReviewClaimSession(...a),
+}))
+
+const registerRelayRun = vi.fn<(...a: unknown[]) => void>()
+const bindRelayRunSession = vi.fn<(...a: unknown[]) => void>()
+const unregisterRelayRun = vi.fn<(...a: unknown[]) => void>()
+vi.mock('./relay-run-registry.js', () => ({
+  registerRelayRun: (...a: unknown[]) => registerRelayRun(...a),
+  bindRelayRunSession: (...a: unknown[]) => bindRelayRunSession(...a),
+  unregisterRelayRun: (...a: unknown[]) => unregisterRelayRun(...a),
+}))
+
 const recordFailure = vi.fn<(...a: unknown[]) => void>()
 const recordSuccess = vi.fn<(...a: unknown[]) => void>()
 vi.mock('./queue-outcome-actions.js', () => ({
@@ -72,7 +96,8 @@ vi.mock('./queue-outcome-actions.js', () => ({
   recordSuccess: (...a: unknown[]) => recordSuccess(...a),
 }))
 
-const { runRelayPhase } = await import('./queue-relay-actions.js')
+const { admitRelayPhase, runManualRelayPhase, runRelayPhase } =
+  await import('./queue-relay-actions.js')
 
 // ---- Fixtures ----
 
@@ -286,5 +311,103 @@ describe('settlement — only a backfilled terminal concludes a phase', () => {
       'pending:new',
       'vendor-session-9',
     )
+  })
+})
+
+/**
+ * The HUMAN entry point's share of this module.
+ *
+ * Same execution, different accountability — and the tests below are the two
+ * halves of that difference: a manual round must record NO queue provenance (so
+ * its approval can never become merge authority) and must book NOTHING on the
+ * failure ladder (so a human retrying by hand is the only backoff there is).
+ * Everything else — the claim, the broadcast, the placeholder release — must
+ * behave exactly like the queue's.
+ */
+describe('the manual entry point', () => {
+  const env = {
+    workspacePath: '/w',
+    hooks: { broadcastIntents: vi.fn() },
+    isDisposed: () => false,
+  }
+
+  /** The claim a manual round runs under — the executor's whole input. */
+  const claimed = (over: Partial<ClaimedRelayPhase> = {}): ClaimedRelayPhase => ({
+    phase: 'review',
+    round: 0,
+    cwd: '/w/wt/i-1',
+    pendingId: 'pending:new',
+    prs: intent().prs,
+    vendor: 'claude',
+    agentId: 'agent-x',
+    ...over,
+  })
+
+  it('claims, broadcasts, and hands back everything the executor needs to run', () => {
+    const admission = admitRelayPhase(env, 'review', 0, intent())
+    expect(admission).toMatchObject({ ok: true })
+    expect(claimRelayOccupancy).toHaveBeenCalledWith(
+      'i-1',
+      'review',
+      'pending:new',
+      { expectReviewStatus: null, expectFixStatus: null, expectRounds: 0, nextRounds: 0 },
+      expect.objectContaining({ workspacePath: '/w', agentId: 'agent-x', vendor: 'claude' }),
+    )
+    // The claim is what the intent list must show: a human who clicked needs to
+    // see the phase become occupied without waiting for anything else.
+    expect(env.hooks.broadcastIntents).toHaveBeenCalledWith('/w')
+  })
+
+  it("writes none of the queue's provenance — an approval here is not merge authority", async () => {
+    // Authority to let c3 land a PR by itself is a fact about the QUEUE having
+    // chosen to review. A human clicking a button never said that, so the round
+    // records nothing for a later `approved` to be promoted from — and stays out
+    // of the trust registry, which keeps that true even if a future reader of
+    // the registry forgets why it exists.
+    await runManualRelayPhase(env, intent(), claimed())
+    expect(recordQueueReviewClaim).not.toHaveBeenCalled()
+    expect(bindQueueReviewClaimSession).not.toHaveBeenCalled()
+    expect(registerRelayRun).not.toHaveBeenCalled()
+    expect(unregisterRelayRun).not.toHaveBeenCalled()
+  })
+
+  it("records the provenance for the QUEUE's own review of the same intent", async () => {
+    // The control: the difference asserted above is a real branch, not a test
+    // that would pass because the wiring never happens at all.
+    getIntent.mockReturnValue(intent({ reviewStatus: 'approved' }))
+    await runRelayPhase(ctx, reviewAction, intent())
+    expect(recordQueueReviewClaim).toHaveBeenCalled()
+    expect(registerRelayRun).toHaveBeenCalled()
+  })
+
+  it('runs the SAME execution as the queue: agent, worktree cwd, tool surface, wall clock', async () => {
+    getIntent.mockReturnValue(intent({ reviewStatus: 'approved' }))
+    await runManualRelayPhase(env, intent(), claimed())
+    expect(runRelaySession.mock.calls[0][0]).toMatchObject({
+      cwd: '/w/wt/i-1',
+      vendor: 'claude',
+      agentId: 'agent-x',
+      maxWallClockMs: 30 * 60_000,
+    })
+  })
+
+  it('books NOTHING on the failure ladder when the turn ends without a conclusion', async () => {
+    // Automated mode off, or the queue idle: this attempt was never one of the
+    // queue's unattended tries, so it must not push the intent toward a backoff
+    // or a park it did not earn. The placeholder is still released, or the phase
+    // would read as running forever and the button would never come back.
+    getIntent.mockReturnValue(intent({ reviewStatus: 'pending' }))
+    await runManualRelayPhase(env, intent(), claimed())
+    expect(releaseRelayOccupancy).toHaveBeenCalled()
+    expect(recordFailure).not.toHaveBeenCalled()
+    expect(recordSuccess).not.toHaveBeenCalled()
+  })
+
+  it('books nothing on an approved review either — it only backfills the status', async () => {
+    getIntent.mockReturnValue(intent({ reviewStatus: 'approved' }))
+    await runManualRelayPhase(env, intent(), claimed())
+    expect(recordSuccess).not.toHaveBeenCalled()
+    // A conclusion needs nothing from us: the sync tool that wrote it broadcasts.
+    expect(releaseRelayOccupancy).not.toHaveBeenCalled()
   })
 })

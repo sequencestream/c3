@@ -221,6 +221,39 @@ export const UI_ERROR_CODES = {
   // Local park-recovery observation: a failed read is reported as unavailable,
   // never rendered as 0% or an empty sample.
   'intent.parkStatsUnavailable': { key: 'error.intent.parkStatsUnavailable' },
+  // Manually started PR review / fix relay (`start_intent_relay`). Every one of
+  // these is a PRE-CLAIM refusal — nothing was written, so the same click can be
+  // retried once the reported fact changes. A failure AFTER the claim is never
+  // reported here: it releases the phase's placeholder and is observed from the
+  // intent and the session UI instead.
+  //
+  // The relay reads and edits the PR's head branch as a checked-out directory, so
+  // it is a worktree-mode capability; under `current-branch` there is nothing for
+  // it to run in.
+  'intent.relay.notWorktree': { key: 'error.intent.relay.notWorktree' },
+  // The intent no longer holds a live PR to review / fix (none ever filed, or all
+  // merged / closed since the page was rendered).
+  'intent.relay.noActivePr': { key: 'error.intent.relay.noActivePr' },
+  // The ledger's own facts call for no next phase: already approved, or still
+  // `rejected` at the fix-round cap. Distinct from `phaseInFlight` so the user
+  // can tell "wait" from "there is nothing left to do here".
+  'intent.relay.phaseNotAllowed': { key: 'error.intent.relay.phaseNotAllowed' },
+  // A review or fix session still holds the phase (a live run, or a `pending:`
+  // placeholder inside its grace window). Nothing was started.
+  'intent.relay.phaseInFlight': { key: 'error.intent.relay.phaseInFlight' },
+  // The phase's agent role resolves to a group with no usable member. Reported
+  // rather than silently skipping the phase, so "no reviewer configured" never
+  // reads as "review not needed".
+  'intent.relay.agentUnavailable': {
+    key: 'error.intent.relay.agentUnavailable',
+    params: ['group'],
+  },
+  // Worktree mode is on, but the intent's own worktree directory is missing.
+  'intent.relay.worktreeUnavailable': { key: 'error.intent.relay.worktreeUnavailable' },
+  // The conditional occupancy claim itself failed (its projection row could not
+  // be written). Nothing was claimed, so no phase is running and the retry is
+  // simply the same click.
+  'intent.relay.claimFailed': { key: 'error.intent.relay.claimFailed' },
   // agent configuration
   // A session could not be created/bound because the agent GROUP its role points
   // at (directly, or by following the default agent) has no usable member — every

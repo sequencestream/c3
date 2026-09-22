@@ -298,6 +298,16 @@ export function buildErrorHandlers(
       if (SHARED.INTENT_SESSION_BIND_FAIL_CODES.has(msg.error.code)) {
         awaitingIntentSessionBindId.value = null
       }
+      // A refused manual relay start is a click that did nothing, and the reason
+      // belongs next to the click rather than in a modal. It is checked BEFORE
+      // the generic `intent.` branch below, which raises a dialog: that dialog
+      // exists for a refusal that interrupted a long-running launch overlay, and
+      // this one interrupted nothing — no session was ever started, and the same
+      // button can be pressed again once the reported fact changes.
+      if (msg.error.code.startsWith('intent.relay.')) {
+        ctx.showToast(translateUiError(msg.error))
+        return
+      }
       if (msg.error.code.startsWith('intent.')) {
         intentActionErrorSeq.value += 1
         // A refusal that leaves the user an EXIT gets the escape dialog instead

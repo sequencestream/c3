@@ -94,6 +94,8 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...overrides,
   }

@@ -343,6 +343,43 @@ export type ClientSetIntentAutomate = {
 }
 
 /**
+ * Start ONE PR review / fix relay phase by hand — the human entry point beside
+ * the automation queue's own dispatch.
+ *
+ * The queue is the only thing that used to start a relay phase, and its
+ * eligibility (`automate` + `status === 'reviewing'` + `needsReview` + cooldown +
+ * a concurrency slot) is about UNATTENDED dispatch. A human asking for a review
+ * has already made the decision those gates stand in for, so none of them apply
+ * here: a manually opened PR on an `in_progress`, automation-off intent can be
+ * reviewed exactly like a queue-filed one.
+ *
+ * What the two paths DO share is the execution: the same worktree cwd, the same
+ * phase agent role, the same prompt / tool allowlist / wall-clock bound, and the
+ * same conditional occupancy claim — so "already in flight" is refused by the
+ * claim rather than by a second lock, and a phase can never run twice.
+ *
+ * Refusals before the claim reach the CALLING connection as an `error` frame
+ * (`intent.relay.*`), because they are synchronous and the user must see why the
+ * click did nothing; a failure AFTER the claim is a session-level outcome the
+ * user reads from the intent and the session UI, never a late error frame. On
+ * acceptance the intent is broadcast with its fresh `pending` placeholder — there
+ * is no dedicated response frame.
+ */
+export type ClientStartIntentRelay = {
+  type: 'start_intent_relay'
+  /**
+   * The workspace the intent must belong to. Carried explicitly rather than
+   * derived from the intent alone: "this intent is not in the workspace I am
+   * looking at" is a refusal of its own, and resolving the workspace root is
+   * what every downstream gate (branch mode, worktree, agent roles) reads.
+   */
+  workspaceName: string
+  intentId: string
+  /** Which half of the relay to start. The server re-derives permission for it. */
+  phase: 'review' | 'fix'
+}
+
+/**
  * Set (or clear) an intent's per-intent spec-mode override. `mode: null` drops
  * the override so the intent inherits the workspace's `sddEnabled` again; the
  * field is always carried explicitly, so this never means "leave as is".

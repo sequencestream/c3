@@ -1479,6 +1479,16 @@
         "label": "추가 작업"
       }
     },
+    "relay": {
+      "startReview": {
+        "label": "리뷰 시작",
+        "tooltip": "에이전트가 지금 이 의도의 PR을 리뷰합니다. 승인되어도 자동 병합은 하지 않습니다."
+      },
+      "startFix": {
+        "label": "수정 시작",
+        "tooltip": "리뷰에서 지적된 문제를 이 의도의 worktree에서 에이전트가 수정합니다."
+      }
+    },
     "automate": {
       "queued": {
         "tooltip": "자동 대기열에 있음"
@@ -2848,7 +2858,16 @@
       "specWriteFailed": "spec 문서 생성에 실패했습니다: {message}。",
       "specNotWritten": "spec이 아직 작성되지 않았습니다. 승인하기 전에 먼저 작성하세요.",
       "specNotApproved": "spec이 아직 승인되지 않았습니다. 작업을 시작하기 전에 먼저 승인하세요.",
-      "parkStatsUnavailable": "로컬 park 복구 통계를 사용할 수 없습니다."
+      "parkStatsUnavailable": "로컬 park 복구 통계를 사용할 수 없습니다.",
+      "relay": {
+        "notWorktree": "리뷰/수정 릴레이는 worktree 모드가 필요합니다. PR 헤드 브랜치를 워크트리로 읽고 수정합니다.",
+        "noActivePr": "이 의도에는 리뷰하거나 수정할 활성 PR이 없습니다.",
+        "phaseNotAllowed": "시작할 단계가 없습니다. 리뷰가 승인되었거나 수정 라운드를 모두 사용했습니다.",
+        "phaseInFlight": "이 의도의 리뷰 또는 수정 세션이 이미 실행 중입니다.",
+        "agentUnavailable": "이 단계에 사용할 수 있는 에이전트가 없습니다. 에이전트 그룹 \"{group}\"에 사용 가능한 멤버가 없습니다.",
+        "worktreeUnavailable": "이 의도의 worktree를 사용할 수 없어 릴레이를 실행할 수 없습니다.",
+        "claimFailed": "단계 등록에 실패했고 아무것도 시작되지 않았습니다. 다시 시도하세요."
+      }
     },
     "agent": {
       "groupUnavailable": "에이전트 그룹 {group}에 사용 가능한 멤버가 없습니다. 에이전트 설정을 확인하세요."

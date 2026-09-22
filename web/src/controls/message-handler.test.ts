@@ -752,6 +752,54 @@ describe('intent action errors', () => {
     expect(result.intentActionErrorSeq.value).toBe(0)
   })
 
+  it('routes an intent.relay.* refusal to the TOAST, not the error dialog', () => {
+    // A refused manual relay start interrupted nothing: no session was ever
+    // launched, so there is no in-flight overlay for the dialog to release, and
+    // the user is looking at the button they just pressed. A modal would also
+    // demand a dismissal for something a second click can simply retry.
+    const result = makeCtx()
+
+    result.ctx.handleMessage(error('intent.relay.notWorktree'))
+
+    expect(result.showToast).toHaveBeenCalledOnce()
+    expect(result.intentActionError.value).toBeNull()
+    expect(result.showIntentActionError).not.toHaveBeenCalled()
+    expect(result.intentActionErrorSeq.value).toBe(0)
+  })
+
+  it('carries every relay refusal code down the toast path', () => {
+    const codes = [
+      'intent.relay.notWorktree',
+      'intent.relay.noActivePr',
+      'intent.relay.phaseNotAllowed',
+      'intent.relay.phaseInFlight',
+      'intent.relay.worktreeUnavailable',
+      'intent.relay.claimFailed',
+    ]
+    for (const code of codes) {
+      const result = makeCtx()
+
+      result.ctx.handleMessage(error(code))
+
+      expect(result.showToast, code).toHaveBeenCalledOnce()
+      expect(result.intentActionError.value, code).toBeNull()
+    }
+  })
+
+  it('localizes the unusable agent group into the toast', () => {
+    // The group reference is the one thing the user has to go and fix, so it
+    // must survive into the sentence rather than be dropped for a generic line.
+    const result = makeCtx()
+
+    result.ctx.handleMessage({
+      type: 'error',
+      error: { code: 'intent.relay.agentUnavailable', params: { group: '_c3_claude_team' } },
+    } as unknown as ServerToClient)
+
+    expect(result.toast.value).toContain('_c3_claude_team')
+    expect(result.toast.value).not.toBe('intent.relay.agentUnavailable')
+  })
+
   it('carries a well-formed Git failure guidance through to the dialog state', () => {
     const result = makeCtx()
     const guidance = {

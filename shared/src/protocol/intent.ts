@@ -734,6 +734,27 @@ export interface Intent {
    */
   fixStatus: IntentFixStatus | null
   /**
+   * Derived, send-time boolean: whether {@link reviewSessionId} is still held by
+   * the relay — a live run, or a `pending:` placeholder whose projection row has
+   * not aged past the grace window. `false` also for a STALE `pending:` (the
+   * launch died and the row is gone or too old), which is what keeps a dead
+   * review round recoverable instead of locking the phase forever.
+   *
+   * Unlike {@link sessionActive} it is NOT a plain "is the process running" read:
+   * the pending placeholder carries no live process between the claim and the
+   * vendor's bind, and that whole window must still read as occupied. Derived at
+   * send-time from the same rule the queue kernel consumes; never stored, never
+   * cached, never inferred by the client from `reviewStatus`.
+   */
+  reviewInFlight: boolean
+  /**
+   * The same send-time occupancy signal for {@link fixSessionId} — see
+   * {@link reviewInFlight}. Kept as its own field rather than a single "relay is
+   * busy" flag because the two phases are held and released independently, and a
+   * stale `pending:` on one must never make the other look occupied.
+   */
+  fixInFlight: boolean
+  /**
    * The c3SessionId of the intent's refine / communication session; `null` when
    * none. Distinct from `lastWorkSessionId` (the work session) — this is the
    * conversation that shapes the intent itself.

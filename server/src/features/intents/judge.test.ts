@@ -84,6 +84,8 @@ const req: Intent = {
   completedAt: 0,
   runStatus: 'idle',
   sessionActive: false,
+  reviewInFlight: false,
+  fixInFlight: false,
   actionDescriptor: null,
 }
 

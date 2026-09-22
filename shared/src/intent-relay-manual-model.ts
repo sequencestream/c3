@@ -19,9 +19,9 @@
  * handler (the backstop against direct WS calls and stale tabs). Sharing it is
  * what keeps the two readers from disagreeing about which PHASE the ledger calls
  * for. It is NOT a promise that a rendered button will be accepted: the claim
- * that follows it (a resolvable agent, an existing worktree, a CAS that still
- * wins) can refuse a click against a world that moved, and each of those
- * refusals is named.
+ * that follows it (a resolvable agent, an existing worktree, a still-live PR, a
+ * CAS that still wins) can refuse a click against a world that moved, and each
+ * of those refusals is named.
  *
  * In-flight is an INPUT, never re-derived here. The server computes it from the
  * live run registry plus the pending projection's age (the same rule the queue

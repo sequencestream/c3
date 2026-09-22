@@ -204,14 +204,11 @@ describe('workspace role overrides in the resolution order (runtime roles)', () 
     expect(fix.ok && fix.target.ref).toBe('plain')
   })
 
-  it('keeps work workspace-first while the other runtime roles remain system-first', () => {
+  it('keeps work workspace-first, and the others system-first, while the workspace inherits', () => {
     settings.workAgentId = 'plain'
     settings.specAgentId = 'plain'
-    workspaceSettings[WS] = {
-      defaultAgentId: 'plain',
-      workAgentId: 'a1',
-      specAgentId: 'a1',
-    }
+    // No `defaultAgentId` key ⇒ no reorder, whatever else the workspace overrides.
+    workspaceSettings[WS] = { workAgentId: 'a1', specAgentId: 'a1' }
     const work = sessionAgentTargetForRole('work', WS)
     const spec = sessionAgentTargetForRole('spec', WS)
     expect(work.ok && work.target.ref).toBe('a1')
@@ -222,6 +219,22 @@ describe('workspace role overrides in the resolution order (runtime roles)', () 
     delete workspaceSettings[WS].workAgentId
     const inheritedWork = sessionAgentTargetForRole('work', WS)
     expect(inheritedWork.ok && inheritedWork.target.ref).toBe('plain')
+  })
+
+  it('lets an explicit workspace default claim the roles the workspace has not overridden', () => {
+    settings.agents = [...settings.agents, agent('other')]
+    settings.specAgentId = 'other'
+    settings.workAgentId = 'other'
+    workspaceSettings[WS] = { defaultAgentId: 'plain', specAgentId: 'a1' }
+    // The workspace's own role override still beats the workspace default…
+    const spec = sessionAgentTargetForRole('spec', WS)
+    expect(spec.ok && spec.target.ref).toBe('a1')
+    // …and the workspace default beats the SYSTEM role field, for spec and work alike.
+    delete workspaceSettings[WS].specAgentId
+    const claimedSpec = sessionAgentTargetForRole('spec', WS)
+    const claimedWork = sessionAgentTargetForRole('work', WS)
+    expect(claimedSpec.ok && claimedSpec.target.ref).toBe('plain')
+    expect(claimedWork.ok && claimedWork.target.ref).toBe('plain')
   })
 
   it('roles do not chain: spec review never inherits the spec role', () => {

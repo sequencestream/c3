@@ -26,6 +26,7 @@ import type {
   SystemSettings,
   VendorId,
   WorkspaceRoleAgentField,
+  WorkspaceSetting,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
 import type { ConnectionWarning } from './provider-resolve.js'
@@ -137,9 +138,8 @@ export function getDefaultAgentId(): string {
  * SessionKind and no dedicated session-launch path.
  *
  * `work` is the one role whose own reference is resolved through a
- * **workspace-first chain** (workspace `workAgentId` → system `workAgentId` → the
- * default chain) rather than the plain "role field → default" chain — see
- * {@link resolveRoleAgentTarget}.
+ * **workspace-first chain** (workspace `workAgentId` before the system one) rather
+ * than the plain "role field → default" chain — see {@link resolveRoleAgentTarget}.
  */
 export type AgentRole =
   'default' | 'tool' | 'intent' | 'spec' | 'spec_review' | 'review' | 'fix' | 'work'
@@ -158,7 +158,9 @@ const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
 
 /**
  * Which `WorkspaceSetting` field a role consults for its per-workspace override —
- * the link between the explicit SYSTEM role field and the workspace `defaultAgentId`.
+ * the most specific workspace link, tried before the workspace `defaultAgentId`
+ * (and, once the workspace configured a default of its own, before the system role
+ * field as well — see {@link resolveRoleAgentTarget}).
  *
  * Only the four RUNTIME roles are listed. `default` has no role override (it already
  * ends on the workspace default), and `review` / `fix` are deliberately absent: their
@@ -279,6 +281,10 @@ export function resolveAgentTarget(
  * reference resolution, or a role with no per-workspace override). Both workspace
  * links are skipped entirely when the task belongs to no workspace, and the single
  * `loadWorkspaceSetting` read serves both.
+ *
+ * `priorRefs` run BEFORE those workspace links, `systemPriorRefs` AFTER them — the
+ * two slots that let a caller move a SYSTEM-level role field either side of the
+ * workspace layer without a second chain (see {@link resolveRoleAgentTarget}).
  */
 function resolveTargetChain(
   ref: string | null,
@@ -286,6 +292,7 @@ function resolveTargetChain(
   workspacePath: string | null | undefined,
   workspaceRoleField: WorkspaceRoleAgentField | null,
   priorRefs?: ReadonlyArray<string | null | undefined>,
+  systemPriorRefs?: ReadonlyArray<string | null | undefined>,
 ): AgentTarget {
   const settings = loadSettings()
   /** Rules 1–2 for one reference: the group/concrete target, or null to keep falling. */
@@ -317,6 +324,14 @@ function resolveTargetChain(
     }
     const scoped = targetFor(workspace.defaultAgentId)
     if (scoped) return scoped
+  }
+  // The system-level half of a role that was moved behind the workspace layer: a
+  // workspace that configured its own default Agent claims every role it has not
+  // overridden itself. Same fall-through rules as `priorRefs` — an empty value or an
+  // unknown id keeps falling, an unusable GROUP throws.
+  for (const prior of systemPriorRefs ?? []) {
+    const hit = targetFor(prior ?? undefined)
+    if (hit) return hit
   }
   const systemDefault = targetFor(settings.defaultAgentId)
   if (systemDefault) return systemDefault
@@ -354,15 +369,31 @@ export function getRoleAgentId(role: AgentRole): string {
  * "role field empty, default is a group" land on the SAME target. Throws
  * {@link AgentGroupUnavailableError} for an unusable group.
  *
- * `workspacePath` scopes the two workspace links a *following* role lands on, so the
- * full order is **explicit system role field → that workspace's same-named role
- * override → that workspace's `defaultAgentId` → the system `defaultAgentId` →
- * `system`**. The `default` role deliberately passes NO explicit reference: feeding it
- * `defaultAgentId` would make the system value an explicit pick and the workspace
- * override could never win. The other roles keep their own field as the explicit pick,
- * so an explicit system-level role choice still outranks every workspace link.
+ * `workspacePath` scopes the workspace links a *following* role lands on, and the
+ * workspace's OWN `defaultAgentId` decides where the SYSTEM role field sits:
  *
- * The work role uses workspace work → system work before the default chain.
+ *  - **workspace configured a default agent** ({@link hasExplicitWorkspaceDefault})
+ *    ⇒ the whole workspace layer moves ahead of the system role field, so the order
+ *    is **that workspace's same-named role override → that workspace's
+ *    `defaultAgentId` → the explicit system role field → the system `defaultAgentId`
+ *    → `system`**. One workspace default then governs every role the workspace has
+ *    not overridden itself, instead of the system having to seed each role;
+ *  - **workspace inherits** (no `defaultAgentId` key) ⇒ the order is the original
+ *    **explicit system role field → that workspace's same-named role override →
+ *    that workspace's `defaultAgentId` → the system `defaultAgentId` → `system`**,
+ *    unchanged.
+ *
+ * Within the workspace the specific always beats the general: a workspace role
+ * override outranks the workspace default in BOTH modes.
+ *
+ * The `default` role deliberately passes NO explicit reference: feeding it
+ * `defaultAgentId` would make the system value an explicit pick and the workspace
+ * override could never win. It contributes nothing to the late slot either — its
+ * system value IS the chain's system-default link, and promoting it would let it
+ * outrank the workspace default it exists to follow. The `work` role never feeds its
+ * field as a top-level pick either; it uses the prior chain instead
+ * ({@link workPriorRefs}).
+ *
  * Only the four other runtime roles read a workspace role override ({@link
  * ROLE_WORKSPACE_FIELD}); `review` / `fix` skip straight to the workspace default.
  */
@@ -370,13 +401,29 @@ export function resolveRoleAgentTarget(
   role: AgentRole,
   workspacePath?: string | null,
 ): AgentTarget {
+  const workspace = workspacePath ? loadWorkspaceSetting(workspacePath) : null
+  const workspaceFirst = hasExplicitWorkspaceDefault(workspace)
   return resolveTargetChain(
-    roleRefForResolve(role),
+    workspaceFirst ? null : roleRefForResolve(role),
     null,
     workspacePath,
     ROLE_WORKSPACE_FIELD[role] ?? null,
-    workPriorRefs(role, workspacePath),
+    workPriorRefs(role, workspace, workspaceFirst),
+    workspaceFirst && role !== 'default' ? [systemRoleRef(role)] : undefined,
   )
+}
+
+/**
+ * Whether a workspace EXPLICITLY configured its own default Agent — the trigger for
+ * moving the workspace layer ahead of the system role fields.
+ *
+ * Blank is the "inherit" sentinel and normalizes to the key being OMITTED, so
+ * key-present-and-non-blank is the whole test. A workspace without one keeps the
+ * original system-first order, which is what makes inheriting a no-op rather than a
+ * silent policy change.
+ */
+function hasExplicitWorkspaceDefault(workspace: WorkspaceSetting | null): boolean {
+  return typeof workspace?.defaultAgentId === 'string' && workspace.defaultAgentId.trim() !== ''
 }
 
 /** {@link resolveRoleAgentTarget} without the throw (see {@link tryResolveAgentTarget}). */
@@ -392,27 +439,38 @@ export function tryResolveRoleAgentTarget(
   }
 }
 
-/** The explicit reference a role contributes: none for `default` or `work` (see above). */
+/** The explicit top-level reference a role contributes: none for `default` or `work`. */
 function roleRefForResolve(role: AgentRole): string | null {
   return role === 'default' || role === 'work' ? null : getRoleAgentId(role) || null
 }
 
+/** A role's SYSTEM-level configured reference (its own settings field), `null` when empty. */
+function systemRoleRef(role: AgentRole): string | null {
+  return getRoleAgentId(role) || null
+}
+
 /**
- * The workspace-first prior reference chain for the `work` role, whose workspace override
- * precedes its system role. Yields `[workspace workAgentId, system workAgentId]`
- * (workspace first, then system), so a workspace override wins over the system value
- * while an empty workspace value still falls through to the system role. Every other
- * role returns `undefined` — the generic resolver must not read work config for them.
+ * The prior reference chain for the `work` role, whose workspace override precedes its
+ * system role. Every other role returns `undefined` — the generic resolver must not
+ * read work config for them.
+ *
+ * The two work levels sit on OPPOSITE sides of the workspace default once the
+ * workspace configured one (`workspaceFirst`): the system `workAgentId` drops behind
+ * the workspace default like every other system role field, giving **workspace
+ * `workAgentId` → workspace `defaultAgentId` → system `workAgentId` → system
+ * `defaultAgentId` → fallback**. Inheriting keeps the original **workspace
+ * `workAgentId` → system `workAgentId` → workspace `defaultAgentId` → system
+ * `defaultAgentId`** — a workspace override wins over the system value, and an empty
+ * workspace value still falls through to the system role.
  */
 function workPriorRefs(
   role: AgentRole,
-  workspacePath?: string | null,
+  workspace: WorkspaceSetting | null,
+  workspaceFirst: boolean,
 ): Array<string | null | undefined> | undefined {
   if (role !== 'work') return undefined
-  const refs: Array<string | null | undefined> = []
-  if (workspacePath) refs.push(loadWorkspaceSetting(workspacePath).workAgentId)
-  refs.push(getRoleAgentId('work'))
-  return refs
+  const systemWork = getRoleAgentId('work')
+  return workspaceFirst ? [workspace?.workAgentId] : [workspace?.workAgentId, systemWork]
 }
 
 /**
@@ -534,6 +592,11 @@ export function resolveAgent(agentId: string | null): AgentConfig {
  * `resolveRoleAgentTarget('tool')`, so the fall-through is `toolAgentId →
  * defaultAgentId → system → synthesized fallback` and a group on either end
  * resolves to its representative member.
+ *
+ * `workspacePath` inserts that workspace's two agent links ({@link
+ * resolveRoleAgentTarget} has the full order): its `toolAgentId` override first,
+ * then its `defaultAgentId` — which, when the workspace configured one, outranks
+ * the system `toolAgentId` just below it.
  */
 export function resolveToolAgent(workspacePath?: string | null): AgentConfig {
   return resolveRoleAgentTarget('tool', workspacePath).agent
@@ -543,11 +606,20 @@ export function resolveToolAgent(workspacePath?: string | null): AgentConfig {
  * Launch overrides for a background tool session — the {@link resolveToolAgent}
  * mirror of {@link resolveSessionLaunch} (model + provider env), so the completion
  * judge / naming one-shots execute on the configured tool agent.
+ *
+ * Resolves through the SAME entry as {@link resolveToolAgent}
+ * ({@link resolveRoleAgentTarget} with role `'tool'`), so a one-shot binds exactly
+ * what a tool session would: this workspace's `toolAgentId` override, then its
+ * `defaultAgentId` — which outranks the system `toolAgentId` once the workspace
+ * configured a default of its own — then the system `toolAgentId`, then the system
+ * default. Binding `target.ref` keeps a group reference intact, so the one-shot
+ * fails over through the group exactly like a session launch does.
  */
 export function resolveToolSessionLaunch(
   workspacePath?: string | null,
 ): { agentId: string } & LaunchOverrides {
-  return resolveLaunchForRef(getToolAgentId() || null, undefined, workspacePath)
+  const target = resolveRoleAgentTarget('tool', workspacePath)
+  return { agentId: target.ref, ...launchForCandidates(target.candidates) }
 }
 
 /**

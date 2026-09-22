@@ -243,6 +243,49 @@ describe('AutomationCronEditor.vue — 执行时段', () => {
     expect(await save(w)).toBe('0 8-12,14-18 * * *')
   })
 
+  it('切换自动化复用同一实例时,不复用上一条的时段', async () => {
+    // 弹框常驻挂载,组件实例跨自动化复用:上一条的时段若留在控件里,
+    // 「打开再保存」就会把这一条的排期静默收窄(全天每 3 小时 → 8-17 点每 3 小时)。
+    const w = mountEditor({ cronExpression: '*/5 8-17 * * *' })
+    expect(selected(w, winStart)).toBe('8')
+    await w.setProps({ cronExpression: '0 */3 * * *' })
+    expect(selected(w, winStart)).toBe('0')
+    expect(selected(w, winEnd)).toBe('24')
+    expect(await save(w)).toBe('0 */3 * * *')
+  })
+
+  it('保留 dom / mon / dow:minutely / hourly 不改写手写的日期约束', async () => {
+    // 每时带窗口 + 工作日:引入时段前该形态走 daily/weekly 分支,保住 1-5 却把 hour
+    // 变成 0;引入后反过来保住 hour 却会丢 1-5 —— 都是静默改排期,要求原样往返。
+    const hourly = mountEditor({ cronExpression: '0 9-17/2 * * 1-5' })
+    expect((hourly.find(freqSelect).element as HTMLSelectElement).value).toBe('hourly')
+    expect(selected(hourly, winStart)).toBe('9')
+    expect(selected(hourly, winEnd)).toBe('18')
+    expect(hourly.findAll('.sce-hint').some((h) => h.text().includes('1-5'))).toBe(true)
+    expect(await save(hourly)).toBe('0 9-17/2 * * 1-5')
+
+    const minutely = mountEditor({ cronExpression: '*/5 8-17 * * 1-5' })
+    expect(minutely.findAll('.sce-hint').some((h) => h.text().includes('1-5'))).toBe(true)
+    expect(await save(minutely)).toBe('*/5 8-17 * * 1-5')
+
+    // 自定义 hour 字段与日期约束并存时,两者都按原样保留。
+    const custom = mountEditor({ cronExpression: '0 8-12,14-18 * * 1-5' })
+    expect(await save(custom)).toBe('0 8-12,14-18 * * 1-5')
+
+    // 默认 `* * *` 不额外提示。
+    const allDay = mountEditor({ cronExpression: '*/5 * * * *' })
+    expect(allDay.findAll('.sce-hint')).toHaveLength(1)
+  })
+
+  it('跨午夜两段步长写法不一致时落自定义态,不被改写', async () => {
+    // `22-23/2,0-7` 的两段步长写法不同(后段是每小时),合成只能写成 `22-23/2,0-7/2`,
+    // 会丢掉 1/3/5/7 点;反解不出可往返的单个区间时按原样保留。
+    const w = mountEditor({ cronExpression: '*/5 22-23/2,0-7 * * *' })
+    expect(w.find(winStart).exists()).toBe(false)
+    expect(w.find('.sce-custom').text()).toContain('22-23/2,0-7')
+    expect(await save(w)).toBe('*/5 22-23/2,0-7 * * *')
+  })
+
   it('hourly 只展示分钟输入,不再显示无效的小时输入框', () => {
     const w = mountEditor({ cronExpression: '0 */2 * * *' })
     expect(w.findAll('.sce-time')).toHaveLength(1)

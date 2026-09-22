@@ -2439,6 +2439,7 @@
         "rangeOvernight": "{start} から翌日 {end} まで（終点を含まない）",
         "custom": "カスタム",
         "customHint": "カスタム時間帯 — スケジュールは記述のまま保持します。",
+        "daysKept": "日付フィールドは記述のまま保持します：{days}",
         "invalid": "開始と終了は別の時刻にしてください"
       },
       "days": {

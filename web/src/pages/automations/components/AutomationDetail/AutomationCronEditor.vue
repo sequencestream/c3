@@ -53,6 +53,10 @@ const windowEnd = ref(24)
 // custom 态打开时的 hour 字段:合成时原样写回,不得回退为 `*` ——
 // 那会静默扩大执行范围,正是执行时段要解决的问题。
 const preservedHourField = ref('*')
+// dom / mon / dow:minutely / hourly 的编辑模型里没有「日期」维度,故整体原样保留,
+// 否则「打开再保存」会把手写的日期约束抹成通配(如 `0 9-17/2 * * 1-5` 丢掉 1-5,
+// 排期从工作日扩到每天)。daily / weekly 有自己的时:分与星期几控件,不走这条路径。
+const preservedDayFields = ref('* * *')
 
 function fmtHour(hourValue: number): string {
   return `${String(hourValue).padStart(2, '0')}:00`
@@ -102,7 +106,17 @@ function seedWindow(rawHourField: string, allowStep: boolean): void {
 }
 
 function seedCron(expression: string): void {
-  const [minuteField = '0', rawHourField = '*', , , dowField = '*'] = expression.split(/\s+/)
+  const [minuteField = '0', rawHourField = '*', domField = '*', monField = '*', dowField = '*'] =
+    expression.split(/\s+/)
+  // 组件实例跨自动化复用(弹框常驻挂载),每次回填都要先把时段状态复位到「全天·可编辑」,
+  // 否则上一条排期的时段会留在控件里 —— 不改动直接保存就把它写进这一条,
+  // 例如 B 的 `0 */3 * * *` 变成 `0 8-17/3 * * *`。
+  windowMode.value = 'editable'
+  windowStart.value = 0
+  windowEnd.value = 24
+  preservedHourField.value = '*'
+  preservedDayFields.value = `${domField} ${monField} ${dowField}`
+
   if (minuteField.startsWith('*/')) {
     frequency.value = 'minutely'
     interval.value = parseNumber(minuteField.slice(2), 1, 59) || 1
@@ -110,6 +124,7 @@ function seedCron(expression: string): void {
     return
   }
   minute.value = parseNumber(minuteField, 0, 59)
+  // 每时的步长写在这个字段里,全天形态即 `*/N`,时段为全天 —— 已由上面的复位给出。
   if (rawHourField.startsWith('*/')) {
     frequency.value = 'hourly'
     interval.value = parseNumber(rawHourField.slice(2), 1, 23) || 1
@@ -171,9 +186,9 @@ const resolvedCronExpression = computed(() => {
   const n = Math.max(1, Math.min(frequency.value === 'minutely' ? 59 : 23, interval.value || 1))
   switch (frequency.value) {
     case 'minutely':
-      return `*/${n} ${hourPart()} * * *`
+      return `*/${n} ${hourPart()} ${preservedDayFields.value}`
     case 'hourly':
-      return `${minute.value} ${hourPart(n)} * * *`
+      return `${minute.value} ${hourPart(n)} ${preservedDayFields.value}`
     case 'daily':
       return `${minute.value} ${hour.value} * * *`
     case 'weekly':
@@ -208,6 +223,14 @@ const windowHint = computed(() => {
     ? t('automation.form.window.rangeOvernight', { start, end })
     : t('automation.form.window.range', { start, end })
 })
+
+// 日期字段不在本控件的编辑模型内(见 preservedDayFields),原样保留并说明,
+// 免得用户以为保存会把它清成通配。
+const daysKeptHint = computed(() =>
+  preservedDayFields.value === '* * *'
+    ? ''
+    : t('automation.form.window.daysKept', { days: preservedDayFields.value }),
+)
 
 // weekly 必须至少选 1 个星期几才能保存;时段不能是零宽区间。
 const daysInvalid = computed(() => frequency.value === 'weekly' && days.value.length === 0)
@@ -283,6 +306,7 @@ function save(): void {
             </select>
           </div>
           <span :class="windowInvalid ? 'sce-warn' : 'sce-hint'">{{ windowHint }}</span>
+          <span v-if="daysKeptHint" class="sce-hint">{{ daysKeptHint }}</span>
         </div>
         <label v-if="frequency !== 'minutely'" class="sce-field">
           <span>{{ t('automation.form.time.label') }}</span>

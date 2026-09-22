@@ -142,6 +142,17 @@ describe('describeCron', () => {
     )
   })
 
+  it('keeps the day-of-week constraint alongside the interval', () => {
+    expect(describeCron('*/5 8-17 * * 1-5')).toBe(
+      'Every 5 minutes between 08:00 and 18:00 on Mon–Fri',
+    )
+    expect(describeCron('0 9-17/2 * * 1-5')).toBe(
+      'Every 2 hours between 09:00 and 18:00 on Mon–Fri',
+    )
+    expect(describeCron('*/5 * * * 1-5')).toBe('Every 5 minutes on Mon–Fri')
+    expect(describeCron('0 */2 * * 2,6')).toBe('Every 2 hours on Tuesday, Saturday')
+  })
+
   it('describes a 1-step interval in the singular', () => {
     expect(describeCron('0 */1 * * *')).toBe('Every hour')
     expect(describeCron('*/1 * * * *')).toBe('Every minute')
@@ -166,6 +177,10 @@ describe('parseHourWindow / renderHourWindow', () => {
     expect(parseHourWindow('8')).toBeNull() // a point, not a window
     expect(parseHourWindow('8-12,14-18')).toBeNull() // two disjoint windows
     expect(parseHourWindow('22-23/3,0-7/2')).toBeNull() // segments step differently
+    // One half carrying the step is also a different step: rendering a single
+    // step for both halves would drop hours the field still matches.
+    expect(parseHourWindow('22-23/2,0-7')).toBeNull()
+    expect(parseHourWindow('22-23,0-7/2')).toBeNull()
     expect(parseHourWindow('22-23,0-23')).toBeNull() // the second segment is the whole day
     expect(parseHourWindow('22-23,0-22,5-6')).toBeNull()
   })

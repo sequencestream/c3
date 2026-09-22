@@ -2676,6 +2676,7 @@
         "rangeOvernight": "From {start} until {end} the next day (end hour excluded)",
         "custom": "Custom",
         "customHint": "Custom hours — the schedule is kept exactly as written.",
+        "daysKept": "Day fields kept as written: {days}",
         "invalid": "Start and end must differ"
       },
       "days": {

@@ -2438,6 +2438,7 @@
         "rangeOvernight": "从 {start} 到次日 {end}（不含终点）",
         "custom": "自定义",
         "customHint": "自定义时段，排期按原样保留。",
+        "daysKept": "日期字段按原样保留：{days}",
         "invalid": "起止时间不能相同"
       },
       "days": {

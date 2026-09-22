@@ -302,7 +302,7 @@ function hourWindow(start: number, end: number, step?: number): HourWindow | nul
 /**
  * Parse an hour field into the execution window it encodes, or `null` when it is
  * not a single contiguous window (`8-12,14-18`, a bare hour like `8` — a point,
- * not a window — or several ranges with mismatched steps).
+ * not a window — or an overnight split whose halves step differently).
  */
 export function parseHourWindow(field: string): HourWindow | null {
   if (field === '*') return { start: 0, end: 24, allDay: true }
@@ -324,10 +324,13 @@ export function parseHourWindow(field: string): HourWindow | null {
   if (segments.length === 2) {
     const [a, b] = [hourSegment(segments[0]), hourSegment(segments[1])]
     // The canonical overnight split: `22-23` then `0-7`, with matching steps.
+    // The two halves are one interval cut by midnight, so a step must be written
+    // the same way on both — `22-23/2,0-7` and `22-23,0-7/2` step the halves
+    // differently and would not come back out of the editor unchanged.
     if (!a || !b) return null
     if (a.lo < 1 || a.hi !== 23 || b.lo !== 0 || b.hi > 22) return null
-    if (a.step !== undefined && b.step !== undefined && a.step !== b.step) return null
-    return hourWindow(a.lo, b.hi + 1, a.step ?? b.step)
+    if (a.step !== b.step) return null
+    return hourWindow(a.lo, b.hi + 1, a.step)
   }
   return null
 }
@@ -386,6 +389,15 @@ function describeField(raw: string): { isWild: boolean; list: number[] } {
   return { isWild: false, list }
 }
 
+/** "on Mon–Fri" / "on Tuesday, Saturday"; empty when day-of-week is unconstrained. */
+function dayOfWeekText(dow: string): string {
+  const d = describeField(dow)
+  if (d.isWild || d.list.length === 0) return ''
+  // Recognise the weekday run (Mon–Fri).
+  if (d.list.length === 5 && d.list.join(',') === '1,2,3,4,5') return 'on Mon–Fri'
+  return `on ${d.list.map((n) => DOW_NAMES[n % 7]).join(', ')}`
+}
+
 /**
  * Produce a short human-readable, English description of a cron expression for
  * display next to the live preview (e.g. "Every 30 minutes",
@@ -398,28 +410,37 @@ export function describeCron(expr: string): string {
   if (fields.length !== 5) return expr
   const [min, hour, dom, mon, dow] = fields
 
+  // The interval shapes below describe a cadence, optionally narrowed to a
+  // day-of-week set; a day-of-month or month constraint is outside them and
+  // falls through to the generic path below.
+  const noMonthDay = dom === '*' && mon === '*'
+  const onDays = dayOfWeekText(dow)
+  const suffix = onDays ? ` ${onDays}` : ''
+
   // Every N minutes — "*/N * * * *"
   const everyMin = min.match(/^\*\/(\d+)$/)
-  const fixedDay = dom === '*' && mon === '*' && dow === '*'
-  if (everyMin && fixedDay) {
-    if (hour === '*') return everyCount('minute', parseInt(everyMin[1], 10))
+  if (everyMin && noMonthDay) {
+    const every = everyCount('minute', parseInt(everyMin[1], 10))
+    if (hour === '*') return `${every}${suffix}`
     // Every N minutes within an execution window — "*/N H1-H2".
     const window = parseHourWindow(hour)
     if (window && window.step === undefined && !window.allDay) {
-      return `${everyCount('minute', parseInt(everyMin[1], 10))} ${betweenWindow(window)}`
+      return `${every} ${betweenWindow(window)}${suffix}`
     }
   }
   // Every N hours — "0 */N * * *"
   const everyHour = hour.match(/^\*\/(\d+)$/)
-  if (min === '0' && everyHour && fixedDay) return everyCount('hour', parseInt(everyHour[1], 10))
+  if (min === '0' && everyHour && noMonthDay) {
+    return `${everyCount('hour', parseInt(everyHour[1], 10))}${suffix}`
+  }
 
   // Every N hours within an execution window — "M H1-H2/N".
   const fixedMinute = min.match(/^(\d+)$/)
-  if (fixedMinute && fixedDay) {
+  if (fixedMinute && noMonthDay) {
     const window = parseHourWindow(hour)
     if (window && !window.allDay) {
       const at = fixedMinute[1] === '0' ? '' : ` at minute ${fixedMinute[1].padStart(2, '0')}`
-      return `${everyCount('hour', window.step ?? 1)}${at} ${betweenWindow(window)}`
+      return `${everyCount('hour', window.step ?? 1)}${at} ${betweenWindow(window)}${suffix}`
     }
   }
 
@@ -437,15 +458,8 @@ export function describeCron(expr: string): string {
   }
 
   // Day-of-week.
-  const dowD = describeField(dow)
-  if (!dowD.isWild && dowD.list.length > 0) {
-    const days = dowD.list.map((d) => DOW_NAMES[d % 7])
-    // Recognise the weekday run (Mon–Fri).
-    if (dowD.list.length === 5 && dowD.list.join(',') === '1,2,3,4,5') {
-      parts.push('on Mon–Fri')
-    } else {
-      parts.push(`on ${days.join(', ')}`)
-    }
+  if (onDays) {
+    parts.push(onDays)
   } else if (!describeField(dom).isWild) {
     parts.push(`on day ${dom} of the month`)
   }

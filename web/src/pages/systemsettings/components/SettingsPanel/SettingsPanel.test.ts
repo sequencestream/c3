@@ -828,6 +828,23 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
 
 describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () => {
   const H = '$scrypt$ln=15,r=8,p=1$s$h'
+  // `useAuth` is a module singleton — a case that demotes the connection must not
+  // leak the flag into the next one.
+  afterEach(() => useAuth().setIsAdmin(true))
+  /** The shipped English copy for the submit-blocked reasons — asserted against the
+   *  catalog, never against rendered text (i18n-spec §4.1). */
+  function enAuth() {
+    return (
+      JSON.parse(readFileSync(resolve(__dirname, '../../../../locales/en.json'), 'utf8')) as {
+        settings: {
+          auth: {
+            blocked: { adminOnly: string; username: string; password: string }
+            account: { duplicate: string }
+          }
+        }
+      }
+    ).settings.auth
+  }
   // Settings with one configured account, designated admin (effectively enabled).
   const withAdmin: SystemSettings = {
     ...baseSettings,
@@ -958,6 +975,98 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     expect(btn.disabled).toBe(true)
     await w.find('[data-testid="settings-auth-add-account"]').trigger('click')
     expect(w.emitted('set-password')).toBeUndefined()
+  })
+
+  it('add account: submit turns available exactly on a fresh username + a 4-char password', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
+    const submit = () =>
+      w.find('[data-testid="settings-auth-add-account"]').element as HTMLButtonElement
+    expect(submit().disabled).toBe(true)
+    await w.find('[data-testid="settings-auth-add-username"]').setValue('root')
+    expect(submit().disabled).toBe(true) // password still empty
+    await w.find('[data-testid="settings-auth-add-password"]').setValue('abc')
+    expect(submit().disabled).toBe(true) // one short of the floor the server enforces
+    await w.find('[data-testid="settings-auth-add-password"]').setValue('abcd')
+    expect(submit().disabled).toBe(false)
+    await w.find('[data-testid="settings-auth-add-account"]').trigger('click')
+    expect((w.emitted('set-password') as [{ username: string }][])[0][0]).toMatchObject({
+      username: 'root',
+      password: 'abcd',
+    })
+  })
+
+  it('add account: names the unmet condition instead of greying the button silently', async () => {
+    const copy = enAuth().blocked
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
+    const reason = () => w.find('[data-testid="settings-auth-add-blocked"]')
+    expect(reason().text()).toBe(copy.username)
+    await w.find('[data-testid="settings-auth-add-username"]').setValue('root')
+    expect(reason().text()).toBe(copy.password)
+    await w.find('[data-testid="settings-auth-add-password"]').setValue('s3cret!')
+    expect(reason().exists()).toBe(false)
+  })
+
+  it('add account: a field filled without an input event (password manager) still counts', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
+    const username = w.find('[data-testid="settings-auth-add-username"]')
+    const password = w.find('[data-testid="settings-auth-add-password"]')
+    // Autofill writes the DOM value straight in and v-model never hears about it, so
+    // the box reads as filled while the model still holds ''. Blur recovers it.
+    ;(username.element as HTMLInputElement).value = 'root'
+    ;(password.element as HTMLInputElement).value = 's3cret!'
+    const submit = () =>
+      w.find('[data-testid="settings-auth-add-account"]').element as HTMLButtonElement
+    expect(submit().disabled).toBe(true)
+    await username.trigger('blur')
+    await password.trigger('blur')
+    expect(submit().disabled).toBe(false)
+    await w.find('[data-testid="settings-auth-add-account"]').trigger('click')
+    expect((w.emitted('set-password') as [{ username: string; password: string }][])[0][0]).toEqual(
+      {
+        username: 'root',
+        password: 's3cret!',
+      },
+    )
+  })
+
+  it('add account: says so when the connection stops being the admin', async () => {
+    const auth = useAuth()
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-auth-provider"]').setValue('basic')
+    await w.find('[data-testid="settings-auth-add-account-open"]').trigger('click')
+    await w.find('[data-testid="settings-auth-add-username"]').setValue('root')
+    await w.find('[data-testid="settings-auth-add-password"]').setValue('s3cret!')
+    const submit = () =>
+      w.find('[data-testid="settings-auth-add-account"]').element as HTMLButtonElement
+    expect(submit().disabled).toBe(false)
+    // A `ready` can demote the connection while the modal is open — the button must
+    // grey out with the reason, not just grey out.
+    auth.setIsAdmin(false)
+    await nextTick()
+    expect(w.find('[data-testid="settings-auth-add-blocked"]').text()).toBe(
+      enAuth().blocked.adminOnly,
+    )
+    expect(submit().disabled).toBe(true)
+    auth.setIsAdmin(true)
+  })
+
+  it('change password: names the length rule and unblocks at 4 characters', async () => {
+    const copy = enAuth().blocked
+    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
+    await w.find('[data-testid="settings-auth-account-change"]').trigger('click')
+    const submit = () =>
+      w.find('[data-testid="settings-auth-set-password"]').element as HTMLButtonElement
+    expect(w.find('[data-testid="settings-auth-change-blocked"]').text()).toBe(copy.password)
+    expect(submit().disabled).toBe(true)
+    await w.find('[data-testid="settings-auth-new-password"]').setValue('newpass1')
+    expect(w.find('[data-testid="settings-auth-change-blocked"]').exists()).toBe(false)
+    expect(submit().disabled).toBe(false)
   })
 
   it('change password: opens the modal and includes the current password', async () => {

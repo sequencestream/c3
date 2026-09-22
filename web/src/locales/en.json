@@ -709,6 +709,11 @@
         "needAdmin": "Set an admin account below before sign-in takes effect.",
         "active": "Sign-in is required. Users must enter the admin credentials to access this console."
       },
+      "blocked": {
+        "adminOnly": "This connection is not signed in as the administrator, so accounts cannot be changed.",
+        "username": "Enter a username.",
+        "password": "The password must be at least 4 characters."
+      },
       "username": {
         "label": "Admin username",
         "placeholder": "admin"

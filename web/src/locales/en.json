@@ -2663,6 +2663,22 @@
         "hourlyHint": "minute past each hour",
         "hint": "hour : minute (UTC)"
       },
+      "window": {
+        "label": "Execution hours",
+        "start": {
+          "label": "From"
+        },
+        "end": {
+          "label": "Until"
+        },
+        "allDay": "All day",
+        "range": "From {start} until {end} (end hour excluded)",
+        "rangeOvernight": "From {start} until {end} the next day (end hour excluded)",
+        "custom": "Custom",
+        "customHint": "Custom hours — the schedule is kept exactly as written.",
+        "daysKept": "Day fields kept as written: {days}",
+        "invalid": "Start and end must differ"
+      },
       "days": {
         "label": "Days",
         "required": "Pick at least one day"

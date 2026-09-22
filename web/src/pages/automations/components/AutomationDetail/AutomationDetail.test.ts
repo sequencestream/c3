@@ -113,7 +113,7 @@ describe('AutomationDetail.vue — 右栏 automation 详情', () => {
   it('cron 排期只读显示表达式和可读频率', () => {
     const w = mountDetail(sched({ cronExpression: '0 */1 * * *' }))
     expect(w.find('.sd-cron').text()).toBe('0 */1 * * *')
-    expect(w.find('.sd-cron-description').text()).toBe('Every 1 hours')
+    expect(w.find('.sd-cron-description').text()).toBe('Every hour')
     expect(w.find('.sd-cron-edit').exists()).toBe(false)
     expect(w.find('[role="dialog"]').exists()).toBe(false)
   })

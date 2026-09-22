@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { describeCron } from '@ccc/shared/cron'
+import { describeCron, parseHourWindow, renderHourWindow } from '@ccc/shared/cron'
 import type { Automation } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 
@@ -38,6 +38,30 @@ const minute = ref(0)
 // weekly 选中的星期几数字集合(单一事实源)。
 const days = ref<number[]>([])
 
+// 执行时段:仅 minutely / hourly 可限定,半开区间 [起:00, 止:00)。
+// 止 24 表示次日 00:00,故 UI 只提供 1–24(0 与 24 是同一时刻的重复写法)。
+const HOURS_FROM = Array.from({ length: 24 }, (_, i) => i) // 0–23
+const HOURS_UNTIL = Array.from({ length: 24 }, (_, i) => i + 1) // 1–24
+
+/**
+ * `editable` = 起止可选(起 0 止 24 即全天,合成 `*`);
+ * `custom` = 手写的 hour 字段反解不出单个连续区间,只读并原样保留。
+ */
+const windowMode = ref<'editable' | 'custom'>('editable')
+const windowStart = ref(0)
+const windowEnd = ref(24)
+// custom 态打开时的 hour 字段:合成时原样写回,不得回退为 `*` ——
+// 那会静默扩大执行范围,正是执行时段要解决的问题。
+const preservedHourField = ref('*')
+// dom / mon / dow:minutely / hourly 的编辑模型里没有「日期」维度,故整体原样保留,
+// 否则「打开再保存」会把手写的日期约束抹成通配(如 `0 9-17/2 * * 1-5` 丢掉 1-5,
+// 排期从工作日扩到每天)。daily / weekly 有自己的时:分与星期几控件,不走这条路径。
+const preservedDayFields = ref('* * *')
+
+function fmtHour(hourValue: number): string {
+  return `${String(hourValue).padStart(2, '0')}:00`
+}
+
 function parseNumber(value: string, fallback: number, max: number): number {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= max ? parsed : fallback
@@ -65,20 +89,65 @@ function renderDow(selected: number[]): string {
   return sorted.join(',')
 }
 
+/**
+ * 把 hour 字段反解成执行时段。解析不出来(多段、非法)时进入 custom 只读态并
+ * 原样记住该字段;`allowStep` 为假时,字段里的步长 UI 表达不了,同样按 custom 处理。
+ */
+function seedWindow(rawHourField: string, allowStep: boolean): void {
+  const window = parseHourWindow(rawHourField)
+  if (!window || (!allowStep && window.step !== undefined)) {
+    windowMode.value = 'custom'
+    preservedHourField.value = rawHourField
+    return
+  }
+  windowMode.value = 'editable'
+  windowStart.value = window.start
+  windowEnd.value = window.end
+}
+
 function seedCron(expression: string): void {
-  const [minuteField = '0', hourField = '*', , , dowField = '*'] = expression.split(/\s+/)
+  const [minuteField = '0', rawHourField = '*', domField = '*', monField = '*', dowField = '*'] =
+    expression.split(/\s+/)
+  // 组件实例跨自动化复用(弹框常驻挂载),每次回填都要先把时段状态复位到「全天·可编辑」,
+  // 否则上一条排期的时段会留在控件里 —— 不改动直接保存就把它写进这一条,
+  // 例如 B 的 `0 */3 * * *` 变成 `0 8-17/3 * * *`。
+  windowMode.value = 'editable'
+  windowStart.value = 0
+  windowEnd.value = 24
+  preservedHourField.value = '*'
+  preservedDayFields.value = `${domField} ${monField} ${dowField}`
+
   if (minuteField.startsWith('*/')) {
     frequency.value = 'minutely'
     interval.value = parseNumber(minuteField.slice(2), 1, 59) || 1
+    seedWindow(rawHourField, false)
     return
   }
   minute.value = parseNumber(minuteField, 0, 59)
-  if (hourField.startsWith('*/')) {
+  // 每时的步长写在这个字段里,全天形态即 `*/N`,时段为全天 —— 已由上面的复位给出。
+  if (rawHourField.startsWith('*/')) {
     frequency.value = 'hourly'
-    interval.value = parseNumber(hourField.slice(2), 1, 23) || 1
+    interval.value = parseNumber(rawHourField.slice(2), 1, 23) || 1
     return
   }
-  hour.value = parseNumber(hourField, 0, 23)
+  // `*` 与单个数字是"几点跑",不是时段:保持按 daily/weekly 回填。
+  if (rawHourField !== '*') {
+    const window = parseHourWindow(rawHourField)
+    if (window) {
+      frequency.value = 'hourly'
+      interval.value = window.step ?? 1
+      seedWindow(rawHourField, true)
+      return
+    }
+    // 含区间/列表却反解不出单个时段(如 `8-12,14-18`)的手写形态:只读保留。
+    if (/[-,/]/.test(rawHourField)) {
+      frequency.value = 'hourly'
+      interval.value = 1
+      seedWindow(rawHourField, true)
+      return
+    }
+  }
+  hour.value = parseNumber(rawHourField, 0, 23)
   frequency.value = dowField === '*' ? 'daily' : 'weekly'
   // weekly 时回填选中的星期几;历史上被存成 `*` 的旧数据解析为空,
   // 给一个合理默认(工作日 1-5,与新建表单一致),避免一打开即不可保存。
@@ -107,13 +176,19 @@ watch(
   { immediate: true },
 )
 
+/** hour 字段:minutely 的步长在 minute 上,hourly 的步长落在时段内。 */
+function hourPart(step?: number): string {
+  if (windowMode.value === 'custom') return preservedHourField.value
+  return renderHourWindow(windowStart.value, windowEnd.value, step)
+}
+
 const resolvedCronExpression = computed(() => {
   const n = Math.max(1, Math.min(frequency.value === 'minutely' ? 59 : 23, interval.value || 1))
   switch (frequency.value) {
     case 'minutely':
-      return `*/${n} * * * *`
+      return `*/${n} ${hourPart()} ${preservedDayFields.value}`
     case 'hourly':
-      return `${minute.value} */${n} * * *`
+      return `${minute.value} ${hourPart(n)} ${preservedDayFields.value}`
     case 'daily':
       return `${minute.value} ${hour.value} * * *`
     case 'weekly':
@@ -123,9 +198,43 @@ const resolvedCronExpression = computed(() => {
   }
 })
 
-// weekly 必须至少选 1 个星期几才能保存;其它频率不受此约束。
+const isWindowFrequency = computed(
+  () => frequency.value === 'minutely' || frequency.value === 'hourly',
+)
+// hourly 的步长写在 hour 字段里;该字段被原样保留时,改间隔无法在不改写它的前提下生效,
+// 故锁定输入,而不是让改动静默丢失。minutely 的步长在 minute 字段上,不受此限。
+const intervalLocked = computed(() => frequency.value === 'hourly' && windowMode.value === 'custom')
+const windowIsAllDay = computed(() => windowStart.value === 0 && windowEnd.value === 24)
+// 起 = 止 是零宽区间,没有任何可执行的时刻。
+const windowInvalid = computed(
+  () =>
+    isWindowFrequency.value &&
+    windowMode.value === 'editable' &&
+    windowStart.value === windowEnd.value,
+)
+
+const windowHint = computed(() => {
+  if (windowMode.value === 'custom') return t('automation.form.window.customHint')
+  if (windowInvalid.value) return t('automation.form.window.invalid')
+  if (windowIsAllDay.value) return t('automation.form.window.allDay')
+  const start = fmtHour(windowStart.value)
+  const end = fmtHour(windowEnd.value)
+  return windowStart.value > windowEnd.value
+    ? t('automation.form.window.rangeOvernight', { start, end })
+    : t('automation.form.window.range', { start, end })
+})
+
+// 日期字段不在本控件的编辑模型内(见 preservedDayFields),原样保留并说明,
+// 免得用户以为保存会把它清成通配。
+const daysKeptHint = computed(() =>
+  preservedDayFields.value === '* * *'
+    ? ''
+    : t('automation.form.window.daysKept', { days: preservedDayFields.value }),
+)
+
+// weekly 必须至少选 1 个星期几才能保存;时段不能是零宽区间。
 const daysInvalid = computed(() => frequency.value === 'weekly' && days.value.length === 0)
-const canSave = computed(() => !daysInvalid.value)
+const canSave = computed(() => !daysInvalid.value && !windowInvalid.value)
 
 function save(): void {
   if (!canSave.value) return
@@ -169,13 +278,48 @@ function save(): void {
               type="number"
               min="1"
               :max="frequency === 'minutely' ? 59 : 23"
+              :disabled="intervalLocked"
             />
           </div>
         </label>
+        <div v-if="isWindowFrequency" class="sce-field sce-field--stacked">
+          <span>{{ t('automation.form.window.label') }}</span>
+          <div v-if="windowMode === 'custom'" class="sce-custom">
+            <code>{{ preservedHourField }}</code>
+            <span class="sce-tag">{{ t('automation.form.window.custom') }}</span>
+          </div>
+          <div v-else class="sce-window">
+            <select
+              v-model.number="windowStart"
+              class="sce-input sce-window-start"
+              :aria-label="t('automation.form.window.start.label')"
+            >
+              <option v-for="h in HOURS_FROM" :key="h" :value="h">{{ fmtHour(h) }}</option>
+            </select>
+            <span>–</span>
+            <select
+              v-model.number="windowEnd"
+              class="sce-input sce-window-end"
+              :aria-label="t('automation.form.window.end.label')"
+            >
+              <option v-for="h in HOURS_UNTIL" :key="h" :value="h">{{ fmtHour(h) }}</option>
+            </select>
+          </div>
+          <span :class="windowInvalid ? 'sce-warn' : 'sce-hint'">{{ windowHint }}</span>
+          <span v-if="daysKeptHint" class="sce-hint">{{ daysKeptHint }}</span>
+        </div>
         <label v-if="frequency !== 'minutely'" class="sce-field">
           <span>{{ t('automation.form.time.label') }}</span>
-          <input v-model.number="hour" class="sce-input sce-time" type="number" min="0" max="23" />
-          <span>:</span>
+          <template v-if="frequency !== 'hourly'">
+            <input
+              v-model.number="hour"
+              class="sce-input sce-time"
+              type="number"
+              min="0"
+              max="23"
+            />
+            <span>:</span>
+          </template>
           <input
             v-model.number="minute"
             class="sce-input sce-time"
@@ -183,6 +327,9 @@ function save(): void {
             min="0"
             max="59"
           />
+          <span v-if="frequency === 'hourly'" class="sce-hint">{{
+            t('automation.form.time.hourlyHint')
+          }}</span>
         </label>
         <div v-if="frequency === 'weekly'" class="sce-field sce-field--stacked">
           <span>{{ t('automation.form.days.label') }}</span>
@@ -304,6 +451,26 @@ function save(): void {
 .sce-warn {
   font-size: var(--fs-caption);
   color: var(--c-warning-text);
+}
+.sce-hint {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.sce-window,
+.sce-custom {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sce-custom code {
+  color: var(--c-text);
+}
+.sce-tag {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: 2px 6px;
 }
 .sce-input {
   min-width: 0;

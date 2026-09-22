@@ -109,3 +109,142 @@ describe('AutomationCronEditor.vue — 修改时间弹框', () => {
     expect(isValidCron(saved)).toBe(true)
   })
 })
+
+const winStart = '.sce-window-start'
+const winEnd = '.sce-window-end'
+const confirmBtn = '.sce-button--primary'
+
+function selected(w: ReturnType<typeof mountEditor>, selector: string): string {
+  return (w.find(selector).element as HTMLSelectElement).value
+}
+
+async function save(w: ReturnType<typeof mountEditor>): Promise<string | undefined> {
+  await w.find(confirmBtn).trigger('click')
+  return w.emitted('save')?.[0]?.[0] as string | undefined
+}
+
+describe('AutomationCronEditor.vue — 执行时段', () => {
+  it('仅 minutely / hourly 展示时段控件;daily / weekly 不展示', async () => {
+    const w = mountEditor({ cronExpression: '0 8 * * *' })
+    expect(w.find(winStart).exists()).toBe(false)
+    await w.find(freqSelect).setValue('minutely')
+    expect(w.find(winStart).exists()).toBe(true)
+    await w.find(freqSelect).setValue('weekly')
+    expect(w.find(winStart).exists()).toBe(false)
+  })
+
+  it('默认全天:合成表达式与引入时段前逐字一致', async () => {
+    const minutely = mountEditor({ cronExpression: '*/5 * * * *' })
+    expect(selected(minutely, winStart)).toBe('0')
+    expect(selected(minutely, winEnd)).toBe('24')
+    expect(await save(minutely)).toBe('*/5 * * * *')
+
+    const hourly = mountEditor({ cronExpression: '0 */2 * * *' })
+    expect(selected(hourly, winStart)).toBe('0')
+    expect(selected(hourly, winEnd)).toBe('24')
+    expect(await save(hourly)).toBe('0 */2 * * *')
+  })
+
+  it('08:00–18:00:分钟频率与小时频率各自合成 hour 字段', async () => {
+    const minutely = mountEditor({ cronExpression: '*/5 * * * *' })
+    await minutely.find(winStart).setValue('8')
+    await minutely.find(winEnd).setValue('18')
+    expect(await save(minutely)).toBe('*/5 8-17 * * *')
+
+    const hourly = mountEditor({ cronExpression: '0 */2 * * *' })
+    await hourly.find(winStart).setValue('8')
+    await hourly.find(winEnd).setValue('18')
+    expect(await save(hourly)).toBe('0 8-17/2 * * *')
+  })
+
+  it('跨午夜 22:00–次日 08:00:两段各自步进,不出现错位', async () => {
+    const minutely = mountEditor({ cronExpression: '*/5 * * * *' })
+    await minutely.find(winStart).setValue('22')
+    await minutely.find(winEnd).setValue('8')
+    expect(await save(minutely)).toBe('*/5 22-23,0-7 * * *')
+
+    const hourly = mountEditor({ cronExpression: '0 */2 * * *' })
+    await hourly.find(winStart).setValue('22')
+    await hourly.find(winEnd).setValue('8')
+    expect(await save(hourly)).toBe('0 22-23/2,0-7/2 * * *')
+  })
+
+  it('小时频率间隔为 1 时省略 /1,与全天形态的 */1 区分', async () => {
+    const w = mountEditor({ cronExpression: '0 */1 * * *' })
+    await w.find(winStart).setValue('8')
+    await w.find(winEnd).setValue('18')
+    expect(await save(w)).toBe('0 8-17 * * *')
+  })
+
+  it('起 = 止 时禁用保存并提示;改回不等即恢复', async () => {
+    const w = mountEditor({ cronExpression: '*/5 * * * *' })
+    await w.find(winStart).setValue('8')
+    await w.find(winEnd).setValue('8')
+    expect(w.find(confirmBtn).attributes('disabled')).toBeDefined()
+    expect(w.find('.sce-warn').exists()).toBe(true)
+    expect(await save(w)).toBeUndefined()
+
+    await w.find(winEnd).setValue('9')
+    expect(w.find(confirmBtn).attributes('disabled')).toBeUndefined()
+    expect(w.find('.sce-warn').exists()).toBe(false)
+    expect(await save(w)).toBe('*/5 8-8 * * *') // [08:00, 09:00)
+  })
+
+  it('起 0 止 24 视作全天:合成 * 并按全天显示', async () => {
+    const w = mountEditor({ cronExpression: '*/5 8-17 * * *' })
+    expect(w.find('.sce-warn').exists()).toBe(false)
+    await w.find(winStart).setValue('0')
+    await w.find(winEnd).setValue('24')
+    expect(w.find('.sce-hint').text()).toBe('All day')
+    expect(await save(w)).toBe('*/5 * * * *')
+  })
+
+  it('反解回填:当日区间 / 跨午夜区间 / 全天', () => {
+    const sameDay = mountEditor({ cronExpression: '*/5 8-17 * * *' })
+    expect(selected(sameDay, winStart)).toBe('8')
+    expect(selected(sameDay, winEnd)).toBe('18')
+
+    const overnight = mountEditor({ cronExpression: '*/5 22-23,0-7 * * *' })
+    expect(selected(overnight, winStart)).toBe('22')
+    expect(selected(overnight, winEnd)).toBe('8')
+
+    const allDay = mountEditor({ cronExpression: '*/5 0-23 * * *' })
+    expect(selected(allDay, winStart)).toBe('0')
+    expect(selected(allDay, winEnd)).toBe('24')
+    expect(allDay.find('.sce-hint').text()).toBe('All day')
+  })
+
+  it('反解回填:小时频率带窗口的形态识别为 hourly + 间隔 + 时段', () => {
+    const w = mountEditor({ cronExpression: '0 8-17/2 * * *' })
+    expect((w.find(freqSelect).element as HTMLSelectElement).value).toBe('hourly')
+    expect((w.find('.sce-interval').element as HTMLInputElement).value).toBe('2')
+    expect(selected(w, winStart)).toBe('8')
+    expect(selected(w, winEnd)).toBe('18')
+  })
+
+  it('反解失败(手写多段)落自定义只读态,保存后 hour 字段原样不变', async () => {
+    const w = mountEditor({ cronExpression: '*/5 8-12,14-18 * * *' })
+    expect(w.find(winStart).exists()).toBe(false)
+    expect(w.find('.sce-custom').text()).toContain('8-12,14-18')
+    expect(w.find('.sce-tag').text()).toBe('Custom')
+    // 不得回退为全天:那会静默扩大执行范围。
+    expect(await save(w)).toBe('*/5 8-12,14-18 * * *')
+  })
+
+  it('自定义态:minutely 改间隔仍保留原 hour 字段', async () => {
+    const w = mountEditor({ cronExpression: '*/5 8-12,14-18 * * *' })
+    await w.find('.sce-interval').setValue(3)
+    expect(await save(w)).toBe('*/3 8-12,14-18 * * *')
+  })
+
+  it('自定义态:hourly 的步长写在被保留的 hour 字段里,间隔输入锁定', async () => {
+    const w = mountEditor({ cronExpression: '0 8-12,14-18 * * *' })
+    expect(w.find('.sce-interval').attributes('disabled')).toBeDefined()
+    expect(await save(w)).toBe('0 8-12,14-18 * * *')
+  })
+
+  it('hourly 只展示分钟输入,不再显示无效的小时输入框', () => {
+    const w = mountEditor({ cronExpression: '0 */2 * * *' })
+    expect(w.findAll('.sce-time')).toHaveLength(1)
+  })
+})

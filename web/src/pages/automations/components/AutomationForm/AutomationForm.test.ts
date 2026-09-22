@@ -672,7 +672,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     const w = mountForm({ automation: sched({ cronExpression: '0 */1 * * *' }) })
     expect(w.find('.sf-advanced').exists()).toBe(false)
     expect(w.find('.sf-cron-inline').text()).toContain('0 */1 * * *')
-    expect(w.find('.sf-cron-inline').text()).toContain('Every 1 hours')
+    expect(w.find('.sf-cron-inline').text()).toContain('Every hour')
 
     await w.find('.sf-cron-edit').trigger('click')
     expect(w.find('[role="dialog"]').exists()).toBe(true)

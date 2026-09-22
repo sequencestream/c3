@@ -261,6 +261,115 @@ function computeNextRunAtZoned(cron: ParsedCron, after: number, timeZone: string
   return after + FAR_FUTURE_MS
 }
 
+/**
+ * The single contiguous execution window an hour field carries, as the half-open
+ * interval `[start:00, end:00)`. `end` is 1–24, where 24 means the following
+ * midnight; `end` at or below `start` wraps past midnight. Only the all-day
+ * window (0 → 24) renders as `*`.
+ *
+ * The hour field can encode more than this — several disjoint ranges, or a step
+ * the editor cannot express — so parsing returns `null` for everything it cannot
+ * round-trip faithfully rather than guessing (a wrong guess would silently widen
+ * when the schedule runs).
+ */
+export interface HourWindow {
+  start: number // 0-23
+  end: number // 1-24
+  /** Hour step carried by the field (`/N`), when present. */
+  step?: number
+  allDay: boolean
+}
+
+/** One comma-separated hour segment: `N`, `N-M`, `N/S` or `N-M/S`. */
+function hourSegment(
+  part: string,
+): { lo: number; hi: number; step?: number; ranged: boolean } | null {
+  const m = part.match(/^(\d+)(?:-(\d+))?(?:\/(\d+))?$/)
+  if (!m) return null
+  const step = m[3] !== undefined ? parseInt(m[3], 10) : undefined
+  // A step without an upper bound runs to the end of the field, as in `8/2`.
+  const hi = m[2] !== undefined ? parseInt(m[2], 10) : step !== undefined ? 23 : parseInt(m[1], 10)
+  return { lo: parseInt(m[1], 10), hi, step, ranged: m[2] !== undefined }
+}
+
+/** `end` below `start` is an overnight window; `end === start` is empty (rejected). */
+function hourWindow(start: number, end: number, step?: number): HourWindow | null {
+  if (start < 0 || start > 23 || end < 1 || end > 24 || end === start) return null
+  if (step !== undefined && step < 1) return null
+  return { start, end, step, allDay: start === 0 && end === 24 }
+}
+
+/**
+ * Parse an hour field into the execution window it encodes, or `null` when it is
+ * not a single contiguous window (`8-12,14-18`, a bare hour like `8` — a point,
+ * not a window — or several ranges with mismatched steps).
+ */
+export function parseHourWindow(field: string): HourWindow | null {
+  if (field === '*') return { start: 0, end: 24, allDay: true }
+  const wildStep = field.match(/^\*\/(\d+)$/)
+  if (wildStep) return hourWindow(0, 24, parseInt(wildStep[1], 10))
+
+  const segments = field.split(',')
+  if (segments.length === 1) {
+    const s = hourSegment(segments[0])
+    if (!s) return null
+    // A reversed bound (`22-7`) matches nothing, so it is not an overnight window.
+    if (s.hi < s.lo) return null
+    // `0-23` is the whole day written out explicitly.
+    if (s.lo === 0 && s.hi === 23) return hourWindow(0, 24, s.step)
+    // A bare hour is a point, not a window — daily expressions seed from it.
+    if (!s.ranged && s.step === undefined) return null
+    return hourWindow(s.lo, s.hi + 1, s.step)
+  }
+  if (segments.length === 2) {
+    const [a, b] = [hourSegment(segments[0]), hourSegment(segments[1])]
+    // The canonical overnight split: `22-23` then `0-7`, with matching steps.
+    if (!a || !b) return null
+    if (a.lo < 1 || a.hi !== 23 || b.lo !== 0 || b.hi > 22) return null
+    if (a.step !== undefined && b.step !== undefined && a.step !== b.step) return null
+    return hourWindow(a.lo, b.hi + 1, a.step ?? b.step)
+  }
+  return null
+}
+
+/**
+ * Render the hour field for the half-open window `[start, end)`, optionally
+ * stepping within it. All-day renders as the bare wildcard, plus a step suffix
+ * when one is given, so an editor with no window set keeps producing the same
+ * expression it always did; a
+ * windowed step of 1 is dropped (`8-17` rather than `8-17/1`).
+ *
+ * `start === end` is an empty window and the caller's to reject: it renders here
+ * as the overnight split, which spans the whole day.
+ */
+export function renderHourWindow(start: number, end: number, step?: number): string {
+  // Only 24 denotes the following midnight; 0 is the same instant written twice.
+  const stop = end <= 0 ? 24 : end
+  const suffix = step !== undefined && step > 1 ? `/${step}` : ''
+  if (start === 0 && stop === 24) return step !== undefined ? `*/${step}` : '*'
+  if (start < stop) return `${start}-${stop - 1}${suffix}`
+  // Overnight: the window is cut by midnight into two runs that step separately.
+  return `${start}-23${suffix},0-${stop - 1}${suffix}`
+}
+
+/** `8` → `08:00`, `24` → `00:00` (24 denotes the following midnight). */
+function clockHour(hour: number): string {
+  return `${String(hour % 24).padStart(2, '0')}:00`
+}
+
+/** "Every minute" / "Every 5 minutes" — singular for a step of 1. */
+function everyCount(unit: 'minute' | 'hour', step: number): string {
+  return step === 1 ? `Every ${unit}` : `Every ${step} ${unit}s`
+}
+
+/**
+ * "between 08:00 and 18:00" for a window. An overnight window reads
+ * "between 22:00 and 08:00" — the reader knows the end has wrapped.
+ */
+function betweenWindow(window: HourWindow): string {
+  return `between ${clockHour(window.start)} and ${clockHour(window.end)}`
+}
+
 const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function describeField(raw: string): { isWild: boolean; list: number[] } {
@@ -280,8 +389,9 @@ function describeField(raw: string): { isWild: boolean; list: number[] } {
 /**
  * Produce a short human-readable, English description of a cron expression for
  * display next to the live preview (e.g. "Every 30 minutes",
- * "At 08:00 on Mon–Fri"). Falls back to the raw expression when the shape is not
- * one the describer recognises. Best-effort, not exhaustive.
+ * "At 08:00 on Mon–Fri", "Every 5 minutes between 08:00 and 18:00"). Falls back
+ * to the raw expression when the shape is not one the describer recognises.
+ * Best-effort, not exhaustive.
  */
 export function describeCron(expr: string): string {
   const fields = expr.trim().split(/\s+/)
@@ -290,13 +400,27 @@ export function describeCron(expr: string): string {
 
   // Every N minutes — "*/N * * * *"
   const everyMin = min.match(/^\*\/(\d+)$/)
-  if (everyMin && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
-    return `Every ${everyMin[1]} minutes`
+  const fixedDay = dom === '*' && mon === '*' && dow === '*'
+  if (everyMin && fixedDay) {
+    if (hour === '*') return everyCount('minute', parseInt(everyMin[1], 10))
+    // Every N minutes within an execution window — "*/N H1-H2".
+    const window = parseHourWindow(hour)
+    if (window && window.step === undefined && !window.allDay) {
+      return `${everyCount('minute', parseInt(everyMin[1], 10))} ${betweenWindow(window)}`
+    }
   }
   // Every N hours — "0 */N * * *"
   const everyHour = hour.match(/^\*\/(\d+)$/)
-  if (min === '0' && everyHour && dom === '*' && mon === '*' && dow === '*') {
-    return `Every ${everyHour[1]} hours`
+  if (min === '0' && everyHour && fixedDay) return everyCount('hour', parseInt(everyHour[1], 10))
+
+  // Every N hours within an execution window — "M H1-H2/N".
+  const fixedMinute = min.match(/^(\d+)$/)
+  if (fixedMinute && fixedDay) {
+    const window = parseHourWindow(hour)
+    if (window && !window.allDay) {
+      const at = fixedMinute[1] === '0' ? '' : ` at minute ${fixedMinute[1].padStart(2, '0')}`
+      return `${everyCount('hour', window.step ?? 1)}${at} ${betweenWindow(window)}`
+    }
   }
 
   const parts: string[] = []

@@ -2426,6 +2426,21 @@
         "hourlyHint": "毎時の分",
         "hint": "時 : 分(UTC)"
       },
+      "window": {
+        "label": "実行時間帯",
+        "start": {
+          "label": "開始"
+        },
+        "end": {
+          "label": "終了"
+        },
+        "allDay": "終日",
+        "range": "{start} から {end} まで（終点を含まない）",
+        "rangeOvernight": "{start} から翌日 {end} まで（終点を含まない）",
+        "custom": "カスタム",
+        "customHint": "カスタム時間帯 — スケジュールは記述のまま保持します。",
+        "invalid": "開始と終了は別の時刻にしてください"
+      },
       "days": {
         "label": "曜日",
         "required": "少なくとも1つの曜日を選択してください"

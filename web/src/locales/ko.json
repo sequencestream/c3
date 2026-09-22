@@ -2426,6 +2426,21 @@
         "hourlyHint": "매시간 몇 분",
         "hint": "시 : 분 (UTC)"
       },
+      "window": {
+        "label": "실행 시간대",
+        "start": {
+          "label": "시작"
+        },
+        "end": {
+          "label": "종료"
+        },
+        "allDay": "하루 종일",
+        "range": "{start}부터 {end}까지 (종료 시점 제외)",
+        "rangeOvernight": "{start}부터 다음 날 {end}까지 (종료 시점 제외)",
+        "custom": "사용자 지정",
+        "customHint": "사용자 지정 시간대 — 일정은 작성한 그대로 유지됩니다.",
+        "invalid": "시작과 종료는 서로 달라야 합니다"
+      },
       "days": {
         "label": "요일",
         "required": "요일을 하나 이상 선택하세요"

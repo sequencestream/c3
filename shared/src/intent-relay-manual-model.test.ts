@@ -63,17 +63,15 @@ describe('resolveIntentRelayManualTrigger — gates', () => {
 
 describe('resolveIntentRelayManualTrigger — phase table', () => {
   it('offers the FIRST review when no conclusion exists', () => {
+    // The impact grade is not an input at all — the criterion has no L5 branch,
+    // which is the intended difference from `needsReview(impactLevel)`. That a
+    // real L5 intent still admits a manual review is pinned at the handler,
+    // where the grade actually exists; this layer cannot express it.
     expect(resolveIntentRelayManualTrigger(facts())).toEqual({
       canStartReview: true,
       canStartFix: false,
       blockedReason: null,
     })
-  })
-
-  it('offers the first review for an L5 grade (the queue would skip it)', () => {
-    // The grade is not an input at all — the criterion has no L5 branch, which
-    // is precisely the intended difference from `needsReview(impactLevel)`.
-    expect(resolveIntentRelayManualTrigger(facts({ reviewStatus: null })).canStartReview).toBe(true)
   })
 
   it('offers the RESUME when a review is marked pending but nothing holds it', () => {

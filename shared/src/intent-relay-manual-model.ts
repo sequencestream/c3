@@ -17,9 +17,11 @@
  * function is. Both readers use it and only it: the web title bar (deciding
  * whether to render 「启动评审」/「启动修复」) and the `start_intent_relay`
  * handler (the backstop against direct WS calls and stale tabs). Sharing it is
- * what makes "the button was there" and "the server accepted it" the same
- * statement — a button that can be clicked and then refused is the failure this
- * single source exists to prevent.
+ * what keeps the two readers from disagreeing about which PHASE the ledger calls
+ * for. It is NOT a promise that a rendered button will be accepted: the claim
+ * that follows it (a resolvable agent, an existing worktree, a CAS that still
+ * wins) can refuse a click against a world that moved, and each of those
+ * refusals is named.
  *
  * In-flight is an INPUT, never re-derived here. The server computes it from the
  * live run registry plus the pending projection's age (the same rule the queue

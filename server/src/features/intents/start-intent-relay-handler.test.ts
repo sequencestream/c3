@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { ProposedIntent, ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import type { SessionRuntime } from '../../runs.js'
@@ -114,10 +114,10 @@ function errorCode(sent: ServerToClient[]): string | undefined {
  * an active PR, `in_progress`, automation OFF. Every one of those is deliberate —
  * the queue would refuse this intent on three of them.
  */
-function seedManualIntent(): string {
+function seedManualIntent(overrides: Partial<ProposedIntent> = {}): string {
   saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
   const [r] = insertIntents(proj, [
-    { title: '人工评审', shortEnTitle: 'manual', content: 'body', priority: 'P1' },
+    { title: '人工评审', shortEnTitle: 'manual', content: 'body', priority: 'P1', ...overrides },
   ])
   updateStatus(r.id, 'in_progress')
   upsertIntentPr({
@@ -327,6 +327,19 @@ describe('startIntentRelay — the round handed to the executor', () => {
     const id = seedManualIntent()
     expect(getIntent(id)!.automate).toBe(false)
     expect(getIntent(id)!.status).toBe('in_progress')
+    const { conn, sent } = fakeConn()
+    await startIntentRelay(fakeCtx().ctx, conn, msg(id))
+    expect(admission).toHaveBeenCalledTimes(1)
+    expect(errorCode(sent)).toBeUndefined()
+  })
+
+  it('does NOT gate on a low impact grade — L5 saves the QUEUE tokens, it is not a rule for a human', async () => {
+    // `needsReview(impactLevel)` withholds the queue's first review at L5 only.
+    // A click is a person asking, so the grade must not reach the admission —
+    // asserted on a REAL L5 intent, because the criterion itself never sees the
+    // grade and a spec-level unit test therefore cannot pin this.
+    const id = seedManualIntent({ impactLevel: 'L5' })
+    expect(getIntent(id)!.impactLevel).toBe('L5')
     const { conn, sent } = fakeConn()
     await startIntentRelay(fakeCtx().ctx, conn, msg(id))
     expect(admission).toHaveBeenCalledTimes(1)

@@ -1475,6 +1475,11 @@ const AUTH_PROVIDERS: { value: string; disabled: boolean }[] = [
 // 30-day TTL mirrors the server default (auth-schema.ts DEFAULT_SESSION_TTL_SECONDS).
 const SECONDS_PER_DAY = 24 * 60 * 60
 const DEFAULT_AUTH_SESSION = { ttlSeconds: 30 * SECONDS_PER_DAY, signingKeyRef: 'C3_AUTH_KEY' }
+// Minimum new-password length — deliberately the same floor the server enforces
+// (`MIN_PASSWORD_LEN`, server/src/features/auth/index.ts) so the two gates agree
+// and a submittable form is never bounced back as `invalid`. Hand-kept in step on
+// purpose: hoisting one constant into `shared/` is a wider change than this rule.
+const MIN_PASSWORD_LEN = 4
 
 // The basic account set + the single admin username (empty arrays/'' when not
 // basic or unconfigured). Accounts are owned by the server (dedicated messages);
@@ -1580,6 +1585,60 @@ const addUsernameTaken = computed(() => {
   const u = addUsername.value.trim()
   return !!u && basicAccounts.value.some((a) => a.username === u)
 })
+
+// Which condition is holding the submit buttons shut — the single derivation
+// behind both the `disabled` attribute and the reason printed under the fields.
+// Greyed out with nothing said is what made this form unreadable from the
+// outside: the only prior hint was the password placeholder, which is gone the
+// moment the user starts typing. Each arm mirrors the old `||` chain in the same
+// order, so no case changes side.
+type SubmitBlocker = 'admin' | 'username' | 'duplicate' | 'password'
+/** Why "add account" cannot be submitted, or `null` when it can. */
+const addAccountBlocker = computed<SubmitBlocker | null>(() => {
+  if (!isAdmin.value) return 'admin'
+  if (!addUsername.value.trim()) return 'username'
+  if (addUsernameTaken.value) return 'duplicate'
+  if (addPassword.value.length < MIN_PASSWORD_LEN) return 'password'
+  return null
+})
+/** Why "change password" cannot be submitted, or `null` when it can. */
+const changePasswordBlocker = computed<SubmitBlocker | null>(() => {
+  if (!isAdmin.value) return 'admin'
+  if (pwNew.value.length < MIN_PASSWORD_LEN) return 'password'
+  return null
+})
+// The visible reason per blocker. A duplicate username keeps its own long-standing
+// line (`addUsernameTaken`), so it is deliberately absent here — the two would
+// otherwise say the same thing twice.
+const BLOCKED_REASON = {
+  admin: 'settings.auth.blocked.adminOnly',
+  username: 'settings.auth.blocked.username',
+  password: 'settings.auth.blocked.password',
+} as const
+/** The reason line to print for a blocker, or `null` when there is nothing to say. */
+function blockedReason(blocker: SubmitBlocker | null) {
+  if (blocker === null || blocker === 'duplicate') return null
+  return BLOCKED_REASON[blocker]
+}
+const addAccountBlockedKey = computed(() => blockedReason(addAccountBlocker.value))
+const changePasswordBlockedKey = computed(() => blockedReason(changePasswordBlocker.value))
+// The write-only fields re-read themselves from the DOM on blur. A password
+// manager (or any autofill) can set a field's value without ever emitting `input`,
+// leaving the box showing a value while the model still holds '' — the submit gate
+// then stays shut for a reason nothing on screen explains. Blur fires whatever
+// filled the box, so it is the one hook that can still recover such a value.
+const addUsernameEl = ref<HTMLInputElement | null>(null)
+const addPasswordEl = ref<HTMLInputElement | null>(null)
+const pwCurrentEl = ref<HTMLInputElement | null>(null)
+const pwNewEl = ref<HTMLInputElement | null>(null)
+function syncAddAccountFields(): void {
+  if (addUsernameEl.value) addUsername.value = addUsernameEl.value.value
+  if (addPasswordEl.value) addPassword.value = addPasswordEl.value.value
+}
+function syncChangePasswordFields(): void {
+  if (pwCurrentEl.value) pwCurrent.value = pwCurrentEl.value.value
+  if (pwNewEl.value) pwNew.value = pwNewEl.value.value
+}
 /** Open the add-account modal with a clean (write-only) form. */
 function startAddAccount() {
   if (!isAdmin.value) return
@@ -1596,10 +1655,13 @@ function cancelAddAccount() {
 /** Add a new account: ship username + initial password (server hashes + adds;
  *  the first account also becomes the admin). No current-password proof. */
 function submitAddAccount() {
-  if (!isAdmin.value) return
-  const username = addUsername.value.trim()
-  if (!username || addUsernameTaken.value || addPassword.value.length < 4) return
-  emit('set-password', { username, password: addPassword.value })
+  // The same gate the button's `disabled` reads (see addAccountBlocker) — kept on
+  // the handler too so no path can emit a payload the server would reject.
+  if (addAccountBlocker.value) return
+  emit('set-password', {
+    username: addUsername.value.trim(),
+    password: addPassword.value,
+  })
   addUsername.value = ''
   addPassword.value = ''
   showAddModal.value = false
@@ -1619,7 +1681,7 @@ function cancelChangePassword() {
 }
 /** Ship a password change for `pwTarget` (proves the current password). */
 function submitChangePassword() {
-  if (!isAdmin.value || !pwTarget.value || pwNew.value.length < 4) return
+  if (changePasswordBlocker.value || !pwTarget.value) return
   emit('set-password', {
     username: pwTarget.value,
     password: pwNew.value,
@@ -2831,26 +2893,37 @@ function selectAdmin(username: string) {
         <label class="auth-field">
           <span class="auth-label">{{ t('settings.auth.username.label') }}</span>
           <input
+            ref="addUsernameEl"
             v-model="addUsername"
             class="agent-field"
             autocomplete="username"
             :placeholder="t('settings.auth.username.placeholder')"
             data-testid="settings-auth-add-username"
+            @blur="syncAddAccountFields"
           />
         </label>
         <label class="auth-field">
           <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
           <input
+            ref="addPasswordEl"
             v-model="addPassword"
             class="agent-field"
             type="password"
             autocomplete="new-password"
             :placeholder="t('settings.auth.password.new.placeholder')"
             data-testid="settings-auth-add-password"
+            @blur="syncAddAccountFields"
           />
         </label>
         <p v-if="addUsernameTaken" class="settings-hint" data-testid="settings-auth-add-duplicate">
           {{ t('settings.auth.account.duplicate') }}
+        </p>
+        <p
+          v-if="addAccountBlockedKey"
+          class="settings-hint"
+          data-testid="settings-auth-add-blocked"
+        >
+          {{ t(addAccountBlockedKey) }}
         </p>
         <div class="settings-modal-foot">
           <button class="ghost" @click="cancelAddAccount">
@@ -2858,9 +2931,7 @@ function selectAdmin(username: string) {
           </button>
           <button
             class="agent-add"
-            :disabled="
-              !isAdmin || !addUsername.trim() || addUsernameTaken || addPassword.length < 4
-            "
+            :disabled="addAccountBlocker !== null"
             data-testid="settings-auth-add-account"
             @click="submitAddAccount"
           >
@@ -2892,32 +2963,43 @@ function selectAdmin(username: string) {
         <label class="auth-field">
           <span class="auth-label">{{ t('settings.auth.password.current.label') }}</span>
           <input
+            ref="pwCurrentEl"
             v-model="pwCurrent"
             class="agent-field"
             type="password"
             autocomplete="current-password"
             :placeholder="t('settings.auth.password.current.placeholder')"
             data-testid="settings-auth-current-password"
+            @blur="syncChangePasswordFields"
           />
         </label>
         <label class="auth-field">
           <span class="auth-label">{{ t('settings.auth.password.new.label') }}</span>
           <input
+            ref="pwNewEl"
             v-model="pwNew"
             class="agent-field"
             type="password"
             autocomplete="new-password"
             :placeholder="t('settings.auth.password.new.placeholder')"
             data-testid="settings-auth-new-password"
+            @blur="syncChangePasswordFields"
           />
         </label>
+        <p
+          v-if="changePasswordBlockedKey"
+          class="settings-hint"
+          data-testid="settings-auth-change-blocked"
+        >
+          {{ t(changePasswordBlockedKey) }}
+        </p>
         <div class="settings-modal-foot">
           <button class="ghost" @click="cancelChangePassword">
             {{ t('common.action.cancel.label') }}
           </button>
           <button
             class="agent-add"
-            :disabled="pwNew.length < 4"
+            :disabled="changePasswordBlocker !== null"
             data-testid="settings-auth-set-password"
             @click="submitChangePassword"
           >

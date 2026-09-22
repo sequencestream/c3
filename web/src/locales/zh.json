@@ -709,6 +709,11 @@
         "needAdmin": "请先在下方设置管理员账号，登录认证才会生效。",
         "active": "已要求登录。用户须输入管理员账号密码才能访问本控制台。"
       },
+      "blocked": {
+        "adminOnly": "当前连接不是管理员，无法管理账号。",
+        "username": "请填写用户名。",
+        "password": "密码至少 4 个字符。"
+      },
       "username": {
         "label": "管理员用户名",
         "placeholder": "admin"

@@ -1483,6 +1483,16 @@
         "label": "More actions"
       }
     },
+    "relay": {
+      "startReview": {
+        "label": "Start review",
+        "tooltip": "Have an agent review the intent’s PR(s) now. Approving it will not merge anything."
+      },
+      "startFix": {
+        "label": "Start fix",
+        "tooltip": "Have an agent fix the issues the review reported, in the intent’s worktree."
+      }
+    },
     "automate": {
       "queued": {
         "tooltip": "in auto queue"
@@ -2868,7 +2878,16 @@
       "specWriteFailed": "Failed to create the spec document: {message}.",
       "specNotWritten": "The spec has not been written yet; author it before approving.",
       "specNotApproved": "The spec has not been approved yet; approve it before starting work.",
-      "parkStatsUnavailable": "Local park-recovery statistics are unavailable."
+      "parkStatsUnavailable": "Local park-recovery statistics are unavailable.",
+      "relay": {
+        "notWorktree": "The review/fix relay needs worktree mode — it reads and edits the PR head branch as a checked-out worktree.",
+        "noActivePr": "This intent has no live PR to review or fix.",
+        "phaseNotAllowed": "The relay has nothing to start here: the review is approved, or the fix rounds are used up.",
+        "phaseInFlight": "A review or fix session is already running for this intent.",
+        "agentUnavailable": "No usable agent for this phase: the agent group \"{group}\" has no available member.",
+        "worktreeUnavailable": "This intent’s worktree is unavailable, so the relay has nowhere to run.",
+        "claimFailed": "Could not register the phase — nothing was started. Try again."
+      }
     },
     "agent": {
       "groupUnavailable": "Agent group {group} has no available member. Check the agent configuration."

@@ -405,6 +405,46 @@ describe('syncIntentPrStatus', () => {
   })
 })
 
+describe('startIntentRelay', () => {
+  it('sends the phase the user asked for', () => {
+    const h = makeCtx({ intents: [] })
+
+    h.ctx.startIntentRelay('i-1', 'review')
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'start_intent_relay',
+      workspaceName: WS,
+      intentId: 'i-1',
+      phase: 'review',
+    })
+  })
+
+  it('sends the fix phase unchanged — the server decides whether it applies', () => {
+    // No client-side gate here on purpose: the button that offered this phase
+    // already read the same criterion the server will, so a second check would
+    // only be a second thing to keep true.
+    const h = makeCtx({ intents: [] })
+
+    h.ctx.startIntentRelay('i-1', 'fix')
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'start_intent_relay',
+      workspaceName: WS,
+      intentId: 'i-1',
+      phase: 'fix',
+    })
+  })
+
+  it('sends nothing when no workspace is selected', () => {
+    const h = makeCtx({ intents: [] })
+    h.ctx.intentsProject.value = ''
+
+    h.ctx.startIntentRelay('i-1', 'review')
+
+    expect(h.ctx.send).not.toHaveBeenCalled()
+  })
+})
+
 /**
  * Create-PR overlay wiring, from the click onwards: one request, an overlay that
  * blocks immediately and lights the server's stages, and closure on every

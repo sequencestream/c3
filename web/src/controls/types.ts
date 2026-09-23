@@ -243,6 +243,16 @@ export interface AppMethods {
   /** Fold one create-PR overlay event through the reducer + handle close side-effects. */
   dispatchCreatePr(ev: CreatePrEvent): void
   syncIntentPrStatus(intentId: string): void
+  /**
+   * Start ONE PR review / fix round by hand, on an intent the queue would not
+   * pick up (automation off, or a manually filed PR).
+   *
+   * No overlay and no optimistic marker: the server answers before it returns,
+   * so an accepted click is visible as the phase turning `pending`, and a refused
+   * one arrives as `intent.relay.*` and is toasted. Modelling the round here
+   * would be a second guess at facts the broadcast already carries.
+   */
+  startIntentRelay(intentId: string, phase: 'review' | 'fix'): void
   /** Link an externally created PR to an intent target after `create_pr` failed. */
   linkIntentPr(intentId: string, prReference: string, deliveryId?: string): void
   startWorkflow(): void

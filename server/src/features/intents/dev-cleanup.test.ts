@@ -73,6 +73,8 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...over,
   }

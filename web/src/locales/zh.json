@@ -1483,6 +1483,16 @@
         "label": "更多操作"
       }
     },
+    "relay": {
+      "startReview": {
+        "label": "启动评审",
+        "tooltip": "立即让 Agent 评审该意图的 PR;即便评审通过也不会自动合并。"
+      },
+      "startFix": {
+        "label": "启动修复",
+        "tooltip": "让 Agent 在该意图的 worktree 里修复评审提出的问题。"
+      }
+    },
     "automate": {
       "queued": {
         "tooltip": "在自动化队列中"
@@ -2868,7 +2878,16 @@
       "specWriteFailed": "创建 spec 文档失败: {message}。",
       "specNotWritten": "spec 尚未编写,请先编写再批准。",
       "specNotApproved": "spec 尚未批准,请先批准再开始工作。",
-      "parkStatsUnavailable": "本机 park 恢复统计暂不可用。"
+      "parkStatsUnavailable": "本机 park 恢复统计暂不可用。",
+      "relay": {
+        "notWorktree": "评审/修复接力需要 worktree 模式:它要在 PR 头分支的工作树里读写。",
+        "noActivePr": "该意图没有可评审或修复的活跃 PR。",
+        "phaseNotAllowed": "接力当前没有可发起的阶段:评审已通过,或修复轮次已用尽。",
+        "phaseInFlight": "该意图的评审或修复会话正在进行中。",
+        "agentUnavailable": "该阶段没有可用 Agent:Agent 组「{group}」没有可用成员。",
+        "worktreeUnavailable": "该意图的 worktree 不可用,接力无处可运行。",
+        "claimFailed": "阶段占位登记失败,未启动任何会话。请重试。"
+      }
     },
     "agent": {
       "groupUnavailable": "组 {group} 无可用成员，请检查 agent 配置。"

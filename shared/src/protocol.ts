@@ -129,6 +129,7 @@ export type ClientToServer =
   | IntentMsg.ClientUpdateIntentContent
   | IntentMsg.ClientUpdateIntentStatus
   | IntentMsg.ClientSetIntentAutomate
+  | IntentMsg.ClientStartIntentRelay
   | IntentMsg.ClientSetIntentSpecMode
   | IntentMsg.ClientSetIntentImpactLevel
   | IntentMsg.ClientUpdateIntentDeps

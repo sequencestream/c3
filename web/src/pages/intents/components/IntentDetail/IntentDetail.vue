@@ -168,6 +168,8 @@ const emit = defineEmits<{
   'set-impact-level': [intentId: string, level: IntentImpactLevel | null]
   'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
+  // 人工发起评审 / 修复轮次(标题栏按钮);服务端准入后复用队列的接力执行内核。
+  'start-relay': [intentId: string, phase: 'review' | 'fix']
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
   /** 跳到某个关联交付的详情页(交付页在另一个一级 tab,故一路上抛到 App)。 */
@@ -514,6 +516,7 @@ function submitChat(text: string, images: PromptImage[]): void {
               @set-automate="(id: string, a: boolean) => emit('set-automate', id, a)"
               @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
               @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
+              @start-relay="(id: string, phase: 'review' | 'fix') => emit('start-relay', id, phase)"
               @share="(id: string) => emit('share', id)"
               @delete="(id: string) => emit('delete', id)"
               @main-action="onMainAction"

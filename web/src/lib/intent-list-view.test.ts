@@ -68,6 +68,8 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     intentSessionId: null,
     responsibleSubject: null,
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...overrides,
   }
@@ -593,6 +595,8 @@ describe('formatDependsOn', () => {
       completedAt: null,
       runStatus: 'idle',
       sessionActive: false,
+      reviewInFlight: false,
+      fixInFlight: false,
       actionDescriptor: null,
       ...overrides,
     }

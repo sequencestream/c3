@@ -29,7 +29,12 @@ import {
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToName, touchWorkspace } from '../../state.js'
 import type { UiError } from '@ccc/shared'
-import { canEditIntentImpactLevel, canEditIntentSpecMode } from '@ccc/shared'
+import {
+  activeIntentPrs,
+  canEditIntentImpactLevel,
+  canEditIntentSpecMode,
+  resolveIntentRelayManualTrigger,
+} from '@ccc/shared'
 import {
   getDefaultMode,
   getGitBranchMode,
@@ -86,10 +91,18 @@ import { syncIntentPrStatus } from './pr-status-sync.js'
 import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
+  deriveRelayPhaseInFlight,
   enrichRunStatus,
   getJudgedSession,
   setJudgedSession,
 } from './run-status.js'
+import {
+  admitRelayPhase,
+  runManualRelayPhase,
+  type RelayAdmissionFailure,
+  type RelayPhaseEnv,
+} from './queue-relay-actions.js'
+import type { RelayPhase } from './relay-occupancy.js'
 import {
   forceSkipIntent,
   getQueueDetail,
@@ -1487,6 +1500,159 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
   }
   setAutomate(msg.intentId, msg.automate)
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceName)!)
+}
+
+/**
+ * `start_intent_relay` handler — a human asking for ONE PR review / fix round.
+ *
+ * The relay's execution core (`runRelayPhase`) has always existed; what did not
+ * was a way to ask for it. The queue's eligibility (`automate` + `status ===
+ * 'reviewing'` + `needsReview` + cooldown + a concurrency slot) gates UNATTENDED
+ * dispatch — nobody chose to spend the token, so the scheduler is conservative.
+ * A click IS the choice, so none of those gates apply: a manually filed PR on an
+ * `in_progress`, automation-off intent can be reviewed exactly like a queue-filed
+ * one. That is the whole point of this entry point, and the reason `automate` and
+ * `status` are deliberately absent from the checks below.
+ *
+ * The shape is "answer synchronously, then run for minutes":
+ *
+ *  1. admit — workspace, intent, branch mode, live PR, phase criterion. Each
+ *     refusal leaves the ledger untouched and travels back on THIS connection as
+ *     a localized `error` frame, because a click that did nothing must say why.
+ *  2. preflight + claim, still synchronous. The claim is the SAME conditional
+ *     occupancy write the queue uses, so "a round is already in flight" needs no
+ *     second lock: the CAS refuses, and a racing tick and this handler can never
+ *     both spend the same round.
+ *  3. broadcast — the intent now reads as `pending` with a live placeholder.
+ *     There is no dedicated response frame: not receiving `error` IS acceptance.
+ *  4. run the rest asynchronously. Failures from here on are the session's own
+ *     outcome, observed from the intent and the session UI — never a late error
+ *     frame on a connection that was answered minutes ago.
+ *
+ * The phase criterion is read from `@ccc/shared` and nowhere else, so the button
+ * the user saw and the verdict here can never disagree. Its in-flight inputs are
+ * recomputed from the CURRENT ledger (`deriveRelayPhaseInFlight`, the same rule
+ * the queue kernel consumes) rather than trusted from whatever the client had
+ * cached.
+ *
+ * Nothing the manual path can do grants merge authority: the round records no
+ * queue provenance, so an `approved` conclusion writes its status and leaves the
+ * PR a human's to merge.
+ */
+export const startIntentRelay: Handler<'start_intent_relay'> = async (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      // `path` is the placeholder the code declares and every locale renders;
+      // passing the name under any other key leaves `{path}` literal on screen.
+      error: { code: 'workspace.unknown', params: { path: msg.workspaceName } },
+    })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  // An id that belongs to another workspace reads as "not found" here, exactly as
+  // it does at the MCP surface: the refusal never confirms what exists elsewhere.
+  if (!req || resolveWorkspaceRoot(req.workspaceName) !== proj) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  // The relay reads, and a fix edits and pushes, the PR's head branch, which only
+  // exists as a checked-out directory under an intent-level worktree.
+  if (getGitBranchMode(proj) !== 'worktree') {
+    conn.send({ type: 'error', error: { code: 'intent.relay.notWorktree' } })
+    return
+  }
+  const hasActivePr = activeIntentPrs(req.prs).length > 0
+  if (!hasActivePr) {
+    conn.send({ type: 'error', error: { code: 'intent.relay.noActivePr' } })
+    return
+  }
+  const trigger = resolveIntentRelayManualTrigger({
+    gitBranchMode: 'worktree',
+    hasActivePr,
+    reviewStatus: req.reviewStatus,
+    fixStatus: req.fixStatus,
+    reviewFixRounds: req.reviewFixRounds,
+    reviewInFlight: deriveRelayPhaseInFlight(req.reviewSessionId),
+    fixInFlight: deriveRelayPhaseInFlight(req.fixSessionId),
+  })
+  const allowed = msg.phase === 'review' ? trigger.canStartReview : trigger.canStartFix
+  if (!allowed) {
+    conn.send({
+      type: 'error',
+      error: {
+        // "Wait, something is running" and "there is nothing to start" are
+        // different answers: the first is fixed by time, the second is not.
+        code:
+          trigger.blockedReason === 'inFlight'
+            ? 'intent.relay.phaseInFlight'
+            : 'intent.relay.phaseNotAllowed',
+      },
+    })
+    return
+  }
+
+  // The environment a relay phase needs from whoever started it. A manual round
+  // has no controller, so there is nothing to be disposed of and no queue state
+  // to touch — the execution core only ever reads the workspace and broadcasts.
+  const env: RelayPhaseEnv = {
+    workspacePath: proj,
+    hooks: { broadcastIntents: ctx.broadcastIntents },
+    isDisposed: () => false,
+  }
+
+  // Everything up to and including the claim is synchronous, so by the time this
+  // handler returns the user either has an `error` frame or an occupied phase.
+  const admission = admitRelayPhase(env, msg.phase, manualRelayRound(msg.phase, req), req)
+  if (!admission.ok) {
+    conn.send({ type: 'error', error: relayAdmissionError(admission.failure) })
+    return
+  }
+
+  // Accepted: the broadcast inside `admitRelayPhase` is the ack. The phase itself
+  // runs for up to half an hour behind it.
+  void runManualRelayPhase(env, req, admission.claimed).catch((err) => {
+    // The executor settles its own failures; a throw that escapes it would leave
+    // the placeholder held with nothing running, so it is logged loudly here
+    // rather than swallowed. Deliberately no `error` frame: this connection was
+    // answered long ago and the user is watching the session, not the toast.
+    console.error(`[c3:manual-relay]「${req.title}」${msg.phase} 阶段异常:`, err)
+  })
+}
+
+/**
+ * The round a manual phase runs under — the same derivation the queue's kernel
+ * makes, so the claim's compare-and-set and the prompt agree with the ledger.
+ *
+ * A review never moves the counter (it re-enters whatever round it is judging);
+ * a fix either RESUMES the round a dead `pending` already claimed or takes the
+ * next one. Hard-coding `0` or re-reading the counter after the claim would put
+ * this path and the queue on two different round sequences.
+ */
+function manualRelayRound(phase: RelayPhase, req: Intent): number {
+  if (phase === 'review') return req.reviewFixRounds
+  return req.fixStatus === 'pending' ? req.reviewFixRounds : req.reviewFixRounds + 1
+}
+
+/** One admission refusal as the `UiError` the caller localizes. */
+function relayAdmissionError(failure: RelayAdmissionFailure): UiError {
+  switch (failure.reason) {
+    case 'agentUnavailable':
+      return { code: 'intent.relay.agentUnavailable', params: { group: failure.groupRef } }
+    case 'worktreeUnavailable':
+      return { code: 'intent.relay.worktreeUnavailable' }
+    case 'noActivePr':
+      return { code: 'intent.relay.noActivePr' }
+    case 'projectionWriteFailed':
+      return { code: 'intent.relay.claimFailed' }
+    case 'stale':
+      return { code: 'intent.relay.phaseInFlight' }
+  }
 }
 
 /**

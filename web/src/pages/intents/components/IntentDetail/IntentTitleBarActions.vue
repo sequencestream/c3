@@ -25,7 +25,7 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Delivery, Intent, IntentStatus } from '@ccc/shared/protocol'
-import { activeIntentPrs, pickPrimaryIntentPr } from '@ccc/shared'
+import { activeIntentPrs, pickPrimaryIntentPr, resolveIntentRelayManualTrigger } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import {
@@ -58,6 +58,8 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
+  // 人工发起一个评审 / 修复轮次(与队列路径同一执行内核)。
+  'start-relay': [intentId: string, phase: 'review' | 'fix']
   share: [intentId: string]
   delete: [intentId: string]
   'main-action': []
@@ -107,6 +109,26 @@ const showCreatePr = computed<boolean>(() => {
   )
 })
 
+// ── 人工发起评审 / 修复 ────────────────────────────────────────────────────
+// 接力一直只有队列一个发起人(`automate` + `reviewing` + 冷却 + 并发槽),手动建的 PR、
+// 关掉自动化的意图因此永远进不去。按钮补的就是「人显式要求」这条路:能不能发起只由共享
+// 判定函数说了算,服务端准入读的是同一个函数,所以「按钮出现过」与「点了能成」不可能分叉。
+//
+// 在途输入取服务端下发的投影字段(reviewInFlight / fixInFlight),不在这里用
+// `reviewStatus === 'pending'` 或 `pending:` 前缀代替:那两样在会话已死时仍留在台账上,
+// 会让按钮永久消失,而人工场景(automation 关)没有任何东西会去回收它。
+const relayTrigger = computed(() =>
+  resolveIntentRelayManualTrigger({
+    gitBranchMode: props.workspaceGitBranchMode ?? 'current-branch',
+    hasActivePr: activeIntentPrs(props.intent.prs).length > 0,
+    reviewStatus: props.intent.reviewStatus,
+    fixStatus: props.intent.fixStatus,
+    reviewFixRounds: props.intent.reviewFixRounds,
+    reviewInFlight: props.intent.reviewInFlight,
+    fixInFlight: props.intent.fixInFlight,
+  }),
+)
+
 /** 主按钮跳转/复制的目标 PR:第一条活跃的,全部终态则取最早一条。 */
 const primaryPr = computed(() => pickPrimaryIntentPr(props.intent.prs))
 
@@ -124,6 +146,13 @@ function syncPrStatus(): void {
 
 function copyPrId(prId: string): void {
   void navigator.clipboard.writeText(prId)
+}
+
+// 没有独立的禁用态:在途时判定函数已经不给这个阶段,按钮整体不渲染。留一个看得见却点不
+// 动的按钮,与「点了没反应」长得一模一样;真被服务端拒掉的那次点击,理由经 error 帧以
+// toast 说清。
+function startRelay(phase: 'review' | 'fix'): void {
+  emit('start-relay', props.intent.id, phase)
 }
 
 // ── 交付归属:关联弹窗(自持) ─────────────────────────────────────────────
@@ -356,6 +385,29 @@ watch(
         @click="copyPrId(primaryPr.number)"
       >
         {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
+      </button>
+      <!-- 人工接力:排在 PR 入口之后 —— 先看得见 PR,才谈得上去评审它。 -->
+      <button
+        v-if="relayTrigger.canStartReview"
+        type="button"
+        class="req-btn"
+        data-action="startReviewRelay"
+        data-testid="intent-detail-start-review"
+        :title="t('intent.relay.startReview.tooltip')"
+        @click="startRelay('review')"
+      >
+        {{ t('intent.relay.startReview.label') }}
+      </button>
+      <button
+        v-if="relayTrigger.canStartFix"
+        type="button"
+        class="req-btn"
+        data-action="startFixRelay"
+        data-testid="intent-detail-start-fix"
+        :title="t('intent.relay.startFix.tooltip')"
+        @click="startRelay('fix')"
+      >
+        {{ t('intent.relay.startFix.label') }}
       </button>
       <button
         v-if="canSyncPrStatus"

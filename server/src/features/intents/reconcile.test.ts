@@ -60,6 +60,8 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     completedAt: null,
     runStatus: 'idle',
     sessionActive: false,
+    reviewInFlight: false,
+    fixInFlight: false,
     actionDescriptor: null,
     ...overrides,
   }

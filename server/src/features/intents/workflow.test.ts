@@ -301,6 +301,8 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   responsibleSubject: null,
   lastWorkSessionId: null,
   sessionActive: false,
+  reviewInFlight: false,
+  fixInFlight: false,
   actionDescriptor: null,
   ...overrides,
 })

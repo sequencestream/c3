@@ -222,7 +222,7 @@ flowchart TD
 点击「启动评审 / 启动修复」
   → start_intent_relay { workspaceName, intentId, phase }
   → 工作区 / 意图归属 → worktree 模式 → 活跃 PR → 阶段判定(与 Web 同一个共享纯函数)
-  → preflight:Agent 可用 → worktree cwd 可用 → CAS 认领(同一次条件更新写 pending 占位、轮次与投影行)
+  → preflight:Agent 可用 → worktree cwd 可用 → 活跃 PR 重读仍在 → CAS 认领(同一次条件更新写 pending 占位、轮次与投影行)
        ├─ 认领前失败 ⇒ error 帧回发起连接(toast),不占轮次、不起会话
        └─ 认领成功 ⇒ 广播 intents(行上已带 *InFlight)⇒ 异步跑该阶段
   → 会话与队列同一条链路:prompt、工具面、30 分钟上限、退出即释放占位

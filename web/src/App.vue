@@ -102,6 +102,7 @@ const CreateIntentDialog = asyncOverlay(
 const InputDialog = asyncOverlay(() => import('./components/InputDialog/InputDialog.vue'))
 
 import { canOfferLinkExistingPr } from './lib/create-pr-failure'
+import { scopedSeedRefs } from './pages/automations/components/AutomationForm/resolveAutomationDefaultAgent'
 
 const { t } = useTypedI18n()
 
@@ -603,20 +604,21 @@ const currentDefaultAgentId = computed<string>(() =>
 const discussionsDefaultAgentId = computed<string>(() =>
   defaultAgentForWorkspace(discussionsProject.value),
 )
-/** The scoped candidate chain seeding the new-automation form: system automation
- *  role → workspace automation override → workspace default → system default. Each
- *  link is passed UN-folded so a workspace override can win without being snapshotted
- *  into the system value. */
+/** The scoped candidate chain seeding the new-automation form, folded by the same
+ *  rule the runtime resolver uses: the workspace's automation override, then its
+ *  default agent when it set one, ahead of the system automation role → system
+ *  default. Each link is passed UN-folded so a workspace override can win without
+ *  being snapshotted into the system value. */
 const automationsSeedAgentRefs = computed<string[]>(() => {
   const system = serverSettings.value
   const ws = automationsProject.value
   const cfg = ws ? system?.projectConfigs?.[ws] : undefined
-  return [
-    system?.automationAgentId ?? '',
-    cfg?.automationAgentId ?? '',
-    cfg?.defaultAgentId ?? '',
-    system?.defaultAgentId ?? '',
-  ]
+  return scopedSeedRefs({
+    systemRoleRef: system?.automationAgentId,
+    workspaceRoleRef: cfg?.automationAgentId,
+    workspaceDefaultAgentId: cfg?.defaultAgentId,
+    systemDefaultAgentId: system?.defaultAgentId,
+  })
 })
 
 /** The candidate deliveries the `delivery-context` exit offers, from the ledger. */

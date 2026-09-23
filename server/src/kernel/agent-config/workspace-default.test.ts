@@ -1,6 +1,9 @@
 /**
  * Scope-aware default-agent resolution: explicit reference → the task's workspace
- * `defaultAgentId` override → the system `defaultAgentId` → `system`.
+ * `defaultAgentId` override → the system `defaultAgentId` → `system`, and the
+ * ROLE-chain variant where a workspace that configured a default agent of its own
+ * claims the roles it has not overridden — its whole workspace layer moves ahead of
+ * the system role fields (see `resolveRoleAgentTarget`).
  *
  * These tests drive the resolver with DELIBERATELY un-normalized settings — the
  * storage layer would have rewritten an emptied group reference long before a run
@@ -32,6 +35,8 @@ const settings: SystemSettings = {
   specAgentId: '',
   specReviewAgentId: '',
   automationAgentId: '',
+  reviewAgentId: '',
+  fixAgentId: '',
   degradationChain: [],
   modelProviders: [],
 } as unknown as SystemSettings
@@ -54,6 +59,7 @@ vi.mock('../config/index.js', () => ({
 }))
 
 // Import AFTER the mock is in place.
+import type { AgentRole } from './index.js'
 import {
   AgentGroupUnavailableError,
   resolveAgentTarget,
@@ -72,8 +78,36 @@ beforeEach(() => {
   settings.intentAgentId = ''
   settings.specAgentId = ''
   settings.specReviewAgentId = ''
+  settings.reviewAgentId = ''
+  settings.fixAgentId = ''
   for (const key of Object.keys(workspaces)) delete workspaces[key]
 })
+
+type RoleField =
+  'toolAgentId' | 'intentAgentId' | 'specAgentId' | 'specReviewAgentId' | 'workAgentId'
+
+/** The four runtime roles that read BOTH a system field and a workspace override. */
+const OVERRIDE_ROLES: Array<{
+  role: AgentRole
+  systemField: RoleField
+  workspaceField: RoleField
+}> = [
+  { role: 'tool', systemField: 'toolAgentId', workspaceField: 'toolAgentId' },
+  { role: 'intent', systemField: 'intentAgentId', workspaceField: 'intentAgentId' },
+  { role: 'spec', systemField: 'specAgentId', workspaceField: 'specAgentId' },
+  { role: 'spec_review', systemField: 'specReviewAgentId', workspaceField: 'specReviewAgentId' },
+]
+
+/**
+ * The five RUNTIME roles and the settings field each reads. `work` has no workspace
+ * role field — its workspace override rides the prior chain instead — and it is
+ * workspace-first in BOTH modes, so it never takes the system-first shape below.
+ */
+const RUNTIME_ROLES: Array<{
+  role: AgentRole
+  systemField: RoleField
+  workspaceField?: RoleField
+}> = [...OVERRIDE_ROLES, { role: 'work', systemField: 'workAgentId' }]
 
 describe('inheritance — a workspace with no override follows the system default', () => {
   it('resolves an empty role to the system default, in a workspace and without one', () => {
@@ -101,10 +135,11 @@ describe('override — a workspace default wins over the system one', () => {
     expect(resolveRoleAgentTarget('default').ref).toBe('a')
   })
 
-  it('does NOT override an explicit system-level role choice', () => {
+  it('takes the roles with it — an explicit workspace default outranks the system role field', () => {
     workspaces[WS_X] = { defaultAgentId: 'b' }
     settings.specAgentId = 'c'
-    expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('c')
+    expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('b')
+    // A workspace that did NOT configure a default keeps the system role choice.
     expect(resolveRoleAgentTarget('spec', WS_Y).ref).toBe('c')
   })
 
@@ -213,9 +248,6 @@ describe('work — the workspace-first chain resolves workAgentId before the def
     workspaces[WS_X] = { workAgentId: '' }
     settings.workAgentId = 'b'
     expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('b')
-    // The system work value outranks the workspace default.
-    workspaces[WS_X] = { workAgentId: '', defaultAgentId: 'c' }
-    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('b')
   })
 
   it('falls through to the default chain when both work values are empty', () => {
@@ -230,4 +262,137 @@ describe('work — the workspace-first chain resolves workAgentId before the def
     // `spec` still resolves through the default chain, untouched by work overrides.
     expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('a')
   })
+})
+
+describe('workspace-default precedence — an explicit workspace default claims every role', () => {
+  it.each(RUNTIME_ROLES)(
+    'role $role: an explicit workspace default A beats the system role field B',
+    ({ role, systemField }) => {
+      settings[systemField] = 'b'
+      workspaces[WS_X] = { defaultAgentId: 'a' }
+      expect(resolveRoleAgentTarget(role, WS_X).ref).toBe('a')
+      // The system role field still runs — just after the workspace layer — so a
+      // workspace WITHOUT an explicit default keeps resolving to it.
+      expect(resolveRoleAgentTarget(role, WS_Y).ref).toBe('b')
+      // …and it is not dropped from the chain: with the workspace default gone the
+      // same workspace lands back on B.
+      delete workspaces[WS_X]
+      expect(resolveRoleAgentTarget(role, WS_X).ref).toBe('b')
+    },
+  )
+
+  it.each(RUNTIME_ROLES)(
+    'role $role: a workspace default that is a GROUP binds the group ref',
+    ({ role, systemField }) => {
+      settings.agents = [agent('d'), agent('b'), agent('m', { group: 'fast' })]
+      settings[systemField] = 'b'
+      workspaces[WS_X] = { defaultAgentId: '_c3_claude_fast' }
+      const target = resolveRoleAgentTarget(role, WS_X)
+      expect(target.ref).toBe('_c3_claude_fast')
+      expect(target.isGroup).toBe(true)
+      expect(target.agent.id).toBe('m')
+    },
+  )
+
+  it('keeps the workspace role override ahead of the workspace default', () => {
+    settings.specAgentId = 'b'
+    workspaces[WS_X] = { specAgentId: 'c', defaultAgentId: 'a' }
+    expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('c')
+  })
+
+  it('applies to review / fix too — the queue chain follows the workspace default first', () => {
+    settings.reviewAgentId = 'b'
+    settings.fixAgentId = 'd'
+    workspaces[WS_X] = { defaultAgentId: 'a' }
+    expect(resolveRoleAgentTarget('review', WS_X).ref).toBe('a')
+    expect(resolveRoleAgentTarget('fix', WS_X).ref).toBe('a')
+    // Inheriting workspaces keep the system review/fix role.
+    expect(resolveRoleAgentTarget('review', WS_Y).ref).toBe('b')
+    expect(resolveRoleAgentTarget('fix', WS_Y).ref).toBe('d')
+  })
+
+  it('ignores the workspace review / fix role fields — they are template seeds, not routes', () => {
+    settings.reviewAgentId = 'b'
+    workspaces[WS_X] = { reviewAgentId: 'c', defaultAgentId: 'a' }
+    expect(resolveRoleAgentTarget('review', WS_X).ref).toBe('a')
+  })
+
+  it('leaves the default role on the workspace default (no role field to reorder)', () => {
+    // The system default is NOT promoted into the explicit slot — that would make
+    // the workspace default unreachable.
+    workspaces[WS_X] = { defaultAgentId: 'b' }
+    settings.defaultAgentId = 'a'
+    expect(resolveRoleAgentTarget('default', WS_X).ref).toBe('b')
+  })
+
+  it('does not reorder anything for a workspace whose default is blank or non-string', () => {
+    settings.specAgentId = 'b'
+    workspaces[WS_X] = { defaultAgentId: '   ' }
+    expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('b')
+    workspaces[WS_X] = {}
+    expect(resolveRoleAgentTarget('spec', WS_X).ref).toBe('b')
+  })
+
+  it('keeps an explicit pick ahead of an explicit workspace default', () => {
+    settings.agents = [agent('a'), agent('c'), agent('m', { group: 'fast' })]
+    workspaces[WS_X] = { defaultAgentId: 'a' }
+    expect(resolveAgentTarget('c', null, WS_X).ref).toBe('c')
+    const group = resolveAgentTarget('_c3_claude_fast', null, WS_X)
+    expect(group.ref).toBe('_c3_claude_fast')
+    expect(group.agent.id).toBe('m')
+  })
+
+  it('stops on a workspace default pointing at an EMPTY group, for every role', () => {
+    const emptyGroup = '_c3_claude_fast'
+    settings.specAgentId = 'b'
+    settings.toolAgentId = 'b'
+    workspaces[WS_X] = { defaultAgentId: emptyGroup }
+    for (const { role } of RUNTIME_ROLES) {
+      expect(() => resolveRoleAgentTarget(role, WS_X)).toThrow(AgentGroupUnavailableError)
+      // No silent fall-through to the system role field that would have answered.
+      expect(tryResolveRoleAgentTarget(role, WS_X)).toEqual({ ok: false, groupRef: emptyGroup })
+    }
+  })
+})
+
+describe('workspace-first role chains — the work role, and the untouched inheritance order', () => {
+  it('walk each of the four work levels in turn', () => {
+    // 1. workspace workAgentId
+    settings.workAgentId = 'd'
+    workspaces[WS_X] = { workAgentId: 'c', defaultAgentId: 'b' }
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('c')
+
+    // 2. the workspace default, once the workspace work override is empty — this
+    //    is where the reorder shows: the system work value no longer pre-empts it
+    workspaces[WS_X] = { workAgentId: '', defaultAgentId: 'b' }
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('b')
+
+    // 3. the SYSTEM work value, once the workspace default is gone too
+    workspaces[WS_X] = { workAgentId: '', defaultAgentId: 'gone' }
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('d')
+
+    // 4. the system default, once both work values are empty
+    settings.workAgentId = ''
+    expect(resolveRoleAgentTarget('work', WS_X).ref).toBe('a')
+  })
+
+  it.each(OVERRIDE_ROLES)(
+    'role $role: without the default key the order is untouched — system role → workspace role → system default',
+    ({ role, systemField, workspaceField }) => {
+      const workspace = { [workspaceField]: 'c' }
+      workspaces[WS_X] = workspace
+      settings[systemField] = 'b'
+      // The system role field still leads a workspace that configured no default.
+      expect(resolveRoleAgentTarget(role, WS_X).ref).toBe('b')
+
+      settings[systemField] = ''
+      // …then the workspace's own role override.
+      expect(resolveRoleAgentTarget(role, WS_X).ref).toBe('c')
+
+      // …then straight to the system default: with no default key there is no
+      // workspace-default link for the system role to have been moved behind.
+      delete workspace[workspaceField as keyof typeof workspace]
+      expect(resolveRoleAgentTarget(role, WS_X).ref).toBe('a')
+    },
+  )
 })

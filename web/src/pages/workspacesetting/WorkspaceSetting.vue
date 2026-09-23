@@ -710,11 +710,12 @@ function roleAgentDraftStale(field: WorkspaceRoleAgentField): boolean {
   return !(props.agents ?? []).some((a) => a.id === ref)
 }
 /**
- * 「继承」当前解析到的系统工作 Agent,供继承选项旁显示。与 inheritedDefaultAgentLabel
- * 同理:只是对系统 workAgentId 的实时读取,不写入草稿,继承态保持干净。
+ * 「继承」当前会落到哪个 Agent,供继承选项旁显示。与 inheritedDefaultAgentLabel
+ * 同理:只是实时读取,不写入草稿,继承态保持干净。工作区的空 workAgentId 先落到本工作区
+ * 的默认 Agent,只有本工作区没设默认 Agent 时才落到系统 workAgentId。
  */
 const inheritedWorkAgentLabel = computed<string>(() => {
-  const ref = props.systemWorkAgentId?.trim() ?? ''
+  const ref = draft.value.defaultAgentId?.trim() || props.systemWorkAgentId?.trim() || ''
   return ref ? agentRefLabel(ref) : ''
 })
 

@@ -12,7 +12,10 @@ import {
 } from '@/lib/automation-refresh'
 import type { AppCtx } from './types'
 import { findEnabledVendorAgent, getAutomationTemplate } from '@/pages/automations/templates'
-import { resolveAutomationDefaultAgent } from '@/pages/automations/components/AutomationForm/resolveAutomationDefaultAgent'
+import {
+  resolveAutomationDefaultAgent,
+  scopedSeedRefs,
+} from '@/pages/automations/components/AutomationForm/resolveAutomationDefaultAgent'
 
 // Install automation-tab actions (read path + create/edit form) onto the ctx.
 export function installAutomationActions(ctx: AppCtx): void {
@@ -165,20 +168,21 @@ export function installAutomationActions(ctx: AppCtx): void {
     const settings = ctx.serverSettings.value
     const agents = settings?.agents ?? []
     // Templates that declare a role field seed from that role reference along the
-    // scoped `system role → workspace role override → workspace default → system
-    // default → first enabled agent` chain; the rest keep the legacy
-    // first-enabled-`claude` default. The resolved agent's concrete vendor replaces
-    // the template's hard-coded `claude` so a non-claude role agent lands in the
-    // snapshot's vendor/agentId pair.
+    // same scoped chain the new-automation form uses, ending on the first enabled
+    // agent; the rest keep the legacy first-enabled-`claude` default. The resolved
+    // agent's concrete vendor replaces the template's hard-coded `claude` so a
+    // non-claude role agent lands in the snapshot's vendor/agentId pair.
     const roleField = template.roleField
     const wsCfg = settings?.projectConfigs?.[workspaceName]
     const seed = roleField
       ? resolveAutomationDefaultAgent(
           agents,
-          settings?.[roleField] ?? '',
-          wsCfg?.[roleField] ?? '',
-          wsCfg?.defaultAgentId ?? '',
-          settings?.defaultAgentId ?? '',
+          ...scopedSeedRefs({
+            systemRoleRef: settings?.[roleField],
+            workspaceRoleRef: wsCfg?.[roleField],
+            workspaceDefaultAgentId: wsCfg?.defaultAgentId,
+            systemDefaultAgentId: settings?.defaultAgentId,
+          }),
         )
       : findEnabledVendorAgent(agents, 'claude')
     if (!seed) {

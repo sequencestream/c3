@@ -3951,7 +3951,7 @@
       "title": {
         "label": "Default Agent"
       },
-      "hint": "Which agent this workspace uses when no executor is specified. Leave it unset to inherit the system default; setting it changes the fallback inside this workspace only — the system setting and every other workspace are untouched.",
+      "hint": "Which agent this workspace uses when no executor is specified. Leave it unset to inherit the system default; setting it also takes over every session role this workspace has not overridden itself — the system setting and every other workspace are untouched.",
       "picker": {
         "label": "Default agent"
       },
@@ -3964,8 +3964,8 @@
       "roleTitle": {
         "label": "Role agent overrides"
       },
-      "roleHint": "Give each role its own agent for this workspace. A role explicitly set at the system level still wins — the workspace role only applies while the system role follows the default; inheriting follows the default agent above.",
-      "inheritRole": "Inherit system default",
+      "roleHint": "Give each role its own agent for this workspace. Once this workspace sets a default agent, every role it has not overridden uses that — a system-level pick for the role no longer applies here; with no default set (inheriting) the system role still wins. Inheriting follows the default agent above.",
+      "inheritRole": "Inherit",
       "roles": {
         "tool": {
           "label": "Tool agent"
@@ -3993,10 +3993,10 @@
         "label": "Work agent"
       },
       "work": {
-        "tooltip": "Agent that runs work sessions (spec-driven delivery) inside this workspace. Leave unset to inherit the system work agent.",
-        "inherit": "Inherit the system work agent",
-        "inheritNamed": "Inherit the system work agent (currently: {agent})",
-        "stale": "The work agent you picked has been deleted. Choose another one, or go back to inheriting the system default."
+        "tooltip": "Agent that runs work sessions (spec-driven delivery) inside this workspace. Leave unset to follow this workspace's default agent, or the system work agent when this workspace sets no default.",
+        "inherit": "Inherit",
+        "inheritNamed": "Inherit (currently: {agent})",
+        "stale": "The work agent you picked has been deleted. Choose another one, or go back to inheriting."
       }
     }
   },

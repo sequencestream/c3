@@ -96,9 +96,9 @@ const defaultInvokeLlm: InvokeLlm = async (prompt, context) => {
   timer.unref()
   const claudePath = findClaudeExecutable()
   // Name derivation is a background tool session ⇒ run on the configured tool
-  // agent's model/provider env (falls back to the workspace's default agent, then
-  // the system one, when unset). No workspace yet (naming can run before the
-  // automation is bound) ⇒ the system default, which is the only scope that applies.
+  // agent's model/provider env, resolved by the same role chain every other tool
+  // session uses (see `resolveRoleAgentTarget`). No workspace yet (naming can run
+  // before the automation is bound) ⇒ the system layer, the only scope that applies.
   const launch = resolveToolSessionLaunch(context?.workspacePath ?? null)
   // 标题生成同样是一次 run,启动/退出照样记账。它可能没有工作区(创建自动化时还
   // 没绑定),那种情况下只留日志、不发事件。

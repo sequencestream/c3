@@ -325,7 +325,7 @@ c3
 │   │   └── agent 输出语言                        # 顶层 agentLang 跟随最近一次上报,供无连接上下文的服务端提示词(意图/规格/标题/总结)使用
 │   │
 │   └── workspace-setting 工作区设置              # 按工作区独立配置(WorkspaceSetting,projectConfigs 按路径存,工作区设置面板)
-│       ├── 智能体覆盖(默认 + 七类角色)          # defaultAgentId + tool/intent/spec/specReview/automation/review/fixAgentId 八个按工作区智能体引用;空白=继承系统默认,继承态绝不快照;解析顺序=显式系统角色 → 工作区同名角色 → 工作区默认 → 系统默认 → system;tool/intent/spec/specReview 运行时消费,automation/review/fix 仅作新建表单/模板种子(review/fix 不进 PR 评审队列)
+│       ├── 智能体覆盖(默认 + 七类角色)          # defaultAgentId + tool/intent/spec/specReview/automation/review/fixAgentId 八个按工作区智能体引用;空白=继承系统默认,继承态绝不快照;解析顺序=配置了默认则工作区层优先(工作区角色 → 工作区默认 → 系统角色 → 系统默认),继承则系统角色优先,末段同为 system;tool/intent/spec/specReview 运行时消费,automation/review/fix 仅作新建表单/模板种子(review/fix 不进 PR 评审队列)
 │       ├── 默认权限模式                          # defaultMode 按 vendor 分组(claude/codex/cursor;字符串经各 MODE_CATALOGS 门禁,非法回退 defaultToken;codex 可持 CodexPolicy)
 │       ├── dev 启动技能                          # devSkill 启动开发时前缀的斜杠命令
 │       ├── Git 分支策略                          # gitBranchMode(current-branch / worktree)+ defaultMainBranch 基线/合并目标分支

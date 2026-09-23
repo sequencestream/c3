@@ -384,6 +384,24 @@ describe('createAutomationFromTemplate — review/fix role-field seeding (AC-R34
     expect(createdInput(c).agentId).toBe('a2')
   })
 
+  it('seeds from the workspace default before a SET system reviewAgentId', () => {
+    const c = makeCtx()
+    c.automationsProject.value = 'ws1'
+    c.serverSettings.value = {
+      agents: [claude('sys'), codex('cx')],
+      defaultAgentId: 'sys',
+      reviewAgentId: 'cx',
+      fixAgentId: '',
+      projectConfigs: { ws1: { defaultAgentId: 'sys' } },
+    } as never
+    c.ctx.createAutomationFromTemplate('pr-review-runner')
+    const input = createdInput(c)
+    // The workspace configured a default agent ⇒ its layer leads, so the template
+    // pre-selects the same agent the queue relay would claim a review with.
+    expect(input.agentId).toBe('sys')
+    expect(input.vendor).toBe('claude')
+  })
+
   it('follows the workspace default override before the system default', () => {
     const c = makeCtx()
     c.automationsProject.value = 'ws1'

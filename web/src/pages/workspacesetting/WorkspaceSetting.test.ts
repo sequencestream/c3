@@ -938,7 +938,7 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
       expect(select.exists()).toBe(true)
       const options = select.findAll('option')
       expect(options).toHaveLength(2) // inherit + a1
-      expect(options[0].attributes('value')).toBe('') // 居首的「继承系统默认」
+      expect(options[0].attributes('value')).toBe('') // 居首的「继承」
     }
   })
 

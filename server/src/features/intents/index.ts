@@ -1548,7 +1548,9 @@ export const startIntentRelay: Handler<'start_intent_relay'> = async (ctx, conn,
   if (!proj) {
     conn.send({
       type: 'error',
-      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
+      // `path` is the placeholder the code declares and every locale renders;
+      // passing the name under any other key leaves `{path}` literal on screen.
+      error: { code: 'workspace.unknown', params: { path: msg.workspaceName } },
     })
     return
   }

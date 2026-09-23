@@ -735,7 +735,8 @@ handler 用假实现做单元测试(无需实时 DB 或总线)。
   已发生的事实,只有新认领能改写);`sweepMergeGrants` 每轮 pass 删除已不成立的 `pending` 凭据。
   `mergeDenial(intent, meta)` 是唯一判据纯函数,内核、投影与执行器读同一份。
 - **`relay-run-registry.ts`** —— 进程内 Map,按 MCP 执行句柄(`executionId`)记录「这个 run 是队列
-  发起的哪个接力阶段、绑定到哪个会话」。`sync_intent_review_status` 的工具 handler 用
+  发起的哪个接力阶段、绑定到哪个会话」;人工发起的轮次**刻意不登记**,归因因此查不到出处,
+  这正是 RM-R53 差异 (1)「不签发合并凭据」的实现方式。`sync_intent_review_status` 的工具 handler 用
   `lookupRelayRun(executionId)` 把真实身份(而非工具参数)传给回填核心;进程重启即失效,因此不落库。
 - **`queue-merge-actions.ts`** —— `runMergePhase` 执行 `merge_prs` 动作:先 `claimQueueMergePhase`
   (带读回确认的条件更新 `pending → running`),再逐条按 identity 键排序、重读 forge 比对 head SHA、

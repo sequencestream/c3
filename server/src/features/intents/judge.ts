@@ -153,8 +153,10 @@ export async function judgeCompletion(input: {
   signal: AbortSignal
 }): Promise<JudgeVerdict> {
   // Completion judging is a background tool session ⇒ run on the configured tool
-  // agent (falls back to the judged intent's workspace default, then the system
-  // one, when toolAgentId is unset).
+  // agent, by the same role chain every other tool session uses: with an unset
+  // workspace `toolAgentId`, the workspace default leads when this workspace set one
+  // and the system tool role leads when it inherits; either way the system default is
+  // only the last link (see `resolveRoleAgentTarget`).
   const launch = resolveToolSessionLaunch(input.req.workspaceName)
   const { system, user } = buildPrompt(input.req, input.lastMessages, input.evidence)
   let text: string

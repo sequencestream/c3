@@ -282,18 +282,21 @@ export interface WorkspaceSetting {
    * order, an **emptied group** to the first enabled agent, and a **deleted**
    * concrete agent drops the key so the workspace goes back to inheriting.
    *
-   * The LAST link a workspace-scoped resolution follows: the seven role overrides
-   * below are tried first, and a role explicitly set at SYSTEM level still wins over
-   * all of them — the workspace layer only answers "follow the default", never
-   * "replace an explicit system pick".
+   * **Configured ⇒ the workspace layer moves ahead of the system role fields.**
+   * The role overrides below are still tried first INSIDE this workspace, then this
+   * value, and only then the system's own role field for the role in question: one
+   * workspace default governs every role the workspace has not overridden itself.
+   * **Omitted ⇒ the system role field still wins** over the workspace layer, which
+   * only answers "follow the default" there — so inheriting stays a no-op.
    */
   defaultAgentId?: string
   /**
-   * This workspace's override for the **tool** role (background tool sessions).
-   * Same sentinel semantics as {@link defaultAgentId} — absent / blank ⇒ inherit,
-   * never a snapshot. Consumed at RUNTIME: it sits between the system
-   * `toolAgentId` and this workspace's {@link defaultAgentId} in the resolution
-   * chain, and keeps group routing (an unusable group fails loudly).
+   * This workspace's override for the **tool** role (background tool sessions, and
+   * the completion-judge / naming one-shots that share their resolver). Same
+   * sentinel semantics as {@link defaultAgentId} — absent / blank ⇒ inherit, never a
+   * snapshot. Consumed at RUNTIME: it leads this workspace's
+   * {@link defaultAgentId} and the system `toolAgentId` alike, and keeps group
+   * routing (an unusable group fails loudly).
    */
   toolAgentId?: string
   /** This workspace's override for the **intent** role (intent-communication
@@ -316,8 +319,8 @@ export interface WorkspaceSetting {
   automationAgentId?: string
   /** This workspace's override for the **review** role — seeds the `pr-review-runner`
    *  template's create-time identity only. Deliberately NOT read by the PR-review
-   *  relay queue, which keeps resolving `reviewAgentId` (system) → workspace
-   *  {@link defaultAgentId} → system default. */
+   *  relay queue, which orders the system `reviewAgentId` and this workspace's
+   *  {@link defaultAgentId} by the same rule as every other role. */
   reviewAgentId?: string
   /** This workspace's override for the **fix** role — seeds the `pr-review-fix`
    *  template's create-time identity only; the relay queue ignores it, exactly as
@@ -326,8 +329,9 @@ export interface WorkspaceSetting {
   /**
    * This workspace's **work-agent override** — the agent ordinary work sessions
    * (`SessionKind='work'`) created inside this workspace without an explicit pick
-   * fall back to, instead of {@link SystemSettings.workAgentId} and then
-   * {@link defaultAgentId}.
+   * fall back to first, ahead of {@link SystemSettings.workAgentId} and this
+   * workspace's {@link defaultAgentId} (whose relative order follows the rule on
+   * {@link defaultAgentId}).
    *
    * **Absent ⇒ inherit.** A missing key, an empty string and a whitespace-only
    * string all mean "no workspace override", and normalize to the key being

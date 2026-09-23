@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AgentConfig } from '@ccc/shared/protocol'
-import { resolveAutomationDefaultAgent } from './resolveAutomationDefaultAgent'
+import { resolveAutomationDefaultAgent, scopedSeedRefs } from './resolveAutomationDefaultAgent'
 
 const claude = (id: string, enabled?: boolean): AgentConfig => ({
   id,
@@ -75,5 +75,56 @@ describe('resolveAutomationDefaultAgent — create-form seed follow-chain (AC-R2
     expect(resolveAutomationDefaultAgent(agents, ' gone ', '  ', 'a2', '')).toMatchObject({
       id: 'a2',
     })
+  })
+})
+
+describe('scopedSeedRefs — the seed chain folds in the resolver order (AC-R33)', () => {
+  it('keeps the system role field first while the workspace inherits', () => {
+    expect(
+      scopedSeedRefs({
+        systemRoleRef: 'sys',
+        workspaceRoleRef: 'ws',
+        systemDefaultAgentId: 'sysdef',
+      }),
+    ).toEqual(['sys', 'ws', '', 'sysdef'])
+  })
+
+  it('moves the workspace layer ahead of the system role field once the workspace sets a default', () => {
+    expect(
+      scopedSeedRefs({
+        systemRoleRef: 'sys',
+        workspaceRoleRef: 'ws',
+        workspaceDefaultAgentId: 'wsdef',
+        systemDefaultAgentId: 'sysdef',
+      }),
+    ).toEqual(['ws', 'wsdef', 'sys', 'sysdef'])
+  })
+
+  it('treats a blank workspace default as inheriting', () => {
+    expect(
+      scopedSeedRefs({
+        systemRoleRef: 'sys',
+        workspaceRoleRef: 'ws',
+        workspaceDefaultAgentId: '   ',
+        systemDefaultAgentId: 'sysdef',
+      }),
+    ).toEqual(['sys', 'ws', '   ', 'sysdef'])
+  })
+
+  it('reads an absent workspace default as inheriting (the key is omitted on the wire)', () => {
+    expect(scopedSeedRefs({ systemRoleRef: 'sys' })).toEqual(['sys', '', '', ''])
+  })
+
+  it('feeds the resolver so a workspace default beats a SET system role field', () => {
+    const agents = [claude('sys'), claude('wsdef')]
+    expect(
+      resolveAutomationDefaultAgent(
+        agents,
+        ...scopedSeedRefs({
+          systemRoleRef: 'sys',
+          workspaceDefaultAgentId: 'wsdef',
+        }),
+      ),
+    ).toMatchObject({ id: 'wsdef' })
   })
 })

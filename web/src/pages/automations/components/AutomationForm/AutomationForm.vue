@@ -79,12 +79,12 @@ const props = defineProps<{
   agents?: AgentConfig[]
   /**
    * The full scoped candidate chain seeding the create form's initial vendor+agent
-   * (AC-R25 + workspace overrides), in priority order:
-   * `[system automationAgentId, workspace automationAgentId, workspace
-   * defaultAgentId, system defaultAgentId]`. Empty entries are skipped; the chain
-   * ends on the first enabled agent. Only seeds the create form — editing an
-   * existing automation is unaffected, and the user's later picks are never
-   * overwritten by this.
+   * (AC-R25 + workspace overrides), in priority order — built by
+   * `scopedSeedRefs`, which puts the workspace's automation override and its default
+   * agent ahead of the system role field when the workspace configured one. Empty
+   * entries are skipped; the chain ends on the first enabled agent. Only seeds the
+   * create form — editing an existing automation is unaffected, and the user's later
+   * picks are never overwritten by this.
    */
   seedAgentRefs?: string[]
 }>()
@@ -544,11 +544,11 @@ watch(
       metadataRows.value = []
       metadataConditions.value = []
       metadataCombinator.value = 'AND'
-      // Seed the create form's default vendor+agent along the scoped chain
-      // `system automationAgentId → workspace automationAgentId → workspace
-      // defaultAgentId → system defaultAgentId → first enabled agent` (AC-R25 +
-      // workspace overrides). No enabled agent ⇒ system fallback (vendor `claude`,
-      // empty agent). The user can still change vendor/agent afterwards.
+      // Seed the create form's default vendor+agent along the scoped chain the
+      // caller built (`scopedSeedRefs`), ending on the first enabled agent.
+      // No enabled agent ⇒ system fallback
+      // (vendor `claude`, empty agent). The user can still change vendor/agent
+      // afterwards.
       const seed = resolveAutomationDefaultAgent(props.agents ?? [], ...(props.seedAgentRefs ?? []))
       // The follow chain answers "which agent does the system point at", not
       // "which agent can run an automation". When it lands on a vendor with no

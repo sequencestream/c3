@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import type { SystemSettings } from '@ccc/shared/protocol'
+import type { SystemSettings, WorkspaceSetting } from '@ccc/shared/protocol'
 
 // Mock loadSettings to return a controlled agent list.
 const mockSettings: SystemSettings = {
@@ -53,8 +53,12 @@ const mockSettings: SystemSettings = {
   modelProviders: [],
 }
 
+/** Per-workspace stored configuration the mocked `loadWorkspaceSetting` serves. */
+const workspaceSettings: Record<string, WorkspaceSetting> = {}
+
 vi.mock('../config/index.js', () => ({
   loadSettings: vi.fn(() => mockSettings),
+  loadWorkspaceSetting: vi.fn((ws: string) => workspaceSettings[ws] ?? {}),
   getSessionAgentId: vi.fn(() => null),
   getProxyConfig: vi.fn(() => ({ enabled: false, httpProxy: '', httpsProxy: '' })),
   bindSessionAgent: vi.fn(),
@@ -659,6 +663,94 @@ describe('roles pointing at a group — bind the group, run its first enabled me
     mockSettings.defaultAgentId = ''
     expect(resolveAgent('').id).toBe('system')
     expect(resolveAgent('gone').id).toBe('system')
+  })
+})
+
+describe('resolveToolSessionLaunch — the workspace layer reaches the one-shot paths', () => {
+  const WS = 'ws-tool'
+  const GROUP = '_c3_claude_tool'
+  const baseAgents = mockSettings.agents
+
+  /** A custom claude member of the `tool` group (relay-capable, so it yields candidates). */
+  function toolMember(id: string, order: number): AgentConfig {
+    mockSettings.modelProviders = [
+      ...(mockSettings.modelProviders ?? []),
+      {
+        id: `p-${id}`,
+        displayName: id,
+        apiKey: `sk-${id}`,
+        urls: { anthropic: `https://${id}.example/anthropic` },
+      },
+    ]
+    return {
+      id,
+      vendor: 'claude',
+      configMode: 'custom',
+      providerId: `p-${id}`,
+      displayName: id,
+      order_seq: order,
+      group: 'tool',
+      config: { baseUrl: '', apiKey: '', model: id },
+      enabled: true,
+    }
+  }
+
+  beforeEach(() => {
+    mockSettings.agents = baseAgents
+    mockSettings.modelProviders = []
+    mockSettings.toolAgentId = ''
+    for (const key of Object.keys(workspaceSettings)) delete workspaceSettings[key]
+  })
+  afterEach(() => {
+    mockSettings.agents = baseAgents
+    mockSettings.modelProviders = []
+    mockSettings.toolAgentId = ''
+  })
+
+  it('binds the workspace default over the system toolAgentId — same agent as resolveToolAgent', () => {
+    mockSettings.toolAgentId = 'claude-pro'
+    workspaceSettings[WS] = { defaultAgentId: 'claude-sonnet' }
+    expect(resolveToolSessionLaunch(WS).agentId).toBe('claude-sonnet')
+    expect(resolveToolAgent(WS).id).toBe(resolveToolSessionLaunch(WS).agentId)
+  })
+
+  it('keeps a GROUP binding as the group ref, with its members as ordered candidates', () => {
+    mockSettings.agents = [toolMember('tm1', 0), toolMember('tm2', 1)]
+    mockSettings.toolAgentId = 'tm1'
+    workspaceSettings[WS] = { defaultAgentId: GROUP }
+    const launch = resolveToolSessionLaunch(WS)
+    expect(launch.agentId).toBe(GROUP)
+    expect(resolveToolAgent(WS).id).toBe('tm1')
+    expect(launch.relayCandidates?.map((c) => c.model)).toEqual(['tm1', 'tm2'])
+  })
+
+  it('keeps the system toolAgentId in front for a workspace with no default', () => {
+    mockSettings.toolAgentId = 'claude-sonnet'
+    expect(resolveToolSessionLaunch(WS).agentId).toBe('claude-sonnet')
+    // …and for a one-shot that belongs to no workspace at all.
+    expect(resolveToolSessionLaunch().agentId).toBe('claude-sonnet')
+    expect(resolveToolSessionLaunch(null).agentId).toBe('claude-sonnet')
+  })
+
+  it('lets the workspace toolAgentId override lead both levels', () => {
+    mockSettings.toolAgentId = 'claude-pro'
+    workspaceSettings[WS] = { toolAgentId: 'codex-agent', defaultAgentId: 'claude-sonnet' }
+    expect(resolveToolSessionLaunch(WS).agentId).toBe('codex-agent')
+  })
+
+  it('reads the workspace toolAgentId override the old explicit-ref path skipped', () => {
+    // The one-shot path used to feed `getToolAgentId()` in as an explicit reference,
+    // so an empty system value jumped straight past the workspace tool agent.
+    mockSettings.toolAgentId = ''
+    workspaceSettings[WS] = { toolAgentId: 'claude-sonnet' }
+    expect(resolveToolSessionLaunch(WS).agentId).toBe('claude-sonnet')
+  })
+
+  it('hard-fails an unusable workspace-default group instead of falling back', () => {
+    mockSettings.agents = [{ ...toolMember('tm1', 0), enabled: false }]
+    mockSettings.toolAgentId = 'claude-pro'
+    workspaceSettings[WS] = { defaultAgentId: GROUP }
+    expect(() => resolveToolSessionLaunch(WS)).toThrow(AgentGroupUnavailableError)
   })
 })
 

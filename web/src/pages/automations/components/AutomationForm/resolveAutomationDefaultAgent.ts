@@ -7,13 +7,12 @@ import { parseGroupAgentRef } from '@ccc/shared'
  * runtime `resolveAgent` router; an automation record stores its own concrete
  * `vendor`/`agentId` snapshot and runs on that.
  *
- * `candidateRefs` is the **full scoped candidate chain, in priority order** — for
- * the new-automation form `[system automationAgentId, workspace automationAgentId,
- * workspace defaultAgentId, system defaultAgentId]`, and for the two PR-review
- * templates the same shape with their own role field at the head. The workspace
- * links are NOT pre-folded here: the callers pass each committed value separately so
- * a workspace override can win over the system default without ever being snapshotted
- * into it.
+ * `candidateRefs` is the **full scoped candidate chain, in priority order** — the
+ * shape {@link scopedSeedRefs} builds for every caller: the role's own system field,
+ * the workspace's same-named override, the two default levels, one role field at the
+ * head. The workspace links are NOT pre-folded here: the callers pass each committed
+ * value separately so a workspace override can win over the system default without
+ * ever being snapshotted into it.
  *
  * Each step matches only against *enabled* agents (disabled ones never seed). A
  * virtual group reference (`_c3_<vendor>_<group>`) at any link is flattened to that
@@ -35,6 +34,37 @@ export function resolveAutomationDefaultAgent(
     if (hit) return hit
   }
   return enabled[0]
+}
+
+/**
+ * The scoped candidate chain of ONE role, folded into the order the runtime resolver
+ * uses: a workspace that **explicitly configured** a default agent moves its
+ * whole workspace layer ahead of the system role field — `workspace role override →
+ * workspace defaultAgentId → system role field → system defaultAgentId` — while a
+ * workspace that **inherits** keeps the system role field first. A blank workspace
+ * default is the "inherit" sentinel (the key is omitted on the wire, never snapshotted
+ * to the system value), so an unset workspace keeps the original order exactly.
+ *
+ * Exported so the create form and the template paths derive it from ONE rule: the
+ * agent a form pre-selects is then the agent a launch would resolve, in a workspace
+ * default agent's own workspace, instead of the system value that workspace overrode.
+ */
+export function scopedSeedRefs(input: {
+  /** The role's own system-level field, e.g. `settings.automationAgentId`. */
+  systemRoleRef?: string
+  /** The workspace's same-named role override, when the role has one. */
+  workspaceRoleRef?: string
+  /** The workspace's own `defaultAgentId` — the switch for the order below. */
+  workspaceDefaultAgentId?: string
+  systemDefaultAgentId?: string
+}): string[] {
+  const systemRole = input.systemRoleRef ?? ''
+  const workspaceRole = input.workspaceRoleRef ?? ''
+  const workspaceDefault = input.workspaceDefaultAgentId ?? ''
+  const systemDefault = input.systemDefaultAgentId ?? ''
+  return workspaceDefault.trim()
+    ? [workspaceRole, workspaceDefault, systemRole, systemDefault]
+    : [systemRole, workspaceRole, workspaceDefault, systemDefault]
 }
 
 /** One follow-chain step: resolve a reference to a concrete enabled agent, flattening

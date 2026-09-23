@@ -351,8 +351,10 @@ export interface SystemSettings {
    * Id of the agent used to **pre-fill the "new automation" form** (the vendor +
    * agent selected the instant the create form opens). Storage-normalization
    * semantics are **identical to {@link specAgentId}**: an **empty string is
-   * "follow the default agent"** (the form resolves it `automationAgentId →
-   * defaultAgentId → system`), a *non-empty* value that points at a now-**disabled**
+   * "follow the default agent"** — the form walks the workspace's automation
+   * override, its `defaultAgentId`, this field and the system default, ordered as
+   * the runtime resolver orders them (a workspace that set a default agent puts its
+   * own layer first). A *non-empty* value that points at a now-**disabled**
    * agent is **rewritten** on store to the next enabled agent in `order_seq` order —
    * the same `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20);
    * when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
@@ -373,9 +375,10 @@ export interface SystemSettings {
    * Id of the agent that runs the **PR-review relay** built-in automation
    * (`pr-review-runner`) when it is created from its template. Semantics are
    * **identical to {@link automationAgentId}**: an **empty string is "follow the
-   * default agent"** (the template seed resolves it `reviewAgentId → effective
-   * default (workspace override → defaultAgentId) → first enabled agent`), a
-   * *non-empty* value that points at a
+   * default agent"** (the template seed walks this field, the workspace's
+   * `reviewAgentId` override, its `defaultAgentId` and the system default — the
+   * workspace's own layer first once the workspace set a default agent — and ends on
+   * the first enabled agent), a *non-empty* value that points at a
    * removed/now-disabled agent is **rewritten** on store to the next enabled agent
    * in `order_seq` order — the same `resolveDefaultAgentId` fall-through the default
    * uses; when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An
@@ -393,9 +396,10 @@ export interface SystemSettings {
    * Id of the agent that runs the **PR-review failure fix** built-in automation
    * (`pr-review-fix`) when it is created from its template. Semantics are
    * **identical to {@link reviewAgentId}**: an **empty string is "follow the default
-   * agent"** (the template seed resolves it `fixAgentId → effective default
-   * (workspace override → defaultAgentId) → first enabled agent`), a *non-empty*
-   * dangling value is **rewritten** on store to the
+   * agent"** (the template seed walks this field, the workspace's `fixAgentId`
+   * override, its `defaultAgentId` and the system default in the same order, and ends
+   * on the first enabled agent), a *non-empty* dangling value is **rewritten** on
+   * store to the
    * next enabled agent in `order_seq` order, and the value is **not** consumed by the
    * runtime router — it only seeds the template's one-time default selection. An
    * empty string is left empty (never auto-filled), so "follow the default" survives

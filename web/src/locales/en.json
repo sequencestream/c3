@@ -3960,7 +3960,7 @@
         "label": "Role agent overrides"
       },
       "roleHint": "Give each role its own agent for this workspace. Once this workspace sets a default agent, every role it has not overridden uses that — a system-level pick for the role no longer applies here; with no default set (inheriting) the system role still wins. Inheriting follows the default agent above.",
-      "inheritRole": "Inherit system default",
+      "inheritRole": "Inherit",
       "roles": {
         "tool": {
           "label": "Tool agent"

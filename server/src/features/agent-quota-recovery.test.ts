@@ -7,6 +7,7 @@ import { join } from 'node:path'
 vi.mock('../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
 }))
 import type { AgentConfig, SystemSettings } from '@ccc/shared/protocol'

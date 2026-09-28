@@ -34,6 +34,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (name: string) => h.registry.get(name) ?? null,
+  resolveRegisteredWorkspaceRoot: (name: string) => h.registry.get(name) ?? null,
 }))
 
 let home: string

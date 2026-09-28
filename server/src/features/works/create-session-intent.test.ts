@@ -26,6 +26,7 @@ vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   // Identity stubs: the test passes a path as the workspaceName (registered).
   resolveWorkspaceRoot: vi.fn((id: string) => id),
+  resolveRegisteredWorkspaceRoot: vi.fn((id: string) => id),
   pathToName: vi.fn((p: string) => p),
   workspaceNameFor: vi.fn((value: string) => value),
   touchWorkspace: vi.fn(),

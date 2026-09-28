@@ -23,6 +23,7 @@ const hoisted = vi.hoisted(() => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => hoisted.roots.get(id) ?? null,
+  resolveRegisteredWorkspaceRoot: (id: string) => hoisted.roots.get(id) ?? null,
 }))
 
 vi.mock('./funnel-store.js', () => ({

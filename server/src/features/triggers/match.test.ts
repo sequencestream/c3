@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
 }))
 // 匹配是纯函数,不需要真的调度器/数据库。

@@ -136,6 +136,7 @@ vi.mock('../external-mcp/workspace-scope.js', () => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (name: string) => h.registry.get(name) ?? null,
+  resolveRegisteredWorkspaceRoot: (name: string) => h.registry.get(name) ?? null,
   isDirectory: (path: string) => !h.goneDirs.has(path),
 }))
 

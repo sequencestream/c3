@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path'
 vi.mock('../../state.js', () => ({
   workspaceNameFor: (value: string) => resolve(value),
   resolveWorkspaceRoot: (name: string) => (name.includes('unregistered') ? null : name),
+  resolveRegisteredWorkspaceRoot: (name: string) => (name.includes('unregistered') ? null : name),
 }))
 // Stub the intents store: `toEvent` reverse-looks-up the owning intent from an
 // event's `session_id`. Default to "no owning intent" so ordinary events derive

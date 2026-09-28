@@ -11,6 +11,7 @@ import { format } from 'node:util'
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
   workspaceNameFor: (value: string) => value,
 }))

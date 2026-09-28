@@ -2887,7 +2887,8 @@
         "phaseInFlight": "A review or fix session is already running for this intent.",
         "agentUnavailable": "No usable agent for this phase: the agent group \"{group}\" has no available member.",
         "worktreeUnavailable": "This intent’s worktree is unavailable, so the relay has nowhere to run.",
-        "claimFailed": "Could not register the phase — nothing was started. Try again."
+        "claimFailed": "Could not register the phase — nothing was started. Try again.",
+        "launchFailed": "The review / fix session could not start: {detail}. Nothing was started — try again."
       }
     },
     "agent": {

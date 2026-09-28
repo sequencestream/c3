@@ -176,6 +176,30 @@ export function resolveWorkspaceRoot(name: string): string | null {
 }
 
 /**
+ * Resolve a workspace given EITHER its registered name OR the path of an already
+ * registered workspace, to that workspace's absolute path.
+ *
+ * The two forms are the same fact read two ways, and internal callers legitimately
+ * hold different ones: an automation record persists a NAME, while the queue's PR
+ * relay hands the dispatcher the PATH it already has in hand. Resolving both in one
+ * place keeps the dispatcher's workspace gate, its session projection and the
+ * relay's MCP closure on a single resolution rule instead of a name-to-path round
+ * trip that each call site would have to remember.
+ *
+ * The boundary is unchanged: only a REGISTERED workspace resolves. An unregistered
+ * or removed directory still returns null, so a workspace removed after a record was
+ * persisted is still refused at the gate.
+ */
+export function resolveRegisteredWorkspaceRoot(value: string): string | null {
+  try {
+    const row = findWorkspaceByName(value) ?? findWorkspaceByPath(value)
+    return row?.registered ? row.path : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Reverse lookup: given an absolute path, return its workspace name.
  * Returns null when the path is not a registered workspace.
  */

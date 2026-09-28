@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // as identity — fixtures use the path itself as the id and round-trip cleanly.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
   workspaceNameFor: (value: string) => value,
 }))

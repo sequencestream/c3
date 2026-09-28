@@ -29,7 +29,9 @@ const admission = vi.fn<(...a: unknown[]) => unknown>(() => ({
   ok: true,
   claimed: { phase: 'review', round: 0 },
 }))
-const runManualRelayPhase = vi.fn<(...a: unknown[]) => Promise<void>>(() => Promise.resolve())
+const runManualRelayPhase = vi.fn<(...a: unknown[]) => Promise<unknown>>(() =>
+  Promise.resolve({ launchFailed: false, reason: null }),
+)
 vi.mock('./queue-relay-actions.js', () => ({
   admitRelayPhase: (...a: unknown[]) => admission(...a),
   runManualRelayPhase: (...a: unknown[]) => runManualRelayPhase(...a),
@@ -76,7 +78,7 @@ beforeEach(() => {
   workspaceName = pathToName(dir)!
   proj = resolveWorkspaceRoot(workspaceName)!
   admission.mockReturnValue({ ok: true, claimed: { phase: 'review', round: 0 } })
-  runManualRelayPhase.mockResolvedValue(undefined)
+  runManualRelayPhase.mockResolvedValue({ launchFailed: false, reason: null })
 })
 
 afterEach(() => {
@@ -390,6 +392,38 @@ describe('startIntentRelay — acceptance is the absence of an error', () => {
     await startIntentRelay(fakeCtx().ctx, conn, msg(id))
     expect(sent).toEqual([])
     expect(runManualRelayPhase).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a launch that bound NO session, because nothing else would show it', async () => {
+    // Claimed, then the launch itself failed: no session to open, no conclusion in
+    // the ledger, and the released placeholder leaves the button looking untouched.
+    // This is the one post-claim failure the user must be told about.
+    const id = seedManualIntent()
+    runManualRelayPhase.mockResolvedValue({
+      launchFailed: true,
+      reason: 'automation_workspace_not_found',
+    })
+    const { conn, sent } = fakeConn()
+    await startIntentRelay(fakeCtx().ctx, conn, msg(id))
+    await Promise.resolve()
+    await Promise.resolve()
+    const err = sent.find((m) => m.type === 'error') as
+      { error: { code: string; params?: Record<string, string> } } | undefined
+    expect(err?.error.code).toBe('intent.relay.launchFailed')
+    expect(err?.error.params).toEqual({ detail: 'automation_workspace_not_found' })
+  })
+
+  it('stays silent when a real session bound — its own failure is visible there', async () => {
+    const id = seedManualIntent()
+    runManualRelayPhase.mockResolvedValue({
+      launchFailed: false,
+      reason: 'wall_clock_timeout',
+    })
+    const { conn, sent } = fakeConn()
+    await startIntentRelay(fakeCtx().ctx, conn, msg(id))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(sent).toEqual([])
   })
 
   it('never reports a LATE failure on a connection that was answered minutes ago', async () => {

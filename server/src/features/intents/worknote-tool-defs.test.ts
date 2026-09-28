@@ -22,6 +22,7 @@ import type { IntentWorknoteKind } from '@ccc/shared/protocol'
 vi.mock('../../state.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../state.js')>()),
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
   workspaceNameFor: (value: string) => value,
 }))

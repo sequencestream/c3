@@ -286,6 +286,10 @@ export async function executeRelayPhase(
       cwd,
       maxWallClockMs: RELAY_MAX_WALL_CLOCK_MS,
       title: `${label}:${req.title}`,
+      // The session this phase binds is the INTENT's session, in the same phase
+      // vocabulary the claim already used for its pending row — so the real row and
+      // the row the bind hook would otherwise ignore describe one session.
+      projection: { intentId: req.id, title: `${label}:${req.title}`, sessionKind: 'work' },
       executionId,
       onSessionBound: (sessionId) => {
         boundSessionId = sessionId
@@ -342,20 +346,40 @@ export async function runRelayPhase(
  *
  * Same execution as the queue's, with the accountability difference applied at
  * both ends: no provenance is recorded (so an approval here can never become a
- * merge credential), and the settlement books nothing on the queue's ladder. A
- * failure that happens after the claim reaches the user through the intent and
- * the session UI, never as a late error frame on a connection that has long since
- * been answered.
+ * merge credential), and the settlement books nothing on the queue's ladder.
+ *
+ * The returned verdict exists for ONE caller-visible case: a phase that never
+ * bound a session AND whose launch failed. There is nothing on screen to read then
+ * — no session, no conclusion, the placeholder simply released and the button back
+ * — so the caller is handed the reason. Every other ending (a concluded turn, a
+ * turn that ended with no conclusion, a bound session that later failed) is already
+ * visible in the intent ledger or the session UI and is NOT reported as an error.
  */
 export async function runManualRelayPhase(
   env: RelayPhaseEnv,
   req: Intent,
   claimed: ClaimedRelayPhase,
-): Promise<void> {
-  const { boundSessionId } = await executeRelayPhase(env, req, claimed, {
+): Promise<ManualRelaySettlement> {
+  const { boundSessionId, outcome } = await executeRelayPhase(env, req, claimed, {
     recordQueueProvenance: false,
   })
   settleManualRelayPhase(env, req, claimed, boundSessionId)
+  return {
+    launchFailed: boundSessionId === null && !outcome.ok,
+    reason: outcome.error,
+  }
+}
+
+/** How a manual relay phase ended, as far as its CALLER is concerned. */
+export interface ManualRelaySettlement {
+  /**
+   * The phase was claimed but no vendor session ever started, and the launch
+   * itself failed — a refused workspace gate, a missing agent, a vendor that would
+   * not start. The user clicked and nothing is now running, so this must be said.
+   */
+  launchFailed: boolean
+  /** The dispatcher's failure code or thrown message, for the error's `detail`. */
+  reason: string | null
 }
 
 /** Record a relay phase's refusal on the queue's own accounting. */

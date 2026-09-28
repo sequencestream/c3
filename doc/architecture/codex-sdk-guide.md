@@ -173,24 +173,31 @@ Codex 的 `workspace-write` 可写集合是 allowlist：`cwd` 一定可写，`--
   路径不在可写根集合内；Codex 仍可用绝对路径读取项目上下文，spec prompt 会显式给出 project root。
 
 不得从 worktree 或 sandbox 内的 `/workspace` 反推 specs root。sandbox wrapper 原样透传参数，且
-sandbox 运行依赖同一路径的 spec 根 bind mount，故容器内外使用同一绝对路径；除这一 spec 根外，不新增
-cwd 之外的可写目录。若 spec 会话无法解析或创建 specs root，必须 fail-closed，不能退回到项目可写 cwd。
-只读/plan 会话仍由 `read-only` sandbox 限制，不因此获得写权限。
+sandbox 运行依赖同一路径的 spec 根 bind mount，故容器内外使用同一绝对路径。可写根集合只有两类：
+specs root，以及 `workspace-write` 下解析 `git rev-parse --path-format=absolute --git-common-dir`
+得到的**仓库公共 git 目录**——工作树的 `.git` 只是指向它的文件，而 `git add` / `git commit` 写的
+index / refs / objects 都落在那里，不补这一目录则工作树内可改文件、却无法记录提交。这一补偿是
+**受边界约束的单目录**，不是把整格升为 `danger-full-access`；除这两类外不新增 cwd 之外的可写目录。
+若 spec 会话无法解析或创建 specs root，必须 fail-closed，不能退回到项目可写 cwd。只读/plan 会话仍由
+`read-only` sandbox 限制，不因此获得写权限。
 
 ### 过渡模式映射
 
 c3 将中性的「行动模式 × 工具闸门」网格映射为 Codex 原生的 `sandboxMode + approvalPolicy`：
 
-| 网格 `(actionMode, toolGate)` | sandboxMode          | approvalPolicy | 说明                                                   |
-| ----------------------------- | -------------------- | -------------- | ------------------------------------------------------ |
-| `plan` × `never-ask`          | `read-only`          | `never`        | 只读 MCP 流程使用；文件系统只读，MCP handler 自行 gate |
-| `plan` × 其他                 | `read-only`          | `on-request`   | plan 模式永远只读                                      |
-| `build` × `never-ask`         | `danger-full-access` | `never`        | 完全放行；允许写入 Git 元数据并提交代码                |
-| `build` × `trusted-prefix`    | `workspace-write`    | `on-failure`   | 仅在失败时干预                                         |
-| `build` × `on-sensitive`      | `workspace-write`    | `on-request`   | 默认/自动模式                                          |
-| `build` × `always-ask`        | `read-only`          | `on-request`   | **降级**——Codex 无法 per-tool 询问，退为只读           |
+| 网格 `(actionMode, toolGate)` | sandboxMode       | approvalPolicy | 说明                                                   |
+| ----------------------------- | ----------------- | -------------- | ------------------------------------------------------ |
+| `plan` × `never-ask`          | `read-only`       | `never`        | 只读 MCP 流程使用；文件系统只读，MCP handler 自行 gate |
+| `plan` × 其他                 | `read-only`       | `on-request`   | plan 模式永远只读                                      |
+| `build` × `never-ask`         | `workspace-write` | `never`        | 停止询问 ≠ 无沙箱；见下方显式授权                      |
+| `build` × `trusted-prefix`    | `workspace-write` | `on-failure`   | 仅在失败时干预                                         |
+| `build` × `on-sensitive`      | `workspace-write` | `on-request`   | 默认/自动模式                                          |
+| `build` × `always-ask`        | `read-only`       | `on-request`   | **降级**——Codex 无法 per-tool 询问，退为只读           |
 
-反向映射用于 session 启动时从存储的 Codex 策略回算网格值，使中性驱动路径统一消费。
+网格不产生 `danger-full-access`。该档只由用户在界面上显式选择产生：选择本身作为
+`CodexPolicy.explicitFullAccess` 持久化，并在启动边界上以中立的 `explicitFullAccess` 传入，只有
+严格等于 `true` 时 `build` × `never-ask` 才升为 `danger-full-access`。反向映射用于 session 启动
+时从存储的 Codex 策略回算网格值，使中性驱动路径统一消费。
 
 ### 网络访问（与 sandboxMode 正交）
 
@@ -402,12 +409,14 @@ relay 的 `POST /internal/codex-relay/v1/responses` 路由
 
 Codex 没有 Claude 的五档模式，而是通过三元语义词义：
 
-| Token         | ActionMode | ToolGate       | SDK 等价                                |
-| ------------- | ---------- | -------------- | --------------------------------------- |
-| `read-only`   | `plan`     | `on-sensitive` | read-only sandbox + on-request approval |
-| `auto`        | `build`    | `on-sensitive` | workspace-write + on-request（默认值）  |
-| `full-access` | `build`    | `never-ask`    | danger-full-access + never approval     |
+| Token         | ActionMode | ToolGate       | SDK 等价                                                          |
+| ------------- | ---------- | -------------- | ----------------------------------------------------------------- |
+| `read-only`   | `plan`     | `on-sensitive` | read-only sandbox + on-request approval                           |
+| `auto`        | `build`    | `on-sensitive` | workspace-write + on-request（默认值）                            |
+| `full-access` | `build`    | `never-ask`    | workspace-write + never approval，显式授权后转 danger-full-access |
 
+`full-access` 的完全访问不是这一档 token 自动成立的：只有 `explicitFullAccess` 为真才产出
+`danger-full-access`，否则停在 `workspace-write`（Git 元数据写入由适配器在 `workspace-write` 下补偿）。
 `always-ask` 明确不提供——Codex 无法 per-tool 询问，提供它是在撒谎（映射时会把它降级为只读）。
 
 这三档注册在 c3 按 vendor 维护的模式目录中（claude 一份、codex 指向以上三档）。
@@ -418,9 +427,11 @@ c3 的 workspace 默认模式按 vendor 存储。对于 Codex vendor，既可以
 也可以存新版对象格式：
 
 ```text
-{ sandboxMode: 'workspace-write', approvalPolicy: 'on-request' }
+{ sandboxMode: 'workspace-write', approvalPolicy: 'on-request', explicitFullAccess: false }
 ```
 
+`explicitFullAccess` 承载「用户显式选过完全访问」这一授权事实，缺省/`false` 即未授权；存
+`danger-full-access` 而没有它，会在启动时被识别为被静默提升并回落 `workspace-write`。
 Codex 的默认模式 token 为 `'auto'`。
 
 ## 8. 任务系统（Observe-Only）

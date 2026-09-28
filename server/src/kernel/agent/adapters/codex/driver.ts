@@ -561,6 +561,13 @@ class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
   }
 }
 
+/** Sandbox width ordering — the only comparison the convergence below needs. */
+const SANDBOX_WIDTH: Record<SandboxMode, number> = {
+  'read-only': 0,
+  'workspace-write': 1,
+  'danger-full-access': 2,
+}
+
 /**
  * The SINGLE convergence point between the neutral launch options and codex's
  * launch-time policy (2026-09-28).
@@ -572,38 +579,35 @@ class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
  *    whose exact value avoids a lossy grid round-trip.
  *
  * The stored policy may refine `approvalPolicy` (an in-boundary field) and may
- * carry `read-only` / `workspace-write` through unchanged. It may NOT carry a
- * wider sandbox: `danger-full-access` survives only with
- * `explicitFullAccess === true`, otherwise the grid result wins and the
- * downgrade is reported to the run log. That keeps the pass-through bag from
- * degenerating into a renamed bypass.
+ * narrow the sandbox, but it may NOT widen it: a stored `sandboxMode` wider than
+ * the grid result is dropped in favour of the grid, and the run log says so.
+ * `danger-full-access` gets no exception — the grid itself reaches it only when
+ * the explicit authorization was lifted onto the launch boundary. That keeps the
+ * pass-through bag from degenerating into a renamed bypass.
  */
 export function convergeCodexPolicy(
   opts: Pick<
     DriverStartOptions,
     'actionMode' | 'toolGate' | 'explicitFullAccess' | 'vendorContext'
   >,
-): { sandboxMode: SandboxMode; approvalPolicy: ApprovalMode; downgraded: boolean } {
+): { sandboxMode: SandboxMode; approvalPolicy: ApprovalMode } {
   const fromGrid = gateToCodexPolicy(opts.actionMode, opts.toolGate, {
     explicitFullAccess: opts.explicitFullAccess,
   })
   const stored = readStoredCodexPolicy(opts.vendorContext)
-  if (!stored) return { ...fromGrid, downgraded: false }
-  if (stored.sandboxMode === 'danger-full-access' && opts.explicitFullAccess !== true) {
-    // The stored policy claims full access but carries no explicit authorization:
-    // it was silently promoted (or predates the flag). Degrade to the grid — which
-    // itself yields `workspace-write` for `build x never-ask` — and say so.
+  if (!stored) return fromGrid
+  if (SANDBOX_WIDTH[stored.sandboxMode] > SANDBOX_WIDTH[fromGrid.sandboxMode]) {
+    // The stored policy is wider than the grid this launch resolved — either it
+    // claims full access with no explicit authorization (silently promoted, or
+    // predating the flag), or it names a sandbox the neutral grid never granted.
+    // Either way the grid wins: narrowing is automatic, widening is not.
     console.info(
-      '[c3] codex: stored policy declares full access without an explicit authorization — ' +
-        'degraded to the neutral grid (workspace-write).',
+      `[c3] codex: stored policy declares a wider sandbox (${stored.sandboxMode}) than this ` +
+        `launch's grid grants (${fromGrid.sandboxMode}) — degraded to the grid.`,
     )
-    return { ...fromGrid, downgraded: true }
+    return fromGrid
   }
-  return {
-    sandboxMode: stored.sandboxMode,
-    approvalPolicy: stored.approvalPolicy,
-    downgraded: false,
-  }
+  return { sandboxMode: stored.sandboxMode, approvalPolicy: stored.approvalPolicy }
 }
 
 /**

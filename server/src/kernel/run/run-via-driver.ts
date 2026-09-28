@@ -509,8 +509,12 @@ export async function runViaDriver(
   // conjunction of profile names): a profile that does not bypass native policy
   // launches from its own grid and carries nothing, and an UNKNOWN profile kind
   // resolves to the conservative rule (bypass) rather than silently inheriting
-  // the stored policy.
-  const carryNativePolicy = !profileRules.bypassesNativePolicy && !!rt.codexPolicy
+  // the stored policy. The vendor test is what keeps the bag vendor-private: a
+  // runtime can hold a stored CodexPolicy for reasons that outlive its vendor (an
+  // automation whose mode was written as an object before its agent moved to
+  // another vendor), and no other vendor's driver reads either field.
+  const carryNativePolicy =
+    adapter.vendor === 'codex' && !profileRules.bypassesNativePolicy && !!rt.codexPolicy
 
   // The session's stored mode is a vendor-native ModeToken; resolve it to the
   // neutral grid through THIS run's vendor catalog (2026-06-07-012). A token from

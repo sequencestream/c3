@@ -48,6 +48,7 @@ import {
   resolveVendorCredentialEnv,
   storedModeToGrid,
 } from '../../kernel/agent/adapters/registry.js'
+import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import { resolve as resolveVendorCli } from '../../kernel/agent/process/launcher.js'
 import type {
   AgentRun,
@@ -1196,7 +1197,7 @@ async function executeCursorLlmPrompt(
   }
   const { actionMode, toolGate } = storedModeToGrid(
     'cursor',
-    typeof automation.mode === 'string' ? automation.mode : 'agent',
+    typeof automation.mode === 'string' ? automation.mode : MODE_CATALOGS.cursor.defaultToken,
   )
   const { model, envOverrides } = launchForAgent(agent)
   const apiKey = agent.vendor === 'cursor' ? agent.config.apiKey?.trim() : undefined

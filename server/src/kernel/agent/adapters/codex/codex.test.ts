@@ -1106,11 +1106,10 @@ describe('convergeCodexPolicy (vendorContext is not a bypass)', () => {
     expect(out).toEqual({
       sandboxMode: 'danger-full-access',
       approvalPolicy: 'never',
-      downgraded: false,
     })
   })
 
-  it('a stored danger-full-access WITHOUT the marker falls back to the grid and reports it', () => {
+  it('a stored danger-full-access WITHOUT the marker falls back to the grid', () => {
     const out = convergeCodexPolicy({
       actionMode: 'build',
       toolGate: 'never-ask',
@@ -1122,7 +1121,6 @@ describe('convergeCodexPolicy (vendorContext is not a bypass)', () => {
     expect(out).toEqual({
       sandboxMode: 'workspace-write',
       approvalPolicy: 'never',
-      downgraded: true,
     })
     // An explicit `false` is the same as absent — strictly true is the rule.
     expect(
@@ -1147,15 +1145,37 @@ describe('convergeCodexPolicy (vendorContext is not a bypass)', () => {
         },
       })
       expect(out.sandboxMode).toBe(sandboxMode)
-      expect(out.downgraded).toBe(false)
     }
+  })
+
+  it('a stored policy NARROWER than the grid is still honoured', () => {
+    // `workspace-write` is a widening of a read-only grid, so it loses; the same
+    // stored value against a workspace-write grid is adopted above. Narrowing in
+    // the other direction is never blocked.
+    expect(
+      convergeCodexPolicy({
+        actionMode: 'plan',
+        toolGate: 'on-sensitive',
+        vendorContext: {
+          codexPolicy: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+        },
+      }),
+    ).toEqual({ sandboxMode: 'read-only', approvalPolicy: 'on-request' })
+    expect(
+      convergeCodexPolicy({
+        actionMode: 'build',
+        toolGate: 'on-sensitive',
+        vendorContext: {
+          codexPolicy: { sandboxMode: 'read-only', approvalPolicy: 'never' },
+        },
+      }),
+    ).toEqual({ sandboxMode: 'read-only', approvalPolicy: 'never' })
   })
 
   it('with no vendor policy in the bag, the grid decides', () => {
     expect(convergeCodexPolicy({ actionMode: 'build', toolGate: 'never-ask' })).toEqual({
       sandboxMode: 'workspace-write',
       approvalPolicy: 'never',
-      downgraded: false,
     })
   })
 })

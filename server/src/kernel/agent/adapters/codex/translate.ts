@@ -19,8 +19,9 @@
  * colour (mirrors generic `preApproved` semantics, but here it is structural:
  * ALL Codex tool calls are pre-adjudicated, not just rule-engine bypasses).
  *
- * ADR-0009: SDK types (`ThreadItem`/`ThreadEvent`) are imported here (inside
- * `adapters/codex/`) and narrowed; only canonical shapes leave this module.
+ * ADR-0011 vendor-type containment: SDK types (`ThreadItem`/`ThreadEvent`) are
+ * imported here (inside `adapters/codex/`) and narrowed; only canonical shapes
+ * leave this module. Rule stated in doc/architecture/codex-sdk-guide.md §11.1.
  */
 import type { ThreadItem } from '@openai/codex-sdk'
 import type { CanonicalBlock, CanonicalMessage, CanonicalToolResult } from '../types.js'

@@ -30,16 +30,17 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
 const DB = process.argv[3] || ''
 const WORKSPACE = process.argv[4] || ''
+const C3_HOME = process.argv[5] || dirname(DB)
 const TIMEOUT_MS = 90_000
 
 if (!DB || !WORKSPACE) {
-  console.error('[relay-launch-e2e] usage: <ws-url> <db-path> <workspace-dir>')
+  console.error('[relay-launch-e2e] usage: <ws-url> <db-path> <workspace-dir> [c3-home]')
   process.exit(1)
 }
 
@@ -88,6 +89,20 @@ function seed() {
   // the literal argument would make the handler's workspace comparison fail for a
   // reason that has nothing to do with the relay.
   const wsPath = realpathSync(WORKSPACE)
+  // The relay refuses to run without the intent's own worktree (a fix must edit the
+  // PR head branch, so there is deliberately no fallback to the project checkout).
+  // Lay down the directory the server's deterministic path points at: c3 home is
+  // the isolated instance's state dir, which the caller passes as the db's folder.
+  const worktree = join(
+    realpathSync(C3_HOME),
+    'worktrees',
+    wsPath.replace(/^\/+/, '').replace(/[/:]/g, '-'),
+    `intent-${intentId}`,
+  )
+  mkdirSync(worktree, { recursive: true })
+  writeFileSync(join(worktree, '.git'), 'gitdir: /dev/null\n')
+  writeFileSync(join(worktree, 'README.md'), '# relay e2e worktree\n')
+  log('worktree at', worktree)
   // The workspace is already registered over the wire under a name that is not its
   // path; the relay resolves it by PATH, so this is exactly the form that used to
   // fail the dispatcher's gate.
@@ -198,6 +213,9 @@ ws.addEventListener('message', (evt) => {
     return
   }
 
+  if (msg.type === 'error') {
+    console.log('  !! ERROR FRAME:', JSON.stringify(msg.error))
+  }
   if (msg.type !== 'intents') return
   const item = (msg.items ?? []).find((i) => i.id === intentId)
   if (!item) return

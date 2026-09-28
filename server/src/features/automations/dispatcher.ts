@@ -43,12 +43,12 @@ import {
 import { getRelay } from '../../kernel/relay/runtime.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { loadSettings } from '../../kernel/config/index.js'
-import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
-import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
-import { resolveCodexGhTokenEnv } from '../../kernel/agent/adapters/codex/gh-token.js'
-import { createCursorAdapter, cursorModeCatalog } from '../../kernel/agent/adapters/cursor/index.js'
+import {
+  resolveVendorAdapter,
+  resolveVendorCredentialEnv,
+  storedModeToGrid,
+} from '../../kernel/agent/adapters/registry.js'
 import { resolve as resolveVendorCli } from '../../kernel/agent/process/launcher.js'
-import { tokenToGrid } from '../../kernel/agent/adapters/mode-catalog.js'
 import type {
   AgentRun,
   DriverStartOptions,
@@ -1100,13 +1100,15 @@ async function executeCodexLlmPrompt(
           sandboxMode: automation.mode === 'read-only' ? 'read-only' : 'workspace-write',
           approvalPolicy: 'never',
         }
-  const { actionMode, toolGate } = codexPolicyToGrid(policy)
+  // The stored policy -> neutral grid goes through the NEUTRAL kernel entry, so
+  // this feature never reaches into the codex adapter's reverse mapping.
+  const { actionMode, toolGate } = storedModeToGrid('codex', policy)
   const { model, relayCandidates, envOverrides, contextWindow, maxOutputTokens } =
     launchForAgent(agent)
   // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
   // so PR review/comment/merge shell commands authenticate; network access stays
   // orthogonal, governed by this automation's sandbox/toolAllowlist settings.
-  const driverEnvOverrides = await resolveCodexGhTokenEnv(envOverrides)
+  const driverEnvOverrides = await resolveVendorCredentialEnv('codex', envOverrides)
   // Network access is the `network-access` pseudo-entry in the tool allowlist. It
   // only makes sense for the `workspace-write` sandbox (a `read-only` sandbox is
   // network-denied unconditionally), so gate on both. When unselected / read-only,
@@ -1125,7 +1127,12 @@ async function executeCodexLlmPrompt(
     signal: abortController.signal,
     actionMode,
     toolGate,
-    codexPolicy: policy,
+    // The stored CodexPolicy rides in the vendor-private bag; the exact value
+    // avoids a lossy grid round-trip, and the adapter converges it internally so
+    // a wider sandbox cannot slip through. The explicit full-access authorization
+    // is lifted onto the neutral field, and only `true` counts.
+    vendorContext: { codexPolicy: policy },
+    ...(policy.explicitFullAccess === true ? { explicitFullAccess: true } : {}),
     ...(model ? { model } : {}),
     ...(relayCandidates ? { relayCandidates } : {}),
     // Optional model capabilities (2026-08-08-013): the codex driver's relay
@@ -1144,7 +1151,7 @@ async function executeCodexLlmPrompt(
     updateLog,
     abortController,
     () =>
-      createCodexAdapter(undefined, undefined, getRelay() ?? undefined).driver.start(startOptions),
+      resolveVendorAdapter('codex', { relay: getRelay() ?? undefined })!.driver.start(startOptions),
     c3Binding,
     cwd,
     projection,
@@ -1187,9 +1194,9 @@ async function executeCursorLlmPrompt(
     })
     return
   }
-  const { actionMode, toolGate } = tokenToGrid(
-    cursorModeCatalog,
-    typeof automation.mode === 'string' ? automation.mode : cursorModeCatalog.defaultToken,
+  const { actionMode, toolGate } = storedModeToGrid(
+    'cursor',
+    typeof automation.mode === 'string' ? automation.mode : 'agent',
   )
   const { model, envOverrides } = launchForAgent(agent)
   const apiKey = agent.vendor === 'cursor' ? agent.config.apiKey?.trim() : undefined
@@ -1212,7 +1219,7 @@ async function executeCursorLlmPrompt(
     logId,
     updateLog,
     abortController,
-    () => createCursorAdapter().driver.start(startOptions),
+    () => resolveVendorAdapter('cursor')!.driver.start(startOptions),
     c3Binding,
     cwd,
     projection,

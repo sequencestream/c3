@@ -139,6 +139,17 @@ const emit = defineEmits<{
 function onPickAgent(agentId: string): void {
   if (agentId !== props.agentSwitch?.current.id) emit('set-session-agent', agentId)
 }
+
+// Picking the sandbox mode IS the explicit, observable authorization: choosing
+// `danger-full-access` records `explicitFullAccess: true`, any other pick clears
+// it. The marker rides the same persisted CodexPolicy the server already stores.
+function onPickSandboxMode(sandboxMode: CodexSandboxMode): void {
+  emit('set-codex-policy', {
+    ...props.codexPolicy,
+    sandboxMode,
+    explicitFullAccess: sandboxMode === 'danger-full-access',
+  } as CodexPolicy)
+}
 </script>
 
 <template>
@@ -209,9 +220,7 @@ function onPickAgent(agentId: string): void {
             :options="sandboxModeOptions"
             :disabled="modeDisabled"
             :aria-label="t('session.titleBar.sandboxMode.ariaLabel')"
-            @update:model-value="
-              emit('set-codex-policy', { ...codexPolicy, sandboxMode: $event } as CodexPolicy)
-            "
+            @update:model-value="onPickSandboxMode"
           />
         </label>
         <label v-if="showMode" class="mode approval-policy" :title="modeLockedHint">

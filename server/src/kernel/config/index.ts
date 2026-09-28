@@ -1289,6 +1289,13 @@ export function getDefaultMode(workspacePath: string, vendor?: VendorId): ModeTo
  * new object format; falls back to translating the legacy string token
  * through the catalog + `gateToCodexPolicy` when stored as a string or
  * missing. Returns `undefined` for non-codex vendors.
+ *
+ * This is a settings-READ path, so it is one of the two legitimate places the
+ * explicit-authorization marker is set (2026-09-28): a legacy `'full-access'`
+ * token is a real, observable user choice, so it is marked
+ * `explicitFullAccess: true` here rather than being silently downgraded by the
+ * new `never-ask` rule. The other tokens are not authorized. The pure mapping
+ * functions stay marker-free — only reading a persisted choice may set it.
  */
 export function getCodexDefaultPolicy(workspacePath: string): CodexPolicy | undefined {
   const map = loadWorkspaceSetting(workspacePath).defaultMode
@@ -1303,16 +1310,16 @@ export function getCodexDefaultPolicy(workspacePath: string): CodexPolicy | unde
   const token = (val as ModeToken) ?? DEFAULT_CODEX_TOKEN
   // Map: auto → on-sensitive, read-only → read-only, full-access → never
   // This is the static equivalent of tokenToGrid(codexModeCatalog, token) + gateToCodexPolicy
-  const policyMap: Record<
-    string,
-    {
-      sandboxMode: CodexPolicy['sandboxMode']
-      approvalPolicy: 'never' | 'on-failure' | 'on-request'
-    }
-  > = {
+  const policyMap: Record<string, CodexPolicy> = {
     'read-only': { sandboxMode: 'read-only', approvalPolicy: 'on-request' },
     auto: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
-    'full-access': { sandboxMode: 'danger-full-access', approvalPolicy: 'never' },
+    // A legacy full-access token IS an explicit user choice — mark it so the new
+    // "danger-full-access needs authorization" rule does not silently downgrade it.
+    'full-access': {
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      explicitFullAccess: true,
+    },
   }
   return policyMap[token] ?? policyMap['auto']
 }

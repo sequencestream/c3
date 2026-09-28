@@ -95,6 +95,39 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
     expect(labels).toEqual(['只读', '自动', '完全访问'])
   })
 
+  it('codex 选择完全访问 → set-codex-policy 带上 explicitFullAccess 标记', async () => {
+    const w = mountBar({ vendor: 'codex', codexPolicy: null })
+    // The sandbox dropdown is the first `.dd-trigger` inside `.sandbox-mode`.
+    await w.find('.sandbox-mode .dd-trigger').trigger('click')
+    const items = w.findAll('.sandbox-mode .dd-item')
+    // Order: workspace-write, danger-full-access, read-only.
+    await items[1].trigger('click')
+    const emitted = w.emitted('set-codex-policy') as [Record<string, unknown>][]
+    expect(emitted.at(-1)![0]).toMatchObject({
+      sandboxMode: 'danger-full-access',
+      explicitFullAccess: true,
+    })
+  })
+
+  it('codex 选择工作区可写 → 清除 explicitFullAccess 标记', async () => {
+    const w = mountBar({
+      vendor: 'codex',
+      codexPolicy: {
+        sandboxMode: 'danger-full-access',
+        approvalPolicy: 'never',
+        explicitFullAccess: true,
+      },
+    })
+    await w.find('.sandbox-mode .dd-trigger').trigger('click')
+    const items = w.findAll('.sandbox-mode .dd-item')
+    await items[0].trigger('click')
+    const emitted = w.emitted('set-codex-policy') as [Record<string, unknown>][]
+    expect(emitted.at(-1)![0]).toMatchObject({
+      sandboxMode: 'workspace-write',
+      explicitFullAccess: false,
+    })
+  })
+
   it('showMode=false 不渲染模式下拉', () => {
     const w = mountBar({ showMode: false })
     expect(w.find('.mode').exists()).toBe(false)

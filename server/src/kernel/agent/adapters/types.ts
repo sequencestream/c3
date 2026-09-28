@@ -25,7 +25,6 @@ import type {
   ToolGate,
   AdapterCapability,
   CanonicalMessage,
-  CodexPolicy,
   SessionCapability,
   SessionCapabilities,
   SkillSupportState,
@@ -269,8 +268,24 @@ export interface DriverStartOptions {
   /** Starting action mode + tool gate (the neutral replacement for PermissionMode). */
   actionMode: ActionMode
   toolGate: ToolGate
-  /** Exact Codex policy when the caller owns one; avoids lossy grid round-tripping. */
-  codexPolicy?: CodexPolicy
+  /**
+   * Vendor-private context passed through UNINTERPRETED. Only the adapter of the
+   * vendor that put something in here may read it — the codex adapter reads its
+   * own exact stored policy (to avoid a lossy grid round-trip) and ignores every
+   * other key; claude / cursor ignore the whole bag. The neutral permission truth
+   * stays `actionMode` x `toolGate`: this bag may refine in-boundary fields but
+   * must never widen a sandbox, and each adapter enforces that convergence
+   * internally (2026-09-28).
+   */
+  vendorContext?: Record<string, unknown>
+  /**
+   * The user EXPLICITLY chose unrestricted host access through an observable UI
+   * action. Vendor-neutral by semantics (defined in the protocol layer), lifted
+   * from the persisted `CodexPolicy.explicitFullAccess` at the launch boundary.
+   * It is NOT a second independent fact: the two are invariant-equal, and the
+   * adapter reads only this neutral field (2026-09-28).
+   */
+  explicitFullAccess?: boolean
   /** Resume an existing session by id. Omit for a new session. */
   resume?: string
   /** Model alias/id override. Omit ⇒ adapter default. */

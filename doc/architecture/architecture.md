@@ -162,6 +162,13 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   **没有任何 vendor SDK 类型跨越适配器边界** —— SDK 的值以无类型的形式进入适配器，并在
   那里被收窄（ADR-0009）。Claude 参考适配器委托给既有的运行路径、gateway 和 session IO；
   Codex 与 Cursor 经统一的 driver 路径运行。
+  **厂商策略补偿只发生在适配器内部，上层一律走 kernel 中立入口**（2026-09-28）：
+  `DriverStartOptions` 上不挂任何厂商专有字段，用户为某厂商选定的精确策略经
+  `vendorContext` 透传袋传入、仅由该厂商适配器解释，且袋内不得把沙箱放大——任何
+  `danger-full-access` 都必须以中立的 `explicitFullAccess === true` 为前提。`features/**` 及
+  其它上层通过 `kernel/agent/adapters/registry.ts` 的 `resolveVendorAdapter` /
+  `storedModeToGrid` / `resolveVendorCredentialEnv` 获取厂商能力，不直接 import
+  `kernel/agent/adapters/<vendor>/**`。
 - **宿主二进制探测是第一道能力关卡（ADR-0012）。** 每个 agent vendor 都以宿主 CLI 子进程的
   形式运行，无法被打包进 c3 的单一二进制中 —— 这个二进制只发布 c3 本身。claude 与 codex 由
   c3 安装到 `~/.c3/vendor` 并可被 env override 或宿主 PATH 覆盖；`cursor-agent` 不由 c3 分发，

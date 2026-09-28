@@ -34,10 +34,9 @@ import type {
   VendorId,
 } from '../agent/adapters/types.js'
 import type { PermissionRequestCtx } from '../permission/gateway.js'
-import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import { VENDOR_CAPABILITIES } from '../agent/adapters/capabilities.js'
-import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
-import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
+import { resolveVendorCredentialEnv, storedModeToGrid } from '../agent/adapters/registry.js'
+import { profileGrid, profilePayload, profileRule, type RunProfile } from './run-profiles.js'
 import {
   ASK_TOOL_NAME,
   buildCursorResumePrompt,
@@ -419,7 +418,6 @@ export async function runViaDriver(
   prompt: string,
   adapter: VendorAdapter,
   eventBus: EventBus<EventBusEvents>,
-  intentProfile?: IntentProfile,
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void,
   /** Images attached to this turn — the codex driver writes them to temp files
    *  and passes each as a `--image` path (2026-06-16). Omit ⇒ a text-only turn. */
@@ -441,21 +439,23 @@ export async function runViaDriver(
    */
   sessionProfile?: SessionMcpProfile,
   /**
-   * The spec-authoring profile, present for `rt.sessionKind === 'spec'` runs.
-   * Mutually exclusive with intent/session profiles.
+   * The run's profile descriptor: a `kind` plus that kind's payload. Replaces the
+   * four parallel optional profile parameters (2026-09-28) so a NEW profile is
+   * one added member of {@link ProfileKind} + one registry row, not a new
+   * positional parameter and a new name in every `!a && !b` guard. A run is
+   * exactly one of intent / spec / spec-review / robot (a work run has none).
    */
-  specProfile?: SpecProfile,
-  /**
-   * The spec-REVIEW profile, present for `rt.sessionKind === 'spec_review'` runs.
-   * Mutually exclusive with every other profile.
-   */
-  specReviewProfile?: SpecReviewProfile,
-  /**
-   * The IM chat-robot profile, present for `rt.sessionKind === 'robot'` runs.
-   * Mutually exclusive with every other profile.
-   */
-  robotProfile?: RobotProfile,
+  profile?: RunProfile,
 ): Promise<void> {
+  // The profile's rules decide the grid and whether the stored native policy may
+  // ride along — looked up, never re-derived from profile names here.
+  const profileRules = profileRule(profile?.kind)
+  const {
+    intent: intentProfile,
+    spec: specProfile,
+    specReview: specReviewProfile,
+    robot: robotProfile,
+  } = profilePayload(profile)
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
 
@@ -504,14 +504,21 @@ export async function runViaDriver(
     }),
   )
 
+  // Whether the session's stored vendor-native policy may ride along on this
+  // launch. Read from the profile's registry row (never from a hand-written
+  // conjunction of profile names): a profile that does not bypass native policy
+  // launches from its own grid and carries nothing, and an UNKNOWN profile kind
+  // resolves to the conservative rule (bypass) rather than silently inheriting
+  // the stored policy.
+  const carryNativePolicy = !profileRules.bypassesNativePolicy && !!rt.codexPolicy
+
   // The session's stored mode is a vendor-native ModeToken; resolve it to the
   // neutral grid through THIS run's vendor catalog (2026-06-07-012). A token from
   // another vendor (e.g. a project defaultMode set under claude, now launching
   // a future driver vendor) degrades to the launching vendor's defaultToken grid — one knob,
-  // every vendor.
-  // For codex sessions with a stored CodexPolicy (2026-06-08), use the dual-policy
-  // grid directly instead of going through the catalog token.
-  // For intent sessions, the read-only gate overrides the session mode.
+  // every vendor. The resolution itself now lives behind the neutral
+  // `storedModeToGrid` kernel entry (a codex session's stored dual-policy object
+  // is read through the vendor's own reverse mapping there, not here).
   // Codex has no live approval channel, so `always-ask` would ask a question no
   // c3 can answer and can prevent its MCP tools from being used. Keep Codex in a
   // read-only sandbox, but let it call the c3 MCP tools; `save_intents` is
@@ -521,21 +528,20 @@ export async function runViaDriver(
     toolGate: import('@ccc/shared/protocol').ToolGate
     // A review run is read-only, so it takes the intent gate's read-only driver
     // grid — NOT the spec author's workspace-write one.
-  } =
-    intentProfile || specReviewProfile
-      ? intentDriverModeForVendor(adapter.vendor)
-      : specProfile
-        ? specDriverModeForVendor(adapter.vendor)
-        : robotProfile
-          ? // A robot turn is unattended: its grid comes from the robot's own
-            // configuration, never from the session's stored mode. Only a LOCAL
-            // write/exec tool selection opens a writable native sandbox — c3 MCP
-            // write tools and `network-access` never do (spec §4), so the mode
-            // keys off `writeEnabled`, not the allowlist size.
-            robotDriverModeForVendor(adapter.vendor, robotProfile.writeEnabled)
-          : adapter.vendor === 'codex' && rt.codexPolicy
-            ? codexPolicyToGrid(rt.codexPolicy)
-            : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
+  } = profileRules.overridesMode
+    ? // A profile run's grid comes from the profile's own gate, never from the
+      // session's stored mode. A robot turn is unattended: only a LOCAL write/exec
+      // tool selection opens a writable native sandbox — c3 MCP write tools and
+      // `network-access` never do (spec §4), so it keys off `writeEnabled`.
+      profileGrid(profileRules, adapter.vendor, robotProfile?.writeEnabled ?? false, {
+        intent: intentDriverModeForVendor,
+        spec: specDriverModeForVendor,
+        robot: robotDriverModeForVendor,
+      })
+    : // A work run: the vendor's own stored native mode, resolved through the
+      // NEUTRAL kernel entry (a codex session's stored CodexPolicy goes through
+      // the vendor's reverse mapping there — never in this file).
+      storedModeToGrid(adapter.vendor, rt.codexPolicy ?? rt.mode)
   const { actionMode, toolGate } = mode
 
   // Resolve the session agent's launch overrides (provider connection only). The
@@ -553,8 +559,7 @@ export async function runViaDriver(
   // keyring); under arapuca the keyring dir stays deny-by-default, so the env
   // bridge is still needed. A no-op when a token is already set or the host probe
   // fails, and skipped entirely for claude.
-  const ghBridgedEnv =
-    adapter.vendor === 'codex' ? await resolveCodexGhTokenEnv(envOverrides) : envOverrides
+  const ghBridgedEnv = await resolveVendorCredentialEnv(adapter.vendor, envOverrides)
   // Cross-mode resume: a codex session frozen to the sandbox store (ADR-0015) has
   // its rollout under the persistent sandbox CODEX_HOME. Resumed in a NON-sandbox
   // run it would otherwise get host `~/.codex` and fail `no rollout found`. Point
@@ -674,13 +679,19 @@ export async function runViaDriver(
     signal: cycleAbort.signal,
     actionMode,
     toolGate,
-    ...(adapter.vendor === 'codex' &&
-    rt.codexPolicy &&
-    !intentProfile &&
-    !specProfile &&
-    !specReviewProfile &&
-    !robotProfile
-      ? { codexPolicy: rt.codexPolicy }
+    // The stored native policy rides in the vendor-private bag, and the explicit
+    // full-access authorization is lifted from it onto the neutral field. Both
+    // only for a run whose profile does NOT bypass native policy (table lookup —
+    // a new profile is safe by default, not by enumeration). The adapter reads
+    // only the neutral `explicitFullAccess`; the codex adapter additionally
+    // converges `vendorContext.codexPolicy` internally, so a caller cannot
+    // smuggle a wider sandbox in through the bag.
+    ...(carryNativePolicy
+      ? {
+          ...(rt.codexPolicy ? { vendorContext: { codexPolicy: rt.codexPolicy } } : {}),
+          // "Strictly equal true" is the authorization rule, everywhere.
+          ...(rt.codexPolicy?.explicitFullAccess === true ? { explicitFullAccess: true } : {}),
+        }
       : {}),
     ...(model ? { model } : {}),
     ...(relayCandidates ? { relayCandidates } : {}),

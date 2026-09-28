@@ -5,7 +5,11 @@ import { findUnknownCommand } from './cli-args.js'
 import { resolve } from 'node:path'
 import { startServer } from './server.js'
 import { setSettingsPath } from './kernel/config/index.js'
-import { setDbPath } from './kernel/infra/db.js'
+import { getDb, setDbPath } from './kernel/infra/db.js'
+import {
+  auditCodexSandboxPromotions,
+  formatCodexSandboxAudit,
+} from './features/automations/codex-sandbox-audit.js'
 import { versionString } from './version.js'
 import { startDaemon, type DaemonStartOptions } from './daemon.js'
 import { installService, UnsupportedPlatformError } from './service-install.js'
@@ -235,6 +239,23 @@ program
   )
   .action(async () => {
     process.exit(await runRestart())
+  })
+
+program
+  .command('audit-codex-sandbox')
+  .description(
+    'List sessions/automations that carry Codex danger-full-access without an explicit authorization record (2026-09-28)',
+  )
+  .option('--db <path>', 'path to the c3 database (default ~/.c3/c3.db)')
+  .action((opts: { db?: string }) => {
+    if (opts.db) setDbPath(resolve(opts.db))
+    const db = getDb()
+    if (!db) {
+      console.error('[c3] error: c3.db unavailable — cannot run the audit')
+      process.exit(1)
+    }
+    console.log(formatCodexSandboxAudit(auditCodexSandboxPromotions(db)))
+    process.exit(0)
   })
 
 // Hidden: never invoked by a user. The console's "restart to update" spawns this

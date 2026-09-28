@@ -151,6 +151,11 @@ export default tseslint.config(
               message:
                 'C-SEC-4: credential primitives (detectCredentialShape) live in kernel/security — import them from that single entry instead of a feature-internal file.',
             },
+            {
+              group: ['**/kernel/agent/adapters/codex/**'],
+              message:
+                'ADR-0011 vendor layering: features/ must not reach into the codex adapter. Go through a neutral kernel entry (adapters/registry.ts: resolveVendorAdapter / storedModeToGrid / resolveVendorCredentialEnv). The one justified exception — sessions/history.ts reading a vendor SessionStore — carries an annotated eslint-disable.',
+            },
           ],
         },
       ],

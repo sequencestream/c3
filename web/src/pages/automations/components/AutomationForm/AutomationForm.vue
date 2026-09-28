@@ -825,9 +825,13 @@ function buildConfig(): Record<string, unknown> {
 
 function serializeMode(): ModeToken | CodexPolicy {
   if (vendor.value === 'codex') {
+    // Picking `danger-full-access` in this form IS the explicit, observable
+    // authorization; it is persisted alongside the policy so the run never has to
+    // infer it from the grid (2026-09-28).
     return {
       sandboxMode: codexSandboxMode.value,
       approvalPolicy: codexApprovalPolicy.value,
+      explicitFullAccess: codexSandboxMode.value === 'danger-full-access',
     }
   }
   if (vendor.value === 'cursor') return cursorMode.value

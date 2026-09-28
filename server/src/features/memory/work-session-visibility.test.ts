@@ -35,9 +35,10 @@ vi.mock('../../kernel/agent/index.js', () => ({
 }))
 
 vi.mock('../../kernel/run/run-via-driver.js', () => ({
-  // The 9th positional argument is the resolved work-session MCP profile.
+  // The 8th positional argument is the resolved work-session MCP profile (the
+  // 9th is the run's profile descriptor: runViaDriver's unified profile param).
   runViaDriver: vi.fn(async (...args: unknown[]) => {
-    fx.driverCalls.push(args[8] as Record<string, unknown> | undefined)
+    fx.driverCalls.push(args[7] as Record<string, unknown> | undefined)
   }),
 }))
 

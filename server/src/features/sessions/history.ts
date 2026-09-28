@@ -7,6 +7,7 @@
  * never disagree about where a vendor's transcript lives.
  */
 import type { CanonicalMessage, TranscriptItem, VendorId } from '@ccc/shared/protocol'
+// eslint-disable-next-line no-restricted-imports -- justified exception (ADR-0011 layering): this feature reads a vendor's SessionStore so an already-persisted transcript can be replayed, which is a registry-style read of the vendor's storage ROOT, not a policy/sandbox decision. There is no neutral entry that can answer where vendor X keeps its transcripts without the feature owning a vendor table. Mirrors the dispatcher's annotated Claude-SDK exemption.
 import { CodexSessionStore, codexStoreRoots } from '../../kernel/agent/adapters/codex/index.js'
 import { CursorSessionStore } from '../../kernel/agent/adapters/cursor/session-store.js'
 import { resolveSessionStoreScope } from '../../kernel/agent-config/index.js'

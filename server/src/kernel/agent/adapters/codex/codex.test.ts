@@ -15,6 +15,7 @@ import type { CanonicalMessage, DriverStartOptions } from '../types.js'
 import type { RelayCandidate } from '../../../relay/contract.js'
 import {
   CodexDriver,
+  convergeCodexPolicy,
   gateToCodexPolicy,
   mcpServersToCodexConfig,
   mcpServersEnableSaveIntents,
@@ -1016,7 +1017,7 @@ describe('gateToCodexPolicy', () => {
       startOpts({
         actionMode: 'build',
         toolGate: 'never-ask',
-        codexPolicy: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+        vendorContext: { codexPolicy: { sandboxMode: 'workspace-write', approvalPolicy: 'never' } },
       }),
     )
     expect(calls[0]?.options).toMatchObject({
@@ -1039,9 +1040,40 @@ describe('gateToCodexPolicy', () => {
     })
   })
 
-  it('build + never-ask ⇒ danger-full-access + never', () => {
+  it('build + never-ask WITHOUT explicit authorization ⇒ workspace-write + never', () => {
+    // "Stop asking" is not "no sandbox": a two-arg call (and an explicit false)
+    // keeps the cell on workspace-write. This is the regression pin for the
+    // silently-promoted-default bug.
     expect(gateToCodexPolicy('build', 'never-ask')).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+    })
+    expect(gateToCodexPolicy('build', 'never-ask', { explicitFullAccess: false })).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+    })
+  })
+
+  it('build + never-ask with explicit authorization ⇒ danger-full-access (the ONLY such input)', () => {
+    expect(gateToCodexPolicy('build', 'never-ask', { explicitFullAccess: true })).toEqual({
       sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+    })
+    // Authorization never widens any OTHER cell.
+    expect(gateToCodexPolicy('build', 'on-sensitive', { explicitFullAccess: true })).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-request',
+    })
+    expect(gateToCodexPolicy('build', 'trusted-prefix', { explicitFullAccess: true })).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-failure',
+    })
+    expect(gateToCodexPolicy('build', 'always-ask', { explicitFullAccess: true })).toEqual({
+      sandboxMode: 'read-only',
+      approvalPolicy: 'on-request',
+    })
+    expect(gateToCodexPolicy('plan', 'never-ask', { explicitFullAccess: true })).toEqual({
+      sandboxMode: 'read-only',
       approvalPolicy: 'never',
     })
   })
@@ -1058,6 +1090,135 @@ describe('gateToCodexPolicy', () => {
       sandboxMode: 'workspace-write',
       approvalPolicy: 'on-failure',
     })
+  })
+})
+
+describe('convergeCodexPolicy (vendorContext is not a bypass)', () => {
+  it('a stored danger-full-access WITH explicit authorization is adopted verbatim', () => {
+    const out = convergeCodexPolicy({
+      actionMode: 'build',
+      toolGate: 'never-ask',
+      explicitFullAccess: true,
+      vendorContext: {
+        codexPolicy: { sandboxMode: 'danger-full-access', approvalPolicy: 'never' },
+      },
+    })
+    expect(out).toEqual({
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      downgraded: false,
+    })
+  })
+
+  it('a stored danger-full-access WITHOUT the marker falls back to the grid and reports it', () => {
+    const out = convergeCodexPolicy({
+      actionMode: 'build',
+      toolGate: 'never-ask',
+      // no explicitFullAccess
+      vendorContext: {
+        codexPolicy: { sandboxMode: 'danger-full-access', approvalPolicy: 'never' },
+      },
+    })
+    expect(out).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+      downgraded: true,
+    })
+    // An explicit `false` is the same as absent — strictly true is the rule.
+    expect(
+      convergeCodexPolicy({
+        actionMode: 'build',
+        toolGate: 'never-ask',
+        explicitFullAccess: false,
+        vendorContext: {
+          codexPolicy: { sandboxMode: 'danger-full-access', approvalPolicy: 'never' },
+        },
+      }).sandboxMode,
+    ).toBe('workspace-write')
+  })
+
+  it('in-boundary stored policies (read-only / workspace-write) are adopted unchanged', () => {
+    for (const sandboxMode of ['read-only', 'workspace-write'] as const) {
+      const out = convergeCodexPolicy({
+        actionMode: 'build',
+        toolGate: 'on-sensitive',
+        vendorContext: {
+          codexPolicy: { sandboxMode, approvalPolicy: 'on-request' },
+        },
+      })
+      expect(out.sandboxMode).toBe(sandboxMode)
+      expect(out.downgraded).toBe(false)
+    }
+  })
+
+  it('with no vendor policy in the bag, the grid decides', () => {
+    expect(convergeCodexPolicy({ actionMode: 'build', toolGate: 'never-ask' })).toEqual({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+      downgraded: false,
+    })
+  })
+})
+
+describe('CodexDriver git-metadata compensation', () => {
+  it('does not add the git dir when the probe finds no repository', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(
+      (options) => {
+        captured = options
+        return client
+      },
+      undefined,
+      async () => null,
+    )
+    await driver.start(
+      startOpts({
+        actionMode: 'build',
+        toolGate: 'on-sensitive',
+        additionalDirectories: ['/home/user/.c3/specs/project'],
+      }),
+    )
+    expect(captured).toBeDefined()
+    expect(calls[0]?.options?.additionalDirectories).toEqual(['/home/user/.c3/specs/project'])
+  })
+
+  it('threads the caller directories + the git dir into thread options', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(
+      () => client,
+      undefined,
+      async () => '/repo/main/.git',
+    )
+    await driver.start(
+      startOpts({
+        actionMode: 'build',
+        toolGate: 'never-ask',
+        additionalDirectories: ['/home/user/.c3/specs/project'],
+      }),
+    )
+    expect(calls[0]?.options?.additionalDirectories).toEqual([
+      '/home/user/.c3/specs/project',
+      '/repo/main/.git',
+    ])
+  })
+
+  it('does not widen a danger-full-access run with a git dir', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    let probed = false
+    const driver = new CodexDriver(
+      () => client,
+      undefined,
+      async () => {
+        probed = true
+        return '/repo/main/.git'
+      },
+    )
+    await driver.start(
+      startOpts({ actionMode: 'build', toolGate: 'never-ask', explicitFullAccess: true }),
+    )
+    expect(calls[0]?.options?.sandboxMode).toBe('danger-full-access')
+    expect(probed).toBe(false)
   })
 })
 

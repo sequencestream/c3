@@ -134,6 +134,17 @@ export type CodexApprovalPolicy = 'never' | 'on-failure' | 'on-request'
 export interface CodexPolicy {
   sandboxMode: CodexSandboxMode
   approvalPolicy: CodexApprovalPolicy
+  /**
+   * The user EXPLICITLY chose full access through an observable UI action
+   * (2026-09-28). This is the authoritative persisted carrier of that choice;
+   * `DriverStartOptions.explicitFullAccess` is its lift onto the launch
+   * boundary, and the two are invariant-equal (never a union). Absent / `false`
+   * ⇒ NOT authorized, so a stored `danger-full-access` without it is treated as
+   * silently promoted and degraded back to the grid (see `gateToCodexPolicy`).
+   * The legacy `'full-access'` ModeToken is marked at the settings-read layer,
+   * never inside the pure grid mapping.
+   */
+  explicitFullAccess?: boolean
 }
 
 /**

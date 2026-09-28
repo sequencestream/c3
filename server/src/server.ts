@@ -157,9 +157,7 @@ import {
   refreshManagedVendorClisInBackground,
   resolve as resolveVendorCli,
 } from './kernel/agent/process/launcher.js'
-import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
-import { createCursorAdapter } from './kernel/agent/adapters/cursor/index.js'
-import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
+import { resolveVendorAdapter } from './kernel/agent/adapters/registry.js'
 import {
   createRelay,
   RELAY_CODEX_PATH,
@@ -418,7 +416,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   let codexAdapter: VendorAdapter | null = null
   if (resolveVendorCli('codex')) {
     try {
-      codexAdapter = createCodexAdapter(undefined, undefined, relay)
+      codexAdapter = resolveVendorAdapter('codex', { relay }) ?? null
       console.log('[c3] codex ready (per-run CLI)')
     } catch (e) {
       console.warn(`[c3] codex unavailable: ${e instanceof Error ? e.message : String(e)}`)
@@ -432,7 +430,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   let cursorAdapter: VendorAdapter | null = null
   if (resolveVendorCli('cursor')) {
     try {
-      cursorAdapter = createCursorAdapter()
+      cursorAdapter = resolveVendorAdapter('cursor') ?? null
       console.log('[c3] cursor ready (per-run CLI)')
     } catch (e) {
       console.warn(`[c3] cursor unavailable: ${e instanceof Error ? e.message : String(e)}`)
@@ -799,7 +797,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // was detected at boot (null-entries are skipped — missing vendors throw at
   // runtime, which is a fatal developer error, not a silent degradation).
   const discussionAdapters = new Map<VendorId, VendorAdapter>()
-  discussionAdapters.set('claude', createClaudeAdapter())
+  discussionAdapters.set('claude', resolveVendorAdapter('claude')!)
   if (codexAdapter) discussionAdapters.set('codex', codexAdapter)
   if (cursorAdapter) discussionAdapters.set('cursor', cursorAdapter)
   const discussionRuns = createDiscussionRuns({

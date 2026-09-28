@@ -68,6 +68,31 @@ c3 提供给子进程的一切(四条 MCP 路由与 provider relay)都在 c3 自
 启动;该令牌从不写入磁盘、记录日志或出现在遥测中。见
 [codex-sdk-guide § GitHub CLI 凭据桥接](../../../architecture/codex-sdk-guide.md)。
 
+### Codex 双策略与显式授权(2026-09-28)
+
+Codex 的原生权限面是 `sandboxMode × approvalPolicy` 两条正交轴,而中立层只有
+`actionMode × toolGate` 网格。二者的往返是有损的(`read-only` 恒压成 `plan`,`always-ask`
+无对应档),所以:
+
+- **补偿只发生在适配器内部。** 中立入口不再挂 Codex 专有字段。用户为 Codex 选定的精确
+  双策略经 `DriverStartOptions.vendorContext` 这个厂商私有透传袋传入,只有 Codex 适配器
+  解释它;Claude / Cursor 忽略整个袋子。袋内可以精化 `approvalPolicy` 这类不改变沙箱边界的
+  字段,但**不能**放大沙箱:适配器内部有一处收敛裁决,任何 `danger-full-access` 都必须以
+  中立的 `explicitFullAccess === true` 为前提,否则回落网格结果。
+- **授权是单一事实、两个载体。** 权威载体是持久的 `CodexPolicy.explicitFullAccess`(会话存
+  `session_configs` 的 `codexPolicy.explicitFullAccess` 键,自动化存 `automations.mode` 的
+  JSON 同名字段,二者都是 KV / TEXT,**无需 DDL**);中立载体是启动边界上的
+  `DriverStartOptions.explicitFullAccess`,由 `run-via-driver` 从持久字段直接上提,不做推断。
+  两者恒等,判定规则统一为「严格等于 `true` 才算已授权」。
+- **置位只发生在读取持久设置的那一层。** 纯映射函数(`gateToCodexPolicy` /
+  `codexPolicyToGrid`)保持无标记;legacy 的 `'full-access'` token 在读取层
+  (`getCodexDefaultPolicy`)被标记为显式,因此用户显式选过的 full-access 不会因新规则被
+  静默降级,而存量未标记的 `danger-full-access` 会被识别为「被静默提升」。
+- **`build × never-ask` 回落为 `workspace-write`。** 需要写 Git 元数据的自动化不再需要
+  `danger-full-access`——Codex 适配器在 `workspace-write` 下把
+  `git rev-parse --git-common-dir` 解析出的目录追加进 `additionalDirectories`,补上
+  `git add/commit/push` 所需的受边界写入能力。
+
 ### 流式输入 prompt
 
 流式输入 prompt 是一个受控的 SDK 用户消息 async-iterable,支撑

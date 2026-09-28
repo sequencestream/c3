@@ -47,6 +47,10 @@ import {
 } from './model-catalog.js'
 import { resolve } from '../../process/launcher.js'
 import { withLoopbackNoProxy } from '../../../infra/no-proxy.js'
+import {
+  resolveGitCommonDir as resolveGitCommonDirDefault,
+  type GitCommonDirResolver,
+} from './git-meta.js'
 
 const INTENT_MCP_TOOL_NAMES = ['find_intents', 'view_intent', 'save_intents'] as const
 
@@ -371,6 +375,12 @@ function quoteTomlString(value: string): string {
 export function gateToCodexPolicy(
   actionMode: ActionMode,
   toolGate: ToolGate,
+  /**
+   * The launch-boundary carrier of the user's EXPLICIT full-access choice. Only
+   * `true` unlocks `danger-full-access`; a two-arg call (or any falsy value)
+   * keeps `build × never-ask` on `workspace-write` (2026-09-28).
+   */
+  opts?: { explicitFullAccess?: boolean },
 ): { sandboxMode: SandboxMode; approvalPolicy: ApprovalMode } {
   // `plan` never executes filesystem changes ⇒ read-only regardless of gate. If
   // the caller explicitly chose `never-ask`, do not request an approval channel
@@ -383,7 +393,12 @@ export function gateToCodexPolicy(
   }
   switch (toolGate) {
     case 'never-ask':
-      return { sandboxMode: 'danger-full-access', approvalPolicy: 'never' }
+      // "Stop asking" is NOT "no sandbox": only an explicit, observable
+      // full-access selection unlocks the unconstrained host filesystem.
+      return {
+        sandboxMode: opts?.explicitFullAccess === true ? 'danger-full-access' : 'workspace-write',
+        approvalPolicy: 'never',
+      }
     case 'trusted-prefix':
       return { sandboxMode: 'workspace-write', approvalPolicy: 'on-failure' }
     case 'on-sensitive':
@@ -546,6 +561,86 @@ class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
   }
 }
 
+/**
+ * The SINGLE convergence point between the neutral launch options and codex's
+ * launch-time policy (2026-09-28).
+ *
+ * Two inputs, one ruler:
+ *  - the neutral grid `actionMode x toolGate`, plus the explicit full-access
+ *    authorization lifted onto the launch boundary;
+ *  - an OPTIONAL vendor-private stored policy in `vendorContext.codexPolicy`,
+ *    whose exact value avoids a lossy grid round-trip.
+ *
+ * The stored policy may refine `approvalPolicy` (an in-boundary field) and may
+ * carry `read-only` / `workspace-write` through unchanged. It may NOT carry a
+ * wider sandbox: `danger-full-access` survives only with
+ * `explicitFullAccess === true`, otherwise the grid result wins and the
+ * downgrade is reported to the run log. That keeps the pass-through bag from
+ * degenerating into a renamed bypass.
+ */
+export function convergeCodexPolicy(
+  opts: Pick<
+    DriverStartOptions,
+    'actionMode' | 'toolGate' | 'explicitFullAccess' | 'vendorContext'
+  >,
+): { sandboxMode: SandboxMode; approvalPolicy: ApprovalMode; downgraded: boolean } {
+  const fromGrid = gateToCodexPolicy(opts.actionMode, opts.toolGate, {
+    explicitFullAccess: opts.explicitFullAccess,
+  })
+  const stored = readStoredCodexPolicy(opts.vendorContext)
+  if (!stored) return { ...fromGrid, downgraded: false }
+  if (stored.sandboxMode === 'danger-full-access' && opts.explicitFullAccess !== true) {
+    // The stored policy claims full access but carries no explicit authorization:
+    // it was silently promoted (or predates the flag). Degrade to the grid — which
+    // itself yields `workspace-write` for `build x never-ask` — and say so.
+    console.info(
+      '[c3] codex: stored policy declares full access without an explicit authorization — ' +
+        'degraded to the neutral grid (workspace-write).',
+    )
+    return { ...fromGrid, downgraded: true }
+  }
+  return {
+    sandboxMode: stored.sandboxMode,
+    approvalPolicy: stored.approvalPolicy,
+    downgraded: false,
+  }
+}
+
+/**
+ * Read the vendor-private stored {@link CodexPolicy} out of the pass-through bag,
+ * or `null` when absent / not a well-formed object. The bag is untyped by
+ * construction, so the shape is validated HERE (inside the adapter) rather than
+ * trusted from the neutral layer.
+ */
+function readStoredCodexPolicy(
+  vendorContext: Record<string, unknown> | undefined,
+): CodexPolicy | null {
+  const raw = vendorContext?.['codexPolicy']
+  if (!raw || typeof raw !== 'object') return null
+  const candidate = raw as Partial<CodexPolicy>
+  if (
+    !isCodexSandboxMode(candidate.sandboxMode) ||
+    !isCodexApprovalPolicy(candidate.approvalPolicy)
+  ) {
+    return null
+  }
+  return {
+    sandboxMode: candidate.sandboxMode,
+    approvalPolicy: candidate.approvalPolicy,
+    ...(typeof candidate.explicitFullAccess === 'boolean'
+      ? { explicitFullAccess: candidate.explicitFullAccess }
+      : {}),
+  }
+}
+
+function isCodexSandboxMode(v: unknown): v is CodexPolicy['sandboxMode'] {
+  return v === 'read-only' || v === 'workspace-write' || v === 'danger-full-access'
+}
+
+function isCodexApprovalPolicy(v: unknown): v is CodexPolicy['approvalPolicy'] {
+  return v === 'never' || v === 'on-failure' || v === 'on-request'
+}
+
 export class CodexDriver implements AgentDriver {
   readonly vendor = 'codex' as const
   readonly capabilities = codexCapabilities
@@ -560,6 +655,7 @@ export class CodexDriver implements AgentDriver {
   constructor(
     private readonly createCodex: CodexFactory = defaultFactory,
     private readonly relay?: Relay,
+    private readonly resolveGitCommonDir: GitCommonDirResolver = resolveGitCommonDirDefault,
   ) {}
 
   async start(opts: DriverStartOptions): Promise<AgentRun> {
@@ -700,20 +796,37 @@ export class CodexDriver implements AgentDriver {
     // adapter is constructed — by this point it is always present.
     codexOptions.codexPathOverride = opts.sandboxWrapperPath ?? resolve('codex') ?? undefined
     const codex = this.createCodex(codexOptions)
-    // Codex's launch-time policy is its permission boundary. Preserve a native
-    // policy supplied by the caller; otherwise derive one from the neutral grid.
-    const policy = opts.codexPolicy ?? gateToCodexPolicy(opts.actionMode, opts.toolGate)
+    // Codex's launch-time policy is its permission boundary. The neutral grid is
+    // the SOURCE OF TRUTH; `vendorContext.codexPolicy` may only REFINE fields that
+    // do not widen the sandbox boundary (2026-09-28). The convergence rule below
+    // is the single enforcement point — a caller cannot hand us a
+    // `danger-full-access` without the explicit authorization flag, whatever the
+    // field is called on the way in.
+    const policy = convergeCodexPolicy(opts)
     // arapuca is already the filesystem sandbox. On macOS a second Seatbelt
     // application from Codex fails with EPERM, so disable only Codex's nested
     // filesystem sandbox while preserving its approval policy.
     const sandboxMode = opts.sandboxWrapperPath ? 'danger-full-access' : policy.sandboxMode
+    // Git-metadata compensation (2026-09-28): under `workspace-write` the agent
+    // can edit the working tree but NOT the index/refs/objects, which for a
+    // worktree live in the main repo's common git dir OUTSIDE cwd. Add exactly
+    // that one directory to the writable set so `git add/commit/push` works
+    // without widening the sandbox to the whole host. Compensations of this kind
+    // live HERE, inside the adapter — the neutral layer never grows a codex branch.
+    const additionalDirectories = [...(opts.additionalDirectories ?? [])]
+    if (sandboxMode === 'workspace-write' && !opts.sandboxWrapperPath) {
+      const gitCommonDir = await this.resolveGitCommonDir(opts.cwd)
+      if (gitCommonDir && !additionalDirectories.includes(gitCommonDir)) {
+        additionalDirectories.push(gitCommonDir)
+      }
+    }
     const threadOptions: ThreadOptions = {
       workingDirectory: opts.cwd,
       skipGitRepoCheck: true, // c3 may run in a non-git cwd; do not hard-fail the run.
       sandboxMode,
       approvalPolicy: policy.approvalPolicy,
       ...(opts.model ? { model: opts.model } : {}),
-      ...(opts.additionalDirectories ? { additionalDirectories: opts.additionalDirectories } : {}),
+      ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
       // Network: codex's sandbox denies network access by default (orthogonal to the
       // filesystem sandboxMode), so any web fetch/search in work/intent/discussion
       // failed until these were threaded through (2026-06-15). `networkAccess` opens

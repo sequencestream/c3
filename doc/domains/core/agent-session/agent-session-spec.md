@@ -155,6 +155,13 @@ stateDiagram-v2
 > 策略就是门控。没有厂商 SDK 类型跨入中立表面或共享协议
 > (ADR-0009);每个 SDK 只活在它自己的厂商 adapter 内部。
 
+> **Codex 双策略与显式授权(2026-09-28)。** Codex 的原生 `sandboxMode × approvalPolicy`
+> 经 `DriverStartOptions.vendorContext` 传入,由 Codex 适配器内部解释;中立层的权限真源
+> 仍是 `actionMode × toolGate`。`danger-full-access` 只能由用户一次明确、可观察的 UI 操作
+> 产生,并以 `CodexPolicy.explicitFullAccess` 持久化;缺标记的一律降级为 `workspace-write`。
+> `build × never-ask` 回落为 `workspace-write`(「停止询问」不等于「无沙箱」),Git 元数据
+> 写入由适配器在 `workspace-write` 下经 `additionalDirectories` 补偿。
+
 > **宿主二进制门控(ADR-0012)。** 在能力问题之前,一个厂商的**宿主 CLI 必须
 > 在 PATH 上**——agent 作为该子进程运行,无法被打包进 c3 的单一二进制中。
 > 解析该厂商的启动器二进制是第一道能力门控:adapter 注册表只有在其二进制能被解析时

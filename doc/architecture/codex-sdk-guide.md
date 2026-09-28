@@ -4,7 +4,7 @@
 > 是什么、其架构与 Claude Agent SDK 的关键差异、数据存在哪里、如何读取 Skill，
 > 以及 c3 如何在 Adapter 层封装它。
 >
-> - **适用版本**：`@openai/codex-sdk@0.148.0`（在 c3 依赖清单中精确锁定）。
+> - **适用版本**：`@openai/codex-sdk@0.157.1`（在 c3 依赖清单中精确锁定）。
 > - **官方文档**：<https://developers.openai.com/codex/sdk>
 > - **源码仓库**：<https://github.com/openai/codex/tree/main/sdk/typescript>
 > - **Python 对应**：`pip install openai-codex`，控制 app-server 二进制；本文档仅覆盖 TypeScript SDK。
@@ -327,7 +327,7 @@ Codex 是 ADR-0016/0017 中 skill 支持判定为 full 的 vendor（与 Claude �
 外部 git 仓库的 skill 也会挂载到 `.codex/skills/_c3_<id>/SKILL.md`。
 但 Codex 缺少 per-tool 运行时审批，这会影响**写操作审批守卫**的效果——`canUseTool` 不会在 Codex 侧触发。
 
-## 6. Responses-to-Chat 中继（ADR-0014）
+## 6. Responses-to-Chat 中继（ADR-0029）
 
 > Codex SDK 特有，Claude 无对应物。
 
@@ -502,8 +502,15 @@ Codex SDK 的 c3 集成由以下职责单元构成（按能力，而非文件组
 relay 侧另有一组职责单元：中继 HTTP handler + 工厂、纯协议转换（Responses ↔ Chat，无 SDK 无 HTTP）、
 及其单元测试与端到端测试。
 
-SDK 边界规则（ADR-0009）：`@openai/codex-sdk` 类型只出现在 Codex 适配层内，
-只有规范形状（规范消息、规范块、任务数据）对外传出。
+### 11.1 SDK 类型边界（ADR-0011）
+
+`@openai/codex-sdk` 类型只允许出现在 `server/src/kernel/agent/adapters/codex/` 目录内；
+只有规范形状（规范消息、规范块、任务数据）对外传出。承载这条约束的代码位置是
+`driver.ts` / `translate.ts` / `task-store.ts` 三个文件的头注释。
+
+被约束的类型共六个：`ApprovalMode` / `SandboxMode` / `ThreadEvent` / `ThreadOptions` /
+`ThreadItem` / `TodoListItem`。SDK 升级时若其中任一形态变化，
+`server/src/kernel/agent/adapters/codex/` 必须同步适配。
 
 ## 12. 最佳实践
 

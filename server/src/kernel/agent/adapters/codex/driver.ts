@@ -19,8 +19,9 @@
  * fake that yields a scripted event stream — no Codex auth/binary needed for the
  * main L1 suite.
  *
- * ADR-0009: imports `@openai/codex-sdk` types (inside `adapters/codex/`); only
- * canonical shapes leave via {@link AgentRun.messages}.
+ * ADR-0011 vendor-type containment: imports `@openai/codex-sdk` types (inside
+ * `adapters/codex/`); only canonical shapes leave via {@link AgentRun.messages}.
+ * The containment rule itself is stated in doc/architecture/codex-sdk-guide.md §11.1.
  */
 import { spawn } from 'node:child_process'
 import readline from 'node:readline'
@@ -839,7 +840,7 @@ export class CodexDriver implements AgentDriver {
  * Build the env for the relay route. `CodexOptions.env` REPLACES `process.env`, so
  * we copy the inherited env (preserving PATH) then ensure the loopback host bypasses
  * any configured proxy — codex routes `127.0.0.1:<c3port>` through `HTTP(S)_PROXY`
- * otherwise, which 502s the relay hop (ADR-0014). `CODEX_API_KEY` is set by the SDK
+ * otherwise, which 502s the relay hop (ADR-0029). `CODEX_API_KEY` is set by the SDK
  * from `apiKey`, so it is not set here.
  */
 function relayEnv(extra?: Record<string, string>): Record<string, string> {

@@ -31,7 +31,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { vendorSupportsAutomation } from '@ccc/shared/protocol'
 import type { GenericEvent } from '@ccc/shared'
-import { resolveWorkspaceRoot } from '../../state.js'
+import { resolveRegisteredWorkspaceRoot } from '../../state.js'
 import {
   bindClaudeRelay,
   freezeSessionAgent,
@@ -66,7 +66,7 @@ import type { FrozenToolSet } from './mcp-freeze.js'
 import { remoteMcpToClaudeConfig } from '../../kernel/agent/adapters/claude/mcp.js'
 import { buildAutomationPrompt, readEmbedEventContext } from './event-prompt.js'
 import type { ServedAutomationMcp } from '../../transport/automation-mcp/index.js'
-import { upsertAutomationExecutionRow } from '../sessions/session-metadata-store.js'
+import { upsertAutomationExecutionRow, upsertBoundRow } from '../sessions/session-metadata-store.js'
 import { ensureRuntime, emit, getRuntime, setStatus } from '../../runs.js'
 import { WireEmitter } from '../../kernel/run/run-via-driver.js'
 import { AutomationViewerStream, translateClaudeSdkMessage } from './viewer-stream.js'
@@ -117,6 +117,31 @@ export interface ExecuteOverrides {
   cwd?: string
   /** Replace the saved prompt for THIS execution only; the record is untouched. */
   promptOverride?: string
+  /**
+   * Declares that THIS execution is not a saved automation's run, and supplies the
+   * session projection it must leave behind. The queue's PR review / fix relay is
+   * the only user: a relay turn is a real session belonging to the intent, not an
+   * automation execution, and letting the default write `sessionKind='automation'`
+   * / `ownerKind='automation'` would both mislabel it and hide it from the intent's
+   * own session list. A saved automation omits this and is unchanged.
+   */
+  sessionProjection?: RelaySessionProjection
+}
+
+/**
+ * The session row a NON-automation execution must leave behind, as its caller
+ * declares it. {@link bindAutomationSession} writes it instead of the automation
+ * execution row, and the same `sessionKind` tags the live runtime, so the
+ * projection row and `select_session` / the read-only gate / the list grouping can
+ * never disagree about what kind of session this is.
+ */
+export interface RelaySessionProjection {
+  /** The intent this session belongs to — written as `ownerKind='intent'`. */
+  intentId: string
+  /** Row title, shown in the session list. */
+  title: string
+  /** The kind this session is registered under, e.g. a work session. */
+  sessionKind: SessionKind
 }
 
 interface CommandConfig {
@@ -185,7 +210,10 @@ export async function execute(
 ): Promise<void> {
   // A workspace can be removed after a automation is persisted but before its
   // queued execution starts. Do not pass an undefined cwd/path into a runner.
-  if (!resolveWorkspaceRoot(automation.workspaceName)) {
+  // The gate accepts the workspace as a REGISTERED NAME (what a saved automation
+  // persists) or as an already-registered PATH (what the relay already holds), so
+  // the same resolution rule serves the gate, the projection and the MCP closure.
+  if (!resolveRegisteredWorkspaceRoot(automation.workspaceName)) {
     updateLog(executionLogId, {
       finishedAt: Date.now(),
       status: 'failed',
@@ -339,7 +367,7 @@ async function executeCommand(
     try {
       const result = await spawnWithTimeout(
         command,
-        resolveWorkspaceRoot(automation.workspaceName)!,
+        resolveRegisteredWorkspaceRoot(automation.workspaceName)!,
         timeout,
       )
       lastExitCode = result.exitCode
@@ -522,12 +550,32 @@ function validateOutput(
  * Order matters: the projection row (which carries `session_kind='automation'` +
  * its owner) is written FIRST, so the bind hook's `INSERT OR IGNORE` behind
  * `freezeSessionAgent` finds it already there and leaves it untouched instead of
- * inserting a plain work row.
+ * inserting a plain work row. An execution that declared a projection (the relay)
+ * writes THAT row instead, for the same reason: the claim-time row it must keep
+ * is the intent's, so the bind hook's ignore must land on a row that already
+ * carries the intent's ownership.
  */
-function bindAutomationSession(automation: Automation, sessionId: string): void {
-  const workspacePath = resolveWorkspaceRoot(automation.workspaceName)!
+function bindAutomationSession(
+  automation: Automation,
+  sessionId: string,
+  projection?: RelaySessionProjection,
+): void {
+  const workspacePath = resolveRegisteredWorkspaceRoot(automation.workspaceName)!
   try {
-    upsertAutomationExecutionRow({ automation, sessionId, workspacePath })
+    if (projection) {
+      upsertBoundRow({
+        sessionId,
+        workspacePath,
+        vendor: automation.vendor,
+        agentId: automation.agentId ?? '',
+        title: projection.title,
+        sessionKind: projection.sessionKind,
+        ownerKind: 'intent',
+        ownerId: projection.intentId,
+      })
+    } else {
+      upsertAutomationExecutionRow({ automation, sessionId, workspacePath })
+    }
   } catch (err) {
     console.error('[c3:automations] failed to upsert automation session projection:', err)
   }
@@ -559,8 +607,9 @@ function registerAutomationRuntime(
   sessionId: string,
   abortController: AbortController,
   cwd?: string,
+  projection?: RelaySessionProjection,
 ): void {
-  const workspacePath = resolveWorkspaceRoot(automation.workspaceName)!
+  const workspacePath = resolveRegisteredWorkspaceRoot(automation.workspaceName)!
   const codexPolicy = typeof automation.mode === 'object' ? automation.mode : undefined
   const mode: ModeToken = typeof automation.mode === 'string' ? automation.mode : 'auto'
   const rt = ensureRuntime(
@@ -568,7 +617,10 @@ function registerAutomationRuntime(
     workspacePath,
     mode,
     [],
-    'automation',
+    // The runtime's kind must agree with the projection row's: `select_session`
+    // answers from the runtime while the session list groups by the row, and a
+    // split would let a relay session be listed as work yet answered as automation.
+    projection?.sessionKind ?? 'automation',
     codexPolicy,
     'background',
   )
@@ -654,7 +706,7 @@ async function executeLlmPrompt(
   // Where the vendor actually runs. Defaults to the workspace root (every saved
   // automation); the relay passes the intent's worktree so a fix session edits the
   // PR's head branch and never the project's main checkout.
-  const effectiveCwd = overrides?.cwd ?? resolveWorkspaceRoot(automation.workspaceName)!
+  const effectiveCwd = overrides?.cwd ?? resolveRegisteredWorkspaceRoot(automation.workspaceName)!
 
   console.log(`[c3:automations] (${SESSION_KIND}) llm run ${automation.id} @ ${effectiveCwd}`)
 
@@ -729,6 +781,7 @@ async function executeLlmPrompt(
       abortController,
       launchAgent,
       effectiveCwd,
+      overrides?.sessionProjection,
     )
     clearTimeout(timeoutTimer)
     return
@@ -743,6 +796,7 @@ async function executeLlmPrompt(
       abortController,
       launchAgent,
       effectiveCwd,
+      overrides?.sessionProjection,
     )
     clearTimeout(timeoutTimer)
     return
@@ -757,7 +811,9 @@ async function executeLlmPrompt(
   const claudePath = findClaudeExecutable()
 
   // Resolve workspace-level MCP configuration and freeze the tool list.
-  const workspaceMcpConfig = getWorkspaceMcpConfig(resolveWorkspaceRoot(automation.workspaceName)!)
+  const workspaceMcpConfig = getWorkspaceMcpConfig(
+    resolveRegisteredWorkspaceRoot(automation.workspaceName)!,
+  )
   const frozenTools = freezeTools(
     automation.toolAllowlist ?? [],
     automation.toolDenylist ?? [],
@@ -765,7 +821,7 @@ async function executeLlmPrompt(
   )
   const permissionHandler = createPermissionHandler(
     automation.id,
-    resolveWorkspaceRoot(automation.workspaceName)!,
+    resolveRegisteredWorkspaceRoot(automation.workspaceName)!,
     frozenTools,
     automation.vendor,
     automation.mode,
@@ -783,7 +839,7 @@ async function executeLlmPrompt(
   const c3Binding =
     selectedC3Mcp && automationHttpMcp
       ? automationHttpMcp.bind({
-          workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
+          workspacePath: resolveRegisteredWorkspaceRoot(automation.workspaceName)!,
           executionId: logId,
           metadata: automation.metadata,
         })
@@ -800,7 +856,13 @@ async function executeLlmPrompt(
   // then fans them out via `emit()`. The `register` callback wires the runtime's
   // `run` pointer to THIS run's abortController and flips the status to running.
   const viewer = new AutomationViewerStream((sid) =>
-    registerAutomationRuntime(automation, sid, abortController, effectiveCwd),
+    registerAutomationRuntime(
+      automation,
+      sid,
+      abortController,
+      effectiveCwd,
+      overrides?.sessionProjection,
+    ),
   )
   let settleReason: 'complete' | 'error' = 'complete'
   let settleError: string | undefined
@@ -838,7 +900,7 @@ async function executeLlmPrompt(
           sessionId = sid
           runningSessionId = sessionId
           updateLog(logId, { sessionId })
-          bindAutomationSession(automation, sessionId)
+          bindAutomationSession(automation, sessionId, overrides?.sessionProjection)
           viewer.bind(sessionId)
         }
       }
@@ -935,7 +997,7 @@ function bindAutomationC3Mcp(
   if (!automationHttpMcp) return null
   if (!hasSelectedC3McpTool(automation.toolAllowlist ?? [])) return null
   return automationHttpMcp.bind({
-    workspacePath: resolveWorkspaceRoot(automation.workspaceName)!,
+    workspacePath: resolveRegisteredWorkspaceRoot(automation.workspaceName)!,
     executionId: logId,
     metadata: automation.metadata,
   })
@@ -961,6 +1023,7 @@ async function runAutomationViaDriver(
   start: () => Promise<AgentRun>,
   c3Binding: { dispose(): void } | null,
   cwd?: string,
+  projection?: RelaySessionProjection,
 ): Promise<void> {
   // Bound once the driver reports the real session id; used by `finally` to settle
   // the runtime to idle. Null until bound.
@@ -969,7 +1032,7 @@ async function runAutomationViaDriver(
   // up-front (`await run.sessionId()`), so the pre-session-id buffer is normally
   // empty, but the same path is used for symmetry with the claude executor.
   const viewer = new AutomationViewerStream((sid) =>
-    registerAutomationRuntime(automation, sid, abortController, cwd),
+    registerAutomationRuntime(automation, sid, abortController, cwd, projection),
   )
   const wireEmitter = new WireEmitter((event) => viewer.push(event))
   let settleReason: 'complete' | 'error' = 'complete'
@@ -979,7 +1042,7 @@ async function runAutomationViaDriver(
     const sessionId = await run.sessionId()
     if (sessionId) {
       updateLog(logId, { sessionId })
-      bindAutomationSession(automation, sessionId)
+      bindAutomationSession(automation, sessionId, projection)
       runningSessionId = sessionId
       viewer.bind(sessionId)
     }
@@ -1028,6 +1091,7 @@ async function executeCodexLlmPrompt(
   abortController: AbortController,
   agent: AgentConfig,
   cwd: string,
+  projection?: RelaySessionProjection,
 ): Promise<void> {
   const policy: CodexPolicy =
     typeof automation.mode === 'object'
@@ -1083,6 +1147,7 @@ async function executeCodexLlmPrompt(
       createCodexAdapter(undefined, undefined, getRelay() ?? undefined).driver.start(startOptions),
     c3Binding,
     cwd,
+    projection,
   )
 }
 
@@ -1112,6 +1177,7 @@ async function executeCursorLlmPrompt(
   abortController: AbortController,
   agent: AgentConfig,
   cwd: string,
+  projection?: RelaySessionProjection,
 ): Promise<void> {
   if (!resolveVendorCli('cursor')) {
     updateLog(logId, {
@@ -1149,5 +1215,6 @@ async function executeCursorLlmPrompt(
     () => createCursorAdapter().driver.start(startOptions),
     c3Binding,
     cwd,
+    projection,
   )
 }

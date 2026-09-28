@@ -223,9 +223,10 @@ export const UI_ERROR_CODES = {
   'intent.parkStatsUnavailable': { key: 'error.intent.parkStatsUnavailable' },
   // Manually started PR review / fix relay (`start_intent_relay`). Every one of
   // these is a PRE-CLAIM refusal — nothing was written, so the same click can be
-  // retried once the reported fact changes. A failure AFTER the claim is never
-  // reported here: it releases the phase's placeholder and is observed from the
-  // intent and the session UI instead.
+  // retried once the reported fact changes. A failure AFTER the claim is not
+  // reported here either: it releases the phase's placeholder and is observed from
+  // the intent and the session UI instead — EXCEPT when no session ever started
+  // (`launchFailed` below), which leaves nothing anywhere to observe.
   //
   // The relay reads and edits the PR's head branch as a checked-out directory, so
   // it is a worktree-mode capability; under `current-branch` there is nothing for
@@ -254,6 +255,16 @@ export const UI_ERROR_CODES = {
   // be written). Nothing was claimed, so no phase is running and the retry is
   // simply the same click.
   'intent.relay.claimFailed': { key: 'error.intent.relay.claimFailed' },
+  // The phase was claimed but the session never started: the launch itself failed
+  // (a refused workspace gate, a missing agent, a vendor that would not start).
+  // Deliberately the only POST-claim code: with no session and no conclusion the
+  // released placeholder is the user's only trace, and a button that silently comes
+  // back is indistinguishable from a click that did nothing. Narrowed to "nothing
+  // bound" on purpose — once a real session exists its own failure is visible there.
+  'intent.relay.launchFailed': {
+    key: 'error.intent.relay.launchFailed',
+    params: ['detail'],
+  },
   // agent configuration
   // A session could not be created/bound because the agent GROUP its role points
   // at (directly, or by following the default agent) has no usable member — every

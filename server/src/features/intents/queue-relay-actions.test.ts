@@ -410,4 +410,82 @@ describe('the manual entry point', () => {
     // A conclusion needs nothing from us: the sync tool that wrote it broadcasts.
     expect(releaseRelayOccupancy).not.toHaveBeenCalled()
   })
+
+  it('declares the session projection so the bound session belongs to the INTENT', async () => {
+    // The session a relay binds is the intent's own work session, in the same phase
+    // vocabulary the claim already used for its pending row. Left to the dispatcher
+    // default it would be stamped as an automation execution, and the review / fix
+    // session would never appear under the intent at all.
+    await runManualRelayPhase(env, intent(), claimed())
+    expect(runRelaySession.mock.calls[0][0]).toMatchObject({
+      projection: { intentId: 'i-1', title: 'PR 评审:接力目标', sessionKind: 'work' },
+    })
+  })
+
+  it('carries the FIX phase label into the projection title, not just the review one', async () => {
+    await runManualRelayPhase(env, intent(), claimed({ phase: 'fix' }))
+    expect(runRelaySession.mock.calls[0][0]).toMatchObject({
+      projection: { intentId: 'i-1', title: 'PR 修复:接力目标', sessionKind: 'work' },
+    })
+  })
+})
+
+/**
+ * What a HUMAN caller is told about a phase it asked for.
+ *
+ * Every ending is visible in the intent ledger or the session UI EXCEPT one: a
+ * launch that bound no session at all. Then there is no session to open, no
+ * conclusion in the ledger, and the released placeholder leaves the button looking
+ * exactly as it did before the click — so the executor hands the reason back, and
+ * only for that case.
+ */
+describe('the manual entry point’s caller-visible settlement', () => {
+  const env = {
+    workspacePath: '/w',
+    hooks: { broadcastIntents: vi.fn() },
+    isDisposed: () => false,
+  }
+  const claimed: ClaimedRelayPhase = {
+    phase: 'review',
+    round: 0,
+    cwd: '/w/wt/i-1',
+    pendingId: 'pending:new',
+    prs: intent().prs,
+    vendor: 'claude',
+    agentId: 'agent-x',
+  }
+
+  it('reports a launch failure that bound nothing, with the dispatcher’s reason', async () => {
+    runRelaySession.mockResolvedValue({
+      ok: false,
+      error: 'automation_workspace_not_found',
+      sessionId: null,
+    })
+    expect(await runManualRelayPhase(env, intent(), claimed)).toEqual({
+      launchFailed: true,
+      reason: 'automation_workspace_not_found',
+    })
+  })
+
+  it('says nothing when the turn merely ended with no conclusion', async () => {
+    // Not a launch failure: the turn ran. The placeholder is released and the
+    // ledger reads un-started, which is what a retry is for.
+    getIntent.mockReturnValue(intent({ reviewStatus: 'pending' }))
+    expect(await runManualRelayPhase(env, intent(), claimed)).toEqual({
+      launchFailed: false,
+      reason: null,
+    })
+  })
+
+  it('says nothing once a real session exists — its own failure is visible there', async () => {
+    runRelaySession.mockImplementation(async (spec) => {
+      spec.onSessionBound?.('vendor-session-9')
+      return { ok: false, error: 'wall_clock_timeout', sessionId: 'vendor-session-9' }
+    })
+    getIntent.mockReturnValue(intent({ reviewStatus: 'pending' }))
+    expect(await runManualRelayPhase(env, intent(), claimed)).toEqual({
+      launchFailed: false,
+      reason: 'wall_clock_timeout',
+    })
+  })
 })

@@ -2887,7 +2887,8 @@
         "phaseInFlight": "该意图的评审或修复会话正在进行中。",
         "agentUnavailable": "该阶段没有可用 Agent:Agent 组「{group}」没有可用成员。",
         "worktreeUnavailable": "该意图的 worktree 不可用,接力无处可运行。",
-        "claimFailed": "阶段占位登记失败,未启动任何会话。请重试。"
+        "claimFailed": "阶段占位登记失败,未启动任何会话。请重试。",
+        "launchFailed": "评审 / 修复会话启动失败:{detail}。本次未启动任何会话,请重试。"
       }
     },
     "agent": {

@@ -30,6 +30,7 @@ vi.mock('../../runs.js', () => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => (id === 'ws' ? '/proj' : null),
+  resolveRegisteredWorkspaceRoot: (id: string) => (id === 'ws' ? '/proj' : null),
 }))
 
 const {

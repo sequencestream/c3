@@ -19,6 +19,7 @@ import { join } from 'node:path'
 // Identity workspace resolution: fixtures use the path itself as the id.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   pathToName: (p: string) => p,
   workspaceNameFor: (value: string) => value,
 }))

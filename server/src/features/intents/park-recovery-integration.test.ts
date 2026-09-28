@@ -21,6 +21,7 @@ const hoisted = vi.hoisted(() => ({ roots: new Map<string, string>() }))
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => hoisted.roots.get(id) ?? null,
+  resolveRegisteredWorkspaceRoot: (id: string) => hoisted.roots.get(id) ?? null,
   pathToName: (path: string) =>
     [...hoisted.roots.entries()].find(([, root]) => root === path)?.[0] ?? null,
   workspaceNameFor: (value: string) =>

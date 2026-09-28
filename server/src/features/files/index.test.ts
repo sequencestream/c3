@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: vi.fn((id: string) => h.roots.get(id) ?? null),
+  resolveRegisteredWorkspaceRoot: vi.fn((id: string) => h.roots.get(id) ?? null),
 }))
 
 import {

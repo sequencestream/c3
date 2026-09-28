@@ -1525,9 +1525,11 @@ export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg
  *     both spend the same round.
  *  3. broadcast — the intent now reads as `pending` with a live placeholder.
  *     There is no dedicated response frame: not receiving `error` IS acceptance.
- *  4. run the rest asynchronously. Failures from here on are the session's own
- *     outcome, observed from the intent and the session UI — never a late error
- *     frame on a connection that was answered minutes ago.
+ *  4. run the rest asynchronously. A failure from here on is normally the session's
+ *     own outcome, observed from the intent and the session UI. The single
+ *     exception is a launch that bound NO session at all (`intent.relay.launchFailed`):
+ *     with no session and no conclusion there is nothing anywhere to read, and the
+ *     released placeholder would leave the click looking like it did nothing.
  *
  * The phase criterion is read from `@ccc/shared` and nowhere else, so the button
  * the user saw and the verdict here can never disagree. Its in-flight inputs are
@@ -1616,13 +1618,29 @@ export const startIntentRelay: Handler<'start_intent_relay'> = async (ctx, conn,
 
   // Accepted: the broadcast inside `admitRelayPhase` is the ack. The phase itself
   // runs for up to half an hour behind it.
-  void runManualRelayPhase(env, req, admission.claimed).catch((err) => {
-    // The executor settles its own failures; a throw that escapes it would leave
-    // the placeholder held with nothing running, so it is logged loudly here
-    // rather than swallowed. Deliberately no `error` frame: this connection was
-    // answered long ago and the user is watching the session, not the toast.
-    console.error(`[c3:manual-relay]「${req.title}」${msg.phase} 阶段异常:`, err)
-  })
+  void runManualRelayPhase(env, req, admission.claimed)
+    .then((settlement) => {
+      // The ONE post-claim failure with nothing on screen to read it from: no
+      // session ever bound, so no session page and no ledger row says what happened
+      // and the button has already come back looking like the click did nothing.
+      // A bound session's failure is visible where it happened, and a turn that
+      // merely ended is not a failure at all — neither is reported.
+      if (!settlement.launchFailed) return
+      conn.send({
+        type: 'error',
+        error: {
+          code: 'intent.relay.launchFailed',
+          params: { detail: settlement.reason ?? 'unknown' },
+        },
+      })
+    })
+    .catch((err) => {
+      // The executor settles its own failures; a throw that escapes it would leave
+      // the placeholder held with nothing running, so it is logged loudly here
+      // rather than swallowed. Deliberately no `error` frame: this connection was
+      // answered long ago and the user is watching the session, not the toast.
+      console.error(`[c3:manual-relay]「${req.title}」${msg.phase} 阶段异常:`, err)
+    })
 }
 
 /**

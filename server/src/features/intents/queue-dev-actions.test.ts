@@ -141,6 +141,9 @@ vi.mock('../../state.js', () => ({
   hasWorkspace: vi.fn(() => true),
   touchWorkspace: vi.fn(),
   resolveWorkspaceRoot: vi.fn((ref: string) => (ref.startsWith('/') ? null : '/test/proj')),
+  resolveRegisteredWorkspaceRoot: vi.fn((ref: string) =>
+    ref.startsWith('/') ? null : '/test/proj',
+  ),
   pathToName: vi.fn(() => 'test-proj'),
   workspaceNameFor: vi.fn(() => 'test-proj'),
 }))

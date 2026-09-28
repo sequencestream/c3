@@ -786,6 +786,27 @@ describe('intent action errors', () => {
     }
   })
 
+  it('toasts a launch failure, with the reason, instead of flashing back silently', () => {
+    // The post-claim failure with no session to look at. A dialog would demand a
+    // dismissal for something the button can simply retry, and silence would make
+    // the click indistinguishable from one that did nothing — so it is the toast,
+    // and it must carry the reason rather than a generic line.
+    const result = makeCtx()
+
+    result.ctx.handleMessage({
+      type: 'error',
+      error: {
+        code: 'intent.relay.launchFailed',
+        params: { detail: 'automation_workspace_not_found' },
+      },
+    } as unknown as ServerToClient)
+
+    expect(result.showToast).toHaveBeenCalledOnce()
+    expect(result.toast.value).toContain('automation_workspace_not_found')
+    expect(result.showIntentActionError).not.toHaveBeenCalled()
+    expect(result.intentActionError.value).toBeNull()
+  })
+
   it('localizes the unusable agent group into the toast', () => {
     // The group reference is the one thing the user has to go and fix, so it
     // must survive into the sentence rather than be dropped for a generic line.

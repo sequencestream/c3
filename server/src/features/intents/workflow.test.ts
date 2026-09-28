@@ -157,6 +157,9 @@ vi.mock('../../state.js', () => ({
   // path must pass through unchanged so controllers stay keyed by the filesystem
   // root handlers already resolved.
   resolveWorkspaceRoot: vi.fn((ref: string) => (ref.startsWith('/') ? null : '/test/proj')),
+  resolveRegisteredWorkspaceRoot: vi.fn((ref: string) =>
+    ref.startsWith('/') ? null : '/test/proj',
+  ),
   pathToName: vi.fn((p: string) =>
     typeof p === 'string' && p.startsWith('/') ? 'test-proj' : null,
   ),

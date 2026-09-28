@@ -23,7 +23,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Automation, ModeToken, VendorId } from '@ccc/shared/protocol'
-import { execute } from './dispatcher.js'
+import { execute, type RelaySessionProjection } from './dispatcher.js'
 
 /** Everything one relay phase needs to execute. */
 export interface RelaySessionSpec {
@@ -42,6 +42,14 @@ export interface RelaySessionSpec {
   maxWallClockMs: number
   /** Shown on the session projection row. */
   title: string
+  /**
+   * The session row this phase must leave behind, declared by the caller from the
+   * facts it already owns (the intent, the phase label). A relay phase is a real
+   * session of THAT intent, not an automation execution: without this the
+   * dispatcher would stamp `sessionKind='automation'` / `ownerKind='automation'`
+   * and the review / fix session would vanish from the intent's own session list.
+   */
+  projection: RelaySessionProjection
   /**
    * The execution handle this phase runs under. Supplied by the caller when it
    * needs to KNOW the handle up front — the queue registers the relay run against
@@ -123,7 +131,7 @@ export async function runRelaySession(spec: RelaySessionSpec): Promise<RelaySess
         }
       },
       undefined,
-      { cwd: spec.cwd },
+      { cwd: spec.cwd, sessionProjection: spec.projection },
     )
   } catch (err) {
     ok = false

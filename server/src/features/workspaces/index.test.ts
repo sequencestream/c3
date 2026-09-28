@@ -25,6 +25,7 @@ vi.mock('../../state.js', () => ({
   listWorkspaces: vi.fn(() => []),
   pathToName: vi.fn(() => null),
   resolveWorkspaceRoot: vi.fn(() => '/abs/proj'),
+  resolveRegisteredWorkspaceRoot: vi.fn(() => '/abs/proj'),
   removeWorkspace: vi.fn(() => {
     h.removed++
   }),

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // In isolation these synthetic paths are unregistered, so use them as opaque names.
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: (id: string) => id,
+  resolveRegisteredWorkspaceRoot: (id: string) => id,
   workspaceNameFor: (value: string) => value,
 }))
 import { mkdtempSync, rmSync } from 'node:fs'

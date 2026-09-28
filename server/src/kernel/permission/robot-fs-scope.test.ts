@@ -32,7 +32,12 @@ import {
 let base = ''
 let root = ''
 let outside = ''
+/** Frozen after `beforeAll` builds the sandbox; see `frozen`. */
+let frozenRoot = ''
 
+// 必须在 beforeAll 建好目录之后再冻结:root 只在那里赋值,而 describe 体是在
+// beforeAll 之前求值的 —— 在 describe 层直接调用会让 freezeRobotRoot('') 返回
+// realpath('') 即进程 cwd,于是需要真实路径的用例会写到仓库里。
 const frozen = (): string => freezeRobotRoot(root)
 
 beforeAll(() => {
@@ -46,6 +51,8 @@ beforeAll(() => {
   writeFileSync(join(root, 'notes', 'a.md'), '# hello')
   writeFileSync(join(root, 'notes.md'), '# top-level')
   writeFileSync(join(outside, 'secret.md'), 'secret')
+  // 目录就绪后再冻结,供各 describe 在其体内直接取用。
+  frozenRoot = frozen()
 })
 
 afterAll(() => rmSync(base, { recursive: true, force: true }))
@@ -94,7 +101,6 @@ describe('isRobotLocalPathTool / descriptor coverage', () => {
 })
 
 describe('adjudicateRobotToolInput — legal reads', () => {
-  const frozenRoot = frozen()
   const cases: Array<[string, Record<string, unknown>]> = [
     ['Read', { file_path: join(frozenRoot, 'notes', 'a.md') }],
     ['Read', { file_path: join(frozenRoot, 'notes.md') }],
@@ -144,8 +150,6 @@ describe('adjudicateRobotToolInput — legal reads', () => {
 })
 
 describe('adjudicateRobotToolInput — escapes', () => {
-  const frozenRoot = frozen()
-
   it('denies an absolute path outside the run root', () => {
     expect(
       denied(
@@ -357,8 +361,6 @@ describe('adjudicateRobotToolInput — escapes', () => {
 })
 
 describe('adjudicateRobotToolInput — malformed calls', () => {
-  const frozenRoot = frozen()
-
   it('denies when two alternate fields for one location are supplied (a conflict, not a preference)', () => {
     // Cursor `ls` takes `path` OR `targetDirectory`; supplying both means c3
     // would have to guess which the vendor honours.
@@ -442,7 +444,6 @@ describe('carriesUndescribedLocation — the c3-MCP guard', () => {
 })
 
 describe('refusal hygiene — one fixed refusal, category-only reasons', () => {
-  const frozenRoot = frozen()
   const escapes: Array<[string, Record<string, unknown>]> = [
     ['Read', { file_path: '/etc/passwd' }],
     ['Read', { file_path: join(frozenRoot, '..', '..', 'var', 'db') }],

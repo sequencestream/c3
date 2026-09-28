@@ -36,6 +36,7 @@ export interface MessageHandlerLocals {
   sessionPagingByWorkspace: AppCtx['sessionPagingByWorkspace']
   sessionCounts: AppCtx['sessionCounts']
   ownerRunningCounts: AppCtx['ownerRunningCounts']
+  workspaceRunningSessionCounts: AppCtx['workspaceRunningSessionCounts']
   activeWorkspace: AppCtx['activeWorkspace']
   activeSession: AppCtx['activeSession']
   activeTitle: AppCtx['activeTitle']
@@ -199,6 +200,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     sessionPagingByWorkspace,
     sessionCounts,
     ownerRunningCounts,
+    workspaceRunningSessionCounts,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -432,6 +434,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     sessionPagingByWorkspace,
     sessionCounts,
     ownerRunningCounts,
+    workspaceRunningSessionCounts,
     activeWorkspace,
     activeSession,
     activeTitle,

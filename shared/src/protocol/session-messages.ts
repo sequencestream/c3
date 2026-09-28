@@ -219,6 +219,18 @@ export type ServerSessionCounts = {
    * nav's per-tab badges.
    */
   ownerCounts: Record<SessionOwnerKind, number>
+  /**
+   * Total number of real (bound) sessions of this workspace that are currently
+   * running, summed across every {@link SessionKind} — including tool /
+   * spec_review / consensus / robot, and unaffected by the tool-session display
+   * switch. Independent of the `counts` buckets and NOT the same number as
+   * `ownerCounts` (which deduplicates by owner); the three never replace or add
+   * up to one another.
+   *
+   * Optional so a client can keep its last snapshot when talking to a server
+   * that does not send it, exactly as it does for `ownerCounts`.
+   */
+  runningSessionCount?: number
 }
 
 /**

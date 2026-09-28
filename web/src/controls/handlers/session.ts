@@ -63,6 +63,7 @@ export function buildSessionHandlers(
     sessionPagingByWorkspace,
     sessionCounts,
     ownerRunningCounts,
+    workspaceRunningSessionCounts,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -401,6 +402,13 @@ export function buildSessionHandlers(
       if (msg.workspaceName !== currentWorkspace.value) return
       sessionCounts.value = { ...sessionCounts.value, ...msg.counts }
       if (msg.ownerCounts) ownerRunningCounts.value = { ...msg.ownerCounts }
+      // 旧服务端不带该字段时保留上一次快照,同样不从会话列表自行推算。
+      if (msg.runningSessionCount !== undefined) {
+        workspaceRunningSessionCounts.value = {
+          ...workspaceRunningSessionCounts.value,
+          [msg.workspaceName]: msg.runningSessionCount,
+        }
+      }
     },
     session_selected: (_ctx, msg) => {
       if (specLaunch.value) {

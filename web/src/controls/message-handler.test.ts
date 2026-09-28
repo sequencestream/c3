@@ -2103,6 +2103,7 @@ function makeWorkspaceOnboardingCtx() {
     deepLinkFulfilled: ref(new Set<string>()),
     deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
     sessionStatus: ref({}),
+    workspaceRunningSessionCounts: ref<Record<string, number>>({}),
     activeSession: ref<string | null>(null),
     teamSessions: ref(new Set<string>()),
     flushIfReady: vi.fn(),
@@ -2279,6 +2280,7 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
 
   function makeCountsCtx() {
     const currentWorkspace = ref<string | null>(WS_A)
+    const workspaces = ref<import('@ccc/shared/protocol').WorkspaceInfo[]>([])
     const sessionCounts = ref<Record<string, number>>({
       work: 0,
       intent: 0,
@@ -2288,6 +2290,7 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
       tool: 0,
     })
     const ownerRunningCounts = ref({ intent: 0, discussion: 0, automation: 0 })
+    const workspaceRunningSessionCounts = ref<Record<string, number>>({})
     const sessionStatus = ref<Record<string, import('@ccc/shared/protocol').SessionStatus>>({})
     const send = vi.fn()
     const ctx = {
@@ -2295,8 +2298,10 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
       add: vi.fn(),
       send,
       currentWorkspace,
+      workspaces,
       sessionCounts,
       ownerRunningCounts,
+      workspaceRunningSessionCounts,
       sessionStatus,
       activeSession: ref<string | null>(null),
       teamSessions: ref<Set<string>>(new Set()),
@@ -2309,15 +2314,27 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
       fetchPersonalizedSettings: vi.fn(),
     } as unknown as AppCtx
     installMessageHandler(ctx)
-    return { ctx, currentWorkspace, sessionCounts, ownerRunningCounts, send }
+    return {
+      ctx,
+      currentWorkspace,
+      sessionCounts,
+      ownerRunningCounts,
+      workspaceRunningSessionCounts,
+      send,
+    }
   }
 
-  function countsMsg(workspaceName: string, owner: Record<string, number>): ServerToClient {
+  function countsMsg(
+    workspaceName: string,
+    owner: Record<string, number>,
+    runningSessionCount?: number,
+  ): ServerToClient {
     return {
       type: 'session_counts',
       workspaceName,
       counts: { work: 1, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0 },
       ownerCounts: owner,
+      ...(runningSessionCount === undefined ? {} : { runningSessionCount }),
     } as unknown as ServerToClient
   }
 
@@ -2380,6 +2397,67 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
     } as unknown as ServerToClient)
     r.ctx.handleMessage(countsMsg(WS_A, { intent: 1, discussion: 0, automation: 0 }))
     expect(r.ownerRunningCounts.value.intent).toBe(1)
+  })
+
+  // 每 workspace「运行中会话数」:与上面两个角标同帧送达、同样的 workspace 校验,
+  // 但按 workspace 名聚合,供竖条角标消费(本期尚无 UI 读取)。
+  it('运行中会话数按 workspace 写入映射', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 3))
+    expect(r.workspaceRunningSessionCounts.value).toEqual({ [WS_A]: 3 })
+  })
+
+  it('会话启动/结束时,重取回包落地后运行中会话数随之变化', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 0))
+
+    // 启动:运行集合变化 → 回发一次权威重取 → 回包 +1。
+    r.ctx.handleMessage({
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'running' }],
+    } as unknown as ServerToClient)
+    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceName: WS_A })
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 1))
+    expect(r.workspaceRunningSessionCounts.value[WS_A]).toBe(1)
+
+    // 结束:同样触发重取,回包 -1。
+    r.ctx.handleMessage({
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'idle' }],
+    } as unknown as ServerToClient)
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 0))
+    expect(r.workspaceRunningSessionCounts.value[WS_A]).toBe(0)
+  })
+
+  it('回包缺该字段时保留上一次取值(旧服务端兼容)', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 4))
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }))
+    expect(r.workspaceRunningSessionCounts.value[WS_A]).toBe(4)
+  })
+
+  it('切换 workspace 后到达的旧回包不写入映射', () => {
+    const r = makeCountsCtx()
+    r.currentWorkspace.value = WS_B
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 7))
+    expect(r.workspaceRunningSessionCounts.value).toEqual({})
+  })
+
+  // 已移除工作区的计数永远不会被刷新,必须在 workspaces 帧里清掉,否则映射里
+  // 永久留下一个陈旧数字。
+  it('工作区被移除后,其计数从映射中清除', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }, 2))
+    r.currentWorkspace.value = WS_B
+    r.ctx.handleMessage(countsMsg(WS_B, { intent: 0, discussion: 0, automation: 0 }, 5))
+    expect(r.workspaceRunningSessionCounts.value).toEqual({ [WS_A]: 2, [WS_B]: 5 })
+
+    // ws-a 从注册表消失(ws-b 仍在)⇒ 只清掉 ws-a,ws-b 的取值不受影响。
+    r.ctx.handleMessage({
+      type: 'workspaces',
+      workspaces: [{ name: WS_B, path: `/ws/${WS_B}`, lastAccessed: 0 }],
+    } as unknown as ServerToClient)
+    expect(r.workspaceRunningSessionCounts.value).toEqual({ [WS_B]: 5 })
   })
 })
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { Rgb } from './contrast'
 import {
   CONTRAST_BODY,
   CONTRAST_SECONDARY,
@@ -198,8 +199,61 @@ function auditTextContrast(name: string, tokens: Record<string, string>): void {
   })
 }
 
+/**
+ * Hue in degrees (0–360) of an opaque colour, so the palette's slots can be told apart
+ * from each other — two slots that are merely two shades of one hue are not a palette.
+ */
+function hueOf({ r, g, b }: Rgb): number {
+  const [R, G, B] = [r / 255, g / 255, b / 255]
+  const max = Math.max(R, G, B)
+  const min = Math.min(R, G, B)
+  const d = max - min
+  if (d === 0) return 0
+  const h = max === R ? ((G - B) / d) % 6 : max === G ? (B - R) / d + 2 : (R - G) / d + 4
+  return (h * 60 + 360) % 360
+}
+
 auditTextContrast('light', light)
 auditTextContrast('solarized', solarized)
+
+/**
+ * The workspace rail's stable palette: six hue slots, each an opaque fill plus the ink
+ * that sits on it. The fill has to read as *that workspace's* colour against the panel it
+ * is drawn on (3:1 — the rail chip is a large-ish mark, but the identity it carries is
+ * auxiliary), and the ink has to clear the body floor on the fill.
+ */
+for (const [name, tokens] of [
+  ['dark', dark],
+  ['light', light],
+  ['solarized', solarized],
+] as const) {
+  describe(`${name} theme workspace rail palette`, () => {
+    for (let slot = 1; slot <= 6; slot += 1) {
+      it(`--c-ws-${slot} reads against the panel and carries its ink`, () => {
+        const fill = flatten(tokens[`--c-ws-${slot}`], WHITE)
+        const ink = flatten(tokens[`--c-ws-ink-${slot}`], WHITE)
+        expect(contrastRatio(fill, flatten(tokens['--c-panel'], WHITE))).toBeGreaterThanOrEqual(
+          CONTRAST_SECONDARY,
+        )
+        expect(contrastRatio(ink, fill)).toBeGreaterThanOrEqual(CONTRAST_BODY)
+      })
+    }
+
+    it('keeps the six fills distinguishable, not six shades of one hue', () => {
+      const hues = [1, 2, 3, 4, 5, 6].map((slot) => hueOf(flatten(tokens[`--c-ws-${slot}`], WHITE)))
+      for (let i = 0; i < hues.length; i += 1) {
+        for (let j = i + 1; j < hues.length; j += 1) {
+          const delta = Math.abs(hues[i]! - hues[j]!)
+          // 20° is the floor a pair has to clear to read as a different colour, not a
+          // different brightness of the same one.
+          expect(Math.min(delta, 360 - delta), `${name} slots ${i + 1}/${j + 1}`).toBeGreaterThan(
+            20,
+          )
+        }
+      }
+    })
+  })
+}
 
 describe('light theme rejects the greys that used to stand in for text', () => {
   it('keeps the previous disabled grey and bright status bases failing', () => {

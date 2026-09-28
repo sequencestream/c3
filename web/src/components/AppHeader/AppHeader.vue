@@ -4,15 +4,16 @@ import type { WorkcenterPage } from '@/controls/state'
  * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 数据驱动的工作区子 tab。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
  *
- * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
- * 三横条;工作台=屏内会话气泡),生效模式蓝、另一个灰;桌面与移动端共用同一份图标标记。
- * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,
- *   右侧两个设置入口:个人化设置(人形齿轮,任何账户可见)与系统设置(齿轮,仅管理员可见)。
- *   工作台图标(切换器右侧)在 workcenterBadgeCount>0 时挂待处理角标,让用户不进工作台也能感知。
- * - workcenter 模式:左侧切换器 + 工作台页面入口(用户通知 / Dashboard / 聊天机器人),中间区域隐藏,右侧同上。
- *   待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上;此模式下工作台切换图标不再挂角标。
- * 待处理角标全部同源 workcenterBadgeCount(与「用户通知」入口共用),0/缺省不渲染,桌面 + 移动端同步。
- * 移动端底部 tab 与桌面共用 tabs 数据(工作台入口已上移到顶部切换器)。
+ * 桌面行:workspace 模式为「项目配置 + 中间标签页 + 右侧设置/账户/更新」,workcenter
+ * 模式为「工作台页面入口(用户通知 / Dashboard / 聊天机器人)+ 右侧同上」,中间区域隐藏。
+ * 工作区切换入口与「工作区/工作台」两个切换按钮已迁到左侧常驻竖条(LeftRail),桌面行
+ * 不再重复提供;`viewMode` / `setViewMode` 的接线保留 —— 深链跳转与 workcenter 内部
+ * 动作仍要经它切视图。
+ * 移动端不渲染竖条,精简行因此保留同款 viewMode 切换器与工作区切换器,窄屏仍能切工作区、
+ * 进工作台;两处共用同一份图标标记与状态。
+ * 待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上,与竖条用户消息入口同源,
+ * 0/缺省不渲染,桌面 + 移动端同步。
+ * 移动端底部 tab 与桌面共用 tabs 数据。
  *
  * tab 角标:数值由上层(HEADER_TABS)给定,本组件只负责渲染 —— badgeCount 为 0/缺省时
  * 桌面与移动端均不渲染;角标不绑定任何事件,点击只沿用所在 tab 的导航行为。「会话」tab
@@ -277,86 +278,8 @@ function selectTab(tab: HeaderTab): void {
 <template>
   <header class="app-header">
     <div class="desktop-header-row">
-      <!-- viewMode 切换器:整行第一个元素,恒定渲染,两图标始终在最左 -->
-      <div class="view-mode-toggle">
-        <button
-          v-for="mode in VIEW_MODES"
-          :key="mode.key"
-          type="button"
-          class="vm-toggle-btn"
-          :class="{ active: viewMode === mode.key }"
-          :title="t(mode.labelKey)"
-          :aria-label="t(mode.labelKey)"
-          @click="emit('update:viewMode', mode.key)"
-        >
-          <!-- 工作区:显示器 + 屏内三条长短不一横条 -->
-          <svg
-            v-if="mode.key === 'workspace'"
-            class="vm-icon"
-            viewBox="0 0 24 24"
-            width="20"
-            height="20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <rect x="3" y="4" width="18" height="13" rx="1.5" />
-            <path d="M9 20h6M12 17v3" />
-            <path d="M7 8h7" />
-            <path d="M7 11h10" />
-            <path d="M7 14h5" />
-          </svg>
-          <!-- 工作台:显示器 + 屏内会话气泡 -->
-          <svg
-            v-else
-            class="vm-icon"
-            viewBox="0 0 24 24"
-            width="20"
-            height="20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <rect x="3" y="4" width="18" height="13" rx="1.5" />
-            <path d="M9 20h6M12 17v3" />
-            <path
-              d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
-            />
-          </svg>
-          <!-- 工作台图标待处理角标:仅 workspace 模式的 workcenter 图标承载,让用户不进
-               工作台也能感知待处理数;与「用户通知」入口同源(workcenterBadgeCount),0/缺省不渲染 -->
-          <span
-            v-if="
-              mode.key === 'workcenter' &&
-              viewMode === 'workspace' &&
-              (workcenterBadgeCount ?? 0) > 0
-            "
-            class="tab-badge"
-            :aria-label="
-              t('dashboard.nav.notificationsBadgeAriaLabel', { count: workcenterBadgeCount ?? 0 })
-            "
-            >{{ workcenterBadgeCount }}</span
-          >
-        </button>
-      </div>
-
-      <!-- Left area: workspace mode — WorkspaceSwitcher + project config -->
+      <!-- Left area: workspace mode — project config（工作区切换器已迁到左侧竖条） -->
       <template v-if="viewMode === 'workspace'">
-        <WorkspaceSwitcher
-          :workspaces="workspaces"
-          :current-workspace-name="currentWorkspace"
-          @request-add-workspace="emit('update:addWorkspaceOpen', true)"
-          @select-workspace="emit('select-workspace', $event)"
-          @remove-workspace="emit('remove-workspace', $event)"
-        />
         <button
           class="icon-btn project-config-btn"
           :title="t('workspaceSetting.entry.tooltip')"
@@ -536,7 +459,7 @@ function selectTab(tab: HeaderTab): void {
     </div>
 
     <div class="mobile-header-row">
-      <!-- viewMode 切换器:与桌面同款两图标,移动端置于顶栏左侧 -->
+      <!-- viewMode 切换器:窄屏没有左侧竖条,这两图标是移动端进入工作台的唯一入口 -->
       <div class="view-mode-toggle">
         <button
           v-for="mode in VIEW_MODES"
@@ -604,7 +527,7 @@ function selectTab(tab: HeaderTab): void {
         </button>
       </div>
 
-      <!-- workspace 模式:工作区切换器;workcenter 模式:同桌面的工作台页面入口 -->
+      <!-- 窄屏同样没有竖条,工作区切换器在此保留(移动端唯一的工作区入口) -->
       <div v-if="viewMode === 'workspace'" class="mobile-workspace">
         <WorkspaceSwitcher
           :workspaces="workspaces"

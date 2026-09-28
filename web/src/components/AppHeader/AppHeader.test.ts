@@ -276,36 +276,41 @@ describe('i18n — dashboard.nav.notificationsBadgeAriaLabel 插值', () => {
   })
 })
 
-describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
-  it('桌面切换器渲染为 desktop-header-row 第一个元素,header-right 不再含切换器', () => {
+describe('AppHeader.vue — viewMode 图标切换器(窄屏保留,桌面已迁至左侧竖条)', () => {
+  it('桌面行不再渲染 viewMode 切换器 —— 入口已迁到 LeftRail', () => {
     const w = mount(AppHeader, { props: baseProps })
-    const row = w.find('.desktop-header-row')
-    expect(row.element.firstElementChild?.classList.contains('view-mode-toggle')).toBe(true)
-    expect(w.find('.header-right .view-mode-toggle').exists()).toBe(false)
+    expect(w.find('.desktop-header-row .view-mode-toggle').exists()).toBe(false)
+    expect(w.find('.desktop-header-row .vm-toggle-btn').exists()).toBe(false)
   })
 
-  it('移动端顶栏左侧出现同款两图标切换器', () => {
+  it('桌面行不再渲染工作区切换器 —— 与切换器同一入口一起迁走', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.desktop-header-row .ws-switcher').exists()).toBe(false)
+    // 项目配置齿轮留在顶栏原位。
+    expect(w.find('.desktop-header-row .project-config-btn').exists()).toBe(true)
+  })
+
+  it('移动端顶栏左侧仍出现同款两图标切换器(窄屏没有竖条,不能失去入口)', () => {
     const w = mount(AppHeader, { props: baseProps })
     const btns = w.findAll('.mobile-header-row .vm-toggle-btn')
     expect(btns).toHaveLength(2)
   })
 
-  it('生效模式图标带 active 类、另一个不带(蓝/灰由 .active 驱动),随 viewMode 互换', () => {
-    const ws = mount(AppHeader, { props: baseProps })
-    const dWs = ws.findAll('.desktop-header-row .vm-toggle-btn')
-    expect(dWs[0].classes()).toContain('active')
-    expect(dWs[1].classes()).not.toContain('active')
-
-    const wc = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
-    const dWc = wc.findAll('.desktop-header-row .vm-toggle-btn')
-    expect(dWc[0].classes()).not.toContain('active')
-    expect(dWc[1].classes()).toContain('active')
+  it('移动端仍渲染工作区切换器(窄屏唯一的工作区入口)', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.mobile-header-row .ws-switcher').exists()).toBe(true)
   })
 
-  it('点击桌面工作台图标 → emit update:viewMode(workcenter)', async () => {
-    const w = mount(AppHeader, { props: baseProps })
-    await w.findAll('.desktop-header-row .vm-toggle-btn')[1].trigger('click')
-    expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
+  it('生效模式图标带 active 类、另一个不带(蓝/灰由 .active 驱动),随 viewMode 互换', () => {
+    const ws = mount(AppHeader, { props: baseProps })
+    const mWs = ws.findAll('.mobile-header-row .vm-toggle-btn')
+    expect(mWs[0].classes()).toContain('active')
+    expect(mWs[1].classes()).not.toContain('active')
+
+    const wc = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
+    const mWc = wc.findAll('.mobile-header-row .vm-toggle-btn')
+    expect(mWc[0].classes()).not.toContain('active')
+    expect(mWc[1].classes()).toContain('active')
   })
 
   it('点击移动端工作台图标 → emit update:viewMode(workcenter)', async () => {
@@ -314,9 +319,9 @@ describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
     expect(w.emitted('update:viewMode')).toEqual([['workcenter']])
   })
 
-  it('workcenter 模式点击工作区图标 → emit update:viewMode(workspace)', async () => {
+  it('workcenter 模式点击移动端工作区图标 → emit update:viewMode(workspace)', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, viewMode: 'workcenter' } })
-    await w.findAll('.desktop-header-row .vm-toggle-btn')[0].trigger('click')
+    await w.findAll('.mobile-header-row .vm-toggle-btn')[0].trigger('click')
     expect(w.emitted('update:viewMode')).toEqual([['workspace']])
   })
 
@@ -330,20 +335,14 @@ describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
   })
 })
 
-describe('AppHeader.vue — 工作台切换图标待处理角标', () => {
+describe('AppHeader.vue — 工作台切换图标待处理角标(移动端竖条未渲染时唯一的入口)', () => {
   // workspace 模式下,workcenter 切换图标(vm-toggle-btn[1])承载 workcenterBadgeCount 角标,
   // 让用户不进工作台也能感知待处理数;workcenter 模式改由「用户通知」入口承载,图标不重复挂。
+  // 桌面端该图标已迁到竖条,角标由 LeftRail 的用户消息入口承载。
   function toggleBadge(w: ReturnType<typeof mount>, rowSelector: string) {
     // 切换器两枚按钮:索引 0 = 工作区,索引 1 = 工作台(workcenter)。
     return w.findAll(`${rowSelector} .vm-toggle-btn`)[1].find('.tab-badge')
   }
-
-  it('workspace 模式 badgeCount>0 → 桌面工作台图标渲染角标,文本正确', () => {
-    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
-    const badge = toggleBadge(w, '.desktop-header-row')
-    expect(badge.exists()).toBe(true)
-    expect(badge.text()).toBe('4')
-  })
 
   it('workspace 模式 badgeCount>0 → 移动端顶栏工作台图标渲染角标,文本正确', () => {
     const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
@@ -354,9 +353,6 @@ describe('AppHeader.vue — 工作台切换图标待处理角标', () => {
 
   it('工作区图标(索引 0)始终不挂角标', () => {
     const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
-    expect(w.findAll('.desktop-header-row .vm-toggle-btn')[0].find('.tab-badge').exists()).toBe(
-      false,
-    )
     expect(w.findAll('.mobile-header-row .vm-toggle-btn')[0].find('.tab-badge').exists()).toBe(
       false,
     )
@@ -364,21 +360,19 @@ describe('AppHeader.vue — 工作台切换图标待处理角标', () => {
 
   it('角标带 i18n aria-label,含待处理计数', () => {
     const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
-    const aria = toggleBadge(w, '.desktop-header-row').attributes('aria-label')
+    const aria = toggleBadge(w, '.mobile-header-row').attributes('aria-label')
     expect(aria).toBeDefined()
     expect(aria).toContain('4')
   })
 
-  it('badgeCount 为 0 → 桌面/移动端工作台图标均不渲染角标', () => {
+  it('badgeCount 为 0 → 移动端工作台图标不渲染角标', () => {
     const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 0 } })
-    expect(toggleBadge(w, '.desktop-header-row').exists()).toBe(false)
     expect(toggleBadge(w, '.mobile-header-row').exists()).toBe(false)
   })
 
-  it('badgeCount 缺省(undefined)→ 均不渲染角标', () => {
+  it('badgeCount 缺省(undefined)→ 不渲染角标', () => {
     const { workcenterBadgeCount: _omit, ...rest } = baseProps
     const w = mount(AppHeader, { props: rest })
-    expect(toggleBadge(w, '.desktop-header-row').exists()).toBe(false)
     expect(toggleBadge(w, '.mobile-header-row').exists()).toBe(false)
   })
 
@@ -391,14 +385,13 @@ describe('AppHeader.vue — 工作台切换图标待处理角标', () => {
         workcenterBadgeCount: 4,
       },
     })
-    expect(toggleBadge(w, '.desktop-header-row').exists()).toBe(false)
     expect(toggleBadge(w, '.mobile-header-row').exists()).toBe(false)
   })
 
   it('计数变化后角标无需重挂载即更新', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
     await w.setProps({ workcenterBadgeCount: 7 })
-    expect(toggleBadge(w, '.desktop-header-row').text()).toBe('7')
+    expect(toggleBadge(w, '.mobile-header-row').text()).toBe('7')
   })
 })
 
@@ -508,17 +501,18 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
     ).toBe(false)
   })
 
-  it('受控开关为真 → 桌面与移动端两处切换器共用一个弹框实例,不叠两层遮罩', () => {
+  it('受控开关为真 → 顶栏只挂一个弹框实例,不叠两层遮罩(桌面切换器已迁到竖条)', () => {
     const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
-    expect(w.findAll('.ws-switcher')).toHaveLength(2)
+    // 桌面行不再有切换器,顶栏内只剩移动端精简行那一个;竖条里的切换器由 LeftRail 持有,
+    // 仍只上抛诉求、不挂弹框。
+    expect(w.findAll('.ws-switcher')).toHaveLength(1)
     expect(w.findAll('[data-testid="input-overlay"]')).toHaveLength(1)
   })
 
-  it('点击桌面 / 移动端「+」→ 各 emit 一次 update:addWorkspaceOpen(true)', async () => {
+  it('点击移动端「+」→ emit 一次 update:addWorkspaceOpen(true)', async () => {
     const w = mount(AppHeader, { props: baseProps })
-    await w.find('.desktop-header-row .ws-switcher-add').trigger('click')
     await w.find('.mobile-header-row .ws-switcher-add').trigger('click')
-    expect(w.emitted('update:addWorkspaceOpen')).toEqual([[true], [true]])
+    expect(w.emitted('update:addWorkspaceOpen')).toEqual([[true]])
   })
 
   it('点击「选择目录」→ 上抛 select-workspace-directory,由控制器去请求服务端', async () => {

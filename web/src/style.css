@@ -4458,3 +4458,31 @@ select.agent-field {
   border-color: var(--c-primary);
   color: #fff;
 }
+
+/* 左侧竖条里的工作区切换器:触发器是竖条自己的字符徽标,下拉仍向右展开(竖条太窄,
+   向下展开会被视口裁掉);列表末项承载管理员的新增入口。 */
+.ws-switcher-rail .ws-switcher-trigger-rail {
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.ws-switcher-rail .ws-switcher-panel {
+  top: 0;
+  left: calc(100% + var(--sp-1));
+}
+.ws-switcher-add-row-btn {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--c-primary-text);
+  font-size: var(--fs-body);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ws-switcher-add-row-btn:hover {
+  background: var(--c-hover-strong);
+}

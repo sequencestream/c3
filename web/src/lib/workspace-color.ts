@@ -10,7 +10,6 @@
  * 主题敏感的硬编码色,主题切换也无需重算。每个槽位另有一个配套的 `--c-ws-ink-N`
  * 令牌 —— 同一填充上的文字色(白或近黑)随槽位不同而定,同样交给主题声明。
  */
-import { readTokenBlock } from './contrast'
 
 /**
  * 竖条可用的稳定色槽位数。槽位按色相铺开(蓝 / 紫 / 品红 / 琥珀 / 绿 / 青),
@@ -21,6 +20,8 @@ export const WORKSPACE_COLOR_SLOTS = 6
 const SLOT_NAMES = ['1', '2', '3', '4', '5', '6'] as const
 
 export interface WorkspaceFill {
+  /** 落到的色槽序号(1–6),供样式表拼出 `--c-ws-N` / `--c-ws-ink-N`。 */
+  slot: number
   /** 徽标实底色,形如 `var(--c-ws-3)`。 */
   fill: string
   /** 徽标上文字色,形如 `var(--c-ws-ink-3)`。 */
@@ -35,8 +36,9 @@ export interface WorkspaceFill {
  */
 export function workspaceColor(name: string | null | undefined): WorkspaceFill | null {
   if (!name?.trim()) return null
-  const slot = SLOT_NAMES[hashName(name) % WORKSPACE_COLOR_SLOTS]!
-  return { fill: `var(--c-ws-${slot})`, ink: `var(--c-ws-ink-${slot})` }
+  const index = hashName(name) % WORKSPACE_COLOR_SLOTS
+  const slot = SLOT_NAMES[index]!
+  return { slot: index + 1, fill: `var(--c-ws-${slot})`, ink: `var(--c-ws-ink-${slot})` }
 }
 
 /** FNV-1a:同名恒定同值。 */

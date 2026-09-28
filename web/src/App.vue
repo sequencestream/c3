@@ -5,6 +5,7 @@
 // refs/computeds stay the SAME reactive objects, so the template below is
 // unchanged. See controls/index.ts for the decomposition map.
 import AppHeader from './components/AppHeader/AppHeader.vue'
+import LeftRail from './components/LeftRail/LeftRail.vue'
 import Login from './pages/login/Login.vue'
 import Queue from './pages/queue/Queue.vue'
 import AsyncViewLoading from './components/AsyncFallback/AsyncViewLoading.vue'
@@ -121,6 +122,7 @@ const {
   activeTab,
   viewMode,
   workcenterPendingCount,
+  workspaceRunningSessionCounts,
   onSelectTab,
   setViewMode,
   openSettings,
@@ -776,6 +778,12 @@ function onSpeedTest(intent: SpeedTestIntent): void {
   }
 }
 
+/** 竖条的用户消息入口:进工作台并落到用户通知页 —— 与顶栏「用户通知」入口同一动作。 */
+function openWorkcenterNotifications(): void {
+  setViewMode('workcenter')
+  setWorkcenterPage('notifications')
+}
+
 function onFilesChatWidth(px: number): void {
   const ws = filesProject.value
   if (!ws) return
@@ -790,6 +798,19 @@ function onFilesChatWidth(px: number): void {
        the gate (at root) so a "session expired" notice shows over it too. -->
   <Login v-if="authStatus === 'login-required'" />
   <template v-else>
+    <!-- 左侧常驻竖条:工作区入口(带该工作区运行中会话数)与用户消息入口(带待处理数)。
+         与顶栏并列而非覆盖;切换工作区仍走控制层的 selectWorkspace,不重写副作用。 -->
+    <LeftRail
+      :workspaces="workspaces"
+      :current-workspace-name="currentWorkspace"
+      :workspace-running-session-counts="workspaceRunningSessionCounts"
+      :workcenter-pending-count="workcenterPendingCount"
+      @request-add-workspace="addWorkspaceOpen = true"
+      @select-workspace="selectWorkspace"
+      @remove-workspace="removeWorkspace"
+      @open-notifications="openWorkcenterNotifications"
+    />
+
     <AppHeader
       v-model:add-workspace-open="addWorkspaceOpen"
       :workspace-directory-picker="workspaceDirectoryPicker"
@@ -801,7 +822,6 @@ function onFilesChatWidth(px: number): void {
       :tabs-enabled="currentWorkspace !== null"
       :view-mode="viewMode"
       :workcenter-page="workcenterPage"
-      :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
       :update-status="updateStatus"
       :self-update="selfUpdate"

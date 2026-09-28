@@ -428,8 +428,8 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
   Claude 的 `TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`。
 
 工具勾选只约束工具是否可用,不扩大 Codex 文件系统沙箱。`approvalPolicy=never` 只关闭
-审批停顿,不改变沙箱边界:自 2026-09-28 起,`build × never-ask` 回落为 `workspace-write`,
-不再等价于 `danger-full-access`——「停止询问」不是「无沙箱」。
+审批停顿,不改变沙箱边界:`build × never-ask` 是 `workspace-write`——「停止询问」不是
+「无沙箱」。
 
 **Git 元数据写入走受边界路径,不靠升格整格。** 工作树的 `.git` 指向工作树之外的主仓库 git
 目录,`workspace-write` 默认不允许写它,`git add/commit/push` 会因此失败。补偿由 **Codex

@@ -15,6 +15,7 @@ import type { CanonicalMessage, DriverStartOptions } from '../types.js'
 import type { RelayCandidate } from '../../../relay/contract.js'
 import {
   CodexDriver,
+  codexPolicyToGrid,
   convergeCodexPolicy,
   gateToCodexPolicy,
   mcpServersToCodexConfig,
@@ -1148,10 +1149,10 @@ describe('convergeCodexPolicy (vendorContext is not a bypass)', () => {
     }
   })
 
-  it('a stored policy NARROWER than the grid is still honoured', () => {
-    // `workspace-write` is a widening of a read-only grid, so it loses; the same
-    // stored value against a workspace-write grid is adopted above. Narrowing in
-    // the other direction is never blocked.
+  it('an unauthorized widening loses; a narrowing is always honoured', () => {
+    // `workspace-write` is a widening of a read-only grid and carries no
+    // authorization, so it loses; the same stored value against a workspace-write
+    // grid is adopted above. Narrowing in the other direction is never blocked.
     expect(
       convergeCodexPolicy({
         actionMode: 'plan',
@@ -1170,6 +1171,42 @@ describe('convergeCodexPolicy (vendorContext is not a bypass)', () => {
         },
       }),
     ).toEqual({ sandboxMode: 'read-only', approvalPolicy: 'never' })
+  })
+
+  it('an authorized full-access survives the lossy round-trip that produced its grid', () => {
+    // A codex run's grid is derived from the SAME stored policy by the lossy
+    // reverse map, which folds `danger-full-access` back onto the cell its
+    // `approvalPolicy` names. Arbitrating the stored value against that grid would
+    // silently discard the user's explicit choice — and this is the ordinary UI
+    // path, because the title bar swaps `sandboxMode` while keeping the stored
+    // `on-request` (the session default).
+    for (const approvalPolicy of ['on-request', 'on-failure'] as const) {
+      const policy = {
+        sandboxMode: 'danger-full-access',
+        approvalPolicy,
+        explicitFullAccess: true,
+      } as const
+      const grid = codexPolicyToGrid(policy)
+      expect(
+        convergeCodexPolicy({
+          actionMode: grid.actionMode,
+          toolGate: grid.toolGate,
+          explicitFullAccess: true,
+          vendorContext: { codexPolicy: policy },
+        }),
+      ).toEqual({ sandboxMode: 'danger-full-access', approvalPolicy })
+    }
+    // The same stored value without the marker is an unauthorized widening and
+    // still loses to the grid.
+    expect(
+      convergeCodexPolicy({
+        actionMode: 'build',
+        toolGate: 'on-sensitive',
+        vendorContext: {
+          codexPolicy: { sandboxMode: 'danger-full-access', approvalPolicy: 'on-request' },
+        },
+      }),
+    ).toEqual({ sandboxMode: 'workspace-write', approvalPolicy: 'on-request' })
   })
 
   it('with no vendor policy in the bag, the grid decides', () => {

@@ -292,9 +292,11 @@ interface WorkspaceSandboxConfig {
   `workspace-write` 下补 Git 元数据写入),补偿点必须落在该厂商的适配器内部,经
   `DriverStartOptions.vendorContext` 这个**透传袋**接收厂商私有上下文,由适配器自行解释;
   Claude / Cursor 忽略整个袋子。`vendorContext` **不是旁路**:袋内只能精化不改变沙箱边界的
-  字段(如 `approvalPolicy`),任何更宽的 `sandboxMode` 都必须以中立的
-  `explicitFullAccess === true` 为前提,否则回落网格结果。中立层的权限真源始终是
-  `actionMode × toolGate`。
+  字段(如 `approvalPolicy`),任何比网格更宽的 `sandboxMode` 都必须以中立的
+  `explicitFullAccess === true` 为前提,否则回落网格结果;带授权时按策略原样采用,不再按网格
+  宽度二次裁决——Codex 运行的网格本身是该策略经有损反查得到的,`danger-full-access` 会被
+  压回其 `approvalPolicy` 命名的那一格,拿网格反过来裁决会静默作废用户的显式选择。中立层的
+  权限真源始终是 `actionMode × toolGate`。
 - **沙箱升级必须经一次明确、可观察的 UI 操作。** `danger-full-access` 只能由用户显式选择
   产生,并且该选择作为 `CodexPolicy.explicitFullAccess` 持久化;缺标记的一律视为未授权,
   由适配器降级为 `workspace-write`。约束方向是单向的:收紧自动生效,放宽必须留下可观察、

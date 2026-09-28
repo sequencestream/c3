@@ -578,12 +578,20 @@ const SANDBOX_WIDTH: Record<SandboxMode, number> = {
  *  - an OPTIONAL vendor-private stored policy in `vendorContext.codexPolicy`,
  *    whose exact value avoids a lossy grid round-trip.
  *
- * The stored policy may refine `approvalPolicy` (an in-boundary field) and may
- * narrow the sandbox, but it may NOT widen it: a stored `sandboxMode` wider than
- * the grid result is dropped in favour of the grid, and the run log says so.
- * `danger-full-access` gets no exception — the grid itself reaches it only when
- * the explicit authorization was lifted onto the launch boundary. That keeps the
- * pass-through bag from degenerating into a renamed bypass.
+ * The stored policy may refine `approvalPolicy` (an in-boundary field) and it
+ * decides the sandbox whenever it is at most as wide as the grid. Widening is
+ * gated on the explicit authorization, and the width comparison runs ONLY when
+ * that authorization is absent. The order matters: a codex run's grid is itself
+ * derived from this same stored policy by the lossy reverse map
+ * ({@link codexPolicyToGrid}), which folds `danger-full-access` back into the
+ * grid cell its `approvalPolicy` names — `build × on-sensitive` for `on-request`,
+ * i.e. a `workspace-write` grid. Arbitrating the stored value against that grid
+ * would discard the user's explicit full-access choice on the ordinary UI path
+ * (the title bar swaps `sandboxMode` and keeps the stored `approvalPolicy`),
+ * leaving the UI reading "full access" while the sandbox is `workspace-write`.
+ * So an authorized policy is adopted verbatim, and only an unauthorized widening
+ * falls back to the grid — narrowing is automatic, widening is not. That keeps
+ * the pass-through bag from degenerating into a renamed bypass.
  */
 export function convergeCodexPolicy(
   opts: Pick<
@@ -596,11 +604,13 @@ export function convergeCodexPolicy(
   })
   const stored = readStoredCodexPolicy(opts.vendorContext)
   if (!stored) return fromGrid
-  if (SANDBOX_WIDTH[stored.sandboxMode] > SANDBOX_WIDTH[fromGrid.sandboxMode]) {
-    // The stored policy is wider than the grid this launch resolved — either it
-    // claims full access with no explicit authorization (silently promoted, or
-    // predating the flag), or it names a sandbox the neutral grid never granted.
-    // Either way the grid wins: narrowing is automatic, widening is not.
+  if (
+    opts.explicitFullAccess !== true &&
+    SANDBOX_WIDTH[stored.sandboxMode] > SANDBOX_WIDTH[fromGrid.sandboxMode]
+  ) {
+    // The stored policy is wider than the grid this launch resolved, without the
+    // authorization that would justify it — silently promoted, or predating the
+    // flag. The grid wins.
     console.info(
       `[c3] codex: stored policy declares a wider sandbox (${stored.sandboxMode}) than this ` +
         `launch's grid grants (${fromGrid.sandboxMode}) — degraded to the grid.`,

@@ -181,14 +181,14 @@ cwd 之外的可写目录。若 spec 会话无法解析或创建 specs root，�
 
 c3 将中性的「行动模式 × 工具闸门」网格映射为 Codex 原生的 `sandboxMode + approvalPolicy`：
 
-| 网格 `(actionMode, toolGate)` | sandboxMode       | approvalPolicy | 说明                                                   |
-| ----------------------------- | ----------------- | -------------- | ------------------------------------------------------ |
-| `plan` × `never-ask`          | `read-only`       | `never`        | 只读 MCP 流程使用；文件系统只读，MCP handler 自行 gate |
-| `plan` × 其他                 | `read-only`       | `on-request`   | plan 模式永远只读                                      |
-| `build` × `never-ask`         | `workspace-write` | `never`        | 完全放行                                               |
-| `build` × `trusted-prefix`    | `workspace-write` | `on-failure`   | 仅在失败时干预                                         |
-| `build` × `on-sensitive`      | `workspace-write` | `on-request`   | 默认/自动模式                                          |
-| `build` × `always-ask`        | `read-only`       | `on-request`   | **降级**——Codex 无法 per-tool 询问，退为只读           |
+| 网格 `(actionMode, toolGate)` | sandboxMode          | approvalPolicy | 说明                                                   |
+| ----------------------------- | -------------------- | -------------- | ------------------------------------------------------ |
+| `plan` × `never-ask`          | `read-only`          | `never`        | 只读 MCP 流程使用；文件系统只读，MCP handler 自行 gate |
+| `plan` × 其他                 | `read-only`          | `on-request`   | plan 模式永远只读                                      |
+| `build` × `never-ask`         | `danger-full-access` | `never`        | 完全放行；允许写入 Git 元数据并提交代码                |
+| `build` × `trusted-prefix`    | `workspace-write`    | `on-failure`   | 仅在失败时干预                                         |
+| `build` × `on-sensitive`      | `workspace-write`    | `on-request`   | 默认/自动模式                                          |
+| `build` × `always-ask`        | `read-only`          | `on-request`   | **降级**——Codex 无法 per-tool 询问，退为只读           |
 
 反向映射用于 session 启动时从存储的 Codex 策略回算网格值，使中性驱动路径统一消费。
 
@@ -406,7 +406,7 @@ Codex 没有 Claude 的五档模式，而是通过三元语义词义：
 | ------------- | ---------- | -------------- | --------------------------------------- |
 | `read-only`   | `plan`     | `on-sensitive` | read-only sandbox + on-request approval |
 | `auto`        | `build`    | `on-sensitive` | workspace-write + on-request（默认值）  |
-| `full-access` | `build`    | `never-ask`    | workspace-write + never approval        |
+| `full-access` | `build`    | `never-ask`    | danger-full-access + never approval     |
 
 `always-ask` 明确不提供——Codex 无法 per-tool 询问，提供它是在撒谎（映射时会把它降级为只读）。
 

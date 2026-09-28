@@ -35,11 +35,12 @@ export { CODEX_RELAY_PROVIDER, type Relay, type RelayCandidate } from '../../../
 //   apply_patch            ← file_change items
 //   web_search             ← web_search items
 //   mcp__<server>/<tool>   ← mcp_tool_call items
-// The task-tool names (TaskCreate/List/Update/Get) are c3-level abstractions
-// backed by {@link CodexTaskStore} but surfaced as SDK tool names.
+// Codex reports its task list as `todo_list` thread items, not as callable
+// TaskCreate/List/Update/Get tools. Those Claude tool names must not appear in
+// Codex permission manifests.
 // ---------------------------------------------------------------------------
 
-const SDK_READ_TOOLS = new Set(['web_search', 'TaskCreate', 'TaskList', 'TaskUpdate', 'TaskGet'])
+const SDK_READ_TOOLS = new Set(['web_search'])
 
 const SDK_WRITE_TOOLS = new Set(['shell', 'apply_patch'])
 

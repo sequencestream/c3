@@ -285,7 +285,7 @@ function normalizeCodex(v: unknown): CodexPolicy {
     return { sandboxMode: c.sandboxMode, approvalPolicy: c.approvalPolicy }
   }
   if (v === 'read-only') return { sandboxMode: 'read-only', approvalPolicy: 'on-request' }
-  if (v === 'full-access') return { sandboxMode: 'workspace-write', approvalPolicy: 'never' }
+  if (v === 'full-access') return { sandboxMode: 'danger-full-access', approvalPolicy: 'never' }
   // auto or fallback
   return { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' }
 }
@@ -1133,6 +1133,9 @@ const parkRecoveryRateText = computed(() => {
                 >
                   <option value="workspace-write">
                     {{ t('codex.sandboxMode.workspaceWrite') }}
+                  </option>
+                  <option value="danger-full-access">
+                    {{ t('codex.sandboxMode.dangerFullAccess') }}
                   </option>
                   <option value="read-only">{{ t('codex.sandboxMode.readOnly') }}</option>
                 </select>

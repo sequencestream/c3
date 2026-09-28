@@ -1009,6 +1009,22 @@ describe('CodexDriver custom-model catalog (2026-08-08-013)', () => {
 })
 
 describe('gateToCodexPolicy', () => {
+  it('preserves an exact workspace-write + never policy without widening it', async () => {
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver(() => client)
+    await driver.start(
+      startOpts({
+        actionMode: 'build',
+        toolGate: 'never-ask',
+        codexPolicy: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+      }),
+    )
+    expect(calls[0]?.options).toMatchObject({
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+    })
+  })
+
   it('plan + never-ask ⇒ read-only + never for read-only MCP-backed flows', () => {
     expect(gateToCodexPolicy('plan', 'never-ask')).toEqual({
       sandboxMode: 'read-only',
@@ -1023,9 +1039,9 @@ describe('gateToCodexPolicy', () => {
     })
   })
 
-  it('build + never-ask ⇒ workspace-write + never', () => {
+  it('build + never-ask ⇒ danger-full-access + never', () => {
     expect(gateToCodexPolicy('build', 'never-ask')).toEqual({
-      sandboxMode: 'workspace-write',
+      sandboxMode: 'danger-full-access',
       approvalPolicy: 'never',
     })
   })

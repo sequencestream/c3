@@ -674,6 +674,14 @@ export async function runViaDriver(
     signal: cycleAbort.signal,
     actionMode,
     toolGate,
+    ...(adapter.vendor === 'codex' &&
+    rt.codexPolicy &&
+    !intentProfile &&
+    !specProfile &&
+    !specReviewProfile &&
+    !robotProfile
+      ? { codexPolicy: rt.codexPolicy }
+      : {}),
     ...(model ? { model } : {}),
     ...(relayCandidates ? { relayCandidates } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),

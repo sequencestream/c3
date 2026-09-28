@@ -1155,8 +1155,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     ).toBe(false)
     expect(w.find('[data-testid="network-access-readonly-hint"]').exists()).toBe(false)
 
-    // 切到只读沙箱(第 3 个 segmented 的第 2 个按钮)后点击 → 伪条目不会进 payload
-    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[1].trigger('click')
+    // 切到只读沙箱(第 3 个 segmented 的第 3 个按钮)后点击 → 伪条目不会进 payload
+    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[2].trigger('click')
     await w.find('[data-testid="network-access-checkbox"]').trigger('change')
     await w.find('.sf-btn.primary').trigger('click')
 
@@ -1179,6 +1179,21 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.mode).toEqual({
       sandboxMode: 'workspace-write',
+      approvalPolicy: 'on-request',
+    })
+  })
+
+  it('create(codex):完全访问显式保存 danger-full-access', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('git commit -am test')
+    await w.find('select.sf-select').setValue('codex')
+    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[1].trigger('click')
+    expect(w.find('[data-testid="network-access"]').exists()).toBe(false)
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.mode).toEqual({
+      sandboxMode: 'danger-full-access',
       approvalPolicy: 'on-request',
     })
   })

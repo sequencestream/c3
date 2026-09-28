@@ -1061,6 +1061,7 @@ async function executeCodexLlmPrompt(
     signal: abortController.signal,
     actionMode,
     toolGate,
+    codexPolicy: policy,
     ...(model ? { model } : {}),
     ...(relayCandidates ? { relayCandidates } : {}),
     // Optional model capabilities (2026-08-08-013): the codex driver's relay

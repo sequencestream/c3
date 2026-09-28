@@ -2480,6 +2480,7 @@
         "codex": {
           "sandboxModeLabel": "サンドボックスモード",
           "sandboxReadWrite": "読み書き",
+          "sandboxFullAccess": "フルアクセス",
           "sandboxReadOnly": "読み取り専用",
           "approvalLabel": "承認ポリシー",
           "approvalOnRequest": "リクエスト時",
@@ -4024,7 +4025,8 @@
     "sandboxMode": {
       "label": "Sandbox Mode",
       "readOnly": "Read-only",
-      "workspaceWrite": "Workspace Write"
+      "workspaceWrite": "Workspace Write",
+      "dangerFullAccess": "Full Access"
     },
     "approvalPolicy": {
       "label": "Approval Policy",

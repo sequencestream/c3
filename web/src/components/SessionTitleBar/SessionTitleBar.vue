@@ -109,6 +109,10 @@ const agentOptions = computed(() => {
 // Codex sandbox-mode dropdown options (2026-06-08).
 const sandboxModeOptions = computed(() => [
   { value: 'workspace-write' as CodexSandboxMode, label: t('codex.sandboxMode.workspaceWrite') },
+  {
+    value: 'danger-full-access' as CodexSandboxMode,
+    label: t('codex.sandboxMode.dangerFullAccess'),
+  },
   { value: 'read-only' as CodexSandboxMode, label: t('codex.sandboxMode.readOnly') },
 ])
 

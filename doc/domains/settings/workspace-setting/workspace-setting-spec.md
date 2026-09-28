@@ -17,7 +17,7 @@
 按 vendor 分组的默认权限模式映射(vendor id → 模式),规范化后三个键齐全:
 
 - `claude`:值为 `ModeToken`,须落在 Claude 目录(`default` / `auto` / `plan` / `acceptEdits` / `bypassPermissions` 等目录声明项),缺省 `default`。
-- `codex`:值为 `CodexPolicy`(双策略对象)或 `ModeToken`(字符串旧格式)。字符串须落在 Codex 目录(`read-only` / `auto` / `full-access`),缺省 `auto`;对象路径保留 `sandboxMode`/`approvalPolicy`,不走字符串目录门禁。
+- `codex`:值为 `CodexPolicy`(双策略对象)或 `ModeToken`(字符串旧格式)。字符串须落在 Codex 目录(`read-only` / `auto` / `full-access`),缺省 `auto`;对象的 `sandboxMode` 为 `read-only` / `workspace-write` / `danger-full-access`,其中 `workspace-write` 保护 Git 元数据,只有 `danger-full-access` 能直接提交代码。旧字符串 `full-access` 规范化为 `danger-full-access + never`。
 - `cursor`:值为 `ModeToken`,须落在 Cursor 目录(`plan` / `agent` / `full-access`),缺省 `agent`。
 
 规范化(`normalizeDefaultMode`)对**每个** vendor 做目录校验:合法 token 原样保留;缺失/空串/对该 vendor 非法的非空字符串一律回退该 vendor 的 `defaultToken`(`DEFAULT_MODE_MAP`)。遗留的单一字符串格式 fan-out 到全部 vendor 键时同样按各目录接受或回退,不得把 Claude 的 `default` 原样写入 `cursor`。某 vendor 不在映射中时,会话启动读该 vendor 的 `defaultToken`。选中已有会话时,若持久化 mode 已不在该会话 vendor 目录内,下发前降级为工作区默认(再不行则 catalog `defaultToken`)并写回纠正值;合法历史 mode 不改写。遗留的全局 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 由读层一次性迁入按项目配置。

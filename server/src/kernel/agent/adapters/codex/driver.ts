@@ -382,7 +382,7 @@ export function gateToCodexPolicy(
   }
   switch (toolGate) {
     case 'never-ask':
-      return { sandboxMode: 'workspace-write', approvalPolicy: 'never' }
+      return { sandboxMode: 'danger-full-access', approvalPolicy: 'never' }
     case 'trusted-prefix':
       return { sandboxMode: 'workspace-write', approvalPolicy: 'on-failure' }
     case 'on-sensitive':
@@ -699,11 +699,9 @@ export class CodexDriver implements AgentDriver {
     // adapter is constructed — by this point it is always present.
     codexOptions.codexPathOverride = opts.sandboxWrapperPath ?? resolve('codex') ?? undefined
     const codex = this.createCodex(codexOptions)
-    // Codex's launch-time policy IS the per-tool-approval substitute (008). It is
-    // derived from the session permission mode (defaultMode → neutral grid →
-    // sandbox/approval), so one permission knob drives every vendor and a codex
-    // agent needs no separate sandbox/approval config (2026-06-06-008).
-    const policy = gateToCodexPolicy(opts.actionMode, opts.toolGate)
+    // Codex's launch-time policy is its permission boundary. Preserve a native
+    // policy supplied by the caller; otherwise derive one from the neutral grid.
+    const policy = opts.codexPolicy ?? gateToCodexPolicy(opts.actionMode, opts.toolGate)
     // arapuca is already the filesystem sandbox. On macOS a second Seatbelt
     // application from Codex fails with EPERM, so disable only Codex's nested
     // filesystem sandbox while preserving its approval policy.

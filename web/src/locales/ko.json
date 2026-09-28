@@ -2480,6 +2480,7 @@
         "codex": {
           "sandboxModeLabel": "샌드박스 모드",
           "sandboxReadWrite": "읽기/쓰기",
+          "sandboxFullAccess": "전체 액세스",
           "sandboxReadOnly": "읽기 전용",
           "approvalLabel": "승인 정책",
           "approvalOnRequest": "요청 시",
@@ -4024,7 +4025,8 @@
     "sandboxMode": {
       "label": "Sandbox Mode",
       "readOnly": "Read-only",
-      "workspaceWrite": "Workspace Write"
+      "workspaceWrite": "Workspace Write",
+      "dangerFullAccess": "Full Access"
     },
     "approvalPolicy": {
       "label": "Approval Policy",

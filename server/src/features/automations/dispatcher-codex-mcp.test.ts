@@ -286,6 +286,21 @@ describe('codex automation — network-access pseudo-entry passthrough', () => {
   })
 })
 
+describe('codex automation — exact sandbox policy passthrough', () => {
+  it('passes danger-full-access to the driver without a neutral-grid round trip', async () => {
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    const policy = { sandboxMode: 'danger-full-access', approvalPolicy: 'never' } as const
+    await execute(codexAutomation({ mode: policy }), 'log-full-access', () => {})
+
+    expect(startArg?.codexPolicy).toEqual(policy)
+  })
+})
+
 describe('codex automation — gh token bridge', () => {
   it('resolves the host gh credential and hands driver.start the injected envOverrides', async () => {
     let startArg: Record<string, unknown> | undefined

@@ -2480,6 +2480,7 @@
         "codex": {
           "sandboxModeLabel": "Режим песочницы",
           "sandboxReadWrite": "Чтение/запись",
+          "sandboxFullAccess": "Полный доступ",
           "sandboxReadOnly": "Только чтение",
           "approvalLabel": "Политика утверждения",
           "approvalOnRequest": "По запросу",
@@ -4024,7 +4025,8 @@
     "sandboxMode": {
       "label": "Sandbox Mode",
       "readOnly": "Read-only",
-      "workspaceWrite": "Workspace Write"
+      "workspaceWrite": "Workspace Write",
+      "dangerFullAccess": "Full Access"
     },
     "approvalPolicy": {
       "label": "Approval Policy",

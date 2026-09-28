@@ -269,7 +269,7 @@ describe('runViaDriver — codex delivery split (hide-session-system-instruction
     const VISIBLE = 'Cache the endpoint\n\nAdd an LRU cache.'
     const { adapter, started } = fakeCodexAdapter()
 
-    await runViaDriver(rt, VISIBLE, adapter, eventBus, undefined, undefined, undefined, {
+    await runViaDriver(rt, VISIBLE, adapter, eventBus, undefined, undefined, {
       systemInstruction: SDD,
       userTurnPrefix: '/dev ',
     })
@@ -334,7 +334,7 @@ describe('runViaDriver — work-session base MCP injection (publish_event, codex
     const bindMcp = vi.fn(() => ({ servers, dispose }))
     const { adapter, started } = fakeCodexAdapter()
 
-    await runViaDriver(rt, 'hi', adapter, eventBus, undefined, undefined, undefined, undefined, {
+    await runViaDriver(rt, 'hi', adapter, eventBus, undefined, undefined, undefined, {
       bindMcp,
     })
 
@@ -441,12 +441,14 @@ describe('runViaDriver — Codex specs writable root', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         {
-          appendSystemPrompt: 'SPEC SYSTEM',
-          disallowedTools: [],
-          gate: 'spec',
-          bindMcp: () => ({ servers, dispose }),
+          kind: 'spec',
+          spec: {
+            appendSystemPrompt: 'SPEC SYSTEM',
+            disallowedTools: [],
+            gate: 'spec',
+            bindMcp: () => ({ servers, dispose }),
+          },
         },
       )
 
@@ -471,6 +473,173 @@ describe('runViaDriver — Codex specs writable root', () => {
       else process.env.C3_DIR = prevC3Dir
       rmSync(tmpC3, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runViaDriver — declarative profile guard (codex policy carriage)', () => {
+  function captureStart(record: Record<string, unknown>): VendorAdapter {
+    return {
+      vendor: 'codex',
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: (opts: Record<string, unknown>) => {
+          Object.assign(record, opts)
+          return Promise.resolve({
+            sessionId: () => Promise.resolve('codex-profile-native'),
+            // eslint-disable-next-line require-yield
+            messages: async function* () {
+              return
+            },
+          })
+        },
+      },
+    } as unknown as VendorAdapter
+  }
+  const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+  const storedPolicy = {
+    sandboxMode: 'workspace-write',
+    approvalPolicy: 'on-request',
+  } as const
+
+  it('a work run carries the stored policy and lifts the explicit marker only when true', async () => {
+    const sid = 'codex-profile-work'
+    const rt = ensureRuntime(sid, '/projects/p', 'auto', [], 'work', {
+      ...storedPolicy,
+      explicitFullAccess: true,
+    })
+    const started: Record<string, unknown> = {}
+    await runViaDriver(rt, 'hi', captureStart(started), eventBus)
+    expect(started.vendorContext).toEqual({
+      codexPolicy: expect.objectContaining({ sandboxMode: 'workspace-write' }),
+    })
+    expect(started.explicitFullAccess).toBe(true)
+    removeRuntime(sid)
+  })
+
+  it('an intent profile uses the intent grid and carries NO stored policy', async () => {
+    const sid = 'codex-profile-intent'
+    const rt = ensureRuntime(sid, '/projects/p', 'auto', [], 'intent', storedPolicy)
+    const started: Record<string, unknown> = {}
+    await runViaDriver(
+      rt,
+      'hi',
+      captureStart(started),
+      eventBus,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        kind: 'intent',
+        intent: {
+          appendSystemPrompt: 'INTENT',
+          disallowedTools: [],
+          gate: 'intent',
+          bindMcp: () => ({ servers: {}, dispose: () => {} }),
+        },
+      },
+    )
+    // The intent gate's read-only driver grid, and no stored native policy.
+    expect(started.actionMode).toBe('plan')
+    expect(started.vendorContext).toBeUndefined()
+    expect(started.explicitFullAccess).toBeUndefined()
+    removeRuntime(sid)
+  })
+
+  it.each([
+    ['intent', { actionMode: 'plan', toolGate: 'never-ask' }],
+    ['spec', { actionMode: 'build', toolGate: 'never-ask' }],
+    ['spec-review', { actionMode: 'plan', toolGate: 'never-ask' }],
+    // `writeEnabled: false` ⇒ the robot's read-only grid for a vendor without
+    // per-tool approval (codex) is plan × never-ask.
+    ['robot', { actionMode: 'plan', toolGate: 'never-ask' }],
+  ] as const)(
+    'the %s profile degrades to its own locked grid and never carries the stored policy',
+    async (kind, expectedGrid) => {
+      const sid = `codex-profile-${kind}`
+      const rt = ensureRuntime(sid, '/projects/p', 'auto', [], 'work', {
+        sandboxMode: 'danger-full-access',
+        approvalPolicy: 'never',
+        explicitFullAccess: true,
+      })
+      const started: Record<string, unknown> = {}
+      const payloads: Record<string, unknown> = {
+        intent: {
+          appendSystemPrompt: 'I',
+          disallowedTools: [],
+          gate: 'intent',
+          bindMcp: () => ({ servers: {}, dispose: () => {} }),
+        },
+        spec: {
+          appendSystemPrompt: 'S',
+          disallowedTools: [],
+          gate: 'spec',
+          bindMcp: () => ({ servers: {}, dispose: () => {} }),
+        },
+        'spec-review': {
+          appendSystemPrompt: 'R',
+          disallowedTools: [],
+          gate: 'spec_review',
+          bindMcp: () => ({ servers: {}, dispose: () => {} }),
+        },
+        robot: {
+          appendSystemPrompt: 'B',
+          disallowedTools: [],
+          gate: 'robot',
+          allowedTools: new Set<string>(),
+          writeEnabled: false,
+          networkAccess: false,
+        },
+      }
+      const key = kind === 'spec-review' ? 'specReview' : kind
+      await runViaDriver(
+        rt,
+        'hi',
+        captureStart(started),
+        eventBus,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { kind, [key]: payloads[kind] } as any,
+      )
+      expect(started.actionMode).toBe(expectedGrid.actionMode)
+      expect(started.toolGate).toBe(expectedGrid.toolGate)
+      expect(started.vendorContext).toBeUndefined()
+      expect(started.explicitFullAccess).toBeUndefined()
+      removeRuntime(sid)
+    },
+  )
+
+  it('an UNKNOWN profile kind is conservative: stored grid, no native policy carried', async () => {
+    const sid = 'codex-profile-unknown'
+    const rt = ensureRuntime(sid, '/projects/p', 'auto', [], 'work', {
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      explicitFullAccess: true,
+    })
+    const started: Record<string, unknown> = {}
+    await runViaDriver(
+      rt,
+      'hi',
+      captureStart(started),
+      eventBus,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        kind: 'future-profile',
+      } as never,
+    )
+    // Conservative: the profile does NOT override the mode (the stored grid still
+    // applies) and does NOT carry the native policy through the bag.
+    expect(started.vendorContext).toBeUndefined()
+    expect(started.explicitFullAccess).toBeUndefined()
+    expect(started.actionMode).toBe('build')
+    expect(started.toolGate).toBe('never-ask')
+    removeRuntime(sid)
   })
 })
 
@@ -610,7 +779,7 @@ describe('runViaDriver — Cursor AskQuestion bridging', () => {
       resumedReply: '收到，我继续。',
     })
 
-    const run = runViaDriver(rt, 'hi', adapter, eventBus, undefined, onPermissionRequest)
+    const run = runViaDriver(rt, 'hi', adapter, eventBus, onPermissionRequest)
     // The bridge blocks on the human — answer it from the test side once the
     // waiter is registered.
     await vi.waitFor(() => expect(pendingCount()).toBe(1))
@@ -681,7 +850,7 @@ describe('runViaDriver — Cursor AskQuestion bridging', () => {
       resumedReply: '不该到这里来',
     })
 
-    const run = runViaDriver(rt, 'hi', adapter, eventBus, undefined, vi.fn())
+    const run = runViaDriver(rt, 'hi', adapter, eventBus, vi.fn())
     await vi.waitFor(() => expect(pendingCount()).toBe(1))
     expect(resolveDecision(`cursor-ask:${sid}:${askId}`, 'deny')).toEqual({ status: 'resolved' })
     await run

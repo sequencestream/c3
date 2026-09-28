@@ -283,6 +283,32 @@ interface WorkspaceSandboxConfig {
 - 移除容器相关配置:镜像名 / `imageOverride` / `readonlyRootfs` / `networkDisabled` / `allowExternalNetwork` 等一律不在当前模型中。网络收窄阶段再按需引入网络字段。
 - 移除容器供应链协议:`RuntimeVendorConfig`、`VendorInstallManifest`、`FetchPlan` 等一律不引入。
 
+## 15.1 权限网格、厂商策略与显式授权(2026-09-28)
+
+两条例外规则,约束「厂商策略补偿」与「沙箱升级」的合法位置:
+
+- **厂商策略补偿只能发生在适配器内部。** 中立层对外只有 `actionMode × toolGate` 网格,永不
+  出现某家厂商的专有策略字段。厂商若需要在中立网格之外补一点能力(例如 Codex 在
+  `workspace-write` 下补 Git 元数据写入),补偿点必须落在该厂商的适配器内部,经
+  `DriverStartOptions.vendorContext` 这个**透传袋**接收厂商私有上下文,由适配器自行解释;
+  Claude / Cursor 忽略整个袋子。`vendorContext` **不是旁路**:袋内只能精化不改变沙箱边界的
+  字段(如 `approvalPolicy`),任何比网格更宽的 `sandboxMode` 都必须以中立的
+  `explicitFullAccess === true` 为前提,否则回落网格结果;带授权时按策略原样采用,不再按网格
+  宽度二次裁决——Codex 运行的网格本身是该策略经有损反查得到的,`danger-full-access` 会被
+  压回其 `approvalPolicy` 命名的那一格,拿网格反过来裁决会静默作废用户的显式选择。中立层的
+  权限真源始终是 `actionMode × toolGate`。
+- **沙箱升级必须经一次明确、可观察的 UI 操作。** `danger-full-access` 只能由用户显式选择
+  产生,并且该选择作为 `CodexPolicy.explicitFullAccess` 持久化;缺标记的一律视为未授权,
+  由适配器降级为 `workspace-write`。约束方向是单向的:收紧自动生效,放宽必须留下可观察、
+  可持久化的记录。`gateToCodexPolicy('build', 'never-ask')` 因此回落为 `workspace-write`
+  ——「停止询问」与「不受限主机写入」不再是同一个开关的两面。
+
+**Git 元数据补偿(`workspace-write` 下)。** 工作树的 `.git` 是指向主仓库 git 目录的文件,
+该目录位于工作树之外,`workspace-write` 默认不允许写入——于是 `git add/commit/push` 失败。
+补偿方式是把 `git rev-parse --path-format=absolute --git-common-dir` 解析出的**那一个目录**
+追加进 Codex 的 `additionalDirectories`,而不是把整格升为 `danger-full-access`。这只发生在
+Codex 适配器内部,是「受边界约束的路径」而非「无沙箱」。
+
 ## 16. 风险与决策
 
 - **进程级隔离弱于容器/microVM**: 明确定位:当前只做目录 ro/rw + 网络全开,不承诺完全不可信代码的强隔离。

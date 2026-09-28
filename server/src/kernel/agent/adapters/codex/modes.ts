@@ -9,7 +9,10 @@
  * consistent chain:
  *  - `read-only`   → plan × on-sensitive → read-only sandbox (no writes).
  *  - `auto`        → build × on-sensitive → workspace-write + on-request.
- *  - `full-access` → build × never-ask → danger-full-access + never (no sandbox or asking).
+ *  - `full-access` → build × never-ask, but only produces danger-full-access once
+ *    the READ layer has marked it `explicitFullAccess: true` (a legacy token or an
+ *    explicit UI pick). Without that marker the same grid cell stays
+ *    workspace-write, so "stop asking" is no longer "no sandbox" (2026-09-28).
  *
  * `always-ask` is intentionally NOT offered: Codex cannot ask per-tool, so a gate
  * that promised it would lie (it degrades to read-only in `gateToCodexPolicy`).

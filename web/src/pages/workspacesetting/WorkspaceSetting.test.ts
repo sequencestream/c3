@@ -206,7 +206,11 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const payload = emitted[0][0]
     expect(payload.defaultMode).toEqual({
       claude: 'plan',
-      codex: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
+      codex: {
+        sandboxMode: 'workspace-write',
+        approvalPolicy: 'on-request',
+        explicitFullAccess: false,
+      },
       cursor: 'agent',
     })
   })
@@ -221,6 +225,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     expect((payload.defaultMode as Record<VendorId, unknown>).codex).toEqual({
       sandboxMode: 'workspace-write',
       approvalPolicy: 'on-request',
+      explicitFullAccess: false,
     })
   })
 
@@ -233,6 +238,8 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     expect((payload.defaultMode as Record<VendorId, unknown>).codex).toEqual({
       sandboxMode: 'read-only',
       approvalPolicy: 'never',
+      // A non-full-access pick clears the marker.
+      explicitFullAccess: false,
     })
   })
 })

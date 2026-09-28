@@ -49,9 +49,18 @@ vi.mock('../sessions/session-metadata-store.js', () => ({
 const codexStart = vi.hoisted(() => ({
   fn: (_o: unknown): Promise<unknown> => Promise.resolve({}),
 }))
-vi.mock('../../kernel/agent/adapters/codex/index.js', () => ({
-  createCodexAdapter: () => ({ driver: { start: (o: unknown) => codexStart.fn(o) } }),
-}))
+// The dispatcher now reaches codex through the NEUTRAL adapter registry, which
+// pulls the adapter factory, the pure policy->grid mapping and the credential
+// bridge from this module. Keep the real grid mapping and swap only the adapter
+// factory + credential bridge, so the mock surface matches the neutral entry.
+vi.mock('../../kernel/agent/adapters/codex/index.js', async (importActual) => {
+  const actual = await importActual<typeof import('../../kernel/agent/adapters/codex/index.js')>()
+  return {
+    ...actual,
+    createCodexAdapter: () => ({ driver: { start: (o: unknown) => codexStart.fn(o) } }),
+    resolveCodexGhTokenEnv: (o?: Record<string, string>) => ghBridge.fn(o),
+  }
+})
 
 // Stub the host `gh` credential bridge so no real `gh auth token` spawns; it injects
 // a deterministic token so the link test can assert the resolved override reaches
@@ -287,18 +296,44 @@ describe('codex automation — network-access pseudo-entry passthrough', () => {
   })
 })
 
-describe('codex automation — exact sandbox policy passthrough', () => {
-  it('passes danger-full-access to the driver without a neutral-grid round trip', async () => {
+describe('codex automation — vendor-private policy + explicit authorization', () => {
+  it('passes the exact stored policy through vendorContext (no lossy grid round trip)', async () => {
     let startArg: Record<string, unknown> | undefined
     codexStart.fn = (o) => {
       startArg = o as Record<string, unknown>
       return Promise.resolve(successfulRun())
     }
 
-    const policy = { sandboxMode: 'danger-full-access', approvalPolicy: 'never' } as const
+    const policy = { sandboxMode: 'workspace-write', approvalPolicy: 'never' } as const
+    await execute(codexAutomation({ mode: policy }), 'log-write', () => {})
+
+    // The neutral options carry the policy in the vendor-private bag, and the
+    // explicit marker only when the user actually selected full access.
+    expect(startArg?.vendorContext).toEqual({ codexPolicy: policy })
+    expect(startArg?.explicitFullAccess).toBeUndefined()
+    // The git-write behaviour is preserved: a `never-ask` automation under
+    // workspace-write still reaches the driver on the writable grid, where the
+    // codex adapter compensates by adding the git common dir.
+    expect(startArg?.actionMode).toBe('build')
+    expect(startArg?.toolGate).toBe('never-ask')
+  })
+
+  it('lifts explicitFullAccess only when the stored policy records it', async () => {
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    const policy = {
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'never',
+      explicitFullAccess: true,
+    } as const
     await execute(codexAutomation({ mode: policy }), 'log-full-access', () => {})
 
-    expect(startArg?.codexPolicy).toEqual(policy)
+    expect(startArg?.explicitFullAccess).toBe(true)
+    expect(startArg?.vendorContext).toEqual({ codexPolicy: policy })
   })
 })
 

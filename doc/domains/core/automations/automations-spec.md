@@ -427,9 +427,17 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
   MCP 命名空间。Codex 的任务列表来自 `todo_list` 事件而非可调用工具,因此清单不包含
   Claude 的 `TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`。
 
-工具勾选只约束工具是否可用,不扩大 Codex 文件系统沙箱。`workspace-write` 允许修改工作区
-文件但保护 `.git` 等元数据;需要 `git add` / `git commit` / 更新本地引用的自动化必须显式选择
-`danger-full-access`。`approvalPolicy=never` 只关闭审批停顿,不改变沙箱边界。
+工具勾选只约束工具是否可用,不扩大 Codex 文件系统沙箱。`approvalPolicy=never` 只关闭
+审批停顿,不改变沙箱边界:`build × never-ask` 是 `workspace-write`——「停止询问」不是
+「无沙箱」。
+
+**Git 元数据写入走受边界路径,不靠升格整格。** 工作树的 `.git` 指向工作树之外的主仓库 git
+目录,`workspace-write` 默认不允许写它,`git add/commit/push` 会因此失败。补偿由 **Codex
+适配器内部**完成:把 `git rev-parse --git-common-dir` 解析出的那一个目录追加进
+`additionalDirectories`,从而在 `workspace-write` 下获得 `git` 写入能力。因此自动化**无需**
+为了写 Git 元数据而选择 `danger-full-access`;个别仍需无边界主机写入的自动化,必须由用户
+在表单里**显式勾选「完全访问」**(该操作会把 `explicitFullAccess` 落库)。存量未显式授权却被
+提升为 `danger-full-access` 的自动化,由 `c3 audit-codex-sandbox` 列出并给出可观察提示。
 
 该工具清单由前端通过 `get_tool_manifest { vendor, workspaceName?, scope? }` 获取,并以
 `tool_manifest { vendor, tools, scope? }` 返回。这对消息**不是自动化独有**:同一张权限网格

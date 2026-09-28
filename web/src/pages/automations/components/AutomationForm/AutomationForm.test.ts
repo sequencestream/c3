@@ -1180,6 +1180,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.mode).toEqual({
       sandboxMode: 'workspace-write',
       approvalPolicy: 'on-request',
+      explicitFullAccess: false,
     })
   })
 
@@ -1195,6 +1196,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.mode).toEqual({
       sandboxMode: 'danger-full-access',
       approvalPolicy: 'on-request',
+      // Picking full access in the form IS the explicit, observable authorization.
+      explicitFullAccess: true,
     })
   })
 

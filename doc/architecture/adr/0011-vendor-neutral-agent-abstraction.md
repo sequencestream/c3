@@ -223,6 +223,16 @@ push-input);interrupt / fork-session 虽然厂商为 true,但要等到重写阶�
 - **Easier:** 一个新厂商添加一个实现三个接口并声明自己能力台账的兄弟适配器;上层通过中立接口
   驱动它,不带任何新的 Claude 假设。必备与可选的界线是机械地被检查的(一个契约测试钉住能力
   台账恰好是那八个可选标志,且必备接口面始终存在)。
+- **Compensation boundary(2026-09-28):** 厂商在自身能力上需要的补偿只发生在**适配器内部**,
+  不得把厂商专有字段挂上中立入口。`DriverStartOptions` 只暴露中立形状——`actionMode × toolGate`
+  网格,加一个不解释的 `vendorContext` 透传袋(仅对应厂商的适配器读它)和一个中立的
+  `explicitFullAccess` 授权标志。`vendorContext` 只能精化不改变沙箱边界的字段,任何更宽的
+  `sandboxMode` 都要以 `explicitFullAccess === true` 为前提;该收敛由适配器内部强制,调用方
+  无法绕过。上层(含 `features/**`)一律经 kernel 中立入口获取厂商能力
+  (`registry.ts` 的 `resolveVendorAdapter` / `storedModeToGrid` / `resolveVendorCredentialEnv`),
+  **不得**直接 import `kernel/agent/adapters/<vendor>/**`;`features/**` 对 codex 子树的这条
+  限制由 eslint `no-restricted-imports` 强制(唯一带注释的例外:会话历史读取各厂商的
+  SessionStore)。
 - **Harder:** 中立权限网格比 Claude 的五种模式更粗;`auto` 的偏向以及一个 always-ask 网关在
   Claude 侧没有精确对应项(这些损失被记录在案,并在翻译处被暴露出来)。未来若某个 UI 想要找回
   丢失的细节,必须把它作为一个厂商额外字段重新引入,而不是塞进中立网格。

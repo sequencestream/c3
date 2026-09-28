@@ -21,7 +21,15 @@ import type { Relay } from '../../../relay/contract.js'
 
 export { codexCapabilities } from './capabilities.js'
 export { createCodexSkillLoader } from './skill.js'
-export { CodexDriver, gateToCodexPolicy, type CodexFactory, type CodexClient } from './driver.js'
+export {
+  CodexDriver,
+  gateToCodexPolicy,
+  codexPolicyToGrid,
+  convergeCodexPolicy,
+  type CodexFactory,
+  type CodexClient,
+} from './driver.js'
+export { resolveCodexGhTokenEnv, type GhAuthTokenRunner } from './gh-token.js'
 export { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 export { CodexSessionStore, codexStoreRoots } from './session-store.js'
 export { CodexTaskStore } from './task-store.js'

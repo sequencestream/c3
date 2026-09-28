@@ -89,6 +89,12 @@ export const SESSION_KEYS = {
   mode: 'mode',
   codexSandboxMode: 'codexPolicy.sandboxMode',
   codexApprovalPolicy: 'codexPolicy.approvalPolicy',
+  /**
+   * The authoritative record that the user EXPLICITLY chose full access
+   * (2026-09-28). "Strictly true" is the authorization rule; its absence is
+   * what the stock-config audit looks for.
+   */
+  codexExplicitFullAccess: 'codexPolicy.explicitFullAccess',
   /** Present only on pending-intent rows; also their creation instant. */
   pendingCreatedAt: 'pendingCreatedAt',
 } as const

@@ -290,17 +290,28 @@ export function getSessionCodexPolicy(sessionId: string): CodexPolicy | undefine
   return {
     sandboxMode: sandboxMode as CodexPolicy['sandboxMode'],
     approvalPolicy: approvalPolicy as CodexPolicy['approvalPolicy'],
+    // The explicit-authorization record rides with the policy. Absent ⇒ NOT
+    // authorized (2026-09-28) — never inferred from the grid.
+    ...(sessionValue(sessionId, SESSION_KEYS.codexExplicitFullAccess) === 'true'
+      ? { explicitFullAccess: true }
+      : {}),
   }
 }
 
 export function setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): void {
   setSessionValue(sessionId, SESSION_KEYS.codexSandboxMode, policy.sandboxMode)
   setSessionValue(sessionId, SESSION_KEYS.codexApprovalPolicy, policy.approvalPolicy)
+  setSessionValue(
+    sessionId,
+    SESSION_KEYS.codexExplicitFullAccess,
+    policy.explicitFullAccess === true ? 'true' : 'false',
+  )
 }
 
 export function deleteSessionCodexPolicy(sessionId: string): void {
   setSessionValue(sessionId, SESSION_KEYS.codexSandboxMode, null)
   setSessionValue(sessionId, SESSION_KEYS.codexApprovalPolicy, null)
+  setSessionValue(sessionId, SESSION_KEYS.codexExplicitFullAccess, null)
 }
 
 export function getActiveSessionId(): string | null {

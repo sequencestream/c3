@@ -6,6 +6,7 @@
 -- 一会话一作用域, 容纳两类互不重叠的键, 各由自己的模块写入:
 --   绑定空间 (ADR-0015): agentId / vendor / storeScope / groupCursor / pendingCreatedAt
 --   会话设置:            mode / codexPolicy.sandboxMode / codexPolicy.approvalPolicy
+--                        / codexPolicy.explicitFullAccess(2026-09-28: 用户显式选择完全访问的持久记录)
 --
 -- 意图 (intent) 与事实 (fact) 靠键区分而不是靠两张表: 带 pendingCreatedAt 的是尚未绑定
 -- 的意图 (session_id 形如 `pending:<uuid>`), 带 vendor 的是已绑定的事实。vendor 是事实

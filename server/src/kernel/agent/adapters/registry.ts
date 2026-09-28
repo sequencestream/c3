@@ -4,20 +4,82 @@
  * override, a c3-managed CLI, or a degraded host PATH fallback; only a runnable
  * executable constructs an adapter.
  */
-import type { VendorId, VendorAdapter } from './types.js'
+import type { ModeToken, NeutralMode, VendorId, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
-import { createCodexAdapter } from './codex/index.js'
+import { createCodexAdapter, codexPolicyToGrid, resolveCodexGhTokenEnv } from './codex/index.js'
 import { createCursorAdapter } from './cursor/index.js'
 import { HOST_BINARIES, resolveExecutable, type VendorProbe } from '../process/launcher.js'
+import { tokenToGrid } from './mode-catalog.js'
+import { MODE_CATALOGS } from './index.js'
+import type { Relay } from '../../relay/contract.js'
+import type { CodexPolicy } from '@ccc/shared/protocol'
+
+/**
+ * Optional dependencies a vendor factory may need. Injected rather than reached
+ * for, so a caller (a feature, the server composition root) never has to import
+ * `adapters/<vendor>/**` to construct an adapter (2026-09-28).
+ */
+export interface VendorFactoryDeps {
+  /** The in-process vendor-neutral relay, for vendors that support it. */
+  relay?: Relay
+}
 
 /** Builds a fresh {@link VendorAdapter}. */
-type VendorFactory = () => VendorAdapter
+type VendorFactory = (deps: VendorFactoryDeps) => VendorAdapter
 
-/** The vendors c3 drives via a no-arg factory. */
+/** The vendors c3 drives via a factory. */
 export const VENDOR_FACTORIES: Partial<Record<VendorId, VendorFactory>> = {
-  claude: createClaudeAdapter,
-  codex: () => createCodexAdapter(),
+  claude: () => createClaudeAdapter(),
+  codex: (deps) => createCodexAdapter(undefined, undefined, deps.relay),
   cursor: () => createCursorAdapter(),
+}
+
+/**
+ * Construct a vendor's adapter through the registry, so callers outside the
+ * kernel's adapter subtree never import a vendor module. Returns `undefined` for
+ * a vendor c3 does not implement (a partial table, by design).
+ */
+export function resolveVendorAdapter(
+  vendor: VendorId,
+  deps: VendorFactoryDeps = {},
+): VendorAdapter | undefined {
+  return VENDOR_FACTORIES[vendor]?.(deps)
+}
+
+/**
+ * Resolve a stored vendor-native mode to the NEUTRAL grid, vendor-agnostically.
+ *
+ * codex is the one vendor whose stored form is a dual-policy OBJECT rather than
+ * a catalog token, so it is read through its own reverse mapping here; every
+ * other vendor's stored form is a {@link ModeToken} read through its catalog.
+ * The vendor branch lives in the kernel (this file), never in a feature — a
+ * feature that needs the grid calls this and gets a `NeutralMode` back.
+ */
+export function storedModeToGrid(
+  vendor: VendorId,
+  storedMode: ModeToken | CodexPolicy,
+): NeutralMode {
+  if (vendor === 'codex' && typeof storedMode === 'object' && storedMode !== null) {
+    return codexPolicyToGrid(storedMode as CodexPolicy)
+  }
+  const token = typeof storedMode === 'string' ? storedMode : MODE_CATALOGS[vendor].defaultToken
+  return tokenToGrid(MODE_CATALOGS[vendor], token)
+}
+
+/**
+ * Bridge a vendor's host credential needs into the run's env overrides.
+ *
+ * Codex is the only vendor with a sandbox that cannot read the OS keyring where
+ * `gh` keeps its token, so it is the only one that needs the bridge; for every
+ * other vendor this is the identity function. A feature calls this instead of
+ * importing `adapters/codex/gh-token.js` (2026-09-28).
+ */
+export function resolveVendorCredentialEnv(
+  vendor: VendorId,
+  envOverrides?: Record<string, string>,
+): Promise<Record<string, string> | undefined> {
+  if (vendor === 'codex') return resolveCodexGhTokenEnv(envOverrides)
+  return Promise.resolve(envOverrides)
 }
 
 /** A vendor whose adapter exists but whose host CLI was not found on this host. */
@@ -54,7 +116,7 @@ export function resolveAvailableAdapters(
     if (!factory) continue
     const result = resolve(vendor)
     if (result.path) {
-      available.push(factory())
+      available.push(factory({}))
     } else {
       // Every factory in this table is a host-CLI vendor, so a spec always exists;
       // the probe's own binary name is the fallback that keeps this total without

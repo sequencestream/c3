@@ -54,9 +54,16 @@ vi.mock('../sessions/session-metadata-store.js', () => ({
 const codexStart = vi.hoisted(() => ({
   fn: (_o: unknown): Promise<unknown> => Promise.resolve({}),
 }))
-vi.mock('../../kernel/agent/adapters/codex/index.js', () => ({
-  createCodexAdapter: () => ({ driver: { start: (o: unknown) => codexStart.fn(o) } }),
-}))
+// The dispatcher reaches codex through the neutral adapter registry, which also
+// imports the pure grid mapping from this module — keep the real one and swap
+// only the adapter factory.
+vi.mock('../../kernel/agent/adapters/codex/index.js', async (importActual) => {
+  const actual = await importActual<typeof import('../../kernel/agent/adapters/codex/index.js')>()
+  return {
+    ...actual,
+    createCodexAdapter: () => ({ driver: { start: (o: unknown) => codexStart.fn(o) } }),
+  }
+})
 
 import type { Automation, ServerToClient } from '@ccc/shared/protocol'
 import { execute } from './dispatcher.js'

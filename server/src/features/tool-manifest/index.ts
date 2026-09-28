@@ -17,9 +17,7 @@
 import type { ToolManifestEntry, ToolManifestScope, VendorId } from '@ccc/shared/protocol'
 import { VENDOR_IDS, isC3McpTool } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
-import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
-import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
-import { createCursorAdapter } from '../../kernel/agent/adapters/cursor/index.js'
+import { resolveVendorAdapter } from '../../kernel/agent/adapters/registry.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { getWorkspaceMcpConfig as storeGetWorkspaceMcpConfig } from '../automations/store.js'
 
@@ -102,16 +100,10 @@ export function vendorSdkTools(
   workspaceName?: string,
   mcpServers?: McpServerDefs,
 ): ToolManifestEntry[] {
-  switch (vendor) {
-    case 'claude':
-      return createClaudeAdapter().listTools(workspaceName ?? '', mcpServers)
-    case 'codex':
-      return createCodexAdapter().listTools(workspaceName ?? '', mcpServers)
-    case 'cursor':
-      return createCursorAdapter().listTools(workspaceName ?? '', mcpServers)
-    default:
-      return []
-  }
+  // Constructed through the neutral adapter registry, so this feature never
+  // imports a vendor module (2026-09-28).
+  const adapter = resolveVendorAdapter(vendor as VendorId)
+  return adapter ? adapter.listTools(workspaceName ?? '', mcpServers) : []
 }
 
 /**

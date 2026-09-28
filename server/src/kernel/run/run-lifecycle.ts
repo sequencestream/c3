@@ -28,6 +28,7 @@ import {
   type SpecReviewProfile,
   type RobotProfile,
 } from './run-via-driver.js'
+import type { RunProfile } from './run-profiles.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
@@ -245,6 +246,37 @@ export async function launchRun(
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
+  /**
+   * Assemble the run's profile descriptor from the resolution done above. The
+   * `sessionKind` booleans are mutually exclusive, so exactly one member is set —
+   * or none for a work / discussion run. This is the one place the kind is named;
+   * `runViaDriver` consumes only the descriptor (2026-09-28).
+   */
+  function runProfileFor(input: {
+    isIntent: boolean
+    isSpec: boolean
+    isSpecReview: boolean
+    isRobot: boolean
+    resolvedIntentProfile: IntentProfile | undefined
+    resolvedSpecProfile: SpecProfile | undefined
+    resolvedSpecReviewProfile: SpecReviewProfile | undefined
+    resolvedRobotProfile: RobotProfile | undefined
+  }): RunProfile | undefined {
+    if (input.isIntent && input.resolvedIntentProfile) {
+      return { kind: 'intent', intent: input.resolvedIntentProfile }
+    }
+    if (input.isSpec && input.resolvedSpecProfile) {
+      return { kind: 'spec', spec: input.resolvedSpecProfile }
+    }
+    if (input.isSpecReview && input.resolvedSpecReviewProfile) {
+      return { kind: 'spec-review', specReview: input.resolvedSpecReviewProfile }
+    }
+    if (input.isRobot && input.resolvedRobotProfile) {
+      return { kind: 'robot', robot: input.resolvedRobotProfile }
+    }
+    return undefined
+  }
+
   const isIntent = rt.sessionKind === 'intent'
   const isSpec = rt.sessionKind === 'spec'
   const isSpecReview = rt.sessionKind === 'spec_review'
@@ -541,14 +573,20 @@ export async function launchRun(
           prompt,
           adapter,
           deps.eventBus,
-          resolvedIntentProfile,
           deps.onPermissionRequest,
           images,
           inject,
           resolvedSessionProfile,
-          resolvedSpecProfile,
-          resolvedSpecReviewProfile,
-          resolvedRobotProfile,
+          runProfileFor({
+            isIntent,
+            isSpec,
+            isSpecReview,
+            isRobot,
+            resolvedIntentProfile,
+            resolvedSpecProfile,
+            resolvedSpecReviewProfile,
+            resolvedRobotProfile,
+          }),
         )
       const unavailable = `${vendor} is unavailable (its host CLI is missing or incompatible — install it to use a ${vendor} agent).`
       logRunFailure(runLogIdentity(), `vendor-unavailable:${vendor}`, unavailable)

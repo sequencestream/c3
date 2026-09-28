@@ -282,12 +282,23 @@ function vendorSectionLabel(v: VendorId): string {
 function normalizeCodex(v: unknown): CodexPolicy {
   if (v && typeof v === 'object' && 'sandboxMode' in v) {
     const c = v as CodexPolicy
-    return { sandboxMode: c.sandboxMode, approvalPolicy: c.approvalPolicy }
+    return {
+      sandboxMode: c.sandboxMode,
+      approvalPolicy: c.approvalPolicy,
+      // The stored marker is carried through verbatim — never re-derived from the
+      // sandbox value, or a stock config would look self-authorized.
+      explicitFullAccess: c.explicitFullAccess === true,
+    }
   }
-  if (v === 'read-only') return { sandboxMode: 'read-only', approvalPolicy: 'on-request' }
-  if (v === 'full-access') return { sandboxMode: 'danger-full-access', approvalPolicy: 'never' }
+  if (v === 'read-only') {
+    return { sandboxMode: 'read-only', approvalPolicy: 'on-request', explicitFullAccess: false }
+  }
+  if (v === 'full-access') {
+    // A legacy full-access token IS an explicit choice, so it stays authorized.
+    return { sandboxMode: 'danger-full-access', approvalPolicy: 'never', explicitFullAccess: true }
+  }
   // auto or fallback
-  return { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' }
+  return { sandboxMode: 'workspace-write', approvalPolicy: 'on-request', explicitFullAccess: false }
 }
 
 /**
@@ -504,8 +515,21 @@ const draftCodexPolicy = computed<CodexPolicy>(() => {
   const c = (draft.value.defaultMode as Record<string, unknown> | undefined)?.codex
   return c && typeof c === 'object'
     ? (c as CodexPolicy)
-    : { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' }
+    : { sandboxMode: 'workspace-write', approvalPolicy: 'on-request', explicitFullAccess: false }
 })
+
+// Picking a sandbox mode in this form is the explicit, observable authorization:
+// `danger-full-access` records the marker, any other pick clears it. Keeping it in
+// sync here means the saved default always states whether it was authorized.
+watch(
+  () => draftCodexPolicy.value.sandboxMode,
+  (sandboxMode) => {
+    const policy = (draft.value.defaultMode as Record<string, unknown> | undefined)?.codex
+    if (policy && typeof policy === 'object') {
+      ;(policy as CodexPolicy).explicitFullAccess = sandboxMode === 'danger-full-access'
+    }
+  },
+)
 
 /**
  * Always-non-null sandbox ref for the template (WorkspaceSetting.sandbox is optional).

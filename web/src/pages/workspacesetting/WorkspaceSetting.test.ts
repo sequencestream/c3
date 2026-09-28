@@ -180,7 +180,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
       .find('[data-testid="default-mode-codex-sandbox"]')
       .findAll('option')
       .map((o) => o.attributes('value'))
-    expect(sandboxOpts).toEqual(['workspace-write', 'read-only'])
+    expect(sandboxOpts).toEqual(['workspace-write', 'danger-full-access', 'read-only'])
     const approvalOpts = w
       .find('[data-testid="default-mode-codex-approval"]')
       .findAll('option')

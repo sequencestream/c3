@@ -415,10 +415,18 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 列表,每个条目是一个工具名加上一个写/非写分类。这个结果是预先判定好的
 分类(不是运行时 MCP 服务探测),遵循与自动化执行器的工具冻结步骤相同的约定。
 
-- **Claude**:返回 SDK 内置工具(`Read`、`Grep`、`Glob`、`LS`、`WebFetch`、`WebSearch`、
-  `TaskCreate`、`TaskList`、`TaskUpdate`、`TaskGet`、`Write`、`Edit`、`NotebookEdit`、`Agent`、`Bash`)
-  加上工作区 MCP 服务器的命名空间前缀(`mcp__<server>__`)。MCP 命名空间被分类
-  为写(保守起见)。
+- **Claude**:返回当前 SDK 默认工具(`Read`、`Grep`、`Glob`、`LS`、`NotebookRead`、`WebFetch`、
+  `WebSearch`、`Write`、`Edit`、`NotebookEdit`、`Agent`、`Bash`)加上工作区 MCP 服务器的命名空间
+  前缀(`mcp__<server>__`)。新模型默认工具面已经移除旧 task/todo 工具,因此清单不再展示
+  `TaskCreate`、`TaskList`、`TaskUpdate`、`TaskGet`;通过环境变量显式恢复它们属于用户扩展配置。
+  MCP 命名空间被分类为写(保守起见)。
+- **Codex**:返回运行事件能够实际产生的 `web_search`、`shell`、`apply_patch`,再加工作区
+  MCP 命名空间。Codex 的任务列表来自 `todo_list` 事件而非可调用工具,因此清单不包含
+  Claude 的 `TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`。
+
+工具勾选只约束工具是否可用,不扩大 Codex 文件系统沙箱。`workspace-write` 允许修改工作区
+文件但保护 `.git` 等元数据;需要 `git add` / `git commit` / 更新本地引用的自动化必须显式选择
+`danger-full-access`。`approvalPolicy=never` 只关闭审批停顿,不改变沙箱边界。
 
 该工具清单由前端通过 `get_tool_manifest { vendor, workspaceName?, scope? }` 获取,并以
 `tool_manifest { vendor, tools, scope? }` 返回。这对消息**不是自动化独有**:同一张权限网格

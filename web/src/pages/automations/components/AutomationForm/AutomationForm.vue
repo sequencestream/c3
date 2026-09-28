@@ -469,7 +469,12 @@ watch(
           codexApprovalPolicy.value = sched.mode.approvalPolicy
         } else {
           const legacy = sched.mode as string
-          codexSandboxMode.value = legacy === 'read-only' ? 'read-only' : 'workspace-write'
+          codexSandboxMode.value =
+            legacy === 'read-only'
+              ? 'read-only'
+              : legacy === 'full-access'
+                ? 'danger-full-access'
+                : 'workspace-write'
           codexApprovalPolicy.value =
             legacy === 'read-only' || legacy === 'full-access' ? 'never' : 'on-request'
         }
@@ -1447,6 +1452,14 @@ function save(): void {
                   <button
                     type="button"
                     class="sf-seg"
+                    :class="{ active: codexSandboxMode === 'danger-full-access' }"
+                    @click="codexSandboxMode = 'danger-full-access'"
+                  >
+                    {{ t('automation.form.permissionMode.codex.sandboxFullAccess') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-seg"
                     :class="{ active: codexSandboxMode === 'read-only' }"
                     @click="codexSandboxMode = 'read-only'"
                   >
@@ -1513,7 +1526,7 @@ function save(): void {
               :model-value="toolAllowlist"
               :loading="toolManifestLoading"
               :error="toolManifestError"
-              :show-network-access="vendor === 'codex'"
+              :show-network-access="vendor === 'codex' && codexSandboxMode !== 'danger-full-access'"
               :network-access-blocked="networkAccessBlocked"
               @update:model-value="toolAllowlist = $event"
             />

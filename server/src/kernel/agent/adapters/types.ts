@@ -25,6 +25,7 @@ import type {
   ToolGate,
   AdapterCapability,
   CanonicalMessage,
+  CodexPolicy,
   SessionCapability,
   SessionCapabilities,
   SkillSupportState,
@@ -268,6 +269,8 @@ export interface DriverStartOptions {
   /** Starting action mode + tool gate (the neutral replacement for PermissionMode). */
   actionMode: ActionMode
   toolGate: ToolGate
+  /** Exact Codex policy when the caller owns one; avoids lossy grid round-tripping. */
+  codexPolicy?: CodexPolicy
   /** Resume an existing session by id. Omit for a new session. */
   resume?: string
   /** Model alias/id override. Omit ⇒ adapter default. */

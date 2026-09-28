@@ -1306,13 +1306,13 @@ export function getCodexDefaultPolicy(workspacePath: string): CodexPolicy | unde
   const policyMap: Record<
     string,
     {
-      sandboxMode: 'read-only' | 'workspace-write'
+      sandboxMode: CodexPolicy['sandboxMode']
       approvalPolicy: 'never' | 'on-failure' | 'on-request'
     }
   > = {
     'read-only': { sandboxMode: 'read-only', approvalPolicy: 'on-request' },
     auto: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
-    'full-access': { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+    'full-access': { sandboxMode: 'danger-full-access', approvalPolicy: 'never' },
   }
   return policyMap[token] ?? policyMap['auto']
 }

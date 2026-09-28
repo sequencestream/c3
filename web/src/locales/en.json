@@ -2702,6 +2702,7 @@
         "codex": {
           "sandboxModeLabel": "Sandbox mode",
           "sandboxReadWrite": "Read-write",
+          "sandboxFullAccess": "Full access",
           "sandboxReadOnly": "Read-only",
           "approvalLabel": "Approval policy",
           "approvalOnRequest": "On request",
@@ -4087,7 +4088,8 @@
     "sandboxMode": {
       "label": "Sandbox Mode",
       "readOnly": "Read-only",
-      "workspaceWrite": "Workspace Write"
+      "workspaceWrite": "Workspace Write",
+      "dangerFullAccess": "Full Access"
     },
     "approvalPolicy": {
       "label": "Approval Policy",

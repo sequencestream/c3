@@ -114,7 +114,7 @@ export interface NeutralMode {
  * Codex sandbox isolation mode — a 1:1 mapping of `@openai/codex-sdk`'s
  * `SandboxMode`. Controls what filesystem write access the agent has.
  */
-export type CodexSandboxMode = 'read-only' | 'workspace-write'
+export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 /**
  * Codex approval policy — a 1:1 mapping of `@openai/codex-sdk`'s

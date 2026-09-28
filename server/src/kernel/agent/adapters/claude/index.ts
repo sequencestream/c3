@@ -38,10 +38,6 @@ const SDK_READ_TOOLS = new Set([
   'NotebookRead',
   'WebFetch',
   'WebSearch',
-  'TaskCreate',
-  'TaskList',
-  'TaskUpdate',
-  'TaskGet',
 ])
 
 /** Built-in SDK tools considered write operations. */

@@ -9,7 +9,7 @@
  * consistent chain:
  *  - `read-only`   → plan × on-sensitive → read-only sandbox (no writes).
  *  - `auto`        → build × on-sensitive → workspace-write + on-request.
- *  - `full-access` → build × never-ask → workspace-write + never (no asking).
+ *  - `full-access` → build × never-ask → danger-full-access + never (no sandbox or asking).
  *
  * `always-ask` is intentionally NOT offered: Codex cannot ask per-tool, so a gate
  * that promised it would lie (it degrades to read-only in `gateToCodexPolicy`).

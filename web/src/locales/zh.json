@@ -2464,6 +2464,7 @@
         "codex": {
           "sandboxModeLabel": "沙箱模式",
           "sandboxReadWrite": "读写",
+          "sandboxFullAccess": "完全访问",
           "sandboxReadOnly": "只读",
           "approvalLabel": "审批策略",
           "approvalOnRequest": "请求时审批",
@@ -3999,7 +4000,8 @@
     "sandboxMode": {
       "label": "沙箱模式",
       "readOnly": "只读",
-      "workspaceWrite": "工作区可写"
+      "workspaceWrite": "工作区可写",
+      "dangerFullAccess": "完全访问"
     },
     "approvalPolicy": {
       "label": "审批策略",

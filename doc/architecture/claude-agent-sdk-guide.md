@@ -3,7 +3,7 @@
 > 面向开发者与 AI：解释 c3 所依赖的 `@anthropic-ai/claude-agent-sdk`（TypeScript）
 > 是什么、如何与 Claude Code 协作、数据存在哪里、如何读取 Skill，以及最佳实践。
 >
-> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.237`（在 c3 依赖清单中锁定）。
+> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.283`（在 c3 依赖清单中锁定）。
 > - **历史名称**：该 SDK 前身为 “Claude Code SDK”，2025 年下半年更名为 “Claude Agent SDK”。
 > - **官方文档**：<https://code.claude.com/docs/en/agent-sdk/>
 > - **源码仓库**：<https://github.com/anthropics/claude-agent-sdk-typescript>
@@ -102,7 +102,7 @@ SDK 进程对子进程的控制分层进行：
 
 ### 权限回调（c3 的核心）
 
-c3 不使用 hook，而是只通过 `canUseTool` 把每次敏感工具调用转成一次浏览器审批：
+c3 在常驻工作会话上通过 `canUseTool` 把每次敏感工具调用转成一次浏览器审批；**不传** `PostToolUse` / `SessionStart` / `Stop` 等 hook。唯一例外是 chat robot：`canUseTool` 可被继承的 allow 规则跳过，因此 robot gate 额外注册一个只拒绝的 `PreToolUse` hook，把本地文件读写钉在冻结的 run root 上。
 
 ```ts
 canUseTool: async (toolName, input) => {
@@ -289,8 +289,10 @@ flowchart LR
 `allowedTools` 也列了它）。三者中只有 `tools` 是「基础集合」——它**替换**默认内建工具集，不是叠加。
 
 自 SDK `0.3.233` 起，task/todo 工具（`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet` /
-`TodoWrite`）在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上**不再属于默认工具面**：要保留，
-宿主须在 `tools` 中点名、在 `allowedTools` 中引用，或设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`。
+`TodoWrite`）在 Opus 4.8、Sonnet 5、Fable 5、Mythos 5 及更新模型上**不再属于默认工具面**。
+`0.3.268` 把默认集合进一步收到 Claude 3.x、Opus 4.0–4.7、Sonnet 4.0–4.6 与 Haiku 4.5；
+其它模型要保留这些工具，宿主须在 `tools` 中点名、在 `allowedTools` 中引用，或设
+`CLAUDE_CODE_ENABLE_TODO_TOOLS=1`。
 
 **c3 三者都不用，沿用 SDK 默认。** c3 是编排层，不替用户改写 vendor 的默认设置——一个 agent 拿到
 什么工具面，由 vendor 与用户自己的配置决定。代价是：在上述模型上模型拿不到 task 工具，**任务面板
@@ -332,6 +334,7 @@ shell 或 agent 的 env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` 即可—
 留痕去向）独立成档，索引见
 [`sdk-upgrade/sdk-upgrade-records.md`](sdk-upgrade/sdk-upgrade-records.md)：
 
+- `0.3.237 → 0.3.283`（2026-09-28）：[`sdk-upgrade/2026-09-28-claude-agent-sdk-upgrade-to-v0.3.283.md`](sdk-upgrade/2026-09-28-claude-agent-sdk-upgrade-to-v0.3.283.md)
 - `0.3.233 → 0.3.237`（2026-08-21）：[`sdk-upgrade/2026-08-21-claude-agent-sdk-upgrade-to-v0.3.237.md`](sdk-upgrade/2026-08-21-claude-agent-sdk-upgrade-to-v0.3.237.md)
 - `0.3.220 → 0.3.233`（2026-08-16）：[`sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md`](sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)
 - `0.3.183 → 0.3.195`（2026-06-28）：[`sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md`](sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md)

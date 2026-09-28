@@ -34,6 +34,7 @@ export function buildWorkspaceHandlers(
     sessionPagingByWorkspace,
     sessionCounts,
     ownerRunningCounts,
+    workspaceRunningSessionCounts,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -170,6 +171,16 @@ export function buildWorkspaceHandlers(
   return {
     workspaces: (_ctx, msg) => {
       workspaces.value = msg.workspaces
+      // 已从注册表移除的工作区,其运行中计数永远不会再被刷新 —— 不清掉就会在映射里
+      // 留下一个再也不会被更新的陈旧数字。首帧 session_counts 之前映射本就是空的。
+      const live = new Set(msg.workspaces.map((w) => w.name))
+      for (const name of Object.keys(workspaceRunningSessionCounts.value)) {
+        if (!live.has(name)) {
+          const next = { ...workspaceRunningSessionCounts.value }
+          delete next[name]
+          workspaceRunningSessionCounts.value = next
+        }
+      }
       // If the current workspace was removed, fall back to the most-recent one.
       const resolved = resolveCurrentWorkspace(currentWorkspace.value, msg.workspaces)
       if (resolved !== currentWorkspace.value) {

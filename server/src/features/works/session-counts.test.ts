@@ -233,6 +233,10 @@ describe('getSessionCounts', () => {
         // 条目口径:intent-1(spec 会话)、intent-3(意图会话)、intent-4(隐藏的 tool
         // 会话仍驱动其 owner)= 3;discussion-1 的两个会话去重后 = 1;automation = 1。
         ownerCounts: { intent: 3, discussion: 1, automation: 1 },
+        // workspace 级口径:work/spec/intent/discussion/tool 五个真实会话都在跑
+        // (spec-idle、discussion-idle 不计),automation 由执行日志驱动而非活跃 run,
+        // 故不计入 —— 与 ownerCounts 的 5 是两个不同的数。
+        runningSessionCount: 5,
       },
     ])
 
@@ -294,6 +298,86 @@ describe('getSessionCounts — 规范聚合', () => {
     // 兼容字段不形成第二个可见口径,故顶栏总数不重复计算。
     expect(counts.spec_review).toBe(0)
     expect(counts.work).toBe(0)
+  })
+})
+
+// Workspace 级「运行中会话数」:跨所有 SessionKind 求和的同一套运行态判定,不分桶、
+// 不受 showToolSessions 影响,与 counts(按 kind 分桶)、ownerCounts(按 owner 去重)
+// 是三个互不替代的数。
+describe('getSessionCounts — 每 workspace 运行中会话数', () => {
+  function countOf(sent: ServerToClient[]): number | undefined {
+    const msg = sent[0] as Extract<ServerToClient, { type: 'session_counts' }>
+    return msg.runningSessionCount
+  }
+
+  function row(sessionId: string, kind: SessionKind, workspacePath = proj): void {
+    upsertBoundRow({
+      sessionId,
+      workspacePath,
+      vendor: 'claude',
+      agentId: 'agent',
+      title: sessionId,
+      sessionKind: kind,
+    })
+  }
+
+  it('跨 kind 求和,idle 会话不计入;无运行会话时为 0', () => {
+    row('w-run', 'work')
+    row('i-run', 'intent')
+    row('s-run', 'spec')
+    row('d-run', 'discussion')
+    row('r-run', 'robot')
+    row('w-idle', 'work')
+    startRun('w-run', proj, 'work')
+    startRun('i-run', proj, 'intent')
+    startRun('s-run', proj, 'spec')
+    startRun('d-run', proj, 'discussion')
+    startRun('r-run', proj, 'robot')
+
+    const { conn, sent } = fakeConn()
+    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceName })
+    // 5 个运行会话(w/i/s/d/robot),w-idle 不计。robot 计入:这类会话同样持有落在
+    // 该 workspace 上的活跃 run,漏掉它会显示「有活儿在跑却是 0」。
+    expect(countOf(sent)).toBe(5)
+
+    // 全部结束后归零。
+    for (const id of ['w-run', 'i-run', 's-run', 'd-run', 'r-run']) removeRuntime(id)
+    const empty = fakeConn()
+    getSessionCounts({} as KernelContext, empty.conn, { type: 'get_session_counts', workspaceName })
+    expect(countOf(empty.sent)).toBe(0)
+  })
+
+  it('其他 workspace 的运行会话不计入(跨 workspace 隔离)', () => {
+    const other = join(dir, 'other-ws')
+    mkdirSync(other)
+    addWorkspace(other, 2)
+    row('mine', 'work')
+    row('theirs', 'work', other)
+    startRun('mine', proj, 'work')
+    startRun('theirs', other, 'work')
+
+    const own = fakeConn()
+    getSessionCounts({} as KernelContext, own.conn, { type: 'get_session_counts', workspaceName })
+    expect(countOf(own.sent)).toBe(1)
+
+    const theirName = pathToName(other)!
+    const theirs = fakeConn()
+    getSessionCounts({} as KernelContext, theirs.conn, {
+      type: 'get_session_counts',
+      workspaceName: theirName,
+    })
+    expect(countOf(theirs.sent)).toBe(1)
+  })
+
+  it('showToolSessions 关闭时 running 的 tool 会话仍计入', () => {
+    row('t-run', 'tool')
+    startRun('t-run', proj, 'tool')
+    // 该设置默认关闭,故 counts.tool 为 0,而 workspace 级计数仍为 1 —— 两者互不干扰。
+    const { conn, sent } = fakeConn()
+    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceName })
+    const msg = sent[0] as Extract<ServerToClient, { type: 'session_counts' }>
+    expect(msg.counts.tool).toBe(0)
+    expect(msg.runningSessionCount).toBe(1)
   })
 })
 

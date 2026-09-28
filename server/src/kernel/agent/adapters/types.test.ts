@@ -216,10 +216,12 @@ describe('neutral adapter contract', () => {
 
     // Codex read tools
     expect(tools.find((e) => e.name === 'web_search')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'TaskCreate')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'TaskList')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'TaskUpdate')!.isWrite).toBe(false)
-    expect(tools.find((e) => e.name === 'TaskGet')!.isWrite).toBe(false)
+
+    // Codex 的任务来自 `todo_list` 事件而非可调用工具,其新模型默认工具面已移除
+    // 旧 task/todo 工具 —— 故清单里不得再出现 Claude 的那四个。
+    for (const gone of ['TaskCreate', 'TaskList', 'TaskUpdate', 'TaskGet']) {
+      expect(tools.find((e) => e.name === gone)).toBeFalsy()
+    }
 
     // Codex write tools
     expect(tools.find((e) => e.name === 'shell')!.isWrite).toBe(true)

@@ -383,3 +383,24 @@ reasoning 六档 union 与运行时二进制完全一致。
 | 6   | `sdk-upgrade-records.md`                       | 索引表按日期倒序插入新记录                                                                       |
 | 7   | ADR-0011 capability ledger                     | **不更新**（未触及 vendor 中立能力面，见正式记录）                                               |
 | 8   | `pnpm-workspace.yaml`                          | **不动**（未放宽冷却、未新增豁免）                                                               |
+
+## 8. 调研期实跑的覆盖边界（如实留痕）
+
+本调研的实跑取证全部在**宿主机模式**下完成：直接 spawn 托管 `codex 0.157.1`，
+使用隔离 `CODEX_HOME`，**未起 c3 server**。因此下列三项**未被实跑覆盖**，
+本文档相应结论的性质是「取证」还是「论证」，如实区分如下：
+
+| 耦合点 | 证据性质 | 说明 |
+| --- | --- | --- |
+| rollout 路径与 `session_meta` 结构未变 | **实跑取证** | 新产生 rollout + c3 真实 `CodexSessionStore` 读取成功 |
+| resume 显式 `--cd` 覆盖持久化 cwd | **实跑取证** | `turn_context.cwd` 由 `DIR_A` → `DIR_B` |
+| `approval_policy` 显式下发 | **实跑取证** | `turn_context.approval_policy = never` |
+| env 注入被新二进制识别 | **实跑取证** | `session_meta.payload.originator === "c3"` |
+| model catalog 解析 | **实跑取证** | `codex debug models` 解析成功并回显 |
+| **外层 arapuca sandbox 未回归** | **论证，非实跑（环境所限）** | 本次未走 arapuca 包装（ADR-0028）；已尝试补跑但 `arapuca run` 报 `sandbox_apply: Operation not permitted`（沙箱无法嵌套），提权亦不可用；未改沙箱代码路径，上游相关条目均为收紧内层 |
+| **回环 MCP 工具面首个 turn 可见** | **论证，非实跑** | 未起 c3 server，无 `127.0.0.1:<c3port>` 端点；仅验证注入通道未改名 |
+| **升级前既有会话仍可列出** | **实跑取证** | 取升级前真实 rollout 25 条，`CodexSessionStore` `list()`+`read()` 全部通过（25/25） |
+
+上表两项「论证」项的共同前提是：**本次 SDK 升级未触及 c3 的沙箱、MCP 注入与
+session-store 代码路径**（改动仅为版本号与注释）。该前提成立时，论证与实跑的
+差距仅在于「运行时确认」，而非「行为可能已变」。

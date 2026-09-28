@@ -243,9 +243,41 @@ worktree 不会跑到错误目录。c3 的模型是「单会话权限档位固�
   (a) `turn_context.cwd` 随显式 `--cd` 由 `DIR_A` 变为 `DIR_B`——**工作目录由 c3 显式下发决定**；
   (b) `sandbox_policy.type` = `read-only`，`approval_policy` = `never`，与显式下发一致——
   **审批策略由 c3 显式下发决定**；(c) `session_meta.payload.originator === "c3"`——
-  **c3 的 env 注入在新二进制上仍被识别**（回环 MCP 工具面的注入通道未被上游改动）。
+  **c3 的 env 注入在新二进制上仍被识别**。
   _说明：隔离 home 无凭据，turn 停在 401 重连，上述三项均在 turn 上下文建立阶段取证，
-  已覆盖 cwd / sandbox / approval / env 注入四个耦合点。_
+  覆盖 cwd / sandbox / approval / env 注入四个耦合点。_
+
+### 本次实跑**未**覆盖的验收项（如实留痕）
+
+以下三项为 spec「验证」章节要求。其中第 3 项已实跑关闭，第 1、2 项在本次执行环境下无法完成：
+
+1. **sandbox 模式（arapuca）实跑未做，且在本次执行环境下无法完成。**
+   本次实跑为**宿主机模式**（直接 spawn 托管 `codex 0.157.1`，隔离 `CODEX_HOME`），
+   **未经 c3 的 arapuca 进程级沙箱包装**（ADR-0028）。因此「sandbox 策略未回归」只在
+   **内层** `--sandbox` 参数语义上取证（`sandbox_policy.type = read-only`），
+   **外层 arapuca 隔离未实跑验证**。
+
+   已尝试关闭该缺口但失败：本机装有 `arapuca`，但在本执行环境内
+   `arapuca run` 报 `sandbox-exec: sandbox_apply: Operation not permitted`
+   ——沙箱**无法嵌套**进已受限的执行环境。提权请求亦因审批服务不可用而未能执行。
+   即：**该缺口是执行环境所限，非跳过**，需在正常宿主环境补跑。
+
+   依据（论证，非实跑）：本次 SDK 升级未触及沙箱代码路径
+   （`process/launcher.ts`、sandbox 认证均未改），且 0.154.0 / 0.155.0 / 0.156.0
+   的沙箱条目均为**收紧内层**，与 c3 依赖同向。
+2. **回环 MCP 工具面「首个 turn 完整可见」未实跑。** 本次未起 c3 server，
+   无 `127.0.0.1:<c3port>` 回环 MCP 端点，因而**未验证** MCP 工具在首个 turn 的可见性。
+   已验证的只是**注入通道未被上游改名**：`originator === "c3"` 佐证 `codexExecEnv()`
+   的 env 注入被新二进制识别，且 `--config` 键名未变（tarball 比对）。
+   0.150.0 的 bearer-token 修复属上游查找逻辑，未改契约。
+3. **回环 MCP 首个 turn 可见性 —— 环境所限未做。** 见上条第 2 点同类说明：
+   本次未起 c3 server，无回环端点。已验证注入通道未被上游改名。
+
+   **原第 3 项「升级前既有会话仍可列出」已实跑关闭**：以临时探针取宿主
+   `~/.codex/sessions` 中**升级前**（`2026-09-2` 之前）的真实 rollout 25 条，
+   逐条用 c3 真实 `CodexSessionStore` 走 `list()` + `read()`：
+   **listed 25 / read 25，共 25 条全部通过**（探针验证后已删除）。
+   既有会话兼容性由此从「论证」升级为**实跑取证**。
 - **rollout 核对**：`sessions/2026/09/28/rollout-*.jsonl` 路径与 `session_meta` 结构未变；
   用 c3 真实 `CodexSessionStore` 读取——**会话列表正常列出该会话（标题正确派生）、
   transcript 回放正常**。

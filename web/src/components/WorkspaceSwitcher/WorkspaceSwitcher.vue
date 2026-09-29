@@ -7,12 +7,11 @@
  * - `variant="rail"`(左侧常驻竖条):触发器由调用方以默认插槽给出(竖条渲染自己的字符
  *   徽标与运行中角标),本组件只把点击接到开关上;「+ 新增」在竖条形态下收起,新增
  *   工作区仍走列表里的入口。
- * 下拉列出全部工作区,下拉列出全部工作区,每行以名称为主行、
- * 完整绝对路径为下方次级行(仅用于区分同名工作区);点选切换当前工作区;每行可移除
- * (二次确认)。所有动作经事件上抛,由 App 发往服务端。工作区身份仍是服务端分配的不透明
- * id,path 只是展示数据,前端不用它构造或判定身份。自带 popover(点击外部 / Esc 关闭)。
- * 「+」只上抛新增诉求:AddWorkspaceDialog 由 AppHeader 单实例持有,桌面与移动端两处
- * 切换器同时挂载,各自持有会叠出两层遮罩。
+ * 下拉列出全部工作区,每行以名称为主行、完整绝对路径为下方次级行(仅用于区分同名工作区);
+ * 点选切换当前工作区;每行可移除(二次确认)。所有动作经事件上抛,由 App 发往服务端。
+ * 工作区身份仍是服务端分配的不透明 id,path 只是展示数据,前端不用它构造或判定身份。
+ * 自带 popover(点击外部 / Esc 关闭)。新增诉求只上抛:AddWorkspaceDialog 由 AppHeader
+ * 单实例持有,顶栏与竖条两处切换器同时挂载,各自持有会叠出两层遮罩。
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
@@ -174,7 +173,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       </li>
       <!-- 竖条形态没有独立的「+」按钮(窄条里再摆一个图标按钮会挤掉徽标),新增入口
            收进列表末项 —— 仍是管理员可见的同一个动作,同一个弹框。 -->
-      <li v-if="isAdmin && variant === 'rail'" class="ws-switcher-item ws-switcher-add-row">
+      <!-- 列表里只有工作区是 option,这条是动作而非选项,标注 presentation 以免被
+           当成第四个工作区读出来。 -->
+      <li
+        v-if="isAdmin && variant === 'rail'"
+        class="ws-switcher-item ws-switcher-add-row"
+        role="presentation"
+      >
         <button type="button" class="ws-switcher-add-row-btn" @click.stop="onAddFromList">
           {{ t('nav.workspace.add.tooltip') }}
         </button>

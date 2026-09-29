@@ -197,7 +197,7 @@ function confirmRestart(): void {
         v-else-if="updateAction"
         type="button"
         class="rail-btn rail-update"
-        :class="{ error: updateAction.kind === 'retry' }"
+        :class="{ 'rail-update-error': updateAction.kind === 'retry' }"
         :disabled="['progress', 'pending', 'applying'].includes(updateAction.kind)"
         :title="updateAction.text"
         :aria-label="updateAction.text"
@@ -367,12 +367,24 @@ function confirmRestart(): void {
   font-weight: 600;
   line-height: 1;
 }
-.rail-update,
 .rail-status.ok {
   color: var(--c-primary-text);
 }
 .rail-btn.error {
   color: var(--c-error-text);
+}
+/* 升级入口刻意高于其他 rail 图标：实心圆底 + 白色下箭头，一眼可辨。圆底托白字，
+   因此填充取「深一档变体」而非基色（见色彩规范 2.1），白字前景沿用导航实心圆的墨色。 */
+.rail-btn.rail-update,
+.rail-btn.rail-update:hover:not(:disabled),
+.rail-btn.rail-update:active {
+  color: var(--c-badge-ink);
+  background: var(--c-primary-text);
+  border-radius: 999px;
+}
+.rail-btn.rail-update.rail-update-error,
+.rail-btn.rail-update.rail-update-error:hover:not(:disabled) {
+  background: var(--c-error-text);
 }
 .rail-account {
   position: relative;

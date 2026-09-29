@@ -181,6 +181,7 @@
       }
     },
     "workspaceList": {
+      "title": "工作区",
       "ariaLabel": "工作区列表",
       "toggle": {
         "collapse": "收起工作区列表",

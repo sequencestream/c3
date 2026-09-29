@@ -181,6 +181,7 @@
       }
     },
     "workspaceList": {
+      "title": "Workspaces",
       "ariaLabel": "Workspace list",
       "toggle": {
         "collapse": "Collapse workspace list",

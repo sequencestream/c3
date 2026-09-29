@@ -182,6 +182,7 @@
       }
     },
     "workspaceList": {
+      "title": "워크스페이스",
       "ariaLabel": "워크스페이스 목록",
       "toggle": {
         "collapse": "워크스페이스 목록 접기",

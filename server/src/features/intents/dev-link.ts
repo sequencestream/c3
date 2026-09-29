@@ -15,6 +15,11 @@
  *
  * Pattern: mirrors `./run-status.ts` (feature-private standalone module, no
  * KernelContext dependency, pure in-memory state that does NOT survive restart).
+ *
+ * It also owns the RESTART coordination state: the set of session ids a manual
+ * `restart_work_session` is aborting, and a bounded subscribe-once wait for such
+ * a session's `run:settled`, so the restart handler can keep two live work
+ * sessions from ever overlapping.
  */
 /**
  * What a pending manual launch carries to its first bind: the intent it belongs
@@ -32,6 +37,73 @@ export interface PendingDevLink {
 
 const pendingDevLink = new Map<string, PendingDevLink>()
 const launchingIntentIds = new Set<string>()
+
+/**
+ * Session ids currently being RESTARTED by the manual `restart_work_session`
+ * path. Populated only when the session being replaced was actually live (an
+ * idle session is never stopped, so nothing needs suppressing), and consulted by
+ * the resident `run:settled` work subscription: the settle of a restart-aborted
+ * turn must write its `cancelled` conclusion but must NOT run the manual
+ * dev cleanup (commit/push/PR) or the fast-mode reverse-spec settle — a restart
+ * is a mid-flight hand-off, not a delivery.
+ *
+ * In-process only, like the pending-link table above: a restart cannot outlive
+ * the process that started it, so persistence would only create a stale marker.
+ */
+const restartingSessionIds = new Set<string>()
+
+/** Mark a live session as being aborted by a restart, before `stopRun`. */
+export function markSessionRestarting(sessionId: string): void {
+  restartingSessionIds.add(sessionId)
+}
+
+/** Whether this settled session was aborted by a restart. */
+export function isSessionRestarting(sessionId: string): boolean {
+  return restartingSessionIds.has(sessionId)
+}
+
+/**
+ * Clear the restart marker. Called on the settle it was set for, and on the
+ * timeout path where the restart was refused and the old run is left to settle
+ * normally (its cleanup must then run as usual).
+ */
+export function clearSessionRestarting(sessionId: string): void {
+  restartingSessionIds.delete(sessionId)
+}
+
+/** Minimal subscriber surface the settle wait needs (the kernel `EventBus` fits). */
+interface RunSettledSubscriber {
+  subscribe(topic: 'run:settled', handler: (payload: { sessionId: string }) => void): () => void
+}
+
+/**
+ * Resolve `true` once `run:settled` fires for `sessionId`, or `false` if the
+ * bounded wait elapses first. A subscribe-once (disposed on either path), NOT a
+ * poll: `isRunning` stays true until teardown completes, so polling could not
+ * tell "still working" from "mid-teardown".
+ */
+export function waitForSessionSettled(
+  eventBus: RunSettledSubscriber,
+  sessionId: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const dispose = eventBus.subscribe('run:settled', (payload) => {
+      if (settled || payload.sessionId !== sessionId) return
+      settled = true
+      clearTimeout(timer)
+      dispose()
+      resolve(true)
+    })
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      dispose()
+      resolve(false)
+    }, timeoutMs)
+  })
+}
 
 /**
  * Synchronously claim a manual start_development launch for an intent.
@@ -105,4 +177,5 @@ export function peekPendingDevLink(pendingId: string): string | undefined {
 export function resetForTests(): void {
   pendingDevLink.clear()
   launchingIntentIds.clear()
+  restartingSessionIds.clear()
 }

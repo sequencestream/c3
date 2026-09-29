@@ -43,6 +43,15 @@ export type StepStatus = 'pending' | 'active' | 'done'
 export interface DevLaunchModel {
   /** The intent whose launch this overlay tracks. */
   intentId: string
+  /**
+   * The intent's `lastWorkSessionId` at the moment the launch was armed, when the
+   * launch is a RESTART. The success terminal for a restart is the bound id
+   * CHANGING to a different non-null value — the intent status stays
+   * `in_progress` throughout, so the status-flip terminal a normal start uses
+   * would fire immediately on any unrelated `intents` broadcast. `null` for a
+   * normal start (which still uses the status flip).
+   */
+  baseWorkSessionId: string | null
   /** Current coarse phase. */
   phase: DevLaunchPhase
   /** Click time (ms epoch); drives the safety-timeout window. */
@@ -76,13 +85,41 @@ export type DevLaunchEvent =
   | { kind: 'timeout'; now: number }
 
 /** Build the initial in-flight (visible) model for a just-clicked launch. */
-export function beginDevLaunch(intentId: string, now: number): DevLaunchModel {
-  return { intentId, phase: 'fetching-base-branch', startedAt: now, visibleAt: now, visible: true }
+export function beginDevLaunch(
+  intentId: string,
+  now: number,
+  baseWorkSessionId: string | null = null,
+): DevLaunchModel {
+  return {
+    intentId,
+    baseWorkSessionId,
+    phase: 'fetching-base-branch',
+    startedAt: now,
+    visibleAt: now,
+    visible: true,
+  }
 }
 
 /** Terminal phases stop progress (the overlay closes around these). */
 export function isTerminalPhase(phase: DevLaunchPhase): boolean {
   return phase === 'ready' || phase === 'failed'
+}
+
+/**
+ * Whether an intent snapshot is the SUCCESS terminal for a launch: the work
+ * session bound. A normal start flips the intent to `in_progress`; a restart
+ * leaves the status `in_progress` throughout and instead shows a new bound id,
+ * so requiring the id to change keeps the overlay from closing on an unrelated
+ * broadcast that still carries the old session.
+ */
+export function isDevLaunchBound(
+  model: Pick<DevLaunchModel, 'baseWorkSessionId'>,
+  intent: { status: string; lastWorkSessionId: string | null },
+): boolean {
+  if (model.baseWorkSessionId) {
+    return !!intent.lastWorkSessionId && intent.lastWorkSessionId !== model.baseWorkSessionId
+  }
+  return intent.status === 'in_progress'
 }
 
 /** Whether the elapsed time has reached the safety-timeout ceiling. */

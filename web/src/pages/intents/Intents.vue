@@ -142,6 +142,8 @@ const emit = defineEmits<{
   'list-intent-logs': [intentId: string]
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
+  /** 重启工作会话:带新提示词新起 work session,意图改指新会话(旧会话保留)。 */
+  'restart-work-session': [intentId: string, prompt: string]
   'start-intent-session': [intentId: string, text: string, images: PromptImage[]]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   'open-work-session': [sessionId: string]
@@ -509,6 +511,9 @@ defineExpose({
           (id: string, input: string) => emit('reset-intent-session', id, input)
         "
         @reset-spec-session="(id: string, input: string) => emit('reset-spec-session', id, input)"
+        @restart-work-session="
+          (id: string, prompt: string) => emit('restart-work-session', id, prompt)
+        "
         @start-intent-session="
           (id: string, text: string, images: PromptImage[]) =>
             emit('start-intent-session', id, text, images)

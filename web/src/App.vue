@@ -239,6 +239,7 @@ const {
   readIntentSpec,
   resetIntentSession,
   resetSpecSession,
+  restartWorkSession,
   startDevelopment,
   selectWorkSession,
   setIntentStatus,
@@ -1030,6 +1031,7 @@ function onFilesChatWidth(px: number): void {
               @list-intent-logs="listIntentLogs"
               @reset-intent-session="resetIntentSession"
               @reset-spec-session="resetSpecSession"
+              @restart-work-session="restartWorkSession"
               @start-dev="startDevelopment"
               @open-work-session="selectWorkSession"
               @set-status="setIntentStatus"

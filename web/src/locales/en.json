@@ -1507,6 +1507,9 @@
       },
       "more": {
         "label": "More actions"
+      },
+      "restart": {
+        "label": "Restart"
       }
     },
     "relay": {
@@ -1790,6 +1793,12 @@
         "message": "Start a fresh spec session seeded with your new input and the current spec content. The previous session stays available under Works but is no longer linked to this intent."
       },
       "placeholder": "What should change? Your input is combined with the current content to seed the new session."
+    },
+
+    "restartSession": {
+      "title": "Restart work session",
+      "message": "Start a BRAND-NEW work session seeded with your prompt, on the same worktree and branch. If the current session is still running it is stopped first, and it stays available under Works; the intent will point at the new session.",
+      "placeholder": "What should the new session pick up? This becomes its first prompt."
     },
     "refineSession": {
       "title": "Refine intent",
@@ -2872,6 +2881,10 @@
       "specEditForbidden": "Cannot directly edit the spec once development has started (status \"{status}\").",
       "specSessionRunning": "Cannot edit the spec while a spec session is running.",
       "devStartInFlight": "Work is already starting for this intent.",
+      "restartPromptRequired": "Enter a prompt to restart the work session with.",
+      "restartNoWorkSession": "This intent has no work session to restart.",
+      "restartSettleTimeout": "The running work session did not stop in time; nothing was restarted.",
+      "restartSessionChanged": "The intent's work session changed while restarting; nothing was restarted.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
       "prCreateNotWorktree": "Can only create a PR in worktree mode. Switch the workspace to worktree mode first.",

@@ -198,6 +198,9 @@ const emit = defineEmits<{
   // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
+  // 重启工作会话:带新提示词新起一个 work session(沿用同一 worktree/分支),
+  // 旧会话(若在运行先中止)保留在会话列表,意图改指新会话。
+  'restart-work-session': [intentId: string, prompt: string]
   'start-intent-session': [intentId: string, text: string, images: PromptImage[]]
   // ── chat column passthrough ──
   'set-mode': [mode: ModeToken]
@@ -389,19 +392,36 @@ function onMainAction(): void {
 
 // ── 会话重置弹框(intent session / spec session / refine 共用,按入口分流) ─────
 const resetDialogOpen = ref(false)
-const resetDialogTarget = ref<'intentSession' | 'specSession' | 'refine'>('intentSession')
+const resetDialogTarget = ref<'intentSession' | 'specSession' | 'refine' | 'restartWorkSession'>(
+  'intentSession',
+)
 const canResetIntentSession = computed<boolean>(
   () => !!props.intent && !props.intent.lastWorkSessionId,
 )
 const canResetSpecSession = computed<boolean>(
   () => !!props.intent && !props.intent.lastWorkSessionId && !!props.intent.specPath,
 )
+/**
+ * 「重启工作会话」入口(工作会话标题栏):仅在工作会话 tab、且该 tab 的会话已就绪
+ * (chatReady——活动会话与 lastWorkSessionId 对齐,避开半绑定/串台窗口)、意图确有关联
+ * 工作会话、且意图非终态时可见。终态(done/cancelled)与入口隐藏同一条判据,服务端再复核。
+ */
+const canRestartWorkSession = computed<boolean>(() => {
+  const r = props.intent
+  if (!r) return false
+  if (activeTab.value !== 'workSession') return false
+  if (!r.lastWorkSessionId) return false
+  if (r.status === 'done' || r.status === 'cancelled') return false
+  return chatReady.value
+})
 const resetDialogTitle = computed<string>(() => {
   switch (resetDialogTarget.value) {
     case 'specSession':
       return t('intent.resetSession.specSession.title')
     case 'refine':
       return t('intent.refineSession.title')
+    case 'restartWorkSession':
+      return t('intent.restartSession.title')
     default:
       return t('intent.resetSession.intentSession.title')
   }
@@ -412,6 +432,8 @@ const resetDialogMessage = computed<string>(() => {
       return t('intent.resetSession.specSession.message')
     case 'refine':
       return t('intent.refineSession.message')
+    case 'restartWorkSession':
+      return t('intent.restartSession.message')
     default:
       return t('intent.resetSession.intentSession.message')
   }
@@ -419,18 +441,25 @@ const resetDialogMessage = computed<string>(() => {
 const resetDialogPlaceholder = computed<string>(() =>
   resetDialogTarget.value === 'refine'
     ? t('intent.refineSession.placeholder')
-    : t('intent.resetSession.placeholder'),
+    : resetDialogTarget.value === 'restartWorkSession'
+      ? t('intent.restartSession.placeholder')
+      : t('intent.resetSession.placeholder'),
 )
 const resetDialogConfirmLabel = computed<string>(() =>
   resetDialogTarget.value === 'refine'
     ? t('intent.action.refine.label')
-    : t('intent.action.modifySession.label'),
+    : resetDialogTarget.value === 'restartWorkSession'
+      ? t('intent.action.restart.label')
+      : t('intent.action.modifySession.label'),
 )
-function openResetDialog(target: 'intentSession' | 'specSession' | 'refine'): void {
+function openResetDialog(
+  target: 'intentSession' | 'specSession' | 'refine' | 'restartWorkSession',
+): void {
   // refine 的打开条件就是「优化」按钮可见(todo),不受「我要修改」那条 canResetIntentSession
   // (无关联工作会话)判据影响——否则 todo 且已有工作会话的意图会出现点了没反应的按钮。
   if (target === 'intentSession' && !canResetIntentSession.value) return
   if (target === 'specSession' && !canResetSpecSession.value) return
+  if (target === 'restartWorkSession' && !canRestartWorkSession.value) return
   resetDialogTarget.value = target
   resetDialogOpen.value = true
 }
@@ -438,6 +467,10 @@ function onResetConfirm(text: string): void {
   const r = props.intent
   resetDialogOpen.value = false
   if (!r) return
+  if (resetDialogTarget.value === 'restartWorkSession') {
+    emit('restart-work-session', r.id, text)
+    return
+  }
   if (resetDialogTarget.value === 'specSession') {
     // 记录待切状态:新 spec 会话创建成功后由 Tab 状态机自动切到 spec session tab。
     markPendingSpecSwitch(r.id, r.specSessionId)
@@ -665,7 +698,23 @@ function submitChat(text: string, images: PromptImage[]): void {
         @stop="emit('stop')"
         @continue="emit('continue')"
         @list-commands="emit('list-commands')"
-      />
+      >
+        <!-- 工作会话标题栏动作:重启(输入新提示词新起会话接力)。仅工作会话 tab、
+            会话已就绪、意图非终态时渲染;与服务端准入同一条可用性判据。 -->
+        <template #title-action>
+          <button
+            v-if="canRestartWorkSession"
+            type="button"
+            class="intent-work-session-restart"
+            data-testid="intent-work-session-restart"
+            :title="t('intent.restartSession.title')"
+            :aria-label="t('intent.restartSession.title')"
+            @click="openResetDialog('restartWorkSession')"
+          >
+            ↻ {{ t('intent.action.restart.label') }}
+          </button>
+        </template>
+      </IntentSessionPanel>
     </template>
 
     <!-- 会话重置输入弹框 -->
@@ -754,6 +803,29 @@ function submitChat(text: string, images: PromptImage[]): void {
   }
   .intent-detail-title-meta {
     justify-content: flex-start;
+  }
+}
+/* 工作会话标题栏的「重启」按钮:与同栏既有 Files 内嵌会话按钮同一形态,保持标题栏
+ * 动作的一致外观。 */
+.intent-work-session-restart {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-caption);
+  line-height: 1;
+  cursor: pointer;
+}
+.intent-work-session-restart:active {
+  background: var(--c-card);
+}
+@media (hover: hover) and (pointer: fine) {
+  .intent-work-session-restart:hover {
+    background: var(--c-card);
   }
 }
 </style>

@@ -1508,6 +1508,9 @@
       },
       "more": {
         "label": "その他の操作"
+      },
+      "restart": {
+        "label": "再起動"
       }
     },
     "relay": {
@@ -1791,6 +1794,12 @@
         "message": "新しい入力と現在の仕様内容を組み合わせて、新しい仕様セッションを開始します。以前のセッションは Works に残りますが、この意図には紐づかなくなります。"
       },
       "placeholder": "何を変更しますか?入力は現在の内容と組み合わされ、新しいセッションの起点になります。"
+    },
+
+    "restartSession": {
+      "title": "作業セッションを再起動",
+      "message": "プロンプトを起点に新しい作業セッションを開始し、同じ worktree とブランチを引き継ぎます。実行中の場合は現在のセッションを先に停止し、Works には残ります。意図は新しいセッションを指します。",
+      "placeholder": "新しいセッションで何を進めますか?これが最初のプロンプトになります。"
     },
     "refineSession": {
       "title": "意図を推敲",
@@ -2864,6 +2873,10 @@
       "specEditForbidden": "開発が開始された後(ステータス \"{status}\")は spec を直接編集できません。",
       "specSessionRunning": "spec セッションの実行中は spec を編集できません。",
       "devStartInFlight": "この意図の開発はすでに開始中です。",
+      "restartPromptRequired": "作業セッションを再起動するプロンプトを入力してください。",
+      "restartNoWorkSession": "この意図には再起動できる作業セッションがありません。",
+      "restartSettleTimeout": "実行中の作業セッションが制限時間内に停止しなかったため、再起動しませんでした。",
+      "restartSessionChanged": "再起動中に意図の作業セッションが変わったため、再起動しませんでした。",
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",

@@ -3,6 +3,7 @@ import {
   DEV_LAUNCH_MIN_DWELL_MS,
   DEV_LAUNCH_SAFETY_TIMEOUT_MS,
   beginDevLaunch,
+  isDevLaunchBound,
   isMinimumDwellComplete,
   isSafetyTimeoutDue,
   isTerminalPhase,
@@ -20,6 +21,32 @@ describe('beginDevLaunch — immediate visibility', () => {
       visibleAt: 1_000,
       visible: true,
     })
+  })
+
+  it('records the replaced session id for a restart', () => {
+    expect(beginDevLaunch('A', 1_000, 'old-1').baseWorkSessionId).toBe('old-1')
+    expect(beginDevLaunch('A', 1_000).baseWorkSessionId).toBeNull()
+  })
+})
+
+describe('isDevLaunchBound — success terminal per launch kind', () => {
+  it('a normal start binds when the intent flips to in_progress', () => {
+    const model = { baseWorkSessionId: null }
+    expect(isDevLaunchBound(model, { status: 'in_progress', lastWorkSessionId: null })).toBe(true)
+    expect(isDevLaunchBound(model, { status: 'todo', lastWorkSessionId: null })).toBe(false)
+  })
+
+  it('a restart binds only when the bound session id CHANGES', () => {
+    const model = { baseWorkSessionId: 'old-1' }
+    // The intent is already in_progress throughout — the status flip is not the
+    // signal, and an unrelated broadcast carrying the old id must not close it.
+    expect(isDevLaunchBound(model, { status: 'in_progress', lastWorkSessionId: 'old-1' })).toBe(
+      false,
+    )
+    expect(isDevLaunchBound(model, { status: 'in_progress', lastWorkSessionId: 'new-2' })).toBe(
+      true,
+    )
+    expect(isDevLaunchBound(model, { status: 'in_progress', lastWorkSessionId: null })).toBe(false)
   })
 })
 
@@ -68,6 +95,7 @@ describe('stepStatusesForPhase — stage advances steps', () => {
 describe('reduceDevLaunch — minimum dwell terminal convergence', () => {
   const inFlight = (): DevLaunchModel => ({
     intentId: 'A',
+    baseWorkSessionId: null,
     phase: 'launching',
     startedAt: 0,
     visibleAt: 0,

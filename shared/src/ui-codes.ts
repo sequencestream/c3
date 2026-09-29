@@ -93,6 +93,13 @@ export const UI_ERROR_CODES = {
   'intent.pendingQuestionUnanswered': { key: 'error.intent.pendingQuestionUnanswered' },
   'intent.contentEditForbidden': { key: 'error.intent.contentEditForbidden', params: ['status'] },
   'intent.devStartInFlight': { key: 'error.intent.devStartInFlight' },
+  // Restart a spent work session with a new first turn. The old session is
+  // stopped (when live) and a fresh one is started on the same worktree/branch;
+  // these four are the cases the restart path itself owns.
+  'intent.restartPromptRequired': { key: 'error.intent.restartPromptRequired' },
+  'intent.restartNoWorkSession': { key: 'error.intent.restartNoWorkSession' },
+  'intent.restartSettleTimeout': { key: 'error.intent.restartSettleTimeout' },
+  'intent.restartSessionChanged': { key: 'error.intent.restartSessionChanged' },
   'intent.illegalStatusTransition': {
     key: 'error.intent.illegalStatusTransition',
     params: ['from', 'to'],

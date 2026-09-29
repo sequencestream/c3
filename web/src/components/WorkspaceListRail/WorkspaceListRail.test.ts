@@ -6,6 +6,7 @@ import WorkspaceListRail from './WorkspaceListRail.vue'
 import { useAuth } from '@/composables/useAuth'
 import { workspaceColor } from '@/lib/workspace-color'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
+import { i18n, type Locale } from '@/i18n'
 
 const ws = (name: string, lastAccessed: number): WorkspaceInfo => ({
   name,
@@ -110,6 +111,39 @@ describe('WorkspaceListRail.vue — 展开 / 收缩双形态', () => {
     expect(w.find('[data-testid="ws-list-toggle"]').attributes('aria-expanded')).toBe('false')
     await w.find('[data-testid="ws-list-toggle"]').trigger('click')
     expect(w.emitted('toggle-expanded')).toHaveLength(2)
+  })
+
+  it('表头:展开态为「[收放按钮][标题]」左对齐,按钮是表头第一个元素', () => {
+    const w = mountRail()
+    const header = w.find('.ws-list-header')
+    expect(header.classes()).toContain('ws-list-header-expanded')
+    // 按钮必须排在标题之前 —— 收放开关贴在竖条最左缘,不再是居中控件。
+    expect(header.element.firstElementChild!.getAttribute('data-testid')).toBe('ws-list-toggle')
+    const title = w.find('[data-testid="ws-list-header-title"]')
+    expect(title.text()).toBe('工作区')
+    expect(title.element.previousElementSibling!.getAttribute('data-testid')).toBe('ws-list-toggle')
+  })
+
+  it('表头:收缩态只剩收放按钮,标题不渲染(竖条不因标题变宽)', () => {
+    const w = mountRail({ expanded: false })
+    const header = w.find('.ws-list-header')
+    expect(header.classes()).not.toContain('ws-list-header-expanded')
+    expect(header.find('[data-testid="ws-list-toggle"]').exists()).toBe(true)
+    expect(w.find('[data-testid="ws-list-header-title"]').exists()).toBe(false)
+    expect(w.find('.ws-list-rail-collapsed').exists()).toBe(true)
+  })
+
+  it('表头标题走 i18n:切到英文界面不出现硬编码中文', async () => {
+    const before = (i18n.global.locale.value as Locale) ?? 'zh'
+    try {
+      i18n.global.locale.value = 'zh'
+      const w = mountRail()
+      expect(w.find('[data-testid="ws-list-header-title"]').text()).toBe('工作区')
+      await i18n.global.locale.value = 'en'
+      expect(w.find('[data-testid="ws-list-header-title"]').text()).toBe('Workspaces')
+    } finally {
+      i18n.global.locale.value = before
+    }
   })
 
   it('收缩态的列表项可聚焦并能用键盘选中(不能只靠鼠标)', async () => {

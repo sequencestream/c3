@@ -6,9 +6,12 @@
  * 右占据一列并横向挤压主列(`.app-main` 以 `min-width: 0` 消化),高度与竖条一致、
  * 纵向可滚动。因此它不吃竖条自身的两枚入口,也不覆盖主列内容。
  *
- * 两种形态(顶部一枚控件切换,默认展开,形态经 localStorage 记忆、仅本机生效):
+ * 两种形态(表头一枚控件切换,默认展开,形态经 localStorage 记忆、仅本机生效):
  * - 展开态:每项一行 —— 字符色块 + 工作区名称(过长截断,`title` 兜底全名)+ 运行中角标。
- * - 收缩态:收到一枚竖条徽标的量级,每项只渲染名称首字符大写徽标。
+ * - 收缩态:收到一枚竖条徽标的量级,每项只渲染名称首字符大写徽标,表头只剩收放按钮。
+ *
+ * 表头:收放按钮贴竖条最左缘(不再是居中的通用悬浮控件),展开态其右侧跟一个「工作区」
+ * 标题(走 i18n);收缩态 56px 放不下标题,只保留按钮,宽度不受标题影响。
  *
  * 排序:只按 `WorkspaceInfo.lastAccessed` 倒序(口径见 lib/workspace-list.ts)。不引入手动
  * 置顶、拖拽序或任何本地覆写顺序。
@@ -103,37 +106,44 @@ function onRemoveConfirm(): void {
     :class="expanded ? 'ws-list-rail-expanded' : 'ws-list-rail-collapsed'"
     :aria-label="t('nav.workspaceList.ariaLabel')"
   >
-    <!-- 形态切换:展开 ⇄ 收缩。不改变竖条自身任何行为,也不改变列表内容与顺序。 -->
-    <button
-      type="button"
-      class="ws-list-toggle"
-      :title="
-        expanded ? t('nav.workspaceList.toggle.collapse') : t('nav.workspaceList.toggle.expand')
-      "
-      :aria-label="
-        expanded ? t('nav.workspaceList.toggle.collapse') : t('nav.workspaceList.toggle.expand')
-      "
-      :aria-expanded="expanded"
-      data-testid="ws-list-toggle"
-      @click="emit('toggle-expanded')"
-    >
-      <svg
-        class="ws-list-toggle-icon"
-        viewBox="0 0 24 24"
-        width="16"
-        height="16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-        focusable="false"
+    <!-- 表头:收放按钮靠最左缘(不是居中的通用悬浮控件),其右侧是列表标题;
+         收缩态只有按钮 —— 56px 放不下标题,硬塞会把竖条撑宽。 -->
+    <div class="ws-list-header" :class="{ 'ws-list-header-expanded': expanded }">
+      <button
+        type="button"
+        class="ws-list-toggle"
+        :title="
+          expanded ? t('nav.workspaceList.toggle.collapse') : t('nav.workspaceList.toggle.expand')
+        "
+        :aria-label="
+          expanded ? t('nav.workspaceList.toggle.collapse') : t('nav.workspaceList.toggle.expand')
+        "
+        :aria-expanded="expanded"
+        data-testid="ws-list-toggle"
+        @click="emit('toggle-expanded')"
       >
-        <path v-if="expanded" d="M15 6l-6 6 6 6" />
-        <path v-else d="M9 6l6 6-6 6" />
-      </svg>
-    </button>
+        <svg
+          class="ws-list-toggle-icon"
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path v-if="expanded" d="M15 6l-6 6 6 6" />
+          <path v-else d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
+
+      <span v-if="expanded" class="ws-list-header-title" data-testid="ws-list-header-title">{{
+        t('nav.workspaceList.title')
+      }}</span>
+    </div>
 
     <ul class="ws-list-items">
       <li v-if="ordered.length === 0" class="ws-list-empty">{{ t('nav.workspaceList.empty') }}</li>
@@ -227,12 +237,39 @@ function onRemoveConfirm(): void {
   width: 56px;
   align-items: center;
 }
+/* 表头:展开态一行 —— 收放按钮贴最左缘,标题紧随其后,整体左对齐;
+   收缩态退化成只有按钮的一行,沿用竖条居中对齐,宽度仍由 .ws-list-rail-* 决定。 */
+.ws-list-header {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--sp-1);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--sp-1) 0 0;
+}
+.ws-list-header-expanded {
+  padding-left: var(--sp-2);
+}
+.ws-list-rail-collapsed .ws-list-header {
+  justify-content: center;
+  padding: 0;
+}
+.ws-list-header-title {
+  min-width: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ws-list-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 100%;
+  width: 32px;
   height: 32px;
   padding: 0;
   background: transparent;

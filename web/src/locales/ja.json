@@ -182,6 +182,7 @@
       }
     },
     "workspaceList": {
+      "title": "ワークスペース",
       "ariaLabel": "ワークスペース一覧",
       "toggle": {
         "collapse": "ワークスペース一覧を折りたたむ",

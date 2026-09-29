@@ -199,3 +199,40 @@ describe('LeftRail.vue — 窄屏断点口径', () => {
     expect(mountRail({}, 768).find('.left-rail').exists()).toBe(true)
   })
 })
+
+describe('LeftRail.vue — 工作台视图下的「回到工作区」回落入口', () => {
+  // 桌面顶栏的旧 viewMode 切换按钮已移除,工作台视图若没有这条回落路径就回不去了。
+  it('工作区视图:工作区入口仍是打开切换器,不渲染回落按钮', () => {
+    const w = mountRail({ viewMode: 'workspace' })
+    expect(w.find('.ws-switcher').exists()).toBe(true)
+    expect(w.find('[data-testid="rail-workspace-back"]').exists()).toBe(false)
+  })
+
+  it('工作台视图:工作区入口换成回落按钮,切换器不再渲染', () => {
+    const w = mountRail({ viewMode: 'workcenter' })
+    expect(w.find('.ws-switcher').exists()).toBe(false)
+    expect(w.find('[data-testid="rail-workspace-back"]').exists()).toBe(true)
+  })
+
+  it('点击回落按钮 → emit enter-workspace(竖条自身不写 viewMode,只上抛)', async () => {
+    const w = mountRail({ viewMode: 'workcenter' })
+    await w.find('[data-testid="rail-workspace-back"]').trigger('click')
+    expect(w.emitted('enter-workspace')).toHaveLength(1)
+  })
+
+  it('回落按钮沿用当前工作区徽标与配色,便于识别将回到哪个工作区', () => {
+    const w = mountRail({ viewMode: 'workcenter', currentWorkspaceName: 'proj-b' })
+    const chip = w.find('[data-testid="rail-workspace-back"] .rail-workspace-chip')
+    expect(chip.find('.rail-workspace-initial').text()).toBe('P')
+    expect(chip.attributes('data-ws-slot')).toBe(String(workspaceColor('proj-b')!.slot))
+  })
+
+  it('用户消息入口在两个视图下都在 —— 与工作区入口构成一对可来回切', () => {
+    expect(
+      mountRail({ viewMode: 'workspace' }).find('[data-testid="rail-messages"]').exists(),
+    ).toBe(true)
+    expect(
+      mountRail({ viewMode: 'workcenter' }).find('[data-testid="rail-messages"]').exists(),
+    ).toBe(true)
+  })
+})

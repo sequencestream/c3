@@ -184,9 +184,6 @@
     "rail": {
       "ariaLabel": "メインナビゲーションレール",
       "workspace": {
-        "ariaLabel": "ワークスペースを切り替える",
-        "tooltip": "ワークスペースを切り替える",
-        "emptyAriaLabel": "ワークスペースが未選択です",
         "badgeAriaLabel": "実行中セッション {count} 件"
       },
       "messages": {

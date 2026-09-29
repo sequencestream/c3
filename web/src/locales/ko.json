@@ -184,9 +184,6 @@
     "rail": {
       "ariaLabel": "주 탐색 레일",
       "workspace": {
-        "ariaLabel": "작업 공간 전환",
-        "tooltip": "작업 공간 전환",
-        "emptyAriaLabel": "선택된 작업 공간 없음",
         "badgeAriaLabel": "실행 중 세션 {count}개"
       },
       "messages": {

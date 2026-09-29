@@ -183,9 +183,6 @@
     "rail": {
       "ariaLabel": "Primary navigation rail",
       "workspace": {
-        "ariaLabel": "Switch workspace",
-        "tooltip": "Switch workspace",
-        "emptyAriaLabel": "No workspace selected",
         "badgeAriaLabel": "{count} running sessions"
       },
       "messages": {

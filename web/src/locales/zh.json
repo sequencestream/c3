@@ -183,9 +183,6 @@
     "rail": {
       "ariaLabel": "主导航竖条",
       "workspace": {
-        "ariaLabel": "切换工作区",
-        "tooltip": "切换工作区",
-        "emptyAriaLabel": "未选择工作区",
         "badgeAriaLabel": "{count} 个运行中会话"
       },
       "messages": {

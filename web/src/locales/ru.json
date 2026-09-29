@@ -184,9 +184,6 @@
     "rail": {
       "ariaLabel": "Основная навигационная панель",
       "workspace": {
-        "ariaLabel": "Сменить рабочую область",
-        "tooltip": "Сменить рабочую область",
-        "emptyAriaLabel": "Рабочая область не выбрана",
         "badgeAriaLabel": "Активных сессий: {count}"
       },
       "messages": {

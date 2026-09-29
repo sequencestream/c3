@@ -11,8 +11,9 @@ import type { WorkcenterPage } from '@/controls/state'
  * 动作仍要经它切视图。
  * 移动端不渲染竖条,精简行因此保留同款 viewMode 切换器与工作区切换器,窄屏仍能切工作区、
  * 进工作台;两处共用同一份图标标记与状态。
- * 待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上,与竖条用户消息入口同源,
- * 0/缺省不渲染,桌面 + 移动端同步。
+ * 待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上,与竖条用户消息入口同源
+ * (App 喂同一个 workcenterPendingCount),0/缺省不渲染,桌面 + 移动端同步。桌面 viewMode
+ * 切换器已迁到竖条,窄屏精简行里的那枚才是本组件唯一的 workcenter 角标承载点。
  * 移动端底部 tab 与桌面共用 tabs 数据。
  *
  * tab 角标:数值由上层(HEADER_TABS)给定,本组件只负责渲染 —— badgeCount 为 0/缺省时

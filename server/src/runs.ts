@@ -42,6 +42,12 @@ interface InFlightRun {
 export interface SessionRuntime {
   /** Real SDK id, or a `pending:…` id until the first run binds it. */
   sessionId: string
+  /**
+   * Public id used by status snapshots when it differs from the runtime key.
+   * Relay runtimes stay keyed by the native id for transcript streaming, while
+   * their intent tabs and projection rows identify them by a stable c3 id.
+   */
+  publicSessionId?: string
   workspacePath: string
   /**
    * The session's action mode as a vendor-aware {@link ModeToken} (NOT the narrow
@@ -578,7 +584,7 @@ export function isAwaitingPermission(id: string): boolean {
  */
 export function listStatuses(): SessionRunStatus[] {
   const out: SessionRunStatus[] = [...runtimes.values()].map((rt) => ({
-    sessionId: rt.sessionId,
+    sessionId: rt.publicSessionId ?? rt.sessionId,
     status: rt.status,
   }))
   for (const sessionId of automationRunning) {

@@ -35,7 +35,7 @@
 - **`reviewStatus`**(enum `pending`|`approved`|`rejected`| null): PR AI 评审结论;`null` = 未评审,`pending` = 待结论,`approved` = 通过,`rejected` = 发现问题(表达修复要求)。持久值无法解释时读作 `null`(RM-R52)。`pending` 只表示「等待结论」,是否真的在跑由会话存活派生(`reviewInFlight`),而非读该枚举 —— 它只由队列内核或人工入口的一次成功认领写入(RM-A25、RM-R53)
 - **`reviewFixRounds`**(number): 已认领的修复轮次;非负整数,只增不改(RM-R52)。**首次评审保持 0** —— 只有一次成功的 Fix 认领才 +1,恢复一个崩溃的阶段不再累加,普通 unpark 也不重置;上限 `MAX_REVIEW_FIX_ROUNDS = 3`,即正常闭环最多三次修复、四次评审(RM-A25)
 - **`fixSessionId`**(text | null): 当前或最近一次 Fix 会话的 `c3SessionId`
-- **`fixStatus`**(enum `pending`|`fixed`| null): PR 修复结论;`null` = 尚未进入 Fix,`pending` = 待结论,`fixed` = 已处理。`fixed` 不等于评审通过,不能自动写成 `approved`。持久值无法解释时读作 `null`(RM-R52)。进入复审时清空,使旧的 `fixed` 不能满足下一次 `rejected`(RM-A25)
+- **`fixStatus`**(enum `pending`|`fixed`| null): PR 修复结论;`null` = 当前闭环尚无可消费的 Fix 结论,`pending` = 待结论,`fixed` = 已处理。`fixed` 不等于评审通过,不能自动写成 `approved`。持久值无法解释时读作 `null`(RM-R52)。进入复审时只清空本字段,使旧的 `fixed` 不能满足下一次 `rejected`;`fixSessionId` 仍保留最近一次修复会话供回看(RM-A25)
 - **`reviewInFlight`**(boolean): 发送时投影的「评审阶段是否仍被占用」;**不落库**,与 `sessionActive` 同模式。判据是该阶段的会话 id 是否仍被接力持有 —— 存活运行、或投影行仍在宽限内的 `pending:` 占位为真;占位过宽限或投影行缺失为**假**(stale,可恢复)。人工发起评审的准入读它,不得改用 `reviewStatus === 'pending'` 或 `pending:` 前缀推断(RM-R53)
 - **`fixInFlight`**(boolean): 同上,对应修复阶段(RM-R53)
 

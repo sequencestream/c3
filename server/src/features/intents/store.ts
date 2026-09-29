@@ -2165,10 +2165,11 @@ export interface IntentRelayClaim {
  * since the kernel's snapshot, which is exactly what makes a repeated action,
  * a duplicated tick or a racing pass unable to spend the fix budget twice.
  *
- * A `review` claim also CLEARS the fix marker: the round's `fixed` has been
+ * A `review` claim also CLEARS the fix status: the round's `fixed` has been
  * consumed by the re-review it just started, so it can never satisfy the next
- * rejection as well. A `fix` claim deliberately leaves `review_status='rejected'`
- * in place — that is the input the fix session reads.
+ * rejection as well. The latest fix session id remains available for inspection
+ * until another fix replaces it. A `fix` claim deliberately leaves
+ * `review_status='rejected'` in place — that is the input the fix session reads.
  */
 export function claimIntentRelayPhase(intentId: string, claim: IntentRelayClaim): boolean {
   const d = requireDb()
@@ -2186,7 +2187,7 @@ export function claimIntentRelayPhase(intentId: string, claim: IntentRelayClaim)
     if (claim.phase === 'review') {
       d.run(
         `UPDATE intents SET review_session_id=?, review_status='pending',
-           fix_session_id=NULL, fix_status=NULL, review_fix_rounds=?, updated_at=? WHERE id=?`,
+           fix_status=NULL, review_fix_rounds=?, updated_at=? WHERE id=?`,
         claim.pendingSessionId,
         claim.nextRounds,
         Date.now(),
@@ -2236,9 +2237,10 @@ export function replaceIntentRelaySession(
 }
 
 /**
- * Release a relay phase the queue claimed but could not launch: the placeholder
- * is dropped AND the transient `pending` status is cleared, so the next pass sees
- * the phase as un-started rather than as a review that mysteriously vanished.
+ * Release a relay phase the queue claimed but did not conclude. An unbound
+ * placeholder is dropped; a bound real session may be preserved as inspectable
+ * history while only the transient `pending` status is cleared, so the next pass
+ * can retry without making the session tab disappear.
  * The round counter is NOT rolled back — a claimed fix round stays claimed, so a
  * crash loop cannot refund itself budget. Owner-safe: applies only while the
  * phase's session still equals `expected`.
@@ -2247,6 +2249,7 @@ export function releaseIntentRelayPhase(
   intentId: string,
   phase: 'review' | 'fix',
   expected: string,
+  preserveSession = false,
 ): boolean {
   const d = requireDb()
   const sessionColumn = phase === 'review' ? 'review_session_id' : 'fix_session_id'
@@ -2261,11 +2264,12 @@ export function releaseIntentRelayPhase(
     // Only the transient marker is cleared. A terminal that arrived while the
     // session was still finishing is a real conclusion and must survive.
     const clearStatus = row.status === 'pending'
-    d.run(
-      `UPDATE intents SET ${sessionColumn}=NULL${clearStatus ? `, ${statusColumn}=NULL` : ''}, updated_at=? WHERE id=?`,
-      Date.now(),
-      intentId,
-    )
+    const assignments = [
+      ...(preserveSession ? [] : [`${sessionColumn}=NULL`]),
+      ...(clearStatus ? [`${statusColumn}=NULL`] : []),
+      'updated_at=?',
+    ]
+    d.run(`UPDATE intents SET ${assignments.join(', ')} WHERE id=?`, Date.now(), intentId)
     applied = true
   })
   return applied

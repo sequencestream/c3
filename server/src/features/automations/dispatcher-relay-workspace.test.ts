@@ -63,9 +63,12 @@ import type { Automation } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
+import { getRuntime, listStatuses, removeRuntime } from '../../runs.js'
+import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { execute, type RelaySessionProjection } from './dispatcher.js'
 
 const SID = 'relay-agent-session'
+const C3_SID = mintC3SessionId({ vendor: 'claude', vendorSessionId: SID })
 const INTENT_ID = 'intent-relay-1'
 
 let dir: string
@@ -95,6 +98,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  removeRuntime(SID)
   resetDbForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
@@ -180,6 +184,28 @@ describe('relay execution — the workspace gate accepts a name OR a registered 
 })
 
 describe('relay execution — the session projection belongs to the INTENT', () => {
+  it('publishes the relay binding only after its projection and runtime are live', async () => {
+    let readyWhenPublished = false
+    await execute(
+      relayExecution(proj),
+      'log-order',
+      (_id, patch) => {
+        if (patch.sessionId === SID) {
+          readyWhenPublished =
+            upsertBoundRow.fn.mock.calls.length === 1 &&
+            !!getRuntime(SID)?.run &&
+            listStatuses().some(
+              (status) => status.sessionId === C3_SID && status.status === 'running',
+            )
+        }
+      },
+      undefined,
+      { cwd: join(proj, 'wt', INTENT_ID), sessionProjection: projection },
+    )
+
+    expect(readyWhenPublished).toBe(true)
+  })
+
   it('writes the declared row, never an automation execution row', async () => {
     await run({ workspaceNameOrPath: proj, projection, cwd: join(proj, 'wt', INTENT_ID) })
     expect(upsertAutomationExecutionRow.fn).not.toHaveBeenCalled()

@@ -19,7 +19,7 @@
  *    only `sync_intent_review_status` / `sync_intent_fix_status` do, and the
  *    session id they carry is the one this prompt names.
  */
-import type { Intent, IntentPr } from '@ccc/shared/protocol'
+import { NETWORK_ACCESS_TOOL, type Intent, type IntentPr } from '@ccc/shared/protocol'
 import { QUEUE_MAX_REVIEW_FIX } from '../../kernel/queue/index.js'
 
 /** Everything a relay prompt is rendered from. */
@@ -33,6 +33,12 @@ export interface RelayPromptInput {
   sessionId: string
   /** The absolute worktree the session executes in. */
   cwd: string
+  /** MCP server name exposed to this execution (Codex uses a per-run suffix). */
+  mcpServerName?: string
+}
+
+function c3Tool(input: RelayPromptInput, name: string): string {
+  return `mcp__${input.mcpServerName ?? 'c3'}__${name}`
 }
 
 /**
@@ -42,6 +48,7 @@ export interface RelayPromptInput {
  * code under review is not a reviewer.
  */
 export const RELAY_REVIEW_TOOL_ALLOWLIST: readonly string[] = [
+  NETWORK_ACCESS_TOOL,
   'Read',
   'Grep',
   'Glob',
@@ -58,6 +65,7 @@ export const RELAY_REVIEW_TOOL_ALLOWLIST: readonly string[] = [
  * carry `sync_intent_review_status` — a fix session must never grade its own work.
  */
 export const RELAY_FIX_TOOL_ALLOWLIST: readonly string[] = [
+  NETWORK_ACCESS_TOOL,
   'Read',
   'Grep',
   'Glob',
@@ -106,11 +114,13 @@ function renderContext(input: RelayPromptInput, phase: 'review' | 'fix'): string
 }
 
 /** The history-reading instruction both phases share. */
-const HISTORY_INSTRUCTION = [
-  '第一步(不可跳过):调用 mcp__c3__list_intent_worknotes 读取本意图的 WorkNote 历史',
-  '(work=开发总结、review=历次评审问题、fix=历次修复说明),必要时按 kind 分批读取。',
-  '空历史是合法结果,可以继续;读取报错不是空历史,必须在结论里如实说明,不得当作「没有历史」。',
-].join('')
+function historyInstruction(input: RelayPromptInput): string {
+  return [
+    `第一步(不可跳过):调用 ${c3Tool(input, 'list_intent_worknotes')} 读取本意图的 WorkNote 历史`,
+    '(work=开发总结、review=历次评审问题、fix=历次修复说明),必要时按 kind 分批读取。',
+    '空历史是合法结果,可以继续;读取报错不是空历史,必须在结论里如实说明,不得当作「没有历史」。',
+  ].join('')
+}
 
 export function buildRelayReviewPrompt(input: RelayPromptInput): string {
   const first = input.round === 0 && input.intent.reviewStatus !== 'rejected'
@@ -120,15 +130,16 @@ export function buildRelayReviewPrompt(input: RelayPromptInput): string {
     '',
     renderContext(input, 'review'),
     '',
-    HISTORY_INSTRUCTION,
+    historyInstruction(input),
     '',
     '第二步:读取上面每个目标 PR 的真实变更(gh pr view / gh pr diff 或等价 forge 命令),',
     '在执行目录内核对代码。diff 过大时分批读完,不得把只看了一部分的变更表述为完整评审。',
+    '本地命令已经在上述执行目录启动,不要向命令工具另传 workdir/cwd,也不得把 shell 语法拼进目录参数。',
     '',
     '第三步:对照意图正文、相关 spec 与 WorkNote 历史评审正确性、安全性、测试与一致性。',
     '复审时逐条核对上一轮 review 提出的问题是否真的被解决。',
     '',
-    '第四步:调用 mcp__c3__append_intent_worknote 追加一条 kind="review" 的记录:',
+    `第四步:调用 ${c3Tool(input, 'append_intent_worknote')} 追加一条 kind="review" 的记录:`,
     '不通过就逐条写清问题与依据,通过就写清通过理由。',
     '',
     '第五步:在上面每一个目标 PR/MR 留下评审评论,评论正文第一行必须且只能是以下二者之一:',
@@ -137,10 +148,12 @@ export function buildRelayReviewPrompt(input: RelayPromptInput): string {
     '空一行后写与本轮 review WorkNote 一致的结论;不通过时逐条列出问题、依据与所需修改,',
     '通过时写清覆盖范围和通过依据。GitHub 使用 `gh pr comment`,其他 forge 使用等价评论命令。',
     `正文加入隐藏去重标记 \`<!-- c3:relay-review:${input.sessionId} -->\`;发送前先检查同一 PR 是否已有该标记,`,
-    '已有则不得重复发送。必须检查评论命令成功;任一目标评论失败时不要回填终态,如实说明错误并停止。',
+    '已有则不得重复发送。必须检查评论命令成功;评论失败时如实记录错误。',
     '',
-    `第六步:只有全部 PR/MR 评论成功或已存在同一去重标记后,才调用 mcp__c3__sync_intent_review_status 回填结论,intentId=${input.intent.id},`,
-    `reviewSessionId=${input.sessionId},reviewStatus 取 approved 或 rejected。`,
+    `第六步:调用 ${c3Tool(input, 'sync_intent_review_status')} 回填结论,intentId=${input.intent.id},`,
+    `reviewSessionId=${input.sessionId},reviewStatus 取 approved 或 rejected。若结论是 rejected,即使 PR/MR 评论失败也必须回填,`,
+    '使意图保留不通过结论并进入修复;若结论是 approved,仍只有全部评论成功或已存在同一去重标记后才能回填,',
+    '评论失败时不得回填 approved,避免触发自动合并。',
     '不调用这个工具就等于没有结论 —— 只在正文里说「通过」不会结束本轮评审。',
   ].join('\n')
 }
@@ -153,16 +166,17 @@ export function buildRelayFixPrompt(input: RelayPromptInput): string {
     '',
     renderContext(input, 'fix'),
     '',
-    HISTORY_INSTRUCTION,
+    historyInstruction(input),
     '最近一条 kind="review" 的记录就是本轮要处理的问题清单。',
     '',
     '第二步:读取目标 PR 的真实变更与当前代码(gh pr view / gh pr diff 或等价 forge 命令),',
     '在上面给出的执行目录内工作 —— 该目录就是这条意图的 worktree,不要切回项目主检出目录。',
+    '本地命令已经在该目录启动,不要向命令工具另传 workdir/cwd,也不得把 shell 语法拼进目录参数。',
     '',
     '第三步:逐条判断每个问题是否成立。成立的就改,改完跑相关测试与必要检查,',
     '在 PR 的 head 分支上提交并推送。判断某条不需要改码的,记录理由,不要制造空提交。',
     '',
-    '第四步:调用 mcp__c3__append_intent_worknote 追加一条 kind="fix" 的记录,',
+    `第四步:调用 ${c3Tool(input, 'append_intent_worknote')} 追加一条 kind="fix" 的记录,`,
     '写清改了什么、验证了什么、哪些问题判断为不需要改以及理由。',
     '',
     '第五步:在上面每一个目标 PR/MR 留下修复评论,正文第一行必须是 `[fix] completed`,',
@@ -171,7 +185,7 @@ export function buildRelayFixPrompt(input: RelayPromptInput): string {
     `正文加入隐藏去重标记 \`<!-- c3:relay-fix:${input.sessionId} -->\`;发送前先检查同一 PR 是否已有该标记,`,
     '已有则不得重复发送。必须检查评论命令成功;任一目标评论失败时不要回填终态,如实说明错误并停止。',
     '',
-    `第六步:只有全部 PR/MR 评论成功或已存在同一去重标记后,才调用 mcp__c3__sync_intent_fix_status 回填结论,intentId=${input.intent.id},`,
+    `第六步:只有全部 PR/MR 评论成功或已存在同一去重标记后,才调用 ${c3Tool(input, 'sync_intent_fix_status')} 回填结论,intentId=${input.intent.id},`,
     `fixSessionId=${input.sessionId},fixStatus=fixed。`,
     'fixed 只表示本轮已处理,不代表评审通过 —— 队列会自动发起复审。',
     '判断整轮都不需要改码时,同样在记录里写清理由后回填 fixed。',

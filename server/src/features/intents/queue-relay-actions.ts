@@ -62,6 +62,7 @@ import { bindRelayRunSession, registerRelayRun, unregisterRelayRun } from './rel
 import { getIntent } from './store.js'
 import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { runRelaySession, type RelaySessionOutcome } from '../automations/relay-session.js'
+import { automationMcpServerName } from '../automations/mcp-server-name.js'
 import {
   bindRelayOccupancy,
   claimRelayOccupancy,
@@ -270,8 +271,16 @@ export async function executeRelayPhase(
           round: claimed.round,
           sessionId: pendingId,
           cwd,
+          mcpServerName: automationMcpServerName(claimed.vendor, executionId),
         })
-      : buildRelayFixPrompt({ intent: req, prs, round: claimed.round, sessionId: pendingId, cwd })
+      : buildRelayFixPrompt({
+          intent: req,
+          prs,
+          round: claimed.round,
+          sessionId: pendingId,
+          cwd,
+          mcpServerName: automationMcpServerName(claimed.vendor, executionId),
+        })
 
   let boundSessionId: string | null = null
   let outcome: RelaySessionOutcome
@@ -540,11 +549,10 @@ function freshConclusion(intentId: string, phase: RelayPhase): string {
 }
 
 /**
- * Release the phase's placeholder — owner-safe against whichever id the phase
- * ended up holding. When the vendor bound a real session the field holds that,
- * and the `pending:` row (which the bind left behind as history) is cleared
- * separately; releasing only the current owner is what keeps a newer phase's
- * occupancy safe from a late callback.
+ * Release the phase's transient occupancy owner-safely. A launch that never bound
+ * drops its placeholder entirely. Once a real session exists, keep that id as the
+ * latest inspectable review/fix session and clear only `pending`; in-flight state
+ * comes from the live runtime, so retaining the dead id does not block a retry.
  */
 function releaseRelayPlaceholder(
   intentId: string,
@@ -552,8 +560,7 @@ function releaseRelayPlaceholder(
   pendingId: string,
   boundSessionId: string | null,
 ): void {
-  releaseRelayOccupancy(intentId, phase, boundSessionId ?? pendingId)
-  if (boundSessionId) releaseRelayOccupancy(intentId, phase, pendingId)
+  releaseRelayOccupancy(intentId, phase, boundSessionId ?? pendingId, boundSessionId !== null)
 }
 
 /**

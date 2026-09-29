@@ -99,6 +99,9 @@
       "files": {
         "label": "ファイル"
       },
+      "settings": {
+        "label": "設定"
+      },
       "delivery": {
         "label": "納品",
         "ariaLabel": "納品({count} 件要対応)"

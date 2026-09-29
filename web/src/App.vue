@@ -701,25 +701,8 @@ function onQueueSelectIntent(intentId: string): void {
   requestedIntentId.value = intentId
 }
 
-/* ── 工作区列表竖条的显隐与形态 ─────────────────────────────────────────────
- * 显隐是**纯本机 UI 状态**,不持久化:点竖条的工作区入口开/合,再点收起。形态
- * (展开/收缩)才是需要记住的偏好,经 usePersistentToggle 落 localStorage,刷新后
- * 读回 —— 默认展开,用户一进来就拿到带名称的完整形态。两者都只在本机生效,不做跨设备
- * 同步。显隐与形态都挂在 App.vue 这个装配边界上当唯一真源:竖条入口只管开合(它自己不持有
- * 显隐,只把意图上抛),列表竖条则经 props 读形态、经事件请求切换 —— 两者都不各自存一份,
- * 免得同一形态出现两个真源。 */
-const workspaceListOpen = ref(false)
+/* 工作区列表在桌面端常驻，只保留展开/收缩形态；偏好经 localStorage 在本机记忆。 */
 const workspaceListExpanded = usePersistentToggle('c3.workspaceListExpanded', true)
-
-function toggleWorkspaceList(): void {
-  workspaceListOpen.value = !workspaceListOpen.value
-}
-
-// 工作台视图下竖条入口变成「回到工作区」,列表竖条也不再渲染 —— 顺手把它收起来,
-// 免得下次回到工作区视图时它还杵在那里、占着横向空间。
-watch(viewMode, (mode) => {
-  if (mode === 'workcenter') workspaceListOpen.value = false
-})
 
 /** Files 内嵌 ChatColumn 的分隔条宽度(像素,per-workspace,仅 localStorage)。切换
  *  workspace 时从持久化读回;拖拽/键盘调节后写回。仅本地,不进服务端配置。 */
@@ -800,10 +783,10 @@ function onSpeedTest(intent: SpeedTestIntent): void {
   }
 }
 
-/** 竖条的用户消息入口:进工作台并落到用户通知页 —— 与顶栏「用户通知」入口同一动作。 */
-function openWorkcenterNotifications(): void {
+/** 系统竖条的工作台入口：三个页面各自独立，切换时统一进入工作台视图。 */
+function openWorkcenterPage(page: 'notifications' | 'dashboard' | 'robots'): void {
   setViewMode('workcenter')
-  setWorkcenterPage('notifications')
+  setWorkcenterPage(page)
 }
 
 /** 竖条在工作台视图下的回落入口:回到工作区视图。桌面顶栏的旧切换按钮已移除,
@@ -829,36 +812,38 @@ function onFilesChatWidth(px: number): void {
     <!-- 行向壳:#app 是纵向 flex 容器,竖条若作为它的直接子节点会被排到顶栏上方。
         这里显式开一层「竖条 + 主列」的行布局,竖条与主列并列、竖条高度贯通。 -->
     <div class="app-shell">
-      <!-- 工作区列表竖条:竖条**左侧**的并列兄弟(不是浮层),点竖条的工作区入口开/合。
-           列出全部工作区,按最近访问倒序;展开态显示名称、收缩态只剩首字符徽标。与竖条
-           一起构成「竖条 + 列表竖条 + 主列」三列,列表的横向占位由主列的 min-width: 0
-           消化。切换工作区仍走控制层的 selectWorkspace,列表本身不重写副作用。 -->
+      <!-- 系统菜单常驻最左侧；工作台三个页面与底部工具均使用独立图标。 -->
+      <LeftRail
+        :status="status"
+        :workcenter-pending-count="workcenterPendingCount"
+        :view-mode="viewMode"
+        :workcenter-page="workcenterPage"
+        :system-settings-open="settingsOpen"
+        :personalized-setting-open="personalizedSettingOpen"
+        :show-logout="authStatus === 'authenticated'"
+        :update-status="updateStatus"
+        :self-update="selfUpdate"
+        @select-workcenter-page="openWorkcenterPage"
+        @enter-workspace="enterWorkspaceView"
+        @open-settings="openSettings"
+        @open-personalized-setting="openPersonalizedSetting"
+        @start-self-update="startSelfUpdate"
+        @apply-self-update="applySelfUpdate"
+        @logout="auth.logout"
+      />
+
+      <!-- Workspace 列表紧邻系统菜单右侧，桌面端始终展示，只允许展开或收缩。 -->
       <WorkspaceListRail
-        v-if="workspaceListOpen"
+        v-if="viewMode === 'workspace' && !settingsOpen && !personalizedSettingOpen"
         id="ws-list-rail"
         :workspaces="workspaces"
         :current-workspace-name="currentWorkspace"
         :workspace-running-session-counts="workspaceRunningSessionCounts"
         :expanded="workspaceListExpanded"
-        :view-mode="viewMode"
         @toggle-expanded="workspaceListExpanded = !workspaceListExpanded"
         @select-workspace="selectWorkspace"
         @request-add-workspace="addWorkspaceOpen = true"
         @remove-workspace="removeWorkspace"
-      />
-
-      <!-- 左侧常驻竖条:工作区入口(带该工作区运行中会话数)与用户消息入口(带待处理数)。
-           与顶栏并列而非覆盖;切换工作区仍走控制层的 selectWorkspace,不重写副作用。 -->
-      <LeftRail
-        :workspaces="workspaces"
-        :current-workspace-name="currentWorkspace"
-        :workspace-running-session-counts="workspaceRunningSessionCounts"
-        :workcenter-pending-count="workcenterPendingCount"
-        :view-mode="viewMode"
-        :workspace-list-open="workspaceListOpen"
-        @toggle-workspace-list="toggleWorkspaceList"
-        @open-notifications="openWorkcenterNotifications"
-        @enter-workspace="enterWorkspaceView"
       />
 
       <div class="app-main">
@@ -871,6 +856,7 @@ function onFilesChatWidth(px: number): void {
           :tabs="HEADER_TABS"
           :active-tab="activeTab"
           :tabs-enabled="currentWorkspace !== null"
+          :workspace-setting-open="workspaceSettingOpen"
           :view-mode="viewMode"
           :workcenter-page="workcenterPage"
           :workcenter-badge-count="workcenterPendingCount"

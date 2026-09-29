@@ -1,19 +1,15 @@
 <script setup lang="ts">
 import type { WorkcenterPage } from '@/controls/state'
 /*
- * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 数据驱动的工作区子 tab。
+ * AppHeader.vue — 工作区上下文顶部栏；移动端另含精简栏与底部子 tab。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
  *
- * 桌面行:workspace 模式为「项目配置 + 中间标签页 + 右侧设置/账户/更新」,workcenter
- * 模式为「工作台页面入口(用户通知 / Dashboard / 聊天机器人)+ 右侧同上」,中间区域隐藏。
- * 工作区切换入口与「工作区/工作台」两个切换按钮已迁到左侧常驻竖条(LeftRail),桌面行
- * 不再重复提供;`viewMode` / `setViewMode` 的接线保留 —— 深链跳转与 workcenter 内部
- * 动作仍要经它切视图。
+ * 桌面行只承载工作区内部子页面标签。工作台的用户通知、总览、聊天机器人，以及升级、
+ * 设置、账户、连接状态均由左侧系统竖条承载；工作台视图不渲染顶部栏。
  * 移动端不渲染竖条,精简行因此保留同款 viewMode 切换器与工作区切换器,窄屏仍能切工作区、
  * 进工作台;两处共用同一份图标标记与状态。
- * 待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上,与竖条用户消息入口同源
- * (App 喂同一个 workcenterPendingCount),0/缺省不渲染,桌面 + 移动端同步。桌面 viewMode
- * 切换器已迁到竖条,窄屏精简行里的那枚才是本组件唯一的 workcenter 角标承载点。
+ * 待处理事件角标(workcenterBadgeCount)挂在移动端「用户通知」入口上,与桌面竖条同源;
+ * 0/缺省不渲染。
  * 移动端底部 tab 与桌面共用 tabs 数据。
  *
  * tab 角标:数值由上层(HEADER_TABS)给定,本组件只负责渲染 —— badgeCount 为 0/缺省时
@@ -42,32 +38,23 @@ const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 const logsHref = logsUrl(window.location)
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
-// 登录身份(basic 用户名),响应式来自每个 `ready`。供桌面账户菜单与
-// 移动操作菜单展示「当前登录的是谁」;未登录时为 null(此时 showLogout 亦为 false)。
+// 登录身份(basic 用户名),响应式来自每个 `ready`,供移动操作菜单展示。
 const { isAdmin, subject } = useAuth()
 
-// 受控 <details> 浮层(移动端「⋯」操作菜单 + 桌面账户下拉):原生
-// details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet/页面之上。
-// 两个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
+// 移动端「⋯」菜单用受控 <details>:选项点击与外部点击都要主动收起。
 const actionsEl = ref<HTMLDetailsElement | null>(null)
-const accountEl = ref<HTMLDetailsElement | null>(null)
 
 function closeActions(): void {
   if (actionsEl.value) actionsEl.value.open = false
 }
 
-function closeAccount(): void {
-  if (accountEl.value) accountEl.value.open = false
-}
-
 function onDocumentPointerDown(event: PointerEvent): void {
   const target = event.target as Node
   if (actionsEl.value?.open && !actionsEl.value.contains(target)) closeActions()
-  if (accountEl.value?.open && !accountEl.value.contains(target)) closeAccount()
 }
 
 function syncOutsideListener(): void {
-  if (actionsEl.value?.open || accountEl.value?.open) {
+  if (actionsEl.value?.open) {
     document.addEventListener('pointerdown', onDocumentPointerDown)
   } else {
     document.removeEventListener('pointerdown', onDocumentPointerDown)
@@ -77,10 +64,6 @@ function syncOutsideListener(): void {
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown))
 
 // 菜单项:先收起菜单再上抛动作,避免浮层悬停在随后打开的 sheet 之上。
-function chooseWorkspaceSetting(): void {
-  closeActions()
-  emit('open-workspace-setting')
-}
 function chooseSettings(): void {
   closeActions()
   emit('open-settings')
@@ -91,7 +74,6 @@ function choosePersonalizedSetting(): void {
 }
 function chooseLogout(): void {
   closeActions()
-  closeAccount()
   emit('logout')
 }
 
@@ -114,6 +96,7 @@ const props = defineProps<{
   activeTab: string
   /** Tabs require a current workspace; disabled until one is selected. */
   tabsEnabled?: boolean
+  workspaceSettingOpen?: boolean
   /** Current view mode: workspace or workcenter. */
   viewMode: 'workspace' | 'workcenter'
   /** Current workcenter page (drives the top-bar page entries' selected state). */
@@ -237,15 +220,14 @@ function confirmRestart(): void {
   emit('apply-self-update')
 }
 
-// 工作区/工作台两模式切换器(顶栏最左,桌面 + 移动端共用同一份图标标记)。
+// 工作区/工作台两模式切换器仅供移动端使用。
 // 当前生效模式图标蓝(--c-primary),另一个灰(--c-text-muted),点击 emit update:viewMode。
 const VIEW_MODES: ReadonlyArray<{ key: 'workspace' | 'workcenter'; labelKey: LocaleKey }> = [
   { key: 'workspace', labelKey: 'nav.viewMode.workspace' as LocaleKey },
   { key: 'workcenter', labelKey: 'nav.viewMode.workcenter' as LocaleKey },
 ]
 
-// 工作台页面入口(顶栏,工作台模式下占据原「工作台」标题位置;桌面 + 移动端共用同一组
-// 页面键与 tab 语义)。「用户通知」入口携带待处理数角标(badge=true),计数为 0 时不渲染。
+// 移动端工作台页面入口。「用户通知」携带待处理数角标,计数为 0 时不渲染。
 const WORKCENTER_PAGES: ReadonlyArray<{
   key: WorkcenterPage
   labelKey: LocaleKey
@@ -277,56 +259,9 @@ function selectTab(tab: HeaderTab): void {
 </script>
 
 <template>
-  <header class="app-header">
+  <header class="app-header" :class="{ 'workcenter-header': viewMode === 'workcenter' }">
     <div class="desktop-header-row">
-      <!-- Left area: workspace mode — project config（工作区切换器已迁到左侧竖条） -->
-      <template v-if="viewMode === 'workspace'">
-        <button
-          class="icon-btn project-config-btn"
-          :title="t('workspaceSetting.entry.tooltip')"
-          :disabled="!currentWorkspace"
-          @click="emit('open-workspace-setting')"
-        >
-          ⚙
-        </button>
-      </template>
-
-      <!-- Left area: workcenter mode — page entries (总览 / 用户通知),tab 语义,
-           占据原「工作台」标题位置。「用户通知」入口携带待处理数角标。 -->
-      <nav
-        v-else
-        class="header-tabs wc-page-nav"
-        role="tablist"
-        :aria-label="t('dashboard.nav.ariaLabel')"
-      >
-        <button
-          v-for="page in WORKCENTER_PAGES"
-          :key="page.key"
-          type="button"
-          role="tab"
-          class="header-tab"
-          :class="{
-            active: workcenterPage === page.key,
-            'has-badge': page.badge && (workcenterBadgeCount ?? 0) > 0,
-          }"
-          :aria-selected="workcenterPage === page.key"
-          @click="emit('select-workcenter-page', page.key)"
-        >
-          <span class="tab-label">
-            {{ t(page.labelKey) }}
-            <span
-              v-if="page.badge && (workcenterBadgeCount ?? 0) > 0"
-              class="tab-badge"
-              :aria-label="
-                t('dashboard.nav.notificationsBadgeAriaLabel', { count: workcenterBadgeCount ?? 0 })
-              "
-              >{{ workcenterBadgeCount }}</span
-            >
-          </span>
-        </button>
-      </nav>
-
-      <!-- Middle: workspace tabs (hidden in workcenter mode) -->
+      <!-- 工作区内部子页面仍是上下文标签；工作台页面改由系统竖条独立导航。 -->
       <nav
         v-if="viewMode === 'workspace'"
         class="header-tabs"
@@ -347,116 +282,16 @@ function selectTab(tab: HeaderTab): void {
             }}</span>
           </span>
         </button>
+        <button
+          class="header-tab"
+          :class="{ active: workspaceSettingOpen }"
+          :disabled="tabsEnabled === false"
+          data-testid="nav-workspace-setting"
+          @click="emit('open-workspace-setting')"
+        >
+          <span class="tab-label">{{ t('nav.tab.settings.label') }}</span>
+        </button>
       </nav>
-
-      <!-- Right area: update hint + settings + account + status -->
-      <div class="header-right">
-        <!-- 更新胶囊(独立控件):不能自更新时是外链,能自更新时是进度/重启按钮。 -->
-        <a
-          v-if="updatePill?.kind === 'link'"
-          class="update-hint"
-          :href="RELEASES_URL"
-          target="_blank"
-          rel="noopener noreferrer"
-          :title="updatePill.text"
-          data-testid="nav-update-link"
-          >{{ updatePill.text }}</a
-        >
-        <button
-          v-else-if="updatePill"
-          class="update-hint update-hint-btn"
-          :class="`update-hint-${updatePill.kind}`"
-          :disabled="
-            updatePill.kind === 'progress' ||
-            updatePill.kind === 'pending' ||
-            updatePill.kind === 'applying'
-          "
-          :title="updatePill.text"
-          data-testid="nav-update-action"
-          @click="onUpdatePillClick"
-        >
-          {{ updatePill.text }}
-        </button>
-        <!-- 个人化设置入口:不受 isAdmin 约束,任何账户恒可达(该域无管理员门禁)。 -->
-        <button
-          class="icon-btn personalized-setting-btn"
-          :title="t('nav.personalizedSetting.tooltip')"
-          :aria-label="t('nav.personalizedSetting.tooltip')"
-          data-testid="nav-personalized-setting"
-          @click="emit('open-personalized-setting')"
-        >
-          <svg
-            class="personalized-icon"
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path
-              fill="currentColor"
-              d="M10 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.69-8 6v2h11.3a6.5 6.5 0 0 1-.3-2c0-2.3 1.2-4.3 3-5.5A14 14 0 0 0 10 14Z"
-            />
-            <path
-              fill="currentColor"
-              d="M18.5 14.2l1.1.6-.5 1.4-1.2-.2a3 3 0 0 1-.8.8l.2 1.2-1.4.5-.6-1.1a3 3 0 0 1-1.1 0l-.6 1.1-1.4-.5.2-1.2a3 3 0 0 1-.8-.8l-1.2.2-.5-1.4 1.1-.6a3 3 0 0 1 0-1.1l-1.1-.6.5-1.4 1.2.2a3 3 0 0 1 .8-.8l-.2-1.2 1.4-.5.6 1.1a3 3 0 0 1 1.1 0l.6-1.1 1.4.5-.2 1.2a3 3 0 0 1 .8.8l1.2-.2.5 1.4-1.1.6a3 3 0 0 1 0 1.1Zm-3.3 1.4a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z"
-            />
-          </svg>
-        </button>
-        <button
-          v-if="isAdmin"
-          class="icon-btn settings-btn"
-          :title="t('nav.settings.tooltip')"
-          @click="emit('open-settings')"
-        >
-          ⚙
-        </button>
-        <!-- 账户菜单(ADR-0023):受控 <details>,人形图标触发,展开显示登录名 + 登出。
-             仅已认证(showLogout)时渲染——无认证 / none / 未配置 basic 时整体隐藏。 -->
-        <details
-          v-if="showLogout"
-          ref="accountEl"
-          class="account-menu"
-          @toggle="syncOutsideListener"
-        >
-          <summary
-            class="icon-btn account-trigger"
-            :title="t('auth.account.tooltip')"
-            :aria-label="t('auth.account.tooltip')"
-          >
-            <svg
-              class="account-icon"
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                fill="currentColor"
-                d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.69-8 6v2h16v-2c0-3.31-3.58-6-8-6Z"
-              />
-            </svg>
-          </summary>
-          <div class="account-dropdown">
-            <div v-if="subject" class="account-name" :title="subject">{{ subject }}</div>
-            <button class="account-logout-btn" @click="chooseLogout">
-              {{ t('auth.logout.label') }}
-            </button>
-          </div>
-        </details>
-        <a
-          class="status status-link"
-          :class="status === 'open' ? 'ok' : 'err'"
-          :href="logsHref"
-          target="_blank"
-          rel="noopener noreferrer"
-          :title="t('nav.logs.tooltip')"
-          data-testid="nav-logs-link"
-        >
-          {{ status }}
-        </a>
-      </div>
     </div>
 
     <div class="mobile-header-row">
@@ -581,27 +416,23 @@ function selectTab(tab: HeaderTab): void {
             :href="RELEASES_URL"
             target="_blank"
             rel="noopener noreferrer"
+            data-testid="nav-update-link-mobile"
             @click="closeActions"
             >{{ updatePill.text }}</a
           >
           <button
             v-else-if="updatePill"
             class="mobile-action-item update-hint-mobile"
+            :class="`update-hint-${updatePill.kind}`"
             :disabled="
               updatePill.kind === 'progress' ||
               updatePill.kind === 'pending' ||
               updatePill.kind === 'applying'
             "
+            data-testid="nav-update-action-mobile"
             @click="onMobileUpdatePillClick"
           >
             {{ updatePill.text }}
-          </button>
-          <button
-            class="mobile-action-item"
-            :disabled="!currentWorkspace"
-            @click="chooseWorkspaceSetting"
-          >
-            {{ t('workspaceSetting.entry.tooltip') }}
           </button>
           <button
             class="mobile-action-item"
@@ -653,10 +484,22 @@ function selectTab(tab: HeaderTab): void {
           }}</span>
         </span>
       </button>
+      <button
+        class="mobile-bottom-tab"
+        :class="{ active: workspaceSettingOpen }"
+        :disabled="tabsEnabled === false"
+        role="tab"
+        :aria-selected="workspaceSettingOpen === true"
+        data-testid="nav-workspace-setting-mobile"
+        @click="emit('open-workspace-setting')"
+      >
+        <span class="mobile-tab-content">
+          <span class="mobile-tab-label">{{ t('nav.tab.settings.label') }}</span>
+        </span>
+      </button>
     </nav>
 
-    <!-- 新增工作区弹框:桌面与移动端两处切换器同时挂载,故弹框在顶栏只有这一个受控
-         实例,手动「+」与冷启动引导共用;路径与名称仍只在此收集。 -->
+    <!-- 新增工作区弹框保持唯一受控实例,桌面列表、移动切换器与冷启动引导共用。 -->
     <AddWorkspaceDialog
       :open="addWorkspaceOpen === true"
       :picker-pending="workspaceDirectoryPicker?.pending === true"
@@ -682,6 +525,12 @@ function selectTab(tab: HeaderTab): void {
 </template>
 
 <style scoped>
+@media (min-width: 768px) {
+  .app-header.workcenter-header {
+    display: none;
+  }
+}
+
 .desktop-header-row {
   display: flex;
   align-items: center;
@@ -748,8 +597,7 @@ function selectTab(tab: HeaderTab): void {
   border-radius: 50%;
 }
 
-/* 工作台页面入口(总览 / 用户通知):复用 .header-tabs/.header-tab 视觉,与工作区
-   顶栏标签统一层级。桌面占据原「工作台」标题位置;移动端占据工作区切换器位置。 */
+/* 移动端工作台页面入口复用 .header-tabs/.header-tab 视觉。 */
 .mobile-wc-page-nav {
   flex: 1;
   min-width: 0;

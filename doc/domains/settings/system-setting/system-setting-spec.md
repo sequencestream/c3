@@ -2,6 +2,8 @@
 
 `system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / 默认 agent / provider / runtime / security / general / 用户与访问 七个顶层页签;其中 agent 页与「默认 agent」页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
 
+系统设置从左侧系统菜单进入,面板只覆盖应用右侧区域,左侧系统菜单保持可操作;选择系统菜单中的其它页面即关闭面板。
+
 配置持久化路径、单一写入路径、`projectConfigs` 分层等**组级共享上下文**见 [settings 组概览](../settings-overview.md)。
 
 ## 显示与本地化

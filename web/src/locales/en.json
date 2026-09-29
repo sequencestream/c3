@@ -95,6 +95,9 @@
       "files": {
         "label": "Files"
       },
+      "settings": {
+        "label": "Settings"
+      },
       "workcenter": {
         "label": "Workcenter"
       },

@@ -99,6 +99,9 @@
       "files": {
         "label": "Файлы"
       },
+      "settings": {
+        "label": "Настройки"
+      },
       "delivery": {
         "label": "Доставка",
         "ariaLabel": "Доставка ({count} требует внимания)"

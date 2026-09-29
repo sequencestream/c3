@@ -296,7 +296,7 @@ c3
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
-│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页为每个 vendor 出一行诊断(二进制名 + 解析来源 + 已解析绝对路径),另展示 sandbox(arapuca)驱动状态
+│   ├── system-setting 系统设置                   # 左侧系统菜单进入、仅覆盖右侧区域的管理员全局配置；运行时页为每个 vendor 出一行诊断(二进制名 + 解析来源 + 已解析绝对路径),另展示 sandbox(arapuca)驱动状态
 │   │   ├── 显示与本地化                          # voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释);界面语言属个人化设置
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
@@ -312,7 +312,7 @@ c3
 │   │   ├── socket 自动续跑                        # socketAutoResume 开关,断连后单次自动 resume(默认开)
 │   │   └── 环境诊断                              # 只读展示各 vendor host CLI/令牌探测结果
 │   │
-│   ├── personalized-setting 个人化设置           # 按人偏好(PersonalizedSettings),独立入口页,不过管理员门,普通账户可改
+│   ├── personalized-setting 个人化设置           # 左侧系统菜单进入、仅覆盖右侧区域的按人偏好(PersonalizedSettings),不过管理员门,普通账户可改
 │   │   ├── 显示语言                              # uiLang 界面语言,选中即切 vue-i18n + <html lang> 并按当前身份保存
 │   │   ├── 显示样式                              # theme 配色主题,选项来自可扩展主题注册表(dark 默认 / light),选中即写根元素 data-theme 并按当前身份保存
 │   │   ├── 字体大小                              # fontScale 全局 UI 字号(70–120,拖动条),经根元素 --c-font-scale 缩放相对单位字号,选中即生效并按当前身份保存
@@ -326,7 +326,7 @@ c3
 │   │   │   └── 访问地址                          # key 配置下方常挂 baseUrl+/mcp 端点(可复制);未配 baseUrl 则明说缺失并指路系统设置,不猜浏览器 Host
 │   │   └── agent 输出语言                        # 顶层 agentLang 跟随最近一次上报,供无连接上下文的服务端提示词(意图/规格/标题/总结)使用
 │   │
-│   └── workspace-setting 工作区设置              # 按工作区独立配置(WorkspaceSetting,projectConfigs 按路径存,工作区设置面板)
+│   └── workspace-setting 工作区设置              # 工作区顶栏「会话」右侧的「设置」页面,在顶栏下方展示；按工作区独立配置(WorkspaceSetting,projectConfigs 按路径存)
 │       ├── 智能体覆盖(默认 + 七类角色)          # defaultAgentId + tool/intent/spec/specReview/automation/review/fixAgentId 八个按工作区智能体引用;空白=继承系统默认,继承态绝不快照;解析顺序=配置了默认则工作区层优先(工作区角色 → 工作区默认 → 系统角色 → 系统默认),继承则系统角色优先,末段同为 system;tool/intent/spec/specReview 运行时消费,automation/review/fix 仅作新建表单/模板种子(review/fix 不进 PR 评审队列)
 │       ├── 默认权限模式                          # defaultMode 按 vendor 分组(claude/codex/cursor;字符串经各 MODE_CATALOGS 门禁,非法回退 defaultToken;codex 可持 CodexPolicy)
 │       ├── dev 启动技能                          # devSkill 启动开发时前缀的斜杠命令

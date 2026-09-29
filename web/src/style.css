@@ -44,6 +44,7 @@ body {
 }
 /* 主列维持 #app 原先的纵向栈:顶栏在上、内容区在下并各自吃掉剩余高度。 */
 .app-main {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -673,10 +674,12 @@ header h1 {
 
 /* ============ 主体：侧边栏 + 内容（规范 3.2 / 3.3） ============ */
 .body {
+  position: relative;
   flex: 1;
   display: flex;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 767px) {
@@ -2821,13 +2824,13 @@ button.deny:hover:not(:disabled) {
   gap: var(--sp-1);
 }
 
-/* ---- System settings (full-page) ---- */
+/* ---- Settings pages: confined to the main content region ---- */
 .settings-btn {
   font-size: var(--fs-title-sm);
 }
 
 .settings-page {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 100;
   display: flex;

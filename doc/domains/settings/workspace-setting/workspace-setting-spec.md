@@ -2,6 +2,8 @@
 
 `workspace-setting` 域承载 `WorkspaceSetting`(见 [`shared/src/protocol/workspace.ts`](../../../../shared/src/protocol/workspace.ts))——**按工作区**独立的配置旋钮,以唯一 workspace name 作为持久化与协议关联键。缺失或部分条目回退规范化默认值(`normalizeWorkspaceSetting`)。协议消息 `load_workspace_setting` / `save_workspace_setting` / `workspace_setting`。
 
+入口是工作区顶栏最右侧、位于「会话」之后的「设置」。设置内容在顶栏下方的右侧内容区展示,不遮挡左侧系统菜单与工作区列表;切换其它工作区顶栏页面或左侧系统菜单页面即关闭。
+
 配置持久化与组级共享上下文见 [settings 组概览](../settings-overview.md)。
 
 ## 智能体覆盖 `defaultAgentId` + 七类角色

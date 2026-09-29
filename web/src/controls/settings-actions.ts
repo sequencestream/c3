@@ -50,6 +50,8 @@ export function installSettingsActions(ctx: AppCtx): void {
   } = ctx
 
   ctx.openSettings = (): void => {
+    if (personalizedSettingOpen.value) ctx.closePersonalizedSetting()
+    workspaceSettingOpen.value = false
     settingsOpen.value = true
     send({ type: 'get_settings' })
   }
@@ -109,13 +111,16 @@ export function installSettingsActions(ctx: AppCtx): void {
 
   /** The panel consumed the one-shot target (or settings closed). */
   ctx.clearActionTarget = (): void => {
-    settingsTarget.value = null
+    if (settingsTarget) settingsTarget.value = null
   }
 
   // Personalized settings are already in memory (browser seed + server echo), so
   // opening the page needs no fetch; refresh anyway so a page left open picks up an
   // account record created on another device.
   ctx.openPersonalizedSetting = (): void => {
+    settingsOpen.value = false
+    if (settingsTarget) settingsTarget.value = null
+    workspaceSettingOpen.value = false
     personalizedSettingOpen.value = true
     ctx.fetchPersonalizedSettings()
     ctx.dismissMyMcpApiKeyReveal()
@@ -153,6 +158,9 @@ export function installSettingsActions(ctx: AppCtx): void {
   }
 
   ctx.openWorkspaceSetting = (): void => {
+    settingsOpen.value = false
+    if (settingsTarget) settingsTarget.value = null
+    if (personalizedSettingOpen.value) ctx.closePersonalizedSetting()
     workspaceSettingOpen.value = true
     const id = currentWorkspace.value
     if (id) {
@@ -508,7 +516,7 @@ export function installSettingsActions(ctx: AppCtx): void {
    * plaintext, exactly as an ordinary close does.
    */
   ctx.openSettingsFromPersonalizedSetting = (): void => {
-    ctx.closePersonalizedSetting()
+    if (personalizedSettingOpen.value) ctx.closePersonalizedSetting()
     ctx.openSettings()
   }
 
@@ -593,6 +601,10 @@ export function installSettingsActions(ctx: AppCtx): void {
 
   // ---- View mode (workspace / workcenter) ----
   ctx.setViewMode = (next: 'workspace' | 'workcenter'): void => {
+    settingsOpen.value = false
+    settingsTarget.value = null
+    workspaceSettingOpen.value = false
+    if (personalizedSettingOpen.value) ctx.closePersonalizedSetting()
     if (next === viewMode.value) return
     if (next === 'workcenter') {
       // 记住当前标签页

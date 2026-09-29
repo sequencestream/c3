@@ -439,6 +439,10 @@ export function installSessionActions(ctx: AppCtx): void {
 
   // Top-bar tab click.
   ctx.onSelectTab = (key: string): void => {
+    ctx.closeSettings()
+    ctx.clearActionTarget()
+    ctx.closePersonalizedSetting()
+    workspaceSettingOpen.value = false
     if (key === 'intents') {
       if (currentWorkspace.value) ctx.openIntents(currentWorkspace.value)
       return

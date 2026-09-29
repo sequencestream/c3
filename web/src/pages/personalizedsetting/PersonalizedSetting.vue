@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * PersonalizedSetting.vue — 个人化设置页(全屏面板),与系统设置、工作区设置三者并列。
+ * PersonalizedSetting.vue — 个人化设置右侧面板,与系统设置、工作区设置三者互斥。
  *
  * 承载「因人而异」的偏好项,不经管理员门禁:普通账户同样可打开并修改自己的设置,故本页
  * 不读 isAdmin、无只读提示、无 Save 按钮。每项都是即时生效 + 即时持久化(选中即应用语言

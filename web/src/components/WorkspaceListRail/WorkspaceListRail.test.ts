@@ -297,15 +297,15 @@ describe('WorkspaceListRail.vue — 管理员增删入口', () => {
   })
 })
 
-describe('WorkspaceListRail.vue — 窄屏与工作台视图', () => {
+describe('WorkspaceListRail.vue — 响应式与常驻展示', () => {
   it('窄屏(≤767px)不渲染 —— 移动端沿用 AppHeader 精简行的切换器', () => {
     expect(mountRail({}, 767).find('.ws-list-rail').exists()).toBe(false)
     expect(mountRail({}, 600).find('.ws-list-rail').exists()).toBe(false)
     expect(mountRail({}, 768).find('.ws-list-rail').exists()).toBe(true)
   })
 
-  it('工作台视图下一并隐藏,不与竖条那条「回到工作区」争抢点击', () => {
-    expect(mountRail({ viewMode: 'workspace' }).find('.ws-list-rail').exists()).toBe(true)
-    expect(mountRail({ viewMode: 'workcenter' }).find('.ws-list-rail').exists()).toBe(false)
+  it('桌面端不接收显隐状态，只通过 expanded 在展开与收缩间切换', () => {
+    expect(mountRail({ expanded: true }).find('.ws-list-rail-expanded').exists()).toBe(true)
+    expect(mountRail({ expanded: false }).find('.ws-list-rail-collapsed').exists()).toBe(true)
   })
 })

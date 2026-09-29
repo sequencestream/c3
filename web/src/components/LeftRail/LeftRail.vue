@@ -1,263 +1,421 @@
 <script setup lang="ts">
-/*
- * LeftRail.vue — 应用最左侧的常驻竖条(登录门内,AppHeader 的兄弟节点)。
- *
- * 只承载两个入口,各带一个数字角标:
- * - 工作区入口(上):当前工作区名首字符 + 由名字派生的稳定配色;角标是该工作区**运行中
- *   会话数**(服务端按 session_counts / session_status 实时下发)。点击**开合竖条左侧的
- *   工作区列表竖条**(WorkspaceListRail):那里直接列出全部工作区、按最近访问排序,选中即
- *   上抛切换。切换的副作用(落回意图 tab、清查看态、持久化)全在控制层的 selectWorkspace
- *   里,竖条不重写,列表竖条也不重写。
- * - 用户消息入口(下):铃铛,角标与工作台「用户通知」入口同源;点击进工作台并定位到用户
- *   通知页。
- *
- * 工作区入口此前是一个浮层下拉(WorkspaceSwitcher 的 rail 形态)。列表竖条接替了它的
- * 列表职责后,那层 popover 与它的 rail 形态一并移除:竖条自身不再持有任何列表,只留
- * 「开合列表竖条」这一个动作。移动端精简行用的 WorkspaceSwitcher(bar 形态)不受影响。
- *
- * 工作台视图下竖条不消失:此时工作区入口从「开合列表竖条」换成「回到工作区」——工作区
- * 徽标直接上抛进入工作区视图,与用户消息入口构成一对可来回切的入口。桌面顶栏已移除旧
- * 切换按钮,若不在此提供回落,进工作台后就再无路可退。列表竖条在工作台视图下一并隐藏,
- * 不与这条回退路径争抢点击。
- *
- * 两个角标都只读既有状态,竖条自身不持有计数、不新增轮询或订阅;0 / 缺省一律不渲染。
- * 窄屏(≤767px)不渲染竖条 —— 移动端顶栏精简行仍保留等价的工作区与工作台入口。
- */
-import { computed } from 'vue'
-import type { WorkspaceInfo } from '@ccc/shared/protocol'
+/* 桌面系统导航竖条。工作台页面各有独立入口，连接、升级、设置与账户固定在底部。 */
+import { computed, ref } from 'vue'
+import type { SelfUpdateState, UpdateStatus } from '@ccc/shared/protocol'
+import type { WorkcenterPage } from '@/controls/state'
 import { useTypedI18n } from '@/i18n'
+import { useAuth } from '@/composables/useAuth'
 import { useIsMobile } from '@/composables/useBreakpoint'
-import { workspaceColor, workspaceInitial } from '@/lib/workspace-color'
+import { logsUrl } from '@/lib/logs-route'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 
 const { t } = useTypedI18n()
+const { isAdmin, subject } = useAuth()
+const isMobile = useIsMobile()
+const logsHref = logsUrl(window.location)
+const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 
 const props = defineProps<{
-  workspaces: WorkspaceInfo[]
-  currentWorkspaceName: string | null
-  /** 每个工作区的运行中会话数,缺项按 0 处理。 */
-  workspaceRunningSessionCounts?: Record<string, number>
-  /** 工作台待处理通知数,与「用户通知」入口同源。 */
+  status: 'connecting' | 'open' | 'closed'
+  viewMode: 'workspace' | 'workcenter'
+  systemSettingsOpen?: boolean
+  personalizedSettingOpen?: boolean
+  workcenterPage?: WorkcenterPage
   workcenterPendingCount?: number
-  /** 当前视图模式:工作台视图下工作区入口承担「回到工作区」。 */
-  viewMode?: 'workspace' | 'workcenter'
-  /** 列表竖条是否已展开 —— 供无障碍状态播报,显隐本身由 App.vue 持有。 */
-  workspaceListOpen?: boolean
+  showLogout?: boolean
+  updateStatus?: UpdateStatus | null
+  selfUpdate?: SelfUpdateState | null
 }>()
 
 const emit = defineEmits<{
-  'toggle-workspace-list': []
-  'open-notifications': []
   'enter-workspace': []
+  'select-workcenter-page': [page: WorkcenterPage]
+  'open-personalized-setting': []
+  'open-settings': []
+  'start-self-update': []
+  'apply-self-update': []
+  logout: []
 }>()
 
-// 窄屏没有竖条 —— 移动端沿用 AppHeader 精简行里的工作区/工作台入口。
-const isMobile = useIsMobile()
-
-const initial = computed(() => workspaceInitial(props.currentWorkspaceName))
-// 配色只落成一个槽位号:底色/文字色由样式表按槽位查 --c-ws-* 令牌,模板里不出现颜色。
-const chipSlot = computed(() => workspaceColor(props.currentWorkspaceName)?.slot ?? null)
-
-// 缺项不是「未知」,是「没有在跑」:按 0 处理,不显示角标,也不额外去拉一次。
-const runningCount = computed(() =>
-  props.currentWorkspaceName
-    ? (props.workspaceRunningSessionCounts?.[props.currentWorkspaceName] ?? 0)
-    : 0,
-)
 const pendingCount = computed(() => props.workcenterPendingCount ?? 0)
+const downloadPercent = computed(() => {
+  const update = props.selfUpdate
+  if (!update || update.totalBytes <= 0) return 0
+  return Math.min(100, Math.round((update.downloadedBytes / update.totalBytes) * 100))
+})
 
-// 工作台视图下,工作区入口的职责从「开合列表竖条」变为「回到工作区」。
-const inWorkcenter = computed(() => props.viewMode === 'workcenter')
-const workspaceEntryLabel = computed(() =>
-  inWorkcenter.value
-    ? t('nav.viewMode.workspace')
-    : props.currentWorkspaceName || t('nav.workspace.trigger.empty.tooltip'),
-)
+type UpdateActionKind =
+  'link' | 'download' | 'progress' | 'restart' | 'pending' | 'applying' | 'retry'
+
+const updateAction = computed<{ kind: UpdateActionKind; text: string } | null>(() => {
+  const update = props.selfUpdate
+  const latest = props.updateStatus?.latestVersion ?? null
+  const target = update?.targetVersion ?? latest
+  const phase = update?.phase ?? 'idle'
+
+  if (phase === 'applying') return { kind: 'applying', text: t('nav.update.restarting') }
+  if (phase === 'ready' && target) {
+    return isAdmin.value
+      ? { kind: 'restart', text: t('nav.update.restart', { version: target }) }
+      : { kind: 'pending', text: t('nav.update.pendingAdmin', { version: target }) }
+  }
+  if ((phase === 'downloading' || phase === 'verifying') && target) {
+    return {
+      kind: 'progress',
+      text: t('nav.update.downloading', { version: target, percent: downloadPercent.value }),
+    }
+  }
+  if (props.updateStatus?.available !== true || !latest) return null
+  if (update?.capable && isAdmin.value) {
+    return phase === 'failed'
+      ? { kind: 'retry', text: t('nav.update.failed', { version: latest }) }
+      : { kind: 'download', text: t('nav.update.download', { version: latest }) }
+  }
+  return { kind: 'link', text: t('nav.update.available', { version: latest }) }
+})
+
+const restartConfirmOpen = ref(false)
+
+function onUpdateClick(): void {
+  const kind = updateAction.value?.kind
+  if (kind === 'restart') restartConfirmOpen.value = true
+  else if (kind === 'download' || kind === 'retry') emit('start-self-update')
+}
+
+function confirmRestart(): void {
+  restartConfirmOpen.value = false
+  emit('apply-self-update')
+}
 </script>
 
 <template>
   <nav v-if="!isMobile" class="left-rail" :aria-label="t('nav.rail.ariaLabel')">
-    <!-- 工作区入口 —— 工作区视图:字符徽标 + 运行中会话数角标,点开/收起左侧的
-         工作区列表竖条(全部工作区在那里,按最近访问排序)。 -->
-    <div v-if="!inWorkcenter" class="rail-slot">
+    <div class="rail-primary">
       <button
         type="button"
-        class="rail-btn rail-workspace-open"
-        :title="workspaceEntryLabel"
-        :aria-label="workspaceEntryLabel"
-        :aria-expanded="workspaceListOpen"
-        aria-controls="ws-list-rail"
-        data-testid="rail-workspace-open"
-        @click="emit('toggle-workspace-list')"
-      >
-        <span class="rail-workspace-chip" :data-ws-slot="chipSlot ?? undefined">
-          <span v-if="initial" class="rail-workspace-initial">{{ initial }}</span>
-          <span v-else class="rail-workspace-initial empty">—</span>
-          <span
-            v-if="runningCount > 0"
-            class="rail-badge"
-            :aria-label="t('nav.rail.workspace.badgeAriaLabel', { count: runningCount })"
-            data-testid="rail-workspace-badge"
-            >{{ runningCount }}</span
-          >
-        </span>
-      </button>
-    </div>
-
-    <!-- 工作区入口 —— 工作台视图:同一枚徽标变成「回到工作区」。桌面顶栏的旧切换按钮
-         已移除,这是工作台视图唯一的回退路径,不能省。 -->
-    <div v-else class="rail-slot">
-      <button
-        type="button"
-        class="rail-btn rail-workspace-back"
-        :title="workspaceEntryLabel"
-        :aria-label="workspaceEntryLabel"
-        data-testid="rail-workspace-back"
+        class="rail-btn"
+        :class="{
+          active: viewMode === 'workspace' && !systemSettingsOpen && !personalizedSettingOpen,
+        }"
+        :title="t('nav.viewMode.workspace')"
+        :aria-label="t('nav.viewMode.workspace')"
+        data-testid="rail-workspace"
         @click="emit('enter-workspace')"
       >
-        <span class="rail-workspace-chip" :data-ws-slot="chipSlot ?? undefined">
-          <span v-if="initial" class="rail-workspace-initial">{{ initial }}</span>
-          <span v-else class="rail-workspace-initial empty">—</span>
-        </span>
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="13" rx="1.5" />
+          <path d="M9 20h6M12 17v3M7 8h7M7 11h10M7 14h5" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        class="rail-btn"
+        :class="{
+          active:
+            viewMode === 'workcenter' &&
+            workcenterPage === 'notifications' &&
+            !systemSettingsOpen &&
+            !personalizedSettingOpen,
+        }"
+        :title="t('dashboard.nav.notifications')"
+        :aria-label="t('dashboard.nav.notifications')"
+        data-testid="rail-notifications"
+        @click="emit('select-workcenter-page', 'notifications')"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7Z" />
+          <path d="M13.7 19a2 2 0 0 1-3.4 0" />
+        </svg>
+        <span
+          v-if="pendingCount > 0"
+          class="rail-badge"
+          :aria-label="t('dashboard.nav.notificationsBadgeAriaLabel', { count: pendingCount })"
+          data-testid="rail-notifications-badge"
+          >{{ pendingCount }}</span
+        >
+      </button>
+
+      <button
+        type="button"
+        class="rail-btn"
+        :class="{
+          active:
+            viewMode === 'workcenter' &&
+            workcenterPage === 'dashboard' &&
+            !systemSettingsOpen &&
+            !personalizedSettingOpen,
+        }"
+        :title="t('dashboard.nav.dashboard')"
+        :aria-label="t('dashboard.nav.dashboard')"
+        data-testid="rail-dashboard"
+        @click="emit('select-workcenter-page', 'dashboard')"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 13h6V4H4v9Zm10 7h6v-9h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        class="rail-btn"
+        :class="{
+          active:
+            viewMode === 'workcenter' &&
+            workcenterPage === 'robots' &&
+            !systemSettingsOpen &&
+            !personalizedSettingOpen,
+        }"
+        :title="t('dashboard.nav.robots')"
+        :aria-label="t('dashboard.nav.robots')"
+        data-testid="rail-robots"
+        @click="emit('select-workcenter-page', 'robots')"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="7" width="16" height="12" rx="3" />
+          <path d="M12 3v4M9 12h.01M15 12h.01M8 16h8" />
+        </svg>
       </button>
     </div>
 
-    <!-- 用户消息入口:铃铛 + 待处理角标,点开进工作台的用户通知页。 -->
-    <button
-      type="button"
-      class="rail-slot rail-btn"
-      :title="t('nav.rail.messages.tooltip')"
-      :aria-label="t('nav.rail.messages.ariaLabel')"
-      data-testid="rail-messages"
-      @click="emit('open-notifications')"
-    >
-      <svg
-        class="rail-icon"
-        viewBox="0 0 24 24"
-        width="20"
-        height="20"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-        focusable="false"
+    <div class="rail-utilities">
+      <a
+        v-if="updateAction?.kind === 'link'"
+        class="rail-btn rail-update"
+        :href="RELEASES_URL"
+        target="_blank"
+        rel="noopener noreferrer"
+        :title="updateAction.text"
+        :aria-label="updateAction.text"
+        data-testid="rail-update-link"
       >
-        <path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7Z" />
-        <path d="M13.7 19a2 2 0 0 1-3.4 0" />
-      </svg>
-      <span
-        v-if="pendingCount > 0"
-        class="rail-badge"
-        :aria-label="t('nav.rail.messages.badgeAriaLabel', { count: pendingCount })"
-        data-testid="rail-messages-badge"
-        >{{ pendingCount }}</span
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14" />
+        </svg>
+      </a>
+      <button
+        v-else-if="updateAction"
+        type="button"
+        class="rail-btn rail-update"
+        :class="{ error: updateAction.kind === 'retry' }"
+        :disabled="['progress', 'pending', 'applying'].includes(updateAction.kind)"
+        :title="updateAction.text"
+        :aria-label="updateAction.text"
+        data-testid="rail-update-action"
+        @click="onUpdateClick"
       >
-    </button>
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        class="rail-btn"
+        :class="{ active: personalizedSettingOpen }"
+        :title="t('nav.personalizedSetting.tooltip')"
+        :aria-label="t('nav.personalizedSetting.tooltip')"
+        data-testid="rail-personalized-setting"
+        @click="emit('open-personalized-setting')"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h6M14 7h6M4 17h10M18 17h2" />
+          <circle cx="12" cy="7" r="2" />
+          <circle cx="16" cy="17" r="2" />
+        </svg>
+      </button>
+
+      <button
+        v-if="isAdmin"
+        type="button"
+        class="rail-btn"
+        :class="{ active: systemSettingsOpen }"
+        :title="t('nav.settings.tooltip')"
+        :aria-label="t('nav.settings.tooltip')"
+        data-testid="rail-settings"
+        @click="emit('open-settings')"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19 15a2 2 0 0 0 .4 2l-2.8 2.8a2 2 0 0 0-2-.4A2 2 0 0 0 13 21h-2a2 2 0 0 0-1.6-1.6 2 2 0 0 0-2 .4L4.6 17a2 2 0 0 0 .4-2A2 2 0 0 0 3 13v-2a2 2 0 0 0 2-1 2 2 0 0 0-.4-2l2.8-2.8a2 2 0 0 0 2 .4A2 2 0 0 0 11 3h2a2 2 0 0 0 1.6 1.6 2 2 0 0 0 2-.4L19.4 7a2 2 0 0 0-.4 2 2 2 0 0 0 2 2v2a2 2 0 0 0-2 2Z"
+          />
+        </svg>
+      </button>
+
+      <details v-if="showLogout" class="rail-account">
+        <summary
+          class="rail-btn"
+          :title="t('auth.account.tooltip')"
+          :aria-label="t('auth.account.tooltip')"
+          data-testid="rail-account"
+        >
+          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M5 21a7 7 0 0 1 14 0" />
+          </svg>
+        </summary>
+        <div class="rail-popover">
+          <div v-if="subject" class="rail-account-name" :title="subject">{{ subject }}</div>
+          <button type="button" class="rail-popover-action" @click="emit('logout')">
+            {{ t('auth.logout.label') }}
+          </button>
+        </div>
+      </details>
+
+      <a
+        class="rail-btn rail-status"
+        :class="status === 'open' ? 'ok' : 'error'"
+        :href="logsHref"
+        target="_blank"
+        rel="noopener noreferrer"
+        :title="t('nav.logs.tooltip')"
+        :aria-label="`${t('nav.logs.tooltip')}: ${status}`"
+        data-testid="rail-logs-link"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" />
+          <circle cx="12" cy="12" r="2" />
+        </svg>
+      </a>
+    </div>
+
+    <ConfirmDialog
+      :open="restartConfirmOpen"
+      :title="t('nav.update.confirmRestart.title')"
+      :message="t('nav.update.confirmRestart.message')"
+      :confirm-label="t('nav.update.confirmRestart.confirm')"
+      :cancel-label="t('common.action.cancel.label')"
+      danger
+      @confirm="confirmRestart"
+      @cancel="restartConfirmOpen = false"
+    />
   </nav>
 </template>
 
 <style scoped>
-/* 常驻竖条:宽度吃掉一点横向空间,换取「在哪个工作区 / 有没有待处理消息」的常驻可见。
-   与顶栏、内容区并列而非覆盖,高度贯通。 */
 .left-rail {
   width: 56px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--sp-2);
   padding: var(--sp-2) 0;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
 }
-.rail-slot {
-  position: relative;
+.rail-primary,
+.rail-utilities {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.rail-utilities {
+  margin-top: auto;
 }
 .rail-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
   padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
   color: var(--c-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
     color var(--dur-fast) var(--ease-standard),
     background-color var(--dur-fast) var(--ease-standard);
 }
-.rail-btn:hover {
+.rail-btn:hover:not(:disabled),
+.rail-btn.active {
+  color: var(--c-primary-text);
   background: var(--c-card);
-  color: var(--c-text);
+}
+.rail-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 .rail-icon {
-  pointer-events: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-/* 工作区字符徽标:底色由名字派生的槽位号查 --c-ws-* 令牌得到,主题一换自动跟随。 */
-.rail-workspace-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--c-input);
-  color: var(--c-text-muted);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  user-select: none;
-}
-/* 六个槽位各一组:底色与该底上的文字色都是主题令牌,同一份取值服务全部三套主题。 */
-.rail-workspace-chip[data-ws-slot='1'] {
-  background: var(--c-ws-1);
-  color: var(--c-ws-ink-1);
-}
-.rail-workspace-chip[data-ws-slot='2'] {
-  background: var(--c-ws-2);
-  color: var(--c-ws-ink-2);
-}
-.rail-workspace-chip[data-ws-slot='3'] {
-  background: var(--c-ws-3);
-  color: var(--c-ws-ink-3);
-}
-.rail-workspace-chip[data-ws-slot='4'] {
-  background: var(--c-ws-4);
-  color: var(--c-ws-ink-4);
-}
-.rail-workspace-chip[data-ws-slot='5'] {
-  background: var(--c-ws-5);
-  color: var(--c-ws-ink-5);
-}
-.rail-workspace-chip[data-ws-slot='6'] {
-  background: var(--c-ws-6);
-  color: var(--c-ws-ink-6);
-}
-.rail-workspace-initial.empty {
-  color: var(--c-text-disabled);
-}
-/* 角标:与顶栏 tab 角标同一形态(右上角实心圆),0 / 缺省不渲染。 */
 .rail-badge {
   position: absolute;
   top: -4px;
-  right: -6px;
+  right: -5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 15px;
   height: 15px;
   padding: 0 4px;
+  color: var(--c-badge-ink);
+  background: var(--c-error-text);
+  border: 1px solid var(--c-panel);
+  border-radius: 999px;
   font-size: 9px;
   font-weight: 600;
   line-height: 1;
-  color: var(--c-badge-ink);
-  background: var(--c-error-text);
-  border-radius: 999px;
-  border: 1px solid var(--c-panel);
+}
+.rail-update,
+.rail-status.ok {
+  color: var(--c-primary-text);
+}
+.rail-btn.error {
+  color: var(--c-error-text);
+}
+.rail-account {
+  position: relative;
+}
+.rail-account > summary {
+  list-style: none;
+}
+.rail-account > summary::-webkit-details-marker {
+  display: none;
+}
+.rail-popover {
+  position: absolute;
+  left: calc(100% + var(--sp-3));
+  bottom: 0;
+  z-index: 120;
+  min-width: 180px;
+  max-width: 280px;
+  padding: var(--sp-2);
+  display: grid;
+  gap: var(--sp-1);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.rail-account-name {
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--c-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-popover-action {
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  color: var(--c-text);
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.rail-popover-action:hover {
+  background: var(--c-card);
 }
 </style>

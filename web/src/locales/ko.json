@@ -99,6 +99,9 @@
       "files": {
         "label": "파일"
       },
+      "settings": {
+        "label": "설정"
+      },
       "delivery": {
         "label": "납품",
         "ariaLabel": "납품({count}건 처리 필요)"

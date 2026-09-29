@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * WorkspaceSetting.vue — 工作区配置页:配置按 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 分 Tab 分组,
+ * WorkspaceSetting.vue — 工作区顶栏下方的配置页:配置按 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 分 Tab 分组,
  * 另有三个无字段的只读/非配置 Tab:本机观测、访问、记忆。
  *
  * 每个 Tab 维护独立草稿脏状态并提供独立保存按钮:保存时只用当前 Tab 白名单字段(经其转换)
@@ -1945,8 +1945,8 @@ const parkRecoveryRateText = computed(() => {
 
 <style scoped>
 .project-config-page {
-  position: fixed;
-  inset: 0;
+  position: absolute;
+  inset: 44px 0 0;
   z-index: 200;
   display: flex;
   flex-direction: column;
@@ -2300,6 +2300,7 @@ const parkRecoveryRateText = computed(() => {
 
 @media (max-width: 767px) {
   .project-config-page {
+    inset: 0;
     height: 100dvh;
   }
 

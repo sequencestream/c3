@@ -1,8 +1,4 @@
-/*
- * 列表竖条的**形态记忆**:形态(展开/收缩)要跨刷新保持,显隐不保持。
- * 这条用例把「显隐是纯内存态、形态落 localStorage」的口径钉在 App.vue 的接线上 ——
- * 两者的差别是刻意的:显隐每次进来都从收起开始(不占横向空间),形态是用户偏好。
- */
+/* 列表竖条桌面常驻，展开/收缩形态跨刷新保持。 */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -94,13 +90,13 @@ describe('工作区列表竖条 — 形态记忆', () => {
   })
 })
 
-describe('工作区列表竖条 — 显隐不持久化', () => {
-  it('显隐是纯内存态:不写 localStorage,列表竖条每次都从收起开始', () => {
+describe('工作区列表竖条 — 桌面常驻', () => {
+  it('App 只持有展开形态，不再持有可隐藏状态', () => {
     const source = readFileSync(resolve(__dirname, '../App.vue'), 'utf-8')
-    // 显隐用一个裸 ref(不进 localStorage),形态才走 usePersistentToggle。
-    expect(source).toMatch(/const workspaceListOpen = ref\(false\)/)
+    expect(source).not.toMatch(/workspaceListOpen/)
     expect(source).toMatch(
       /const workspaceListExpanded = usePersistentToggle\('c3\.workspaceListExpanded', true\)/,
     )
+    expect(source).toMatch(/<WorkspaceListRail/)
   })
 })

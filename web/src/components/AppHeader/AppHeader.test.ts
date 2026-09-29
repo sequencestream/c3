@@ -48,7 +48,7 @@ describe('AppHeader.vue — top-bar tabs', () => {
 
     for (const tabs of [hidden, visible]) {
       const w = mount(AppHeader, { props: { ...baseProps, tabs } })
-      const expected = tabs.map((tab) => tab.label)
+      const expected = [...tabs.map((tab) => tab.label), 'Settings']
       expect(w.findAll('.desktop-header-row .header-tab').map((tab) => tab.text())).toEqual(
         expected,
       )
@@ -59,7 +59,13 @@ describe('AppHeader.vue — top-bar tabs', () => {
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Automations'])
+    expect(tabs.map((t) => t.text())).toEqual([
+      'Works',
+      'Intents',
+      'Discussions',
+      'Automations',
+      'Settings',
+    ])
     expect(tabs[0].classes()).toContain('active')
     expect(tabs[1].classes()).not.toContain('active')
     expect(tabs[2].classes()).not.toContain('active')
@@ -95,35 +101,52 @@ describe('AppHeader.vue — top-bar tabs', () => {
     expect(w.find('.mode').exists()).toBe(false)
   })
 
-  it('移动端底部导航仅渲染工作区子 tab,不含工作台', () => {
+  it('移动端底部导航渲染工作区子 tab 与末位设置,不含工作台', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.mobile-bottom-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Automations'])
+    expect(tabs.map((t) => t.text())).toEqual([
+      'Works',
+      'Intents',
+      'Discussions',
+      'Automations',
+      'Settings',
+    ])
   })
 
-  it('管理员显示系统设置入口(桌面 ⚙ + 移动端菜单项)', () => {
+  it('工作区设置固定在末位，点击上抛独立事件并显示选中态', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workspaceSettingOpen: true } })
+    const setting = w.find('[data-testid="nav-workspace-setting"]')
+    expect(setting.text()).toBe('Settings')
+    expect(setting.classes()).toContain('active')
+    await setting.trigger('click')
+    expect(w.emitted('open-workspace-setting')).toEqual([[]])
+  })
+
+  it('管理员在移动端菜单中保留系统设置入口', () => {
     useAuth().setIsAdmin(true)
     const w = mount(AppHeader, { props: baseProps })
-    expect(w.find('.settings-btn').exists()).toBe(true)
+    expect(w.findAll('.mobile-action-item').some((item) => item.text() === 'System settings')).toBe(
+      true,
+    )
   })
 
   it('非管理员隐藏系统设置入口(ADR-0023 authz)', () => {
     useAuth().setIsAdmin(false)
     const w = mount(AppHeader, { props: baseProps })
-    expect(w.find('.settings-btn').exists()).toBe(false)
+    expect(w.findAll('.mobile-action-item').some((item) => item.text() === 'System settings')).toBe(
+      false,
+    )
   })
 
-  it('个人化设置入口在桌面与移动端并列于系统设置之外,非管理员同样可达', async () => {
+  it('个人化设置入口在移动端保留,非管理员同样可达', async () => {
     for (const admin of [true, false]) {
       useAuth().setIsAdmin(admin)
       const w = mount(AppHeader, { props: baseProps })
-      const desktop = w.find('[data-testid="nav-personalized-setting"]')
       const mobile = w.find('[data-testid="nav-personalized-setting-mobile"]')
-      expect(desktop.exists()).toBe(true)
+      expect(w.find('[data-testid="nav-personalized-setting"]').exists()).toBe(false)
       expect(mobile.exists()).toBe(true)
-      await desktop.trigger('click')
       await mobile.trigger('click')
-      expect(w.emitted('open-personalized-setting')).toHaveLength(2)
+      expect(w.emitted('open-personalized-setting')).toHaveLength(1)
       // 三类设置各自独立入口:个人化不复用系统设置/工作区设置的事件。
       expect(w.emitted('open-settings')).toBeUndefined()
       expect(w.emitted('open-workspace-setting')).toBeUndefined()
@@ -215,8 +238,8 @@ describe('AppHeader.vue — 「意图/讨论/自动化」tab 进行中条目数�
 
   it('三个 tab 各显示自己的数字(桌面 + 移动端一致)', () => {
     const w = mount(AppHeader, { props: { ...baseProps, tabs: itemTabs } })
-    expect(badgeTexts(w, '.desktop-header-row .header-tab')).toEqual([null, '2', '1', '3'])
-    expect(badgeTexts(w, '.mobile-bottom-tab')).toEqual([null, '2', '1', '3'])
+    expect(badgeTexts(w, '.desktop-header-row .header-tab')).toEqual([null, '2', '1', '3', null])
+    expect(badgeTexts(w, '.mobile-bottom-tab')).toEqual([null, '2', '1', '3', null])
   })
 
   it('角标 aria-label 用对应 tab 的文案,而非「会话」文案', () => {
@@ -238,7 +261,7 @@ describe('AppHeader.vue — 「意图/讨论/自动化」tab 进行中条目数�
   it('计数变化后角标无需重挂载即更新', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, tabs: itemTabs } })
     await w.setProps({ tabs: itemTabs.map((tab) => ({ ...tab, badgeCount: 5 })) })
-    expect(badgeTexts(w, '.desktop-header-row .header-tab')).toEqual(['5', '5', '5', '5'])
+    expect(badgeTexts(w, '.desktop-header-row .header-tab')).toEqual(['5', '5', '5', '5', null])
   })
 
   it('角标为纯展示:点击带角标的 tab 只产生原有导航事件', async () => {
@@ -286,8 +309,7 @@ describe('AppHeader.vue — viewMode 图标切换器(窄屏保留,桌面已迁�
   it('桌面行不再渲染工作区切换器 —— 与切换器同一入口一起迁走', () => {
     const w = mount(AppHeader, { props: baseProps })
     expect(w.find('.desktop-header-row .ws-switcher').exists()).toBe(false)
-    // 项目配置齿轮留在顶栏原位。
-    expect(w.find('.desktop-header-row .project-config-btn').exists()).toBe(true)
+    expect(w.find('.desktop-header-row .project-config-btn').exists()).toBe(false)
   })
 
   it('移动端顶栏左侧仍出现同款两图标切换器(窄屏没有竖条,不能失去入口)', () => {
@@ -404,43 +426,16 @@ describe('AppHeader.vue — 工作台页面入口(用户通知 / 总览 / 聊天
     workcenterBadgeCount: 0,
   }
 
-  it('工作台模式:桌面顶栏渲染三个页面入口且不出现「工作台」文字标题', () => {
+  it('工作台模式:桌面顶栏不再渲染页面入口', () => {
     const w = mount(AppHeader, { props: wcProps })
     const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard', 'Chat robots'])
-    expect(w.text()).not.toContain('Workcenter')
+    expect(tabs).toHaveLength(0)
+    expect(w.find('.app-header').classes()).toContain('workcenter-header')
   })
 
   it('工作区模式:不渲染工作台页面入口', () => {
     const w = mount(AppHeader, { props: baseProps })
     expect(w.find('.wc-page-nav').exists()).toBe(false)
-  })
-
-  it('容器有 tablist 语义与可访问名称,当前项 aria-selected=true', () => {
-    const w = mount(AppHeader, { props: wcProps })
-    const nav = w.find('.desktop-header-row .wc-page-nav')
-    expect(nav.attributes('role')).toBe('tablist')
-    expect(nav.attributes('aria-label')).toBe('Workcenter pages')
-    const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    // 页签顺序为 Notifications(0)、Dashboard(1);wcProps 当前页为 dashboard → 选中项为索引 1。
-    expect(tabs[1].classes()).toContain('active')
-    expect(tabs[1].attributes('aria-selected')).toBe('true')
-    expect(tabs[0].attributes('aria-selected')).toBe('false')
-  })
-
-  it('当前页跟随 workcenterPage(notifications)', () => {
-    const w = mount(AppHeader, { props: { ...wcProps, workcenterPage: 'notifications' } })
-    const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    // Notifications 为索引 0,当前页为 notifications → 选中项为索引 0。
-    expect(tabs[1].attributes('aria-selected')).toBe('false')
-    expect(tabs[0].classes()).toContain('active')
-    expect(tabs[0].attributes('aria-selected')).toBe('true')
-  })
-
-  it('点击入口 → emit select-workcenter-page(key)', async () => {
-    const w = mount(AppHeader, { props: wcProps })
-    await w.findAll('.desktop-header-row .wc-page-nav .header-tab')[0].trigger('click')
-    expect(w.emitted('select-workcenter-page')).toEqual([['notifications']])
   })
 
   it('移动端顶栏同样渲染三个页面入口', () => {
@@ -463,12 +458,9 @@ describe('AppHeader.vue — 「用户通知」入口待处理数角标', () => {
     workcenterPage: 'dashboard' as const,
   }
 
-  it('badgeCount>0 → 「用户通知」入口渲染角标(桌面 + 移动端),文本正确', () => {
+  it('badgeCount>0 → 移动端「用户通知」入口渲染角标', () => {
     const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 2 } })
-    const desktop = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    // Notifications 为索引 0 携带角标,Dashboard 为索引 1 无角标。
-    expect(desktop[1].find('.tab-badge').exists()).toBe(false)
-    expect(desktop[0].find('.tab-badge').text()).toBe('2')
+    expect(w.find('.desktop-header-row .wc-page-nav').exists()).toBe(false)
     const mobile = w.findAll('.mobile-header-row .wc-page-nav .header-tab')
     expect(mobile[0].find('.tab-badge').text()).toBe('2')
   })
@@ -476,13 +468,13 @@ describe('AppHeader.vue — 「用户通知」入口待处理数角标', () => {
   it('角标带 i18n aria-label,含待处理计数', () => {
     const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 2 } })
     const aria = w
-      .find('.desktop-header-row .wc-page-nav .header-tab.has-badge .tab-badge')
+      .find('.mobile-header-row .wc-page-nav .header-tab.has-badge .tab-badge')
       .attributes('aria-label')
     expect(aria).toBeDefined()
     expect(aria).toContain('2')
   })
 
-  it('badgeCount 为 0 时桌面/移动端「用户通知」入口均不渲染角标', () => {
+  it('badgeCount 为 0 时移动端「用户通知」入口不渲染角标', () => {
     const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 0 } })
     expect(w.find('.desktop-header-row .wc-page-nav .tab-badge').exists()).toBe(false)
     expect(w.find('.mobile-header-row .wc-page-nav .tab-badge').exists()).toBe(false)
@@ -585,29 +577,14 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
 })
 
 describe('AppHeader.vue — 账户菜单(ADR-0023)', () => {
-  it('未认证(showLogout 缺省)→ 桌面不渲染账户菜单触发器', () => {
+  it('桌面账户入口已迁往系统竖条', () => {
     const w = mount(AppHeader, { props: baseProps })
     expect(w.find('.account-trigger').exists()).toBe(false)
   })
 
-  it('已认证 → 桌面渲染人形图标触发器', () => {
+  it('已认证也不在桌面顶栏重复渲染账户入口', () => {
     const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
-    const trigger = w.find('.account-trigger')
-    expect(trigger.exists()).toBe(true)
-    expect(trigger.find('.account-icon').exists()).toBe(true)
-  })
-
-  it('展开下拉展示登录名', () => {
-    useAuth().setSubject('alice')
-    const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
-    expect(w.find('.account-name').text()).toBe('alice')
-  })
-
-  it('点击下拉内登出按钮 → emit logout', async () => {
-    useAuth().setSubject('alice')
-    const w = mount(AppHeader, { props: { ...baseProps, showLogout: true } })
-    await w.find('.account-logout-btn').trigger('click')
-    expect(w.emitted('logout')).toHaveLength(1)
+    expect(w.find('.account-trigger').exists()).toBe(false)
   })
 
   it('移动端溢出菜单同样展示登录名与登出项', () => {
@@ -622,14 +599,15 @@ describe('AppHeader.vue — 账户菜单(ADR-0023)', () => {
 describe('AppHeader.vue — 新版本提示(header upgrade hint)', () => {
   const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 
-  it('不能自更新时桌面渲染提示外链,文案含版本号,新标签页跳到发布页', () => {
+  it('桌面升级入口迁往系统竖条，移动端保留提示外链', () => {
     const w = mount(AppHeader, {
       props: {
         ...baseProps,
         updateStatus: { available: true, latestVersion: '1.2.3', checkedAt: 1 },
       },
     } as never)
-    const link = w.find('.desktop-header-row .update-hint')
+    expect(w.find('.desktop-header-row .update-hint').exists()).toBe(false)
+    const link = w.find('.mobile-actions-menu .update-hint-mobile')
     expect(link.exists()).toBe(true)
     expect(link.text()).toContain('1.2.3')
     expect(link.attributes('href')).toBe(RELEASES_URL)
@@ -703,8 +681,8 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
 
   it('能自更新且是管理员时,idle 渲染为「更新到」动作按钮而非外链', () => {
     const w = mountWith(capableIdle)
-    expect(w.find('[data-testid="nav-update-link"]').exists()).toBe(false)
-    const btn = w.find('[data-testid="nav-update-action"]')
+    expect(w.find('[data-testid="nav-update-link-mobile"]').exists()).toBe(false)
+    const btn = w.find('[data-testid="nav-update-action-mobile"]')
     expect(btn.exists()).toBe(true)
     expect(btn.text()).toContain('1.2.3')
     expect(btn.attributes('disabled')).toBeUndefined()
@@ -720,7 +698,7 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
       downloadedBytes: 25,
       totalBytes: 100,
     })
-    const btn = w.find('[data-testid="nav-update-action"]')
+    const btn = w.find('[data-testid="nav-update-action-mobile"]')
     expect(btn.text()).toContain('25')
     expect(btn.attributes('disabled')).toBeDefined()
   })
@@ -733,13 +711,13 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
       downloadedBytes: 4096,
       totalBytes: 0,
     })
-    expect(w.find('[data-testid="nav-update-action"]').text()).toContain('0')
+    expect(w.find('[data-testid="nav-update-action-mobile"]').text()).toContain('0')
   })
 
   it('就绪时管理员点击先弹二次确认,确认后才 emit apply-self-update', async () => {
     const w = mountWith({ ...capableIdle, phase: 'ready', targetVersion: '1.2.3' })
     expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
-    await w.find('[data-testid="nav-update-action"]').trigger('click')
+    await w.find('[data-testid="nav-update-action-mobile"]').trigger('click')
     expect(w.emitted('apply-self-update')).toBeUndefined()
     expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
     await w.find('[data-testid="confirm-accept"]').trigger('click')
@@ -751,7 +729,7 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
     useAuth().setIsAdmin(false)
     try {
       const w = mountWith({ ...capableIdle, phase: 'ready', targetVersion: '1.2.3' })
-      const btn = w.find('[data-testid="nav-update-action"]')
+      const btn = w.find('[data-testid="nav-update-action-mobile"]')
       expect(btn.attributes('disabled')).toBeDefined()
       await btn.trigger('click')
       expect(w.emitted('apply-self-update')).toBeUndefined()
@@ -768,7 +746,7 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
       targetVersion: '1.2.3',
       failure: { code: 'network', detail: 'boom' },
     })
-    const btn = w.find('[data-testid="nav-update-action"]')
+    const btn = w.find('[data-testid="nav-update-action-mobile"]')
     expect(btn.classes()).toContain('update-hint-retry')
     btn.trigger('click')
     expect(w.emitted('start-self-update')).toHaveLength(1)
@@ -779,7 +757,7 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
       { ...capableIdle, phase: 'applying', targetVersion: '1.2.3' },
       { available: false, latestVersion: null, checkedAt: 1 },
     )
-    const btn = w.find('[data-testid="nav-update-action"]')
+    const btn = w.find('[data-testid="nav-update-action-mobile"]')
     expect(btn.exists()).toBe(true)
     expect(btn.attributes('disabled')).toBeDefined()
   })
@@ -790,26 +768,24 @@ describe('AppHeader.vue — 自更新胶囊(self-update pill)', () => {
       capable: false,
       incapableReason: 'package-manager',
     })
-    expect(w.find('[data-testid="nav-update-action"]').exists()).toBe(false)
-    expect(w.find('[data-testid="nav-update-link"]').exists()).toBe(true)
+    expect(w.find('[data-testid="nav-update-action-mobile"]').exists()).toBe(false)
+    expect(w.find('[data-testid="nav-update-link-mobile"]').exists()).toBe(true)
   })
 })
 
 describe('AppHeader.vue — 运行日志入口', () => {
-  it('连接状态即日志入口:桌面与移动端都指向独立路由并在新标签页打开', () => {
+  it('桌面入口迁往系统竖条，移动端仍指向独立日志路由', () => {
     const w = mount(AppHeader, { props: baseProps })
-    for (const testid of ['nav-logs-link', 'nav-logs-link-mobile']) {
-      const link = w.get(`[data-testid="${testid}"]`)
-      expect(link.attributes('href')?.endsWith('#/logs'), testid).toBe(true)
-      expect(link.attributes('target'), testid).toBe('_blank')
-      // 新标签页与本页彼此独立:不给 opener,主应用不受影响。
-      expect(link.attributes('rel'), testid).toContain('noopener')
-    }
+    expect(w.find('[data-testid="nav-logs-link"]').exists()).toBe(false)
+    const link = w.get('[data-testid="nav-logs-link-mobile"]')
+    expect(link.attributes('href')?.endsWith('#/logs')).toBe(true)
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toContain('noopener')
   })
 
-  it('入口保留原有的连接状态展示', () => {
+  it('移动端入口保留连接状态展示', () => {
     const w = mount(AppHeader, { props: { ...baseProps, status: 'closed' as const } })
-    const link = w.get('[data-testid="nav-logs-link"]')
+    const link = w.get('[data-testid="nav-logs-link-mobile"]')
     expect(link.text()).toBe('closed')
     expect(link.classes()).toContain('err')
   })

@@ -98,6 +98,9 @@
       "files": {
         "label": "文件"
       },
+      "settings": {
+        "label": "设置"
+      },
       "delivery": {
         "label": "交付",
         "ariaLabel": "交付({count} 项待处理)"

@@ -30,9 +30,13 @@ describe('应用外壳 — 左侧竖条确实排在最左侧', () => {
     const tpl = appTemplate()
     const shell = tpl.indexOf('<div class="app-shell">')
     expect(shell).toBeGreaterThan(-1)
-    // 壳的直属子节点依次是竖条与主列:竖条在主列之前,才排在最左侧。
-    expect(tpl.indexOf('<LeftRail')).toBeGreaterThan(shell)
-    expect(tpl.indexOf('<div class="app-main">')).toBeGreaterThan(tpl.indexOf('<LeftRail'))
+    // 系统竖条最左，Workspace 列表紧邻其右，最后才是主列。
+    const systemRail = tpl.indexOf('<LeftRail')
+    const workspaceRail = tpl.indexOf('<WorkspaceListRail')
+    const main = tpl.indexOf('<div class="app-main">')
+    expect(systemRail).toBeGreaterThan(shell)
+    expect(workspaceRail).toBeGreaterThan(systemRail)
+    expect(main).toBeGreaterThan(workspaceRail)
   })
 
   it('#app 仍是纵向容器,行向由壳承担 —— 两处不能同时是 column', () => {
@@ -63,5 +67,12 @@ describe('应用外壳 — 左侧竖条确实排在最左侧', () => {
   it('主列维持原有纵向栈:顶栏在上、内容区在下各自吃剩余高度', () => {
     expect(cssRule('.app-main')).toContain('flex-direction: column')
     expect(cssRule('.body')).toContain('flex: 1')
+  })
+
+  it('工作区列表只在工作区场景显示，系统与个人设置会隐藏它', () => {
+    const tpl = appTemplate()
+    expect(tpl).toContain(
+      'v-if="viewMode === \'workspace\' && !settingsOpen && !personalizedSettingOpen"',
+    )
   })
 })

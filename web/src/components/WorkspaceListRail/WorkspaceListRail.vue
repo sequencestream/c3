@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /*
- * WorkspaceListRail.vue — 贴在左侧常驻竖条(LeftRail)**左侧**的工作区列表竖条。
+ * WorkspaceListRail.vue — 紧邻左侧常驻系统竖条(LeftRail)右侧的工作区列表竖条。
  *
- * 位置与关系:它是 `.app-shell` 里 LeftRail 的**并列兄弟**,不是竖条的浮层 —— 展开时从
- * 竖条左缘向左生长,横向挤压主列(`.app-main` 以 `min-width: 0` 消化),高度与竖条一致、
+ * 位置与关系:它是 `.app-shell` 里 LeftRail 的**并列兄弟**,不是竖条的浮层 —— 展开时向
+ * 右占据一列并横向挤压主列(`.app-main` 以 `min-width: 0` 消化),高度与竖条一致、
  * 纵向可滚动。因此它不吃竖条自身的两枚入口,也不覆盖主列内容。
  *
  * 两种形态(顶部一枚控件切换,默认展开,形态经 localStorage 记忆、仅本机生效):
@@ -22,8 +22,8 @@
  * 「+ 新增」只上抛诉求 —— AddWorkspaceDialog 仍由 AppHeader 单实例持有,两处挂载会叠出
  * 两层遮罩。
  *
- * 窄屏(≤767px)不渲染:移动端沿用 AppHeader 精简行里的 WorkspaceSwitcher。工作台视图
- * (viewMode === 'workcenter')下一并隐藏,避免与竖条那条「回到工作区」的回退路径争抢点击。
+ * 窄屏(≤767px)不渲染:移动端沿用 AppHeader 精简行里的 WorkspaceSwitcher。桌面端默认
+ * 展示且不提供隐藏动作,只允许在展开态与收缩态之间切换。
  */
 import { computed, ref } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
@@ -46,8 +46,6 @@ const props = defineProps<{
   workspaceRunningSessionCounts?: Record<string, number>
   /** 展开态(true)/ 收缩态(false)。由 App.vue 持有形态记忆,本组件不直接读 localStorage。 */
   expanded: boolean
-  /** 工作台视图下一并隐藏。 */
-  viewMode?: 'workspace' | 'workcenter'
 }>()
 
 const emit = defineEmits<{
@@ -59,7 +57,6 @@ const emit = defineEmits<{
 
 // 窄屏没有这条竖条 —— 移动端仍用 AppHeader 精简行里的切换器。
 const isMobile = useIsMobile()
-const inWorkcenter = computed(() => props.viewMode === 'workcenter')
 
 // 服务端已按 lastAccessed 降序下发,这里再排一次是防御性的:别的调用路径喂进乱序时
 // 列表依然呈现正确顺序。不引入手动置顶或本地覆写。
@@ -101,7 +98,7 @@ function onRemoveConfirm(): void {
 
 <template>
   <nav
-    v-if="!isMobile && !inWorkcenter"
+    v-if="!isMobile"
     class="ws-list-rail"
     :class="expanded ? 'ws-list-rail-expanded' : 'ws-list-rail-collapsed'"
     :aria-label="t('nav.workspaceList.ariaLabel')"

@@ -561,6 +561,18 @@ describe('session-runtime registry', () => {
     })
   })
 
+  it('uses a runtime public id in status snapshots without changing its registry key', () => {
+    const rt = ensureRuntime('vendor-session', '/ws', 'default', [])
+    rt.publicSessionId = 'c3s_public'
+    rt.status = 'running'
+
+    expect(listStatuses()).toContainEqual({ sessionId: 'c3s_public', status: 'running' })
+    expect(getRuntime('vendor-session')).toBe(rt)
+    expect(getRuntime('c3s_public')).toBeUndefined()
+
+    removeRuntime('vendor-session')
+  })
+
   describe('automation running registry', () => {
     // Clean up the process-local set so cases stay independent (its ids are unique
     // per case, but clear defensively regardless).

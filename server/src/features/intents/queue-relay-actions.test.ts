@@ -43,6 +43,7 @@ interface RelaySpecProbe {
   cwd: string
   vendor: string
   agentId: string
+  prompt: string
   onSessionBound?: (sessionId: string) => void
 }
 const runRelaySession =
@@ -181,6 +182,10 @@ describe('agent identity', () => {
     await runRelayPhase(ctx, fixAction, intent({ reviewStatus: 'rejected' }))
     expect(agentTarget).toHaveBeenCalledWith('fix', '/w')
     expect(runRelaySession.mock.calls[0][0]).toMatchObject({ vendor: 'codex', agentId: 'agent-y' })
+    expect(runRelaySession.mock.calls[0][0].prompt).toMatch(
+      /mcp__c3_[A-Za-z0-9_-]+__sync_intent_fix_status/,
+    )
+    expect(runRelaySession.mock.calls[0][0].prompt).not.toContain('mcp__c3__sync_intent_fix_status')
   })
 
   it('fails loudly when the role resolves to an unusable group — never a silent skip', async () => {
@@ -277,6 +282,21 @@ describe('settlement — only a backfilled terminal concludes a phase', () => {
     expect(releaseRelayOccupancy).toHaveBeenCalled()
     expect(recordFailure.mock.calls[0][2]).toBe('turn_error')
     expect(recordFailure.mock.calls[0][3]).toContain('未回填结论')
+  })
+
+  it('keeps a bound session visible when the turn ends without a conclusion', async () => {
+    runRelaySession.mockImplementation(async (spec) => {
+      spec.onSessionBound?.('vendor-session-9')
+      return { ok: false, error: 'turn_ended', sessionId: 'vendor-session-9' }
+    })
+    getIntent.mockReturnValue(intent({ reviewStatus: 'pending' }))
+    await runRelayPhase(ctx, reviewAction, intent())
+    expect(releaseRelayOccupancy).toHaveBeenCalledWith(
+      'i-1',
+      'review',
+      'c3s_0a6f82adfacef1c9df8921cf528a66f0',
+      true,
+    )
   })
 
   it('a failed turn books the launch failure with the dispatcher’s reason', async () => {

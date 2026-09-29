@@ -97,7 +97,7 @@ describe('claimIntentRelayPhase — review', () => {
     expect(getIntent(id)!.reviewFixRounds).toBe(2)
   })
 
-  it('a re-review clears the fix marker so an old `fixed` cannot satisfy the next rejection', () => {
+  it('a re-review consumes the fix result but keeps its session available for inspection', () => {
     const id = seed()
     updateIntentReviewFixStatus(id, {
       reviewStatus: 'rejected',
@@ -119,7 +119,7 @@ describe('claimIntentRelayPhase — review', () => {
     const after = getIntent(id)!
     expect(after.reviewStatus).toBe('pending')
     expect(after.fixStatus).toBeNull()
-    expect(after.fixSessionId).toBeNull()
+    expect(after.fixSessionId).toBe('fix-1')
     expect(after.reviewFixRounds).toBe(1)
   })
 })
@@ -214,6 +214,16 @@ describe('owner-safe session writes', () => {
     expect(releaseIntentRelayPhase(id, 'review', 'pending:rev-1')).toBe(true)
     const after = getIntent(id)!
     expect(after.reviewSessionId).toBeNull()
+    expect(after.reviewStatus).toBeNull()
+  })
+
+  it('releasing a bound un-concluded phase keeps the real session for inspection', () => {
+    const id = seed()
+    claimIntentRelayPhase(id, firstReview)
+    replaceIntentRelaySession(id, 'review', 'pending:rev-1', 'real-1')
+    expect(releaseIntentRelayPhase(id, 'review', 'real-1', true)).toBe(true)
+    const after = getIntent(id)!
+    expect(after.reviewSessionId).toBe('real-1')
     expect(after.reviewStatus).toBeNull()
   })
 

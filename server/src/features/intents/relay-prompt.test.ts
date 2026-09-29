@@ -5,13 +5,17 @@
  * assert the facts that must be present (which intent, which PRs, which round,
  * which session id to conclude under) and the two orderings the loop depends on:
  * read the WorkNote history before the diff, publish the forge-visible result
- * before the terminal backfill, and conclude with a tool call rather than with
- * prose. They also pin the tool allowlists, because those are the phase's real
+ * alongside the terminal backfill, and conclude with a tool call rather than
+ * with prose. They also pin the tool allowlists, because those are the phase's real
  * capability boundary — a reviewer that could edit is not a reviewer.
  */
 import { describe, expect, it } from 'vitest'
-import type { Intent, IntentPr } from '@ccc/shared/protocol'
-import { MAX_REVIEW_FIX_ROUNDS } from '@ccc/shared/protocol'
+import {
+  MAX_REVIEW_FIX_ROUNDS,
+  NETWORK_ACCESS_TOOL,
+  type Intent,
+  type IntentPr,
+} from '@ccc/shared/protocol'
 import {
   RELAY_FIX_TOOL_ALLOWLIST,
   RELAY_REVIEW_TOOL_ALLOWLIST,
@@ -71,6 +75,11 @@ describe('review prompt', () => {
     expect(diff).toBeGreaterThan(history)
   })
 
+  it('keeps local commands in the worktree already assigned to the session', () => {
+    expect(prompt).toContain('不要向命令工具另传 workdir/cwd')
+    expect(prompt).toContain('不得把 shell 语法拼进目录参数')
+  })
+
   it('separates an empty history from a read error', () => {
     expect(prompt).toContain('空历史是合法结果')
     expect(prompt).toContain('读取报错不是空历史')
@@ -81,12 +90,25 @@ describe('review prompt', () => {
     expect(prompt).toContain('不调用这个工具就等于没有结论')
   })
 
-  it('publishes the required review verdict on every PR before backfilling the terminal', () => {
+  it('uses the execution-specific MCP namespace when the runner supplies one', () => {
+    const namespaced = buildRelayReviewPrompt({
+      ...base,
+      round: 0,
+      mcpServerName: 'c3_exec_123',
+    })
+    expect(namespaced).toContain('mcp__c3_exec_123__list_intent_worknotes')
+    expect(namespaced).toContain('mcp__c3_exec_123__append_intent_worknote')
+    expect(namespaced).toContain('mcp__c3_exec_123__sync_intent_review_status')
+    expect(namespaced).not.toContain('mcp__c3__sync_intent_review_status')
+  })
+
+  it('keeps rejected as an intent fact when publishing the PR comment fails', () => {
     expect(prompt).toContain('[review] pass')
     expect(prompt).toContain('[review] change-required')
     expect(prompt).toContain('gh pr comment')
     expect(prompt).toContain('<!-- c3:relay-review:c3-session-9 -->')
-    expect(prompt).toContain('任一目标评论失败时不要回填终态')
+    expect(prompt).toContain('结论是 rejected,即使 PR/MR 评论失败也必须回填')
+    expect(prompt).toContain('评论失败时不得回填 approved')
     expect(prompt.indexOf('gh pr comment')).toBeLessThan(
       prompt.indexOf('mcp__c3__sync_intent_review_status'),
     )
@@ -112,6 +134,7 @@ describe('fix prompt', () => {
   it('points the session at the intent worktree with no fallback', () => {
     expect(prompt).toContain('/w/worktrees/intent-42')
     expect(prompt).toContain('不要切回项目主检出目录')
+    expect(prompt).toContain('不要向命令工具另传 workdir/cwd')
   })
 
   it('requires a fix note and the fix terminal, and says `fixed` is not approval', () => {
@@ -119,6 +142,16 @@ describe('fix prompt', () => {
     expect(prompt).toContain('kind="fix"')
     expect(prompt).toContain('sync_intent_fix_status')
     expect(prompt).toContain('fixed 只表示本轮已处理,不代表评审通过')
+  })
+
+  it('uses the execution-specific MCP namespace for the fix terminal too', () => {
+    const namespaced = buildRelayFixPrompt({
+      ...base,
+      round: 2,
+      mcpServerName: 'c3_exec_456',
+    })
+    expect(namespaced).toContain('mcp__c3_exec_456__sync_intent_fix_status')
+    expect(namespaced).not.toContain('mcp__c3__sync_intent_fix_status')
   })
 
   it('publishes the fix result on every PR before backfilling fixed', () => {
@@ -138,6 +171,11 @@ describe('fix prompt', () => {
 })
 
 describe('tool allowlists are the phase capability boundary', () => {
+  it('gives both PR-facing phases raw network access without widening file writes', () => {
+    expect(RELAY_REVIEW_TOOL_ALLOWLIST).toContain(NETWORK_ACCESS_TOOL)
+    expect(RELAY_FIX_TOOL_ALLOWLIST).toContain(NETWORK_ACCESS_TOOL)
+  })
+
   it('a reviewer can read and conclude, but cannot edit or file a fix result', () => {
     expect(RELAY_REVIEW_TOOL_ALLOWLIST).toContain('mcp__c3__sync_intent_review_status')
     expect(RELAY_REVIEW_TOOL_ALLOWLIST).toContain('mcp__c3__list_intent_worknotes')

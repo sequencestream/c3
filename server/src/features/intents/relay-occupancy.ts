@@ -14,8 +14,9 @@
  *     round counter, so a phase, its session and its budget can never disagree;
  *   - the dispatcher's bind callback replaces the placeholder with the real
  *     session id, and only while the field still holds THAT placeholder;
- *   - a launch that failed or a settle with no result releases it, again only
- *     while it still holds that placeholder;
+ *   - a launch that failed releases its placeholder; a bound session that settles
+ *     without a result keeps the real id for inspection and only releases the
+ *     transient status, in both cases only while that run still owns the field;
  *   - after a restart a `pending:` value with no live run stays occupied until its
  *     projection row ages past the bounded grace window.
  *
@@ -141,8 +142,9 @@ export function releaseRelayOccupancy(
   intentId: string,
   phase: RelayPhase,
   sessionId: string,
+  preserveSession = false,
 ): boolean {
-  return releaseIntentRelayPhase(intentId, phase, sessionId)
+  return releaseIntentRelayPhase(intentId, phase, sessionId, preserveSession)
 }
 
 function errMsg(err: unknown): string {

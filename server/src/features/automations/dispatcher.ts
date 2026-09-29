@@ -71,6 +71,8 @@ import { upsertAutomationExecutionRow, upsertBoundRow } from '../sessions/sessio
 import { ensureRuntime, emit, getRuntime, setStatus } from '../../runs.js'
 import { WireEmitter } from '../../kernel/run/run-via-driver.js'
 import { AutomationViewerStream, translateClaudeSdkMessage } from './viewer-stream.js'
+import { automationMcpServerName } from './mcp-server-name.js'
+import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 
 // ---------------------------------------------------------------------------
 // Automation c3 MCP route (the SINGLE loopback HTTP MCP transport every vendor's
@@ -625,6 +627,12 @@ function registerAutomationRuntime(
     codexPolicy,
     'background',
   )
+  if (projection) {
+    rt.publicSessionId = mintC3SessionId({
+      vendor: automation.vendor,
+      vendorSessionId: sessionId,
+    })
+  }
   rt.run = { abort: abortController, handle: null }
   // A relay execution runs in the intent's worktree, so the viewer must show that
   // directory rather than the workspace root the runtime defaults to.
@@ -900,9 +908,13 @@ async function executeLlmPrompt(
         if (typeof sid === 'string' && sid) {
           sessionId = sid
           runningSessionId = sessionId
-          updateLog(logId, { sessionId })
           bindAutomationSession(automation, sessionId, overrides?.sessionProjection)
           viewer.bind(sessionId)
+          // Publish the session binding only after the projection row and live
+          // runtime exist. Relay callbacks replace their pending ledger id and
+          // broadcast immediately; doing that first makes the c3 id look idle
+          // because there is not yet a row that resolves it to this runtime.
+          updateLog(logId, { sessionId })
         }
       }
       // Accumulate assistant text for the execution log's `output` + schema check.
@@ -1017,7 +1029,7 @@ function codexExecutionMcpServers(
 ): Record<string, RemoteMcpServer> {
   const c3 = servers.c3
   if (!c3) return servers
-  return { [`c3_${executionId.replace(/[^A-Za-z0-9_-]/g, '_')}`]: c3 }
+  return { [automationMcpServerName('codex', executionId)]: c3 }
 }
 
 /**
@@ -1058,10 +1070,12 @@ async function runAutomationViaDriver(
     const run = await start()
     const sessionId = await run.sessionId()
     if (sessionId) {
-      updateLog(logId, { sessionId })
       bindAutomationSession(automation, sessionId, projection)
       runningSessionId = sessionId
       viewer.bind(sessionId)
+      // Keep the relay's first intent broadcast behind both halves of the bind;
+      // see the equivalent Claude ordering above.
+      updateLog(logId, { sessionId })
     }
     let output = ''
     for await (const message of run.messages()) {

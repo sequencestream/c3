@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { nextTick } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
@@ -120,7 +121,7 @@ describe('WorkspaceListRail.vue — 展开 / 收缩双形态', () => {
     // 按钮必须排在标题之前 —— 收放开关贴在竖条最左缘,不再是居中控件。
     expect(header.element.firstElementChild!.getAttribute('data-testid')).toBe('ws-list-toggle')
     const title = w.find('[data-testid="ws-list-header-title"]')
-    expect(title.text()).toBe('工作区')
+    expect(title.text()).toBe(i18n.global.t('nav.workspaceList.title'))
     expect(title.element.previousElementSibling!.getAttribute('data-testid')).toBe('ws-list-toggle')
   })
 
@@ -139,7 +140,8 @@ describe('WorkspaceListRail.vue — 展开 / 收缩双形态', () => {
       i18n.global.locale.value = 'zh'
       const w = mountRail()
       expect(w.find('[data-testid="ws-list-header-title"]').text()).toBe('工作区')
-      await i18n.global.locale.value = 'en'
+      i18n.global.locale.value = 'en'
+      await nextTick()
       expect(w.find('[data-testid="ws-list-header-title"]').text()).toBe('Workspaces')
     } finally {
       i18n.global.locale.value = before

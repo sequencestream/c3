@@ -74,6 +74,17 @@ function select(name: string): void {
   if (name !== props.currentWorkspaceName) emit('select-workspace', name)
 }
 
+// 行内移除按钮是这一行的后代节点,keydown 同样会冒泡到行级处理器。
+// 只在事件真正来自行本身时响应,避免按 ✕ 的 Enter/Space 顺带切换工作区。
+function onRowKeydown(event: KeyboardEvent, name: string): void {
+  if (event.target !== event.currentTarget) return
+  // key 名大小写在不同触发源下不统一(合成事件会给出 "enter"),统一折叠比较。
+  const key = event.key.toLowerCase()
+  if (key !== 'enter' && key !== ' ') return
+  event.preventDefault()
+  select(name)
+}
+
 // 移除工作区:点 ✕ 设定目标并打开 danger ConfirmDialog;确认后才 emit remove。
 // 与 WorkspaceSwitcher 走同一条确认路径,文案也复用同一组 key。
 const removeTarget = ref<WorkspaceInfo | null>(null)
@@ -141,8 +152,7 @@ function onRemoveConfirm(): void {
         tabindex="0"
         :data-testid="expanded ? 'ws-list-row' : 'ws-list-row-collapsed'"
         @click="select(w.name)"
-        @keydown.enter.prevent="select(w.name)"
-        @keydown.space.prevent="select(w.name)"
+        @keydown="onRowKeydown($event, w.name)"
       >
         <!-- 字符徽标:底色由名字派生的槽位号查 --c-ws-* 令牌得到,两种形态共用同一份色。 -->
         <span class="ws-list-chip" :data-ws-slot="workspaceColor(w.name)?.slot ?? undefined">
@@ -167,6 +177,8 @@ function onRemoveConfirm(): void {
           :title="t('nav.workspace.remove.tooltip')"
           :aria-label="t('nav.workspace.remove.tooltip')"
           @click.stop="requestRemove(w)"
+          @keydown.enter.stop.prevent
+          @keydown.space.stop.prevent
         >
           ✕
         </button>

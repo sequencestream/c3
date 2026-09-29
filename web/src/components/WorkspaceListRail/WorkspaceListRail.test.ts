@@ -253,6 +253,28 @@ describe('WorkspaceListRail.vue — 管理员增删入口', () => {
     expect(w.emitted('remove-workspace')).toEqual([['proj-b']])
   })
 
+  // 回归:✕ 是行的后代节点,keydown 会冒泡到行级处理器。
+  // 必须取「非当前工作区」那一行,否则会被 select() 的同名守卫挡掉,测试假绿。
+  it('键盘操作非当前工作区的 ✕ 不会连带切换工作区(Enter/Space 均拦截)', async () => {
+    const w = mountRail()
+    const removes = w.findAll('.ws-list-remove')
+    // DOM 顺序 proj-a(当前) / proj-b / proj-c —— 取 proj-b 这一行。
+    expect(removes[1]!.element.closest('[data-testid="ws-list-row"]')!.textContent).toContain(
+      'proj-b',
+    )
+
+    for (const key of ['Enter', ' ']) {
+      await removes[1]!.trigger('keydown', { key })
+    }
+    expect(w.emitted('select-workspace')).toBeUndefined()
+  })
+
+  it('行本身聚焦时 Enter/Space 仍正常切换工作区', async () => {
+    const w = mountRail()
+    await w.findAll('[data-testid="ws-list-row"]')[1]!.trigger('keydown', { key: 'Enter' })
+    expect(w.emitted('select-workspace')).toEqual([['proj-b']])
+  })
+
   it('非管理员 → 新增与移除入口都不出现(增删仅管理员)', () => {
     useAuth().setIsAdmin(false)
     const w = mountRail()

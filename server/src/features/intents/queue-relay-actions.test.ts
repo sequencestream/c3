@@ -309,7 +309,7 @@ describe('settlement — only a backfilled terminal concludes a phase', () => {
       'i-1',
       'review',
       'pending:new',
-      'vendor-session-9',
+      'c3s_0a6f82adfacef1c9df8921cf528a66f0',
     )
   })
 })
@@ -358,17 +358,20 @@ describe('the manual entry point', () => {
     expect(env.hooks.broadcastIntents).toHaveBeenCalledWith('/w')
   })
 
-  it("writes none of the queue's provenance — an approval here is not merge authority", async () => {
+  it("writes none of the queue's merge provenance — an approval here is not merge authority", async () => {
     // Authority to let c3 land a PR by itself is a fact about the QUEUE having
     // chosen to review. A human clicking a button never said that, so the round
-    // records nothing for a later `approved` to be promoted from — and stays out
-    // of the trust registry, which keeps that true even if a future reader of
-    // the registry forgets why it exists.
+    // records no review claim and marks its execution attribution as ineligible
+    // for merge authority. The latter lets the tool replace the prompt's pending
+    // id with the bound c3 id without weakening the merge boundary.
     await runManualRelayPhase(env, intent(), claimed())
     expect(recordQueueReviewClaim).not.toHaveBeenCalled()
     expect(bindQueueReviewClaimSession).not.toHaveBeenCalled()
-    expect(registerRelayRun).not.toHaveBeenCalled()
-    expect(unregisterRelayRun).not.toHaveBeenCalled()
+    expect(registerRelayRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ canGrantMerge: false }),
+    )
+    expect(unregisterRelayRun).toHaveBeenCalled()
   })
 
   it("records the provenance for the QUEUE's own review of the same intent", async () => {

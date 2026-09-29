@@ -268,8 +268,11 @@ export function buildAutomationC3Tools(
       description: syncIntentFixStatusDesc,
       inputSchema: syncIntentFixStatusSchema,
       handler: async (args) => ({
-        ...runSyncIntentFixStatus(workspacePath, args as SyncIntentFixStatusArgs, (path) =>
-          deps?.broadcastIntents(path),
+        ...runSyncIntentFixStatus(
+          workspacePath,
+          args as SyncIntentFixStatusArgs,
+          (path) => deps?.broadcastIntents(path),
+          lookupRelayRun(typeof executionId === 'function' ? executionId() : executionId),
         ),
       }),
     },

@@ -20,6 +20,7 @@ const binding = {
   phase: 'review' as const,
   workspacePath: '/w',
   sessionId: 'pending:review-1',
+  canGrantMerge: true,
 }
 
 describe('relay run registry', () => {
@@ -36,6 +37,7 @@ describe('relay run registry', () => {
       phase: 'review',
       workspacePath: '/w',
       sessionId: 'real-session-1',
+      canGrantMerge: true,
     })
   })
 

@@ -36,6 +36,7 @@ import {
   getByC3Id,
   resetStoreForTests as resetSessionMetadata,
   setNow,
+  upsertForBind,
   upsertPendingRow,
 } from '../sessions/session-metadata-store.js'
 import * as sessionMetadataStore from '../sessions/session-metadata-store.js'
@@ -346,6 +347,32 @@ describe('isSpecOccupancyAlive — the fact the queue probe consumes', () => {
 
   it('a real (bound) id with no live run is NOT alive — it is resumable, not running', () => {
     expect(isSpecOccupancyAlive('real-bound', () => false, Date.now())).toBe(false)
+  })
+
+  it('resolves a bound c3 id to the live vendor runtime id', () => {
+    const pendingId = pending('binding')
+    upsertPendingRow({
+      pendingId,
+      workspacePath: proj,
+      vendor: 'codex',
+      agentId: 'review-agent',
+      title: 'Review',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    })
+    const { c3Id } = upsertForBind({
+      pendingId,
+      realId: 'vendor-native-session',
+      workspacePath: proj,
+      vendor: 'codex',
+      agentId: 'review-agent',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    })
+
+    expect(isSpecOccupancyAlive(c3Id, (id) => id === 'vendor-native-session', Date.now())).toBe(
+      true,
+    )
   })
 
   it('a pending within the grace window is alive even with no live run (restart recovery)', () => {

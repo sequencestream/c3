@@ -190,10 +190,34 @@ describe('codex automation MCP bridge — mount opt-in', () => {
     expect(binds[0]).toEqual({ workspacePath: '/ws', executionId: 'log-2' })
     const mcpServers = startArg?.mcpServers as
       Record<string, { type: string; url: string; enabledTools: string[] }> | undefined
-    expect(mcpServers?.c3.type).toBe('http')
-    expect(mcpServers?.c3.url).toContain('token=')
-    expect(mcpServers?.c3.enabledTools).toEqual(FULL_TOOLS)
+    expect(Object.keys(mcpServers ?? {})).toEqual(['c3_log-2'])
+    expect(mcpServers?.['c3_log-2'].type).toBe('http')
+    expect(mcpServers?.['c3_log-2'].url).toContain('token=')
+    expect(mcpServers?.['c3_log-2'].enabledTools).toEqual(FULL_TOOLS)
     expect(disposeCalls()).toBe(1)
+  })
+
+  it('uses a fresh MCP config identity for each Codex execution', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    const seen: string[] = []
+    codexStart.fn = (options) => {
+      seen.push(...Object.keys((options as { mcpServers?: object }).mcpServers ?? {}))
+      return Promise.resolve(successfulRun())
+    }
+
+    await execute(
+      codexAutomation({ toolAllowlist: ['mcp__c3__find_intents'] }),
+      'relay:first',
+      () => {},
+    )
+    await execute(
+      codexAutomation({ toolAllowlist: ['mcp__c3__find_intents'] }),
+      'relay:second',
+      () => {},
+    )
+
+    expect(seen).toEqual(['c3_relay_first', 'c3_relay_second'])
   })
 })
 

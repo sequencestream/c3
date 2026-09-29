@@ -272,6 +272,63 @@ describe('store failure surfaces as an error (not a receipt)', () => {
 })
 
 describe('a phase the queue holds only accepts its own session (stale backfill)', () => {
+  it('uses the server-attributed c3 session when the relay prompt still carries its pending id', () => {
+    const id = seedIntent()
+    updateIntentReviewFixStatus(id, {
+      reviewSessionId: 'c3s_bound_review',
+      reviewStatus: 'pending',
+    })
+
+    const saved = payload(
+      runSyncIntentReviewStatus(
+        proj,
+        {
+          intentId: id,
+          reviewSessionId: 'pending:review-launch',
+          reviewStatus: 'rejected',
+        },
+        undefined,
+        {
+          intentId: id,
+          phase: 'review',
+          sessionId: 'c3s_bound_review',
+          canGrantMerge: false,
+        },
+      ),
+    )
+
+    expect(saved.reviewSessionId).toBe('c3s_bound_review')
+    expect(getIntent(id)!.reviewSessionId).toBe('c3s_bound_review')
+    expect(getQueueIntentMetaById(id).mergeGrant).toBeNull()
+  })
+
+  it('normalizes the fix prompt pending id through the same execution attribution', () => {
+    const id = seedIntent()
+    updateIntentReviewFixStatus(id, {
+      reviewSessionId: 'c3s_review',
+      reviewStatus: 'rejected',
+      fixSessionId: 'c3s_bound_fix',
+      fixStatus: 'pending',
+    })
+
+    const saved = payload(
+      runSyncIntentFixStatus(
+        proj,
+        { intentId: id, fixSessionId: 'pending:fix-launch', fixStatus: 'fixed' },
+        undefined,
+        {
+          intentId: id,
+          phase: 'fix',
+          sessionId: 'c3s_bound_fix',
+          canGrantMerge: false,
+        },
+      ),
+    )
+
+    expect(saved.fixSessionId).toBe('c3s_bound_fix')
+    expect(getIntent(id)!.fixSessionId).toBe('c3s_bound_fix')
+  })
+
   it('refuses a review conclusion from a session that no longer holds the phase', () => {
     const id = seedIntent()
     claimIntentRelayPhase(id, {
@@ -362,7 +419,12 @@ describe('merge authority — only the server-attributed queue review grants it'
     const id = seedIntent()
     recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
 
-    const trusted: TrustedRelayCaller = { intentId: id, phase: 'review', sessionId: 'rev-1' }
+    const trusted: TrustedRelayCaller = {
+      intentId: id,
+      phase: 'review',
+      sessionId: 'rev-1',
+      canGrantMerge: true,
+    }
     payload(
       runSyncIntentReviewStatus(
         proj,
@@ -402,6 +464,7 @@ describe('merge authority — only the server-attributed queue review grants it'
       intentId: 'other-intent',
       phase: 'review',
       sessionId: 'rev-1',
+      canGrantMerge: true,
     }
     payload(
       runSyncIntentReviewStatus(
@@ -419,7 +482,12 @@ describe('merge authority — only the server-attributed queue review grants it'
     const id = seedIntent()
     recordQueueReviewClaim({ workspacePath: proj, intentId: id, sessionId: 'rev-1', prs: [pinned] })
 
-    const trusted: TrustedRelayCaller = { intentId: id, phase: 'fix', sessionId: 'rev-1' }
+    const trusted: TrustedRelayCaller = {
+      intentId: id,
+      phase: 'fix',
+      sessionId: 'rev-1',
+      canGrantMerge: true,
+    }
     payload(
       runSyncIntentReviewStatus(
         proj,
@@ -439,7 +507,7 @@ describe('merge authority — only the server-attributed queue review grants it'
       proj,
       { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'approved' },
       undefined,
-      { intentId: id, phase: 'review', sessionId: 'rev-1' },
+      { intentId: id, phase: 'review', sessionId: 'rev-1', canGrantMerge: true },
     )
     expect(getQueueIntentMetaById(id).mergeGrant).not.toBeNull()
 
@@ -447,7 +515,7 @@ describe('merge authority — only the server-attributed queue review grants it'
       proj,
       { intentId: id, reviewSessionId: 'rev-1', reviewStatus: 'rejected' },
       undefined,
-      { intentId: id, phase: 'review', sessionId: 'rev-1' },
+      { intentId: id, phase: 'review', sessionId: 'rev-1', canGrantMerge: true },
     )
     expect(getQueueIntentMetaById(id).mergeGrant).toBeNull()
   })

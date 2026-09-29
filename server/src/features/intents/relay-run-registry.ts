@@ -7,11 +7,11 @@
  * can type the id they see in the intent detail. Either is fine for writing a
  * conclusion; neither may confer the authority to merge.
  *
- * So the queue keeps this registry. It maps the per-execution handle the MCP
- * binding already carries (`executionId`) onto the relay phase the queue started
- * under that handle, and the session the VENDOR bound to it. A tool call arriving
- * on that binding is therefore attributable without trusting any argument: the
- * server knows which run it is serving.
+ * So every relay run is kept in this registry. It maps the per-execution handle
+ * the MCP binding already carries (`executionId`) onto the phase c3 started under
+ * that handle and the public c3 session id it bound. A tool call arriving on that
+ * binding is therefore attributable without trusting any argument. The separate
+ * `canGrantMerge` bit preserves the stronger queue-only merge boundary.
  *
  * In-memory on purpose. The registry only answers "is this live call the queue's
  * review run?", which is a question about the current process; a restart ends
@@ -26,6 +26,8 @@ export interface RelayRunBinding {
   workspacePath: string
   /** The `pending:` placeholder at registration; the real session id once bound. */
   sessionId: string
+  /** Only a queue-owned review may turn an approval into merge authority. */
+  canGrantMerge: boolean
 }
 
 const bindings = new Map<string, RelayRunBinding>()

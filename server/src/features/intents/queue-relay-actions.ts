@@ -16,8 +16,8 @@
  *   its ladder while the handler can answer the caller's own connection;
  * - **provenance** — the queue's review round records that it owns the round
  *   ({@link recordQueueReviewClaim}), which is the only thing that can later
- *   turn an `approved` into merge authority; a manual round records nothing, so
- *   its approval writes a conclusion and grants no merge;
+ *   turn an `approved` into merge authority; a manual round records only its
+ *   execution-to-session attribution and marks it ineligible for merge;
  * - **settlement** — the queue books success / failure on its ledger, a manual
  *   round releases the placeholder and stops there. A human retrying by hand is
  *   its own backoff.
@@ -46,6 +46,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Intent, IntentPr, VendorId } from '@ccc/shared/protocol'
 import { activeIntentPrs } from '@ccc/shared'
+import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import type { QueueAction, QueuePrIdentity } from '../../kernel/queue/index.js'
 import { getGitBranchMode, getForgeOverride } from '../../kernel/config/index.js'
 import { getForgePrLinkFacts } from '../../git.js'
@@ -218,16 +219,15 @@ export function admitRelayPhase(
  * difference, not an execution one:
  *
  * - `true` (the queue's own round) pins the PR set the round is about to judge
- *   and registers the run in the trust registry. The pin is written NOW, before
+ *   and marks the execution attribution as merge-eligible. The pin is written NOW, before
  *   the agent can say anything, so an `approved` conclusion later has something
  *   to be checked against that no caller authored; the registry is what makes a
  *   tool call arriving on this execution provably the queue's run rather than a
  *   model's claim about itself.
- * - `false` (a human's round) writes neither. The round therefore CANNOT become a
- *   merge credential: authority to let c3 land a PR by itself is a fact about the
- *   queue having chosen to review, and a human clicking a button never said that.
- *   Leaving the run out of the registry is how that stays true even if a future
- *   reader of the registry forgets why it exists.
+ * - `false` (a human's round) writes no PR pin and marks its attribution as
+ *   merge-ineligible. The attribution still lets the terminal tool replace the
+ *   pre-bind prompt handle with the real c3 session id, but can never become a
+ *   merge credential.
  *
  * A failed pin leaves no claim, which simply means the round grants no merge
  * authority; the review itself proceeds unchanged.
@@ -253,15 +253,14 @@ export async function executeRelayPhase(
   // The execution handle is minted HERE so the run can be registered before it
   // launches: a tool call may arrive on the very first turn, and a registry that
   // was populated afterwards would fail to attribute it.
-  const executionId = opts.recordQueueProvenance ? randomUUID() : undefined
-  if (executionId) {
-    registerRelayRun(executionId, {
-      intentId: req.id,
-      phase,
-      workspacePath: env.workspacePath,
-      sessionId: pendingId,
-    })
-  }
+  const executionId = randomUUID()
+  registerRelayRun(executionId, {
+    intentId: req.id,
+    phase,
+    workspacePath: env.workspacePath,
+    sessionId: pendingId,
+    canGrantMerge: opts.recordQueueProvenance,
+  })
 
   const prompt =
     phase === 'review'
@@ -292,11 +291,12 @@ export async function executeRelayPhase(
       projection: { intentId: req.id, title: `${label}:${req.title}`, sessionKind: 'work' },
       executionId,
       onSessionBound: (sessionId) => {
-        boundSessionId = sessionId
-        bindRelayOccupancy(req.id, phase, pendingId, sessionId)
-        if (executionId) bindRelayRunSession(executionId, sessionId)
+        const c3SessionId = mintC3SessionId({ vendor: claimed.vendor, vendorSessionId: sessionId })
+        boundSessionId = c3SessionId
+        bindRelayOccupancy(req.id, phase, pendingId, c3SessionId)
+        bindRelayRunSession(executionId, c3SessionId)
         if (opts.recordQueueProvenance && phase === 'review') {
-          bindQueueReviewClaimSession(env.workspacePath, req.id, pendingId, sessionId)
+          bindQueueReviewClaimSession(env.workspacePath, req.id, pendingId, c3SessionId)
         }
         env.hooks.broadcastIntents(env.workspacePath)
       },
@@ -304,7 +304,7 @@ export async function executeRelayPhase(
   } finally {
     // The registry answers "is this live call the queue's run?", so a run that has
     // ended must stop answering it — on every path, including a throw.
-    if (executionId) unregisterRelayRun(executionId)
+    unregisterRelayRun(executionId)
   }
 
   return { boundSessionId, outcome }
@@ -345,8 +345,9 @@ export async function runRelayPhase(
  * Run ONE relay phase for a HUMAN's request, from a claim that already happened.
  *
  * Same execution as the queue's, with the accountability difference applied at
- * both ends: no provenance is recorded (so an approval here can never become a
- * merge credential), and the settlement books nothing on the queue's ladder.
+ * both ends: only merge-ineligible execution attribution is recorded (so an
+ * approval here can never become a merge credential), and the settlement books
+ * nothing on the queue's ladder.
  *
  * The returned verdict exists for ONE caller-visible case: a phase that never
  * bound a session AND whose launch failed. There is nothing on screen to read then

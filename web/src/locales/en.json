@@ -179,6 +179,17 @@
     },
     "logs": {
       "tooltip": "View runtime log"
+    },
+    "rail": {
+      "ariaLabel": "Primary navigation rail",
+      "workspace": {
+        "badgeAriaLabel": "{count} running sessions"
+      },
+      "messages": {
+        "ariaLabel": "User notifications",
+        "tooltip": "User notifications",
+        "badgeAriaLabel": "{count} pending notifications"
+      }
     }
   },
   "permission": {

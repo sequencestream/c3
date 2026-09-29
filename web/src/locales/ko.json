@@ -180,6 +180,17 @@
     },
     "logs": {
       "tooltip": "런타임 로그 보기"
+    },
+    "rail": {
+      "ariaLabel": "주 탐색 레일",
+      "workspace": {
+        "badgeAriaLabel": "실행 중 세션 {count}개"
+      },
+      "messages": {
+        "ariaLabel": "사용자 알림",
+        "tooltip": "사용자 알림",
+        "badgeAriaLabel": "대기 중 알림 {count}개"
+      }
     }
   },
   "permission": {

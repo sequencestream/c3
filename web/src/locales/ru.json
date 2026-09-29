@@ -180,6 +180,17 @@
     },
     "logs": {
       "tooltip": "Показать журнал работы"
+    },
+    "rail": {
+      "ariaLabel": "Основная навигационная панель",
+      "workspace": {
+        "badgeAriaLabel": "Активных сессий: {count}"
+      },
+      "messages": {
+        "ariaLabel": "Уведомления пользователя",
+        "tooltip": "Уведомления пользователя",
+        "badgeAriaLabel": "Непрочитанных уведомлений: {count}"
+      }
     }
   },
   "permission": {

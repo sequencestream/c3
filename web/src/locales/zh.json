@@ -179,6 +179,17 @@
     },
     "logs": {
       "tooltip": "查看运行日志"
+    },
+    "rail": {
+      "ariaLabel": "主导航竖条",
+      "workspace": {
+        "badgeAriaLabel": "{count} 个运行中会话"
+      },
+      "messages": {
+        "ariaLabel": "用户通知",
+        "tooltip": "用户通知",
+        "badgeAriaLabel": "{count} 条待处理通知"
+      }
     }
   },
   "permission": {

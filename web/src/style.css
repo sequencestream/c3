@@ -30,6 +30,28 @@ body {
   overflow: hidden;
 }
 
+/* ============ 应用行向壳 ============ */
+/* #app 是纵向 flex 容器:登录门内必须先把「左侧竖条 + 主列」并排放进一行,竖条才会
+   贴在最左侧并贯通高度;直接让竖条当 #app 的子节点,会按纵向流排在顶栏上方、只剩内容高。 */
+.app-shell {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* 主列维持 #app 原先的纵向栈:顶栏在上、内容区在下并各自吃掉剩余高度。 */
+.app-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* ============ 顶部标题栏（规范 3.1） ============ */
 header {
   height: 44px;
@@ -4457,4 +4479,32 @@ select.agent-field {
   background: var(--c-primary);
   border-color: var(--c-primary);
   color: #fff;
+}
+
+/* 左侧竖条里的工作区切换器:触发器是竖条自己的字符徽标,下拉仍向右展开(竖条太窄,
+   向下展开会被视口裁掉);列表末项承载管理员的新增入口。 */
+.ws-switcher-rail .ws-switcher-trigger-rail {
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.ws-switcher-rail .ws-switcher-panel {
+  top: 0;
+  left: calc(100% + var(--sp-1));
+}
+.ws-switcher-add-row-btn {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--c-primary-text);
+  font-size: var(--fs-body);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ws-switcher-add-row-btn:hover {
+  background: var(--c-hover-strong);
 }

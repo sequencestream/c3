@@ -4,27 +4,30 @@
  *
  * 只承载两个入口,各带一个数字角标:
  * - 工作区入口(上):当前工作区名首字符 + 由名字派生的稳定配色;角标是该工作区**运行中
- *   会话数**(服务端按 session_counts / session_status 实时下发);点击打开工作区选择器,
- *   选中即上抛切换。切换的副作用(落回意图 tab、清查看态、持久化)全在控制层的
- *   selectWorkspace 里,竖条不重写。
+ *   会话数**(服务端按 session_counts / session_status 实时下发)。点击**开合竖条左侧的
+ *   工作区列表竖条**(WorkspaceListRail):那里直接列出全部工作区、按最近访问排序,选中即
+ *   上抛切换。切换的副作用(落回意图 tab、清查看态、持久化)全在控制层的 selectWorkspace
+ *   里,竖条不重写,列表竖条也不重写。
  * - 用户消息入口(下):铃铛,角标与工作台「用户通知」入口同源;点击进工作台并定位到用户
  *   通知页。
  *
- * 工作台视图下竖条不消失:此时工作区入口从「打开切换器」换成「回到工作区」——工作区徽标
- * 直接上抛进入工作区视图,与用户消息入口构成一对可来回切的入口。桌面顶栏已移除旧切换
- * 按钮,若不在此提供回落,进工作台后就再无路可退。
+ * 工作区入口此前是一个浮层下拉(WorkspaceSwitcher 的 rail 形态)。列表竖条接替了它的
+ * 列表职责后,那层 popover 与它的 rail 形态一并移除:竖条自身不再持有任何列表,只留
+ * 「开合列表竖条」这一个动作。移动端精简行用的 WorkspaceSwitcher(bar 形态)不受影响。
+ *
+ * 工作台视图下竖条不消失:此时工作区入口从「开合列表竖条」换成「回到工作区」——工作区
+ * 徽标直接上抛进入工作区视图,与用户消息入口构成一对可来回切的入口。桌面顶栏已移除旧
+ * 切换按钮,若不在此提供回落,进工作台后就再无路可退。列表竖条在工作台视图下一并隐藏,
+ * 不与这条回退路径争抢点击。
  *
  * 两个角标都只读既有状态,竖条自身不持有计数、不新增轮询或订阅;0 / 缺省一律不渲染。
  * 窄屏(≤767px)不渲染竖条 —— 移动端顶栏精简行仍保留等价的工作区与工作台入口。
- * 「+ 新增工作区」只上抛诉求:AddWorkspaceDialog 仍由 AppHeader 单实例持有,两处挂载
- * 会叠出两层遮罩。
  */
 import { computed } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { workspaceColor, workspaceInitial } from '@/lib/workspace-color'
-import WorkspaceSwitcher from '@/components/WorkspaceSwitcher/WorkspaceSwitcher.vue'
 
 const { t } = useTypedI18n()
 
@@ -37,12 +40,12 @@ const props = defineProps<{
   workcenterPendingCount?: number
   /** 当前视图模式:工作台视图下工作区入口承担「回到工作区」。 */
   viewMode?: 'workspace' | 'workcenter'
+  /** 列表竖条是否已展开 —— 供无障碍状态播报,显隐本身由 App.vue 持有。 */
+  workspaceListOpen?: boolean
 }>()
 
 const emit = defineEmits<{
-  'request-add-workspace': []
-  'select-workspace': [name: string]
-  'remove-workspace': [name: string]
+  'toggle-workspace-list': []
   'open-notifications': []
   'enter-workspace': []
 }>()
@@ -62,7 +65,7 @@ const runningCount = computed(() =>
 )
 const pendingCount = computed(() => props.workcenterPendingCount ?? 0)
 
-// 工作台视图下,工作区入口的职责从「打开切换器」变为「回到工作区」。
+// 工作台视图下,工作区入口的职责从「开合列表竖条」变为「回到工作区」。
 const inWorkcenter = computed(() => props.viewMode === 'workcenter')
 const workspaceEntryLabel = computed(() =>
   inWorkcenter.value
@@ -73,15 +76,18 @@ const workspaceEntryLabel = computed(() =>
 
 <template>
   <nav v-if="!isMobile" class="left-rail" :aria-label="t('nav.rail.ariaLabel')">
-    <!-- 工作区入口 —— 工作区视图:字符徽标 + 运行中会话数角标,点开选择器完成切换。 -->
+    <!-- 工作区入口 —— 工作区视图:字符徽标 + 运行中会话数角标,点开/收起左侧的
+         工作区列表竖条(全部工作区在那里,按最近访问排序)。 -->
     <div v-if="!inWorkcenter" class="rail-slot">
-      <WorkspaceSwitcher
-        :workspaces="workspaces"
-        :current-workspace-name="currentWorkspaceName"
-        variant="rail"
-        @request-add-workspace="emit('request-add-workspace')"
-        @select-workspace="emit('select-workspace', $event)"
-        @remove-workspace="emit('remove-workspace', $event)"
+      <button
+        type="button"
+        class="rail-btn rail-workspace-open"
+        :title="workspaceEntryLabel"
+        :aria-label="workspaceEntryLabel"
+        :aria-expanded="workspaceListOpen"
+        aria-controls="ws-list-rail"
+        data-testid="rail-workspace-open"
+        @click="emit('toggle-workspace-list')"
       >
         <span class="rail-workspace-chip" :data-ws-slot="chipSlot ?? undefined">
           <span v-if="initial" class="rail-workspace-initial">{{ initial }}</span>
@@ -94,7 +100,7 @@ const workspaceEntryLabel = computed(() =>
             >{{ runningCount }}</span
           >
         </span>
-      </WorkspaceSwitcher>
+      </button>
     </div>
 
     <!-- 工作区入口 —— 工作台视图:同一枚徽标变成「回到工作区」。桌面顶栏的旧切换按钮

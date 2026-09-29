@@ -178,6 +178,18 @@
         "empty": "まだワークスペースがありません。+ をクリックしてディレクトリを追加してください。"
       }
     },
+    "workspaceList": {
+      "ariaLabel": "ワークスペース一覧",
+      "toggle": {
+        "collapse": "ワークスペース一覧を折りたたむ",
+        "expand": "ワークスペース一覧を展開する"
+      },
+      "item": {
+        "label": "ワークスペース {name}",
+        "badgeAriaLabel": "実行中セッション {count} 件"
+      },
+      "empty": "ワークスペースがまだありません"
+    },
     "logs": {
       "tooltip": "実行ログを表示"
     },

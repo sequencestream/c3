@@ -6,6 +6,7 @@
 // unchanged. See controls/index.ts for the decomposition map.
 import AppHeader from './components/AppHeader/AppHeader.vue'
 import LeftRail from './components/LeftRail/LeftRail.vue'
+import WorkspaceListRail from './components/WorkspaceListRail/WorkspaceListRail.vue'
 import Login from './pages/login/Login.vue'
 import Queue from './pages/queue/Queue.vue'
 import AsyncViewLoading from './components/AsyncFallback/AsyncViewLoading.vue'
@@ -25,6 +26,7 @@ import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
 import { FILES_CHAT_WIDTH_DEFAULT } from './controls/state'
 import type { SpeedTestIntent } from './lib/model-provider-speed-test'
+import { usePersistentToggle } from './composables/usePersistentToggle'
 
 // ── 懒加载装配约定 ─────────────────────────────────────────────────────────
 // App.vue 是唯一的装配边界:重量级业务页面与低频全局组件都由 defineAsyncComponent
@@ -699,6 +701,25 @@ function onQueueSelectIntent(intentId: string): void {
   requestedIntentId.value = intentId
 }
 
+/* ── 工作区列表竖条的显隐与形态 ─────────────────────────────────────────────
+ * 显隐是**纯本机 UI 状态**,不持久化:点竖条的工作区入口开/合,再点收起。形态
+ * (展开/收缩)才是需要记住的偏好,经 usePersistentToggle 落 localStorage,刷新后
+ * 读回 —— 默认展开,用户一进来就拿到带名称的完整形态。两者都只在本机生效,不做跨设备
+ * 同步。竖条入口与列表竖条因此都需要这份状态:显隐挂在 App.vue(装配边界)当唯一真源,
+ * 形态则由列表竖条自己持有并在被 v-if 卸载时保住记忆。 */
+const workspaceListOpen = ref(false)
+const workspaceListExpanded = usePersistentToggle('c3.workspaceListExpanded', true)
+
+function toggleWorkspaceList(): void {
+  workspaceListOpen.value = !workspaceListOpen.value
+}
+
+// 工作台视图下竖条入口变成「回到工作区」,列表竖条也不再渲染 —— 顺手把它收起来,
+// 免得下次回到工作区视图时它还杵在那里、占着横向空间。
+watch(viewMode, (mode) => {
+  if (mode === 'workcenter') workspaceListOpen.value = false
+})
+
 /** Files 内嵌 ChatColumn 的分隔条宽度(像素,per-workspace,仅 localStorage)。切换
  *  workspace 时从持久化读回;拖拽/键盘调节后写回。仅本地,不进服务端配置。 */
 const filesChatWidth = ref(FILES_CHAT_WIDTH_DEFAULT)
@@ -807,17 +828,34 @@ function onFilesChatWidth(px: number): void {
     <!-- 行向壳:#app 是纵向 flex 容器,竖条若作为它的直接子节点会被排到顶栏上方。
         这里显式开一层「竖条 + 主列」的行布局,竖条与主列并列、竖条高度贯通。 -->
     <div class="app-shell">
+      <!-- 工作区列表竖条:竖条**左侧**的并列兄弟(不是浮层),点竖条的工作区入口开/合。
+           列出全部工作区,按最近访问倒序;展开态显示名称、收缩态只剩首字符徽标。与竖条
+           一起构成「竖条 + 列表竖条 + 主列」三列,列表的横向占位由主列的 min-width: 0
+           消化。切换工作区仍走控制层的 selectWorkspace,列表本身不重写副作用。 -->
+      <WorkspaceListRail
+        v-if="workspaceListOpen"
+        id="ws-list-rail"
+        :workspaces="workspaces"
+        :current-workspace-name="currentWorkspace"
+        :workspace-running-session-counts="workspaceRunningSessionCounts"
+        :expanded="workspaceListExpanded"
+        :view-mode="viewMode"
+        @toggle-expanded="workspaceListExpanded = !workspaceListExpanded"
+        @select-workspace="selectWorkspace"
+        @request-add-workspace="addWorkspaceOpen = true"
+        @remove-workspace="removeWorkspace"
+      />
+
       <!-- 左侧常驻竖条:工作区入口(带该工作区运行中会话数)与用户消息入口(带待处理数)。
-         与顶栏并列而非覆盖;切换工作区仍走控制层的 selectWorkspace,不重写副作用。 -->
+           与顶栏并列而非覆盖;切换工作区仍走控制层的 selectWorkspace,不重写副作用。 -->
       <LeftRail
         :workspaces="workspaces"
         :current-workspace-name="currentWorkspace"
         :workspace-running-session-counts="workspaceRunningSessionCounts"
         :workcenter-pending-count="workcenterPendingCount"
         :view-mode="viewMode"
-        @request-add-workspace="addWorkspaceOpen = true"
-        @select-workspace="selectWorkspace"
-        @remove-workspace="removeWorkspace"
+        :workspace-list-open="workspaceListOpen"
+        @toggle-workspace-list="toggleWorkspaceList"
         @open-notifications="openWorkcenterNotifications"
         @enter-workspace="enterWorkspaceView"
       />

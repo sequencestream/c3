@@ -5,7 +5,13 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { ref } from 'vue'
-import type { ClientToServer, Discussion, Intent, SessionInfo } from '@ccc/shared/protocol'
+import type {
+  ClientToServer,
+  Discussion,
+  Intent,
+  SessionInfo,
+  WorkspaceInfo,
+} from '@ccc/shared/protocol'
 import { installIntentActions } from './intent-actions'
 import { installSessionActions } from './session-actions'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
@@ -42,6 +48,8 @@ function makeCtx(
     activeKind?: SessionPageKind
     /** Install the real intent actions so `openIntents` is the production entry. */
     wireIntents?: boolean
+    /** 工作区列表(服务端已按最近访问降序下发)。 */
+    workspaces?: WorkspaceInfo[]
   } = {},
 ) {
   const send = vi.fn<(msg: ClientToServer) => void>()
@@ -99,6 +107,7 @@ function makeCtx(
   const taskModel = ref<unknown>(null)
   const addWorkspaceOpen = ref(false)
   const workspaceDirectoryPicker = ref(emptyDirectoryPicker())
+  const workspaces = ref<WorkspaceInfo[]>(opts.workspaces ?? [])
   const ctx = {
     send,
     sessionsByWorkspace,
@@ -157,6 +166,7 @@ function makeCtx(
     currentSessions: ref([]),
     addWorkspaceOpen,
     workspaceDirectoryPicker,
+    workspaces,
   } as unknown as AppCtx
   installSessionActions(ctx)
   // The workspace switch lands on the intents tab through `openIntents`; wiring
@@ -190,6 +200,7 @@ function makeCtx(
     openAutomations,
     onSelectAutomation,
     selectIntentSession,
+    workspaces,
     persistCurrentWorkspace,
   }
 }
@@ -259,6 +270,40 @@ describe('selectWorkspace', () => {
     expect(h.ctx.currentWorkspace.value).toBe(WS)
     expect(h.activeTab.value).toBe('intents')
     expect(h.intentsProject.value).toBe(WS)
+  })
+
+  // 列表竖条按「最近访问」排序。切换路径在服务端只 touch 了时间戳、没有把新的
+  // workspaces 列表推回来,所以客户端必须自己把目标补记成刚访问过,列表才当场重排。
+  it('切到某个工作区 → 把它补记成刚访问过,列表重排到顶部', () => {
+    const h = makeCtx({
+      wireIntents: true,
+      workspaces: [
+        { name: 'a', path: '/ws-a', lastAccessed: 300 },
+        { name: 'b', path: '/ws-b', lastAccessed: 200 },
+        { name: 'c', path: '/ws-c', lastAccessed: 100 },
+      ],
+    })
+    h.ctx.currentWorkspace.value = 'a'
+
+    h.ctx.selectWorkspace('/ws-c')
+
+    expect(h.workspaces.value.map((w) => w.name)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('切换不改列表成员,只重排 —— 不凭空增删工作区', () => {
+    const h = makeCtx({
+      wireIntents: true,
+      workspaces: [
+        { name: 'a', path: '/ws-a', lastAccessed: 300 },
+        { name: 'b', path: '/ws-b', lastAccessed: 200 },
+      ],
+    })
+    h.ctx.currentWorkspace.value = 'a'
+
+    h.ctx.selectWorkspace('/ws-b')
+
+    expect(h.workspaces.value).toHaveLength(2)
+    expect(h.workspaces.value.map((w) => w.name).sort()).toEqual(['a', 'b'])
   })
 
   it('重复选择当前工作区 → no-op:不切 tab、不改指针、不刷新、不持久化', () => {

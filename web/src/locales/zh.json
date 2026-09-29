@@ -177,6 +177,18 @@
         "empty": "还没有工作区。点击 + 添加一个目录。"
       }
     },
+    "workspaceList": {
+      "ariaLabel": "工作区列表",
+      "toggle": {
+        "collapse": "收起工作区列表",
+        "expand": "展开工作区列表"
+      },
+      "item": {
+        "label": "工作区 {name}",
+        "badgeAriaLabel": "{count} 个运行中会话"
+      },
+      "empty": "还没有工作区"
+    },
     "logs": {
       "tooltip": "查看运行日志"
     },

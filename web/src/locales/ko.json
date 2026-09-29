@@ -178,6 +178,18 @@
         "empty": "아직 작업 공간이 없습니다. +를 클릭하여 디렉터리를 추가하세요."
       }
     },
+    "workspaceList": {
+      "ariaLabel": "워크스페이스 목록",
+      "toggle": {
+        "collapse": "워크스페이스 목록 접기",
+        "expand": "워크스페이스 목록 펼치기"
+      },
+      "item": {
+        "label": "워크스페이스 {name}",
+        "badgeAriaLabel": "실행 중 세션 {count}개"
+      },
+      "empty": "아직 워크스페이스가 없습니다"
+    },
     "logs": {
       "tooltip": "런타임 로그 보기"
     },

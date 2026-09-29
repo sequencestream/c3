@@ -33,6 +33,12 @@ export { resolveCodexGhTokenEnv, type GhAuthTokenRunner } from './gh-token.js'
 export { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 export { CodexSessionStore, codexStoreRoots } from './session-store.js'
 export { CodexTaskStore } from './task-store.js'
+export {
+  findCodexChildrenByThread,
+  listCodexChildren,
+  type CodexChildOutcome,
+  type CodexChildRecord,
+} from './process-registry.js'
 export { itemToBlock, itemToCanonical } from './translate.js'
 export { CODEX_RELAY_PROVIDER, type Relay, type RelayCandidate } from '../../../relay/contract.js'
 

@@ -151,13 +151,30 @@ c3 完全绕过这套逻辑：从 PATH 解析出绝对路径，通过 SDK 的 `c
 
 SDK 对子进程的控制比 Claude 更有限，总结如下：
 
-- **进程管理**: Node `child_process.spawn()` 拉起 `codex exec`；turn 进程常驻期间，唯一控制是 AbortSignal
+- **进程管理**: Node `child_process.spawn()` 拉起 `codex exec`；turn 进程常驻期间，唯一**运行中**控制是 AbortSignal；子进程的登记、回收与 resume 自愈由 c3 适配层负责（见下）
 - **报文协议**: stdio 上的 JSON-lines 事件流，**单向输出**——stdin 发完 prompt 即关闭，无反向通道
 - **权限控制**: **无 per-tool 运行时审批**——`sandboxMode` + `approvalPolicy` 是启动时固定的全量开关
 - **沙箱模式**: `read-only` / `workspace-write` / `danger-full-access`（claude 不存在的概念）
 - **审批策略**: `never` / `on-failure` / `on-request`（在非交互式 exec 中实际无用户通道）
 - **MCP**: 通过 CLI 配置的 `mcpServers` 下发给子进程；SDK 无 `PreToolUse` hook 等效物
 - **Hooks**: Codex CLI 有 hooks 系统，但**SDK 进程内无 hook 注入点**（Claude SDK 的 `Pre/PostToolUse` 不存在）
+
+### 子进程登记、回收与 resume 自愈
+
+SDK 只提供 `AbortSignal`，进程生命周期由 c3 适配层兜底，不依赖上层提醒。
+
+- **登记**：每次为某个 thread 拉起 `codex exec` 都留下一条登记（pid、thread、启动时刻，以及从宿主
+  进程表读到的进程启动时间）。登记只在 c3 进程内、有上限、尽力而为；查不到记录只会降级为「归属
+  不明」，绝不会退化成误杀。
+- **必回收**：一轮以 stream error、解析失败、非零退出或用户中止结束时，子进程一定被终止——先
+  SIGTERM，超过宽限期仍存活则升级 SIGKILL 并复核。子进程已自行退出时该步骤为空操作。终止结果
+  （pid、退出码/信号或回收方式）进入会话可见的轮次错误与日志，而不只是终端输出。
+- **resume 自愈**：`thread/resume` 被 `already has an active writer`（JSON-RPC `-32600`）拒绝时，先按
+  命令行定位占用进程；只有同时满足「登记中存在该 thread 的**已终结**记录」与「进程启动时间仍与记录
+  一致」才动手回收，回收后自动重试一次 resume。不满足条件一律不动手：占用者归属不明（无记录、启动
+  时间缺失或不符）或仍是一轮进行中的运行，就把可诊断信息（pid、启动时间、归属）返回给用户决定。
+- **不猜**：进程表不可读时不编造占用者身份。c3 只回收自己拉起的那一个子进程，不处理它再派生出的
+  后代进程。
 
 ### 集中式 Spec 根与 `--add-dir`
 
@@ -550,6 +567,9 @@ relay 侧另有一组职责单元：中继 HTTP handler + 工厂、纯协议转�
   只能从事件流是否正常结束来判断。
 - `AbortSignal` 是唯一的中止方式。c3 将中性的中止信号与内部 `AbortController`
   组合转发给 `runStreamed`。
+- 进程回收是 c3 的责任而非 SDK 的：一轮异常结束后 c3 确保子进程被终止（SIGTERM → 宽限 → SIGKILL），
+  并把 pid 与回收方式并入该轮错误。`resume` 因 thread 占用而失败时，只有能证明占用者是 c3 自己的
+  残留进程才会自动回收并重试一次，否则只报告诊断、不擅自 kill。
 
 ### 结构化输出
 

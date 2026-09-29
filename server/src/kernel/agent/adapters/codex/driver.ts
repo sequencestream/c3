@@ -23,7 +23,7 @@
  * `adapters/codex/`); only canonical shapes leave via {@link AgentRun.messages}.
  * SDK types never cross the adapter boundary.
  */
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import readline from 'node:readline'
 import type { ApprovalMode, SandboxMode, ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import type {
@@ -51,6 +51,23 @@ import {
   resolveGitCommonDir as resolveGitCommonDirDefault,
   type GitCommonDirResolver,
 } from './git-meta.js'
+import {
+  bindCodexChildThread,
+  describeCodexChildOutcome,
+  describeCodexOccupantRefusal,
+  describeCodexReclaimFailure,
+  escalateKill,
+  getCodexProcessSignals,
+  logCodexChildSpawn,
+  logCodexChildSettled,
+  logCodexReclaim,
+  readProcessStartTime,
+  reclaimCodexOccupant,
+  registerCodexChild,
+  settleCodexChild,
+  type CodexChildOutcome,
+} from './process-registry.js'
+import { runErrMsg } from '../../../run/run-log.js'
 
 const INTENT_MCP_TOOL_NAMES = ['find_intents', 'view_intent', 'save_intents'] as const
 
@@ -72,6 +89,12 @@ export interface CodexThread {
     input: CodexInput,
     turnOptions?: { signal?: AbortSignal },
   ): Promise<{ events: AsyncGenerator<ThreadEvent> }>
+  /**
+   * Terminal outcome of the child backing the most recent `runStreamed`
+   * (2026-09-29-004), so the turn error can carry the pid and how it was
+   * reclaimed. Optional: an in-process/fake thread has no child to report.
+   */
+  lastChildOutcome?(): CodexChildOutcome | null
 }
 
 /** The minimal structural face of the Codex client. */
@@ -121,6 +144,7 @@ class CliCodexClient implements CodexClient {
 
 class CliCodexThread implements CodexThread {
   private threadId: string | null
+  private lastOutcome: CodexChildOutcome | null = null
 
   constructor(
     private readonly options: CodexFactoryOptions,
@@ -132,6 +156,10 @@ class CliCodexThread implements CodexThread {
 
   get id(): string | null {
     return this.threadId
+  }
+
+  lastChildOutcome(): CodexChildOutcome | null {
+    return this.lastOutcome
   }
 
   async runStreamed(
@@ -151,21 +179,20 @@ class CliCodexThread implements CodexThread {
       env: codexExecEnv(this.options),
       signal,
     })
+    // Observability (2026-09-29-004): remember what we spawned, keyed by thread,
+    // before any event flows. The start time is read from the host process table so
+    // a later pid match can prove the process is ours and not a recycled pid.
+    const pid = child.pid ?? null
+    if (pid !== null) {
+      const startTimeMs = await readProcessStartTime(pid)
+      logCodexChildSpawn(
+        registerCodexChild({ pid, threadId: this.threadId, spawnedAt: Date.now(), startTimeMs }),
+      )
+    }
     let spawnError: Error | null = null
     child.once('error', (err) => {
       spawnError = err
     })
-    if (!child.stdin) {
-      child.kill()
-      throw new Error('Codex child process has no stdin')
-    }
-    child.stdin.write(text)
-    child.stdin.end()
-    if (!child.stdout) {
-      child.kill()
-      throw new Error('Codex child process has no stdout')
-    }
-
     const stderrChunks: Buffer[] = []
     child.stderr?.on('data', (data: Buffer) => {
       stderrChunks.push(data)
@@ -175,9 +202,14 @@ class CliCodexThread implements CodexThread {
         child.once('exit', (code, exitSignal) => resolveExit({ code, signal: exitSignal }))
       },
     )
-    const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
+    let rl: readline.Interface | null = null
 
     try {
+      if (!child.stdin) throw new Error('Codex child process has no stdin')
+      child.stdin.write(text)
+      child.stdin.end()
+      if (!child.stdout) throw new Error('Codex child process has no stdout')
+      rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
       for await (const line of rl) {
         let parsed: ThreadEvent
         try {
@@ -185,7 +217,10 @@ class CliCodexThread implements CodexThread {
         } catch (err) {
           throw new Error(`Failed to parse codex JSON event: ${line}`, { cause: err })
         }
-        if (parsed.type === 'thread.started') this.threadId = parsed.thread_id
+        if (parsed.type === 'thread.started') {
+          this.threadId = parsed.thread_id
+          if (pid !== null) bindCodexChildThread(pid, parsed.thread_id)
+        }
         yield parsed
       }
       if (spawnError) throw spawnError
@@ -197,14 +232,53 @@ class CliCodexThread implements CodexThread {
         )
       }
     } finally {
-      rl.close()
-      child.removeAllListeners()
-      try {
-        if (!child.killed) child.kill()
-      } catch {
-        // Best-effort cleanup only.
+      rl?.close()
+      // Guaranteed teardown (2026-09-29-004): a stream error, a parse error, a
+      // non-zero exit and a user abort all land here. A child that already exited is
+      // a no-op; a survivor is SIGTERM'd, escalated to SIGKILL after the grace
+      // period, and its outcome recorded so the turn error can name the pid.
+      if (pid !== null) {
+        this.lastOutcome = await settleChildLifecycle(child, pid, exitPromise)
+        const record = settleCodexChild(pid, this.lastOutcome)
+        if (record) logCodexChildSettled(record)
       }
+      child.removeAllListeners()
     }
+  }
+}
+
+/**
+ * Determine how a spawned Codex child ended, reclaiming it when it survived its
+ * turn. An already-exited child is recorded as such without signalling; a survivor
+ * goes through the shared escalation helper.
+ */
+async function settleChildLifecycle(
+  child: ChildProcess,
+  pid: number,
+  exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+): Promise<CodexChildOutcome> {
+  const signals = getCodexProcessSignals()
+  if (child.exitCode === null && child.signalCode === null) {
+    // A child that is exiting right now is reaped momentarily; give it that beat so
+    // escalation does not race the OS and report a spurious SIGKILL.
+    await Promise.race([exitPromise, signals.sleep(250)])
+  }
+  if (child.exitCode === null && child.signalCode === null) {
+    const escalation = await escalateKill(pid, { signals })
+    return {
+      pid,
+      exitCode: null,
+      signal: null,
+      reclaimedBy: escalation.method,
+      waitedMs: escalation.waitedMs,
+      reason: escalation.reason,
+    }
+  }
+  return {
+    pid,
+    exitCode: child.exitCode,
+    signal: child.signalCode,
+    reclaimedBy: 'already-exited',
   }
 }
 
@@ -510,6 +584,73 @@ export function codexPolicyToGrid(policy: CodexPolicy): {
   }
 }
 
+/**
+ * A restartable view over {@link CanonicalQueue} (2026-09-29-004). The consumer
+ * holds one iterator for the whole run; `swap` installs a replacement queue and
+ * unblocks the pending `next()` so that iterator simply keeps receiving from the
+ * replacement. No re-`start()`, no second `for await`, and the neutral `AgentRun`
+ * contract is unchanged.
+ */
+class RestartableQueue implements AsyncIterable<CanonicalMessage> {
+  private inner: CanonicalQueue
+  private generation = 0
+
+  constructor(initial: CanonicalQueue) {
+    this.inner = initial
+  }
+
+  push(m: CanonicalMessage): void {
+    this.inner.push(m)
+  }
+
+  close(): void {
+    this.inner.close()
+  }
+
+  fail(err: unknown): void {
+    this.inner.fail(err)
+  }
+
+  swap(next: CanonicalQueue): void {
+    const previous = this.inner
+    this.inner = next
+    this.generation += 1
+    // Unblock a consumer parked on the discarded queue so it re-reads the new one.
+    previous.close()
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<CanonicalMessage> {
+    let generation = this.generation
+    let iterator = this.inner[Symbol.asyncIterator]()
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done) {
+        if (generation !== this.generation) {
+          generation = this.generation
+          iterator = this.inner[Symbol.asyncIterator]()
+          continue
+        }
+        return
+      }
+      yield result.value
+    }
+  }
+}
+
+/**
+ * Whether an error is Codex's thread writer-lock rejection (2026-09-29-004):
+ * `thread ... already has an active writer`, or JSON-RPC `-32600`. It is normally
+ * an in-band `error` ThreadEvent and can also surface as a generator throw; both
+ * shapes route through this one predicate.
+ */
+export function isActiveWriterRejection(err: unknown): boolean {
+  if (err && typeof err === 'object' && 'code' in err) {
+    if ((err as { code?: unknown }).code === -32600) return true
+  }
+  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  return /already has an active writer/i.test(message) || /-32600/.test(message)
+}
+
 /** Push/close/fail async-iterable buffer bridging the event pump into a pull stream. */
 class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
   private readonly items: CanonicalMessage[] = []
@@ -673,7 +814,9 @@ export class CodexDriver implements AgentDriver {
   ) {}
 
   async start(opts: DriverStartOptions): Promise<AgentRun> {
-    const queue = new CanonicalQueue()
+    // One stable async-iterable for the whole run: a resume retry swaps the inner
+    // queue and the thread behind it while the consumer keeps this same iterator.
+    const queue = new RestartableQueue(new CanonicalQueue())
 
     // Internal abort owns the run; the external signal feeds it. The turn-level
     // AbortSignal is Codex's only runtime control (008).
@@ -857,9 +1000,11 @@ export class CodexDriver implements AgentDriver {
           ? { webSearchEnabled: true, webSearchMode: 'live' as const }
           : {}),
     }
-    const thread = opts.resume
-      ? codex.resumeThread(opts.resume, threadOptions)
-      : codex.startThread(threadOptions)
+    const buildThread = (): CodexThread =>
+      opts.resume
+        ? codex.resumeThread(opts.resume, threadOptions)
+        : codex.startThread(threadOptions)
+    let thread = buildThread()
 
     // sessionId resolves from `thread.started` (a new thread) or is known up-front
     // (a resume). Items always follow `thread.started`, so `sid` is set before them.
@@ -870,6 +1015,25 @@ export class CodexDriver implements AgentDriver {
       : new Promise<string>((r) => {
           resolveSid = r
         })
+
+    // Supervisor state (2026-09-29-004). Failures are deferred, never immediate: the
+    // supervisor decides between retrying and terminating, so a recovery is one
+    // uninterrupted turn rather than a dead stream plus a mystery second run. The
+    // retry budget is spent only by an active-writer rejection on a resume.
+    let retryBudget = opts.resume ? 1 : 0
+    let pendingError: unknown = null
+    let lastRejection: unknown = null
+    let needsRetry = false
+
+    const considerFailure = (err: unknown): boolean => {
+      if (retryBudget > 0 && isActiveWriterRejection(err)) {
+        retryBudget -= 1
+        lastRejection = err
+        return true
+      }
+      if (pendingError === null) pendingError = err
+      return false
+    }
 
     const dispatch = (ev: ThreadEvent): void => {
       switch (ev.type) {
@@ -885,14 +1049,61 @@ export class CodexDriver implements AgentDriver {
           break
         }
         case 'turn.failed':
-          queue.fail(new Error(`codex turn failed: ${ev.error.message}`))
+          needsRetry = considerFailure(new Error(`codex turn failed: ${ev.error.message}`))
           break
         case 'error':
-          queue.fail(new Error(`codex stream error: ${ev.message}`))
+          needsRetry = considerFailure(new Error(`codex stream error: ${ev.message}`))
           break
         // turn.started / turn.completed: no canonical analogue; the generator
         // ending is the turn-end signal (handled in pump()).
       }
+    }
+
+    /**
+     * Close the turn once its child has settled. The CLI teardown outcome is only
+     * known after the generator's `finally`, so the pending error is held and the
+     * outcome phrase (`pid 43210 exited code=1`) is appended here — which is what
+     * makes the pid and reclamation visible in the exact 502-stream-error case.
+     */
+    const settleTurn = (settledThread: CodexThread): void => {
+      const outcome = settledThread.lastChildOutcome?.() ?? null
+      if (pendingError !== null) {
+        const phrase = outcome ? describeCodexChildOutcome(outcome) : null
+        const base = runErrMsg(pendingError)
+        queue.fail(new Error(phrase ? `${base} (${phrase})` : base, { cause: pendingError }))
+        return
+      }
+      queue.close()
+    }
+
+    const failTurn = (diagnostic: string): void => {
+      const base = lastRejection ? runErrMsg(lastRejection) : 'codex thread is locked'
+      queue.fail(new Error(`${base} — ${diagnostic}`, { cause: lastRejection ?? undefined }))
+    }
+
+    /**
+     * Locate the process holding the resumed thread's writer lock and reclaim it
+     * only when c3 can prove it is its own leftover. Returns true when the retry may
+     * proceed; otherwise it fails the turn with actionable diagnostics.
+     */
+    const recoverFromActiveWriter = async (): Promise<boolean> => {
+      const threadId = opts.resume
+      if (!threadId) return false
+      const result = await reclaimCodexOccupant(threadId)
+      if (result.kind === 'reclaimed' || result.kind === 'already-exited') {
+        logCodexReclaim(
+          threadId,
+          result.pid,
+          result.kind === 'reclaimed' ? result.method : 'already-exited',
+        )
+        return true
+      }
+      failTurn(
+        result.kind === 'failed'
+          ? describeCodexReclaimFailure(result)
+          : describeCodexOccupantRefusal(threadId, result),
+      )
+      return false
     }
 
     // Prompt images (2026-06-16): codex takes images as on-disk paths
@@ -934,14 +1145,38 @@ export class CodexDriver implements AgentDriver {
 
     const pump = async (): Promise<void> => {
       try {
-        const { events } = await thread.runStreamed(codexInput, { signal: controller.signal })
-        for await (const ev of events) {
-          if (controller.signal.aborted) break
-          dispatch(ev)
+        for (;;) {
+          needsRetry = false
+          let retry = false
+          try {
+            const { events } = await thread.runStreamed(codexInput, { signal: controller.signal })
+            for await (const ev of events) {
+              if (controller.signal.aborted) break
+              dispatch(ev)
+              // Fetch the failure now instead of waiting for the stream to end: a
+              // broken turn's child may linger, and only closing the generator runs
+              // its teardown (the SIGTERM/SIGKILL reclaim).
+              if (needsRetry || pendingError !== null) {
+                retry = needsRetry
+                break
+              }
+            }
+          } catch (e) {
+            retry = considerFailure(e)
+          }
+          if (!retry) {
+            settleTurn(thread)
+            return
+          }
+          // Breaking the loop above ran the discarded attempt's teardown, so its
+          // child is gone before the replacement starts — a retry never overlaps two
+          // live children for one turn.
+          if (controller.signal.aborted) return
+          const recovered = await recoverFromActiveWriter()
+          if (!recovered || controller.signal.aborted) return
+          thread = buildThread()
+          queue.swap(new CanonicalQueue())
         }
-        queue.close()
-      } catch (e) {
-        queue.fail(e)
       } finally {
         resolveSid(sid) // never leave sessionId() hanging if the turn never started.
         if (relayToken) this.relay?.unregister(relayToken) // evict the per-run binding.

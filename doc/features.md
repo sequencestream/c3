@@ -18,7 +18,8 @@ c3
 │   │   ├── 取消中止                              # 用户命令或断连时干净中止在途 run
 │   │   ├── 历史续传                              # 每轮持久化,浏览器刷新可完整回放 transcript
 │   │   ├── 多厂商                                # 同时支持 Claude、Codex 与 Cursor 三个 vendor(均落在宿主 CLI 上;claude/codex 由 c3 分发,cursor-agent 由厂商自己的安装器分发)
-│   │   └── Codex GH_TOKEN 桥接                    # codex 会话启动时把宿主 gh 钥匙串令牌注入 GH_TOKEN,沙箱内 gh 可认证(已有 token 不覆盖/探测失败静默降级)
+│   │   ├── Codex GH_TOKEN 桥接                    # codex 会话启动时把宿主 gh 钥匙串令牌注入 GH_TOKEN,沙箱内 gh 可认证(已有 token 不覆盖/探测失败静默降级)
+│   │   └── Codex 子进程回收与 resume 自愈         # 每轮登记子进程 pid↔thread 与进程启动时间;异常结束(断流/非零退出/中止)必回收(SIGTERM→宽限→SIGKILL)并把 pid 与回收方式带进轮次错误与日志;resume 被 active-writer 拒绝且能证明占用者是自己的残留进程时自动回收并重试一次,否则只给诊断、不擅自 kill
 │   │
 │   ├── permission-gateway 权限网关               # 智能体与人之间的控制点,有副作用的工具须过此门
 │   │   ├── 权限拦截                              # 捕获每次 SDK canUseTool 回调,工具运行前暂停

@@ -2,6 +2,7 @@ import { consoleEntryTarget, consoleTabEntryEffects, workspaceSwitchEffects } fr
 import { emptyTaskModel } from '@/lib/task-list'
 import { SESSION_PAGE_SIZE } from '@/lib/session-page'
 import { resolveSessionJumpTarget, type SessionJumpTarget } from '@/lib/session-jump'
+import { touchWorkspaceAccess } from '@/lib/workspace-list'
 import type { SessionInfo, SessionKind } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 import { emptyDirectoryPicker, sessionCacheKey, type SessionPageKind } from './state'
@@ -41,6 +42,7 @@ export function installSessionActions(ctx: AppCtx): void {
     taskModel,
     selectedIntentSessionId,
     intentsProject,
+    workspaces,
   } = ctx
 
   // Merge-patch a workspace's pagination state (SR-R14).
@@ -215,6 +217,10 @@ export function installSessionActions(ctx: AppCtx): void {
     if (fx.noop) return
     currentWorkspace.value = path
     ctx.persistCurrentWorkspace()
+    // 列表竖条按「最近访问」排序,但这条切换路径在服务端只 touch 了时间戳、并没有把
+    // 新的 workspaces 列表推回来(下一次 `workspaces` 广播才会带权威顺序)。在客户端
+    // 先把目标工作区补记成刚访问过,列表当场重排到顶部,不等到下一次广播。
+    workspaces.value = touchWorkspaceAccess(workspaces.value, path)
     workspaceSettingOpen.value = false
     currentWorkspaceSetting.value = null
     detectedMainBranch.value = null
@@ -347,6 +353,10 @@ export function installSessionActions(ctx: AppCtx): void {
     const kind = sessionPageKindFromSource(input.sessionKind)
     currentWorkspace.value = path
     ctx.persistCurrentWorkspace()
+    // 列表竖条按「最近访问」排序,但这条切换路径在服务端只 touch 了时间戳、并没有把
+    // 新的 workspaces 列表推回来(下一次 `workspaces` 广播才会带权威顺序)。在客户端
+    // 先把目标工作区补记成刚访问过,列表当场重排到顶部,不等到下一次广播。
+    workspaces.value = touchWorkspaceAccess(workspaces.value, path)
     activeSessionKind.value = kind
     ctx.flags.pendingConsoleBind = false
     ctx.enterConsole()

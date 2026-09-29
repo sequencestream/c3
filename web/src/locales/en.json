@@ -177,6 +177,18 @@
         "empty": "No workspaces yet. Click + to add a directory."
       }
     },
+    "workspaceList": {
+      "ariaLabel": "Workspace list",
+      "toggle": {
+        "collapse": "Collapse workspace list",
+        "expand": "Expand workspace list"
+      },
+      "item": {
+        "label": "Workspace {name}",
+        "badgeAriaLabel": "{count} running sessions"
+      },
+      "empty": "No workspaces yet"
+    },
     "logs": {
       "tooltip": "View runtime log"
     },

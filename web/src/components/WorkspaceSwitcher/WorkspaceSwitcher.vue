@@ -2,16 +2,16 @@
 /*
  * WorkspaceSwitcher.vue — 「当前工作区」切换器,承载工作区列表与切换动作。
  *
- * 两种触发形态共用同一份列表与动作:
- * - 默认(顶栏):[当前工作区名] [+ 新增] [▾ 下拉]。
- * - `variant="rail"`(左侧常驻竖条):触发器由调用方以默认插槽给出(竖条渲染自己的字符
- *   徽标与运行中角标),本组件只把点击接到开关上;「+ 新增」在竖条形态下收起,新增
- *   工作区仍走列表里的入口。
+ * 桌面端的工作区列表已由左侧的 WorkspaceListRail 承担(直接列出全部工作区,按最近访问
+ * 排序,展开/收缩双形态),本组件因此只服务窄屏:AppHeader 精简行里的 [当前工作区名]
+ * [+ 新增] [▾ 下拉]。原先的 `variant="rail"` 形态(浮层下拉)随列表竖条一起退役 ——
+ * 桌面不再有两份工作区列表互相打架。
+ *
  * 下拉列出全部工作区,每行以名称为主行、完整绝对路径为下方次级行(仅用于区分同名工作区);
  * 点选切换当前工作区;每行可移除(二次确认)。所有动作经事件上抛,由 App 发往服务端。
  * 工作区身份仍是服务端分配的不透明 id,path 只是展示数据,前端不用它构造或判定身份。
  * 自带 popover(点击外部 / Esc 关闭)。新增诉求只上抛:AddWorkspaceDialog 由 AppHeader
- * 单实例持有,顶栏与竖条两处切换器同时挂载,各自持有会叠出两层遮罩。
+ * 单实例持有,两处入口同时挂载会叠出两层遮罩。
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
@@ -25,15 +25,10 @@ const { t } = useTypedI18n()
 // server stays the real gate. Viewing / switching workspaces is unaffected.
 const { isAdmin } = useAuth()
 
-const props = withDefaults(
-  defineProps<{
-    workspaces: WorkspaceInfo[]
-    currentWorkspaceName: string | null
-    /** `rail` = 触发器交给默认插槽渲染(左侧竖条);默认 = 顶栏的「工作区名 + ▾」形态。 */
-    variant?: 'bar' | 'rail'
-  }>(),
-  { variant: 'bar' },
-)
+const props = defineProps<{
+  workspaces: WorkspaceInfo[]
+  currentWorkspaceName: string | null
+}>()
 
 const emit = defineEmits<{
   // 「+」只表达「用户要新增工作区」;路径与名称在 AppHeader 持有的弹框里收集。
@@ -87,11 +82,6 @@ function removeWorkspace(w: WorkspaceInfo) {
   removeTarget.value = w
 }
 
-function onAddFromList() {
-  emit('request-add-workspace')
-  close()
-}
-
 function onRemoveConfirm() {
   if (removeTarget.value) emit('remove-workspace', removeTarget.value.name)
   removeTarget.value = null
@@ -101,26 +91,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
 </script>
 
 <template>
-  <div
-    ref="rootEl"
-    class="ws-switcher"
-    :class="[variant === 'rail' ? 'ws-switcher-rail' : 'ws-switcher-bar', { open }]"
-    @keydown="onKeydown"
-  >
-    <!-- 竖条形态:触发器内容由调用方给出(竖条自己的字符徽标 + 角标),本组件只提供
-         可聚焦可按下的按钮外壳与开关行为。 -->
+  <div ref="rootEl" class="ws-switcher" :class="{ open }" @keydown="onKeydown">
     <button
-      v-if="variant === 'rail'"
-      class="ws-switcher-trigger ws-switcher-trigger-rail"
-      :title="currentName || t('nav.workspace.trigger.empty.tooltip')"
-      aria-haspopup="listbox"
-      :aria-expanded="open"
-      @click="toggle"
-    >
-      <slot />
-    </button>
-    <button
-      v-else
       class="ws-switcher-trigger"
       :title="currentName || t('nav.workspace.trigger.empty.tooltip')"
       aria-haspopup="listbox"
@@ -134,7 +106,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       <span class="ws-switcher-arrow" aria-hidden="true">▾</span>
     </button>
     <button
-      v-if="isAdmin && variant === 'bar'"
+      v-if="isAdmin"
       class="icon-btn ws-switcher-add"
       :title="t('nav.workspace.add.tooltip')"
       @click="emit('request-add-workspace')"
@@ -169,19 +141,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
           @click.stop="removeWorkspace(w)"
         >
           ✕
-        </button>
-      </li>
-      <!-- 竖条形态没有独立的「+」按钮(窄条里再摆一个图标按钮会挤掉徽标),新增入口
-           收进列表末项 —— 仍是管理员可见的同一个动作,同一个弹框。 -->
-      <!-- 列表里只有工作区是 option,这条是动作而非选项,标注 presentation 以免被
-           当成第四个工作区读出来。 -->
-      <li
-        v-if="isAdmin && variant === 'rail'"
-        class="ws-switcher-item ws-switcher-add-row"
-        role="presentation"
-      >
-        <button type="button" class="ws-switcher-add-row-btn" @click.stop="onAddFromList">
-          {{ t('nav.workspace.add.tooltip') }}
         </button>
       </li>
     </ul>

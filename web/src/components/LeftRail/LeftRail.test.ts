@@ -133,37 +133,41 @@ describe('LeftRail.vue — 工作区入口展示当前工作区名首字符与�
   })
 })
 
-describe('LeftRail.vue — 切换工作区', () => {
-  it('点工作区入口打开选择器,列表列出全部工作区', async () => {
+// 工作区入口不再自己持有列表:它的职责收敛为「开合左侧的工作区列表竖条」。列表本身
+// 见 WorkspaceListRail.test.ts,这里只钉住竖条这一侧的契约。
+describe('LeftRail.vue — 工作区入口开合列表竖条', () => {
+  it('点工作区入口 → 上抛开合意图,由 App.vue 持有列表竖条的显隐', async () => {
     const w = mountRail()
     expect(w.find('.ws-switcher-panel').exists()).toBe(false)
-    await w.find('.ws-switcher-rail .ws-switcher-trigger-rail').trigger('click')
-    expect(w.findAll('.ws-switcher-item').length).toBeGreaterThanOrEqual(2)
+    await w.find('[data-testid="rail-workspace-open"]').trigger('click')
+    expect(w.emitted('toggle-workspace-list')).toHaveLength(1)
   })
 
-  it('选中另一个工作区 → 上抛切换,由控制层完成落 tab / 刷新', async () => {
+  it('竖条自身不再持有任何工作区列表 —— 列表竖条接替了浮层下拉的职责', () => {
     const w = mountRail()
-    await w.find('.ws-switcher-rail .ws-switcher-trigger-rail').trigger('click')
-    const target = w.findAll('.ws-switcher-item').find((item) => item.text().includes('proj-b'))!
-    await target.trigger('click')
-    expect(w.emitted('select-workspace')).toEqual([['proj-b']])
+    // 点开也不该冒出 popover:两份工作区列表并存正是这次要消除的问题。
+    w.find('[data-testid="rail-workspace-open"]').trigger('click')
+    expect(w.find('.ws-switcher-panel').exists()).toBe(false)
+    expect(w.find('.ws-switcher').exists()).toBe(false)
   })
 
-  it('点选当前工作区不触发切换(与既有切换器行为一致)', async () => {
-    const w = mountRail({ currentWorkspaceName: 'proj-a' })
-    await w.find('.ws-switcher-rail .ws-switcher-trigger-rail').trigger('click')
-    const current = w.findAll('.ws-switcher-item').find((item) => item.text().includes('proj-a'))!
-    await current.trigger('click')
+  it('入口把列表竖条的显隐播报给无障碍层,并指向那条列表', async () => {
+    const closed = mountRail()
+    const btn = closed.find('[data-testid="rail-workspace-open"]')
+    expect(btn.attributes('aria-expanded')).toBe('false')
+    expect(btn.attributes('aria-controls')).toBe('ws-list-rail')
+    await closed.setProps({ workspaceListOpen: true })
+    expect(closed.find('[data-testid="rail-workspace-open"]').attributes('aria-expanded')).toBe(
+      'true',
+    )
+  })
+
+  it('入口不再上抛切换/增删:那些动作都在列表竖条里', async () => {
+    const w = mountRail()
+    await w.find('[data-testid="rail-workspace-open"]').trigger('click')
     expect(w.emitted('select-workspace')).toBeUndefined()
-  })
-
-  it('竖条形态不摆独立「+」按钮,新增入口收进列表且只上抛诉求', async () => {
-    useAuth().setIsAdmin(true)
-    const w = mountRail()
-    expect(w.find('.ws-switcher-rail .ws-switcher-add').exists()).toBe(false)
-    await w.find('.ws-switcher-rail .ws-switcher-trigger-rail').trigger('click')
-    await w.find('.ws-switcher-add-row-btn').trigger('click')
-    expect(w.emitted('request-add-workspace')).toHaveLength(1)
+    expect(w.emitted('request-add-workspace')).toBeUndefined()
+    expect(w.emitted('remove-workspace')).toBeUndefined()
   })
 })
 
@@ -202,15 +206,15 @@ describe('LeftRail.vue — 窄屏断点口径', () => {
 
 describe('LeftRail.vue — 工作台视图下的「回到工作区」回落入口', () => {
   // 桌面顶栏的旧 viewMode 切换按钮已移除,工作台视图若没有这条回落路径就回不去了。
-  it('工作区视图:工作区入口仍是打开切换器,不渲染回落按钮', () => {
+  it('工作区视图:工作区入口是开合列表竖条,不渲染回落按钮', () => {
     const w = mountRail({ viewMode: 'workspace' })
-    expect(w.find('.ws-switcher').exists()).toBe(true)
+    expect(w.find('[data-testid="rail-workspace-open"]').exists()).toBe(true)
     expect(w.find('[data-testid="rail-workspace-back"]').exists()).toBe(false)
   })
 
-  it('工作台视图:工作区入口换成回落按钮,切换器不再渲染', () => {
+  it('工作台视图:工作区入口换成回落按钮,不再开合列表竖条', () => {
     const w = mountRail({ viewMode: 'workcenter' })
-    expect(w.find('.ws-switcher').exists()).toBe(false)
+    expect(w.find('[data-testid="rail-workspace-open"]').exists()).toBe(false)
     expect(w.find('[data-testid="rail-workspace-back"]').exists()).toBe(true)
   })
 

@@ -705,8 +705,9 @@ function onQueueSelectIntent(intentId: string): void {
  * 显隐是**纯本机 UI 状态**,不持久化:点竖条的工作区入口开/合,再点收起。形态
  * (展开/收缩)才是需要记住的偏好,经 usePersistentToggle 落 localStorage,刷新后
  * 读回 —— 默认展开,用户一进来就拿到带名称的完整形态。两者都只在本机生效,不做跨设备
- * 同步。竖条入口与列表竖条因此都需要这份状态:显隐挂在 App.vue(装配边界)当唯一真源,
- * 形态则由列表竖条自己持有并在被 v-if 卸载时保住记忆。 */
+ * 同步。显隐与形态都挂在 App.vue 这个装配边界上当唯一真源:竖条入口只管开合(它自己不持有
+ * 显隐,只把意图上抛),列表竖条则经 props 读形态、经事件请求切换 —— 两者都不各自存一份,
+ * 免得同一形态出现两个真源。 */
 const workspaceListOpen = ref(false)
 const workspaceListExpanded = usePersistentToggle('c3.workspaceListExpanded', true)
 

@@ -1,8 +1,9 @@
 # Specs Knowledge Base — Overview
 
-本目录是 **c3 做什么以及为什么这样做** 的权威来源(source of truth)。源代码是
-**它今天是如何做到的** 的权威来源;文档描述代码必须满足的预期行为。当两者不一致时,
-说明其中一方存在缺陷——需要调和,而不是忽略。
+本目录是 **c3 做什么以及为什么这样做** 的权威来源,停在比代码高一层的意图、边界与取舍。
+源代码是 **细节设计如何落地** 的权威来源;要探索细节,读代码,不从文档里翻。两边各自自洽、
+互不引用文件;行为变更时同时更新,对照两份文本验证一致性。当两者不一致时,说明其中一方
+存在缺陷——需要调和,而不是忽略。
 
 ## 如何导航
 
@@ -12,7 +13,7 @@
 - 系统的形态以及各部分如何连接 — [`architecture/architecture.md`](architecture/architecture.md)
 - 为什么做出某个关键决策 — [`architecture/adr/`](architecture/adr/)
 - 某个场景的端到端路径 — [`flows/flows.md`](flows/flows.md)
-- WebSocket 通信契约 — 编译期真源 [`shared/src/protocol.ts`](../shared/src/protocol.ts);人类目录与约定见 [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
+- WebSocket 通信契约 — 编译期真源在共享协议模块;人类目录与约定见 [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
 - 前端视觉风格指南 — [`style/color-style-spec.md`](style/color-style-spec.md)
 - 性能 / 安全 / 可用性目标 — [`non-functional/`](non-functional/)
 - 某个具体能力的行为 — [`features.md`](features.md) 中的领域索引
@@ -45,20 +46,15 @@ c3 有两个业务组:`core`(工作台业务能力)、`settings`(用户配置)�
 ## 使用规则
 
 1. **先写规格,后写代码。** 新行为先在这里描述,然后再实现。
-2. **WHAT 与 HOW。** `<domain>-spec.md` 文件陈述业务行为;`<domain>-design.md` 文件陈述
-   技术实现。两者要分开。
-3. **通信格式的唯一真源。** WebSocket 消息联合与载荷形状只在
-   [`shared/src/protocol.ts`](../shared/src/protocol.ts) /
-   [`shared/src/protocol/`](../shared/src/protocol/) 中定义一次。
+2. **上层与细节。** `<domain>-spec.md` 陈述必须遵守的行为与约束;`<domain>-design.md` 陈述模块如何协作与关键取舍。两者都停在上层,不写细节代码设计,不出现源文件名。细节从代码探索。
+3. **通信格式的唯一真源。** WebSocket 消息联合与载荷形状只在共享协议模块中定义一次。
    [`websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) 是人类可读的约定与目录;
-   领域文档引用 `type` 名,不重新定义消息形状。
-4. **引用,不要复制。** 共享规则只存在一处,并通过编号引用。
-5. **日期一律使用 `YYYY-MM-DD`。** 业务语义类型优先于技术类型。
-6. **保持设计高度,而非代码堆砌。** 规格清晰地解释变更——方式、流程、逻辑、状态与规则——
-   并对照真实代码库进行校验,而不穷举式地列出低层级代码细节(完整源码树列表,或
-   逐文件/逐符号检查清单),因为那会与源码重复并随之漂移失步。在边界高度描述受影响的
-   能力与契约;共享契约只记录一次,并通过编号引用。见
-   [`constitution.md`](constitution.md) 文档撰写规范一节。
+   领域文档引用消息 `type` 名,不重新定义消息形状,也不链到源文件。
+4. **引用,不要复制。** 共享规则只存在一处,并通过编号引用。文档之间可以互相引用;文档不得引用代码文件,代码也不得引用文档。
+5. **日期一律使用 `YYYY-MM-DD`。** 业务语义类型优先于技术类型。规格正文不写变更日期;过程账本(升级记录等)放 GitHub Issue。
+6. **文档停在上层,细节在代码。** 规格解释意图、边界、不变量与取舍,对照代码校验是否一致;
+   不写细节代码设计、不出现源文件名。见 [`constitution.md`](constitution.md) 文档撰写规范与
+   [`AGENTS.md`](AGENTS.md)。
 
 ## 维护
 

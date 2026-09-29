@@ -17,7 +17,7 @@ import type { IntentStatus, RunEndReason, RunLifecycleTopic } from './protocol.j
 // the field-level redaction/truncation. The normalized event is wrapped in a
 // {@link GenericEventEnvelope} and carried on the single `'event'` bus topic;
 // consumers discriminate on `event.type`. The PR operation event (below) is the
-// first registered type. See `doc/architecture/event-mechanism.md`.
+// first registered type.
 
 /**
  * A JSON-compatible value. Excludes functions, class instances, `undefined`,

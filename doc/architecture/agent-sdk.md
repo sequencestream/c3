@@ -32,15 +32,15 @@ spawn(见
 - **提交说明**：commit message 中写明升级了什么、涵盖了哪些关键更新。
 - **适配器同步**：如果 SDK 变更影响 vendor 中性适配器层，一并更新，
   并在 [`adr/0011-vendor-neutral-agent-abstraction.md`](adr/0011-vendor-neutral-agent-abstraction.md) 的 capability ledger 中反映。
-- **升级留痕**：每次升级的逐项 changelog 评估（接入/不接入 + 依据 + 留痕去向）独立成档，
-  索引见 [`sdk-upgrade/sdk-upgrade-records.md`](sdk-upgrade/sdk-upgrade-records.md)。
+- **升级留痕**：每次升级的逐项 changelog 评估（接入/不接入 + 依据）写在对应 GitHub Issue
+  的新评论里，不进 `doc/`。`doc/` 只保留 Issue 链接：
+  - Claude Agent SDK — <https://github.com/sequencestream/c3/issues/485>
+  - Codex SDK — <https://github.com/sequencestream/c3/issues/486>
 
 Cursor 没有 SDK 依赖可升:它的 CLI 由厂商自己的安装器分发,c3 只解析与启动
 (见 [`adr/0012-host-binary-probe-first-capability-gate.md`](adr/0012-host-binary-probe-first-capability-gate.md)
 的非托管分支)。取而代之的纪律是**契约复验**:当它的帧形状、`--resume` 语义或权限
-开关出现变化时,重跑
-[`scripts/e2e/cursor-cli-probe.mjs`](../../scripts/e2e/cursor-cli-probe.mjs) 更新探针
-结论,再据此调整能力台账。
+开关出现变化时,重跑 Cursor CLI 准入探针,更新探针结论,再据此调整能力台账。
 
 各 SDK changelog 地址：
 

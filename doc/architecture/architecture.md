@@ -90,8 +90,8 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   只发回合的最终文本或已注册固定提示。见
   [im-robot](../domains/core/im-robot/im-robot-spec.md)，选型与授权模型见 ADR-0046
 - **静态内嵌**: 生成并内联的 web bundle
-- **Wire 协议**: client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现。领域契约按域分区在 `shared/src/protocol/`，`shared/src/protocol.ts` 收敛为 barrel 与两个联合的唯一装配点
-- **共享领域 helper**: `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出
+- **Wire 协议**: 共享协议模块上的 client→server / server→client 消息联合，以及工作区/会话类型；只有类型/联合/常量，无运行时实现。领域契约按域分区，由 barrel 装配成两个联合的唯一入口
+- **共享领域 helper**: 共享模块里按领域拆分的双端纯函数（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出
 - **WS client**: 浏览器 WebSocket 包装器
 - **UI shell**: 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container
 - **Pages**: 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件
@@ -99,6 +99,12 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 
 ## 横切约定
 
+- **文档停在上层，细节在代码。** `doc/` 只写比代码高一层的内容——意图、边界、不变量、模块如何
+  协作、关键取舍。不写细节代码设计；细节由代码实现，要探索细节就读代码。可以提到模块名、
+  抽象概念或抽象接口的名字；禁止出现代码文件名与源码路径。文档保持自洽，不引用对应代码；
+  代码与注释保持自洽，不引用 `doc/`、规则编号或 ADR 编号。行为变更时两边同时更新，用对照
+  两份自洽文本来验证一致性。过程性记录（SDK 升级、调研、迁移流水）不进 `doc/`，落 GitHub
+  Issue；文档只保留 Issue 链接。SDK 升级账本入口见 [`agent-sdk.md`](agent-sdk.md)。
 - **单一契约。** wire 格式只有一份定义，两端共用。
   见 [`../shared/api-conventions/websocket-protocol.md`](../shared/api-conventions/websocket-protocol.md)。
 - **权限单向流动。** 只有 gateway 能解析出一个决策；SDK 在没有决策之前绝不会在敏感工具上继续
@@ -140,10 +146,9 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   - **迁移模板。** 顺序 = 表/列重塑要在 `CREATE TABLE IF NOT EXISTS` 之前执行
     （一个全新的 schema 不能预先创建新名字，从而搁置旧表的数据）；提升 schema 版本号；
     用一个测试覆盖全新 db、旧版 db 和部分迁移 db 这几个起点，并同时断言重跑的幂等性。
-    涉及「rename-aside → 建新同名表 → 复制 → 重建索引」的整表重塑应走
-    `server/src/kernel/infra/table-rebuild.ts` 的 `rebuildTable`，避免索引名随 RENAME 挂到
-    archive 上后 `CREATE INDEX IF NOT EXISTS` 静默跳过；同形状的就地 `RENAME TO`（源表名与
-    目标表名不同）仍留在各 store 内 guarded 执行。
+    涉及「rename-aside → 建新同名表 → 复制 → 重建索引」的整表重塑应走 kernel 的
+    table-rebuild 入口，避免索引名随 RENAME 挂到 archive 上后 `CREATE INDEX IF NOT EXISTS`
+    静默跳过；同形状的就地 `RENAME TO`（源表名与目标表名不同）仍留在各 store 内 guarded 执行。
   - **审查清单**（每一次迁移变更）：☐ 幂等重跑是空操作 ☐ 部分迁移重入能收敛
     ☐ 零 `DROP TABLE` ☐ 无数据丢失（行/边都存活） ☐ schema 版本已提升
     ☐ 重塑先于 `CREATE TABLE IF NOT EXISTS` ☐ 全新/旧版/部分起点都已测试。
@@ -162,13 +167,10 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   **没有任何 vendor SDK 类型跨越适配器边界** —— SDK 的值以无类型的形式进入适配器，并在
   那里被收窄（ADR-0009）。Claude 参考适配器委托给既有的运行路径、gateway 和 session IO；
   Codex 与 Cursor 经统一的 driver 路径运行。
-  **厂商策略补偿只发生在适配器内部，上层一律走 kernel 中立入口**（2026-09-28）：
-  `DriverStartOptions` 上不挂任何厂商专有字段，用户为某厂商选定的精确策略经
-  `vendorContext` 透传袋传入、仅由该厂商适配器解释，且袋内不得把沙箱放大——任何
-  `danger-full-access` 都必须以中立的 `explicitFullAccess === true` 为前提。`features/**` 及
-  其它上层通过 `kernel/agent/adapters/registry.ts` 的 `resolveVendorAdapter` /
-  `storedModeToGrid` / `resolveVendorCredentialEnv` 获取厂商能力，不直接 import
-  `kernel/agent/adapters/<vendor>/**`。
+  **厂商策略补偿只发生在适配器内部，上层一律走 kernel 中立入口：**
+  启动选项上不挂任何厂商专有字段，用户为某厂商选定的精确策略经透传袋传入、仅由该厂商
+  适配器解释，且袋内不得把沙箱放大——任何全权限沙箱都必须以中立的显式全权限前提为条件。
+  上层通过适配器注册表获取厂商能力，不直接深入某一厂商适配器内部。
 - **宿主二进制探测是第一道能力关卡（ADR-0012）。** 每个 agent vendor 都以宿主 CLI 子进程的
   形式运行，无法被打包进 c3 的单一二进制中 —— 这个二进制只发布 c3 本身。claude 与 codex 由
   c3 安装到 `~/.c3/vendor` 并可被 env override 或宿主 PATH 覆盖；`cursor-agent` 不由 c3 分发，
@@ -189,9 +191,9 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
     page container。Page container 是**纯粹的**（props 传入 / emit 向上）—— 自身没有
     领域状态（队列编辑的预填内容会被转发回 composer）。纯逻辑、经过单元测试的视图辅助函数
     与 composable 与这两层并列存放，并被两层共同引入。
-  - Sessions（历史上的 `works/` 目录）页面与 intents 页面共用 `ChatColumn`，其五个区块
-    可以通过 props 显示或隐藏。会话跳回是一条基于 `(sessionKind, ownerKind, ownerId)`
-    的纯前端规则，被 sessions 页面与 WorkCenter 共用。
+  - Sessions 页面与 intents 页面共用聊天列，其五个区块可以通过属性显示或隐藏。
+    会话跳回是一条基于 `(sessionKind, ownerKind, ownerId)` 的纯前端规则，被
+    sessions 页面与工作台共用。
   - Page container 是路由级的视图，可以使用单词名；其私有组件仍遵守多词命名规则。
   - 组件挂载测试运行在类浏览器 DOM 中；其他测试运行在 node 中。
 

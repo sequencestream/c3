@@ -5,3 +5,4 @@
 - **`import type` for type-only imports**: keeps imports erased at runtime, prevents circular refs
 - **Explicit return types on all exported functions**: the public API is a contract; inference hides breaks
 - **`interface` for object shapes, `type` for everything else**: `interface` = named record; `type` = unions, intersections, mapped/conditional types, type aliases
+- **Comments do not cite `doc/`**: no document paths, ADR numbers, or rule IDs (`SR-R14` etc.). A comment states the invariant in place; the code remains self-contained.

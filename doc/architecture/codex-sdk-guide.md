@@ -591,5 +591,5 @@ const turn = await thread.run('分析仓库状态', {
 
 > **维护提示**：本文件描述外部依赖，**会随 SDK 版本漂移**。升级 `@openai/codex-sdk` 时复核
 > 「是否需要本机 codex」「事件类型与 ThreadItem 种类」「sandbox/approvalPolicy 枚举值」
-> 「中继协议兼容性」四处，并更新顶部「适用版本」。`file_change` 中 `changes` 数组的字段
-> 形态也可能变化，需同步更新 Codex 翻译逻辑和本文件的 ThreadItem 映射表。
+> 「中继协议兼容性」四处，并更新顶部「适用版本」。过程评估写在
+> [Codex SDK 升级记录](https://github.com/sequencestream/c3/issues/486)，不进 `doc/`。

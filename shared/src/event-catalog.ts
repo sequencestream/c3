@@ -8,7 +8,6 @@
  * the cascade form and docs, NOT a closed enum — the wire contract stays an open
  * string, so an unlisted `custom:thing` type publishes and subscribes fine. A
  * filter `type` of `<category>:*` subscribes every action of that category.
- * Definition catalog + naming spec live in `doc/architecture/event-mechanism.md`.
  *
  * It is derived from the wire contract's value lists rather than restated, so a
  * new PR operation / intent phase can never drift from the catalog.

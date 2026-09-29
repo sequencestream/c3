@@ -6,7 +6,7 @@
  * and the per-filter / OR-over-filters matcher. Matching reads only the trusted
  * minimal view a `GenericEventEnvelope` already provides (`workspacePath` +
  * `event`) — a new event type never requires a new protocol field or dispatch
- * branch. See `doc/architecture/event-mechanism.md`.
+ * branch.
  *
  * The automation store (candidate narrowing) and the trigger evaluator (final
  * verdict) both read this module, so the two can never diverge on what a filter

@@ -297,9 +297,8 @@ flowchart LR
 **c3 三者都不用，沿用 SDK 默认。** c3 是编排层，不替用户改写 vendor 的默认设置——一个 agent 拿到
 什么工具面，由 vendor 与用户自己的配置决定。代价是：在上述模型上模型拿不到 task 工具，**任务面板
 会保持为空**（`taskStore` 是 vendor 级 capability，仍为 `true`，面板照常渲染）。需要的用户自己在
-shell 或 agent 的 env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` 即可——`buildChildEnv` 的优先级
-会原样放行。取舍与代价的完整记录见
-[`sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md`](sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)。
+shell 或 agent 的 env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` 即可——宿主子进程环境的优先级
+会原样放行。取舍过程见 [Claude Agent SDK 升级记录](https://github.com/sequencestream/c3/issues/485)。
 
 ### 流式 vs 一次性
 
@@ -330,14 +329,9 @@ shell 或 agent 的 env 覆盖里设 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` 即可—
 
 ## 8. 版本升级评估留痕
 
-每次升级 `@anthropic-ai/claude-agent-sdk` 的逐项 changelog 评估账本（接入/不接入 + 依据 +
-留痕去向）独立成档，索引见
-[`sdk-upgrade/sdk-upgrade-records.md`](sdk-upgrade/sdk-upgrade-records.md)：
-
-- `0.3.237 → 0.3.283`（2026-09-28）：[`sdk-upgrade/2026-09-28-claude-agent-sdk-upgrade-to-v0.3.283.md`](sdk-upgrade/2026-09-28-claude-agent-sdk-upgrade-to-v0.3.283.md)
-- `0.3.233 → 0.3.237`（2026-08-21）：[`sdk-upgrade/2026-08-21-claude-agent-sdk-upgrade-to-v0.3.237.md`](sdk-upgrade/2026-08-21-claude-agent-sdk-upgrade-to-v0.3.237.md)
-- `0.3.220 → 0.3.233`（2026-08-16）：[`sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md`](sdk-upgrade/2026-08-16-claude-agent-sdk-upgrade-to-v0.3.233.md)
-- `0.3.183 → 0.3.195`（2026-06-28）：[`sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md`](sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md)
+每次升级 `@anthropic-ai/claude-agent-sdk` 的逐项 changelog 评估（接入/不接入 + 依据）
+写在 [Claude Agent SDK 升级记录](https://github.com/sequencestream/c3/issues/485) 的新评论里，
+不进 `doc/`。本指南只描述当前终态。
 
 ## 附录：来源与可信度
 

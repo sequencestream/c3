@@ -341,8 +341,8 @@ Cursor 注册 arapuca auth profile,与其他宿主 CLI 同路:`createSandboxWrap
 
 ## 探针结论
 
-准入探针 `scripts/e2e/cursor-cli-probe.mjs` 可复现地验证能力,其结论是本页台账的
-唯一事实来源。它需要真实凭据与出网,非 CI 安全,不在 `pnpm e2e` 套件内;无凭据时
+准入探针可复现地验证能力,其结论是本页台账的
+唯一事实来源。它需要真实凭据与出网,非 CI 安全,不在常规 e2e 套件内;无凭据时
 判 SKIP 而不是因机制通过就报 GO。
 
 两个**阻断项**:

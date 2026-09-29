@@ -21,9 +21,8 @@
  * store is unit-testable with no `codex` process (mirrors the injected-seam pattern
  * the {@link import('../claude/task-store.js').ClaudeTaskStore} uses for its executor).
  *
- * ADR-0011 vendor-type containment: the SDK `TodoListItem` type is imported here
+ * Vendor-type containment: the SDK `TodoListItem` type is imported here
  * (inside `adapters/codex/`) and consumed; only neutral {@link TaskData} leaves.
- * Rule stated in doc/architecture/codex-sdk-guide.md §11.1.
  */
 import type { TodoListItem } from '@openai/codex-sdk'
 import type { Disposer, TaskData, TaskStore } from '../types.js'

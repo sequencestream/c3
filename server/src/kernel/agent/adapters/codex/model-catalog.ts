@@ -18,9 +18,9 @@
  * serde-required snapshot of codex's catalog entry, discovered by
  * feeding partial entries to the locked binary and reading the `missing field`
  * errors until one parsed, and re-verified against 0.157.1 (the entry below
- * parses; fields added since 0.147.0 all carry defaults). A codex upgrade may
- * add/rename required fields — re-run that drill per doc/architecture/sdk-upgrade/
- * when upgrading. A parse failure surfaces as an explicit codex startup error,
+ * parses; fields added since 0.147.0 all carry defaults). A Codex upgrade may
+ * add/rename required fields — re-run that drill against the locked binary
+ * when upgrading. A parse failure surfaces as an explicit Codex startup error,
  * never silent degradation.
  *
  * Non-goal: persistence. The file lives only for the run; {@link cleanupModelCatalogFile}

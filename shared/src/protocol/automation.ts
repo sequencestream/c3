@@ -86,8 +86,7 @@ export const MAX_AUTOMATION_METADATA_VALUE_LEN = 256
 // carries, in place of one bespoke `eventXxxFilter` field per topic. Matching
 // reads only the trusted minimal view a {@link GenericEventEnvelope} already
 // provides (`workspacePath` + `event`) — a new event type never requires a new
-// protocol field, dispatch branch, or form panel. See
-// `doc/architecture/event-mechanism.md` §7.
+// protocol field, dispatch branch, or form panel.
 
 /**
  * An automation's generic event-trigger filter. `type` is the single stable
@@ -124,7 +123,6 @@ export const RUN_LIFECYCLE_EVENT_TYPES = ['run:started', 'run:settled'] as const
 // so an unlisted `custom:thing` type publishes and subscribes fine; the known
 // categories/actions/statuses are suggestions listed in `event-catalog.ts`. A
 // filter `type` of `<category>:*` subscribes every action of that category.
-// Definition catalog + naming spec live in `doc/architecture/event-mechanism.md`.
 
 /** The category-wildcard action segment: `<category>:*` matches every action. */
 export const EVENT_ACTION_WILDCARD = '*'

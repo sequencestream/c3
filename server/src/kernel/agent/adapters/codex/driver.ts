@@ -19,9 +19,9 @@
  * fake that yields a scripted event stream — no Codex auth/binary needed for the
  * main L1 suite.
  *
- * ADR-0011 vendor-type containment: imports `@openai/codex-sdk` types (inside
+ * Vendor-type containment: imports `@openai/codex-sdk` types (inside
  * `adapters/codex/`); only canonical shapes leave via {@link AgentRun.messages}.
- * The containment rule itself is stated in doc/architecture/codex-sdk-guide.md §11.1.
+ * SDK types never cross the adapter boundary.
  */
 import { spawn } from 'node:child_process'
 import readline from 'node:readline'

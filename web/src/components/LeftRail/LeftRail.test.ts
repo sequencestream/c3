@@ -122,6 +122,31 @@ describe('LeftRail.vue — 底部工具', () => {
     await wrapper.find('[data-testid="rail-update-action"]').trigger('click')
     expect(wrapper.emitted('start-self-update')).toHaveLength(1)
   })
+
+  it('升级入口两种形态都带高亮类，下载失败时切到错误态类', () => {
+    const status = { available: true, currentVersion: '1.0.0', latestVersion: '1.1.0' }
+    const capable = {
+      capable: true,
+      phase: 'idle',
+      targetVersion: null,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      error: null,
+    }
+    expect(
+      mountRail({ updateStatus: status }).find('[data-testid="rail-update-link"]').classes(),
+    ).toContain('rail-update')
+    const action = mountRail({ updateStatus: status, selfUpdate: capable }).find(
+      '[data-testid="rail-update-action"]',
+    )
+    expect(action.classes()).toContain('rail-update')
+    expect(action.classes()).not.toContain('rail-update-error')
+    const failed = mountRail({
+      updateStatus: status,
+      selfUpdate: { ...capable, phase: 'failed' },
+    }).find('[data-testid="rail-update-action"]')
+    expect(failed.classes()).toContain('rail-update-error')
+  })
 })
 
 describe('LeftRail.vue — 响应式边界', () => {

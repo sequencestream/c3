@@ -177,8 +177,6 @@ function onRemoveConfirm(): void {
           :title="t('nav.workspace.remove.tooltip')"
           :aria-label="t('nav.workspace.remove.tooltip')"
           @click.stop="requestRemove(w)"
-          @keydown.enter.stop.prevent
-          @keydown.space.stop.prevent
         >
           ✕
         </button>

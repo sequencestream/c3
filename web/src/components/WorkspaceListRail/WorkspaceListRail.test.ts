@@ -275,6 +275,18 @@ describe('WorkspaceListRail.vue — 管理员增删入口', () => {
     expect(w.emitted('select-workspace')).toEqual([['proj-b']])
   })
 
+  // 回归:原生 <button> 的 Enter/Space 激活 click 是浏览器在 keydown 默认行为中合成的。
+  // 只要 keydown 被 preventDefault 取消,✕ 就彻底失去键盘可达性。
+  // happy-dom 不合成该 click,所以这里直接断言 defaultPrevented —— 覆盖测试环境够不着的这一层。
+  it('✕ 不拦截 keydown 默认行为(否则键盘激活不了移除)', async () => {
+    const w = mountRail()
+    for (const key of ['Enter', ' ']) {
+      const evt = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      w.findAll('.ws-list-remove')[1]!.element.dispatchEvent(evt)
+      expect(evt.defaultPrevented).toBe(false)
+    }
+  })
+
   it('非管理员 → 新增与移除入口都不出现(增删仅管理员)', () => {
     useAuth().setIsAdmin(false)
     const w = mountRail()

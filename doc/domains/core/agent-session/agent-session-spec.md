@@ -48,7 +48,7 @@ session id——来自 runtime,由
 - **AS-R5**: 模式决定哪些工具调用是敏感的,从而抵达 gateway。`bypassPermissions` 授权所有工具自动执行;`acceptEdits` 自动接受 edit 类工具;`default`/`auto`/`plan` 按 SDK 分类器把敏感调用路由给 gateway。
 - **AS-R6**: 一次运行只能被 `stop_run`(所观察会话)、`delete_session` 或 `remove_workspace` 停止——从不因切换视图或关闭 socket 而停止。停止会中断底层的 `query()`;一个已完成或尚未开始流式传输的运行会被无害地中断。
 - **AS-R7**: 一次运行以恰好一个终止性结果结束:`turn_end` 带 `reason: 'complete'`(SDK 产生了一个 result,或运行被停止)或 `reason: 'error'`(一个异常)。`turn_end` 从不意味着会话结束——它仍为下一个 prompt 保持存活。
-- **AS-R8**: 关闭连接只会取消订阅其视图;运行会**在其 runtime 中于后台继续**。重新连接并选择该会话会回放完整记录并恢复实时投递。
+- **AS-R8**: 关闭连接只会取消订阅其视图;运行会**在其 runtime 中于后台继续**。重新连接并选择该会话会回放完整记录并恢复实时投递。公开选择使用稳定 `c3SessionId` 时,服务端必须把它解析到厂商原生 runtime id 后回放 buffer 并挂接 viewer,同时在 `session_selected` 中保持原 `c3SessionId`;不得以公开 id 另建一个与正在运行的原生 runtime 分离的冷会话。
 - **AS-R9**: 只有模型的文本 block、tool-use block 和 tool-result block 会被映射到线协议;其他 SDK 消息种类被忽略。
 - **AS-R11**: 每个实时事件都记录在 runtime 中:追加到其 `buffer` 并通过 `emit` 分发给当前的 viewers。一个加入某会话的视图会先回放 `baseline`(runtime 创建时的磁盘快照)再回放 `buffer`,因此完整记录被重建,且没有重复。
 - **AS-R12**: 每个 runtime 都有一个状态——`idle`、`running`、`awaiting_permission`、`team` 或 `reconnecting`。任何变更都会向**所有**连接广播 `session_status`,以便后台化的会话能显示其状态。

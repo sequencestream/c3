@@ -163,7 +163,10 @@ callback 将运行接入 runtime 及 team hook 后启动运行。运行 id 是�
 在 `select_session` / `create_session` 上:移除旧的 viewer,然后要么重用
 已有的 runtime,要么从磁盘播种一个冷的;发送 `session_selected`(history = baseline,running = 是否有
 运行进行中),把 buffer 作为实时事件回放,然后加入 viewer。回放块中没有 await,因此
-它对并发的 emit 是原子的。`stop_run` 会停止所观察会话的运行。
+它对并发的 emit 是原子的。`select_session` 接受公开的稳定 `c3SessionId` 时,先从投影解析
+厂商原生 id:响应仍回传 `c3SessionId`,但 runtime 查找、buffer 回放与 viewer 订阅都使用
+原生 id,保证后台运行与意图内嵌 Tab 观察的是同一条实时流,而不是在 c3 id 下另建冷 runtime。
+`stop_run` 会停止所观察会话的运行。
 
 ## Stop / interrupt
 

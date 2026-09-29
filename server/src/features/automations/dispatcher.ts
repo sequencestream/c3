@@ -1005,6 +1005,22 @@ function bindAutomationC3Mcp(
 }
 
 /**
+ * Codex keeps MCP clients by configured server name longer than one `exec` turn.
+ * A fixed `c3` name can therefore retain the previous turn's tokenized URL and
+ * call an already-disposed automation binding. Give every Codex execution its
+ * own config identity; tool names stay unchanged because they come from the
+ * server's advertised tool list, not from this map key.
+ */
+function codexExecutionMcpServers(
+  servers: Record<string, RemoteMcpServer>,
+  executionId: string,
+): Record<string, RemoteMcpServer> {
+  const c3 = servers.c3
+  if (!c3) return servers
+  return { [`c3_${executionId.replace(/[^A-Za-z0-9_-]/g, '_')}`]: c3 }
+}
+
+/**
  * The execution lifecycle every driver-shaped vendor (codex, cursor) shares:
  * start the run, bind its session id to the log + the automation viewer, stream
  * canonical messages into wire events, and settle the runtime, the execution log
@@ -1144,7 +1160,7 @@ async function executeCodexLlmPrompt(
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(networkAccess ? { networkAccess: true } : {}),
     ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
-    ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
+    ...(c3Binding ? { mcpServers: codexExecutionMcpServers(c3Binding.servers, logId) } : {}),
   }
   await runAutomationViaDriver(
     automation,

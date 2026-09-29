@@ -362,15 +362,21 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
   }
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   try {
-    const existing = getRuntime(msg.sessionId)
     const effectiveVendor = resolveSessionVendor(msg.sessionId)
     const projectionRow = projectionRowForSelection(effectiveVendor, msg.sessionId)
+    // The wire exposes the stable c3 id, while a live vendor run is keyed by its
+    // native id. Keep the c3 id in `session_selected`, but attach this connection
+    // to the native runtime so its buffer replay and subsequent events come from
+    // the same stream. Without this split, an intent's review tab created a second
+    // cold runtime under the c3 id and never received the live review output.
+    const runtimeSessionId = projectionRow?.vendorSessionId ?? msg.sessionId
+    const existing = getRuntime(runtimeSessionId)
     // Projection-first (ADR-0013 left/right same-source): prefer the title the
     // session list shows; fall back to the claude-only legacy path only when the
     // projection has no real title yet (codex never resolves through the latter).
     const title =
       projectionSelectionTitle(effectiveVendor, msg.sessionId) ??
-      (await sessionTitle(abs, msg.sessionId))
+      (await sessionTitle(abs, runtimeSessionId))
     // Cold session ⇒ read disk once and seed a runtime; warm session ⇒
     // reuse its in-memory runtime (baseline + live buffer). After this
     // point there is no `await`, so the replay below is atomic w.r.t.
@@ -380,14 +386,14 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     // the runtime's research marker, so a cold restore without it would let the next
     // follow-up turn run write-capable. Keyed on the id match alone, so no other
     // session kind's restore semantics change.
-    const researchOwner = findDiscussionByResearchSessionId(msg.sessionId)
+    const researchOwner = findDiscussionByResearchSessionId(runtimeSessionId)
     const rt = existing
       ? existing
       : ensureRuntime(
-          msg.sessionId,
+          runtimeSessionId,
           abs,
-          getSessionMode(msg.sessionId, getDefaultMode(abs, effectiveVendor)),
-          await loadHistoryForVendor(effectiveVendor, abs, msg.sessionId),
+          getSessionMode(runtimeSessionId, getDefaultMode(abs, effectiveVendor)),
+          await loadHistoryForVendor(effectiveVendor, abs, runtimeSessionId),
           researchOwner ? 'discussion' : 'work',
         )
     if (researchOwner) rt.researchDiscussionId = researchOwner.id
@@ -398,11 +404,11 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     const displayMode = coerceSessionModeForVendor(rt.mode, effectiveVendor, abs)
     if (displayMode !== rt.mode) {
       rt.mode = displayMode
-      if (!msg.sessionId.startsWith(PENDING_SESSION_PREFIX)) {
-        setSessionMode(msg.sessionId, displayMode)
+      if (!runtimeSessionId.startsWith(PENDING_SESSION_PREFIX)) {
+        setSessionMode(runtimeSessionId, displayMode)
       }
     }
-    conn.viewing = msg.sessionId
+    conn.viewing = runtimeSessionId
     touchWorkspace(abs, Date.now())
     setActiveSessionId(msg.sessionId)
     conn.send({
@@ -413,19 +419,21 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       mode: rt.mode,
       codexPolicy:
         effectiveVendor === 'codex'
-          ? (rt.codexPolicy ?? getSessionCodexPolicy(msg.sessionId))
+          ? (rt.codexPolicy ?? getSessionCodexPolicy(runtimeSessionId))
           : undefined,
       history: rt.baseline,
       status: rt.status,
       vendor: resolveSessionVendor(msg.sessionId),
-      agentSwitch: agentSwitchFor(msg.sessionId),
+      agentSwitch: agentSwitchFor(runtimeSessionId),
       sessionKind: projectionRow?.sessionKind,
       ownerKind: projectionRow?.ownerKind,
       ownerId: projectionRow?.ownerId,
       // Reverse-look-up the intent that created this work session (only
       // `start_development`-bound sessions have a row) so the title bar can offer
       // a jump-to-intent button; absent ⇒ plain session ⇒ no button.
-      linkedIntentId: findIntentIdBySessionId(msg.sessionId) ?? undefined,
+      linkedIntentId:
+        (findIntentIdBySessionId(msg.sessionId) ?? findIntentIdBySessionId(runtimeSessionId)) ||
+        undefined,
     })
     // Task-list cold replay (2026-06-07-009): the baseline transcript predates
     // this process and carries no `task_list` events, so derive the model from
@@ -438,7 +446,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     // Replay everything emitted since the baseline (current + past
     // turns), then start receiving live events.
     for (const e of rt.buffer) conn.send(e)
-    addViewer(msg.sessionId, conn.deliver)
+    addViewer(runtimeSessionId, conn.deliver)
     conn.sendWorkspaces()
   } catch (err) {
     conn.send({

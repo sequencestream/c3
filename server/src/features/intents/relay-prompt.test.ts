@@ -4,9 +4,10 @@
  * A relay session's whole authority comes from what the server told it, so these
  * assert the facts that must be present (which intent, which PRs, which round,
  * which session id to conclude under) and the two orderings the loop depends on:
- * read the WorkNote history before the diff, and conclude with a tool call rather
- * than with prose. They also pin the tool allowlists, because those are the
- * phase's real capability boundary — a reviewer that could edit is not a reviewer.
+ * read the WorkNote history before the diff, publish the forge-visible result
+ * before the terminal backfill, and conclude with a tool call rather than with
+ * prose. They also pin the tool allowlists, because those are the phase's real
+ * capability boundary — a reviewer that could edit is not a reviewer.
  */
 import { describe, expect, it } from 'vitest'
 import type { Intent, IntentPr } from '@ccc/shared/protocol'
@@ -80,6 +81,17 @@ describe('review prompt', () => {
     expect(prompt).toContain('不调用这个工具就等于没有结论')
   })
 
+  it('publishes the required review verdict on every PR before backfilling the terminal', () => {
+    expect(prompt).toContain('[review] pass')
+    expect(prompt).toContain('[review] change-required')
+    expect(prompt).toContain('gh pr comment')
+    expect(prompt).toContain('<!-- c3:relay-review:c3-session-9 -->')
+    expect(prompt).toContain('任一目标评论失败时不要回填终态')
+    expect(prompt.indexOf('gh pr comment')).toBeLessThan(
+      prompt.indexOf('mcp__c3__sync_intent_review_status'),
+    )
+  })
+
   it('forbids changing the code it reviews', () => {
     expect(prompt).toContain('只评审、不改码、不提交、不合并')
   })
@@ -107,6 +119,16 @@ describe('fix prompt', () => {
     expect(prompt).toContain('kind="fix"')
     expect(prompt).toContain('sync_intent_fix_status')
     expect(prompt).toContain('fixed 只表示本轮已处理,不代表评审通过')
+  })
+
+  it('publishes the fix result on every PR before backfilling fixed', () => {
+    expect(prompt).toContain('[fix] completed')
+    expect(prompt).toContain('gh pr comment')
+    expect(prompt).toContain('<!-- c3:relay-fix:c3-session-9 -->')
+    expect(prompt).toContain('任一目标评论失败时不要回填终态')
+    expect(prompt.indexOf('gh pr comment')).toBeLessThan(
+      prompt.indexOf('mcp__c3__sync_intent_fix_status'),
+    )
   })
 
   it('accepts "no code change was warranted" as a real outcome', () => {

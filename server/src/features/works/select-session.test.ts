@@ -78,7 +78,7 @@ import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { getByC3Id } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { findDiscussionByResearchSessionId } from '../discussions/store.js'
-import { ensureRuntime, getRuntime } from '../../runs.js'
+import { addViewer, ensureRuntime, getRuntime } from '../../runs.js'
 import { getDefaultMode } from '../../kernel/config/index.js'
 import { getSessionMode, setSessionMode } from '../../state.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
@@ -138,6 +138,47 @@ describe('select_session', () => {
     expect(sel?.title).toBe('Refactor the parser')
     // Projection hit ⇒ the legacy claude-only lookup is short-circuited.
     expect(sessionTitle).not.toHaveBeenCalled()
+  })
+
+  it('stable c3 id → subscribes to the existing native runtime while keeping the wire id stable', async () => {
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    vi.mocked(getByC3Id).mockImplementation((id) =>
+      id === 'c3-review-1'
+        ? ({
+            c3Id: 'c3-review-1',
+            vendorSessionId: 'native-review-1',
+            title: 'PR review',
+          } as never)
+        : null,
+    )
+    const liveRuntime = {
+      mode: 'auto',
+      baseline: [{ kind: 'assistant', text: 'initial' }],
+      status: 'running',
+      buffer: [{ type: 'assistant_text', text: 'latest' }],
+    }
+    vi.mocked(getRuntime).mockImplementation((id) =>
+      id === 'native-review-1' ? (liveRuntime as never) : undefined,
+    )
+    const conn = fakeConn()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceName: '/abs/proj',
+      sessionId: 'c3-review-1',
+    })
+
+    expect(getRuntime).toHaveBeenCalledWith('native-review-1')
+    expect(ensureRuntime).not.toHaveBeenCalled()
+    expect(conn.viewing).toBe('native-review-1')
+    expect(addViewer).toHaveBeenCalledWith('native-review-1', conn.deliver)
+    expect(conn.sent.find((m) => m.type === 'session_selected')).toMatchObject({
+      sessionId: 'c3-review-1',
+      status: 'running',
+      history: liveRuntime.baseline,
+    })
+    expect(conn.sent).toContainEqual({ type: 'assistant_text', text: 'latest' })
   })
 
   it('codex select → replays codex JSONL history instead of claude-only history', async () => {

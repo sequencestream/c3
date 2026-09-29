@@ -89,10 +89,10 @@ export type SyncIntentReviewStatusArgs = {
  * What the SERVER knows about the call, independent of what the call claims.
  *
  * Supplied only by a surface that can actually attribute the caller — today the
- * per-execution MCP binding of a queue-started relay run. Its absence is the
- * normal case (manual backfill, an automation that is not a relay run) and is
- * never an error: such a call writes its conclusion exactly as before and simply
- * confers no merge authority.
+ * per-execution MCP binding of a server-started relay run. Queue and manual relay
+ * runs both use it to normalize the pre-bind prompt handle to a c3 session id;
+ * only the queue form carries merge authority. Its absence is the normal case
+ * for an ordinary automation or external backfill and is never an error.
  */
 export interface TrustedRelayCaller {
   /** The intent the server started this run for. */
@@ -100,6 +100,8 @@ export interface TrustedRelayCaller {
   phase: 'review' | 'fix'
   /** The session the server bound to this run — never a model-supplied value. */
   sessionId: string
+  /** Whether this run was claimed by the queue and may issue merge authority. */
+  canGrantMerge: boolean
 }
 
 export type SyncIntentFixStatusArgs = {
@@ -190,11 +192,15 @@ export function runSyncIntentReviewStatus(
   if (!owned) {
     return fail(`未找到 id 为 ${args.intentId} 的意图(本项目)。`)
   }
-  const stale = staleRelayBackfill(owned, 'review', args.reviewSessionId)
+  const effectiveSessionId =
+    trusted?.intentId === args.intentId && trusted.phase === 'review'
+      ? trusted.sessionId
+      : args.reviewSessionId
+  const stale = staleRelayBackfill(owned, 'review', effectiveSessionId)
   if (stale) return fail(stale)
   try {
     const updated = updateIntentReviewFixStatus(args.intentId, {
-      reviewSessionId: args.reviewSessionId,
+      reviewSessionId: effectiveSessionId,
       reviewStatus: args.reviewStatus,
     })
     applyMergeAuthority(workspacePath, args, trusted ?? null)
@@ -235,7 +241,10 @@ function applyMergeAuthority(
   trusted: TrustedRelayCaller | null,
 ): void {
   const isQueueReview =
-    trusted !== null && trusted.phase === 'review' && trusted.intentId === args.intentId
+    trusted !== null &&
+    trusted.canGrantMerge &&
+    trusted.phase === 'review' &&
+    trusted.intentId === args.intentId
   if (args.reviewStatus === 'approved' && isQueueReview) {
     issueMergeGrant({
       workspacePath,
@@ -261,6 +270,7 @@ export function runSyncIntentFixStatus(
   workspacePath: string,
   args: SyncIntentFixStatusArgs,
   onBroadcast?: (workspacePath: string) => void,
+  trusted?: TrustedRelayCaller | null,
 ): ReviewFixToolResult {
   if (!isStoreAvailable()) return fail('意图库不可用,无法回填修复状态。')
   if (!(FIX_TERMINALS as readonly string[]).includes(args.fixStatus)) {
@@ -270,11 +280,15 @@ export function runSyncIntentFixStatus(
   if (!owned) {
     return fail(`未找到 id 为 ${args.intentId} 的意图(本项目)。`)
   }
-  const stale = staleRelayBackfill(owned, 'fix', args.fixSessionId)
+  const effectiveSessionId =
+    trusted?.intentId === args.intentId && trusted.phase === 'fix'
+      ? trusted.sessionId
+      : args.fixSessionId
+  const stale = staleRelayBackfill(owned, 'fix', effectiveSessionId)
   if (stale) return fail(stale)
   try {
     const updated = updateIntentReviewFixStatus(args.intentId, {
-      fixSessionId: args.fixSessionId,
+      fixSessionId: effectiveSessionId,
       fixStatus: args.fixStatus,
     })
     onBroadcast?.(workspacePath)

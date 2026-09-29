@@ -107,7 +107,14 @@ export function isSpecOccupancyAlive(
   now: number,
 ): boolean {
   if (isRunningFn(sessionId)) return true
-  if (!isPendingId(sessionId)) return false
+  if (!isPendingId(sessionId)) {
+    // Intent ledgers expose the stable c3 id, while the in-process runtime is
+    // keyed by the vendor's native id. Resolve the projection before declaring
+    // a bound session dead; otherwise the UI and queue release a live relay as
+    // soon as its pending id is replaced at bind time.
+    const vendorSessionId = getByC3Id(sessionId)?.vendorSessionId
+    return !!vendorSessionId && vendorSessionId !== sessionId && isRunningFn(vendorSessionId)
+  }
   return pendingIsFresh(sessionId, now)
 }
 
@@ -130,8 +137,7 @@ function specSlotFree(current: string | null): boolean {
  */
 function reviewSlotFree(current: string | null): boolean {
   if (current === null) return true
-  if (isPendingId(current)) return !isSpecOccupancyAlive(current, isRunning, Date.now())
-  return !isRunning(current)
+  return !isSpecOccupancyAlive(current, isRunning, Date.now())
 }
 
 /** The intent's CURRENT spec_session_id, re-read from the ledger. */

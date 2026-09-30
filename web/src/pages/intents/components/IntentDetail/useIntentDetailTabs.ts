@@ -47,6 +47,8 @@ export function useIntentDetailTabs(opts: {
   intentSessionStatus: () => SessionStatus | null | undefined
   specSessionStatus: () => SessionStatus | null | undefined
   specReviewSessionStatus: () => SessionStatus | null | undefined
+  reviewSessionStatus: () => SessionStatus | null | undefined
+  fixSessionStatus: () => SessionStatus | null | undefined
   onReadSpec: (intentId: string, specPath: string) => void
   onListIntentLogs: (intentId: string) => void
   onOpenIntentSession: (sessionId: string) => void
@@ -68,6 +70,8 @@ export function useIntentDetailTabs(opts: {
     intentSessionStatus,
     specSessionStatus,
     specReviewSessionStatus,
+    reviewSessionStatus,
+    fixSessionStatus,
     onReadSpec,
     onListIntentLogs,
     onOpenIntentSession,
@@ -147,10 +151,22 @@ export function useIntentDetailTabs(opts: {
     const st = specSessionStatus()
     return st && st !== 'idle' ? st : null
   })
-  // 评审(spec_review 会话)tab 标签的运行中状态点:与其余三类会话同构,非 idle/未知
+  // 评审(spec_review 会话)tab 标签的运行中状态点:与其余会话 tab 同构,非 idle/未知
   // (null)才显示。只读会话同样会运行(机器评审中),状态点让用户看到评审正在进行。
   const specReviewSessionStatusDot = computed<SessionStatus | null>(() => {
     const st = specReviewSessionStatus()
+    return st && st !== 'idle' ? st : null
+  })
+
+  // PR 评审会话 tab 标签的运行中状态点:与其余会话 tab 同构,非 idle/未知(null)才显示。
+  // 评审是闭环里最慢的一环,没有状态点用户只能逐个 Tab 轮询或误判意图已停滞。
+  const reviewSessionStatusDot = computed<SessionStatus | null>(() => {
+    const st = reviewSessionStatus()
+    return st && st !== 'idle' ? st : null
+  })
+  // PR 修复会话 tab 标签的运行中状态点:与评审同构,非 idle/未知(null)才显示。
+  const fixSessionStatusDot = computed<SessionStatus | null>(() => {
+    const st = fixSessionStatus()
     return st && st !== 'idle' ? st : null
   })
 
@@ -330,6 +346,8 @@ export function useIntentDetailTabs(opts: {
     intentSessionStatusDot,
     specSessionStatusDot,
     specReviewSessionStatusDot,
+    reviewSessionStatusDot,
+    fixSessionStatusDot,
     expectedSessionId,
     chatReady,
     chatReadonly,

@@ -8,8 +8,9 @@
  * module, NOT to the shared `KernelContext`. Exposed as a narrow function API (no
  * raw `Map`s leak across the boundary). Behavior is unchanged from the closure.
  */
-import type { Intent, IntentRunStatus } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, type Intent, type IntentRunStatus } from '@ccc/shared/protocol'
 import { isRunning } from '../../runs.js'
+import { getByC3Id } from '../sessions/session-metadata-store.js'
 import { deriveActionDescriptor, type WorkspaceIntentsLoader } from './action-descriptor.js'
 import { isSpecOccupancyAlive } from './spec-occupancy.js'
 import { listIntents } from './store.js'
@@ -61,17 +62,42 @@ export function clearJudgedSession(id: string): void {
 }
 
 /**
- * True when any of the intent's four session ids (intent / spec / spec review /
- * work) is a non-null id the run registry reports as running. Short-circuit OR;
- * missing, unknown, and stopped ids all count as inactive. Covers all statuses —
- * unlike `runStatus`, it is not gated on `in_progress`.
+ * True when `sessionId` identifies a live process. The ledger stores the stable
+ * c3 id; the in-process runtime is keyed by the vendor's native id, so a miss
+ * on the ledger id still asks once via the projection. A `pending:` placeholder
+ * is never live — occupancy (a phase still held, possibly with no process) is a
+ * different fact from the relay occupancy below.
+ */
+function isLiveProcess(sessionId: string | null): boolean {
+  if (!sessionId) return false
+  if (isRunning(sessionId)) return true
+  if (sessionId.startsWith(PENDING_SESSION_PREFIX)) return false
+  const vendorSessionId = getByC3Id(sessionId)?.vendorSessionId
+  return !!vendorSessionId && vendorSessionId !== sessionId && isRunning(vendorSessionId)
+}
+
+/**
+ * True when any of the intent's six session ids (intent / spec / spec review /
+ * work / PR review / PR fix) identifies a live process. Short-circuit OR;
+ * missing, unknown, stopped, and `pending:` ids all count as inactive. Covers
+ * all statuses — unlike `runStatus`, it is not gated on `in_progress`, and
+ * independent of it.
+ *
+ * All six kinds share ONE liveness rule on purpose: the two indicators (this
+ * boolean and the per-tab status dot) answer the same question — "is an agent
+ * working on this intent right now" — and users are never told which kind of
+ * session it is. Review and fix are the slowest stages of the delivery loop, so
+ * leaving them out would leave the list dot and the tabs dark exactly when a
+ * human most wants to watch.
  */
 function deriveSessionActive(r: Intent): boolean {
   return (
-    (!!r.intentSessionId && isRunning(r.intentSessionId)) ||
-    (!!r.specSessionId && isRunning(r.specSessionId)) ||
-    (!!r.specReviewSessionId && isRunning(r.specReviewSessionId)) ||
-    (!!r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
+    isLiveProcess(r.intentSessionId) ||
+    isLiveProcess(r.specSessionId) ||
+    isLiveProcess(r.specReviewSessionId) ||
+    isLiveProcess(r.lastWorkSessionId) ||
+    isLiveProcess(r.reviewSessionId) ||
+    isLiveProcess(r.fixSessionId)
   )
 }
 
@@ -80,8 +106,8 @@ function deriveSessionActive(r: Intent): boolean {
  * send-time projection of {@link isSpecOccupancyAlive}, which is verbatim the
  * rule the queue kernel's `probeRelayRunFacts` consumes.
  *
- * It is deliberately NOT `isRunning` (what {@link deriveSessionActive} answers
- * for the four session kinds): between a phase's claim and the vendor's bind the
+ * It is deliberately NOT `isLiveProcess` (what {@link deriveSessionActive} answers
+ * for the six session kinds): between a phase's claim and the vendor's bind the
  * field holds a `pending:` placeholder with no live process at all, and that
  * whole window must read as occupied or the UI would offer a second launch on a
  * worktree an agent is already about to enter. Reading it through the same

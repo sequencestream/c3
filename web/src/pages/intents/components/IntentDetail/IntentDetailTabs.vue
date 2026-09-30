@@ -2,8 +2,8 @@
 /*
  * IntentDetailTabs.vue — 意图详情页的 Tab 导航条。
  *
- * 纯呈现:渲染可见 Tab 列表、高亮当前激活项,并在意图/规范/评审/工作会话 Tab 标签内联运行中
- * 状态点(复用全局 .session-status 视觉)。选择动作以 select 事件上抛,可见性/激活/状态点均由
+ * 纯呈现:渲染可见 Tab 列表、高亮当前激活项,并在六类会话 Tab 标签内联运行中
+ * 状态点(复用全局 .session-status 视觉,不按会话种类分文案或配色)。选择动作以 select 事件上抛,可见性/激活/状态点均由
  * 容器(Tab 状态机 composable)决定。
  */
 import type { SessionStatus } from '@ccc/shared/protocol'
@@ -16,6 +16,8 @@ defineProps<{
   intentSessionStatusDot: SessionStatus | null
   specSessionStatusDot: SessionStatus | null
   specReviewSessionStatusDot: SessionStatus | null
+  reviewSessionStatusDot: SessionStatus | null
+  fixSessionStatusDot: SessionStatus | null
 }>()
 
 const emit = defineEmits<{ select: [tab: DetailTab] }>()
@@ -61,6 +63,20 @@ const emit = defineEmits<{ select: [tab: DetailTab] }>()
           :title="specReviewSessionStatusDot"
           data-testid="intent-detail-spec-review-session-status"
         ></span>
+        <span
+          v-if="tab.key === 'reviewSession' && reviewSessionStatusDot"
+          class="session-status"
+          :class="reviewSessionStatusDot"
+          :title="reviewSessionStatusDot"
+          data-testid="intent-detail-review-session-status"
+        ></span>
+        <span
+          v-if="tab.key === 'fixSession' && fixSessionStatusDot"
+          class="session-status"
+          :class="fixSessionStatusDot"
+          :title="fixSessionStatusDot"
+          data-testid="intent-detail-fix-session-status"
+        ></span>
       </button>
     </div>
   </nav>
@@ -101,7 +117,7 @@ const emit = defineEmits<{ select: [tab: DetailTab] }>()
   border-bottom-color: var(--c-primary);
   font-weight: 600;
 }
-/* 工作/意图/规范会话 tab 标签内联运行中状态点(复用全局 .session-status 视觉,inline 对齐文字)。 */
+/* 六类会话 tab 标签内联运行中状态点(复用全局 .session-status 视觉,inline 对齐文字)。 */
 .intent-detail-tab .session-status {
   display: inline-block;
   margin-left: var(--sp-1);

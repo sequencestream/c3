@@ -49,7 +49,8 @@ Web 控制台是人对工作台的窗口：看活动流、提交或排队 prompt
 - **WC-R8a**: 新工作区路径由服务端主机选择（[session-registry](../session-registry/session-registry-spec.md)）；控制台默认不手填。点选失败才露出一次性手填。取消是正常结果。
 - **WC-R10**: pending 会话保持当前，直到 `session_started` 换成真实 id。
 - **WC-R21**: 新建会话可指定智能体，或省略以继承默认（[agent-config](../../settings/agent-config/agent-config-spec.md)）。宿主 CLI 不可用的厂商不能被选来新建。
-- **WC-R29**: 查看 `spec_review` 时聊天列只读：无输入、无队列、无停止/继续、无权限作答。服务端续跑门禁见[意图管理](../intent-management/intent-management-spec.md)。
+- **WC-R29**: 查看 `spec_review` 时聊天列只读：无输入、无队列、无停止/继续、无权限作答。服务端续跑门禁见[意图管理](../intent-management/intent-management-spec.md)。标签内联运行中状态点与其余会话标签同构。
+- **WC-R32**: 意图详情在存在对应会话 id 时渲染评审 / 修复会话标签；内联运行中状态点与其余会话标签同构。聊天列不进入只读门。
 
 ### 冷启动、双视图、移动端
 

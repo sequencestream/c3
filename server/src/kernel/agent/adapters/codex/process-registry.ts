@@ -10,6 +10,11 @@
  *  - `registerCodexChild` records one child c3 spawned — or, for a sandbox run,
  *    the descendant it reclaimed on that child's behalf — with its pid, thread id
  *    and the process start time read from the host process table;
+ *  - `recordCodexDescendants` is called while a turn child is still alive, so the
+ *    processes that actually do the work (and hold the writer lock) are in the
+ *    registry *before* the wrapper that parents them is signalled — once the
+ *    wrapper dies they are reparented and can no longer be traced through the
+ *    process table;
  *  - `escalateKill` is the single teardown helper (SIGTERM → poll → SIGKILL →
  *    verify) shared by the turn lifecycle and the resume reclaim path, so the two
  *    never diverge on grace period or outcome vocabulary;
@@ -43,7 +48,7 @@ export interface CodexChildOutcome {
   reason?: string
 }
 
-/** One Codex turn child: spawned by c3, or a descendant c3 reclaimed for it. */
+/** One Codex turn child: spawned by c3, or a descendant of one that c3 reaped. */
 export interface CodexChildRecord {
   pid: number
   /** The Codex thread the child serves; `null` until `thread.started` arrives. */
@@ -55,6 +60,13 @@ export interface CodexChildRecord {
   startTimeMs: number | null
   /** True when the start time could not be captured; excludes the record from reclaim. */
   startTimeUnknown: boolean
+  /**
+   * The registered child this process descends from, when it is not itself the
+   * child c3 spawned. Kept as record linkage on purpose: by the time the
+   * descendant outlives its wrapper the parent link is gone from the process
+   * table, so ownership must not depend on re-reading it.
+   */
+  parentPid: number | null
   status: 'live' | 'settled'
   outcome?: CodexChildOutcome
 }
@@ -71,6 +83,7 @@ export interface RegisterCodexChildInput {
   sessionId?: string | null
   spawnedAt?: number
   startTimeMs?: number | null
+  parentPid?: number | null
 }
 
 /** Record a freshly spawned Codex child. Returns the stored record. */
@@ -83,6 +96,7 @@ export function registerCodexChild(input: RegisterCodexChildInput): CodexChildRe
     spawnedAt: input.spawnedAt ?? Date.now(),
     startTimeMs,
     startTimeUnknown: startTimeMs === null,
+    parentPid: input.parentPid ?? null,
     status: 'live',
   }
   if (!records.has(record.pid) && records.size >= MAX_CODEX_CHILD_RECORDS) {
@@ -310,6 +324,77 @@ export async function readProcessStartTime(pid: number): Promise<number | null> 
 }
 
 // ---------------------------------------------------------------------------
+// Turn-tree descendants (the processes that hold the lock)
+// ---------------------------------------------------------------------------
+
+/** How many descendants of one turn child are registered at most. */
+const MAX_CODEX_DESCENDANTS = 32
+/** How deep the descendant walk goes — a bounded guard, not a tree-size claim. */
+const MAX_CODEX_DESCENDANT_DEPTH = 8
+
+/**
+ * Every descendant of `rootPid` in `table`, nearest first. The child c3 spawned is
+ * only the visible head of a turn: under a sandbox wrapper it runs the vendor CLI
+ * inside itself, and that CLI's own launcher runs the binary that takes the writer
+ * lock. Bounded and cycle-guarded; `rootPid` is never included.
+ */
+function descendantEntries(rootPid: number, table: ProcessTableEntry[]): ProcessTableEntry[] {
+  const byParent = new Map<number, ProcessTableEntry[]>()
+  for (const entry of table) {
+    if (entry.ppid === null) continue
+    const siblings = byParent.get(entry.ppid)
+    if (siblings) siblings.push(entry)
+    else byParent.set(entry.ppid, [entry])
+  }
+  const out: ProcessTableEntry[] = []
+  const seen = new Set<number>([rootPid])
+  let frontier = byParent.get(rootPid) ?? []
+  for (let depth = 0; depth < MAX_CODEX_DESCENDANT_DEPTH && frontier.length > 0; depth++) {
+    const next: ProcessTableEntry[] = []
+    for (const entry of frontier) {
+      if (entry.pid <= 1 || seen.has(entry.pid)) continue
+      seen.add(entry.pid)
+      out.push(entry)
+      if (out.length >= MAX_CODEX_DESCENDANTS) return out
+      next.push(...(byParent.get(entry.pid) ?? []))
+    }
+    frontier = next
+  }
+  return out
+}
+
+/**
+ * Register every descendant of a turn child as a record for this thread, nearest
+ * first. Called from the child lifecycle while the turn child is still alive: after
+ * it is signalled its descendants are reparented to the init process, so the
+ * registry is the only remaining proof that they belong to c3 — and a descendant
+ * that survives teardown keeps the thread's writer lock. Best-effort: an unreadable
+ * process table registers nothing and the turn still ends.
+ */
+export async function recordCodexDescendants(
+  rootPid: number,
+  threadId: string | null,
+  sessionId: string | null = threadId,
+): Promise<CodexChildRecord[]> {
+  const table = await processTable()
+  if (!table) return []
+  const out: CodexChildRecord[] = []
+  for (const entry of descendantEntries(rootPid, table)) {
+    out.push(
+      registerCodexChild({
+        pid: entry.pid,
+        threadId,
+        sessionId,
+        spawnedAt: entry.startTimeMs ?? Date.now(),
+        startTimeMs: entry.startTimeMs,
+        parentPid: rootPid,
+      }),
+    )
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Writer-lock occupant scan and reclaim
 // ---------------------------------------------------------------------------
 
@@ -394,8 +479,13 @@ type CodexOwnership =
  * Whether the lock holder is provably a c3 leftover. Ownership holds when the
  * holder itself is a settled c3 child for this thread, OR when it descends from
  * one whose start time still matches — under a sandbox wrapper the holder is the
- * vendor CLI *inside* the wrapper, while c3 registered the wrapper's pid, so the
- * two pids differ by construction and only the ancestry link can prove it.
+ * vendor CLI *inside* the wrapper, so the two pids differ by construction. The
+ * descent path is the fallback: a descendant c3 recorded at teardown is matched by
+ * its own pid and needs no live parent at all.
+ *
+ * A refusal always names the *occupant* — the pid actually holding the lock — and
+ * its own start time from the table, never the record's: pointing the user at the
+ * wrapper instead of the process that keeps the thread locked is not actionable.
  */
 function resolveOwnership(
   threadId: string,
@@ -403,28 +493,39 @@ function resolveOwnership(
   candidateStart: number | null,
   table: ProcessTableEntry[],
 ): CodexOwnership {
+  const refuse = (reason: CodexRefusalReason): CodexOwnership => ({
+    kind: 'refused',
+    reason,
+    pid: candidatePid,
+    startTimeMs: candidateStart,
+  })
   const records = findCodexChildrenByThread(threadId)
-  if (records.length === 0) {
-    return { kind: 'refused', reason: 'no-record', pid: candidatePid, startTimeMs: candidateStart }
-  }
+  if (records.length === 0) return refuse('no-record')
   const byPid = new Map(records.map((record) => [record.pid, record]))
   const chain = [candidatePid, ...ancestorPids(candidatePid, table)]
   for (const pid of chain) {
     const record = byPid.get(pid)
     if (!record) continue
-    const startTimeMs = table.find((entry) => entry.pid === pid)?.startTimeMs ?? null
     if (record.status === 'live') {
-      return { kind: 'refused', reason: 'record-live', pid, startTimeMs }
+      return refuse('record-live')
     }
     if (record.startTimeUnknown || record.startTimeMs === null) {
-      return { kind: 'refused', reason: 'start-time-unknown', pid, startTimeMs }
+      return refuse('start-time-unknown')
     }
-    if (startTimeMs === null || startTimeMs !== record.startTimeMs) {
-      return { kind: 'refused', reason: 'start-time-mismatch', pid, startTimeMs }
+    // A pid recycled into an unrelated process must never be signalled. The start
+    // time cannot be read ⇒ identity cannot be proven at all, which is a different
+    // refusal from "read it and it differs" and must not be reported as pid reuse.
+    const observed =
+      pid === candidatePid
+        ? candidateStart
+        : (table.find((e) => e.pid === pid)?.startTimeMs ?? null)
+    if (observed === null) return refuse('start-time-unknown')
+    if (observed !== record.startTimeMs) {
+      return refuse('start-time-mismatch')
     }
     return { kind: 'owned' }
   }
-  return { kind: 'refused', reason: 'no-record', pid: candidatePid, startTimeMs: candidateStart }
+  return refuse('no-record')
 }
 
 /**

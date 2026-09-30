@@ -33,6 +33,8 @@ import {
   logCodexChildSpawn,
   logCodexSessionChildren,
   parseProcessTable,
+  reclaimCodexOccupant,
+  recordCodexDescendants,
   registerCodexChild,
   resetCodexProcessRegistryForTests,
   setCodexProcessSignalsForTests,
@@ -233,7 +235,113 @@ describe('escalateKill (guaranteed child teardown)', () => {
   })
 })
 
+describe('turn-tree descendants (the processes that actually hold the lock)', () => {
+  it('records every descendant of the spawned child, nearest first, with its own start time', async () => {
+    setCodexProcessTableForTests(
+      table([
+        {
+          pid: 8100,
+          ppid: 1,
+          startTimeMs: START_MS,
+          command: `/usr/bin/arapuca run -- /opt/codex/bin/codex exec resume ${THREAD}`,
+        },
+        {
+          pid: 8101,
+          ppid: 8100,
+          startTimeMs: START_MS + 1000,
+          command: `node /opt/codex/bin/codex.js exec resume ${THREAD}`,
+        },
+        {
+          pid: 8102,
+          ppid: 8101,
+          startTimeMs: START_MS + 1100,
+          command: `/opt/codex/vendor/bin/codex exec resume ${THREAD}`,
+        },
+        // An unrelated process must not be swept into the turn's tree.
+        { pid: 9999, ppid: 1, startTimeMs: START_MS, command: '/sbin/launchd' },
+      ]),
+    )
+
+    const recorded = await recordCodexDescendants(8100, THREAD)
+
+    expect(recorded.map((r) => r.pid)).toEqual([8101, 8102])
+    expect(recorded[0]).toMatchObject({
+      parentPid: 8100,
+      startTimeMs: START_MS + 1000,
+      startTimeUnknown: false,
+      status: 'live',
+    })
+    expect(findCodexChildrenByThread(THREAD).map((r) => r.pid)).toEqual([8101, 8102])
+  })
+
+  it('registers nothing (and still lets the turn end) when the process table is unreadable', async () => {
+    setCodexProcessTableForTests(async () => null)
+
+    expect(await recordCodexDescendants(8100, THREAD)).toEqual([])
+    expect(findCodexChildrenByThread(THREAD)).toEqual([])
+  })
+})
+
 describe('Codex driver teardown of a real lingering child', () => {
+  it('reaps the descendant holding the lock, not only the child c3 spawned', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'c3-codex-tree-'))
+    const fakeCodex = join(dir, 'codex')
+    const pidFile = join(dir, 'tree.txt')
+    // The real shape, reduced: the spawned child runs the lock holder *inside*
+    // itself, and that descendant is the process that survives.
+    writeFileSync(
+      fakeCodex,
+      [
+        '#!/bin/sh',
+        `PIDFILE=${shQuote(pidFile)}`,
+        'sleep 30 &',
+        'holder=$!',
+        `printf '%s %s\\n' "$$" "$holder" > "$PIDFILE"`,
+        'cat >/dev/null',
+        `printf '%s\\n' '{"type":"thread.started","thread_id":"thread_tree"}'`,
+        `printf '%s\\n' '{"type":"error","message":"openrouter:web_search upstream returned 502"}'`,
+        'sleep 30',
+      ].join('\n'),
+    )
+    chmodSync(fakeCodex, 0o755)
+    // `ps` is denied inside this sandbox, so the process table is served from the
+    // pids the child itself published — the injected seam the adapter exposes.
+    setCodexProcessTableForTests(async () => {
+      if (!existsSync(pidFile)) return []
+      const [root, holder] = readFileSync(pidFile, 'utf-8').trim().split(' ')
+      return [
+        { pid: Number(root), ppid: process.pid, startTimeMs: null, command: '/bin/sh codex' },
+        {
+          pid: Number(holder),
+          ppid: Number(root),
+          startTimeMs: START_MS,
+          command: `/opt/codex/vendor/bin/codex exec --experimental-json resume thread_tree`,
+        },
+      ]
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const driver = new CodexDriver()
+      const run = await driver.start(
+        startOpts({ resume: undefined, sandboxWrapperPath: fakeCodex }),
+      )
+      const failure = await collect(run.messages()).then(
+        () => null,
+        (err: unknown) => err as Error,
+      )
+      expect(failure?.message).toContain('openrouter:web_search upstream returned 502')
+
+      const [root, holder] = readFileSync(pidFile, 'utf-8').trim().split(' ').map(Number)
+      // The descendant is registered and settled as part of the turn, and it is
+      // gone afterwards — killing only the head would have left it running.
+      expect(log.mock.calls.flat().join('\n')).toContain(`pid=${holder} thread=thread_tree`)
+      expect(() => process.kill(holder, 0)).toThrow()
+      expect(() => process.kill(root, 0)).toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   it('reclaims the spawned child after a stream error, escalating to SIGKILL when SIGTERM is ignored', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'c3-codex-zombie-'))
     const fakeCodex = join(dir, 'codex')
@@ -554,9 +662,57 @@ describe('resume self-healing on an active-writer rejection', () => {
       () => null,
       (err: unknown) => err as Error,
     )
-    expect(failure?.message).toContain('pid 9200')
+    // The occupant — not the wrapper it descends from — is the pid named.
+    expect(failure?.message).toContain('pid 9201')
+    expect(failure?.message).not.toContain('pid 9200')
     expect(failure?.message).toContain('pid reuse')
     expect(kills).toEqual([])
+  })
+
+  it('closes the loop on a reparented orphan: the wrapper is gone, the recorded holder is reclaimed', async () => {
+    // Turn end: the tree was still traceable, so the lock holder was registered
+    // before the wrapper was signalled.
+    setCodexProcessTableForTests(
+      table(sandboxedResumeEntries(8200, 8201, THREAD, START_MS, START_MS + 1000)),
+    )
+    const [holder] = await recordCodexDescendants(8200, THREAD)
+    settleCodexChild(holder.pid, {
+      pid: holder.pid,
+      exitCode: null,
+      signal: null,
+      reclaimedBy: 'failed',
+      reason: 'the wrapper died before the holder was reclaimed',
+    })
+    seedSettledZombie(8200, START_MS)
+
+    // Later: the wrapper c3 spawned is gone, the CLI it ran was reparented to
+    // launchd (`ppid` 1), and it still holds the writer lock. Ancestry proves
+    // nothing now — the record carried over from teardown is the proof.
+    const { signals, kills } = fakeSignals({ alive: [8201], diesOn: ['SIGTERM'] })
+    setCodexProcessSignalsForTests(signals)
+    setCodexProcessTableForTests(table([resumeEntry(8201, THREAD, START_MS + 1000, 1)]))
+
+    const { client, calls } = scriptedClient([
+      { events: [ACTIVE_WRITER_EVENT] },
+      {
+        events: [
+          {
+            type: 'item.completed',
+            item: { id: 'i1', type: 'agent_message', text: 'orphan healed' },
+          } as ThreadEvent,
+        ],
+      },
+    ])
+    const driver = new CodexDriver(() => client)
+    const run = await driver.start(startOpts())
+
+    const messages = await collect(run.messages())
+    expect(messages[0].blocks).toMatchObject([{ type: 'text', text: 'orphan healed' }])
+    expect(calls).toHaveLength(2)
+    expect(kills).toEqual([{ pid: 8201, signal: 'SIGTERM' }])
+    expect(findCodexChildrenByThread(THREAD).find((r) => r.pid === 8201)?.outcome).toMatchObject({
+      reclaimedBy: 'sigterm',
+    })
   })
 
   it('does not scan, kill or retry when a resume fails for a non-lock -32600', async () => {
@@ -648,6 +804,29 @@ describe('resume self-healing on an active-writer rejection', () => {
     expect(failure?.message).toContain('pid 6003')
     expect(failure?.message).toContain('pid reuse')
     expect(kills).toEqual([])
+  })
+
+  it('reports an unreadable-occupant start time as unidentified, never as pid reuse', async () => {
+    seedSettledZombie(6008, START_MS)
+    const { signals, kills } = fakeSignals({ alive: [6008] })
+    setCodexProcessSignalsForTests(signals)
+    // The table is readable but this entry's start time is not: identity cannot be
+    // proven, which is a different refusal from "read it and it differs".
+    setCodexProcessTableForTests(table([resumeEntry(6008, THREAD, null)]))
+
+    const { client, calls } = scriptedClient([{ events: [ACTIVE_WRITER_EVENT] }])
+    const driver = new CodexDriver(() => client)
+    const run = await driver.start(startOpts())
+
+    const failure = await collect(run.messages()).then(
+      () => null,
+      (err: unknown) => err as Error,
+    )
+    expect(failure?.message).toContain('could not be identified')
+    expect(failure?.message).not.toContain('pid reuse')
+    expect(failure?.message).not.toContain('6008')
+    expect(kills).toEqual([])
+    expect(calls).toHaveLength(1) // no retry
   })
 
   it('reports an unidentified holder (no pid) when the start time was never captured', async () => {

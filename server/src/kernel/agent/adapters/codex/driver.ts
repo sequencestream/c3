@@ -64,6 +64,7 @@ import {
   logCodexReclaim,
   logCodexSessionChildren,
   readProcessStartTime,
+  recordCodexDescendants,
   reclaimCodexOccupant,
   registerCodexChild,
   settleCodexChild,
@@ -238,9 +239,10 @@ class CliCodexThread implements CodexThread {
       // Guaranteed teardown (2026-09-29-004): a stream error, a parse error, a
       // non-zero exit and a user abort all land here. A child that already exited is
       // a no-op; a survivor is SIGTERM'd, escalated to SIGKILL after the grace
-      // period, and its outcome recorded so the turn error can name the pid.
+      // period, and its outcome recorded so the turn error can name the pid. The
+      // child's descendants are reaped too — see settleChildLifecycle.
       if (pid !== null) {
-        this.lastOutcome = await settleChildLifecycle(child, pid, exitPromise)
+        this.lastOutcome = await settleChildLifecycle(child, pid, exitPromise, this.threadId)
         const record = settleCodexChild(pid, this.lastOutcome)
         if (record) logCodexChildSettled(record)
       }
@@ -258,8 +260,29 @@ async function settleChildLifecycle(
   child: ChildProcess,
   pid: number,
   exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+  threadId: string | null,
 ): Promise<CodexChildOutcome> {
   const signals = getCodexProcessSignals()
+  // The spawned child is only the head of the turn: under a sandbox wrapper it runs
+  // the vendor CLI inside itself, and the lock holder is a descendant. Record that
+  // subtree while it is still traceable and terminate it leaves-first — killing the
+  // head alone reparents the rest, and a reparented survivor keeps the writer lock
+  // with no way left to prove it is ours.
+  const descendants = await recordCodexDescendants(pid, threadId)
+  // `descendants` is nearest-first; kill it in reverse so no parent is left to
+  // re-spawn or outlive its children between signals.
+  for (const descendant of [...descendants].reverse()) {
+    const escalation = await escalateKill(descendant.pid, { signals })
+    const record = settleCodexChild(descendant.pid, {
+      pid: descendant.pid,
+      exitCode: null,
+      signal: null,
+      reclaimedBy: escalation.method,
+      waitedMs: escalation.waitedMs,
+      reason: escalation.reason,
+    })
+    if (record) logCodexChildSettled(record)
+  }
   if (child.exitCode === null && child.signalCode === null) {
     // A child that is exiting right now is reaped momentarily; give it that beat so
     // escalation does not race the OS and report a spurious SIGKILL.

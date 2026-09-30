@@ -110,7 +110,7 @@ stateDiagram-v2
 
 ## 宿主 CLI
 
-厂商宿主 CLI 必须可解析,否则该 agent 类型不可用,以明确错误呈现,不默默挂起([ADR 0012](../../../architecture/adr/0012-host-binary-probe-first-capability-gate.md))。Cursor 由厂商安装器分发,不由 c3 托管([ADR 0040](../../../architecture/adr/0040-cursor-as-host-cli-vendor.md));其相对 Claude/Codex 的能力边界见 [Cursor](features/agent-session-cursor.md)。
+厂商宿主 CLI 必须可解析,否则该 agent 类型不可用,以明确错误呈现,不默默挂起([ADR 0012](../../../architecture/adr/0012-host-binary-probe-first-capability-gate.md))。Cursor 由厂商安装器分发,不由 c3 托管([ADR 0040](../../../architecture/adr/0040-cursor-as-host-cli-vendor.md));其相对 Claude/Codex 的能力边界见 [Cursor](features/agent-session-cursor.md)。Codex 一轮结束后回收本轮子进程树;续跑遇残留写锁时,仅在能证明占用者是本轮残留才自动回收并重试一次。见 [Codex 适配边界](../../../architecture/codex-sdk-guide.md)。
 
 ## Domain events
 

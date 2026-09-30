@@ -8,6 +8,12 @@ SDK 升级评估见 [#486](https://github.com/sequencestream/c3/issues/486)。
 
 适配器拉起宿主 `codex` 子进程跑一轮；模型调用与工具执行在该子进程里，不是从本进程直连模型 API。c3 以宿主 CLI 的 JSONL（`codex exec`）形态驱动，不以 JS wrapper 为运行时。prompt 送出后 stdin 关闭，事件流只读，没有写回半通道。对照 architecture.md。
 
+## 子进程回收
+
+一轮结束后回收本轮进程树：先登记后代，再自叶向根终止（SIGTERM，超时则 SIGKILL）。头先死则后代被 init 收养，之后无法证明归属。占用者只认进程自身的 `argv[0]` 是 Codex CLI。
+
+`resume` 被 `already has an active writer` 拒绝时，只有占用者能沿本轮已终结登记证明身份（pid 与启动时间一致）才回收并重试一次。进程表不可读、归属不明或占用者仍在跑，只报告 pid 与启动时间，不杀。
+
 ## 宿主 CLI 必达
 
 适配器只驱动探测到的宿主 `codex`。找不到则 Codex 不可用。该二进制由 c3 分发，见 [ADR-0012](adr/0012-host-binary-probe-first-capability-gate.md)。

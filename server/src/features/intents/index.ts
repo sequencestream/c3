@@ -26,6 +26,7 @@ import {
   isRunning,
   removeRuntime,
   removeViewer,
+  stopRun,
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToName, touchWorkspace } from '../../state.js'
 import type { UiError } from '@ccc/shared'
@@ -131,6 +132,7 @@ import type { PromptImage, ServerToClient } from '@ccc/shared/protocol'
 import type { KernelContext } from '../../kernel/types.js'
 import type { Conn, Handler } from '../../transport/handler-registry.js'
 import { launchWorkSession } from './session-launcher.js'
+import { clearSessionRestarting, markSessionRestarting, waitForSessionSettled } from './dev-link.js'
 import { applyIntentStatusChange, createPrForIntent, linkIntentPrForIntent } from './write-cores.js'
 
 export { buildResetIntentPrompt }
@@ -1420,6 +1422,120 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   }
   // The session started; the worktree it started in just is not on the newest
   // baseline. Said, not enforced — the repairs stay the user's to trigger.
+  if (result.baselineNotice) conn.send(result.baselineNotice)
+}
+
+/**
+ * How long a restart waits for the live session it is replacing to actually
+ * settle (fire `run:settled`) after `stopRun`. The abort only SIGNALS the run;
+ * teardown completes the settle, and the new session must not be created while
+ * the old one is still tearing down (that would momentarily leave two live work
+ * sessions). Bounded so a stuck teardown refuses the restart rather than
+ * hanging the connection.
+ */
+const RESTART_SETTLE_TIMEOUT_MS = 30_000
+
+/**
+ * `restart_work_session` handler — hand a spent work session off to a NEW one.
+ *
+ * The prompt is required and seeded as the new session's first turn (replacing
+ * the intent body; the dependency and spec-path notes are still appended).
+ * The old session is stopped first only when it is actually LIVE:
+ *
+ *   - idle  → no stop, no wait: an idle session has no in-flight run, so no
+ *             `run:settled` will ever fire and waiting would always time out.
+ *   - live  → mark it as restarting (so its settle skips the delivery-side
+ *             cleanup), abort it, and wait for its `run:settled` before creating
+ *             the new run. The marker is cleared on a timeout so a restart that
+ *             was refused leaves the old run to settle normally.
+ *
+ * The rebind is the existing pending→intent link: `lastWorkSessionId` changes
+ * only on a successful first bind, so a launch that fails before binding leaves
+ * the intent on the old session — never a half-bound state.
+ */
+export const restartWorkSession: Handler<'restart_work_session'> = async (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceName)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceName: msg.workspaceName } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  // Terminal intents have no forward edge; the entry is not offered for them and
+  // the server refuses a direct request the same way Start Work would.
+  if (req.status === 'done' || req.status === 'cancelled') {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.cannotStartDev', params: { status: req.status } },
+    })
+    return
+  }
+  if (msg.prompt.trim() === '') {
+    conn.send({ type: 'error', error: { code: 'intent.restartPromptRequired' } })
+    return
+  }
+  const oldSessionId = req.lastWorkSessionId
+  if (!oldSessionId) {
+    conn.send({ type: 'error', error: { code: 'intent.restartNoWorkSession' } })
+    return
+  }
+
+  // Only a LIVE old session is stopped. An idle one has no in-flight run, so
+  // stopping would be a no-op and waiting for its settle would always time out.
+  if (isRunning(oldSessionId)) {
+    markSessionRestarting(oldSessionId)
+    stopRun(oldSessionId)
+    const settled = await waitForSessionSettled(
+      ctx.eventBus,
+      oldSessionId,
+      RESTART_SETTLE_TIMEOUT_MS,
+    )
+    if (!settled) {
+      // The old run is still tearing down; do NOT create a second live session
+      // against it. Release the marker so the eventual settle runs its normal
+      // cleanup (this restart never happened).
+      clearSessionRestarting(oldSessionId)
+      conn.send({ type: 'error', error: { code: 'intent.restartSettleTimeout' } })
+      return
+    }
+  }
+
+  const result = await launchWorkSession(
+    proj,
+    msg.intentId,
+    { launchRun: ctx.launchRun, broadcastIntents: ctx.broadcastIntents },
+    (stage) =>
+      conn.send({
+        type: 'dev_launch_progress',
+        intentId: msg.intentId,
+        stage: stage as DevLaunchStage,
+      }),
+    conn.subject,
+    { restart: { prompt: msg.prompt, previousSessionId: oldSessionId } },
+  )
+  if (!result.success) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: result.code as UiErrorCode,
+        ...(result.params ? { params: result.params } : {}),
+        ...(result.guidance ? { guidance: result.guidance } : {}),
+      },
+    })
+    return
+  }
+  // Same notice as a normal start: the launch happened, the worktree just is
+  // not on the newest baseline.
   if (result.baselineNotice) conn.send(result.baselineNotice)
 }
 

@@ -81,6 +81,14 @@ export interface DevPromptArgs {
   effectiveSpecMode: IntentSpecMode
   /** The intent's approved spec path (relative to the workspace); `null` when none. */
   specPath: string | null
+  /**
+   * Replaces the `title\n\ncontent` segment of the visible body. Set only by a
+   * RESTART, whose first turn is the user's new prompt rather than the intent
+   * body. The dependency and spec-path notes are NOT part of the replaced
+   * segment and are still appended: they are the context that keeps the turn
+   * workable (which intents it builds on / which approved spec governs it).
+   */
+  promptOverride?: string
 }
 
 /**
@@ -134,7 +142,10 @@ export interface DevPromptParts {
   systemInstruction: string
   /** Slash-command dev skill (e.g. `/dev `) when configured; `''` otherwise. Leads the model user turn. */
   userTurnPrefix: string
-  /** Visible business context: intent title + content + dependency note + spec-path note. */
+  /**
+   * Visible business context: intent title + content (or, for a restart, the
+   * restart prompt in their place) + dependency note + spec-path note.
+   */
   visible: string
 }
 
@@ -157,6 +168,9 @@ export function buildDevPrompt(args: DevPromptArgs): DevPromptParts {
   // intent with a reverse-authored spec still gets pointed at it. It is business
   // context, not an internal instruction, so it stays visible.
   const specNote = args.sddEnabled && args.specPath ? `\n\n${buildDevSpecNote(args.specPath)}` : ''
-  const visible = `${args.title}\n\n${args.content}${depNote}${specNote}`
+  // A restart substitutes the user's prompt for the intent body; the trailing
+  // notes below are appended either way.
+  const body = args.promptOverride ?? `${args.title}\n\n${args.content}`
+  const visible = `${body}${depNote}${specNote}`
   return { systemInstruction, userTurnPrefix, visible }
 }

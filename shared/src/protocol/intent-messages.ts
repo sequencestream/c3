@@ -272,6 +272,25 @@ export type ClientResetIntentSession = {
 }
 
 /**
+ * Restart an intent's work session: stop the currently bound one (if it is
+ * still running) and start a BRAND-NEW work session seeded with `prompt`,
+ * reusing the intent's existing worktree and branch. The intent's
+ * `lastWorkSessionId` is rebound to the new session on its first bind; the old
+ * session is kept in the session list and stays openable.
+ *
+ * Not a resume: the new session starts from an empty conversation. `prompt` is
+ * the only content the user supplies and is REQUIRED (the server refuses an
+ * empty/whitespace prompt). The dependency and spec-path notes a normal launch
+ * carries are still appended, so the restart turn is as workable as a start.
+ */
+export type ClientRestartWorkSession = {
+  type: 'restart_work_session'
+  workspaceName: string
+  intentId: string
+  prompt: string
+}
+
+/**
  * Reset an intent's spec-authoring session: start a FRESH write-confined
  * `'spec'` session seeded with the user's new input concatenated with the
  * CURRENT spec document content (read from `spec_path`), replacing the prior

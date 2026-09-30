@@ -1508,6 +1508,9 @@
       },
       "more": {
         "label": "更多操作"
+      },
+      "restart": {
+        "label": "重启"
       }
     },
     "relay": {
@@ -1791,6 +1794,12 @@
         "message": "以你的新输入与当前规范内容拼接,新起一个规范会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
       },
       "placeholder": "想调整什么?你的输入会与当前内容拼接,作为新会话的起点。"
+    },
+
+    "restartSession": {
+      "title": "重启工作会话",
+      "message": "以你的提示词新起一个工作会话,沿用同一 worktree 与分支。旧会话若仍在运行会先中止,并保留在 Works 中;该意图将改指新会话。",
+      "placeholder": "接下来要做什么?这将成为新会话的第一条提示词。"
     },
     "refineSession": {
       "title": "优化意图",
@@ -2873,6 +2882,10 @@
       "specEditForbidden": "开发已启动(状态 {status}),不可直接编辑 spec。",
       "specSessionRunning": "spec 会话运行中,暂不可直接编辑 spec。",
       "devStartInFlight": "该意图正在启动工作,请稍候。",
+      "restartPromptRequired": "请输入重启工作会话的提示词。",
+      "restartNoWorkSession": "该意图没有可重启的工作会话。",
+      "restartSettleTimeout": "运行中的工作会话未能在限定时间内停止,未执行重启。",
+      "restartSessionChanged": "重启期间该意图绑定的工作会话已变化,未执行重启。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
       "prCreateNotWorktree": "仅 worktree 模式可创建 PR。请先将工作区切换为 worktree 模式。",

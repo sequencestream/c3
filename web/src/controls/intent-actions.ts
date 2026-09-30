@@ -501,6 +501,30 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'repair_intent_worktree', workspaceName: intentsProject.value, intentId, mode })
   }
 
+  // Restart an intent's spent work session with a new first turn. The server
+  // stops the old session (only when live), starts a fresh one on the same
+  // worktree/branch, and rebinds the intent on the new session's first bind.
+  // The same dev-launch overlay covers the prep, with the old session id as its
+  // success terminal — the intent stays `in_progress`, so the status flip a
+  // normal start relies on would not tell us the new session bound.
+  ctx.restartWorkSession = (intentId: string, prompt: string): void => {
+    if (!intentsProject.value) return
+    const baseWorkSessionId =
+      ctx.currentIntents.value.find((r) => r.id === intentId)?.lastWorkSessionId ?? null
+    send({
+      type: 'restart_work_session',
+      workspaceName: intentsProject.value,
+      intentId,
+      prompt,
+    })
+    ctx.requestedWorkSessionId.value = null
+    ctx.clearDevLaunchTimers()
+    ctx.devLaunch.value = beginDevLaunch(intentId, Date.now(), baseWorkSessionId)
+    ctx.devLaunchTimers.safety = setTimeout(() => {
+      ctx.dispatchDevLaunch({ kind: 'timeout', now: Date.now() })
+    }, DEV_LAUNCH_SAFETY_TIMEOUT_MS)
+  }
+
   ctx.setIntentStatus = (intentId: string, status: IntentStatus): void => {
     send({ type: 'update_intent_status', intentId, status })
   }

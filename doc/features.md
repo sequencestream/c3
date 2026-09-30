@@ -71,7 +71,8 @@ c3
 │   │   │   └── 评审过程可核验                    # 意图详情「规范评审会话」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
 │   │   ├── 规格直接编辑                          # 未启动开发且无运行中 spec 会话时行内编辑 spec 源码,覆盖写集中 specs 文件+审批联动重置+写 spec_updated 日志
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
-│   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
+│   │   │   ├── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
+│   │   │   └── 工作会话重启                      # 工作会话回合用尽后的接力出口:详情页工作会话标题栏「重启」收集必填提示词,以新会话沿用同 worktree/分支开跑并改绑 lastWorkSessionId;旧会话(存活先中止并等待其落定)保留可查看,被中止回合只写 cancelled 审计、不做提交/推送/PR/反向规范
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
 │   │   ├── WorkNote 追加式历史                    # 意图的 work/review/fix 自由文本正文历史,只增不改不删,供后续 Agent 读前序上下文而不必凭 PR diff 推断;经 MCP append_intent_worknote/list_intent_worknotes 读写,物理删除意图同事务级联清除
 │   │   ├── PR 评审/修复结果                       # 意图级结果快照(reviewSessionId/reviewStatus/reviewFixRounds/fixSessionId/fixStatus):Review 未评审/待结论/通过/发现问题,Fix 尚未进入/待结论/已处理,闭环复审轮次;与 spec 只读审核 specReview*、PR 平台状态 IntentPrStatus、意图生命周期 status/completedAt 各自独立;needsReview(impactLevel) 仅 L5 免评审(未定级/越界窄化为 null 仍需评审);同步回填 MCP sync_intent_review_status/sync_intent_fix_status 只写终态及对应会话、不递增轮次、不写 WorkNote,明确分类为写工具并贯通运行时权限冻结

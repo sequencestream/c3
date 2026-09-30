@@ -55,6 +55,8 @@ vi.mock('../features/sessions/session-metadata-store.js', () => ({
 }))
 vi.mock('../features/intents/dev-link.js', () => ({
   clearPendingDevLink: vi.fn(() => undefined),
+  clearSessionRestarting: vi.fn(),
+  isSessionRestarting: vi.fn(() => false),
   releaseDevLaunch: vi.fn(),
   takePendingDevLink: vi.fn(() => null),
 }))
@@ -76,6 +78,9 @@ vi.mock('../features/intents/spec-content-watch.js', () => ({
 }))
 vi.mock('../features/intents/dev-cleanup.js', () => ({
   runManualDevCleanup: vi.fn(async () => ({ kind: 'skipped' })),
+}))
+vi.mock('../features/intents/fast-spec.js', () => ({
+  settleFastTurn: vi.fn(async () => undefined),
 }))
 vi.mock('../features/intents/worktree.js', () => ({
   getWorktreePath: vi.fn((ws: string, id: string) => `${ws}/.wt/${id}`),
@@ -815,6 +820,75 @@ describe('resident domain subscriptions — discussion + automation', () => {
     // Give the (not-expected) fire-and-forget a tick; it must never be called.
     await new Promise((r) => setTimeout(r, 10))
     expect(runManualDevCleanup).not.toHaveBeenCalled()
+  })
+
+  it('run:settled sessionKind=work: a RESTART-aborted turn skips cleanup but keeps its conclusion', async () => {
+    const { listIntents, getIntentSessionBySessionId, updateIntentSession } =
+      await import('../features/intents/store.js')
+    const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
+    const { isSessionRestarting, clearSessionRestarting } =
+      await import('../features/intents/dev-link.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      { id: 'intent-restart', lastWorkSessionId: 'sess-restart', title: 'R' } as Intent,
+    ])
+    vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
+      id: 77,
+      intentId: 'intent-restart',
+      sessionId: 'sess-restart',
+    } as unknown as IntentDevSession)
+    vi.mocked(isSessionRestarting).mockReturnValueOnce(true)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-restart',
+      workspacePath: '/proj',
+      reason: 'aborted',
+      sessionKind: 'work',
+      runKind: 'interactive',
+    })
+
+    // The `cancelled` conclusion is still the audit record of the stopped turn.
+    await vi.waitFor(() => {
+      expect(updateIntentSession).toHaveBeenCalled()
+    })
+    const patch = vi.mocked(updateIntentSession).mock.calls[0]![1] as Partial<{ exitCode: string }>
+    expect(patch.exitCode).toBe('cancelled')
+    // But a hand-off is not a delivery: no commit/push/PR cleanup.
+    await new Promise((r) => setTimeout(r, 10))
+    expect(runManualDevCleanup).not.toHaveBeenCalled()
+    // The marker is consumed on the settle it was set for.
+    expect(clearSessionRestarting).toHaveBeenCalledWith('sess-restart')
+  })
+
+  it('run:settled sessionKind=work: a RESTART-aborted fast turn does NOT reverse-author a spec', async () => {
+    const { listIntents } = await import('../features/intents/store.js')
+    const { getSddEnabled } = await import('../kernel/config/index.js')
+    const { settleFastTurn } = await import('../features/intents/fast-spec.js')
+    const { isSessionRestarting } = await import('../features/intents/dev-link.js')
+
+    vi.mocked(listIntents).mockReturnValueOnce([
+      {
+        id: 'intent-fast',
+        lastWorkSessionId: 'sess-fast',
+        title: 'F',
+        effectiveSpecMode: 'fast',
+      } as Intent,
+    ])
+    vi.mocked(getSddEnabled).mockReturnValueOnce(true)
+    vi.mocked(isSessionRestarting).mockReturnValueOnce(true)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'sess-fast',
+      workspacePath: '/proj',
+      reason: 'aborted',
+      sessionKind: 'work',
+      runKind: 'interactive',
+    })
+
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settleFastTurn).not.toHaveBeenCalled()
   })
 
   it('run:settled matched intent with error reason writes failure exit_code', async () => {

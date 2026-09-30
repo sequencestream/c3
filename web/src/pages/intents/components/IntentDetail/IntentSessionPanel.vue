@@ -146,5 +146,8 @@ defineExpose({
     @stop="emit('stop')"
     @continue="emit('continue')"
     @list-commands="emit('list-commands')"
-  />
+  >
+    <!-- 标题栏动作插槽:意图详情把「重启工作会话」按钮透传到这里(仅工作会话 tab 渲染)。 -->
+    <template #title-action><slot name="title-action" /></template>
+  </ChatColumn>
 </template>

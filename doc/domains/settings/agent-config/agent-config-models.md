@@ -202,8 +202,8 @@ Model Vendor 的内置清单——它连不到任何 provider,列 provider 的�
 - **`specAgentId`**(text): 运行规格编写会话(编写/完善项目规格)的智能体 id。语义同 `toolAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`(AC-R24)。
 - **`specReviewAgentId`**(text): 运行规格审核会话(只读审核者,判定已写规格并提交结构化结论)的智能体 id。语义同 `specAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`。唯一槽位,无 sandbox 变体。
 - **`automationAgentId`**(text): 为”新建自动化”创建表单预填 vendor + agent 的智能体 id。语义同 `specAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`。与运行时 `resolveAgent` 路由无关——自动化记录存创建时快照(AC-R25)。
-- **`reviewAgentId`**(text): 从 `pr-review-runner`(PR 评审接力)内置模板新建自动化时的默认执行身份。语义同 `automationAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`。与运行时 `resolveAgent` 路由无关——只做模板种子的一次性默认选择。
-- **`fixAgentId`**(text): 从 `pr-review-fix`(PR 评审失败修复)内置模板新建自动化时的默认执行身份。语义同 `reviewAgentId`。
+- **`reviewAgentId`**(text): PR 评审阶段(自动化队列的评审接力)的执行身份。语义同 `automationAgentId`:空 ⇒”跟随默认”;非空指向已禁用 → 改写,指向已删除 → 清空为 `''`。与运行时 `resolveAgent` 路由无关——只做一次性默认选择。
+- **`fixAgentId`**(text): PR 评审失败修复阶段的执行身份。语义同 `reviewAgentId`。工作区层同名覆盖原本只被已下线的内置评审模板消费,保留字段供用户自建自动化使用。
 - **`defaultMode`**(权限模式,可选): 新会话启动时所处的权限模式;为五种权限模式取值之一,找不到时回退到 `default`(AC-R8)。为 session-registry 中新会话的模式做种(SR-R6)。
 - **`consensus`**(`{ enabled }`,可选): 权限提示上的多智能体共识投票;默认关闭。由权限网关消费——见 [consensus](../../core/permission-gateway/features/permission-gateway-consensus.md)。
 - **`maxRoundsPerStage`**(number,可选): 多智能体讨论每阶段的轮次上限;归一化为 ≥ 8,默认 12(AC-R9)。由讨论引擎消费。

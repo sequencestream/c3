@@ -372,38 +372,35 @@ export interface SystemSettings {
    */
   automationAgentId: string
   /**
-   * Id of the agent that runs the **PR-review relay** built-in automation
-   * (`pr-review-runner`) when it is created from its template. Semantics are
-   * **identical to {@link automationAgentId}**: an **empty string is "follow the
-   * default agent"** (the template seed walks this field, the workspace's
-   * `reviewAgentId` override, its `defaultAgentId` and the system default — the
-   * workspace's own layer first once the workspace set a default agent — and ends on
-   * the first enabled agent), a *non-empty* value that points at a
-   * removed/now-disabled agent is **rewritten** on store to the next enabled agent
-   * in `order_seq` order — the same `resolveDefaultAgentId` fall-through the default
-   * uses; when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An
-   * empty string is left empty (never auto-filled), so "follow the default" survives
-   * a save.
+   * Id of the agent that runs **PR-review work** (a user-built automation, or the
+   * review stage of a spec-review relay). Semantics are **identical to
+   * {@link automationAgentId}**: an **empty string is "follow the default agent"**
+   * (the resolution walks this field, the workspace's `reviewAgentId` override, its
+   * `defaultAgentId` and the system default — the workspace's own layer first once
+   * the workspace set a default agent — and ends on the first enabled agent), a
+   * *non-empty* value that points at a removed/now-disabled agent is **rewritten**
+   * on store to the next enabled agent in `order_seq` order — the same
+   * `resolveDefaultAgentId` fall-through the default uses; when every agent is
+   * disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string is left empty
+   * (never auto-filled), so "follow the default" survives a save.
    *
    * UNLIKE {@link toolAgentId}/{@link intentAgentId}/{@link specAgentId}, this value
    * is **not** consumed by the runtime `resolveAgent` router (same as
    * {@link automationAgentId}): an automation record stores a concrete
-   * `vendor`/`agentId` snapshot at creation time and runs on that. This field only
-   * decides the template's one-time default selection.
+   * `vendor`/`agentId` snapshot at creation time and runs on that.
    */
   reviewAgentId: string
   /**
-   * Id of the agent that runs the **PR-review failure fix** built-in automation
-   * (`pr-review-fix`) when it is created from its template. Semantics are
-   * **identical to {@link reviewAgentId}**: an **empty string is "follow the default
-   * agent"** (the template seed walks this field, the workspace's `fixAgentId`
-   * override, its `defaultAgentId` and the system default in the same order, and ends
-   * on the first enabled agent), a *non-empty* dangling value is **rewritten** on
-   * store to the
-   * next enabled agent in `order_seq` order, and the value is **not** consumed by the
-   * runtime router — it only seeds the template's one-time default selection. An
-   * empty string is left empty (never auto-filled), so "follow the default" survives
-   * a save.
+   * Id of the agent that runs **PR-review fix work** (a user-built automation, or
+   * the fix stage of a spec-review relay). Semantics are **identical to
+   * {@link reviewAgentId}**: an **empty string is "follow the default agent"** (the
+   * resolution walks this field, the workspace's `fixAgentId` override, its
+   * `defaultAgentId` and the system default in the same order, and ends on the first
+   * enabled agent), a *non-empty* dangling value is **rewritten** on store to the
+   * next enabled agent in `order_seq` order, and the value is **not** consumed by
+   * the runtime router — an automation record keeps its own concrete snapshot. An
+   * empty string is left empty (never auto-filled), so "follow the default"
+   * survives a save.
    */
   fixAgentId: string
   /**

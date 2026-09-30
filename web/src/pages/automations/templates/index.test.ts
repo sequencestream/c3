@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  GenericEvent,
-  PrBranchRef,
-  PrEventAssociation,
-  PrRef,
-  PrRepo,
-} from '@ccc/shared/event-model'
 import type { AutomationTemplateBuildArgs } from './index'
 import {
   ARCH_REVIEW_PROMPT,
-  PR_STATUS_POLLER_PROMPT,
   WEEKLY_VULN_ANALYSIS_PROMPT,
   WEEKLY_WORKTREE_CLEANUP_PROMPT,
-  PR_REVIEW_RUNNER_PROMPT,
-  PR_REVIEW_FIX_PROMPT,
   TEMPLATE_MAX_WALL_CLOCK_MS,
   getAutomationTemplate,
 } from './index'
@@ -27,12 +17,9 @@ function countPhysicalLines(s: string): number {
 
 describe('all templates', () => {
   const ids = [
-    'pr-status-poller',
     'weekly-arch-review',
     'weekly-vuln-analysis',
     'weekly-worktree-cleanup',
-    'pr-review-runner',
-    'pr-review-fix',
     'custom-event-echo',
   ] as const
 
@@ -49,56 +36,17 @@ describe('all templates', () => {
     expect(template!.titleKey).toMatch(/^automation\.list\.templates\./)
     expect(template!.descriptionKey).toMatch(/^automation\.list\.templates\./)
   })
-})
 
-describe('PR status poller automation template', () => {
-  it('builds the enabled Claude reconciliation configuration', () => {
-    const input = getAutomationTemplate('pr-status-poller')?.build({
-      workspaceName: '/workspace',
-      agentId: 'a1',
-    })
-    expect(input).toMatchObject({
-      type: 'llm',
-      vendor: 'claude',
-      agentId: 'a1',
-      cronExpression: '*/10 * * * *',
-      mode: 'bypassPermissions',
-      maxWallClockMs: 600_000,
-    })
-    expect(input?.toolAllowlist).toEqual(
-      expect.arrayContaining([
-        'Bash',
-        'mcp__c3__find_intents',
-        'mcp__c3__view_intent',
-        'mcp__c3__publish_event',
-      ]),
-    )
-  })
-
-  it('grants the sync tool as the only PR-status write surface, decided by the forge', () => {
-    // The forge-derived `sync_intent_pr_status` is the only PR-status write the
-    // template grants: the allowlist and the prompt are one fact and must move
-    // together, or the automation calls a tool it does not have — a silent loss of
-    // the reconciliation it advertises.
-    const input = getAutomationTemplate('pr-status-poller')?.build({
-      workspaceName: '/workspace',
-      agentId: 'a1',
-    })
-    expect(input?.toolAllowlist).toContain('mcp__c3__sync_intent_pr_status')
-    expect(PR_STATUS_POLLER_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
-    // The prompt still never writes a status itself — c3 derives it from the forge
-    // — and publish_event remains the subscription signal for downstream automations.
-    expect(PR_STATUS_POLLER_PROMPT).toContain('never pass or assume a status value')
-    expect(PR_STATUS_POLLER_PROMPT).toContain('publish_event')
-  })
-
-  it('prompt is ≤10 physical lines and retains core identifiers', () => {
-    expect(countPhysicalLines(PR_STATUS_POLLER_PROMPT)).toBeLessThanOrEqual(10)
-    expect(PR_STATUS_POLLER_PROMPT).toContain('reviewing')
-    expect(PR_STATUS_POLLER_PROMPT).toContain('gh')
-    expect(PR_STATUS_POLLER_PROMPT).toContain('merged')
-    expect(PR_STATUS_POLLER_PROMPT).toContain('closed')
-  })
+  // The PR state source is the server-side derivation on the intent PR row, so the
+  // LLM-polling review/fix chain is no longer offered as a one-click template. The
+  // `pr:*` event types and the PR-status sync tool stay available for user-built
+  // automations; only these ready-made entries are gone.
+  it.each(['pr-status-poller', 'pr-review-runner', 'pr-review-fix'])(
+    '%s is no longer a built-in template',
+    (id) => {
+      expect(getAutomationTemplate(id)).toBeUndefined()
+    },
+  )
 })
 
 describe('weekly architecture review automation template', () => {
@@ -245,203 +193,6 @@ describe('weekly expired worktree cleanup automation template', () => {
     expect(WEEKLY_WORKTREE_CLEANUP_PROMPT).not.toContain('git branch -D')
     expect(WEEKLY_WORKTREE_CLEANUP_PROMPT).not.toContain('mcp__c3__save_intents')
     expect(WEEKLY_WORKTREE_CLEANUP_PROMPT).not.toContain('mcp__c3__save_intent_directly')
-  })
-})
-
-describe('PR review runner automation template', () => {
-  it('builds the event-claude review configuration', () => {
-    const input = getAutomationTemplate('pr-review-runner')?.build({
-      workspaceName: '/workspace',
-      agentId: 'a1',
-    })
-    expect(input).toMatchObject({
-      type: 'llm',
-      vendor: 'claude',
-      agentId: 'a1',
-      triggerType: 'event',
-      cronExpression: '',
-      mode: 'bypassPermissions',
-      maxWallClockMs: 600_000,
-    })
-    expect((input?.config as Record<string, unknown>).embedEventContext).toBe(true)
-    expect(input?.eventFilters).toEqual([
-      { type: 'pr:create' },
-      { type: 'pr:update', statuses: ['success'] },
-    ])
-    expect(input?.toolAllowlist).toEqual(
-      expect.arrayContaining([
-        'Read',
-        'Grep',
-        'Glob',
-        'Bash',
-        'mcp__c3__find_intents',
-        'mcp__c3__view_intent',
-        'mcp__c3__sync_intent_pr_status',
-        'mcp__c3__publish_event',
-      ]),
-    )
-    // Review-only: must NOT have file-edit or intent-saving tools.
-    expect(input?.toolAllowlist).not.toContain('Edit')
-    expect(input?.toolAllowlist).not.toContain('Write')
-    expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intents')
-    expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intent_directly')
-  })
-
-  it('reviews only when needed, comments the result, and merges a passing PR', () => {
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('pr:review')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('publish_event')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr diff')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr list --state open')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('[review]')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('[error]')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('newer commit')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('gh pr merge')
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('Never edit files')
-    // A forge-observed terminal state is reconciled through the sync tool, and the
-    // tool name must match what the allowlist actually grants.
-    expect(PR_REVIEW_RUNNER_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
-  })
-})
-
-describe('PR review fix automation template', () => {
-  it('builds the event-claude fix configuration', () => {
-    const input = getAutomationTemplate('pr-review-fix')?.build({
-      workspaceName: '/workspace',
-      agentId: 'a1',
-    })
-    expect(input).toMatchObject({
-      type: 'llm',
-      vendor: 'claude',
-      agentId: 'a1',
-      triggerType: 'event',
-      cronExpression: '',
-      mode: 'bypassPermissions',
-      maxWallClockMs: 600_000,
-    })
-    expect((input?.config as Record<string, unknown>).embedEventContext).toBe(true)
-    expect(input?.eventFilters).toEqual([{ type: 'pr:review', statuses: ['failure'] }])
-    expect(input?.toolAllowlist).toEqual(
-      expect.arrayContaining([
-        'Read',
-        'Grep',
-        'Glob',
-        'Bash',
-        'Edit',
-        'Write',
-        'mcp__c3__view_intent',
-        'mcp__c3__sync_intent_pr_status',
-        'mcp__c3__publish_event',
-      ]),
-    )
-  })
-
-  it('evaluates findings, comments every decision, and publishes pr:update', () => {
-    expect(PR_REVIEW_FIX_PROMPT).toContain('pr:update')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('publish_event')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('associated intent')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('relevant spec')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('git worktree list --porcelain')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('worth changing')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('[fix]')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('commit the changes')
-    expect(PR_REVIEW_FIX_PROMPT).toContain('do not create an empty commit')
-    // A forge-observed terminal state is reconciled through the sync tool.
-    expect(PR_REVIEW_FIX_PROMPT).toContain('mcp__c3__sync_intent_pr_status')
-    // Fix prompt must allow editing unlike the runner.
-    expect(PR_REVIEW_FIX_PROMPT).toContain('Perform edits')
-    expect(PR_REVIEW_FIX_PROMPT).not.toContain('Do not modify any files')
-  })
-})
-
-/**
- * The two PR templates embed their triggering event verbatim, so their prompts
- * must describe the real `pr:*` payload: `data` carries `{ pr, repo, ref,
- * association }` — the number is `data.pr.number`, the repository is
- * `data.repo.owner` / `data.repo.name`, and `association` holds intent linkage
- * only. Typing the fixture with the shared interfaces turns a schema change into
- * a compile error instead of a silently stale prompt.
- */
-const PR_EVENT_DATA: {
-  pr: PrRef
-  repo: PrRepo
-  ref: PrBranchRef
-  association: PrEventAssociation
-} = {
-  pr: {
-    number: 231,
-    id: 'PR_kwABC',
-    url: 'https://github.com/acme/demo/pull/231',
-    title: 'feat: x',
-    state: 'OPEN',
-  },
-  repo: { provider: 'github', host: 'github.com', owner: 'acme', name: 'demo' },
-  ref: { head: 'feat/x', base: 'main' },
-  association: { intentId: 'i-1', intentTitle: 'An intent' },
-}
-
-/**
- * What a SERVER-published `pr:create` actually looks like: only `pr.url`, `ref`
- * and `association.intentId` are filled in — no `pr.number` and no `repo` — so a
- * prompt that reads the number/repo directly must offer a recovery path.
- */
-const SERVER_PR_CREATE_EVENT: GenericEvent = {
-  type: 'pr:create',
-  status: 'success',
-  metadata: { operation: 'create' },
-  data: {
-    pr: { url: PR_EVENT_DATA.pr.url! },
-    ref: { head: 'intent/abc-1', base: 'main' },
-    association: { intentId: 'i-1' },
-  },
-}
-
-/** Every `data.<container>.<field>` path the real event can carry. */
-const VALID_EVENT_DATA_PATHS = new Set(
-  Object.entries(PR_EVENT_DATA).flatMap(([container, fields]) =>
-    Object.keys(fields).map((field) => `${container}.${field}`),
-  ),
-)
-
-/** The `data.<container>.<field>` paths a prompt tells the agent to read. */
-function referencedEventDataPaths(prompt: string): string[] {
-  return [...prompt.matchAll(/\bdata\.([A-Za-z]+)\.([A-Za-z]+)\b/g)].map(
-    (match) => `${match[1]}.${match[2]}`,
-  )
-}
-
-describe('PR template prompts match the real pr:* event shape', () => {
-  const prompts = [
-    ['pr-review-runner', PR_REVIEW_RUNNER_PROMPT],
-    ['pr-review-fix', PR_REVIEW_FIX_PROMPT],
-  ] as const
-
-  it.each(prompts)('%s only references event data paths that exist', (_id, prompt) => {
-    const referenced = referencedEventDataPaths(prompt)
-    expect(referenced.length).toBeGreaterThan(0)
-    for (const path of referenced) expect(VALID_EVENT_DATA_PATHS).toContain(path)
-  })
-
-  it.each(prompts)('%s reads number and repo from the right containers', (_id, prompt) => {
-    expect(prompt).toContain('data.pr.number')
-    expect(prompt).toContain('data.repo.owner')
-    expect(prompt).toContain('data.repo.name')
-    // The association carries intent linkage only — never the PR number or repo.
-    expect(prompt).not.toMatch(/\bpr\.owner\b/)
-    expect(prompt).not.toMatch(/\bpr\.repo\b/)
-    expect(prompt).not.toMatch(/association\.(number|owner|repo|name)\b/)
-    expect(prompt).toContain('intentId')
-  })
-
-  it.each(prompts)('%s recovers the fields a server-published event omits', (_id, prompt) => {
-    const data = SERVER_PR_CREATE_EVENT.data as Record<string, Record<string, unknown>>
-    // Guard the premise: the server-side create path fills neither of these.
-    expect(data.pr.number).toBeUndefined()
-    expect(data.repo).toBeUndefined()
-    // So the prompt must fall back to the URL, the local remote and a head-branch lookup.
-    expect(prompt).toContain('data.pr.url')
-    expect(prompt).toContain('gh repo view --json owner,name')
-    expect(prompt).toContain('gh pr list --head')
-    expect(prompt).toContain('data.ref.head')
   })
 })
 

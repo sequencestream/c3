@@ -128,14 +128,15 @@ export function getDefaultAgentId(): string {
  * is the fallback every other role follows when its own field is the empty "follow
  * the default" sentinel; the dedicated slots are background tool sessions, intent
  * communication, spec authoring, spec review, ordinary work sessions (`work`), and
- * the two PR-review automation template seeds (`review` for the review relay, `fix`
- * for the failure fix). One enum + one field map ({@link ROLE_SETTINGS_FIELD}) is
+ * the two PR-review work roles (`review` for the review relay, `fix` for the
+ * failure fix). One enum + one field map ({@link ROLE_SETTINGS_FIELD}) is
  * what keeps the dedicated roles from each re-implementing the resolution rules.
  *
- * `review` and `fix` are agent ROLES, not session types: they seed the two
- * PR-review built-in automations' default executor and are consumed through the
- * shared {@link getRoleAgentId} / {@link resolveRoleAgentTarget} entry. They add no
- * SessionKind and no dedicated session-launch path.
+ * `review` and `fix` are agent ROLES, not session types: they name the executor of
+ * PR-review work (the review relay, or an automation the user built for it) and are
+ * consumed through the shared {@link getRoleAgentId} /
+ * {@link resolveRoleAgentTarget} entry. They add no SessionKind and no dedicated
+ * session-launch path.
  *
  * `work` is the one role whose own reference is resolved through a
  * **workspace-first chain** (workspace `workAgentId` before the system one) rather
@@ -164,8 +165,8 @@ const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
  *
  * Only the four RUNTIME roles are listed. `default` has no role override (it already
  * ends on the workspace default), and `review` / `fix` are deliberately absent: their
- * workspace overrides are create-time seeds for the two PR-review templates, consumed
- * by the console. The relay queue claims its phases through this same resolver, so
+ * workspace overrides are create-time seeds the console applies, never part of the
+ * relay queue's resolution. The relay queue claims its phases through this same resolver, so
  * listing them here would silently change which agent an in-flight Review / Fix phase
  * binds — a behaviour change the workspace-override feature does not ask for.
  */

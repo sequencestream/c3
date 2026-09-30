@@ -18,6 +18,20 @@ vi.mock('../../runs.js', () => ({
   isRunning: vi.fn((id: string) => running.has(id)),
 }))
 
+const { c3ToVendor } = vi.hoisted(() => ({ c3ToVendor: new Map<string, string>() }))
+vi.mock('../sessions/session-metadata-store.js', async () => {
+  const actual = await vi.importActual<typeof import('../sessions/session-metadata-store.js')>(
+    '../sessions/session-metadata-store.js',
+  )
+  return {
+    ...actual,
+    getByC3Id: (id: string) => {
+      const vendorSessionId = c3ToVendor.get(id)
+      return vendorSessionId ? { vendorSessionId } : actual.getByC3Id(id)
+    },
+  }
+})
+
 const blocked = new Map<string, ActionDescriptor>()
 /** The loader each derivation was handed, so the ledger plumbing is observable. */
 const loaders: ((workspacePath: string) => Intent[])[] = []
@@ -106,6 +120,7 @@ function enrichOne(overrides: Partial<Intent> & { id: string }): Intent {
 
 beforeEach(() => {
   running.clear()
+  c3ToVendor.clear()
   blocked.clear()
   loaders.length = 0
   ledger.clear()
@@ -223,6 +238,30 @@ describe('enrichRunStatus — sessionActive derivation', () => {
     const stopped = enrichOne({ id: 'a', reviewSessionId: 's-review-stopped' })
     expect(stopped.sessionActive).toBe(false)
     expect(stopped.reviewInFlight).toBe(false)
+  })
+
+  it('counts a live review session stored as a c3 id when only the vendor id is running', () => {
+    const c3Id = 'c3s_review_bound'
+    const vendorId = 'vendor-native-review'
+    c3ToVendor.set(c3Id, vendorId)
+    running.add(vendorId)
+    expect(enrichOne({ id: 'a', reviewSessionId: c3Id }).sessionActive).toBe(true)
+    expect(running.has(c3Id)).toBe(false)
+  })
+
+  it('counts a live fix session stored as a c3 id when only the vendor id is running', () => {
+    const c3Id = 'c3s_fix_bound'
+    const vendorId = 'vendor-native-fix'
+    c3ToVendor.set(c3Id, vendorId)
+    running.add(vendorId)
+    expect(enrichOne({ id: 'a', fixSessionId: c3Id }).sessionActive).toBe(true)
+    expect(running.has(c3Id)).toBe(false)
+  })
+
+  it('does not treat a pending placeholder as active even when a vendor mapping exists', () => {
+    c3ToVendor.set('pending:review-1', 'vendor-native-review')
+    running.add('vendor-native-review')
+    expect(enrichOne({ id: 'a', reviewSessionId: 'pending:review-1' }).sessionActive).toBe(false)
   })
 
   it('derives active for non-in_progress intents too (draft with running intent session)', () => {

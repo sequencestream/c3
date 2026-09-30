@@ -57,10 +57,12 @@ import {
   describeCodexOccupantRefusal,
   describeCodexReclaimFailure,
   escalateKill,
+  findCodexChildrenByThread,
   getCodexProcessSignals,
   logCodexChildSpawn,
   logCodexChildSettled,
   logCodexReclaim,
+  logCodexSessionChildren,
   readProcessStartTime,
   reclaimCodexOccupant,
   registerCodexChild,
@@ -638,17 +640,26 @@ class RestartableQueue implements AsyncIterable<CanonicalMessage> {
 }
 
 /**
- * Whether an error is Codex's thread writer-lock rejection (2026-09-29-004):
- * `thread ... already has an active writer`, or JSON-RPC `-32600`. It is normally
- * an in-band `error` ThreadEvent and can also surface as a generator throw; both
- * shapes route through this one predicate.
+ * Whether an error is Codex's thread writer-lock rejection (2026-09-29-004). Only
+ * the deterministic message is accepted: JSON-RPC `-32600` is a generic "invalid
+ * request", not lock-specific, and a false positive here would scan the process
+ * table, possibly signal a process, and re-send this turn's prompt on the retry.
+ * The rejection is normally an in-band `error` ThreadEvent and can also surface as
+ * a generator throw; both shapes route through this one predicate.
  */
 export function isActiveWriterRejection(err: unknown): boolean {
-  if (err && typeof err === 'object' && 'code' in err) {
-    if ((err as { code?: unknown }).code === -32600) return true
+  return /already has an active writer/i.test(errorMessageOf(err))
+}
+
+/** The message text of an `Error`, a string, or a message-bearing object. */
+function errorMessageOf(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object') {
+    const message = (err as { message?: unknown }).message
+    if (typeof message === 'string') return message
   }
-  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
-  return /already has an active writer/i.test(message) || /-32600/.test(message)
+  return ''
 }
 
 /** Push/close/fail async-iterable buffer bridging the event pump into a pull stream. */
@@ -1179,6 +1190,9 @@ export class CodexDriver implements AgentDriver {
         }
       } finally {
         resolveSid(sid) // never leave sessionId() hanging if the turn never started.
+        // The session's own record of its codex children: pid, exit mode and
+        // reclamation result in one line, read back from the registry.
+        logCodexSessionChildren(sid, findCodexChildrenByThread(sid))
         if (relayToken) this.relay?.unregister(relayToken) // evict the per-run binding.
         cleanupImageTempFiles(imageFiles) // remove the per-turn image temp files.
         cleanupModelCatalogFile(modelCatalog) // remove the per-run model catalog (host or sandbox).

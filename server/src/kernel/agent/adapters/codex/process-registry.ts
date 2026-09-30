@@ -7,8 +7,9 @@
  * `thread/resume` is refused with `already has an active writer` (-32600). This
  * module is the adapter's memory of what it spawned:
  *
- *  - `registerCodexChild` records the pid, the thread id and the process start time
- *    read from the host process table;
+ *  - `registerCodexChild` records one child c3 spawned — or, for a sandbox run,
+ *    the descendant it reclaimed on that child's behalf — with its pid, thread id
+ *    and the process start time read from the host process table;
  *  - `escalateKill` is the single teardown helper (SIGTERM → poll → SIGKILL →
  *    verify) shared by the turn lifecycle and the resume reclaim path, so the two
  *    never diverge on grace period or outcome vocabulary;
@@ -42,7 +43,7 @@ export interface CodexChildOutcome {
   reason?: string
 }
 
-/** One spawned Codex turn child. `live` until it settles. */
+/** One Codex turn child: spawned by c3, or a descendant c3 reclaimed for it. */
 export interface CodexChildRecord {
   pid: number
   /** The Codex thread the child serves; `null` until `thread.started` arrives. */
@@ -126,13 +127,8 @@ export function findCodexChildrenByThread(threadId: string): CodexChildRecord[] 
   return out
 }
 
-export function findCodexChildByPid(pid: number): CodexChildRecord | undefined {
+function findCodexChildByPid(pid: number): CodexChildRecord | undefined {
   return records.get(pid)
-}
-
-/** All records, for a session-detail / log reconstruction of a c3 instance's turns. */
-export function listCodexChildren(): CodexChildRecord[] {
-  return [...records.values()]
 }
 
 /** Test hook: drop every record so cases do not leak into one another. */
@@ -181,7 +177,7 @@ export function setCodexProcessSignalsForTests(next: CodexProcessSignals | null)
 /** Grace period between SIGTERM and SIGKILL — mirrors the daemon restart sequence. */
 export const CODEX_KILL_GRACE_MS = 3000
 /** Poll interval while waiting for a signalled process to exit. */
-export const CODEX_KILL_POLL_MS = 100
+const CODEX_KILL_POLL_MS = 100
 
 export interface CodexKillEscalation {
   method: CodexReclaimMethod
@@ -242,9 +238,11 @@ export async function escalateKill(
 // Host process table (injectable)
 // ---------------------------------------------------------------------------
 
-/** One live host process: its pid, start time and full command line. */
+/** One live host process: its pid, parent, start time and full command line. */
 export interface ProcessTableEntry {
   pid: number
+  /** Parent pid — the ancestry link that proves a sandbox wrapper's descendant. */
+  ppid: number | null
   /** `null` when the table was readable but this entry's start time was not. */
   startTimeMs: number | null
   command: string
@@ -254,7 +252,7 @@ export interface ProcessTableEntry {
 export type ProcessTableReader = () => Promise<ProcessTableEntry[] | null>
 
 const PS_LINE_RE =
-  /^\s*(\d+)\s+([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.*)$/
+  /^\s*(\d+)\s+(\d+)\s+([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.*)$/
 
 /** Parse `ps -eo pid=,lstart=,command=` output (C locale). Malformed lines are skipped. */
 export function parseProcessTable(stdout: string): ProcessTableEntry[] {
@@ -263,11 +261,12 @@ export function parseProcessTable(stdout: string): ProcessTableEntry[] {
     if (!line.trim()) continue
     const match = PS_LINE_RE.exec(line)
     if (!match) continue
-    const parsed = Date.parse(match[2])
+    const parsed = Date.parse(match[3])
     out.push({
       pid: Number(match[1]),
+      ppid: Number(match[2]),
       startTimeMs: Number.isNaN(parsed) ? null : parsed,
-      command: match[3].trim(),
+      command: match[4].trim(),
     })
   }
   return out
@@ -279,7 +278,7 @@ export function defaultProcessTableReader(): Promise<ProcessTableEntry[] | null>
     try {
       execFile(
         'ps',
-        ['-eo', 'pid=,lstart=,command='],
+        ['-eo', 'pid=,ppid=,lstart=,command='],
         { env: { ...process.env, LC_ALL: 'C' }, maxBuffer: 16 * 1024 * 1024 },
         (err, stdout) => {
           if (err) {
@@ -324,7 +323,7 @@ export type CodexRefusalReason =
   | 'record-live'
   | 'start-time-mismatch'
 
-export type CodexOccupantScan =
+type CodexOccupantScan =
   | { kind: 'candidate'; pid: number; startTimeMs: number | null }
   | { kind: 'ambiguous' }
   | { kind: 'none' }
@@ -342,42 +341,105 @@ export type CodexReclaimResult =
       startTimeMs?: number | null
     }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 /**
- * Whether a command line is a Codex turn resuming `threadId`. c3 always passes
- * `resume <threadId>` as argv elements, and the arapuca wrapper forwards argv
- * verbatim, so the marker survives both run shapes.
+ * Whether a command line is the Codex turn process resuming `threadId`. c3 always
+ * passes `resume <threadId>` as argv elements, and the arapuca wrapper forwards
+ * argv verbatim, so the marker survives both run shapes.
+ *
+ * `argv[0]` decides which process is the CLI: a sandbox supervisor carries the
+ * wrapped CLI later in its own argv (`arapuca run … -- codex … resume <tid>`), so
+ * keying on the first token keeps the supervisor from being mistaken for the
+ * holder and the scan from turning ambiguous.
  */
 export function isCodexResumeCommand(command: string, threadId: string): boolean {
-  if (!/\bcodex\b/.test(command)) return false
-  return new RegExp(`(?:^|\\s)resume\\s+${escapeRegExp(threadId)}(?:\\s|$)`).test(command)
+  const argv = command.trim().split(/\s+/)
+  if (!/(^|\/)codex(\.exe)?$/i.test(argv[0] ?? '')) return false
+  for (let i = 1; i < argv.length - 1; i++) {
+    if (argv[i] === 'resume' && argv[i + 1] === threadId) return true
+  }
+  return false
 }
 
+/** The occupant scan over a readable table — the `unreadable` case is decided by the caller. */
+type CodexTableScan = Exclude<CodexOccupantScan, { kind: 'unreadable' }>
+
 /** Find the live process holding `threadId`'s writer lock, by command line. */
-export async function scanCodexResumeOccupants(threadId: string): Promise<CodexOccupantScan> {
-  const table = await processTable()
-  if (table === null) return { kind: 'unreadable' }
+function scanTableForOccupant(table: ProcessTableEntry[], threadId: string): CodexTableScan {
   const matches = table.filter((entry) => isCodexResumeCommand(entry.command, threadId))
   if (matches.length === 0) return { kind: 'none' }
   if (matches.length > 1) return { kind: 'ambiguous' }
   return { kind: 'candidate', pid: matches[0].pid, startTimeMs: matches[0].startTimeMs }
 }
 
+/** The candidate's ancestors, nearest first (bounded and cycle-guarded). */
+function ancestorPids(pid: number, table: ProcessTableEntry[]): number[] {
+  const byPid = new Map(table.map((entry) => [entry.pid, entry]))
+  const out: number[] = []
+  const seen = new Set<number>([pid])
+  let current = byPid.get(pid)?.ppid ?? null
+  for (let hop = 0; hop < 16 && current !== null && current > 1; hop++) {
+    if (seen.has(current)) break
+    seen.add(current)
+    out.push(current)
+    current = byPid.get(current)?.ppid ?? null
+  }
+  return out
+}
+
+type CodexOwnership =
+  | { kind: 'owned' }
+  | { kind: 'refused'; reason: CodexRefusalReason; pid: number; startTimeMs: number | null }
+
+/**
+ * Whether the lock holder is provably a c3 leftover. Ownership holds when the
+ * holder itself is a settled c3 child for this thread, OR when it descends from
+ * one whose start time still matches — under a sandbox wrapper the holder is the
+ * vendor CLI *inside* the wrapper, while c3 registered the wrapper's pid, so the
+ * two pids differ by construction and only the ancestry link can prove it.
+ */
+function resolveOwnership(
+  threadId: string,
+  candidatePid: number,
+  candidateStart: number | null,
+  table: ProcessTableEntry[],
+): CodexOwnership {
+  const records = findCodexChildrenByThread(threadId)
+  if (records.length === 0) {
+    return { kind: 'refused', reason: 'no-record', pid: candidatePid, startTimeMs: candidateStart }
+  }
+  const byPid = new Map(records.map((record) => [record.pid, record]))
+  const chain = [candidatePid, ...ancestorPids(candidatePid, table)]
+  for (const pid of chain) {
+    const record = byPid.get(pid)
+    if (!record) continue
+    const startTimeMs = table.find((entry) => entry.pid === pid)?.startTimeMs ?? null
+    if (record.status === 'live') {
+      return { kind: 'refused', reason: 'record-live', pid, startTimeMs }
+    }
+    if (record.startTimeUnknown || record.startTimeMs === null) {
+      return { kind: 'refused', reason: 'start-time-unknown', pid, startTimeMs }
+    }
+    if (startTimeMs === null || startTimeMs !== record.startTimeMs) {
+      return { kind: 'refused', reason: 'start-time-mismatch', pid, startTimeMs }
+    }
+    return { kind: 'owned' }
+  }
+  return { kind: 'refused', reason: 'no-record', pid: candidatePid, startTimeMs: candidateStart }
+}
+
 /**
  * Locate and, when ownership is provable, terminate the process holding a
- * thread's writer lock. Killing requires BOTH a settled registry record for this
- * thread/pid and a start time that still matches the recorded one; every other
- * outcome is a refusal the caller must surface rather than act on.
+ * thread's writer lock. Killing requires BOTH a settled registry record that
+ * still matches this process (directly or as its ancestor) and an unbroken start
+ * time; every other outcome is a refusal the caller must surface rather than act on.
  */
 export async function reclaimCodexOccupant(
   threadId: string,
   opts: CodexKillOptions = {},
 ): Promise<CodexReclaimResult> {
-  const scan = await scanCodexResumeOccupants(threadId)
-  if (scan.kind === 'unreadable') return { kind: 'refused', reason: 'table-unreadable' }
+  const table = await processTable()
+  if (table === null) return { kind: 'refused', reason: 'table-unreadable' }
+  const scan = scanTableForOccupant(table, threadId)
   if (scan.kind === 'none') return { kind: 'refused', reason: 'no-candidate' }
   if (scan.kind === 'ambiguous') return { kind: 'refused', reason: 'ambiguous' }
 
@@ -385,15 +447,8 @@ export async function reclaimCodexOccupant(
   // The occupant's own start time must be readable before any identity claim.
   if (startTimeMs === null) return { kind: 'refused', reason: 'start-time-unknown' }
 
-  const record = findCodexChildrenByThread(threadId).find((r) => r.pid === pid)
-  if (!record) return { kind: 'refused', reason: 'no-record', pid, startTimeMs }
-  if (record.status === 'live') return { kind: 'refused', reason: 'record-live', pid, startTimeMs }
-  if (record.startTimeUnknown || record.startTimeMs === null) {
-    return { kind: 'refused', reason: 'start-time-unknown', pid, startTimeMs }
-  }
-  if (record.startTimeMs !== startTimeMs) {
-    return { kind: 'refused', reason: 'start-time-mismatch', pid, startTimeMs }
-  }
+  const ownership = resolveOwnership(threadId, pid, startTimeMs, table)
+  if (ownership.kind === 'refused') return ownership
 
   const escalation = await escalateKill(pid, opts)
   if (escalation.method === 'failed') {
@@ -405,6 +460,12 @@ export async function reclaimCodexOccupant(
     signal: null,
     reclaimedBy: escalation.method,
     waitedMs: escalation.waitedMs,
+  }
+  // The holder may be a descendant of the registered child (a sandbox wrapper
+  // spawns the CLI inside itself), so record it too: the session's process trail
+  // must name the process that was actually reclaimed, not only the one c3 spawned.
+  if (!findCodexChildByPid(pid)) {
+    registerCodexChild({ pid, threadId, spawnedAt: Date.now(), startTimeMs })
   }
   settleCodexChild(pid, outcome)
   if (escalation.method === 'already-exited') return { kind: 'already-exited', pid }
@@ -510,6 +571,29 @@ export function logCodexChildSettled(record: CodexChildRecord): void {
 
 export function logCodexReclaim(threadId: string, pid: number, method: CodexReclaimMethod): void {
   console.warn(formatCodexReclaim(threadId, pid, method))
+}
+
+/**
+ * The per-session view of the registry: which codex children belong to this
+ * session and how each ended. Emitted once at turn end, so the session's own
+ * record (the runtime log the console renders, plus the turn error) answers
+ * "pid, exit mode, reclamation result" without cross-referencing spawn lines.
+ */
+export function formatCodexSessionChildren(
+  sessionId: string,
+  children: CodexChildRecord[],
+): string {
+  const detail = children
+    .map((record) =>
+      record.outcome ? describeCodexChildOutcome(record.outcome) : `pid ${record.pid} live`,
+    )
+    .join('; ')
+  return `[codex] session children session=${sessionId} vendor=codex count=${children.length} ${detail}`
+}
+
+export function logCodexSessionChildren(sessionId: string, children: CodexChildRecord[]): void {
+  if (children.length === 0) return
+  console.log(formatCodexSessionChildren(sessionId, children))
 }
 
 function errorText(err: unknown): string {

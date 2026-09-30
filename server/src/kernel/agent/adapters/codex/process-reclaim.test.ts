@@ -10,7 +10,7 @@
  * previous c3 turn leaves behind.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ThreadEvent } from '@openai/codex-sdk'
@@ -31,6 +31,7 @@ import {
   isCodexResumeCommand,
   logCodexChildSettled,
   logCodexChildSpawn,
+  logCodexSessionChildren,
   parseProcessTable,
   registerCodexChild,
   resetCodexProcessRegistryForTests,
@@ -73,12 +74,41 @@ function table(entries: ProcessTableEntry[]): () => Promise<ProcessTableEntry[]>
   return async () => entries
 }
 
-function resumeEntry(pid: number, threadId: string, startTimeMs: number | null): ProcessTableEntry {
+function resumeEntry(
+  pid: number,
+  threadId: string,
+  startTimeMs: number | null,
+  ppid = 1,
+): ProcessTableEntry {
   return {
     pid,
+    ppid,
     startTimeMs,
     command: `/usr/local/bin/codex exec --experimental-json --sandbox workspace-write resume ${threadId}`,
   }
+}
+
+/**
+ * The sandbox shape: c3 spawned the wrapper, the wrapper handed off to arapuca,
+ * and the vendor CLI it supervises holds the writer lock. The registered pid and
+ * the lock holder are therefore different processes.
+ */
+function sandboxedResumeEntries(
+  wrapperPid: number,
+  childPid: number,
+  threadId: string,
+  wrapperStartTimeMs: number | null,
+  childStartTimeMs: number | null = wrapperStartTimeMs,
+): ProcessTableEntry[] {
+  return [
+    {
+      pid: wrapperPid,
+      ppid: 1,
+      startTimeMs: wrapperStartTimeMs,
+      command: `/usr/bin/arapuca run --seccomp baseline -- /opt/codex/bin/codex exec --experimental-json resume ${threadId}`,
+    },
+    resumeEntry(childPid, threadId, childStartTimeMs, wrapperPid),
+  ]
 }
 
 /** An async generator over a fixed script of events. */
@@ -135,6 +165,10 @@ async function collect(stream: AsyncIterable<CanonicalMessage>): Promise<Canonic
   const out: CanonicalMessage[] = []
   for await (const m of stream) out.push(m)
   return out
+}
+
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 const ACTIVE_WRITER_EVENT: ThreadEvent = {
@@ -237,6 +271,81 @@ describe('Codex driver teardown of a real lingering child', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   }, 20_000)
+
+  it('replays the incident: 502 stream error, lingering child reclaimed, then resume succeeds', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'c3-codex-replay-'))
+    const fakeCodex = join(dir, 'codex')
+    const lockFile = join(dir, `${THREAD}.lock`)
+    // A fake CLI that models the writer lock the way Codex does: the lock is a bare
+    // pid placeholder, so a resume decides liveness from the process itself — the
+    // same reason c3 must reclaim the survivor before it can resume.
+    writeFileSync(
+      fakeCodex,
+      [
+        '#!/bin/sh',
+        `LOCK=${shQuote(lockFile)}`,
+        'tid=""',
+        'prev=""',
+        'for a in "$@"; do',
+        '  if [ "$prev" = "resume" ]; then tid="$a"; fi',
+        '  prev="$a"',
+        'done',
+        'if [ -n "$tid" ]; then',
+        '  if [ -f "$LOCK" ]; then',
+        '    holder=$(cat "$LOCK" 2>/dev/null)',
+        '    if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then',
+        `      printf '%s\\n' "{\\"type\\":\\"error\\",\\"message\\":\\"thread $tid already has an active writer (code -32600)\\"}"`,
+        '      exit 1',
+        '    fi',
+        '  fi',
+        '  cat >/dev/null',
+        '  echo $$ > "$LOCK"',
+        `  printf '%s\\n' "{\\"type\\":\\"thread.started\\",\\"thread_id\\":\\"$tid\\"}"`,
+        `  printf '%s\\n' '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"healed"}}'`,
+        '  rm -f "$LOCK"',
+        '  exit 0',
+        'fi',
+        // First turn: take the lock, report the provider 502, then linger — the
+        // process survives the turn, which is what used to lock the thread.
+        'echo $$ > "$LOCK"',
+        `trap '' TERM`,
+        'cat >/dev/null',
+        `printf '%s\\n' '{"type":"thread.started","thread_id":"${THREAD}"}'`,
+        `printf '%s\\n' '{"type":"error","message":"openrouter:web_search upstream returned 502"}'`,
+        'sleep 30',
+      ].join('\n'),
+    )
+    chmodSync(fakeCodex, 0o755)
+    try {
+      const driver = new CodexDriver()
+
+      // Turn 1 — the provider hiccup. The turn fails and c3 must not leave the
+      // child holding the thread's writer lock.
+      const first = await driver.start(
+        startOpts({ resume: undefined, sandboxWrapperPath: fakeCodex }),
+      )
+      const failure = await collect(first.messages()).then(
+        () => null,
+        (err: unknown) => err as Error,
+      )
+      expect(failure?.message).toContain('openrouter:web_search upstream returned 502')
+      expect(failure?.message).toMatch(/pid \d+ terminated \(SIGKILL after \d+s\)/)
+
+      // The lock placeholder is left behind, but the process it names is dead.
+      expect(existsSync(lockFile)).toBe(true)
+      const holder = Number(readFileSync(lockFile, 'utf-8').trim())
+      expect(() => process.kill(holder, 0)).toThrow()
+
+      // Turn 2 — the user continues the chat. Resume succeeds instead of reporting
+      // "already has an active writer".
+      const second = await driver.start(startOpts({ sandboxWrapperPath: fakeCodex }))
+      const messages = await collect(second.messages())
+      expect(messages).toHaveLength(1)
+      expect(messages[0].blocks).toMatchObject([{ type: 'text', text: 'healed' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
 })
 
 describe('Codex driver teardown outcome (stream error / non-zero exit)', () => {
@@ -307,6 +416,7 @@ describe('resume self-healing on an active-writer rejection', () => {
     setCodexProcessSignalsForTests(signals)
     setCodexProcessTableForTests(table([resumeEntry(4242, THREAD, START_MS)]))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     const { client, calls } = scriptedClient([
       { events: [ACTIVE_WRITER_EVENT] },
@@ -339,6 +449,11 @@ describe('resume self-healing on an active-writer rejection', () => {
     })
     expect(warn.mock.calls.flat().join('\n')).toContain('reclaimed stale child')
     expect(warn.mock.calls.flat().join('\n')).toContain('pid=4242')
+    // The session's own record of its children is emitted at turn end.
+    const log = logSpy.mock.calls.flat().join('\n')
+    expect(log).toContain('[codex] session children')
+    expect(log).toContain(`session=${THREAD}`)
+    expect(log).toContain('pid 4242 terminated (SIGTERM after')
   })
 
   it('reclaims a settled c3 leftover (throw shape) and retries resume exactly once', async () => {
@@ -390,6 +505,90 @@ describe('resume self-healing on an active-writer rejection', () => {
     // Budget is one: the original attempt plus exactly one retry.
     expect(calls).toHaveLength(2)
     expect(kills).toHaveLength(1)
+  })
+
+  it('reclaims the lock holder inside a sandbox wrapper, where the pids differ', async () => {
+    seedSettledZombie(9100, START_MS)
+    const { signals, kills } = fakeSignals({ alive: [9101], diesOn: ['SIGTERM'] })
+    setCodexProcessSignalsForTests(signals)
+    setCodexProcessTableForTests(table(sandboxedResumeEntries(9100, 9101, THREAD, START_MS)))
+
+    const { client, calls } = scriptedClient([
+      { events: [ACTIVE_WRITER_EVENT] },
+      {
+        events: [
+          {
+            type: 'item.completed',
+            item: { id: 'i1', type: 'agent_message', text: 'sandbox healed' },
+          } as ThreadEvent,
+        ],
+      },
+    ])
+    const driver = new CodexDriver(() => client)
+    const run = await driver.start(startOpts())
+
+    const messages = await collect(run.messages())
+    expect(messages[0].blocks).toMatchObject([{ type: 'text', text: 'sandbox healed' }])
+    expect(calls).toHaveLength(2)
+    // The descendant that actually held the lock is the one reclaimed.
+    expect(kills).toEqual([{ pid: 9101, signal: 'SIGTERM' }])
+    expect(findCodexChildrenByThread(THREAD).map((r) => r.pid)).toContain(9101)
+    expect(findCodexChildrenByThread(THREAD).find((r) => r.pid === 9101)?.outcome).toMatchObject({
+      reclaimedBy: 'sigterm',
+    })
+  })
+
+  it('does not kill a sandbox descendant whose wrapper start time no longer matches', async () => {
+    seedSettledZombie(9200, START_MS)
+    const { signals, kills } = fakeSignals({ alive: [9201] })
+    setCodexProcessSignalsForTests(signals)
+    setCodexProcessTableForTests(
+      table(sandboxedResumeEntries(9200, 9201, THREAD, START_MS + 60_000)),
+    )
+
+    const { client } = scriptedClient([{ events: [ACTIVE_WRITER_EVENT] }])
+    const driver = new CodexDriver(() => client)
+    const run = await driver.start(startOpts())
+
+    const failure = await collect(run.messages()).then(
+      () => null,
+      (err: unknown) => err as Error,
+    )
+    expect(failure?.message).toContain('pid 9200')
+    expect(failure?.message).toContain('pid reuse')
+    expect(kills).toEqual([])
+  })
+
+  it('does not scan, kill or retry when a resume fails for a non-lock -32600', async () => {
+    const { signals, kills } = fakeSignals({ alive: [] })
+    setCodexProcessSignalsForTests(signals)
+    let scanned = false
+    setCodexProcessTableForTests(async () => {
+      scanned = true
+      return []
+    })
+
+    const { client, calls } = scriptedClient([
+      {
+        events: [
+          {
+            type: 'error',
+            message: 'invalid request: unknown method (code -32600)',
+          } as ThreadEvent,
+        ],
+      },
+    ])
+    const driver = new CodexDriver(() => client)
+    const run = await driver.start(startOpts())
+
+    const failure = await collect(run.messages()).then(
+      () => null,
+      (err: unknown) => err as Error,
+    )
+    expect(failure?.message).toContain('invalid request')
+    expect(calls).toHaveLength(1) // no retry
+    expect(kills).toEqual([])
+    expect(scanned).toBe(false) // no process-table scan
   })
 
   it('does not reclaim (or retry) when the occupant has no c3 record', async () => {
@@ -546,43 +745,74 @@ describe('process registry and structured log lines', () => {
   })
 })
 
+it('emits one per-session line listing the children and their outcomes', () => {
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+  registerCodexChild({ pid: 7301, threadId: 'thread_sum', startTimeMs: START_MS })
+  settleCodexChild(7301, {
+    pid: 7301,
+    exitCode: 1,
+    signal: null,
+    reclaimedBy: 'already-exited',
+  })
+
+  logCodexSessionChildren('thread_sum', findCodexChildrenByThread('thread_sum'))
+
+  const line = log.mock.calls.flat().join('\n')
+  expect(line).toContain('[codex] session children')
+  expect(line).toContain('session=thread_sum')
+  expect(line).toContain('count=1')
+  expect(line).toContain('pid 7301 exited code=1')
+})
+
 describe('process-table parsing and the resume marker', () => {
-  it('parses `ps -eo pid=,lstart=,command=` output, single-digit days included', () => {
+  it('parses `ps -eo pid=,ppid=,lstart=,command=` output, single-digit days included', () => {
     const stdout = [
-      '    1 Wed Sep 23 08:48:58 2026     /sbin/launchd',
-      '  4242 Thu Sep  1 09:00:00 2026 /opt/codex/bin/codex exec resume thread_z',
+      '    1     0 Wed Sep 23 08:48:58 2026     /sbin/launchd',
+      ' 4242     1 Thu Sep  1 09:00:00 2026 /opt/codex/bin/codex exec resume thread_z',
       '',
       'not a ps line',
     ].join('\n')
 
     expect(parseProcessTable(stdout)).toEqual([
-      { pid: 1, startTimeMs: Date.parse('Wed Sep 23 08:48:58 2026'), command: '/sbin/launchd' },
+      {
+        pid: 1,
+        ppid: 0,
+        startTimeMs: Date.parse('Wed Sep 23 08:48:58 2026'),
+        command: '/sbin/launchd',
+      },
       {
         pid: 4242,
+        ppid: 1,
         startTimeMs: Date.parse('Thu Sep  1 09:00:00 2026'),
         command: '/opt/codex/bin/codex exec resume thread_z',
       },
     ])
   })
 
-  it('matches only a codex resume of the exact thread', () => {
+  it('matches the codex CLI process resuming the exact thread, not its supervisor', () => {
     const cmd = (s: string): string => `/opt/codex exec --experimental-json resume ${s}`
     expect(isCodexResumeCommand(cmd('thread_z'), 'thread_z')).toBe(true)
     expect(isCodexResumeCommand(cmd('thread_z'), 'thread_z2')).toBe(false)
     expect(isCodexResumeCommand(cmd('thread_z2'), 'thread_z')).toBe(false)
+    expect(isCodexResumeCommand(`${cmd('thread_z')} extra`, 'thread_z')).toBe(true)
+    expect(isCodexResumeCommand(`/usr/bin/node server.js resume thread_z`, 'thread_z')).toBe(false)
+    // The sandbox supervisor lists the wrapped CLI in its own argv — it is not the
+    // holder, and counting it would make every sandboxed resume ambiguous.
     expect(
       isCodexResumeCommand(
         `/usr/bin/arapuca run -- /opt/codex/bin/codex exec resume thread_z`,
         'thread_z',
       ),
-    ).toBe(true)
-    expect(isCodexResumeCommand(`${cmd('thread_z')} extra`, 'thread_z')).toBe(true)
-    expect(isCodexResumeCommand(`/usr/bin/node server.js resume thread_z`, 'thread_z')).toBe(false)
+    ).toBe(false)
   })
 
-  it('classifies the active-writer rejection on both message and code', () => {
+  it('classifies the active-writer rejection by its message alone', () => {
     expect(isActiveWriterRejection(new Error('Thread X already has an active writer'))).toBe(true)
-    expect(isActiveWriterRejection({ code: -32600, message: 'nope' })).toBe(true)
+    expect(isActiveWriterRejection({ message: 'thread t already has an active writer' })).toBe(true)
+    // -32600 is a generic "invalid request"; it is NOT lock-specific, so a
+    // code-only match must not trigger a scan-and-resend.
+    expect(isActiveWriterRejection({ code: -32600, message: 'invalid request' })).toBe(false)
+    expect(isActiveWriterRejection(new Error('invalid request (code -32600)'))).toBe(false)
     expect(isActiveWriterRejection(new Error('upstream returned 502'))).toBe(false)
     expect(isActiveWriterRejection(undefined)).toBe(false)
   })

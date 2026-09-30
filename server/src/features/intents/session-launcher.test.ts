@@ -658,14 +658,50 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
     expect(deps.launchRun).not.toHaveBeenCalled()
   })
 
-  it('refuses to resume an intent that was started before SDD was switched on', async () => {
-    // Development began with SDD off — the intent has no approval at all.
+  it('resumes an intent started before SDD was switched on when it NEVER had a spec', async () => {
+    // Development began with SDD off, so the intent never started a spec
+    // (`raw`, no spec path, no spec session). There is no document whose
+    // approval could be asked for, so an EXISTING work session is continued
+    // rather than refused over an approval of nothing.
     saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
     const id = idleInProgress('Pre SDD', 'sess-pre-sdd')
     saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
 
     const deps = mockDeps()
+    const r = asSuccess(await launchWorkSession(proj, id, deps))
+    expect(r.sessionId).toBe('sess-pre-sdd')
+    expect(r.mode).toBe('resume')
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refuses a no-spec continuation once a spec session has been started', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const id = idleInProgress('Spec started', 'sess-spec-started')
+    setSpecSessionId(id, 'spec-session-1')
+
+    const deps = mockDeps()
     const r = asError(await launchWorkSession(proj, id, deps))
+    expect(r.code).toBe('intent.specNotApproved')
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('still refuses a no-spec continuation for a high-impact intent', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    const [intent] = insertIntents(proj, [
+      {
+        title: 'Hi no spec',
+        shortEnTitle: 'hi-no-spec',
+        content: '',
+        priority: 'P1',
+        impactLevel: 'L1',
+      },
+    ])
+    updateStatus(intent.id, 'in_progress', 'test')
+    setLastWorkSession(intent.id, 'sess-hi-no-spec')
+    ensureRuntime('sess-hi-no-spec', proj, 'default', [], 'work')
+
+    const deps = mockDeps()
+    const r = asError(await launchWorkSession(proj, intent.id, deps))
     expect(r.code).toBe('intent.specNotApproved')
     expect(deps.launchRun).not.toHaveBeenCalled()
   })

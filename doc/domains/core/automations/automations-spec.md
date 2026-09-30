@@ -473,9 +473,8 @@ c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出�
 上的机会。工具触发服务端派生:遍历该意图全部处于 `reviewing` 的 PR 行逐条向 forge 查询真实状态,
 `merged` / `closed` 终态落库并写意图日志,仍 `open` 的行不变——终态唯一由 forge 裁决,模型不写状态。
 `rejected`/`failed`/`closed → reviewing` 的复位不在该工具职责,由携带 `association.deliveryId` 或
-`pr.number` 的 `pr:update` 事件处理。内置模板 `pr-status-poller` 因此是「观察并对账」:检测到与台账
-不一致的终态时显式调用该工具同步,`pr:merge` / `pr:close` 事件仍可发布作订阅信号;提示词与允许列表
-表达同一条路径——两者不一致时,自动化会静默失去它宣称的对账能力。
+`pr.number` 的 `pr:update` 事件处理。PR 的终态本身由服务端在意图 PR 行上一次性派生,不由模型轮询维护;
+该工具是自建自动化在观察到台账不一致时显式触发复核的入口,`pr:merge` / `pr:close` 事件仍可发布作订阅信号。
 
 ### 网络访问伪条目(`network-access`,仅 codex)
 
@@ -733,11 +732,10 @@ i18n 错误,不打开确认态、不发送任何写消息;合法空数组进入�
 相同的创建契约创建一个已启用的自动化,无需二次
 确认;创建出来的自动化仍然完全可编辑、可删除。
 
-**PR 状态轮询器**(`pr-status-poller`)每十分钟轮询处于评审中的 GitHub PR。它的 Claude
-执行身份被显式允许使用有边界的 intent 查询 / forge 派生 PR 状态同步 / 事件发布
-能力,以及用于 `gh` 的 shell。它只对账处于评审中的 intent:检测到与台账不一致的终态时调用
-`mcp__c3__sync_intent_pr_status` 让 c3 复核 forge 后落库(状态由 forge 裁决,模型不写),已合并的
-工作被标记为完成、已关闭的 PR 被记录而不完成该工作项,并仍可发布 provider 中立的 PR 事件作订阅信号。
+内置模板**只是开箱即用的起点,不是能力边界**:`pr:merge` / `pr:close` / `pr:review` /
+`pr:update` 事件类型、PR 状态同步工具以及 review / fix 角色配置都是通用能力,用户随时可以
+自建自动化使用。评审接力类内置模板已下线——PR 终态由服务端在意图 PR 行上一次派生,再提供一条
+靠模型轮询维护状态的模板入口只会与真实状态来源重复并互相干扰。
 
 **每周架构稳定性评审**(`weekly-arch-review`)在每周五 18:00 运行 Claude
 (cron `0 18 * * 5`,`mode: bypassPermissions`)。它只评审 git 活动的**最近 7 天**
@@ -806,10 +804,6 @@ worktree。
 执行日志必须明确列出每个删除和跳过的 worktree,包含路径、意图 ID(可解析时)、分支名(可读取时)、跳过原因和本地/远端分支清理结果。
 模板的 toolAllowlist 为 `Read` / `Grep` / `Glob` / `Bash` 加
 `mcp__c3__find_intents` / `mcp__c3__view_intent`;它不授予创建或保存意图的工具。
-
-**PR 评审接力**(`pr-review-runner`)由 `pr:create` 或 `pr:update`(status `success`)事件触发,评审一个 GitHub PR(取最新会话消息与最新提交;消息不以 `[review]` 开头,或以 `[review]` 开头但已有更新提交时才评审):对完整 diff 评审正确性/安全/性能/测试/符合意图与 spec,只发一条以 `[review]` 开头的 PASS / CHANGES REQUESTED 结论;发现问题不改码、发 `pr:review`(failure);PASS 则 `gh pr merge` 并 `sync_intent_pr_status` 落 `merged` 后发 `pr:review`(success);合并失败/冲突补 `[error]` 评论并发布 `pr:review`(failure)。它不修改文件、不建提交、不 push、不 approve——唯一允许的仓库写操作是 PASS 后的合并。toolAllowlist:`Read` / `Grep` / `Glob` / `Bash` + `mcp__c3__find_intents` / `mcp__c3__view_intent` / `mcp__c3__sync_intent_pr_status` / `mcp__c3__publish_event`。**默认执行身份取自 `reviewAgentId`**(AC-R34):模板新建时沿 `reviewAgentId → 工作区有效默认(工作区覆盖 `defaultAgentId`,无覆盖则系统默认)→ 第一个已启用的智能体` 解析为该角色的 `vendor`/`agentId`,创建出的记录保存这份具体快照并永远按快照运行。
-
-**PR 评审失败修复**(`pr-review-fix`)由 `pr:review`(status `failure`)事件触发,评估并响应评审问题:读失败描述与 diff、关联意图与 spec,在 PR 头分支对应的 worktree(或安全 checkout)内逐个问题判断是否值得修——值得修的修复、跑测试/检查、commit + push,不值得修的记录理由;无论是否改码都发一条以 `[fix]` 开头的评论(汇总已提交修复 + 解释未改项),随后发 `pr:update`(success;失败则 `failure`),PR 已 merged/closed 时 `sync_intent_pr_status` 落终态。它不改无关代码、不改意图、不改 spec。toolAllowlist:`Read` / `Grep` / `Glob` / `Bash` / `Edit` / `Write` + `mcp__c3__view_intent` / `mcp__c3__sync_intent_pr_status` / `mcp__c3__publish_event`。**默认执行身份取自 `fixAgentId`**(AC-R34),解析链与 `reviewAgentId` 相同。
 
 **自定义事件回显**(`custom-event-echo`)是一个最小示例:由 `my:create-event` 事件触发,执行 `echo hello`(command 任务,无 LLM 执行身份)。
 

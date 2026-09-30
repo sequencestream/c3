@@ -50,6 +50,6 @@
 ## References
 
 - `doc/constitution.md` § C-SEC-1
-- `doc/non-functional/security.md` § SEC-3
+- [security.md](../../non-functional/security.md) SEC-3
 - `doc/domains/core/permission-gateway/permission-gateway-spec.md`
 - Superseded: [ADR 0001](deprecated/0001-c3-sole-permission-authority.md)

@@ -1,29 +1,16 @@
-# 领域: intent-management
+# Domain: intent-management
 
-- **分组:** core
-- **一句话:** 一个项目范围内的意图台账,配合一个只读的意图沟通(intent-communication)
-  智能体,把想法拆解为可验证的条目,能发起开发,还能端到端(judge → commit → push → next)
-  自动开发被标记的待办积压。
-- **负责人:** maintainer
-- **状态:** 活跃
-- **依赖:** `agent-session`(以 `intent` 种类的运行时来运行沟通智能体、发起开发运行、
-  并运行一次性的完成判定器);`permission-gateway`(意图网关放行 `save_intents` 与只读查询
-  工具,默认拒绝其余工具);`session-registry`(把沟通会话从常规会话列表中隐藏);一个位于
-  `~/.c3/c3.db` 的本地 SQLite 存储;本地 `git` CLI(自动化编排器在验证完成后提交并推送)。
-- **被依赖方:** `web-console`(渲染意图视图:列表 + 沟通聊天 + 自动化控件)。
-- **exposes-api:** true —— 在 WebSocket `/ws` 上暴露意图 CRUD/会话/规格/开发/队列控制等客户端消息,
-  以及 `intents`、`intent_sessions`、`workflow_status`、`queue_detail` 等服务端推送。聊天收发与历史回放**复用**已有的协议事件;
-  消息形状定义在共享协议中,不在本文档中重复定义。
-- **ADRs:** [0007](../../../architecture/adr/0007-read-only-intent-agent.md)、
-  [0034](../../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)
+- **Group:** core
+- **One-line:** 项目范围的意图账本:只读沟通智能体把想法拆成可验证条目,驱动规格、开发、PR 与可选的自动化队列。
+- **Owner:** maintainer
+- **Status:** active
+- **Depends on:** [agent-session](../agent-session/agent-session-spec.md)(沟通 / 规格 / 工作运行);[permission-gateway](../permission-gateway/permission-gateway-spec.md)(意图网关与规格写界);[session-registry](../session-registry/session-registry-spec.md)(工作区身份、隐藏沟通与规格会话)。
+- **Depended on by:** [web-console](../web-console/web-console-spec.md)(意图视图与队列页);[delivery](../delivery/delivery-spec.md)(关联与 PR 落点);[automations](../automations/automations-spec.md)(评审 / 修复执行面);[discussion](../discussion/discussion-overview.md)(结论转意图)。
+- **exposes-api:** true — WebSocket `/ws`。消息形状在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中定义。
+- **ADRs:** [0007](../../../architecture/adr/0007-read-only-intent-agent.md) 只读沟通智能体、[0034](../../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md) PR 账本为事实源
 
-## 索引
+## Index
 
-- [intent-management-spec.md](intent-management-spec.md) —— 实体、状态机、用户故事 US-1..US-9、
-  业务规则(含自动化编排器 RM-A1–A9)
-- [intent-management-design.md](intent-management-design.md) —— SQLite 驱动适配器、
-  沟通运行时变体、保存工具、发起开发接线、自动化编排器(状态机 + 完成判定器 + git 辅助)
-- [intent-management-models.md](intent-management-models.md) —— Intent / Intent Dependency /
-  Communication Session / Automation Status 实体
-- [intent-management-pr-readpoints.md](intent-management-pr-readpoints.md) —— PR 三字段
-  当前读写点清单
+- [intent-management-spec.md](intent-management-spec.md) — 账本生命周期、规格闸门、开发挂接、PR 事实、依赖、评审修复、自动化队列
+- [intent-management-design.md](intent-management-design.md) — 与运行时、网关、注册表、交付、自动化、控制台的协作与取舍
+- [intent-management-models.md](intent-management-models.md) — Intent / Dependency / PR 行 / WorkNote / 沟通会话

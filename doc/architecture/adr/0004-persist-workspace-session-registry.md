@@ -39,7 +39,7 @@ rename)，任何读取/解析错误都回退到空状态，使 c3 仍能启动�
 - 架构中“状态是按连接的、纯内存的；不持久化”的规则被修订：**权限决策仍保持纯内存、按
   连接**(不变，ADR 0001/0002)，但**工作区/会话注册表被持久化**(本 ADR)。
 - `settingSources`(现在继承 user + project，ADR 0005)不受影响——transcript 存储与
-  会话接口照常工作(见 [`claude-agent-sdk-guide.md`](../claude-agent-sdk-guide.md) §4)。
+  会话接口照常工作(见 [session-registry 规格](../../domains/core/session-registry/session-registry-spec.md))。
 
 ## Compliance
 

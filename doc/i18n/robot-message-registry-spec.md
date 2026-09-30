@@ -1,29 +1,17 @@
 # IM 机器人服务端文案注册表
 
-> 适用范围:IM 机器人出站固定控制提示。与 Web vue-i18n 分离;详见 `doc/i18n/i18n-spec.md` §1.1。
+适用范围:IM 机器人出站固定控制提示。与 Web 文案分离;详见 [i18n-spec · 与 IM 机器人服务端文案的边界](i18n-spec.md#与-im-机器人服务端文案的边界)。
 
 ## 语言与回退
 
-- 支持短码:`en`(基准目录)、`zh`、`ja`、`ko`、`ru`。
-- 发送时解析:**绑定主体当前 `uiLang` → 机器人 `locale`(NULL=系统默认 `en`) → `en`**,去重后逐层查找同一键。
-- 未知 locale、缺键、参数校验失败 → 渲染 `system.safeFallback`(仍非空);基准目录不完整则启动期失败。
+支持短码:`en`(基准)、`zh`、`ja`、`ko`、`ru`。发送时按绑定主体当前界面语言 → 机器人 locale(未设则系统默认 `en`) → `en` 逐层查找同一键。未知语言、缺键或参数不合法则落到非空的安全回退;基准目录不完整则启动失败。
 
 ## 键与参数
 
-- 键:稳定点分语义名(如 `binding.identityRequired`、`visibility.notVisible`)。
-- 调用方只提交 `RobotMessageRef { key, params }`;不能传模板正文或额外字段。
-- 导航类键的 `nav` 参数由服务端根据 `SystemSettings.baseUrl` 与路由白名单构造;`baseUrl` 非法时同键无链接变体。
+键是稳定点分语义名。调用方只提交键与参数,不能传模板正文。导航链路由服务端按公开访问地址与路由白名单构造;地址非法时同键无链接。
 
 ## 使用策略
 
-| 策略             | 出站类别     | 说明                                          |
-| ---------------- | ------------ | --------------------------------------------- |
-| `fixed_notice`   | 普通固定提示 | 运行期/可见性/令牌(L2 契约)等                 |
-| `binding_notice` | 绑定提示     | 窄豁免;群内仅部分键                           |
-| `broadcast_only` | _(未接线)_   | L0 播报键冻结契约,ADR-0046 后续裁决前不可发送 |
-
-## 代码位置
-
-- 目录:`server/src/features/im/robot-message-catalog.ts`
-- 渲染:`server/src/features/im/robot-message-registry.ts`
-- 出站:`server/src/features/im/outbound-guard.ts` → `sendGuarded`
+- **固定提示** — 运行期、可见性、令牌等普通出站。
+- **绑定提示** — 窄豁免,群内仅部分键。
+- **播报** — 契约冻结,裁决前不可发送(见 [ADR-0046](../architecture/adr/0046-im-robot-outbound-authorization.md))。

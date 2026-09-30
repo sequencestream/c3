@@ -1,76 +1,31 @@
 # session-registry — 数据模型
 
-以域术语给出的实体定义;物理接线见 [session-registry-design.md](session-registry-design.md)。
-工作区、会话与 transcript-item 的线上形状在
-[共享协议](../../../shared/api-conventions/websocket-protocol.md) 中统一定义;本域引用它们,而不是重新定义消息形状。
+实体与不变量。行为见[规格](session-registry-spec.md)，协作见[设计](session-registry-design.md)。线上形状在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中定义，此处不重复。
 
-## Workspace(工作区)
+## Workspace
 
-一个已注册的项目目录。
+一个已登记的项目目录。身份是不可变的工作区名称；路径是该智能体的工作目录，也是会话枚举所依据的位置，不是身份。
 
-| 属性           | 类型        | 说明                                                 |
-| -------------- | ----------- | ---------------------------------------------------- |
-| `path`         | text(路径） | 绝对目录;传给智能体的工作目录,也是会话枚举所依据的键 |
-| `name`         | text        | 显示名称 —— 目录的 basename                          |
-| `lastAccessed` | timestamp   | 此处会话最后一次被选中/创建的时间;排序键降序(SR-R2)  |
+不变量:
 
-关系:一个 workspace 拥有零个或多个 Session。读侧列表来自
-`session_metadata`;内容与 transcript 仍存放在原生厂商存储中。
+- 名称全局唯一、创建后不可变；路径指向已存在的目录，且同一路径只对应一个身份。
+- 按最近访问排序；在其中选择或创建会话会推高自己。
+- 从目录取消登记不删除身份、配置或磁盘转录；同一路径再登记时恢复原名称。
+- 零个或多个 Session。
 
-## Session(会话)
+## Session
 
-工作区内一个由厂商托管的会话,为列表/计数读取投影到 `session_metadata` 中。
+工作区内一次由厂商托管的对话。对外以不透明 c3 会话 id 寻址（[ADR 0013](../../../architecture/adr/0013-canonical-envelope-on-wire-c3-session-namespace.md)）。
 
-- **`sessionId`**(text): 线上不透明的 c3 会话 id;内部映射到厂商 + 原生 id
-- **`title`**(text): 厂商自定义标题 / 摘要 / 首条提示
-- **`lastModified`**(timestamp): 厂商最后修改时间;工作区内的排序键(SR-R4)
-- **`mode`**(permission mode): c3 跟踪的每会话权限模式;默认 `default`(SR-R5)
-- **`sessionKind`**(enum): work / intent / spec / spec_review / discussion / automation / tool / robot
-- **`ownerKind`**(enum | null): 用于跳回的逻辑所有者类别;无所有者会话为 null
-- **`ownerId`**(text | null): 逻辑所有者 id;null 表示该会话无法跳回某个所有者
-- **`bound`**(boolean): 真实行为 true;仅当为 work 待处理占位符时为 false
+真实种类：`work` / `intent` / `spec` / `spec_review` / `discussion` / `automation` / `tool` / `robot`（及内部 `consensus`）。会话页按显示分类列目录，「规范」同时含 `spec` 与 `spec_review`；`robot` 不进会话页。
 
-关系:属于一个 Workspace;其 transcript 与 title 由智能体厂商拥有,其
-`mode` 由 registry 拥有。所有者字段指回诸如 intent、discussion 或 automation 等域实体;
-它们并不使该投影成为这些域的事实来源。一条 spec 会话行使用 `sessionKind=spec`、`ownerKind=intent`,
-以及该 intent 的 id 作为 `ownerId`;intent 域仍通过 `intents.spec_session_id` 拥有当前 spec 会话链接。
-规格评审会话是**独立的一种真实 kind**(`sessionKind=spec_review`,同样以 intent 为所有者),由 `intents.spec_review_session_id` 拥有;
-它在会话页与 `spec` 合并为一个**显示分类**(SR-R15),但投影行的真实 kind 与所有者绝不因此被改写——
-选择与跳回都依赖真实 kind 才能落到只读恢复入口而不是通用会话恢复。
-一条 robot 会话行使用 `sessionKind=robot` 且**没有所有者** —— 机器人是部署级 IM 出入口、不属于任何
-工作区,其线程与会话的对应关系由机器人域自己的线程表持有,不经这份投影;它也不进会话页的任何显示分类。
-线程连续性不等于工作区授权。
-一条 tool 会话行使用 `sessionKind=tool`;当触发的业务来源已知时,它复用 `ownerKind` / `ownerId` 实现跳回,
-当来源未知或为历史数据时,两者都留空,使该行仅用于展示。
+不变量:
 
-## Pending Session(待处理会话)
+- 转录、标题与存在性由所属厂商的原生存储拥有；本域拥有目录成员资格与权限模式。
+- 所有者是跳回指针，不是意图 / 讨论 / 自动化等域的事实来源。
+- 种类与所有者由写入投影的调用方声明；本域不因启动机制改写它们。
+- 厂商在首次绑定时冻结，之后不能改。
 
-在 UI 中创建但尚未启动的会话。
+## Pending Session
 
-| 属性       | 类型                    | 说明                                            |
-| ---------- | ----------------------- | ----------------------------------------------- |
-| `clientId` | text(`pending:<uuid>`） | 临时 id,直到首次运行上报真实 `sessionId`        |
-| `mode`     | permission mode         | 起始为 `default`;绑定时按真实 id 持久化(SR-R7） |
-
-关系:一旦首次运行绑定了真实会话 id,即被替换为真实的 Session。
-
-## 持久化状态
-
-c3 拥有的 registry,存于 `c3.db`(ADR 0004、ADR-0042）。
-
-| 事实         | 位置                                        | 说明                                |
-| ------------ | ------------------------------------------- | ----------------------------------- |
-| 工作区       | `workspaces` 表                             | registry 本身(SR-R2)                |
-| 每会话模式   | `session_configs` 的 `mode`                 | 每会话模式(SR-R5）;过期 id 会被忽略 |
-| 最后活跃会话 | `system_configs` 的 `state.activeSessionId` | 用于启动时恢复                      |
-
-绝不包含权限决策或批准(SR-R11）。
-
-## Session runtime(内存中)
-
-每会话的运行状态由 agent-session 拥有 —— 其完整形状即
-[agent-session models](../agent-session/agent-session-models.md) 中的 **Session Runtime**。registry 只负责为其
-播种(工作目录 / 模式 / 基线)并读取其运行状态。注意其 team 标志
-(当一次运行升级为持久化智能体团队时被设置,拆除时被重置;ADR 0008):它会把
-`turn_end` 隐含的 idle 覆盖为 team 状态(见 [session-registry-design.md](session-registry-design.md) § Team 会话
-状态)。绝不持久化。
+在 UI 中创建、尚未首次运行的会话。历史为空；首次运行绑到真实 Session，意向变为事实。从未运行则只留下可变意向，不产生真实会话。

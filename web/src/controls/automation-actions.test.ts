@@ -262,7 +262,7 @@ describe('automation save overlay', () => {
   it('sets automationSaving on create from template and sends the message', () => {
     const c = makeCtx()
     c.automationsProject.value = 'ws1'
-    c.ctx.createAutomationFromTemplate('pr-status-poller')
+    c.ctx.createAutomationFromTemplate('weekly-arch-review')
     expect(c.automationSaving.value).toBe(true)
     expect(c.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'create_automation' }))
   })
@@ -284,7 +284,7 @@ describe('automation save overlay', () => {
     const c = makeCtx()
     c.automationsProject.value = 'ws1'
     c.serverSettings.value = { agents: [] }
-    c.ctx.createAutomationFromTemplate('pr-status-poller')
+    c.ctx.createAutomationFromTemplate('weekly-arch-review')
     expect(c.automationSaving.value).toBe(false)
     expect(c.send).not.toHaveBeenCalled()
     expect(c.showToast).toHaveBeenCalledOnce()
@@ -323,174 +323,6 @@ describe('automation save overlay', () => {
     c.ctx.importAutomations([])
     expect(c.send).not.toHaveBeenCalled()
     expect(c.showToast).not.toHaveBeenCalled()
-  })
-})
-
-describe('createAutomationFromTemplate — review/fix role-field seeding (AC-R34)', () => {
-  const claude = (id: string, enabled = true) => ({
-    id,
-    vendor: 'claude',
-    enabled,
-    displayName: id,
-  })
-  const codex = (id: string) => ({ id, vendor: 'codex', enabled: true, displayName: id })
-
-  /** The `create_automation` input the template resolved (its vendor/agentId snapshot). */
-  function createdInput(c: ReturnType<typeof makeCtx>): { vendor: string; agentId: string | null } {
-    const call = c.send.mock.calls.find(([m]) => m.type === 'create_automation')
-    return (call?.[0] as { input: { vendor: string; agentId: string | null } }).input
-  }
-
-  it('seeds pr-review-runner from reviewAgentId — explicit non-claude vendor', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1'), codex('cx')],
-      defaultAgentId: 'a1',
-      reviewAgentId: 'cx',
-      fixAgentId: '',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    const input = createdInput(c)
-    expect(input.vendor).toBe('codex')
-    expect(input.agentId).toBe('cx')
-  })
-
-  it('seeds pr-review-fix from fixAgentId — explicit non-claude vendor', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1'), codex('cx')],
-      defaultAgentId: 'a1',
-      reviewAgentId: '',
-      fixAgentId: 'cx',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-fix')
-    const input = createdInput(c)
-    expect(input.vendor).toBe('codex')
-    expect(input.agentId).toBe('cx')
-  })
-
-  it('follows defaultAgentId when the role field is empty', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1'), claude('a2')],
-      defaultAgentId: 'a2',
-      reviewAgentId: '',
-      fixAgentId: '',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    expect(createdInput(c).agentId).toBe('a2')
-  })
-
-  it('seeds from the workspace default before a SET system reviewAgentId', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('sys'), codex('cx')],
-      defaultAgentId: 'sys',
-      reviewAgentId: 'cx',
-      fixAgentId: '',
-      projectConfigs: { ws1: { defaultAgentId: 'sys' } },
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    const input = createdInput(c)
-    // The workspace configured a default agent ⇒ its layer leads, so the template
-    // pre-selects the same agent the queue relay would claim a review with.
-    expect(input.agentId).toBe('sys')
-    expect(input.vendor).toBe('claude')
-  })
-
-  it('follows the workspace default override before the system default', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1'), claude('a2')],
-      defaultAgentId: 'a1',
-      reviewAgentId: '',
-      fixAgentId: '',
-      projectConfigs: { ws1: { defaultAgentId: 'a2' } },
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    expect(createdInput(c).agentId).toBe('a2')
-  })
-
-  it('seeds from the workspace reviewAgentId override before the workspace default', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1'), codex('cx')],
-      defaultAgentId: 'a1',
-      reviewAgentId: '',
-      fixAgentId: '',
-      projectConfigs: { ws1: { reviewAgentId: 'cx', defaultAgentId: 'a1' } },
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    const input = createdInput(c)
-    expect(input.vendor).toBe('codex')
-    expect(input.agentId).toBe('cx')
-  })
-
-  it('falls past a dangling role ref to the default agent', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1')],
-      defaultAgentId: 'a1',
-      reviewAgentId: 'gone',
-      fixAgentId: '',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    expect(createdInput(c).agentId).toBe('a1')
-  })
-
-  it('flattens a virtual group role ref to its first enabled member', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [
-        { ...claude('m1'), group: 'default' },
-        { ...claude('m2'), group: 'default' },
-      ],
-      defaultAgentId: 'm1',
-      reviewAgentId: '_c3_claude_default',
-      fixAgentId: '',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    const input = createdInput(c)
-    expect(input.agentId).toBe('m1')
-    expect(input.vendor).toBe('claude')
-  })
-
-  it('aborts with a toast when the chain has no enabled agent', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [claude('a1', false)],
-      defaultAgentId: 'a1',
-      reviewAgentId: 'a1',
-      fixAgentId: '',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-review-runner')
-    expect(c.send).not.toHaveBeenCalled()
-    expect(c.showToast).toHaveBeenCalledOnce()
-  })
-
-  it('keeps role-less templates on the legacy first-enabled-claude path', () => {
-    const c = makeCtx()
-    c.automationsProject.value = 'ws1'
-    c.serverSettings.value = {
-      agents: [codex('cx'), claude('a1')],
-      defaultAgentId: 'cx',
-      reviewAgentId: 'cx',
-      fixAgentId: '',
-    } as never
-    c.ctx.createAutomationFromTemplate('pr-status-poller')
-    const input = createdInput(c)
-    // pr-status-poller declares no roleField ⇒ the reviewAgentId is ignored.
-    expect(input.agentId).toBe('a1')
-    expect(input.vendor).toBe('claude')
   })
 })
 

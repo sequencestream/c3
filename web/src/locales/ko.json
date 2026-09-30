@@ -1796,7 +1796,6 @@
       },
       "placeholder": "무엇을 변경할까요? 입력은 현재 내용과 결합되어 새 세션의 시작점이 됩니다."
     },
-
     "restartSession": {
       "title": "작업 세션 다시 시작",
       "message": "프롬프트를 시작점으로 새 작업 세션을 만들고 동일한 worktree와 브랜치를 이어받습니다. 실행 중이면 현재 세션을 먼저 중지하며, 이전 세션은 Works에 남습니다. 의도는 새 세션을 가리킵니다.",
@@ -2177,10 +2176,6 @@
       "templates": {
         "button": "템플릿",
         "noAgent": "활성 Claude Agent가 없습니다.",
-        "prPoller": {
-          "title": "PR 상태 폴링 검사",
-          "description": "10분마다 검토 중인 의도를 GitHub PR 상태와 대조하고 변화가 있으면 이벤트를 발행합니다(읽기 전용, 원장은 기록하지 않음)."
-        },
         "archReview": {
           "title": "주간 아키텍처 안정성 점검",
           "description": "매주 금요일 18:00에 최근 7일간의 코드 변경을 검토하여 가치 높은 아키텍처 개선점을 초안 의도로 등록합니다."
@@ -2192,14 +2187,6 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "매주 일요일 03:00에 7일 넘게 변경이 없는 c3 관리 worktree를 미커밋 변경, 의도 상태, 브랜치 안전 조건을 통과할 때만 삭제합니다."
-        },
-        "prReviewRunner": {
-          "title": "PR 리뷰 실행기",
-          "description": "PR 생성 또는 업데이트를 구독하고 AI가 PR을 검토한 후 pr:review 이벤트를 게시합니다."
-        },
-        "prReviewFix": {
-          "title": "PR 리뷰 실패 수정",
-          "description": "PR 리뷰가 실패를 보고하면 문제를 진단 및 수정하고 완료 후 pr:update 이벤트를 게시합니다."
         },
         "customEventEcho": {
           "title": "사용자 정의 이벤트 echo",

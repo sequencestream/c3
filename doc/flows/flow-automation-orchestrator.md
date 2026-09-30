@@ -1,360 +1,72 @@
 # Flow — 自动化队列(确定性调度内核)
 
-**场景。** 用户在想要构建的意图上勾选 `automate`,然后点击自动化按钮。一个按工作区划分的
-**确定性调度内核**按优先级/依赖顺序逐一开发它们,评判是否真正完成,提交并推送,建 PR,再按影响
-范围驱动 PR 的 AI 评审 → 修复 → 复审闭环,并在评审是队列自己通过时自动合并 PR,然后推进。
+**场景。** 用户对要构建的意图勾选 `automate` 并启动队列。按工作区划分的调度内核逐条开发、评判、提交推送,再按影响范围驱动评审 → 修复 → 复审;单意图失败隔离(`park`),队列不停。
 
 **领域。** intent-management · agent-session · permission-gateway · git。
 
-这是 [意图 → 开发](flow-intent-to-development.md) 的**无人值守**版本兄弟流程。它是“不自动
-完成”规则(`RM-R9`)唯一一个显式的、用户主动选择加入的例外:只有在一个独立的评判者确认**且**
-变更已被提交并推送(`RM-A5`)之后,它才会把一个意图标记为 `done`——或者在 `worktree` 模式 +
-`automate` 下标记为 `reviewing`(评审/修复/合并尚未了结,接力接管后才收敛为 `done`,见下)。
-自动化是**受监督的**,而非无人值守:一次实时的权限 prompt 会等待一位正在盯着的人类(`RM-A9`)。
-
-**队列如何前进(2026-07-31,ADR-0031)。** 队列**不由事件推动**。它以固定 10s 节拍唤醒并
-**全量对账**:从意图账本快照 + 活跃 run 存活探测 + 少量持久化的单意图调度元数据**重新推导**
-该做什么。生命周期事件只把工作区放进一个**合并式脏集**(“再看一眼”),因此丢一个事件最多造成
-一轮延迟,不再造成永久卡死。一次失败只隔离到**那一条意图**(指数退避 → 连续 3 次 park),
-队列继续处理与其**无依赖关系**的其他候选;而依赖被 park 意图的下游**仍被依赖闸门挡住**。
+本流程是 [意图 → 开发](flow-intent-to-development.md) 的队列路径,复用同一套运行循环与闸门;规则见 [intent-management](../domains/core/intent-management/intent-management-spec.md)。它是 `RM-R9` 的显式 opt-in 例外,且仍受监督(`RM-A9`、`C-SEC-3`)。与 [自动化执行](flow-automation-execution.md) 无关。队列靠节拍全量对账前进,事件只标脏([ADR-0031](../architecture/adr/0031-deterministic-queue-reconcile-kernel.md))。
 
 ## 流程图
 
 ```mermaid
 flowchart TD
-    T1[tick · 每 10s] --> P
-    T2[事件标脏 · 合并去重] --> P
-    T3[服务启动对账] --> P
-    P[reconcile pass<br/>幂等 · 纯函数] --> SNAP{快照可读?}
-    SNAP -- 否 --> FC[fail closed<br/>本轮不 launch]
-    SNAP -- 是 --> GATE[并发闸门 + 存活探测]
-    GATE -- 有存活会话 --> ATT[attach / awaiting_gate]
-    GATE --> PICK[挑选合格意图<br/>优先级 → 最旧]
-    PICK -- 无候选且无阻塞链 --> DONE[done]
-    PICK -- 仅有被阻塞候选 --> RUN[running · 非 done]
-    PICK --> ACT[launch / resume]
-    ACT --> DEVT[dev turn — await + catch]
-    DEVT --> J{completion judge}
-    J -- done --> CP[commit & push · mark reviewing/done]
-    J -- in_progress --> CONT[continue ≤ cap]
-    J -- stuck --> FAIL[记该意图一次失败]
-    J -- 判定不可用<br/>judge 跑不通/无法解析 --> FAILU[judge_unavailable<br/>记一次失败 · 不进人工决策通道]
+    T1[tick] --> P
+    T2[事件标脏] --> P
+    T3[启动对账] --> P
+    P[reconcile] --> SNAP{快照可读?}
+    SNAP -- 否 --> FC[fail closed]
+    SNAP -- 是 --> GATE[并发闸门]
+    GATE -- 存活会话 --> ATT[attach]
+    GATE --> PICK[挑选]
+    PICK -- 无候选无阻塞 --> DONE[done]
+    PICK -- 仅被阻塞 --> RUN[running]
+    PICK --> ACT[launch]
+    ATT --> DEVT
+    ACT --> DEVT[dev turn]
+    DEVT --> J{judge}
+    J -- done --> CP[commit & push]
+    J -- in_progress --> CONT[continue]
+    J -- stuck / 不可用 --> FAIL[该意图失败]
     CONT --> DEVT
-    FAILU --> BO
-    FAIL --> BO{连续 3 次?}
-    BO -- 否 --> BACK[指数退避 · 下轮重试]
-    BO -- 是 --> PARK[park · 队列继续其他意图<br/>下游仍被依赖闸门挡住]
-    CP --> RL{needsReview?<br/>仍有活跃 PR?}
+    FAIL --> BO{连续失败?}
+    BO -- 否 --> BACK[退避]
+    BO -- 是 --> PARK[park]
+    CP --> RL{需评审?}
     RL -- 否 / L5 --> P
-    RL -- 是 --> REV[Review 会话<br/>reviewAgentId · 意图 worktree]
-    REV --> RS{回填了结论?}
-    RS -- 无结论退出 --> FAIL
-    RS -- approved --> MG{队列自己评审<br/>且凭据有效 / 有在途合并?}
-    MG -- 否(人工回填/凭据失效) --> P
-    MG -- 是 --> MRG[merge_prs · 占一个并发名额<br/>认领 pending→running · 逐条重读 forge · gh/glab merge]
-    MRG --> SYNC{forge 回读全部 merged?}
-    SYNC -- 是 --> P
-    SYNC -- 否/失败 --> HB[handed_back · pr_merge_failed/unconfirmed<br/>去重待办转人工 · 不重试]
+    RL -- 是 --> REV[Review]
+    REV --> RS{结论}
+    RS -- 无结论 --> FAIL
+    RS -- approved --> MG{队列可合并?}
+    MG -- 否 --> P
+    MG -- 是 --> MRG[merge]
+    MRG -- 全部 merged --> P
+    MRG -- 否 --> HB[交回人]
     HB --> P
-    RS -- rejected --> RB{已用满 3 轮修复?}
-    RB -- 是 --> PARKX[park · review_fix_exhausted<br/>转人工 · 普通 unpark 不赠预算]
-    RB -- 否 --> FIX[Fix 会话 · 轮次 +1<br/>fixAgentId · 同一 worktree]
-    FIX --> FS{回填 fixed?}
-    FS -- 无结论退出 --> FAIL
-    FS -- fixed --> REV
+    RS -- rejected --> RB{预算耗尽?}
+    RB -- 是 --> PARKX[park]
+    RB -- 否 --> FIX[Fix]
+    FIX -- fixed --> REV
+    FIX -- 否 --> FAIL
     BACK --> P
     PARK --> P
     PARKX --> P
-    FAIL -. majority toggle .-> CC[checkpoint consensus<br/>may override]
 ```
 
-## 启动与排序
+## 步骤
 
-1. **web-console → intent-management。** `start_workflow`。每个工作区最多一个队列;第二次启动
-   是空操作,只会返回当前状态(`RM-A2`)。**启停意愿被持久化**:服务重启后,启动时的全工作区
-   对账会从持久事实恢复队列,而不是静默变回 `idle`(`RM-A20`)。
-2. **并发闸门(`RM-A12`)。** 闸门要挡的是两个工作会话改同一份文件,作用范围随 Git 分支模式:
-   `current-branch` 下所有意图共用一份检出,该工作区中**任何**一个 `in_progress` 意图(包括手动
-   启动的)有**真正在运行**的工作会话时,队列不 launch 新意图,状态为 `awaiting_gate`;
-   `worktree` 下每条意图各有独立目录,运行中的会话只代表它自己,队列在观察它的同时可另选一个
-   合格意图,多条意图并行开发,但并行开发总数受工作区 `automationConcurrency` 配额(默认 2)约束:
-   内核按意图 ID 去重统计占用(in-flight run + 队列挂接的活跃自动化会话 + 本轮新选中),达到上限
-   即不再挑选,其余合格意图以 `blocked_concurrency_gate`「已达并发上限 N」阻塞(每轮仍最多发起
-   一个新的工作动作)。一个**悬空(dangling)**的会话两种模式下都不阻塞 —— 这由每轮的**存活探测**
-   保证:已死的阻塞会话不再出现在存活集合中,闸门随即释放,不必等一个永远不会到来的 settle
-   (`RM-A10`)。
-3. **挑选。** 符合资格的条件是:`automate` 为真,且 `status ∈ {todo, in_progress}`,且所有已知的
-   `dependsOn` 都是 `done`;在 worktree 模式下,若某个 `done` 依赖的 PR/MR 尚未确认为
-   `merged`,则依然会阻塞,因为其代码是否已进入主干尚不确定。当工作区启用了 SDD
-   (`sddEnabled`)时,该意图还必须通过规格审批检查点(`spec_status='approved'`——`specStatus`
-   是唯一事实源,`raw`/`pending` 一律视为未通过)。**唯一例外是有效规格模式为 `fast` 的意图**:
-   它本就不先写规格,规格由工作回合落定后反向补轨,因此队列不因未批准的规格挡住它 ——
-   与手动准入同一条例外,两条路径对同一批事实不会给出相反结论;fast 意图也因此不进入
-   规格阶段,队列不会替它撰写或审核规格。SDD 关闭时保持
-   历史行为,不要求有规格。若唯一使某个意图不符合资格的原因是某个依赖的 PR/MR 状态陈旧且未
-   确认,服务器会启动一次一次性的后台 PR/MR 状态同步,完成后重新对账;它不会轮询,也不会绕过
-   该闸门。**SDD 未批准不再被静默跳过**,而是产出显式的 `blocked_spec_not_approved` 阻塞原因,
-   并且这样的队列**不得显示 `done`**(`RM-A18`、`RM-A7`)。符合资格的意图按**优先级(P0→P3)再
-   按最旧优先**排序(`RM-A3`)。`dependsOnIndexes` 的提交顺序戳记(`RM-R17`)会确定性地打破同
-   优先级的平局。另外三类条目本轮不参与选择,并各自带可展示的原因码:**退避中**、**已 park**、
-   **被用户强制跳过**。
+1. **web-console → intent-management。** `start_workflow` 启动该工作区队列;每工作区至多一个,启停持久化,重启按意愿恢复(`RM-A2`)。节拍、标脏与启动对账进入同一轮;快照不可读则本轮不派发(`RM-A15`、`RM-A20`)。
+2. **挑选。** 仅 `automate` 为候选(`RM-A1`)。并发闸门约束共享检出与工作区上限,存活探测释放悬空占用(`RM-A12`、`RM-A10`)。合格者按优先级再按最早创建挑选,闸门给出原因、不静默跳过(`RM-A3`)。SDD 下未过闸者先走规格撰写→审核(`RM-R34`、`RM-R35`、`RM-R51`)。仍有退避、`park` 或被挡住的候选时队列不得呈现完成(`RM-A7`)。
+3. **intent-management → agent-session。** 有存活回合则挂接;否则续跑或新开。新回合是新准入,挂接不是(`RM-A21`)。开发走标准门控循环;权限提示等人作答,运行不停、队列不代答(`RM-A9`、`C-SEC-3`)。
+4. **评判 → 提交。** 回合结束由判定器给出 `done` / `in_progress` / `stuck`;判定不可用按该意图失败记,不伪装成人介入(`RM-A4`)。`done` 则提交推送:无 PR 阶段标 `done`,worktree 进入 `reviewing` 再等 `RM-R48`(`RM-A5`);预提交钩子拒绝允许一次自愈(`RM-A13`)。`in_progress` 续跑至上限(`RM-A8`)。失败只隔离到该意图:退避,连续失败则 `park`,下游仍被挡住(`RM-A6`、`RM-A17`)。
+5. **评审接力。** `reviewing` 且仍有活跃 PR 时,同一套闸门驱动评审/修复;仅 `L5` 可跳过首次评审;共享检出不接力(`RM-A24`)。结论只由工具调用产生(`RM-A26`)。修复预算触顶则 `park` 交人(`RM-A25`)。仅队列自己评审并通过的 PR 可由工作台落地;失败交回人、不重试(`RM-A27`)。
 
-## 开发一个意图
+## 分支与异常
 
-启动动作遵循严格的优先级次序(`RM-A3`、`RM-A10`):
-
-1. **Attach(附加)**——若被选中意图的 `lastWorkSessionId` **已经在运行某一轮**,附加并跟踪它
-   (绝不启动第二轮——一次运行会比一轮更长命,`RM-A10`)。
-2. **Resume(恢复)**——否则,若一个 `in_progress` 意图的 `lastWorkSessionId` **仍存在于磁盘上**,
-   则恢复它(`resume` id,`AS-R1`/`AS-R10`),延续其半成品的 dev-skill 上下文。
-3. **Fresh(全新)**——否则,一个 `todo` 或**悬空**的意图会启动一个全新的工作会话(可配置技能),
-   与手动启动相同的悬空规则(`RM-R8`)。
-
-这三态属于共享的 `launchWorkSession`,而非队列内核独有:手动「开始开发」按钮与 MCP
-`start_session_for_intent` 走同一条路径,对同一组事实产生同一结果。**发起新 turn 就是一次新准入**,
-因此 fresh 与 resume 在该函数内过同一条闸门链:`RM-A12` 并发闸门 → SDD 规格批准 → `worktree` 下的
-依赖闸门(`RM-A21`)。`current-branch` 下同工作区若有**其它**意图的工作会话正在运行,fresh 与 resume
-都被拒(`intent.concurrencyGate`),`worktree` 下则放行;规格批准被撤销或依赖 PR 未合并时,空闲会话
-同样不能被恢复。attach 只挂 viewer、不发 turn,不构成新准入,也不受这条闸门链约束;悬空会话从不阻塞。
-底层存在**未作答**的 `AskUserQuestion` 时不得 resume——续跑提示绝不代替用户的答案
-(`intent.pendingQuestionUnanswered`,`RM-A11`/`C-SEC-3`)。
-
-开发轮次运行标准的受门控循环。**权限一致性**(`RM-A9`):该轮次中出现的一次 prompt 行为与手动
-会话完全一致——该次运行**不会**被中止;它停在 `awaiting_permission`,该 prompt 呈现给浏览器,
-一位正在盯着的人类回答后,该轮次继续。与此同时状态会显示一个“等待授权”的提示。
-
-## 评判 → 提交 → 推进
-
-1. **完成度评判(`RM-A4`)。** 该轮次结束后,一个**不带工具**的一次性评判者读取该意图 +
-   工作会话最后一条助手消息 + 代码变更证据(跨多仓库的 `git diff`/`git log` 仅作为*佐证性*
-   旁证,**不是** `done` 的先决条件),返回 `done` / `in_progress` / `stuck`,判定优先级依次
-   为 **stuck → done → in_progress**。轮次结束本身绝不等同于“done”;空的证据本身也绝不单独
-   构成 `stuck` 信号。评判者的 provider 连接与其它会话同规:`custom` 模式的工具 agent 经中继
-   下发真实上游,只下发模型名而不下发其 provider 会让 CLI 拿着三方模型名去打一方端点。
-2. **`done` ⇒ 提交并推送(`RM-A5`)。** 队列提交任何未提交的工作(`feat: <title>`,若工作树
-   干净则跳过),并**总是**推送(感知多仓库),然后把该意图标记为 `reviewing`(`worktree` 模式 +
-   `automate`)或 `done`(无 PR 阶段的模式),**之后**才建 PR:
-   建 PR 以重读到的意图状态为准(非 `done`/`reviewing` 则整体跳过),base 由 `resolvePrTarget`
-   解析 (与手动建 PR 同一份解析):关联就绪交付 ⇒ 该交付分支;未关联 ⇒ 意图 `baseBranch`
-   (`delivery_id` 为空);目标不可用(分支未就绪 / 多关联 / 交付未知)时不建 PR 并推一条待办
-   说明原因,**绝不另选主线顶替**。建 PR 的结果不改变已达成的 `reviewing`/`done`。若提交被
-   **pre-commit lint 钩子**拦截,会通过单次开发智能体修复轮次自愈,再重试一次(`RM-A13`);
-   任何其他提交/推送失败(或修复后仍然存在的 lint 失败)都计为**该意图**的一次失败(`RM-A6`),
-   队列本身继续。
-3. **`in_progress` ⇒ 继续(`RM-A8`)。** 用一次 continue 恢复同一会话(清除各检查点),直到达到
-   一个固定的单意图上限;超出该上限计为该意图的一次失败,而**不是**停整条队列。continue 仅用于
-   **纯粹的检查点**,绝不用于回答一个人工决策点。
-4. **`stuck` / launch 抛异常 ⇒ 该意图失败一次(`RM-A6`)。** 指数退避(30s 起,逐次翻倍,上限
-   15 分钟);**连续第 3 次进入 park**。park 的意图不再自动启动,但**不是 `done`** ——
-   依赖它的下游继续被依赖闸门挡住,**既不跳过也不放行**(`RM-A17`)。
-5. **判定不可用 ⇒ 同样失败一次,但原因码不同(`judge_unavailable`)。** 评判者跑不通(工具
-   agent 的 provider/模型配置错误、一次性会话未启动)或回答不是一个判定对象时,这是**工具侧
-   故障,不是关于这条意图的判定**:不折叠成 `stuck`、不触发检查点共识、不进人工决策通道,
-   只按 `RM-A6` 记一次失败并退避,原因码指向工具 agent 配置。
-6. **每一轮的取舍都被记录(`RM-A18`)。** `queue_decision_log` 按 tick/intent 记录选择的动作、
-   被哪个闸门挡住、拒绝理由、尝试/退避计数与下次唤醒时间;队列页面逐条展示,并提供 pause /
-   force-skip / unpark / 覆盖结论等与内核动作一一对应的人工动作(`RM-A19`)。同一轮还派生出
-   被并发闸门挡住者的**队列位次**(`RM-A19`),只展示不落库。
-7. **耗尽。** 只有当快照中**不存在任何待处理的自动化候选及阻塞链**时,队列才呈现 `done`;
-   仍有退避 / park / 被闸门阻塞的候选时呈现 `running`。`stop_workflow` 会中止当前运行并无错误地
-   返回 `idle`(`RM-A7`)。
-
-## PR 评审 → 修复 → 复审 → 自动合并接力(`RM-A24`/`RM-A25`/`RM-A26`/`RM-A27`)
-
-建了 PR 不等于这条意图离开了队列。队列继续持有它,直到 PR 拿到一个 AI 评审结论,并且在评审是
-队列自己通过时把 PR 自动合并。
-
-1. **接力候选(`RM-A24`)。** `automate` + `status === 'reviewing'` + `worktree` 分支模式 + 仍有
-   **活跃 PR**(非 `merged`/`closed`)+ 接力未结束。`reviewStatus` 为空时由
-   `needsReview(impactLevel)` 决定要不要首次评审(只有 `L5` 跳过);一旦存在任何结论,影响范围
-   再怎么改都不影响接力 —— 否则一次降级就能丢掉未处理的 `rejected`。`approved` 通常使意图**退出**
-   候选集合、留在 `reviewing` 等合并(队列因此仍能正常呈现 `done`/idle,因为它对这条意图已无事
-   可做);**唯一例外**是评审由队列自己认领并通过 —— 此时意图持有一张合并凭据,接力以 `merge_prs`
-   收尾自动合并后才退出(见第 8 条)。`done` 只由收敛检查在「评审了结 + PR 全部合并」后写,不由
-   接力自己写。**合并本身就是评审了结**:收敛检查观测到 PR 全部合并时,会把台账 `reviewStatus`
-   按合并结果补写为 `approved`(already `approved` 则跳过),因此评审会话缺席、或在 c3 之外先合
-   并的意图不会卡在 `reviewing` —— 这种情况队列不再为它拉起评审会话。接力候选与开发
-   候选**同一条闸门链、同一份并发配额**:
-   规格、交付写入、交付歧义、依赖、退避、冷却、`RM-A12` 一条都不放宽,每轮最多发起**一次**接力
-   会话。`current-branch` 下不接力 —— 评审读、修复改的是 PR 的 head 分支,共享检出里没有这个
-   目录,与自动建 PR 只在 `worktree` 生效同源。
-2. **首次评审。** 队列在同一次条件更新中写入 `reviewStatus='pending'` 与会话占位,轮次保持
-   **0** —— 首次评审不占修复预算。Review 会话只读:没有 `Edit`/`Write`,也没有修复回填工具。
-3. **rejected ⇒ 修复(`RM-A25`)。** 认领下一轮时 `reviewFixRounds + 1`、写 `fixStatus='pending'`
-   并登记会话占位,三件事在**同一条件更新**里落定;`reviewStatus` 保持 `rejected`,那正是修复
-   会话要读的输入。Fix 会话拿受控编辑能力,但**没有** `sync_intent_review_status` —— 修复方不给
-   自己打分。
-4. **fixed ⇒ 复审。** 队列把 Review 切回 `pending` 并**清空 `fixStatus`**,轮次不变,使旧的
-   `fixed` 不能满足下一次 `rejected`;`fixSessionId` 继续指向最近一次修复会话,供复审期间回看,
-   直到下一轮 Fix 启动时才被新会话替换。该分支**优先于**预算判定:第三轮修复完成后仍要跑
-   最后一次复审。
-5. **收敛上限。** 只有「已用满三轮修复」且复审仍 `rejected` 时,才以 `review_fix_exhausted`
-   park 并推一条去重的人工待办。正常闭环上限是**三次修复、四次评审**。该原因**不属于**失败阶梯
-   的自动恢复集合(`RM-A17`),普通 unpark 也不赠送新预算。
-6. **结论只由工具调用产生(`RM-A26`)。** 会话退出、崩溃、超时或正文里说「完成」都不是结论:
-   未绑定会话时队列释放该阶段占位;已绑定真实会话时保留会话 id 供 Tab 回看、只清除 `pending`
-   标记,随后按 `RM-A6` 记一次失败并退避,**但不退还已认领的
-   轮次** —— 失败阶梯与评审收敛预算是两套独立计数。恢复的是**同一个**阶段,不是新一轮。
-   回填工具之前必须先把与 WorkNote 一致的结果留在每个活跃 PR/MR:Review 首行精确使用
-   `[review] pass` / `[review] change-required`,Fix 首行使用 `[fix] completed`;评论带会话级隐藏
-   去重标记。`rejected` 是已经形成的评审事实,即使评论失败也要回填,使意图保留评审会话并进入修复;
-   `approved` 仍以全部评论成功或命中去重标记为前提,评论失败时不回填,避免在外部没有评审痕迹时触发自动合并。
-7. **身份与上下文(`RM-A26`)。** 认领时一次性选定 vendor/agent(Review 取 `reviewAgentId`、
-   Fix 取 `fixAgentId`,空值沿 `AC-R33` 的角色解析链兜底(工作区设了默认 Agent 时工作区默认为先、
-   继承时系统 review/fix 角色为先),无可用 Agent 是**明确失败**而不是跳过评审),
-   之后运行中与恢复时都不再重读设置。执行目录是该意图的 **worktree**,不回退主检出。prompt 由
-   服务端组装,携带意图、阶段、轮次与上限、本次 `pending:` 启动句柄与目标 PR 的仓库/编号/链接与
-   head/base,并要求**先读 WorkNote 历史再读 PR 变更** —— 空历史可以继续,读取报错不得伪装成
-   无历史。Review/Fix 都显式携带 automation 的 `network-access` 伪工具权限,使 Codex 的
-   `workspace-write` 沙箱能够执行 `gh`/`glab` 的读取、评论与推送;该标记不授予文件写工具,
-   Review 仍没有 `Edit`/`Write`。厂商绑定后服务端把阶段字段换成公开的 `c3SessionId`,结论工具再按 execution 归属把
-   prompt 中的启动句柄归一到这个真实 id;过期会话不能覆盖已经换人的阶段,相同终态重复回填幂等。
-8. **自动合并(`RM-A27`)。** 只有队列自己认领的那轮评审、由服务端按 MCP 执行句柄归因的会话给出
-   `approved`,才签发一张合并凭据(`merge_grant` + `mergePhase='pending'`);人工回填、普通自动化
-   或口头说出会话 id 的参数都只写结论、不给凭据。内核看到 `approved + 凭据有效`(或重启后发现
-   `running`/`awaiting_sync` 的在途合并)就产出 `merge_prs` 动作,占一个与 Review/Fix 相同的并发
-   名额。执行器先 `pending → running` 条件认领(读回确认,认领写不进就一条命令不发),再逐条按
-   identity 键顺序重读 forge、比对 head SHA 仍是评审时 pin 的那一版,发出
-   `gh pr merge --merge --match-head-commit <sha>` / `glab mr merge --yes --auto-merge=false --sha <sha>`;
-   缺 head SHA 是拒绝而非豁免。命令返回 0 不当作成功:`syncIntentPrStatus` 读回 forge,聚合态
-   `merged` 才 `completeIntentOnPrsMerged` 写 `done`;该路径进入前 `reviewStatus` 必然已是 `approved`,
-   故其中的合并补写是 no-op,同一次合并被同步与二次求值先后观测也不会多写结论;冲突、红检查、缺 CLI、超时或 forge 未确认
-   都**交回人**(phase `handed_back`、凭据清空、去重待办 + 决策行,`pr_merge_failed`/
-   `pr_merge_unconfirmed`),意图停在 `reviewing` + `approved`,队列继续其他意图。**没有重试阶梯**:
-   被恢复的那次尝试可能已经落地,重发等于发出一个没人授权的第二次合并。
-
-## 人工发起评审 / 修复(`RM-R53`)
-
-队列之外,人可以在意图标题栏手动发起一轮评审或修复 —— 手动建的 PR、关掉自动化或队列 idle 的意图
-只能走这条路。准入判据、与队列的四项差异、在途字段的语义见 RM-R53;这里只描述一次点击的链路。
-
-```
-点击「启动评审 / 启动修复」
-  → start_intent_relay { workspaceName, intentId, phase }
-  → 存储可用 → 工作区 / 意图归属 → worktree 模式 → 活跃 PR → 阶段判定(与 Web 同一个共享纯函数)
-  → preflight:Agent 可用 → worktree cwd 可用 → 活跃 PR 重读仍在 → CAS 认领(同一次条件更新写 pending 占位、轮次与投影行)
-       ├─ 认领前失败 ⇒ error 帧回发起连接(toast),不占轮次、不起会话
-       └─ 认领成功 ⇒ 广播 intents(行上已带 *InFlight)⇒ 异步跑该阶段
-  → 会话与队列同一条链路:prompt、工具面、30 分钟上限、退出即释放占位
-  → WorkNote → 每个 PR/MR 留言(会话标记去重)→ 全部成功后才由 MCP 工具回填结论
-  → 无结论退出不记失败阶梯
-```
-
-**发起是同步的,阶段是异步的。** handler 等到认领落定才返回:判定与认领都在这一次往返里跑完(服务端
-不信任客户端缓存,用共享判定对当前台账现场重算),认领前的每一种拒绝都以 `error` 帧当场回到发起连接。
-认领成功只广播账本,没有专用 response 帧。认领之后会话可能跑上半小时,它无结论退出或异常时**不回调
-发起连接**:那一次点击早已被答复,再补一个 `error` 只会读作「刚才那次成功作废了」;失败从意图投影与
-会话 UI 观察。认领**前**的失败绝不会被这样吞掉 —— 那正是同步等待认领要换来的一致性。
-
-## 分支 —— 检查点共识override(`RM-A14`)
-
-当多数票开关(`ConsensusConfig.majority`)为 ON 时,一次 `stuck` 判定或一个
-`pendingQuestion` 守卫可能改为触发一次多智能体投票(通过共享的跨厂商
-`selectConsensusVoters` 选出的对等方,一次性、禁用工具;continue/wait 的 prompt 与厂商无关,
-且跳过工具风险归一化器),来决定是否通过该检查点。多数票 `continue` 会覆盖该次失败并
-自动继续(与 `RM-A8` 相同的上限);平票 / 多数为 `wait` 则按 `RM-A6` / `RM-A11` 处理该意图。结果通过
-`WorkflowStatus.checkpointConsensus` 广播。它只决定*自动化流程*本身,绝不决定底层
-`AskUserQuestion` 的答案。参见
-[consensus(共识)](../domains/core/permission-gateway/features/permission-gateway-consensus.md)。
-
-## 自动化 c3 MCP 工具集
-
-自动化执行环境(每个 `llm_prompt` 类型的自动化运行)绑定一个受限的 c3 MCP 服务,暴露以下
-工具(与手动 WebSocket 路径相同的行为,但以 MCP 返回值表达结果):
-
-- **`find_intents`**(只读): 按 status/module/keyword 检索项目意图列表
-- **`view_intent`**(只读): 按 id 查看单条意图完整详情
-- **`find_deliveries`**(只读): 按 status/keyword 检索项目交付列表(状态、基线/交付分支、就绪标志、集成就绪 N/M)。交付**没有写工具**:状态写必须过交付状态机与守卫;默认不勾选
-- **`view_delivery`**(只读): 按 id 查看单条交付完整详情(含关联意图与最新交付 PR 行);默认不勾选
-- **`save_intent_directly`**(写): 直接落库新建 `draft + automate=false` 意图(绕过人工确认,仅限自动化)。schema 不含 `status`/`automate`;工具与 `save_intents` 共用的正文描述按 Why / What / Trade-offs·Non-goals / 可选 When / Acceptance 五维引导,缺维不构成业务错误。自动化 MCP 不暴露交互式 `save_intents`;后续激活须由另一个已获该工具授权的入口按 id upsert
-- **`sync_intent_pr_status`**(写): **触发服务端从 forge 派生 PR 终态并落库**。只接受 `intentId`,不接受任何状态值:服务端遍历该意图全部 `reviewing` 的 PR 行逐条向 forge 查询,`merged`/`closed` 终态落库并写意图日志,仍 `open` 的行不变。模型只触发,状态唯一由 forge 裁决
-- **`publish_pr_event`**(写): 发布 PR 操作事件(触发其他自动化)
-- **`find_discussions`**(只读): 检索项目讨论列表
-- **`view_discussion`**(只读): 查看单条讨论详情及消息
-- **`start_discussion`**(写): 启动一个 draft 讨论
-- **`continue_discussion`**(写): 继续或恢复一个讨论
-- **`start_session_for_intent`**(写): **按意图启动 spec 或 work 会话**。接受 `intentId` + `sessionType`(`'spec'` / `'work'`),复用与手动操作一致的校验门禁(状态、SDD 审批、依赖阻塞、Git 分支策略)。`work` 分支按 `lastWorkSessionId` 三态解析:运行中 **attach**(返回原 id,不发新 turn)、空闲 **resume**(原 id 上续跑)、无会话才 **fresh**;fresh 与 resume 发起新 turn 前都要过下沉到 `launchWorkSession` 内的同一条闸门链(RM-A12 并发 → SDD 批准 → 依赖)。成功返回 JSON `{sessionId, sessionType, mode}`,失败返回 JSON `{code, params}` 且 `isError: true`。不发送 WebSocket 进度事件。
-
-工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有厂商表面自动同步,无需维护第二份名单。
-
-**PR 终态回填经 `sync_intent_pr_status` 显式触发**:工具只接受 `intentId`,不携带任何状态值——服务端
-遍历该意图全部处于 `reviewing` 的 PR 行逐条向 forge 查询真实状态,`merged` / `closed` 终态落库并写
-意图日志,forge 仍 `open` 的行保持不变。模型不直接写状态,终态唯一由 forge 裁决;`rejected` /
-`failed` / `closed → reviewing` 的复位仍由携带 `association.deliveryId` 或 `pr.number` 的
-`pr:update` 事件处理。
-
-## 顾问 Agent 的专属工具组(propose-then-validate)
-
-确定性内核只处理「知道怎么办」的情形。遇到需要判断的节点(从 transcript 根因分析一个死掉的
-run、该 retry 还是 reset/skip/escalate),内核可**按需唤起**一个顾问 Agent:它**不常驻、不握
-方向盘**,只**提出**一个结构化动作,由内核校验后执行。
-
-> **本条只交付工具面 + 双保险校验。** 内核**何时/如何**唤起顾问(park 触发时机、会话类型、
-> transcript 上下文注入、续跑预算定义)尚未立项。没有触发面,顾问不会自动被唤起——不应期待
-> 「park 后自动打开顾问会话」这类端到端行为。
-
-**这不是普通 automation 的能力。** 该组有自己的注册表(`ADVISOR_C3_TOOL_NAMES`)和自己的
-loopback 路由(`transport/advisor-mcp`),**不并入** `AUTOMATION_C3_TOOL_NAMES`;上面那张自动化
-工具表因此一条未增。作用域(工作区 + 目标意图)由**闭包**绑定,任何工具都不接受
-`workspacePath` / `intentId` 参数——提案携带 `workspacePath` 本身就是一次越权尝试,直接被拒。
-
-| 工具                                          | 读/写 | 服务端重校验                       | 确认队列   |
-| --------------------------------------------- | ----- | ---------------------------------- | ---------- |
-| `read_session_transcript`                     | 读    | 会话归属;先脱敏后尾部截断          | 免         |
-| `get_run_status` / `list_sessions`            | 读    | 会话/意图归属                      | 免         |
-| `stop_run`                                    | 写    | 会话归属                           | 免         |
-| `reset_intent_session` / `reset_spec_session` | 写    | 会话归属(破坏性上下文替换)         | **需确认** |
-| `update_intent_status`                        | 写    | **仅允许非 `done` 的合法流转**     | **需确认** |
-| `create_pr` / `sync_intent_pr_status`         | 写    | 复用人工 Git/PR 路径的全部前置校验 | **需确认** |
-| `raise_user_todo`                             | 写    | 去重的 `wait-user-involve` 待办    | 免         |
-
-**`approve_spec` 不注册、不接受提案、不提供任何别名或等价动作**;顾问也**不能**把意图标记为
-`done`——`RM-R9` 的自动完成例外仍然只属于队列自身的「评判 → 提交 → 推送」路径,不写第三条例外。
-
-**双保险。** 两层之间是 gate-in-the-tool + propose-then-validate:
-
-1. **纯函数校验器**先对提案给出接受 / **结构化拒绝**——稳定原因码、可展示 detail、
-   **是否可重试**、以及决定该结论的约束值。拒绝理由**回喂给 Agent**,它因此能学会「为什么不
-   行」,而不是盲目重试。
-2. **每个写工具在服务端重新校验**:副作用发生前重新读取权威事实,再查一遍归属、状态与硬闸门。
-   **绕过校验器直接调用工具仍会被拒**,拒绝不产生任何部分写入;两次检查之间事实发生变化时,
-   **以工具执行时的事实为准**。
-
-需确认的动作进入**既有**写入审批队列(与 `save_intents` 同一套 `permission_request` +
-`waitForDecision` 闸门,落同一个 WorkCenter 待办面板)。**审批不放宽任何闸门**:批准后仍然重校验。
-
-**人机对等。** 顾问能做的每个动作,人都能通过既有入口做到(`stop_run`、`reset_intent_session`、
-`reset_spec_session`、`update_intent_status`、`create_pr`、`sync_intent_pr_status`、
-wait-user-involve 待办),且成功结果与结构化拒绝对人和对 Agent 一致呈现。既有人工能力中不存在
-等价动作的,不得只在 MCP 侧开放。
-
-**自激环防护。** origin tag 与 per-intent 冷却窗口限制的是「多频繁」,**链深度**限制的是「多深」:
-超过上限时,在唤起 Agent 与任何工具副作用**之前**拒绝,并向 `queue_decision_log` 落一条
-`blocked_chain_depth` 记录。日志写入失败**不放宽**深度限制。
-
-**环境坑(已回归覆盖)。** ① 宿主 `HTTP_PROXY` 未配 `NO_PROXY` 会让回环 MCP 502,且工具**静默
-全缺席**——由 `withLoopbackNoProxy` 同时补齐 `NO_PROXY` 与 `no_proxy`;② codex 遇未知/别名 model
-会回退到默认能力元数据、把 MCP 调用拉进代码执行沙箱,导致所有 c3 工具报 unsupported call——
-该组与意图组一样被识别为「必须走直接工具调用路径」,对应关闭 `js_repl`。
-
-## 分支与异常(反面场景)
-
-- **人工决策点绝不会被碾过。** `stuck` 涵盖每一种“需要人类介入”的信号(`RM-A11`)。在此之上,
-  一个独立的 `pendingQuestion` 守卫会强制停止一个**已拆除**且带有未回答的 `AskUserQuestion`
-  的轮次——**即便**评判者判定为 `in_progress`(`RM-A11`,纵深防御)。
-- **轮次结束 ≠ 完成。** dev skill 是由检查点驱动的;一次单纯的轮次结束绝不会被当作 `done`
-  (`RM-A4`)。
-- **缺乏证据绝不否决一份可信的报告。** 提交是 c3 在 `done` *之后*的工作,因此一个空的
-  diff/log 本身绝不能否定完成(`RM-A4`/`RM-A5`)。
-- **受监督而非无人值守 —— 但不再连坐。** 权限提示仍然会等待一位在场的人类,**运行永不被中止、
-  决定永不被自动作答**(`C-SEC-3`)。有窗口的是**队列的等待**:超过 30 分钟无人应答时,队列
-  **park 该意图并推一条去重的 `wait-user-involve` 待办**,然后继续处理其他候选(`RM-A9`、
-  `RM-A17`)。要完全无人值守运行,仍须通过 mode/allow 规则预先授权。
-- **launch 异常不再吞掉。** 所有内核发起的 run 都被 await 并捕获;一次异常记为该意图的一次
-  失败尝试并进入退避,队列在下一轮继续推进 —— 而不是等一个永远不会到来的 settle(`RM-A16`)。
-- **丢事件只是延迟。** 事件只标脏、不携带决策依据、不重放;丢一个最多延后一轮对账(`RM-A15`)。
-- **快照不可读时 fail closed。** 本轮不 launch 任何意图,只记录一条工作区级故障,由下一轮
-  重新对账(`RM-A20`)。
-- **人工动作不能绕过硬闸门。** `force-skip` 只改变本轮选择,**不**标记 `done`、**不**满足依赖;
-  `覆盖结论`只能在既有合法后续动作中选择,不能绕过权限、spec、依赖、并发、续跑预算或提交推送
-  成功等闸门(`RM-A19`)。
+- **检查点共识。** 多数表决开启时,投票可覆盖 `stuck` 并自动继续;从不代答澄清问题(`RM-A14`)。
+- **人工评审/修复。** 队列之外人可发起同一阶段(`RM-R53`)。
+- **顾问。** 决策点可唤起顾问;不得批准规格,不得把意图标 `done`(`RM-A22`)。
+- **不得碾过人工决策。** 不代答权限,不续跑未回答的澄清;运行保持存活(`RM-A9`、`RM-A11`、`C-SEC-3`)。
+- **回合结束 ≠ 完成;空证据不否决可信报告**(`RM-A4`、`RM-A5`)。
+- **丢事件只延迟;快照不可读则 fail closed**(`RM-A15`、`RM-A20`)。
+- **跳过/覆盖不能绕过硬闸门;`park` 与跳过都不是 `done`**(`RM-A17`、`RM-A19`)。
+- **每轮取舍可查询;写入失败不放宽闸门**(`RM-A18`)。

@@ -3,9 +3,9 @@
 - **Status:** accepted
 - **Date:** 2026-07-13
 
-> **后续演进（2026-07-13）**：本 ADR 当时把「统一模型工具 `publish_event`」记为**后续可复用目标**、明确不在本 ADR 范围（见下方 Scope 表）。该后续目标随后已落地:`publish_pr_event` 被**替换**为单一通用 `publish_event`(入参即 `GenericEvent`),归一化后以 `GenericEventEnvelope` 落到单一 `'event'` 总线 topic,PR 消费者按 `event.type` 判别投影。因此本 ADR 正文中描述 `publish_pr_event` 窄工具与 `pr:operation` 总线 topic 的段落是**决策时的历史语境**;当前状态见 `event-mechanism.md §6`。
+> **后续演进（2026-07-13）**：本 ADR 当时把「统一模型工具 `publish_event`」记为**后续可复用目标**、明确不在本 ADR 范围（见下方 Scope 表）。该后续目标随后已落地:`publish_pr_event` 被**替换**为单一通用 `publish_event`(入参即 `GenericEvent`),归一化后以 `GenericEventEnvelope` 落到单一 `'event'` 总线 topic,PR 消费者按 `event.type` 判别投影。因此本 ADR 正文中描述 `publish_pr_event` 窄工具与 `pr:operation` 总线 topic 的段落是**决策时的历史语境**;当前状态见 [事件机制 · 模型对外发布表面](../event-mechanism.md#模型对外发布表面)。
 
-> **修订（2026-07-15）——注册表由「封闭」改为「开放 + 默认归一化器兜底」**：本 ADR 原选项 3 把注册表定为**封闭集合**、「未注册 type 一律拒绝」。实践中这与 `<category>:<action>` 命名规范（ADR-0027，type 本就是开放字符串,订阅侧已支持任意 `custom:*` type）冲突,也挡住了用户自定义事件。现修订为:注册表额外接受一个**默认归一化器**(`server/src/features/events/default-normalizer.ts`),已知 type 走其专用归一化器,**其余自定义 type 落到默认归一化器**——它复用同一套 secret 脱敏/绝对路径剥离/截断,但不绑定固定字段形状(递归清洗每个 string 叶子,`type` 不改写)。核心取舍不变:**字段级安全仍在**(默认归一化器同样脱敏/剥路径/截断),放弃的只是「未注册即拒」这条封闭边界——它不再是安全资产,而是无谓的发布限制。下文正文中「封闭注册表 / 未注册即拒」的表述按此修订理解;当前状态见 `event-mechanism.md §6.3 / §9.3`。
+> **修订（2026-07-15）——注册表由「封闭」改为「开放 + 默认归一化器兜底」**：本 ADR 原选项 3 把注册表定为**封闭集合**、「未注册 type 一律拒绝」。实践中这与 `<category>:<action>` 命名规范（ADR-0027，type 本就是开放字符串,订阅侧已支持任意 `custom:*` type）冲突,也挡住了用户自定义事件。现修订为:注册表额外接受一个**默认归一化器**(`server/src/features/events/default-normalizer.ts`),已知 type 走其专用归一化器,**其余自定义 type 落到默认归一化器**——它复用同一套 secret 脱敏/绝对路径剥离/截断,但不绑定固定字段形状(递归清洗每个 string 叶子,`type` 不改写)。核心取舍不变:**字段级安全仍在**(默认归一化器同样脱敏/剥路径/截断),放弃的只是「未注册即拒」这条封闭边界——它不再是安全资产,而是无谓的发布限制。下文正文中「封闭注册表 / 未注册即拒」的表述按此修订理解;当前状态见 [字段级安全归一化](../event-mechanism.md#字段级安全归一化) 与 [模型可发布事件](../event-mechanism.md#模型可发布事件)。
 
 ## Context
 
@@ -58,7 +58,7 @@ _Con:_ 通用 `data` 放弃「全字段先验强类型」，安全边界改由 `
 
 ## 后果
 
-- **§9.3 结论被修订**：模型可发布事件的安全原则从「每种事件新增窄工具」改为「**type 判别 + 封闭归一化器注册**」。`event-mechanism.md §9.3` 同步改写。
+- **§9.3 结论被修订**：模型可发布事件的安全原则从「每种事件新增窄工具」改为「**type 判别 + 封闭归一化器注册**」。落地形态见 [事件机制 · 模型可发布事件](../event-mechanism.md#模型可发布事件)。
 - **扩展更便宜**：加一种模型可发布事件 = 写一个归一化器（字段级脱敏规则）+ 在组合根注册一行；无需复制工具壳与信封/绑定逻辑。
 - **安全边界更清晰**：只有已注册 type 能发布，未注册即拒；per-run 信封注入与「同名 data 不可覆盖」由通用链路统一保证。
 - **渐进收敛**：`pr:operation` 通过适配桥承接旧订阅面，其余内部 topic 暂不动；后续可按需将统一发布工具与 Automation 通用过滤接到本机制上。
@@ -67,4 +67,4 @@ _Con:_ 通用 `data` 放弃「全字段先验强类型」，安全边界改由 `
 
 - [ADR 0018](0018-event-bus-kernel-layer.md) — 进程内事件总线；本 ADR 在其「模型对外发布」层之上引入通用契约 + 归一化器注册表。
 - [ADR 0009](0009-unidirectional-boundaries.md) — kernel 不得 import features/transport；注册表在 kernel，归一化器由组合根注册。
-- [事件机制](../event-mechanism.md) — 活文档，§9.3 记录本决策的落地形态。
+- [事件机制 · 模型可发布事件](../event-mechanism.md#模型可发布事件) — 本决策的落地形态。

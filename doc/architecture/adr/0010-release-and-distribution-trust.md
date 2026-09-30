@@ -61,14 +61,12 @@ SHA256SUMS + 每产物 `.sha256` + macOS ad-hoc + 发布说明/发布编排)都�
 - `pnpm build`(CJS bundle)与 Node CJS 文件系统回退路径保持不变。
 - 这些命名好的接缝得到了回报:第 3 步把**分发信任链**(SHA256SUMS + 每产物 `.sha256` + macOS ad-hoc
   代码签名 + 发布说明/发布编排)挂在了清单 + 编译原语之上,没有做任何结构性改动。
-  混淆是一个明确的非目标(security.md)。参见 `doc/non-functional/release.md` 的
-  "Distribution trust"一节。
+  混淆是一个明确的非目标(security.md)。参见 [release.md](../../non-functional/release.md) 与 [security.md · 分发信任](../../non-functional/security.md#分发信任)。
 - **自我更新(`c3 upgrade` / `c3 restart`)** 搭乘的是同一条链,而不是新建一条:upgrade 下载 GitHub Release
   包 + 外层附属文件,校验包字节后,原子地替换 `process.execPath`(Windows 下用 `.exe.old` 占位);
   验证失败会保留旧的二进制。upgrade 从不自动重启——解耦出来的 `c3 restart` 会重新读取
   操作系统服务单元(它引用的路径,如今指向新的二进制)或从一份持久化的选项 sidecar 重新拉起 `--daemon`。
-  不修改 PATH/profile,不维护多版本历史。参见 `doc/non-functional/release.md` 的
-  "Distribution trust"一节以及 security.md 的 DIST-1。upgrade 以 sha256 校验和校验包字节。
+  不修改 PATH/profile,不维护多版本历史。参见 [release.md](../../non-functional/release.md) 与 [security.md · 分发信任](../../non-functional/security.md#分发信任)。upgrade 以 sha256 校验和校验包字节。
 
 ## Compliance
 

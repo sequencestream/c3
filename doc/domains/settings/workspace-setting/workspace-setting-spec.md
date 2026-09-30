@@ -1,107 +1,76 @@
-# workspace-setting 工作区设置
+# workspace-setting — 领域规格
 
-`workspace-setting` 域承载 `WorkspaceSetting`(见 [`shared/src/protocol/workspace.ts`](../../../../shared/src/protocol/workspace.ts))——**按工作区**独立的配置旋钮,以唯一 workspace name 作为持久化与协议关联键。缺失或部分条目回退规范化默认值(`normalizeWorkspaceSetting`)。协议消息 `load_workspace_setting` / `save_workspace_setting` / `workspace_setting`。
+## Overview
 
-入口是工作区顶栏最右侧、位于「会话」之后的「设置」。设置内容在顶栏下方的右侧内容区展示,不遮挡左侧系统菜单与工作区列表;切换其它工作区顶栏页面或左侧系统菜单页面即关闭。
+workspace-setting 按工作区名称持有一份独立配置。缺失或部分条目回退规范化默认。智能体引用留空表示继承,不把当时的系统值快照进来。
 
-配置持久化与组级共享上下文见 [settings 组概览](../settings-overview.md)。
+**范围:** 智能体覆盖、按厂商默认权限模式、开发与 Git、沙箱启用与挂载种类、共识旋钮与讨论上限、规格策略、自动化总闸与并发、外部技能仓库、代码托管;本机观测与访问一览两个只读面。
+**边界:** 不执行隔离(见 [sandbox](../../core/sandbox/sandbox-spec.md));不解析角色(见 [AC-R33](../agent-config/agent-config-spec.md));不编排共识(见 [permission-gateway](../../core/permission-gateway/permission-gateway-overview.md));不跑讨论(见 [discussion](../../core/discussion/discussion-spec.md));不调度自动化或意图队列;不编辑账号范围(见 [system-setting](../system-setting/system-setting-spec.md#用户与访问));不拥有钥匙或记忆账本。
 
-## 智能体覆盖 `defaultAgentId` + 七类角色
+能力索引见 [features.md](../../../features.md) 的 workspace-setting 节。持久化分层见 [settings 组概览](../settings-overview.md)。
 
-工作区「默认 Agent」页签承载九个选择器:默认 `defaultAgentId`、工作 `workAgentId`,以及工具、意图、规格、规格审核、自动化、评审、修复七类角色。各角色保存独立覆盖或保持动态继承,候选来自已提交的启用智能体及虚拟组。
+## Business rules
 
-- **存储与清理。** 九个引用使用相同的继承哨兵、归一化与全工作区悬空清理规则,见 [agent-config 的 AC-R33](../agent-config/agent-config-spec.md)。
-- **七类角色。** 工作区**配置了默认 Agent** 时工作区层优先(工作区同名角色 → 工作区默认 → 系统角色 → 系统默认),**继承**时系统角色优先(系统角色 → 工作区同名角色 → 工作区默认 → 系统默认),详见 AC-R33;页面说明这一先后,各角色选择器居首为不带「系统」的「继承」——空值跟随的是上方的默认 Agent(本工作区未设默认时才落到系统角色),写成「继承系统默认」会与这条先后相反。运行时角色保留组路由与空组硬失败;自动化、评审、修复覆盖只用于新建表单或模板的身份种子,review/fix 工作区覆盖不进入队列解析(AC-R34)。
-- **工作角色。** `SessionKind='work'` 无显式选择时按工作区 `workAgentId` 优先、系统 `workAgentId` 与工作区默认的先后同七类角色的规则解析(AC-R35)。工作选择器位于默认选择器之后,空选项为「继承」,其解析到的 Agent 名显示在该选项旁。
+### 智能体覆盖
 
-## 默认权限模式 `defaultMode`
+默认、工作角色与七类专用角色均可覆盖系统。空值继承,省略键,不快照。解析先后、组路由、运行时与种子的分工见 [AC-R33](../agent-config/agent-config-spec.md) / [AC-R34](../agent-config/agent-config-spec.md) / [AC-R35](../agent-config/agent-config-spec.md)。系统保存时清理全部工作区悬空引用。
 
-按 vendor 分组的默认权限模式映射(vendor id → 模式),规范化后三个键齐全:
+### 默认权限模式
 
-- `claude`:值为 `ModeToken`,须落在 Claude 目录(`default` / `auto` / `plan` / `acceptEdits` / `bypassPermissions` 等目录声明项),缺省 `default`。
-- `codex`:值为 `CodexPolicy`(双策略对象)或 `ModeToken`(字符串旧格式)。字符串须落在 Codex 目录(`read-only` / `auto` / `full-access`),缺省 `auto`;对象含 `sandboxMode`(`read-only` / `workspace-write` / `danger-full-access`)、`approvalPolicy`(`never` / `on-failure` / `on-request`)与布尔 `explicitFullAccess`——后者是「用户显式选过完全访问」的持久授权事实,规范化时原样携带、**不从 `sandboxMode` 反推**(否则一份普通配置会显得自我授权),只有旧字符串 `full-access` 在读层规范化为 `danger-full-access + never` 时被标记为已授权。缺标记却存着 `danger-full-access` 的策略在启动时被判为被静默提升,降级为 `workspace-write`。`workspace-write` 已能提交代码(适配器补上仓库公共 git 目录的可写权限),`danger-full-access` 保留给仍需无边界主机写入的场景。
-- `cursor`:值为 `ModeToken`,须落在 Cursor 目录(`plan` / `agent` / `full-access`),缺省 `agent`。
+新会话按厂商读取本工作区默认权限模式([AC-R8](../agent-config/agent-config-spec.md))。各厂商对照自己的目录;非法或缺失回退该厂商缺省,不把别家缺省写入这家。会话已持久化但不在目录内的模式,下发前降为工作区默认。Codex 的无边界写入须有显式授权标记,不从沙箱档反推;无标记则降为工作区可写。此后按会话改模式不回写本域。
 
-规范化(`normalizeDefaultMode`)对**每个** vendor 做目录校验:合法 token 原样保留;缺失/空串/对该 vendor 非法的非空字符串一律回退该 vendor 的 `defaultToken`(`DEFAULT_MODE_MAP`)。遗留的单一字符串格式 fan-out 到全部 vendor 键时同样按各目录接受或回退,不得把 Claude 的 `default` 原样写入 `cursor`。某 vendor 不在映射中时,会话启动读该 vendor 的 `defaultToken`。选中已有会话时,若持久化 mode 已不在该会话 vendor 目录内,下发前降级为工作区默认(再不行则 catalog `defaultToken`)并写回纠正值;合法历史 mode 不改写。遗留的全局 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 由读层一次性迁入按项目配置。
+### 开发与 Git
 
-## 共识投票 `consensus`
+开发启动可带一条斜杠命令前缀,空则无。分支策略为当前分支或独立工作树,缺省工作树;非法归一为工作树。工作树以指定基准分支分叉,缺省从当前 HEAD。
 
-多智能体对权限提示的共识投票配置(是否启用、一致/多数裁决、投票者集)。缺省关闭。投票编排与裁决机制见 [permission-gateway](../../core/permission-gateway/permission-gateway-overview.md)。
+### 工作区沙箱
 
-## dev 启动技能 `devSkill`
+工作区自身的进程隔离配置:是否启用、补充挂载、哪些会话种类入箱。缺省关;种类缺省仅工作会话。是否入箱只看启用与种类,与 run 来源、是否工作树、分支模式无关。切换分支模式不丢已存配置。补充挂载默认只读,不得覆盖执行根、源工作区、规格目录。运行语义见 [sandbox 规格](../../core/sandbox/sandbox-spec.md)。本域不按名称引用系统沙箱模板。
 
-启动本工作区开发时前缀的斜杠命令(带前导 `/`)。可选;空 ⇒ 无前缀。
+### 共识与讨论
 
-## 讨论上限
+权限共识含是否启用、一致或多数、投票者集,缺省关。编排见 [permission-gateway](../../core/permission-gateway/permission-gateway-overview.md)。每阶段轮次上限最小 8,每轮字数引导最小 300,均向上钳制。值由本域持有([AC-R9](../agent-config/agent-config-spec.md));引擎见 [discussion 规格](../../core/discussion/discussion-spec.md)。
 
-- **`maxRoundsPerStage`** — 本工作区多智能体讨论每阶段轮次上限,最小 8(向上钳制)。
-- **`maxSpeechChars`** — 参与者每轮发言字数引导,最小 300(向上钳制)。
+### 规格策略
 
-讨论编排见 [discussion](../../core/discussion/discussion-overview.md)。
+规格驱动开发总开关缺省开,仅显式关闭。机器批准显式 opt-in、缺省关,仅显式开启才落键;高影响仍强制人工(见 [RM-R51](../../core/intent-management/intent-management-spec.md))。关闭不撤销已批准。见 [ADR-0032](../../../architecture/adr/0032-machine-spec-approval-opt-in.md)。
 
-## Git 分支策略
+小改动阈值约束 `fast` 单回合改动的文件数与行数,缺省 3 与 50,达到即超阈。超阈后的闸门见 [RM-R43](../../core/intent-management/intent-management-spec.md)。
 
-- **`gitBranchMode`** — `start_development` 的分支策略:`current-branch` 或 `worktree`(缺省)。缺失/非法值读时归一为 `worktree`;显式合法值保持不变,新键缺失时仍兼容旧磁盘键 `gitCommitMode`。
-- **`defaultMainBranch`** — `worktree` 模式下新 worktree 的基线/合并目标分支;缺省 ⇒ 从当前 HEAD 分叉。设置面板打开时自动探测(origin/HEAD → 当前 HEAD)。
+规格根不是配置项:服务端从工作区路径解析,只读展示,客户端提交忽略。不入 Git。不识别工作区内历史规范文档。
 
-## 工作区沙箱 `sandbox`
+### 自动化策略
 
-工作区级 arapuca 进程级隔离配置,收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`。是否进沙箱只由 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds` 决定,**与 run 来源(Intent / spec / 普通)、是否使用 worktree、`gitBranchMode` 无关**。配置**独立于分支模式**:`current-branch` 与 `worktree` 下均展示同一编辑区并可保存;归一化只校验 sandbox 内容,切换分支模式不会静默删除已保存的 `enabled` / `extraMounts` / `sandboxSessionKinds`。运行语义(执行根、固定放行、失败硬隔离)见 [sandbox](../../core/sandbox/sandbox-design.md)。
+自动派发总闸缺省开,仅显式关闭。挡住此后自动派发,不改单条状态、不影响立即运行(见 [SCH-R28](../../core/automations/automations-spec.md))。读取失败按开。
 
-- **`enabled`(主开关)** — 缺省关(缺失/`false` 即禁用)。启用后入选 run 的 vendor CLI 经 arapuca wrapper 启动。
-- **`extraMounts`(补充放行目录)** — 逐项 `{ path, readonly? }` 同路径放行,默认只读、可逐项声明 rw;不得覆盖执行根 / 源工作区 / specsBase 等保留路径。
-- **`sandboxSessionKinds`(会话种类勾选)** — 配置沙箱时列出全部 `SessionKind`(`work` / `intent` / `discussion` / `automation` / `consensus` / `tool` / `spec`),用户勾选哪些种类的 run 进沙箱。**缺省只勾选 `work`**。仅 run 的 `sessionKind` 命中勾选集合时才进沙箱,不再叠加任何 worktree 前置条件;每个勾选的种类都对该种类的全部 run 生效。归一化去重、丢弃未知值,清空后回退 `['work']`。
+队列同时开发的意图数上限缺省 2、最小 1,只约束自动派发的开发会话。共享检出有效并发恒为 1(见 [RM-A12](../../core/intent-management/intent-management-spec.md))。规格阶段不计入。人工与外部启动不按此配额拒绝。调低不取消在途。
 
-## 规格驱动开发 `sddEnabled`
+### 外部技能仓库
 
-- **`sddEnabled`** — 本工作区规格驱动开发(SDD)总开关,缺省开。开启时,SDD 规格质量门与人工批准检查点在开发编码前生效。仅显式布尔 `false` 关闭;缺失/非布尔规范化为 `true`。
-- **`specMachineApprovalEnabled`(机器批准,显式 opt-in)** — 仅在 `sddEnabled` 开启时展示的显式授权开关,**缺省关闭**。开启后,审核结论为 `pass` 的规格由队列以机器身份(保留常量 `c3:machine-spec-approver`,不冒充任何登录 subject)自动跨过人工批准检查点;关闭时仍停留在人工批准检查点。**高影响(L1/L2)意图除外:** 即使本开关开启,机器批准动作对它**根本不产生**,等级强制人工批准优先于 opt-in(见 intent-management RM-R51)。规范化严格 opt-in:仅显式布尔 `true` 读作开启并写入该工作区的 `projectConfigs`,缺失 / `false` / 非布尔一律读作关闭且**不落该键**,故既有工作区升级后不会静默获得机器批准。**关闭开关只影响此后的机器批准判断,不撤销任何已批准的规格**(撤销须经批准领域能力的撤销路径)。行为与可撤销语义见 [ADR-0032](../../../architecture/adr/0032-machine-spec-approval-opt-in.md)。
-- **Spec 目录(只读、集中、固定)** — SDD 规范文档根目录**不是可配置项**,被**固定**为按项目隔离的集中位置 `<c3 home>/doc/<项目路径段>`(命名范式与 worktree 集中目录同源),由服务端从**归属工作区路径**确定性解析,故同一项目的所有 worktree 共享同一份规范集合。工作区配置**仅只读展示**该解析目录(随工作区设置回复下发),界面与协议均**无法修改**:任何客户端提交的规范目录入参都被忽略,不写入、不改变解析结果(「服务端为准」)。规范文档**不提交 Git**,依赖本机 `<c3 home>`。
-  > 边界:不迁移、不读取、不识别历史的工作区内 `.doc` 规范文档(集中目录仅承载启用后的新规范)。
+外部 git 仓库作为技能源。空则本工作区无外部技能。配置不合法则拒绝保存。
 
-`sddEnabled` 存于按工作区的 `projectConfigs` 映射,由 `normalizeWorkspaceSetting` 回填默认;不存在持久化的规范目录字段。`specMachineApprovalEnabled` 同存于该映射,由 `normalizeWorkspaceSetting` 按「仅 `true` 落键」重建:规范化返回值在开启时携带该键,保存其他工作区字段时原样保留,经「保存—落盘—重新加载」往返仍为 `true`;关闭时省略该键。
+### 代码托管
 
-## 外部技能仓库 `skillRepos`
+建 PR/MR 所用托管:自动探测,或显式 GitHub / GitLab。缺省自动。
 
-配置为技能源的外部 git 仓库。c3 把每个 clone 进共享的 `~/.c3/repo/` 缓存,并把其 skills 软链进每个具备 build-link 能力的 vendor 发现目录。由 `getSkillRepos()` 校验(fail-hard)。缺省/空 ⇒ 本工作区未配置外部技能。另有显式 `install_skill` 安装到 `.claude/skills` 与 `.agents/skills`。
+### 本机观测
 
-## 代码托管平台 `forge`
+只读展示本工作区挂起后恢复情况,不进配置、不进保存。本机、不出网,无导出或遥测入口。空样本与查询失败分示,失败优先于旧数字。迟到回包按工作区名丢弃。采集口径见 [RM-A23](../../core/intent-management/intent-management-spec.md)。
 
-为本工作区建 PR/MR 时使用的托管平台:`auto`(规范化缺省,从仓库 origin 探测)、`github` 或 `gitlab`(显式纠正自建 GitLab 等探测)。
+### 访问一览
 
-## 自动化总闸 `automationEnabled`
+只读列出当前谁能到达本工作区,不进配置、不进保存。名单与外部调用闸门同一解析器。能到达本工作区的已认证连接可读;不能到达、未认证或不存在,回同一种拒绝。不生成、不吊销、不改范围。语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);账号范围编辑见 [system-setting](../system-setting/system-setting-spec.md#用户与访问)。
 
-- **`automationEnabled`** — 本工作区自动化**自动派发**总开关,缺省**开**。关闭时,该工作区下所有 cron 与事件触发的自动化都不会被 tick 循环 / 事件分发器自动派发(在派发前短路);单条自动化各自的 `active` / `paused` 状态不受影响,手动「立即运行」不受影响。触发语义与关闭态的 `nextRunAt` 重算/不补跑规则见 [automations](../../core/automations/automations-spec.md) 的 SCH-R28。
-- 规范化仅接受显式布尔 `false` 为关闭;缺失/非布尔/旧的非法值一律归一为 `true`,故现有工作区升级后行为不变(无需数据库迁移,值进入既有 `projectConfigs` 配置 JSON)。`normalizeWorkspaceSetting` 的返回值始终包含规范化后的布尔值,保存其他工作区设置时原样保留该字段。设置读取失败或缺失时按开启处理。
+## Domain events
 
-## 自动化队列并发意图数 `automationConcurrency`
+消费 `load_workspace_setting`、`save_workspace_setting`、`get_workspace_accessors`、`get_park_recovery_stats`。发出 `workspace_setting`、`workspace_accessors`、`park_recovery_stats`。形状见[共享协议](../../../shared/api-conventions/websocket-protocol.md)。观测与访问不进保存载荷。
 
-- **`automationConcurrency`** — 自动化队列**同时进行开发工作会话**的意图数上限,缺省 **2**。它只约束自动化队列自动派发的开发会话:`worktree` 隔离模式下每条意图各占独立目录,队列可并行开发最多 N 条;`current-branch` 共享同一份检出,有效并发**恒为 1**,配置值不覆盖 RM-A12 的共享文件安全。spec 撰写/审核阶段维持串行、**不计入**该上限;人工「开始工作」与 MCP `start_session_for_intent` 不被队列配额拒绝(仍走既有安全门禁)。
-- **归一化。** 缺失/非数字/非有限数字回退 `2`;有限数字先取整,小于 1 钳制为 1;合法正整数原值保留。`normalizeWorkspaceSetting` 的返回值始终包含规范化后的数字,保存其他字段时原样保留,无需数据库迁移(存于既有 `projectConfigs` 配置 JSON)。`getAutomationConcurrency(workspacePath)` 是对账内核读取该值的统一访问器,每次 pass 重读,保存后下一 tick 即生效、无需重启队列。
-- **队列语义。** 内核按意图 ID 去重统计本轮占用:内核持有的 work run、队列已挂接观察的活跃自动化会话、本轮刚选中的开发意图;占用数达到上限即不再挑选,其余合格意图以 `blocked_concurrency_gate` 与「已达并发上限 N」阻塞。调低上限**不取消/停止/park** 已在途会话(允许暂时超额,持续阻止新派发);调高上限后按每轮一个动作逐步补足。
-- **默认 2 是有意收敛。** 早期 `worktree` 模式对并行**无上限**,意图一多会瞬间拉起大量 AI 会话;默认 2 把未配置工作区收敛为最多两个意图并行开发,高吞吐用户可显式调高。
-- **界面。** 工作区设置页第六个配置 Tab「自动化」承载 `automationEnabled` 总开关与并发数输入(min 1、步长 1);`automationEnabled` 与自动化页/工作台仪表盘共用同一字段,任一入口保存后经设置回推校准其余入口,不引入镜像字段。
+## Interactions
 
-## 本机观测(只读,不属于 `WorkspaceSetting`)
-
-工作区设置页的第七个 Tab「本机观测」展示 park 恢复率,用于判断本批 park 指引是否有效、后续 P1/P2 是否值得投入。
-
-- **不是配置。** 派生统计**不进** `SystemSettings` / `WorkspaceSetting`,也不进任何保存负载;该 Tab 的字段白名单为空,因此永不脏、不参与切换确认、无 Save 按钮,`buildPayload` 对它返回 `null` 使程序化保存也发不出东西。避免设置保存把观测数据回写成配置。
-- **专用只读协议。** `get_park_recovery_stats`(workspaceName)→ `park_recovery_stats`(workspaceName + `{ windowMs, eligible, recovered, pending, rate }` 或结构化 `error`)。服务端沿用既有工作区解析与访问边界,无法解析的工作区一律拒绝;响应不暴露单条事件、intent id、原因码或任意文本。回包按 `workspaceName` 对齐当前工作区,切换后到达的迟到回包被丢弃而非改标。
-- **打开页面或切换工作区时**请求对应工作区统计;切换工作区与重连时清空已有数字,避免一个工作区的数据挂在另一个名下。
-- **呈现。** park 后 24h 恢复率(`rate` 为 `null` 时显示「暂无足够样本」,**不显示 0%**)、`recovered / eligible` 样本数、`pending` 未满窗数;**数据库不可用或查询失败**显示「本机统计暂不可用」并提供重试,失败态**优先于**任何仍在手上的旧数字。「暂无足够样本」只用于真正读到了空样本的情形,数据库打不开**不得**退化成它。
-- **文案必须写明**数据只在本机、滚动保留 90 天、不含自由文本、不外传,以及决策口径:恢复率达 60% 为正向信号、达 70% 为强信号;上线 2–4 周复查,若相对上线初期未见提升,则停止并作废基于本批指引规划的全部 P1/P2 后续投入。
-- **无控件**开启遥测、导出、上传、修改保留期或清空数据。趋势图、按原因拆分报表、自动执行 P1/P2 决策均为非目标。
-
-采集侧(`funnel_event` 表、写入边界、统计口径与保留)见 [intent-management](../../core/intent-management/intent-management-spec.md) 的 RM-A23。
-
-## 谁能访问本工作区(非配置,只读观察)
-
-第八个 Tab「访问」回答一个观察性的问题:现在谁够得到本工作区。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);账号范围的编辑面见 [system-setting](../system-setting/system-setting-spec.md#用户与访问)。
-
-- **非配置。** 本 Tab 不在 `WorkspaceSetting` 里,空字段白名单:永不脏、无 Save 按钮、不出现在任何保存载荷里。
-- **纯只读。** 没有生成、重置、吊销、工具范围、勾选或 Save 控件。key 的生命周期归其持有者(个人化设置),账号范围归管理员(系统设置);本页只展示两者相交后的结果,并指路到那两处。把授权入口留在这里,会让「本页是权威」这个已经被否定的印象继续成立。
-- **派生而非另存。** 名单由服务端用与外部 MCP 调用闸门、控制台工作区列表**同一个** subject 感知解析器算出(`get_workspace_accessors` → `workspace_accessors`),因此不可能与真实授权漂移。它包含隐式持有全部范围的身份(配置的管理员,或本机模式下的 `local`),排除已移除账号、已失效的选中项,以及有效范围不含本工作区的 subject。
-- **可见性即门槛。** 这条读开放给任何自己就能到达本工作区的已认证连接,不需要管理员权限;未认证、工作区不存在、或超出调用方范围一律回同一种拒绝,故不能被用来试探工作区名。
-- **只说工作区可见性。** 不说谁正连着、哪把 key 有哪些工具、历史上谁来过。审计查询、调用历史均为非目标。
-- **刷新时机。** 打开工作区设置时拉取一次,并提供显式刷新;切换工作区后到达的迟到回包按 `workspaceName` 丢弃,不改标。
+- **agent-config** — 覆盖存储;解析在该域。
+- **sandbox** — 启用、补充挂载、种类勾选。
+- **permission-gateway** — 共识旋钮。
+- **discussion** — 轮次与字数上限。
+- **automations / intent-management** — 总闸、并发、规格策略、Git、托管。
+- **external-mcp / system-setting** — 访问一览只读求交。
+- **web-console** — 设置页。UX 不是权威。

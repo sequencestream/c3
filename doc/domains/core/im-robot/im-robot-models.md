@@ -1,77 +1,35 @@
-# im-robot — 实体
+# im-robot — 数据模型
 
-物理表见 `database/robots/`;行为契约见 [im-robot-spec.md](im-robot-spec.md)。
+实体与不变量。行为见[规格](im-robot-spec.md),协作见[设计](im-robot-design.md)。线上形状在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中定义,此处不重复。正式术语见[术语表·机器人](../../../glossary.md#机器人)。
+
+## Binding
+
+某一平台命名空间内,外部发送者与 c3 主体之间的显式对应。挑战由已认证 Web 发起,仅私聊消费,不进模型。
+
+不变量:
+
+- 同一命名空间内,active 发送者与 active 主体均唯一;变更须先撤销再绑。
+- 未绑定只收固定引导,不启动回合,不读 c3 对象。
+- 绑定、撤销或 policy epoch 推进切断旧对话恢复;工作区集合后来相同也不接回。
+- 群白名单默认空,与响应面名单分属授权与是否应答。
 
 ## Robot
 
-一个已配置的、**部署级**聊天机器人(正式定义见[术语表](../../../glossary.md))。身份是 `name`——它
-同时是显示名、工作目录名与唯一键,受路径安全约束(小写字母/数字/`-`/`_`,以字母或数字开头,最长 32
-字符),**创建后不可修改**:改名等于换一个机器人,已有 Conversation 的会话历史会随之失去归属。
+部署级聊天机器人:平台连接、执行身份、冻结的工具策略与响应面。身份是名称,创建后不可改——改名等于换一个机器人。
 
-`im_robots` 不持有 `workspace_name`。运行目录 `~/.c3/robots/<name>/` 是隔离的工作容器,不是授权范围
-或默认工作区。否决机器人级、连接级与线程级工作区绑定。
+不变量:
 
-字段分四组:
+- 默认停用。启用须管理员、可连接凭据、以及一次记录在案的外发范围确认。停用永远允许。
+- 不持有工作区。运行目录是隔离工作容器,不是授权范围;删除或重建目录不改变对话归属。
+- 创建默认只读。连接状态是进程内运行时事实,不落库。
+- 群默认须 @;单聊默认不响应。密钥只以「是否已配置」出现在线上,不明文回传。
 
-- **平台连接** —— `platform`、`appId`、`appSecret`。密钥加密落库,线上只出现 `hasSecret` 布尔值,
-  永不回传明文。
-- **执行身份** —— `vendor` 与 `agentId`。后者可以是真实 agent id,也可以是一个组引用;组的故障转移
-  按轮次重新解析,因此这里存的是引用而非解析结果。
-- **预设权限** —— `mode` 与 `toolAllowlist`。白名单由权限网格勾选而来:真实工具名,外加一个可选的
-  `network-access` 伪条目(能力开关,见规格);为空即只读,这是创建时的取值。
-- **响应面与限额** —— `requireMention`(默认真)、`chatAllowlist`(空即不限群)、`dmMode`(默认不响应
-  单聊)、`dmAllowlist`、`maxTurnMs`(空即用默认值)。
+## Outbound message
 
-另有两个字段承载授权状态:`enabled` 默认为假,`outboundAckAt` 记录用户确认外发范围的时刻。
+允许离开本机的 IM 内容。类别封闭:回合结束的最终智能体文本、已注册固定提示(含进度与绑定引导)、L0 事件模板。一律经唯一出站守卫。
 
-**连接状态不是字段。** 连上没有、重连第几次、上次为何失败都是进程内的运行时事实,随查询附加在
-Robot 上回传,从不落库。
+不变量:
 
-**运行目录不是会话存储。** `~/.c3/robots/<name>/` 只提供一轮运行所需的可重建目录;删除或重建不得
-改变数据库中的 Conversation 归属或可恢复上下文。
-
-## Conversation
-
-一条发送者隔离的持续对话,身份是 `(platform, robotId, threadKey, senderId, bindingId, subject, scope_hash)`。
-
-`bindingId` / `subject` 来自 active IM 身份绑定;`scope_hash` 是对当次详细可见工作区集合与授权版本的不可逆摘要,不是权限凭据。绑定、撤销或 scope 变化后旧键不可恢复 Context Turn 或原生 `sessionId`,即使工作区集合后来恢复为相同内容。
-
-`threadKey` 是平台中性的线程身份,由归一化规则得出,优先级为:平台原生话题 → 回复链根 → 会话本身。
-三者各带前缀,因此一个会话 id 不会与另一个会话的话题 id 相撞。
-
-`senderId` 是平台提供的不透明外部标识,只在所属平台、机器人与线程内有意义;经 IM 身份绑定映射为 c3 `subject`,不跨平台合并。同一群、同一线程、不同发送者是不同 Conversation,互不可读、不可恢复、不可覆盖。
-
-`sessionId` 可空——原生厂商会话只是续接缓存,且必须与 Conversation 的 `vendor`、已提交修订一致才可
-使用。缓存缺失或 vendor 变更时,从数据库已提交 Context Turn 恢复。`contextRevision` 随每次成功提交
-递增。线程**不**绑定工作区:会话连续性不等于读取或写入授权。重复投递以
-`(platform, robotId, messageId)` 唯一认领,不再依赖线程级 `lastMessageId`。
-
-## Context Turn
-
-一次可恢复的 IM 可见往来,归属于一个 Conversation。状态为 `pending` / `committed` / `failed`:
-
-- **pending** —— 入站 `messageId` 已认领;正文暂不落库
-- **committed** —— 用户文本与已投递最终回答同事务写入;进入后续恢复上下文
-- **failed** —— 超时、阻塞、守卫拒绝、投递失败或崩溃遗留;正文保持为空,并使原生会话缓存失效
-
-认领以 `(platform, robotId, messageId)` 唯一。每 Conversation 最多保留最近 50 个已提交回合,且每个
-回合自提交起最多 30 天;超出即硬删除完整回合。用户与 assistant 正文各最多 4000 个 Unicode 码点。
-
-## Turn(审计)
-
-一次回合的审计行。它回答的是**何时、对谁、发了多长、结果如何**,不回答**说了什么**:
-`outboundChars` 是长度而非内容,入站也只留消息 id。IM 可见正文只存在于 Context Turn(ADR-0048)。
-
-`outcome` 覆盖全部结局:
-
-- `complete` —— 已回答
-- `error` —— 运行出错,或平台拒绝了投递
-- `blocked` —— 回合撞上一个无人能答的授权请求
-- `timeout` —— 墙钟到点
-- `guard_refused` —— 出站守卫拒绝(凭据形状命中是其中一种原因);若改发了固定拦截提示,记该提示的实际长度
-- `input_rejected` —— 入站凭据或超长守卫拒绝;封闭原因在 `rejectReason`(`credential` | `too_long`)
-- `identity_required` —— 未绑定或绑定失效,只发送固定绑定引导,未启动 agent run
-- `scope_changed` —— 回合进行中授权版本变化,丢弃 agent 最终文本,只发送固定权限变化提示
-- `busy` —— 同一 Conversation 已有在途回合,未启动 agent run,但发送了忙碌提示
-
-后几种同样留痕:一次没发出去的外发尝试,和一次成功的外发一样值得被看见。
+- 工具过程、推理、文件与未注册自由文本不外发。守卫或审计不可用则失败关闭。
+- 审计只记发生(何时、对谁、多长、结局),不记正文。结局为 `complete` | `error` | `blocked` | `timeout` | `guard_refused` | `input_rejected` | `identity_required` | `scope_changed` | `busy`。
+- 可恢复上下文是发送者隔离、成对、有界的持久化例外([ADR 0048](../../../architecture/adr/0048-robot-im-context-as-bounded-local-persistence.md)):只存已投递的问答;每对话最多 50 个已提交回合,自提交起最多 30 天;单侧最多 4000 码点。超出硬删除完整回合。凭据形状命中则不存正文。

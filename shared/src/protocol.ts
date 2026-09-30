@@ -124,6 +124,7 @@ export type ClientToServer =
   | IntentMsg.ClientOpenSpecReviewSession
   | IntentMsg.ClientResetIntentSession
   | IntentMsg.ClientResetSpecSession
+  | IntentMsg.ClientRestartWorkSession
   | IntentMsg.ClientReadSpec
   | IntentMsg.ClientUpdateSpecContent
   | IntentMsg.ClientUpdateIntentContent

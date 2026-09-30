@@ -86,6 +86,8 @@ import {
 } from '../features/intents/spec-occupancy.js'
 import {
   clearPendingDevLink,
+  clearSessionRestarting,
+  isSessionRestarting,
   releaseDevLaunch,
   takePendingDevLink,
 } from '../features/intents/dev-link.js'
@@ -421,6 +423,15 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 
     if (sessionKind !== 'work') return // only work runs affect intent state
 
+    // A session aborted by a RESTART is a mid-flight hand-off, not a delivery:
+    // its settle must record the `cancelled` conclusion below but must NOT run
+    // the manual end-of-turn git/PR cleanup or the fast-mode reverse-spec settle
+    // (both would commit/push/open a PR, or author a spec, from a half-done
+    // turn). Captured and consumed here — before any early return — so the
+    // in-process marker cannot linger past the settle it was set for.
+    const restarting = isSessionRestarting(sessionId)
+    if (restarting) clearSessionRestarting(sessionId)
+
     const unboundIntentId = clearPendingDevLink(sessionId)
     if (unboundIntentId) {
       releaseDevLaunch(unboundIntentId)
@@ -457,7 +468,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     // in `notifyTurnSettled`; a session NOT owned by the active orchestrator is a
     // manual Start-Work session, so run the session-end Git/PR cleanup for it.
     // Fire-and-forget — must not block the run:settled handler.
-    if (!isIntentDrivenByWorkflow(workspacePath, matched.id)) {
+    if (!restarting && !isIntentDrivenByWorkflow(workspacePath, matched.id)) {
       // Manual fast-mode turn: settle the reverse-spec first. The diff is
       // measured against the FIXED turn-start baseline, so the cleanup commit
       // below never moves it — the two can run independently. Only SDD-on +

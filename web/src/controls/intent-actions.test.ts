@@ -887,3 +887,40 @@ describe('新增意图弹窗 — 入口与创建请求', () => {
     expect(h.ctx.send).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('restartWorkSession — new session hand-off', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('sends restart_work_session and arms the overlay with the OLD session id', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'old-sess')] })
+
+    h.ctx.restartWorkSession('i-1', 'PICK UP FROM HERE')
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'restart_work_session',
+      workspaceName: WS,
+      intentId: 'i-1',
+      prompt: 'PICK UP FROM HERE',
+    })
+    // The overlay's success terminal is the bound id CHANGING, not a status flip:
+    // the intent stays in_progress throughout a restart.
+    expect(h.ctx.devLaunch.value).toMatchObject({
+      intentId: 'i-1',
+      baseWorkSessionId: 'old-sess',
+    })
+    expect(h.devLaunchTimers.safety).not.toBeNull()
+
+    if (h.devLaunchTimers.safety) clearTimeout(h.devLaunchTimers.safety)
+  })
+
+  it('sends nothing when no workspace is selected', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'old-sess')] })
+    h.ctx.intentsProject.value = null
+
+    h.ctx.restartWorkSession('i-1', 'x')
+
+    expect(h.ctx.send).not.toHaveBeenCalled()
+    if (h.devLaunchTimers.safety) clearTimeout(h.devLaunchTimers.safety)
+  })
+})

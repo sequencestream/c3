@@ -1508,6 +1508,9 @@
       },
       "more": {
         "label": "More actions"
+      },
+      "restart": {
+        "label": "Restart"
       }
     },
     "relay": {
@@ -1791,6 +1794,11 @@
         "message": "Start a fresh spec session seeded with your new input and the current spec content. The previous session stays available under Works but is no longer linked to this intent."
       },
       "placeholder": "What should change? Your input is combined with the current content to seed the new session."
+    },
+    "restartSession": {
+      "title": "Restart work session",
+      "message": "Start a BRAND-NEW work session seeded with your prompt, on the same worktree and branch. If the current session is still running it is stopped first, and it stays available under Works; the intent will point at the new session.",
+      "placeholder": "What should the new session pick up? This becomes its first prompt."
     },
     "refineSession": {
       "title": "Refine intent",
@@ -2167,10 +2175,6 @@
       "templates": {
         "button": "Templates",
         "noAgent": "No enabled Claude agent is available for this template.",
-        "prPoller": {
-          "title": "PR status polling check",
-          "description": "Check reviewing intents against GitHub PR status every 10 minutes and publish an event on a change (read-only; the ledger is not written)."
-        },
         "archReview": {
           "title": "Weekly architecture stability review",
           "description": "Every Friday at 18:00, review the last 7 days of code changes and file high-value architecture improvements as draft intents."
@@ -2182,14 +2186,6 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "Every Sunday at 03:00, remove stale c3-managed worktrees older than 7 days only when dirty, intent and branch safety gates pass."
-        },
-        "prReviewRunner": {
-          "title": "PR review runner",
-          "description": "Review PR changes on creation or update, then publish a pr:review event."
-        },
-        "prReviewFix": {
-          "title": "PR review fix",
-          "description": "When a PR review reports failure, diagnose and fix the issues, then publish a pr:update event."
         },
         "customEventEcho": {
           "title": "Custom event echo",
@@ -2873,6 +2869,10 @@
       "specEditForbidden": "Cannot directly edit the spec once development has started (status \"{status}\").",
       "specSessionRunning": "Cannot edit the spec while a spec session is running.",
       "devStartInFlight": "Work is already starting for this intent.",
+      "restartPromptRequired": "Enter a prompt to restart the work session with.",
+      "restartNoWorkSession": "This intent has no work session to restart.",
+      "restartSettleTimeout": "The running work session did not stop in time; nothing was restarted.",
+      "restartSessionChanged": "The intent's work session changed while restarting; nothing was restarted.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
       "prCreateNotWorktree": "Can only create a PR in worktree mode. Switch the workspace to worktree mode first.",

@@ -26,7 +26,7 @@ pnpm start [--port 3000] [--db ~/.c3/c3.db] # start is default cmd; --db relocat
 
 ## Rules
 
-- `doc/` 只写比代码高一层的内容(意图、边界、不变量、协作方式、关键取舍),不写细节代码设计;要探索细节,读代码。禁止出现源文件名。代码与注释不引用 `doc/`、规则编号或 ADR 编号。行为变更时文档与代码同时更新,用对照验证一致性。过程性记录(SDK 升级等)放 GitHub Issue,`doc/` 只留链接。细则见 `doc/AGENTS.md` 与 `doc/constitution.md`。
+- `doc/` records one layer above the code: intent, boundaries, invariants, how modules collaborate, and key tradeoffs — not detailed code design. To explore details, read the code. Source file names are forbidden. Code and comments must not cite `doc/`, rule numbers, or ADR numbers. Keeping docs in sync means updating that higher-layer contract when behavior changes, not transcribing implementation; a refactor that does not change intent, boundaries, invariants, collaboration, or tradeoffs leaves docs untouched. Verify consistency by comparing the two self-contained texts. Process notes (SDK upgrades, etc.) go in GitHub Issues; `doc/` keeps only the link. Details: `doc/AGENTS.md` and `doc/constitution.md`.
 - No `Co-Authored-By` in commit messages.
 - At the end of an edit session
   - Run `pnpm allcheck`.
@@ -42,7 +42,7 @@ pnpm start [--port 3000] [--db ~/.c3/c3.db] # start is default cmd; --db relocat
 - shared/src/protocol.ts: WebSocket protocol entry — a barrel that re-exports `shared/src/protocol/` and is the ONLY place the `ClientToServer` / `ServerToClient` unions are assembled. Keep it a barrel: add a message by defining its payload in the owning domain module, then listing one arm here.
 - shared/src/protocol/: wire contract partitioned by domain (vendor, session, code, workspace, settings, auth, agent-config, consensus, skill, intent, discussion, automation). `<domain>.ts` holds the public data models (re-exported by the barrel); `<domain>-messages.ts` holds that domain's message payload types (internal to the partition — never re-exported, or the public surface would widen). Import path stays `@ccc/shared/protocol` / `@ccc/shared`; no subpath export exists.
 - scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed. E2E always run against an isolated database (`node scripts/e2e/isolated-server.mjs` — a single `--db <temp>` carries configuration too) and never write the real `~/.c3/c3.db`; see the constraint at the top of the guide.
-- doc/: 上层意图与约束的权威来源,与代码同步更新但互不引用文件;细节从代码探索。过程账本不进 doc/,见 GitHub Issue。Write Chinese doc.
+- doc/: source of truth for higher-layer intent and constraints; keep in sync with code but never cite each other's files. Explore details in code. Process ledgers stay out of doc/; see GitHub Issues. Write Chinese doc.
 - doc/AGENTS.md: document constitution
 - doc/overview.md: overview of the system
 - doc/features.md: c3 feature tree index, keep synchronized with code

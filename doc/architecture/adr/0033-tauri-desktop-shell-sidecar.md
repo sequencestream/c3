@@ -91,7 +91,7 @@ c3 现有交付物只有一种形态:用户从终端运行 `./c3 --daemon`,再�
 
 ## References
 
-- `doc/non-functional/release.md` § 桌面渠道
+- [release.md · 桌面渠道](../../non-functional/release.md#桌面渠道)
 - `desktop/README.md`
 - [ADR-0003](0003-single-binary-via-bun-compile.md) — 单一二进制
 - [ADR-0010](0010-release-and-distribution-trust.md) — 发布与分发信任

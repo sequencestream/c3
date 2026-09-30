@@ -1,140 +1,77 @@
-# system-setting 系统设置
+# system-setting — 领域规格
 
-`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / 默认 agent / provider / runtime / security / general / 用户与访问 七个顶层页签;其中 agent 页与「默认 agent」页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
+## Overview
 
-系统设置从左侧系统菜单进入,面板只覆盖应用右侧区域,左侧系统菜单保持可操作;选择系统菜单中的其它页面即关闭面板。
+system-setting 持有本部署一份的管理员配置,既非按工作区、也非按人。写过 [AUTH-R10](../../core/auth/auth-spec.md)。智能体档案与路由属 [agent-config](../agent-config/agent-config-spec.md);按人偏好属 [personalized-setting](../personalized-setting/personalized-setting-spec.md),不过管理员门。
 
-配置持久化路径、单一写入路径、`projectConfigs` 分层等**组级共享上下文**见 [settings 组概览](../settings-overview.md)。
+**范围:** 显示与本地化、公开访问地址、导航显示、CLI 版本、代理、会话清理开关与保留期、鉴权配置与账号范围编辑面、外部钥匙存储与哈希、监听与续跑、环境诊断。
+**边界:** 不持有智能体档案;不执行工作区隔离(见 [sandbox](../../core/sandbox/sandbox-spec.md)、[workspace-setting](../workspace-setting/workspace-setting-spec.md));不校验钥匙出示(见 [external-mcp](../../core/external-mcp/external-mcp-spec.md));不执行保留期删除(见 [session-cleanup](../../core/session-cleanup/session-cleanup-spec.md));不渲染控制台。
+
+能力索引见 [features.md](../../../features.md) 的 system-setting 节。持久化分层见 [settings 组概览](../settings-overview.md)。
 
 ## 显示与本地化
 
-- **`voiceLang`** — 浏览器语音输入的 BCP-47 语言标签(如 `zh-CN`),缺省 `zh-CN`。与界面语言解耦(后者是个人化偏好)。
-- **`timezone`** — 系统级 IANA 时区(如 `Asia/Shanghai`),用于解释**每个自动化 cron 字段**并计算 `next_run_at`(DST 感知)。缺省/非法回退服务端本地时区。修改会平移既有自动化的实际触发时刻。
+语音输入语言与界面语言解耦。系统时区解释每一条自动化 cron(含夏令时);非法回退服务端本地时区;改时区平移既有自动化的实际触发时刻。
 
-## 公开访问地址 `baseUrl`
+## 公开访问地址
 
-`baseUrl` 是此 c3 部署的对外基地址,用于拼接可分享的链接(如分享按钮生成的 URL)。典型值如 `http://192.168.10.10:9000`。
+可选对外基址,用于拼接可分享深链。空即未配置,消费者自行回退。保存时去掉首尾空白与尾斜杠。不做协议/主机校验,不探测可达。
 
-- **可选字段**:空值或缺失均视为「未配置」,消费者回退默认行为。
-- **规范化**:保存时 trim 首尾空白并去除尾部斜杠(`http://host:3000///` → `http://host:3000`)。纯空白视为空值,不落库。
-- **存储**:明文存于 `system_configs`(非敏感,不走 `secret` 类型的加密路径)。
-- **作用域**:系统级,不与 `WorkspaceSetting` / `projectConfigs` 交互。
-- **不做格式校验**:不解析 URL、不校验协议/主机、不探测可达性。
+## 导航显示
 
-## vendor CLI 生效版本 `vendorCliVersions`
+两个独立开关,缺省均隐藏:会话聚合页是否进主导航;工具类会话是否进列表。关闭聚合页不删除功能内的会话入口。
 
-`vendorCliVersions.claude` / `vendorCliVersions.codex` 选择运行时**生效**的受管版本——不是下载锚点。只有受管厂商在此列:`cursor-agent` 不由 c3 分发,没有可选版本,不出现在该字段与面板里。空/缺失表示自动取最新兼容版:同步流始终把最新兼容 npm 版落到 `~/.c3/vendor/<vendor>/<version>/bin/<binary>{.exe}`,与本字段无关,因此历史版可被选为生效而不冻结升级。非空值必须指向服务端上报的已安装版;未安装/不兼容值降级为最新兼容受管版,固定值仍保留,不静默清空。面板把已安装版列表渲染为单选。显式 env override 仍最高优先;host PATH 仅在受管解析或同步失败后作降级回退。
+## CLI 版本
 
-### 固定版本、实际生效版本与降级提示
+只对 c3 托管的厂商有效。空即最新兼容版;非空必须是已安装版,否则降到最新兼容并保留固定值、给出可见诊断,不静默清空。固定值与实际生效允许不同。同步始终跟踪最新兼容,不因固定而冻结升级。显式环境覆盖优先于托管解析。管理员可立即同步一次,不写入设置草稿。诊断与失败可同时呈现,不得互相遮蔽。
 
-面板的「当前生效 / Active」只表示**实际运行的版本**(`VendorHostStatus.activeVersion`),与 `vendorCliVersions` 里的**固定版本**是两件事,两者允许不同。
+## 代理
 
-固定版本用不了、但解析成功落到另一个可运行版本时,服务端下发结构化诊断 `VendorHostStatus.degradation`:`reason` 为 `pinned-version-unavailable`,并带 `pinnedVersion`(固定值)与 `resolvedVersion`(实际运行值,恒等于 `activeVersion`)。该场景不再下发英文 `lastError`——措辞由前端按原因码经 vue-i18n 本地化,任何语言都不得把固定版本称作「当前生效 / Active / 激活」,否则与面板同屏的「当前生效」字段自相矛盾。
-
-边界:只有确实解析出 `resolvedVersion` 才生成该诊断;所有候选与 host PATH 全部失败时,按既有自由文本 `lastError` 报告失败,不伪造「已回退」。健康解析清除旧诊断。env override 生效或无效时同样清除旧诊断——override 优先级最高,受管固定值根本没参与解析,此时留着诊断既谎报运行版本又会遮住 override 的报错。安装失败、override 无效、完全无法解析等仍走自由文本 `lastError`,未纳入结构化与本地化。字段为可选,旧客户端可忽略,无需迁移。
-
-`degradation` 与 `lastError` 互不排斥:固定版本回退成功后,同步/安装可以再失败,两者同时成立。面板必须两条都渲染,不得让其一遮蔽另一条——否则先记录的降级会永久盖住之后发生的失败。
-
-### 手动下载 / 检查新版本
-
-受管 vendor CLI 的下载与升级除启动时后台自动刷新(受 24 小时冷却 `lastRemoteCheckAt` 约束)外,还提供一条**手动**入口:Runtime 页签的「厂商 CLI 版本」区块,每个 npm 受管 vendor(claude、codex)行内渲染一个按钮——未安装时为「下载」,已安装时为「检查新版本」,在途为「下载中…」。点击即对服务端发 `sync_vendor_cli { vendor }`(负载只有 vendor,客户端不能指定包名/版本/URL),由服务端管理员门控后直接 `syncManagedVendorCli(vendor)`,**绕过冷却立即执行一次同步**;完成后先回 `settings` 全量快照刷新面板,再回 `vendor_cli_sync_result { ok, version, installed, error }` 让前端解除 in-flight 并按「已安装 / 已是最新 / 失败」选择提示文案。
-
-边界与语义:
-
-- 按钮仅按 `VendorHostStatus.npmManaged === true` 渲染(`npmManaged` 缺失视为 false,旧服务端自然无按钮),前端不按 vendor 名分支;非 npm 受管 vendor(如 cursor)既不渲染按钮,服务端也直接拒绝且不回包。
-- 按钮在 `!isAdmin` 或在途时禁用;点击只触发同步,**不写入设置草稿**,即使 Runtime 页签存在未保存的版本选择,草稿与脏状态保持不动。
-- 手动触发会刷新 `lastRemoteCheckAt`,从而顺延下一次后台检查——预期行为,避免刚同步完就在下次启动再拉一遍。
-- 同一 vendor 的并发手动触发在服务端合并,后到请求等同一结果,不重复下载。
-- 「运行时驱动」诊断列表仍是纯只读,按钮只出现在「厂商 CLI 版本」区块。
-
-## 系统沙箱定义 `sandboxes`
-
-系统级沙箱定义(镜像/挂载模板),供各工作区按 name 引用(工作区侧引用见 [workspace-setting](../workspace-setting/workspace-setting-spec.md))。仅管理员经系统设置面板 CRUD;缺省/空 ⇒ 无沙箱定义,工作区配置面板隐藏其沙箱区。沙箱运行语义见 [sandbox](../../core/sandbox/sandbox-design.md)。
-
-## 代理 `proxy`
-
-`proxy` 块是本部署「出网走哪条路」的唯一声明,同时管两类流量:**会话子进程**(经环境变量)与 **c3 服务端自身的出网请求**(经进程内路由)。
-
-- **`proxy.enabled`** — 总开关(严格布尔,仅 `true` 启用)。关闭时无论 URL 为何都不注入、也不路由。
-- **`proxy.httpProxy`** — HTTP 代理 URL(如 `http://proxy.local:3128`)。启用且非空时注入 `HTTP_PROXY` 与 `http_proxy`。
-- **`proxy.httpsProxy`** — HTTPS 代理 URL。启用且非空时注入 `HTTPS_PROXY` 与 `https_proxy`。
-
-要点:
-
-- 子进程侧仅支持上述四个变量——无 `NO_PROXY`/`ALL_PROXY`/SOCKS/PAC。
-- 仅影响**新启动**的 vendor CLI 子进程(全部厂商,经 `envOverrides` 生效);运行中的会话不追溯更新。
-- 关闭 `enabled` 时保留 URL 值,便于快速开关而不必重填。
-- 代理认证可内嵌于 URL(`http://user:pass@host:port`),无专门表单;明文存储(不走 `c3secretv1:`,有意取舍)。
-- 注入发生在 `launchForAgent()` 的 `envOverrides`,覆盖所有入口(主运行、工具会话、意图沟通、规格撰写、讨论、自动化执行、顾问会话)。`buildChildEnv` 合并序(keepalive < process.env < envOverrides)不变:代理变量落在 `envOverrides`,优先于用户 shell,但仍可被 shell 中显式 `HTTP_PROXY`/`HTTPS_PROXY` 覆盖。
+一份配置同时管新会话出网与服务端自身出网。总开关关闭则两者都不走代理,已填地址保留。只影响此后新开的会话,运行中的不追溯。
 
 ### 服务端自身出网
 
-c3 代表自己发出的请求(版本检查与自更新下载,`c3 upgrade` 亦同)按同一份配置路由。这是必须的:Node 的全局 `fetch` 默认无视 `HTTP(S)_PROXY`(除非进程以 `--use-env-proxy` 启动),因此在只能经代理访问外网的网络里,顶栏永远不会提示新版本,控制台的下载也只会连接超时。
+版本检查与自更新走同一份配置。回环与环境排除名单直连;开关开则用配置地址;否则回退宿主环境代理;都没有则直连。配置了会话侧可接受、服务端不支持的代理方案时,服务端请求明确失败,不悄悄直连。每次请求重读配置。
 
-单次请求的路由判定(命中即止):
+## 会话清理
 
-1. 目标是回环、或命中环境 `NO_PROXY`/`no_proxy` ⇒ 直连(c3 自己的回环源永不经代理,与子进程侧的 `NO_PROXY` 回环兜底同一约定);
-2. `proxy.enabled` 为真 ⇒ 用配置的地址(https 目标优先 `httpsProxy`,回退 `httpProxy`;http 目标反之);
-3. 否则回退宿主环境的 `HTTPS_PROXY`/`HTTP_PROXY`(含小写);
-4. 都没有 ⇒ 直连,且原样交给运行时自带的 `fetch`(无代理路径行为零改变)。
+开关与保留期在本域;未开启不删任何文件。执行见 [session-cleanup](../../core/session-cleanup/session-cleanup-spec.md)。
 
-其它约定:
+## 鉴权与访问
 
-- 只支持 `http://`/`https://` 代理。配置里填了 `socks5://`(校验器允许,因为 vendor CLI 可能认)时,服务端自身的请求**明确失败并给出原因**,而不是悄悄直连绕过用户指定的路由;环境变量里的 SOCKS 值则只降级为直连(原生 `fetch` 本来也不会用它)。
-- 传输随运行时:Bun 编译二进制交给原生 `fetch` 的 `proxy` 选项;Node 下由 c3 自行走 `CONNECT` 隧道 + TLS(https 目标)或绝对形式请求行(http 目标),按 fetch 标准跟随重定向,跨源时丢弃 `Authorization`/`Cookie`。
-- 配置**每次请求重读**,改完代理无需重启即对下一次检查/下载生效。
-
-## 鉴权 `auth`
-
-`auth` 承载鉴权配置:`basic` 多账号 + 唯一管理员、会话 token 策略(TTL、签名钥引用)、bind 地址暴露意图。缺省/`enabled:false` ⇒ 无鉴权(localhost-only 默认)。账号凭据仅由专用鉴权消息变更,不经通用 `save_settings`。提供者中立抽象与运行语义见 [auth](../../core/auth/auth-overview.md)。
-
-## 外部 MCP API Key 存储 `mcp_api_keys`
-
-长期 API key 是 [外部 MCP 端点 `POST /mcp`](../../core/external-mcp/external-mcp-spec.md) 的**唯一凭据**:c3 没有拉起的 agent(独立 Claude Code / Codex 会话、CI 任务、监控脚本)凭它访问本部署。**生命周期(新建/列示/重置密钥/吊销)在个人化设置的「外部 MCP key」区块**,由 key 的持有者自助完成,不在系统设置;只有存储与哈希属本域。
-
-**存储位置是安全边界。** key 记录存于独立的 `mcp_api_keys` 表,一密钥一作用域,不属于 `SystemSettings`(与个人化设置同一所有权切分)。因此整对象 `save_settings` 既不携带它、也无法注入/覆盖/读出哈希——进出只有下述专用操作。
-
-每条记录含:不可变 id、显示名称、创建时间、最后使用时间(可空)、**不可变的归属账号 `ownerSubject`**、**正整数密钥版本 `secretVersion`**、管理该 key 的工作区名称、工具范围、每 key 独立随机盐、`scrypt` 哈希及其参数与版本。**磁盘上没有明文。** 两个新字段与其余字段一样是 EAV 的 `config_key` 行,表结构不变。
-
-- **明文格式** `c3k_<id>_<secret>`。id 一半刻意**非秘密**:校验时据它直接定位唯一候选记录,只付一次派生开销,而不是拿每条记录都算一遍哈希。secret 一半是 256 bit CSPRNG 熵,恒定时间比较。
-- **归属与版本是 NOT NULL 不变量**。缺任一项的记录不是可用的 key:没有归属就没有可求交的权限,凭空指派一个就是发放访问权;没有版本就无法把轮换前后的会话区分开。创建时归属取**连接已验证的 subject**(无账号部署为合成主体 `local`),空归属直接拒绝落库;新密钥版本从 1 起,原地轮换在替换哈希的同一事务里加一。
-- **key 不绑定工作区**。记录里的工作区名只是**归档位置**,回答「历史上哪个页面列出过它」,不授予任何访问权;能到达哪些工作区由归属账号的 [工作区范围](../../core/auth/auth-overview.md#工作区范围-user_workspace_scopes) 决定。该字段**可空**,`null` 是合法且有意的取值——自助创建的 key 属于它的持有者而不属于任何页面,一律归档为 `null`,并因此不出现在、也无法经工作区寻址的历史操作改动。非空的名称仍须解析到已注册工作区,解析不到的记录保持 fail-closed 丢弃:声明了名字却指向空,是损坏而不是「不归档」的意思。
-- **归属自持,不可代管**。每条自助操作都从**已验证的连接**推导归属,客户端永不传 owner;未知 id 与他人的 id 返回**同一个**未找到结果且不产生变更,故无法用 id 枚举他人的 key。身为管理员不构成对他人 key 的任何权力:既看不到,也重置不了,更读不出明文。
-- **生成**:响应是唯一出现明文的地方,只此一次。列表与后续任何快照只回 id、名称、时间、归档位置、工具范围与非秘密短前缀 `c3k_<id>`,不含归属、盐或哈希。前端把它保存在页面内存里供复制,关闭揭示区、离开页面、切换身份或收到后续名册即不可恢复;不提供「再看一次」或找回入口。
-- **重置密钥**:原地换密钥——key id、归属、名称、工具范围全部不变,只有盐、哈希与 `secretVersion` 更新。**没有宽限期**:先落库、后清场,旧密钥及其开出的会话立即失效;清场失败也无法救回旧密钥,下一次请求按版本比对拒绝。新明文同样只出现一次。
-- **校验**:每次请求重读当前记录,进程**不缓存「此 key 有效」的结论**,故吊销下一次请求即生效。key 格式错、id 未知、哈希版本不支持、哈希不匹配一律以同一个 401 拒绝——调用方无法据此探测某个 id 是否存在。哈希版本不受支持时按无效拒绝并记录不含秘密的诊断,绝不 fail-open。
-- **工具范围**创建时由服务端强制为默认只读集。自助面**不提供**工具范围编辑:能调什么不是持有者自己说了算的。**空工具范围表示该 key 什么也调不到,绝不是通配。** 改动工具范围会在同一事务内推进 policy epoch。
-- **吊销**:删除记录即吊销,不提供恢复或查看明文。吊销同时关闭该 key 已建立的活动 transport,故两个方向都立即生效。
-- **最后使用时间**是展示字段,按分钟粒度粗略落盘:每个请求都去抢写锁重写时间戳不值当,它也不推进 policy epoch。
-- **无归属的历史记录一律吊销**。谁创建的没有记录过,指派一个管理员就是凭空发放权限,保留旧的单工作区绑定则等于保留被替换掉的模型。启动时幂等清除,管理员重建 key 并重配客户端。
+承载认证配置。缺省关闭([AUTH-R1](../../core/auth/auth-spec.md))。账号凭据只走专用消息,不经通用保存([AUTH-R7](../../core/auth/auth-spec.md))。运行语义见 [auth](../../core/auth/auth-spec.md)。
 
 ## 用户与访问
 
-系统设置的第七个顶层页签「用户与访问」是账号 × 工作区授权的编辑面:它决定每个账号能到达哪些工作区,进而决定这些账号名下的 key 能到达哪些工作区。存储与解析语义见 [工作区范围](../../core/auth/auth-overview.md#工作区范围-user_workspace_scopes)。
+账号 × 工作区授权的管理员编辑面。存储与解析见 [AUTH-R11](../../core/auth/auth-spec.md)。不属于系统设置对象:不进通用保存。读写作管理员门([AUTH-R10](../../core/auth/auth-spec.md));名册列出全部账号与工作区,隐藏页签不是关卡。管理员与 `local` 以只读行呈现,无法把自己锁在门外。无策略与选空可区分,均不放行。保存整笔生效或整笔拒绝。搜索不改变将提交的勾选集合。新工作区:`all` 立即可见,`selected` 不自动加入。本页不新建账号、不改口令、不指派管理员。
 
-- **不属于 `SystemSettings`。** 空字段白名单:本页签不进草稿、不出现在任何 `save_settings` 载荷里,按账号逐条保存。授权与系统配置分两条写路径,是为了让一次整对象保存既不可能顺手携带授权,也不可能悄悄把它抹掉。
-- **管理员专属,且是保密边界。** 读(`get_user_workspace_access`)与写(`save_user_workspace_access`)都过 `requireAdmin`。名册列出本部署的全部账号与全部工作区,正是普通账号不应能枚举的清单;在客户端隐藏页签只是呈现,不构成防线。
-- **三态可区分。** 「无策略」(无人配置过)与「选中,但一个都没选」(管理员明确不给)当前都不放行,但在名册里保持可区分:后者是一次决定,前者不是。
-- **不可变身份。** 配置的管理员与本机模式下的 `local` 以只读行呈现:它们的「全部工作区」是解析器分支而非库里的行。正因不可编辑,管理员才无法把自己锁在门外。
-- **搜索只改变呈现。** 账号与工作区都可搜索,但保存永远提交**完整**的勾选集合,含被过滤隐藏的选中项;否则在搜索框里打一个字就会撤掉看不见的授权。
-- **整笔生效或整笔拒绝。** 账号不存在、工作区名不在注册表、模式无法识别、或试图写入不可变身份时,策略与 policy epoch 都不动,也不关闭任何会话。成功时策略与 epoch 在同一事务内提交,随后立即清场该归属名下全部外部 MCP 会话,并回一份新名册。全局 epoch 也会让无关会话在下一次请求时失效——这份更宽的失效被有意保留为 fail-safe 授权边界。
-- **新增工作区的默认可见性**在页面上明写:注册一个新工作区后,`all` 的账号立即可见,`selected` 的账号不会被自动加入,直到管理员显式勾选。注册本身推进 policy epoch,但**不重写**任何 selected 明细。
-- **不做账号管理。** 本页不新建/删除账号、不改口令、不指派管理员、不定义角色——那些仍在「鉴权」页签。它也不写个人化设置,不让普通用户编辑自己的范围。
+## 外部 MCP API Key 存储 `mcp_api_keys`
 
-`--host` 决定这些 key 能从哪里被用到:默认回环,只有显式放开监听后外部主机才可达;绑定非回环地址却没有配置管理员时,`/mcp` 整面返回 503。见下节。
+独立账本,不属于系统设置对象,通用保存既不能注入也不能读出哈希。磁盘无明文。归属与密钥版本不可缺;缺则不是可用钥匙。无归属的历史记录启动时吊销,不凭空指派。
 
-## 监听地址 `--host`
+钥匙不绑定工作区:名称只是归档位置,能到达哪些工作区由归属账号的 [AUTH-R11](../../core/auth/auth-spec.md) 决定;自助钥匙归档为空,不经工作区寻址改动。标识一半非秘密,校验按它定位唯一记录。明文只在生成响应出现一次。空工具范围是零权限,不是通配。校验每次重读记录,不缓存「此钥匙有效」。
 
-`c3 start` / `c3 install` 接受 `--host <address>`,贯穿 CLI、daemon 侧车快照与 OS service 单元,最终落到 `serve({ hostname })`。
+用法见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);自助生命周期见 [personalized-setting](../personalized-setting/personalized-setting-spec.md)。
 
-- **缺省 `127.0.0.1`**,即只有本机可达。这是对旧行为的**收紧**:此前不传 hostname 等于隐式监听全部网卡,局域网上的机器无需任何人做出选择就能访问 c3。
-- 需要局域网/远程访问时显式 `--host 0.0.0.0`、`::` 或某个具体接口地址。
-- 启动日志打印**实际**监听地址与端口,便于回答「另一台机器为什么连不上」;日志不打印 token,也不打印任何可能带 token 的完整 MCP URL。
-- 未显式配置 host 的既有后台服务在升级后会收紧为回环。需要远程访问的用户必须重新 `c3 install --host …` 或以 `c3 start --host …` 启动。
+## 监听与续跑
 
-## 其他系统级开关
+监听缺省回环,显式放开才对外。绑定非回环且无管理员时,外部 MCP 入口拒绝(见 [external-mcp](../../core/external-mcp/external-mcp-spec.md))。断连自动续跑缺省开、一次为限;关闭则该次以错误结束,由用户继续。运行语义见 [AS-R18](../../core/agent-session/agent-session-spec.md)。
 
-- **`showToolSessions`** — 工具类会话(完成判定、共识顾问)是否进侧栏会话列表,缺省 `false`(隐藏)。
-- **`showSessionsPage`** — 会话聚合页是否出现在桌面顶栏与移动端底栏,缺省 `false`(隐藏)。开启后入口位于「代码」之后;关闭只影响主导航及普通启动恢复,不删除 Works 页、会话同步、角标或意图/讨论/自动化/代码等功能内的会话入口。该开关与 `showToolSessions` 独立:前者控制聚合页入口,后者控制聚合页内是否列出工具类会话。
-- **`socketAutoResume`** — socket 断连后的单次自动 `resume` 开关。缺省开:普通会话遇 `socket connection was closed unexpectedly` 且工具副作用门清空时,同 `runId` 自动续跑一次。设为 false 则每次断连以 `turn_end{reason:'error'}` 收尾,由用户手动继续。
-- **环境诊断** — runtime 页只读展示各 vendor 的 host CLI 探测结果(是否存在、令牌是否就绪),不落库、不可编辑。
+## 环境诊断
+
+只读展示各厂商 CLI 探测结果,不落库、不可编辑。与「能不能新开一轮」的门控分开,见 [AC-R26](../agent-config/agent-config-spec.md)。
+
+## Domain events
+
+消费 `get_settings`、`save_settings`、`sync_vendor_cli`、`get_user_workspace_access`、`save_user_workspace_access`。发出 `settings`、`vendor_cli_sync_result`、`user_workspace_access`。钥匙自助消息属 [personalized-setting](../personalized-setting/personalized-setting-spec.md)。形状见[共享协议](../../../shared/api-conventions/websocket-protocol.md)。账号范围与钥匙不进通用保存载荷。
+
+## Interactions
+
+- **auth** — 认证配置与账号范围编辑面;求解在该域。
+- **agent-config** — CLI 版本与宿主诊断;该域只取能不能跑。
+- **session-cleanup** — 开关与保留期。
+- **external-mcp / personalized-setting** — 存储与哈希在本域;用法与自助面分属那两域。
+- **sandbox / self-update** — 系统代理。
+- **workspace-setting** — 账号范围编辑;该域只读求交。
+- **web-console** — 设置页。UX 不是权威。
+- **automations** — 系统时区。

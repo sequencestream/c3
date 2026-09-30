@@ -12,10 +12,6 @@ import {
 } from '@/lib/automation-refresh'
 import type { AppCtx } from './types'
 import { findEnabledVendorAgent, getAutomationTemplate } from '@/pages/automations/templates'
-import {
-  resolveAutomationDefaultAgent,
-  scopedSeedRefs,
-} from '@/pages/automations/components/AutomationForm/resolveAutomationDefaultAgent'
 
 // Install automation-tab actions (read path + create/edit form) onto the ctx.
 export function installAutomationActions(ctx: AppCtx): void {
@@ -165,31 +161,15 @@ export function installAutomationActions(ctx: AppCtx): void {
     const template = getAutomationTemplate(templateId)
     const workspaceName = automationsProject.value
     if (!template || !workspaceName) return
-    const settings = ctx.serverSettings.value
-    const agents = settings?.agents ?? []
-    // Templates that declare a role field seed from that role reference along the
-    // same scoped chain the new-automation form uses, ending on the first enabled
-    // agent; the rest keep the legacy first-enabled-`claude` default. The resolved
-    // agent's concrete vendor replaces the template's hard-coded `claude` so a
-    // non-claude role agent lands in the snapshot's vendor/agentId pair.
-    const roleField = template.roleField
-    const wsCfg = settings?.projectConfigs?.[workspaceName]
-    const seed = roleField
-      ? resolveAutomationDefaultAgent(
-          agents,
-          ...scopedSeedRefs({
-            systemRoleRef: settings?.[roleField],
-            workspaceRoleRef: wsCfg?.[roleField],
-            workspaceDefaultAgentId: wsCfg?.defaultAgentId,
-            systemDefaultAgentId: settings?.defaultAgentId,
-          }),
-        )
-      : findEnabledVendorAgent(agents, 'claude')
+    const agents = ctx.serverSettings.value?.agents ?? []
+    // Templates seed from the first enabled `claude` agent; none declares a role
+    // field, so the snapshot's vendor/agentId pair always comes from this one path.
+    const seed = findEnabledVendorAgent(agents, 'claude')
     if (!seed) {
       ctx.showToast(ctx.t('automation.list.templates.noAgent'))
       return
     }
-    ctx.createAutomation(template.build({ workspaceName, agentId: seed.id, vendor: seed.vendor }))
+    ctx.createAutomation(template.build({ workspaceName, agentId: seed.id }))
   }
 
   ctx.updateAutomation = (id: string, input: UpdateAutomationInput): void => {

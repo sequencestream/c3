@@ -94,7 +94,7 @@ Several fields deserve special attention:
 
 The top-right of the list also has a workspace-wide **Enable automations** switch. Turning it off silences **all schedule and event triggers** in the workspace: nothing is queued or replayed later. Individual enabled/paused states remain unchanged, and **Run now** remains available. This is a useful master switch while investigating problems.
 
-> The **Templates** menu includes ready-made automations for PR status reconciliation, weekly architecture stability checks, weekly vulnerability analysis, and stale worktree cleanup. The **⋯** menu supports JSON **import/export** for copying a pipeline to another workspace. Imported automations are always created in the **paused** state and must be reviewed individually before being enabled.
+> The **Templates** menu includes ready-made automations for weekly architecture stability checks, weekly vulnerability analysis, and stale worktree cleanup. Templates are starting points, not a capability boundary: the `pr:*` event types, the PR-status sync tool, and the review / fix agent roles are all still there, so build your own automation when you need a review relay. The **⋯** menu supports JSON **import/export** for copying a pipeline to another workspace. Imported automations are always created in the **paused** state and must be reviewed individually before being enabled.
 
 ### 2. Schedule triggers: the entry point for routine work
 

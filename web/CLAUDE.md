@@ -1,6 +1,6 @@
 - support desktop and mobile devices
 - All user-visible UI text goes through i18n: no hard-coded copy in templates.
-- Key naming is English and follows `doc/i18n/i18n-spec.md` §2; the displayed text lives as values in `web/src/locales/en.json` (base) and `zh.json` (and other locales).
+- Key naming is English and follows [`doc/i18n/i18n-spec.md`](../doc/i18n/i18n-spec.md#key-命名规范); the displayed text lives as locale values, baseline `en`.
 - Use the typed `t` / `useTypedI18n()` from `@/i18n` so a misspelt key fails `vue-tsc` (native `$t` only autocompletes).
 - Fixed translations / do-not-translate terms: see `doc/i18n/i18n-terms.md`.
 - Destructive / irreversible confirmations (delete, etc.) use the `ConfirmDialog` component (`@/components/ConfirmDialog`), never `window.confirm`: a controlled modal with injected title/message/labels, `danger` confirm styling, overlay/Esc/cancel all emitting `cancel`, and mobile full-screen sheet. Pre-existing `window.confirm` call sites are legacy — migrate them to `ConfirmDialog` when touched.

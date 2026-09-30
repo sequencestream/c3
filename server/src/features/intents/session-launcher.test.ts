@@ -13,7 +13,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { GitActionFailureGuidance, Intent, ServerToClient } from '@ccc/shared/protocol'
+import type {
+  GitActionFailureGuidance,
+  Intent,
+  IntentStatus,
+  ServerToClient,
+} from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { ensureRuntime, getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
@@ -38,6 +43,7 @@ import {
   updateStatus,
 } from './store.js'
 import { createWorktree, pullCurrentBranch } from './worktree.js'
+import { resetForTests as resetDevLink, takePendingDevLink } from './dev-link.js'
 
 // Both keep their REAL behaviour by default (a bare temp dir has no remote, and
 // `git worktree add` genuinely fails there); the spies exist so single tests can
@@ -77,6 +83,7 @@ beforeEach(() => {
   resetDbForTests()
   resetStoreForTests()
   resetSessionMetadata()
+  resetDevLink()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
@@ -88,6 +95,7 @@ afterEach(() => {
   removeRuntimesForWorkspace(proj)
   resetDbForTests()
   resetSessionMetadata()
+  resetDevLink()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   delete process.env.CLAUDE_CONFIG_DIR
@@ -352,6 +360,89 @@ describe('launchWorkSession — attach / resume / fresh', () => {
     const r = asError(await launchWorkSession(proj, id, deps))
     expect(r.code).toBe('intent.pendingQuestionUnanswered')
     expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  // ── restart: always the fresh path, never attach/resume ──
+
+  describe('restart', () => {
+    /** An intent in `status` whose bound work session has a runtime. */
+    function restartTarget(status: IntentStatus, sessionId: string): string {
+      const [intent] = insertIntents(proj, [
+        { title: 'Restart me', shortEnTitle: 'restart-me', content: 'BODY', priority: 'P1' },
+      ])
+      updateStatus(intent.id, status, 'test')
+      setLastWorkSession(intent.id, sessionId)
+      ensureRuntime(sessionId, proj, 'default', [], 'work')
+      return intent.id
+    }
+
+    it('skips resume: creates a NEW session even when the old one is idle', async () => {
+      const id = restartTarget('in_progress', 'sess-old-idle')
+      const deps = mockDeps()
+      const r = asSuccess(
+        await launchWorkSession(proj, id, deps, undefined, null, {
+          restart: { prompt: 'NEW PROMPT', previousSessionId: 'sess-old-idle' },
+        }),
+      )
+      expect(r.mode).toBe('fresh')
+      expect(r.sessionId).not.toBe('sess-old-idle')
+      expect(r.sessionId).toContain(PENDING_SESSION_PREFIX)
+      // The rebind is the launcher's pending link: until the new session binds,
+      // the intent still points at the old one (no half-bound state here either).
+      expect(getIntent(id)?.lastWorkSessionId).toBe('sess-old-idle')
+      expect(takePendingDevLink(r.sessionId)?.intentId).toBe(id)
+    })
+
+    it('skips attach: does not hang a viewer on a running old session', async () => {
+      const id = restartTarget('in_progress', 'sess-old-live')
+      markRunning('sess-old-live')
+      const deps = mockDeps()
+      const r = asSuccess(
+        await launchWorkSession(proj, id, deps, undefined, null, {
+          restart: { prompt: 'P', previousSessionId: 'sess-old-live' },
+        }),
+      )
+      expect(r.mode).toBe('fresh')
+      expect(deps.launchRun).toHaveBeenCalledTimes(1)
+    })
+
+    it('bypasses the status gate for a reviewing intent', async () => {
+      const id = restartTarget('reviewing', 'sess-reviewing')
+      const r = asSuccess(
+        await launchWorkSession(proj, id, mockDeps(), undefined, null, {
+          restart: { prompt: 'P', previousSessionId: 'sess-reviewing' },
+        }),
+      )
+      expect(r.mode).toBe('fresh')
+    })
+
+    it('seeds the new turn with the restart prompt, not the intent body', async () => {
+      const id = restartTarget('in_progress', 'sess-old-body')
+      const launchRun = vi
+        .fn()
+        .mockResolvedValue(undefined) as unknown as SessionLaunchDeps['launchRun']
+      const deps = mockDeps(launchRun)
+      asSuccess(
+        await launchWorkSession(proj, id, deps, undefined, null, {
+          restart: { prompt: 'PICK UP FROM HERE', previousSessionId: 'sess-old-body' },
+        }),
+      )
+      const visible = vi.mocked(launchRun).mock.calls[0]![1]
+      expect(visible).toBe('PICK UP FROM HERE')
+      expect(visible).not.toContain('BODY')
+    })
+
+    it('refuses when the intent no longer points at the named session', async () => {
+      const id = restartTarget('in_progress', 'sess-current')
+      const deps = mockDeps()
+      const r = asError(
+        await launchWorkSession(proj, id, deps, undefined, null, {
+          restart: { prompt: 'P', previousSessionId: 'sess-stale' },
+        }),
+      )
+      expect(r.code).toBe('intent.restartSessionChanged')
+      expect(deps.launchRun).not.toHaveBeenCalled()
+    })
   })
 
   // ── RM-A12, now enforced inside the launcher ──

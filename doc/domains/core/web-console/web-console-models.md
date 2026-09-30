@@ -1,75 +1,35 @@
-# web-console —— 数据模型
+# web-console — 数据模型
 
-控制台的视图模型定义。这些是展示层实体,而非领域实体——它们只存在于浏览器中。行为方面的关联见 [web-console-design.md](web-console-design.md)。
+实体与不变量。行为见[规格](web-console-spec.md)，协作见[设计](web-console-design.md)。线上形状在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中定义，此处不重复。这些实体只存在于浏览器中。
 
-## Chat Message
+## View
 
-渲染流中的一项。以 `kind` 为判别字段的联合类型;每个变体都携带一个数字型 `id` 用于 key。
+当前观察：哪一个应用视图（工作区 / 工作台）、哪一个工作区上下文、正在看哪条会话及其活动流。
 
-- **`user`**
-  - 属性: `text`
-  - 来源事件: `user_text`(提示词回显)
-- **`assistant`**
-  - 属性: `text`
-  - 来源事件: `assistant_text`
-- **`tool-use`**
-  - 属性: `toolName`, `input`
-  - 来源事件: `tool_use`
-- **`tool-result`**
-  - 属性: `content`, `isError`
-  - 来源事件: `tool_result`
-- **`permission`**
-  - 属性: `requestId`, `toolName`, `input`, `decision: 'allow' | 'deny' | null`, `consensus?`
-  - 来源事件: `permission_request`
-- **`consensus`**
-  - 属性: `toolName`, `input`, `outcome`
-  - 来源事件: `consensus_auto`
-- **`system`**
-  - 属性: `text`
-  - 来源事件: `turn_end{error}` / `error` / `notice`(仅思考轮次)的提示
+不变量:
 
-关系:
+- 不是运行的所有者。切走或关闭不停止运行（[ADR 0006](../../../architecture/adr/0006-decouple-runs-from-connections.md)）。
+- 活动流只属于正在看的会话；选中会整段替换为回放再接实时尾部。
+- 可操作的权限提示至多一条，关联键是 `requestId`。
+- `spec_review` 的流可看不可写。
 
-- 一条 `permission` 消息通过 `requestId` 与服务端的一个 Permission Request 相关联;其
-  `decision` 初始为 `null`,只会被设置一次(WC-R3)。
-- 消息是只追加的,按到达顺序渲染(WC-R1)。选中某个会话会用回放历史替换整条流(WC-R9)。
+当前工作区是本机导航状态，与正在看的会话所属工作区不必相同。
 
-## 侧边栏视图模型
+## Connection
 
-镜像服务端的工作区/会话信息(共享协议);控制台渲染这些信息,并跟踪哪些工作区已展开、当前查看的是哪个会话,以及每个会话的实时状态。
+浏览器到服务端的 WebSocket。状态为 `connecting` | `open` | `closed`。与 runtime 的 `reconnecting` 不是一回事。
 
-- **Workspace row**
-  - 属性: path、name、last-accessed
-  - 来源事件: `ready` / `workspaces`
-- **Session row**
-  - 属性: session id、title、last-modified、mode、`sessionKind`、可选的 `ownerKind`/`ownerId`、`bound`;状态徽标来自会话状态
-  - 来源事件: `sessions` / `session_status` / `session_counts`
-- **Viewed session**
-  - 属性: 当前工作区、当前会话、当前标题、mode
-  - 来源事件: `session_selected` / `session_started`
+不变量:
 
-Sessions 页面为每个 `(workspace, sessionKind)` 维护独立的分页缓存,以及一个六类运行计数映射(键即左栏的六个显示分类;「规范」一类同时覆盖 `spec` 与 `spec_review` 两种真实 kind,见 SR-R15)。Owner 字段只是展示层输入:客户端用一条纯规则解析回跳目标,并不持久化或修改所有权本身。行的**真实** `sessionKind` 另外决定两件事:打开路径(`spec_review` 行改走按意图解析的只读恢复入口)与聊天列是否进入只读态——两者都不看左栏当前选的是哪个分类。
+- 关闭只退订视图，不拆运行。
+- 重连后恢复当前视图的回放，不另起运行。
 
-## 任务列表(服务端派生,独立 wire 路径)
+## Queue
 
-对开发会话的任务工具调用(`TaskCreate` / `TaskList` /
-`TaskUpdate` / `TaskGet`)进行归一化后得到的“当前任务列表”。自 2026-06-07-009 起,它走**独立的 wire 路径**(`task_list` +
-`task_created`/`task_updated`/`task_deleted`):由**服务端**派生该模型,客户端只需用这些带类型的消息填充任务模型——不再重新解析 tool-result 内容。纯归约函数(reducer)是共享任务模型中唯一的事实来源;客户端的 task-list 模块重新导出它,并自行新增两个无 DOM 依赖的纯辅助函数——展示选择器,以及应用单条 `task_*` 增量(快照替换 / 按 id upsert / 删除)的客户端 fold。服务端的派生与回放规则见[WebSocket 协议](../../../shared/api-conventions/websocket-protocol.md)(`task_*` 路径部分);客户端的消费方式见 [web-console-design.md](web-console-design.md) 的 _Task-list (wire-driven)_ 一节。
+普通会话在 turn 进行中写下、尚未发出的 prompt。仅客户端。
 
-- **Task item**
-  - 属性: id、subject、description?、status、order、blocked-by?、blocks?、owner?
-  - 来源: 由 `task_*` wire 消息携带(共享任务条目)
-- **Task-list model**
-  - 属性: 有序的任务集合(按 order 排序;同一时刻只有一份当前列表)
-  - 来源: 服务端侧的 fold,以快照形式推送
-- **Task-panel view**
-  - 属性: visible、in-progress、pending、completed(最近 N 条)、hidden-completed
-  - 来源: 由展示选择器派生得到
+不变量:
 
-Status 为 pending / in*progress / completed。Order 是原始顺序(快照索引,或增量插入时的追加顺序)。Blocked-by / blocks / owner 仅在 SDK 结果中包含时才保留。task-panel view 是任务面板消费的只读展示投影(分组 / 已完成截断 / 可见性——见 [web-console-design.md](web-console-design.md) 的 \_Task panel* 一节)。自
-2026-06-07-010 起,该面板**额外受能力(capability)门控**:`settings` 消息携带按厂商划分的二进制能力台账,容器将当前生效厂商的 task-store 能力派生为一个 task-store-available 标志,当厂商不具备 task store 能力时面板即隐藏(未知能力 ⇒ 默认展开,对旧会话安全)。
-
-## 说明
-
-- 聊天视图模型是临时性的;刷新页面会清空它们并从服务端重新拉取(注册表本身持久化在服务端,见 ADR 0004)。
-- 工具的输入与结果原样呈现给人类;控制台仅出于客户端本地的运行活动推断而解释结果内容,绝不作为权威状态。任务列表不再从 tool-result 文本推断——它通过 `task_*` wire 路径以服务端派生的形式到达。
+- 按会话划分；切会话保留；刷新丢失。
+- 只在「正在看且 idle」时刷出为一条 `user_prompt`。
+- team 无队列。

@@ -1,6 +1,7 @@
 import type { HandlerMap } from '../handler-registry'
 import type { MessageHandlerLocals } from './context'
 import type { AppCtx } from '../types'
+import { isDevLaunchBound } from '@/lib/dev-launch-view'
 
 export function buildIntentHandlers(
   ctx: AppCtx,
@@ -179,7 +180,7 @@ export function buildIntentHandlers(
       // `in_progress` (via the resident `run:bound` subscription) means the dev
       // session bound — close the overlay (silently, no toast).
       const dl = devLaunch.value
-      if (dl && msg.items.some((it) => it.id === dl.intentId && it.status === 'in_progress')) {
+      if (dl && msg.items.some((it) => it.id === dl.intentId && isDevLaunchBound(dl, it))) {
         ctx.dispatchDevLaunch({ kind: 'ready', intentId: dl.intentId, now: Date.now() })
       }
       ctx.consumePendingWorkSessionSelect(true)

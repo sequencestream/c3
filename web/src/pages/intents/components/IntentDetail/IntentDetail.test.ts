@@ -130,7 +130,7 @@ function mountDetail(
         ChatColumn: {
           props: ['showMode', 'modeDisabled', 'sessionBound'],
           template:
-            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" :data-session-bound="String(sessionBound)" />',
+            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" :data-session-bound="String(sessionBound)"><slot name="title-action" /></div>',
         },
       },
     },
@@ -2205,5 +2205,68 @@ describe('IntentDetail.vue — derived next-step banner', () => {
     // No overlay/modal: the tab strip and the title bar render alongside it.
     expect(w.findComponent({ name: 'IntentDetailTabs' }).exists()).toBe(true)
     expect(w.findComponent({ name: 'IntentTitleBarActions' }).exists()).toBe(true)
+  })
+})
+
+describe('IntentDetail.vue — restart work session', () => {
+  const restartSelector = '[data-testid="intent-work-session-restart"]'
+
+  async function openWorkSessionTab(w: ReturnType<typeof mountDetail>): Promise<void> {
+    await w.find('.intent-detail-tab[data-tab="workSession"]').trigger('click')
+  }
+
+  it('offers Restart on a ready work-session tab of a non-terminal intent', async () => {
+    const item = intent({
+      id: 'i1',
+      status: 'in_progress',
+      lastWorkSessionId: 'sess-work',
+    })
+    const w = mountDetail(item, { activeSession: 'sess-work' })
+    await openWorkSessionTab(w)
+    expect(w.find(restartSelector).exists()).toBe(true)
+  })
+
+  it('does not offer it before the work session is the ready/active session', async () => {
+    const item = intent({
+      id: 'i1',
+      status: 'in_progress',
+      lastWorkSessionId: 'sess-work',
+    })
+    const w = mountDetail(item, { activeSession: null })
+    await openWorkSessionTab(w)
+    expect(w.find(restartSelector).exists()).toBe(false)
+  })
+
+  it('does not offer it for a terminal (done) intent', async () => {
+    const item = intent({
+      id: 'i1',
+      status: 'done',
+      lastWorkSessionId: 'sess-work',
+    })
+    const w = mountDetail(item, { activeSession: 'sess-work' })
+    await openWorkSessionTab(w)
+    expect(w.find(restartSelector).exists()).toBe(false)
+  })
+
+  it('collects a required prompt and emits the trimmed text on confirm', async () => {
+    const item = intent({
+      id: 'i1',
+      status: 'in_progress',
+      lastWorkSessionId: 'sess-work',
+    })
+    const w = mountDetail(item, { activeSession: 'sess-work' })
+    await openWorkSessionTab(w)
+
+    await w.find(restartSelector).trigger('click')
+    // Empty input cannot be submitted.
+    expect(w.find('[data-testid="reset-accept"]').attributes('disabled')).toBeDefined()
+
+    await w.find('[data-testid="reset-input"]').setValue('  PICK UP FROM HERE  ')
+    expect(w.find('[data-testid="reset-accept"]').attributes('disabled')).toBeUndefined()
+
+    await w.find('[data-testid="reset-accept"]').trigger('click')
+    expect(w.emitted('restart-work-session')).toEqual([['i1', 'PICK UP FROM HERE']])
+    // The dialog closes on confirm.
+    expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(false)
   })
 })

@@ -112,4 +112,4 @@ ADR-0016 spike B 只实证了 codex **user 级**(`~/.codex/skills/`) skill 发�
 ## References
 
 - ADR-0016(扁平布局 + vendor 范围,本 ADR 的前提)。
-- `doc/architecture/claude-agent-sdk-guide.md` §5「它如何读取 Skill」(全局 glob 行为)。
+- [Claude 适配边界 · 设置继承](../claude-agent-sdk-guide.md#设置继承)（单层发现）。

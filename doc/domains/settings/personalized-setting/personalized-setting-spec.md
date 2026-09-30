@@ -1,82 +1,62 @@
-# personalized-setting 个人化设置
+# personalized-setting — 领域规格
 
-`personalized-setting` 域承载 `PersonalizedSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))——**因人而异**的偏好项。它是三类设置中唯一**不过管理员门**的一类:普通账户即可修改自己的偏好,改动不影响任何其他人。协议消息 `get_personalized_settings` / `save_personalized_settings` / `personalized_settings`。
+## Overview
 
-配置持久化路径与组级共享上下文见 [settings 组概览](../settings-overview.md)。
+personalized-setting 持有**因人而异**的偏好,以及本人名下的钥匙与 IM 绑定入口。三类设置中唯一不过管理员门:改自己的,碰不到别人。管理员配置见 [system-setting](../system-setting/system-setting-spec.md);工作区旋钮见 [workspace-setting](../workspace-setting/workspace-setting-overview.md)。
 
-## 作用域与存储
+**范围:** 显示语言、显示样式、字体大小、按身份存储、首次登录播种、智能体输出语言、外部钥匙自助;同页的本人 IM 绑定入口。
+**边界:** 不拥有钥匙存储与哈希(见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcp_api_keys));不校验钥匙出示(见 [external-mcp](../../core/external-mcp/external-mcp-spec.md));不拥有 IM 绑定语义(见 [im-robot](../../core/im-robot/im-robot-spec.md));不裁定工作区范围;不渲染控制台。
 
-存储位置由**身份**决定,与部署形态无关:
+能力索引见 [features.md](../../../features.md) 的 personalized-setting 节。持久化分层见 [settings 组概览](../settings-overview.md)。
 
-- **已认证连接** — 服务端按连接已验证的 `subject`(basic 用户名,大小写敏感)存于 `personalized_configs`,一账号一作用域。它不是 `SystemSettings` 的字段:不出现在 `settings` 快照中,`save_settings` 与个人化写入分属不同作用域,互相碰不到。
-- **无身份连接**(鉴权关闭 / `none` 提供者 / 登录前) — 服务端不建任何共享账户记录,浏览器 `localStorage` 即存储,回包只是把客户端上报值归一后回显。此形态无跨浏览器、跨设备同步;`localStorage` 不可用时偏好只在当次页面内有效。
+## 按身份存储
 
-subject 只取自服务端验证过的连接身份,客户端无法指定读写哪个账户,故账户之间彼此不可见。连接级鉴权门仍在上游生效:鉴权开启时未认证连接根本到不了本域的 handler。
+存储跟身份走,与部署形态无关。已认证:按已验证主体一账号一份,客户端不能指定读写谁。无身份:只留在本浏览器,不跨设备。个人化不进系统设置快照,与通用保存互不触及。鉴权开启时未认证连接到不了本域。
 
-## 缺省与归一化
-
-每个字段各自归一到自身默认值,故旧版或新版客户端写下的记录始终可读,单个损坏值不会扩散。解析顺序:**账户记录 → 本浏览器记录 → 内置默认**。首屏语言与主题解析都不看浏览器/系统偏好(`navigator.language`、`prefers-color-scheme`)——那不是用户对 c3 的显式选择,把它当隐式偏好会让「无记录」看起来像已设置过。
+解析:**账户记录 → 本机合法值 → 内置默认**。各字段独立归一,损坏不扩散。首屏不把浏览器或系统偏好当作已选择。显示项选中即生效再按身份保存,无草稿。
 
 ## 首次登录播种
 
-获取时客户端顺带上报本浏览器的合法记录作为**种子**。仅当该 subject **没有任何记录**时,服务端在同一持久化锁内「检查是否存在并创建」,以该种子建账户记录;账户记录一旦存在即为权威,不同的本地值既不覆盖也不合并。并发登录只产生一次创建,其余请求读到已创建值。
+取偏好时客户端可上报本机合法值作种子。仅当该主体尚无记录时创建一次;一旦有记录即为权威,本机值不覆盖、不合并。并发只成功一次。不从系统设置推导账户默认。保存成功后本机跟上,登出仍用最近选择,也可作其他无记录账户在此浏览器的种子。
 
-不从旧的全局 `SystemSettings.uiLang` 批量生成账户记录:磁盘上的旧顶层 `uiLang` 读时忽略、写时清理,且绝不作为任一账户的默认值——否则等于继续传播一个人的全局偏好。
+## 显示语言
 
-账户保存成功后客户端同步更新本地记录,使该浏览器在登出状态下保持最近选择,也可作为**其他**尚无记录账户在此浏览器首次登录的种子。
+控制台界面语言,与系统语音输入语言解耦(见 [system-setting](../system-setting/system-setting-spec.md#显示与本地化))。非法回落英语。
 
-## 显示语言 `uiLang`
+## 显示样式
 
-Web 控制台界面语言。缺失或非法值归一为 `en`。选中即生效:立即切换 vue-i18n locale 与 `<html lang>`,再按当前身份保存,故页面无需刷新。可选语言由 `web/src/i18n/index.ts` 的 `ENABLED_LOCALES` 产生(`en`/`zh` 为无条件基线,其余语种须人工在 locale JSON 中翻起 `__humanReviewed__` 后才进下拉)。与系统设置的 `voiceLang`(语音输入语言)彻底解耦。
+控制台配色。可选项与配色见[风格设计规范](../../../style/color-style-spec.md);本域只接纳合法 id。非法回落深色。不参与输出语言推进。
 
-## 显示样式 `theme`
+## 字体大小
 
-Web 控制台的配色主题,取值为主题注册表中的主题 id。缺失或非法值归一为 `dark`,即控制台原有的深色外观——未登录、无本地记录、旧账户记录都因此保持现状。选中即生效:立即改写根元素的 `data-theme`,再按当前身份保存,无需刷新。
+控制台全局字号。非法或越界回落基准。与语言、样式各自归一。
 
-可选项来自前端的主题注册表(见[风格设计规范](../../../style/color-style-spec.md)的「主题注册表」),设置页不另存一份主题清单;新增预设主题需在注册表加一项、补一组同名 CSS 变量,并在服务端合法 id 集合 `server/src/kernel/config/personalized.ts` 的 `UI_THEMES` 接纳同一 id——本域唯一的联动点就是这处合法 id 集合,主题名称与配色仍全部留在前端。
+## 智能体输出语言
 
-`theme` 与 `uiLang` **各自独立归一**:一个字段损坏不会连累另一个。它纯属 Web 展示偏好,不参与服务端 `agentLang` 的推进,也不影响语音语言、系统设置与工作区设置。服务端只校验 id 是否在已知集合内,主题的名称与配色全部留在前端。
+无连接上下文的服务端提示词(意图、规格、自动化、讨论与共识)读一份部署级语言:任何客户端保存或上报界面语言时顺带推进,无记录则英语。不是任何账户的默认,也不会当作某人的偏好读回。
 
-## 字体大小 `fontScale`
+## 外部钥匙自助
 
-Web 控制台全局 UI 字号缩放,取值为内置字号的百分比,范围 70–120(含小数,如 87.5)。缺失、非数值或越界归一为 `100`,即内置字号。`fontScale` 与 `uiLang`/`theme` **各自独立归一**:一个字段损坏只回落自身,不连累另两个。它属 per-person 展示偏好,不过管理员门,不参与 `agentLang` 推进,也不影响系统设置与工作区设置。
+本人名下的外部 MCP 钥匙。持有者即权威,管理员对别人的钥匙无权力。存储与哈希见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcp_api_keys);出示与求交见 [external-mcp](../../core/external-mcp/external-mcp-spec.md)。
 
-生效经根元素 CSS 变量 `--c-font-scale`(比值 = 值/100,由 `applyFontScale` 写入):`standard.css` 的全部字号 token 以 `calc(原始值 * var(--c-font-scale))` 消费,故缩放作用于所有走相对单位/变量的 UI;px 硬编码处不随动,是缩放设计的既定边界。冷启动在首屏渲染前先应用本浏览器记录的值,服务端回显到达后如有不同再修正。选中即生效 + 按当前身份保存,与 `uiLang`/`theme` 同一模式。
+不进个人化载荷:即时指令,无草稿。归属只从已验证连接推导,客户端不传所有者;无法解析身份则拒绝创建。未知 id 与他人 id 同一未找到、无变更。不显示不编辑工作区范围;新钥匙拿服务端默认只读集,本页不选工具。明文只在新建或重置成功时出现一次,不可再看。归属失效只留吊销。公开地址未配置则明说,不猜浏览器主机。
 
-## 服务端 agent 输出语言
+## IM 身份自助
 
-服务端生成给人看的文本(意图分析回复、规格文档、自动化标题、讨论与共识总结)需要一个语言,但这些调用点没有连接上下文——背景自动化根本没有用户。故 `system_configs` 另存一个 `agentLang` 键:任何客户端(含无身份的)上报或保存个人化语言时顺带推进,无记录则 `en`。它**不是**任何账户的默认值,也永远不会被当作某人的偏好读回;单用户部署下它就等于该用户的选择。
-
-## 外部 MCP key 自助(非 `PersonalizedSettings`)
-
-本页另承载一个不属于 `PersonalizedSettings` 的区块:**本人名下**的 [外部 MCP key](../../core/external-mcp/external-mcp-spec.md)。它落在这里而不是任何管理页,是因为 key 是自持凭据——持有者即其权威,身为管理员对别人的 key 没有任何权力。存储与哈希语义见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcp_api_keys)。
-
-- **不进设置载荷。** key 不在 `PersonalizedSettings` 里:每个操作都是独立的即时服务端指令,不进草稿、不参与保存,页面依旧没有 Save。
-- **归属自持,不可代管。** 归属恒从已验证的连接推导,客户端永不传 owner;无法解析身份时拒绝创建而不是猜一个。未知 id 与他人的 id 返回**同一个**未找到结果且不产生任何变更,故不能用 id 枚举他人的 key。不做跨账号代持或共享 key。
-- **按设备/客户端各建一把。** 只填一个用途名。这是**账号级凭据**,归档位置显式为 `null`,不属于任何工作区;能到达哪些工作区由管理员维护的账号范围逐请求解析,本页既不显示也不编辑它。
-- **不编辑工具范围。** 新 key 一律拿服务端定的默认只读集;能调什么不是持有者自己说了算的,故本页无工具选择器。
-- **重置密钥。** 原地换密钥:key id、归属、名称、工具范围全部不变。**没有宽限期**——旧密钥及其开出的会话立即失效,故保存前走一次危险确认。
-- **一次性明文。** 明文只出现在新建或重置成功的那一次回包里,只活在页面内存。关闭揭示区、离开本页、切换身份或收到后续名册即不可恢复;**不提供**「再看一次」或找回入口,任何人(含管理员)都不能二次查看。组件不写 localStorage,一行式命令以环境变量间接引用 key,不把明文再拼进一条会进 shell 历史的命令。
-- **不可用态。** 归属账号已不被本部署承认时(账号被移除,或无认证时期创建的 `local` 归属在配置 basic 认证之后),该 key 什么也够不到,只留吊销。
-- **缺失态。** `baseUrl` 未配置时明说「未配置」并给出跳转系统设置的入口(地址拼不出来,key 仍可生成),**不猜浏览器 Host**。
-- **访问地址。** key 配置下方常挂 `baseUrl`+`/mcp` 端点(可复制);同一地址服务每一把 key 与每一个工作区,凭据走 `Authorization` 头。不依赖新建/重置揭示才可见。
-
-## IM 身份自助(非 `PersonalizedSettings`)
-
-本页另承载 **本人 IM 身份绑定**,与 [im-robot](../../core/im-robot/im-robot-overview.md) 的 Web→私聊挑战流程对应。它不进 `PersonalizedSettings` 载荷:每项操作都是即时 WebSocket 指令,无草稿与保存按钮。
-
-- **按 account namespace 独立。** 命名空间 = `platform:appId`(与机器人凭据一致)。同一 c3 账号可对多个已启用机器人分别绑定;**唯一性只在命名空间内**——同一 namespace 下 subject 与 senderId 各至多一条 active 绑定,不同 appId 互不影响。
-- **列表与待办分命名空间展示。** 页面列出本人全部 active 绑定与 pending 挑战;每个命名空间至多一条 pending。已绑定的 namespace 不再显示「创建挑战」;尚未绑定的已启用机器人仍可出现绑定入口。
-- **挑战一次性明文。** 创建挑战成功时 token 只回显一次,页面可复制;关闭或刷新后不可恢复,须取消后重建。消费路径是向对应机器人私聊发送 token,不在 Web 输入。
-- **撤销即时生效。** 撤销本人 binding 会 bump policy epoch,切断该 namespace 下以旧 `scope_hash` 恢复的 Conversation 上下文;群内仍须管理员另行配置工作区白名单。
-- **不进管理员门。** 绑定/撤销/取消挑战是本人自持操作;群工作区白名单在机器人管理页的「身份与群范围」区块,不在本页。
+同页承载本人 IM 绑定入口。不进个人化载荷,不过管理员门。绑定、挑战与撤销语义见 [im-robot](../../core/im-robot/im-robot-spec.md)。群工作区白名单不在本页。切身份或离开本页即丢弃仍在手上的钥匙明文与挑战令牌。
 
 ## 失败处理
 
-读失败返回可识别错误(`personalizedSetting.loadFailed`),不发伪成功快照;写失败(`personalizedSetting.saveFailed`)不改动已存值。客户端两种情况都保留当前正在显示的语言、主题与字号并给出反馈,不清空本地记录或内存快照;后续服务端回显仍可恢复账户权威值。
+读失败不发伪成功;写失败不改已存。无连接则屏幕回到切换前,使所见与已存一致。
 
-同步发送失败(无连接)则完整回滚:DOM、内存快照与浏览器记录一并复原到切换前,使屏幕上呈现的与已存的始终一致。
+## Domain events
 
-## 界面
+消费 `get_personalized_settings`、`save_personalized_settings`、`list_my_mcp_api_keys`、`create_my_mcp_api_key`、`reset_my_mcp_api_key`、`revoke_my_mcp_api_key`。发出 `personalized_settings`、`my_mcp_api_keys`。本人 IM 绑定消息属 [im-robot](../../core/im-robot/im-robot-spec.md)。形状见[共享协议](../../../shared/api-conventions/websocket-protocol.md)。钥匙与绑定不进个人化载荷。
 
-「个人化设置」从左侧系统菜单进入,只覆盖应用右侧区域,不遮挡系统菜单,且不依赖当前工作区。入口**恒定可见**(不受 `isAdmin` 约束)。每项都是即时生效 + 即时持久化,故页面没有草稿态、脏标记与保存按钮。打开页面时先丢弃任何仍在手上的明文(外部 MCP key 与 IM 挑战 token)再拉取本身份的数据;关闭页面同样丢弃——名册、绑定与挑战 token 都是按身份的,让上一个身份的东西留在屏幕上是错的。
+## Interactions
+
+- **auth** — 已验证身份划定作用域;不过管理员门。
+- **system-setting** — 钥匙只存哈希;公开地址供自助面展示,本域不猜主机。
+- **external-mcp** — 钥匙用法与求交在该域。
+- **im-robot** — 绑定语义在该域;本域只提供本人入口。
+- **web-console** — 设置页。UX 不是权威。

@@ -2,7 +2,7 @@
 
 ## 系统形态
 
-c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
+c3 是一个单一本地进程：浏览器经 `/ws` 连入，进程内经厂商中性适配器驱动宿主 CLI。
 
 ```
 ┌────────────┐      /ws        ┌──────────────────────────────────────────────────┐
@@ -27,186 +27,52 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
                                     CLI         CLI          CLI
 ```
 
-> 三个 vendor 都落在宿主 CLI 上，但接入模式各不相同：详情见
-> [`agent-sdk.md`](agent-sdk.md)（三者的驱动方式与分发）、
-> [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)（Claude）、
-> ADR-0011（vendor-neutral 抽象层设计）、ADR-0029（vendor 中立 relay，服务 custom provider）
-> 和 ADR-0040（Cursor 作为非托管宿主 CLI）。
->
-> | Vendor | 接入架构                 | 进程模型       | 工具级审批 |
-> | ------ | ------------------------ | -------------- | ---------- |
-> | Claude | 子进程包装（JSON stdio） | 本地常驻子进程 | ✔ 逐工具   |
-> | Codex  | 子进程包装（HTTP/SSE）   | 本地子进程     | ✗ 仅整轮   |
-> | Cursor | 子进程（NDJSON stdio）   | 每轮一个子进程 | ✗ 仅整轮   |
->
-> 三者的能力差异（中断、模式切换、流式输入、fork、session 操作等）由一份逐能力声明的检查表
-> 管理，上层统一通过中性接口驱动（ADR-0011）。
+三个厂商都落在宿主 CLI 上，产品能力不同。驱动与分发见 [`agent-sdk.md`](agent-sdk.md)；Claude 适配边界见 [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)；中性抽象见 [ADR-0011](adr/0011-vendor-neutral-agent-abstraction.md)；custom provider 走中立 relay（[ADR-0029](adr/0029-vendor-neutral-relay-and-agent-group-failover.md)）；Cursor 为非托管宿主 CLI（[ADR-0040](adr/0040-cursor-as-host-cli-vendor.md)）。
 
-- **Browser（web-console）** — 一个单页 web 应用。通过 `/ws` 连接，渲染工作区/会话侧边栏
-  与活动流，是每一次权限决策和模式切换的界面。
-- **本地服务器** — 升级 `/ws` 并在生产环境中提供内嵌前端。一个连接就是一个**视图**：它只保存
-  当前正在观看哪个会话，并在切换时(取消)订阅。运行状态存在于进程级的 session-runtime 注册表中，
-  而非连接上。
-- **session-runtime 注册表** — 一个进程级注册表，拥有每个会话的运行：其中断句柄、用于回放的
-  内存基线 + wire 事件缓冲区、当前观看者及实时状态。跨连接共享，因此运行能在切换、刷新和断线后
-  存活（ADR 0006）。
-- **session-registry** — 管理工作区注册表与会话，拥有每会话模式和最近访问顺序，并通过可重建的
-  `session_metadata` 投影读取列表/计数界面。原生 vendor 存储仍是转录内容的事实来源。
-- **agent-session** — 驱动 vendor 中性适配器层走完其生命周期，把规范消息映射到 wire 协议上，
-  并暴露运行中的控制（模式切换、中断）。每个 vendor 的 SDK/CLI 细节被封在其适配器之后 —— 运行
-  循环从不直接接触 SDK 类型。
-  - **Claude** 通过子进程 JSON stdio 运行 Claude Agent SDK 的 query loop
-    （见 [`claude-agent-sdk-guide.md`](claude-agent-sdk-guide.md)）。
-  - **Codex** 以 experimental-JSON 模式运行 `codex` CLI，并为第三方 provider 提供一个
-    Responses→Chat relay（ADR-0029）。
-  - **Cursor** 每轮拉起一个 `cursor-agent` 子进程，逐行解析其 NDJSON 帧
-    （见 [Cursor 特性文档](../domains/core/agent-session/features/agent-session-cursor.md)）。
-- **permission-gateway** — 一个审批桥回调加上一个 request→resolver 注册表，把敏感工具路由到
-  浏览器并阻塞直到用户作答；对 Codex 与 Cursor 而言会降级为启动时策略（逐工具审批在结构上
-  就不存在，ADR-0011）。
-- **Agent 宿主 CLI** — 每个 vendor 的 CLI 都是硬性运行时依赖：
-  - `claude` CLI —— 由 Claude Agent SDK 作为子进程拉起。
-  - `codex` CLI —— 由 c3 作为子进程拉起。
-  - `cursor-agent` CLI —— 由 c3 作为子进程拉起；**不由 c3 分发**，只从 `CURSOR_PATH` 与宿主
-    PATH 解析（ADR-0040）。
+| Vendor | 进程模型       | 工具级审批 |
+| ------ | -------------- | ---------- |
+| Claude | 本地常驻子进程 | 逐工具     |
+| Codex  | 本地子进程     | 仅整轮     |
+| Cursor | 每轮一个子进程 | 仅整轮     |
+
+- **web-console** — 人的视图：侧边栏、活动流、权限与模式。一条连接只保存当前在看哪个会话。见 [web-console](../domains/core/web-console/web-console-overview.md)。
+- **本地进程** — 升级 `/ws`，单二进制交付中内嵌前端。运行活在进程级 session-runtime，不活在 socket 上（[ADR-0006](adr/0006-decouple-runs-from-connections.md)）。默认只监听本机回环；暴露到网络是显式选择。
+- **agent-session** — 驱动适配器走完生命周期，把规范消息映到线协议，并暴露模式切换与中断。运行循环不接触厂商 SDK 类型。见 [agent-session](../domains/core/agent-session/agent-session-overview.md)。
+- **permission-gateway** — 把尚未被策略决定的敏感工具交给浏览器，阻塞直到人作答。见 [permission-gateway](../domains/core/permission-gateway/permission-gateway-overview.md)。
+- **session-registry** — 工作区与会话目录；转录以厂商原生存储为事实来源。见 [session-registry](../domains/core/session-registry/session-registry-overview.md)。
+- **宿主 CLI** — 硬性运行时依赖。Claude 与 Codex 由 c3 分发，Cursor 不由 c3 分发。解析不到则该厂商不可用——这是产品约定（[ADR-0012](adr/0012-host-binary-probe-first-capability-gate.md)）。
 
 ## 模块地图
 
-- **CLI 入口**: 命令行入口；`start` 是默认命令（`--port` 默认为 3000，`--host` 默认为 `127.0.0.1`——监听地址是显式选择，不再有"不传 hostname 即全网卡"的隐式行为；工作区通过 Web UI 管理）
-- **桌面壳（Tauri 2）**: `desktop/` 下的原生外壳：把同一份 c3 单二进制当 sidecar 拉起（`start --host 127.0.0.1 --port <空闲回环端口>`），就绪后在 WebView 中加载 **sidecar 自带的** SPA；托盘常驻、单实例、可选开机自启。壳内无业务逻辑，共享同一个 c3 home（ADR-0033）
-- **HTTP/WS 服务器**: 升级 `/ws`、提供静态资源、追踪每个连接观看的会话、分发消息并广播状态
-- **外部 MCP 端点**: 公开的 `POST /mcp`：凭据只走 `Authorization: Bearer`,工作区由 `X-C3-Workspace` 在 initialize 时选定,权限是「key 范围 × 归属账号范围 × 工具授权」三层求交。与六条 `/internal/*-mcp/v1` 并列而非放宽——后者保留 loopback guard 与 per-run token。见 [external-mcp](../domains/core/external-mcp/external-mcp-spec.md)
-- **Session-runtime 注册表**: 进程级注册表，记录每个会话的运行句柄、回放基线 + 缓冲区、观看者及状态（ADR 0006）
-- **Host-CLI launcher**: vendor 无关的宿主 CLI 探测：把 vendor 解析为绝对二进制路径或 none，为每个 vendor 携带安装提示，并运行健康检查；第一道能力关卡（ADR-0012）
-- **Kernel 事件总线**: 进程内的类型化发布/订阅总线：同步、错误隔离、静态类型化的 topic→payload map；承载 run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018
-- **Session 注册表**: 持久化的工作区注册表、每会话模式、最近活跃会话
-- **Session IO**: 列出 / 读取 / 重命名 / 删除会话，以及转录内容映射
-- **权限注册表**: 待审批 map，带等待/解析决策与超时处理
-- **结果格式化**: 把工具结果内容摊平为展示字符串
-- **Intent ledger**: SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）
-- **IM 聊天机器人**: 出站长连接接入办公 IM（当前为飞书）。部署级出入口——配置与名册跨工作区一致，
-  运行目录 `~/.c3/robots/<name>/` 是隔离工作容器而非授权范围（部署级 ≠ 无边界访问）。平台特有的部分
-  收在 provider 里，响应策略、去重、单线程串行、唯一出站守卫与审计在中性层。外发受四重授权约束，
-  只发回合的最终文本或已注册固定提示。见
-  [im-robot](../domains/core/im-robot/im-robot-spec.md)，选型与授权模型见 ADR-0046
-- **静态内嵌**: 生成并内联的 web bundle
-- **Wire 协议**: 共享协议模块上的 client→server / server→client 消息联合，以及工作区/会话类型；只有类型/联合/常量，无运行时实现。领域契约按域分区，由 barrel 装配成两个联合的唯一入口
-- **共享领域 helper**: 共享模块里按领域拆分的双端纯函数（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出
-- **WS client**: 浏览器 WebSocket 包装器
-- **UI shell**: 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container
-- **Pages**: 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件
-- **共享组件**: 跨页面组件，每个都配有同址单元测试
+业务域职责见 [core](../domains/core/core-overview.md) 与 [settings](../domains/settings/settings-overview.md)。下面只列构成运行时形状的层。
 
-## 横切约定
+- **交付** — 单一自包含二进制（[ADR-0003](adr/0003-single-binary-via-bun-compile.md)）。可选桌面壳把该二进制当 sidecar，WebView 加载其自带前端；壳内无业务逻辑（[ADR-0033](adr/0033-tauri-desktop-shell-sidecar.md)）。
+- **线协议** — 两端共用一份消息联合。见 [websocket-protocol](../shared/api-conventions/websocket-protocol.md)。
+- **session-runtime** — 进程级注册表：运行句柄、回放缓冲、观看者；跨连接共享。
+- **Host-CLI launcher** — 厂商无关的宿主探测与健康检查，第一道能力关卡（ADR-0012）。
+- **事件总线** — 进程内发布/订阅。见 [`event-mechanism.md`](event-mechanism.md)（[ADR-0018](adr/0018-event-bus-kernel-layer.md)）。
+- **relay** — 进程内 provider 枢纽，真钥不离开本进程。见 [`relay-architecture.md`](relay-architecture.md)。
+- **sandbox** — 入选 run 进进程级隔离；驱动不可用则失败、不裸跑。见 [sandbox](../domains/core/sandbox/sandbox-overview.md) 与 [沙箱架构](sandbox-architecture.md)。
+- **prompt 缓存** — system 与 user turn 分离，稳定前缀才能命中厂商 cache。见 [跨厂商 prompt 缓存](session-scenarios.md)。
+- **MCP** — 公开 `POST /mcp` 与内部 loopback MCP 并列、互不放宽。见 [external-mcp](../domains/core/external-mcp/external-mcp-overview.md)。
+- **IM 出入口** — 部署级办公 IM。见 [im-robot](../domains/core/im-robot/im-robot-overview.md)。
 
-- **文档停在上层，细节在代码。** `doc/` 只写比代码高一层的内容——意图、边界、不变量、模块如何
-  协作、关键取舍。不写细节代码设计；细节由代码实现，要探索细节就读代码。可以提到模块名、
-  抽象概念或抽象接口的名字；禁止出现代码文件名与源码路径。文档保持自洽，不引用对应代码；
-  代码与注释保持自洽，不引用 `doc/`、规则编号或 ADR 编号。行为变更时两边同时更新，用对照
-  两份自洽文本来验证一致性。过程性记录（SDK 升级、调研、迁移流水）不进 `doc/`，落 GitHub
-  Issue；文档只保留 Issue 链接。SDK 升级账本入口见 [`agent-sdk.md`](agent-sdk.md)。
-- **单一契约。** wire 格式只有一份定义，两端共用。
-  见 [`../shared/api-conventions/websocket-protocol.md`](../shared/api-conventions/websocket-protocol.md)。
-- **权限单向流动。** 只有 gateway 能解析出一个决策；SDK 在没有决策之前绝不会在敏感工具上继续
-  往下走。
-- **权限状态是全局的、内存态的。** 权限决策从不持久化；待处理请求以 `requestId` 为键，因此
-  被切到后台的会话，在切回来后其 prompt 依然可以回答。
-- **运行与连接解耦（ADR 0006）。** 运行状态存在于 session-runtime 注册表中，而非 socket 上。
-  切换观看的会话与关闭 socket 只会改变订阅关系 —— 运行在后台继续，直到它结束或被显式停止
-  （`stop_run`）。不同会话可以并发运行，没有固定上限；单个会话是串行的（在其回合进行中会拒绝
-  新的 prompt）。
-- **配置与注册表都在 c3.db 里。** 系统设置、每工作区设置、个性化设置、会话绑定与 MCP 密钥
-  存在 config 模块的表中，一字段一行；工作区注册表（工作区 + 最近访问顺序）、每会话模式与当前
-  活跃会话同样如此。会话本身存在于 SDK 的转录存储中。见
-  [ADR 0004](adr/0004-persist-workspace-session-registry.md)、
-  [ADR 0042](adr/0042-configuration-in-database.md)。
-- **数据库位置决定整个实例。** `--db <path>` > `C3_DB_PATH` > `C3_DIR` > `~/.c3/c3.db`；c3 主
-  目录（日志、worktree、sandbox 分发）跟随数据库文件所在目录，因此一个覆盖项即可搬走整个 c3。
-- **Intent ledger 与配置同库（ADR 0007）。** 项目范围的 intent 存在 `~/.c3/c3.db`，背后是一个
-  跨运行时的驱动适配器（`node:sqlite` / `bun:sqlite`）。它是软失败的：如果 db 不可用，intent
-  功能会降级，但 c3 仍能启动并服务正常会话。intent-communication agent 复用运行时注册表与权限
-  gateway，以只读的 `intent` 类型运行。
-- **Session metadata 投影是一个统一的读缓存。** c3.db 中的 `session_metadata` 是
-  `work_session_metadata` 改名/泛化后的继任者。它为各会话类型（work / intent / spec /
-  spec_review / discussion / automation / tool / robot）携带寻址与生命周期元数据，包括用于跳回的
-  可选逻辑归属字段。
-  它是可重建的，且刻意做到无内容：转录、prompt、工具调用或工具结果都不属于这里。
-  work / intent / spec / spec_review / discussion / automation / tool / robot 均由对应领域写入投影。
-- **DB 迁移必须幂等、绝不删表、只能向前修正（硬性规则）。** 每一次 c3.db 的 schema 变更都要
-  经过某个领域存储的一次性 schema-ensure，并遵守这条项目级的迁移纪律：
-  - **幂等 + 可从部分状态重入。** 每一步都要靠*探测实际 schema 状态*
-    （`sqlite_master` / `PRAGMA table_info`）来守护，而不是只信 `user_version` 历史。
-    一个在迁移中途被打断的 db，必须在任何一次重跑后收敛到终态，且不能抛出重复应用的错误。
-  - **绝不 `DROP TABLE`。** 原地重塑 —— `ALTER TABLE … ADD COLUMN` / `RENAME TO` /
-    `RENAME COLUMN`。（为了改名而删除一个*索引*是可以的；SQLite 没有 `RENAME INDEX`。）
-    涉及数据搬迁的变更要复制进一个新表，并保留旧表，直到后续一次独立的迁移将其淘汰 ——
-    绝不做破坏性的原地替换。
-  - **通过向前修正来回滚。** 一次错误的迁移要靠追加一个*新的*反向迁移来修正
-    （例如一次反向改名），而不是编辑或删除历史中的原迁移。
-  - **迁移模板。** 顺序 = 表/列重塑要在 `CREATE TABLE IF NOT EXISTS` 之前执行
-    （一个全新的 schema 不能预先创建新名字，从而搁置旧表的数据）；提升 schema 版本号；
-    用一个测试覆盖全新 db、旧版 db 和部分迁移 db 这几个起点，并同时断言重跑的幂等性。
-    涉及「rename-aside → 建新同名表 → 复制 → 重建索引」的整表重塑应走 kernel 的
-    table-rebuild 入口，避免索引名随 RENAME 挂到 archive 上后 `CREATE INDEX IF NOT EXISTS`
-    静默跳过；同形状的就地 `RENAME TO`（源表名与目标表名不同）仍留在各 store 内 guarded 执行。
-  - **审查清单**（每一次迁移变更）：☐ 幂等重跑是空操作 ☐ 部分迁移重入能收敛
-    ☐ 零 `DROP TABLE` ☐ 无数据丢失（行/边都存活） ☐ schema 版本已提升
-    ☐ 重塑先于 `CREATE TABLE IF NOT EXISTS` ☐ 全新/旧版/部分起点都已测试。
-- **Vendor 中性性活在适配器层（ADR-0011）。** 一个中性的三件套接口
-  （一个负责运行生命周期 + 规范消息流的 driver、一个拦截/挂起/写回决策的审批桥、
-  以及一个把历史藏在同一个面孔后面的 session store）加上一份能力台账，让 c3 可以通过同一个
-  界面驱动 Claude、Codex、Cursor 及未来的 vendor；可选能力（中断、模式切换、流式输入、
-  进程内 MCP、session fork、逐工具审批、task store）在使用前会被探测。
-  会话生命周期操作（list / read / resume / rename / delete）被诚实地评为一份结构化的
-  逐操作子台账 —— 每个操作是 _none_ / _partial_ / _full_ / _temporarily-unavailable_
-  四者之一 —— 因为一个布尔值无法区分结构性的 NO（根本没有路由）和一次瞬时故障。
-  wire 上携带这份逐 vendor 矩阵，console 按能力*状态*渲染会话行的操作，绝不通过判断
-  vendor 的身份来切换。权限是一个中性的 工具名 + 输入 + 上下文 → allow / ask / deny 策略，
-  作用在一个正交的 action-mode（plan、build）× tool-gate（always-ask / on-sensitive /
-  trusted-prefix / never-ask）网格之上（Claude 原本的五档权限模式不再是一一对应）。
-  **没有任何 vendor SDK 类型跨越适配器边界** —— SDK 的值以无类型的形式进入适配器，并在
-  那里被收窄（ADR-0009）。Claude 参考适配器委托给既有的运行路径、gateway 和 session IO；
-  Codex 与 Cursor 经统一的 driver 路径运行。
-  **厂商策略补偿只发生在适配器内部，上层一律走 kernel 中立入口：**
-  启动选项上不挂任何厂商专有字段，用户为某厂商选定的精确策略经透传袋传入、仅由该厂商
-  适配器解释，且袋内不得把沙箱放大——任何全权限沙箱都必须以中立的显式全权限前提为条件。
-  上层通过适配器注册表获取厂商能力，不直接深入某一厂商适配器内部。
-- **宿主二进制探测是第一道能力关卡（ADR-0012）。** 每个 agent vendor 都以宿主 CLI 子进程的
-  形式运行，无法被打包进 c3 的单一二进制中 —— 这个二进制只发布 c3 本身。claude 与 codex 由
-  c3 安装到 `~/.c3/vendor` 并可被 env override 或宿主 PATH 覆盖；`cursor-agent` 不由 c3 分发，
-  只从 `CURSOR_PATH` 与宿主 PATH 解析（ADR-0040）。host-CLI launcher 把一个 vendor 解析为其绝对二进制
-  路径或 none；只有当其二进制能解析出来时，才会为该 vendor 构造一个适配器，因此 CLI 缺失
-  意味着该 agent 类型不可用（这是一个产品约定，不是 bug），并附带安装指引，其能力台账也就
-  永远不会派上用场。启动时的健康报告会响亮但非致命地列出存在/缺失的二进制。
-- **构建顺序：** 先 `web` 后 `server` —— server 内嵌了 web bundle。
-- **Web 模块结构。** 前端按三层组织：
-  - 共享（跨页面）组件，每个都配有同址单元测试。mobile drill-down shell 是
-    list/detail 与三栏页面共用的、仅移动端使用的容器：桌面端按顺序渲染每个面板槽位，
-    移动端则显示单一面板栈并配以显式的返回事件；page container 始终拥有自己的
-    选中项/数据状态。
-  - 页面私有组件，每个都配有同址测试。
-  - Page container —— 每个页面一个（works / intents / discussions / automations /
-    systemsettings）。
-  - shell 拥有 WS client、入站消息处理器与所有共享/tab 状态，并按当前活跃 tab 分发给
-    page container。Page container 是**纯粹的**（props 传入 / emit 向上）—— 自身没有
-    领域状态（队列编辑的预填内容会被转发回 composer）。纯逻辑、经过单元测试的视图辅助函数
-    与 composable 与这两层并列存放，并被两层共同引入。
-  - Sessions 页面与 intents 页面共用聊天列，其五个区块可以通过属性显示或隐藏。
-    会话跳回是一条基于 `(sessionKind, ownerKind, ownerId)` 的纯前端规则，被
-    sessions 页面与工作台共用。
-  - Page container 是路由级的视图，可以使用单词名；其私有组件仍遵守多词命名规则。
-  - 组件挂载测试运行在类浏览器 DOM 中；其他测试运行在 node 中。
+## 依赖方向
 
-## 关键决策
+```
+web-console ──/ws──► session-registry ──工作目录 / 模式──► agent-session ──► permission-gateway
+                                              │
+                                         适配器层 ──► 宿主 CLI
+```
 
-- [0001](adr/deprecated/0001-c3-sole-permission-authority.md) — _（已被 0005 取代）_ c3 是唯一的权限权威
-- [0002](adr/0002-websocket-as-permission-transport.md) — WebSocket 是权限传输方式
-- [0003](adr/0003-single-binary-via-bun-compile.md) — 通过 `bun build --compile` 发布为单一二进制
-- [0004](adr/0004-persist-workspace-session-registry.md) — 持久化一份 c3 所有的工作区与会话注册表
-- [0005](adr/0005-inherit-user-project-settings.md) — 继承用户与项目设置；c3 是权限 gateway（`settingSources: ['user', 'project']`）
-- [0006](adr/0006-decouple-runs-from-connections.md) — 把 agent 运行与 WebSocket 连接解耦；运行存在于模块级注册表中
-- [0007](adr/0007-read-only-intent-agent.md) — 只读的 intent-communication agent；`save_intents` 经对话确认后落库；跨运行时 SQLite ledger
-- [0009](adr/0009-unidirectional-boundaries.md) — 单向边界：kernel → transport/features；SDK 类型永不离开 kernel
-- [0011](adr/0011-vendor-neutral-agent-abstraction.md) — Vendor 中性的 Agent 抽象：要求三件套接口 + 探测式能力台账；五档权限模式改为 action-mode × tool-gate 网格
-- [0012](adr/0012-host-binary-probe-first-capability-gate.md) — 宿主二进制探测是第一道能力关卡；vendor CLI 缺失 ⇒ agent 类型不可用（按 agent 类型安装，单一二进制并非自包含）
-- [0018](adr/0018-event-bus-kernel-layer.md) — kernel 层的进程内类型化事件总线（发布/订阅、错误隔离、同步分发，符合 ADR-0009 边界安全）
+控制台是视图，不拥有运行。注册表给运行提供上下文。运行时依赖网关门工具。适配器隔离厂商，SDK 类型不向上泄漏（[ADR-0009](adr/0009-unidirectional-boundaries.md)）。意图、自动化、IM 等复用同一运行时，不反向依赖控制台。域级依赖见 [core-overview](../domains/core/core-overview.md)。
+
+## 横切不变量
+
+- **权限单向。** 只有网关能给出决策；没有决策则敏感工具不得继续。决策不持久化，待决跟 run 走。
+- **运行与连接解耦。** 切换观看或关闭 socket 只改订阅；运行继续直到结束或被显式停止。会话之间并发、无固定上限；同一会话串行。
+- **配置在实例库。** 设置与会话绑定存在 `c3.db`；实例身份跟随该文件（[ADR-0042](adr/0042-configuration-in-database.md)）。转录仍在厂商原生存储（[ADR-0004](adr/0004-persist-workspace-session-registry.md)）。见 [persistence](../shared/data-conventions/persistence.md)。
+- **意图同库、软失败。** 库不可用时意图降级，其余会话仍可服务（[ADR-0007](adr/0007-read-only-intent-agent.md)）。见 [intent-management](../domains/core/intent-management/intent-management-overview.md)。
+- **厂商中性。** 上层经同一界面驱动，按探测到的能力行事，不按厂商身份分支。厂商策略补偿只发生在适配器内（ADR-0011）。
+
+决策目录见 [adr.md](adr/adr.md)。

@@ -205,6 +205,23 @@ export interface WorkLaunchOptions {
    * automation queue: an unattended path does not get to make this call.
    */
   forceDependencyGate?: boolean
+  /**
+   * RESTART an intent's work session with a brand-new one instead of attaching
+   * to or resuming the existing one. When set:
+   *
+   *  - `attachOrResumeWorkSession` is skipped entirely and the `todo`/dangling
+   *    status precondition is bypassed — a restart is by definition the escape
+   *    hatch from a session whose turn is spent.
+   *  - `prompt` replaces the `title\n\ncontent` segment of the first turn's
+   *    visible body (the dependency and spec-path notes are still appended).
+   *  - `previousSessionId` is the session the caller believes it is replacing;
+   *    if the intent has since rebound elsewhere the launch is refused rather
+   *    than silently restarting a different session.
+   *
+   * Everything else — delivery context, `checkWorkAdmission`, agent resolution,
+   * worktree/branch preparation, the pending→intent bind — runs unchanged.
+   */
+  restart?: { prompt: string; previousSessionId: string }
 }
 
 /**
@@ -519,21 +536,41 @@ export async function launchWorkSession(
     return { success: false, code: 'intent.notFound' }
   }
 
-  // An `in_progress` intent whose session is still usable is attached to or
-  // resumed in place — it is NOT a `cannotStartDev` rejection any more.
-  const existing = await attachOrResumeWorkSession(workspacePath, req, deps, progress, opts, actor)
-  if (existing) {
-    releaseClaim()
-    return existing
-  }
+  // A restart always takes the fresh path: it must never attach to or resume the
+  // session it is replacing, and the status precondition (which a spent session
+  // has already outgrown) does not apply to it.
+  if (opts?.restart) {
+    // The caller names the session it believes it is replacing; if the intent has
+    // rebound since, refuse rather than restart a different session than the one
+    // it verified (checked again here, after the caller's own read).
+    if (req.lastWorkSessionId !== opts.restart.previousSessionId) {
+      releaseClaim()
+      return { success: false, code: 'intent.restartSessionChanged' }
+    }
+  } else {
+    // An `in_progress` intent whose session is still usable is attached to or
+    // resumed in place — it is NOT a `cannotStartDev` rejection any more.
+    const existing = await attachOrResumeWorkSession(
+      workspacePath,
+      req,
+      deps,
+      progress,
+      opts,
+      actor,
+    )
+    if (existing) {
+      releaseClaim()
+      return existing
+    }
 
-  // Status gate: allow `todo`, or `in_progress` whose work session has gone missing.
-  const dangling =
-    req.status === 'in_progress' &&
-    (!req.lastWorkSessionId || !(await sessionExists(workspacePath, req.lastWorkSessionId)))
-  if (req.status !== 'todo' && !dangling) {
-    releaseClaim()
-    return { success: false, code: 'intent.cannotStartDev', params: { status: req.status } }
+    // Status gate: allow `todo`, or `in_progress` whose work session has gone missing.
+    const dangling =
+      req.status === 'in_progress' &&
+      (!req.lastWorkSessionId || !(await sessionExists(workspacePath, req.lastWorkSessionId)))
+    if (req.status !== 'todo' && !dangling) {
+      releaseClaim()
+      return { success: false, code: 'intent.cannotStartDev', params: { status: req.status } }
+    }
   }
 
   // The concurrency gate, applied before a fresh turn for the same reason it
@@ -672,6 +709,7 @@ export async function launchWorkSession(
     sddEnabled: getSddEnabled(workspacePath),
     effectiveSpecMode: req.effectiveSpecMode,
     specPath: req.specPath,
+    ...(opts?.restart ? { promptOverride: opts.restart.prompt } : {}),
   })
 
   // Register pending→intent link and fire launcher. The delivery context rides

@@ -172,6 +172,13 @@ export interface AppMethods {
   resetIntentSession(intentId: string, userInput: string): void
   /** Reset the intent's spec session: new input + current spec content → fresh session. */
   resetSpecSession(intentId: string, userInput: string): void
+  /**
+   * Restart the intent's WORK session: stop the currently bound one (if it is
+   * still running) and start a brand-new work session seeded with `prompt`,
+   * reusing the same worktree and branch. The old session is kept; the intent is
+   * rebound to the new one on its first bind.
+   */
+  restartWorkSession(intentId: string, prompt: string): void
   startDevelopment(
     intentId: string,
     hasUnfinishedDeps: boolean,

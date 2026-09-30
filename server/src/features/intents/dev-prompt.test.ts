@@ -149,6 +149,27 @@ describe('buildDevPrompt — channel split (hide-session-system-instructions)', 
     expect(p.systemInstruction).toBe('')
     expect(p.visible.endsWith(`\n\n${buildDevSpecNote(specPath)}`)).toBe(true)
   })
+
+  it('a restart prompt replaces the title+content body but KEEPS the dep and spec notes', () => {
+    // The regression guard for the mistake of dropping the notes: the SDD
+    // contract ("Spec is Truth. Read it first") has nothing to read without the
+    // spec-path note, and a current-branch turn loses the intents it builds on.
+    const specPath = '.specs/2026/09/29/2026-09-29-003/spec.md'
+    const p = buildDevPrompt({
+      ...base,
+      devSkill: '',
+      sddEnabled: true,
+      effectiveSpecMode: 'sdd',
+      specPath,
+      dependsOn: ['intent-a', 'intent-b'],
+      promptOverride: 'PICK UP FROM THE LAST CHECKPOINT',
+    })
+    expect(p.visible.startsWith('PICK UP FROM THE LAST CHECKPOINT')).toBe(true)
+    expect(p.visible).not.toContain('Cache the endpoint')
+    expect(p.visible).not.toContain('Add an LRU cache.')
+    expect(p.visible).toContain('依赖需求:intent-a, intent-b')
+    expect(p.visible).toContain(buildDevSpecNote(specPath))
+  })
 })
 
 describe('start_development SDD forced gate', () => {

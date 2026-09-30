@@ -1,71 +1,33 @@
 # Glossary
 
-c3 文档中使用的业务与技术术语。在此处统一定义;各领域文档引用这些定义,而不是重新
-定义。
+c3 文档的术语索引。此处只给短定义并指向权威文档，不重复领域规格。
 
-- **c3**: Code Creative Center。该应用:一个通过浏览器集中驱动多个 AI 编码智能体(Claude / Codex / Cursor)并对其工具调用进行门控的 Web UI。
-- **Agent run**: 由一次用户提示驱动的单次 `query()` 调用。持续流式输出智能体文本、工具活动与权限请求,直至完成或出错。
-- **VendorModeCatalog**: 各厂商声明的原生模式 token 清单(2026-06-07-012)。每个条目将某厂商的 `token`(一个 `ModeToken`)与其 i18n `labelCode`,以及它映射到的中立 `ActionMode × ToolGate` 网格单元配对。每个厂商声明自己的 catalog;这些 catalog 按厂商聚合为一个编译期穷尽的集合。通过 `settings.vendorModes` 下发给 Web 端,使控制台无需任何厂商特定分支即可为每个厂商渲染模式选择器。
-- **Permission decision**: 用户对权限请求的应答:`allow` 或 `deny`。
-- **Permission mode**: 应用于所查看会话中工具调用的策略。自 2026-06-07-012 起,它是随 wire 携带于会话 `mode` 字段(在 `set_mode` / `mode_changed` 上)的厂商原生模式 token,通过该会话的厂商 VendorModeCatalog 被解释为中立的 `ActionMode × ToolGate` 网格单元。Claude 原先的五值 permission-mode 联合类型作为该厂商自己的 token 集合保留;通用类型则是一个普通字符串模式 token。按会话持久化,种子值来自项目的 `defaultMode`。另见 VendorModeCatalog。
-- **canUseTool**: c3 提供给 SDK 的回调。在敏感工具调用时被触发;c3 将问题路由给浏览器,并返回解析后的决定。
-- **Sensitive tool**: SDK 在当前模式下判定需要审批的工具(例如 `Write`、`Edit`、危险的 `Bash`)。只读工具由 SDK 自动放行,不会产生请求。
-- **Auto-deny**: 由于运行在用户决定之前被停止(`stop_run` / 删除 / 移除工作区),导致一个待处理权限请求被清除时的结果。不存在基于超时的自动拒绝——未应答的请求会无限期阻塞,切换视图也绝不会拒绝它。
-- **Wire protocol**: `/ws` WebSocket 上的 JSON 消息契约。两个消息判别联合类型——`ClientToServer` 与 `ServerToClient`——记录于[WebSocket 协议契约](shared/api-conventions/websocket-protocol.md)。
-- **Authentication (认证)**: 在允许某个连接驱动智能体之前,确认它**是谁**。是一项**可选**能力——是否启用认证、以及是否把 c3 暴露到网络,由使用者决定(ADR-0023)。已落地 `basic` provider 运行时(scrypt-PHC 密码哈希、真实 `login` 校验、多账户 + 唯一管理员);仍延后:令牌签发/校验、通用认证中间件。参见[认证域](domains/core/auth/auth-overview.md)。
-- **AuthProvider**: 以 `kind` 判别的认证后端抽象(ADR-0023)。`kind: 'none'`(**NoneAuthProvider** `{}`)表示无认证(默认值,登录禁用),不携带任何配置。`kind: 'basic'`(**BasicAuthProvider** —— `accounts: { username, PHC passwordHash }[]` + `adminUsername`:**多账户,恰好一个管理员**)是运行时可用的;任何账户均可登录,`adminUsername` 指定唯一的配置权威账户(无 RBAC)。`none` 与 `basic` 互斥(同一个 `provider` 联合类型)。`sso`/多租户仍是预留的扩展点(增加一个 `kind` 分支 + 一个服务端 zod 分支即可,其余不变)。与 ADR-0011 的厂商模型采用相同的中立抽象 + 按 kind 扩展的形态。
-- **AuthConfig**: 挂载在 `SystemSettings.auth?` 上的认证配置——`{ enabled, provider, session, exposure? }`(ADR-0023)。缺失该块或 `enabled: false` ⇒ 无认证(默认值);格式错误的块会(fail-soft)归一化为禁用。`session` 是厂商中立的 `AuthSessionPolicy`(令牌 `ttlSeconds` + `signingKeyRef`,一个指向签名密钥的引用,而非密钥本身);`exposure.bindAddress` 记录服务端绑定地址/网络暴露意图。
-- **Session token (会话令牌)**: 客户端登录后出示的、厂商中立的已签发凭证——`AuthSessionToken { tokenId, subject, issuedAt, expiresAt }`(ADR-0023)。在 `login` 成功后签发,在 wire 上以不透明形式携带,按请求校验(签名/校验推迟到后续任务)。区别于 c3 的**Session**(一次智能体对话)以及会话注册表持久化状态。
-- **passwordHash / signingKeyRef**: `AuthConfig` 的"通过引用存放机密"字段(ADR-0023、AUTH-R3/R4/R9)。`passwordHash` 仅以 PHC 哈希形式存储密码——绝不明文;明文的 `AuthLoginRequest.password` 仅在传输过程中存在。`signingKeyRef` 是对令牌签名密钥的一个*引用*(环境变量名/密钥库 id),该密钥本身绝不持久化在系统设置中。
-- **Workspace directory**: 已注册的工作区目录,用作 SDK 的 `cwd`。工作区通过 Web UI 或 `add_workspace` WebSocket 消息注册。智能体相对它读写文件。
-- **Session**: 工作区内一个由厂商支撑的对话。其执行由一个进程级的**Session Runtime**拥有;一个连接一次只**查看**一个会话。运行不绑定到某个连接(ADR 0006)。列表/计数读取使用可重建的 `session_metadata` 投影。
-- **Sessions tab**: 顶层导航标签,聚合某工作区的六种 `SessionKind` 类别。它实现于历史遗留的 `works/` 前端目录中,内部视图键仍沿用 `console`,但面向用户的标签是 "Sessions" /「会话」。
-- **Work session**: Sessions tab 中主要的开发对话类型(`sessionKind: 'work'`)。用于区分一般工作会话与 intent、spec、discussion、automation、tool 会话。
-- **Session Runtime**: 进程级的一个会话运行的所有者:其中止/句柄、用于重放的 `baseline + buffer` wire 事件、当前查看者以及实时状态。跨连接共享;在切换/断连后依然存活。
-- **SessionKind**: 判定一次运行/智能体调用**业务场景**(由哪种场景产生)的唯一源:`work`(一般工作会话——用户控制台、intent→开发交接、automation 的开发轮次)、`intent`(只读的 intent 沟通会话)、`discussion`(编排者 + 调研)、`automation`(调度器发起的、无 socket 的运行)、`consensus`(一次共识投票)、`tool`(内部工具调用——完成度判定 + 标题生成)、`spec`(spec 撰写会话,写入被限定在该 intent 的 spec 目录内)。哪种场景可以触发一次 automation、适用哪种安全门控这类业务来源判断,读取的是 `sessionKind`。携带于 session runtime 的 `sessionKind` 字段以及 `run:started`/`run:settled` 事件上。于 2026-06-26 从旧的 `RunKind` 中拆分而来,其 7 个业务值原样迁移到此处,`'session' → 'work'`(`RunKind` 本身此前是二值的 `'normal' | 'intent'`;`'normal' → 'session'`)。**`automation` 是一种触发来源,而非一种运行类型:**由用户会话*触发*的 automation 是对一次 `work` 类运行的响应;`automation` 只标记调度器自身的无 socket 运行。事件触发的 automation 只在 `sessionKind === 'work'` 时触发。
-- **RunKind**: 一次运行**执行形态**(如何执行)的分类法,与 **SessionKind** 正交——`interactive`(有 socket、有人在观看的运行:用户控制台、intent→开发交接、intent/spec 沟通会话)、`background`(仍在运行总线上、但无 socket 的运行——automation 的开发轮次)、`headless`(调度器自身的无 socket 运行)、`internal`(内部编排/工具调用——discussion、consensus、judge/命名)。携带于 session runtime 的 `runKind` 字段以及 `run:started`/`run:settled` 事件上。同一 `sessionKind` 的两次运行在这里可以不同——例如 `work` 类型的控制台是 `interactive`,而 `work` 类型的 automation 开发轮次是 `background`。于 2026-06-26 从旧的 7 值 `RunKind` 中细分出来(其业务值迁移到了 **SessionKind**)。目前仅用于记录以便审计/扩展;尚无消费者据此分支。
-- **Session status**: 会话的实时运行状态:`idle`、`running`、`awaiting_permission` 或 `team`。通过 `session_status` 广播给所有连接,用于驱动侧边栏徽标。
-- **Viewed session**: 某连接当前查看的唯一会话。该连接发出的下一个 `user_prompt` 将针对它运行;切换查看视图绝不会停止前一个会话的运行。
-- **Run handle**: 交给连接处理器的、对一次在途运行的实时控制(一个设置权限模式的控制),使模式变更可以在运行途中生效。
-- **Interrupt / abort**: 通过 SDK 的中断控制停止一次在途运行。仅由 `stop_run`、`delete_session` 或 `remove_workspace` 触发——绝不会因切换所查看会话或关闭连接而触发。
-- **Static embed**: 内联进已编译二进制文件中的 Web 构建产物(生成且被 gitignore)。当磁盘上不存在文件系统 Web 构建产物时提供服务。
-- **Vendor CLI**: 各厂商用来运行智能体的宿主可执行文件——`claude`、`codex` 与 `cursor-agent`。解析顺序是显式 env override(`CLAUDE_PATH` / `CODEX_PATH` / `CURSOR_PATH`)→ c3 托管安装(`~/.c3/vendor/<vendor>/<version>/bin/<binary>{.exe}`,仅受管厂商)→ 主机 PATH(ADR-0012)。`cursor-agent` **不由 c3 分发**,只有 env override 与 PATH 两级,版本由 Cursor 官方安装器决定(ADR-0040);二进制名从厂商描述符读取,不由 vendor id 推导。登录状态始终属于该 CLI 自身,而非 c3。
-- **turn_end**: 一次 prompt→result 轮次的终止性服务端→客户端事件,`reason` 为 `complete`(含被停止的运行)或 `error`。绝不意味着会话结束——它仍存活以等待下一个 prompt。
-- **Workspace name (工作区名称)**: 工作区全局唯一且不可变的身份。去除首尾空白后为 1–64 个 Unicode 字符,区分大小写；协议、URL、配置和业务台账都用 `workspaceName` / `workspace_name` 关联。磁盘绝对路径只用于文件系统操作与界面辅助展示。
-- **Intent (意图)**: 一个项目范围内的台账条目——`title`、`content`、`priority`(P0–P3)、`status`、可选的项目内依赖关系——持久化在本地 intent 台账中,以 workspace name 为键。intent 列表、精炼、开始工作这些操作所共同作用的单元(ADR 0007)。由 **Requirement** 更名而来(requirements→intents,PR-2)。**歧义说明:** 领域概念 **Intent**(首字母大写,一个持久化的工作单元实体)*不是*其他地方用于无关概念的小写单词 _intent_——例如某个 Vue 子组件的事件 _intent_(一次用户操作 emit)、ADR-0011 中的权限 _intent_、共识投票中厂商中立的 _intent_,以及编排者的下一子话题/广播 _intent_。这些是同词异义(在此交叉引用),本次更名刻意不涉及它们。
-- **意图级别 (Intent priority)**: 一个 intent 的优先级,取值为 `P0`、`P1`、`P2`、`P3` 之一(P0 最高)。
-- **模块名称 (Module)**: 一个 intent 所属的模块——由沟通智能体从条目的标题/内容中推断出的自由文本标签(例如 认证、会话、意图管理)。作为必填的自由文本字段持久化在 intent 上,默认值为空字符串;当无法识别或对于历史行时为 `''`。为后续基于模块的组织/展示打下数据基础(ADR 0007)。
-- **New Intent session (Communication session)**: 用于将想法精炼为 intent 条目的、按项目划分的长驻只读智能体会话。是一个真实的 SDK 会话,但被排除在普通会话列表之外(隐藏集合);以强制的 `default` 模式运行,不能编辑/写入/运行命令/派生子智能体/运行 slash 命令(ADR 0007)。
-- **save_intents**: 原子持久化一批 intent 的 MCP 新建/upsert 工具(`mcp__c3__save_intents`)。每项可选 `status: 'todo'` 激活 draft/cancelled 与可选 `automate`;非法状态、自动执行组合或批内任一错误使整批零写入。交互式调用的授权是用户在对话中对完整条目及状态/自动执行变化的明确文字确认,外部 MCP 则以管理员授予该写工具为授权。单项批次可用 `intentSessionId` 回链沟通会话;外部 MCP 剥离它。工具的正文说明以 Why / What / Trade-offs·Non-goals / 可选 When / Acceptance 为软指引。create-only 的 `save_intent_directly` 不含上述状态/自动执行字段,固定新建 `draft + automate=false`。详见[意图管理规格](domains/core/intent-management/intent-management-spec.md)。
-- **工作区记忆 (Workspace memory)**: 工作区级的一条持久结论——用户口头表达过的偏好、验证过一次的项目约束、稳定事实或踩过的坑,即仓库自身无法自证、也不适合写进 `CLAUDE.md` 的那部分知识。结构化(封闭的 `type` + `title` + `content` + 可空 `subject`)、有界、可撤销;身份是 `(workspace name, 归一化 title)`,同名写入原地覆盖。它是**结论**的存储,不是转录的存储:代码、命令、提示词、工具输入输出与对话原文在写入路径被拒绝。参见[记忆域](domains/core/memory/memory-overview.md)与 ADR-0045。
-- **memory_search / memory_write**: work session 的两个记忆 MCP 工具(`mcp__c3__memory_search` / `mcp__c3__memory_write`),经既有的 event MCP 回环路由提供给 Claude / Codex / Cursor。检索有「目录」与「字面匹配」两种模式,写入有 `create` / `update` / `delete` 三种操作。工具面由 `sessionKind === 'work'` **正向**选中,因此 intent / spec / spec_review / discussion 会话都拿不到;标准权限门对二者免确认(免确认不等于可用)。
-- **开始工作 (Start work)**: 将一个 `todo` 状态的 intent 转变为一个**后台普通会话**的操作,该会话以可配置的开发技能(系统设置中的 `devSkill`;默认为空 ⇒ 无技能前缀)运行,携带该 intent 的内容,将 intent 置为 `in_progress`,并记录 `lastWorkSessionId` 用于工作会话的反向链接。该运行从不自动完成该 intent。
-- **撰写 spec (Write spec)**: 质量关口动作(`write_spec`),将一个 intent 转变为一份受限的、可评审的 **spec 文档**,位于**固定的、集中式的 spec 根目录**下(`<c3 home>/doc/<project-path-segment>`,按项目隔离,由该项目的所有 worktree 共享),置于按日期组织的 `yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>` 目录中。该 intent 的 `spec_path` 记录**绝对**位置(doc 存在于工作区之外,不提交到 Git)。它会在已配置的 spec 智能体(`specAgentId`)上启动一个**限定写入**的 spec 会话,其写入被限制在 spec 目录内(项目的其余部分只读)——它只写 spec,从不写代码。限定写入的兑现方式按厂商而异:Claude 用路径级的 permission-gateway 写入锁,Codex 用驱动的沙箱边界(读代码的 cwd 之外,specs 根经 `--add-dir` 传入)(RM-R21)。spec 根目录**不可**由用户配置。
-- **Spec document (规范文档)**: 一次变更在开发之前、从某个 intent 撰写而来的单一事实来源。它描述"做什么"和"为什么"(而非实现代码),提炼保留意图的必要信息以便**独立评审**,需通过四个维度的自查:自洽、一致、可验证、可追溯(RM-R21)。
-- **自动提交 lint 自愈 (Auto-commit lint self-heal)**: 当 automation 编排者的 `done` 自动提交被**pre-commit lint 钩子**拒绝时(提交并推送步骤报告了一次提交钩子失败),它不会硬性中止,而是自愈——将失败交给**开发智能体一次**——因为不同项目的 lint 工具链各不相同,不存在通用的修复命令。它恢复同一个工作会话,附上 lint 错误摘要,让智能体修复,然后**一次性**重试提交。任何非 lint 的提交/推送失败,或者 lint 失败在智能体单次尝试后仍未解决,都会硬性中止(RM-A13/RM-A6)。
-- **Intent ledger**: c3 home 目录中用于存放 intent 的本地 SQLite 存储。区别于会话注册表的持久化状态(位于继承的 `.claude` home 下);通过一个跨运行时的 SQLite 驱动适配器访问,该适配器会 fail soft,因此即使它不可用 c3 仍能启动(ADR 0007)。
-- **Streaming input**: SDK 的一种模式,其中 prompt 是一个受控的异步可迭代对象,而非一次性字符串。推送一个轮次会追加到同一个存活的会话中;关闭该流则结束这次 `query`。c3 对**所有**会话都采用这种方式运行(ADR 0008):这使得智能体团队的主进程得以保持存活,使运行途中的模式变更和中断得以生效,并通过在轮次产生结果时关闭流,来为普通会话复现一次性行为。
-- **Agent team**: 一种 Claude Code SDK 编排方式,其中**团队负责人(team lead)**将工作委派给**队友(teammate)**。c3 在运行时检测到团队工具(`TeamCreate`、`SendMessage` 或后台 `Agent`)被使用时予以识别,将该会话升级为**持久会话**(AS-R14、ADR 0008)。**锁定于 Claude**(AS-R21,2026-06-06-006):只有当会话的厂商具备 `streamingPush`(一个进程内运行 `TeamCreate`/`SendMessage` 的常驻负责人)时,该会话才会成为团队——目前只有 Claude 具备;非 Claude 会话永远不会被标记为 `team`。异构队友是一项推迟的能力。
-- **Team lead**: 一个智能体团队的主智能体——c3 拥有的那次 `query()` 运行。在团队会话中,其进程在各轮次之间保持存活(不会在 `result` 时退出)以协调队友;c3 让该运行保持在途,直到用户显式停止它。
-- **Teammate**: 由团队负责人派生的被委派智能体,例如一个以分离方式运行、异步向负责人报告结果的后台 `Agent`(`run_in_background: true`)。杀死负责人进程会使队友成为孤儿——这正是负责人必须保持存活的原因(ADR 0008)。
-- **Persistent session**: 运行在各轮次之间保持在途、而非每轮结束就终止的会话。目前只有 `team` 会话如此:负责人进程在各轮次之间存活,状态保持在 `team`(而非 `idle`),仅在用户显式停止(`stop_run` / `delete_session` / `remove_workspace`)时结束。
-- **team_upgraded**: 标记某会话升级为持久智能体团队的一次性服务端→客户端事件(以及 `SessionStatus` 的 `team` 值)。记录在会话缓冲区中,以便重连回放时能显示它;驱动团队徽标和始终启用的输入框。
-- **AgentDriver**: 某厂商中立的生命周期 + 流式接口:启动一次运行会得到一个句柄,暴露其会话 id、一个规范化的消息流,以及一个必须具备的中止控制,再加上按能力门控的可选控制。是对 Claude 运行循环的一般化(ADR-0011)。
-- **AdapterCapabilities**: 某厂商可选/可降级能力的探测台账,分两部分(ADR-0011,2026-06-07 修订):**(a)** 恰好八个**布尔型**在途运行标志:`interrupt`、`setActionMode`、`streamingPush`、`inProcessMcp`、`forkSession`、`perToolApproval`、`taskStore`、`nativeUserInput`;**(b)** 针对会话生命周期操作(`list` / `read` / `resume` / `rename` / `delete`)的结构化能力子台账,每项是一个四态能力状态(`'none'` / `'partial'` / `'full'` / `'temporarily-unavailable'`)——布尔值无法区分 `none`(结构性地不支持)与 `temporarily-unavailable`(机制存在,只是当前不可达),而这一区分正是 UI 需要渲染出来的。必备能力不携带标志。上层在使用某个存在分歧的控制之前先探测一个标志(以及方法是否存在),在缺失时降级;会话子台账的状态按状态驱动行操作的门控,做到**零 `if (vendor === …)`**(ADR-0011)。
-- **Canonical message**: 跨厂商的消息信封(ADR-0011,依据 010 号 diff):`vendor` 标签 + `sessionId`(必有) + 精简后的 `role`/`blocks`/`ts`/`turnId?` + 两级 `vendorExtra` 溢出区。块采用"有则更新、无则追加"(append-with-upsert);一次工具调用的返回值被**内嵌**在其 `tool_use` 块上,而非作为独立的块。在 ADR-0013 中被**提升到 wire 层**(与 SDK 无关)——wire 只新增了一个 `vendor` 维度,绝不会新增按厂商区分的 schema。
-- **ActionMode × ToolGate (neutral permission grid)**: 取代 Claude 五路 `PermissionMode` 的双轴方案(ADR-0011):`ActionMode{plan,build}`(这次运行可以做什么)× `ToolGate{always-ask, on-sensitive, trusted-prefix, never-ask}`(工具如何被门控)。每个适配器都声明一个 VendorModeCatalog,将其原生模式 token 翻译为这个网格——一个正向映射(token → grid)和一个反向的、有损的映射(grid → token)。中立策略将一次工具调用(名称 + 输入 + 上下文)解析为 allow / ask / deny。在 2026-06-07-012 中被提升为共享 wire 契约中的唯一事实来源。
-- **Vendor executable resolver**: 与厂商无关的启动器:它将某个厂商解析为一个可执行文件路径,外加来源/健康状况(`env-override`、`managed`、`host-path-fallback`、`missing`、`install-failed`、`override-invalid`)。优先级为:显式环境变量覆盖 → c3 在 `~/.c3/vendor` 下托管的 CLI → 降级的主机 PATH 后备。它是**第一道能力门**——一个无法解析的可执行文件会在触及任何适配器或能力之前就短路(ADR-0012)。
-- **Adapter registry**: 将每个已实现的厂商映射到其工厂,并将厂商可执行文件解析结果拆分为可用集合/缺失集合。在构造每个适配器**之前**进行探测;无法解析的可执行文件会落入缺失集合,并带有来源感知的失败信息,且永远不会被构建。可用集合是内核判定可用智能体类型的唯一事实来源,在启动时被记录日志(ADR-0012)。
-- **AdapterCapability (wire capability set)**: 面向 wire 的能力名称集合(ADR-0013),命名了八个可选/可降级能力:`interrupt`/`setActionMode`/`streamingPush`/`inProcessMcp`/`forkSession`/`perToolApproval`/`taskStore`/`nativeUserInput`。内核的布尔能力台账正是以这些名称为键;一个编译期断言将两者锁定,使其不会产生偏差。
-- **Block upsert (two-form)**: 使两种厂商消息形式得以共享一个模型的规则(ADR-0013):块以 `(sessionId, block.id)` 为键并被 **upsert**(而非只追加)。Claude 的整消息帧与 Codex 的增量更新帧都收敛为"原地修订,而不是堆叠"(Cursor 的增量帧由其适配器先累积成整段再发出,线上即整块);一次工具调用的返回值会单调地回填其 `tool_use` 块。由规范化累加器的 block-upsert 步骤实现。
-- **c3SessionId**: 不透明的、与厂商无关的会话句柄(`"c3s_" + sha256(vendor \0 vendorSessionId)[:32]`,ADR-0013)——唯一一个跨出内核边界的会话 id。是确定性的(无需持久化),且既不包含厂商名称、也不以原始 id 作为子串,因此厂商 id 永远不会泄漏进 URL 或存储键。可解析为内核内部保存的 `{ vendor, vendorSessionId }` 引用。
-- **SessionAccessor**: 对各可用厂商原生会话存储的**只读**惰性归一化联合(ADR-0013):列表跨厂商合并(原生 id 隐藏在 `vendorExtra` 中),读取则通过一个惰性构建的 c3 句柄 → 引用索引路由到所属的存储。原生存储始终是事实来源——不做双写;该索引是一个可重建的运行时缓存(存储形态归一、位置不归一)。
-- **Session→agent binding (two-key)**: 记录某会话运行在哪个智能体上的按会话记录,拆分为两个键空间(ADR-0015,agent-config AC-R16):一个可变的**pending intent** 和一个已落定的**session fact**。持久化在注册表状态中(一个 `pending-intents` 空间 + 一个 `session-agents` 空间);解析某会话的智能体时两者都会读取。区别于 c3SessionId / SessionAccessor,后两者关乎读取转录内容。
-- **Pending intent**: 该绑定的可变一半(ADR-0015):`pendingId → { agentId, createdAt }`——一个尚未运行的会话*想要*使用哪个智能体。可编辑/可清除;在首次绑定时被复制为一个 fact 并被丢弃,否则由 janitor 在 7 天后回收。清除/回收一个 intent 绝不会触及 fact 空间,因此不会使某个 fact 成为孤儿。
-- **Session fact / vendor ownership**: 该绑定的已落定一半(ADR-0015):`realId → { agentId, vendor }`——某个真实会话运行所用的智能体,加上其**冻结的厂商**。厂商是不可变的不变量:一个会话的转录内容只存在于该厂商的原生存储中(c3 从不存储会话内容),因此厂商不能变更。同厂商内的智能体更换是允许的(会成功);跨厂商的变更会被拒绝。跨厂商的 Fork / **replay-seed** 仍被推迟(ADR-0011)。
-- **release (build)**: 位于既有构建/二进制原语之上、产出多平台构建产物的薄编排层。它不取代普通的 web/server 构建或单二进制构建;它按顺序编排三个无竞争阶段——阶段 0 web 构建(一次)→ 阶段 1 生成 static embed(一次)→ 阶段 2 并行二进制编译扇出(只读)。参见[发布规格](non-functional/release.md)、ADR-0010。
-- **channel**: 发布产物的命名分发轨道(例如 `stable`、`nightly`)。决定产物命名/后缀以及发布哪个版本。在 release 1/7 中是**占位符**——编排者目前还没有 channel 概念就能构建。
-- **version SoT**: 产物版本及其构建期注入的唯一事实来源(目前是包清单;`--version` 标志报告 `0.1.0`)。统一的 version SoT + git-tag/channel 注入是留给后续发布波次的**占位符**。
-- **update check (更新检查)**: c3 查询 GitHub Releases API(`sequencestream/c3`)判断是否有更早于当前二进制的更新版本可用。这是一个只读的公开查询,不携带任何凭据,也不依赖任何自建服务端。
-- **self-update (自更新)**: c3 把新版发行包下载并校验到暂存区、在管理员确认后替换自身二进制并重启的能力。与 update check 的区别是它会改动安装位置的文件;与 `c3 upgrade` 的区别是它把「让新版本生效」也包含在内。参见 [self-update](domains/core/self-update/self-update-design.md)、ADR-0043。
-- **机器人 (IM robot)**: c3 **部署级**的办公 IM 出入口——一个实例共用一套机器人配置、平台连接与名册,不按工作区分区,也不出现在工作区切换器或会话页。部署级全局只表示管理面跨工作区一致,**不等于**机器人或 IM 用户可以无边界访问 c3 数据:运行目录 `~/.c3/robots/<name>/` 是隔离的工作容器,不是授权范围或默认工作区;连接、`threadKey`、`sessionId` 只表达执行与对话连续性,不得从中推断或缓存工作区/对象/用户权限。涉及 c3 对象的能力必须在每次工具调用时按调用者、对象所属工作区与会话可见范围重新求交。否决「每个工作区配置一个机器人」以及「为连接或线程固定工作区」——线程级绑定会把一次上下文选择变成后续调用的隐形授权。能力上限按 L0–L3 约束(L0 受控播报 / L1 只读问答 / L2 定向作答 / L3 仅返回 Web 深链),该分级是后续设计天花板而非当前启用状态;外发只走唯一出站守卫。参见 [im-robot](domains/core/im-robot/im-robot-overview.md)、ADR-0046。
+- **c3**：Code Creative Center。通过浏览器集中驱动多个 AI 编码智能体，并对其工具调用进行门控的工作台。
+- **Agent run**：一次用户提示驱动的单次智能体运行，流式给出文本、工具活动与权限请求，直至完成或出错。见 [agent-session](domains/core/agent-session/agent-session-overview.md)。
+- **Permission decision**：用户对权限请求的应答：允许或拒绝。见 [permission-gateway](domains/core/permission-gateway/permission-gateway-overview.md)。
+- **Permission mode**：该会话上工具调用的策略，按会话持久化。厂商原生模式经目录解释为中立网格；网格见 [agent-session 规格](domains/core/agent-session/agent-session-spec.md)。
+- **Sensitive tool**：当前模式下须经审批才可执行的工具；只读工具自动放行。见 [permission-gateway](domains/core/permission-gateway/permission-gateway-overview.md)。
+- **Wire protocol**：浏览器与服务端在 `/ws` 上交换的 JSON 消息契约。见 [WebSocket 协议](shared/api-conventions/websocket-protocol.md)。
+- **Authentication（认证）**：允许连接驱动智能体之前，确认它是谁。是否启用由使用者决定。见 [认证域](domains/core/auth/auth-overview.md)。
+- **Workspace / workspace name（工作区 / 工作区名称）**：已注册的工作区；名称是全局唯一且不可变的身份。协议与台账用名称关联，磁盘路径只表示位置。见 [session-registry](domains/core/session-registry/session-registry-overview.md)。
+- **Session**：工作区内一次由厂商支撑的对话。执行由进程级 Session Runtime 拥有；连接一次只查看一个会话。运行不绑定连接（[ADR 0006](architecture/adr/0006-decouple-runs-from-connections.md)）。
+- **Session Runtime**：进程级的会话运行所有者。跨连接共享；切换查看或断连后仍存活。见 [agent-session](domains/core/agent-session/agent-session-overview.md)。
+- **Viewed session**：某连接当前查看的唯一会话。该连接的下一 prompt 针对它；切换查看不停止前一会话的运行。
+- **SessionKind**：一次运行的**业务场景**（由哪种场景产生）。种类清单见 [session-registry](domains/core/session-registry/session-registry-spec.md) 与 [agent-session](domains/core/agent-session/agent-session-spec.md)。
+- **RunKind**：一次运行的**执行形态**（如何执行），与 SessionKind 正交。种类清单同上。
+- **turn_end**：一次 prompt→result 轮次的终止性服务端事件。不结束会话。见 [agent-session 规格](domains/core/agent-session/agent-session-spec.md)。
+- **Vendor CLI**：各厂商用来运行智能体的宿主可执行文件。解析不到则该厂商不可用。见 [agent-sdk](architecture/agent-sdk.md)、[ADR-0012](architecture/adr/0012-host-binary-probe-first-capability-gate.md)。
+- **Streaming input**：把 prompt 作为持续输入推入存活会话，而非一次性字符串。见 [agent-session 规格](domains/core/agent-session/agent-session-spec.md)、[ADR-0008](architecture/adr/0008-streaming-input-for-agent-teams.md)。
+- **Agent team**：团队负责人将工作委派给队友的编排；识别后该会话在轮次之间保持存活。见同上。
+- **Team lead**：智能体团队的主智能体。其进程在各轮次之间保持存活以协调队友，直至用户显式停止。
+- **Pending intent**：尚未运行的会话想要使用的智能体，可改可清（[ADR-0015](architecture/adr/0015-session-agent-binding-vendor-ownership.md)）。
+- **Session fact / vendor freeze**：已落定的会话所用智能体及其冻结厂商。厂商不可变：转录只存在于该厂商原生存储（[ADR-0015](architecture/adr/0015-session-agent-binding-vendor-ownership.md)）。
+- **Intent（意图）**：项目范围内一条持久的工作单元。见 [意图管理](domains/core/intent-management/intent-management-overview.md)。
+- **Workspace memory（工作区记忆）**：工作区级持久结论——仓库无法自证、也不适合写进仓库文档的偏好与约束。见 [记忆域](domains/core/memory/memory-overview.md)。
+- **Spec document（规范文档）**：开发之前从某个 intent 撰写、供独立评审的规格。见 [意图管理](domains/core/intent-management/intent-management-overview.md)。
+- **release**：多平台产物的编排与公开分发。二进制名为 `c3` / `c3.exe`。见 [发布规格](non-functional/release.md)。
+- **self-update（自更新）**：把新版发行包校验到暂存，管理员确认后替换自身并重启。见 [self-update](domains/core/self-update/self-update-overview.md)。
+
+## 机器人
+
+- **机器人**：c3 部署级的办公 IM 出入口。实例共用一套配置与名册，不按工作区分区；管理面跨工作区一致，不等于 IM 侧可无边界访问数据。见 [im-robot](domains/core/im-robot/im-robot-overview.md)。

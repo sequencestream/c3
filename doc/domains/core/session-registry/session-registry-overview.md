@@ -1,16 +1,16 @@
-# session-registry — 域概览
+# Domain: session-registry
 
-| 字段 | 值                                                            |
-| ---- | ------------------------------------------------------------- |
-| 职责 | 管理工作区与统一的厂商会话列表投影;拥有每会话的模式与访问顺序 |
-| API  | WebSocket `/ws`(见共享协议)                                   |
-| 状态 | active                                                        |
+- **Group:** core
+- **One-line:** 工作区与会话目录：不可变身份、最近访问、每会话模式，以及从厂商原生存储回放历史。
+- **Owner:** maintainer
+- **Status:** active
+- **Depends on:** 厂商原生存储（转录事实来源）；[agent-session](../agent-session/agent-session-spec.md)（runtime、回放缓冲）；[agent-config](../../settings/agent-config/agent-config-spec.md)（绑定与厂商冻结）。
+- **Depended on by:** [web-console](../web-console/web-console-spec.md)（侧边栏）；[files](../files/files-spec.md)（工作区根）；agent-session（工作目录 / 模式 / resume）；intent-management、automations、memory、delivery（工作区身份）。
+- **exposes-api:** true — WebSocket `/ws`。消息形状在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中定义。
+- **ADRs:** [0004](../../../architecture/adr/0004-persist-workspace-session-registry.md) 持久化目录、[0006](../../../architecture/adr/0006-decouple-runs-from-connections.md) 查看不是所有权、[0013](../../../architecture/adr/0013-canonical-envelope-on-wire-c3-session-namespace.md) 原生存储为转录真源、[0015](../../../architecture/adr/0015-session-agent-binding-vendor-ownership.md) 绑定冻结厂商、[0042](../../../architecture/adr/0042-configuration-in-database.md) 实例库为配置真源
 
-session-registry 是侧边栏背后的记账层。它把项目目录注册为**工作区(workspace)**,
-从可重建的 `session_metadata` 投影(以厂商存储作为校验/重建来源)中列出每个工作区的**会话(session)**,
-跟踪哪个会话处于**活跃(active)**状态,并记忆每个会话的权限**模式(mode)**以及每个工作区跨重启的最近访问顺序。
+## Index
 
-它不运行智能体(那是 [agent-session](../agent-session/agent-session-overview.md) 的职责),
-也不渲染侧边栏(那是 [web-console](../web-console/web-console-overview.md) 的职责)。
-
-见 [session-registry-spec.md](session-registry-spec.md)、[session-registry-models.md](session-registry-models.md)、[session-registry-design.md](session-registry-design.md)。
+- [session-registry-spec.md](session-registry-spec.md) — 工作区身份、会话目录、最近访问、模式记忆、回放归属、种类与分页
+- [session-registry-design.md](session-registry-design.md) — 与运行时、控制台、文件域的协作；投影相对原生存储的取舍
+- [session-registry-models.md](session-registry-models.md) — Workspace / Session

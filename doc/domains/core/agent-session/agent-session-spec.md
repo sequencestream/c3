@@ -2,261 +2,123 @@
 
 ## Overview
 
-一个 agent session 把用户 prompt 转变为一次由 vendor adapter 驱动的智能体运行,流式传输该
-运行的活动,通过 [permission-gateway](../permission-gateway/permission-gateway-spec.md) 执行该
-vendor 支持的工具门控,并让用户通过可用的权限模式和运行控制来引导这次运行。
+一个 agent session 把用户 prompt 变成一次由 vendor adapter 驱动的智能体运行:流式给出活动,按该 vendor 的能力把敏感工具交给 [permission-gateway](../permission-gateway/permission-gateway-spec.md),并用权限模式与运行控制引导这次运行。
 
-一次运行**并不**绑定于启动它的浏览器连接。每个会话都有一个
-进程范围的 **Session Runtime** 拥有其运行;连接只是对某个
-会话的一个**视图**(它当前观察的是哪个)。切换视图或关闭 socket 从不会停止
-运行——它会在后台继续进行,而一个返回的视图会回放已发生的一切
-(ADR 0006)。不同的会话**并发**运行,没有固定上限;单个会话是
-**串行的**(一次一个 turn)——但持久化的 **agent team** 会话除外,其中 lead
-进程在各 turn 之间保持存活,用户可以向其中继续推入更多 turn(AS-R13/R14)。
+运行不绑定启动它的浏览器连接。每个会话有一个进程范围的 **Session Runtime**;连接只是当前观察哪个会话的**视图**。切换视图或关闭 socket 不会停止运行,返回的视图回放已发生的一切([ADR 0006](../../../architecture/adr/0006-decouple-runs-from-connections.md))。不同会话并发、无固定上限;单个会话串行(一次一个 turn)——持久化的 **agent team** 除外,其 lead 在 turn 之间保持存活,用户可继续推入 turn。
 
-Claude 运行以**流式输入模式**(一个受控的 async-iterable prompt)驱动 SDK,
-而非一次性字符串。一个普通 Claude 会话在 `result` 上通过关闭流来结束每个 turn 的
-底层进程;一个 Claude team 会话则保持流打开,使 lead 进程比该 turn 存活得更久
-(ADR 0008)。其他 vendor 由各自 adapter 按能力台账实现运行与续接,上层生命周期保持一致。
+运行的工作目录、起始权限模式与 resume id 由 runtime 持有,由 [session-registry](../session-registry/session-registry-spec.md) 播种。
 
-运行的上下文——工作目录(`cwd`)、起始权限模式、以及 `resume`
-session id——来自 runtime,由
-[session-registry](../session-registry/session-registry-spec.md) 播种。
+**范围:** 运行生命周期、后台执行与回放、权限模式契约、会话连续性、agent-team、实时状态、把厂商消息译为线事件的规则。**边界:** 不决定个别权限(gateway)、不管理工作区/会话目录(session-registry)、不渲染 UI(web-console)。
 
-**范围:** 运行生命周期(开始、流式传输、结束、停止)、后台执行与回放缓冲、
-权限模式策略、会话连续性(`resume`)、持久化 agent-team 会话、实时
-状态、以及把 SDK 消息忠实映射为线事件。**边界:** 不决定个别权限
-(gateway)、不管理工作区/会话注册表(session-registry)、不渲染 UI
-(web-console)。
-
-## Core entities
-
-- **Session Runtime**: 进程范围内某个会话执行的所有者:其运行、用于回放的 `baseline + buffer`、当前 viewers、以及状态
-- **Agent Run**: 由一个用户 prompt 驱动的一次 vendor 运行
-- **Run Handle**: 对进行中运行的实时控制:设置权限模式,以及把下一个用户 turn 推入实时 team 会话
-- **Connection View**: 一个 WebSocket 连接对其当前观察会话的订阅(分发实时事件;加入时回放)
-
-见 [agent-session-models.md](agent-session-models.md)。
+实体见 [agent-session-models.md](agent-session-models.md)。
 
 ## Business rules
 
-- **AS-R1**: 一个 `user_prompt` 会针对所观察会话的 runtime 启动一次新的 Agent Run,带上该会话的 `cwd`、权限模式,以及(对既有会话而言)`resume` id。该 prompt 会作为 `user_text` 回显到流中,以便每个 viewer(以及切回后的回放)都能看到它。**该回显只携带可见的 turn 内容**——用户自己的输入加上提供给模型的业务上下文(intent body、spec body、依赖说明、spec-path 说明)。任何为受 preset 约束的会话注入的**内部系统指令**(intent analyst 角色、spec-authoring 契约、work-session instruct)是通过其系统上下文送达模型的,而非通过此回显,因此它从不作为可见聊天消息渲染,也不会读起来像是用户输入的(见 intent-management 内部/可见边界,RM-R25)。一个 slash-command development skill 是唯一必须随模型的用户 turn 展开的内部载体;它仍然被排除在 `user_text` 回显之外。
-- **AS-R2**: 一个会话是**串行的**:每个会话最多一个 Agent Run 在进行中。若某会话的 turn 已在进行中,针对该会话的 `user_prompt` 会以 `error` 被拒绝且不启动任何东西。不同会话**并发**运行,没有固定上限。
-- **AS-R3**: 权限模式是**按会话**的(由 runtime 拥有,镜像到 session-registry)。运行以该会话的模式启动;`set_mode` 只改变所观察会话的模式。
-- **AS-R10**: 一次运行会报告其 SDK session id(来自 `init` 消息),使 pending 会话绑定到一个真实 id,后续 prompt 通过 `resume` 继续它。绑定会**重新键入** runtime(buffer、viewers、run 随之移动);一个恢复的运行保持同一个 id。在同一时刻,session→agent 事实被冻结到运行该会话的 agent 上,把其**vendor** 固定住直到该会话结束(agent-config AC-R16, ADR-0015)——这里之所以相关,是因为一个会话的转录只存在于该 vendor 自己的原生存储中,所以 vendor 之后永远不能改变。
-- **AS-R4**: 若所观察会话有一个进行中的运行,`set_mode` 会立即应用于它;否则会在该会话的下一次运行时生效。变更以 `mode_changed` 确认。
-- **AS-R5**: 模式决定哪些工具调用是敏感的,从而抵达 gateway。`bypassPermissions` 授权所有工具自动执行;`acceptEdits` 自动接受 edit 类工具;`default`/`auto`/`plan` 按 SDK 分类器把敏感调用路由给 gateway。
-- **AS-R6**: 一次运行只能被 `stop_run`(所观察会话)、`delete_session` 或 `remove_workspace` 停止——从不因切换视图或关闭 socket 而停止。停止会中断底层的 `query()`;一个已完成或尚未开始流式传输的运行会被无害地中断。
-- **AS-R7**: 一次运行以恰好一个终止性结果结束:`turn_end` 带 `reason: 'complete'`(SDK 产生了一个 result,或运行被停止)或 `reason: 'error'`(一个异常)。`turn_end` 从不意味着会话结束——它仍为下一个 prompt 保持存活。
-- **AS-R8**: 关闭连接只会取消订阅其视图;运行会**在其 runtime 中于后台继续**。重新连接并选择该会话会回放完整记录并恢复实时投递。公开选择使用稳定 `c3SessionId` 时,服务端必须把它解析到厂商原生 runtime id 后回放 buffer 并挂接 viewer,同时在 `session_selected` 中保持原 `c3SessionId`;不得以公开 id 另建一个与正在运行的原生 runtime 分离的冷会话。
-- **AS-R9**: 只有模型的文本 block、tool-use block 和 tool-result block 会被映射到线协议;其他 SDK 消息种类被忽略。
-- **AS-R11**: 每个实时事件都记录在 runtime 中:追加到其 `buffer` 并通过 `emit` 分发给当前的 viewers。一个加入某会话的视图会先回放 `baseline`(runtime 创建时的磁盘快照)再回放 `buffer`,因此完整记录被重建,且没有重复。
-- **AS-R12**: 每个 runtime 都有一个状态——`idle`、`running`、`awaiting_permission`、`team` 或 `reconnecting`。任何变更都会向**所有**连接广播 `session_status`,以便后台化的会话能显示其状态。
-- **AS-R13**: 每次运行都以**流式输入模式**驱动 SDK:该 prompt 是一个用用户第一个 turn 播种的受控 async-iterable,而不是一次性字符串。这使 SDK 控制通道保持存活(以便 `set_mode`/stop 真正抵达运行),并让一个 turn 的进程能比单次 `result` 存活更久(ADR 0008)。
-- **AS-R14**: 一次运行在运行时被识别为持久化的 **agent team**:当第一个**team 工具**被使用时,runtime 被标记为 `team` 一次,并发出 `team_upgraded`。team 工具是 `TeamCreate`、`SendMessage`,或一个后台 `Agent`(`run_in_background === true`);前台 `Agent` **不是**(它在该 turn 内完成)。检测发生在该 turn 的 `result` 之前。
-- **AS-R15**: 在 `result` 上,运行发出 `turn_end { reason: 'complete' }`。一个**非 team**运行随后关闭其输入流——底层进程退出,下一个 prompt 恢复一个全新进程(一次性行为)。一个 **team** 运行保持其输入打开:lead 进程在各 turn 之间保持存活以协调队友,因此运行仍处于进行中(状态为 `team`,而非 `idle`)。
-- **AS-R16**: 一个 team 会话**只有**在用户明确停止它时(`stop_run` / `delete_session` / `remove_workspace`)才会结束:中止会关闭输入流,这是关闭一个 team 流的唯一方式(它从不自动关闭)。没有自动的 team 拆除检测——"team lead 已完成" 被等同于用户明确停止。
-- **AS-R17**: 当一个会话处于 `team` 状态时,一个 `user_prompt` 既**不**被拒绝,也**不**启动第二个运行;它会作为 `user_text` 回显,并作为下一个用户 turn 推入实时的 lead 会话(不 `resume`,不新建进程)。即使 lead 正在 turn 中途,用户也可以发送——SDK 会把它排队。(对非 team 会话,AS-R2 仍然成立。)
-- **AS-R18**: 一个**普通**用户会话的 turn 若以 `socket connection was closed unexpectedly` 失败(一个窄的分类器,与降级链分类器**分离**——一次 socket disconnect 从不进入降级候选集合),会在一个 3–5 秒的有界退避之后,把**同一个**运行自动 `resume` **一次**,`resume` 到同一个运行 id,以保留完整上下文(从不新建会话)。该重试**被限定为每个 turn 一次**;在退避期间状态保持在 `reconnecting`。若 resume 成功,该 turn 的 `turn_end` 会携带 `reconnect_attempted: true`(以及 `retry_count`)。若自动 resume 被拒绝(AS-R19)、被禁用(自动 resume 设置关闭)、没有真实 session id、该会话是 team/intent,或单次重试已被用掉,该 turn 以 `turn_end { reason: 'error' }` 结束(携带原始错误和门控结论)并结算到 `idle`——用户手动继续(一个普通的 `user_prompt` 会恢复同一会话)。从不静默挂起(AVAIL-1/AVAIL-7)。
-- **AS-R20**: **Keepalive 环境注入**(socket-disconnect 的*预防*层——与 AS-R18/R19 的恢复层配对)。每个由某次运行派生的 Claude Code 子进程都会得到一组固定的传输韧性环境变量——`CLAUDE_CODE_REMOTE_SEND_KEEPALIVES=true`、`BUN_CONFIG_HTTP_IDLE_TIMEOUT`、`BUN_CONFIG_HTTP_RETRY_COUNT`——用以从源头降低 `socket connection was closed unexpectedly` 的*发生率*。它们以**最低优先级**注入:用户(shell 环境)或活跃 agent(其 env 覆盖)显式设置的同名值总是优先(用户优先)。它们即使对系统 agent(没有覆盖)也适用。与自动 resume 解耦——只改变子进程 env,从不改变 resume/gate 逻辑。
-- **AS-R19**: **工具副作用门控**(自动 resume 的守卫):从 SDK 消息流中,c3 通过配对 `tool_use`↔`tool_result` 来推断 turn 中途的状态。若在断线时刻,一个**side-effect-class** 的 `tool_use` 仍处于打开状态(尚无 `tool_result`),则 `side_effect_pending` 为 true,自动 resume 被**拒绝**(一次写入可能已半途应用)。该分类是**保守的**:只有 `Read/Grep/Glob/LS/NotebookRead/WebFetch/WebSearch/TaskCreate/TaskList/TaskUpdate/TaskGet/AskUserQuestion` 是无副作用的;**其他所有**——`Write/Edit/MultiEdit/NotebookEdit/Bash` 以及任何未知/MCP 工具——都算作 side-effect 工具。这个偏向是刻意的:宁可错过一次自动 resume(回落到手动继续),也不要在一次可能的写入之后错误地自动 resume。
-- **AS-R22**: **降级链是同厂商的**。fallback 链只保留与该会话当前 agent(attempt 0)**相同厂商**的链上 agent;不同厂商的条目会被**跳过**,从不被启动。跨厂商降级无法携带上下文(一个 Claude 会话不能 `resume` 到 Codex——SDK 会报错),否则运行循环会在 Claude CLI 下启动错误的厂商。同厂商降级不受影响(`sonnet → haiku` 的 fallback 会打开一个全新的同厂商会话;降级从不 resume,无论如何——每次尝试都是一个全新的 SDK 会话)。被跳过的条目会被记录,并在链耗尽时通过 `all_agents_failed` 呈现,使控制台能如实说明跨厂商候选无法(也未曾)被尝试。**已推迟:** 通过一条**重放种子路径**在厂商间携带上下文——用规范转录作为 prompt 播种一个新的目标厂商会话,UI 标记该上下文为不连续的——已经规格化,但尚未构建(SDK 层面的 resume 屏障使无缝交接不可能;等真正的需求出现再构建)。
-- **AS-R23**: **手动同厂商 agent 切换**。当当前 agent 无法工作(token 耗尽 / 被限流 / 宿主二进制抖动)时,用户可以通过标题栏切换器把会话重新指向另一个**同厂商** agent(`set_session_agent` 改写 session→agent 事实),而不丢失上下文。这是 AS-R22 的手动版本:它从**相同**的同厂商规则中解析候选(该规则由降级链和共识投票者共享),因此切换器只提供同厂商、宿主二进制存在、已启用的对等 agent——跨厂商变更会被拒绝(`session_agent_changed` 报告失败,事实不变;vendor 被冻结,AC-R17)。该切换只改写事实;它**不**重新启动——会话的下一个 `user_prompt` 会用新 agent 通过不变的启动路径恢复同一次运行(一个真实 id ⇒ `resume` 到同一个运行 id,AS-R1)。审计跟随最后一个有效的 agent(被改写的事实)。候选集合 + 一个当前不可用标记会搭载在 selection reply 的 agent-switch 数据中(仅在存在真实、非 comm 会话且有可行动内容可提供时才出现)。
-- **AS-R25**: **降级链在内核事件总线上被事件化**(ADR-0018)。在三个节点,launcher 会在内核事件总线上发布一个 **bypass** 事件,_在_——而不是替代——既有控制流和线帧*之外*:一个 **agent-error** 事件(单个 agent 失败;在可降级错误的收集点发布,携带会话/工作区/agent 身份、错误,以及一个可降级标记)、一个 **agent-fallback** 事件(前进到链上下一个 agent;在 fallback 步骤发布,携带 from/to agent id 和名称),以及一个 **agent-all-failed** 事件(链耗尽;与线上的 `all_agents_failed` 一起发布,携带失败列表 + 任何被跳过的跨厂商条目)。这使得除了硬编码的"切到下一个 agent" 之外的动作(触发一次自动化、通知讨论引擎、审计)能够以订阅方式挂在 agent 失败上,在注册时配置,无需改动 launcher。降级链**零行为变化**:线上的 `agent_failed`(仍只在一次全新的 fallback 前进时发出)/`all_agents_failed` 帧、resume-决策状态机,以及候选集合构建器都未被触及(它们的契约测试保持绿色)。订阅者的抛出被总线隔离(同步、每处理器 try/catch——ADR-0018),因此它们永远不会抵达运行循环。可降级标记目前始终为 true(只有可降级错误路径被事件化;一次不可降级的基础设施抛出仍走既有的 catch 路径,尚未被事件化——该标记为此扩展保留)。发布调用点是薄薄的一行代码,建立在纯 payload 构建器之上,像 resume 决策 / 候选集合构建器一样有单元测试覆盖。
+- **AS-R1**: `user_prompt` 针对所观察会话的 runtime 启动一次 Agent Run,带上该会话的工作目录、权限模式,以及对既有会话的 resume id。prompt 作为 `user_text` 回显,供所有 viewer 与回放看见。回显只含可见 turn 内容(用户输入与交给模型的业务上下文);内部系统指令走系统上下文,不进回显。slash-command 开发技能是唯一必须随模型用户 turn 展开的内部载体,同样排除在回显之外。
+- **AS-R2**: 会话串行:每个会话最多一个进行中的 Agent Run。turn 进行中时,针对该会话的 `user_prompt` 以 `error` 拒绝且不启动任何东西。不同会话并发,无固定上限。
+- **AS-R3**: 权限模式按会话(runtime 拥有,镜像到 session-registry)。运行以该会话的模式启动;`set_mode` 只改变所观察会话的模式。
+- **AS-R4**: `set_mode` 更新该会话记住的模式,并以 `mode_changed` 确认。若厂商支持运行中途改模式且有在途运行,立即应用到该 run;否则下次运行才生效。
+- **AS-R5**: 模式(经目录落到网格)决定哪些工具调用敏感从而抵达 gateway。全自动执行授权所有工具;自动接受编辑只覆盖 edit 类;其余按该厂商分类器把敏感调用交给 gateway。不具备逐工具审批的厂商把门控落在启动策略上,回合内不再询问。
+- **AS-R6**: 运行只能被 `stop_run`(所观察会话)、`delete_session` 或 `remove_workspace` 停止,从不因切换视图或关闭 socket 而停止。已结束或尚未开始流式传输的运行,中止是无害的。
+- **AS-R7**: 一次运行以恰好一个终止性 `turn_end` 结束:`reason: 'complete'`(厂商给出结果,或运行被停止)或 `reason: 'error'`。`turn_end` 不结束会话。
+- **AS-R8**: 关闭连接只取消该视图的订阅;运行在 runtime 中于后台继续。重连并选择该会话则回放完整记录并恢复实时投递。以稳定 `c3SessionId` 选择时,必须解析到厂商原生 runtime 再回放并挂接 viewer,`session_selected` 仍携带原 `c3SessionId`;不得用公开 id 另建一个与在跑 runtime 分离的冷会话。
+- **AS-R9**: 只有模型文本、tool-use 与 tool-result 映射到线协议;其余厂商消息种类忽略。整 turn 只有思考、没有任何可见文本或工具时,在 `turn_end` 之前发一条 `notice`,以免看起来像卡住。
+- **AS-R10**: 运行报告厂商 session id,使 pending 会话绑定到真实 id,后续 prompt 经 resume 继续。绑定重新键入 runtime(buffer、viewers、run 随之移动);恢复的运行保持同一 id。绑定同时冻结 session→agent 的 **vendor**(agent-config AC-R16,[ADR 0015](../../../architecture/adr/0015-session-agent-binding-vendor-ownership.md)):转录只存在于该厂商原生存储,vendor 之后不能改。
+- **AS-R11**: 每个实时事件追加到 runtime 的 buffer,并分发给当前 viewers。加入的视图先回放 baseline(创建时的磁盘快照)再回放 buffer,完整且不重复。
+- **AS-R12**: runtime 状态为 `idle`、`running`、`awaiting_permission`、`team` 或 `reconnecting`。任何变更向所有连接广播 `session_status`。
+- **AS-R13**: 需要运行中途控制(改模式、中止)或让进程比单次结果活得更久的运行,以**流式输入**驱动,而不是一次性字符串([ADR 0008](../../../architecture/adr/0008-streaming-input-for-agent-teams.md))。
+- **AS-R14**: 当第一个 **team 工具**被使用时,runtime 标记为 `team` 一次,并发出 `team_upgraded`。team 工具是 `TeamCreate`、`SendMessage`,或后台 `Agent`;前台 `Agent` 不是。检测发生在该 turn 的结果之前。
+- **AS-R15**: 结果到达时发出 `turn_end { reason: 'complete' }`。非 team 运行随后结束其输入,底层进程退出,下一 prompt 恢复全新进程。team 运行保持输入打开,lead 在 turn 之间存活,状态保持 `team` 而非 `idle`。
+- **AS-R16**: team 会话只在用户明确停止(`stop_run` / `delete_session` / `remove_workspace`)时结束。没有自动拆除;「lead 已完成」等同于用户停止。
+- **AS-R17**: 会话处于 `team` 时,`user_prompt` 不被拒绝也不启动第二个运行:回显为 `user_text`,并作为下一用户 turn 推入存活的 lead(不 resume、不新建进程)。非 team 会话仍遵守 AS-R2。
+- **AS-R18**: 普通用户会话的 turn 若因传输层断开失败,且与降级链分类分离(一次断线从不进入降级候选),则在有界退避后对**同一个**运行自动 resume **一次**,以保留上下文。退避期间状态为 `reconnecting`。成功则该 `turn_end` 携带 `reconnect_attempted`。被拒绝(AS-R19)、被设置关闭、没有真实 session id、会话是 team/intent、或该 turn 已用过一次时,以 `turn_end { reason: 'error' }` 结束并回到 `idle`,由用户手动继续。从不静默挂起。
+- **AS-R19**: 自动 resume 的守卫是工具副作用:断线时若仍有未闭合的 side-effect 类 `tool_use`,则 `side_effect_pending` 为真,自动 resume 拒绝。分类保守——明确的只读/检索/问答视为无副作用;写入、执行、未知与 MCP 一律视为有副作用。宁可错过自动 resume,也不在可能的写入之后自动续跑。
+- **AS-R20**: Claude 子进程获得一组最低优先级的传输 keepalive 默认值,以降低断线发生率;用户或 agent 显式环境覆盖优先。这与自动 resume 解耦,不改变 resume/门控逻辑。
+- **AS-R21**: 只有具备流式推入能力的厂商才能成为 agent-team lead;目前只有 Claude。非 Claude 会话不会被标为 `team`。
+- **AS-R22**: 降级链只保留与当前 agent **相同厂商**的条目;跨厂商条目跳过、从不启动。同厂商降级每次尝试都是全新会话,从不 resume。被跳过的条目在链耗尽时经 `all_agents_failed` 呈现。
+- **AS-R23**: 用户可以把会话改绑到另一个**同厂商** agent(`set_session_agent`),不丢上下文。候选与降级链、共识投票者共用同一条同厂商规则;跨厂商拒绝,事实不变。切换只改绑定,不立即重跑——下一 `user_prompt` 用新 agent resume 同一次运行。
+- **AS-R25**: 降级链在内核事件总线上发布 `agent-error` / `agent-fallback` / `agent-all-failed`,供其他域订阅,不取代线上的 `agent_failed` / `all_agents_failed` 与运行循环([ADR 0018](../../../architecture/adr/0018-event-bus-kernel-layer.md))。
 
-## States & transitions
+## States
 
-### Session Runtime status(进程范围,按会话)
+### Session Runtime(进程范围,按会话)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle: runtime created (create/select)
+    [*] --> Idle: runtime created
     Idle --> Running: user_prompt
     Running --> AwaitingPermission: permission_request
     AwaitingPermission --> Running: decision resolved
-    Running --> Idle: turn_end (complete/error) or stop_run
+    Running --> Idle: turn_end or stop_run
     AwaitingPermission --> Idle: stop_run
-    Running --> Reconnecting: socket disconnect, gate clear (AS-R18/R19)
-    Reconnecting --> Running: single auto-resume (resume: runId, backoff elapsed)
+    Running --> Reconnecting: socket disconnect, gate clear
+    Reconnecting --> Running: single auto-resume
     Reconnecting --> Idle: stop_run during backoff
-    Running --> Idle: socket disconnect refused/exhausted ⇒ turn_end error (AS-R18)
-    Running --> Team: team tool used (team_upgraded)
-    Team --> Team: turn_end (lead turn done; process stays alive) / user_prompt (push)
+    Running --> Idle: auto-resume refused or exhausted
+    Running --> Team: team tool used
+    Team --> Team: turn_end / user_prompt push
     Team --> Running: user_prompt resumes a lead turn
     Team --> AwaitingPermission: permission_request
-    Team --> Idle: stop_run (only)
+    Team --> Idle: stop_run only
     Idle --> [*]: delete_session / remove_workspace
 ```
 
-切换视图和关闭连接**不会**改变 runtime 状态——运行会在后台继续
-运行(AS-R8)。状态变更会广播 `session_status`(AS-R12)。`Team`
-状态使 lead 进程在各 turn 之间保持存活;它只有在用户明确
-停止时才回到 `Idle`(AS-R15/R16)。
+切换视图和关闭连接不改变 runtime 状态。
 
 ### Connection View
 
 ```mermaid
 stateDiagram-v2
     [*] --> None: connection open
-    None --> Viewing: create_session / select_session (subscribe; replay baseline+buffer)
-    Viewing --> Viewing: select other (unsubscribe old, subscribe new)
-    Viewing --> [*]: connection close (unsubscribe only; run survives)
+    None --> Viewing: create_session / select_session
+    Viewing --> Viewing: select other
+    Viewing --> [*]: connection close
 ```
 
 ### Agent Run
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Streaming: query() created (streaming-input prompt)
+    [*] --> Streaming: run started
     Streaming --> Streaming: assistant_text / tool_use / tool_result / permission_request
-    Streaming --> Streaming: result while team (input stays open; awaits next turn)
-    Streaming --> Complete: SDK result message (non-team ⇒ input closed)
-    Streaming --> Errored: exception (and not stopped)
-    Streaming --> Stopped: stop_run / delete / workspace removal (input closed + interrupt)
+    Streaming --> Streaming: result while team
+    Streaming --> Complete: vendor result (non-team)
+    Streaming --> Errored: exception
+    Streaming --> Stopped: stop_run / delete / workspace removal
     Complete --> [*]
     Errored --> [*]
     Stopped --> [*]
 ```
 
-对一个 team 运行来说,一个 `result` 结束该*turn*(发出 `turn_end`)但不结束该*运行*——输入
-流保持打开,lead 进程持续运行直到被停止(AS-R15/R16)。
-
 ## Permission modes
 
-- `default`: SDK 只对敏感工具调用 gateway;只读工具自动允许。
-- `auto`: 类似 default,但更偏向于在 SDK 认为安全时自动推进。
-- `plan`: 计划模式;agent 提出方案而不执行变更。
-- `acceptEdits`: edit 类工具自动接受;其他敏感工具仍被门控。
-- `bypassPermissions`: 所有工具自动执行;不咨询 gateway。需要用户明确选择(constitution C-SEC-2/SEC-7)。
+线/UI 携带厂商原生模式 token,经该厂商的模式目录解释为中立网格 `ActionMode(plan | build) × ToolGate`([ADR 0011](../../../architecture/adr/0011-vendor-neutral-agent-abstraction.md))。Claude 的 `default` / `auto` / `plan` / `acceptEdits` / `bypassPermissions` 是该厂商自己的目录,不是所有厂商的公共枚举。
 
-具体分类由 SDK 拥有;c3 选择模式并将其呈现出来。
+- 升级到更宽松的门控(含全自动执行)只能通过一次明确、可观察的 UI 操作。
+- Codex 与 Cursor 没有逐工具审批;门控是启动时的沙箱与审批策略。Codex 的无沙箱必须有用户显式授权,缺标记则降为工作区可写;`build × never-ask` 不等于无沙箱。
+- Codex 规格运行必须把可写根限制在集中化 specs 目录;边界建不成则启动失败,不回落到项目可写目录。
+- Codex 沙箱读不到宿主密钥链:启动时若环境尚未提供 GitHub 令牌,则注入宿主 `gh` 令牌,已有则不覆盖。
 
-> **Vendor 维度(ADR-0011)。** 上述五种模式是 Claude 的权限模式,
-> 也是今天的 wire/UI 表面。在其下面,一个厂商中立的适配层引入了一个中立的
-> **agent driver**,gateway 变为一个中立的**审批桥接**,历史记录变为一个中立的**会话
-> 存储**,五路模式被简化为一个中立的网格(action mode plan/build × 一个 tool gate),
-> 每个 adapter 都把它转换出来。逐厂商的分歧(Codex 与 Cursor 都没有逐工具审批;只有 Claude
-> 会 fork/流式传输)存在于一个被探测出来的**能力账本**中,而不在这份规格的模式表里。Codex 与
-> Cursor 被路由通过中立 driver,而 Claude 路径保持逐字节不变:当会话的 vendor 是非 Claude 时,启动会分叉
-> 到 driver 路由,从头到尾练习中立 driver / 审批
-> 桥接 / 会话存储接口。driver 路由会解析该会话 agent 的启动
-> 覆盖(model / base URL / API key / env 覆盖 + 仅 codex 才有的策略),并把它们编入
-> driver start。对于普通的 Codex 工作运行,该启动层会推导出所属工作区的
-> 集中化 specs 根目录,并将其作为唯一的额外可写目录传入。Codex adapter 把它
-> 映射为 `--add-dir`,而所有其他工作目录之外的路径都留在 Codex 可写
-> 根目录之外。对于 Codex **spec** 运行,driver 会额外把 cwd 本身移动到集中化 specs
-> 根目录,并强制 `workspace-write` + `approval_policy=never`;因为 Codex 总是把 cwd 当作一个
-> 可写根且没有只读 cwd 原语,这就是那道硬边界,使项目
-> 源码和账本 DB 留在可写根目录之外,同时仍允许 `spec.md` 的写入。若那道 cwd /
-> specs-root 边界无法建立,启动会失败关闭,而不是回落到一个
-> 项目可写的 cwd。driver 路由刻意是*最小*路由——没有降级链、
-> socket 自动 resume、共识或 intent profile(那些是 Claude 特有的)。Codex 与 Cursor 都没有
-> 逐工具审批,因此其审批桥接从不触发;agent 启动时的沙箱模式/审批
-> 策略就是门控。没有厂商 SDK 类型跨入中立表面或共享协议
-> (ADR-0009);每个 SDK 只活在它自己的厂商 adapter 内部。
+具体哪些工具算敏感,由该厂商运行时拥有;c3 选择模式并呈现门控。
 
-> **Codex 双策略与显式授权(2026-09-28)。** Codex 的原生 `sandboxMode × approvalPolicy`
-> 经 `DriverStartOptions.vendorContext` 传入,由 Codex 适配器内部解释;中立层的权限真源
-> 仍是 `actionMode × toolGate`。`danger-full-access` 只能由用户一次明确、可观察的 UI 操作
-> 产生,并以 `CodexPolicy.explicitFullAccess` 持久化;缺标记的一律降级为 `workspace-write`。
-> `build × never-ask` 回落为 `workspace-write`(「停止询问」不等于「无沙箱」),Git 元数据
-> 写入由适配器在 `workspace-write` 下经 `additionalDirectories` 补偿。
+## 厂商中立映射规则
 
-> **宿主二进制门控(ADR-0012)。** 在能力问题之前,一个厂商的**宿主 CLI 必须
-> 在 PATH 上**——agent 作为该子进程运行,无法被打包进 c3 的单一二进制中。
-> 解析该厂商的启动器二进制是第一道能力门控:adapter 注册表只有在其二进制能被解析时
-> 才会构造该厂商的 adapter,因此一个缺失的 CLI 意味着该 agent 类型只是
-> 不可用(去安装它;这是一个产品约定,以指引呈现,而非一个运行错误)。
-> Claude 二进制发现(`$CLAUDE_PATH` → c3 托管安装 → PATH 查找)是该门控在 Claude 上的实例;
-> Cursor 是同一道门控上不由 c3 分发的实例,只有 `$CURSOR_PATH` → PATH 两级,且二进制名
-> (`cursor-agent`)与 vendor 名不同,从描述符读取而非由 vendor id 推导(ADR-0040)。
+- 适配器把厂商消息译为规范信封;线协议只增加 `vendor` 维度,不增加按厂商的 schema([ADR 0013](../../../architecture/adr/0013-canonical-envelope-on-wire-c3-session-namespace.md))。
+- 块以(会话, 块 id)为键原地修订,而不是堆叠;工具返回折入对应 tool-use。
+- 审批请求不进入信封,走 permission-gateway。厂商规则引擎自动允许的调用只打 pre-approved 审计标记,不构成第二条决策通道。
+- 会话对外以不透明 `c3SessionId` 寻址;原生存储仍是转录事实来源,c3 不双写。
 
-> **本地 MCP 服务器监督者。** 一个其 MCP 能力需要一个长期存活本地服务器的厂商会得到
-> 一个 SDK 未提供的监督者——SDK 在 spawn 之后就放弃了它(静默崩溃,无
-> 健康检查,无重启)。该监督者:(1)拥有 spawn;(2)把服务器放入它
-> **自己的进程组**,以便拆除时能收割整棵进程树,并有退出/中断/终止的
-> 兜底 ⇒ 无孤儿,无端口泄漏;(3)对服务器**健康轮询**并以有界退避**自动重启**。一个
-> 纯客户端厂商(无 spawn/健康检查/重启/kill)绕过宿主二进制门控。**惰性启动 +
-> 一等公民状态(2026-06-07-003, AS-R24)**:启动时的开机现在是 best-effort 的(adapter
-> 无条件被构建,以便服务器能在首次需要时启动);一个 ensure-running 步骤会在监督者内部
-> 惰性地(重新)启动,若失败会降级为一个临时不可用状态,并在后台
-> **自我修复**,而不是把该厂商标记为永久死亡——一个宕机的服务器是
-> 诚实降级,而非致命的。监督者 + adapter 在组合根处构建一次,并
-> 注入到启动路径中。
+## 宿主 CLI
 
-> **规范信封 + c3 会话命名空间(ADR-0013)。** 厂商中立的消息信封
-> (vendor、session id、可选 turn id、role、blocks、timestamp、可选 pre-approved 标记、可选
-> vendor-extra)被提升到线协议(不含 SDK):线协议只增加一个 `vendor` 维度,从不
-> 增加逐厂商的 schema。Block 以**id-upsert** 方式追加,以(session id, block id)为键,
-> 因此一个厂商的原地消息更新事件(例如 Codex 的 item-updated)都会折叠为"原地修订,而不是
-> 堆叠";一个工具的返回会折入 tool-use block 的 result 中(没有独立的 `tool_result` block——
-> 011 D3)。**审批/权限*请求*事件停留在这个模型之外**——它们走审批桥接
-> 流,以便信封永远不会变成一个上帝类型。唯一的例外是顶层的**pre-approved
-> 审计标记**(2026-06-06-003):一个 c3 从未决定过的厂商规则引擎自动允许,会被打上戳
-> 记到信封上(在累加器中是粘性的)以供审计轨迹使用——一个标记,而非一个决策通道。
-> 会话通过一个**不透明的、无厂商信息的 session id** 寻址(vendor 加上
->
-> - vendor 原生 session id 的一个确定性摘要);一个厂商 id 永远不会进入 URL 或存储键。一个**只读的**
->   惰性归一化访问器包装了逐厂商的会话存储——每个厂商的原生存储保持为
->   事实来源,从不被双写(不透明 id → 原生引用 索引是一个可重建的运行时
->   缓存)。实时线帧和 web URL/存储尚未接入这个模型(已推迟)。
+厂商宿主 CLI 必须可解析,否则该 agent 类型不可用,以明确错误呈现,不默默挂起([ADR 0012](../../../architecture/adr/0012-host-binary-probe-first-capability-gate.md))。Cursor 由厂商安装器分发,不由 c3 托管([ADR 0040](../../../architecture/adr/0040-cursor-as-host-cli-vendor.md));其相对 Claude/Codex 的能力边界见 [Cursor](features/agent-session-cursor.md)。Codex 一轮结束后回收本轮子进程树;续跑遇残留写锁时,仅在能证明占用者是本轮残留才自动回收并重试一次。见 [Codex 适配边界](../../../architecture/codex-sdk-guide.md)。
 
-## Domain events(wire)
+## Domain events
 
-发出 `mode_changed`、`user_text`、`assistant_text`、`tool_use`、`tool_result`、`turn_end`、
-`team_upgraded`(一次性,在检测到 team 时——AS-R14)以及 `session_status`(运行状态
-广播)。消费 `user_prompt`、`set_mode`、`stop_run`、`ping`。代表 gateway 转发 `permission_request`。向 session-registry 报告运行的 SDK session id
-(session-registry 会发出 `session_started`)。工作区/会话事件(`ready`、
-`workspaces`、`sessions`、`session_selected`)属于
-[session-registry](../session-registry/session-registry-spec.md)。形状见
-[共享协议](../../../shared/api-conventions/websocket-protocol.md)。
-
-## User scenarios
-
-- **并发会话:** 给定会话 A 上有一个运行进行中,当用户选择会话 B
-  并提交一个 prompt 时,那么两个运行都会并发执行;两者都不会被停止。
-- **切走再切回:** 给定会话 A 正在运行,当用户查看 B 然后回到 A 时,
-  那么 A 自开始以来的完整活动(prompt、输出、任何待处理权限)会被回放,
-  实时投递恢复。
-- **停止(反例场景):** 选择另一个会话或关闭 socket **绝不能**停止
-  一次运行(AS-R6/AS-R8);只有 `stop_run`/`delete_session`/`remove_workspace` 可以。
-- **会话内串行(反例场景):** 若某会话的 turn 正在进行中,第二个
-  `user_prompt` **绝不能**为该会话启动第二个并发运行(AS-R2)。
-- **Team 形成:** 给定一次运行使用了一个 team 工具(创建一个 team、发送一条队友消息,或
-  生成一个后台 `Agent`),当该 turn 的 `result` 到达时,那么该会话被标记为
-  `team`,`team_upgraded` 被广播,lead 进程保持存活而不是退出。
-- **Team 下一个 turn:** 给定一个 `team` 会话,当用户提交另一个 prompt 时,那么它被
-  回显并推入实时的 lead 会话(不新建进程,不 `resume`);lead 在
-  同一上下文中继续。
-- **Team 只在停止时结束(反例场景):** 一个 `team` 会话**绝不能**在
-  lead 的 `turn_end` 上掉到 `idle`;它只在明确的 `stop_run` / `delete_session` / `remove_workspace`
-  时结束(AS-R16)。
-- **Socket 断线,安全状态:** 给定一个普通会话的 turn 在模型正在产生文本时(没有打开的写
-  `tool_use`)掉了 socket,当门控清晰时,那么 c3 会短暂退避(状态 `reconnecting`)
-  并自动 `resume` 同一次运行一次;该 turn 以 `reconnect_attempted: true` 完成,
-  完整上下文完好无损(AS-R18)。
-- **Socket 断线,危险状态(反例场景):** 给定一个 turn 在一个
-  `Edit`/`Write`/`Bash` `tool_use` 仍未关闭时掉了 socket,c3 **绝不能**自动 resume;它会以
-  `turn_end { reason: 'error', side_effect_pending: true }` 结束该
-  turn,结算到 `idle`,让用户手动继续——这会恢复同一会话(AS-R18/R19)。
-- **有界重连(反例场景):** 一个 turn **绝不能**自动 resume 超过**一次**,而
-  一次被拒绝/耗尽的断线**绝不能**静默挂起——它总是会发出一个终止性的
-  `turn_end`(AVAIL-1/AVAIL-7)。
+发出 `mode_changed`、`user_text`、`assistant_text`、`tool_use`、`tool_result`、`turn_end`、`team_upgraded`、`session_status`;消费 `user_prompt`、`set_mode`、`stop_run`、`set_session_agent`、`ping`。代表 gateway 转发 `permission_request`。向 session-registry 报告运行的厂商 session id。工作区/会话目录事件属于 session-registry。形状见[共享协议](../../../shared/api-conventions/websocket-protocol.md)。
 
 ## Interactions
 
-- **permission-gateway** — 从运行的 `canUseTool` 中被调用;在
-  解析之前阻塞运行。一个待处理的请求在切走时仍然存活(决策以 `requestId` 为键)。
-- **Claude Agent SDK** — `query()` 提供该运行,由一个流式输入 prompt
-  驱动(AS-R13);`setPermissionMode` 和 `interrupt` 引导它(仅在流式输入
-  模式下生效)。关闭输入流会结束 query。
-- **Claude Code agent teams** — SDK 的一个特性,其 team 工具(`TeamCreate` / `SendMessage` /
-  背景 `Agent`)会把一个会话升级为一个持久化的 team(AS-R14)。
-- **claude CLI** — 由 SDK 作为 agent 进程生成;从 `$CLAUDE_PATH`
-  或 PATH 中解析。
-
-## Data dictionary
-
-- **In-flight run** — 一个带有实时 Run Handle 的 Streaming Agent Run。
-- **settingSources: ['user', 'project']** — 继承用户/项目设置的选项
-  (hook、allow/deny 规则、Skills、`CLAUDE.md`);c3 是其上层的 gateway(ADR 0005)。
+- **permission-gateway** — 敏感工具在此阻塞;待决请求以 `requestId` 为键,切走视图仍可回答。
+- **session-registry** — 提供工作目录、每会话模式与 resume id;接收 pending→真实 id 绑定。
+- **vendor adapter** — driver / 审批桥 / 会话存储;SDK 类型不跨出适配器。
+- **agent-config** — 解析启动覆盖(模型、端点、环境)与同厂商候选。

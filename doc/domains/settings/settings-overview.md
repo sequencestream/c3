@@ -1,43 +1,35 @@
 # Group: settings
 
-`settings` 组承载 c3 由用户管理的配置(非按会话簿记)。含四个域:**agent-config**(智能体档案)、**system-setting**(管理员级全局旋钮,含子进程代理)、**workspace-setting**(按工作区旋钮)、**personalized-setting**(按人偏好,无管理员门)。
+`settings` 承载用户管理的配置,与按会话簿记正交。四个域、三类作用域彼此独立:系统级(全局一份,含智能体档案)、工作区级、个人级。`personalized-setting` 是唯一不过管理员门的一类。
 
-作用域分三类且彼此正交:系统级(全局一份,含 agent-config)、工作区级(按工作区一份)、个人级(按人一份)。`personalized-setting` 是唯一不过管理员门的一类。
-
-Web 控制台把三类设置限制在应用右侧区域,左侧系统菜单始终可见。系统设置与个人化设置从系统菜单进入并覆盖右侧区域;工作区设置是工作区顶栏最右侧的「设置」页面。进入系统菜单的其它页面会关闭当前设置页。工作区列表只在系统菜单选中「工作区」且未打开系统设置或个人化设置时显示;工作区设置仍属于工作区场景,因此保留该列表。
+系统设置与个人化从系统菜单进入;工作区设置在工作区顶栏。三者不同时叠在同一区域。
 
 ## Domains
 
 - [agent-config](agent-config/agent-config-overview.md) — active
-  - 职责: 智能体档案(url/key/model + 名称)、默认智能体、按角色的 agent 路由、按会话绑定、降级链
-  - API: WebSocket `/ws`(见共享协议)
-- [system-setting](system-setting/system-setting-spec.md) — active
-  - 职责: 管理员级全局旋钮:语音输入/时区/baseUrl、vendor CLI 生效版本、系统沙箱定义、子进程代理、鉴权、外部 MCP API key、监听地址、诊断、会话开关
-  - API: `SystemSettings`(见协议)
-- [workspace-setting](workspace-setting/workspace-setting-spec.md) — active
-  - 职责: 按工作区旋钮:defaultMode、consensus、devSkill、讨论上限、Git 分支策略、沙箱引用、SDD、skillRepos、forge
-  - API: WebSocket `/ws`(见共享协议)
-- [personalized-setting](personalized-setting/personalized-setting-spec.md) — active
-  - 职责: 按人偏好:显示语言。已认证按账户存服务端,无身份存浏览器;首次登录以本地值播种
-  - API: `PersonalizedSettings`(见协议)
+  - 职责: 智能体档案、具名上游、默认与专用路由、按会话绑定
+  - API: WebSocket `/ws`
+- [system-setting](system-setting/system-setting-overview.md) — active
+  - 职责: 管理员全局配置:显示与时区、CLI 版本、代理、鉴权、监听、诊断、会话清理
+  - API: WebSocket `/ws`
+- [workspace-setting](workspace-setting/workspace-setting-overview.md) — active
+  - 职责: 按工作区的权限模式、开发与 Git、沙箱、共识与讨论、规格与自动化策略
+  - API: WebSocket `/ws`
+- [personalized-setting](personalized-setting/personalized-setting-overview.md) — active
+  - 职责: 按人偏好(语言、样式、字号);已认证存服务端,无身份存本机
+  - API: WebSocket `/ws`
 
-## 组级共享上下文
+## Shared context
 
-- 共用 [`shared/api-conventions/websocket-protocol.md`](../../shared/api-conventions/websocket-protocol.md) 的 wire 协议(`get_settings`、`save_settings`、`settings`、`load_workspace_setting`、`save_workspace_setting`、`workspace_setting`、`get_personalized_settings`、`save_personalized_settings`、`personalized_settings`)。
-- 持久化到 `c3.db` 的配置表,一字段一行。隔离启动(如 e2e)用 `c3 start --db <path>` 指定数据库——它同时决定 c3 主目录,整体迁移实例而不动真实 `~/.c3`。
-- 每类设置有自己的作用域表(系统 / 每工作区 / 每账号 / 每会话 / MCP 密钥),一次写入只触及一个作用域,故 `save_settings` 在存储层就不可能抹掉工作区配置、个人化偏好或 MCP 密钥。见 [persistence](../../shared/data-conventions/persistence.md)。
-- 每工作区配置按 `workspaces.id` 分组;协议上仍以 `projectConfigs`(工作区路径 → workspace-setting 映射)呈现。
-- 外部 MCP 的长期 API key 独立成表,整对象 `save_settings` 既不携带也无法注入/读出其哈希,进出只有专用的管理员操作。见 [system-setting](system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
-- 工作区注册表(id ↔ 路径)与会话绑定同在此库,见 [session-registry](../core/session-registry/session-registry-spec.md)。
+- 线协议约定见 [`websocket-protocol.md`](../../shared/api-conventions/websocket-protocol.md)。
+- 配置按作用域分存,一次写入只触及一个作用域。见 [persistence](../../shared/data-conventions/persistence.md)。
+- 外部 MCP 钥匙独立存储,不走通用保存。见 [system-setting](system-setting/system-setting-spec.md) 与 [external-mcp](../core/external-mcp/external-mcp-overview.md)。
 
-## 依赖方向
+## Dependency direction
 
 ```
-web-console ──(/ws)──► agent-config ──供给 env/model override──► agent-session ──► SDK run loop
-                              │
-                              ├──► workspace-setting ──供给 defaultMode/consensus/devSkill/rounds/speech──► agent-session
-                              │
-                              ├──► system-setting ──proxy 注入 HTTP_PROXY/HTTPS_PROXY──► launchForAgent(envOverrides)──► agent-session
-                              │
-                              └──► personalized-setting ──供给 agent 输出语言──► 提示词构造(意图/规格/自动化标题/讨论总结)
+web-console ──(/ws)──► agent-config ──启动覆盖──► agent-session
+                              ├──► workspace-setting ──工作区旋钮──► 运行与编排
+                              ├──► system-setting ──代理 / CLI / 鉴权──► 启动与出网
+                              └──► personalized-setting ──界面与输出语言
 ```

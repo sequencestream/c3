@@ -334,6 +334,57 @@ describe('IntentList.vue — active-session pulsing dot', () => {
     expect(w.find('.req-run-status.dangling').exists()).toBe(true)
   })
 
+  it('lights the dot for a PR review session running (review-only fixture)', () => {
+    // 服务端口径:六类会话任一存活即点亮。评审是闭环里最慢的一环,列表必须能看出它在跑。
+    const w = mountList([
+      intent({
+        id: 'rev',
+        status: 'in_progress',
+        reviewSessionId: 'pr-rev-1',
+        reviewStatus: 'pending',
+        sessionActive: true,
+      }),
+    ])
+    const dot = w.find('.req-session-active')
+    expect(dot.exists()).toBe(true)
+    // 用户不被告知是哪类会话在跑:提示文案是既有的通用文案,评审/修复不另设。
+    expect(dot.attributes('title')).toBe('A session is running for this intent')
+    expect(dot.attributes('role')).toBe('img')
+  })
+
+  it('lights the dot for a PR fix session running (fix-only fixture)', () => {
+    const w = mountList([
+      intent({
+        id: 'fix',
+        status: 'in_progress',
+        fixSessionId: 'pr-fix-1',
+        fixStatus: 'pending',
+        sessionActive: true,
+      }),
+    ])
+    expect(w.find('.req-session-active').exists()).toBe(true)
+  })
+
+  it('keeps the review/fix dot clear of the badge and the runStatus label', () => {
+    // 工作会话已死(dangling)但评审会话在跑:绿点回答「有东西在跑」,
+    // 标签回答「上一次工作运行发生了什么」,两者共存不重叠。
+    const w = mountList([
+      intent({
+        id: 'both',
+        status: 'in_progress',
+        lastWorkSessionId: 's-work-dead',
+        reviewSessionId: 'pr-rev-1',
+        reviewStatus: 'pending',
+        runStatus: 'dangling',
+        sessionActive: true,
+      }),
+    ])
+    expect(w.find('.req-session-active').exists()).toBe(true)
+    expect(w.find('.req-status').exists()).toBe(true)
+    expect(w.find('.req-run-status.dangling').exists()).toBe(true)
+    expect(w.find('.req-item').find('.req-session-active').exists()).toBe(true)
+  })
+
   it('shows the status badge but no dot when sessionActive is false (in_progress dangling)', () => {
     const w = mountList([
       intent({ id: 'ip', status: 'in_progress', runStatus: 'dangling', sessionActive: false }),

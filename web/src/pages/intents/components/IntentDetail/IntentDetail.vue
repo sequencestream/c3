@@ -336,6 +336,8 @@ const {
   intentSessionStatusDot,
   specSessionStatusDot,
   specReviewSessionStatusDot,
+  reviewSessionStatusDot,
+  fixSessionStatusDot,
   expectedSessionId,
   chatReady,
   chatReadonly,
@@ -355,6 +357,8 @@ const {
   intentSessionStatus: () => props.intentSessionStatus,
   specSessionStatus: () => props.specSessionStatus,
   specReviewSessionStatus: () => props.specReviewSessionStatus,
+  reviewSessionStatus: () => props.reviewSessionStatus,
+  fixSessionStatus: () => props.fixSessionStatus,
   onReadSpec: (id, specPath) => emit('read-spec', id, specPath),
   onListIntentLogs: (id) => emit('list-intent-logs', id),
   onOpenIntentSession: (sessionId) => emit('open-intent-session', sessionId),
@@ -595,6 +599,8 @@ function submitChat(text: string, images: PromptImage[]): void {
         :intent-session-status-dot="intentSessionStatusDot"
         :spec-session-status-dot="specSessionStatusDot"
         :spec-review-session-status-dot="specReviewSessionStatusDot"
+        :review-session-status-dot="reviewSessionStatusDot"
+        :fix-session-status-dot="fixSessionStatusDot"
         @select="selectTab"
       />
 

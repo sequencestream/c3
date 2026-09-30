@@ -61,17 +61,29 @@ export function clearJudgedSession(id: string): void {
 }
 
 /**
- * True when any of the intent's four session ids (intent / spec / spec review /
- * work) is a non-null id the run registry reports as running. Short-circuit OR;
- * missing, unknown, and stopped ids all count as inactive. Covers all statuses —
- * unlike `runStatus`, it is not gated on `in_progress`.
+ * True when any of the intent's six session ids (intent / spec / spec review /
+ * work / PR review / PR fix) is a non-null id the run registry reports as
+ * running. Short-circuit OR; missing, unknown, and stopped ids all count as
+ * inactive. Covers all statuses — unlike `runStatus`, it is not gated on
+ * `in_progress`, and independent of it.
+ *
+ * All six kinds share ONE liveness rule on purpose: the two indicators (this
+ * boolean and the per-tab status dot) answer the same question — "is an agent
+ * working on this intent right now" — and users are never told which kind of
+ * session it is. Review and fix are the slowest stages of the delivery loop, so
+ * excluding them (as an earlier revision did) left the list dot and the tabs
+ * dark exactly when a human most wants to watch. Liveness via `isRunning` is a
+ * different fact from the relay occupancy below: a review/fix phase can be
+ * occupied by a not-yet-bound `pending:` placeholder with no process at all.
  */
 function deriveSessionActive(r: Intent): boolean {
   return (
     (!!r.intentSessionId && isRunning(r.intentSessionId)) ||
     (!!r.specSessionId && isRunning(r.specSessionId)) ||
     (!!r.specReviewSessionId && isRunning(r.specReviewSessionId)) ||
-    (!!r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
+    (!!r.lastWorkSessionId && isRunning(r.lastWorkSessionId)) ||
+    (!!r.reviewSessionId && isRunning(r.reviewSessionId)) ||
+    (!!r.fixSessionId && isRunning(r.fixSessionId))
   )
 }
 
@@ -81,7 +93,7 @@ function deriveSessionActive(r: Intent): boolean {
  * rule the queue kernel's `probeRelayRunFacts` consumes.
  *
  * It is deliberately NOT `isRunning` (what {@link deriveSessionActive} answers
- * for the four session kinds): between a phase's claim and the vendor's bind the
+ * for the six session kinds): between a phase's claim and the vendor's bind the
  * field holds a `pending:` placeholder with no live process at all, and that
  * whole window must read as occupied or the UI would offer a second launch on a
  * worktree an agent is already about to enter. Reading it through the same

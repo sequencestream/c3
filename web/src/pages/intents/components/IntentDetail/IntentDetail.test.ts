@@ -84,6 +84,8 @@ function mountDetail(
     intentSessionStatus?: SessionStatus | null
     specSessionStatus?: SessionStatus | null
     specReviewSessionStatus?: SessionStatus | null
+    reviewSessionStatus?: SessionStatus | null
+    fixSessionStatus?: SessionStatus | null
     intentLogs?: IntentLog[]
   } = {},
 ) {
@@ -119,6 +121,8 @@ function mountDetail(
       intentSessionStatus: opts.intentSessionStatus ?? null,
       specSessionStatus: opts.specSessionStatus ?? null,
       specReviewSessionStatus: opts.specReviewSessionStatus ?? null,
+      reviewSessionStatus: opts.reviewSessionStatus ?? null,
+      fixSessionStatus: opts.fixSessionStatus ?? null,
       intentLogs: opts.intentLogs ?? [],
       intentLogsLoading: false,
     },
@@ -2112,6 +2116,40 @@ describe('IntentDetail.vue — PR review/fix session tabs', () => {
     await w.setProps({ activeSession: 'pr-fix-1' })
     expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
     expect(w.emitted('open-pr-fix-session')).toEqual([['pr-fix-1']])
+  })
+
+  it('shows the review/fix status dots only while their own session runs, without new requests', async () => {
+    const w = mountDetail(
+      intent({ id: 'i1', reviewSessionId: 'pr-rev-1', fixSessionId: 'pr-fix-1' }),
+      { reviewSessionStatus: 'running', fixSessionStatus: 'awaiting_permission' },
+    )
+    const reviewDot = w.find('[data-testid="intent-detail-review-session-status"]')
+    const fixDot = w.find('[data-testid="intent-detail-fix-session-status"]')
+    expect(reviewDot.exists()).toBe(true)
+    expect(reviewDot.classes()).toContain('running')
+    expect(w.find(`${reviewTab} .session-status.running`).exists()).toBe(true)
+    expect(fixDot.exists()).toBe(true)
+    expect(fixDot.classes()).toContain('awaiting_permission')
+    // 状态点只读既有状态源:不因渲染指示而多发任何请求。
+    expect(w.emitted('open-pr-review-session')).toBeUndefined()
+    expect(w.emitted('open-pr-fix-session')).toBeUndefined()
+
+    // 会话停止 → 状态点消失。
+    await w.setProps({ reviewSessionStatus: 'idle', fixSessionStatus: 'idle' })
+    expect(w.find('[data-testid="intent-detail-review-session-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-fix-session-status"]').exists()).toBe(false)
+  })
+
+  it('never shows a PR review/fix dot on a tab that is not rendered', () => {
+    // 有状态但无会话 id → tab 不存在,状态点无处安放。
+    const w = mountDetail(intent({ id: 'i1' }), {
+      reviewSessionStatus: 'running',
+      fixSessionStatus: 'running',
+    })
+    expect(w.find(reviewTab).exists()).toBe(false)
+    expect(w.find(fixTab).exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-review-session-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-fix-session-status"]').exists()).toBe(false)
   })
 
   it('falls back to the intent tab when the review/fix session id disappears', async () => {

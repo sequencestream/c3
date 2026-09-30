@@ -1,7 +1,7 @@
 /**
  * Tests for `enrichRunStatus` — the single send-time enrich boundary shared by
  * the list / refresh / broadcast paths. Focuses on the derived `sessionActive`
- * signal (any of intent / spec / work session running), the derived
+ * signal (any of the six session kinds running), the derived
  * `actionDescriptor` projection, and their independence from the existing
  * `runStatus` reconcile field. `isRunning` and the vendor-block fact table are
  * mocked so a controllable set of session ids counts as "running" and a
@@ -156,6 +156,73 @@ describe('enrichRunStatus — sessionActive derivation', () => {
       lastWorkSessionId: 's-work',
     })
     expect(r.sessionActive).toBe(false)
+  })
+
+  it('is true when only reviewSessionId is running', () => {
+    running.add('s-review')
+    expect(enrichOne({ id: 'a', reviewSessionId: 's-review' }).sessionActive).toBe(true)
+  })
+
+  it('is true when only fixSessionId is running', () => {
+    running.add('s-fix')
+    expect(enrichOne({ id: 'a', fixSessionId: 's-fix' }).sessionActive).toBe(true)
+  })
+
+  it('is true when the review and fix sessions run together', () => {
+    running.add('s-review')
+    running.add('s-fix')
+    const r = enrichOne({ id: 'a', reviewSessionId: 's-review', fixSessionId: 's-fix' })
+    expect(r.sessionActive).toBe(true)
+  })
+
+  it('is true when a review/fix session runs alongside any of the other four kinds', () => {
+    const others: [string, Partial<Intent>][] = [
+      ['s-intent', { intentSessionId: 's-intent' }],
+      ['s-spec', { specSessionId: 's-spec' }],
+      ['s-spec-review', { specReviewSessionId: 's-spec-review' }],
+      ['s-work', { lastWorkSessionId: 's-work' }],
+    ]
+    for (const [sessionId, fields] of others) {
+      running.clear()
+      running.add('s-review')
+      expect(enrichOne({ id: 'a', ...fields }).sessionActive).toBe(false)
+      running.add(sessionId)
+      expect(enrichOne({ id: 'a', reviewSessionId: 's-review', ...fields }).sessionActive).toBe(
+        true,
+      )
+    }
+  })
+
+  it('is false when all six session ids exist but none is running', () => {
+    const r = enrichOne({
+      id: 'a',
+      intentSessionId: 's-intent',
+      specSessionId: 's-spec',
+      specReviewSessionId: 's-spec-review',
+      lastWorkSessionId: 's-work',
+      reviewSessionId: 's-review',
+      fixSessionId: 's-fix',
+    })
+    expect(r.sessionActive).toBe(false)
+  })
+
+  it('counts a live review session but never a not-yet-bound pending placeholder', () => {
+    // 存活进程 → 绿点。
+    running.add('s-review')
+    const live = enrichOne({ id: 'a', reviewSessionId: 's-review' })
+    expect(live.sessionActive).toBe(true)
+    expect(live.reviewInFlight).toBe(true)
+
+    // 接力已写入 pending: 占位但尚无进程 —— 占用语义为真、存活语义为假。
+    // 本次只放宽 sessionActive,绝不把「占位」读成「在跑」,否则绿点会在
+    // 认领瞬间先亮、进程死亡后由占位一直撑着不灭。
+    const pending = enrichOne({ id: 'a', reviewSessionId: 'pending:review-1' })
+    expect(pending.sessionActive).toBe(false)
+
+    // 已停止的真实 id 同样不计。
+    const stopped = enrichOne({ id: 'a', reviewSessionId: 's-review-stopped' })
+    expect(stopped.sessionActive).toBe(false)
+    expect(stopped.reviewInFlight).toBe(false)
   })
 
   it('derives active for non-in_progress intents too (draft with running intent session)', () => {

@@ -354,8 +354,10 @@ describe('Codex driver teardown of a real lingering child', () => {
         `printf '%s\n' '{"type":"thread.started","thread_id":"thread_zombie"}'`,
         `printf '%s\n' '{"type":"error","message":"openrouter:web_search upstream returned 502"}'`,
         // The survivor: the turn is over from c3's point of view but this process
-        // lives on, exactly as in the reported incident.
-        'sleep 30',
+        // lives on, exactly as in the reported incident. `exec` so SIGTERM-ignore
+        // stays on the spawned pid — a forked `sleep` would be reaped as a
+        // descendant first, and the head would then exit 137 instead of SIGKILL.
+        'exec sleep 30',
       ].join('\n'),
     )
     chmodSync(fakeCodex, 0o755)
@@ -420,7 +422,7 @@ describe('Codex driver teardown of a real lingering child', () => {
         'cat >/dev/null',
         `printf '%s\\n' '{"type":"thread.started","thread_id":"${THREAD}"}'`,
         `printf '%s\\n' '{"type":"error","message":"openrouter:web_search upstream returned 502"}'`,
-        'sleep 30',
+        'exec sleep 30',
       ].join('\n'),
     )
     chmodSync(fakeCodex, 0o755)

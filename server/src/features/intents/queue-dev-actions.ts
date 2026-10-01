@@ -48,6 +48,7 @@ import { registerPendingDevLink } from './dev-link.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { JudgeUnavailableError, judgeCompletion, type JudgeVerdict } from './judge.js'
+import { UNKNOWN_AGENT_IDENTITY } from '../../kernel/agent-config/index.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 // eslint-disable-next-line no-restricted-imports -- PR 事件管线导出 runServerSidePrCreate,非安全原语(凭据原语已归 kernel/security)
@@ -155,13 +156,17 @@ export async function runDevelopLoop(
       })
     } catch (err) {
       if (signal.aborted || ctx.isDisposed()) return
-      const detail =
-        err instanceof JudgeUnavailableError ? err.detail : `完成判定执行失败:${errText(err)}`
+      const judgeFault = err instanceof JudgeUnavailableError
+      // A judge fault already carries the identity of the agent that failed; reusing
+      // it verbatim is what makes the judge's own log line, this detail and the
+      // `[c3:queue]` failure line name the same agent.
+      const detail = judgeFault ? err.detail : `完成判定执行失败:${errText(err)}`
+      const who = judgeFault ? err.agentIdentity : UNKNOWN_AGENT_IDENTITY
       recordFailure(
         ctx,
         req.id,
         'judge_unavailable',
-        `完成判定不可用(检查 tool agent 配置):${detail}`,
+        `完成判定不可用(检查 tool agent 配置)[${who}]:${detail}`,
       )
       return
     }

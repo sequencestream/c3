@@ -7,8 +7,9 @@
  * a parked intent still blocked (park is not `done`), and unrelated intents
  * still flowing.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Intent } from '@ccc/shared/protocol'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentConfig, Intent } from '@ccc/shared/protocol'
+import type { AgentRole, AgentTarget } from '../../kernel/agent-config/index.js'
 
 // ---- Mocks (must be before imports) ----
 
@@ -85,6 +86,9 @@ vi.mock('./queue-store.js', () => {
 
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
+  // Read only to name the agent on a failure line; a session with no frozen fact
+  // returns null so the failure line falls back to the role chain.
+  getSessionAgentId: vi.fn(() => null),
   getForgeOverride: vi.fn(),
   getDevSkill: vi.fn(),
   getDefaultMode: vi.fn(),
@@ -113,6 +117,14 @@ vi.mock('../../runs.js', () => ({
 }))
 
 vi.mock('../../kernel/agent-config/index.js', () => ({
+  UNKNOWN_AGENT_IDENTITY: '未知 agent',
+  agentLogIdentity: (t: { agent?: { id?: string; displayName?: string } } | null) =>
+    t?.agent?.id ? `${t.agent.displayName || t.agent.id}(${t.agent.id})` : '未知 agent',
+  tryResolveAgentTarget: vi.fn(() => ({ ok: true as const, target: workTarget() })),
+  tryResolveRoleAgentTarget: vi.fn((role: AgentRole) => ({
+    ok: true as const,
+    target: role === 'tool' ? toolTarget() : workTarget(),
+  })),
   getDefaultAgentId: vi.fn(),
   resolveSessionAgentSwitch: vi.fn(),
   resolveSessionVendor: vi.fn(),
@@ -162,13 +174,40 @@ vi.mock('./funnel-store.js', () => ({
 vi.mock('./judge.js', () => ({
   judgeCompletion: vi.fn(),
   JudgeUnavailableError: class JudgeUnavailableError extends Error {
-    constructor(readonly detail: string) {
+    constructor(
+      readonly detail: string,
+      readonly agentIdentity: string = '未知 agent',
+    ) {
       super(`judge 不可用: ${detail}`)
       this.name = 'JudgeUnavailableError'
     }
   },
 }))
 vi.mock('./checkpoint-consensus.js', () => ({ runCheckpointConsensus: vi.fn() }))
+
+// Targets the failure-line identity resolver reads. Each role resolves to a
+// recognizable agent so a log assertion can tell the judge agent from the work one.
+// Declared as hoisted functions, not consts: a `vi.mock` factory runs when the
+// mocked module is first imported, i.e. BEFORE this module's body — a const would
+// be in its temporal dead zone by then.
+// Full `AgentConfig` shapes: the identity renderer reads display fields off them and
+// TypeScript keeps these mocks honest against the real contract.
+function agentStub(id: string, displayName: string): AgentConfig {
+  return {
+    id,
+    displayName,
+    vendor: 'claude',
+    configMode: 'system',
+    config: { baseUrl: '', apiKey: '', model: '' },
+    enabled: true,
+  }
+}
+function toolTarget(): AgentTarget {
+  return { ref: 'tool-1', agent: agentStub('tool-1', '判定器'), candidates: [], isGroup: false }
+}
+function workTarget(): AgentTarget {
+  return { ref: 'work-1', agent: agentStub('work-1', '主控'), candidates: [], isGroup: false }
+}
 
 // ---- Imports ----
 
@@ -185,7 +224,7 @@ import { listIntents, getIntent, updateStatus } from './store.js'
 import { getDevSkill, getGitBranchMode, getSddEnabled } from '../../kernel/config/index.js'
 import { readBranch } from './worktree.js'
 import { commitAndPush, gitDiffStat, gitRecentLog } from '../../git.js'
-import { judgeCompletion } from './judge.js'
+import { JudgeUnavailableError, judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { getRuntime } from '../../runs.js'
 import {
@@ -195,6 +234,7 @@ import {
   resetQueueStoreForTests,
 } from './queue-store.js'
 
+let warnSpy: ReturnType<typeof vi.spyOn>
 const prRegistry = new EventNormalizerRegistry()
 prRegistry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
 
@@ -415,5 +455,137 @@ describe('queue outcome actions — failure isolation', () => {
       backoffUntil: null,
       parked: false,
     })
+  })
+})
+
+describe('queue failure line — it names the agent, so one line answers "which one?"', () => {
+  const proj = '/test/failure-identity'
+
+  function hooksBag(): WorkflowHooks {
+    return {
+      runDevTurn: vi.fn((): Promise<DevTurnResult> =>
+        Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' }),
+      ),
+      launchSpecRun: vi.fn(() => Promise.resolve()),
+      broadcastIntents: vi.fn(),
+      emitStatus: vi.fn(),
+      sessionExists: vi.fn(() => Promise.resolve(false)),
+      isRunning: vi.fn(() => false),
+      sessionStatus: vi.fn(() => null),
+      normalizeEvent: (core) => prRegistry.normalize(core),
+      publishEvent: vi.fn(),
+      createUserTodo: vi.fn(),
+      broadcastQueueDetail: vi.fn(),
+    }
+  }
+
+  /** Every `[c3:queue]` failure line written during the run. */
+  function failureLines(): string {
+    return warnSpy.mock.calls.map((c) => String(c[0])).join('\n')
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkflowForTests()
+    resetQueueStoreForTests()
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  // `clearAllMocks` keeps implementations, so restore the resolvers' defaults here
+  // instead of letting one case's throwing stub leak into the next.
+  afterEach(async () => {
+    const { tryResolveAgentTarget, tryResolveRoleAgentTarget } =
+      await import('../../kernel/agent-config/index.js')
+    vi.mocked(tryResolveRoleAgentTarget).mockImplementation((role: AgentRole) => ({
+      ok: true,
+      target: role === 'tool' ? toolTarget() : workTarget(),
+    }))
+    vi.mocked(tryResolveAgentTarget).mockImplementation(() => ({ ok: true, target: workTarget() }))
+  })
+
+  it('a judge fault names the TOOL agent, not the work session agent', async () => {
+    const intent = makeIntent({ id: 'JF', title: '判定失败', status: 'todo' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getDevSkill).mockReturnValue('')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
+    vi.mocked(judgeCompletion).mockRejectedValue(
+      new JudgeUnavailableError('provider 连接失败', '判定器(tool-1)'),
+    )
+
+    startWorkflow(proj, hooksBag(), 1)
+    await settleQueueForTests(proj)
+
+    const line = failureLines()
+    expect(line).toContain('[c3:queue]')
+    // The judge family blames the tool agent — and it says so by name and id.
+    expect(line).toMatch(/判定器\(tool-1\).*judge_unavailable/)
+    // It must NOT blame the work-session agent: that is the wrong diagnosis.
+    expect(line).not.toContain('主控(work-1)')
+  })
+
+  it('a turn failure names the WORK agent — the wrong tool agent would misdirect triage', async () => {
+    const intent = makeIntent({ id: 'TF', title: '回合失败', status: 'todo' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getDevSkill).mockReturnValue('')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
+
+    const hooks = hooksBag()
+    vi.mocked(hooks.runDevTurn).mockRejectedValue(new Error('spawn failed'))
+
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+
+    const line = failureLines()
+    expect(line).toMatch(/主控\(work-1\).*第 1 次失败\(launch_failed\)/)
+    expect(line).not.toContain('判定器(tool-1)')
+  })
+
+  it('an unresolvable identity degrades to the placeholder and STILL backs the intent off', async () => {
+    const intent = makeIntent({ id: 'UF', title: '身份缺失', status: 'todo' })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getDevSkill).mockReturnValue('')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    // A resolver that blows up (unreadable settings, an empty-group throw) must not
+    // be able to turn a backoff into a crash.
+    const { tryResolveRoleAgentTarget } = await import('../../kernel/agent-config/index.js')
+    vi.mocked(tryResolveRoleAgentTarget).mockImplementation(() => {
+      throw new Error('settings unreadable')
+    })
+
+    const hooks = hooksBag()
+    vi.mocked(hooks.runDevTurn).mockRejectedValue(new Error('spawn failed'))
+
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+
+    const line = failureLines()
+    expect(line).toContain('未知 agent')
+    expect(line).not.toMatch(/undefined|\[object Object\]/)
+    // The transition itself is unaffected by the identity lookup failing.
+    const meta = getQueueIntentMetaById('UF')
+    expect(meta.failureCount).toBe(1)
+    expect(meta.backoffUntil).not.toBeNull()
   })
 })

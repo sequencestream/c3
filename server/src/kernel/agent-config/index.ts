@@ -204,6 +204,37 @@ export interface AgentTarget {
  *  unusable group reference that stopped it. */
 export type AgentTargetResult = { ok: true; target: AgentTarget } | { ok: false; groupRef: string }
 
+/**
+ * The stable placeholder a diagnostic line carries when no agent identity can be
+ * resolved at all (the settings store is unreadable, the role chain throws, a test
+ * double omitted the field). Chosen so a reader can tell "we could not name the
+ * agent" apart from a real agent, and so no `undefined` / `[object Object]` can ever
+ * reach a log line.
+ */
+export const UNKNOWN_AGENT_IDENTITY = '未知 agent'
+
+/**
+ * Render an already-resolved target as the agent identity a diagnostic log line
+ * carries: `名称(id)`, plus `vendor/model` when both are readable. An empty display
+ * name (a legacy config that never set one) falls back to the id; an empty model or
+ * a non-string value simply drops that fragment rather than printing it.
+ *
+ * Read-only and total: it takes a target the caller already resolved, so a caller
+ * that cannot resolve one never reaches this and uses {@link UNKNOWN_AGENT_IDENTITY}
+ * instead. Only display fields are read — never a provider key, base URL or env
+ * value.
+ */
+export function agentLogIdentity(target: AgentTarget | null | undefined): string {
+  if (!target) return UNKNOWN_AGENT_IDENTITY
+  const agent = target.agent
+  if (!agent || typeof agent.id !== 'string' || agent.id === '') return UNKNOWN_AGENT_IDENTITY
+  const name = typeof agent.displayName === 'string' ? agent.displayName.trim() : ''
+  const head = `${name || agent.id}(${agent.id})`
+  const vendor = typeof agent.vendor === 'string' ? agent.vendor : ''
+  const model = typeof agent.config?.model === 'string' ? agent.config.model.trim() : ''
+  return vendor && model ? `${head} ${vendor}/${model}` : head
+}
+
 /** A concrete (non-group) agent as a degenerate one-candidate target. */
 function singleTarget(agent: AgentConfig): AgentTarget {
   return { ref: agent.id, agent, candidates: [agent], isGroup: false }
@@ -615,12 +646,22 @@ export function resolveToolAgent(workspacePath?: string | null): AgentConfig {
  * configured a default of its own — then the system `toolAgentId`, then the system
  * default. Binding `target.ref` keeps a group reference intact, so the one-shot
  * fails over through the group exactly like a session launch does.
+ *
+ * `agentIdentity` is the display string diagnostic logs name this run by
+ * ({@link agentLogIdentity}); it is derived from the same {@link AgentTarget} as
+ * `agentId`, never resolved a second time.
  */
 export function resolveToolSessionLaunch(
   workspacePath?: string | null,
-): { agentId: string } & LaunchOverrides {
+): { agentId: string; agentIdentity: string } & LaunchOverrides {
   const target = resolveRoleAgentTarget('tool', workspacePath)
-  return { agentId: target.ref, ...launchForCandidates(target.candidates) }
+  // The identity comes from the SAME resolution as the launch, so a diagnostic line
+  // and the run it describes can never name different agents.
+  return {
+    agentId: target.ref,
+    agentIdentity: agentLogIdentity(target),
+    ...launchForCandidates(target.candidates),
+  }
 }
 
 /**

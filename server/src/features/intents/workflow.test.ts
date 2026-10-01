@@ -92,6 +92,7 @@ vi.mock('./queue-store.js', () => {
 
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
+  getSessionAgentId: vi.fn(() => null),
   getForgeOverride: vi.fn(),
   getDevSkill: vi.fn(),
   getDefaultMode: vi.fn(),
@@ -119,13 +120,19 @@ vi.mock('../../runs.js', () => ({
   addViewer: vi.fn(),
 }))
 
+// The failure line names the executing agent, so the identity renderer and both
+// resolvers it reads must exist on this mock — returning nothing would throw inside
+// the log branch and turn a backoff into an unhandled rejection.
 vi.mock('../../kernel/agent-config/index.js', () => ({
+  UNKNOWN_AGENT_IDENTITY: '未知 agent',
+  agentLogIdentity: (t: { agent?: { id?: string; displayName?: string } } | null) =>
+    t?.agent?.id ? `${t.agent.displayName || t.agent.id}(${t.agent.id})` : '未知 agent',
   getDefaultAgentId: vi.fn(),
   resolveSessionAgentSwitch: vi.fn(),
   resolveSessionVendor: vi.fn(),
   setSessionAgent: vi.fn(),
-  tryResolveAgentTarget: vi.fn(),
-  tryResolveRoleAgentTarget: vi.fn(),
+  tryResolveAgentTarget: vi.fn(() => ({ ok: false, groupRef: '' })),
+  tryResolveRoleAgentTarget: vi.fn(() => ({ ok: false, groupRef: '' })),
 }))
 
 vi.mock('../../kernel/agent/vendor-runtime.js', () => ({

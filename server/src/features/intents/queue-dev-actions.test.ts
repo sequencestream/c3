@@ -8,7 +8,8 @@
  * rather than answered.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Intent } from '@ccc/shared/protocol'
+import type { AgentConfig, Intent } from '@ccc/shared/protocol'
+import type { AgentTarget } from '../../kernel/agent-config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 
 // ---- Mocks (must be before imports) ----
@@ -87,6 +88,9 @@ vi.mock('./queue-store.js', () => {
 
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
+  // Read only to name the agent on a failure line; a session with no frozen fact
+  // returns null so the failure line falls back to the role chain.
+  getSessionAgentId: vi.fn(() => null),
   getForgeOverride: vi.fn(),
   getDevSkill: vi.fn(),
   getDefaultMode: vi.fn(),
@@ -118,6 +122,14 @@ vi.mock('../../runs.js', () => ({
 }))
 
 vi.mock('../../kernel/agent-config/index.js', () => ({
+  UNKNOWN_AGENT_IDENTITY: '未知 agent',
+  agentLogIdentity: (t: { agent?: { id?: string; displayName?: string } } | null) =>
+    t?.agent?.id ? `${t.agent.displayName || t.agent.id}(${t.agent.id})` : '未知 agent',
+  tryResolveAgentTarget: vi.fn(() => ({ ok: true, target: workTarget() })),
+  tryResolveRoleAgentTarget: vi.fn((role: string) => ({
+    ok: true,
+    target: role === 'tool' ? toolTarget() : workTarget(),
+  })),
   getDefaultAgentId: vi.fn(),
   resolveSessionAgentSwitch: vi.fn(),
   resolveSessionVendor: vi.fn(),
@@ -177,13 +189,40 @@ vi.mock('./funnel-store.js', () => ({
 vi.mock('./judge.js', () => ({
   judgeCompletion: vi.fn(),
   JudgeUnavailableError: class JudgeUnavailableError extends Error {
-    constructor(readonly detail: string) {
+    constructor(
+      readonly detail: string,
+      readonly agentIdentity: string = '未知 agent',
+    ) {
       super(`judge 不可用: ${detail}`)
       this.name = 'JudgeUnavailableError'
     }
   },
 }))
 vi.mock('./checkpoint-consensus.js', () => ({ runCheckpointConsensus: vi.fn() }))
+
+// Targets the failure-line identity resolver reads. Each role resolves to a
+// recognizable agent so a log assertion can tell the judge agent from the work one.
+// Declared as hoisted functions, not consts: a `vi.mock` factory runs when the
+// mocked module is first imported, i.e. BEFORE this module's body — a const would
+// be in its temporal dead zone by then.
+// Full `AgentConfig` shapes: the identity renderer reads display fields off them and
+// TypeScript keeps these mocks honest against the real contract.
+function agentStub(id: string, displayName: string): AgentConfig {
+  return {
+    id,
+    displayName,
+    vendor: 'claude',
+    configMode: 'system',
+    config: { baseUrl: '', apiKey: '', model: '' },
+    enabled: true,
+  }
+}
+function toolTarget(): AgentTarget {
+  return { ref: 'tool-1', agent: agentStub('tool-1', '判定器'), candidates: [], isGroup: false }
+}
+function workTarget(): AgentTarget {
+  return { ref: 'work-1', agent: agentStub('work-1', '主控'), candidates: [], isGroup: false }
+}
 
 // ---- Imports ----
 
@@ -227,6 +266,7 @@ import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
 import {
   getQueueIntentMetaById,
   listQueueDecisions,
+  listQueueDecisionsForIntent,
   resetQueueStoreForTests,
 } from './queue-store.js'
 
@@ -1058,5 +1098,36 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(runCheckpointConsensus).not.toHaveBeenCalled()
     expect(hooks.createUserTodo).not.toHaveBeenCalled()
     expect(updateStatus).not.toHaveBeenCalledWith('JU', 'done')
+  })
+
+  it("the judge_unavailable detail reuses the judge's OWN identity verbatim", async () => {
+    const proj = '/test/judge-identity'
+    const intent = makeIntent({ id: 'JI', status: 'todo' })
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    // The judge already resolved this identity for its own log line; the detail
+    // written here must be the SAME string, not a second lookup that could differ.
+    vi.mocked(judgeCompletion).mockRejectedValue(
+      new JudgeUnavailableError(
+        "There's an issue with the selected model (deepseek-v4-flash).",
+        '判定器(tool-1) claude/deepseek-v4-flash',
+      ),
+    )
+
+    const { hooks } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+
+    // The judge failure is one row among the intent's decision log — later passes add
+    // their own blocked rows — so read the row this failure actually wrote.
+    const detail = listQueueDecisionsForIntent('JI')
+      .map((d) => String(d.rejectReason ?? ''))
+      .find((r) => r.includes('完成判定不可用'))
+    expect(detail).toContain('判定器(tool-1) claude/deepseek-v4-flash')
+    // The raw provider error is still there — the identity is added, not swapped in.
+    expect(detail).toContain('deepseek-v4-flash')
+    expect(detail).not.toMatch(/undefined|\[object Object\]/)
   })
 })

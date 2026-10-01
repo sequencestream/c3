@@ -261,7 +261,7 @@ admin-only).
 
 - **Handbook:** [English](handbook/README.md#english) |
   [简体中文](handbook/README.md#简体中文) — getting started guides for c3,
-  discussions, multi-agent consensus, intents, SDD, and automation engineering.
+  discussions, multi-agent consensus, intents, SDD, delivery, and automation engineering.
 - **[Development guide](doc/develop.md)** — build from source, tests, single binary, and release.
 - **[`doc/`](doc/)** — architecture spec, ADRs, domain specs, and flows (the source of
   truth kept in sync with the code).

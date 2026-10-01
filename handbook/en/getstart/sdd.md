@@ -22,7 +22,7 @@ Once AI agents became the executors, an imbalance appeared: the speed of produci
 Spec-driven development has only three core conventions:
 
 1. **Spec first, then code.** Every development task first produces a spec document stating the observable behaviour changes, the boundary, the key decisions, and the verification method.
-2. **Human approval is the gate into development.** A spec must be reviewed and approved by a human; an unapproved task cannot start coding — the same applies to manual starts and to automated orchestration.
+2. **Approval is the gate into development.** An unapproved task cannot start coding — the same applies to manual starts and to the intent queue. High-impact changes still require a human; a workspace may opt in to machine approval after a passing read-only review.
 3. **Spec is Truth.** Development follows the spec; when implementation reveals the spec is wrong or needs to deviate, change the spec first (Reverse Sync), keeping document and code consistent at all times.
 
 Around these three conventions, development agents in SDD mode follow a working contract: Spec is Truth, Restate First, Checkpoint Before Execute, Done by Evidence (rather than self-declaration), Reverse Sync (update the spec when implementation and spec diverge), and Ask for Clarification (ask instead of guessing when something is ambiguous).
@@ -43,7 +43,7 @@ SDD is a quality gate, and a gate has a cost (an extra round of writing and revi
 
 - Changes touching interface contracts, persisted data, migrations, security, or cross-module impact — hard to walk back if wrong;
 - Projects with multiple collaborators — the spec carries the team's shared understanding of "what it should become";
-- Using automated orchestration to let agents develop autonomously — with nobody present, the gate is the only checkpoint;
+- Using the intent queue to let agents develop autonomously — with nobody present, the gate is the only checkpoint;
 - Scenarios with traceability requirements (audit, compliance, long-term maintenance).
 
 **Cases where SDD can stay off:**
@@ -58,23 +58,28 @@ In c3, SDD is a workspace-level switch: within the same c3 you can turn it on fo
 
 ## Part 2: SDD configuration and development flow in c3
 
-In c3, SDD is built into the development chain of [intents](requirement-to-intent.md) as a first-class workflow: once enabled, every intent must first produce a spec and get your approval before it can enter development.
+In c3, SDD is a first-class workflow on the [intent](requirement-to-intent.md) development path. The workspace master switch is **on by default**; each intent can override with `specMode`, and impact level still applies.
 
 ```
 intent (todo)
    │
    ▼
-Write Spec ──► a write-restricted spec session produces spec.md
-   │              (can be refined repeatedly / reset and rewritten)
+Write Spec ──► a write-restricted spec session produces the spec
+   │             (refine / reset; or edit the body directly when development has not started and no spec session is running)
    ▼
-Approve Spec ──► human checkpoint: you click approve on the spec document page
+Spec Review ──► an independent read-only session; the verdict is bound to the current content fingerprint; rewriting invalidates it
    │
    ▼
-Start Work ──► the server enforces "spec approved" before starting the development session
-   │              the development session treats the spec as the single source of truth
+Approve Spec ──► human checkpoint; the workspace may explicitly allow machine approval (high impact still requires a human)
+   │             approval is revocable; a running development session is not force-stopped, the next resume re-checks the gate
    ▼
-development finishes → commit / PR → mark done
+Start Work ──► the server enforces the gate before launching the development session
+   │             the development session treats the spec as the single source of truth
+   ▼
+development finishes → commit / PR (optionally onto a delivery) → done when review is settled and the PR is merged
 ```
+
+When the effective mode is `fast`, the primary button is Start Work and does not invite writing a spec first — it only skips "must approve a spec first". A single-turn diff that reaches the workspace small-change thresholds (default 3 files, 50 lines) pins the intent back to `sdd` and reverse-fills a spec.
 
 ### Prerequisites
 
@@ -83,54 +88,62 @@ development finishes → commit / PR → mark done
 
 ### Configuring SDD
 
-#### 1. Turn on the workspace SDD switch
+#### 1. The workspace SDD switch
 
-Open Workspace Setting, find the spec-driven development section, and check enable spec-driven development. The switch is off by default and applies per workspace.
+Open Workspace Setting and find the spec-driven development section. The switch is **on by default** and only turns off when you explicitly disable it; it applies per workspace. Turning it off does not revoke already-approved specs.
 
-Once on, the primary action button of intents in that workspace becomes the SDD-aware four-state button (see the flow below), and the automation orchestrator only picks up intents whose specs are approved.
+Once on, the primary action button of intents follows spec status (see the flow below). Impact levels `L1`/`L2` still force spec-first and forbid machine approval even when the workspace switch is off.
 
 ![c3 SDD switch](../../images/c3-enable-sdd.png)
 
+Two optional settings:
+
+- **Allow machine approval of a passing spec review** — off by default. When on, a read-only review concluding "pass" is approved by c3 under a machine identity, and development may start without another human click. The approval stays revocable; the same review conclusion is not machine-approved again. High-impact intents always require a human.
+- **Small-change thresholds (fast mode)** — the maximum files and lines a single turn may change; reaching the value is over the threshold.
+
 #### 2. Understand the spec directory (read-only, nothing to configure)
 
-Once the switch is on, the settings page shows the project's spec directory. It is a fixed central location: `~/.c3/specs/<project path segments>`, resolved deterministically by the server from the workspace path, neither configurable nor modifiable. There are two reasons for this design:
+The settings page shows the project's spec directory. It is a fixed central location: `~/.c3/specs/<project path segments>`, resolved deterministically by the server from the workspace path, not configurable. There are two reasons for this design:
 
-- **All worktrees share the same specs.** Specs are stored per project under the c3 home directory rather than scattered across each git working copy — whichever worktree an intent is developed in, it reads the same spec;
-- **Specs are not committed to Git.** They are governance documents of the development process and do not enter the code repository.
+- **All worktrees share the same specs.** Specs are stored per project under the c3 home directory rather than scattered across each git working copy;
+- **Specs are not committed to Git.** They are governance documents of the development process and do not enter the code repository. Historical spec files inside the workspace are not recognized.
 
-#### 3. Optional: designate a spec agent
+#### 3. Optional: designate spec agents
 
-Under Settings → Agents you can configure the spec agent (the agent responsible for writing specs); it follows the default agent unless set. Note: the spec-writing session is write-restricted (see below), the restriction is enforced at the tool/path layer, and if the configured agent cannot establish this boundary, startup is rejected rather than silently downgraded.
+Under Settings → Agents you can configure the agents for spec writing and spec review; they follow the default agent unless set. The writing session is write-restricted (see below); the review session has no write access to any path. If the configured agent cannot establish this boundary, startup is rejected rather than silently downgraded.
 
 ![c3 spec agent](../../images/c3-agents.png)
 
 #### 4. Optional: development skill (devSkill)
 
-`devSkill` in the workspace settings is the slash command prefix for development sessions. If devSkill is configured, the development session works according to your skill's conventions; if not, SDD automatically injects the built-in spec-driven working contract into the development session (Spec is Truth, Restate First, Checkpoint Before Execute, Done by Evidence, Reverse Sync, Ask via Tool). The two do not stack — devSkill takes precedence.
+The development launch skill in workspace settings is the slash-command prefix for development sessions. If it is set, the development session follows your skill's conventions; if not, SDD injects the built-in spec-driven working contract (Spec is Truth, Restate First, Checkpoint Before Execute, Done by Evidence, Reverse Sync, Ask via Tool). The two do not stack — the skill takes precedence.
 
 ### The SDD development flow
 
-With SDD on, the primary action button of a `todo` intent presents three actions depending on state: no spec ⇒ Write Spec; written but not approved ⇒ Approve Spec; approved ⇒ Start Work. Let us walk through it step by step:
+With SDD on and the effective mode `sdd`, the primary action button of a `todo` intent presents: no spec (or only a seeded placeholder) ⇒ Write Spec; written but not approved ⇒ go to the spec tab to approve; approved ⇒ Start Work. `fast` with no spec yet goes straight to Start Work. Walk through it:
 
 #### Step 1: Write Spec
 
 Click Write Spec on the intent detail page. c3 will:
 
-1. Create a dated spec document under the central spec directory: `~/.c3/specs/<project>/yyyy/mm/dd/yyyy-mm-dd-<sequence>-<intent short title>.md`, and immediately back-fill it onto the intent;
-2. Start a spec session to write the content. This session only writes the spec and never changes code: writes are hard-restricted to that spec directory (writing anywhere else is rejected outright), the rest of the project is read-only, and shell, subagents, and slash commands are all disabled — just like the intent communication agent, the constraints are enforced at the tool/path layer, not by prompt discipline. It can query the project's existing intents read-only, to align context and avoid conflicting with established agreements.
+1. Create a dated spec document under the central spec directory: `~/.c3/specs/<project>/yyyy/mm/dd/yyyy-mm-dd-<sequence>-<intent short title>.md`, and immediately back-fill it onto the intent (seeded as `raw`; real content change moves it to `pending`);
+2. Start a spec session to write the content. This session only writes the spec and never changes code: writes are hard-restricted to that spec directory, the rest of the project is read-only, and shell, subagents, and slash commands are all disabled. It can query the workspace's existing intents read-only and cannot save intents.
 
-> In worktree mode, before writing a spec c3 checks whether all of the intent's dependencies have been merged into the mainline — a spec written while the dependency code is not yet on the mainline is castles in the air, so the button is disabled with an explanation.
+> Before writing a spec, c3 checks the dependency gate: if predecessor output is not yet on this intent's baseline, the button is disabled with an explanation. That is not the same question as "has the predecessor PR merged to mainline".
 
-**What does a spec look like?** A spec's first reader is you (the reviewer), and only its second reader is the development agent. It does not repeat the Why / What / Acceptance already in the intent; it goes straight to the point: the observable behaviour changes, the boundary, the key decisions that need a call, and the verification method. Its length scales with impact — a single-point small change is usually just 8–20 lines; only changes touching contracts, data, migrations, security, or multiple domains expand into recorded trade-offs, compatibility, and failure handling. A spec describes capabilities and contracts in domain language; it does not list file paths or name functions — that belongs to the implementation stage.
+**What does a spec look like?** A spec's first reader is you (the reviewer), and only its second reader is the development agent. It does not repeat the Why / What / Acceptance already in the intent; it goes straight to the point: the observable behaviour changes, the boundary, the key decisions that need a call, and the verification method. Its length scales with impact. A spec describes capabilities and contracts in domain language; it does not list file paths or name functions.
 
-#### Step 2: Review and refine
+#### Step 2: Review, refine, and read-only audit
 
 Read the generated spec on the spec tab of the intent detail page. The criterion is simple: without reading the codebase, can you confidently approve or reject it?
 
-If you are not satisfied, there are two ways to keep polishing:
+If you are not satisfied:
 
 - Continue the conversation in the spec-writing session tab and ask it to revise;
-- When the session has gone on so long it has gone "mushy", click reset spec session: enter your new requirements, and c3 starts a fresh, clean spec session from "your input + the current spec path" (write-restricted in the same way). The old session remains visible under Works, but is no longer linked to this intent.
+- When development has not started and no spec session is running, you may edit the body directly; rewriting revokes approval;
+- When the session has gone "mushy", reset it: a fresh session starts from "your input + the current spec path"; the old session remains reviewable.
+
+Spec review is an independent read-only session: the verdict is submitted structurally and bound to the current content fingerprint; rewriting invalidates the old verdict. It can be replayed, never resumed; judgements in the chat body do not count.
 
 #### Step 3: Approve Spec
 
@@ -138,27 +151,28 @@ Once the spec is good enough, click approve on the spec document tab. This is SD
 
 - The approval records the approver (the currently logged-in user), and a single confirmation takes effect;
 - To prevent misclicks, the approve action is unavailable for the first 10 seconds after a spec is generated;
-- Approval only opens the gate; it does not start development automatically — the button then changes to Start Work.
+- Approval only opens the gate; it does not start development automatically — the button then changes to Start Work;
+- An approved spec can be revoked; revocation is auditable and does not force-stop a running development session.
 
 #### Step 4: Start Work
 
 Click Start Work to launch a background development session. SDD does three things at this step:
 
-1. **Server-enforced gate.** An intent whose spec is not approved cannot start development — even calling the API directly, bypassing the UI, is rejected by the server; the gate does not depend on a hidden front-end button;
-2. **Injecting the spec path.** Besides the intent title, content, and dependency notes, the development session's startup information carries the path of the approved spec and declares it the single source of truth: when implementation and spec diverge, reverse-sync the spec first;
-3. **Installing the working contract.** When devSkill is not configured, SDD's spec-driven working contract is injected into the development session as system context — restate first, checkpoints, done by evidence, ask when ambiguous.
+1. **Server-enforced gate.** When the effective mode requires a spec, an unapproved intent cannot start or resume — even calling the API directly is rejected. High impact also requires a human approver. If a spec was never written and a work session already exists, a manual resume or restart is not blocked for "unapproved"; the queue and high impact still require approval.
+2. **Injecting the spec path.** The development session's startup information carries the path of the approved spec and declares it the single source of truth: when implementation and spec diverge, reverse-sync the spec first.
+3. **Installing the working contract.** When no development skill is configured, the spec-driven working contract is injected as system context.
 
-After that it is the standard development loop: the agent develops on a (optionally worktree-isolated) branch, sensitive operations still go through your permission approval, and when finished it commits, pushes a PR, and marks the intent `done`.
+After that it is the standard development loop: the agent develops on a (worktree-isolated by default) branch, and sensitive operations still go through your permission approval. A finished run does not by itself mark the intent `done`; that happens when the queue judges completion and commits, or when review is settled and the PR is merged.
 
-#### Working together with automation
+#### Working together with the queue
 
-When you mark an intent with `automate` and start the automation orchestrator, the SDD switch still applies: intents whose specs are not approved are not picked up by automation, and queue until you approve them before entering autonomous development. That is exactly SDD's value for automation — when nobody is present, the gate keeps watch over the direction for you.
+When you mark an intent with `automate` and start the intent queue, the SDD switch still applies. Under SDD the queue autonomously advances write → review → bounded rework; hitting the cap parks the intent for a human. Machine approval is an explicit workspace opt-in, and high impact still requires a human. The spec stage does not consume the development concurrency cap.
 
 ### FAQ
 
 **Q: With SDD on, do I have to write a spec for every small intent? Isn't that too heavy?**
 
-A: A spec's length scales with impact; the spec for a single-point small change is usually just over a dozen lines and takes a minute to review. If most changes in your project are small fixes, you can simply leave SDD off — it is a workspace-level switch, weighed per project.
+A: Spec length scales with impact; a single-point change is usually a dozen lines. Low-impact intents can use `fast`; if most changes in the project are small fixes, you can also turn the workspace switch off. It is a per-workspace trade-off.
 
 **Q: Why aren't specs stored in the code repository?**
 
@@ -166,17 +180,18 @@ A: A spec is a governance document of the development process, and metadata such
 
 **Q: Could the spec session casually modify my code?**
 
-A: No. Its write scope is restricted to that spec directory, all other paths are read-only, and shell and subagents are disabled — these constraints are enforced at the tool/path layer and cannot be bypassed by prompting.
+A: No. The writing session's write scope is that spec directory; the review session has no write access to any path. Those constraints are enforced at the tool/path layer.
 
 **Q: Can a spec still be changed after approval?**
 
-A: At the current stage approval is a single-person confirmation with no "unapprove". Polish the spec thoroughly with the spec session or a reset spec session before approving; when development reveals a genuine problem with the spec, follow the reverse-sync principle — have the development session pause and hand the divergence back to you for a decision.
+A: Yes — you can revoke approval. Polish with the spec session, direct edit, or a reset before approving; if development discovers the spec is wrong, reverse-sync — pause the development session and hand the divergence back to you.
 
 **Q: Do SDD specs duplicate the intent's Acceptance?**
 
-A: No. Acceptance lives in the intent and answers "what conditions count as done"; the spec turns those acceptance items into observable verification conditions and adds the design decisions the intent does not cover (contracts, boundaries, compatibility, failure handling). A spec does not copy the intent's content.
+A: No. Acceptance lives in the intent and answers "what conditions count as done"; the spec turns those acceptance items into observable verification conditions and adds the design decisions the intent does not cover. A spec does not copy the intent's content.
 
 ## References
 
 - [c3 Getting Started Guide](c3-get-start.md)
 - [From Requirement to Intent](requirement-to-intent.md)
+- [Delivery](delivery.md)

@@ -22,7 +22,7 @@ Three safety lines:
 2. **There must be at least one "other".** If there is no agent besides the session's own to vote, consensus is skipped and you are asked as usual.
 3. **Automatic decisions leave a traceable record.** Every automatic decision made without human involvement leaves an audit-only, non-blocking record under the "auto" filter in the WorkCenter, so afterwards you can check who approved what, when, and on what basis.
 
-Consensus covers not only allow/deny tool permissions but also answering each `AskUserQuestion` item, plus checkpoints in automated orchestration (whether the flow should `continue` or `wait` for a human) — the same voting agents, the same bottom line of falling back to the human.
+Consensus covers not only allow/deny tool permissions but also answering each `AskUserQuestion` item, plus checkpoints in the intent queue (whether the flow should `continue` or `wait` for a human) — the same voting agents, the same bottom line of falling back to the human.
 
 ## How to configure it in c3
 
@@ -52,20 +52,18 @@ The second switch, off by default, and only meaningful when consensus is already
 
 Majority rule clearly raises the automation rate, at the cost of decisions no longer requiring a full vote. c3 distinguishes "all agents agreed…" from "decided by majority…" in the result, so you can see at a glance how a given decision came about.
 
-> Majority rule also incidentally enables checkpoint consensus in automated orchestration: when the development loop judges that it is stuck, or there is an unanswered multiple-choice question, the same set of agents votes on whether the flow should `continue` or `wait` for a human. With majority rule off, checkpoints never trigger consensus and follow the original "stop and wait for a human" path.
+> Majority rule also incidentally enables checkpoint consensus in the intent queue: when the development loop judges that it is stuck, or there is an unanswered multiple-choice question, the same set of agents votes on whether the flow should `continue` or `wait` for a human. With majority rule off, checkpoints never trigger consensus and follow the original "stop and wait for a human" path.
 
 ### 3. Who votes
 
-> **Choose who votes. Voting is always limited to enabled agents of the session's own vendor (different vendors never vote); custom only narrows further within that set.** (all agents / custom)
+> **Choose who votes.** (all agents / custom)
 
-An `all agents (default) / custom` radio choice determines the range of voters.
+An `all agents / custom` radio choice determines the range of voters.
 
-- **All agents (default)**: every enabled agent other than the session's own takes part in the vote.
-- **Custom:** pick the subset allowed to vote from the checklist of enabled agents. Useful for:
-  - excluding read-only agents irrelevant to the decision;
-  - granting the vote only to the few agents you trust more.
+- **All agents**: every enabled agent other than the session's own takes part, **regardless of vendor**. A Claude session can be voted on by a Codex or Cursor agent.
+- **Custom:** pick the subset allowed to vote from the checklist of enabled agents. Useful for excluding read-only agents, or granting the vote only to the few you trust more. Custom only narrows, by id, never by vendor. Disabled agents or an empty list yield zero voters, consensus is skipped, and you are asked as usual.
 
-  A custom list can only narrow the set, and it is doubly filtered — disabled or no longer existing agents are removed from the list, and at run time the voting set is rebuilt from the "enabled agents" only, so a stale id can never come back to life as a voter. If the custom list ends up empty, consensus is skipped and you are asked as usual.
+Read-only, unattended, or write-restricted runs do not run consensus. When external skills are mounted, write tools skip consensus and go straight to a human. Checkpoint continue/wait votes in the intent queue share the same workspace config and voter set, but do not go through the permission gateway.
 
 ## A suggested rollout pace
 

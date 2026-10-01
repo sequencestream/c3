@@ -111,70 +111,74 @@ Acceptance is the most critical dimension for the "AI executes, humans gate" spl
 
 ## Part 2: Intents in c3 and how to use them
 
-c3 (Code Creative Center) is a coding platform that fuses harness design, loop engineering, and AI software engineering practices. It drives coding work through intents, treating requirements, specs, tests, and docs as subtasks of an intent, realizing the "one goal, one intent" principle. See https://github.com/sequencestream/c3 for details.
+c3 drives coding work through intents: requirements, specs, tests, and docs fold into the same goal, realizing the "one goal, one intent" principle. See https://github.com/sequencestream/c3 for details.
 
 ### What makes up an intent in c3
 
-In c3, an intent lands as one structured project-level record with the following main fields:
+In c3, an intent lands as one structured workspace-scoped record with the following main fields:
 
-| Component        | Description                                                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **title**        | One sentence stating what this intent is meant to achieve                                                                         |
-| **shortEnTitle** | A short ASCII title, used to derive the Git branch name / worktree directory name                                                 |
-| **content**      | The full description of the intent, covering the five dimensions from Part 1: **Why / What / Trade-offs / When / Acceptance**     |
-| **priority**     | `P0`–`P3`, with P0 highest; determines execution order in automated development                                                   |
-| **module**       | The module the intent belongs to, inferred by the communication agent from the title/content                                      |
-| **status**       | The `draft` → `todo` → `in_progress` → `done` / `cancelled` state machine                                                         |
-| **dependsOn**    | Other intents in the same project that this one depends on, forming a directed dependency graph that determines development order |
-| **automate**     | Whether the automation orchestrator may develop this intent autonomously; off by default                                          |
+- **title** — one sentence stating what this intent is meant to achieve
+- **shortEnTitle** — a short ASCII title, used to derive the Git branch name / worktree directory name
+- **content** — the full description covering the five dimensions from Part 1: **Why / What / Trade-offs / When / Acceptance**. Draft and todo items can be edited in place; once work is in progress the body is locked
+- **priority** — `P0`–`P3`, with P0 highest; determines queue order
+- **impactLevel** — `L1`–`L5`, orthogonal to priority: priority answers when to do it, impact answers how far a mistake reaches. High impact forces spec-first and forbids machine approval; low impact defaults to `fast` unless explicitly overridden
+- **specMode** — `sdd` (must approve a spec first) / `fast` (may start work first; over-threshold diffs reverse-fill a spec) / empty (inherit the workspace). Locked once spec or development has started
+- **module** — inferred by the communication agent from the title/content; display only
+- **status** — `draft` → `todo` → `in_progress` → `reviewing` → `done` / `cancelled`. `reviewing` means code is committed and the PR is not yet settled
+- **dependencies** — directed edges in the same workspace. The gate asks whether the predecessor's output is already on this intent's baseline, not whether the predecessor PR is merged; a manual start may waive the dependency gate once
+- **automate** — whether this intent is a candidate for the workspace intent queue; the flag grants candidacy only, it does not start the queue or skip gates
+- **base branch** — a snapshot written at creation time, not chasing later mainline movement. PR targets and worktree baselines read the same value
+
+An intent may also carry communication sessions, spec-writing / spec-review sessions, a work session, PR rows, WorkNotes, and deliveries.
 
 ### Prerequisites
 
 You have completed the installation and startup in the [c3 Getting Started Guide](c3-get-start.md), and created a workspace pointing at your project directory.
 
-### Creating an intent, option 1: talk to the intent communication agent (recommended)
+### Creating an intent, option 1: create directly (the main entry)
 
-1. **Enter the intent view.** In the workspace UI, click the + (create intent) button and c3 opens the intent communication session for that project.
-2. **State your idea.** Describe what you want to do in natural language, for example:
-
-   > I want to add an export feature to the user list, exporting to CSV, and it should handle large data volumes.
-
-3. **Let the agent refine it with you.** The intent communication agent is read-only — it can read project code, search the web, and query existing intents in the project (to avoid duplication and reference dependencies correctly), and it can use a question tool to clarify things with you, but it can never modify files or run commands. Over several turns it turns your idea into one or more right-sized intent items, each covering the five dimensions, annotated with priority, module, and the dependencies between items.
-4. **Confirm to save.** When the agent saves intents, c3 opens a confirmation panel listing every pending intent (including dependencies). Only after you click Allow are the intents written with `todo` status; clicking Deny writes nothing. Without your confirmation, no intent ever reaches the store.
+1. **Enter the intent view and click +.** The create-intent dialog opens.
+2. **Pick a base.** Two mutually exclusive choices: a workspace branch (prefilled with the main branch) or a still-writable delivery (branch ready, and still in planned / integrating).
+3. **Write the idea.** Content must be non-empty to submit. In one request the server registers the intent, records the base, and starts that intent's communication session with this text as the first turn — you do not open a second session to restate the background. Empty content only registers; it does not start a session.
+4. **Let the communication agent refine it.** The agent is read-only: it can read project code, search the web, and query existing intents in this workspace, and it can ask you clarifying questions, but it cannot modify files or run commands. It turns the idea into right-sized items covering the five dimensions, annotated with priority, impact, module, and dependencies.
+5. **Confirm in the conversation before anything is stored.** The agent must list every intent in the turn and obtain your explicit textual confirmation, then call save. The call writes immediately — no permission panel; a validation failure writes nothing. Newly saved items start as `todo`. Without your confirmation, nothing lands through this path.
 
 ### Creating an intent, option 2: convert from a multi-agent discussion
 
-For questions where the direction is still unclear, start a discussion first: several AI agents hold a round-table on your goal and converge on a conclusion. When the discussion finishes, click Convert to Intent and the conclusion feeds into the same intent refinement flow, again landing in the store only after your confirmation.
+When the direction is still unclear, start a [discussion](discussion.md) first. When it has completed with a non-empty conclusion, click Convert to Intent; the conclusion enters the same creation primitive and still lands only after communication and confirmation.
 
 ### After creation: from intent to development
 
 Once an intent is stored, the typical path forward is:
 
 ```
-intent (todo) → [optional] Write Spec → [optional] Approve Spec
-    → Start Work (background session, optional worktree isolation)
-    → development finishes → commit / push / create PR → mark done
+intent (todo)
+   → [when the effective mode requires a spec] Write Spec → read-only review → approve (human, or machine if the workspace opted in)
+   → Start Work (attach or resume if a session exists, otherwise create; worktree isolation is the default)
+   → commit / push / create PR (optionally onto a delivery) → review / fix → mark done
 ```
 
-- **Refine:** a saved intent can be reopened in a communication session at any time to keep polishing it; updates overwrite the original item instead of producing duplicates.
-- **Spec-driven (SDD):** once the workspace's SDD switch is on, an intent must first produce a spec document and receive human approval before it can enter development — that is the quality gate.
-- **Automation:** mark an intent with `automate` and start the automation orchestrator, and c3 will develop, judge, commit, and push intents one by one following priority and dependency order.
+- **Refine:** a saved intent can be opened in a communication session to keep polishing it; an id updates in place instead of duplicating. A real change to title or body revokes spec approval.
+- **Spec:** the workspace SDD switch is on by default; each intent can override with `specMode`. See [SDD](sdd.md).
+- **Dependencies:** unmet ones warn in the list; the real gate is whether predecessor output is on this baseline. The queue does not offer a one-shot waiver.
+- **Queue:** mark `automate` and start this workspace's intent queue; c3 picks by priority then earliest created, can autonomously write / review specs with bounded rework, and on development failure backs off then parks after three consecutive failures. A permission wait that times out parks and files a todo — it never answers for you. This scheduler is not the cron / event automations on the [Automations](automation-engineering.md) page.
+- **Delivery:** intent PRs can land on a delivery branch so a batch is verified before the mainline. See [Delivery](delivery.md).
 
-> Tip: on your first attempt, pick a small, clear idea (say "add a validation to some module") and walk the full "dialogue → confirm → start work" flow to feel the difference between an intent and simply typing a prompt into a session.
+> Tip: on your first attempt, pick a small, clear idea (say "add a validation to some module") and walk the full "create → confirm → start work" flow to feel the difference between an intent and simply typing a prompt into a session.
 
 ### FAQ
 
 **Q: What is the difference between an intent and just typing a prompt into a session?**
 
-A: A session prompt is one-off — when the conversation ends, the context disperses. An intent is a durable structured record that can be refined, depended upon, scheduled, and automated, and it links to the full development chain. Chat directly for small things; use intents for serious feature evolution.
+A: A session prompt is one-off — when the conversation ends, the context disperses. An intent is a durable structured record that can be refined, depended upon, scheduled, and queued, and it links to the full development and delivery chain. Chat directly for small things; use intents for serious feature evolution.
 
 **Q: Could the intent communication agent secretly modify my code?**
 
-A: No. Its read-only constraint is enforced at the tool layer (not by prompt discipline): editing, writing files, running commands, spawning subagents, and similar capabilities are hard-disabled.
+A: No. Its read-only constraint is enforced at the tool layer (not by prompt discipline): editing, writing files, running commands, spawning subagents, and slash commands are hard-disabled.
 
 **Q: Could an intent be saved without my consent?**
 
-A: No. The save confirmation is enforced by the save handler itself — even under permission modes where tools are pre-approved, the confirmation panel still appears, and denying writes nothing.
+A: Not on the communication path. Save requires your explicit confirmation in the conversation; the call then writes immediately and does not go through Allow/Deny. If an administrator has granted write tools to an external MCP key or a chat robot, that grant replaces conversational confirmation — business validation is not relaxed.
 
 **Q: Should one big idea become one intent or several?**
 
@@ -183,3 +187,5 @@ A: Let the communication agent split it — it produces multiple right-sized int
 ## References
 
 - [c3 Getting Started Guide](c3-get-start.md)
+- [Spec-Driven Development (SDD)](sdd.md)
+- [Delivery](delivery.md)

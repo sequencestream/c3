@@ -81,7 +81,7 @@ In c3, a discussion is a structured record within a workspace with the following
 
 ### Prerequisites
 
-You have completed the installation and startup in the [c3 Getting Started Guide](c3-get-start.md), created a workspace pointing at your project directory, and enabled at least two agents (one as organizer, one as participant).
+You have completed the installation and startup in the [c3 Getting Started Guide](c3-get-start.md), created a workspace pointing at your project directory, and enabled at least two agents (one as organizer, one as participant). Creating from the console requires at least one participant other than the organizer.
 
 ### Starting a discussion
 
@@ -116,11 +116,12 @@ created (draft) → read-only research (survey the current state) → discussion
 
 ### The three ways a human intervenes
 
-| Action             | When available            | Effect                                                                                                                                                                                       |
-| ------------------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pause / Resume** | While the discussion runs | Suspends the discussion at a round boundary (the remark being generated finishes first), and resumes in place                                                                                |
-| **Speak**          | While the discussion runs | Interject in the input box; your words enter the discussion record and the organizer reads them next round and adjusts direction                                                             |
-| **Continue**       | Discussion completed      | When unsatisfied with the conclusion or you have follow-ups, enter a new question; the discussion returns to in progress, continues on top of the full record, and produces a new conclusion |
+| Action             | When available                        | Effect                                                                                                                                                                                       |
+| ------------------ | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pause / Resume** | While the discussion runs             | Suspends the discussion at a round boundary (the remark being generated finishes first), and resumes in place                                                                                |
+| **Speak**          | While the discussion runs             | Interject in the input box; your words enter the discussion record and the organizer reads them next round and adjusts direction                                                             |
+| **Stop**           | Draft or in progress                  | Tears down every live run on this discussion and lands `cancelled`. Stop is terminal; there is no resume. Start a new discussion if you want to continue                                     |
+| **Continue**       | Completed with a non-empty conclusion | When unsatisfied with the conclusion or you have follow-ups, enter a new question; the discussion returns to in progress, continues on top of the full record, and produces a new conclusion |
 
 > Tip: you do not have to watch a discussion throughout. Start it, go do something else, and read the conclusion when you come back; if you feel it drifted, use "Continue" for one more round of follow-up — often less work than intervening mid-way.
 
@@ -128,7 +129,9 @@ created (draft) → read-only research (survey the current state) → discussion
 
 The right column of the discussion detail presents tabs: goal, context, research, conclusion (Markdown-rendered), research session (the research run's full process — stoppable, and open to follow-ups), process session (the full record of remarks), and details. Every agent remark carries a vendor tag, so who said it and on which model is obvious at a glance. The research session is also listed on the sessions page under 「Discussion」, from where it jumps back to this discussion.
 
-When the discussion is completed and the conclusion is non-empty, a Convert to Intent button appears in the title bar. Clicking it makes c3 open the project's intent communication session carrying the discussion title and conclusion, and the intent communication agent breaks the conclusion into one or more intent items covering the five dimensions Why / What / Trade-offs / When / Acceptance — exactly the same flow as creating an intent directly, and likewise nothing lands in the store until you click Allow in the confirmation panel. From there it joins the "intent → development" path described in [From Requirement to Intent](./requirement-to-intent.md).
+When the discussion is completed and the conclusion is non-empty, a Convert to Intent button appears in the title bar. Clicking it makes c3 open the workspace's intent communication session carrying the discussion title and conclusion, and the intent communication agent breaks the conclusion into one or more intent items covering the five dimensions Why / What / Trade-offs / When / Acceptance — exactly the same flow as creating an intent directly, and likewise nothing lands until you confirm in the conversation. From there it joins the "intent → development" path described in [From Requirement to Intent](requirement-to-intent.md).
+
+Automations must tick the discussion tools explicitly to mount them: they can find, view, start a draft, and open a new round on a completed discussion. Orchestration start and end publish `discussion:start` / `discussion:end` for event subscriptions. The round-table path does not run consensus voting.
 
 ### FAQ
 
@@ -142,7 +145,7 @@ A: No. A discussion only ever reads and speaks: the research agent is read-only 
 
 **Q: Could a discussion run forever without stopping?**
 
-A: No. Phases can only advance one way, and both each phase and the whole discussion have round caps; hitting a cap automatically writes a fallback conclusion. You can also pause at any time.
+A: No. Phases can only advance one way, and both each phase and the whole discussion have round caps; hitting a cap automatically writes a fallback conclusion. You can also pause at any time. Stop cancels the discussion for good.
 
 **Q: What if I am not satisfied with the conclusion?**
 

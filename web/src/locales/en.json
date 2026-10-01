@@ -3817,7 +3817,7 @@
         "label": "Allow majority rule (a tie or no clear majority still defers to you)"
       },
       "voters": {
-        "hint": "Choose who votes. Voting is always limited to enabled agents of the session's own vendor (different vendors never vote); custom only narrows within that set.",
+        "hint": "Choose who votes. Voters are every enabled agent except the session's own, regardless of vendor; custom only narrows that set further.",
         "all": {
           "label": "All agents"
         },

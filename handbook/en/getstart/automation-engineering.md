@@ -59,7 +59,9 @@ Layer 1  Trigger foundation             │
 - **Irreversible, high-risk operations** — directly changing production data, releasing, or merging to the main branch, unless permission modes and the tool allowlist tightly constrain the operation;
 - **One-time work** — when defining the automation costs more than performing the task once.
 
-**Automation is supervised, not inherently unattended.** Sensitive operations still go through the normal permission flow. If nobody responds, the execution waits. For genuinely unattended execution, use the **permission mode** and **allowed tools** to authorize the required capabilities in advance. This is explicit, bounded authorization—not a blanket approval.
+**Automation tasks are unattended.** Sensitive tools are allowed or denied on the server from the frozen allowlist and permission mode of that automation; they never send a permission prompt to the browser. Unticked tools are denied. For a run to actually finish, pre-authorize only the capabilities it needs through **permission mode** and **allowed tools** — an explicit, bounded grant, not a blanket approval. The intent development queue is different: those work sessions still hand permissions back to you, and a wait that times out only parks.
+
+Intent / delivery / discussion workbench tools must be ticked explicitly; an empty list grants none of them. Network can be turned on under a writable sandbox and is off by default. Claude, Codex, and Cursor can all execute; a missing, disabled, or mismatched identity fails that run and does not switch vendor. New forms are seeded from the default automation agent; the record stores a creation snapshot. Same-vendor profiles can also bind to a group and fall back in list order.
 
 ---
 
@@ -90,7 +92,7 @@ Several fields deserve special attention:
 
 - **Task type** is either **Command** (run a shell command in the workspace, capture stdout/stderr, and fail on a nonzero exit code) or **LLM prompt** (start an agent session in the workspace and use the prompt as its first input; the session ends when that turn ends). **The type cannot be changed after creation.**
 - **Execution timeout** is the maximum wall-clock duration of one execution. Leaving it blank uses the default: 30 seconds for commands and 60 seconds for LLM prompts. An explicit value can range from 1 second to 24 hours. **Always increase it explicitly for tests and builds**, or they may be marked failed due to timeout.
-- **Permission mode and allowed tools** jointly define the execution boundary. Read-only inspections should receive only read tools; grant write tools only when the task must change code. For unattended runs, the tool list is the upper bound of what the automation can do.
+- **Permission mode and allowed tools** jointly define the execution boundary. Read-only inspections should receive only read tools; grant write tools only when the task must change code. For unattended runs, the tool list is the upper bound of what the automation can do — an unticked tool is denied and never pops in the browser.
 
 The top-right of the list also has a workspace-wide **Enable automations** switch. Turning it off silences **all schedule and event triggers** in the workspace: nothing is queued or replayed later. Individual enabled/paused states remain unchanged, and **Run now** remains available. This is a useful master switch while investigating problems.
 
@@ -102,7 +104,7 @@ Select **On a schedule** to configure a visual schedule: choose a **frequency** 
 
 Important rules:
 
-- **Schedules use the system time zone.** Cron expressions are interpreted using the time zone in system settings, such as `Asia/Shanghai`, rather than UTC, and account for daylight saving time.
+- **Schedules use the system time zone.** Cron expressions are interpreted using the time zone in system settings, such as `Asia/Shanghai`, rather than UTC, and account for daylight saving time. A schedule may also limit itself to a daily time window.
 - **Each automation runs serially.** If the previous execution is still running, a new trigger is **skipped**, not queued.
 - **Old missed runs are not replayed.** If service downtime makes a trigger more than five minutes late, c3 records a failure and calculates the next run from the current time.
 - **You can always run it manually.** **Run now** starts one execution without affecting the schedule or enabled state. It also works for paused automations and is the primary debugging tool.
@@ -133,12 +135,24 @@ c3 event names use `<category>:<action>` and may also carry a `status` (the outc
 - Status: none
 - Published by c3 at intent lifecycle milestones
 
+**`discussion` — discussion orchestration**
+
+- Types: `discussion:start` (formal orchestration starts) and `discussion:end` (orchestration ends)
+- Status: only `discussion:end` has one — the same terminal reasons as a run: completed, errored, or aborted
+- The research phase does not publish this pair; a resume and a new round each count as one attempt
+
+**`delivery` — delivery lifecycle**
+
+- Types: `delivery:created`, `delivery:status_changed`, `delivery:branch_ready`, `delivery:pr_created`, `delivery:delivered`, and `delivery:cancelled`
+- Status: none; `status_changed` carries the edge in metadata `from` / `to`
+- Entering a terminal status publishes both `status_changed` and the terminal event
+
 Two details are critical:
 
 - **Event types are open-ended, not a closed enum.** The cascading selector suggests known categories and actions, but each level has an **Other** option. Agents can publish custom events such as `custom:verify`, and automations can subscribe to them. This is the primary extension point for defining your own pipeline semantics.
 - A category wildcard such as **`pr:*` or `intent:*` matches every action in that category**. Wildcards are supported only at the category level.
 
-For PR events, remember that **c3 does not itself perform PR operations**. Agents create, review, merge, close, or comment using their own tools, such as the `gh` CLI or GitHub MCP, and then call c3's MCP tool to publish a PR event. **No published event means no trigger.** Tell upstream agents explicitly to publish an event after completing the operation.
+For PR events, remember that **the automations domain does not itself perform PR operations**. Agents create, review, merge, close, or comment using their own tools, such as the `gh` CLI or GitHub MCP, and then call c3's MCP tool to publish a PR event. Intent and delivery each own their own create-PR paths; that is not an automation item doing the work. For automation handoffs, **no published event means no trigger.** Tell upstream agents explicitly to publish an event after completing the operation. The first time a workspace creates a delivery, c3 notes that `pr:merge` may point at the delivery branch rather than the mainline.
 
 #### Subscription conditions
 
@@ -148,7 +162,7 @@ An automation can have **multiple subscription rows, combined with OR**: any mat
 2. **Status filter** — accepts multiple values; **empty means any status**, while a nonempty filter requires an exact, case-sensitive match;
 3. **Metadata conditions** — key-value conditions combined with **all (AND)** or **any (OR)**; empty means no metadata filtering. Values use exact matches without case folding, regular expressions, or substring matching.
 
-Subscriptions to `run:started` or `run:settled` also offer a **session type** multi-select: work, intent, discussion, automation, consensus, tool, or specification. **Empty means all session types.**
+Subscriptions to `run:started` or `run:settled` also offer a **session type** multi-select: work, intent, discussion, automation, consensus, tool, specification, spec review, or robot. **Empty means all session types.**
 
 > Session type is both a filter that prevents discussion runs from triggering development workflows and the switch that makes loops possible. **Automation is itself a session type**; selecting it allows one automation's completion to trigger another.
 
@@ -288,7 +302,7 @@ A: Runs more than five minutes late are not replayed. c3 records a failure and r
 
 **Q: Who answers permission requests during automation execution?**
 
-A: Someone must answer in the browser, or the execution waits until it times out. For unattended operation, pre-authorize only the required capabilities through the **permission mode** and **allowed tools**.
+A: Automation tasks do not send permission prompts to the browser. Sensitive tools missing from the allowlist are denied on the server. For a run to actually finish, pre-authorize only the required capabilities through the **permission mode** and **allowed tools**. Work sessions in the intent queue still hand permissions back to you; that is a different path.
 
 **Q: Should I use a command or an LLM prompt?**
 
@@ -307,4 +321,5 @@ A: Turn off **Enable automations** in the automation list header. It silences al
 - [c3 Getting Started Guide](c3-get-start.md)
 - [From Requirements to Intents](requirement-to-intent.md)
 - [Spec-Driven Development (SDD)](sdd.md)
+- [Delivery](delivery.md)
 - [Multi-agent Consensus](multi-agent-consensus.md)

@@ -27,6 +27,15 @@ const CURSOR_AGENT: AgentConfig = {
   config: { apiKey: '', model: '' },
 }
 
+/** 一个 codex agent —— codex 分支用例需要一条同 vendor 的执行身份。 */
+const CODEX_AGENT: AgentConfig = {
+  id: 'codex-custom',
+  vendor: 'codex',
+  configMode: 'custom',
+  displayName: 'Codex custom',
+  config: { wireApi: 'chat', baseUrl: '', apiKey: '', model: '' },
+}
+
 const READ_TOOLS: ToolManifestEntry[] = [
   { name: 'Read', isWrite: false },
   { name: 'Grep', isWrite: false },
@@ -101,6 +110,14 @@ function sched(over: Partial<Automation> = {}): Automation {
 }
 
 // ---- 级联表单测试辅助:通过 BaseDropdown + chip 交互 ---------------
+
+// 执行身份(执行身份与工具权限两区)只在 LLM 任务下渲染,依赖它们的用例
+// 必须显式切到 llm;command 任务看到的就是收敛后的表单。
+async function mountLlmForm(props: Parameters<typeof mountForm>[0] = {}) {
+  const w = mountForm(props)
+  await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[1].trigger('click') // llm
+  return w
+}
 
 /**
  * 选择第 `row` 个 event filter 行的 category（大类）。
@@ -542,8 +559,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Sectioned layout ----------------------------------------------------
 
-  it('表单渲染为 5 个带标题的卡片区块', () => {
-    const w = mountForm()
+  it('llm:表单渲染为 5 个带标题的卡片区块', async () => {
+    const w = await mountLlmForm()
     const sections = w.findAll('.sf-section')
     expect(sections).toHaveLength(5)
     const testids = [
@@ -566,8 +583,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     ])
   })
 
-  it('区块归属:任务类型落基本信息、触发落触发条件、工具落工具权限', () => {
-    const w = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+  it('区块归属:任务类型落基本信息、触发落触发条件、工具落工具权限', async () => {
+    const w = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS } })
     const basic = w.find('[data-testid="section-basic"]')
     expect(basic.text()).toContain('Task type')
     const trigger = w.find('[data-testid="section-trigger"]')
@@ -687,8 +704,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Vendors -------------------------------------------------------------
 
-  it('渲染 vendor 下拉选择器,三个品牌均可见;运行时可用时不额外标注原因', () => {
-    const w = mountForm()
+  it('渲染 vendor 下拉选择器,三个品牌均可见;运行时可用时不额外标注原因', async () => {
+    const w = await mountLlmForm()
     const select = w.find('[data-testid="automation-vendor"]')
     expect(select.exists()).toBe(true)
     const opts = select.findAll('option')
@@ -705,7 +722,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     for (const opt of opts) expect(opt.attributes('disabled')).toBeUndefined()
   })
 
-  it('运行时不可用的 vendor disabled(与"有没有执行路径"是两个独立条件)', () => {
+  it('运行时不可用的 vendor disabled(与"有没有执行路径"是两个独立条件)', async () => {
     const runtime = { ...RUNTIME_AVAILABLE }
     runtime.codex = {
       vendor: 'codex',
@@ -714,12 +731,12 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
       runtimeId: 'codex',
       reason: 'host-cli-missing',
     }
-    const w = mountForm({ vendorAvailability: runtime })
+    const w = await mountLlmForm({ vendorAvailability: runtime })
     const opts = w.findAll('[data-testid="automation-vendor"] option')
     expect(opts[1].attributes('disabled')).toBeDefined()
   })
 
-  it('cursor 运行时不可用(SDK 解析不到)时灰显并就地标注原因', () => {
+  it('cursor 运行时不可用(SDK 解析不到)时灰显并就地标注原因', async () => {
     const runtime = { ...RUNTIME_AVAILABLE }
     runtime.cursor = {
       vendor: 'cursor',
@@ -728,7 +745,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
       runtimeId: 'cursor-agent',
       reason: 'host-cli-missing',
     }
-    const w = mountForm({ vendorAvailability: runtime })
+    const w = await mountLlmForm({ vendorAvailability: runtime })
     const opts = w.findAll('[data-testid="automation-vendor"] option')
     expect(opts[2].attributes('disabled')).toBeDefined()
     // 原因写在选项文本上,不用用户去别处找。
@@ -754,7 +771,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   })
 
   it('cursor 的模式下拉给出目录里的三个令牌(plan / agent / full-access)', async () => {
-    const w = mountForm({ agents: [...AGENTS, CURSOR_AGENT] })
+    const w = await mountLlmForm({ agents: [...AGENTS, CURSOR_AGENT] })
     await w.find('[data-testid="automation-vendor"]').setValue('cursor')
     const values = w
       .findAll('[data-testid="automation-cursor-mode"] option')
@@ -763,15 +780,13 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   })
 
   it('automationAgentId 跟随链解析到 cursor 时直接作为默认执行身份', async () => {
-    const w = mountForm({
+    const w = await mountLlmForm({
       agents: [CURSOR_AGENT, ...AGENTS],
       seedAgentRefs: ['cursor-a', '', '', ''],
     })
     const select = w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement
     expect(select.value).toBe('cursor')
     expect(w.find('[data-testid="automation-seed-vendor-unsupported"]').exists()).toBe(false)
-    // agent 下拉只在 LLM 型任务下渲染,预填的 cursor agent 在那里直接可用。
-    await w.findAll('.sf-seg')[1].trigger('click')
     expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('cursor-a')
   })
 
@@ -853,21 +868,21 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   ]
 
   it('create:automationAgentId 指向 codex agent 时,表单预选 codex + 该 agent', async () => {
-    const w = mountForm({ agents: MULTI_AGENTS, seedAgentRefs: ['codex-custom', '', '', ''] })
+    const w = await mountLlmForm({
+      agents: MULTI_AGENTS,
+      seedAgentRefs: ['codex-custom', '', '', ''],
+    })
     // vendor 下拉预选 codex。
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
-    // 切到 LLM 类型后 agent 下拉预选该 codex agent。
-    await w.findAll('.sf-seg')[1].trigger('click')
     expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
   })
 
   it('create:automationAgentId 为空时跟随 defaultAgentId 解析出的 agent', async () => {
-    const w = mountForm({
+    const w = await mountLlmForm({
       agents: MULTI_AGENTS,
       seedAgentRefs: ['', '', '', 'codex-custom'],
     })
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
-    await w.findAll('.sf-seg')[1].trigger('click')
     expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
   })
 
@@ -884,23 +899,21 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   it('create:工作区 automationAgentId 覆盖优先于系统 defaultAgentId', async () => {
     // 系统角色为空、工作区角色覆盖指向 codex:即使系统默认为 claude-default,也应预选 codex。
-    const w = mountForm({
+    const w = await mountLlmForm({
       agents: MULTI_AGENTS,
       seedAgentRefs: ['', 'codex-custom', '', 'claude-default'],
     })
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
-    await w.findAll('.sf-seg')[1].trigger('click')
     expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
   })
 
   it('create:工作区 defaultAgentId 覆盖优先于系统 defaultAgentId', async () => {
     // 角色层全部为空,工作区默认为 codex-custom、系统默认为 claude-default:应选工作区默认。
-    const w = mountForm({
+    const w = await mountLlmForm({
       agents: MULTI_AGENTS,
       seedAgentRefs: ['', '', 'codex-custom', 'claude-default'],
     })
     expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
-    await w.findAll('.sf-seg')[1].trigger('click')
     expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
   })
 
@@ -929,22 +942,22 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Tool manifest -------------------------------------------------------
 
-  it('无工具清单时显示空态文案', () => {
-    const w = mountForm({
+  it('llm:无工具清单时显示空态文案', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: null },
     })
     expect(w.text()).toContain('No tools available')
   })
 
-  it('工具加载中显示 loading 态', () => {
-    const w = mountForm({
+  it('llm:工具加载中显示 loading 态', async () => {
+    const w = await mountLlmForm({
       toolManifestLoading: true,
     })
     expect(w.text()).toContain('Loading tools')
   })
 
-  it('读工具默认勾上,写工具默认不勾', () => {
-    const w = mountForm({
+  it('llm:读工具默认勾上,写工具默认不勾', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: ALL_TOOLS },
     })
     const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
@@ -956,8 +969,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect((checks[3].element as HTMLInputElement).checked).toBe(false)
   })
 
-  it('工具按读写分区展示,两组各正确数量', () => {
-    const w = mountForm({
+  it('llm:工具按读写分区展示,两组各正确数量', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: ALL_TOOLS },
     })
     const groupLabels = w.findAll('.sf-tools-subtitle')
@@ -969,8 +982,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(items).toHaveLength(4)
   })
 
-  it('全选/全清按钮工作正确', async () => {
-    const w = mountForm({
+  it('llm:全选/全清按钮工作正确', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: ALL_TOOLS },
     })
     // 默认:读勾写不勾 → 选中 2 个
@@ -985,8 +998,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(w.findAll('.sf-tool-item input:checked')).toHaveLength(0)
   })
 
-  it('手动切换工具的勾选状态', async () => {
-    const w = mountForm({
+  it('llm:手动切换工具的勾选状态', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: ALL_TOOLS },
     })
     const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
@@ -1002,8 +1015,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Save payload with toolAllowlist -------------------------------------
 
-  it('create payload 携带 toolAllowlist', async () => {
-    const w = mountForm({
+  it('llm:create payload 携带 toolAllowlist', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: ALL_TOOLS },
     })
     await w.find('textarea').setValue('pnpm build')
@@ -1028,9 +1041,9 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input).toHaveProperty('toolAllowlist')
   })
 
-  it('编辑回读:从 automation.toolAllowlist 还原勾选', async () => {
-    const w = mountForm({
-      automation: sched({ toolAllowlist: ['Write', 'Edit'] }),
+  it('llm:编辑回读:从 automation.toolAllowlist 还原勾选', async () => {
+    const w = await mountLlmForm({
+      automation: sched({ toolAllowlist: ['Write', 'Edit'], type: 'llm' }),
       toolManifest: { claude: ALL_TOOLS },
     })
     const checks = w.findAll('.sf-tool-item input[type="checkbox"]')
@@ -1044,30 +1057,34 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- network-access pseudo-entry (codex-only) ----------------------------
 
-  it('network-access 开关仅 codex 可见,claude 隐藏', async () => {
-    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+  it('llm:network-access 开关仅 codex 可见,claude 隐藏', async () => {
+    const w = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
     // 默认 claude → 不渲染
     expect(w.find('[data-testid="network-access"]').exists()).toBe(false)
     // 切到 codex → 渲染,且带 codex-only / workspace-write 提示
-    await w.find('select.sf-select').setValue('codex')
+    await w.find('[data-testid="automation-vendor"]').setValue('codex')
     expect(w.find('[data-testid="network-access"]').exists()).toBe(true)
     expect(w.find('[data-testid="network-access"]').text()).toContain('Codex only')
     expect(w.find('[data-testid="network-access"]').text()).toContain('workspace-write')
   })
 
-  it('network-access 默认未勾选', async () => {
-    const w = mountForm({
+  it('llm:network-access 默认未勾选', async () => {
+    const w = await mountLlmForm({
       toolManifest: { codex: ALL_TOOLS },
-      automation: sched({ vendor: 'codex' }),
+      automation: sched({ vendor: 'codex', type: 'llm' }),
     })
     const cb = w.find('[data-testid="network-access-checkbox"]')
     expect((cb.element as HTMLInputElement).checked).toBe(false)
   })
 
-  it('勾选 network-access 后 create payload 的 toolAllowlist 含伪条目', async () => {
-    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+  it('llm:勾选 network-access 后 create payload 的 toolAllowlist 含伪条目', async () => {
+    const w = await mountLlmForm({
+      agents: [...AGENTS, CODEX_AGENT],
+      toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS },
+    })
     await w.find('textarea').setValue('pnpm build')
-    await w.find('select.sf-select').setValue('codex')
+    await w.find('[data-testid="automation-vendor"]').setValue('codex')
+    await w.find('.sf-agent-select').setValue('codex-custom')
     await w.find('[data-testid="network-access-checkbox"]').trigger('change')
     await w.find('.sf-btn.primary').trigger('click')
 
@@ -1075,19 +1092,28 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.toolAllowlist as string[]).toContain('network-access')
   })
 
-  it('未勾选 network-access 时 create payload 不含伪条目', async () => {
-    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+  it('llm:未勾选 network-access 时 create payload 不含伪条目', async () => {
+    const w = await mountLlmForm({
+      agents: [...AGENTS, CODEX_AGENT],
+      toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS },
+    })
     await w.find('textarea').setValue('pnpm build')
-    await w.find('select.sf-select').setValue('codex')
+    await w.find('[data-testid="automation-vendor"]').setValue('codex')
+    await w.find('.sf-agent-select').setValue('codex-custom')
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.toolAllowlist as string[]).not.toContain('network-access')
   })
 
-  it('编辑回读:toolAllowlist 含 network-access → 勾上', () => {
-    const w = mountForm({
-      automation: sched({ vendor: 'codex', toolAllowlist: ['Read', 'network-access'] }),
+  it('llm:编辑回读:toolAllowlist 含 network-access → 勾上', async () => {
+    const w = await mountLlmForm({
+      automation: sched({
+        vendor: 'codex',
+        type: 'llm',
+        agentId: 'codex-custom',
+        toolAllowlist: ['Read', 'network-access'],
+      }),
       toolManifest: { codex: ALL_TOOLS },
     })
     const cb = w.find('[data-testid="network-access-checkbox"]')
@@ -1095,8 +1121,15 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   })
 
   it('与「全选工具」互不联动:全选保留已开启的 network-access', async () => {
-    const w = mountForm({
-      automation: sched({ vendor: 'codex', toolAllowlist: ['network-access'] }),
+    const w = await mountLlmForm({
+      agents: [...AGENTS, CODEX_AGENT],
+      automation: sched({
+        vendor: 'codex',
+        type: 'llm',
+        agentId: 'codex-custom',
+        config: { prompt: 'fix the build', name: 'legacy name' },
+        toolAllowlist: ['network-access'],
+      }),
       toolManifest: { codex: ALL_TOOLS },
     })
     // network 开、无真实工具
@@ -1115,8 +1148,15 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   })
 
   it('全选工具(未开 network)不会隐式开启 network-access', async () => {
-    const w = mountForm({
-      automation: sched({ vendor: 'codex', toolAllowlist: ['Read'] }),
+    const w = await mountLlmForm({
+      agents: [...AGENTS, CODEX_AGENT],
+      automation: sched({
+        vendor: 'codex',
+        type: 'llm',
+        agentId: 'codex-custom',
+        config: { prompt: 'fix the build', name: 'legacy name' },
+        toolAllowlist: ['Read'],
+      }),
       toolManifest: { codex: ALL_TOOLS },
     })
     await w.findAll('.sf-tools-btn')[0].trigger('click') // selectAll
@@ -1126,10 +1166,11 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.toolAllowlist as string[]).not.toContain('network-access')
   })
 
-  it('只读沙箱:network-access 开关禁用并给出原因', () => {
-    const w = mountForm({
+  it('llm:只读沙箱:network-access 开关禁用并给出原因', async () => {
+    const w = await mountLlmForm({
       automation: sched({
         vendor: 'codex',
+        type: 'llm',
         mode: { sandboxMode: 'read-only', approvalPolicy: 'never' },
         toolAllowlist: ['Read'],
       }),
@@ -1141,9 +1182,13 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   })
 
   it('切到只读沙箱后 network-access 点击不再生效', async () => {
-    const w = mountForm({
+    const w = await mountLlmForm({
+      agents: [...AGENTS, CODEX_AGENT],
       automation: sched({
         vendor: 'codex',
+        type: 'llm',
+        agentId: 'codex-custom',
+        config: { prompt: 'fix the build', name: 'legacy name' },
         mode: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
         toolAllowlist: ['Read'],
       }),
@@ -1166,12 +1211,13 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Permission mode per vendor -----------------------------------------
 
-  it('create(codex):payload 携带 CodexPolicy 对象', async () => {
-    const w = mountForm()
+  it('llm:create(codex):payload 携带 CodexPolicy 对象', async () => {
+    const w = await mountLlmForm({ agents: [...AGENTS, CODEX_AGENT] })
     await w.find('textarea').setValue('pnpm build')
-    // 切换到 codex vendor
-    const vendorSelect = w.find('select.sf-select')
+    // 切换到 codex vendor(改 vendor 会清空已选 agent,故随后重新绑定)
+    const vendorSelect = w.find('[data-testid="automation-vendor"]')
     await vendorSelect.setValue('codex')
+    await w.find('.sf-agent-select').setValue('codex-custom')
 
     // Codex 的 segmented mode: 默认 sandbox=workspace-write, approval=on-request
     await w.find('.sf-btn.primary').trigger('click')
@@ -1184,10 +1230,11 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     })
   })
 
-  it('create(codex):完全访问显式保存 danger-full-access', async () => {
-    const w = mountForm()
+  it('llm:create(codex):完全访问显式保存 danger-full-access', async () => {
+    const w = await mountLlmForm({ agents: [...AGENTS, CODEX_AGENT] })
     await w.find('textarea').setValue('git commit -am test')
-    await w.find('select.sf-select').setValue('codex')
+    await w.find('[data-testid="automation-vendor"]').setValue('codex')
+    await w.find('.sf-agent-select').setValue('codex-custom')
     await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[1].trigger('click')
     expect(w.find('[data-testid="network-access"]').exists()).toBe(false)
     await w.find('.sf-btn.primary').trigger('click')
@@ -1201,21 +1248,143 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     })
   })
 
-  it('权限模式控件随 vendor 切换联动', async () => {
-    const w = mountForm({
+  it('llm:权限模式控件随 vendor 切换联动', async () => {
+    const w = await mountLlmForm({
       toolManifest: { claude: ALL_TOOLS },
     })
-    const vendorSelect = w.find('select.sf-select')
+    const vendorSelect = w.find('[data-testid="automation-vendor"]')
 
-    // 默认 claude → Claude dropdown 可见 (vendor select + claude mode select)
+    // 默认 claude → Claude dropdown 可见 (vendor + agent + claude mode select)
     const claudeSelects = w.findAll('select.sf-select')
-    expect(claudeSelects).toHaveLength(2)
+    expect(claudeSelects).toHaveLength(3)
 
     // 切到 codex → 两个 segmented 组可见
     await vendorSelect.setValue('codex')
     const codexSegs = w.findAll('.sf-segmented')
     // task type + trigger + codex sandbox + codex approval = 4
     expect(codexSegs).toHaveLength(4)
+  })
+})
+
+// ---- command 任务不参与执行的两大区(执行身份 / 工具权限)不渲染 ------------
+//
+// `command` 型任务只在工作区跑一条 shell 命令,vendor、智能体、权限模式与工具
+// 清单都不进入它的执行路径;表单据此把它们整块收敛,免得用户以为这些设置有
+// 影响。隐藏是纯渲染层的:vendor / 权限模式 / toolAllowlist 照旧初始化、回填
+// 与序列化,切换类型不得清空任何一项。
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function switchTaskType(w: any, type: 'command' | 'llm'): Promise<void> {
+  await w
+    .findAll('.sf-segmented')[0]
+    .findAll('.sf-seg')
+    [type === 'command' ? 0 : 1].trigger('click')
+}
+
+describe('AutomationForm.vue — 命令任务隐藏执行身份与工具权限', () => {
+  it('command:vendor 选择器、权限模式与工具权限分区均不渲染', async () => {
+    const w = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+    // llm 下三块齐全,便于对照。
+    expect(w.find('[data-testid="section-execution"]').exists()).toBe(true)
+    await switchTaskType(w, 'command')
+
+    expect(w.find('[data-testid="section-execution"]').exists()).toBe(false)
+    expect(w.find('[data-testid="automation-vendor"]').exists()).toBe(false)
+    expect(w.find('.sf-agent-select').exists()).toBe(false)
+    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(false)
+    expect(w.find('[data-testid="automation-seed-vendor-unsupported"]').exists()).toBe(false)
+    // claude / cursor 的权限模式下拉随分区一起消失。
+    expect(w.find('[data-testid="automation-cursor-mode"]').exists()).toBe(false)
+    expect(w.find('[data-testid="section-tools"]').exists()).toBe(false)
+    expect(w.find('.sf-tool-item').exists()).toBe(false)
+    // 表单只剩基本信息 / 触发条件 / 元数据三块。
+    expect(w.findAll('.sf-section')).toHaveLength(3)
+  })
+
+  it('command:cursor 权限模式下拉也不渲染(记录带 cursor vendor 时)', async () => {
+    const w = await mountLlmForm({
+      agents: [CURSOR_AGENT, ...AGENTS],
+      automation: sched({
+        vendor: 'cursor',
+        type: 'command',
+        mode: 'full-access',
+        config: { command: 'pnpm build', name: 'legacy name' },
+      }),
+    })
+    await switchTaskType(w, 'command')
+    expect(w.find('[data-testid="automation-cursor-mode"]').exists()).toBe(false)
+    expect(w.find('[data-testid="section-execution"]').exists()).toBe(false)
+  })
+
+  it('llm ↔ command 往返切换不丢 vendor / Agent / 权限模式 / 工具勾选', async () => {
+    const w = await mountLlmForm({
+      agents: [...AGENTS, CODEX_AGENT],
+      toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS },
+    })
+    await w.find('[data-testid="automation-vendor"]').setValue('codex')
+    await w.find('.sf-agent-select').setValue('codex-custom')
+    // 权限模式:沙箱 read-only + 审批 never。
+    const codexSegs = () => w.findAll('.sf-segmented')
+    await codexSegs()[2].findAll('.sf-seg')[2].trigger('click') // sandbox = read-only
+    await codexSegs()[3].findAll('.sf-seg')[2].trigger('click') // approval = never
+    // 工具勾选(只读沙箱下网络开关禁用,工具本身可勾)。
+    await w.findAll('.sf-tool-item input[type="checkbox"]')[0].trigger('change')
+
+    await switchTaskType(w, 'command')
+    expect(w.find('[data-testid="section-tools"]').exists()).toBe(false)
+
+    await switchTaskType(w, 'llm')
+    expect((w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement).value).toBe(
+      'codex',
+    )
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
+    const segs = codexSegs()
+    expect(segs[2].findAll('.sf-seg')[2].classes()).toContain('active')
+    expect(segs[3].findAll('.sf-seg')[2].classes()).toContain('active')
+    expect(w.findAll('.sf-tool-item input:checked')).toHaveLength(1)
+  })
+
+  it('command:编辑既有 command 自动化后保存,vendor / mode / toolAllowlist 逐字段原样回传', async () => {
+    const original = sched({
+      vendor: 'codex',
+      agentId: null,
+      mode: { sandboxMode: 'read-only', approvalPolicy: 'never', explicitFullAccess: false },
+      toolAllowlist: ['Read'],
+      config: { command: 'pnpm build', name: 'legacy name' },
+    })
+    const w = mountForm({
+      agents: [...AGENTS, CODEX_AGENT],
+      automation: original,
+      toolManifest: { codex: ALL_TOOLS },
+    })
+    // 命令型任务连执行身份分区都不渲染。
+    expect(w.find('[data-testid="section-execution"]').exists()).toBe(false)
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeUndefined()
+
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.vendor).toBe(original.vendor)
+    expect(input.mode).toEqual(original.mode)
+    expect(input.toolAllowlist).toEqual(original.toolAllowlist)
+    // 命令型任务没有执行身份可言。
+    expect(input.agentId).toBeNull()
+  })
+
+  it('command:新建时不因 vendor 阻止保存,提交载荷与隐藏前一致', async () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+    // vendor 不可见的命令任务照常可保存。
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+    await w.find('textarea').setValue('pnpm build')
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeUndefined()
+
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.type).toBe('command')
+    expect(input.vendor).toBe('claude')
+    expect(input.agentId).toBeNull()
+    expect(input.mode).toBe('default')
   })
 })
 
@@ -1396,8 +1565,8 @@ describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', ()
     )
   })
 
-  it('少量工具与多行工具两种 manifest 都完整渲染读写两组与全部工具项', () => {
-    const few = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+  it('少量工具与多行工具两种 manifest 都完整渲染读写两组与全部工具项', async () => {
+    const few = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS } })
     expect(few.findAll('.sf-tools-subtitle')).toHaveLength(2)
     expect(few.find('.sf-tools-scroll').exists()).toBe(true)
     expect(few.findAll('.sf-tools-grid')).toHaveLength(2)
@@ -1411,7 +1580,7 @@ describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', ()
       name: `Write${i}`,
       isWrite: true,
     }))
-    const many = mountForm({ toolManifest: { claude: [...manyRead, ...manyWrite] } })
+    const many = await mountLlmForm({ toolManifest: { claude: [...manyRead, ...manyWrite] } })
     expect(many.findAll('.sf-tools-subtitle')).toHaveLength(2)
     expect(many.findAll('.sf-tool-item')).toHaveLength(manyRead.length + manyWrite.length)
   })
@@ -1431,8 +1600,8 @@ function sectionItems(w: any, id: string) {
 }
 
 describe('AutomationForm.vue — 配置项归组与分隔结构', () => {
-  it('create:各多项分区的直接配置项带稳定归组标识 sf-item', () => {
-    const w = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+  it('llm:各多项分区的直接配置项带稳定归组标识 sf-item', async () => {
+    const w = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS } })
     // 基本信息(command + cron):任务类型 / 命令 / 超时 = 3(无 Title、无嵌入项)。
     expect(sectionItems(w, 'section-basic')).toHaveLength(3)
     // 触发条件:触发类型 + cron 构造块 = 2。
@@ -1480,8 +1649,8 @@ describe('AutomationForm.vue — 配置项归组与分隔结构', () => {
     expect(eventItem.findAll('.sf-item')).toHaveLength(0)
   })
 
-  it('claude ↔ codex 切换:工具分区在 codex 下多出网络访问配置项', async () => {
-    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+  it('llm:claude ↔ codex 切换:工具分区在 codex 下多出网络访问配置项', async () => {
+    const w = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
     expect(sectionItems(w, 'section-tools')).toHaveLength(1) // claude
     await w.find('select.sf-select').setValue('codex')
     expect(sectionItems(w, 'section-tools')).toHaveLength(2) // + 网络访问

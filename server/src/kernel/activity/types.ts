@@ -1,4 +1,4 @@
-import type { SessionKind, SessionOwnerKind } from '@ccc/shared/protocol'
+import type { SessionKind, SessionOwnerKind, WorkspaceActivitySummary } from '@ccc/shared/protocol'
 
 export const ACTIVITY_STATES = [
   'running',
@@ -71,25 +71,20 @@ export const ATTENTION_KINDS = ['permission', 'todo', 'delivery'] as const
 
 export type AttentionKind = (typeof ATTENTION_KINDS)[number]
 
-export interface WorkspaceActivitySummary {
-  runningSessions: number
-  runningSessionsByKind: Partial<Record<SessionKind, number>>
-  activeOwners: {
-    intents: number
-    discussions: number
-    automations: number
-  }
-  attention: {
-    awaitingPermission: number
-    pendingUserTasks: number
-    actionableDeliveries: number
-  }
-}
+export type { WorkspaceActivitySummary }
 
 export interface BadgeProjectionSnapshot {
   revision: number
   workspaces: Record<string, WorkspaceActivitySummary>
 }
+
+export interface BadgeProjectionDelta {
+  revision: number
+  changedWorkspaces: Record<string, WorkspaceActivitySummary>
+  removedWorkspaces: string[]
+}
+
+export type BadgeProjectionListener = (delta: BadgeProjectionDelta) => void
 
 export type ActivityMutation =
   | { type: 'change'; prev?: ActivityFact; next?: ActivityFact }

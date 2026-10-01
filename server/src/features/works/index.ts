@@ -6,8 +6,16 @@
  * + delivery live on `conn`, shared services on `ctx`.
  */
 import { randomUUID } from 'node:crypto'
-import type { CodexPolicy, ModeToken, PermissionMode, SessionKind } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import {
+  PENDING_SESSION_PREFIX,
+  sessionPageCountsFromSummary,
+  type CodexPolicy,
+  type ModeToken,
+  type PermissionMode,
+  type SessionKind,
+  type SessionOwnerKind,
+  type WorkspaceActivitySummary,
+} from '@ccc/shared/protocol'
 import { isImageMediaType } from '@ccc/shared'
 import {
   addViewer,
@@ -50,7 +58,7 @@ import {
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
-import type { SessionAgentSwitch, SessionOwnerKind, VendorId } from '@ccc/shared/protocol'
+import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import { loadHistoryForVendor } from '../sessions/history.js'
@@ -62,7 +70,7 @@ import {
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { findDiscussionByResearchSessionId } from '../discussions/store.js'
 import { runningAutomationIdsForWorkspace } from '../automations/store.js'
-import { badgeProjection, type WorkspaceActivitySummary } from '../../kernel/activity/index.js'
+import { badgeProjection } from '../../kernel/activity/index.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -136,29 +144,10 @@ export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) =>
  * become a second visible badge. `tool` follows the display switch. consensus
  * and robot are omitted from page categories but remain in runningSessions.
  */
-export function sessionCountsFromSummary(summary: WorkspaceActivitySummary): {
-  counts: Record<Exclude<SessionKind, 'consensus' | 'robot'>, number>
-  ownerCounts: Record<SessionOwnerKind, number>
-  runningSessionCount: number
-} {
-  const byKind = summary.runningSessionsByKind
-  return {
-    counts: {
-      work: byKind.work ?? 0,
-      intent: byKind.intent ?? 0,
-      spec: (byKind.spec ?? 0) + (byKind.spec_review ?? 0),
-      spec_review: 0,
-      discussion: byKind.discussion ?? 0,
-      automation: byKind.automation ?? 0,
-      tool: getShowToolSessions() ? (byKind.tool ?? 0) : 0,
-    },
-    ownerCounts: {
-      intent: summary.activeOwners.intents,
-      discussion: summary.activeOwners.discussions,
-      automation: summary.activeOwners.automations,
-    },
-    runningSessionCount: summary.runningSessions,
-  }
+export function sessionCountsFromSummary(
+  summary: WorkspaceActivitySummary,
+): ReturnType<typeof sessionPageCountsFromSummary> {
+  return sessionPageCountsFromSummary(summary, getShowToolSessions())
 }
 
 /**

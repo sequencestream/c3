@@ -78,6 +78,7 @@ import type {
   VendorId,
   VendorRuntimeStatus,
   WaitUserInvolveEvent,
+  WorkspaceActivitySummary,
   UserWorkspaceAccessAccount,
   WorkspaceInfo,
   WorkspaceDashboardRow,
@@ -168,6 +169,9 @@ export function buildSessionSlice(deps: StateDeps) {
   // 每工作区的「运行中会话数」(服务端权威,跨所有 kind 求和,不分桶)。与 sessionCounts
   // 同一帧送达,按 workspace 名聚合,驱动工作区竖条角标。只在回包属于当前工作区时写入。
   const workspaceRunningSessionCounts = ref<Record<string, number>>({})
+  // 全工作区活动摘要(服务端角标投影)。revision 为 0 表示尚未收到 snapshot。
+  const activityRevision = ref(0)
+  const workspaceActivity = ref<Record<string, WorkspaceActivitySummary>>({})
   // Per-workspace cursor-pagination state (SR-R14), parallel to the session
   // arrays above. `hasMore` drives the "load more" button; `exhausted` flips it
   // to a "Fully loaded" hint; `loadingMore` guards a double click;
@@ -192,9 +196,13 @@ export function buildSessionSlice(deps: StateDeps) {
   const workcenterLoading = ref(false)
   const workcenterAppendNext = ref(false)
   const workcenterTodoCounts = ref<Record<string, number>>({})
-  const workcenterPendingCount = computed(
-    () => workcenterTodoCounts.value[currentWorkspace.value ?? ''] ?? 0,
-  )
+  const workcenterPendingCount = computed(() => {
+    const ws = currentWorkspace.value ?? ''
+    if (activityRevision.value > 0) {
+      return workspaceActivity.value[ws]?.attention.pendingUserTasks ?? 0
+    }
+    return workcenterTodoCounts.value[ws] ?? 0
+  })
 
   // Workcenter page-internal nav: which page the workcenter view is showing.
   const workcenterPage = ref<WorkcenterPage>('notifications')
@@ -378,6 +386,8 @@ export function buildSessionSlice(deps: StateDeps) {
     sessionCounts,
     ownerRunningCounts,
     workspaceRunningSessionCounts,
+    activityRevision,
+    workspaceActivity,
     sessionPagingByWorkspace,
     currentWorkspace,
     activeWorkspace,

@@ -279,4 +279,41 @@ describe('BadgeProjection', () => {
     expect(p.summaryFor('proj').attention.awaitingPermission).toBe(0)
     expect(p.summaryFor('other').attention.awaitingPermission).toBe(1)
   })
+
+  it('emits a delta only when a workspace summary changes', () => {
+    const { r, p } = registry()
+    const deltas: { revision: number; changed: string[] }[] = []
+    p.subscribe((delta) => {
+      deltas.push({ revision: delta.revision, changed: Object.keys(delta.changedWorkspaces) })
+    })
+    r.start(startInput({ generation: 'g-a' }))
+    expect(deltas).toEqual([{ revision: 1, changed: ['proj'] }])
+    r.renew('s-1', 9_000)
+    expect(deltas).toHaveLength(1)
+    r.settle('s-1')
+    expect(deltas).toEqual([
+      { revision: 1, changed: ['proj'] },
+      { revision: 2, changed: ['proj'] },
+    ])
+  })
+
+  it('workspace removal with only attention emits removedWorkspaces', () => {
+    const p = new BadgeProjection()
+    p.setAttentionMembers('todo', 'proj', ['t-1'])
+    const deltas: string[][] = []
+    p.subscribe((delta) => deltas.push(delta.removedWorkspaces))
+    p.apply({ type: 'clear_workspace', workspaceName: 'proj' })
+    expect(deltas).toEqual([['proj']])
+  })
+
+  it('dropping the last running session emits a zeroed summary', () => {
+    const { r, p } = registry()
+    r.start(startInput({ generation: 'g-a' }))
+    const changed: number[] = []
+    p.subscribe((delta) => {
+      if (delta.changedWorkspaces.proj) changed.push(delta.changedWorkspaces.proj.runningSessions)
+    })
+    r.settle('s-1')
+    expect(changed).toEqual([0])
+  })
 })

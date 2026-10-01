@@ -1,4 +1,9 @@
-import type { SessionInfo, WorkspaceDashboardRow } from '@ccc/shared/protocol'
+import { ref } from 'vue'
+import type {
+  SessionInfo,
+  WorkspaceActivitySummary,
+  WorkspaceDashboardRow,
+} from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
 import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
@@ -37,6 +42,8 @@ export interface MessageHandlerLocals {
   sessionCounts: AppCtx['sessionCounts']
   ownerRunningCounts: AppCtx['ownerRunningCounts']
   workspaceRunningSessionCounts: AppCtx['workspaceRunningSessionCounts']
+  activityRevision: AppCtx['activityRevision']
+  workspaceActivity: AppCtx['workspaceActivity']
   activeWorkspace: AppCtx['activeWorkspace']
   activeSession: AppCtx['activeSession']
   activeTitle: AppCtx['activeTitle']
@@ -201,6 +208,8 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     sessionCounts,
     ownerRunningCounts,
     workspaceRunningSessionCounts,
+    activityRevision: activityRevisionFromCtx,
+    workspaceActivity: workspaceActivityFromCtx,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -329,6 +338,10 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     addWorkspaceOpen,
   } = ctx
 
+  const activityRevision = activityRevisionFromCtx ?? ref(0)
+  const workspaceActivity =
+    workspaceActivityFromCtx ?? ref<Record<string, WorkspaceActivitySummary>>({})
+
   const coldStart: ColdStartState = {
     workspacesEmpty: null,
     isAdmin: false,
@@ -435,6 +448,8 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     sessionCounts,
     ownerRunningCounts,
     workspaceRunningSessionCounts,
+    activityRevision,
+    workspaceActivity,
     activeWorkspace,
     activeSession,
     activeTitle,

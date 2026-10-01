@@ -186,6 +186,8 @@ import {
   registerActivityRegistry,
   registerAttentionProjection,
   rebuildBadgeAttention,
+  createActivityPush,
+  registerActivityPush,
   startImRobotsWiring,
   startSchedulerWiring,
   stopImRobotsWiring,
@@ -574,6 +576,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   registerRunLifecycleLogging(eventBus)
   registerActivityRegistry(eventBus)
   registerAttentionProjection()
+  const activityPush = createActivityPush()
+  registerActivityPush(activityPush)
 
   // Generic event contract + kernel normalizer registry. Every model-publishable
   // event is routed through `type → normalizer`: a KNOWN type gets its dedicated
@@ -971,7 +975,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const handlerRegistry = registerHandlers()
   app.get(
     '/ws',
-    createWsHandler({ upgradeWebSocket, broadcaster, ctx, handlerRegistry, sessionAccessor }),
+    createWsHandler({
+      upgradeWebSocket,
+      broadcaster,
+      ctx,
+      handlerRegistry,
+      sessionAccessor,
+      activityPush,
+    }),
   )
 
   // Vendor-neutral relay loopback endpoints (ADR-0029). MUST be registered before

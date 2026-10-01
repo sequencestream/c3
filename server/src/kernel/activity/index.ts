@@ -16,6 +16,8 @@ export type {
   ActivityStartInput,
   ActivityState,
   AttentionKind,
+  BadgeProjectionDelta,
+  BadgeProjectionListener,
   BadgeProjectionSnapshot,
   RunningActivityState,
   WorkspaceActivitySummary,
@@ -32,3 +34,4 @@ export {
 } from './activity-registry.js'
 export { mapSessionStatusToActivityState } from './session-status.js'
 export { badgeProjection } from './projection-singleton.js'
+export { activityDeltaForVisible, activitySnapshotForVisible } from './visibility.js'

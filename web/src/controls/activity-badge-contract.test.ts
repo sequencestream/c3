@@ -113,40 +113,86 @@ describe('wait_user_events — 工作区身份与权威计数', () => {
   })
 })
 
-describe('已知缺陷 — 目标口径(当前失败)', () => {
-  it.fails('非当前 workspace 的 session_counts 仍写入竖条映射', () => {
+describe('activity_snapshot / activity_delta — 全工作区权威角标', () => {
+  it('snapshot 写入全部工作区竖条,不要求当前工作区', () => {
     const { ctx, state } = makeHandlerCtx()
     state.currentWorkspace.value = 'ws-b'
     ctx.handleMessage({
-      type: 'session_counts',
-      workspaceName: 'ws-a',
-      counts: {
-        work: 0,
-        intent: 0,
-        spec: 0,
-        spec_review: 0,
-        discussion: 0,
-        automation: 0,
-        tool: 0,
+      type: 'activity_snapshot',
+      revision: 1,
+      workspaces: {
+        'ws-a': {
+          runningSessions: 3,
+          runningSessionsByKind: { work: 3 },
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+          attention: { awaitingPermission: 0, pendingUserTasks: 0, actionableDeliveries: 0 },
+        },
+        'ws-b': {
+          runningSessions: 1,
+          runningSessionsByKind: { work: 1 },
+          activeOwners: { intents: 2, discussions: 0, automations: 0 },
+          attention: { awaitingPermission: 0, pendingUserTasks: 4, actionableDeliveries: 1 },
+        },
       },
-      ownerCounts: { intent: 0, discussion: 0, automation: 0 },
-      runningSessionCount: 3,
     } as ServerToClient)
     expect(state.workspaceRunningSessionCounts.value['ws-a']).toBe(3)
+    expect(state.workspaceRunningSessionCounts.value['ws-b']).toBe(1)
+    expect(state.ownerRunningCounts.value.intent).toBe(2)
+    expect(state.workcenterPendingCount.value).toBe(4)
+    expect(state.HEADER_TABS.value.find((tab) => tab.key === 'deliveries')?.badgeCount).toBe(1)
   })
 
-  it.fails('运行集合变化时为所有已登记 workspace 重取计数', () => {
+  it('delta 更新非当前工作区竖条,不请求 get_session_counts', () => {
     const { ctx, state, send } = makeHandlerCtx()
     state.currentWorkspace.value = 'ws-b'
-    state.workspaces.value = [
-      { name: 'ws-a', path: '/ws/a', lastAccessed: 2 },
-      { name: 'ws-b', path: '/ws/b', lastAccessed: 1 },
-    ]
     ctx.handleMessage({
-      type: 'session_status',
-      statuses: [{ sessionId: 's-a', status: 'running' }],
+      type: 'activity_snapshot',
+      revision: 1,
+      workspaces: {
+        'ws-a': {
+          runningSessions: 0,
+          runningSessionsByKind: {},
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+          attention: { awaitingPermission: 0, pendingUserTasks: 0, actionableDeliveries: 0 },
+        },
+        'ws-b': {
+          runningSessions: 0,
+          runningSessionsByKind: {},
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+          attention: { awaitingPermission: 0, pendingUserTasks: 0, actionableDeliveries: 0 },
+        },
+      },
     } as ServerToClient)
-    expect(send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceName: 'ws-a' })
-    expect(send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceName: 'ws-b' })
+    send.mockClear()
+    ctx.handleMessage({
+      type: 'activity_delta',
+      revision: 2,
+      changedWorkspaces: {
+        'ws-a': {
+          runningSessions: 3,
+          runningSessionsByKind: { work: 3 },
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+          attention: { awaitingPermission: 0, pendingUserTasks: 0, actionableDeliveries: 0 },
+        },
+      },
+    } as ServerToClient)
+    expect(state.workspaceRunningSessionCounts.value['ws-a']).toBe(3)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('revision 跳跃时请求完整 snapshot', () => {
+    const { ctx, send } = makeHandlerCtx()
+    ctx.handleMessage({
+      type: 'activity_snapshot',
+      revision: 1,
+      workspaces: {},
+    } as ServerToClient)
+    send.mockClear()
+    ctx.handleMessage({
+      type: 'activity_delta',
+      revision: 4,
+      changedWorkspaces: {},
+    } as ServerToClient)
+    expect(send).toHaveBeenCalledWith({ type: 'request_activity_snapshot' })
   })
 })

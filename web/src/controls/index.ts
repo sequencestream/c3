@@ -147,6 +147,7 @@ export function useAppController(): AppCtx {
         }
         // Reconnect is a high-risk window for a stale status; pull a fresh snapshot.
         ctx.send({ type: 'request_session_status' })
+        ctx.send({ type: 'request_activity_snapshot' })
       },
     })
     ctx.client = client

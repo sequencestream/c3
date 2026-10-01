@@ -1,7 +1,7 @@
 import type { HandlerMap } from '../handler-registry'
 import type { MessageHandlerLocals } from './context'
 import type { AppCtx } from '../types'
-import type { SessionInfo } from '@ccc/shared/protocol'
+import type { SessionInfo, WorkspaceActivitySummary } from '@ccc/shared/protocol'
 import * as SHARED from './shared'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
 import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
@@ -15,6 +15,7 @@ import {
   sessionCacheKey,
   type SessionPageKind,
 } from '../state/types'
+import { applyActivityDelta, applyActivitySnapshot, projectActivityBadges } from '../activity-apply'
 import { transcriptToChat } from '../transcript'
 
 export function buildSessionHandlers(
@@ -26,6 +27,8 @@ export function buildSessionHandlers(
   | 'session_status'
   | 'sessions'
   | 'session_counts'
+  | 'activity_snapshot'
+  | 'activity_delta'
   | 'session_selected'
   | 'session_started'
   | 'session_agent_changed'
@@ -64,6 +67,8 @@ export function buildSessionHandlers(
     sessionCounts,
     ownerRunningCounts,
     workspaceRunningSessionCounts,
+    activityRevision,
+    workspaceActivity,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -197,6 +202,24 @@ export function buildSessionHandlers(
     pruneDashboardPending,
   } = locals
 
+  function writeActivityStore(store: {
+    revision: number
+    workspaces: Record<string, WorkspaceActivitySummary>
+  }): void {
+    activityRevision.value = store.revision
+    workspaceActivity.value = store.workspaces
+    const projected = projectActivityBadges(
+      store,
+      currentWorkspace.value,
+      serverSettings.value?.showToolSessions === true,
+    )
+    sessionCounts.value = projected.sessionCounts
+    ownerRunningCounts.value = projected.ownerRunningCounts
+    workspaceRunningSessionCounts.value = projected.workspaceRunningSessionCounts
+    if (ctx.workcenterTodoCounts) ctx.workcenterTodoCounts.value = projected.workcenterTodoCounts
+    deliveriesNeedsAction.value = projected.deliveriesNeedsAction
+  }
+
   return {
     ready: (_ctx, msg) => {
       // Refresh admin authorization for this connection (ADR-0023 authz) — drives
@@ -247,6 +270,8 @@ export function buildSessionHandlers(
       imGroupScopeChatId.value = ''
       userWorkspaceAccess.value = null
       ctx.applyStatuses(msg.statuses)
+      activityRevision.value = 0
+      workspaceActivity.value = {}
 
       // ---- Deep-link consumption (takes priority over localStorage restore) ----
       // Consumed = workspace validated + dispatched by kind; fulfillment is
@@ -409,6 +434,21 @@ export function buildSessionHandlers(
           [msg.workspaceName]: msg.runningSessionCount,
         }
       }
+    },
+    activity_snapshot: (_ctx, msg) => {
+      writeActivityStore(applyActivitySnapshot(msg))
+    },
+    activity_delta: (_ctx, msg) => {
+      const result = applyActivityDelta(
+        { revision: activityRevision.value, workspaces: workspaceActivity.value },
+        msg,
+      )
+      if (result.status === 'stale') return
+      if (result.status === 'gap') {
+        send({ type: 'request_activity_snapshot' })
+        return
+      }
+      writeActivityStore(result.store)
     },
     session_selected: (_ctx, msg) => {
       if (specLaunch.value) {

@@ -6,6 +6,7 @@ import { touchWorkspaceAccess } from '@/lib/workspace-list'
 import type { SessionInfo, SessionKind } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 import { emptyDirectoryPicker, sessionCacheKey, type SessionPageKind } from './state'
+import { projectActivityBadges } from './activity-apply'
 import { watch } from 'vue'
 
 /** 目录选择请求 id 的单调后缀,保证同一毫秒内的两次点击也不撞号。 */
@@ -217,6 +218,15 @@ export function installSessionActions(ctx: AppCtx): void {
     if (fx.noop) return
     currentWorkspace.value = path
     ctx.persistCurrentWorkspace()
+    if ((ctx.activityRevision?.value ?? 0) > 0 && ctx.workspaceActivity && ctx.sessionCounts) {
+      const projected = projectActivityBadges(
+        { revision: ctx.activityRevision.value, workspaces: ctx.workspaceActivity.value },
+        path,
+        ctx.serverSettings.value?.showToolSessions === true,
+      )
+      ctx.sessionCounts.value = projected.sessionCounts
+      ctx.ownerRunningCounts.value = projected.ownerRunningCounts
+    }
     // 列表竖条按「最近访问」排序,但这条切换路径在服务端只 touch 了时间戳、并没有把
     // 新的 workspaces 列表推回来(下一次 `workspaces` 广播才会带权威顺序)。在客户端
     // 先把目标工作区补记成刚访问过,列表当场重排到顶部,不等到下一次广播。

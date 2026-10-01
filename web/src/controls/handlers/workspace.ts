@@ -181,6 +181,18 @@ export function buildWorkspaceHandlers(
           workspaceRunningSessionCounts.value = next
         }
       }
+      const activity = ctx.workspaceActivity
+      if (activity) {
+        const nextActivity = { ...activity.value }
+        let pruned = false
+        for (const name of Object.keys(nextActivity)) {
+          if (!live.has(name)) {
+            delete nextActivity[name]
+            pruned = true
+          }
+        }
+        if (pruned) activity.value = nextActivity
+      }
       // If the current workspace was removed, fall back to the most-recent one.
       const resolved = resolveCurrentWorkspace(currentWorkspace.value, msg.workspaces)
       if (resolved !== currentWorkspace.value) {

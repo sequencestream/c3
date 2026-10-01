@@ -66,6 +66,7 @@ import {
   stopRunHandler,
   userPrompt,
 } from './works/index.js'
+import { requestActivitySnapshot } from './works/activity-snapshot.js'
 import {
   deleteIntent,
   deleteIntentSession,
@@ -203,6 +204,7 @@ export const handlerMap: HandlerMap = {
   // meta
   ping,
   request_session_status: requestSessionStatus,
+  request_activity_snapshot: requestActivitySnapshot,
   // settings
   get_settings: getSettings,
   save_settings: saveSettingsHandler,

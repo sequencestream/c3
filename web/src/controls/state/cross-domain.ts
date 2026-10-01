@@ -1,5 +1,11 @@
 import { computed } from 'vue'
-import type { Delivery, Intent } from '@ccc/shared/protocol'
+import {
+  emptyWorkspaceActivitySummary,
+  sessionPageCountsFromSummary,
+  type Delivery,
+  type Intent,
+  type WorkspaceActivitySummary,
+} from '@ccc/shared/protocol'
 import { CLAUDE_MODE_FALLBACK } from '@/composables/useModeLabel'
 import { agentNameAt } from '@/lib/agent-prefix'
 import { type StateDeps, sumSessionCounts, type TabKey } from './types'
@@ -21,6 +27,8 @@ export function buildCrossDomainSlice(
     ownerRunningCounts,
     sessionCounts,
     currentWorkspace,
+    activityRevision,
+    workspaceActivity,
     currentAgentIndexBySession,
     messages,
     sessionsByWorkspace,
@@ -46,7 +54,21 @@ export function buildCrossDomainSlice(
   const HEADER_TABS = computed<
     { key: TabKey; label: string; badgeCount?: number; badgeAriaLabel?: string }[]
   >(() => {
-    const owners = ownerRunningCounts.value
+    const ws = currentWorkspace.value
+    const summary: WorkspaceActivitySummary | undefined = ws
+      ? workspaceActivity.value[ws]
+      : undefined
+    const useActivity = activityRevision.value > 0
+    const mapped = useActivity
+      ? sessionPageCountsFromSummary(
+          summary ?? emptyWorkspaceActivitySummary(),
+          serverSettings.value?.showToolSessions === true,
+        )
+      : null
+    const owners = mapped?.ownerCounts ?? ownerRunningCounts.value
+    const deliveryCount = useActivity
+      ? (summary?.attention.actionableDeliveries ?? 0)
+      : (deliveriesNeedsAction.value[ws ?? ''] ?? 0)
     const tabs: { key: TabKey; label: string; badgeCount?: number; badgeAriaLabel?: string }[] = [
       {
         key: 'intents',
@@ -57,9 +79,9 @@ export function buildCrossDomainSlice(
       {
         key: 'deliveries',
         label: t('nav.tab.delivery.label'),
-        badgeCount: deliveriesNeedsAction.value[currentWorkspace.value ?? ''] ?? 0,
+        badgeCount: deliveryCount,
         badgeAriaLabel: t('nav.tab.delivery.ariaLabel', {
-          count: deliveriesNeedsAction.value[currentWorkspace.value ?? ''] ?? 0,
+          count: deliveryCount,
         }),
       },
       {
@@ -77,7 +99,9 @@ export function buildCrossDomainSlice(
       { key: 'files', label: t('nav.tab.files.label') },
     ]
     if (serverSettings.value?.showSessionsPage === true) {
-      const running = sumSessionCounts(sessionCounts.value)
+      const running = mapped
+        ? sumSessionCounts(mapped.counts)
+        : sumSessionCounts(sessionCounts.value)
       tabs.push({
         key: 'console',
         label: t('nav.tab.console.label'),

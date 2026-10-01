@@ -21,6 +21,8 @@ import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { countRunningOwners, getSessionCounts } from './index.js'
+import { requestActivitySnapshot } from './activity-snapshot.js'
+import { sessionPageCountsFromSummary } from '@ccc/shared/protocol'
 import { lookupActivityOwner } from './activity-rebuild.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
 import {
@@ -325,5 +327,23 @@ describe('自动化 Runtime 与执行日志并集', () => {
     seedRunningLog(id, 'auto-log-only')
     expect(sessionCountsMsg().runningSessionCount).toBe(2)
     expect(sessionCountsMsg().runningSessionCount).toBe(dashboardRunning())
+  })
+
+  it('activity_snapshot 与 session_counts 对同一工作区口径一致', () => {
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    row('i-run', 'intent', { ownerKind: 'intent', ownerId: 'intent-1' })
+    startRun('i-run', proj, 'intent')
+    const counts = sessionCountsMsg()
+    const { conn, sent } = fakeConn()
+    requestActivitySnapshot({} as KernelContext, conn, { type: 'request_activity_snapshot' })
+    const snap = sent[0]
+    if (!snap || snap.type !== 'activity_snapshot') throw new Error('expected activity_snapshot')
+    expect(snap.workspaces).toHaveProperty(workspaceName)
+    expect(sessionPageCountsFromSummary(snap.workspaces[workspaceName]!, false)).toEqual({
+      counts: counts.counts,
+      ownerCounts: counts.ownerCounts,
+      runningSessionCount: counts.runningSessionCount,
+    })
   })
 })

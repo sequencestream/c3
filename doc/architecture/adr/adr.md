@@ -72,3 +72,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0050](0050-activity-registry-as-current-state.md) · accepted — 活动状态注册表保存当前实时活动，与事件总线正交；generation/sequence 围栏，可从 Runtime 与在途执行重建
 - [0051](0051-badge-projection-from-activity-sets.md) · accepted — 角标投影从活动成员集合增量维护 Workspace / SessionKind / owner 索引；revision 仅在摘要变化时增加，可与全量重建对照
 - [0052](0052-attention-sets-in-badge-projection.md) · accepted — 角标投影用独立成员集合维护权限、待办与交付 attention，不合并为一个总数
+- [0053](0053-activity-snapshot-delta-protocol.md) · accepted — 活动摘要以 snapshot / delta 推送到前端；握手后下发可见工作区，revision 跳跃则重取快照

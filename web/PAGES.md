@@ -23,6 +23,7 @@ web/src/
 │   │   ├── files.ts                                 # 文件浏览器态
 │   │   ├── settings.ts                              # 系统/个人/工作区设置与 MCP/IM
 │   │   └── cross-domain.ts                          # HEADER_TABS 等跨域 computed
+│   ├── activity-apply.ts                            # activity_snapshot/delta 的 revision 原子更新与角标投影(竖条/条目/待办/交付)
 │   ├── handler-registry.ts                          # ServerToClient HandlerMap 完备注册表 + createHandlerRegistry(缺条目 typecheck 失败)
 │   ├── handlers/                                      # 入站 WS 按领域拆分的处理器
 │   │   ├── register.ts                              # buildHandlerMap():合并各领域 build*Handlers

@@ -12,12 +12,18 @@
  * by its own sources. The projection is not a second source of truth: rebuild
  * from facts plus attention sets must match any legal incremental sequence.
  */
-import type { SessionKind, SessionOwnerKind } from '@ccc/shared/protocol'
+import {
+  emptyWorkspaceActivitySummary,
+  type SessionKind,
+  type SessionOwnerKind,
+} from '@ccc/shared/protocol'
 import {
   isRunningActivityState,
   type ActivityFact,
   type ActivityMutation,
   type AttentionKind,
+  type BadgeProjectionDelta,
+  type BadgeProjectionListener,
   type BadgeProjectionSnapshot,
   type WorkspaceActivitySummary,
 } from './types.js'
@@ -25,12 +31,7 @@ import {
 const SEP = '\0'
 
 function emptySummary(): WorkspaceActivitySummary {
-  return {
-    runningSessions: 0,
-    runningSessionsByKind: {},
-    activeOwners: { intents: 0, discussions: 0, automations: 0 },
-    attention: { awaitingPermission: 0, pendingUserTasks: 0, actionableDeliveries: 0 },
-  }
+  return emptyWorkspaceActivitySummary()
 }
 
 function kindKey(workspaceName: string, kind: SessionKind): string {
@@ -100,9 +101,17 @@ export class BadgeProjection {
   private readonly permissionsByWorkspace = new Map<string, Set<string>>()
   private readonly todosByWorkspace = new Map<string, Set<string>>()
   private readonly deliveriesByWorkspace = new Map<string, Set<string>>()
+  private readonly listeners = new Set<BadgeProjectionListener>()
 
   getRevision(): number {
     return this.revision
+  }
+
+  subscribe(listener: BadgeProjectionListener): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   snapshot(): BadgeProjectionSnapshot {
@@ -143,8 +152,7 @@ export class BadgeProjection {
 
   apply(mutation: ActivityMutation): void {
     if (mutation.type === 'reset') {
-      this.clearAll()
-      this.revision = 0
+      this.reset()
       return
     }
     if (mutation.type === 'rebuild') {
@@ -162,20 +170,29 @@ export class BadgeProjection {
     const before = this.snapshotSummaries()
     this.clearActivityIndexes()
     for (const fact of facts) this.index(fact)
-    this.bumpIfChanged(before)
+    this.emitIfChanged(before)
   }
 
   reset(): void {
+    const removedWorkspaces = [...this.indexedWorkspaces()]
     this.clearAll()
     this.revision = 0
+    if (removedWorkspaces.length === 0) return
+    this.emit({
+      revision: 0,
+      changedWorkspaces: {},
+      removedWorkspaces,
+    })
   }
 
   setAttentionMembers(kind: AttentionKind, workspaceName: string, ids: readonly string[]): void {
     const current = this.attentionMap(kind).get(workspaceName)
     if (sameIdSet(current, ids)) return
-    const before = this.summaryFor(workspaceName)
+    const before = new Map<string, WorkspaceActivitySummary>([
+      [workspaceName, this.summaryFor(workspaceName)],
+    ])
     this.writeAttentionSet(kind, workspaceName, ids)
-    if (!summariesEqual(before, this.summaryFor(workspaceName))) this.revision += 1
+    this.emitIfChanged(before)
   }
 
   replaceAttentionKind(
@@ -190,11 +207,7 @@ export class BadgeProjection {
     for (const [workspaceName, ids] of byWorkspace) {
       this.writeAttentionSet(kind, workspaceName, ids)
     }
-    let changed = false
-    for (const ws of affected) {
-      if (!summariesEqual(before.get(ws) ?? emptySummary(), this.summaryFor(ws))) changed = true
-    }
-    if (changed) this.revision += 1
+    this.emitIfChanged(before)
   }
 
   private applyChange(prev: ActivityFact | undefined, next: ActivityFact | undefined): void {
@@ -205,17 +218,19 @@ export class BadgeProjection {
     for (const ws of affected) before.set(ws, this.summaryFor(ws))
     this.unindex(prev)
     this.index(next)
-    let changed = false
-    for (const ws of affected) {
-      if (!summariesEqual(before.get(ws) ?? emptySummary(), this.summaryFor(ws))) changed = true
-    }
-    if (changed) this.revision += 1
+    this.emitIfChanged(before)
   }
 
   private removeWorkspace(workspaceName: string): void {
     const before = this.summaryFor(workspaceName)
     this.dropWorkspaceKeys(workspaceName)
-    if (!isEmptySummary(before)) this.revision += 1
+    if (isEmptySummary(before)) return
+    this.revision += 1
+    this.emit({
+      revision: this.revision,
+      changedWorkspaces: {},
+      removedWorkspaces: [workspaceName],
+    })
   }
 
   private index(fact: ActivityFact | undefined): void {
@@ -301,16 +316,29 @@ export class BadgeProjection {
     return out
   }
 
-  private bumpIfChanged(before: Map<string, WorkspaceActivitySummary>): void {
+  private emitIfChanged(before: Map<string, WorkspaceActivitySummary>): void {
     const after = this.snapshotSummaries()
     const affected = new Set<string>([...before.keys(), ...after.keys()])
+    const changedWorkspaces: Record<string, WorkspaceActivitySummary> = {}
     let changed = false
     for (const ws of affected) {
-      if (!summariesEqual(before.get(ws) ?? emptySummary(), after.get(ws) ?? emptySummary())) {
-        changed = true
-      }
+      const prev = before.get(ws) ?? emptySummary()
+      const next = after.get(ws) ?? emptySummary()
+      if (summariesEqual(prev, next)) continue
+      changed = true
+      changedWorkspaces[ws] = next
     }
-    if (changed) this.revision += 1
+    if (!changed) return
+    this.revision += 1
+    this.emit({
+      revision: this.revision,
+      changedWorkspaces,
+      removedWorkspaces: [],
+    })
+  }
+
+  private emit(delta: BadgeProjectionDelta): void {
+    for (const listener of this.listeners) listener(delta)
   }
 
   private clearActivityIndexes(): void {

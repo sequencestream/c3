@@ -9,6 +9,7 @@
  * added below plus its payload type in the owning domain module.
  */
 
+export * from './protocol/activity.js'
 export * from './protocol/agent-config.js'
 export * from './protocol/model-provider.js'
 export * from './protocol/model-provider-speed-test.js'
@@ -31,6 +32,7 @@ export * from './protocol/tool-manifest.js'
 export * from './protocol/vendor.js'
 export * from './protocol/workspace.js'
 
+import type * as ActivityMsg from './protocol/activity-messages.js'
 import type * as AuthMsg from './protocol/auth-messages.js'
 import type * as AutomationMsg from './protocol/automation-messages.js'
 import type * as FileMsg from './protocol/file-messages.js'
@@ -59,6 +61,7 @@ export type ClientToServer =
   | WorkspaceMsg.ClientCancelWorkspaceDirectorySelection
   | SessionMsg.ClientListSessions
   | SessionMsg.ClientGetSessionCounts
+  | ActivityMsg.ClientRequestActivitySnapshot
   | SessionMsg.ClientCreateSession
   | SessionMsg.ClientCreateWorkSession
   | SessionMsg.ClientDeleteSession
@@ -216,6 +219,8 @@ export type ServerToClient =
   | WorkspaceMsg.ServerWorkspaceDirectorySelection
   | SessionMsg.ServerSessions
   | SessionMsg.ServerSessionCounts
+  | ActivityMsg.ServerActivitySnapshot
+  | ActivityMsg.ServerActivityDelta
   | FileMsg.ServerDirListed
   | FileMsg.ServerFileRead
   | FileMsg.ServerFileGitStatus

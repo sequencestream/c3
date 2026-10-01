@@ -21,6 +21,7 @@ import type { ServerToClient, WorkspaceInfo } from '@ccc/shared/protocol'
 import type WebSocket from 'ws'
 import { dispatch, type Broadcaster, type Conn, type HandlerRegistry } from '../transport/index.js'
 import type { KernelContext } from '../kernel/types.js'
+import type { ActivityPush } from './activity-push.js'
 import { getActiveSessionId, pathToName } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
@@ -75,8 +76,10 @@ export function createWsHandler(deps: {
   handlerRegistry: HandlerRegistry
   /** Cross-vendor session listing union (ADR-0013); the new `list_sessions` core. */
   sessionAccessor: SessionAccessor
+  activityPush: ActivityPush
 }): WsMiddleware {
-  const { upgradeWebSocket, broadcaster, ctx, handlerRegistry, sessionAccessor } = deps
+  const { upgradeWebSocket, broadcaster, ctx, handlerRegistry, sessionAccessor, activityPush } =
+    deps
   const send = (ws: { send: (d: string) => void }, msg: ServerToClient): void =>
     ws.send(JSON.stringify(msg))
 
@@ -192,6 +195,8 @@ export function createWsHandler(deps: {
           // package waiting for a restart — shows up immediately on connect.
           selfUpdate: currentSelfUpdateState(),
         })
+        activityPush.sendSnapshot(conn)
+        activityPush.add(conn)
       },
       // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):
       // parse + validate + exhaustive lookup all live in `dispatch`.
@@ -201,6 +206,7 @@ export function createWsHandler(deps: {
       onClose() {
         // Keep runs alive in the background; just stop delivering to this view.
         if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+        activityPush.remove(conn)
         broadcaster.remove(conn.deliver)
         // A native directory chooser is owned by the connection that opened it:
         // nobody is left to answer, so kill it and free the slot.

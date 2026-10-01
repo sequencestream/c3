@@ -111,11 +111,17 @@ function sched(over: Partial<Automation> = {}): Automation {
 
 // ---- 级联表单测试辅助:通过 BaseDropdown + chip 交互 ---------------
 
+/** 任务类型分段控件:[0] = command,[1] = llm(编辑态该控件被禁用)。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pickTaskType(w: any, index: 0 | 1): Promise<void> {
+  await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[index].trigger('click')
+}
+
 // 执行身份(执行身份与工具权限两区)只在 LLM 任务下渲染,依赖它们的用例
 // 必须显式切到 llm;command 任务看到的就是收敛后的表单。
 async function mountLlmForm(props: Parameters<typeof mountForm>[0] = {}) {
   const w = mountForm(props)
-  await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[1].trigger('click') // llm
+  await pickTaskType(w, 1)
   return w
 }
 
@@ -1273,20 +1279,12 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 // 影响。隐藏是纯渲染层的:vendor / 权限模式 / toolAllowlist 照旧初始化、回填
 // 与序列化,切换类型不得清空任何一项。
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function switchTaskType(w: any, type: 'command' | 'llm'): Promise<void> {
-  await w
-    .findAll('.sf-segmented')[0]
-    .findAll('.sf-seg')
-    [type === 'command' ? 0 : 1].trigger('click')
-}
-
 describe('AutomationForm.vue — 命令任务隐藏执行身份与工具权限', () => {
   it('command:vendor 选择器、权限模式与工具权限分区均不渲染', async () => {
     const w = await mountLlmForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
     // llm 下三块齐全,便于对照。
     expect(w.find('[data-testid="section-execution"]').exists()).toBe(true)
-    await switchTaskType(w, 'command')
+    await pickTaskType(w, 0)
 
     expect(w.find('[data-testid="section-execution"]').exists()).toBe(false)
     expect(w.find('[data-testid="automation-vendor"]').exists()).toBe(false)
@@ -1311,7 +1309,7 @@ describe('AutomationForm.vue — 命令任务隐藏执行身份与工具权限',
         config: { command: 'pnpm build', name: 'legacy name' },
       }),
     })
-    await switchTaskType(w, 'command')
+    await pickTaskType(w, 0)
     expect(w.find('[data-testid="automation-cursor-mode"]').exists()).toBe(false)
     expect(w.find('[data-testid="section-execution"]').exists()).toBe(false)
   })
@@ -1330,10 +1328,10 @@ describe('AutomationForm.vue — 命令任务隐藏执行身份与工具权限',
     // 工具勾选(只读沙箱下网络开关禁用,工具本身可勾)。
     await w.findAll('.sf-tool-item input[type="checkbox"]')[0].trigger('change')
 
-    await switchTaskType(w, 'command')
+    await pickTaskType(w, 0)
     expect(w.find('[data-testid="section-tools"]').exists()).toBe(false)
 
-    await switchTaskType(w, 'llm')
+    await pickTaskType(w, 1)
     expect((w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement).value).toBe(
       'codex',
     )
@@ -1393,10 +1391,6 @@ describe('AutomationForm.vue — 命令任务隐藏执行身份与工具权限',
 const EMBED = '[data-testid="embed-event-context"]'
 const EMBED_BOX = '[data-testid="embed-event-context-checkbox"]'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function pickTaskType(w: any, index: 0 | 1): Promise<void> {
-  await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[index].trigger('click')
-}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function pickTrigger(w: any, index: 0 | 1): Promise<void> {
   await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[index].trigger('click')

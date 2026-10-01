@@ -1,72 +1,44 @@
-# files — Domain Spec
+# files — 领域规格
 
 ## Overview
 
-files domain 让浏览器检视当前工作区的文件树,而不授予写权限。它存在的目的是
-让一个面板能够浏览文件、读取文本、搜索文件,同时保持
-constitution 中围绕文件系统根目录的默认拒绝边界。
+files 让人在已登记工作区内只读检视仓库：看树、读文本、有界搜索、看工作树状态，并内嵌工作会话就代码提问。
 
-**Scope:** 在一个已注册工作区内的只读目录列表、文本文件读取,以及文件名/内容
-搜索。**Boundary:** 它不编辑文件、不计算 diff、不追溯 blame 历史、不追踪
-符号,也不访问所选工作区之外的文件。
+**范围:** 单一已登记工作区的只读目录与文件、有界搜索、工作树状态、内嵌工作会话。
+**边界:** 不编辑仓库；不列分支与提交、不展示版本间 diff、不 blame、不符号导航；单次请求不跨工作区；不扫描密钥。内嵌会话的运行与权限见 [agent-session](../agent-session/agent-session-spec.md) 与 [permission-gateway](../permission-gateway/permission-gateway-spec.md)。
 
-## Core entities
+实体见 [files-models.md](files-models.md)。能力索引见 [features.md](../../../features.md) 的 files 节。
 
-| Entity        | Description                            | Key attributes                        |
-| ------------- | -------------------------------------- | ------------------------------------- |
-| WorkspaceRoot | 限定所有文件读取范围的已注册工作区目录 | 服务端签发的工作区 id、已解析的根目录 |
-| FilePath      | 浏览器请求的一个工作区相对路径         | 规范化的相对路径、文件或目录          |
-| FileResult    | 返回给浏览器的一个只读观察结果         | 条目元数据、文本内容、搜索命中        |
+## Business rules
 
-## Business Rules
+### 只读与信任根
 
-- **FILE-R1**: 所有 files 请求都是只读的。该 domain 绝不能创建、编辑、删除、重命名、chmod,或以其他方式变更工作区文件。
-- **FILE-R2**: 信任根由服务端拥有:一个请求通过其不透明 id 标识一个已注册工作区。伪造或未注册的 id 会被拒绝,且绝不能被当作文件系统路径处理。
-- **FILE-R3**: 所有请求路径都是工作区相对的。绝对路径、父级遍历、空字节,以及任何解析后落在已注册根目录之外的路径都会被拒绝。符号链接目标依据其解析后的目标判定,而非链接本身的文本。
-- **FILE-R4**: `.git` 从目录列表、文件读取和搜索结果中排除。
-- **FILE-R5**: 读取一个文本文件返回内容与元数据。二进制文件和超过配置大小上限的文件只返回元数据,绝不返回内容。
-- **FILE-R6**: 搜索只返回有界结果。文件名与内容搜索都必须同时强制结果数量上限与运行时限,以避免大型工作区占用服务端资源。
-- **FILE-R9**: 搜索可以携带一个可选的、针对文件基础名的 glob 过滤器(例如 `*.ts`,逗号/空格分隔取并集)。它限定了哪些文件被匹配(文件名模式)或被读取(内容模式);目录始终被遍历,以使嵌套文件仍可到达。空过滤器或 `*` 表示所有文件。
-- **FILE-R7**: list/search 返回的路径始终相对于工作区根目录,并且自身也必须满足相同的根目录守卫。
-- **FILE-R8**: 可接受的风险:在一个被允许的工作区内,非 `.git` 的敏感文件如 `.env` 可被本地用户读取。c3 依赖仅限本地运行、已认证的工作区注册,以及工作区所有者查看自己的文件;files domain 不实现密钥扫描或按文件策略。
-- **FILE-R10**: 文件名搜索以查询词作条目基础名的不区分大小写子串匹配:连字符与扩展名不构成匹配边界(查询 `sandbox` 命中 `sandbox-architecture.md`),命中的 `match` 为完整基础名。查询词不被解释为 glob 或相对路径,也不分词或改写;文件名匹配不读取文件内容,并仍受 FILE-R9 的 glob 准入约束。
+- **FILE-R1**: 本域所有请求只读。不得创建、编辑、删除、重命名或以其他方式变更工作区文件。
+- **FILE-R2**: 信任根由服务端拥有。请求以已登记工作区的不透明身份标识根；伪造或未登记的身份拒绝，且不得当作文件系统路径。
+- **FILE-R3**: 请求路径相对该根。解析后落在根外的路径一律拒绝；符号链接按解析后的目标判定。
+- **FILE-R4**: `.git` 不出现在目录、读取与搜索结果中。
+- **FILE-R7**: 返回路径相对工作区根，且须通过同一根守卫。
+- **FILE-R8**: 已登记工作区内非 `.git` 的敏感文件（如 `.env`）对本地所有者可读。本域不扫描密钥、不按文件策略过滤。跨域路径约束见 [SEC-11](../../../non-functional/security.md)。拒绝与失败不回显绝对路径。
 
-## States & Transitions
+### 仓库浏览
 
-Files 请求是无状态的。每个请求解析一个工作区根目录,校验相对路径,
-执行一次有界的读/列/搜索,返回一个结果或错误,不保留任何请求间状态。
+列出直接子项、读取文本文件。二进制或超过体积上限的文件只返元数据，不返内容（**FILE-R5**）。可按文件名或内容搜索，结果数量与耗时均有界（**FILE-R6**）。
 
-## Domain Events
+### 文件树状态
 
-消费 `list_dir`、`read_file` 与 `search_files` WebSocket 消息。发出 `dir_listed`、
-`file_read`、`files_searched`,或 `error`。见
-[shared protocol](../../../shared/api-conventions/websocket-protocol.md)。
+只读快照标出改动、暂存与未跟踪。文件页可见时刷新；离开则停。非 git 或读失败则空快照，不打断树。状态不展开为提交或两版本间的 diff。
+
+### 代码域会话
+
+文件页可内嵌一个普通工作会话就代码提问，可新建或重置。本域不拥有该会话的运行。浏览仍只读；改仓库只经该会话与权限网关。
+
+## Domain events
+
+消费 `list_dir`、`read_file`、`get_file_git_status`、`search_files`。发出 `dir_listed`、`file_read`、`file_git_status`、`files_searched`，或 `error`。形状见[共享协议](../../../shared/api-conventions/websocket-protocol.md)。内嵌会话走既有会话消息，不另开线路。
 
 ## Interactions
 
-- **session-registry** 提供已注册工作区 id 到根目录的映射。
-- **web-console** 发送相对路径的浏览/搜索请求并渲染结果。
-- **non-functional/security** 拥有跨 domain 的路径遍历与信任根不变式。
-
-## Non-Goals
-
-- 无编辑或写入操作。
-- 单次请求内无跨工作区浏览。
-- 无 git diff、blame、历史或 status。
-- 无符号索引或跳转到定义。
-- 除显式的 `.git` 排除之外,无特殊的密钥过滤。
-
-## Anti-Scenarios
-
-- 客户端提供的绝对路径如 `~/.ssh` 被当作工作区根目录接受。
-- 一个相对路径如 `../../etc/passwd` 读取到工作区之外。
-- 工作区内的一个符号链接暴露出工作区之外的目标。
-- 一个同级目录如 `/workspace-evil` 通过前缀混淆 `/workspace` 而通过校验。
-- `.git` 出现在任何 list、read 或 search 结果中。
-
-## Data Dictionary
-
-- **Workspace-relative path** —— 在某个已注册工作区根目录下解释的路径;绝非
-  绝对文件系统路径。
-- **Registered workspace** —— 之前被 session-registry 接受、在线上以不透明 id
-  标识的一个工作区。
+- **session-registry** — 已登记名称到根路径；本域不解释名称之外的信任根。
+- **agent-session** — 内嵌工作会话的运行。
+- **web-console** — 发送相对路径的浏览请求并渲染。
+- **permission-gateway** — 内嵌会话里的敏感工具，与本域只读浏览正交。

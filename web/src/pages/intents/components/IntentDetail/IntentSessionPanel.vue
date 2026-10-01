@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * IntentSessionPanel.vue — 四类会话 tab(intent / spec / spec review / work session)的内容面板。
+ * IntentSessionPanel.vue — 六类会话 tab(intent / spec / spec review / work / PR review / PR fix)的内容面板。
  *
  * 沿用「单一活动会话」模型:仅在全局活动会话与期望 ID 对齐(chatReady)后渲染 ChatColumn,
  * 避免串台;期望 ID 为空的意图会话首轮渲染首条输入框(firstIntentTurn)。打开会话本身由容器

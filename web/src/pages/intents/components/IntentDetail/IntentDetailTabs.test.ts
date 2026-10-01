@@ -23,6 +23,8 @@ function mountTabs(over: Record<string, unknown> = {}) {
       intentSessionStatusDot: null,
       specSessionStatusDot: null,
       specReviewSessionStatusDot: null,
+      reviewSessionStatusDot: null,
+      fixSessionStatusDot: null,
       ...over,
     },
   })
@@ -90,19 +92,48 @@ describe('IntentDetailTabs.vue', () => {
     expect(w.find('[data-testid="intent-detail-spec-review-session-status"]').exists()).toBe(false)
   })
 
-  it('renders review/fix tabs without any status dot', async () => {
+  it('scopes the review/fix dots to their own tabs and leaves them off when absent', async () => {
     const w = mountTabs()
     const reviewTab = w.find('.intent-detail-tab[data-tab="reviewSession"]')
     const fixTab = w.find('.intent-detail-tab[data-tab="fixSession"]')
     expect(reviewTab.exists()).toBe(true)
     expect(fixTab.exists()).toBe(true)
+    // idle/未知 → 无状态点。
     expect(reviewTab.find('.session-status').exists()).toBe(false)
     expect(fixTab.find('.session-status').exists()).toBe(false)
 
-    // 即便其他会话在跑,评审/修复 tab 也不渲染状态点(无对应 prop)。
+    // 其他会话在跑也不点亮评审/修复 tab(不按来源串台)。
     await w.setProps({ workSessionStatusDot: 'running', specReviewSessionStatusDot: 'running' })
     expect(reviewTab.find('.session-status').exists()).toBe(false)
     expect(fixTab.find('.session-status').exists()).toBe(false)
+  })
+
+  it('renders the review and fix dots while their sessions run, and drops them when idle', async () => {
+    const w = mountTabs({
+      reviewSessionStatusDot: 'running',
+      fixSessionStatusDot: 'awaiting_permission',
+    })
+    const reviewDots = w.findAll('[data-testid="intent-detail-review-session-status"]')
+    const fixDots = w.findAll('[data-testid="intent-detail-fix-session-status"]')
+    expect(reviewDots).toHaveLength(1)
+    expect(fixDots).toHaveLength(1)
+    expect(reviewDots[0].classes()).toContain('running')
+    expect(reviewDots[0].attributes('title')).toBe('running')
+    expect(fixDots[0].classes()).toContain('awaiting_permission')
+    expect(
+      w.find('.intent-detail-tab[data-tab="reviewSession"]').find('.session-status').exists(),
+    ).toBe(true)
+    expect(
+      w.find('.intent-detail-tab[data-tab="fixSession"]').find('.session-status').exists(),
+    ).toBe(true)
+    // 互不串台:评审在跑不点亮另外五类。
+    expect(w.find('[data-testid="intent-detail-spec-review-session-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-work-session-status"]').exists()).toBe(false)
+
+    // 会话停止 → 状态点随之消失。
+    await w.setProps({ reviewSessionStatusDot: null, fixSessionStatusDot: null })
+    expect(w.find('[data-testid="intent-detail-review-session-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-fix-session-status"]').exists()).toBe(false)
   })
 
   it('scopes the spec session dot to the specSession tab, active or not', async () => {

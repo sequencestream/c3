@@ -1795,7 +1795,6 @@
       },
       "placeholder": "想调整什么?你的输入会与当前内容拼接,作为新会话的起点。"
     },
-
     "restartSession": {
       "title": "重启工作会话",
       "message": "以你的提示词新起一个工作会话,沿用同一 worktree 与分支。旧会话若仍在运行会先中止,并保留在 Works 中;该意图将改指新会话。",
@@ -2176,10 +2175,6 @@
       "templates": {
         "button": "模板",
         "noAgent": "没有可用于此模板的已启用 Claude Agent。",
-        "prPoller": {
-          "title": "PR 状态轮询检查",
-          "description": "每 10 分钟对照 GitHub PR 状态检查审核中的意图,有变化时发布事件(只读,不写台账)。"
-        },
         "archReview": {
           "title": "每周架构稳定性体检",
           "description": "每周五 18:00 复盘最近 7 天代码变化,把高价值架构优化点落为草稿意图待人工确认。"
@@ -2191,14 +2186,6 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "每周日 03:00 清理超过 7 天未变化的 c3 托管 worktree,仅在无未提交改动、意图状态和分支安全检查通过时删除。"
-        },
-        "prReviewRunner": {
-          "title": "PR 评审接力",
-          "description": "订阅 PR 创建或更新，AI 评审 PR 改动后发布 pr:review 事件。"
-        },
-        "prReviewFix": {
-          "title": "PR 评审失败修复",
-          "description": "当 PR 评审报告失败时，定位并修复问题，完成后发布 pr:update 事件。"
         },
         "customEventEcho": {
           "title": "自定义事件 echo",

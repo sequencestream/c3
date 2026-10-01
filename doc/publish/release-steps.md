@@ -1,118 +1,19 @@
-# 发布步骤 — c3 二进制 Release
+# 发布步骤
 
-> 对应 doc/non-functional/release.md(release 1–7)。
->
-> **说明:** 产物完整性由 **sha256 校验和**(`.sha256` / `SHA256SUMS`)+ **公开
-> GitHub Release 的 HTTPS** 提供。产物分发以 CI 切割的公开 GitHub Release 为准;
-> release notes 由 GitHub `--generate-notes` 基于 PR 历史自动生成。
+维护者如何切一份公开 GitHub Release，或只在本机做出产物树。产物形态、完整性与桌面渠道见 [release.md](../non-functional/release.md)（[桌面渠道](../non-functional/release.md#桌面渠道)）、[ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md)、[ADR-0033](../architecture/adr/0033-tauri-desktop-shell-sidecar.md)。树内构建入口见 [develop.md](../develop.md)。
 
-## 概述
+公开分发只走 GitHub Release。本机 `pnpm release` 交叉编译，产物供排查与自用。
 
-c3 发布的是**单二进制**(macOS / Linux / Windows),经公开 GitHub Release 分发。可信度链条:
+CLI 与桌面是同一次发布的两个渠道。桌面渠道失败不阻断 CLI 发布。
 
-- **构建**:`bun build --compile` 出二进制 → 打包 tar.gz/zip + `manifest.json`。本地 `pnpm release` 用 Bun **交叉编译**在一台 macOS/Linux 机器上一次产出三目标(`linux-x64` / `macos-arm64` / `windows-x64`,无需 Docker、无需 Windows 机器);CI 则各目标跑在其原生 OS runner 上。
-- **校验和**:对每个产物生成 `.sha256`,并汇总出 `SHA256SUMS`。macOS 目标在计算哈希前先做 ad-hoc `codesign -s -`(仅临时签名,非 Apple 公证)。
-- **校验**:使用者用 `shasum -a 256 -c <artifact>.sha256`(或对照 `SHA256SUMS`)校验下载完整性;传输信任来自 GitHub 的 HTTPS。
-- **分发**:产物通过 CI 切成一个**公开的 GitHub Release**(仓库 `sequencestream/c3`)供用户下载。
+## 公开 GitHub Release
 
-发布路径:**本地手动**(`pnpm release`,在一台机器上交叉编译三目标 → 生成校验和 → 汇集,产物供排查/自用)与 **CI**(各目标原生 OS 构建 → 切公开 GitHub Release,面向公众)。两者调用同一批 `scripts/release/*` 脚本,逻辑同源。
+触发：在 Actions 上手动跑 Release，或推送 `v*` tag。
 
----
+源码闸门（typecheck、lint、test、i18n）红了不进编译。CI 按目标在对应原生 OS 上构建；本机 `pnpm release:github` 走交叉编译，同样切公开 Release，需要已登录且有推送权限的 `gh`。发布说明由 GitHub `--generate-notes` 根据 PR 历史生成。
 
-## 前置条件
+macOS 桌面目标必须签名并公证，否则该目标被阻断（见 [桌面渠道](../non-functional/release.md#桌面渠道)）。CLI 的 macOS 签名见 [release.md](../non-functional/release.md)。
 
-| 名称        | 用途              | 配置位置                                                  |
-| ----------- | ----------------- | --------------------------------------------------------- |
-| GitHub 推送 | 切 GitHub Release | 已登录且有推送权限的 `gh` CLI(CI 使用内置 `GITHUB_TOKEN`) |
+## 本机产物树
 
-> `dist/` 全目录 gitignored。开源版不再需要签名私钥。
-
----
-
-## 路径 A:CI 发布(公开分发)
-
-CI workflow:`.github/workflows/release.yml`。各目标在其原生 OS runner 上构建(不交叉编译),最终切出公开 GitHub Release。
-
-### 触发方式
-
-- **手动**:Actions → Release → Run workflow,可选填 `version`(如 `v0.2.0`,留空则从 git tag 推导)。目标是固定的(`linux-x64` / `macos-arm64` / `windows-x64`,每次构建全部,无 targets 输入)。
-- **打 tag**:`git push` 一个 `v*` tag,自动重建 + 重新校验 + 重新发布。
-
-### Job 链(`needs:` 强制顺序)
-
-1. **setup** — 解析 `version`。
-2. **pregate** — 源码闸门:`typecheck → lint → test → i18n:check`。红了不进编译。
-3. **build-publish:<target>**(各跑在原生 OS)—— CLI 渠道:`build → smoke → checksum → postgate`,
-   上传按目标分类的制品(包 + `.sha256` + `SHA256SUMS` + 该 job 自己的 `dist/manifest.json`)。
-   3b. **build-desktop:<target>**(各跑在原生 OS)—— 桌面渠道:`release:desktop → checksum → postgate(channel=desktop)`,
-   产出 `.dmg`/`.app.tar.gz`、`.msi`/`.exe`、`.deb`/`.AppImage`,同样上传含自身 `manifest.json`。
-   macOS 走 `--require-signing`,签名或公证任一失败即阻断该目标。**桌面 job 失败只丢它自己的产物,不阻断 CLI 发布**
-   (`publish` 的 `if:` 只要求三个 CLI job 全绿;缺席的 desktop job 在合并阶段直接不参与)。
-4. **publish** — 下载各 job 制品(**按制品名分目录**,不用 merge-multiple——同名 `manifest.json` / `SHA256SUMS` 会互相覆盖只剩最后一份)→
-   调 `scripts/release/merge-dist.mjs` 合并各 job 的 manifest 为**一份跨目标** `manifest.json` + `SHA256SUMS`
-   (要求各输入 manifest 的 `schema` / `version` / `commit` 一致,按 `file` 去重)→
-   跑 `postgate` 门禁(manifest ↔ SHA256SUMS ↔ 磁盘 + 必需 CLI 目标完整 + schema 属 `c3-release-manifest/*` + 无孤儿制品)→
-   `gh release create` / `upload`,上传集合 = 每个制品 + 其 `.sha256` sidecar + 合并后的 `SHA256SUMS` + **合并后的 `manifest.json`**;
-   **release notes 由 `--generate-notes` 基于 PR 历史自动生成**。合并或门禁失败时 publish 直接红、不调用 `gh`,绝不产出「看着正常但缺 manifest」的 Release。
-
-### 校验 CI 产物
-
-发布完成后,从 GitHub Release 下载某产物及其 `.sha256`,本地校验:
-
-```bash
-shasum -a 256 -c c3-cli-vX.Y.Z-macos-arm64.tar.gz.sha256   # 或对照 SHA256SUMS
-```
-
----
-
-## 路径 B:本地手动构建(`pnpm release`)
-
-一台 macOS/Linux 机器即可完成「交叉编译三目标 → 生成校验和 → 汇集」。产物落在 `dist/release-artifacts/v<版本>/`,供排查/自用;公开分发由 CI 负责。需装 Bun。
-
-### `pnpm release` —— 交互式本地构建
-
-```bash
-pnpm release
-```
-
-依次执行:
-
-1. **提示版本号**(默认给出推导值,回车采用;或 `--version=0.8.0` 非交互指定)。
-2. **源码闸门 pregate**(`typecheck → lint → test → …`,红了不进编译;`--skip-gate` 跳过)。
-3. **交叉编译三目标** `linux-x64` / `macos-arm64` / `windows-x64`(Bun `--target`,一台机器全出;Windows 直接产出 `c3.exe`)。构建为 `bun --compile`(minify),无代码混淆。
-4. **生成校验和**:出每包的 `.sha256`、汇总 `SHA256SUMS`。
-5. **汇集**到 `dist/release-artifacts/v<版本>/`。
-
-常用参数:
-
-```bash
-pnpm release --version=0.8.0            # 非交互指定版本(无 TTY 时必需)
-pnpm release --skip-upload             # 只构建+校验和+汇集
-pnpm release --targets=windows-x64     # 只构建某目标(覆盖默认三目标)
-pnpm release --skip-gate               # 跳过源码闸门(调试)
-pnpm release --dry-run                 # 排练:跑闸门 + 打印计划,不构建
-```
-
-### `pnpm release:github` —— 一体化 GitHub 发布编排器
-
-`pnpm release:github` 串联 gate → build → notes → publish,一键在 `sequencestream/c3` 上切一个公开 GitHub Release(release notes 由 GitHub `--generate-notes` 自动生成)。需要已登录且有推送权限的 `gh` CLI。
-
-```bash
-pnpm release:github                # 完整:gate → build(+smoke) → notes → publish
-pnpm release:github --no-publish   # gate + build + checksum + notes,不创建 GitHub Release
-pnpm release:github --dry-run      # 排练每个阶段,不打 tag / 不跑 gh
-```
-
-> 开源版分发以 GitHub Release 为准。CI(路径 A)是常规的自动发布入口;`pnpm release:github`(本地一键端到端)是等价的手动路径,两者调用同一批 `scripts/release/*` 脚本。
-
----
-
-## 相关脚本速查
-
-- **`pnpm release`**: **交互式本地构建**:提示版本 → 交叉编译三目标 → 生成校验和 → 汇集 `dist/release-artifacts/v<版本>/`
-- **`pnpm release:build`**: 仅构建 + 打包 + manifest(`--targets` / `--skip-web` / `--skip-pack`)
-- **`pnpm release:desktop`**: 桌面渠道:sidecar 编译 → 暂存 + 版本门禁 → `tauri build` → 收集 + manifest(`--require-signing`)
-- **`pnpm release:checksum`**: 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)
-- **`pnpm release:smoke`**: 冒烟:`--version` + headless 启动
-- **`pnpm release:verify-dist`**: postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性 + 必需目标 + schema + 无孤儿制品
-- **`pnpm release:github`**: GitHub 发布编排:gate → build → notes → 切公开 GitHub Release
+`pnpm release` 在一台 macOS 或 Linux 机器上用 Bun 交叉编译三平台，过同一道源码闸门后留下本机产物。桌面渠道用 `pnpm release:desktop`。

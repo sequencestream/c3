@@ -767,14 +767,16 @@ export interface Intent {
   responsibleSubject: string | null
   /**
    * Derived, send-time boolean: `true` when ANY of `intentSessionId`,
-   * `specSessionId`, or `lastWorkSessionId` is a non-null id that the run
-   * registry reports as `isRunning` (a turn is executing right now). Covers all
-   * three session kinds and is a transient liveness signal independent of the
-   * intent's `status`. Distinct from `runStatus`, which describes ONLY the
-   * `in_progress` work session's alive/dangling/idle reconcile state:
-   * `sessionActive=true` may co-exist with `runStatus='idle'` or `'dangling'`.
-   * Re-derived from the live registry on every send (list / refresh / broadcast);
-   * never stored, never cached, never inferred from a missing field.
+   * `specSessionId`, `specReviewSessionId`, `lastWorkSessionId`,
+   * `reviewSessionId`, or `fixSessionId` identifies a live process. A
+   * `pending:` placeholder is never active. Covers all six session kinds and is
+   * a transient liveness signal independent of the intent's `status`. Distinct
+   * from `runStatus`, which describes ONLY the `in_progress` work session's
+   * alive/dangling/idle reconcile state: `sessionActive=true` may co-exist with
+   * `runStatus='idle'` or `'dangling'`. Distinct from `reviewInFlight` /
+   * `fixInFlight`, which include not-yet-bound occupancy. Re-derived from the
+   * live registry on every send (list / refresh / broadcast); never stored,
+   * never cached, never inferred from a missing field.
    */
   sessionActive: boolean
   /**

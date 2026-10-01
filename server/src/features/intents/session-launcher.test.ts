@@ -443,6 +443,20 @@ describe('launchWorkSession — attach / resume / fresh', () => {
       expect(r.code).toBe('intent.restartSessionChanged')
       expect(deps.launchRun).not.toHaveBeenCalled()
     })
+
+    it('restarts a no-spec in-progress intent even when SDD is on', async () => {
+      saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+      const id = restartTarget('in_progress', 'sess-no-spec-restart')
+      const deps = mockDeps()
+      const r = asSuccess(
+        await launchWorkSession(proj, id, deps, undefined, null, {
+          restart: { prompt: 'CONTINUE', previousSessionId: 'sess-no-spec-restart' },
+        }),
+      )
+      expect(r.mode).toBe('fresh')
+      expect(r.sessionId).not.toBe('sess-no-spec-restart')
+      expect(deps.launchRun).toHaveBeenCalledTimes(1)
+    })
   })
 
   // ── RM-A12, now enforced inside the launcher ──

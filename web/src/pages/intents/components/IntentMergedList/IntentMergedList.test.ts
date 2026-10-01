@@ -123,6 +123,54 @@ describe('IntentMergedList.vue — header', () => {
   })
 })
 
+describe('IntentMergedList.vue — active-session dot through the wrapper', () => {
+  // 合并列表只是容器,内层渲染 IntentList:六类会话(含评审/修复)的绿点必须原样透出。
+  it('shows the dot for a running PR review session', () => {
+    const w = mountMerged({
+      intents: [
+        intent({
+          id: 'rev',
+          status: 'in_progress',
+          reviewSessionId: 'pr-rev-1',
+          reviewStatus: 'pending',
+          sessionActive: true,
+        }),
+      ],
+    })
+    expect(w.find('.req-session-active').exists()).toBe(true)
+  })
+
+  it('shows the dot for a running PR fix session', () => {
+    const w = mountMerged({
+      intents: [
+        intent({
+          id: 'fix',
+          status: 'in_progress',
+          fixSessionId: 'pr-fix-1',
+          fixStatus: 'pending',
+          sessionActive: true,
+        }),
+      ],
+    })
+    expect(w.find('.req-session-active').exists()).toBe(true)
+  })
+
+  it('shows no dot when nothing is running', () => {
+    const w = mountMerged({
+      intents: [
+        intent({
+          id: 'idle',
+          status: 'in_progress',
+          reviewSessionId: 'pr-rev-1',
+          fixSessionId: 'pr-fix-1',
+          sessionActive: false,
+        }),
+      ],
+    })
+    expect(w.find('.req-session-active').exists()).toBe(false)
+  })
+})
+
 describe('IntentMergedList.vue — collapse', () => {
   it('toggles collapsed class on button click', async () => {
     const w = mountMerged()

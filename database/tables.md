@@ -244,8 +244,7 @@ state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数
 
 刻意**没有**入参、工具输出、bearer、哈希与认证头列：能泄漏凭据的审计轨迹等于凭据的第二份副本。
 `key_id` 对 `mcp_api_keys` 不设外键，key 吊销后历史仍须可读。写入不进业务事务：落库失败保持业务
-结果不变，但必须发出脱敏的运维错误，让审计缺口可观测。读操作不入表 (见 security.md SEC-14 的已知
-缺口)。
+结果不变，但必须发出脱敏的运维错误，让审计缺口可观测。读操作不入表（见 [SEC-14](../doc/non-functional/security.md) 与 [external-mcp 请求与授权链](../doc/domains/core/external-mcp/external-mcp-spec.md#请求与授权链)）。
 
 ### memory
 
@@ -272,7 +271,7 @@ IM 聊天机器人域。八张表把「群里 @机器人 提问、c3 跑一轮�
 `im_identity_bindings` / `im_group_workspace_scopes` / `im_identity_audit` 是 Web→私聊身份绑定、群明细
 白名单与授权审计。它是 c3 唯一一条主动把 agent 产出送往第三方云的路径;授权模型由 ADR-0046 裁定,
 上下文持久化例外由 ADR-0048 裁定,身份绑定与调用级作用域由 ADR-0049 裁定。正式定义见
-[术语表·机器人](../doc/glossary.md)。
+[术语表·机器人](../doc/glossary.md#机器人)。
 
 **部署级出入口、不绑工作区**是本域的结构性特征:`im_robots` 刻意没有 `workspace_name` 列——配置/
 连接/名册跨工作区一致,但不等于无边界访问。机器人按 `name` 拥有独立工作目录

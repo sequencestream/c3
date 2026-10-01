@@ -1,90 +1,49 @@
 # 非功能需求 — 安全
 
-安全是 c3 的核心价值(constitution § Mission & values)。这里的目标是把 constitution 中的 `C-SEC-*` 规则细化为可核查的期望。
+安全是 c3 的核心价值（[constitution](../constitution.md) 使命与价值观）。本节把 `C-SEC-*` 细化为可核查的期望；MCP、认证、文件与密钥的不变量由各域规格拥有，此处只引用。
 
 ## 威胁模型
 
-- **可信:** 运行 c3 的操作系统用户,以及其授权的浏览器会话(启用认证后即通过认证的会话)。
-- **不可信:** 未经授权的连接与输入。是否把 c3 暴露到网络由使用者决定;暴露到非回环地址时应启用认证。
-- **不在范围内:** 防范恶意的本地用户;对 `claude` 进程做沙箱隔离;保护项目目录的内容。
+- **可信:** 运行 c3 的操作系统用户，以及其授权的浏览器会话（启用认证后即通过认证的会话）。
+- **不可信:** 未经授权的连接与输入。是否把 c3 暴露到网络由使用者决定；暴露到非回环地址时应启用认证。
+- **不在范围内:** 防范恶意的本地用户；对厂商进程做沙箱隔离；保护项目目录的内容。
 
 ## 需求
 
-- **SEC-1**: 服务端的绑定地址由使用者**显式**决定:`--host` 缺省 `127.0.0.1`,只有本机可达(此前不传 hostname 等于隐式监听全部网卡,是被收紧掉的默认)。放开到非回环地址时应启用认证(见 auth 域);外部 MCP 路由另有自己的凭据(SEC-14)。
-- **SEC-2**: c3 只持久化**被显式选择的结构化运行数据**——意图/交付/讨论台账、配置、审计轨迹、[工作区记忆](../domains/core/memory/memory-overview.md),以及[机器人 IM 可见上下文](../domains/core/im-robot/im-robot-overview.md)(ADR-0048),全部落在本机单文件 `~/.c3/c3.db`。原始 prompt 与对话转录**默认不落盘**:不进磁盘日志,也不得以记忆的形式持久化(记忆的写入路径为此拒绝代码围栏、工具调用/返回框架与角色转录行)。**唯一例外**是 ADR-0048 定义的发送者隔离、成对、有界机器人 IM 上下文——例外必须同时满足四维归属、成对结构、凭据形状拒绝、单条与总量上限、固定保留期与确定硬删除;任一保障缺失时不得写入。工具输入/输出、推理过程与运行日志仍一律不落盘。会话与权限的运行态仍只在连接生命周期内驻于内存。工作区记忆见 ADR-0045;机器人 IM 上下文见 ADR-0048。
-- **SEC-3**: SDK 以 `settingSources: ['user', 'project']` 运行——用户与项目设置、hook、允许/拒绝规则会在进入 c3 的浏览器门控之前被继承并应用。未被它们预先决定的工具会流经 `canUseTool`(C-SEC-1,ADR 0005)。
-- **SEC-4**: 敏感工具只有在得到明确的 `allow`,或处于用户明确选择的、授权自动执行的模式(`acceptEdits`、`bypassPermissions`)下才会执行(C-SEC-2)。
-- **SEC-5**: 默认结果是**拒绝**:无法识别的决策或被中止的运行绝不会得出 `allow`(C-SEC-3)。一个未被应答的请求根本不会被解析——它会一直阻塞,直到用户作出决定或运行被中止。
-- **SEC-6**: c3 绝不读取、存储或传输 Claude 凭据;`claude` CLI 拥有认证权(C-SEC-4)。
-- **SEC-7**: 切换进入 `bypassPermissions` 永远是一次明确的、可观察的 UI 操作的结果;c3 绝不会静默地设置它。
-- **SEC-8**: 分发信任(DIST-1):发布的二进制文件携带逐工件的 sha256 校验和(每产物 `.sha256` + 汇总 `SHA256SUMS`);产物经**公开 GitHub Release**(HTTPS)分发,使用者可用 `shasum -a 256 -c` 校验完整性。
-- **SEC-9**: **工作区身份是一个由服务端分配的不透明 id。** 每一条工作区范围内的线路消息都携带一个 `workspaceName`(随机生成,持久化在注册表中),而不是绝对路径。服务端是唯一有权将 `id → 真实路径` 建立映射的一方,拒绝任何未注册/伪造的 id——因此客户端在构造上就无法注入任意的文件系统根目录(它既不能读取也不能伪造出一个有效的 id)。`add_workspace`/`remove_workspace` 是**唯一**携带路径的消息;绝对路径不会出现在其他任何消息中(通过 grep 强制检查)。
-- **SEC-10**: **`add_workspace`(以及 `remove_workspace`)需要一个已认证的会话。** 它们是唯一一个绝对路径可以合法进入系统的入口——也就是一个新的信任根被建立的地方——因此在未认证的连接上会被拒绝(`unauthenticated` 应答)。这是未来按角色授权的挂钩点;登录门控在其余方面保持不变。
-- **SEC-11**: **工作区文件浏览被限定在已注册的根目录内。** 任何只读的代码浏览请求都必须从 `workspaceName → 已注册工作区真实路径` 解析出其根目录,然后对根目录和目标路径都执行 `realpath`,只接受根目录本身或 `根目录 + 路径分隔符` 之下的路径。它必须拒绝未知 id、绝对路径、上级目录穿越、空字节、前缀混淆的同名兄弟目录,以及真实指向逃出根目录之外的符号链接。目录遍历/搜索必须对所产出的路径应用同一守卫,并排除 `.git`。二进制文件或超大文件只返回元数据。已接受的风险:已注册工作区内非 `.git` 的敏感信息(例如 `.env`)对本地工作区所有者是可读的,因为它是一个面向工作区所有者的只读检视功能,而不是密钥扫描器。
-- **SEC-13**: **自定义智能体的 `apiKey` 以 `config_type='secret'` 静态加密落库。**(在带版本标签的内嵌密钥下使用 AES-256-GCM,前缀 `c3secretvN:`——见 § Agent apiKey 静态加密。)这**仅达到混淆级别**:它把明文的上游密钥从配置文件中移除(因此意外的文件/备份/日志泄露不会把它交出去),但**不能**防范持有 c3 二进制文件的人(密钥是内嵌的,可以静态提取——这是一个与反反编译非目标一致的、被接受的权衡)。与 SEC-6 的区别:SEC-6 覆盖第一方的 Claude 凭据(由 `claude` CLI 拥有,系统模式);SEC-13 覆盖 `custom` 智能体存储的第三方/网关密钥。线路协议、前端与 WebSocket 传输仍以明文携带该密钥(传输层安全不在此范围内)。
-- **SEC-14**: **外部 MCP 端点 `POST /mcp` 以长期 API key 为唯一凭据,凭据只从 `Authorization: Bearer` 读取,每一次调用都重新授权,每一次写调用都留下可归因的审计行。** 该端点服务于 c3 未拉起的 agent,因此不做 loopback 判断(无认证部署的 trusted-local 模式除外);Web 登录会话与内部 per-run token 都不能替代 key。**地址不含凭据**:`/mcp/<任何东西>` 一律 404,query 参数与 `X-API-Key` 之类的自定义凭据头都不被解析,因此 key 不会随 URL 进入代理访问日志或 shell 历史。key 以每条独立随机盐 + `scrypt` 哈希落盘,**磁盘上无明文**,明文只在新建或重置密钥成功的那一次响应里出现且不可恢复,不提供找回入口;记录存于独立的 `mcp_api_keys` 表,故整对象 `save_settings` 既不携带也无法注入/读出哈希。**生命周期归持有者自助**:每条自助操作从已验证连接推导归属,客户端永不传 owner,未知 id 与他人的 id 返回同一个未找到结果且不产生变更——身为管理员既看不到、也重置不了、更读不出别人的明文。重置密钥保 id、归属、名称与工具范围,只递增密钥版本并替换哈希,**没有宽限期**:先持久化后清场,旧密钥及其开出的会话立即失效。每次请求重新校验(进程不缓存"此 key 有效"的结论),吊销下一次请求即失败并关闭已建立的活动 transport。**作用域是三层求交**,每次请求重建:key 自身范围 ∩ 归属账号的管理员配置工作区范围 ∩ (key 工具 ∩ 可外部授权目录);唯一卡口是 `authorizeCall`,缺策略记录一律读作**零权限**而非全部。key 必须有不可变归属与正整数密钥版本,缺任一项的记录在启动时被吊销而不是被指派归属。**凭据先于工作区解析**,缺失/格式错/未知/吊销/归属失效一律同一 401,未授权方既无法探测 key 是否存在也无法探测工作区名;工作区由 `X-C3-Workspace` 在 initialize 时选定,缺失/重复/超长 400,未知与越权同一 403。会话钉在 `(keyId, secretVersion, workspaceName, policyEpoch)` 四元组上,任一项变化即清场,顺序恒为**先持久化后清连接**,清理失败由逐请求比对兜底。工具面是**显式 allowlist** + **逐 key 勾选**:默认只读(`find_intents`/`view_intent`/`find_discussions`/`view_discussion`/`publish_event`/`list_workspaces`/`whoami`),写工具(`save_intents`/`submit_spec_review`/`start_session_for_intent` 等)一律不在默认集内。自助面**不提供**工具范围编辑——能调什么不是持有者自己说了算的——因此当前阶段没有任何首方界面能授予写工具:授予路径只剩既有的工作区寻址消息,而自助 key 归档为 `null`、连那条路径也够不到。这是**有意的收紧**,不是遗漏。``tools/list`精确等于有效工具集,集外调用返回稳定 forbidden 且不执行 handler,新增内部工具不会因遗漏而外泄。**执行时校验**:工具目录不闭包任何作用域,handler 只收本次调用重新求解出的`EffectiveScope`;写工具可用可选入参 `workspaceName` 逐次指定目标(读工具不接受该参数),该目标必须落在有效范围内,越权的显式工作区返回与「工具未授权」逐字相同的 forbidden;带 id 的写(`save_intents` 的 upsert 目标与持久化依赖引用、`submit_spec_review`、`start_session_for_intent`、`continue_discussion`)先全库反查该记录的不可变归属工作区并比对,不符即在任何落库/广播/事件/会话拉起之前拒绝,**绝不静默改到 id 真实归属的工作区**,范围内缺失一律回既有的「未找到(本项目)」。**来源由服务端派生**:`publish_event` 的 envelope 取校验后的工作区、`sessionId`恒为`external-mcp:<keyId>@<工作区名>`,载荷里的 workspace/session/source 字段只作数据不进 envelope;`save_intents`一律剥掉调用方传入的`intentSessionId`。**写调用审计**:每次已知写工具调用尝试(成功、handler 失败、进入 handler 之前被拒三态)在 `external_mcp_write_audits`落且只落一行,含 keyId、归属账号、判定所针对的工作区名、工具名、结果与时间,**不含**入参、输出、bearer、密钥材料、哈希或认证头;派发器先定业务结果、等待审计写入尝试完成再回响应,审计落库失败保持业务结果不变但必须发出脱敏运维错误,使审计缺口可观测。绑定非回环地址却未配置管理员时整面返回 503,不建立任何会话。已接受的风险与**已知缺口**:不内建也不强制 HTTPS,明文 HTTP 下 bearer 可被同网络嗅探,远程暴露须由使用者自管 TLS 反代并抑制日志中的敏感头;统一端点既是单一故障域也是 DoS 面,**无速率限制**;**读操作不入审计**,一次凭据泄漏后的读取枚举既不受速率约束也不留痕;账号 × 工作区授权的变更同样不留审计轨迹。服务端日志不打印 key,也不打印`Authorization` 的值。
-- **SEC-15**: **模型提供方连通性探测(`probe_model_provider`)是服务端出网面**:对操作者输入的 URL 发一次 GET(或仅做结构性校验后拒绝),把 `status`/`latencyMs`/传输错误回传控制台;`redirect: 'manual'` 避免 30x 把鉴权头带到重定向目标,但不限制首跳主机(私网、回环、云元数据地址均不拦截)。**鉴权前提**:走 `requireAdmin` 门;未配置管理员时该门 inert,与 `save_settings` 等同。**凭据配对**:草稿 `baseUrl` 只与**同一请求携带的**草稿 `apiKey` 配对——草稿 key 为空则不带任何鉴权头探测;**已存账户级 key 只允许配已存 URL 使用**,绝不随草稿 URL 外发。这与 SEC-13「线路以明文携带 key」的读取面不同:后者是读,前者是把密钥主动推给第三方主机。
+- **SEC-1**: 绑定地址由使用者显式决定，缺省回环；放开非回环时应启用认证（[AUTH-R6](../domains/core/auth/auth-spec.md)）。监听缺省见 [system-setting](../domains/settings/system-setting/system-setting-spec.md)「监听与续跑」；外部入口另有自己的凭据（SEC-14）。
+- **SEC-2**: 只持久化被显式选择的结构化运行数据，落在本机实例库（[persistence](../shared/data-conventions/persistence.md)）；原始 prompt 与对话转录默认不落盘，工作区记忆见 [memory](../domains/core/memory/memory-overview.md)（[ADR-0045](../architecture/adr/0045-workspace-memory-as-allowed-local-persistence.md)），唯一转录例外是有界机器人 IM 上下文（[im-robot](../domains/core/im-robot/im-robot-overview.md)、[ADR-0048](../architecture/adr/0048-robot-im-context-as-bounded-local-persistence.md)）。
+- **SEC-3**: 会话继承宿主与项目的 hook 与允许/拒绝规则；未被它们预先决定的敏感工具流经权限网关（[C-SEC-1](../constitution.md)、[ADR-0005](../architecture/adr/0005-inherit-user-project-settings.md)、[permission-gateway](../domains/core/permission-gateway/permission-gateway-spec.md)）。
+- **SEC-4**: 敏感工具须有明确允许，或处于用户选择的、授权自动执行的权限模式（[C-SEC-2](../constitution.md)）；模式目录由 [agent-session](../domains/core/agent-session/agent-session-spec.md) 拥有。
+- **SEC-5**: 无决策则拒绝；无法识别的消息与被中止的运行都不得当作允许（[C-SEC-3](../constitution.md)、[permission-gateway](../domains/core/permission-gateway/permission-gateway-spec.md)）。
+- **SEC-6**: 不读取、存储或传输厂商 CLI 凭据；认证权归各 vendor CLI（[C-SEC-4](../constitution.md)）。
+- **SEC-7**: 升级到更宽松的权限模式只能通过一次明确、可观察的 UI 操作，不得静默放宽。
+- **SEC-8**: 分发信任见下文 DIST-1；渠道与升级见 [release.md](release.md)、[ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md)。
+- **SEC-9**: 工作区身份是服务端分配的不透明名称，磁盘路径只表示位置（[session-registry](../domains/core/session-registry/session-registry-spec.md)）；伪造或未登记的身份不得解析为文件系统根。
+- **SEC-10**: 登记或拆除工作区是建立或撤销信任根，须过身份与管理员门（[auth](../domains/core/auth/auth-spec.md)、[session-registry](../domains/core/session-registry/session-registry-spec.md)）。
+- **SEC-11**: 只读浏览限定在已登记根内，不把客户端路径当作信任根（[files](../domains/core/files/files-spec.md)）。
+- **SEC-13**: 智能体 `apiKey` 在存储边界加密落库，仅达混淆级；见下文。与 SEC-6 的边界：SEC-6 管厂商 CLI 凭据，SEC-13 管配置里的上游密钥。
+- **SEC-14**: 对未拉起 agent 的公开入口以长期钥匙为凭据，每次调用重新授权，写调用可归因审计；卡口与并列内部面见 [external-mcp](../domains/core/external-mcp/external-mcp-overview.md) [请求与授权链](../domains/core/external-mcp/external-mcp-spec.md#请求与授权链)。
+- **SEC-15**: 模型提供方连通性探测是服务端出网面：已存钥只配已存地址，草稿钥只配草稿地址（[AC-R31](../domains/settings/agent-config/agent-config-spec.md)）；出网路由见 [system-setting](../domains/settings/system-setting/system-setting-spec.md#服务端自身出网)。
 
-## 分发信任(DIST-1 / SEC-8)
+## 分发信任
 
-由于 SEC-6 已经把凭据挡在二进制之外,真正的分发威胁是**工件冒充/供应链篡改**(恶意镜像或 MITM 分发被植入木马的 `c3`),而不是逆向工程。信任由**公开的 GitHub Release(HTTPS)+ sha256 校验和**提供:
+凭据不在二进制内（SEC-6），分发威胁是工件冒充与供应链篡改。信任由公开 GitHub Release（HTTPS）与逐工件 sha256 校验和提供（DIST-1 / SEC-8；[ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md)）。渠道、自更新与签名见 [release.md](release.md)。开源，不把混淆当作信任控制。
 
-- **`SHA256SUMS` + 逐工件 `.sha256`** — 完整性校验,与 `shasum -a 256 -c` 兼容。使用者下载产物后可比对哈希,确认字节未在传输/镜像中被篡改。
-- **分发通道即信任来源** — 产物仅经 `sequencestream/c3` 的**公开 GitHub Release** 分发(HTTPS + GitHub 的账号/仓库信任);没有第三方镜像,也没有新增信任锚点。
-- **`c3 upgrade`** — 从 GitHub Releases 自更新:下载包 + 其 `.sha256`,在**解包或替换任何内容之前**先校验包的 sha256;哈希不匹配或字节损坏会拒绝替换,并让已安装的二进制保持不变。upgrade 只会替换当前可写的二进制,且从不自动重启;单独的 `c3 restart` 才会加载新版本(它会重新读取 service unit / 重新启动守护进程)。
-- **macOS 临时签名 `codesign -s -`** — 在哈希计算之前应用,使被覆盖的字节正是 sha256 所校验的内容。(仅为临时签名;不是 Apple 公证——Gatekeeper 隔离属性由用户用 `xattr -dr com.apple.quarantine` 清除,已在 README 中说明。)
+## Agent apiKey 静态加密
 
-## Agent apiKey 静态加密(SEC-13)
-
-智能体配置会存储一个 `apiKey`:`custom` 模式的 claude / codex 存的是 provider/网关密钥,`system` 模式的 cursor 存的是可选的 Cursor API key。加密按**字段名**而非厂商分支施加,因此三者同路。为了让该密钥不以明文留在库中,c3 在**存储边界**处对其加密:明文只存在于内存中(运行时——例如 `launchForAgent` 的 `ANTHROPIC_API_KEY` 注入——始终看到真实密钥),落库的值是 `config_type='secret'` 的密文。
-
-一个加密后密钥的**线路格式**:
-
-```
-c3secretvN:<base64url( IV ‖ ciphertext ‖ authTag )>
-```
-
-- `c3secretvN:` — 字面前缀,携带**密钥版本**(目前是 `v1`)。
-- `IV` — 12 个随机字节,每次加密都是新生成的 ⇒ 相同的明文每次加密都会得到不同的密文(不存在相等性 oracle)。
-- `ciphertext` — 在该版本的内嵌密钥下的 AES-256-GCM 输出。
-- `authTag` — 16 字节的 GCM 标签;被篡改的令牌或错误的密钥会认证失败并**抛出异常**(解密绝不会静默返回错误的明文)。
-
-**多版本约定。** 前缀标明密钥版本,以便未来的轮换可以新增 `v2`、`v3`……每个版本都有自己的内嵌密钥;加密始终写入最新版本,解密则按存储的版本进行分发。一个带 `c3secret` 前缀但版本未知的令牌是一个**错误**(绝不会被当作明文处理)。目前只存在分发结构本身——尚无密钥轮换工具。
-
-**惰性迁移。** 一个**不带** `c3secret` 前缀的值会被当作遗留明文处理,读取时原样返回;下一次 `saveSettings` 会把它重新写为密文。一个空的 `apiKey`(系统模式/未配置的 provider)永远不会被加密,也不会获得前缀。
-
-**关于强度的坦白说明。** 组合密钥是**内嵌在二进制中的**(由编译期常量分片组装而成)。这是混淆级别的——见下方 § 非目标一节——并**不是**针对持有该二进制的本地用户的防护。它只防范*明文配置文件*自身泄露的情形(误发的副本、备份、共享的机器、日志)。按安装生成的随机密钥/外部 KMS 是明确的非目标。
-
-实现位置:`server/src/kernel/config/encryption.ts`;接入了设置读写的唯一边界(`server/src/kernel/config/index.ts`)。
+智能体配置中的 `apiKey` 在存储边界加密：内存明文、磁盘密文（[persistence](../shared/data-conventions/persistence.md)）。密钥内嵌于二进制，只防配置文件意外泄露，不防持有该二进制的本机用户——与下文非目标一致。线路仍明文携带；传输层安全不在此范围。
 
 ## 非目标:反反编译/混淆
 
-对**反编译或逆向工程**的抵抗**明确不是**一个安全目标。发布构建的 `minify`(去掉 sourcemap)只是略微提高了随意复制的门槛——它**不是**机密性或完整性控制手段,绝不能被当作这样的手段依赖。真正的分发信任完全来自上面的 sha256 校验和 + GitHub HTTPS(DIST-1)。把混淆当作安全是一个已知的反模式;c3 不会这样做。
+抵抗反编译或逆向工程不是安全目标。发布构建去掉 sourcemap 只提高随意复制门槛，不是机密性或完整性控制。分发信任只来自 DIST-1。c3 开源，不做混淆，也不把许可校验或完整性自检当作信任手段。
 
-**代码混淆已移除。** 早期版本曾有一个 `standard` harden 分级,用 `javascript-obfuscator`(仅 `stringArray` + `identifierRename`)对发布 bundle 做混淆。c3 是开源软件,这套混淆及其 harden 分层**已彻底移除**——它对真正的分发威胁(制品冒充 / 供应链篡改)没有防御价值。以下加固/混淆选项同样**明确不属于** c3 发布流水线,评估后一并拒绝;这份清单保留于此,是为了让未来的贡献者不会引入它们,也让代码评审有一个统一可指向的地方。
+## 反场景
 
-- **控制流平坦化(Control-flow flattening)**: 出现回归时 E2E/smoke 会变得难以诊断(堆栈信息变得更少);打包体积翻倍;对真正的威胁没有任何防御价值。
-- **字符串加密/字符串数组化**: 增加启动耗时;还会破坏对打包产物的 e2e 正则断言;对真正的威胁没有防御价值。
-- **标识符改名/对象键变换**: 会破坏运行时的动态分发(`obj['key']`);回归风险高;没有实际防御价值。
-- **`selfDefending` / 反调试**: 首次运行时会让我们的 smoke 测试与 CI 出现误报;在攻击者肯花一分钟功夫的情况下,会被具备 `eval` 感知能力的工具绕过。
-- **调试防护/反虚拟机**: 同上——误报加上可被绕过;e2e/smoke 会把这类噪音当作 FAIL 捕获到。
-- **UPX 打包/可执行文件压缩**: `upx -d` 大约 1 秒即可还原;会触发 Windows Defender 误报;拖慢启动速度;对恶意软件扫描器而言只不过多了一个可识别的指纹。
-- **内嵌在二进制中的许可/激活检查**: 一个焊死在**二进制**里的许可/激活检查被拒绝:它不是一种信任控制手段。c3 是开源软件,**不做任何许可/激活校验**——没有服务端可供校验,复制本身就是设计使然。分发信任完全来自 DIST-1 的 sha256 校验和 + GitHub HTTPS,而非许可门控。
-- **防篡改/完整性自检**: 增加了一个启动时的绕过面;与已经端到端覆盖完整性的清单 sha256 校验和链重复。
-
-## 反场景(绝不能发生)
-
-- 一个畸形的 WebSocket 帧被解读为 `allow`。
-- 一个权限请求永远挂起、没有任何解析。
-- 凭据出现在日志行、错误信息或线路消息中。
-- 一个被篡改的二进制通过了 sha256 校验和比对,或混淆被当作一种信任控制手段。
-- “不做”清单中的某个加固选项(控制流平坦化、UPX、反调试、许可检查……)被重新引入发布流水线。
-- 一个绝对路径从 `add_workspace`/`remove_workspace` 之外的任何线路消息到达了某个功能处理器(SEC-9),或者一个伪造/未注册的 `workspaceName` 被解析成了文件系统根目录,而不是被拒绝。
-- `add_workspace`/`remove_workspace` 在未认证的连接上注册/拆除了一个信任根(SEC-10)。
-- 一次代码浏览请求把客户端提供的路径当作其信任根;接受了 `~/.ssh`、`../../etc/passwd`、一个绝对路径、一个带空字节的路径、一个符号链接逃逸,或者一个通过前缀混淆冒充的 `/workspace-evil` 同名兄弟目录;或者返回了 `.git` 的内容(SEC-11)。
-- 一把外部 MCP key 在未被管理员显式勾选的情况下拿到写工具、会话启动工具或评审工具;或者读到了它未被授权的工作区;或者已吊销的 key 仍能通过一条早先建立的 MCP 会话继续调用(SEC-14)。
-- 一次外部写调用作用到了调用方声称、但不在其有效范围内的工作区;或者一条 id 被静默改到它真实归属的工作区去执行;或者一次写调用没有留下审计行,而审计缺口也没有任何运维错误可见(SEC-14)。
-- 外部调用方伪造出 c3 的来源:事件 envelope 的工作区/会话取自调用方载荷,或一条意图被写上调用方指定的会话回链(SEC-14)。
-- API key 的明文落到磁盘、日志或生成响应之外的任何一条线路消息里;或者 `save_settings` 把 key 哈希注入、覆盖或读了出来(SEC-14)。
-- 六条 `/internal/*-mcp/v1` 中的任何一条丢掉了 loopback guard 或 per-run token 校验——外部路由是**并列新增**,不是对它们的放宽。
-- 模型提供方连通性探测把已存账户级 key 随草稿 URL 发往操作者指定的任意主机(SEC-15)。
+- 无法识别的决策被当成允许（SEC-5）。
+- 密钥出现在日志或错误信息中（SEC-6、SEC-13、SEC-14）。
+- 被篡改的二进制通过校验和，或混淆被当作信任控制（SEC-8）。
+- 伪造或未登记的工作区身份被解析为文件系统根（SEC-9、SEC-11）。
+- 未过身份门的连接登记或拆除了工作区信任根（SEC-10）。
+- 浏览请求把客户端路径当作信任根（SEC-11）。
+- 违反 [请求与授权链](../domains/core/external-mcp/external-mcp-spec.md#请求与授权链)（SEC-14）。
+- 连通性探测把已存钥随草稿地址发往操作者指定的主机（SEC-15）。

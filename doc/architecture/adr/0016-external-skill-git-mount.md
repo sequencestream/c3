@@ -32,8 +32,7 @@ c3 的后台 dev skill 现仅支持单个可选的字符串配置(斜杠命令�
   `_c3_session/abc123def/SKILL.md`(两层),用与 c3 命令发现层同一机制
   (streaming-input `query()` + `supportedCommands()`,`settingSources: ['project']`)实列。
 - **结果**:`flat=true, nested=false` —— 仅扁平的 `skills/<name>/SKILL.md` 被发现为 skill;
-  嵌套的 `skills/<name>/<id>/SKILL.md` **未被发现**。与 `claude-agent-sdk-guide.md` 记载的
-  `skills/*/SKILL.md` **单层 glob** 一致。
+  嵌套的 `skills/<name>/<id>/SKILL.md` **未被发现**。与 [Claude 适配边界 · 设置继承](../claude-agent-sdk-guide.md#设置继承) 的单层发现一致。
 - **决策**:挂载目录**降级为扁平** `<vendorSkillsDir>/_c3_<id>/SKILL.md`(一个 id 一个目录,直挂 SKILL.md),
   **放弃**嵌套的 `_c3_session/<id>/` 方案。
 
@@ -66,4 +65,4 @@ c3 的后台 dev skill 现仅支持单个可选的字符串配置(斜杠命令�
 ## References
 
 - ADR-0005(继承 user/project settings;c3 是网关)、ADR-0011(vendor 中性抽象)、ADR-0015(session→agent 绑定)。
-- [claude-agent-sdk-guide](../claude-agent-sdk-guide.md) §5「它如何读取 Skill」(`skills/*/SKILL.md` 单层 glob)。
+- [Claude 适配边界 · 设置继承](../claude-agent-sdk-guide.md#设置继承)（单层 `skills/<name>/SKILL.md`）。

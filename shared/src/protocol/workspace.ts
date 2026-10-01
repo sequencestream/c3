@@ -317,14 +317,14 @@ export interface WorkspaceSetting {
    * own concrete snapshot.
    */
   automationAgentId?: string
-  /** This workspace's override for the **review** role — seeds the `pr-review-runner`
-   *  template's create-time identity only. Deliberately NOT read by the PR-review
+  /** This workspace's override for the **review** role — seeds the create-time
+   *  identity of review work started here. Deliberately NOT read by the PR-review
    *  relay queue, which orders the system `reviewAgentId` and this workspace's
    *  {@link defaultAgentId} by the same rule as every other role. */
   reviewAgentId?: string
-  /** This workspace's override for the **fix** role — seeds the `pr-review-fix`
-   *  template's create-time identity only; the relay queue ignores it, exactly as
-   *  it ignores {@link reviewAgentId}. */
+  /** This workspace's override for the **fix** role — seeds the create-time
+   *  identity of fix work started here; the relay queue ignores it, exactly as it
+   *  ignores {@link reviewAgentId}. */
   fixAgentId?: string
   /**
    * This workspace's **work-agent override** — the agent ordinary work sessions

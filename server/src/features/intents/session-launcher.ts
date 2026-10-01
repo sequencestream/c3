@@ -269,11 +269,10 @@ function checkWorkAdmission(
   // A second, narrower relaxation covers an intent that NEVER STARTED a spec and
   // already has a work session: there is no document whose approval could be
   // asked for, and a continuation (restart / resume) must not be refused over an
-  // approval of nothing. It is deliberately limited to a live work session and a
-  // never-touched spec, so a fresh intent is still routed through 编写 Spec by
-  // the ordinary flow, and a revoked approval (`pending`) still blocks. High
-  // impact is never exempt — RM-R51 forces the spec wherever the change reaches
-  // core flow, money or data, and a missing spec is exactly what that arm stops.
+  // approval of nothing. It is deliberately limited to a bound work session and a
+  // never-touched spec, so a fresh intent is still routed through spec authoring,
+  // and a revoked approval (`pending`) still blocks. High impact is never exempt
+  // — a missing spec is exactly what that grade's forced checkpoint stops.
   const specNeverStarted = intent.specStatus === 'raw' && !intent.specPath && !intent.specSessionId
   const exemptSpecLessContinuation =
     specNeverStarted && !!intent.lastWorkSessionId && !isHighImpactLevel(intent.impactLevel)

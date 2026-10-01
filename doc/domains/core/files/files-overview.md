@@ -1,26 +1,17 @@
-# files — Overview
+# Domain: files
 
-## Purpose
+- **Group:** core
+- **One-line:** 只读浏览已登记工作区的仓库，并可就代码提问。
+- **Owner:** maintainer
+- **Status:** active
+- **Depends on:** [session-registry](../session-registry/session-registry-spec.md)（工作区根）；[agent-session](../agent-session/agent-session-spec.md)（内嵌工作会话）。
+- **Depended on by:** [web-console](../web-console/web-console-spec.md)（文件页）。
+- **exposes-api:** true — WebSocket `/ws`。消息形状在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中定义。
 
-files domain 让浏览器能检视当前已注册工作区内的文件,使用户
-无需离开 c3 就能浏览项目文件。
+本域拥有已登记工作区内的只读检视。不拥有运行循环，不写仓库，不把客户端路径当作信任根。
 
-## Scope
+## Index
 
-- 针对一个已注册工作区的只读目录列表、文本文件读取、以及文件搜索。
-- 仅限工作区相对路径。
-- 对所有文件系统访问强制执行安全边界。
-
-## Out of scope
-
-- 编辑、写入、删除、移动或创建文件。
-- 跨工作区浏览。
-- Git diff、blame、符号导航、语言索引或语义搜索。
-- 隐藏非 `.git` 的敏感文件如 `.env`;这一可接受风险记录在
-  [security](../../../non-functional/security.md) 中。
-
-## Documents
-
-- [files-spec.md](files-spec.md) —— domain 行为与不变式。
-- [files-design.md](files-design.md) —— 实现契约与 API 形状。
-- [files-models.md](files-models.md) —— 工作区相对文件结果形状。
+- [files-spec.md](files-spec.md) — 只读树、工作树状态、内嵌会话
+- [files-design.md](files-design.md) — 与 session-registry、agent-session 的协作与取舍
+- [files-models.md](files-models.md) — 已登记工作区 / 相对路径 / 工作树状态 / 内嵌会话

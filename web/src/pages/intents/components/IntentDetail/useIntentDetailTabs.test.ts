@@ -108,6 +108,8 @@ function mountHost(props: Record<string, unknown>) {
       intentSessionStatus: { type: String as () => SessionStatus | null, default: null },
       specSessionStatus: { type: String as () => SessionStatus | null, default: null },
       specReviewSessionStatus: { type: String as () => SessionStatus | null, default: null },
+      reviewSessionStatus: { type: String as () => SessionStatus | null, default: null },
+      fixSessionStatus: { type: String as () => SessionStatus | null, default: null },
     },
     setup(hostProps) {
       const tabs = useIntentDetailTabs({
@@ -121,6 +123,8 @@ function mountHost(props: Record<string, unknown>) {
         intentSessionStatus: () => hostProps.intentSessionStatus,
         specSessionStatus: () => hostProps.specSessionStatus,
         specReviewSessionStatus: () => hostProps.specReviewSessionStatus,
+        reviewSessionStatus: () => hostProps.reviewSessionStatus,
+        fixSessionStatus: () => hostProps.fixSessionStatus,
         onReadSpec: (id, p) => calls.readSpec.push([id, p]),
         onListIntentLogs: (id) => calls.listLogs.push(id),
         onOpenIntentSession: (s) => calls.openIntent.push(s),
@@ -346,6 +350,66 @@ describe('useIntentDetailTabs', () => {
     expect(tabs().specSessionStatusDot.value).toBe('running')
     expect(tabs().intentSessionStatusDot.value).toBe(null)
     expect(tabs().workSessionStatusDot.value).toBe(null)
+  })
+
+  it.each<SessionStatus>(['running', 'awaiting_permission', 'team', 'reconnecting'])(
+    'exposes the PR review/fix session dots for the non-idle status %s',
+    async (status) => {
+      const { w, tabs } = mountHost({
+        intent: intent({ id: 'i1', reviewSessionId: 's-review', fixSessionId: 's-fix' }),
+        reviewSessionStatus: status,
+        fixSessionStatus: status,
+      })
+      expect(tabs().reviewSessionStatusDot.value).toBe(status)
+      expect(tabs().fixSessionStatusDot.value).toBe(status)
+
+      // idle / 未知(null)均不产出状态点,与另外四类会话同口径。
+      await w.setProps({ reviewSessionStatus: 'idle', fixSessionStatus: 'idle' })
+      expect(tabs().reviewSessionStatusDot.value).toBe(null)
+      expect(tabs().fixSessionStatusDot.value).toBe(null)
+      await w.setProps({ reviewSessionStatus: null, fixSessionStatus: null })
+      expect(tabs().reviewSessionStatusDot.value).toBe(null)
+      expect(tabs().fixSessionStatusDot.value).toBe(null)
+    },
+  )
+
+  it('keeps the PR review/fix dots independent of the other four session dots', () => {
+    const { tabs } = mountHost({
+      intent: intent({
+        id: 'i1',
+        intentSessionId: 's-intent',
+        specSessionId: 's-spec',
+        specReviewSessionId: 's-spec-review',
+        lastWorkSessionId: 's-work',
+        reviewSessionId: 's-review',
+        fixSessionId: 's-fix',
+      }),
+      sddEnabled: true,
+      reviewSessionStatus: 'running',
+      fixSessionStatus: 'team',
+      intentSessionStatus: 'idle',
+      specSessionStatus: 'idle',
+      specReviewSessionStatus: 'idle',
+      workSessionStatus: 'idle',
+    })
+    expect(tabs().reviewSessionStatusDot.value).toBe('running')
+    expect(tabs().fixSessionStatusDot.value).toBe('team')
+    expect(tabs().intentSessionStatusDot.value).toBe(null)
+    expect(tabs().specSessionStatusDot.value).toBe(null)
+    expect(tabs().specReviewSessionStatusDot.value).toBe(null)
+    expect(tabs().workSessionStatusDot.value).toBe(null)
+  })
+
+  it('keeps the PR review/fix tabs hidden without a session id, so no dot can be stranded', () => {
+    // 与另外四类不同,评审/修复 tab 的可见性只由会话 id 决定(不看 SDD 开关),
+    // 因此「隐藏 tab 出现状态点」在结构上不可能:tab 根本不渲染。
+    const { visibleKeys } = mountHost({
+      intent: intent({ id: 'i1' }),
+      reviewSessionStatus: 'running',
+      fixSessionStatus: 'running',
+    })
+    expect(visibleKeys()).not.toContain('reviewSession')
+    expect(visibleKeys()).not.toContain('fixSession')
   })
 
   it('shows the review tab only with SDD on AND a review session id', async () => {

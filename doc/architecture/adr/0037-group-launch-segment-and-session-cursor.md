@@ -33,7 +33,7 @@ ADR-0029 把 agent group 定义为"一组按 `order_seq` 排序的同 vendor age
 
 组的**编辑入口**随之收敛为分组容器:`group` 只能通过在容器间移动行来改,不再逐行手输组名——手输能凭空造出用户看不见的池,而现在"这个组里有谁、谁排第一"必须一眼可见,才撑得住"段首一定被使用"这条不变量。
 
-完整规格见 [relay-architecture](../relay-architecture.md) §8.4。
+完整规格见 [relay-architecture · 启动段与会话游标](../relay-architecture.md#启动段与会话游标)。
 
 ## Consequences
 

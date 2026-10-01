@@ -56,9 +56,10 @@ export function showRunStatus(s: IntentRunStatus): boolean {
 
 /**
  * 「关联会话进行中」绿点的显隐,只读取服务端派生的 `sessionActive`,
- * 不附加 `status` 或 `runStatus` 条件——绿点是「意图会话/Spec 会话/开发会话
- * 三者任一此刻有 turn 在跑」的独立叠加信号,可与状态徽标及 `.req-run-status`
- * 的 running/dangling 标签并存。
+ * 不附加 `status` 或 `runStatus` 条件——绿点是「意图会话 / 规范会话 / 规范评审
+ * 会话 / 开发会话 / PR 评审会话 / PR 修复会话,六者任一此刻有 turn 在跑」的独立
+ * 叠加信号,可与状态徽标及 `.req-run-status` 的 running/dangling 标签并存。
+ * 不按会话种类分叉:用户侧只看到一个泛化提示,不被告知是哪类会话在跑。
  */
 export function showSessionActive(active: boolean): boolean {
   return active

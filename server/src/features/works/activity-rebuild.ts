@@ -8,10 +8,11 @@ import { randomUUID } from 'node:crypto'
 import type { ActivityFact, ActivityOwner } from '../../kernel/activity/index.js'
 import {
   activityRegistry,
+  badgeProjection,
   mapSessionStatusToActivityState,
   resolveActivityWorkspaceName,
 } from '../../kernel/activity/index.js'
-import { listAllNonIdleRuntimes } from '../../runs.js'
+import { listAllNonIdleRuntimes, reconcileLiveness } from '../../runs.js'
 import { listWorkspaces, pathToName } from '../../state.js'
 import {
   runningAutomationIdsForWorkspace,
@@ -44,7 +45,31 @@ function ownerForRebuild(sessionId: string, workspacePath: string): ActivityOwne
   )
 }
 
+function factFromPrior(
+  sessionId: string,
+  workspaceName: string,
+  sessionKind: ActivityFact['sessionKind'],
+  state: ActivityFact['state'],
+  owner: ActivityOwner | undefined,
+  now: number,
+  prior: ActivityFact | undefined,
+): ActivityFact {
+  return {
+    activityId: prior?.activityId ?? sessionId,
+    generation: prior?.generation ?? randomUUID(),
+    sequence: prior?.sequence ?? 1,
+    sessionId,
+    workspaceName,
+    sessionKind,
+    owner,
+    state,
+    updatedAt: now,
+    leaseUntil: prior?.leaseUntil,
+  }
+}
+
 export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[] {
+  const previous = new Map(activityRegistry.snapshot().map((fact) => [fact.sessionId, fact]))
   const facts: ActivityFact[] = []
   const seen = new Set<string>()
 
@@ -52,37 +77,66 @@ export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[
     const state = mapSessionStatusToActivityState(rt.status)
     if (state === 'idle') continue
     seen.add(rt.sessionId)
-    facts.push({
-      activityId: rt.sessionId,
-      generation: randomUUID(),
-      sequence: 1,
-      sessionId: rt.sessionId,
-      workspaceName: pathToName(rt.workspacePath) ?? resolveActivityWorkspaceName(rt.workspacePath),
-      sessionKind: rt.sessionKind,
-      owner: ownerForRebuild(rt.sessionId, rt.workspacePath),
-      state,
-      updatedAt: now,
-    })
+    facts.push(
+      factFromPrior(
+        rt.sessionId,
+        pathToName(rt.workspacePath) ?? resolveActivityWorkspaceName(rt.workspacePath),
+        rt.sessionKind,
+        state,
+        ownerForRebuild(rt.sessionId, rt.workspacePath),
+        now,
+        previous.get(rt.sessionId),
+      ),
+    )
   }
 
   for (const workspace of listWorkspaces()) {
     for (const sessionId of runningAutomationSessionIdsForWorkspace(workspace.path)) {
       if (seen.has(sessionId)) continue
       seen.add(sessionId)
-      facts.push({
-        activityId: sessionId,
-        generation: randomUUID(),
-        sequence: 1,
-        sessionId,
-        workspaceName: workspace.name,
-        sessionKind: 'automation',
-        owner: ownerForRebuild(sessionId, workspace.path),
-        state: 'running',
-        updatedAt: now,
-      })
+      facts.push(
+        factFromPrior(
+          sessionId,
+          workspace.name,
+          'automation',
+          'running',
+          ownerForRebuild(sessionId, workspace.path),
+          now,
+          previous.get(sessionId),
+        ),
+      )
     }
   }
 
   activityRegistry.replaceAll(facts)
   return activityRegistry.snapshot()
+}
+
+export interface ActivityReconcileResult {
+  reapedSessionIds: string[]
+  projectionChanged: boolean
+}
+
+/**
+ * Low-frequency recovery: reap hung runs, then rebuild the registry from the
+ * remaining fact sources. Projection listeners fire only when a workspace
+ * summary actually changes.
+ */
+export function reconcileActivityProjection(now: number, staleMs: number): ActivityReconcileResult {
+  const revisionBefore = badgeProjection.getRevision()
+  const reapedSessionIds = reconcileLiveness(now, staleMs)
+  rebuildActivityRegistry(now)
+  const revisionAfter = badgeProjection.getRevision()
+  if (revisionAfter !== revisionBefore) {
+    console.log(
+      '[c3:activity] reconcile revision=%d→%d reaped=%d',
+      revisionBefore,
+      revisionAfter,
+      reapedSessionIds.length,
+    )
+  }
+  return {
+    reapedSessionIds,
+    projectionChanged: revisionAfter !== revisionBefore,
+  }
 }

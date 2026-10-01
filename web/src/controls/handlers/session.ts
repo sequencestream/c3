@@ -16,6 +16,7 @@ import {
   type SessionPageKind,
 } from '../state/types'
 import { applyActivityDelta, applyActivitySnapshot, projectActivityBadges } from '../activity-apply'
+import { markActivityApplied } from '../activity-refresh'
 import { transcriptToChat } from '../transcript'
 
 export function buildSessionHandlers(
@@ -218,6 +219,7 @@ export function buildSessionHandlers(
     workspaceRunningSessionCounts.value = projected.workspaceRunningSessionCounts
     if (ctx.workcenterTodoCounts) ctx.workcenterTodoCounts.value = projected.workcenterTodoCounts
     deliveriesNeedsAction.value = projected.deliveriesNeedsAction
+    markActivityApplied(Date.now())
   }
 
   return {
@@ -272,6 +274,7 @@ export function buildSessionHandlers(
       ctx.applyStatuses(msg.statuses)
       activityRevision.value = 0
       workspaceActivity.value = {}
+      markActivityApplied(0)
 
       // ---- Deep-link consumption (takes priority over localStorage restore) ----
       // Consumed = workspace validated + dispatched by kind; fulfillment is

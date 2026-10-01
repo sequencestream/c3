@@ -30,7 +30,6 @@ import {
 import { listWorkspaces, resolveWorkspaceRoot, workspaceNameFor } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
-  reconcileLiveness,
   emit,
   setOnStatusChange,
   isRunning,
@@ -139,7 +138,10 @@ import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
-import { rebuildActivityRegistry } from './features/works/activity-rebuild.js'
+import {
+  rebuildActivityRegistry,
+  reconcileActivityProjection,
+} from './features/works/activity-rebuild.js'
 import { checkDbDriver } from './kernel/infra/db.js'
 import { ensureLegacyImport } from './kernel/config/import-legacy.js'
 import {
@@ -217,8 +219,8 @@ export interface ServerOptions {
  */
 export const DEFAULT_HOST = '127.0.0.1'
 
-/** How often the server broadcasts a full session-status snapshot. */
-const STATUS_HEARTBEAT_MS = 15_000
+/** How often hung runs are reaped and the activity registry is rebuilt from facts. */
+const ACTIVITY_RECONCILE_MS = 15_000
 /**
  * How long a `running` session can be silent before its run is presumed hung
  * and forcefully converged to `idle`. Conservative — long-running tools (build,
@@ -551,10 +553,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   })
   setInterval(() => {
-    // Reap stale/hung runs before broadcasting, so the snapshot is authoritative.
-    reconcileLiveness(Date.now(), RUN_STALE_MS)
-    broadcasts.broadcastStatuses()
-  }, STATUS_HEARTBEAT_MS)
+    reconcileActivityProjection(Date.now(), RUN_STALE_MS)
+  }, ACTIVITY_RECONCILE_MS)
   // Janitor: drop pending-session intents abandoned for >7 days (never ran), at
   // boot and hourly thereafter. Clearing an intent never orphans a fact (ADR-0015).
   const sweepPendingIntents = (): void => {

@@ -216,6 +216,7 @@ describe('refreshSessions', () => {
     expect(msg.before).toBeUndefined()
     expect(msg.since).toBeUndefined()
     expect(typeof msg.limit).toBe('number')
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'get_session_counts' }))
   })
 
   it('window refresh (since = oldest loaded) when a window is loaded', () => {
@@ -226,6 +227,15 @@ describe('refreshSessions', () => {
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.since).toBe(200)
     expect(msg.before).toBeUndefined()
+  })
+
+  it('does not request session counts — badges come from activity push', () => {
+    const { ctx, send } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300), s('b', 200)] },
+    })
+    ctx.refreshSessions(WS)
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'get_session_counts' }))
+    expect(send).toHaveBeenCalledTimes(1)
   })
 })
 

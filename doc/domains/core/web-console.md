@@ -8,7 +8,7 @@
 - **Depended on by:** 无（位于技术栈顶层）。
 - **exposes-api:** false — 客户端，消费 `/ws`，不对外提供 API。
 - **notes:** 内部域。消息形状在[共享协议](../../shared/api-conventions/websocket-protocol.md)中定义一次。
-- **ADRs:** [0002](../../architecture/adr/0002-websocket-as-permission-transport.md)（WebSocket 传输）、[0006](../../architecture/adr/0006-decouple-runs-from-connections.md)（连接是视图）
+- **ADRs:** [0002](../../architecture/adr/0002-websocket-as-permission-transport.md)（WebSocket 传输）、[0006](../../architecture/adr/0006-decouple-runs-from-connections.md)（连接是视图）、[0054](../../architecture/adr/0054-converge-activity-badge-polling.md)（角标不点查）
 
 ## Overview
 
@@ -59,7 +59,7 @@ Web 控制台是人对工作台的窗口：看活动流、提交或排队 prompt
 - **WC-R21**: 新建会话可指定智能体，或省略以继承默认（[agent-config](../settings/agent-config.md)）。宿主 CLI 不可用的厂商不能被选来新建。
 - **WC-R29**: 查看 `spec_review` 时聊天列只读：无输入、无队列、无停止/继续、无权限作答。服务端续跑门禁见[意图管理](intent-management.md)。标签内联运行中状态点与其余会话标签同构。
 - **WC-R32**: 意图详情在存在对应会话 id 时渲染评审 / 修复会话标签；内联运行中状态点与其余会话标签同构。聊天列不进入只读门。
-- **WC-R33**: 顶部会话与条目角标、工作区竖条、工作台通知角标、交付入口只渲染服务端活动摘要，不扫描页面列表。客户端按 Workspace 保存 `activity_snapshot` / `activity_delta`；revision 不连续则请求完整快照。会话分类与条目角标读当前工作区摘要；竖条读每个工作区的 `runningSessions`，不依赖进入该工作区。工作台通知角标读 `attention.pendingUserTasks`；非当前工作区的待办列表帧不写入当前列表。兼容期仍接受 `session_counts` 与 `wait_user_events.todoCount`。
+- **WC-R33**: 顶部会话与条目角标、工作区竖条、工作台通知角标、交付入口只渲染服务端活动摘要，不扫描页面列表，也不靠定时业务请求刷新。客户端按 Workspace 保存 `activity_snapshot` / `activity_delta`；revision 不连续则请求完整快照。页面恢复可见时，仅当尚未收到快照或快照过旧才重取 snapshot。会话列表定时刷新只更新已展示范围，不点查计数。WebSocket ping/pong 只保活。会话分类与条目角标读当前工作区摘要；竖条读每个工作区的 `runningSessions`，不依赖进入该工作区。工作台通知角标读 `attention.pendingUserTasks`；非当前工作区的待办列表帧不写入当前列表。兼容期仍接受 `session_counts` 与 `wait_user_events.todoCount`。
 
 ### 冷启动、双视图、移动端
 

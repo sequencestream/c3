@@ -196,3 +196,21 @@ describe('activity_snapshot / activity_delta — 全工作区权威角标', () =
     expect(send).toHaveBeenCalledWith({ type: 'request_activity_snapshot' })
   })
 })
+
+describe('idle 不点查角标', () => {
+  it('revision 连续的 delta 不触发 snapshot 或 get_session_counts', () => {
+    const { ctx, send } = makeHandlerCtx()
+    ctx.handleMessage({
+      type: 'activity_snapshot',
+      revision: 1,
+      workspaces: {},
+    } as ServerToClient)
+    send.mockClear()
+    ctx.handleMessage({
+      type: 'activity_delta',
+      revision: 2,
+      changedWorkspaces: {},
+    } as ServerToClient)
+    expect(send).not.toHaveBeenCalled()
+  })
+})

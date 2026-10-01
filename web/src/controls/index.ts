@@ -3,6 +3,11 @@ import { createWsClient } from '@/lib/ws'
 import { parseDeepLink } from '@/lib/deep-link'
 import { FILES_GIT_STATUS_INTERVAL_MS } from '@/lib/files-git-poller'
 import { createGatedPoller } from '@/lib/poller'
+import {
+  CONSOLE_SESSION_LIST_INTERVAL_MS,
+  activityAppliedAt,
+  shouldRequestActivitySnapshot,
+} from './activity-refresh'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
@@ -145,7 +150,8 @@ export function useAppController(): AppCtx {
             sessionId: ctx.activeSession.value,
           })
         }
-        // Reconnect is a high-risk window for a stale status; pull a fresh snapshot.
+        // Reconnect is a recovery window: session dots and activity badges both
+        // need a full snapshot because in-flight deltas may have been dropped.
         ctx.send({ type: 'request_session_status' })
         ctx.send({ type: 'request_activity_snapshot' })
       },
@@ -155,17 +161,13 @@ export function useAppController(): AppCtx {
     // Let the auth store fire `login` / `logout` over this connection.
     auth.bindSender(client.send)
 
-    // Session-layer status heartbeat.
-    const hbTimer = setInterval(() => {
-      ctx.send({ type: 'request_session_status' })
-    }, 15_000)
-
-    // While on the console tab, re-fetch the current workspace's sessions every 10s.
+    // While on the console tab, re-fetch the current workspace's session list.
+    // This is list pagination only — badges come from activity snapshot/delta.
     const sessionsTimer = setInterval(() => {
       if (ctx.activeTab.value === 'console' && ctx.currentWorkspace.value) {
         ctx.refreshSessions(ctx.currentWorkspace.value)
       }
-    }, 10_000)
+    }, CONSOLE_SESSION_LIST_INTERVAL_MS)
 
     // Files Git-status auto-poll: only while ON the Files view AND the page is
     // visible AND the window is focused. Activating fetches immediately, then every
@@ -187,10 +189,20 @@ export function useAppController(): AppCtx {
     // the Files view (the watch only fires on a subsequent change).
     syncFilesGitPoller()
 
-    // Tab restored from background → fetch fresh status.
+    // Tab restored from background: only re-fetch activity when the last
+    // snapshot/delta is missing or too old. Revision gaps request immediately
+    // when a delta arrives; reconnect requests on its own.
     const onVis = (): void => {
-      if (document.visibilityState === 'visible') {
-        ctx.send({ type: 'request_session_status' })
+      if (
+        document.visibilityState === 'visible' &&
+        shouldRequestActivitySnapshot({
+          connected: ctx.status.value === 'open',
+          revision: ctx.activityRevision.value,
+          lastAppliedAt: activityAppliedAt(),
+          now: Date.now(),
+        })
+      ) {
+        ctx.send({ type: 'request_activity_snapshot' })
       }
       syncFilesGitPoller()
     }
@@ -206,7 +218,6 @@ export function useAppController(): AppCtx {
     document.addEventListener('c3:file-click', onFileClick)
 
     onUnmounted(() => {
-      clearInterval(hbTimer)
       clearInterval(sessionsTimer)
       document.removeEventListener('visibilitychange', onVis)
       document.removeEventListener('c3:file-click', onFileClick)

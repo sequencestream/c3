@@ -701,7 +701,7 @@ export function activeWorktreeRuntimeCount(): number {
 
 /**
  * Session-layer liveness reconciliation: identify stale/hung runs and converge
- * them to `idle`. Called periodically by the server's status heartbeat.
+ * them to `idle`. Called periodically by the server's activity reconcile tick.
  *
  * A run is converged when:
  * 1. Its AbortController has already been triggered (`aborted === true`) but

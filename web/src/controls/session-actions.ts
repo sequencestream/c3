@@ -139,10 +139,10 @@ export function installSessionActions(ctx: AppCtx): void {
     send({ type: 'get_session_counts', workspaceName: path })
   }
 
-  // Refresh a workspace's session list (SR-R14): when a window is already
-  // loaded, ask only for the displayed range (`since` = oldest loaded), so the
-  // reply updates what's shown without re-pulling earlier, unloaded sessions;
-  // otherwise pull the first (newest) page.
+  // Refresh a workspace's session list: when a window is already loaded, ask
+  // only for the displayed range (`since` = oldest loaded), so the reply
+  // updates what's shown without re-pulling earlier, unloaded sessions;
+  // otherwise pull the first (newest) page. Badges are not refreshed here.
   ctx.refreshSessions = (path: string | null): void => {
     if (!path) return
     const key = activeKey(path)
@@ -164,7 +164,6 @@ export function installSessionActions(ctx: AppCtx): void {
         limit: SESSION_PAGE_SIZE,
       })
     }
-    send({ type: 'get_session_counts', workspaceName: path })
   }
 
   // Lazily fetch a workspace's first session page (once) for the sidebar.

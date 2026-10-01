@@ -24,7 +24,11 @@ import {
   resetStoreForTests as resetAutomationStoreForTests,
 } from '../automations/store.js'
 import { listActiveSessionsForWorkspace } from './active-workspace-sessions.js'
-import { lookupActivityOwner, rebuildActivityRegistry } from './activity-rebuild.js'
+import {
+  lookupActivityOwner,
+  rebuildActivityRegistry,
+  reconcileActivityProjection,
+} from './activity-rebuild.js'
 
 let dir: string
 let proj: string
@@ -222,5 +226,50 @@ describe('badge projection rebuild matches incremental writes', () => {
       discussions: 0,
       automations: 2,
     })
+  })
+})
+
+describe('rebuild preserves fencing and skips unchanged projection', () => {
+  it('keeps generation/sequence and does not bump revision when members match', () => {
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    rebuildActivityRegistry()
+    const prior = activityRegistry.getBySessionId('w-run')!
+    const revision = badgeProjection.getRevision()
+    rebuildActivityRegistry()
+    const again = activityRegistry.getBySessionId('w-run')!
+    expect(again.generation).toBe(prior.generation)
+    expect(again.sequence).toBe(prior.sequence)
+    expect(badgeProjection.getRevision()).toBe(revision)
+  })
+
+  it('drops a registry-only member and bumps revision', () => {
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    rebuildActivityRegistry()
+    activityRegistry.start({
+      activityId: 'ghost',
+      sessionId: 'ghost',
+      workspaceName,
+      sessionKind: 'work',
+    })
+    const revision = badgeProjection.getRevision()
+    rebuildActivityRegistry()
+    expect(activityRegistry.getBySessionId('ghost')).toBeUndefined()
+    expect(activityRegistry.getBySessionId('w-run')).toBeDefined()
+    expect(badgeProjection.getRevision()).toBe(revision + 1)
+  })
+})
+
+describe('reconcileActivityProjection', () => {
+  it('does not change projection when facts already match', () => {
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    rebuildActivityRegistry()
+    const revision = badgeProjection.getRevision()
+    const result = reconcileActivityProjection(Date.now(), 5 * 60_000)
+    expect(result.reapedSessionIds).toEqual([])
+    expect(result.projectionChanged).toBe(false)
+    expect(badgeProjection.getRevision()).toBe(revision)
   })
 })

@@ -16,7 +16,7 @@ c3 文档的术语索引。此处只给短定义并指向权威文档，不重�
 - **SessionKind**：一次运行的**业务场景**（由哪种场景产生）。种类清单见 [session-registry](domains/core/session-registry.md) 与 [agent-session](domains/core/agent-session.md)。
 - **活动角标**：会话分类数、业务条目数、工作区运行中总数是三个互不替代的数，由服务端角标投影提供；工作台通知角标是该工作区待办台账的权威 todo 数。口径见 [session-registry](domains/core/session-registry.md) 与 [web-console](domains/core/web-console.md)。
 - **活动状态注册表**：进程内当前活动事实容器。与事件总线正交：总线记录已发生的事，注册表回答现在有哪些活动。见 [agent-session](domains/core/agent-session.md)、[ADR-0050](architecture/adr/0050-activity-registry-as-current-state.md)。
-- **角标投影**：从活动成员集合与三类 attention 成员集合派生的 Workspace 摘要（运行中会话、种类分桶、活动 owner、待办 / 权限 / 交付）。见 [agent-session](domains/core/agent-session.md)、[ADR-0051](architecture/adr/0051-badge-projection-from-activity-sets.md)、[ADR-0052](architecture/adr/0052-attention-sets-in-badge-projection.md)、[ADR-0053](architecture/adr/0053-activity-snapshot-delta-protocol.md)。
+- **角标投影**：从活动成员集合与三类 attention 成员集合派生的 Workspace 摘要（运行中会话、种类分桶、活动 owner、待办 / 权限 / 交付）。见 [agent-session](domains/core/agent-session.md)、[ADR-0051](architecture/adr/0051-badge-projection-from-activity-sets.md)、[ADR-0052](architecture/adr/0052-attention-sets-in-badge-projection.md)、[ADR-0053](architecture/adr/0053-activity-snapshot-delta-protocol.md)、[ADR-0054](architecture/adr/0054-converge-activity-badge-polling.md)。
 - **RunKind**：一次运行的**执行形态**（如何执行），与 SessionKind 正交。种类清单同上。
 - **turn_end**：一次 prompt→result 轮次的终止性服务端事件。不结束会话。见 [agent-session](domains/core/agent-session.md)。
 - **Vendor CLI**：各厂商用来运行智能体的宿主可执行文件。解析不到则该厂商不可用。见 [agent-sdk](architecture/agent-sdk.md)、[ADR-0012](architecture/adr/0012-host-binary-probe-first-capability-gate.md)。

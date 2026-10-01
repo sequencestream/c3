@@ -157,16 +157,20 @@ export async function runDevelopLoop(
     } catch (err) {
       if (signal.aborted || ctx.isDisposed()) return
       const judgeFault = err instanceof JudgeUnavailableError
-      // A judge fault already carries the identity of the agent that failed; reusing
-      // it verbatim is what makes the judge's own log line, this detail and the
-      // `[c3:queue]` failure line name the same agent.
-      const detail = judgeFault ? err.detail : `完成判定执行失败:${errText(err)}`
-      const who = judgeFault ? err.agentIdentity : UNKNOWN_AGENT_IDENTITY
+      // A judge fault already carries the identity of the agent that failed, and it is
+      // handed to the failure line AS the line's identity rather than being embedded
+      // into the detail: one rendering, one source. The judge's own log line, this
+      // detail and the `[c3:queue]` line therefore all name the very agent the judge
+      // resolved its launch from — no second resolution, no placeholder disagreeing
+      // with the name the judge already printed.
       recordFailure(
         ctx,
         req.id,
         'judge_unavailable',
-        `完成判定不可用(检查 tool agent 配置)[${who}]:${detail}`,
+        judgeFault
+          ? `完成判定不可用(检查 tool agent 配置):${err.detail}`
+          : `完成判定执行失败:${errText(err)}`,
+        judgeFault ? err.agentIdentity : UNKNOWN_AGENT_IDENTITY,
       )
       return
     }

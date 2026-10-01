@@ -23,6 +23,21 @@ vi.mock('../../kernel/config/index.js', () => ({
   getSpecMachineApprovalEnabled: vi.fn(() => true),
 }))
 
+// The spec family's own agent resolver: a refused launch must name the spec agent,
+// not the development agent that had nothing to do with the refusal.
+vi.mock('../../kernel/agent-config/index.js', () => ({
+  UNKNOWN_AGENT_IDENTITY: '未知 agent',
+  agentLogIdentity: (t: { agent?: { id?: string; displayName?: string } } | null) =>
+    t?.agent?.id ? `${t.agent.displayName || t.agent.id}(${t.agent.id})` : '未知 agent',
+  tryResolveRoleAgentTarget: vi.fn((role: string) => ({
+    ok: true,
+    target: {
+      ref: `${role}-1`,
+      agent: { id: `${role}-1`, displayName: role === 'spec' ? '撰写' : '审阅' },
+    },
+  })),
+}))
+
 vi.mock('./session-launcher.js', () => ({
   launchSpecSession: vi.fn(),
   launchSpecReviewSession: vi.fn(),
@@ -220,6 +235,7 @@ describe('runSpecPhase — authoring and read-only review', () => {
       'E',
       'launch_failed',
       'spec 撰写会话启动被拒绝(intent.notFound)',
+      '撰写(spec-1)',
     )
     expect(recordSuccess).not.toHaveBeenCalled()
     expect(hooks.broadcastIntents).not.toHaveBeenCalled()
@@ -243,6 +259,7 @@ describe('runSpecPhase — authoring and read-only review', () => {
       'F',
       'launch_failed',
       'spec 审核会话启动被拒绝(intent.specNotWritten)',
+      '审阅(spec_review-1)',
     )
   })
 
@@ -269,6 +286,7 @@ describe('runSpecPhase — authoring and read-only review', () => {
       'K',
       'launch_failed',
       `spec 审核会话启动被拒绝(intent.worktreeCreateFailed) — message=${message}`,
+      '审阅(spec_review-1)',
     )
   })
 
@@ -291,6 +309,7 @@ describe('runSpecPhase — authoring and read-only review', () => {
       'L',
       'launch_failed',
       'spec 撰写会话启动被拒绝(intent.dependencyNotMerged) — title=先落地登录, id=dep-1',
+      '撰写(spec-1)',
     )
   })
 })

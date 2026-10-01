@@ -118,6 +118,7 @@ vi.mock('../../runs.js', () => ({
 
 vi.mock('../../kernel/agent-config/index.js', () => ({
   UNKNOWN_AGENT_IDENTITY: '未知 agent',
+  UNATTRIBUTED_AGENT_IDENTITY: '未归属 agent',
   agentLogIdentity: (t: { agent?: { id?: string; displayName?: string } } | null) =>
     t?.agent?.id ? `${t.agent.displayName || t.agent.id}(${t.agent.id})` : '未知 agent',
   tryResolveAgentTarget: vi.fn(() => ({ ok: true as const, target: workTarget() })),
@@ -218,6 +219,8 @@ import {
   startWorkflow,
 } from './workflow.js'
 import type { WorkflowHooks, DevTurnResult, RunDevTurnInput } from './workflow.js'
+import { recordFailure } from './queue-outcome-actions.js'
+import type { QueueActionContext } from './queue-action-context.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent } from '../pr-events/tool-defs.js'
 import { listIntents, getIntent, updateStatus } from './store.js'
@@ -552,6 +555,53 @@ describe('queue failure line — it names the agent, so one line answers "which 
     const line = failureLines()
     expect(line).toMatch(/主控\(work-1\).*第 1 次失败\(launch_failed\)/)
     expect(line).not.toContain('判定器(tool-1)')
+  })
+
+  /** The minimal context `recordFailure` reads: a path, a tick and the queue hook. */
+  function recordCtx(): QueueActionContext {
+    return {
+      workspacePath: proj,
+      tickId: () => 'test-tick',
+      hooks: { broadcastQueueDetail: vi.fn() },
+    } as unknown as QueueActionContext
+  }
+
+  it('a failure with no agent behind it names nobody rather than the work agent', () => {
+    // A refused SPEC launch: the spec agent refused, the work agent never ran. The
+    // line must not point at the work agent — that is the wrong diagnosis this line
+    // exists to prevent — so it says so explicitly instead of guessing.
+    const req = makeIntent({ id: 'SF', title: 'spec 启动被拒', status: 'todo' })
+    req.lastWorkSessionId = 'sess-work'
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getIntent).mockReturnValue(req)
+
+    recordFailure(recordCtx(), 'SF', 'budget_exhausted', 'spec 撰写会话启动被拒绝(intent.notFound)')
+
+    const line = failureLines()
+    expect(line).toContain('未归属 agent')
+    expect(line).not.toContain('主控(work-1)')
+    expect(line).not.toContain('判定器(tool-1)')
+  })
+
+  it('a caller-supplied identity wins over any inference — it is the agent that ran', () => {
+    // The relay review phase refuses on ITS OWN agent; the intent also has a work
+    // session behind it, which the inference path would (wrongly) name.
+    const req = makeIntent({ id: 'RF', title: '评审失败', status: 'reviewing' })
+    req.lastWorkSessionId = 'sess-work'
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getIntent).mockReturnValue(req)
+
+    recordFailure(
+      recordCtx(),
+      'RF',
+      'launch_failed',
+      'PR 评审 Agent 不可用:Agent 组「g」没有可用成员',
+      '评审员(review-1)',
+    )
+
+    const line = failureLines()
+    expect(line).toMatch(/\[评审员\(review-1\)\].*第 1 次失败\(launch_failed\)/)
+    expect(line).not.toContain('主控(work-1)')
   })
 
   it('an unresolvable identity degrades to the placeholder and STILL backs the intent off', async () => {

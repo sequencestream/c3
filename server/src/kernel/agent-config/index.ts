@@ -214,6 +214,15 @@ export type AgentTargetResult = { ok: true; target: AgentTarget } | { ok: false;
 export const UNKNOWN_AGENT_IDENTITY = '未知 agent'
 
 /**
+ * The stable placeholder a diagnostic line carries when the failure it reports was
+ * NOT an agent execution at all, or came from a family that resolves its own agent
+ * identity. Distinct from {@link UNKNOWN_AGENT_IDENTITY} on purpose: "nobody ran this"
+ * and "we failed to find out who ran it" are different diagnoses, and printing either
+ * one's name for the other sends triage after the wrong agent.
+ */
+export const UNATTRIBUTED_AGENT_IDENTITY = '未归属 agent'
+
+/**
  * Render an already-resolved target as the agent identity a diagnostic log line
  * carries: `名称(id)`, plus `vendor/model` when both are readable. An empty display
  * name (a legacy config that never set one) falls back to the id; an empty model or

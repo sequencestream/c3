@@ -49,6 +49,7 @@ import { activeIntentPrs } from '@ccc/shared'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import type { QueueAction, QueuePrIdentity } from '../../kernel/queue/index.js'
 import { getGitBranchMode, getForgeOverride } from '../../kernel/config/index.js'
+import { agentLogIdentity } from '../../kernel/agent-config/index.js'
 import { getForgePrLinkFacts } from '../../git.js'
 import type { QueueActionContext, WorkflowHooks } from './queue-action-context.js'
 import {
@@ -136,6 +137,12 @@ export interface ClaimedRelayPhase {
   prs: IntentPr[]
   vendor: VendorId
   agentId: string
+  /**
+   * The SAME resolved target's identity, rendered at claim time. Carried because this
+   * is the agent the phase actually runs on, so a failure line about the phase can
+   * name it without re-resolving a role that may have been reconfigured since.
+   */
+  agentIdentity: string
 }
 
 export type RelayAdmission =
@@ -207,6 +214,7 @@ export function admitRelayPhase(
       prs,
       vendor: target.target.agent.vendor,
       agentId: target.target.ref,
+      agentIdentity: agentLogIdentity(target.target),
     },
   }
 }
@@ -338,7 +346,7 @@ export async function runRelayPhase(
 
   const admission = admitRelayPhase(ctx, phase, action.round, req)
   if (!admission.ok) {
-    reportQueueRefusal(ctx, req, label, admission.failure)
+    reportQueueRefusal(ctx, req, label, phase, admission.failure)
     return
   }
 
@@ -347,7 +355,7 @@ export async function runRelayPhase(
   })
 
   if (ctx.isDisposed()) return
-  settleRelayPhase(ctx, req, phase, label, admission.claimed.pendingId, boundSessionId, outcome)
+  settleRelayPhase(ctx, req, phase, label, admission.claimed, boundSessionId, outcome)
 }
 
 /**
@@ -397,8 +405,17 @@ function reportQueueRefusal(
   ctx: QueueActionContext,
   req: Intent,
   label: string,
+  phase: RelayPhase,
   failure: RelayAdmissionFailure,
 ): void {
+  // Every failure this function books ran on — or would have run on — the phase's OWN
+  // agent, so all three name it rather than letting the shared line fall back to some
+  // other role's agent. That resolution is total: an unusable or missing target
+  // degrades to the placeholder, never to a wrong name.
+  const who = () => {
+    const target = sessionAgentTargetForRole(phase, ctx.workspacePath)
+    return agentLogIdentity(target.ok ? target.target : null)
+  }
   switch (failure.reason) {
     case 'agentUnavailable':
       recordFailure(
@@ -406,13 +423,14 @@ function reportQueueRefusal(
         req.id,
         'launch_failed',
         `${label} Agent 不可用:Agent 组「${failure.groupRef}」没有可用成员`,
+        who(),
       )
       return
     case 'worktreeUnavailable':
-      recordFailure(ctx, req.id, 'launch_failed', `${label} 无法执行:意图 worktree 不可用`)
+      recordFailure(ctx, req.id, 'launch_failed', `${label} 无法执行:意图 worktree 不可用`, who())
       return
     case 'projectionWriteFailed':
-      recordFailure(ctx, req.id, 'launch_failed', `${label} 占位投影不可写,本轮未启动`)
+      recordFailure(ctx, req.id, 'launch_failed', `${label} 占位投影不可写,本轮未启动`, who())
       return
     case 'noActivePr':
       // The PR list emptied between the kernel's snapshot and this executor.
@@ -479,7 +497,7 @@ function settleRelayPhase(
   req: Intent,
   phase: RelayPhase,
   label: string,
-  pendingId: string,
+  claimed: ClaimedRelayPhase,
   boundSessionId: string | null,
   outcome: RelaySessionOutcome,
 ): void {
@@ -490,7 +508,7 @@ function settleRelayPhase(
     return
   }
 
-  releaseRelayPlaceholder(req.id, phase, pendingId, boundSessionId)
+  releaseRelayPlaceholder(req.id, phase, claimed.pendingId, boundSessionId)
   ctx.hooks.broadcastIntents(ctx.workspacePath)
   recordFailure(
     ctx,
@@ -499,6 +517,9 @@ function settleRelayPhase(
     outcome.ok
       ? `${label} 会话已结束但未回填结论`
       : `${label} 会话执行失败:${outcome.error ?? '未知原因'}`,
+    // The phase's own agent, resolved when it was claimed — never a re-read that
+    // could name a different agent than the one this turn actually ran on.
+    claimed.agentIdentity,
   )
 }
 

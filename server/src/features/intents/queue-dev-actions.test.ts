@@ -1100,21 +1100,24 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(updateStatus).not.toHaveBeenCalledWith('JU', 'done')
   })
 
-  it("the judge_unavailable detail reuses the judge's OWN identity verbatim", async () => {
+  it("the judge_unavailable line carries the judge's OWN identity verbatim, exactly once", async () => {
     const proj = '/test/judge-identity'
     const intent = makeIntent({ id: 'JI', status: 'todo' })
     vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
     vi.mocked(listIntents).mockReturnValue([intent])
     vi.mocked(getIntent).mockReturnValue(intent)
     vi.mocked(getRuntime).mockReturnValue(undefined)
-    // The judge already resolved this identity for its own log line; the detail
-    // written here must be the SAME string, not a second lookup that could differ.
+    // The judge already resolved this identity for its own log line; the failure line
+    // must carry that SAME string as ITS identity — handed over, not looked up again,
+    // so the two can never disagree.
     vi.mocked(judgeCompletion).mockRejectedValue(
       new JudgeUnavailableError(
         "There's an issue with the selected model (deepseek-v4-flash).",
         '判定器(tool-1) claude/deepseek-v4-flash',
       ),
     )
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const { hooks } = makeHooks()
     startWorkflow(proj, hooks, 1)
@@ -1125,9 +1128,18 @@ describe('queue dev actions — branch-mode git alignment', () => {
     const detail = listQueueDecisionsForIntent('JI')
       .map((d) => String(d.rejectReason ?? ''))
       .find((r) => r.includes('完成判定不可用'))
-    expect(detail).toContain('判定器(tool-1) claude/deepseek-v4-flash')
+    expect(detail).toContain('完成判定不可用(检查 tool agent 配置)')
     // The raw provider error is still there — the identity is added, not swapped in.
     expect(detail).toContain('deepseek-v4-flash')
     expect(detail).not.toMatch(/undefined|\[object Object\]/)
+
+    // The identity is rendered ONCE, at the head of the line, from the judge's own
+    // resolution — not twice (detail plus line head) and not from a second lookup.
+    const line = warnSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes('judge_unavailable'))
+    expect(line).toContain('[判定器(tool-1) claude/deepseek-v4-flash]')
+    expect(line?.match(/判定器\(tool-1\)/g)).toHaveLength(1)
+    warnSpy.mockRestore()
   })
 })

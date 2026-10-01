@@ -34,6 +34,11 @@ vi.mock('./worktree.js', () => ({
   worktreeExists: () => worktreeExists(),
 }))
 
+vi.mock('../../kernel/agent-config/index.js', () => ({
+  agentLogIdentity: (t: { agent?: { id?: string; displayName?: string } } | null) =>
+    t?.agent?.id ? `${t.agent.displayName || t.agent.id}(${t.agent.id})` : '未知 agent',
+}))
+
 const agentTarget = vi.fn<(role: string, w: string) => unknown>()
 vi.mock('../sessions/agent-target.js', () => ({
   sessionAgentTargetForRole: (role: string, w: string) => agentTarget(role, w),
@@ -161,7 +166,12 @@ beforeEach(() => {
   claimRelayOccupancy.mockReturnValue({ ok: true })
   agentTarget.mockReturnValue({
     ok: true,
-    target: { ref: 'agent-x', agent: { vendor: 'claude' }, candidates: [], isGroup: false },
+    target: {
+      ref: 'agent-x',
+      agent: { vendor: 'claude', id: 'agent-x', displayName: '评审员' },
+      candidates: [],
+      isGroup: false,
+    },
   })
   runRelaySession.mockResolvedValue({ ok: true, error: null, sessionId: 'real-1' })
   getIntent.mockReturnValue(intent({ reviewStatus: 'approved' }))
@@ -194,6 +204,27 @@ describe('agent identity', () => {
     expect(runRelaySession).not.toHaveBeenCalled()
     expect(claimRelayOccupancy).not.toHaveBeenCalled()
     expect(recordFailure.mock.calls[0][3]).toContain('_c3_claude_team')
+  })
+
+  it("a refused launch names the PHASE agent, not some other role's agent", async () => {
+    // The failure line is read alone; pointing it at an agent that never ran is the
+    // misdiagnosis the identity is supposed to prevent.
+    worktreeExists.mockReturnValue(false)
+    await runRelayPhase(ctx, reviewAction, intent())
+    expect(recordFailure.mock.calls[0][4]).toBe('评审员(agent-x)')
+  })
+
+  it('an unusable group degrades the name to the placeholder rather than another agent', async () => {
+    worktreeExists.mockReturnValue(false)
+    agentTarget.mockReturnValue({ ok: false, groupRef: '_c3_claude_team' })
+    await runRelayPhase(ctx, reviewAction, intent())
+    expect(recordFailure.mock.calls[0][4]).toBe('未知 agent')
+  })
+
+  it('a turn that ends without a conclusion names the agent the claim bound', async () => {
+    getIntent.mockReturnValue(intent({ reviewStatus: 'pending' }))
+    await runRelayPhase(ctx, reviewAction, intent())
+    expect(recordFailure.mock.calls[0][4]).toBe('评审员(agent-x)')
   })
 })
 
@@ -360,6 +391,7 @@ describe('the manual entry point', () => {
     prs: intent().prs,
     vendor: 'claude',
     agentId: 'agent-x',
+    agentIdentity: '评审员(agent-x)',
     ...over,
   })
 
@@ -476,6 +508,7 @@ describe('the manual entry point’s caller-visible settlement', () => {
     prs: intent().prs,
     vendor: 'claude',
     agentId: 'agent-x',
+    agentIdentity: '评审员(agent-x)',
   }
 
   it('reports a launch failure that bound nothing, with the dispatcher’s reason', async () => {

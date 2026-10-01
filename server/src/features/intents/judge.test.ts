@@ -27,13 +27,17 @@ vi.mock('../../kernel/agent/index.js', () => ({
 // The completion judge is a background tool session ⇒ it resolves its launch via
 // `resolveToolSessionLaunch` (the tool agent), NOT `resolveSessionLaunch`. The mock
 // pins a recognizable model + relay candidate so the routing can be asserted.
+// `agentIdentity` is what a diagnostic line names the running agent by; per-case
+// tests override it to exercise the empty/placeholder degradation.
 const toolLaunchMock = vi.fn(() => ({
   agentId: 'tool-agent',
+  agentIdentity: '判定器(tool-agent) claude/sonnet',
   model: 'tool-model',
   envOverrides: { TOOL: '1' },
   relayCandidates: [{ baseUrl: 'https://third-party.example', apiKey: 'k', model: 'tool-model' }],
 }))
 vi.mock('../../kernel/agent-config/index.js', () => ({
+  UNKNOWN_AGENT_IDENTITY: '未知 agent',
   resolveToolSessionLaunch: () => toolLaunchMock(),
 }))
 
@@ -99,7 +103,18 @@ function judge(lastMessage: string) {
   })
 }
 
-beforeEach(() => askMock.mockReset())
+// The judge's diagnostic lines are its whole contract here, so capture both console
+// channels (a verdict prints, a fault warns) instead of spraying the test output.
+// Re-armed per test because `restoreAllMocks` below detaches whatever it installed.
+let warnSpy: ReturnType<typeof vi.spyOn>
+let logSpy: ReturnType<typeof vi.spyOn>
+
+beforeEach(() => {
+  askMock.mockReset()
+  toolLaunchMock.mockClear()
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+})
 afterEach(() => vi.restoreAllMocks())
 
 describe('judge prompt — tightened resume-judgement rules', () => {
@@ -208,6 +223,59 @@ describe('judge — runs on the tool agent (toolAgentId routing, 2026-06-15-001)
     expect(args.relayCandidates).toEqual([
       { baseUrl: 'https://third-party.example', apiKey: 'k', model: 'tool-model' },
     ])
+  })
+})
+
+describe('judge logs — every line names the agent that ran (2026-10-01-002)', () => {
+  /** Every `[c3:automation]` line judge wrote, both console channels, joined. */
+  function judgeLogs(): string {
+    return [...warnSpy.mock.calls, ...logSpy.mock.calls].map((c) => String(c[0])).join('\n')
+  }
+
+  it('a done verdict names the agent by display name AND id', async () => {
+    askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
+    await judge('m')
+    const line = judgeLogs()
+    expect(line).toContain('[c3:automation]')
+    expect(line).toContain('判定器(tool-agent)')
+    // Both halves must be present: the display name alone cannot be looked up.
+    expect(line).toMatch(/判定器.*tool-agent/)
+  })
+
+  it('a judge that never ran names the agent on the same line as the raw error', async () => {
+    askMock.mockRejectedValue(new Error('spawn claude ENOENT'))
+    await expect(judge('m')).rejects.toBeInstanceOf(JudgeUnavailableError)
+    expect(judgeLogs()).toMatch(/判定器\(tool-agent\).*判定不可用\(会话未跑通\).*ENOENT/)
+  })
+
+  it('an unparseable reply names the agent on the same line as the reply excerpt', async () => {
+    askMock.mockResolvedValue('probably fine, continue.')
+    await expect(judge('m')).rejects.toBeInstanceOf(JudgeUnavailableError)
+    expect(judgeLogs()).toMatch(/判定器\(tool-agent\).*判定不可用\(无法解析\)/)
+  })
+
+  it('the thrown error carries the SAME identity the log line printed', async () => {
+    askMock.mockResolvedValue('nonsense')
+    const err = await judge('m').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(JudgeUnavailableError)
+    const identity = (err as InstanceType<typeof JudgeUnavailableError>).agentIdentity
+    expect(identity).toBe('判定器(tool-agent) claude/sonnet')
+    expect(judgeLogs()).toContain(identity)
+  })
+
+  it('degrades to the placeholder when resolution yields no identity — never `undefined`', async () => {
+    toolLaunchMock.mockReturnValueOnce({
+      agentId: 'tool-agent',
+      agentIdentity: '',
+      model: 'tool-model',
+      envOverrides: { TOOL: '1' },
+      relayCandidates: [],
+    })
+    askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
+    await judge('m')
+    const line = judgeLogs()
+    expect(line).toContain('未知 agent')
+    expect(line).not.toMatch(/undefined|\[object Object\]/)
   })
 })
 

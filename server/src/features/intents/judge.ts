@@ -40,7 +40,10 @@
  */
 import type { Intent, SessionKind } from '@ccc/shared/protocol'
 import { askOneShot } from '../../kernel/agent/index.js'
-import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
+import {
+  UNKNOWN_AGENT_IDENTITY,
+  resolveToolSessionLaunch,
+} from '../../kernel/agent-config/index.js'
 
 /**
  * This module's SessionKind: completion judging is an internal, socket-less tool
@@ -62,7 +65,15 @@ export type JudgeVerdict = { verdict: 'done' | 'in_progress' | 'stuck'; reason: 
  * verdict this time" — keep the intent where it is and surface the fault.
  */
 export class JudgeUnavailableError extends Error {
-  constructor(readonly detail: string) {
+  constructor(
+    readonly detail: string,
+    /**
+     * The tool agent this judge ran on, rendered once so the failure detail a caller
+     * writes and the judge's own log line name the SAME agent. Defaults to the
+     * placeholder so a hand-built error still yields a readable line.
+     */
+    readonly agentIdentity: string = UNKNOWN_AGENT_IDENTITY,
+  ) {
     super(`judge 不可用: ${detail}`)
     this.name = 'JudgeUnavailableError'
   }
@@ -158,6 +169,10 @@ export async function judgeCompletion(input: {
   // and the system tool role leads when it inherits; either way the system default is
   // only the last link (see `resolveRoleAgentTarget`).
   const launch = resolveToolSessionLaunch(input.req.workspaceName)
+  // One identity, resolved once, shared by all three verdict lines AND the thrown
+  // error: a diagnostic line and the failure detail derived from it can never
+  // disagree about which agent ran.
+  const who = launch.agentIdentity || UNKNOWN_AGENT_IDENTITY
   const { system, user } = buildPrompt(input.req, input.lastMessages, input.evidence)
   let text: string
   try {
@@ -178,20 +193,20 @@ export async function judgeCompletion(input: {
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     console.warn(
-      `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ 判定不可用(会话未跑通): ${detail}`,
+      `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」[${who}] → 判定不可用(会话未跑通): ${detail}`,
     )
-    throw new JudgeUnavailableError(detail)
+    throw new JudgeUnavailableError(detail, who)
   }
   const verdict = parseVerdict(text)
   if (!verdict) {
     const detail = text.slice(0, 200) || '(judge 无输出)'
     console.warn(
-      `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ 判定不可用(无法解析): ${detail}`,
+      `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」[${who}] → 判定不可用(无法解析): ${detail}`,
     )
-    throw new JudgeUnavailableError(detail)
+    throw new JudgeUnavailableError(detail, who)
   }
   console.log(
-    `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ ${verdict.verdict}: ${verdict.reason}`,
+    `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」[${who}] → ${verdict.verdict}: ${verdict.reason}`,
   )
   return verdict
 }

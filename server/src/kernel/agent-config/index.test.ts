@@ -69,6 +69,8 @@ vi.mock('../config/index.js', () => ({
 // Import AFTER the mock is set up.
 import {
   AgentGroupUnavailableError,
+  UNKNOWN_AGENT_IDENTITY,
+  agentLogIdentity,
   groupAgents,
   launchForAgent,
   launchForCandidates,
@@ -92,6 +94,7 @@ import {
 } from './index.js'
 import type { AgentRole } from './index.js'
 import type { AgentConfig } from '@ccc/shared/protocol'
+import type { AgentTarget } from './index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 
 describe('group agents + candidate resolution (ADR-0029)', () => {
@@ -746,11 +749,68 @@ describe('resolveToolSessionLaunch — the workspace layer reaches the one-shot 
     expect(resolveToolSessionLaunch(WS).agentId).toBe('claude-sonnet')
   })
 
-  it('hard-fails an unusable workspace-default group instead of falling back', () => {
+  it('carries the identity of the SAME target it bound, so a log line names the running agent', () => {
+    mockSettings.toolAgentId = 'codex-agent'
+    const launch = resolveToolSessionLaunch(WS)
+    expect(launch.agentId).toBe('codex-agent')
+    expect(launch.agentIdentity).toBe(agentLogIdentity(resolveRoleAgentTarget('tool', WS)))
+    expect(launch.agentIdentity).toContain('codex-agent')
+  })
+
+  it('still hard-fails an unusable workspace-default group instead of falling back', () => {
     mockSettings.agents = [{ ...toolMember('tm1', 0), enabled: false }]
     mockSettings.toolAgentId = 'claude-pro'
     workspaceSettings[WS] = { defaultAgentId: GROUP }
     expect(() => resolveToolSessionLaunch(WS)).toThrow(AgentGroupUnavailableError)
+  })
+})
+
+describe('agentLogIdentity — the agent a diagnostic line names', () => {
+  function targetOf(agent: AgentConfig): AgentTarget {
+    return { ref: agent.id, agent, candidates: [agent], isGroup: false }
+  }
+
+  const agent = (over: Partial<AgentConfig>): AgentConfig =>
+    ({
+      id: 'a1',
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: '主控',
+      config: { baseUrl: '', apiKey: '', model: 'sonnet' },
+      ...over,
+    }) as AgentConfig
+
+  it('renders 名称(id) plus vendor/model when both are readable', () => {
+    expect(agentLogIdentity(targetOf(agent({})))).toBe('主控(a1) claude/sonnet')
+  })
+
+  it('drops only the model fragment when the model is empty', () => {
+    expect(
+      agentLogIdentity(targetOf(agent({ config: { baseUrl: '', apiKey: '', model: '' } }))),
+    ).toBe('主控(a1)')
+  })
+
+  it('falls back to the id as the name for a legacy agent with an empty displayName', () => {
+    expect(agentLogIdentity(targetOf(agent({ displayName: '' })))).toBe('a1(a1) claude/sonnet')
+    expect(agentLogIdentity(targetOf(agent({ displayName: '   ' })))).toBe('a1(a1) claude/sonnet')
+  })
+
+  it('degrades to the stable placeholder when there is no usable target', () => {
+    expect(agentLogIdentity(null)).toBe(UNKNOWN_AGENT_IDENTITY)
+    expect(agentLogIdentity(undefined)).toBe(UNKNOWN_AGENT_IDENTITY)
+    expect(agentLogIdentity(targetOf(agent({ id: '' })))).toBe(UNKNOWN_AGENT_IDENTITY)
+  })
+
+  it('never renders undefined or an object string, whatever the config shape', () => {
+    const odd = {
+      id: 'a9',
+      displayName: null,
+      vendor: undefined,
+      config: undefined,
+    } as unknown as AgentConfig
+    const line = agentLogIdentity(targetOf(odd))
+    expect(line).not.toMatch(/undefined|\[object Object\]/)
+    expect(line).toBe('a9(a9)')
   })
 })
 

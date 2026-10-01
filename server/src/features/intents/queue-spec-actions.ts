@@ -24,12 +24,35 @@ import { MACHINE_SPEC_APPROVER } from '@ccc/shared/protocol'
 import { machineApprovalEligible, type GenericEvent } from '@ccc/shared'
 import type { QueueAction } from '../../kernel/queue/index.js'
 import { getSpecMachineApprovalEnabled } from '../../kernel/config/index.js'
+import {
+  UNKNOWN_AGENT_IDENTITY,
+  agentLogIdentity,
+  tryResolveRoleAgentTarget,
+} from '../../kernel/agent-config/index.js'
 import { QUEUE_ACTOR, type QueueActionContext } from './queue-action-context.js'
 import { recordFailure, recordSuccess } from './queue-outcome-actions.js'
 import { getIntent, machineApproveSpec } from './store.js'
 import { launchSpecReviewSession, launchSpecSession } from './session-launcher.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { applySpecApproval } from './spec.js'
+
+/**
+ * The identity of the agent the spec family launches on, resolved the same way the
+ * launch itself resolves it. Total: an unusable group or an unreadable settings store
+ * degrades to the placeholder rather than escaping into the failure path.
+ */
+function specPhaseAgentIdentity(
+  workspacePath: string,
+  kind: 'launch_spec' | 'launch_spec_review',
+): string {
+  const role = kind === 'launch_spec' ? 'spec' : 'spec_review'
+  try {
+    const target = tryResolveRoleAgentTarget(role, workspacePath)
+    return agentLogIdentity(target.ok ? target.target : null)
+  } catch {
+    return UNKNOWN_AGENT_IDENTITY
+  }
+}
 
 /**
  * Render a refused launch's parameters into the failure detail.
@@ -86,6 +109,10 @@ export async function runSpecPhase(
       'launch_failed',
       `${action.kind === 'launch_spec' ? 'spec 撰写' : 'spec 审核'}会话启动被拒绝(${result.code})` +
         formatLaunchParams(result.params),
+      // The spec family's own agent — the one whose launcher just refused. Same role
+      // the launch resolves, so the line names the agent a reader must go configure,
+      // and never the development agent that had nothing to do with this refusal.
+      specPhaseAgentIdentity(ctx.workspacePath, action.kind),
     )
     return
   }

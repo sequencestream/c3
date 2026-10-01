@@ -21,6 +21,15 @@
  */
 import type { Intent } from '@ccc/shared/protocol'
 import type { QueueAction, QueueReasonCode } from '../../kernel/queue/index.js'
+import {
+  UNATTRIBUTED_AGENT_IDENTITY,
+  UNKNOWN_AGENT_IDENTITY,
+  agentLogIdentity,
+  tryResolveAgentTarget,
+  tryResolveRoleAgentTarget,
+} from '../../kernel/agent-config/index.js'
+import type { AgentTarget, AgentTargetResult } from '../../kernel/agent-config/index.js'
+import { getSessionAgentId } from '../../kernel/config/index.js'
 import { QUEUE_MAX_ATTEMPTS, backoffDelayMs } from '../../kernel/queue/index.js'
 import type { QueueActionContext } from './queue-action-context.js'
 import { getIntent } from './store.js'
@@ -107,6 +116,75 @@ export function executeSyncDependencyPrs(
 // Scheduling metadata transitions (shared by every action family)
 // ---------------------------------------------------------------------------
 
+/** The resolved target, or null when resolution stopped at an unusable group. */
+function targetOf(result: AgentTargetResult): AgentTarget | null {
+  return result.ok ? result.target : null
+}
+
+/**
+ * The identity a failure line carries, when the CALLER already resolved it at the
+ * moment the work it names actually ran: the agent that ran this very phase, which no
+ * later re-resolution can improve on. `null` means "no caller-known identity" and
+ * falls back to {@link inferredFailureLogIdentity} — never to another agent's name.
+ */
+export type FailureLogIdentity = string | null
+
+/**
+ * The identity an unattributed failure line names — the one piece of observability
+ * that lets a reader tell a bad provider config from a bad piece of work without
+ * opening the session.
+ *
+ * Best-effort by construction: {@link agentLogIdentity} is total and every resolver
+ * below is wrapped, so this can only ever degrade the string, never the transition the
+ * caller just recorded.
+ */
+function inferredFailureLogIdentity(
+  ctx: QueueActionContext,
+  reason: QueueReasonCode,
+  req: Intent | null,
+): string {
+  try {
+    if (JUDGE_FAILURE_REASONS.has(reason)) {
+      return agentLogIdentity(targetOf(tryResolveRoleAgentTarget('tool', ctx.workspacePath)))
+    }
+    // A work-session failure names the agent the session itself is bound to; an
+    // intent that never got a session follows the same role chain the dev launch
+    // would have taken. Every OTHER family (relay review / fix, spec authoring /
+    // spec review, commit, budget) names an agent this module cannot name at all —
+    // relaying on the work session there would point at an agent that took no part in
+    // the failure, which is the misdiagnosis this line exists to prevent. So those
+    // stay unattributed and say so, rather than guess.
+    if (!WORK_SESSION_FAILURE_REASONS.has(reason)) return UNATTRIBUTED_AGENT_IDENTITY
+    const sessionId = req?.lastWorkSessionId
+    if (sessionId) {
+      return agentLogIdentity(targetOf(tryResolveAgentTarget(getSessionAgentId(sessionId))))
+    }
+    return agentLogIdentity(targetOf(tryResolveRoleAgentTarget('work', ctx.workspacePath)))
+  } catch {
+    return UNKNOWN_AGENT_IDENTITY
+  }
+}
+
+/**
+ * The `judge_*` family blames the TOOL agent (that is where the completion judge
+ * runs). Selecting by reason rather than by a flag keeps the mapping readable at the
+ * call site.
+ */
+const JUDGE_FAILURE_REASONS: ReadonlySet<QueueReasonCode> = new Set<QueueReasonCode>([
+  'judge_stuck',
+  'judge_unavailable',
+])
+
+/**
+ * The reasons a bare failure line may attribute to the intent's work session. Only
+ * the dev family reports these; every other family must pass its own resolved identity
+ * (or none) so a line never names an agent that did not run.
+ */
+const WORK_SESSION_FAILURE_REASONS: ReadonlySet<QueueReasonCode> = new Set<QueueReasonCode>([
+  'turn_error',
+  'launch_failed',
+])
+
 /**
  * One failed attempt for ONE intent. Exponential backoff first; the third
  * consecutive failure parks it. The queue itself never stops — other intents
@@ -118,6 +196,14 @@ export function recordFailure(
   intentId: string,
   reason: QueueReasonCode,
   detail: string,
+  /**
+   * The identity of the agent that was running when this failed, when the CALLER knows
+   * it (relay review / fix, spec authoring / review, the judge). Passing it is what
+   * keeps the failure line pointing at the agent that actually failed; `null` leaves the
+   * line to the reason-based inference, which only names the work session for the dev
+   * family and otherwise prints the unattributed placeholder.
+   */
+  agentIdentity: FailureLogIdentity = null,
 ): void {
   const now = Date.now()
   const prev = getQueueIntentMetaById(intentId)
@@ -163,8 +249,16 @@ export function recordFailure(
   ])
   const req = getIntent(intentId)
   if (req) publishIntentLifecycle(ctx.workspacePath, req, 'failed')
+  // The failure line is where most parks are diagnosed from, and "which agent was
+  // this?" is the first question a reader asks of it. An identity the CALLER carried
+  // in is used verbatim — that one was resolved while the agent it names was actually
+  // running, so it cannot drift from the run it describes; anything else is inferred
+  // HERE, after every state write and outside every persisted field. Inference is
+  // total: an unreadable settings store degrades to the placeholder instead of
+  // turning a backoff or a park into a crash.
+  const who = agentIdentity ?? inferredFailureLogIdentity(ctx, reason, req)
   console.warn(
-    `[c3:queue]「${req?.title ?? intentId}」第 ${failureCount} 次失败(${reason}): ${detail}` +
+    `[c3:queue]「${req?.title ?? intentId}」[${who}] 第 ${failureCount} 次失败(${reason}): ${detail}` +
       (park ? ' → 已 park,队列继续处理其他意图' : ` → 退避 ${backoffDelayMs(failureCount)}ms`),
   )
   ctx.hooks.broadcastQueueDetail(ctx.workspacePath)

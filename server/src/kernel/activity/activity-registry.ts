@@ -12,12 +12,13 @@
  * read-only clone. Rebuild replaces the whole table from authority sources.
  */
 import { randomUUID } from 'node:crypto'
-import type { SessionKind } from '@ccc/shared/protocol'
 import {
   isRunningActivityState,
   type ActivityApplyResult,
   type ActivityFact,
   type ActivityFencing,
+  type ActivityMutation,
+  type ActivityMutationListener,
   type ActivityOwner,
   type ActivityRegistryClock,
   type ActivityStartInput,
@@ -39,6 +40,7 @@ export class ActivityRegistry {
   private readonly facts = new Map<string, ActivityFact>()
   private readonly sessionIndex = new Map<string, string>()
   private readonly aliases = new Map<string, string>()
+  private readonly listeners = new Set<ActivityMutationListener>()
   private readonly clock: ActivityRegistryClock
 
   constructor(clock?: Partial<ActivityRegistryClock>) {
@@ -52,6 +54,7 @@ export class ActivityRegistry {
   start(input: ActivityStartInput): ActivityApplyResult {
     const at = input.at ?? this.clock.now()
     const existing = this.lookup(input.activityId) ?? this.lookup(input.sessionId)
+    let replaced: ActivityFact | undefined
     if (existing) {
       if (existing.state === 'stale') {
         if (input.generation !== undefined && input.generation === existing.generation) {
@@ -59,6 +62,7 @@ export class ActivityRegistry {
           return { accepted: false, reason: 'stale_generation' }
         }
         this.erase(existing)
+        replaced = existing
       } else {
         if (input.generation !== undefined && input.generation !== existing.generation) {
           this.logReject('stale_generation', existing.activityId)
@@ -89,6 +93,7 @@ export class ActivityRegistry {
       leaseUntil: input.leaseUntil,
     }
     this.put(fact)
+    this.emitChange(replaced, fact)
     return { accepted: true, fact: cloneFact(fact) }
   }
 
@@ -108,6 +113,7 @@ export class ActivityRegistry {
       if (!gated.accepted) return gated
       this.erase(pending)
       this.aliases.set(prevId, real.activityId)
+      this.emitChange(pending, undefined)
       return { accepted: true, fact: cloneFact(real) }
     }
     if (!pending && real) {
@@ -130,6 +136,7 @@ export class ActivityRegistry {
     this.erase(pending)
     this.put(next)
     this.aliases.set(prevId, realId)
+    this.emitChange(pending, next)
     return { accepted: true, fact: cloneFact(next) }
   }
 
@@ -171,6 +178,7 @@ export class ActivityRegistry {
       updatedAt: fencing?.at ?? this.clock.now(),
     }
     this.erase(current)
+    this.emitChange(current, undefined)
     return { accepted: true, fact: cloneFact(settled) }
   }
 
@@ -221,12 +229,24 @@ export class ActivityRegistry {
     const current = this.lookup(activityId)
     if (!current) return false
     this.erase(current)
+    this.emitChange(current, undefined)
     return true
   }
 
   removeByWorkspace(workspaceName: string): void {
     for (const fact of [...this.facts.values()]) {
-      if (fact.workspaceName === workspaceName) this.erase(fact)
+      if (fact.workspaceName === workspaceName) {
+        this.erase(fact)
+        this.emitChange(fact, undefined)
+      }
+    }
+    this.notify({ type: 'clear_workspace', workspaceName })
+  }
+
+  subscribe(listener: ActivityMutationListener): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
     }
   }
 
@@ -248,14 +268,14 @@ export class ActivityRegistry {
   }
 
   replaceAll(facts: readonly ActivityFact[]): void {
-    this.reset()
+    this.clearTables()
     for (const fact of facts) this.put(cloneFact(fact))
+    this.notify({ type: 'rebuild', facts: this.snapshot() })
   }
 
   reset(): void {
-    this.facts.clear()
-    this.sessionIndex.clear()
-    this.aliases.clear()
+    this.clearTables()
+    this.notify({ type: 'reset' })
   }
 
   private lookup(id: string): ActivityFact | undefined {
@@ -281,13 +301,33 @@ export class ActivityRegistry {
   }
 
   private commit(current: ActivityFact, patch: Partial<ActivityFact>): ActivityApplyResult {
+    const prev = cloneFact(current)
     const next: ActivityFact = {
       ...current,
       ...patch,
       sequence: current.sequence + 1,
     }
     this.put(next)
+    this.emitChange(prev, next)
     return { accepted: true, fact: cloneFact(next) }
+  }
+
+  private emitChange(prev: ActivityFact | undefined, next: ActivityFact | undefined): void {
+    this.notify({
+      type: 'change',
+      prev: prev ? cloneFact(prev) : undefined,
+      next: next ? cloneFact(next) : undefined,
+    })
+  }
+
+  private notify(mutation: ActivityMutation): void {
+    for (const listener of this.listeners) listener(mutation)
+  }
+
+  private clearTables(): void {
+    this.facts.clear()
+    this.sessionIndex.clear()
+    this.aliases.clear()
   }
 
   private put(fact: ActivityFact): void {
@@ -313,6 +353,7 @@ export class ActivityRegistry {
 }
 
 let workspaceNameOf = (workspacePath: string): string => workspacePath
+let ownerOf = (_sessionId: string): ActivityOwner | undefined => undefined
 
 export function setActivityWorkspaceNameResolver(
   fn: ((workspacePath: string) => string) | null,
@@ -324,8 +365,20 @@ export function resolveActivityWorkspaceName(workspacePath: string): string {
   return workspaceNameOf(workspacePath)
 }
 
+export function setActivityOwnerResolver(
+  fn: ((sessionId: string) => ActivityOwner | undefined) | null,
+): void {
+  ownerOf = fn ?? (() => undefined)
+}
+
+export function resolveActivityOwner(sessionId: string): ActivityOwner | undefined {
+  return ownerOf(sessionId)
+}
+
 export const activityRegistry = new ActivityRegistry()
 
 export function resetActivityRegistryForTests(): void {
   activityRegistry.reset()
+  setActivityWorkspaceNameResolver(null)
+  setActivityOwnerResolver(null)
 }

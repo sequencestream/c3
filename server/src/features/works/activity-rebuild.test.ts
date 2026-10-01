@@ -10,7 +10,9 @@ import type { SessionKind } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   activityRegistry,
+  badgeProjection,
   resetActivityRegistryForTests,
+  setActivityOwnerResolver,
   setActivityWorkspaceNameResolver,
 } from '../../kernel/activity/index.js'
 import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
@@ -22,7 +24,7 @@ import {
   resetStoreForTests as resetAutomationStoreForTests,
 } from '../automations/store.js'
 import { listActiveSessionsForWorkspace } from './active-workspace-sessions.js'
-import { rebuildActivityRegistry } from './activity-rebuild.js'
+import { lookupActivityOwner, rebuildActivityRegistry } from './activity-rebuild.js'
 
 let dir: string
 let proj: string
@@ -44,6 +46,7 @@ beforeEach(() => {
   resetStateCacheForTests()
   resetActivityRegistryForTests()
   setActivityWorkspaceNameResolver((p) => pathToName(p) ?? p)
+  setActivityOwnerResolver(lookupActivityOwner)
   proj = join(dir, 'proj')
   mkdirSync(proj)
   addWorkspace(proj, 1)
@@ -193,5 +196,31 @@ describe('rebuildActivityRegistry', () => {
     expect(runningIdsFromRegistry()).toEqual(['a-run', 'b-run'])
     expect(runningIdsFromFacts(proj)).toEqual(['a-run'])
     expect(runningIdsFromFacts(other)).toEqual(['b-run'])
+  })
+})
+
+describe('badge projection rebuild matches incremental writes', () => {
+  it('full rebuild and incremental facts produce the same workspace summary', () => {
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    row('i-run', 'intent', { ownerKind: 'intent', ownerId: 'intent-1' })
+    startRun('i-run', proj, 'intent')
+    const logOnly = seedLlmAutomation('auto-log')
+    seedRunningLog(logOnly, 'auto-log')
+    const both = seedLlmAutomation('auto-both')
+    seedRunningLog(both, 'auto-both')
+    startRun('auto-both', proj, 'automation')
+
+    const incremental = badgeProjection.summaryFor(workspaceName)
+    expect(incremental.runningSessions).toBe(runningIdsFromFacts(proj).length)
+
+    rebuildActivityRegistry()
+    expect(badgeProjection.summaryFor(workspaceName)).toEqual(incremental)
+    expect(badgeProjection.summaryFor(workspaceName).runningSessions).toBe(4)
+    expect(badgeProjection.summaryFor(workspaceName).activeOwners).toEqual({
+      intents: 1,
+      discussions: 0,
+      automations: 2,
+    })
   })
 })

@@ -13,6 +13,7 @@ import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   activityRegistry,
   resolveActivityWorkspaceName,
+  setActivityOwnerResolver,
   setActivityWorkspaceNameResolver,
 } from '../kernel/activity/index.js'
 import { lookupActivityOwner } from '../features/works/activity-rebuild.js'
@@ -20,6 +21,7 @@ import { pathToName } from '../state.js'
 
 export function registerActivityRegistry(eventBus: EventBus<EventBusEvents>): void {
   setActivityWorkspaceNameResolver((workspacePath) => pathToName(workspacePath) ?? workspacePath)
+  setActivityOwnerResolver(lookupActivityOwner)
 
   eventBus.subscribe('run:started', (e) => {
     if (e.sessionKind === 'automation') return

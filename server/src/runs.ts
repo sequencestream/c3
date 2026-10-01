@@ -36,6 +36,7 @@ import type { RunHandle } from './kernel/agent/index.js'
 import {
   activityRegistry,
   mapSessionStatusToActivityState,
+  resolveActivityOwner,
   resolveActivityWorkspaceName,
 } from './kernel/activity/index.js'
 
@@ -431,16 +432,19 @@ function syncRuntimeActivity(rt: SessionRuntime): void {
     return
   }
   const existing = activityRegistry.getBySessionId(rt.sessionId)
+  const owner = resolveActivityOwner(rt.sessionId)
   if (!existing) {
     activityRegistry.start({
       activityId: rt.sessionId,
       sessionId: rt.sessionId,
       workspaceName: resolveActivityWorkspaceName(rt.workspacePath),
       sessionKind: rt.sessionKind,
+      owner,
       state,
     })
     return
   }
+  if (owner && !existing.owner) activityRegistry.setOwner(rt.sessionId, owner)
   if (existing.state !== state) {
     activityRegistry.transition(rt.sessionId, state)
   }

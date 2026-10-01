@@ -66,3 +66,31 @@ export interface ActivityRegistryClock {
   now: () => number
   generation: () => string
 }
+
+export interface WorkspaceActivitySummary {
+  runningSessions: number
+  runningSessionsByKind: Partial<Record<SessionKind, number>>
+  activeOwners: {
+    intents: number
+    discussions: number
+    automations: number
+  }
+  attention: {
+    awaitingPermission: number
+    pendingUserTasks: number
+    actionableDeliveries: number
+  }
+}
+
+export interface BadgeProjectionSnapshot {
+  revision: number
+  workspaces: Record<string, WorkspaceActivitySummary>
+}
+
+export type ActivityMutation =
+  | { type: 'change'; prev?: ActivityFact; next?: ActivityFact }
+  | { type: 'rebuild'; facts: readonly ActivityFact[] }
+  | { type: 'reset' }
+  | { type: 'clear_workspace'; workspaceName: string }
+
+export type ActivityMutationListener = (mutation: ActivityMutation) => void

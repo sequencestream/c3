@@ -3,6 +3,7 @@
  */
 import { addWorkspace, removeWorkspace, resolveWorkspaceRoot } from '../../state.js'
 import { getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
+import { activityRegistry } from '../../kernel/activity/index.js'
 import { isStoreAvailable as isAutomationStoreAvailable } from '../automations/store.js'
 import { onWorkspaceRemoved } from '../automations/archiver.js'
 import { requireAdmin } from '../auth/authz.js'
@@ -60,6 +61,7 @@ export const removeWorkspaceHandler: Handler<'remove_workspace'> = (ctx, conn, m
   if (!abs) return
   // Tear down any background runs under this workspace.
   removeRuntimesForWorkspace(abs)
+  activityRegistry.removeByWorkspace(msg.workspaceName)
   // Pause all automations under this workspace (SCH-R1).
   if (isAutomationStoreAvailable()) {
     onWorkspaceRemoved(abs)

@@ -56,19 +56,14 @@ import { listCommands } from '../../commands.js'
 import { loadHistoryForVendor } from '../sessions/history.js'
 import {
   getByC3Id,
-  listForWorkspace,
   listOwnedForWorkspace,
   upsertPendingRow,
 } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { findDiscussionByResearchSessionId } from '../discussions/store.js'
-import {
-  countRunningAutomationSessions,
-  runningAutomationIdsForWorkspace,
-} from '../automations/store.js'
-import { countActiveSessionsForWorkspace } from './active-workspace-sessions.js'
+import { runningAutomationIdsForWorkspace } from '../automations/store.js'
+import { badgeProjection, type WorkspaceActivitySummary } from '../../kernel/activity/index.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
-import { sessionKindsForCategory } from '../../kernel/agent/session/list-sessions.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -135,32 +130,36 @@ export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) =>
   })
 }
 
-const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus' | 'robot'>[] = [
-  'work',
-  'intent',
-  'spec',
-  'spec_review',
-  'discussion',
-  'automation',
-  'tool',
-]
-
 /**
- * The display categories the session page actually offers. `spec_review` has no
- * category of its own — its sessions are listed and counted under `spec`
- * ({@link sessionKindsForCategory}) — so it is not iterated here; its wire count
- * field stays at 0 so neither an old nor a new client can turn it into a second
- * visible badge or double-count it in the top-bar total. `robot` is excluded one
- * level up ({@link SESSION_PAGE_KINDS}): an IM robot's sessions are not addressed
- * from any workspace, so the page has nowhere to show them.
+ * Map a workspace activity summary onto the session-page wire counts.
+ * `spec` aggregates authoring + review; `spec_review` stays 0 so it cannot
+ * become a second visible badge. `tool` follows the display switch. consensus
+ * and robot are omitted from page categories but remain in runningSessions.
  */
-const SESSION_PAGE_CATEGORIES: readonly Exclude<
-  SessionKind,
-  'consensus' | 'spec_review' | 'robot'
->[] = SESSION_PAGE_KINDS.filter(
-  (kind): kind is Exclude<SessionKind, 'consensus' | 'spec_review' | 'robot'> =>
-    kind !== 'spec_review',
-)
+export function sessionCountsFromSummary(summary: WorkspaceActivitySummary): {
+  counts: Record<Exclude<SessionKind, 'consensus' | 'robot'>, number>
+  ownerCounts: Record<SessionOwnerKind, number>
+  runningSessionCount: number
+} {
+  const byKind = summary.runningSessionsByKind
+  return {
+    counts: {
+      work: byKind.work ?? 0,
+      intent: byKind.intent ?? 0,
+      spec: (byKind.spec ?? 0) + (byKind.spec_review ?? 0),
+      spec_review: 0,
+      discussion: byKind.discussion ?? 0,
+      automation: byKind.automation ?? 0,
+      tool: getShowToolSessions() ? (byKind.tool ?? 0) : 0,
+    },
+    ownerCounts: {
+      intent: summary.activeOwners.intents,
+      discussion: summary.activeOwners.discussions,
+      automation: summary.activeOwners.automations,
+    },
+    runningSessionCount: summary.runningSessions,
+  }
+}
 
 /**
  * Running **business item** counts of a workspace, deduplicated by owner: an
@@ -207,38 +206,12 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
     })
     return
   }
-  // `spec` is the aggregated「规范」badge: running spec authoring + spec review
-  // sessions, each real session counted once. `spec_review` is kept on the wire
-  // for shape compatibility but stays 0 — it is not a visible category, and a
-  // non-zero value would double-count those sessions in the top-bar total.
-  const counts = {
-    work: 0,
-    intent: 0,
-    spec: 0,
-    spec_review: 0,
-    discussion: 0,
-    automation: 0,
-    tool: 0,
-  }
-  for (const kind of SESSION_PAGE_CATEGORIES) {
-    if (kind === 'tool' && !getShowToolSessions()) continue
-    counts[kind] =
-      kind === 'automation'
-        ? countRunningAutomationSessions(abs)
-        : listForWorkspace(abs, sessionKindsForCategory(kind)).filter((row) =>
-            isRunning(row.vendorSessionId ?? row.c3Id),
-          ).length
-  }
-  // Workspace 级「运行中会话数」:与 Dashboard 共用同一活动集合(非空闲 runtime ∪
-  // 在途自动化执行会话,按 session id 去重)。它与 counts(按 kind 分桶)、ownerCounts
-  // (按 owner 去重)是三个互不替代的数,谁也不等于谁。纯内存派生,随本帧下发。
-  const runningSessionCount = countActiveSessionsForWorkspace(abs)
+  const workspaceName = pathToName(abs)!
+  const mapped = sessionCountsFromSummary(badgeProjection.summaryFor(workspaceName))
   conn.send({
     type: 'session_counts',
-    workspaceName: pathToName(abs)!,
-    counts,
-    ownerCounts: countRunningOwners(abs),
-    runningSessionCount,
+    workspaceName,
+    ...mapped,
   })
 }
 

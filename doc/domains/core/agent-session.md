@@ -165,7 +165,7 @@ stateDiagram-v2
 
 **session-registry** 播种工作目录、每会话模式与 resume id。本域拥有进程级 Session Runtime:运行句柄、回放用的 baseline + buffer、当前 viewers 与状态([ADR 0006](../../architecture/adr/0006-decouple-runs-from-connections.md))。pending→真实 id 绑定时,buffer、viewers 与在途 run 一起搬到新键上，活动注册表上的同一条事实也原子迁移。公开 `c3SessionId` 必须解析到同一原生 runtime,不能另开冷会话。
 
-**活动状态注册表** 镜像本域的实时活动:开始、权限等待、team parked、落定与删除。它不是第二份 Runtime，也不能替代事件总线；当前活动从这里查询，并必须能从 Runtime 与在途自动化执行重建。
+**活动状态注册表** 镜像本域的实时活动:开始、权限等待、team parked、落定与删除。它不是第二份 Runtime，也不能替代事件总线；当前活动从这里查询，并必须能从 Runtime 与在途自动化执行重建。**角标投影**从这些活动事实维护 Workspace、种类与 owner 集合，会话计数入口读投影（[ADR 0051](../../architecture/adr/0051-badge-projection-from-activity-sets.md)）。
 
 **permission-gateway** 是敏感工具的阻塞点。具备逐工具审批的厂商(Claude)在回合内把调用交给网关;不具备的厂商(Codex、Cursor)把门控落在启动策略上,审批桥不触发。待决请求跟 run 走,不跟连接走。
 

@@ -41,7 +41,7 @@ import { eventTypeMatches } from '../../kernel/events/event-match.js'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { getTimezone } from '../../kernel/config/index.js'
-import { activityRegistry } from '../../kernel/activity/index.js'
+import { activityRegistry, resolveActivityWorkspaceName } from '../../kernel/activity/index.js'
 import { getRuntime } from '../../runs.js'
 import { fallbackName } from './naming.js'
 import { ensureAutomationSchema } from './store-migrations.js'
@@ -894,9 +894,9 @@ function syncAutomationLogActivity(
   activityRegistry.start({
     activityId: sessionId,
     sessionId,
-    workspaceName: automation.workspaceName,
+    workspaceName: resolveActivityWorkspaceName(automation.workspaceName),
     sessionKind: 'automation',
-    owner: { kind: 'automation', id: automationId },
+    owner: automation.type === 'llm' ? { kind: 'automation', id: automationId } : undefined,
     state: 'running',
   })
 }

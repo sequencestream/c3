@@ -11,11 +11,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerToClient, SessionKind } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
+import {
+  resetActivityRegistryForTests,
+  setActivityOwnerResolver,
+  setActivityWorkspaceNameResolver,
+} from '../../kernel/activity/index.js'
 import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
 import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { countRunningOwners, getSessionCounts } from './index.js'
+import { lookupActivityOwner } from './activity-rebuild.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
 import {
   appendExecutionLog,
@@ -56,6 +62,9 @@ beforeEach(() => {
   resetDiscussions()
   resetSettingsCacheForTests()
   resetStateCacheForTests()
+  resetActivityRegistryForTests()
+  setActivityWorkspaceNameResolver((p) => pathToName(p) ?? p)
+  setActivityOwnerResolver(lookupActivityOwner)
   proj = join(dir, 'proj')
   mkdirSync(proj)
   addWorkspace(proj, 1)
@@ -68,6 +77,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const id of startedRuntimes) removeRuntime(id)
   startedRuntimes.length = 0
+  resetActivityRegistryForTests()
   resetDbForTests()
   resetStoreForTests()
   resetAutomationStoreForTests()
@@ -249,11 +259,11 @@ describe('种类计入矩阵 — 会话页分类 vs 工作区总数', () => {
     expect(msg.runningSessionCount).toBe(1)
   })
 
-  it('自动化分类走执行日志;仅有活跃 run、没有 running 日志时分类为 0', () => {
+  it('自动化分类取活动集合的 automation 分桶;仅有活跃 run 时分类与工作区总数都计 1', () => {
     seedLlmAutomation('auto-rt')
     startRun('auto-rt', proj, 'automation')
     const msg = sessionCountsMsg()
-    expect(msg.counts.automation).toBe(0)
+    expect(msg.counts.automation).toBe(1)
     expect(msg.runningSessionCount).toBe(1)
   })
 

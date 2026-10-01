@@ -4,12 +4,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
+import {
+  resetActivityRegistryForTests,
+  setActivityOwnerResolver,
+  setActivityWorkspaceNameResolver,
+} from '../../kernel/activity/index.js'
 import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
 import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import type { SessionKind } from '@ccc/shared/protocol'
 import { countRunningOwners, getSessionCounts } from './index.js'
+import { lookupActivityOwner } from './activity-rebuild.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
 import {
   appendExecutionLog,
@@ -36,6 +42,9 @@ beforeEach(() => {
   resetAutomationStoreForTests()
   resetSettingsCacheForTests()
   resetStateCacheForTests()
+  resetActivityRegistryForTests()
+  setActivityWorkspaceNameResolver((p) => pathToName(p) ?? p)
+  setActivityOwnerResolver(lookupActivityOwner)
   proj = join(dir, 'proj')
   mkdirSync(proj)
   addWorkspace(proj, 1)
@@ -50,6 +59,7 @@ afterEach(() => {
   removeRuntime('tool-running')
   for (const id of startedRuntimes) removeRuntime(id)
   startedRuntimes.length = 0
+  resetActivityRegistryForTests()
   resetDbForTests()
   resetStoreForTests()
   resetAutomationStoreForTests()

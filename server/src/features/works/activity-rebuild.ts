@@ -13,13 +13,35 @@ import {
 } from '../../kernel/activity/index.js'
 import { listAllNonIdleRuntimes } from '../../runs.js'
 import { listWorkspaces, pathToName } from '../../state.js'
-import { runningAutomationSessionIdsForWorkspace } from '../automations/store.js'
+import {
+  runningAutomationIdsForWorkspace,
+  runningAutomationSessionIdsForWorkspace,
+} from '../automations/store.js'
 import { getBoundByVendorSessionId, getByC3Id } from '../sessions/session-metadata-store.js'
 
 export function lookupActivityOwner(sessionId: string): ActivityOwner | undefined {
   const row = getBoundByVendorSessionId(sessionId) ?? getByC3Id(sessionId)
   if (!row?.ownerKind || !row.ownerId) return undefined
+  // Automation owners come from displayable running executions, not from a
+  // session merely being owned by an automation.
+  if (row.ownerKind === 'automation') return undefined
   return { kind: row.ownerKind, id: row.ownerId }
+}
+
+function lookupDisplayableAutomationOwner(
+  sessionId: string,
+  workspacePath: string,
+): ActivityOwner | undefined {
+  const row = getBoundByVendorSessionId(sessionId) ?? getByC3Id(sessionId)
+  if (row?.ownerKind !== 'automation' || !row.ownerId) return undefined
+  if (!runningAutomationIdsForWorkspace(workspacePath).includes(row.ownerId)) return undefined
+  return { kind: 'automation', id: row.ownerId }
+}
+
+function ownerForRebuild(sessionId: string, workspacePath: string): ActivityOwner | undefined {
+  return (
+    lookupActivityOwner(sessionId) ?? lookupDisplayableAutomationOwner(sessionId, workspacePath)
+  )
 }
 
 export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[] {
@@ -37,7 +59,7 @@ export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[
       sessionId: rt.sessionId,
       workspaceName: pathToName(rt.workspacePath) ?? resolveActivityWorkspaceName(rt.workspacePath),
       sessionKind: rt.sessionKind,
-      owner: lookupActivityOwner(rt.sessionId),
+      owner: ownerForRebuild(rt.sessionId, rt.workspacePath),
       state,
       updatedAt: now,
     })
@@ -54,7 +76,7 @@ export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[
         sessionId,
         workspaceName: workspace.name,
         sessionKind: 'automation',
-        owner: lookupActivityOwner(sessionId),
+        owner: ownerForRebuild(sessionId, workspace.path),
         state: 'running',
         updatedAt: now,
       })

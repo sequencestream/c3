@@ -32,3 +32,5 @@ desktop/src-tauri/gen/
 desktop/src-tauri/binaries/*
 !desktop/src-tauri/binaries/.gitkeep
 desktop/src-tauri/tauri.release.json
+
+.work/

@@ -2,7 +2,8 @@
  * Activity-badge口径契约:冻结每个数字的当前含义,并用预期失败用例表达已知缺陷。
  *
  * 三个互不替代的数:`counts`(会话页分类)、`ownerCounts`(条目去重)、
- * `runningSessionCount`(工作区竖条)。Dashboard `sessions.running` 是第四个入口。
+ * `runningSessionCount`(工作区竖条)。后者与 Dashboard `sessions.running` 共用
+ * 同一活动集合。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -256,12 +257,12 @@ describe('种类计入矩阵 — 会话页分类 vs 工作区总数', () => {
     expect(msg.runningSessionCount).toBe(1)
   })
 
-  it('仅有执行日志的自动化计入分类角标,当前不计入工作区总数', () => {
+  it('仅有执行日志的自动化同时计入分类角标与工作区总数', () => {
     const id = seedLlmAutomation('auto-log')
     seedRunningLog(id, 'auto-log')
     const msg = sessionCountsMsg()
     expect(msg.counts.automation).toBe(1)
-    expect(msg.runningSessionCount).toBe(0)
+    expect(msg.runningSessionCount).toBe(1)
   })
 })
 
@@ -300,26 +301,19 @@ describe('自动化 Runtime 与执行日志并集', () => {
     expect(dashboardRunning()).toBe(1)
   })
 
-  it('仅执行日志的自动化,Dashboard 计入、session_counts 当前不计', () => {
-    const id = seedLlmAutomation('auto-log-only')
-    seedRunningLog(id, 'auto-log-only')
-    expect(sessionCountsMsg().runningSessionCount).toBe(0)
-    expect(dashboardRunning()).toBe(1)
-  })
-})
-
-describe('已知缺陷 — 目标口径(当前失败)', () => {
-  it.fails('仅有执行日志的自动化会话计入 runningSessionCount', () => {
+  it('仅执行日志的自动化,runningSessionCount 与 Dashboard 都计 1', () => {
     const id = seedLlmAutomation('auto-log-only')
     seedRunningLog(id, 'auto-log-only')
     expect(sessionCountsMsg().runningSessionCount).toBe(1)
+    expect(dashboardRunning()).toBe(1)
   })
 
-  it.fails('同一工作区 runningSessionCount 与 Dashboard.sessions.running 一致', () => {
+  it('同一工作区 runningSessionCount 与 Dashboard.sessions.running 一致', () => {
     row('w-run', 'work')
     startRun('w-run', proj, 'work')
     const id = seedLlmAutomation('auto-log-only')
     seedRunningLog(id, 'auto-log-only')
+    expect(sessionCountsMsg().runningSessionCount).toBe(2)
     expect(sessionCountsMsg().runningSessionCount).toBe(dashboardRunning())
   })
 })

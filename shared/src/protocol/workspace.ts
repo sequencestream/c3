@@ -435,9 +435,9 @@ export interface WorkspaceDashboardRow {
   path: string
   /**
    * `total`: all real (`bound=1`) session projections across every `SessionKind`.
-   * `running`: distinct live sessions — non-idle runtimes plus automation sessions
-   * with a running execution log, de-duplicated by session id (idle / completed /
-   * failed / terminated never counted).
+   * `running`: the workspace activity set — non-idle runtimes plus automation
+   * sessions with a running execution log, de-duplicated by session id. Same
+   * number as `session_counts.runningSessionCount` for this workspace.
    */
   sessions: { running: number; total: number }
   /** All intent rows in the workspace (no status or time filter). */

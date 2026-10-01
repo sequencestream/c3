@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
-import { ensureRuntime, removeRuntime } from '../../runs.js'
+import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import type { SessionKind } from '@ccc/shared/protocol'
@@ -66,12 +66,14 @@ afterEach(() => {
 /** Runtime ids started by the owner-count tests, torn down in `afterEach`. */
 const startedRuntimes: string[] = []
 
-/** Mark a session as running the way `isRunning` observes it (a live run handle). */
+/** Mark a session as running the way activity queries observe it (live handle + status). */
 function startRun(sessionId: string, workspacePath: string, kind: SessionKind): void {
-  ensureRuntime(sessionId, workspacePath, 'default', [], kind).run = {
+  const rt = ensureRuntime(sessionId, workspacePath, 'default', [], kind)
+  rt.run = {
     abort: new AbortController(),
     handle: null,
   }
+  setStatus(sessionId, 'running')
   startedRuntimes.push(sessionId)
 }
 
@@ -193,26 +195,11 @@ describe('getSessionCounts', () => {
       ownerId: 'intent-4',
     })
 
-    ensureRuntime('work-running', proj, 'default', [], 'work').run = {
-      abort: new AbortController(),
-      handle: null,
-    }
-    ensureRuntime('spec-running', proj, 'default', [], 'spec').run = {
-      abort: new AbortController(),
-      handle: null,
-    }
-    ensureRuntime('intent-running', proj, 'default', [], 'intent').run = {
-      abort: new AbortController(),
-      handle: null,
-    }
-    ensureRuntime('discussion-running', proj, 'default', [], 'discussion').run = {
-      abort: new AbortController(),
-      handle: null,
-    }
-    ensureRuntime('tool-running', proj, 'default', [], 'tool').run = {
-      abort: new AbortController(),
-      handle: null,
-    }
+    startRun('work-running', proj, 'work')
+    startRun('spec-running', proj, 'spec')
+    startRun('intent-running', proj, 'intent')
+    startRun('discussion-running', proj, 'discussion')
+    startRun('tool-running', proj, 'tool')
 
     const { conn, sent } = fakeConn()
     getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceName })
@@ -233,10 +220,10 @@ describe('getSessionCounts', () => {
         // 条目口径:intent-1(spec 会话)、intent-3(意图会话)、intent-4(隐藏的 tool
         // 会话仍驱动其 owner)= 3;discussion-1 的两个会话去重后 = 1;automation = 1。
         ownerCounts: { intent: 3, discussion: 1, automation: 1 },
-        // workspace 级口径:work/spec/intent/discussion/tool 五个真实会话都在跑
-        // (spec-idle、discussion-idle 不计),automation 由执行日志驱动而非活跃 run,
-        // 故不计入 —— 与 ownerCounts 的 5 是两个不同的数。
-        runningSessionCount: 5,
+        // workspace 级口径:与 Dashboard 同一活动集合。work/spec/intent/discussion/tool
+        // 五个非空闲 runtime,加上仅有执行日志的 automation,去重后 = 6。
+        // spec-idle、discussion-idle 不计。与 ownerCounts 的 5 是两个不同的数。
+        runningSessionCount: 6,
       },
     ])
 
@@ -301,9 +288,9 @@ describe('getSessionCounts — 规范聚合', () => {
   })
 })
 
-// Workspace 级「运行中会话数」:跨所有 SessionKind 求和的同一套运行态判定,不分桶、
-// 不受 showToolSessions 影响,与 counts(按 kind 分桶)、ownerCounts(按 owner 去重)
-// 是三个互不替代的数。
+// Workspace 级「运行中会话数」:与 Dashboard 共用同一活动集合(非空闲 runtime ∪
+// 在途自动化执行会话),不分桶、不受 showToolSessions 影响,与 counts(按 kind
+// 分桶)、ownerCounts(按 owner 去重)是三个互不替代的数。
 describe('getSessionCounts — 每 workspace 运行中会话数', () => {
   function countOf(sent: ServerToClient[]): number | undefined {
     const msg = sent[0] as Extract<ServerToClient, { type: 'session_counts' }>

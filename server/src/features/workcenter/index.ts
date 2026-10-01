@@ -22,14 +22,11 @@ import type {
 import type { UiError } from '@ccc/shared/ui-codes'
 import type { Handler } from '../../transport/handler-registry.js'
 import { listWorkspaces, pathToName, resolveWorkspaceRoot } from '../../state.js'
-import { runningCountForWorkspace, runningRuntimeSessionIdsForWorkspace } from '../../runs.js'
+import { runningCountForWorkspace } from '../../runs.js'
 import { countByStatusInRange as countIntentsByStatus } from '../intents/store.js'
 import { countByStatusInRange as countDiscussionsByStatus } from '../discussions/store.js'
-import {
-  countAutomationsInRange,
-  countRunningAutomations,
-  runningAutomationSessionIdsForWorkspace,
-} from '../automations/store.js'
+import { countAutomationsInRange, countRunningAutomations } from '../automations/store.js'
+import { countActiveSessionsForWorkspace } from '../works/active-workspace-sessions.js'
 import { countRealInRange, countBoundSessions } from '../sessions/session-metadata-store.js'
 import { getDb } from '../../kernel/infra/db.js'
 import {
@@ -89,17 +86,6 @@ function sumCounts(byStatus: Record<string, number>): number {
   return total
 }
 
-/**
- * The live count of a workspace's running sessions: the union (de-duplicated by
- * session id) of non-idle runtimes and automation sessions with a running
- * execution log. A session backed by BOTH surfaces counts once.
- */
-function runningSessionCount(workspacePath: string): number {
-  const ids = new Set(runningRuntimeSessionIdsForWorkspace(workspacePath))
-  for (const id of runningAutomationSessionIdsForWorkspace(workspacePath)) ids.add(id)
-  return ids.size
-}
-
 /** Aggregate one workspace's Dashboard row. Throws if its path cannot be resolved. */
 function dashboardRow(ws: WorkspaceInfo): WorkspaceDashboardRow {
   const path = resolveWorkspaceRoot(ws.name)
@@ -109,7 +95,7 @@ function dashboardRow(ws: WorkspaceInfo): WorkspaceDashboardRow {
     name: ws.name,
     path: ws.path,
     sessions: {
-      running: runningSessionCount(path),
+      running: countActiveSessionsForWorkspace(path),
       total: countBoundSessions(path),
     },
     intents: { total: sumCounts(countIntentsByStatus(path)) },

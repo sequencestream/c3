@@ -220,10 +220,12 @@ export type ServerSessionCounts = {
    */
   ownerCounts: Record<SessionOwnerKind, number>
   /**
-   * Total number of real (bound) sessions of this workspace that are currently
-   * running, summed across every {@link SessionKind} — including tool /
-   * spec_review / consensus / robot, and unaffected by the tool-session display
-   * switch. Independent of the `counts` buckets and NOT the same number as
+   * Total number of currently active sessions of this workspace — the union of
+   * non-idle runtimes and automation sessions with a running execution log,
+   * de-duplicated by session id, across every {@link SessionKind} (including
+   * tool / spec_review / consensus / robot) and unaffected by the tool-session
+   * display switch. Same set as Workcenter Dashboard `sessions.running`.
+   * Independent of the `counts` buckets and NOT the same number as
    * `ownerCounts` (which deduplicates by owner); the three never replace or add
    * up to one another.
    *

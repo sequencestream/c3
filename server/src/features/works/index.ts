@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { CodexPolicy, ModeToken, PermissionMode, SessionKind } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, SESSION_KINDS } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { isImageMediaType } from '@ccc/shared'
 import {
   addViewer,
@@ -66,6 +66,7 @@ import {
   countRunningAutomationSessions,
   runningAutomationIdsForWorkspace,
 } from '../automations/store.js'
+import { countActiveSessionsForWorkspace } from './active-workspace-sessions.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { sessionKindsForCategory } from '../../kernel/agent/session/list-sessions.js'
 import { errMsg } from '../errmsg.js'
@@ -228,12 +229,10 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
             isRunning(row.vendorSessionId ?? row.c3Id),
           ).length
   }
-  // Workspace 级「运行中会话数」:跨所有 SessionKind 求和的同一套运行态判定,不分桶、
-  // 不受 showToolSessions 影响。它与 counts(按 kind 分桶)、ownerCounts(按 owner 去重)
-  // 是三个互不替代的数,谁也不等于谁。纯内存派生,随本帧下发。
-  const runningSessionCount = listForWorkspace(abs, SESSION_KINDS).filter((row) =>
-    isRunning(row.vendorSessionId ?? row.c3Id),
-  ).length
+  // Workspace 级「运行中会话数」:与 Dashboard 共用同一活动集合(非空闲 runtime ∪
+  // 在途自动化执行会话,按 session id 去重)。它与 counts(按 kind 分桶)、ownerCounts
+  // (按 owner 去重)是三个互不替代的数,谁也不等于谁。纯内存派生,随本帧下发。
+  const runningSessionCount = countActiveSessionsForWorkspace(abs)
   conn.send({
     type: 'session_counts',
     workspaceName: pathToName(abs)!,

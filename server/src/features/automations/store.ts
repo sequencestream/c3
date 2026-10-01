@@ -481,10 +481,9 @@ export function runningAutomationIdsForWorkspace(workspacePath: string): string[
 /**
  * The distinct agent session ids of a workspace's automation sessions that
  * currently have a running (`status='running'`) execution log — a live "now"
- * notion, independent of any time range. The Workcenter Dashboard unions these
- * with the non-idle runtime session ids (see `runningRuntimeSessionIdsForWorkspace`)
- * and takes the set size, so a session that is both a live runtime and has a
- * running log counts once. Empty when the db is unavailable.
+ * notion, independent of any time range. The workspace activity set unions these
+ * with non-idle runtime session ids so a session backed by both surfaces counts
+ * once. Empty when the db is unavailable.
  */
 export function runningAutomationSessionIdsForWorkspace(workspacePath: string): string[] {
   const d = db()

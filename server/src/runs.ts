@@ -594,32 +594,48 @@ export function listStatuses(): SessionRunStatus[] {
 }
 
 /**
+ * A live (non-`idle`) runtime in one workspace: identity plus the kind needed
+ * to bucket the same set by SessionKind. `sessionId` is the runtime key, which
+ * matches the vendor-native id stored on automation execution logs.
+ */
+export interface RunningRuntimeRef {
+  sessionId: string
+  sessionKind: SessionKind
+}
+
+/**
+ * Live (non-`idle`) runtimes whose `workspacePath` matches — mid-turn,
+ * awaiting permission, or holding a team lead. Idle ones are omitted. Pure
+ * in-memory registry read (no db). Kind is kept so a caller can classify the
+ * same members that the workspace total counts.
+ */
+export function listRunningRuntimesForWorkspace(workspacePath: string): RunningRuntimeRef[] {
+  const out: RunningRuntimeRef[] = []
+  for (const rt of runtimes.values()) {
+    if (rt.workspacePath === workspacePath && rt.status !== 'idle') {
+      out.push({ sessionId: rt.sessionId, sessionKind: rt.sessionKind })
+    }
+  }
+  return out
+}
+
+/**
  * Count the live (non-`idle`) runtimes whose `workspacePath` matches — the
  * WorkCenter "running sessions" tally for one project. A live-"now" notion: any
  * runtime mid-turn / awaiting permission / holding a team lead counts; idle ones
  * do not. Pure in-memory registry read (no db).
  */
 export function runningCountForWorkspace(workspacePath: string): number {
-  let n = 0
-  for (const rt of runtimes.values()) {
-    if (rt.workspacePath === workspacePath && rt.status !== 'idle') n++
-  }
-  return n
+  return listRunningRuntimesForWorkspace(workspacePath).length
 }
 
 /**
  * The session ids of the live (non-`idle`) runtimes whose `workspacePath` matches.
- * The Workcenter Dashboard unions this with the automation sessions that only have
- * a running execution log (no runtime surface) and takes the set size, so a session
- * backed by BOTH a runtime and a running log is counted once. Returns the raw ids
- * (not a count) precisely so that de-duplication can happen at the union site.
+ * The workspace activity set unions these with automation sessions that only have
+ * a running execution log, so a session backed by both surfaces is counted once.
  */
 export function runningRuntimeSessionIdsForWorkspace(workspacePath: string): string[] {
-  const ids: string[] = []
-  for (const rt of runtimes.values()) {
-    if (rt.workspacePath === workspacePath && rt.status !== 'idle') ids.push(rt.sessionId)
-  }
-  return ids
+  return listRunningRuntimesForWorkspace(workspacePath).map((r) => r.sessionId)
 }
 
 /** Count active worktree-backed dev runtimes across the installation. */

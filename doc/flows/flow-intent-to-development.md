@@ -37,7 +37,7 @@ flowchart TD
 1. **web-console → intent-management。** `open_intent_session` 打开该工作区的沟通会话,并调和每条 `in_progress` 意图(`RM-R4`、`RM-R10`、`RM-R18`)。
 2. **沟通智能体(只读)。** 强制 `default` 模式;可读项目与本项目账本,不可写入、执行、派生子智能体或跑斜杠命令(`RM-R2`、`RM-R3`、`RM-R19`)。
 3. **intent-management。** 人确认后 `save_intents` 落库,新条以 `todo` 起步;人拒绝或校验失败则整批不写(`RM-R5`、`RM-R6`、`RM-R17`、`RM-R20`)。
-4. **可选规格。** `write_spec` 开写入受限的规格会话(`RM-R21`)。SDD 或高影响时,未批准不得开发;人发 `approve_spec` 清闸门、不自行启动;可 `revoke_spec_approval`(`RM-R22`、`RM-R23`、`RM-R33`、`RM-R51`)。
+4. **可选规格。** `write_spec` 开写入受限的规格会话(`RM-R21`)。SDD 或高影响时,未批准不得开发;从未写过规格且已有工作会话时,人工续跑或重启不拦。人发 `approve_spec` 清闸门、不自行启动;可 `revoke_spec_approval`(`RM-R22`、`RM-R23`、`RM-R33`、`RM-R51`)。
 5. **web-console → intent-management。** `start_development` 认领意图,解析交付上下文与依赖后启动后台普通会话(`RM-R8`、`RM-R40`、`RM-R41`、`RM-R42`)。该会话走标准门控循环,断连后仍存活(`AS-R8`)。
 6. **回链。** `select_session` 打开最近工作会话;会话已不存在则提示可重启,不崩溃(`RM-R13`)。
 

@@ -17,7 +17,7 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { GitActionFailureGuidance, Intent, PromptImage } from '@ccc/shared/protocol'
-import { findWriteBlockingDelivery, specGateBlocks } from '@ccc/shared'
+import { findWriteBlockingDelivery, isHighImpactLevel, specGateBlocks } from '@ccc/shared'
 import { ensureRuntime, getRuntime, isRunning } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
 import { loadHistory, sessionExists } from '../../sessions.js'
@@ -265,7 +265,19 @@ function checkWorkAdmission(
   // MANUAL work turn without an approved spec — the spec is reverse-authored
   // from the turn's diff after it settles. Everything else below stays closed,
   // and the automation queue still requires `approved` regardless of mode.
+  //
+  // A second, narrower relaxation covers an intent that NEVER STARTED a spec and
+  // already has a work session: there is no document whose approval could be
+  // asked for, and a continuation (restart / resume) must not be refused over an
+  // approval of nothing. It is deliberately limited to a bound work session and a
+  // never-touched spec, so a fresh intent is still routed through spec authoring,
+  // and a revoked approval (`pending`) still blocks. High impact is never exempt
+  // — a missing spec is exactly what that grade's forced checkpoint stops.
+  const specNeverStarted = intent.specStatus === 'raw' && !intent.specPath && !intent.specSessionId
+  const exemptSpecLessContinuation =
+    specNeverStarted && !!intent.lastWorkSessionId && !isHighImpactLevel(intent.impactLevel)
   if (
+    !exemptSpecLessContinuation &&
     specGateBlocks({
       impactLevel: intent.impactLevel,
       effectiveSpecMode: intent.effectiveSpecMode,

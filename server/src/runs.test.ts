@@ -21,10 +21,14 @@ import {
   setAutomationRunning,
   clearAutomationRunning,
 } from './runs.js'
+import { resetActivityRegistryForTests } from './kernel/activity/index.js'
 
 // The registry is a module-level singleton; clean up the global status hook and
 // any runtimes a test created so cases stay independent.
-afterEach(() => setOnStatusChange(null))
+afterEach(() => {
+  setOnStatusChange(null)
+  resetActivityRegistryForTests()
+})
 
 describe('session-runtime registry', () => {
   it('seeds a runtime once and keeps its baseline on re-ensure', () => {

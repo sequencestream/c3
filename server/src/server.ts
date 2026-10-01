@@ -139,6 +139,7 @@ import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
+import { rebuildActivityRegistry } from './features/works/activity-rebuild.js'
 import { checkDbDriver } from './kernel/infra/db.js'
 import { ensureLegacyImport } from './kernel/config/import-legacy.js'
 import {
@@ -182,6 +183,7 @@ import {
   mountStaticAssets,
   registerRunDomainSubscriptions,
   registerRunLifecycleLogging,
+  registerActivityRegistry,
   startImRobotsWiring,
   startSchedulerWiring,
   stopImRobotsWiring,
@@ -568,6 +570,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // launcher、driver、automation、discussion、一次性内部调用)的启动/退出都被记
   // 录,不依赖各自的调用顺序。
   registerRunLifecycleLogging(eventBus)
+  registerActivityRegistry(eventBus)
 
   // Generic event contract + kernel normalizer registry. Every model-publishable
   // event is routed through `type → normalizer`: a KNOWN type gets its dedicated
@@ -1050,6 +1053,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // Start the automation scheduler after the server is ready.
   startSchedulerWiring({ broadcasts, eventBus })
+  rebuildActivityRegistry()
 
   // Dial out to every enabled chat robot's platform. A robot that cannot connect
   // is a visible, recoverable state; it never blocks startup or the others.

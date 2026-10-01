@@ -146,7 +146,7 @@ stateDiagram-v2
 
 ## 协作
 
-**agent-session.** `llm` 开专用会话并提交提示;`command` 在工作区派生命令。运行生命周期由运行路径发布,本域订阅以驱动事件触发。
+**agent-session.** `llm` 开专用会话并提交提示;`command` 在工作区派生命令。运行生命周期由运行路径发布,本域订阅以驱动事件触发。`llm` 登记为 Session Runtime 后进入活动状态注册表，与普通会话共用同一份当前活动事实。
 
 **session-registry.** 工作区必须已登记;取消登记归档自动化。`llm` 执行声明种类为 `automation` 的投影行。意图接力声明自己的种类,不进「自动化」列([session-registry](session-registry.md) SR-R16)。
 

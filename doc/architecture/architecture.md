@@ -49,8 +49,9 @@ c3 是一个单一本地进程：浏览器经 `/ws` 连入，进程内经厂商�
 - **交付** — 单一自包含二进制（[ADR-0003](adr/0003-single-binary-via-bun-compile.md)）。可选桌面壳把该二进制当 sidecar，WebView 加载其自带前端；壳内无业务逻辑（[ADR-0033](adr/0033-tauri-desktop-shell-sidecar.md)）。
 - **线协议** — 两端共用一份消息联合。见 [websocket-protocol](../shared/api-conventions/websocket-protocol.md)。
 - **session-runtime** — 进程级注册表：运行句柄、回放缓冲、观看者；跨连接共享。
+- **活动状态注册表** — 进程内当前活动事实：generation / sequence 围栏、pending 绑定、只读快照；可从 Runtime 与在途自动化执行重建。与事件总线正交（[ADR-0050](adr/0050-activity-registry-as-current-state.md)）。
 - **Host-CLI launcher** — 厂商无关的宿主探测与健康检查，第一道能力关卡（ADR-0012）。
-- **事件总线** — 进程内发布/订阅。见 [`event-mechanism.md`](event-mechanism.md)（[ADR-0018](adr/0018-event-bus-kernel-layer.md)）。
+- **事件总线** — 进程内发布/订阅。见 [`event-mechanism.md`](event-mechanism.md)（[ADR-0018](adr/0018-event-bus-kernel-layer.md)）。事件表达已发生的事实；当前活动不由总线保存。
 - **relay** — 进程内 provider 枢纽，真钥不离开本进程。见 [`relay-architecture.md`](relay-architecture.md)。
 - **sandbox** — 入选 run 进进程级隔离；驱动不可用则失败、不裸跑。见 [sandbox](../domains/core/sandbox.md) 与 [沙箱架构](sandbox-architecture.md)。
 - **prompt 缓存** — system 与 user turn 分离，稳定前缀才能命中厂商 cache。见 [跨厂商 prompt 缓存](session-scenarios.md)。

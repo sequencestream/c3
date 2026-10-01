@@ -23,3 +23,4 @@ export { startSchedulerWiring, stopSchedulerWiring } from './scheduler-startup.j
 export { startImRobotsWiring, stopImRobotsWiring } from './im-startup.js'
 export { registerRunDomainSubscriptions } from './run-domain-subscriptions.js'
 export { registerRunLifecycleLogging } from './run-lifecycle-logging.js'
+export { registerActivityRegistry } from './activity-registry.js'

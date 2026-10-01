@@ -18,7 +18,9 @@
  *
  * Status changes (idle / running / awaiting_permission) trigger a single global
  * `onStatusChange` callback; the server broadcasts the new statuses to every
- * connection so sidebars can badge background sessions.
+ * connection so sidebars can badge background sessions. The same transitions
+ * write the in-process activity registry so current-state queries do not have
+ * to scan runtimes after the fact.
  */
 import type {
   CodexPolicy,
@@ -31,6 +33,11 @@ import type {
   TranscriptItem,
 } from '@ccc/shared/protocol'
 import type { RunHandle } from './kernel/agent/index.js'
+import {
+  activityRegistry,
+  mapSessionStatusToActivityState,
+  resolveActivityWorkspaceName,
+} from './kernel/activity/index.js'
 
 export type Viewer = (event: ServerToClient) => void
 
@@ -388,6 +395,7 @@ export function emit(id: string, event: ServerToClient): void {
   }
   if (next && next !== rt.status) {
     rt.status = next
+    syncRuntimeActivity(rt)
     onStatusChange?.()
   }
   // Derive side-channel wire events (task list) from this event. Runs last, after
@@ -416,6 +424,28 @@ export function clearPending(id: string): void {
   runtimes.get(id)?.pending.clear()
 }
 
+function syncRuntimeActivity(rt: SessionRuntime): void {
+  const state = mapSessionStatusToActivityState(rt.status)
+  if (state === 'idle') {
+    activityRegistry.settle(rt.sessionId)
+    return
+  }
+  const existing = activityRegistry.getBySessionId(rt.sessionId)
+  if (!existing) {
+    activityRegistry.start({
+      activityId: rt.sessionId,
+      sessionId: rt.sessionId,
+      workspaceName: resolveActivityWorkspaceName(rt.workspacePath),
+      sessionKind: rt.sessionKind,
+      state,
+    })
+    return
+  }
+  if (existing.state !== state) {
+    activityRegistry.transition(rt.sessionId, state)
+  }
+}
+
 /** Force a runtime's status (e.g. 'running' at run start). Broadcasts if changed. */
 export function setStatus(id: string, status: SessionStatus): void {
   const rt = runtimes.get(id)
@@ -426,6 +456,7 @@ export function setStatus(id: string, status: SessionStatus): void {
   if (status === 'running') rt.sawTurnEnd = false
   if (rt.status === status) return
   rt.status = status
+  syncRuntimeActivity(rt)
   onStatusChange?.()
 }
 
@@ -527,6 +558,7 @@ export function bindPending(pendingId: string, realId: string): void {
     rt.sessionId = realId
     runtimes.set(realId, rt)
   }
+  activityRegistry.bind(pendingId, realId)
 }
 
 /** Abort the in-flight run of a session, if any. The run's teardown clears it. */
@@ -548,6 +580,7 @@ export function removeRuntime(id: string): void {
   }
   rt.run?.abort.abort()
   runtimes.delete(id)
+  activityRegistry.remove(id)
 }
 
 export function isRunning(id: string): boolean {
@@ -601,6 +634,27 @@ export function listStatuses(): SessionRunStatus[] {
 export interface RunningRuntimeRef {
   sessionId: string
   sessionKind: SessionKind
+  workspacePath: string
+  status: SessionStatus
+}
+
+/**
+ * Every live (non-`idle`) runtime in the process: identity, kind, workspace,
+ * and the runtime status the activity registry mirrors.
+ */
+export function listAllNonIdleRuntimes(): RunningRuntimeRef[] {
+  const out: RunningRuntimeRef[] = []
+  for (const rt of runtimes.values()) {
+    if (rt.status !== 'idle') {
+      out.push({
+        sessionId: rt.sessionId,
+        sessionKind: rt.sessionKind,
+        workspacePath: rt.workspacePath,
+        status: rt.status,
+      })
+    }
+  }
+  return out
 }
 
 /**
@@ -610,13 +664,7 @@ export interface RunningRuntimeRef {
  * same members that the workspace total counts.
  */
 export function listRunningRuntimesForWorkspace(workspacePath: string): RunningRuntimeRef[] {
-  const out: RunningRuntimeRef[] = []
-  for (const rt of runtimes.values()) {
-    if (rt.workspacePath === workspacePath && rt.status !== 'idle') {
-      out.push({ sessionId: rt.sessionId, sessionKind: rt.sessionKind })
-    }
-  }
-  return out
+  return listAllNonIdleRuntimes().filter((rt) => rt.workspacePath === workspacePath)
 }
 
 /**
@@ -717,6 +765,7 @@ export function removeRuntimesForWorkspace(workspacePath: string): void {
     if (rt.workspacePath === workspacePath) {
       rt.run?.abort.abort()
       runtimes.delete(id)
+      activityRegistry.remove(id)
     }
   }
 }

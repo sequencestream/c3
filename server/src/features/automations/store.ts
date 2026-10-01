@@ -41,6 +41,8 @@ import { eventTypeMatches } from '../../kernel/events/event-match.js'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { getTimezone } from '../../kernel/config/index.js'
+import { activityRegistry } from '../../kernel/activity/index.js'
+import { getRuntime } from '../../runs.js'
 import { fallbackName } from './naming.js'
 import { ensureAutomationSchema } from './store-migrations.js'
 
@@ -870,6 +872,36 @@ export function pauseAllForWorkspace(workspacePath: string): void {
 }
 
 /**
+ * Mirror a bound, running automation session into the activity registry.
+ * Log-only members (no Session Runtime) would otherwise be invisible until a
+ * full rebuild. A live runtime owns settle; the log only settles when no
+ * non-idle runtime remains for that session id.
+ */
+function syncAutomationLogActivity(
+  automationId: string,
+  sessionId: string | null,
+  status: string | null,
+): void {
+  if (!sessionId || !status) return
+  const automation = getAutomation(automationId)
+  if (!automation) return
+  if (status !== 'running') {
+    const rt = getRuntime(sessionId)
+    if (rt && rt.status !== 'idle') return
+    activityRegistry.settle(sessionId)
+    return
+  }
+  activityRegistry.start({
+    activityId: sessionId,
+    sessionId,
+    workspaceName: automation.workspaceName,
+    sessionKind: 'automation',
+    owner: { kind: 'automation', id: automationId },
+    state: 'running',
+  })
+}
+
+/**
  * Update an execution log's fields (status, output, error, exit_code, finished_at).
  * Only provided fields are changed.
  */
@@ -916,6 +948,8 @@ export function updateExecutionLog(
   if (sets.length === 0) return
   params.push(id)
   d.run(`UPDATE automation_execution_logs SET ${sets.join(', ')} WHERE id=?`, ...params)
+  const log = getExecutionLog(id)
+  if (log) syncAutomationLogActivity(log.automationId, log.sessionId, log.status)
 }
 
 /**
@@ -983,7 +1017,14 @@ export function appendExecutionLog(
   )
   // Refresh the parent automation's updated_at so list ordering reflects activity.
   d.run('UPDATE automations SET updated_at=? WHERE id=?', now, input.automationId)
-  return { id, ...input, status: input.status ?? 'running', sessionId: input.sessionId ?? null }
+  const log: AutomationExecutionLog = {
+    id,
+    ...input,
+    status: input.status ?? 'running',
+    sessionId: input.sessionId ?? null,
+  }
+  syncAutomationLogActivity(log.automationId, log.sessionId, log.status)
+  return log
 }
 
 /** Get a single execution log by id (null if absent or db unavailable). */

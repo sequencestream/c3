@@ -59,6 +59,7 @@ import { completeIntentOnPrsMerged } from '../intents/pr-merge-completion.js'
 import { markQueueDirty } from '../intents/workflow.js'
 import { maybePublishDeliveryReviewRequired } from '../im/broadcast-hooks.js'
 import { deliveryMergeActionable } from './merge-attention.js'
+import { syncDeliveryAttention } from './attention.js'
 import {
   canTransitionDelivery,
   computeTransitionPlan,
@@ -174,6 +175,7 @@ export const listDeliveriesHandler: Handler<'list_deliveries'> = (ctx, conn, msg
     items,
     needsActionCount: countDeliveriesNeedingAction(items, (d) => deliveryMergeActionable(abs, d)),
   })
+  syncDeliveryAttention(abs)
 }
 
 export const createDeliveryHandler: Handler<'create_delivery'> = (ctx, conn, msg) => {

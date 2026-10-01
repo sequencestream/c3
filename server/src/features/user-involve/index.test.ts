@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
   listEventsPage: vi.fn(),
   getEvent: vi.fn(),
   updateStatus: vi.fn(),
+  countTodos: vi.fn(),
+  syncTodoAttention: vi.fn(),
 }))
 
 vi.mock('../../state.js', () => ({
@@ -29,6 +31,11 @@ vi.mock('./store.js', () => ({
   listEventsPage: h.listEventsPage,
   getEvent: h.getEvent,
   updateStatus: h.updateStatus,
+  countTodos: h.countTodos,
+}))
+
+vi.mock('./publish.js', () => ({
+  syncTodoAttention: (...args: unknown[]) => h.syncTodoAttention(...args),
 }))
 
 import { listWaitUserEvents, updateWaitUserEvent } from './index.js'
@@ -42,6 +49,9 @@ beforeEach(() => {
   h.listEventsPage.mockReset()
   h.getEvent.mockReset()
   h.updateStatus.mockReset()
+  h.countTodos.mockReset()
+  h.countTodos.mockReturnValue(0)
+  h.syncTodoAttention.mockReset()
   broadcastWaitUserEvents.mockReset()
 })
 
@@ -86,6 +96,7 @@ describe('listWaitUserEvents', () => {
       },
     ]
     h.listEventsPage.mockReturnValue({ items: events, hasMore: false })
+    h.countTodos.mockReturnValue(2)
     const { conn, sent } = capture()
 
     listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceName: 'ws-1' })
@@ -98,7 +109,15 @@ describe('listWaitUserEvents', () => {
       undefined,
       undefined,
     )
-    expect(sent).toEqual([{ type: 'wait_user_events', items: events, hasMore: false }])
+    expect(sent).toEqual([
+      {
+        type: 'wait_user_events',
+        workspaceName: 'ws-1',
+        items: events,
+        hasMore: false,
+        todoCount: 2,
+      },
+    ])
   })
 
   it('forwards paging inputs to the store', () => {
@@ -119,7 +138,9 @@ describe('listWaitUserEvents', () => {
     const { conn, sent } = capture()
     listWaitUserEvents(KCTX, conn, { type: 'list_wait_user_events', workspaceName: 'ghost' })
     expect(h.listEventsPage).not.toHaveBeenCalled()
-    expect(sent).toEqual([{ type: 'wait_user_events', items: [], hasMore: false }])
+    expect(sent).toEqual([
+      { type: 'wait_user_events', workspaceName: 'ghost', items: [], hasMore: false, todoCount: 0 },
+    ])
   })
 
   it('reports an error when the store is unavailable', () => {

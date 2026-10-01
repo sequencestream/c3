@@ -417,6 +417,49 @@ export function getEventByRequestId(requestId: string): WaitUserInvolveEvent | n
   return row ? toEvent(row) : null
 }
 
+/**
+ * Todo event ids for a workspace. The badge projection indexes this set;
+ * COUNT(todo) is the set size. Independent of list pagination.
+ */
+export function listTodoIds(workspacePath: string): string[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<{ id: string }>(
+      "SELECT id FROM wait_user_involve_events WHERE workspace_name=? AND status='todo' ORDER BY created_at DESC, id DESC",
+      workspaceKey(workspacePath),
+    )
+    .map((row) => row.id)
+}
+
+/** Authoritative COUNT of `todo` events for a workspace. */
+export function countTodos(workspacePath: string): number {
+  const d = db()
+  if (!d) return 0
+  return (
+    d.get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM wait_user_involve_events WHERE workspace_name=? AND status='todo'",
+      workspaceKey(workspacePath),
+    )?.n ?? 0
+  )
+}
+
+/** Todo ids grouped by stored workspace name, for projection rebuild. */
+export function listTodoIdsByWorkspace(): Map<string, string[]> {
+  const d = db()
+  const out = new Map<string, string[]>()
+  if (!d) return out
+  const rows = d.all<{ id: string; workspace_name: string }>(
+    "SELECT id, workspace_name FROM wait_user_involve_events WHERE status='todo'",
+  )
+  for (const row of rows) {
+    const ids = out.get(row.workspace_name)
+    if (ids) ids.push(row.id)
+    else out.set(row.workspace_name, [row.id])
+  }
+  return out
+}
+
 /** Update a single event's status (and `updated_at`). */
 export function updateStatus(id: string, status: WaitUserInvolveStatus): void {
   const d = requireDb()

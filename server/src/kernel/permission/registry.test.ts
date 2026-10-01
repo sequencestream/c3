@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { waitForDecision, waitForAskAnswers, resolveDecision, pendingCount } from './registry.js'
+import {
+  waitForDecision,
+  waitForAskAnswers,
+  resolveDecision,
+  pendingCount,
+  listPendingPermissions,
+  setPendingPermissionsListener,
+} from './registry.js'
 
 describe('permission registry', () => {
   it('resolves with the decision delivered via resolveDecision', async () => {
@@ -130,5 +137,17 @@ describe('permission registry', () => {
     expect(resolveDecision('req-ask-deny', 'deny')).toEqual({ status: 'resolved' })
     await expect(p).resolves.toEqual({ decision: 'deny', answers: undefined })
     expect(pendingCount()).toBe(0)
+  })
+
+  it('lists pending permissions that carry a workspace name', async () => {
+    const listener = vi.fn()
+    setPendingPermissionsListener(listener)
+    const p = waitForDecision('req-ws', undefined, 'ws-a')
+    expect(listPendingPermissions()).toEqual([{ requestId: 'req-ws', workspaceName: 'ws-a' }])
+    expect(listener).toHaveBeenCalledWith([{ requestId: 'req-ws', workspaceName: 'ws-a' }])
+    resolveDecision('req-ws', 'allow')
+    await p
+    expect(listPendingPermissions()).toEqual([])
+    setPendingPermissionsListener(undefined)
   })
 })

@@ -32,12 +32,14 @@ vi.mock('../intents/store.js', () => ({
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   cancelBySessionId,
+  countTodos,
   createEvent,
   getEvent,
   getEventByRequestId,
   isStoreAvailable,
   listEvents,
   listEventsPage,
+  listTodoIds,
   resetStoreForTests,
   retentionDelete,
   updateStatus,
@@ -448,7 +450,7 @@ describe('unregistered-workspace degradation', () => {
 })
 
 describe('待处理角标口径 — 分页 vs 权威总数', () => {
-  it('超过一页时第一页截断为 20 且 hasMore,全量 todo 仍为 25', () => {
+  it('超过一页时第一页截断为 20 且 hasMore,权威 todo 仍为 25', () => {
     for (let i = 0; i < 25; i++) {
       createEvent({ workspacePath: proj, sessionKind: 'work', title: `todo-${i}` })
     }
@@ -462,16 +464,8 @@ describe('待处理角标口径 — 分页 vs 权威总数', () => {
     expect(page.items).toHaveLength(20)
     expect(page.hasMore).toBe(true)
     expect(listEvents(proj, 'todo')).toHaveLength(25)
-  })
-
-  it.fails('第一页加载后可见 todo 数仍等于权威总数', () => {
-    for (let i = 0; i < 25; i++) {
-      createEvent({ workspacePath: proj, sessionKind: 'work', title: `todo-${i}` })
-    }
-    const page = listEventsPage(proj, 'todo', undefined, undefined, 20)
-    expect(page.items.filter((event) => event.status === 'todo')).toHaveLength(
-      listEvents(proj, 'todo').length,
-    )
+    expect(countTodos(proj)).toBe(25)
+    expect(listTodoIds(proj)).toHaveLength(25)
   })
 })
 

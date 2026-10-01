@@ -40,6 +40,34 @@ export interface DecisionResult {
 interface PendingApproval {
   resolve: (r: DecisionResult) => void
   validate?: (answers?: Record<string, string>) => { ok: true } | { ok: false; error: string }
+  workspaceName?: string
+}
+
+export interface PendingPermissionEntry {
+  requestId: string
+  workspaceName: string
+}
+
+type PendingPermissionsListener = (entries: readonly PendingPermissionEntry[]) => void
+
+let pendingListener: PendingPermissionsListener | undefined
+
+export function setPendingPermissionsListener(
+  listener: PendingPermissionsListener | undefined,
+): void {
+  pendingListener = listener
+}
+
+export function listPendingPermissions(): PendingPermissionEntry[] {
+  const entries: PendingPermissionEntry[] = []
+  for (const [requestId, pending] of pendingApprovals) {
+    if (pending.workspaceName) entries.push({ requestId, workspaceName: pending.workspaceName })
+  }
+  return entries
+}
+
+function notifyPending(): void {
+  pendingListener?.(listPendingPermissions())
 }
 
 /** Whether `resolveDecision` settled the request, rejected it, or never knew it. */
@@ -63,7 +91,11 @@ const pendingApprovals = new Map<string, PendingApproval>()
  * is removed and the promise resolves to `'deny'` (the run is already being torn
  * down, so the decision is moot).
  */
-export function waitForDecision(requestId: string, signal?: AbortSignal): Promise<DecisionResult> {
+export function waitForDecision(
+  requestId: string,
+  signal?: AbortSignal,
+  workspaceName?: string,
+): Promise<DecisionResult> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
       resolve({ decision: 'deny' })
@@ -71,16 +103,20 @@ export function waitForDecision(requestId: string, signal?: AbortSignal): Promis
     }
     const onAbort = () => {
       pendingApprovals.delete(requestId)
+      notifyPending()
       resolve({ decision: 'deny' })
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     pendingApprovals.set(requestId, {
+      workspaceName,
       resolve: (r) => {
         signal?.removeEventListener('abort', onAbort)
         pendingApprovals.delete(requestId)
+        notifyPending()
         resolve(r)
       },
     })
+    notifyPending()
   })
 }
 
@@ -95,6 +131,7 @@ export function waitForAskAnswers(
   requestId: string,
   validate: (answers?: Record<string, string>) => { ok: true } | { ok: false; error: string },
   signal?: AbortSignal,
+  workspaceName?: string,
 ): Promise<DecisionResult> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -103,17 +140,21 @@ export function waitForAskAnswers(
     }
     const onAbort = () => {
       pendingApprovals.delete(requestId)
+      notifyPending()
       resolve({ decision: 'deny' })
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     pendingApprovals.set(requestId, {
+      workspaceName,
       validate,
       resolve: (r) => {
         signal?.removeEventListener('abort', onAbort)
         pendingApprovals.delete(requestId)
+        notifyPending()
         resolve(r)
       },
     })
+    notifyPending()
   })
 }
 

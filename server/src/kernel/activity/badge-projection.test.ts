@@ -132,12 +132,14 @@ describe('BadgeProjection', () => {
         generation: 'g-b',
       }),
     )
+    p.setAttentionMembers('todo', 'proj', ['t-1'])
     r.removeByWorkspace('proj')
     expect(p.snapshot().workspaces).toEqual({
       other: expect.objectContaining({ runningSessions: 1 }),
     })
     expect(p.summaryFor('proj').runningSessions).toBe(0)
     expect(p.summaryFor('proj').activeOwners.intents).toBe(0)
+    expect(p.summaryFor('proj').attention.pendingUserTasks).toBe(0)
   })
 
   it('rebuild from facts matches the incremental summary', () => {
@@ -225,5 +227,56 @@ describe('BadgeProjection', () => {
     const rev = p.getRevision()
     p.rebuild([fact()])
     expect(p.getRevision()).toBe(rev)
+  })
+
+  it('indexes permission, todo, and delivery attention independently', () => {
+    const p = new BadgeProjection()
+    p.setAttentionMembers('todo', 'proj', ['t-1', 't-2'])
+    p.setAttentionMembers('permission', 'proj', ['p-1'])
+    p.setAttentionMembers('delivery', 'proj', ['d-1', 'd-2', 'd-3'])
+    expect(p.summaryFor('proj').attention).toEqual({
+      awaitingPermission: 1,
+      pendingUserTasks: 2,
+      actionableDeliveries: 3,
+    })
+    expect(p.summaryFor('proj').runningSessions).toBe(0)
+    expect(p.getRevision()).toBe(3)
+  })
+
+  it('does not bump revision when an attention set is replaced with the same members', () => {
+    const p = new BadgeProjection()
+    p.setAttentionMembers('todo', 'proj', ['t-2', 't-1'])
+    const rev = p.getRevision()
+    p.setAttentionMembers('todo', 'proj', ['t-1', 't-2'])
+    expect(p.getRevision()).toBe(rev)
+    expect(p.summaryFor('proj').attention.pendingUserTasks).toBe(2)
+  })
+
+  it('activity rebuild keeps attention members', () => {
+    const { r, p } = registry()
+    p.setAttentionMembers('todo', 'proj', ['t-1'])
+    r.start(startInput({ generation: 'g-a' }))
+    expect(p.summaryFor('proj').runningSessions).toBe(1)
+    r.replaceAll([])
+    expect(p.summaryFor('proj').runningSessions).toBe(0)
+    expect(p.summaryFor('proj').attention.pendingUserTasks).toBe(1)
+  })
+
+  it('clears attention when a workspace is removed', () => {
+    const { r, p } = registry()
+    p.setAttentionMembers('todo', 'proj', ['t-1'])
+    p.setAttentionMembers('permission', 'other', ['p-1'])
+    r.removeByWorkspace('proj')
+    expect(p.summaryFor('proj').attention.pendingUserTasks).toBe(0)
+    expect(p.summaryFor('other').attention.awaitingPermission).toBe(1)
+  })
+
+  it('replaceAttentionKind drops workspaces that no longer have members', () => {
+    const p = new BadgeProjection()
+    p.setAttentionMembers('permission', 'proj', ['p-1'])
+    p.setAttentionMembers('permission', 'other', ['p-2'])
+    p.replaceAttentionKind('permission', new Map([['other', ['p-3']]]))
+    expect(p.summaryFor('proj').attention.awaitingPermission).toBe(0)
+    expect(p.summaryFor('other').attention.awaitingPermission).toBe(1)
   })
 })

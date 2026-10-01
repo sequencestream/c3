@@ -240,6 +240,21 @@ export function deliveryRequiresAction(
 }
 
 /**
+ * Deliveries in a workspace that currently need user action. The badge
+ * projection indexes this ID set; the count is the set size.
+ */
+export function listDeliveriesNeedingAction(
+  items: readonly Delivery[],
+  mergeActionable?: (delivery: Delivery) => boolean,
+): string[] {
+  return items
+    .filter((d) =>
+      deliveryRequiresAction(d.status, computeTransitionPlan(d).targets, mergeActionable?.(d)),
+    )
+    .map((d) => d.id)
+}
+
+/**
  * Sum {@link deliveryRequiresAction} over a workspace's deliveries (badge count).
  * `mergeActionable` is the caller's ledger-backed lookup; omitted, no delivery
  * contributes through the delivery-PR route.
@@ -248,12 +263,5 @@ export function countDeliveriesNeedingAction(
   items: readonly Delivery[],
   mergeActionable?: (delivery: Delivery) => boolean,
 ): number {
-  return items.reduce(
-    (n, d) =>
-      n +
-      (deliveryRequiresAction(d.status, computeTransitionPlan(d).targets, mergeActionable?.(d))
-        ? 1
-        : 0),
-    0,
-  )
+  return listDeliveriesNeedingAction(items, mergeActionable).length
 }

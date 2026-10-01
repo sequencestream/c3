@@ -47,6 +47,7 @@ function makeCtx() {
     requestedIntentId,
     requestedIntentSubTab,
     workcenterEvents: ref<WaitUserInvolveEvent[]>([]),
+    workcenterTodoCounts: ref<Record<string, number>>({ [WS]: 2 }),
     workcenterLoading: ref(false),
     workcenterAppendNext: ref(false),
     workcenterHasMore: ref(true),

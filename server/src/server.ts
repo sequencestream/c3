@@ -184,6 +184,8 @@ import {
   registerRunDomainSubscriptions,
   registerRunLifecycleLogging,
   registerActivityRegistry,
+  registerAttentionProjection,
+  rebuildBadgeAttention,
   startImRobotsWiring,
   startSchedulerWiring,
   stopImRobotsWiring,
@@ -571,6 +573,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // 录,不依赖各自的调用顺序。
   registerRunLifecycleLogging(eventBus)
   registerActivityRegistry(eventBus)
+  registerAttentionProjection()
 
   // Generic event contract + kernel normalizer registry. Every model-publishable
   // event is routed through `type → normalizer`: a KNOWN type gets its dedicated
@@ -1054,6 +1057,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Start the automation scheduler after the server is ready.
   startSchedulerWiring({ broadcasts, eventBus })
   rebuildActivityRegistry()
+  rebuildBadgeAttention()
 
   // Dial out to every enabled chat robot's platform. A robot that cannot connect
   // is a visible, recoverable state; it never blocks startup or the others.

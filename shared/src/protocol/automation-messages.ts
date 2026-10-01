@@ -107,9 +107,15 @@ export type ServerAutomationExecutionLogs = {
  * A project's wait-user-involve event list (reply to `list_wait_user_events`).
  * Paged replies carry `hasMore`; live todo broadcasts omit it and refresh the
  * pending set without representing a historical page.
+ *
+ * `todoCount` is the workspace's authoritative COUNT of `todo` events, not the
+ * length of `items`. `workspaceName` is required so a broadcast for one
+ * workspace cannot be applied as another workspace's list.
  */
 export type ServerWaitUserEvents = {
   type: 'wait_user_events'
+  workspaceName: string
   items: WaitUserInvolveEvent[]
   hasMore?: boolean
+  todoCount: number
 }

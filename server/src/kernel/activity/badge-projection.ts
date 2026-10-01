@@ -1,19 +1,23 @@
 /**
- * Incremental badge projection over activity facts.
+ * Incremental badge projection over activity facts and attention member sets.
  *
  * Indexes store member sets, never independent counters. Aggregation is Set
  * size. A revision advances only when a workspace summary actually changes.
- * Attention stays zero until a later stage feeds it; the field is part of the
- * summary so later deltas share this shape.
  *
- * The projection is not a second source of truth: rebuild(facts) must match
- * any legal incremental sequence of the same members.
+ * Attention is three independent collections: still-answerable permission
+ * requests, wait-user todos, and deliveries the delivery domain already judged
+ * actionable. They are never summed into one number.
+ *
+ * Activity rebuild replaces running/owner indexes only. Attention is replaced
+ * by its own sources. The projection is not a second source of truth: rebuild
+ * from facts plus attention sets must match any legal incremental sequence.
  */
 import type { SessionKind, SessionOwnerKind } from '@ccc/shared/protocol'
 import {
   isRunningActivityState,
   type ActivityFact,
   type ActivityMutation,
+  type AttentionKind,
   type BadgeProjectionSnapshot,
   type WorkspaceActivitySummary,
 } from './types.js'
@@ -81,12 +85,21 @@ function isEmptySummary(summary: WorkspaceActivitySummary): boolean {
   return summariesEqual(summary, emptySummary())
 }
 
+function sameIdSet(current: Set<string> | undefined, ids: readonly string[]): boolean {
+  if ((current?.size ?? 0) !== ids.length) return false
+  if (!current) return ids.length === 0
+  return ids.every((id) => current.has(id))
+}
+
 export class BadgeProjection {
   private revision = 0
   private readonly sessionsByWorkspace = new Map<string, Set<string>>()
   private readonly sessionsByKind = new Map<string, Set<string>>()
   private readonly sessionsByOwner = new Map<string, Set<string>>()
   private readonly ownersByKind = new Map<string, Set<string>>()
+  private readonly permissionsByWorkspace = new Map<string, Set<string>>()
+  private readonly todosByWorkspace = new Map<string, Set<string>>()
+  private readonly deliveriesByWorkspace = new Map<string, Set<string>>()
 
   getRevision(): number {
     return this.revision
@@ -120,7 +133,11 @@ export class BadgeProjection {
         discussions: this.ownersByKind.get(ownerKindKey(workspaceName, 'discussion'))?.size ?? 0,
         automations: this.ownersByKind.get(ownerKindKey(workspaceName, 'automation'))?.size ?? 0,
       },
-      attention: { awaitingPermission: 0, pendingUserTasks: 0, actionableDeliveries: 0 },
+      attention: {
+        awaitingPermission: this.permissionsByWorkspace.get(workspaceName)?.size ?? 0,
+        pendingUserTasks: this.todosByWorkspace.get(workspaceName)?.size ?? 0,
+        actionableDeliveries: this.deliveriesByWorkspace.get(workspaceName)?.size ?? 0,
+      },
     }
   }
 
@@ -143,7 +160,7 @@ export class BadgeProjection {
 
   rebuild(facts: readonly ActivityFact[]): void {
     const before = this.snapshotSummaries()
-    this.clearAll()
+    this.clearActivityIndexes()
     for (const fact of facts) this.index(fact)
     this.bumpIfChanged(before)
   }
@@ -151,6 +168,33 @@ export class BadgeProjection {
   reset(): void {
     this.clearAll()
     this.revision = 0
+  }
+
+  setAttentionMembers(kind: AttentionKind, workspaceName: string, ids: readonly string[]): void {
+    const current = this.attentionMap(kind).get(workspaceName)
+    if (sameIdSet(current, ids)) return
+    const before = this.summaryFor(workspaceName)
+    this.writeAttentionSet(kind, workspaceName, ids)
+    if (!summariesEqual(before, this.summaryFor(workspaceName))) this.revision += 1
+  }
+
+  replaceAttentionKind(
+    kind: AttentionKind,
+    byWorkspace: ReadonlyMap<string, readonly string[]>,
+  ): void {
+    const map = this.attentionMap(kind)
+    const affected = new Set<string>([...map.keys(), ...byWorkspace.keys()])
+    const before = new Map<string, WorkspaceActivitySummary>()
+    for (const ws of affected) before.set(ws, this.summaryFor(ws))
+    map.clear()
+    for (const [workspaceName, ids] of byWorkspace) {
+      this.writeAttentionSet(kind, workspaceName, ids)
+    }
+    let changed = false
+    for (const ws of affected) {
+      if (!summariesEqual(before.get(ws) ?? emptySummary(), this.summaryFor(ws))) changed = true
+    }
+    if (changed) this.revision += 1
   }
 
   private applyChange(prev: ActivityFact | undefined, next: ActivityFact | undefined): void {
@@ -203,6 +247,25 @@ export class BadgeProjection {
     }
   }
 
+  private attentionMap(kind: AttentionKind): Map<string, Set<string>> {
+    if (kind === 'permission') return this.permissionsByWorkspace
+    if (kind === 'todo') return this.todosByWorkspace
+    return this.deliveriesByWorkspace
+  }
+
+  private writeAttentionSet(
+    kind: AttentionKind,
+    workspaceName: string,
+    ids: readonly string[],
+  ): void {
+    const map = this.attentionMap(kind)
+    if (ids.length === 0) {
+      map.delete(workspaceName)
+      return
+    }
+    map.set(workspaceName, new Set(ids))
+  }
+
   private dropWorkspaceKeys(workspaceName: string): void {
     this.sessionsByWorkspace.delete(workspaceName)
     const prefix = `${workspaceName}${SEP}`
@@ -215,6 +278,9 @@ export class BadgeProjection {
     for (const key of [...this.ownersByKind.keys()]) {
       if (key.startsWith(prefix)) this.ownersByKind.delete(key)
     }
+    this.permissionsByWorkspace.delete(workspaceName)
+    this.todosByWorkspace.delete(workspaceName)
+    this.deliveriesByWorkspace.delete(workspaceName)
   }
 
   private indexedWorkspaces(): Set<string> {
@@ -223,6 +289,9 @@ export class BadgeProjection {
       const sep = key.indexOf(SEP)
       if (sep > 0) names.add(key.slice(0, sep))
     }
+    for (const ws of this.permissionsByWorkspace.keys()) names.add(ws)
+    for (const ws of this.todosByWorkspace.keys()) names.add(ws)
+    for (const ws of this.deliveriesByWorkspace.keys()) names.add(ws)
     return names
   }
 
@@ -244,10 +313,21 @@ export class BadgeProjection {
     if (changed) this.revision += 1
   }
 
-  private clearAll(): void {
+  private clearActivityIndexes(): void {
     this.sessionsByWorkspace.clear()
     this.sessionsByKind.clear()
     this.sessionsByOwner.clear()
     this.ownersByKind.clear()
+  }
+
+  private clearAttentionIndexes(): void {
+    this.permissionsByWorkspace.clear()
+    this.todosByWorkspace.clear()
+    this.deliveriesByWorkspace.clear()
+  }
+
+  private clearAll(): void {
+    this.clearActivityIndexes()
+    this.clearAttentionIndexes()
   }
 }

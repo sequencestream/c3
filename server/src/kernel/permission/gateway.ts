@@ -52,6 +52,7 @@ import {
   ROBOT_NON_LOCAL_READ_TOOLS,
 } from './robot-fs-scope.js'
 import { waitForDecision } from './registry.js'
+import { resolveActivityWorkspaceName } from '../activity/index.js'
 import { runAskConsensus, runConsensusVote } from '../../consensus.js'
 import { askQuestions } from '../../consensus-tally.js'
 
@@ -204,6 +205,10 @@ function permissionRequestCtx(
   return { ...base, initiatedBySubject: spec.initiatedBySubject ?? null }
 }
 
+function waitHuman(spec: GatewaySpec, requestId: string) {
+  return waitForDecision(requestId, spec.signal, resolveActivityWorkspaceName(spec.workspacePath))
+}
+
 /**
  * Build the SDK `canUseTool` callback for one run. The returned function is the
  * only path a tool verdict can take; its `Promise<PermissionDecision>` return type
@@ -274,7 +279,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           }),
         )
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
-        const { decision, answers } = await waitForDecision(requestId, signal)
+        const { decision, answers } = await waitHuman(spec, requestId)
         if (decision === 'allow') {
           return allow(withAnswers(input, answers ?? {}))
         }
@@ -324,7 +329,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           }),
         )
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
-        const { decision, answers } = await waitForDecision(requestId, signal)
+        const { decision, answers } = await waitHuman(spec, requestId)
         if (decision === 'allow') {
           return allow(withAnswers(input, answers ?? {}))
         }
@@ -530,7 +535,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
             }
           : { type: 'permission_request', requestId, toolName, input, isUserInteraction: true },
       )
-      const { decision, answers } = await waitForDecision(requestId, signal)
+      const { decision, answers } = await waitHuman(spec, requestId)
       if (decision === 'allow') {
         return allow(withAnswers(input, answers ?? {}))
       }
@@ -568,7 +573,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         }),
       )
       send({ type: 'permission_request', requestId, toolName, input })
-      const { decision } = await waitForDecision(requestId, signal)
+      const { decision } = await waitHuman(spec, requestId)
       if (decision === 'allow') return allow(input)
       return deny('User denied in c3 UI')
     }
@@ -639,7 +644,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           ...(isUI ? { isUserInteraction: true } : {}),
         }
     send(req)
-    const { decision } = await waitForDecision(requestId, signal)
+    const { decision } = await waitHuman(spec, requestId)
     if (decision === 'allow') {
       return allow(input)
     }

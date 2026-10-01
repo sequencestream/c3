@@ -71,3 +71,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0049](0049-im-identity-binding-and-call-level-scope.md) · accepted — IM 身份绑定与调用级工作区作用域(Web→私聊一次性绑定 + 每次工具调用求交 + scope_hash 切断旧上下文);与 ADR-0044 外部 MCP 连接钉定并列、不共用语义
 - [0050](0050-activity-registry-as-current-state.md) · accepted — 活动状态注册表保存当前实时活动，与事件总线正交；generation/sequence 围栏，可从 Runtime 与在途执行重建
 - [0051](0051-badge-projection-from-activity-sets.md) · accepted — 角标投影从活动成员集合增量维护 Workspace / SessionKind / owner 索引；revision 仅在摘要变化时增加，可与全量重建对照
+- [0052](0052-attention-sets-in-badge-projection.md) · accepted — 角标投影用独立成员集合维护权限、待办与交付 attention，不合并为一个总数

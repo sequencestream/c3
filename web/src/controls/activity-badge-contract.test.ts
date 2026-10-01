@@ -49,33 +49,71 @@ function makeHandlerCtx() {
   return { ctx, state, send }
 }
 
-describe('workcenterPendingCount — 当前口径等于已加载 todo', () => {
-  it('角标等于已加载列表中的 todo 数,done 不计', () => {
+describe('workcenterPendingCount — 权威 todoCount', () => {
+  it('角标等于当前工作区的权威 todoCount,done 不计', () => {
     const s = makeState()
+    s.currentWorkspace.value = 'ws-a'
     s.workcenterEvents.value = [
       todoEvent('t1'),
       { ...todoEvent('d1'), status: 'done' },
       todoEvent('t2'),
     ]
+    s.workcenterTodoCounts.value = { 'ws-a': 2 }
     expect(s.workcenterPendingCount.value).toBe(2)
   })
 
-  it('超过一页时当前角标等于本页 todo 数,不是台账总数', () => {
+  it('超过一页 todo 时待处理角标仍为权威总数', () => {
     const s = makeState()
+    s.currentWorkspace.value = 'ws-a'
     s.workcenterEvents.value = Array.from({ length: 20 }, (_, i) => todoEvent(`t-${i}`))
     s.workcenterHasMore.value = true
-    expect(s.workcenterPendingCount.value).toBe(20)
+    s.workcenterTodoCounts.value = { 'ws-a': 25 }
+    expect(s.workcenterPendingCount.value).toBe(25)
+  })
+
+  it('角标读当前工作区的权威计数,不扫描已加载列表', () => {
+    const s = makeState()
+    s.currentWorkspace.value = 'ws-b'
+    s.workcenterEvents.value = Array.from({ length: 20 }, (_, i) => todoEvent(`t-${i}`, 'ws-a'))
+    s.workcenterTodoCounts.value = { 'ws-a': 20, 'ws-b': 3 }
+    expect(s.workcenterPendingCount.value).toBe(3)
+  })
+})
+
+describe('wait_user_events — 工作区身份与权威计数', () => {
+  it('当前工作区的分页回包写入列表与 todoCount', () => {
+    const { ctx, state } = makeHandlerCtx()
+    state.currentWorkspace.value = 'ws-a'
+    ctx.handleMessage({
+      type: 'wait_user_events',
+      workspaceName: 'ws-a',
+      items: Array.from({ length: 20 }, (_, i) => todoEvent(`t-${i}`)),
+      hasMore: true,
+      todoCount: 25,
+    } as ServerToClient)
+    expect(state.workcenterEvents.value).toHaveLength(20)
+    expect(state.workcenterHasMore.value).toBe(true)
+    expect(state.workcenterPendingCount.value).toBe(25)
+  })
+
+  it('非当前工作区的广播只更新该工作区计数,不污染当前列表', () => {
+    const { ctx, state } = makeHandlerCtx()
+    state.currentWorkspace.value = 'ws-b'
+    state.workcenterEvents.value = [todoEvent('keep', 'ws-b')]
+    state.workcenterTodoCounts.value = { 'ws-b': 1 }
+    ctx.handleMessage({
+      type: 'wait_user_events',
+      workspaceName: 'ws-a',
+      items: [todoEvent('t-new', 'ws-a')],
+      todoCount: 4,
+    } as ServerToClient)
+    expect(state.workcenterEvents.value.map((event) => event.id)).toEqual(['keep'])
+    expect(state.workcenterTodoCounts.value).toEqual({ 'ws-a': 4, 'ws-b': 1 })
+    expect(state.workcenterPendingCount.value).toBe(1)
   })
 })
 
 describe('已知缺陷 — 目标口径(当前失败)', () => {
-  it.fails('超过一页 todo 时待处理角标仍为权威总数', () => {
-    const s = makeState()
-    s.workcenterEvents.value = Array.from({ length: 20 }, (_, i) => todoEvent(`t-${i}`))
-    s.workcenterHasMore.value = true
-    expect(s.workcenterPendingCount.value).toBe(25)
-  })
-
   it.fails('非当前 workspace 的 session_counts 仍写入竖条映射', () => {
     const { ctx, state } = makeHandlerCtx()
     state.currentWorkspace.value = 'ws-b'

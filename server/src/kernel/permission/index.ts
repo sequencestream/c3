@@ -17,10 +17,13 @@ export {
   waitForAskAnswers,
   resolveDecision,
   pendingCount,
+  listPendingPermissions,
+  setPendingPermissionsListener,
   registerPermissionResolver,
   type Decision,
   type DecisionResolveResult,
   type DecisionResult,
+  type PendingPermissionEntry,
 } from './registry.js'
 export {
   adjudicateRobotToolInput,

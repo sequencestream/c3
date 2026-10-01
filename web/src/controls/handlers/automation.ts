@@ -204,7 +204,12 @@ export function buildAutomationHandlers(
         [msg.executionId]: msg.items,
       }
     },
-    wait_user_events: (_ctx, msg) => {
+    wait_user_events: (ctx, msg) => {
+      ctx.workcenterTodoCounts.value = {
+        ...ctx.workcenterTodoCounts.value,
+        [msg.workspaceName]: msg.todoCount,
+      }
+      if (msg.workspaceName !== currentWorkspace.value) return
       if (msg.hasMore === undefined) {
         const nonTodo = workcenterEvents.value.filter((event) => event.status !== 'todo')
         workcenterEvents.value = [...msg.items, ...nonTodo]

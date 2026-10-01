@@ -67,6 +67,10 @@ export interface ActivityRegistryClock {
   generation: () => string
 }
 
+export const ATTENTION_KINDS = ['permission', 'todo', 'delivery'] as const
+
+export type AttentionKind = (typeof ATTENTION_KINDS)[number]
+
 export interface WorkspaceActivitySummary {
   runningSessions: number
   runningSessionsByKind: Partial<Record<SessionKind, number>>

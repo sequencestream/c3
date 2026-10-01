@@ -191,8 +191,9 @@ export function buildSessionSlice(deps: StateDeps) {
   const workcenterHasMore = ref(false)
   const workcenterLoading = ref(false)
   const workcenterAppendNext = ref(false)
+  const workcenterTodoCounts = ref<Record<string, number>>({})
   const workcenterPendingCount = computed(
-    () => workcenterEvents.value.filter((event) => event.status === 'todo').length,
+    () => workcenterTodoCounts.value[currentWorkspace.value ?? ''] ?? 0,
   )
 
   // Workcenter page-internal nav: which page the workcenter view is showing.
@@ -386,6 +387,7 @@ export function buildSessionSlice(deps: StateDeps) {
     workcenterHasMore,
     workcenterLoading,
     workcenterAppendNext,
+    workcenterTodoCounts,
     workcenterPendingCount,
     workcenterPage,
     robots,

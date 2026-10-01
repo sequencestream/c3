@@ -2,6 +2,17 @@ import type { WaitUserInvolveEvent, WaitUserInvolveStatus } from '@ccc/shared/pr
 import { resolveSessionJumpTarget } from '@/lib/session-jump'
 import type { AppCtx } from './types'
 
+function decrementTodoCount(ctx: AppCtx, workspaceName: string): void {
+  const key = workspaceName || ctx.currentWorkspace.value
+  if (!key) return
+  const current = ctx.workcenterTodoCounts.value[key] ?? 0
+  if (current <= 0) return
+  ctx.workcenterTodoCounts.value = {
+    ...ctx.workcenterTodoCounts.value,
+    [key]: current - 1,
+  }
+}
+
 // Install WorkCenter event actions (resolve permission + jump-to-source) onto the ctx.
 export function installWorkcenterActions(ctx: AppCtx): void {
   const send = ctx.send
@@ -11,7 +22,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   ctx.respondWorkcenter = (event: WaitUserInvolveEvent, decision: 'allow' | 'deny'): void => {
     if (!ctx.client || !event.requestId) return
     send({ type: 'permission_response', requestId: event.requestId, decision })
-    // Mark it done locally so the badge drops immediately.
+    if (event.status === 'todo') decrementTodoCount(ctx, event.workspaceName)
     event.status = 'done'
   }
 
@@ -26,6 +37,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
       decision: 'allow',
       answers,
     })
+    if (event.status === 'todo') decrementTodoCount(ctx, event.workspaceName)
     event.status = 'done'
   }
 
@@ -61,7 +73,10 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     if (!ctx.client) return
     send({ type: 'update_wait_user_event', id: eventId, status: 'done' })
     const event = ctx.workcenterEvents.value.find((item) => item.id === eventId)
-    if (event) event.status = 'done'
+    if (event && event.status === 'todo') {
+      decrementTodoCount(ctx, event.workspaceName)
+      event.status = 'done'
+    }
   }
 
   // Jump from a WorkCenter event to its source. Routing is decided by `intentId`

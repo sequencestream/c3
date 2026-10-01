@@ -17,7 +17,8 @@
  */
 import type { Broadcaster } from '../../transport/index.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../../kernel/permission/gateway.js'
-import { createEvent, getEventByRequestId, listEvents } from './store.js'
+import { createEvent, getEventByRequestId } from './store.js'
+import { emitWaitUserTodoSnapshot } from './publish.js'
 import { getByC3Id } from '../works/work-session-store.js'
 import { getIntent } from '../intents/store.js'
 import { getQueueIntentMetaById } from '../intents/queue-store.js'
@@ -70,9 +71,7 @@ export function createPermissionRequestHandler(deps: {
     syncPermissionRequestContract(ctx, ctx.initiatedBySubject)
     maybePublishPermissionQueued(ctx.requestId)
 
-    // Broadcast the fresh todo list so every connection sees it.
-    const items = listEvents(ctx.workspacePath, 'todo')
-    deps.broadcaster.toAll({ type: 'wait_user_events', items })
+    emitWaitUserTodoSnapshot(ctx.workspacePath, (msg) => deps.broadcaster.toAll(msg))
   }
 }
 
@@ -170,7 +169,6 @@ export function createQueueTodoHandler(deps: {
       )
       return
     }
-    const items = listEvents(input.workspacePath, 'todo')
-    deps.broadcaster.toAll({ type: 'wait_user_events', items })
+    emitWaitUserTodoSnapshot(input.workspacePath, (msg) => deps.broadcaster.toAll(msg))
   }
 }

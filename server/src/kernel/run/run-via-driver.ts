@@ -55,6 +55,7 @@ import {
 } from '../agent-config/index.js'
 import { askQuestions } from '../../consensus-tally.js'
 import { waitForAskAnswers, waitForDecision } from '../permission/index.js'
+import { resolveActivityWorkspaceName } from '../activity/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import { VENDOR_AUTH_PROFILES } from '../sandbox/vendor-auth.js'
 import { agentErrorEvent } from './agent-events.js'
@@ -367,6 +368,7 @@ export function makeDriverApprovalHandler(deps: {
   waitForDecision: (
     requestId: string,
     signal?: AbortSignal,
+    workspaceName?: string,
   ) => Promise<{ decision: 'allow' | 'deny' }>
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
   initiatedBySubject?: string | null
@@ -390,7 +392,11 @@ export function makeDriverApprovalHandler(deps: {
       input: req.input,
       ...(isUI ? { isUserInteraction: true } : {}),
     })
-    const { decision } = await deps.waitForDecision(req.requestId, deps.signal)
+    const { decision } = await deps.waitForDecision(
+      req.requestId,
+      deps.signal,
+      resolveActivityWorkspaceName(deps.workspacePath),
+    )
     return decision === 'allow'
       ? { behavior: 'allow' }
       : { behavior: 'deny', reason: 'User denied in c3 UI' }
@@ -808,6 +814,7 @@ export async function runViaDriver(
         requestId,
         (a) => validateAskAnswers(questions, a),
         cycleAbort.signal,
+        resolveActivityWorkspaceName(workspacePath),
       )
       if (cycleAbort.signal.aborted) break
       const answerMap = answers ?? {}

@@ -3,7 +3,8 @@
  *
  * Listing + lifecycle handlers for WorkCenter wait-user-involve events.
  */
-import { getEvent, isStoreAvailable, listEventsPage, updateStatus } from './store.js'
+import { countTodos, getEvent, isStoreAvailable, listEventsPage, updateStatus } from './store.js'
+import { syncTodoAttention } from './publish.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -18,7 +19,13 @@ export const listWaitUserEvents: Handler<'list_wait_user_events'> = (_ctx, conn,
   // re-fetch bug). An unregistered id degrades to an explicit empty snapshot.
   const workspacePath = resolveWorkspaceRoot(msg.workspaceName)
   if (!workspacePath) {
-    conn.send({ type: 'wait_user_events', items: [], hasMore: false })
+    conn.send({
+      type: 'wait_user_events',
+      workspaceName: msg.workspaceName,
+      items: [],
+      hasMore: false,
+      todoCount: 0,
+    })
     return
   }
   const page = listEventsPage(
@@ -28,7 +35,15 @@ export const listWaitUserEvents: Handler<'list_wait_user_events'> = (_ctx, conn,
     msg.cursorExcludeId,
     msg.limit,
   )
-  conn.send({ type: 'wait_user_events', items: page.items, hasMore: page.hasMore })
+  const todoCount = countTodos(workspacePath)
+  syncTodoAttention(workspacePath)
+  conn.send({
+    type: 'wait_user_events',
+    workspaceName: msg.workspaceName,
+    items: page.items,
+    hasMore: page.hasMore,
+    todoCount,
+  })
 }
 
 export const updateWaitUserEvent: Handler<'update_wait_user_event'> = (ctx, conn, msg) => {

@@ -14,6 +14,7 @@ import {
   canTransitionDelivery,
   computeTransitionPlan,
   countDeliveriesNeedingAction,
+  listDeliveriesNeedingAction,
   deliveryRequiresAction,
   type DeliveryTransitionFacts,
 } from './state-machine.js'
@@ -370,5 +371,6 @@ describe('deliveryRequiresAction — the badge rule', () => {
       delivery('cancelled', { id: 'd5' }),
     ]
     expect(countDeliveriesNeedingAction(items)).toBe(2)
+    expect(listDeliveriesNeedingAction(items)).toEqual(['d2', 'd3'])
   })
 })

@@ -37,6 +37,7 @@ import {
 } from '../features/deliveries/store.js'
 import { countDeliveriesNeedingAction } from '../features/deliveries/state-machine.js'
 import { deliveryMergeActionable } from '../features/deliveries/merge-attention.js'
+import { syncDeliveryAttention } from '../features/deliveries/attention.js'
 import { discussionRunSnapshot, researchRunSnapshot } from '../features/discussions/run-controls.js'
 import type { ResearchStreamItem } from '../features/discussions/research.js'
 import type { DispatchStatus } from '../features/discussions/orchestrator.js'
@@ -44,10 +45,8 @@ import {
   isStoreAvailable as isAutomationStoreAvailable,
   listAutomations,
 } from '../features/automations/store.js'
-import {
-  isStoreAvailable as isWaitUserEventsStoreAvailable,
-  listEvents as listWaitUserEvents,
-} from '../features/user-involve/store.js'
+import { isStoreAvailable as isWaitUserEventsStoreAvailable } from '../features/user-involve/store.js'
+import { emitWaitUserTodoSnapshot } from '../features/user-involve/publish.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
 import { currentSelfUpdateState } from '../features/updates/self-update.js'
 
@@ -233,6 +232,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
         deliveryMergeActionable(proj, d),
       ),
     })
+    syncDeliveryAttention(proj)
   }
 
   // Push a project's refreshed discussion list. The frontend keeps a
@@ -348,15 +348,13 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     })
   }
 
-  // Push a project's refreshed wait-user-involve event list. Only 'todo'
-  // events are broadcast — the frontend's pending-items badge count uses them.
-  // 'done' / 'canceled' events are still queryable via list_wait_user_events
-  // with an explicit status filter, but are never pushed proactively.
+  // Push a project's refreshed wait-user-involve todo snapshot. The frame
+  // carries workspace identity and the authoritative todoCount; items are the
+  // live todo set, not a historical page.
   const broadcastWaitUserEvents = (workspacePath: string): void => {
     if (!isWaitUserEventsStoreAvailable()) return
     const proj = resolve(workspacePath)
-    const items = listWaitUserEvents(proj, 'todo')
-    broadcaster.toAll({ type: 'wait_user_events', items })
+    emitWaitUserTodoSnapshot(proj, (msg) => broadcaster.toAll(msg))
   }
 
   // Push the current update-availability snapshot to every connection. The

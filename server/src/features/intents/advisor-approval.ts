@@ -17,12 +17,14 @@
  */
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { PermissionRequestCtx } from '../../kernel/permission/index.js'
+import { resolveActivityWorkspaceName } from '../../kernel/activity/index.js'
 
 export interface AdvisorApprovalDeps {
   emit: (runId: string, frame: ServerToClient) => void
   waitForDecision: (
     requestId: string,
     signal?: AbortSignal,
+    workspaceName?: string,
   ) => Promise<{ decision: 'allow' | 'deny'; actor?: string | null }>
   /**
    * WorkCenter event hook — invoked BEFORE the wire frame so the request lands in
@@ -68,7 +70,11 @@ export function createAdvisorApproval(
       sessionKind: 'work',
     })
     deps.emit(req.sessionId, { type: 'permission_request', requestId, toolName, input })
-    const { decision } = await deps.waitForDecision(requestId, req.signal)
+    const { decision } = await deps.waitForDecision(
+      requestId,
+      req.signal,
+      resolveActivityWorkspaceName(req.workspacePath),
+    )
     return decision === 'allow'
   }
 }

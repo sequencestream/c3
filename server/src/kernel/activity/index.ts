@@ -1,4 +1,9 @@
-export { ACTIVITY_STATES, RUNNING_ACTIVITY_STATES, isRunningActivityState } from './types.js'
+export {
+  ACTIVITY_STATES,
+  ATTENTION_KINDS,
+  RUNNING_ACTIVITY_STATES,
+  isRunningActivityState,
+} from './types.js'
 export type {
   ActivityApplyResult,
   ActivityFact,
@@ -10,6 +15,7 @@ export type {
   ActivityRejectReason,
   ActivityStartInput,
   ActivityState,
+  AttentionKind,
   BadgeProjectionSnapshot,
   RunningActivityState,
   WorkspaceActivitySummary,

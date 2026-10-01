@@ -25,6 +25,7 @@ vi.mock('../intents/store.js', () => ({
   getIntent: () => null,
 }))
 import { resetDbForTests } from '../../kernel/infra/db.js'
+import { resetActivityRegistryForTests } from '../../kernel/activity/index.js'
 import { listEvents, resetStoreForTests } from './store.js'
 import { createConsensusAutoHandler, createPermissionRequestHandler } from './hooks.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../../kernel/permission/index.js'
@@ -40,6 +41,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetActivityRegistryForTests()
   resetDbForTests()
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
@@ -77,7 +79,11 @@ describe('createPermissionRequestHandler', () => {
     })
     // Broadcast carries the refreshed list.
     expect(sent).toHaveLength(1)
-    expect(sent[0]).toMatchObject({ type: 'wait_user_events' })
+    expect(sent[0]).toMatchObject({
+      type: 'wait_user_events',
+      workspaceName: proj,
+      todoCount: 1,
+    })
   })
 
   it('honours sessionKind=work (the full SessionKind, no longer folded)', () => {

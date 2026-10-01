@@ -27,7 +27,7 @@
 - 投影可从注册表快照全量重建；任意合法增量序列与全量重建必须得到相同摘要。
 - 删除 Workspace 时注册表与投影一并清除该工作区的全部成员。
 - `get_session_counts` 读投影再映射到线协议：`spec` 聚合撰写与评审，`spec_review` 线字段为 0，`tool` 随显示开关，`consensus` / `robot` 不进会话页分类但仍计入工作区总数。
-- 待用户处理与交付 attention 仍不在本投影内，摘要里的 attention 字段保持为零，待后续阶段接入。
+- 待用户处理、可回答权限与交付 attention 由独立成员集合维护，见 [ADR 0052](0052-attention-sets-in-badge-projection.md)。
 - 快照 / delta 推送协议仍不在本决策范围。
 
 ## Consequences

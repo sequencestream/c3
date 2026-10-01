@@ -1366,7 +1366,7 @@ function save(): void {
         </div>
 
         <!-- Section: execution identity & permissions -->
-        <div class="sf-section" data-testid="section-execution">
+        <div v-if="type === 'llm'" class="sf-section" data-testid="section-execution">
           <span class="sf-section-title">{{ t('automation.form.section.execution') }}</span>
           <div class="sf-section-body">
             <!-- Vendor selector -->
@@ -1517,7 +1517,7 @@ function save(): void {
         </div>
 
         <!-- Section: tool permissions -->
-        <div class="sf-section" data-testid="section-tools">
+        <div v-if="type === 'llm'" class="sf-section" data-testid="section-tools">
           <span class="sf-section-title">{{ t('automation.form.section.tools') }}</span>
           <div class="sf-section-body">
             <!-- The shared permission grid renders the read/write checklist, the

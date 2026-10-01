@@ -4,7 +4,7 @@
 
 **领域。** discussion · agent-config · intent-management。
 
-本流程不跑共识、不跑智能体团队。规则见 [discussion](../domains/core/discussion/discussion-spec.md)。产出汇入 [intent → development](flow-intent-to-development.md) 的 `save_intents`。
+本流程不跑共识、不跑智能体团队。规则见 [discussion](../domains/core/discussion.md)。产出汇入 [intent → development](flow-intent-to-development.md) 的 `save_intents`。
 
 ## 流程图
 

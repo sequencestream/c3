@@ -1,6 +1,6 @@
 # 沙箱架构
 
-入选 run 的厂商 CLI 作为宿主进程运行,由 arapuca 用内核 MAC 收窄可见目录。不是容器,没有独立根文件系统;进程看见的绝对路径即宿主路径,无 bind 改写。决策见 [ADR-0028](adr/0028-process-level-lightweight-sandbox-arapuca.md)。隔离不变量见 [sandbox 规格](../domains/core/sandbox/sandbox-spec.md);协作见 [sandbox 设计](../domains/core/sandbox/sandbox-design.md)。
+入选 run 的厂商 CLI 作为宿主进程运行,由 arapuca 用内核 MAC 收窄可见目录。不是容器,没有独立根文件系统;进程看见的绝对路径即宿主路径,无 bind 改写。决策见 [ADR-0028](adr/0028-process-level-lightweight-sandbox-arapuca.md)。隔离不变量与协作见 [sandbox](../domains/core/sandbox.md)。
 
 ## 进程级隔离
 
@@ -8,7 +8,7 @@
 
 隔离不可用则该 run 失败,永不裸跑。
 
-门控是工作区启用加会话种类,与意图来源、工作树、分支模式无关;见 [workspace-setting](../domains/settings/workspace-setting/workspace-setting-spec.md)。[IM 机器人](../domains/core/im-robot/im-robot-spec.md) 每回合无条件隔离。
+门控是工作区启用加会话种类,与意图来源、工作树、分支模式无关;见 [workspace-setting](../domains/settings/workspace-setting.md)。[IM 机器人](../domains/core/im-robot.md) 每回合无条件隔离。
 
 ## 网络
 

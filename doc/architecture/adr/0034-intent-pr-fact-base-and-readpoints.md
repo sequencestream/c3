@@ -8,7 +8,7 @@
 M1 将单条意图上的 `pr_id/pr_url/pr_status` 拆为多 PR 关系(`intent_prs`)。拆表、回填
 SQL 与唯一键必须建立在可复核的现状事实上,而不是字段名、DDL 注释或口头清单。核查结论
 (当前契约见
-[intent-management 规格](../../domains/core/intent-management/intent-management-spec.md)；
+[intent-management](../../domains/core/intent-management.md)；
 验证脚本 `scripts/verify-multi-base-pr.mjs`):
 
 - **时间戳编码。** `intents.created_at/updated_at/completed_at` 以 SQLite `INTEGER`
@@ -51,4 +51,4 @@ SQL 与唯一键必须建立在可复核的现状事实上,而不是字段名、
 ## References
 
 - `scripts/verify-multi-base-pr.mjs` — 多 base 建 PR 可重跑验证脚本
-- [intent-management 规格](../../domains/core/intent-management/intent-management-spec.md) — 当前 PR 账本不变量
+- [intent-management](../../domains/core/intent-management.md) — 当前 PR 账本不变量

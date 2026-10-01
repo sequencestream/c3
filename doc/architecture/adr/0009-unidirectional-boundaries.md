@@ -100,5 +100,5 @@ WebSocket 协议如何拼接在一起的地方。改动其中任何一处,都会
 - [ADR 0006](0006-decouple-runs-from-connections.md) —— 运行与连接解耦(本 ADR 的精神先驱:一个边界、一条
   规则,在运行时层被机器检查)。
 - [architecture overview](../architecture.md) —— 模块地图,当前形态。
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) —— socket 自动恢复决策与运行
+- [agent-session spec](../../domains/core/agent-session.md) —— socket 自动恢复决策与运行
   启动路径(切片 1/3 的契约测试 C2 所钉住的 "AS-R18 / AVAIL-7")。

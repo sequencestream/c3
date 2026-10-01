@@ -80,5 +80,5 @@ secret}` 说明值怎么解码。只有「多值且无稳定身份」的子树�
 ## References
 
 - `database/config/*.sql`、`database/migrate/2026/08/12/038-config-tables.sql`
-- `doc/domains/settings/settings-overview.md`、`doc/shared/data-conventions/persistence.md`
+- `doc/domains/settings/settings.md`、`doc/shared/data-conventions/persistence.md`
 - ADR-0035 (`schema_migrations` 迁移标记表)

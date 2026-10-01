@@ -8,11 +8,11 @@ Claude 与 Codex 走 relay。Cursor 不走——c3 没有 Cursor 协议的中继
 
 真实 provider 密钥只存在 c3 进程内，永不离开。厂商 CLI 只持有 **per-run 不透明 token**；relay 按 token 取出有序候选，用真实密钥出站。run 结束注销。未知 token 拒绝。无组的智能体是长度为 1 的候选，与组共用同一路径。
 
-沙箱内同样只见 token 与 loopback，够到宿主回环上的 relay。隔离边界见 [sandbox](../domains/core/sandbox/sandbox-overview.md)。
+沙箱内同样只见 token 与 loopback，够到宿主回环上的 relay。隔离边界见 [sandbox](../domains/core/sandbox.md)。
 
 ## 组与故障转移
 
-相同 `(group, vendor)` 的启用智能体构成一组，在选择面上暴露为虚拟组智能体。组身份含 vendor，跨厂商不转移。档案与角色绑定见 [agent-config](../domains/settings/agent-config/agent-config-overview.md)。
+相同 `(group, vendor)` 的启用智能体构成一组，在选择面上暴露为虚拟组智能体。组身份含 vendor，跨厂商不转移。档案与角色绑定见 [agent-config](../domains/settings/agent-config.md)。
 
 一次请求从当前段最高优先级候选起试；**仅在尚未向 CLI 回传任何响应字节之前**失败才切下一个。开始流式后上游中断，该请求以错误结束。命中候选的真实 model 由 relay 覆盖，CLI 侧 model 只作占位。组内候选应同档——relay 做连接级转移，不消除模型差异。
 

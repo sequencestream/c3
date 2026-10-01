@@ -8,7 +8,7 @@
 > 为立论背景。该前提已退役:**是否把 c3 暴露到网络、以及绑定到哪个地址,由使用者决定**,认证不再是
 > 非回环绑定的强制前置;宪法 C-SEC-5 条款已随之移除。仍然有效的是**认证抽象本身**的决策
 > (`none`/`basic` provider、会话令牌策略、唯一管理员门等 provider 无关部分),记录在
-> [auth 域](../../domains/core/auth/auth-overview.md)。下文中出现的「localhost-only / 非回环需认证」
+> [auth 域](../../domains/core/auth.md)。下文中出现的「localhost-only / 非回环需认证」
 > 措辞按此退役理解,不再作为约束。
 
 > **更新（后续废弃）：** 曾规划的 `oauth`/OIDC provider 已移除。认证抽象当前只支持 `none`
@@ -191,7 +191,7 @@ _Con:_ 仍把 basic 的字段（用户名/口令哈希）焊在顶层；加 SSO/
 
 ## References
 
-- [auth domain spec](../../domains/core/auth/auth-overview.md) — 业务规则 AUTH-R\*
+- [auth domain spec](../../domains/core/auth.md) — 业务规则 AUTH-R\*
 - [ADR-0009](0009-unidirectional-boundaries.md) — 类型在 shared、运行时在 server 的分层
 - [ADR-0011](0011-vendor-neutral-agent-abstraction.md) — 同构的「中立抽象 + 按 kind/vendor 扩展」范式
 - [ADR-0021](0021-system-project-two-tier-sandbox-config.md) — 同构的「启用」开关 + 缺省即禁用 + 拒绝超前设计

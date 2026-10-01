@@ -15,7 +15,7 @@ Vite listens on `:5173` and proxies `/ws` to the Hono server. Open
 
 `pnpm start` binds loopback. Pass `--host` to expose the process; non-loopback
 bind should enable auth ([SEC-1](non-functional/security.md),
-[auth](domains/core/auth/auth-overview.md)).
+[auth](domains/core/auth.md)).
 
 ## Tests
 

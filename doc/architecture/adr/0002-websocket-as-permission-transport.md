@@ -31,4 +31,4 @@
 ## References
 
 - `doc/shared/api-conventions/websocket-protocol.md`
-- `doc/domains/core/permission-gateway/permission-gateway-spec.md`
+- `doc/domains/core/permission-gateway.md`

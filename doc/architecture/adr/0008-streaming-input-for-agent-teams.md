@@ -71,11 +71,11 @@ prompt 下,它们虽然被发出,却被悄无声息地吞掉了,因此运行中�
 
 ## References
 
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) —— AS-R13…R17(流式输入、
+- [agent-session spec](../../domains/core/agent-session.md) —— AS-R13…R17(流式输入、
   团队检测、`result` 分叉、团队在停止时结束、团队下一轮推送)。
-- [agent-session design](../../domains/core/agent-session/agent-session-design.md) —— 流式输入、团队会话、
+- [agent-session design](../../domains/core/agent-session.md) —— 流式输入、团队会话、
   停止 / 中断、消息映射。
-- [session-registry design](../../domains/core/session-registry/session-registry-design.md) —— 团队会话状态
+- [session-registry design](../../domains/core/session-registry.md) —— 团队会话状态
   (团队标志与 emit 覆写)。
 - [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) —— `team_upgraded`、
   `team` 会话状态、`user_prompt` 的团队语义。

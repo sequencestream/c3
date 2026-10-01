@@ -1,6 +1,6 @@
 # Codex 适配边界
 
-本页只写 Codex 适配器相对其它厂商的产品边界：c3 如何面对 Codex 宿主 CLI。系统形状见 [architecture.md](architecture.md)；驱动与分发见 [agent-sdk.md](agent-sdk.md)；运行生命周期见 [agent-session 规格](../domains/core/agent-session/agent-session-spec.md) 与 [设计](../domains/core/agent-session/agent-session-design.md)；中性抽象见 [ADR-0011](adr/0011-vendor-neutral-agent-abstraction.md)。对比 Claude 见 [claude-agent-sdk-guide.md](claude-agent-sdk-guide.md)。本文不适用于 Claude、Cursor。自定义 provider 走中立 relay，见 [relay-architecture.md](relay-architecture.md) 与 [ADR-0029](adr/0029-vendor-neutral-relay-and-agent-group-failover.md)。
+本页只写 Codex 适配器相对其它厂商的产品边界：c3 如何面对 Codex 宿主 CLI。系统形状见 [architecture.md](architecture.md)；驱动与分发见 [agent-sdk.md](agent-sdk.md)；运行生命周期见 [agent-session](../domains/core/agent-session.md)；中性抽象见 [ADR-0011](adr/0011-vendor-neutral-agent-abstraction.md)。对比 Claude 见 [claude-agent-sdk-guide.md](claude-agent-sdk-guide.md)。本文不适用于 Claude、Cursor。自定义 provider 走中立 relay，见 [relay-architecture.md](relay-architecture.md) 与 [ADR-0029](adr/0029-vendor-neutral-relay-and-agent-group-failover.md)。
 
 SDK 升级评估见 [#486](https://github.com/sequencestream/c3/issues/486)。
 
@@ -20,7 +20,7 @@ SDK 升级评估见 [#486](https://github.com/sequencestream/c3/issues/486)。
 
 ## 整轮审批
 
-Codex 不具备逐工具审批。门控落在启动时的整轮策略上，回合内审批桥不触发。Claude 才有逐工具回路，见 [claude-agent-sdk-guide.md](claude-agent-sdk-guide.md) 与 [permission-gateway](../domains/core/permission-gateway/permission-gateway-overview.md)。
+Codex 不具备逐工具审批。门控落在启动时的整轮策略上，回合内审批桥不触发。Claude 才有逐工具回路，见 [claude-agent-sdk-guide.md](claude-agent-sdk-guide.md) 与 [permission-gateway](../domains/core/permission-gateway.md)。
 
 ## 流式输入与 team lead
 

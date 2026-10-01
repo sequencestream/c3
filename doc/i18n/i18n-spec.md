@@ -4,7 +4,7 @@
 
 ## 与 IM 机器人服务端文案的边界
 
-本规范只管浏览器 UI。IM 出站固定提示由独立的服务端注册表渲染,见 [robot-message-registry-spec](./robot-message-registry-spec.md);外发范围见 [im-robot](../domains/core/im-robot/im-robot-spec.md)「允许外发的内容」。两者仅共享 `en` / `zh` / `ja` / `ko` / `ru` 短码与术语约束。机器人控制台配置的 locale 是注册表语言,不是 Web 显示语言。
+本规范只管浏览器 UI。IM 出站固定提示由独立的服务端注册表渲染,见 [robot-message-registry-spec](./robot-message-registry-spec.md);外发范围见 [im-robot](../domains/core/im-robot.md)「允许外发的内容」。两者仅共享 `en` / `zh` / `ja` / `ko` / `ru` 短码与术语约束。机器人控制台配置的 locale 是注册表语言,不是 Web 显示语言。
 
 ## Key 命名规范
 

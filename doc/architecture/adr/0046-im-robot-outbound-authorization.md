@@ -156,7 +156,7 @@ OpenAPI 客户端,构建期的摇树无法削减。
   `im:broadcast_candidate`;外发审计记录里出现正文;机器人默认启用,或外发不校验确认哈希;非管理员能
   创建/启用机器人;面向人的交互工具在机器人门下被放行;模板携带未注册字段或自由文本;应用密钥出现在
   线上、日志或错误信息里。
-- 外发的授权链与内容边界见 [im-robot](../../domains/core/im-robot/im-robot-spec.md)。
+- 外发的授权链与内容边界见 [im-robot](../../domains/core/im-robot.md)。
 
 ## References
 

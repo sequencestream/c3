@@ -85,4 +85,4 @@ SEC-2 收敛为:原始 prompt 与对话转录默认不落盘;唯一例外是本 
 - [ADR-0046](0046-im-robot-outbound-authorization.md) —— 外发授权与审计只记发生
 - [ADR-0047](0047-robot-local-reads-scoped-to-run-root.md) —— 运行根不是会话恢复输入
 - [security.md](../../non-functional/security.md) —— SEC-2
-- [im-robot 域](../../domains/core/im-robot/im-robot-overview.md)
+- [im-robot 域](../../domains/core/im-robot.md)

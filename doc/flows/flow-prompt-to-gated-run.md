@@ -32,7 +32,7 @@ flowchart TD
 
 ## 分支与异常
 
-- **团队 lead 保活。** 使用团队工具则升为团队：lead 轮次间存活，后续 `user_prompt` 推入同一进程，仅显式停止才结束。见 [agent-session](../domains/core/agent-session/agent-session-spec.md) 与 [ADR-0008](../architecture/adr/0008-streaming-input-for-agent-teams.md)（`AS-R14`、`AS-R15`、`AS-R16`、`AS-R17`、`AS-R21`）。
+- **团队 lead 保活。** 使用团队工具则升为团队：lead 轮次间存活，后续 `user_prompt` 推入同一进程，仅显式停止才结束。见 [agent-session](../domains/core/agent-session.md) 与 [ADR-0008](../architecture/adr/0008-streaming-input-for-agent-teams.md)（`AS-R14`、`AS-R15`、`AS-R16`、`AS-R17`、`AS-R21`）。
 - **会话内串行。** 进行中的 `user_prompt` 拒绝且不启动第二次运行（`AS-R2`）；团队走推入（`AS-R17`）。
 - **断连不停止运行。** 关连接或切视图只取消订阅，待决权限仍可回答。见 [运行的韧性](flow-run-resilience.md)（`AS-R6`、`AS-R8`、`PG-R3`）。
 - **默认拒绝。** 无显式允许即拒绝；停止运行将待决视为拒绝（`PG-R4`）。

@@ -4,7 +4,7 @@
 
 **领域。** intent-management · agent-session · permission-gateway · session-registry · agent-config。
 
-本流程在会话层之上:先记下要构建什么,再送入 [prompt → gated run](flow-prompt-to-gated-run.md)。无人值守姊妹流程是 [自动化队列](flow-automation-orchestrator.md)。它复用运行循环与闸门,不持有权限状态。规则见 [intent-management](../domains/core/intent-management/intent-management-spec.md)。
+本流程在会话层之上:先记下要构建什么,再送入 [prompt → gated run](flow-prompt-to-gated-run.md)。无人值守姊妹流程是 [自动化队列](flow-automation-orchestrator.md)。它复用运行循环与闸门,不持有权限状态。规则见 [intent-management](../domains/core/intent-management.md)。
 
 ## 流程图
 

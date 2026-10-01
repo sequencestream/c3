@@ -146,9 +146,8 @@
 
 ## References
 
-- [intent-management spec](../../domains/core/intent-management/intent-management-spec.md)
-- [intent-management design](../../domains/core/intent-management/intent-management-design.md)
-- [permission-gateway spec](../../domains/core/permission-gateway/permission-gateway-spec.md) —— 被复用的
+- [intent-management](../../domains/core/intent-management.md)
+- [permission-gateway](../../domains/core/permission-gateway.md) —— 被复用的
   `canUseTool` 流程。
 - [ADR 0006](0006-decouple-runs-from-connections.md) —— 沟通运行与开发运行共用的运行时注册表。
 - [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) —— `permission_request`、

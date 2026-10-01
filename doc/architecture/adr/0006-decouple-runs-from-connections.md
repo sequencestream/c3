@@ -66,8 +66,8 @@ c3 最初的设计把一次智能体运行绑定到发起它的 WebSocket 连接
 
 ## References
 
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — 运行生命周期与规则。
-- [session-registry spec](../../domains/core/session-registry/session-registry-spec.md) — 正在查看的会话 vs 运行时。
+- [agent-session spec](../../domains/core/agent-session.md) — 运行生命周期与规则。
+- [session-registry spec](../../domains/core/session-registry.md) — 正在查看的会话 vs 运行时。
 - [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) — `stop_run`,
   `session_status`, `user_text`, `session_selected.status`, `ready.statuses`。
 - 取代了 [ADR 0002](0002-websocket-as-permission-transport.md) 连接模型中的按连接中止那部分

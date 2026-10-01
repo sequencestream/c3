@@ -135,8 +135,8 @@ owner 为 `local` 的 key 立即失效,绝不静默改派给真实账号。
 - 违反本 ADR 的信号:出现第二个能授权外部 MCP 调用的判断点;任何把缺失策略读作 `all` 的分支;从 query
   /path/body/自定义头解析凭据;为管理员或 `local` 写入范围行;策略写入与 epoch bump 不同事务;先清连接
   后持久化;内部六条路由丢掉 loopback guard 或 per-run token。
-- 范围模型见 [auth](../../domains/core/auth/auth-overview.md),请求与授权链见
-  [external-mcp](../../domains/core/external-mcp/external-mcp-spec.md)。
+- 范围模型见 [auth](../../domains/core/auth.md),请求与授权链见
+  [external-mcp](../../domains/core/external-mcp.md)。
 
 ## References
 

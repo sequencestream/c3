@@ -93,7 +93,7 @@ ADR-0011 引入了厂商中立的规范消息模型,但它只存在于内核适�
 - [ADR 0009](0009-unidirectional-boundaries.md) —— 共享层与适配层遵守的不含 SDK 边界。
 - [ADR 0004](0004-persist-workspace-session-registry.md) —— c3 命名空间最终将要面向的
   工作区/会话注册表(推迟)。
-- [agent-session domain spec](../../domains/core/agent-session/agent-session-spec.md) ——
+- [agent-session domain spec](../../domains/core/agent-session.md) ——
   信封/命名空间规则。
 
 ---

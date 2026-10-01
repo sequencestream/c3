@@ -10,20 +10,20 @@
 
 ## 需求
 
-- **SEC-1**: 绑定地址由使用者显式决定，缺省回环；放开非回环时应启用认证（[AUTH-R6](../domains/core/auth/auth-spec.md)）。监听缺省见 [system-setting](../domains/settings/system-setting/system-setting-spec.md)「监听与续跑」；外部入口另有自己的凭据（SEC-14）。
-- **SEC-2**: 只持久化被显式选择的结构化运行数据，落在本机实例库（[persistence](../shared/data-conventions/persistence.md)）；原始 prompt 与对话转录默认不落盘，工作区记忆见 [memory](../domains/core/memory/memory-overview.md)（[ADR-0045](../architecture/adr/0045-workspace-memory-as-allowed-local-persistence.md)），唯一转录例外是有界机器人 IM 上下文（[im-robot](../domains/core/im-robot/im-robot-overview.md)、[ADR-0048](../architecture/adr/0048-robot-im-context-as-bounded-local-persistence.md)）。
-- **SEC-3**: 会话继承宿主与项目的 hook 与允许/拒绝规则；未被它们预先决定的敏感工具流经权限网关（[C-SEC-1](../constitution.md)、[ADR-0005](../architecture/adr/0005-inherit-user-project-settings.md)、[permission-gateway](../domains/core/permission-gateway/permission-gateway-spec.md)）。
-- **SEC-4**: 敏感工具须有明确允许，或处于用户选择的、授权自动执行的权限模式（[C-SEC-2](../constitution.md)）；模式目录由 [agent-session](../domains/core/agent-session/agent-session-spec.md) 拥有。
-- **SEC-5**: 无决策则拒绝；无法识别的消息与被中止的运行都不得当作允许（[C-SEC-3](../constitution.md)、[permission-gateway](../domains/core/permission-gateway/permission-gateway-spec.md)）。
+- **SEC-1**: 绑定地址由使用者显式决定，缺省回环；放开非回环时应启用认证（[AUTH-R6](../domains/core/auth.md)）。监听缺省见 [system-setting](../domains/settings/system-setting.md)「监听与续跑」；外部入口另有自己的凭据（SEC-14）。
+- **SEC-2**: 只持久化被显式选择的结构化运行数据，落在本机实例库（[persistence](../shared/data-conventions/persistence.md)）；原始 prompt 与对话转录默认不落盘，工作区记忆见 [memory](../domains/core/memory.md)（[ADR-0045](../architecture/adr/0045-workspace-memory-as-allowed-local-persistence.md)），唯一转录例外是有界机器人 IM 上下文（[im-robot](../domains/core/im-robot.md)、[ADR-0048](../architecture/adr/0048-robot-im-context-as-bounded-local-persistence.md)）。
+- **SEC-3**: 会话继承宿主与项目的 hook 与允许/拒绝规则；未被它们预先决定的敏感工具流经权限网关（[C-SEC-1](../constitution.md)、[ADR-0005](../architecture/adr/0005-inherit-user-project-settings.md)、[permission-gateway](../domains/core/permission-gateway.md)）。
+- **SEC-4**: 敏感工具须有明确允许，或处于用户选择的、授权自动执行的权限模式（[C-SEC-2](../constitution.md)）；模式目录由 [agent-session](../domains/core/agent-session.md) 拥有。
+- **SEC-5**: 无决策则拒绝；无法识别的消息与被中止的运行都不得当作允许（[C-SEC-3](../constitution.md)、[permission-gateway](../domains/core/permission-gateway.md)）。
 - **SEC-6**: 不读取、存储或传输厂商 CLI 凭据；认证权归各 vendor CLI（[C-SEC-4](../constitution.md)）。
 - **SEC-7**: 升级到更宽松的权限模式只能通过一次明确、可观察的 UI 操作，不得静默放宽。
 - **SEC-8**: 分发信任见下文 DIST-1；渠道与升级见 [release.md](release.md)、[ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md)。
-- **SEC-9**: 工作区身份是服务端分配的不透明名称，磁盘路径只表示位置（[session-registry](../domains/core/session-registry/session-registry-spec.md)）；伪造或未登记的身份不得解析为文件系统根。
-- **SEC-10**: 登记或拆除工作区是建立或撤销信任根，须过身份与管理员门（[auth](../domains/core/auth/auth-spec.md)、[session-registry](../domains/core/session-registry/session-registry-spec.md)）。
-- **SEC-11**: 只读浏览限定在已登记根内，不把客户端路径当作信任根（[files](../domains/core/files/files-spec.md)）。
+- **SEC-9**: 工作区身份是服务端分配的不透明名称，磁盘路径只表示位置（[session-registry](../domains/core/session-registry.md)）；伪造或未登记的身份不得解析为文件系统根。
+- **SEC-10**: 登记或拆除工作区是建立或撤销信任根，须过身份与管理员门（[auth](../domains/core/auth.md)、[session-registry](../domains/core/session-registry.md)）。
+- **SEC-11**: 只读浏览限定在已登记根内，不把客户端路径当作信任根（[files](../domains/core/files.md)）。
 - **SEC-13**: 智能体 `apiKey` 在存储边界加密落库，仅达混淆级；见下文。与 SEC-6 的边界：SEC-6 管厂商 CLI 凭据，SEC-13 管配置里的上游密钥。
-- **SEC-14**: 对未拉起 agent 的公开入口以长期钥匙为凭据，每次调用重新授权，写调用可归因审计；卡口与并列内部面见 [external-mcp](../domains/core/external-mcp/external-mcp-overview.md) [请求与授权链](../domains/core/external-mcp/external-mcp-spec.md#请求与授权链)。
-- **SEC-15**: 模型提供方连通性探测是服务端出网面：已存钥只配已存地址，草稿钥只配草稿地址（[AC-R31](../domains/settings/agent-config/agent-config-spec.md)）；出网路由见 [system-setting](../domains/settings/system-setting/system-setting-spec.md#服务端自身出网)。
+- **SEC-14**: 对未拉起 agent 的公开入口以长期钥匙为凭据，每次调用重新授权，写调用可归因审计；卡口与并列内部面见 [external-mcp](../domains/core/external-mcp.md) [请求与授权链](../domains/core/external-mcp.md#请求与授权链)。
+- **SEC-15**: 模型提供方连通性探测是服务端出网面：已存钥只配已存地址，草稿钥只配草稿地址（[AC-R31](../domains/settings/agent-config.md)）；出网路由见 [system-setting](../domains/settings/system-setting.md#服务端自身出网)。
 
 ## 分发信任
 
@@ -45,5 +45,5 @@
 - 伪造或未登记的工作区身份被解析为文件系统根（SEC-9、SEC-11）。
 - 未过身份门的连接登记或拆除了工作区信任根（SEC-10）。
 - 浏览请求把客户端路径当作信任根（SEC-11）。
-- 违反 [请求与授权链](../domains/core/external-mcp/external-mcp-spec.md#请求与授权链)（SEC-14）。
+- 违反 [请求与授权链](../domains/core/external-mcp.md#请求与授权链)（SEC-14）。
 - 连通性探测把已存钥随草稿地址发往操作者指定的主机（SEC-15）。

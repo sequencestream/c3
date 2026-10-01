@@ -1,6 +1,6 @@
 # c3 特性清单
 
-c3（code creative center）全部能力的树状索引，每行一句话。按业务组与能力域组织，与 [`domains/`](domains/) 对应。详细行为见各域 `<domain>-spec.md`；协议约定见 [`websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)。
+c3（code creative center）全部能力的树状索引，每行一句话。按业务组与能力域组织，与 [`domains/`](domains/) 对应。详细行为见各域 `{domain}.md`；协议约定见 [`websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)。
 
 ```
 c3
@@ -173,7 +173,7 @@ c3
 │       ├── 工具目录                              # 管理员勾选，新钥匙默认只给读；未授权不可调用
 │       ├── 目标与自检                            # 写目标须在可见工作区内；可查范围不含密钥
 │       ├── 写调用审计                            # 每次写尝试记结果，不含入参与密钥
-│       └── 规范对齐                              # 与内部面同一传输形态；差距见 [合规说明](domains/core/mcp/mcp-spec-compliance.md)
+│       └── 规范对齐                              # 与内部面同一传输形态；差距见 [合规说明](domains/core/mcp.md)
 │
 ├── settings — 塑造智能体循环的配置；作用域分系统、工作区、个人
 │   │
@@ -234,4 +234,4 @@ c3
 
 - 能力出现或消失时更新本索引，使其仍覆盖用户可见能力。
 - 实现拆分、改名或局部重构而跨模块行为不变，不必改本文件。
-- 每行一句；规则与不变量写在对应 `<domain>-spec.md`，不要把本文件当成实现说明书或变更账本。
+- 每行一句；规则与不变量写在对应 `{domain}.md`，不要把本文件当成实现说明书或变更账本。

@@ -86,4 +86,4 @@ Cursor 改为**每轮一个 `cursor-agent` 子进程**,并作为**非托管**宿
 - [ADR-0011](0011-vendor-neutral-agent-abstraction.md) — 厂商中立抽象与能力台账
 - [ADR-0012](0012-host-binary-probe-first-capability-gate.md) — 宿主二进制解析顺序
 - [ADR-0030](0030-session-store-scope-vendor-neutral-data-root.md) — 会话 store scope
-- [agent-session-cursor](../../domains/core/agent-session/features/agent-session-cursor.md)
+- [Cursor 能力边界](../../domains/core/agent-session.md#cursor-能力边界)

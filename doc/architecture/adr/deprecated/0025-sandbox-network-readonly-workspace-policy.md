@@ -78,6 +78,6 @@ _Con:_ `readonlyRootfs` 默认从 `false` 改为 `true`，是行为变更（见�
 
 ## References
 
-- [ADR-0021](0021-system-project-two-tier-sandbox-config.md) — 双层配置（本 ADR 修订其字段归属）
-- [ADR-0024](0024-sandbox-worktree-only-random-agent-hard-isolation.md) — sandbox 仅 worktree + 硬隔离
-- [sandbox domain design](../../domains/core/sandbox/sandbox-design.md) — SND-R5 / SND-R10 / SND-R24
+- [ADR-0021](../0021-system-project-two-tier-sandbox-config.md) — 双层配置（本 ADR 修订其字段归属）
+- [ADR-0024](../0024-sandbox-worktree-only-random-agent-hard-isolation.md) — sandbox 仅 worktree + 硬隔离
+- [sandbox](../../../domains/core/sandbox.md) — SND-R5 / SND-R10 / SND-R24

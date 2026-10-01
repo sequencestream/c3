@@ -4,7 +4,7 @@
 
 **领域。** intent-management · agent-session · permission-gateway · git。
 
-本流程是 [意图 → 开发](flow-intent-to-development.md) 的队列路径,复用同一套运行循环与闸门;规则见 [intent-management](../domains/core/intent-management/intent-management-spec.md)。它是 `RM-R9` 的显式 opt-in 例外,且仍受监督(`RM-A9`、`C-SEC-3`)。与 [自动化执行](flow-automation-execution.md) 无关。队列靠节拍全量对账前进,事件只标脏([ADR-0031](../architecture/adr/0031-deterministic-queue-reconcile-kernel.md))。
+本流程是 [意图 → 开发](flow-intent-to-development.md) 的队列路径,复用同一套运行循环与闸门;规则见 [intent-management](../domains/core/intent-management.md)。它是 `RM-R9` 的显式 opt-in 例外,且仍受监督(`RM-A9`、`C-SEC-3`)。与 [自动化执行](flow-automation-execution.md) 无关。队列靠节拍全量对账前进,事件只标脏([ADR-0031](../architecture/adr/0031-deterministic-queue-reconcile-kernel.md))。
 
 ## 流程图
 

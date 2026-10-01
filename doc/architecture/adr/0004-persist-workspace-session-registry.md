@@ -39,7 +39,7 @@ rename)，任何读取/解析错误都回退到空状态，使 c3 仍能启动�
 - 架构中“状态是按连接的、纯内存的；不持久化”的规则被修订：**权限决策仍保持纯内存、按
   连接**(不变，ADR 0001/0002)，但**工作区/会话注册表被持久化**(本 ADR)。
 - `settingSources`(现在继承 user + project，ADR 0005)不受影响——transcript 存储与
-  会话接口照常工作(见 [session-registry 规格](../../domains/core/session-registry/session-registry-spec.md))。
+  会话接口照常工作(见 [session-registry](../../domains/core/session-registry.md))。
 
 ## Compliance
 
@@ -48,6 +48,6 @@ rename)，任何读取/解析错误都回退到空状态，使 c3 仍能启动�
 
 ## References
 
-- `doc/domains/core/session-registry/session-registry-spec.md`
+- `doc/domains/core/session-registry.md`
 - `doc/architecture/architecture.md` § cross-cutting conventions
 - [ADR 0001](deprecated/0001-c3-sole-permission-authority.md), [ADR 0003](0003-single-binary-via-bun-compile.md)

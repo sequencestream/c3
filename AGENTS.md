@@ -50,7 +50,7 @@ pnpm start [--port 3000] [--db ~/.c3/c3.db] # start is default cmd; --db relocat
 - doc/glossary.md: glossary of the system
 - doc/architecture/architecture.md: architecture spec
 - doc/architecture/adr/adr.md: architecture decision records
-- doc/domains/: domain doc
+- doc/domains/: 领域文档，每域一份 `{domain}.md`
 - doc/flows/flows.md: flow doc
 - doc/non-functional/: non-functional doc
 - database/tables.md: database table schema index，DDL in `database/<module>/<table>.sql` ,schema change need to be synchronized, change record in `database/migrate/<YYYY>/<MM>/<DD>/<NNN>-<table>.sql`

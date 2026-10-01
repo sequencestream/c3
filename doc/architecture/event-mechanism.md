@@ -24,4 +24,4 @@
 
 `type` 为开放的 `<category>:<action>` 字符串，已知目录是建议而非封闭枚举（[ADR-0027](adr/0027-event-naming-and-multi-row-subscription.md)）。订阅可用 `<category>:*` 匹配该大类全部动作。
 
-自动化按 type 订阅，过滤器为多行 OR 加 `:*` 大类通配；匹配与触发见 [automations](../domains/core/automations/automations-overview.md)。意图域对部分事件的消费见 [intent-management](../domains/core/intent-management/intent-management-overview.md)。
+自动化按 type 订阅，过滤器为多行 OR 加 `:*` 大类通配；匹配与触发见 [automations](../domains/core/automations.md)。意图域对部分事件的消费见 [intent-management](../domains/core/intent-management.md)。

@@ -2,7 +2,7 @@
 
 一次模型调用拆成两段：**system**（稳定、可缓存的指令）与 **user turn**（本轮输入）。必须分离，稳定前缀才能命中厂商 API 的 prompt cache。
 
-系统形状见 [architecture.md](architecture.md)。运行生命周期见 [agent-session](../domains/core/agent-session/agent-session-overview.md)。厂商边界见 [Claude](claude-agent-sdk-guide.md)、[Codex](codex-sdk-guide.md)、[Cursor](../domains/core/agent-session/features/agent-session-cursor.md)。
+系统形状见 [architecture.md](architecture.md)。运行生命周期见 [agent-session](../domains/core/agent-session.md)。厂商边界见 [Claude](claude-agent-sdk-guide.md)、[Codex](codex-sdk-guide.md)、[Cursor](../domains/core/agent-session.md#cursor-能力边界)。
 
 ## 通道
 
@@ -13,13 +13,13 @@
 
 ## 不变量
 
-多轮工作、意图沟通与规格撰写在三个厂商上都按上述通道拆分。场景生命周期见 [agent-session](../domains/core/agent-session/agent-session-spec.md) 与 [intent-management](../domains/core/intent-management/intent-management-overview.md)。
+多轮工作、意图沟通与规格撰写在三个厂商上都按上述通道拆分。场景生命周期见 [agent-session](../domains/core/agent-session.md) 与 [intent-management](../domains/core/intent-management.md)。
 
-讨论的研究会话组织者仅 Claude，见 [discussion](../domains/core/discussion/discussion-overview.md)。
+讨论的研究会话组织者仅 Claude，见 [discussion](../domains/core/discussion.md)。
 
-team lead 在启动时设置一次 system，之后只推 user turn，前缀保持稳定。流式输入见 [agent-session](../domains/core/agent-session/agent-session-spec.md) 与 [ADR-0008](adr/0008-streaming-input-for-agent-teams.md)。
+team lead 在启动时设置一次 system，之后只推 user turn，前缀保持稳定。流式输入见 [agent-session](../domains/core/agent-session.md) 与 [ADR-0008](adr/0008-streaming-input-for-agent-teams.md)。
 
-共识、检查点与意图完成度判定的一次性顾问回合拆成 `{system, user}`，并行投票者共享同一份可缓存前缀。规则见 [共识](../domains/core/permission-gateway/features/permission-gateway-consensus.md) 与 [intent-management](../domains/core/intent-management/intent-management-spec.md)。
+共识、检查点与意图完成度判定的一次性顾问回合拆成 `{system, user}`，并行投票者共享同一份可缓存前缀。规则见 [共识](../domains/core/permission-gateway.md#多智能体共识) 与 [intent-management](../domains/core/intent-management.md)。
 
 ## 例外
 

@@ -4,7 +4,7 @@
 
 **领域。** auth · web-console · settings。
 
-不变量见 [auth-spec](../domains/core/auth/auth-spec.md)；域边界见 [auth-overview](../domains/core/auth/auth-overview.md)。
+不变量与域边界见 [auth](../domains/core/auth.md)。
 
 ## 流程图
 

@@ -244,7 +244,7 @@ state.json 的全局部分)、`agentLang`，以及授权策略的新鲜度计数
 
 刻意**没有**入参、工具输出、bearer、哈希与认证头列：能泄漏凭据的审计轨迹等于凭据的第二份副本。
 `key_id` 对 `mcp_api_keys` 不设外键，key 吊销后历史仍须可读。写入不进业务事务：落库失败保持业务
-结果不变，但必须发出脱敏的运维错误，让审计缺口可观测。读操作不入表（见 [SEC-14](../doc/non-functional/security.md) 与 [external-mcp 请求与授权链](../doc/domains/core/external-mcp/external-mcp-spec.md#请求与授权链)）。
+结果不变，但必须发出脱敏的运维错误，让审计缺口可观测。读操作不入表（见 [SEC-14](../doc/non-functional/security.md) 与 [external-mcp 请求与授权链](../doc/domains/core/external-mcp.md#请求与授权链)）。
 
 ### memory
 

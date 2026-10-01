@@ -2,7 +2,7 @@
 /**
  * Cursor CLI capability probe — the evidence source for Cursor's capability
  * ledger (see
- * `doc/domains/core/agent-session/features/agent-session-cursor.md`).
+ * `doc/domains/core/agent-session.md#cursor-能力边界`).
  *
  * Drives `cursor-agent` exactly as c3's driver does — `create-chat` to mint the
  * id, then `--print --output-format stream-json --resume <id>` with the prompt on

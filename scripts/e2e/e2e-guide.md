@@ -596,7 +596,7 @@ if it persists, reported as SKIP (auth already proven, block is environmental).
 
 Standalone capability probe for `cursor-agent` — the evidence source for Cursor's
 capability ledger (see
-[`doc/domains/core/agent-session/features/agent-session-cursor.md`](../../doc/domains/core/agent-session/features/agent-session-cursor.md)).
+[`doc/domains/core/agent-session.md#cursor-能力边界`](../../doc/domains/core/agent-session.md#cursor-能力边界)).
 It asserts the two blocking gates — the id `create-chat` mints being the one the run
 reports and persists under, and `--resume` restoring context — plus the frame
 vocabulary, the field the run identity travels on, the terminal frame's shape, and

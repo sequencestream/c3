@@ -54,4 +54,4 @@ ADR-0014 用一个进程内 Responses→Chat 中继,让自定义 codex agent 能
 - 取代 [ADR-0014](deprecated/0014-codex-in-process-responses-chat-relay.md)(codex 进程内 Responses→Chat relay)。
 - 规格:[relay-architecture](../relay-architecture.md)。
 - ADR-0003(单二进制)、ADR-0009(边界)、ADR-0011(vendor 中立 agent)、ADR-0028(arapuca 进程级沙箱)。
-- [agent-config 数据模型](../../domains/settings/agent-config/agent-config-models.md)(`group` 字段)。
+- [agent-config 数据模型](../../domains/settings/agent-config.md)(`group` 字段)。

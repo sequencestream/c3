@@ -262,7 +262,7 @@ push-input);interrupt / fork-session 虽然厂商为 true,但要等到重写阶�
   规则扩展到中立接口面。
 - [ADR 0005](0005-inherit-user-project-settings.md) —— c3 是权限网关(中立的 approval bridge
   把这个角色泛化到了所有厂商)。
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) —— agent
+- [agent-session spec](../../domains/core/agent-session.md) —— agent
   driver 所抽象的运行生命周期;中立网格所取代的权限模式表。
 - Phase-0 探针:`changes/2026/06/05/2026-06-05-008-codex-approval-probe/`(NO-GO)。
 - 本阶段的 spec:`changes/2026/06/05/2026-06-05-011-vendor-neutral-agent-abstraction/2026-06-05-011-vendor-neutral-agent-abstraction-spec.md`。

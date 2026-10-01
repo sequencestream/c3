@@ -48,4 +48,4 @@ c3 应当能在开发者机器上轻松运行，无需完整的 Node 工具链�
 ## References
 
 - `README.md` § Single binary
-- `doc/domains/core/agent-session/agent-session-design.md`
+- `doc/domains/core/agent-session.md`

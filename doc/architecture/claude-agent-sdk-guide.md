@@ -1,6 +1,6 @@
 # Claude 适配边界
 
-本页只写 Claude 适配器相对其它厂商的产品边界：c3 如何面对 Claude 宿主 CLI 与其 SDK。系统形状见 [architecture.md](architecture.md)；驱动与分发见 [agent-sdk.md](agent-sdk.md)；运行生命周期见 [agent-session 规格](../domains/core/agent-session/agent-session-spec.md) 与 [设计](../domains/core/agent-session/agent-session-design.md)；中性抽象见 [ADR-0011](adr/0011-vendor-neutral-agent-abstraction.md)。本文不适用于 Codex、Cursor。
+本页只写 Claude 适配器相对其它厂商的产品边界：c3 如何面对 Claude 宿主 CLI 与其 SDK。系统形状见 [architecture.md](architecture.md)；驱动与分发见 [agent-sdk.md](agent-sdk.md)；运行生命周期见 [agent-session](../domains/core/agent-session.md)；中性抽象见 [ADR-0011](adr/0011-vendor-neutral-agent-abstraction.md)。本文不适用于 Codex、Cursor。
 
 SDK 升级评估见 [#485](https://github.com/sequencestream/c3/issues/485)。
 
@@ -14,7 +14,7 @@ Claude SDK 在 c3 进程内编排与回调；模型调用与工具执行跑在�
 
 ## 逐工具审批
 
-Claude 具备逐工具审批。回合内尚未被策略决定的敏感工具，经审批桥交给 [permission-gateway](../domains/core/permission-gateway/permission-gateway-overview.md)，阻塞直到人作答。Codex 与 Cursor 无此回路，门控落在启动策略上。
+Claude 具备逐工具审批。回合内尚未被策略决定的敏感工具，经审批桥交给 [permission-gateway](../domains/core/permission-gateway.md)，阻塞直到人作答。Codex 与 Cursor 无此回路，门控落在启动策略上。
 
 ## 流式输入与 team lead
 

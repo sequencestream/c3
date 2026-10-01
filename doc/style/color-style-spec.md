@@ -1,6 +1,6 @@
 # 风格设计规范
 
-控制台视觉契约。合法主题 id 以本文为准；配色取值在设计令牌里，本文不列色值。个人化设置只接纳合法 id，见 [personalized-setting](../domains/settings/personalized-setting/personalized-setting-spec.md)。
+控制台视觉契约。合法主题 id 以本文为准；配色取值在设计令牌里，本文不列色值。个人化设置只接纳合法 id，见 [personalized-setting](../domains/settings/personalized-setting.md)。
 
 ## 设计原则
 

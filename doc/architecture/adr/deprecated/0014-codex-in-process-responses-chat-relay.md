@@ -97,6 +97,6 @@ Responses→Chat 中继来驱动 codex;用户的配置保持不变(真实的上�
 ## References
 
 - ADR-0003(单二进制)、ADR-0009(边界)、ADR-0011(厂商中立 agent)。
-- [agent-config domain spec](../../../domains/settings/agent-config/agent-config-spec.md) AC-R5。
+- [agent-config domain spec](../../../domains/settings/agent-config.md) AC-R5。
 - openai/codex discussion #7782(chat wire-api 移除);codex 的 Rust SSE 解析器
   (rust-v0.137.0)——这条事件契约。

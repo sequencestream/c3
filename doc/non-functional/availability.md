@@ -5,13 +5,13 @@ c3 是单一前台进程,没有集群、故障转移或 SLA。可用性是优雅
 ## 需求
 
 - **AVAIL-1**: 厂商可执行文件找不到或运行时出错,该轮次以错误终态结束,从不静默挂起。
-- **AVAIL-2**: 权限请求无限期等人,无超时;切视图或关连接不释放。见 [permission-gateway](../domains/core/permission-gateway/permission-gateway-spec.md)。
-- **AVAIL-3**: 关闭连接不停止运行,只取消该视图订阅;回放见 [agent-session](../domains/core/agent-session/agent-session-spec.md) AS-R8、[ADR-0006](../architecture/adr/0006-decouple-runs-from-connections.md)。
-- **AVAIL-4**: 运行只被明确停止、删除会话或移除工作区中止;中止不得拖垮进程([agent-session](../domains/core/agent-session/agent-session-spec.md) AS-R6)。
+- **AVAIL-2**: 权限请求无限期等人,无超时;切视图或关连接不释放。见 [permission-gateway](../domains/core/permission-gateway.md)。
+- **AVAIL-3**: 关闭连接不停止运行,只取消该视图订阅;回放见 [agent-session](../domains/core/agent-session.md) AS-R8、[ADR-0006](../architecture/adr/0006-decouple-runs-from-connections.md)。
+- **AVAIL-4**: 运行只被明确停止、删除会话或移除工作区中止;中止不得拖垮进程([agent-session](../domains/core/agent-session.md) AS-R6)。
 - **AVAIL-5**: 无法解析的客户端消息被忽略,不拆除连接。
 - **AVAIL-6**: 浏览器↔服务端 WebSocket 靠心跳与有界退避自动重连,并重选当前会话以接上 AVAIL-3 的回放。
-- **AVAIL-7**: 服务端↔智能体传输断开时,普通会话对同一运行做至多一次有界自动 resume;与 AVAIL-6 不是同一条连接。见 [运行的韧性](../flows/flow-run-resilience.md)、[agent-session](../domains/core/agent-session/agent-session-spec.md) AS-R18 / AS-R19。
-- **AVAIL-8**: 进程关停(含自更新释放端口的同一入口)先中止全部存活的讨论编排与调研,再做其余关停步骤。中止语义见 [discussion](../domains/core/discussion/discussion-spec.md)。
+- **AVAIL-7**: 服务端↔智能体传输断开时,普通会话对同一运行做至多一次有界自动 resume;与 AVAIL-6 不是同一条连接。见 [运行的韧性](../flows/flow-run-resilience.md)、[agent-session](../domains/core/agent-session.md) AS-R18 / AS-R19。
+- **AVAIL-8**: 进程关停(含自更新释放端口的同一入口)先中止全部存活的讨论编排与调研,再做其余关停步骤。中止语义见 [discussion](../domains/core/discussion.md)。
 
 ## 可观测性 — 文件日志
 
@@ -20,7 +20,7 @@ c3 是单一前台进程,没有集群、故障转移或 SLA。可用性是优雅
 - **OBS-3**: 超过 30 天的归档删除,当天边界保留;实时文件与非归档文件永不清理。
 - **OBS-4**: 日志尽力而为:目录不可写、归档或清理失败只报标准错误,主进程不因此崩溃,也不静默吞掉。
 - **OBS-5**: 时间戳与落盘独立:文件日志关了,控制台行仍带时间。
-- **OBS-6**: 已鉴权连接可只读增量拉取实时日志(单次有界、切在行边界);偏移失效则整段替换,文件缺失则空且不可用。范围仅限当前实时文件。呈现见 [web-console](../domains/core/web-console/web-console-spec.md) WC-R31。
+- **OBS-6**: 已鉴权连接可只读增量拉取实时日志(单次有界、切在行边界);偏移失效则整段替换,文件缺失则空且不可用。范围仅限当前实时文件。呈现见 [web-console](../domains/core/web-console.md) WC-R31。
 
 ## 可观测性 — run 生命周期日志
 

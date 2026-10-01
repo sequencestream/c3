@@ -4,7 +4,7 @@
 
 **领域。** automations · session-registry · agent-session。
 
-本流程与意图 `automate` 队列([自动化队列](flow-automation-orchestrator.md))无关。规则见 [automations](../domains/core/automations/automations-spec.md)。敏感工具按冻结白名单在服务端裁定,不经浏览器权限网关(`SCH-R9`)。
+本流程与意图 `automate` 队列([自动化队列](flow-automation-orchestrator.md))无关。规则见 [automations](../domains/core/automations.md)。敏感工具按冻结白名单在服务端裁定,不经浏览器权限网关(`SCH-R9`)。
 
 ## 流程图
 

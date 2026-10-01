@@ -968,8 +968,10 @@ export async function launchRun(
       if (action.type === 'resume') {
         socketRetryUsed = true
         // Hold the session in `reconnecting` over the bounded backoff so the
-        // sidebar shows the transient state; reconcileLiveness won't reap it
-        // (it only converges `running`/aborted/idle).
+        // sidebar shows the transient state. Liveness abort does not reap it
+        // (only already-aborted zombies and idle dangling run pointers).
+        // The activity lease uses a short reconnecting window and is renewed
+        // while the run pointer is still live.
         setStatus(runId, 'reconnecting')
         await sleepAbortable(socketReconnectBackoffMs(), cycleAbort.signal)
         if (cycleAbort.signal.aborted) break

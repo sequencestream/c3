@@ -45,6 +45,7 @@
 - **AS-R22**: 降级链只保留与当前 agent **相同厂商**的条目;跨厂商条目跳过、从不启动。同厂商降级每次尝试都是全新会话,从不 resume。被跳过的条目在链耗尽时经 `all_agents_failed` 呈现。
 - **AS-R23**: 用户可以把会话改绑到另一个**同厂商** agent(`set_session_agent`),不丢上下文。候选与降级链、共识投票者共用同一条同厂商规则;跨厂商拒绝,事实不变。切换只改绑定,不立即重跑——下一 `user_prompt` 用新 agent resume 同一次运行。
 - **AS-R25**: 降级链在内核事件总线上发布 `agent-error` / `agent-fallback` / `agent-all-failed`,供其他域订阅,不取代线上的 `agent_failed` / `all_agents_failed` 与运行循环([ADR 0018](../../architecture/adr/0018-event-bus-kernel-layer.md))。
+- **AS-R26**: 运行存活以租约为准,不以无业务输出为死亡。在途 run 由 runner 定期续约,续约不依赖模型文本或工具事件。租约到期先标 `stale` 并从 running 角标移除;默认不因此中止运行。权限等待(`awaiting_user`)与 team parked 无普通 running 租约;`reconnecting` 用短宽限期。进程重启后 Runtime 不复活,遗留的自动化 running 执行收敛为 failed([ADR 0055](../../architecture/adr/0055-lease-heartbeat-replaces-content-silence.md))。
 
 ## States
 
@@ -137,7 +138,7 @@ stateDiagram-v2
 - 工作目录与权限模式由它持有;session-registry 播种并镜像模式。
 - 状态为 `idle` | `running` | `awaiting_permission` | `team` | `reconnecting`。
 - 会话种类(work / intent / spec / discussion / automation / tool 等)只作路由标记;runtime 仍是实时执行的事实来源。
-- 非空闲状态、pending 绑定与销毁同步写入进程内活动状态注册表。注册表保存当前活动，不改写本域或其它域的持久业务状态（[ADR 0050](../../architecture/adr/0050-activity-registry-as-current-state.md)）。
+- 非空闲状态、pending 绑定与销毁同步写入进程内活动状态注册表。注册表保存当前活动，不改写本域或其它域的持久业务状态。`running` 事实带 generation、`lastRenewedAt` 与 `leaseUntil`；在途 runner 独立于内容流续约，到期先 stale([ADR 0050](../../architecture/adr/0050-activity-registry-as-current-state.md)、[ADR 0055](../../architecture/adr/0055-lease-heartbeat-replaces-content-silence.md))。
 
 回放由创建时的磁盘 baseline 加上此后每一条线事件的 buffer 组成。Viewers 是当前观察该会话的连接。
 
@@ -165,7 +166,7 @@ stateDiagram-v2
 
 **session-registry** 播种工作目录、每会话模式与 resume id。本域拥有进程级 Session Runtime:运行句柄、回放用的 baseline + buffer、当前 viewers 与状态([ADR 0006](../../architecture/adr/0006-decouple-runs-from-connections.md))。pending→真实 id 绑定时,buffer、viewers 与在途 run 一起搬到新键上，活动注册表上的同一条事实也原子迁移。公开 `c3SessionId` 必须解析到同一原生 runtime,不能另开冷会话。
 
-**活动状态注册表** 镜像本域的实时活动:开始、权限等待、team parked、落定与删除。它不是第二份 Runtime，也不能替代事件总线；当前活动从这里查询，并必须能从 Runtime 与在途自动化执行重建。**角标投影**从这些活动事实维护 Workspace、种类与 owner 集合，并从权限登记表、待办台账与交付判定维护三类 attention 集合。WebSocket 在握手后下发可见工作区的活动快照，投影变化时推送带 revision 的增量；服务端低频对账在摘要未变时不推送。会话计数入口仍可读投影并映射到 `session_counts`（[ADR 0051](../../architecture/adr/0051-badge-projection-from-activity-sets.md)、[ADR 0052](../../architecture/adr/0052-attention-sets-in-badge-projection.md)、[ADR 0053](../../architecture/adr/0053-activity-snapshot-delta-protocol.md)、[ADR 0054](../../architecture/adr/0054-converge-activity-badge-polling.md)）。
+**活动状态注册表** 镜像本域的实时活动:开始、权限等待、team parked、租约续约、落定与删除。它不是第二份 Runtime，也不能替代事件总线；当前活动从这里查询，并必须能从 Runtime 与在途自动化执行重建。**角标投影**从这些活动事实维护 Workspace、种类与 owner 集合，并从权限登记表、待办台账与交付判定维护三类 attention 集合。WebSocket 在握手后下发可见工作区的活动快照，投影变化时推送带 revision 的增量；服务端低频对账先收敛已知死亡的 run，再重建、续约、把到期租约标 stale，摘要未变不推送。会话计数入口仍可读投影并映射到 `session_counts`（[ADR 0051](../../architecture/adr/0051-badge-projection-from-activity-sets.md)、[ADR 0052](../../architecture/adr/0052-attention-sets-in-badge-projection.md)、[ADR 0053](../../architecture/adr/0053-activity-snapshot-delta-protocol.md)、[ADR 0054](../../architecture/adr/0054-converge-activity-badge-polling.md)、[ADR 0055](../../architecture/adr/0055-lease-heartbeat-replaces-content-silence.md)）。
 
 **permission-gateway** 是敏感工具的阻塞点。具备逐工具审批的厂商(Claude)在回合内把调用交给网关;不具备的厂商(Codex、Cursor)把门控落在启动策略上,审批桥不触发。待决请求跟 run 走,不跟连接走。
 

@@ -33,5 +33,13 @@ export {
   setActivityWorkspaceNameResolver,
 } from './activity-registry.js'
 export { mapSessionStatusToActivityState } from './session-status.js'
+export {
+  RUNNING_LEASE_MS,
+  RECONNECTING_LEASE_MS,
+  isLeaseDue,
+  leaseDurationMs,
+  nextLeaseUntil,
+  shouldAbortOnStale,
+} from './lease.js'
 export { badgeProjection } from './projection-singleton.js'
 export { activityDeltaForVisible, activitySnapshotForVisible } from './visibility.js'

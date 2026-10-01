@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ActivityRegistry } from './activity-registry.js'
 import { BadgeProjection } from './badge-projection.js'
 import type { ActivityFact, ActivityStartInput, WorkspaceActivitySummary } from './types.js'
@@ -70,6 +70,7 @@ describe('BadgeProjection', () => {
   })
 
   it('drops running membership on pause, stale, and settle', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     const { r, p } = registry()
     r.start(startInput({ generation: 'g-a' }))
     r.transition('s-1', 'paused')
@@ -83,6 +84,17 @@ describe('BadgeProjection', () => {
     r.start(startInput({ generation: 'g-b' }))
     r.settle('s-1')
     expect(p.snapshot().workspaces).toEqual({})
+  })
+
+  it('restores running membership when a stale fact is renewed', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const { r, p } = registry()
+    r.start(startInput({ generation: 'g-a', leaseUntil: 2_000 }))
+    r.expire('s-1')
+    expect(p.summaryFor('proj').runningSessions).toBe(0)
+    r.renew('s-1', 9_000)
+    expect(p.summaryFor('proj').runningSessions).toBe(1)
+    expect(p.getRevision()).toBe(3)
   })
 
   it('counts one owner for two sessions and updates on owner change', () => {

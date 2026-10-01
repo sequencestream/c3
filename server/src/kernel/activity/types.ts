@@ -35,6 +35,7 @@ export interface ActivityFact {
   owner?: ActivityOwner
   state: ActivityState
   updatedAt: number
+  lastRenewedAt?: number
   leaseUntil?: number
 }
 
@@ -53,6 +54,7 @@ export interface ActivityStartInput {
   state?: Exclude<ActivityState, 'idle'>
   generation?: string
   at?: number
+  lastRenewedAt?: number
   leaseUntil?: number
 }
 

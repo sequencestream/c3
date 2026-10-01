@@ -10,9 +10,10 @@ import {
   activityRegistry,
   badgeProjection,
   mapSessionStatusToActivityState,
+  nextLeaseUntil,
   resolveActivityWorkspaceName,
 } from '../../kernel/activity/index.js'
-import { listAllNonIdleRuntimes, reconcileLiveness } from '../../runs.js'
+import { listAllNonIdleRuntimes, listLiveRunHeartbeats, reconcileLiveness } from '../../runs.js'
 import { listWorkspaces, pathToName } from '../../state.js'
 import {
   runningAutomationIdsForWorkspace,
@@ -53,7 +54,14 @@ function factFromPrior(
   owner: ActivityOwner | undefined,
   now: number,
   prior: ActivityFact | undefined,
+  reconnecting = false,
 ): ActivityFact {
+  const keepStale = prior?.state === 'stale' && state === 'running'
+  const nextState = keepStale ? 'stale' : state
+  const leaseUntil =
+    nextState === 'running'
+      ? (prior?.leaseUntil ?? nextLeaseUntil(now, 'running', { reconnecting }))
+      : prior?.leaseUntil
   return {
     activityId: prior?.activityId ?? sessionId,
     generation: prior?.generation ?? randomUUID(),
@@ -62,9 +70,10 @@ function factFromPrior(
     workspaceName,
     sessionKind,
     owner,
-    state,
+    state: nextState,
     updatedAt: now,
-    leaseUntil: prior?.leaseUntil,
+    lastRenewedAt: prior?.lastRenewedAt ?? (leaseUntil !== undefined ? now : undefined),
+    leaseUntil,
   }
 }
 
@@ -86,6 +95,7 @@ export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[
         ownerForRebuild(rt.sessionId, rt.workspacePath),
         now,
         previous.get(rt.sessionId),
+        rt.status === 'reconnecting',
       ),
     )
   }
@@ -112,31 +122,56 @@ export function rebuildActivityRegistry(now: number = Date.now()): ActivityFact[
   return activityRegistry.snapshot()
 }
 
+function renewLiveActivityLeases(now: number): void {
+  const renewed = new Set<string>()
+  for (const hb of listLiveRunHeartbeats()) {
+    const state = mapSessionStatusToActivityState(hb.status)
+    const leaseUntil = nextLeaseUntil(now, state, { reconnecting: hb.status === 'reconnecting' })
+    if (leaseUntil === undefined) continue
+    activityRegistry.renew(hb.sessionId, leaseUntil, { at: now })
+    renewed.add(hb.sessionId)
+  }
+  for (const workspace of listWorkspaces()) {
+    for (const sessionId of runningAutomationSessionIdsForWorkspace(workspace.path)) {
+      if (renewed.has(sessionId)) continue
+      const leaseUntil = nextLeaseUntil(now, 'running')
+      if (leaseUntil === undefined) continue
+      activityRegistry.renew(sessionId, leaseUntil, { at: now })
+    }
+  }
+}
+
 export interface ActivityReconcileResult {
   reapedSessionIds: string[]
+  expiredSessionIds: string[]
   projectionChanged: boolean
 }
 
 /**
- * Low-frequency recovery: reap hung runs, then rebuild the registry from the
- * remaining fact sources. Projection listeners fire only when a workspace
+ * Low-frequency recovery: reap known-dead runs, rebuild from remaining facts,
+ * renew leases for runners that are still holding a turn, then expire unpaid
+ * running leases into stale. Projection listeners fire only when a workspace
  * summary actually changes.
  */
-export function reconcileActivityProjection(now: number, staleMs: number): ActivityReconcileResult {
+export function reconcileActivityProjection(now: number): ActivityReconcileResult {
   const revisionBefore = badgeProjection.getRevision()
-  const reapedSessionIds = reconcileLiveness(now, staleMs)
+  const reapedSessionIds = reconcileLiveness()
   rebuildActivityRegistry(now)
+  renewLiveActivityLeases(now)
+  const expiredSessionIds = activityRegistry.expireDue(now)
   const revisionAfter = badgeProjection.getRevision()
   if (revisionAfter !== revisionBefore) {
     console.log(
-      '[c3:activity] reconcile revision=%d→%d reaped=%d',
+      '[c3:activity] reconcile revision=%d→%d reaped=%d expired=%d',
       revisionBefore,
       revisionAfter,
       reapedSessionIds.length,
+      expiredSessionIds.length,
     )
   }
   return {
     reapedSessionIds,
+    expiredSessionIds,
     projectionChanged: revisionAfter !== revisionBefore,
   }
 }

@@ -49,8 +49,8 @@ c3 是一个单一本地进程：浏览器经 `/ws` 连入，进程内经厂商�
 - **交付** — 单一自包含二进制（[ADR-0003](adr/0003-single-binary-via-bun-compile.md)）。可选桌面壳把该二进制当 sidecar，WebView 加载其自带前端；壳内无业务逻辑（[ADR-0033](adr/0033-tauri-desktop-shell-sidecar.md)）。
 - **线协议** — 两端共用一份消息联合。见 [websocket-protocol](../shared/api-conventions/websocket-protocol.md)。
 - **session-runtime** — 进程级注册表：运行句柄、回放缓冲、观看者；跨连接共享。
-- **活动状态注册表** — 进程内当前活动事实：generation / sequence 围栏、pending 绑定、只读快照；可从 Runtime 与在途自动化执行重建。与事件总线正交（[ADR-0050](adr/0050-activity-registry-as-current-state.md)）。
-- **角标投影** — 从注册表成员集合增量维护 Workspace / 种类 / owner 索引，并从权限、待办、交付权威源维护三类 attention 集合；revision 仅在摘要变化时增加，可全量重建。经 WebSocket 以 snapshot / delta 推送给前端。服务端低频对账 Runtime 与注册表，摘要未变不广播（[ADR-0051](adr/0051-badge-projection-from-activity-sets.md)、[ADR-0052](adr/0052-attention-sets-in-badge-projection.md)、[ADR-0053](adr/0053-activity-snapshot-delta-protocol.md)、[ADR-0054](adr/0054-converge-activity-badge-polling.md)）。
+- **活动状态注册表** — 进程内当前活动事实：generation / sequence 围栏、pending 绑定、租约（`lastRenewedAt` / `leaseUntil`）、只读快照；可从 Runtime 与在途自动化执行重建。与事件总线正交（[ADR-0050](adr/0050-activity-registry-as-current-state.md)、[ADR-0055](adr/0055-lease-heartbeat-replaces-content-silence.md)）。
+- **角标投影** — 从注册表成员集合增量维护 Workspace / 种类 / owner 索引，并从权限、待办、交付权威源维护三类 attention 集合；revision 仅在摘要变化时增加，可全量重建。经 WebSocket 以 snapshot / delta 推送给前端。服务端低频对账 Runtime 与注册表：收敛已知死亡的 run，续约仍持有 turn 的 runner，到期标 stale；摘要未变不广播（[ADR-0051](adr/0051-badge-projection-from-activity-sets.md)、[ADR-0052](adr/0052-attention-sets-in-badge-projection.md)、[ADR-0053](adr/0053-activity-snapshot-delta-protocol.md)、[ADR-0054](adr/0054-converge-activity-badge-polling.md)、[ADR-0055](adr/0055-lease-heartbeat-replaces-content-silence.md)）。
 - **Host-CLI launcher** — 厂商无关的宿主探测与健康检查，第一道能力关卡（ADR-0012）。
 - **事件总线** — 进程内发布/订阅。见 [`event-mechanism.md`](event-mechanism.md)（[ADR-0018](adr/0018-event-bus-kernel-layer.md)）。事件表达已发生的事实；当前活动不由总线保存。
 - **relay** — 进程内 provider 枢纽，真钥不离开本进程。见 [`relay-architecture.md`](relay-architecture.md)。

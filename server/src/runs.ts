@@ -36,6 +36,7 @@ import type { RunHandle } from './kernel/agent/index.js'
 import {
   activityRegistry,
   mapSessionStatusToActivityState,
+  nextLeaseUntil,
   resolveActivityOwner,
   resolveActivityWorkspaceName,
 } from './kernel/activity/index.js'
@@ -121,11 +122,9 @@ export interface SessionRuntime {
    */
   sawTurnEnd: boolean
   /**
-   * ms since epoch of the most recent activity in this session (any `emit` call
-   * or runtime creation). Used by the session-layer heartbeat to detect stale /
-   * hung runs: if the status is `running` but no event has been emitted for more
-   * than `staleMs`, the run is presumed hung and gets forcefully converged to
-   * `idle`. Updated in `emit()`.
+   * ms since epoch of the most recent wire event in this session (any `emit`
+   * call or runtime creation). Intent silent-timeout reads this as progress,
+   * not as proof the run is still alive. Liveness uses the activity lease.
    */
   lastActivityAt: number
   /**
@@ -425,6 +424,13 @@ export function clearPending(id: string): void {
   runtimes.get(id)?.pending.clear()
 }
 
+function applyActivityLease(rt: SessionRuntime, at: number = Date.now()): void {
+  const state = mapSessionStatusToActivityState(rt.status)
+  const leaseUntil = nextLeaseUntil(at, state, { reconnecting: rt.status === 'reconnecting' })
+  if (leaseUntil === undefined) return
+  activityRegistry.renew(rt.sessionId, leaseUntil, { at })
+}
+
 function syncRuntimeActivity(rt: SessionRuntime): void {
   const state = mapSessionStatusToActivityState(rt.status)
   if (state === 'idle') {
@@ -433,7 +439,8 @@ function syncRuntimeActivity(rt: SessionRuntime): void {
   }
   const existing = activityRegistry.getBySessionId(rt.sessionId)
   const owner = resolveActivityOwner(rt.sessionId)
-  if (!existing) {
+  const at = Date.now()
+  if (!existing || existing.state === 'stale') {
     activityRegistry.start({
       activityId: rt.sessionId,
       sessionId: rt.sessionId,
@@ -441,13 +448,16 @@ function syncRuntimeActivity(rt: SessionRuntime): void {
       sessionKind: rt.sessionKind,
       owner,
       state,
+      at,
+      leaseUntil: nextLeaseUntil(at, state, { reconnecting: rt.status === 'reconnecting' }),
     })
     return
   }
-  if (owner && !existing.owner) activityRegistry.setOwner(rt.sessionId, owner)
+  if (owner && !existing.owner) activityRegistry.setOwner(rt.sessionId, owner, { at })
   if (existing.state !== state) {
-    activityRegistry.transition(rt.sessionId, state)
+    activityRegistry.transition(rt.sessionId, state, { at })
   }
+  applyActivityLease(rt, at)
 }
 
 /** Force a runtime's status (e.g. 'running' at run start). Broadcasts if changed. */
@@ -603,6 +613,24 @@ export function sessionLastActivityAt(id: string): number | null {
   return runtimes.get(id)?.lastActivityAt ?? null
 }
 
+export interface RunHeartbeat {
+  sessionId: string
+  status: SessionStatus
+}
+
+/**
+ * In-flight runs whose AbortController has not fired. The activity sweep uses
+ * this as the runner heartbeat: it is independent of wire content.
+ */
+export function listLiveRunHeartbeats(): RunHeartbeat[] {
+  const out: RunHeartbeat[] = []
+  for (const rt of runtimes.values()) {
+    if (!rt.run || rt.run.abort.signal.aborted) continue
+    out.push({ sessionId: rt.sessionId, status: rt.status })
+  }
+  return out
+}
+
 /**
  * True while this session is paused on a permission prompt nobody has answered.
  * A known, human-owned wait — readers use it to avoid describing such a session
@@ -700,31 +728,29 @@ export function activeWorktreeRuntimeCount(): number {
 }
 
 /**
- * Session-layer liveness reconciliation: identify stale/hung runs and converge
- * them to `idle`. Called periodically by the server's activity reconcile tick.
+ * Session-layer liveness: converge runs that are already known-dead, not runs
+ * that have gone quiet. Called by the activity reconcile tick before lease
+ * renew and expire.
  *
  * A run is converged when:
  * 1. Its AbortController has already been triggered (`aborted === true`) but
  *    the teardown `finally` never ran — the run is stuck in a zombie state.
  *    This applies to ALL statuses including `awaiting_permission` and `team`.
- * 2. The status is `running` AND no event has been emitted for > `staleMs` —
- *    the SDK iterator or for-await loop is presumed hung / the process exited
- *    without a clean result.
+ * 2. A live run pointer remains after status has settled to `idle` (a stray
+ *    `turn_end` flowed through `emit` before teardown cleared `rt.run`).
  *
- * `awaiting_permission` and `team` runs are NOT converged by staleness alone
- * (a user waiting on a prompt is legitimate; a team lead waiting between turns
- * is legitimate). Only the `aborted` branch covers them.
+ * Content silence is not a reason to abort. `awaiting_permission` and `team`
+ * runs are not converged here except via the aborted-zombie branch.
  *
  * Convergence mimics `launchRun`'s teardown `finally`: abort the controller,
  * clear the run pointer, reset team flag, drop pending prompts, and `finalizeRun`.
  *
  * @returns The session ids that were converged (for testing).
  */
-export function reconcileLiveness(now: number, staleMs: number): string[] {
+export function reconcileLiveness(): string[] {
   const converged: string[] = []
   for (const [id, rt] of runtimes) {
     if (!rt.run) continue
-    // Branch 1: run was already aborted but hasn't cleaned up.
     if (rt.run.abort.signal.aborted) {
       rt.run = null
       rt.team = false
@@ -733,22 +759,6 @@ export function reconcileLiveness(now: number, staleMs: number): string[] {
       converged.push(id)
       continue
     }
-    // Branch 2: status running with no recent activity → presumed hung.
-    if (rt.status === 'running' && now - rt.lastActivityAt > staleMs) {
-      rt.run.abort.abort()
-      rt.run = null
-      rt.team = false
-      clearPending(id)
-      finalizeRun(id)
-      converged.push(id)
-      continue
-    }
-    // Branch 3: status/run inconsistency — a live run pointer but the status has
-    // settled to `idle` (e.g. a stray `turn_end` flowed through `emit` before the
-    // run's teardown cleared `rt.run`). Broadcasts would then advertise the session
-    // as idle while `user_prompt` still rejects with "a turn is already running",
-    // and the staleness branch above (gated on `running`) never reaps it. Force a
-    // consistent terminal state so the client and server agree.
     if (rt.status === 'idle') {
       rt.run.abort.abort()
       rt.run = null
@@ -756,9 +766,7 @@ export function reconcileLiveness(now: number, staleMs: number): string[] {
       clearPending(id)
       finalizeRun(id)
       converged.push(id)
-      continue
     }
-    // `awaiting_permission` and `team` are not converged by staleness alone.
   }
   return converged
 }

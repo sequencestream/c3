@@ -219,14 +219,8 @@ export interface ServerOptions {
  */
 export const DEFAULT_HOST = '127.0.0.1'
 
-/** How often hung runs are reaped and the activity registry is rebuilt from facts. */
+/** How often known-dead runs are reaped and activity leases are renewed or expired. */
 const ACTIVITY_RECONCILE_MS = 15_000
-/**
- * How long a `running` session can be silent before its run is presumed hung
- * and forcefully converged to `idle`. Conservative — long-running tools (build,
- * deploy) emit no intermediate events but finish much faster than this.
- */
-const RUN_STALE_MS = 5 * 60_000
 
 /** How often the janitor reaps abandoned pending-session intents (ADR-0015). The
  * 7-day TTL is coarse, so an hourly sweep is plenty. */
@@ -553,7 +547,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   })
   setInterval(() => {
-    reconcileActivityProjection(Date.now(), RUN_STALE_MS)
+    reconcileActivityProjection(Date.now())
   }, ACTIVITY_RECONCILE_MS)
   // Janitor: drop pending-session intents abandoned for >7 days (never ran), at
   // boot and hourly thereafter. Clearing an intent never orphans a fact (ADR-0015).

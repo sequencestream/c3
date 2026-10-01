@@ -5,8 +5,8 @@
  * process currently recognizes, fenced by generation (which run) and sequence
  * (which update of that run). Callers that omit fencing operate on the live
  * generation and receive an auto-incremented sequence — that is the path
- * Session Runtime uses. Tests and later lease renewal pass explicit fencing
- * so late or replayed updates are ignored.
+ * Session Runtime uses. Tests and lease renewal pass explicit fencing so late
+ * or replayed updates are ignored.
  *
  * The registry does not write persistent business state. Snapshot is a
  * read-only clone. Rebuild replaces the whole table from authority sources.
@@ -90,6 +90,7 @@ export class ActivityRegistry {
       owner: input.owner ? { ...input.owner } : undefined,
       state: input.state ?? 'running',
       updatedAt: at,
+      lastRenewedAt: input.lastRenewedAt ?? (input.leaseUntil !== undefined ? at : undefined),
       leaseUntil: input.leaseUntil,
     }
     this.put(fact)
@@ -160,9 +161,12 @@ export class ActivityRegistry {
     if (!current) return { accepted: false, reason: 'unknown_activity' }
     const gated = this.gate(current, fencing)
     if (!gated.accepted) return gated
+    const at = fencing?.at ?? this.clock.now()
     return this.commit(current, {
+      state: current.state === 'stale' ? 'running' : current.state,
       leaseUntil,
-      updatedAt: fencing?.at ?? this.clock.now(),
+      lastRenewedAt: at,
+      updatedAt: at,
     })
   }
 
@@ -195,10 +199,35 @@ export class ActivityRegistry {
       return { accepted: true, fact: cloneFact(current) }
     }
     if (current.state === 'stale') return { accepted: true, fact: cloneFact(current) }
-    return this.commit(current, {
+    const next = this.commit(current, {
       state: 'stale',
       updatedAt: fencing?.at ?? this.clock.now(),
     })
+    if (next.accepted) {
+      console.log(
+        '[c3:activity] expire activity=%s generation=%s leaseUntil=%s',
+        next.fact.activityId,
+        next.fact.generation,
+        next.fact.leaseUntil ?? '-',
+      )
+    }
+    return next
+  }
+
+  /**
+   * Turn every running fact whose lease is due into stale. Missing leaseUntil on
+   * a running fact is treated as due so a source that stopped renewing still
+   * leaves the running aggregate. awaiting_user / parked / paused are skipped.
+   */
+  expireDue(now: number): string[] {
+    const expired: string[] = []
+    for (const fact of [...this.facts.values()]) {
+      if (fact.state !== 'running') continue
+      if (fact.leaseUntil !== undefined && now < fact.leaseUntil) continue
+      const result = this.expire(fact.activityId, { at: now })
+      if (result.accepted && result.fact.state === 'stale') expired.push(fact.activityId)
+    }
+    return expired
   }
 
   setOwner(

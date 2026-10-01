@@ -12,6 +12,7 @@
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
   activityRegistry,
+  nextLeaseUntil,
   resolveActivityWorkspaceName,
   setActivityOwnerResolver,
   setActivityWorkspaceNameResolver,
@@ -28,6 +29,7 @@ export function registerActivityRegistry(eventBus: EventBus<EventBusEvents>): vo
     const owner = lookupActivityOwner(e.sessionId)
     const existing = activityRegistry.getBySessionId(e.sessionId)
     if (!existing) {
+      const at = Date.now()
       activityRegistry.start({
         activityId: e.sessionId,
         sessionId: e.sessionId,
@@ -35,6 +37,8 @@ export function registerActivityRegistry(eventBus: EventBus<EventBusEvents>): vo
         sessionKind: e.sessionKind,
         owner,
         state: 'running',
+        at,
+        leaseUntil: nextLeaseUntil(at, 'running'),
       })
       return
     }

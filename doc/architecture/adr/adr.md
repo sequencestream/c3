@@ -74,3 +74,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 - [0052](0052-attention-sets-in-badge-projection.md) · accepted — 角标投影用独立成员集合维护权限、待办与交付 attention，不合并为一个总数
 - [0053](0053-activity-snapshot-delta-protocol.md) · accepted — 活动摘要以 snapshot / delta 推送到前端；握手后下发可见工作区，revision 跳跃则重取快照
 - [0054](0054-converge-activity-badge-polling.md) · accepted — 活动角标收敛为推送：空闲不点查计数，对账未变不广播
+- [0055](0055-lease-heartbeat-replaces-content-silence.md) · accepted — 用独立于内容流的租约续约替换静默超时：到期先 stale 下角标，默认不 abort

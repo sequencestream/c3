@@ -184,6 +184,7 @@ describe('ActivityRegistry', () => {
 
   it('expire turns running into stale and drops it from the running snapshot', () => {
     const { r } = registry()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     r.start(startInput({ generation: 'gen-a' }))
     const expired = r.expire('pending:1')
     expect(expired.accepted).toBe(true)
@@ -220,11 +221,64 @@ describe('ActivityRegistry', () => {
     expect(renewed.accepted).toBe(true)
     if (!renewed.accepted) return
     expect(renewed.fact.leaseUntil).toBe(5_000)
+    expect(renewed.fact.lastRenewedAt).toBe(1_000)
     expect(renewed.fact.sequence).toBe(2)
+  })
+
+  it('records lastRenewedAt when start carries a lease', () => {
+    const { r } = registry()
+    const started = r.start(startInput({ generation: 'gen-a', leaseUntil: 9_000 }))
+    expect(started.accepted).toBe(true)
+    if (!started.accepted) return
+    expect(started.fact.leaseUntil).toBe(9_000)
+    expect(started.fact.lastRenewedAt).toBe(1_000)
+  })
+
+  it('restores a stale fact to running on a current-generation renew', () => {
+    const { r } = registry()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    r.start(startInput({ generation: 'gen-a', leaseUntil: 2_000 }))
+    r.expire('pending:1')
+    expect(r.getBySessionId('pending:1')?.state).toBe('stale')
+    const restored = r.renew('pending:1', 8_000, { generation: 'gen-a' })
+    expect(restored.accepted).toBe(true)
+    if (!restored.accepted) return
+    expect(restored.fact.state).toBe('running')
+    expect(restored.fact.leaseUntil).toBe(8_000)
+    expect(r.snapshotRunning()).toHaveLength(1)
+  })
+
+  it('expireDue stales running facts whose lease has been reached', () => {
+    const { r } = registry()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    r.start(
+      startInput({ activityId: 'due', sessionId: 'due', generation: 'gen-a', leaseUntil: 1_000 }),
+    )
+    r.start(
+      startInput({
+        activityId: 'fresh',
+        sessionId: 'fresh',
+        generation: 'gen-b',
+        leaseUntil: 2_000,
+      }),
+    )
+    r.start(startInput({ activityId: 'wait', sessionId: 'wait', generation: 'gen-c' }))
+    r.transition('wait', 'awaiting_user')
+    expect(r.expireDue(1_000)).toEqual(['due'])
+    expect(r.getBySessionId('due')?.state).toBe('stale')
+    expect(r.getBySessionId('fresh')?.state).toBe('running')
+    expect(r.getBySessionId('wait')?.state).toBe('awaiting_user')
+    expect(
+      r
+        .snapshotRunning()
+        .map((f) => f.sessionId)
+        .sort(),
+    ).toEqual(['fresh', 'wait'])
   })
 
   it('starts a new generation after stale rather than keeping the dead run', () => {
     const { r } = registry()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
     r.start(startInput({ generation: 'gen-a' }))
     r.expire('pending:1')
     const next = r.start(startInput({ generation: 'gen-b' }))

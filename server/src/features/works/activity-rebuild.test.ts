@@ -2,7 +2,7 @@
  * Activity registry rebuild matches the workspace activity union
  * (non-idle runtimes ∪ running automation-log sessions).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,15 +12,17 @@ import {
   activityRegistry,
   badgeProjection,
   resetActivityRegistryForTests,
+  RUNNING_LEASE_MS,
   setActivityOwnerResolver,
   setActivityWorkspaceNameResolver,
 } from '../../kernel/activity/index.js'
 import { addWorkspace, pathToName, resetStateCacheForTests } from '../../state.js'
-import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
+import { ensureRuntime, getRuntime, removeRuntime, setStatus } from '../../runs.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
 import {
   appendExecutionLog,
   createAutomation,
+  reconcileStuckRunningExecutions,
   resetStoreForTests as resetAutomationStoreForTests,
 } from '../automations/store.js'
 import { listActiveSessionsForWorkspace } from './active-workspace-sessions.js'
@@ -66,6 +68,7 @@ afterEach(() => {
   resetStoreForTests()
   resetAutomationStoreForTests()
   resetStateCacheForTests()
+  vi.restoreAllMocks()
   if (prevClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
   else process.env.CLAUDE_CONFIG_DIR = prevClaudeConfigDir
   if (prevHome === undefined) delete process.env.HOME
@@ -267,9 +270,107 @@ describe('reconcileActivityProjection', () => {
     startRun('w-run', proj, 'work')
     rebuildActivityRegistry()
     const revision = badgeProjection.getRevision()
-    const result = reconcileActivityProjection(Date.now(), 5 * 60_000)
+    const result = reconcileActivityProjection(Date.now())
     expect(result.reapedSessionIds).toEqual([])
+    expect(result.expiredSessionIds).toEqual([])
     expect(result.projectionChanged).toBe(false)
     expect(badgeProjection.getRevision()).toBe(revision)
   })
+
+  it('keeps a silent long tool running and does not abort it', () => {
+    row('quiet', 'work')
+    startRun('quiet', proj, 'work')
+    const rt = getRuntime('quiet')!
+    rt.lastActivityAt = 0
+    const now = Date.now() + RUNNING_LEASE_MS + 1
+    const result = reconcileActivityProjection(now)
+    expect(result.reapedSessionIds).toEqual([])
+    expect(result.expiredSessionIds).toEqual([])
+    expect(rt.status).toBe('running')
+    expect(isRunningPointer('quiet')).toBe(true)
+    expect(activityRegistry.getBySessionId('quiet')?.state).toBe('running')
+    expect(badgeProjection.summaryFor(workspaceName).runningSessions).toBe(1)
+    const fact = activityRegistry.getBySessionId('quiet')!
+    expect(fact.lastRenewedAt).toBe(now)
+    expect(fact.leaseUntil).toBe(now + RUNNING_LEASE_MS)
+  })
+
+  it('expires an unpaid lease to stale without aborting the run', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    row('lost', 'work')
+    startRun('lost', proj, 'work')
+    const rt = getRuntime('lost')!
+    rt.run = null
+    const now = Date.now() + RUNNING_LEASE_MS + 1
+    const result = reconcileActivityProjection(now)
+    expect(result.reapedSessionIds).toEqual([])
+    expect(result.expiredSessionIds).toEqual(['lost'])
+    expect(rt.status).toBe('running')
+    expect(activityRegistry.getBySessionId('lost')?.state).toBe('stale')
+    expect(badgeProjection.summaryFor(workspaceName).runningSessions).toBe(0)
+  })
+
+  it('does not expire awaiting_user or parked by the running lease', () => {
+    row('perm', 'work')
+    startRun('perm', proj, 'work')
+    setStatus('perm', 'awaiting_permission')
+    row('team', 'work')
+    startRun('team', proj, 'work')
+    setStatus('team', 'team')
+    const now = Date.now() + RUNNING_LEASE_MS * 4
+    const result = reconcileActivityProjection(now)
+    expect(result.expiredSessionIds).toEqual([])
+    expect(activityRegistry.getBySessionId('perm')?.state).toBe('awaiting_user')
+    expect(activityRegistry.getBySessionId('team')?.state).toBe('parked')
+    expect(badgeProjection.summaryFor(workspaceName).runningSessions).toBe(2)
+  })
+
+  it('rejects a late renew from an old generation after a new run starts', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    const old = activityRegistry.getBySessionId('w-run')!
+    activityRegistry.expire('w-run')
+    activityRegistry.start({
+      activityId: 'w-run',
+      sessionId: 'w-run',
+      workspaceName,
+      sessionKind: 'work',
+      generation: 'gen-next',
+      leaseUntil: Date.now() + RUNNING_LEASE_MS,
+    })
+    expect(activityRegistry.renew('w-run', Date.now() + 1, { generation: old.generation })).toEqual(
+      {
+        accepted: false,
+        reason: 'stale_generation',
+      },
+    )
+    expect(activityRegistry.getBySessionId('w-run')?.generation).toBe('gen-next')
+  })
+
+  it('rebuild after a process restart does not resurrect leftover running facts', () => {
+    row('w-run', 'work')
+    startRun('w-run', proj, 'work')
+    const logOnly = seedLlmAutomation('auto-log')
+    seedRunningLog(logOnly, 'auto-log')
+    rebuildActivityRegistry()
+    expect(
+      activityRegistry
+        .snapshotRunning()
+        .map((f) => f.sessionId)
+        .sort(),
+    ).toEqual(['auto-log', 'w-run'])
+
+    removeRuntime('w-run')
+    startedRuntimes.length = 0
+    expect(reconcileStuckRunningExecutions(Date.now())).toBe(1)
+    activityRegistry.replaceAll([])
+    rebuildActivityRegistry()
+    expect(activityRegistry.snapshot()).toEqual([])
+    expect(badgeProjection.summaryFor(workspaceName).runningSessions).toBe(0)
+  })
 })
+
+function isRunningPointer(sessionId: string): boolean {
+  return getRuntime(sessionId)?.run != null
+}

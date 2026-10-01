@@ -166,7 +166,7 @@ export function buildSessionSlice(deps: StateDeps) {
   // 驱动顶部「意图/讨论/自动化」三个 tab 的角标。
   const ownerRunningCounts = ref<Record<SessionOwnerKind, number>>(emptyOwnerCounts())
   // 每工作区的「运行中会话数」(服务端权威,跨所有 kind 求和,不分桶)。与 sessionCounts
-  // 同一帧送达,按 workspace 名聚合;本期只暴露数据,没有任何组件消费它。
+  // 同一帧送达,按 workspace 名聚合,驱动工作区竖条角标。只在回包属于当前工作区时写入。
   const workspaceRunningSessionCounts = ref<Record<string, number>>({})
   // Per-workspace cursor-pagination state (SR-R14), parallel to the session
   // arrays above. `hasMore` drives the "load more" button; `exhausted` flips it

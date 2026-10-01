@@ -447,6 +447,34 @@ describe('unregistered-workspace degradation', () => {
   })
 })
 
+describe('待处理角标口径 — 分页 vs 权威总数', () => {
+  it('超过一页时第一页截断为 20 且 hasMore,全量 todo 仍为 25', () => {
+    for (let i = 0; i < 25; i++) {
+      createEvent({ workspacePath: proj, sessionKind: 'work', title: `todo-${i}` })
+    }
+    createEvent({
+      workspacePath: proj,
+      sessionKind: 'work',
+      title: 'done-1',
+      status: 'done',
+    })
+    const page = listEventsPage(proj, 'todo', undefined, undefined, 20)
+    expect(page.items).toHaveLength(20)
+    expect(page.hasMore).toBe(true)
+    expect(listEvents(proj, 'todo')).toHaveLength(25)
+  })
+
+  it.fails('第一页加载后可见 todo 数仍等于权威总数', () => {
+    for (let i = 0; i < 25; i++) {
+      createEvent({ workspacePath: proj, sessionKind: 'work', title: `todo-${i}` })
+    }
+    const page = listEventsPage(proj, 'todo', undefined, undefined, 20)
+    expect(page.items.filter((event) => event.status === 'todo')).toHaveLength(
+      listEvents(proj, 'todo').length,
+    )
+  })
+})
+
 describe('degradation', () => {
   it('reads return empty/null and writes throw when the db is unavailable', () => {
     process.env.C3_DB_PATH = '/dev/null/nope/c3.db' // open fails

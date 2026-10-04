@@ -44,7 +44,10 @@ import {
   responsesRequestToChat,
   ChatToResponsesConverter,
   SseChunkParser,
+  isChatStreamTerminator,
   serializeSse,
+  CHAT_STREAM_DONE,
+  UPSTREAM_STREAM_TRUNCATED,
   type ResponsesRequest,
   type ChatStreamChunk,
 } from './translate.js'
@@ -268,7 +271,18 @@ async function fetchWithFailover(
   return { error: lastError }
 }
 
-/** Pipe an upstream Chat SSE body through the converter into a Responses SSE body. */
+/**
+ * Pipe an upstream Chat SSE body through the converter into a Responses SSE body.
+ *
+ * A truncated upstream must NOT be laundered into a success. The converter can only
+ * emit `response.completed` — codex's required turn terminator — so the decision of
+ * WHICH terminal event to send is made here, from the only trustworthy evidence
+ * available: did the upstream actually declare the stream finished (a `finish_reason`
+ * chunk or the `[DONE]` sentinel)? A body that simply stops without either signal
+ * ended early, so it closes with `response.failed` carrying
+ * {@link UPSTREAM_STREAM_TRUNCATED} instead. Failover is deliberately NOT attempted
+ * here: switching upstreams mid-stream would silently swap the model.
+ */
 function translateStream(upstream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
@@ -276,6 +290,7 @@ function translateStream(upstream: ReadableStream<Uint8Array>): ReadableStream<U
   const conv = new ChatToResponsesConverter()
   const reader = upstream.getReader()
   let preludeSent = false
+  let sawTerminator = false
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -296,11 +311,18 @@ function translateStream(upstream: ReadableStream<Uint8Array>): ReadableStream<U
         while (emitted === 0) {
           const { done, value } = await reader.read()
           if (done) {
-            emit(conv.done())
+            // The upstream finished. Emit `response.completed` ONLY if it said so
+            // first; otherwise the stream was cut short and this is a failure.
+            if (sawTerminator) emit(conv.done())
+            else emit(conv.fail(UPSTREAM_STREAM_TRUNCATED))
             controller.close()
             return
           }
           for (const data of parser.push(decoder.decode(value, { stream: true }))) {
+            if (data === CHAT_STREAM_DONE) {
+              sawTerminator = true
+              continue
+            }
             let chunk: ChatStreamChunk & { error?: { message?: string } }
             try {
               chunk = JSON.parse(data)
@@ -312,6 +334,7 @@ function translateStream(upstream: ReadableStream<Uint8Array>): ReadableStream<U
               controller.close()
               return
             }
+            if (isChatStreamTerminator(chunk)) sawTerminator = true
             emit(conv.consume(chunk))
           }
         }

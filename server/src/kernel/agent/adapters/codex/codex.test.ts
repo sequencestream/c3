@@ -20,6 +20,7 @@ import {
   gateToCodexPolicy,
   mcpServersToCodexConfig,
   mcpServersEnableSaveIntents,
+  isUpstreamStreamBreak,
   type CodexClient,
   type CodexFactoryOptions,
   type CodexThread,
@@ -1303,5 +1304,296 @@ describe('createCodexAdapter', () => {
     expect(adapter.capabilities.perToolApproval).toBe(false)
     expect(await adapter.sessions.list({ cwd: '/work' })).toEqual([])
     expect(await adapter.sessions.read('thread_1', { cwd: '/work' })).toEqual([])
+  })
+})
+
+/**
+ * Upstream response-stream resilience. The failure under test is the CLI's own
+ * terminal verdict after its reconnect budget runs out
+ * (`stream disconnected before completion … socket connection was closed
+ * unexpectedly`), reached through an `error` event or a generator throw. Such a
+ * round used to fail immediately and unattended — the one case where a transient
+ * upstream fault cost a whole automation run. Codex-specific, so it stays here
+ * rather than in the shared error classification.
+ */
+describe('isUpstreamStreamBreak', () => {
+  it.each([
+    [
+      'the CLI truncated-stream verdict',
+      'codex stream error: stream disconnected before completion',
+    ],
+    [
+      'the wrapped transport cause',
+      'upstream fetch failed: The socket connection was closed unexpectedly',
+    ],
+    ['the reconnect budget, counted down', 'Reconnecting... 1/5 then gave up'],
+  ])('recognizes %s', (_label, message) => {
+    expect(isUpstreamStreamBreak(new Error(message))).toBe(true)
+    expect(isUpstreamStreamBreak({ message })).toBe(true)
+  })
+
+  it.each([
+    ['a tool failure', 'codex stream error: tool `bash` exited 1'],
+    ['an auth rejection', 'codex stream error: 401 Unauthorized (invalid api key)'],
+    ['an active-writer rejection', 'thread t already has an active writer'],
+    ['an empty failure', ''],
+  ])('does NOT misclassify %s', (_label, message) => {
+    expect(isUpstreamStreamBreak(new Error(message))).toBe(false)
+  })
+})
+
+describe('CodexDriver upstream stream-break recovery', () => {
+  /** The CLI's terminal stream-error event, as it actually arrives. */
+  const BREAK_EVENT = {
+    type: 'error',
+    message:
+      'stream disconnected before completion: upstream fetch failed: The socket connection was closed unexpectedly',
+  } as ThreadEvent
+
+  /**
+   * A client whose threads replay a different script per attempt, recording how
+   * each was launched (fresh vs resumed) so the resume branch is observable.
+   */
+  function sequentialClient(
+    scripts: ThreadEvent[][],
+    threadIds: string[] = [],
+  ): { client: CodexClient; calls: Array<{ kind: 'start' | 'resume'; id?: string }> } {
+    const calls: Array<{ kind: 'start' | 'resume'; id?: string }> = []
+    let index = 0
+    const nextThread = (): CodexThread => {
+      const script = scripts[Math.min(index, scripts.length - 1)]
+      const id = threadIds[index] ?? `thread_${index}`
+      index += 1
+      return {
+        id,
+        runStreamed: async () => ({ events: scriptEvents(script) }),
+        // The CLI exits 0 even when it abandons the stream — the misleading
+        // signature this whole path exists to explain.
+        lastChildOutcome: () => null,
+      }
+    }
+    const client: CodexClient = {
+      startThread: () => {
+        calls.push({ kind: 'start' })
+        return nextThread()
+      },
+      resumeThread: (id) => {
+        calls.push({ kind: 'resume', id })
+        return nextThread()
+      },
+    }
+    return { client, calls }
+  }
+
+  it('retries once and succeeds when the first attempt breaks mid-stream', async () => {
+    const { client, calls } = sequentialClient(
+      [
+        [
+          { type: 'thread.started', thread_id: 'thread_a' },
+          { type: 'item.completed', item: { id: 'i0', type: 'agent_message', text: 'partial' } },
+          BREAK_EVENT,
+        ],
+        [
+          { type: 'thread.started', thread_id: 'thread_b' },
+          { type: 'item.completed', item: { id: 'i1', type: 'agent_message', text: 'complete' } },
+          { type: 'turn.completed', usage: {} as never },
+        ],
+      ],
+      ['thread_a', 'thread_b'],
+    )
+    const run = await new CodexDriver(() => client).start(startOpts())
+
+    const msgs = await collect(run.messages())
+    // The invariant is no DUPLICATE stacking, not "hide the broken attempt": text
+    // the CLI already streamed before the break was genuinely produced and has
+    // already been handed to the consumer, so it is kept — what must not happen is
+    // the same item appearing twice, or the discarded attempt emitting into the
+    // replacement queue after the swap.
+    const texts = msgs.flatMap((m) => m.blocks.map((b) => (b as { text?: string }).text))
+    expect(texts).toEqual(['partial', 'complete'])
+    const ids = msgs.map((m) => (m.blocks[0] as { id?: string }).id)
+    expect(ids).toEqual(['i0', 'i1'])
+    expect(new Set(ids).size).toBe(ids.length) // no item delivered twice
+    // The broken turn HAD announced its thread id, so the retry resumes that thread
+    // to keep the context it had built.
+    expect(calls).toEqual([{ kind: 'start' }, { kind: 'resume', id: 'thread_a' }])
+  })
+
+  it('lands failed with a readable attribution when the retry breaks too', async () => {
+    const { client, calls } = sequentialClient([
+      [{ type: 'thread.started', thread_id: 'thread_a' }, BREAK_EVENT],
+    ])
+    const run = await new CodexDriver(() => client).start(startOpts())
+
+    await expect(collect(run.messages())).rejects.toThrow(
+      /上游响应流在完成前中断.*已自动重试 1 次仍失败/s,
+    )
+    // Budget is one: the original attempt plus exactly one retry, then it stops.
+    expect(calls).toHaveLength(2)
+  })
+
+  it('keeps the CLI outcome phrase as evidence beside the attribution', async () => {
+    const calls: Array<{ kind: 'start' | 'resume'; id?: string }> = []
+    let index = 0
+    const thread = (): CodexThread => {
+      index += 1
+      return {
+        id: 'thread_a',
+        runStreamed: async () => ({ events: scriptEvents([BREAK_EVENT]) }),
+        lastChildOutcome: () => ({ pid: 43210, exitCode: 0, signal: null }),
+      }
+    }
+    const client: CodexClient = {
+      startThread: () => {
+        calls.push({ kind: 'start' })
+        return thread()
+      },
+      resumeThread: (id) => {
+        calls.push({ kind: 'resume', id })
+        return thread()
+      },
+    }
+    const run = await new CodexDriver(() => client).start(startOpts())
+
+    await expect(collect(run.messages())).rejects.toThrow(
+      /上游响应流在完成前中断[\s\S]*exited code=0/,
+    )
+  })
+
+  it('starts fresh when the break precedes the thread id', async () => {
+    const { client, calls } = sequentialClient([
+      [BREAK_EVENT],
+      [
+        { type: 'thread.started', thread_id: 'thread_b' },
+        { type: 'item.completed', item: { id: 'i1', type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed', usage: {} as never },
+      ],
+    ])
+    const run = await new CodexDriver(() => client).start(startOpts())
+
+    expect(await collect(run.messages())).toHaveLength(1)
+    // No id was ever announced, so there is nothing to resume — a clean restart.
+    expect(calls).toEqual([{ kind: 'start' }, { kind: 'start' }])
+  })
+
+  it('recovers a generator-thrown break, not just an error event', async () => {
+    let index = 0
+    const client: CodexClient = {
+      startThread: () => ({
+        id: 'thread_a',
+        runStreamed: async () => ({
+          events: (async function* (): AsyncGenerator<ThreadEvent> {
+            if (index++ === 0) {
+              yield { type: 'thread.started', thread_id: 'thread_a' } as ThreadEvent
+              throw new Error('upstream fetch failed: socket connection was closed unexpectedly')
+            }
+            yield {
+              type: 'item.completed',
+              item: { id: 'i1', type: 'agent_message', text: 'recovered' },
+            } as ThreadEvent
+            yield { type: 'turn.completed', usage: {} as never } as ThreadEvent
+          })(),
+        }),
+      }),
+      resumeThread: () => client.startThread(),
+    }
+    const run = await new CodexDriver(() => client).start(startOpts())
+
+    const msgs = await collect(run.messages())
+    expect(msgs[0].blocks).toMatchObject([{ type: 'text', text: 'recovered' }])
+  })
+
+  it('does NOT retry an ordinary failure (no budget spent on unrelated errors)', async () => {
+    const { client, calls } = sequentialClient([
+      [
+        { type: 'thread.started', thread_id: 'thread_a' },
+        { type: 'error', message: 'tool `bash` exited with code 1' } as ThreadEvent,
+      ],
+    ])
+    const run = await new CodexDriver(() => client).start(startOpts())
+
+    await expect(collect(run.messages())).rejects.toThrow(/exited with code 1/)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('does NOT retry when the run was aborted before the break', async () => {
+    const controller = new AbortController()
+    const { client, calls } = sequentialClient([
+      [
+        { type: 'thread.started', thread_id: 'thread_a' },
+        (() => {
+          controller.abort()
+          return BREAK_EVENT
+        })(),
+      ],
+    ])
+    const run = await new CodexDriver(() => client).start(startOpts({ signal: controller.signal }))
+
+    await collect(run.messages()).catch(() => undefined)
+    // An abort is the user stopping the run; it outranks every classification.
+    expect(calls).toHaveLength(1)
+  })
+
+  it('grants the retry budget to a FRESH round, not only to a resume', async () => {
+    // The original bug: the budget was `opts.resume ? 1 : 0`, so a brand-new
+    // automation run — the case in the report — had no recovery at all.
+    const { client, calls } = sequentialClient([
+      [{ type: 'thread.started', thread_id: 'thread_a' }, BREAK_EVENT],
+      [
+        { type: 'thread.started', thread_id: 'thread_b' },
+        { type: 'item.completed', item: { id: 'i1', type: 'agent_message', text: 'done' } },
+        { type: 'turn.completed', usage: {} as never },
+      ],
+    ])
+    const run = await new CodexDriver(() => client).start(startOpts({ resume: undefined }))
+
+    expect(await collect(run.messages())).toHaveLength(1)
+    expect(calls).toHaveLength(2)
+  })
+})
+
+describe('CodexDriver relay provider stream tolerance', () => {
+  /** A fake relay that records the candidate list it binds and mints a fixed token. */
+  function fakeRelay() {
+    const relay = {
+      endpoint: () => 'http://127.0.0.1:3000/internal/relay/v1/codex',
+      register: () => 'relay-token-xyz',
+      unregister: () => {},
+    }
+    return relay
+  }
+
+  it('configures the CLI stream-retry knobs on the c3-constructed provider', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, fakeRelay())
+    await driver.start(
+      startOpts({
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+          },
+        ],
+      }),
+    )
+    const provider = captured?.config?.model_providers as Record<string, Record<string, unknown>>
+    const entry = provider.c3relay
+    // Each is a field of the CLI's own ModelProviderInfo (verified against the
+    // shipped 0.159.2 binary); integers, because the CLI parses them as numbers.
+    expect(entry.request_max_retries).toBe(6)
+    expect(entry.stream_max_retries).toBe(8)
+    expect(entry.stream_idle_timeout_ms).toBe(300_000)
+    for (const key of ['request_max_retries', 'stream_max_retries', 'stream_idle_timeout_ms']) {
+      expect(Number.isInteger(entry[key])).toBe(true)
+    }
+    // The websocket timeout is irrelevant on a route that forces plain HTTP+SSE.
+    expect(entry.websocket_connect_timeout_ms).toBeUndefined()
+    expect(entry.supports_websockets).toBe(false)
   })
 })

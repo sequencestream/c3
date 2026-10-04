@@ -674,6 +674,67 @@ export function isActiveWriterRejection(err: unknown): boolean {
   return /already has an active writer/i.test(errorMessageOf(err))
 }
 
+/**
+ * Per-provider stream tolerance for the relay route, applied to the custom provider
+ * c3 constructs.
+ *
+ * The CLI reconnects a broken response stream internally (its budget is the `1/5` in
+ * its own error text) and only then gives up, so raising the budget and the idle
+ * window converts some mid-turn breaks into a turn that simply continues — worth
+ * having before the whole-round retry below ever runs. Only the three keys relevant to
+ * this route are set (`websocket_connect_timeout_ms` is omitted because the route
+ * forces `supports_websockets: false` and never opens one).
+ *
+ * These are NOT guesses: all three are fields of the CLI's own `ModelProviderInfo`,
+ * confirmed against the shipped 0.159.2 binary. An unrecognized key there would make
+ * the CLI refuse to start, which is why the set is pinned to exactly these three.
+ */
+const RELAY_PROVIDER_STREAM_TOLERANCE = {
+  // Whole-request retries (connect/5xx), above the CLI default of 4.
+  request_max_retries: 6,
+  // Response-STREAM reconnect attempts — the budget the error message counts down.
+  stream_max_retries: 8,
+  // Idle window before a silent-but-open stream counts as dead. Generous by design:
+  // a long tool-backed turn can legitimately go quiet, and a false timeout here
+  // discards a turn that was still making progress.
+  stream_idle_timeout_ms: 300_000,
+} as const
+
+/**
+ * How a terminal upstream break is named in the run details. Codex-specific, and
+ * deliberately says which side broke the stream: the CLI's own text ("stream error",
+ * a child that exited 0) invites the reader to suspect c3's channel to the CLI,
+ * which never carries model bytes.
+ */
+const CODEX_UPSTREAM_BREAK_ATTRIBUTION =
+  '上游响应流在完成前中断（Codex CLI ↔ 上游 provider，非 c3 ↔ Codex 通道）'
+
+/**
+ * Whether a failure is the UPSTREAM response stream breaking mid-turn, as opposed to
+ * anything about c3's own channel to the CLI. That distinction is the whole point of
+ * this predicate: c3 talks to codex over stdin/stdout JSONL events, which never carry
+ * model bytes, so a "stream" error text can only have come from the CLI's own HTTP
+ * client talking to the provider. The CLI exhausts its internal reconnect budget
+ * (`Reconnecting... 1/5`) before surfacing this, which is why the message reads as
+ * terminal while the underlying fault is transient.
+ *
+ * Narrow on purpose. Every phrase below is one the CLI emits verbatim, and a false
+ * positive would re-run a whole turn (duplicating whatever tool side effects already
+ * happened) — an ordinary tool failure or an auth rejection must never match.
+ * Codex-specific wording, so it stays here rather than in the neutral error module.
+ */
+export function isUpstreamStreamBreak(err: unknown): boolean {
+  const message = errorMessageOf(err)
+  if (message === '') return false
+  // The CLI's own truncated-stream verdict (its reconnect budget ran out).
+  if (/stream disconnected before completion/i.test(message)) return true
+  // The transport-level cause it wraps.
+  if (/socket connection was closed unexpectedly/i.test(message)) return true
+  // The CLI's reconnect budget, reported without the above phrasing.
+  if (/reconnecting\.{0,3}\s*\d+\s*\/\s*\d+/i.test(message)) return true
+  return false
+}
+
 /** The message text of an `Error`, a string, or a message-bearing object. */
 function errorMessageOf(err: unknown): string {
   if (err instanceof Error) return err.message
@@ -890,6 +951,7 @@ export class CodexDriver implements AgentDriver {
               env_key: 'CODEX_API_KEY',
               wire_api: 'responses',
               supports_websockets: false,
+              ...RELAY_PROVIDER_STREAM_TOLERANCE,
             },
           },
         },
@@ -1040,6 +1102,21 @@ export class CodexDriver implements AgentDriver {
         : codex.startThread(threadOptions)
     let thread = buildThread()
 
+    /**
+     * Rebuild for a retry. An upstream stream break is not tied to the original
+     * launch mode: when the broken turn already announced a thread id, the retry
+     * resumes THAT thread to keep its context, even if the run began as a fresh
+     * thread (the common case for an automation's first round breaking late). With
+     * no id yet — a break before the first frame — there is nothing to resume, so it
+     * starts over exactly as the original attempt did.
+     */
+    const buildThreadForRetry = (): CodexThread => {
+      const resumable = opts.resume ?? (sid ? sid : undefined)
+      return resumable
+        ? codex.resumeThread(resumable, threadOptions)
+        : codex.startThread(threadOptions)
+    }
+
     // sessionId resolves from `thread.started` (a new thread) or is known up-front
     // (a resume). Items always follow `thread.started`, so `sid` is set before them.
     let sid = opts.resume ?? ''
@@ -1052,21 +1129,49 @@ export class CodexDriver implements AgentDriver {
 
     // Supervisor state (2026-09-29-004). Failures are deferred, never immediate: the
     // supervisor decides between retrying and terminating, so a recovery is one
-    // uninterrupted turn rather than a dead stream plus a mystery second run. The
-    // retry budget is spent only by an active-writer rejection on a resume.
-    let retryBudget = opts.resume ? 1 : 0
+    // uninterrupted turn rather than a dead stream plus a mystery second run.
+    //
+    // Two INDEPENDENT budgets, because the two recoverable failures need different
+    // recoveries and have different reach. An active-writer rejection is specific to a
+    // resume (a fresh thread holds no lock) and must first reclaim the stale holder.
+    // An upstream stream break can strike ANY round — a brand-new automation run
+    // breaks just as easily as a resumed one — and needs no reclaim, so its budget is
+    // granted unconditionally; keeping it tied to `opts.resume` is what left a first
+    // run with no recovery at all.
+    let activeWriterBudget = opts.resume ? 1 : 0
+    let streamBreakBudget = 1
+    let streamBreakRetries = 0
     let pendingError: unknown = null
     let lastRejection: unknown = null
-    let needsRetry = false
 
-    const considerFailure = (err: unknown): boolean => {
-      if (retryBudget > 0 && isActiveWriterRejection(err)) {
-        retryBudget -= 1
+    /** What the pump must do after {@link considerFailure} grants a retry. */
+    type RetryPlan = 'reclaim-writer' | 'restart-turn' | null
+
+    // Set by the dispatch handlers on the event path, read by the pump below.
+    let retryPlan: RetryPlan = null
+
+    const considerFailure = (err: unknown): RetryPlan => {
+      // An abort is the user stopping the run: it precedes every classification, so
+      // it neither spends a budget nor triggers a recovery.
+      if (controller.signal.aborted) {
+        if (pendingError === null) pendingError = err
+        return null
+      }
+      if (activeWriterBudget > 0 && isActiveWriterRejection(err)) {
+        activeWriterBudget -= 1
         lastRejection = err
-        return true
+        return 'reclaim-writer'
+      }
+      if (streamBreakBudget > 0 && isUpstreamStreamBreak(err)) {
+        streamBreakBudget -= 1
+        streamBreakRetries += 1
+        // Recorded so the failure that finally lands carries WHY it is terminal: the
+        // bare CLI text is what made this undiagnosable from the run details alone.
+        if (pendingError === null) pendingError = err
+        return 'restart-turn'
       }
       if (pendingError === null) pendingError = err
-      return false
+      return null
     }
 
     const dispatch = (ev: ThreadEvent): void => {
@@ -1083,10 +1188,10 @@ export class CodexDriver implements AgentDriver {
           break
         }
         case 'turn.failed':
-          needsRetry = considerFailure(new Error(`codex turn failed: ${ev.error.message}`))
+          retryPlan = considerFailure(new Error(`codex turn failed: ${ev.error.message}`))
           break
         case 'error':
-          needsRetry = considerFailure(new Error(`codex stream error: ${ev.message}`))
+          retryPlan = considerFailure(new Error(`codex stream error: ${ev.message}`))
           break
         // turn.started / turn.completed: no canonical analogue; the generator
         // ending is the turn-end signal (handled in pump()).
@@ -1104,7 +1209,15 @@ export class CodexDriver implements AgentDriver {
       if (pendingError !== null) {
         const phrase = outcome ? describeCodexChildOutcome(outcome) : null
         const base = runErrMsg(pendingError)
-        queue.fail(new Error(phrase ? `${base} (${phrase})` : base, { cause: pendingError }))
+        // Say, in the run details, WHICH failure this is and what was already tried.
+        // The raw CLI text names neither the fault nor the recovery, so a terminal
+        // upstream break otherwise reads as an unexplained failure (its child even
+        // exits 0). The outcome phrase is kept as the corroborating evidence.
+        const blamed =
+          streamBreakRetries > 0 && isUpstreamStreamBreak(pendingError)
+            ? `${CODEX_UPSTREAM_BREAK_ATTRIBUTION} (已自动重试 ${streamBreakRetries} 次仍失败): ${base}`
+            : base
+        queue.fail(new Error(phrase ? `${blamed} (${phrase})` : blamed, { cause: pendingError }))
         return
       }
       queue.close()
@@ -1180,8 +1293,7 @@ export class CodexDriver implements AgentDriver {
     const pump = async (): Promise<void> => {
       try {
         for (;;) {
-          needsRetry = false
-          let retry = false
+          retryPlan = null
           try {
             const { events } = await thread.runStreamed(codexInput, { signal: controller.signal })
             for await (const ev of events) {
@@ -1190,15 +1302,12 @@ export class CodexDriver implements AgentDriver {
               // Fetch the failure now instead of waiting for the stream to end: a
               // broken turn's child may linger, and only closing the generator runs
               // its teardown (the SIGTERM/SIGKILL reclaim).
-              if (needsRetry || pendingError !== null) {
-                retry = needsRetry
-                break
-              }
+              if (retryPlan !== null || pendingError !== null) break
             }
           } catch (e) {
-            retry = considerFailure(e)
+            retryPlan = considerFailure(e)
           }
-          if (!retry) {
+          if (retryPlan === null) {
             settleTurn(thread)
             return
           }
@@ -1206,9 +1315,16 @@ export class CodexDriver implements AgentDriver {
           // child is gone before the replacement starts — a retry never overlaps two
           // live children for one turn.
           if (controller.signal.aborted) return
-          const recovered = await recoverFromActiveWriter()
-          if (!recovered || controller.signal.aborted) return
-          thread = buildThread()
+          if (retryPlan === 'reclaim-writer') {
+            const recovered = await recoverFromActiveWriter()
+            if (!recovered || controller.signal.aborted) return
+          }
+          // A stream break has already discarded its attempt's child above and owns
+          // no lock to reclaim. Resume the SAME thread when its id is known, so the
+          // retry keeps the context the broken turn had built up; only a turn that
+          // broke before its first frame (no id yet) starts over from scratch.
+          pendingError = null
+          thread = buildThreadForRetry()
           queue.swap(new CanonicalQueue())
         }
       } finally {

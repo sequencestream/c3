@@ -1,116 +1,128 @@
+/**
+ * The authoring prompt is a PROJECTION of the ruleset, so these tests assert the
+ * projection and the shell — never a prose literal. A test that pinned 'Target
+ * 8–20 lines' would only prove someone edited a string; a test that renders the
+ * ruleset and compares proves the prompt cannot drift from the discipline.
+ */
+
 import { describe, expect, it } from 'vitest'
 import { buildSpecAgentPrompt } from './spec-prompt.js'
+import { SPEC_RULES, SPEC_RULE_LIMIT, SPEC_TIER_LINE_BUDGETS } from './spec-rules.js'
 
-describe('buildSpecAgentPrompt', () => {
-  it('makes the user the primary reader and localizes the authored document', () => {
-    const prompt = buildSpecAgentPrompt('zh')
-
-    expect(prompt).toContain('first reader is the user; its second reader is the development agent')
-    expect(prompt).toContain('Write the document itself in Chinese')
+describe('the ruleset — one source of truth', () => {
+  it('stays within the cap that keeps it from regrowing into a prose blob', () => {
+    expect(SPEC_RULES.length).toBeLessThanOrEqual(SPEC_RULE_LIMIT)
   })
 
-  it('requires a self-contained spec that distils the intent instead of excluding it', () => {
-    const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('the spec must be self-contained')
-    expect(prompt).toContain(
-      'a reviewer reads this document alone and approves or rejects, without opening the intent or the source',
-    )
-    expect(prompt).toContain(
-      'the motivation, the observable change, the scope boundaries and non-goals, and the acceptance conditions',
-    )
-    expect(prompt).toContain('Do not copy the intent verbatim')
-    expect(prompt).toContain(
-      '**Self-contained** (reviewable without opening the intent or the source)',
-    )
-
-    expect(prompt).not.toContain('Do NOT restate the intent')
-    expect(prompt).not.toContain('Never repeat Why, What, Non-goals')
-    expect(prompt).not.toContain('repeated requirements')
+  it('gives every rule a tier and a severity', () => {
+    for (const rule of SPEC_RULES) {
+      expect(rule.tier).toMatch(/^(simple|normal|complex|all)$/)
+      expect(rule.severity).toBe('warn')
+      expect(rule.statement.length).toBeGreaterThan(0)
+    }
   })
 
-  it('requires a minimal structure for simple changes', () => {
-    const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('For a simple change')
-    expect(prompt).toContain('Behavior and boundaries')
-    expect(prompt).toContain('Target 8–20 lines')
-    expect(prompt).toContain('Do not add background, implementation steps, alternatives')
+  it('gives every rule a unique id, since the id is the metric row key', () => {
+    const ids = SPEC_RULES.map((rule) => rule.id)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('requires the implementation approach while forbidding exhaustive code transcription', () => {
-    const prompt = buildSpecAgentPrompt('en')
+  it('covers all three tiers with a line budget', () => {
+    expect(SPEC_TIER_LINE_BUDGETS.map((t) => t.tier)).toEqual(['simple', 'normal', 'complex'])
+  })
+})
 
-    expect(prompt).toContain(
-      'the chosen approach, the flows, the core logic, the state and its transitions, and the rules',
-    )
-    expect(prompt).toContain('Do not exhaustively transcribe the code')
-    expect(prompt).toContain('Cover the implementation approach inline where it belongs')
+describe('buildSpecAgentPrompt projects the ruleset', () => {
+  it('renders every rule statement into the prompt', () => {
+    const prompt = buildSpecAgentPrompt('en')
+    for (const rule of SPEC_RULES) {
+      expect(prompt).toContain(rule.statement)
+    }
   })
 
-  it('requires a top-down hierarchy instead of a flat pile of bullets', () => {
+  it('renders every tier budget into the prompt', () => {
     const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('Organise the content top-down so the hierarchy is visible')
-    expect(prompt).toContain('**Frame first, decompose, then land.**')
-    expect(prompt).toContain(
-      'decompose it layer by layer along its modules, flows, or state relationships, and only then land on the concrete change points',
-    )
-    expect(prompt).toContain('grouped subsections or nested bullets')
-    expect(prompt).toContain('never flatten it into one level of loose bullets')
+    for (const tier of SPEC_TIER_LINE_BUDGETS) {
+      expect(prompt).toContain(tier.budget)
+    }
+    // The two tiers that had no budget before now carry one.
+    expect(prompt).toContain('at most 40 lines')
+    expect(prompt).toContain('at most 70 lines')
   })
 
-  it('suggests locating named symbols by file path or owning module', () => {
+  it('carries the non-normative-navigation declaration', () => {
     const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('**Suggested: keep key touchpoints locatable.**')
-    expect(prompt).toContain(
-      'it helps the reader to also give its file path — or at least the owning module, class, and method name',
-    )
-    expect(prompt).toContain('not a licence to enumerate every file and symbol')
+    expect(prompt).toContain('NON-NORMATIVE NAVIGATION')
+    expect(prompt).toContain('MUST NOT carry a constraint')
   })
 
-  it('suggests Mermaid diagrams only when the change is genuinely complex', () => {
+  it('carries the four sentence-form rules as shapes, not as numbers', () => {
     const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('**Suggested: draw it when it is genuinely complex.**')
-    expect(prompt).toContain(
-      'add a Mermaid code block (`graph`, `flowchart`, or `sequenceDiagram`)',
-    )
-    expect(prompt).toContain('complex enough that a picture pays for itself')
+    const sentenceForm = SPEC_RULES.find((rule) => rule.id === 'sentence-form')!
+    expect(prompt).toContain(sentenceForm.statement)
+    expect(sentenceForm.statement).toContain('break it at a semantic boundary')
+    expect(sentenceForm.statement).toContain('conclusion of a section first')
+    expect(sentenceForm.statement).toContain('connective at most once')
+    expect(sentenceForm.statement).toContain('active voice')
+    // The rule must not smuggle in a numeric threshold for any of the four.
+    expect(sentenceForm.statement).not.toMatch(/\d+\s*(字|词|characters|words|characters)/)
+    expect(sentenceForm.statement).toContain('not numbers to hit')
   })
 
-  it('keeps locating and diagramming advisory rather than mandatory', () => {
+  it('drops the implementation-handoff section and folds the content into Approach', () => {
     const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain(
-      'Both of these are suggestions to use where they fit, not acceptance criteria',
-    )
-    expect(prompt).toContain('a simple change needs no diagram')
-    expect(prompt).toContain('may push the document past the length its tier allows')
+    expect(prompt).not.toMatch(/^\s*[-*]\s+\*\*Implementation handoff\*\*/m)
+    expect(prompt).not.toContain('## Implementation handoff')
+    // The content survives, as an explicit refusal to defer or to order.
+    expect(prompt).toContain('no separate implementation-handoff section')
+    expect(prompt).toContain('do not list an implementation ORDER')
   })
 
-  it('forbids document-level status labels because approval does not write them back', () => {
+  it('replaces a file/line inventory of what does NOT change with one sourced sentence', () => {
     const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('Do not add a `status` label in the frontmatter or document header')
-    expect(prompt).toContain('approval is a system gate and does not write a document status back')
+    expect(prompt).toContain('let the source be the inventory')
+    expect(prompt).toContain('which capability or layer stays as it is and why')
   })
 
-  it('keeps the normal tier between the simple and complex tiers', () => {
-    const prompt = buildSpecAgentPrompt('en')
-
-    expect(prompt).toContain('For a normal change, add only sections that carry new information')
-    expect(prompt).toContain('Affected capabilities / contracts')
-    expect(prompt).toContain('Important boundaries')
+  it('keeps the language shell the ruleset does not own', () => {
+    expect(buildSpecAgentPrompt('zh')).toContain('Write the document itself in Chinese')
+    expect(buildSpecAgentPrompt('en')).toContain('first reader is the user')
+    expect(buildSpecAgentPrompt('en')).toContain('Write the spec, nothing else')
+    expect(buildSpecAgentPrompt('en')).toContain('find_intents')
   })
 
-  it('reserves migration and trade-off detail for complex changes', () => {
-    const prompt = buildSpecAgentPrompt('en')
+  it('tells the author not to announce the tier', () => {
+    expect(buildSpecAgentPrompt('en')).toContain('Do not announce the complexity level')
+  })
+})
 
-    expect(prompt).toContain('For a complex or high-risk change')
-    expect(prompt).toContain('Decision and trade-offs')
-    expect(prompt).toContain('Compatibility / migration')
-    expect(prompt).toContain('Risks and failure handling')
+describe('the prompt holds no second copy of the discipline', () => {
+  it('owns every bolded label: each is either a ruleset principle or shell scaffolding', () => {
+    const prompt = buildSpecAgentPrompt('en')
+    // Everything the prompt bolds must be accounted for by exactly two sources:
+    // a projected principle, or the shell (runtime confinement + tier skeletons).
+    // A discipline rule restated here under a new label is exactly the drift the
+    // projection exists to prevent.
+    const ruleLabels = SPEC_RULES.map((rule) => rule.statement.match(/\*\*([^*]+)\*\*/)![1]!)
+    const shellLabels = [
+      'Write the spec, nothing else.',
+      'Query existing intents (read-only).',
+      'Change summary',
+      'Behavior and boundaries',
+      'Verification',
+      'Approach',
+      'Affected capabilities / contracts',
+      'Important boundaries',
+      'Decision and trade-offs',
+      'Compatibility / migration',
+      'Risks and failure handling',
+      // Emphasis in the job description, not a rule label.
+      'spec document',
+    ]
+    const claimed = prompt.match(/\*\*[^*]+\*\*/g) ?? []
+    const stray = claimed
+      .map((label) => label.replace(/\*\*/g, ''))
+      .filter((bare) => !ruleLabels.includes(bare) && !shellLabels.includes(bare))
+    expect(stray).toEqual([])
   })
 })

@@ -85,6 +85,17 @@ describe('stripping: code, tables, comments and Given/When/Then are not the auth
     expect(kinds(analyzeSpec(doc))).not.toContain('passive_voice')
   })
 
+  it('does not read a passive out of a bare ``` fence with no info string', () => {
+    const doc = '# 规格\n\n## 方案\n\n```\n状态机由配置覆盖\n```\n'
+    expect(kinds(analyzeSpec(doc))).not.toContain('passive_voice')
+  })
+
+  it('does not read a duplicate out of two bare ``` fences', () => {
+    const block = '必须保持状态机不变量不被绕过并覆盖所有异常路径。'
+    const doc = `# 规格\n\n## A\n\n\`\`\`\n${block}\n\`\`\`\n\n## B\n\n\`\`\`\n${block}\n\`\`\`\n`
+    expect(kinds(analyzeSpec(doc))).not.toContain('duplicate_normative_fact')
+  })
+
   it('does not read a navigation-as-constraint out of a table row', () => {
     const row = '| 必须 | server/src/a.ts | server/src/b.ts | server/src/c.ts | :12 |'
     const doc = `# 规格\n\n## 边界\n\n| x | y | z | w | v |\n| --- | --- | --- | --- | --- |\n${row}\n`
@@ -100,6 +111,13 @@ describe('stripping: code, tables, comments and Given/When/Then are not the auth
   it('does not read a duplicate out of Given/When/Then', () => {
     const step = '必须保持状态机不变量不被绕过并覆盖所有异常路径。'
     const doc = `# 规格\n\n## 场景\n\nGiven: 系统已就绪\nWhen: ${step}\nThen: 结果成立\n\n## 另一场景\n\nGiven: 系统重启\nWhen: ${step}\nThen: 结果成立\n`
+    expect(kinds(analyzeSpec(doc))).not.toContain('duplicate_normative_fact')
+  })
+
+  it('does not read anything out of Chinese Given/When/Then steps', () => {
+    const doc =
+      '# 规格\n\n## 场景\n\n- 假设 系统已就绪\n- 当 状态机由配置覆盖\n- 则 结论成立\n\n## 另一场景\n\n- 假设 系统重启\n- 当 状态机由配置覆盖\n- 则 结论成立\n'
+    expect(kinds(analyzeSpec(doc))).not.toContain('passive_voice')
     expect(kinds(analyzeSpec(doc))).not.toContain('duplicate_normative_fact')
   })
 })

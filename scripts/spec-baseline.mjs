@@ -136,7 +136,10 @@ function collect(db, specsRoot) {
     )[0]?.c ?? 0
   const changes =
     db.all(
-      "SELECT COUNT(*) AS c FROM intent_logs WHERE operation_type='spec_reviewed' AND summary LIKE '%需修改%'",
+      // 精确匹配结论前缀，不做子串 LIKE：reason 逐字拼在结论后面，一条
+      // verdict=pass 但理由里出现「需修改」三字的结论会被子串统计误计，
+      // 而这个占比正是重写轮次上限的推导输入之一。
+      "SELECT COUNT(*) AS c FROM intent_logs WHERE operation_type='spec_reviewed' AND summary GLOB 'spec 审核结论: 需修改 —*'",
     )[0]?.c ?? 0
   const rounds = db.all(
     'SELECT spec_review_rework_rounds AS r, COUNT(*) AS c FROM intents GROUP BY 1 ORDER BY 1',

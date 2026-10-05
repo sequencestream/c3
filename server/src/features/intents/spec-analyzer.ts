@@ -48,7 +48,10 @@ interface Line {
 const FENCE = /^\s*(?:```|~~~)/
 const TABLE_ROW = /^\s*\|.*\|\s*$/
 const HTML_COMMENT = /^\s*<!--/
-const GWT_LINE = /^\s*(?:-|\*|\d+\.)?\s*(?:given|when|then|假设|当|则)\b\s*[:：]?/i
+// `\b` is defined over [A-Za-z0-9_], so it can never fire right after a CJK
+// character (nor after the whitespace before one): only the Latin keywords get
+// a word boundary, the Chinese ones match on the character alone.
+const GWT_LINE = /^\s*(?:-|\*|\d+\.)?\s*(?:(?:given|when|then)\b|(?:假设|当|则))\s*[:：]?/i
 
 /**
  * Build the line view plus the stripped subset the counting checks read.
@@ -77,7 +80,12 @@ function readLines(markdown: string): { all: Line[]; prose: Line[] } {
       continue
     }
     if (FENCE.test(text)) {
-      inFence = !text.trimEnd().endsWith('```') && !text.trimEnd().endsWith('~~~') ? true : false
+      // Reached only OUTSIDE a block, because the in-fence branch above already
+      // consumes closing markers — so any fence line here opens a block. A bare
+      // ``` (no info string) is the commonest opener and looks identical to a
+      // closer; deciding per line would read it as a close and leak the whole
+      // block into the counting checks.
+      inFence = true
       all.push({ number: i + 1, text, section, stripped: true })
       continue
     }

@@ -307,7 +307,8 @@ export const MACHINE_SPEC_APPROVER = 'c3:machine-spec-approver'
  *
  * Why this number — measured on the workspace ledger (audit trail of every
  * `spec_reviewed` conclusion plus the per-intent round counter), 259 conclusions
- * over 162 distinct intents:
+ * over 162 distinct intents, collected 2026-10-05 (the same single collection
+ * the gate document quotes, so the two never drift apart):
  *
  *   - `changes_requested` is 94/259 ≈ 36%: a third of specs miss the gate the
  *     first time, so a rejection is routine rather than exceptional.

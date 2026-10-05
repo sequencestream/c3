@@ -4,6 +4,7 @@
  * binding lifecycle, the per-vendor endpoints, and the upstream-URL derivation.
  */
 import { describe, it, expect, afterEach } from 'vitest'
+import { isUpstreamStreamBreak } from '../../kernel/agent/adapters/codex/driver.js'
 import {
   createRelay,
   chatCompletionsUrl,
@@ -265,6 +266,48 @@ describe('relay Chat stream termination (truncation is not completion)', () => {
     expect(body).toContain('response.failed')
     expect(body).not.toContain('response.completed')
     expect(body).toContain('upstream stream ended before completion')
+  })
+
+  // The relay's truncation marker and the driver's failure classifier are two ends
+  // of one contract, split across the ADR-0009 layer boundary. This is the test that
+  // keeps them joined: the marker the relay actually puts on the wire must be
+  // recognized by the classifier once the CLI wraps it in its own sentence.
+  it('emits a response.failed whose marker the codex driver classifies as retryable', async () => {
+    const body = await runCodexHandler(() =>
+      chatSse([JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'half a sen' } }] })]),
+    )
+    expect(body).toContain('response.failed')
+    // The marker as it travels: an event message the CLI will quote back.
+    const marker = /"message":"([^"]+)"/.exec(body)?.[1]
+    expect(marker).toBe('upstream stream ended before completion')
+    // Bare, as relayed.
+    expect(isUpstreamStreamBreak(new Error(marker ?? ''))).toBe(true)
+    // Wrapped in the CLI's own phrasing — the only form that can be relied on, since
+    // the CLI rewrites the message before c3 ever sees the failure.
+    expect(isUpstreamStreamBreak(new Error(`codex turn failed: ${marker}`))).toBe(true)
+  })
+
+  it('emits response.completed when only a trailing usage frame closes the stream', async () => {
+    // Providers that sign usage off in a separate frame instead of (or alongside)
+    // finish_reason must not have their finished turns reported as truncations.
+    const body = await runCodexHandler(() =>
+      chatSse([
+        JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'hello' } }] }),
+        JSON.stringify({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+      ]),
+    )
+    expect(body).toContain('response.completed')
+    expect(body).not.toContain('response.failed')
+  })
+
+  it('still fails a stream that produced nothing but a usage frame', async () => {
+    // The counterpart to the case above: usage alone is not evidence of a clean
+    // finish, or an empty/truncated response would silently pass.
+    const body = await runCodexHandler(() =>
+      chatSse([JSON.stringify({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 0 } })]),
+    )
+    expect(body).toContain('response.failed')
+    expect(body).not.toContain('response.completed')
   })
 
   it('does not emit response.completed for an entirely empty upstream body', async () => {

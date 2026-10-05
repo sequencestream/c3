@@ -303,8 +303,12 @@ function normalizeToolChoice(choice: unknown): unknown {
  * Deliberately a distinct phrase rather than a generic error string: it is the ONE
  * anchor a downstream retry classifier needs to recognize a truncated upstream,
  * regardless of which vendor wording the CLI wraps it in.
+ *
+ * Re-exported from the kernel-side relay contract, which is where the codex driver's
+ * classifier reads it from — the CLI wraps this marker in a vendor-specific sentence
+ * before it ever reaches c3, so both ends must agree on the one phrase they key on.
  */
-export const UPSTREAM_STREAM_TRUNCATED = 'upstream stream ended before completion'
+export { CODEX_UPSTREAM_STREAM_TRUNCATED as UPSTREAM_STREAM_TRUNCATED } from '../../kernel/relay/contract.js'
 
 interface PendingToolCall {
   id: string
@@ -500,6 +504,37 @@ export function serializeSse(event: ResponsesEvent): string {
  */
 export function isChatStreamTerminator(chunk: ChatStreamChunk): boolean {
   return (chunk.choices ?? []).some((choice) => typeof choice.finish_reason === 'string')
+}
+
+/**
+ * Whether a chunk carries real model output — text, reasoning or tool calls. Used to
+ * tell a trailing usage report apart from the opening frames of a stream that has not
+ * produced anything yet.
+ */
+export function isChatStreamOutput(chunk: ChatStreamChunk): boolean {
+  return (chunk.choices ?? []).some((choice) => {
+    const delta = choice.delta
+    return Boolean(
+      delta?.content ||
+      delta?.reasoning_content ||
+      (delta?.tool_calls && delta.tool_calls.length > 0),
+    )
+  })
+}
+
+/**
+ * Whether a chunk is a bare usage report: token counts with no `finish_reason` and no
+ * choice output. Several chat providers close a stream with exactly this shape once
+ * they have already sent `finish_reason` (or under `stream_options.include_usage`).
+ *
+ * On its own this is NOT proof of a clean finish — usage can appear mid-stream, and a
+ * stream that produced nothing at all has certainly been cut short. The caller
+ * therefore pairs it with the fact that output already flowed (see
+ * {@link isChatStreamOutput}), which is what distinguishes a trailing usage frame
+ * from a truncated one.
+ */
+export function isChatStreamUsageReport(chunk: ChatStreamChunk): boolean {
+  return Boolean(chunk.usage) && !isChatStreamTerminator(chunk) && !isChatStreamOutput(chunk)
 }
 
 /**

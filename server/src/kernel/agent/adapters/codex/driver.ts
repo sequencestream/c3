@@ -38,7 +38,11 @@ import type {
 import type { CodexPolicy } from '@ccc/shared/protocol'
 import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
-import { CODEX_RELAY_PROVIDER, type Relay } from '../../../relay/contract.js'
+import {
+  CODEX_RELAY_PROVIDER,
+  CODEX_UPSTREAM_STREAM_TRUNCATED,
+  type Relay,
+} from '../../../relay/contract.js'
 import { writeImageTempFiles, cleanupImageTempFiles, type ImageTempFiles } from './image-files.js'
 import {
   writeModelCatalogFile,
@@ -718,14 +722,20 @@ const CODEX_UPSTREAM_BREAK_ATTRIBUTION =
  * (`Reconnecting... 1/5`) before surfacing this, which is why the message reads as
  * terminal while the underlying fault is transient.
  *
- * Narrow on purpose. Every phrase below is one the CLI emits verbatim, and a false
- * positive would re-run a whole turn (duplicating whatever tool side effects already
- * happened) — an ordinary tool failure or an auth rejection must never match.
+ * The phrases come in two families. The first is c3's OWN wording: the relay labels a
+ * truncated upstream with {@link CODEX_UPSTREAM_STREAM_TRUNCATED}, and the CLI echoes
+ * that event's message back inside a sentence of its own — so matching the marker
+ * substring is what survives whatever phrasing the CLI wraps it in. The rest are the
+ * CLI's own truncated-stream verdicts. Narrow on purpose: a false positive would
+ * re-run a whole turn (duplicating whatever tool side effects already happened), so an
+ * ordinary tool failure or an auth rejection must never match.
  * Codex-specific wording, so it stays here rather than in the neutral error module.
  */
 export function isUpstreamStreamBreak(err: unknown): boolean {
   const message = errorMessageOf(err)
   if (message === '') return false
+  // c3's own truncation marker, as relayed back through the CLI's error text.
+  if (message.toLowerCase().includes(CODEX_UPSTREAM_STREAM_TRUNCATED)) return true
   // The CLI's own truncated-stream verdict (its reconnect budget ran out).
   if (/stream disconnected before completion/i.test(message)) return true
   // The transport-level cause it wraps.

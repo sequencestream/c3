@@ -44,7 +44,9 @@ import {
   responsesRequestToChat,
   ChatToResponsesConverter,
   SseChunkParser,
+  isChatStreamOutput,
   isChatStreamTerminator,
+  isChatStreamUsageReport,
   serializeSse,
   CHAT_STREAM_DONE,
   UPSTREAM_STREAM_TRUNCATED,
@@ -291,6 +293,7 @@ function translateStream(upstream: ReadableStream<Uint8Array>): ReadableStream<U
   const reader = upstream.getReader()
   let preludeSent = false
   let sawTerminator = false
+  let sawOutput = false
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -335,6 +338,13 @@ function translateStream(upstream: ReadableStream<Uint8Array>): ReadableStream<U
               return
             }
             if (isChatStreamTerminator(chunk)) sawTerminator = true
+            if (isChatStreamOutput(chunk)) sawOutput = true
+            // A trailing usage-only frame (`{"choices":[],"usage":{…}}`) is how many
+            // chat providers sign off, either alongside `finish_reason` or instead of
+            // it. Accept it as a terminator ONLY once real output has already flowed —
+            // otherwise a stream that produced nothing but a usage report is precisely
+            // the truncation case this whole branch exists to catch.
+            if (isChatStreamUsageReport(chunk) && sawOutput) sawTerminator = true
             emit(conv.consume(chunk))
           }
         }

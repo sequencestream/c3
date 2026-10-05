@@ -1327,6 +1327,15 @@ describe('isUpstreamStreamBreak', () => {
       'upstream fetch failed: The socket connection was closed unexpectedly',
     ],
     ['the reconnect budget, counted down', 'Reconnecting... 1/5 then gave up'],
+    ["c3's own truncation marker, bare", 'upstream stream ended before completion'],
+    [
+      "c3's own truncation marker, wrapped in the CLI's own sentence",
+      'codex turn failed: upstream stream ended before completion',
+    ],
+    [
+      "c3's own truncation marker, wrapped and punctuated",
+      'ERROR stream error: Stream ended before completion: upstream stream ended before completion.',
+    ],
   ])('recognizes %s', (_label, message) => {
     expect(isUpstreamStreamBreak(new Error(message))).toBe(true)
     expect(isUpstreamStreamBreak({ message })).toBe(true)

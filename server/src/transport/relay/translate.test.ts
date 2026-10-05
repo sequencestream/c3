@@ -19,7 +19,9 @@ import {
   ChatToResponsesConverter,
   SseChunkParser,
   serializeSse,
+  isChatStreamOutput,
   isChatStreamTerminator,
+  isChatStreamUsageReport,
   CHAT_STREAM_DONE,
   UPSTREAM_STREAM_TRUNCATED,
   type ChatStreamChunk,
@@ -279,6 +281,48 @@ describe('isChatStreamTerminator', () => {
     expect(isChatStreamTerminator({ choices: [{ delta: { content: 'x' } }] })).toBe(false)
     expect(isChatStreamTerminator({ choices: [{ delta: {}, finish_reason: null }] })).toBe(false)
     expect(isChatStreamTerminator({})).toBe(false)
+  })
+})
+
+describe('isChatStreamOutput', () => {
+  it('recognizes text, reasoning and tool-call frames', () => {
+    expect(isChatStreamOutput({ choices: [{ delta: { content: 'x' } }] })).toBe(true)
+    expect(isChatStreamOutput({ choices: [{ delta: { reasoning_content: 'x' } }] })).toBe(true)
+    expect(
+      isChatStreamOutput({ choices: [{ delta: { tool_calls: [{ index: 0, id: 't' }] } }] }),
+    ).toBe(true)
+  })
+
+  it('rejects a usage-only frame and an empty delta', () => {
+    expect(isChatStreamOutput({ choices: [], usage: { prompt_tokens: 1 } })).toBe(false)
+    expect(isChatStreamOutput({ choices: [{ delta: {} }] })).toBe(false)
+    expect(isChatStreamOutput({})).toBe(false)
+  })
+})
+
+describe('isChatStreamUsageReport', () => {
+  it('accepts a trailing usage-only frame', () => {
+    expect(isChatStreamUsageReport({ choices: [], usage: { prompt_tokens: 7 } })).toBe(true)
+    expect(isChatStreamUsageReport({ choices: [{}], usage: { prompt_tokens: 7 } })).toBe(true)
+  })
+
+  it('rejects a frame that already finished or still carries output', () => {
+    expect(
+      isChatStreamUsageReport({
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1 },
+      }),
+    ).toBe(false)
+    expect(
+      isChatStreamUsageReport({
+        choices: [{ delta: { content: 'x' } }],
+        usage: { prompt_tokens: 1 },
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects a chunk with no usage at all', () => {
+    expect(isChatStreamUsageReport({ choices: [] })).toBe(false)
   })
 })
 

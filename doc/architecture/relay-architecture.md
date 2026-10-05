@@ -28,6 +28,6 @@ provider 端点在进程拉起时写入，一次 run 无法在「走 relay」与
 
 适配按厂商、按候选上游协议选择透传或翻译；无 SDK 类型穿过翻译层（[ADR-0009](adr/0009-unidirectional-boundaries.md)）。Codex 在上游为 Chat 时做 Responses↔Chat 双向翻译，上游为 Responses 时透传。Claude 对 Anthropic 兼容上游透传。relay 不做跨协议的 Claude 翻译，也不做厂商之间的切换。共识投票不在本层。
 
-上游流必须**自己声明结束**，relay 才承认这一轮完成。见到上游的终止信号（Chat 侧的终止块或 `[DONE]`）才发 `response.completed`；提前结束一律发 `response.failed`，带可辨识的截断标记。理由是失败与成功的区别：被截断的一轮若按正常完成翻译，CLI 与 c3 都拿到「成功」，工具参数可能残缺、文本可能半截，自动化还会把残缺输出落成 `success`——比直接失败更糟。
+上游流必须**自己声明结束**，relay 才承认这一轮完成。见到上游的终止信号（Chat 侧的 `finish_reason` 终止块、`[DONE]`，或已产出内容之后的纯 usage 收尾帧）才发 `response.completed`；提前结束一律发 `response.failed`，带可辨识的截断标记。纯 usage 收尾帧只在流中已有真实输出后才被承认为终止信号：usage 也会出现在流中间，单独出现时它恰恰是「什么都没产出就被切断」的形状，把它当完成等于把空响应判成成功。理由是失败与成功的区别：被截断的一轮若按正常完成翻译，CLI 与 c3 都拿到「成功」，工具参数可能残缺、文本可能半截，自动化还会把残缺输出落成 `success`——比直接失败更糟。
 
 中途断裂不切候选：换上游等于换模型，同一轮内换模型不可接受。Responses 直通路径原样透传，截断由 CLI 自行识别。Codex 侧据此重试，见 [codex-sdk-guide.md](codex-sdk-guide.md)。

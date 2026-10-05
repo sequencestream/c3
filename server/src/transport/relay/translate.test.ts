@@ -6,7 +6,9 @@
  *    events codex's parser consumes (text / tool-call / reasoning / usage / error),
  *    asserting the contract pinned from `codex-rs/.../sse/responses.rs`:
  *    output items arrive as full `ResponseItem`s in `output_item.done` and the
- *    stream always ends with `response.completed` (id required, usage optional).
+ *    stream always ends with exactly one terminator — `response.completed` for a
+ *    stream the upstream declared finished, `response.failed` for one that stopped
+ *    early (id required on completion, usage optional).
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +19,11 @@ import {
   ChatToResponsesConverter,
   SseChunkParser,
   serializeSse,
+  isChatStreamOutput,
+  isChatStreamTerminator,
+  isChatStreamUsageReport,
+  CHAT_STREAM_DONE,
+  UPSTREAM_STREAM_TRUNCATED,
   type ChatStreamChunk,
 } from './translate.js'
 
@@ -224,10 +231,119 @@ describe('SSE framing', () => {
     expect(s).toBe('event: response.created\ndata: {"type":"response.created","response":{}}\n\n')
   })
 
-  it('parses data lines and skips [DONE] / blanks across chunk splits', () => {
+  it('parses data lines across chunk splits and surfaces the [DONE] sentinel', () => {
     const p = new SseChunkParser()
     expect(p.push('data: {"a":1}\n\ndata: {"b')).toEqual(['{"a":1}'])
     expect(p.push('":2}\n')).toEqual(['{"b":2}'])
-    expect(p.push('data: [DONE]\n\n')).toEqual([])
+    // [DONE] is forwarded, not swallowed: the caller needs it to tell a clean
+    // upstream finish from a truncated one.
+    expect(p.push('data: [DONE]\n\n')).toEqual([CHAT_STREAM_DONE])
+  })
+})
+
+/**
+ * Upstream end-of-stream detection. These two signals are the ONLY evidence that a
+ * Chat stream finished on purpose; their absence is what the relay turns into a
+ * `response.failed` instead of a completion.
+ */
+describe('SseChunkParser end-of-stream sentinel', () => {
+  it('surfaces [DONE] instead of swallowing it', () => {
+    const parser = new SseChunkParser()
+    const out = parser.push('data: {"id":"c1"}\n\ndata: [DONE]\n\n')
+    expect(out).toEqual(['{"id":"c1"}', CHAT_STREAM_DONE])
+  })
+
+  it('still drops empty data lines (keepalives)', () => {
+    expect(new SseChunkParser().push('data: \n\n')).toEqual([])
+  })
+
+  it('keeps the sentinel in wire order relative to the last chunk', () => {
+    const parser = new SseChunkParser()
+    // Split across a chunk boundary — the sentinel may arrive mid-read.
+    expect(parser.push('data: {"a":1}\n\ndata: [DO')).toEqual(['{"a":1}'])
+    expect(parser.push('NE]\n\n')).toEqual([CHAT_STREAM_DONE])
+  })
+
+  it('ignores non-data SSE lines (event:/comments)', () => {
+    expect(new SseChunkParser().push('event: message\n: keepalive\n\n')).toEqual([])
+  })
+})
+
+describe('isChatStreamTerminator', () => {
+  it('accepts a choice carrying a finish_reason', () => {
+    expect(isChatStreamTerminator({ choices: [{ delta: {}, finish_reason: 'stop' }] })).toBe(true)
+    expect(isChatStreamTerminator({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })).toBe(
+      true,
+    )
+  })
+
+  it('rejects a mid-stream chunk and a null finish_reason', () => {
+    expect(isChatStreamTerminator({ choices: [{ delta: { content: 'x' } }] })).toBe(false)
+    expect(isChatStreamTerminator({ choices: [{ delta: {}, finish_reason: null }] })).toBe(false)
+    expect(isChatStreamTerminator({})).toBe(false)
+  })
+})
+
+describe('isChatStreamOutput', () => {
+  it('recognizes text, reasoning and tool-call frames', () => {
+    expect(isChatStreamOutput({ choices: [{ delta: { content: 'x' } }] })).toBe(true)
+    expect(isChatStreamOutput({ choices: [{ delta: { reasoning_content: 'x' } }] })).toBe(true)
+    expect(
+      isChatStreamOutput({ choices: [{ delta: { tool_calls: [{ index: 0, id: 't' }] } }] }),
+    ).toBe(true)
+  })
+
+  it('rejects a usage-only frame and an empty delta', () => {
+    expect(isChatStreamOutput({ choices: [], usage: { prompt_tokens: 1 } })).toBe(false)
+    expect(isChatStreamOutput({ choices: [{ delta: {} }] })).toBe(false)
+    expect(isChatStreamOutput({})).toBe(false)
+  })
+})
+
+describe('isChatStreamUsageReport', () => {
+  it('accepts a trailing usage-only frame', () => {
+    expect(isChatStreamUsageReport({ choices: [], usage: { prompt_tokens: 7 } })).toBe(true)
+    expect(isChatStreamUsageReport({ choices: [{}], usage: { prompt_tokens: 7 } })).toBe(true)
+  })
+
+  it('rejects a frame that already finished or still carries output', () => {
+    expect(
+      isChatStreamUsageReport({
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1 },
+      }),
+    ).toBe(false)
+    expect(
+      isChatStreamUsageReport({
+        choices: [{ delta: { content: 'x' } }],
+        usage: { prompt_tokens: 1 },
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects a chunk with no usage at all', () => {
+    expect(isChatStreamUsageReport({ choices: [] })).toBe(false)
+  })
+})
+
+describe('converter terminal events', () => {
+  it('fail() emits response.failed and is terminal', () => {
+    const conv = new ChatToResponsesConverter()
+    conv.start()
+    const events = conv.fail(UPSTREAM_STREAM_TRUNCATED)
+    expect(events).toHaveLength(1)
+    expect(events[0].type).toBe('response.failed')
+    expect(JSON.stringify(events[0])).toContain(UPSTREAM_STREAM_TRUNCATED)
+    // A second terminal call is a no-op — exactly one terminator ever reaches codex.
+    expect(conv.fail('again')).toEqual([])
+    expect(conv.done()).toEqual([])
+  })
+
+  it('done() still emits response.completed and is terminal', () => {
+    const conv = new ChatToResponsesConverter()
+    conv.start()
+    const events = conv.done()
+    expect(events.some((e) => e.type === 'response.completed')).toBe(true)
+    expect(conv.fail('later')).toEqual([])
   })
 })

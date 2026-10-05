@@ -57,3 +57,16 @@ export interface Relay {
  * can be forced off — codex 0.137 otherwise dials a websocket the relay can't serve.
  */
 export const CODEX_RELAY_PROVIDER = 'c3relay'
+
+/**
+ * The one phrase that means "the upstream response stream ended before it declared
+ * itself finished", for the codex chat-wire relay. Lives here — the inert kernel-side
+ * contract — rather than in the relay's transport module, because the consumer is the
+ * codex driver's failure classifier and ADR-0009 bars kernel from importing transport.
+ *
+ * The relay emits it as the message of a `response.failed` event; the codex CLI wraps
+ * whatever that event carries in a sentence of its own wording, so both ends must key
+ * on this exact substring rather than on a full message. Any classifier change has to
+ * keep matching the marker itself, independent of the CLI's surrounding phrasing.
+ */
+export const CODEX_UPSTREAM_STREAM_TRUNCATED = 'upstream stream ended before completion'

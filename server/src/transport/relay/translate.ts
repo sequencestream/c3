@@ -294,6 +294,22 @@ function normalizeToolChoice(choice: unknown): unknown {
 // Response translation: Chat Completions SSE → Responses SSE events
 // ---------------------------------------------------------------------------
 
+/**
+ * The relay's stable, machine-matchable marker for "the upstream Chat stream ended
+ * before it said it was finished". Without it a truncated stream is
+ * indistinguishable from a short-but-complete one, and the turn would be handed to
+ * the CLI as a normal completion with truncated text or half a tool call.
+ *
+ * Deliberately a distinct phrase rather than a generic error string: it is the ONE
+ * anchor a downstream retry classifier needs to recognize a truncated upstream,
+ * regardless of which vendor wording the CLI wraps it in.
+ *
+ * Re-exported from the kernel-side relay contract, which is where the codex driver's
+ * classifier reads it from — the CLI wraps this marker in a vendor-specific sentence
+ * before it ever reaches c3, so both ends must agree on the one phrase they key on.
+ */
+export { CODEX_UPSTREAM_STREAM_TRUNCATED as UPSTREAM_STREAM_TRUNCATED } from '../../kernel/relay/contract.js'
+
 interface PendingToolCall {
   id: string
   name: string
@@ -481,8 +497,60 @@ export function serializeSse(event: ResponsesEvent): string {
 }
 
 /**
+ * Whether a parsed Chat chunk is the upstream's own end-of-stream signal — a choice
+ * carrying a non-null `finish_reason`. This is the terminator for providers that do
+ * NOT send the `[DONE]` sentinel; either signal is sufficient evidence of a clean
+ * finish, and their absence is what marks a stream as truncated.
+ */
+export function isChatStreamTerminator(chunk: ChatStreamChunk): boolean {
+  return (chunk.choices ?? []).some((choice) => typeof choice.finish_reason === 'string')
+}
+
+/**
+ * Whether a chunk carries real model output — text, reasoning or tool calls. Used to
+ * tell a trailing usage report apart from the opening frames of a stream that has not
+ * produced anything yet.
+ */
+export function isChatStreamOutput(chunk: ChatStreamChunk): boolean {
+  return (chunk.choices ?? []).some((choice) => {
+    const delta = choice.delta
+    return Boolean(
+      delta?.content ||
+      delta?.reasoning_content ||
+      (delta?.tool_calls && delta.tool_calls.length > 0),
+    )
+  })
+}
+
+/**
+ * Whether a chunk is a bare usage report: token counts with no `finish_reason` and no
+ * choice output. Several chat providers close a stream with exactly this shape once
+ * they have already sent `finish_reason` (or under `stream_options.include_usage`).
+ *
+ * On its own this is NOT proof of a clean finish — usage can appear mid-stream, and a
+ * stream that produced nothing at all has certainly been cut short. The caller
+ * therefore pairs it with the fact that output already flowed (see
+ * {@link isChatStreamOutput}), which is what distinguishes a trailing usage frame
+ * from a truncated one.
+ */
+export function isChatStreamUsageReport(chunk: ChatStreamChunk): boolean {
+  return Boolean(chunk.usage) && !isChatStreamTerminator(chunk) && !isChatStreamOutput(chunk)
+}
+
+/**
+ * The Chat stream's own end-of-stream sentinel, surfaced verbatim so the caller can
+ * tell a clean upstream finish from a truncated stream. Emitted in-band (rather
+ * than as a side flag) because it arrives interleaved with the `data:` payloads on
+ * one ordered wire — the only place its arrival ORDER relative to the last chunk
+ * is known. Everything else on the wire is JSON, so the sentinel is unambiguous.
+ */
+export const CHAT_STREAM_DONE = '[DONE]'
+
+/**
  * Incremental SSE line parser for the upstream Chat stream. Feed raw decoded text
- * chunks; yields the JSON payloads of each `data:` line (excluding `[DONE]`).
+ * chunks; yields the JSON payloads of each `data:` line, plus the
+ * {@link CHAT_STREAM_DONE} sentinel where the upstream sent one. Empty `data:`
+ * lines (keepalives) are still dropped.
  */
 export class SseChunkParser {
   private buffer = ''
@@ -496,8 +564,8 @@ export class SseChunkParser {
       this.buffer = this.buffer.slice(nl + 1)
       if (!line.startsWith('data:')) continue
       const data = line.slice(5).trim()
-      if (data === '' || data === '[DONE]') continue
-      out.push(data)
+      if (data === '') continue
+      out.push(data === '[DONE]' ? CHAT_STREAM_DONE : data)
     }
     return out
   }

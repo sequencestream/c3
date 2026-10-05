@@ -4,6 +4,7 @@
  * binding lifecycle, the per-vendor endpoints, and the upstream-URL derivation.
  */
 import { describe, it, expect, afterEach } from 'vitest'
+import { isUpstreamStreamBreak } from '../../kernel/agent/adapters/codex/driver.js'
 import {
   createRelay,
   chatCompletionsUrl,
@@ -184,5 +185,143 @@ describe('relay failover (ADR-0029)', () => {
     )
     const sentBody = JSON.parse(sentBodyRaw) as Record<string, unknown>
     expect(sentBody.model).toBe('deepseek-v4')
+  })
+})
+
+/**
+ * Upstream Chat stream TERMINATION semantics. The regression these guard is the
+ * dangerous one: a truncated stream used to be translated into
+ * `response.completed`, so a cut-off turn — half a tool call, half a sentence —
+ * reached the CLI as a success and an automation would persist it as one.
+ */
+describe('relay Chat stream termination (truncation is not completion)', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  /** A Chat SSE body built from raw `data:` lines, in order. */
+  function chatSse(lines: string[]): Response {
+    return new Response(lines.map((l) => `data: ${l}\n\n`).join(''), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }
+
+  async function runCodexHandler(relayBody: () => Response): Promise<string> {
+    const relay = createRelay('http://127.0.0.1:3000', () => 'tok')
+    relay.register([{ baseUrl: 'https://a.example', apiKey: 'kA', model: 'm', wireApi: 'chat' }])
+    globalThis.fetch = (async () => relayBody()) as typeof fetch
+    // The fake ctx's `body()` hands the stream straight back (Hono would wrap it in
+    // a Response), so drain it here to get the translated SSE text.
+    const res = (await relay.codexHandler(
+      fakeCtx({ authorization: 'Bearer tok' }, { model: 'placeholder', input: [] }) as never,
+    )) as unknown as { __body: ReadableStream<Uint8Array> }
+    return new Response(res.__body).text()
+  }
+
+  it('emits response.completed for a stream that ends with [DONE]', async () => {
+    const body = await runCodexHandler(() =>
+      chatSse([
+        JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'hello' } }] }),
+        JSON.stringify({ id: 'c1', choices: [{ delta: {}, finish_reason: 'stop' }] }),
+        '[DONE]',
+      ]),
+    )
+    expect(body).toContain('response.completed')
+    expect(body).not.toContain('response.failed')
+    expect(body).toContain('hello')
+  })
+
+  it('emits response.completed when only finish_reason terminates the stream (no [DONE])', async () => {
+    const body = await runCodexHandler(() =>
+      chatSse([
+        JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'hi' } }] }),
+        JSON.stringify({ id: 'c1', choices: [{ delta: {}, finish_reason: 'stop' }] }),
+      ]),
+    )
+    expect(body).toContain('response.completed')
+    expect(body).not.toContain('response.failed')
+  })
+
+  it('emits response.failed (not completed) when the stream just stops mid-turn', async () => {
+    const body = await runCodexHandler(() =>
+      chatSse([
+        JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'half a sen' } }] }),
+        JSON.stringify({
+          id: 'c1',
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: 't1', function: { name: 'bash', arguments: '{"cmd":"re' } },
+                ],
+              },
+            },
+          ],
+        }),
+      ]),
+    )
+    // The cut-off text/tool-args must NOT be presented as a finished turn.
+    expect(body).toContain('response.failed')
+    expect(body).not.toContain('response.completed')
+    expect(body).toContain('upstream stream ended before completion')
+  })
+
+  // The relay's truncation marker and the driver's failure classifier are two ends
+  // of one contract, split across the ADR-0009 layer boundary. This is the test that
+  // keeps them joined: the marker the relay actually puts on the wire must be
+  // recognized by the classifier once the CLI wraps it in its own sentence.
+  it('emits a response.failed whose marker the codex driver classifies as retryable', async () => {
+    const body = await runCodexHandler(() =>
+      chatSse([JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'half a sen' } }] })]),
+    )
+    expect(body).toContain('response.failed')
+    // The marker as it travels: an event message the CLI will quote back.
+    const marker = /"message":"([^"]+)"/.exec(body)?.[1]
+    expect(marker).toBe('upstream stream ended before completion')
+    // Bare, as relayed.
+    expect(isUpstreamStreamBreak(new Error(marker ?? ''))).toBe(true)
+    // Wrapped in the CLI's own phrasing — the only form that can be relied on, since
+    // the CLI rewrites the message before c3 ever sees the failure.
+    expect(isUpstreamStreamBreak(new Error(`codex turn failed: ${marker}`))).toBe(true)
+  })
+
+  it('emits response.completed when only a trailing usage frame closes the stream', async () => {
+    // Providers that sign usage off in a separate frame instead of (or alongside)
+    // finish_reason must not have their finished turns reported as truncations.
+    const body = await runCodexHandler(() =>
+      chatSse([
+        JSON.stringify({ id: 'c1', choices: [{ delta: { content: 'hello' } }] }),
+        JSON.stringify({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+      ]),
+    )
+    expect(body).toContain('response.completed')
+    expect(body).not.toContain('response.failed')
+  })
+
+  it('still fails a stream that produced nothing but a usage frame', async () => {
+    // The counterpart to the case above: usage alone is not evidence of a clean
+    // finish, or an empty/truncated response would silently pass.
+    const body = await runCodexHandler(() =>
+      chatSse([JSON.stringify({ choices: [], usage: { prompt_tokens: 7, completion_tokens: 0 } })]),
+    )
+    expect(body).toContain('response.failed')
+    expect(body).not.toContain('response.completed')
+  })
+
+  it('does not emit response.completed for an entirely empty upstream body', async () => {
+    const body = await runCodexHandler(() => chatSse([]))
+    expect(body).toContain('response.failed')
+    expect(body).not.toContain('response.completed')
+  })
+
+  it('still surfaces an upstream error object as response.failed', async () => {
+    const body = await runCodexHandler(() =>
+      chatSse([JSON.stringify({ error: { message: 'upstream exploded' } })]),
+    )
+    expect(body).toContain('response.failed')
+    expect(body).toContain('upstream exploded')
+    expect(body).not.toContain('response.completed')
   })
 })

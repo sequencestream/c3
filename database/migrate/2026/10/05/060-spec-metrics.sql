@@ -1,0 +1,17 @@
+-- 060 — 新增规格质量度量表 spec_metrics
+-- 对应 DDL: database/intents/spec_metrics.sql
+-- 实际迁移逻辑在 intents store 的惰性 schema ensure(CREATE TABLE/INDEX IF NOT EXISTS + user_version 26→27)。
+--
+-- 一张表两类行：
+--   - kind='warning'：只读分析器每次扫描命中的规则 id / 位置 / 提示语 / 严重级 / 命中的
+--     spec 内容指纹。severity 由 CHECK 限定恒为 'warn'——本阶段没有阻断分支，这不是
+--     约定而是存储层的保证，写入方无法绕过。
+--   - kind='baseline'：四项对照指标的存量聚合（指标名落在 rule_id 列）。
+--
+-- 告警是落库旁路：不进入提示词、不改变会话行为（不阻断、不追加 turn、不改写可见
+-- 消息）。写入失败只 console.warn，会话启动照常成功——见 spec 质量度量的记录封装。
+--
+-- 惰性 schema ensure 以 CREATE TABLE/INDEX IF NOT EXISTS 同时覆盖新库与旧库，并推进
+-- 意图 schema 版本 26 → 27；此次只有建表与索引，无数据回填。基线聚合由一次性脚本
+-- scripts/spec-baseline.mjs 采集，不随迁移执行；基线行缺失时升级门槛无从计算，
+-- 这正是「未达门槛前不得阻断」在数据上的体现。

@@ -61,6 +61,7 @@ import {
   specFingerprint,
 } from './spec-review.js'
 import { armSpecContentWatch } from './spec-content-watch.js'
+import { scanSpecForWarnings } from './spec-scan.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import {
   dependencyGateRejection,
@@ -825,6 +826,12 @@ export async function launchSpecSession(
   // link was lost): re-author IN PLACE. Scaffolding here would mint a second spec
   // file and silently detach the one the reviewer just judged.
   if (opts?.reworkReason && intent.specPath) {
+    // The authoring scan hook, on the branch that re-opens an existing document.
+    // Sidechannel only: the scan below can neither refuse this launch nor reach
+    // the prompt. The first-time branch has no authored spec to measure yet — a
+    // seeded placeholder would only ever report its own empty heading — so the
+    // review hook is what first measures a brand new spec.
+    scanSpecForWarnings(workspacePath, intent.specPath, intent.id)
     return createSpecSessionOnExistingPath(workspacePath, intent, deps, opts, progress)
   }
 
@@ -1029,6 +1036,10 @@ export async function launchSpecReviewSession(
   if (fingerprint === null) {
     return { success: false, code: 'intent.specNotWritten' }
   }
+
+  // The second of the two read-only scan hooks: the reviewer judges the same
+  // document the author is held to, so both sides share one measurement.
+  scanSpecForWarnings(workspacePath, intent.specPath, intent.id)
 
   // The reviewer's agent, resolved before the runtime exists.
   const reviewTarget = sessionAgentTargetForRole('spec_review', workspacePath)

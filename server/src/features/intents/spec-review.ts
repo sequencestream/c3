@@ -162,11 +162,15 @@ Judge the spec on whether it is safe and sufficient to develop against:
 - **Grounded** — its claims about the codebase hold when you check them. Names, contracts and constraints it asserts should actually exist as described.
 - **Consistent** — it does not contradict the project's existing conventions, specs, or related intents.
 - **Verifiable** — its acceptance conditions are concrete enough to be observed.
-- **Complete for its size** — the decisions a developer must not have to invent are present. Do not demand ceremony a small change does not need.
+- **Necessary and non-duplicative** — every normative fact is stated once, and only because it changes a decision. Two concrete defects are always in scope:
+  - the same normative fact is restated in full somewhere later in the document;
+  - a list or a navigation aid that the source can rebuild, and that changes no decision, is presented as if it were a constraint.
 
-Return \`changes_requested\` when a real defect would mislead development: a wrong or unverifiable claim about the code, a missing decision, an untestable acceptance condition, a contradiction. Say precisely what is wrong and what would fix it — your reason is handed to the author verbatim as the rework brief.
+Judge completeness by whether the decisions a developer must NOT have to invent are all present — never by how much text the document has. A short spec that settles every decision is complete; a long one that settles none of them is not. Do not demand ceremony a small change does not need.
 
-Return \`pass\` when the spec is good enough to build from. Do not withhold a pass over style, wording, or a section you would personally have organised differently. Rework rounds are capped at ${MAX_SPEC_REVIEW_REWORK_ROUNDS}; spending one on a preference rather than a defect burns a round the spec may genuinely need later.
+Return \`changes_requested\` when a real defect would mislead development: a wrong or unverifiable claim about the code, a missing decision, an untestable acceptance condition, a contradiction, or one of the two duplication defects above. Say precisely what is wrong and what would fix it — your reason is handed to the author verbatim as the rework brief.
+
+Return \`pass\` when the spec is good enough to build from. You must NOT withhold a pass over tone, sentence form, or length — a reviewer has no standing to be the sole arbiter of how long a document may be, and there is no conciseness criterion to score. The only style-shaped thing in scope is a fact stated twice or a non-constraint posing as one; that is a duplication defect, not a taste call. Do not withhold a pass over wording or a section you would personally have organised differently. Rework rounds are capped at ${MAX_SPEC_REVIEW_REWORK_ROUNDS}; spending one on a preference rather than a defect burns a round the spec may genuinely need later.
 
 Write the reason in ${UI_LANG_NAMES[lang]}; be concise and specific.`
 }

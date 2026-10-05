@@ -63,7 +63,12 @@ import { readSpecFingerprint } from './spec-review.js'
 import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
-const SCHEMA_VERSION = 26
+/**
+ * The intents schema version. Exported so migration tests can assert "lands at
+ * the current terminal version" without pinning a literal that every new table
+ * would break — the literal WAS the bug, not the version.
+ */
+export const SCHEMA_VERSION = 27
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -190,6 +195,27 @@ CREATE TABLE IF NOT EXISTS intent_worknotes (
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_worknote_intent_created ON intent_worknotes(intent_id, created_at DESC);
+
+-- 规格质量度量:一类行是只读分析器的告警(恒 warn,不改会话行为),另一类是四项对照
+-- 指标的存量基线聚合。两类行同表,因为升级门槛的误报率就是按 rule_id 对告警行聚合
+-- 出来的,而基线是那个聚合的对照点。
+CREATE TABLE IF NOT EXISTS spec_metrics (
+  id               TEXT PRIMARY KEY,
+  kind             TEXT    NOT NULL CHECK(kind IN ('baseline','warning')),
+  intent_id        TEXT,
+  rule_id          TEXT,
+  detection        TEXT,
+  severity         TEXT    NOT NULL DEFAULT 'warn' CHECK(severity = 'warn'),
+  location         TEXT,
+  message          TEXT,
+  spec_fingerprint TEXT,
+  sample_size      INTEGER,
+  value            REAL,
+  created_at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_spec_metrics_kind_created ON spec_metrics(kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_spec_metrics_rule ON spec_metrics(kind, rule_id);
+CREATE INDEX IF NOT EXISTS idx_spec_metrics_intent ON spec_metrics(intent_id, created_at DESC);
 
 -- Per-turn fast-spec settlement record: the baseline a fast-mode work turn
 -- started from, plus the idempotency marker that stops a replayed settled event
@@ -749,6 +775,11 @@ function db(): Db | null {
     backfillIntentPrs(d)
     backfillIntentBaseBranch(d)
     backfillReviewingStatus(d)
+    // v26 → v27: spec_metrics — the spec quality metrics table. Created by the
+    // SCHEMA block above via CREATE TABLE/INDEX IF NOT EXISTS, so fresh and
+    // pre-existing dbs converge with no backfill: the warn rows are written by
+    // the analyzer at each session launch, the baseline rows by a one-off
+    // backfill script that deliberately does NOT run as part of migration.
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -764,6 +795,15 @@ function requireDb(): Db {
 /** Whether the store can be used (db opened). */
 export function isStoreAvailable(): boolean {
   return isDbAvailable()
+}
+
+/**
+ * The schema-owning accessor, for the few modules that persist spec quality
+ * metrics. Going through here rather than `getDb()` directly is what guarantees
+ * the schema (including `spec_metrics`) has been created before they write.
+ */
+export function getIntentsDb(): Db | null {
+  return db()
 }
 
 /** Test-only: forget the "schema ensured" flag (pair with `resetDbForTests`). */

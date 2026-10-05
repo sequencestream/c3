@@ -8,6 +8,9 @@ import { fileURLToPath, URL } from 'node:url'
 // `web/src/components` and page-private ones under `web/src/pages/*/components`
 // — mount real SFCs (via the `vue()` plugin) and run in happy-dom instead.
 export default defineConfig({
+  // The dep cache must live INSIDE the repo, not in the shared node_modules:
+  // node_modules may be a linked checkout whose tree is not writable here.
+  cacheDir: '.vite',
   plugins: [vue()],
   resolve: {
     // Mirror web/vite.config.ts so component tests resolve `@/…` (web/src) imports.

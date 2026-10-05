@@ -29,6 +29,7 @@ import {
   updateIntentReviewFixStatus,
   updateStatus,
   upsertIntentPr,
+  SCHEMA_VERSION,
 } from './store.js'
 
 const proj = '/abs/review-fix-proj'
@@ -85,7 +86,9 @@ describe('PR review/fix columns — schema + historic rows', () => {
     expect(byName.get('review_fix_rounds')!.notnull).toBe(1)
     expect(byName.get('review_fix_rounds')!.dflt_value).toBe('0')
 
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(26)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(
+      SCHEMA_VERSION,
+    )
   })
 
   it('rejects an illegal persisted review/fix status at the CHECK on a fresh db', () => {
@@ -133,7 +136,9 @@ describe('PR review/fix columns — schema + historic rows', () => {
     expect(list[0].reviewFixRounds).toBe(0)
     expect(list[0].fixSessionId).toBeNull()
     expect(list[0].fixStatus).toBeNull()
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(26)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(
+      SCHEMA_VERSION,
+    )
   })
 
   it('narrows an uninterpretable persisted review/fix status to null, never a middle value', () => {

@@ -304,6 +304,29 @@ export const MACHINE_SPEC_APPROVER = 'c3:machine-spec-approver'
  * Hard ceiling on spec rework rounds. After this many `changes_requested`
  * conclusions the queue stops re-launching the author and escalates to a human
  * todo instead — bounding both token spend and the risk of never converging.
+ *
+ * Why this number — measured on the workspace ledger (audit trail of every
+ * `spec_reviewed` conclusion plus the per-intent round counter), 259 conclusions
+ * over 162 distinct intents, collected 2026-10-05 (the same single collection
+ * the gate document quotes, so the two never drift apart):
+ *
+ *   - `changes_requested` is 94/259 ≈ 36%: a third of specs miss the gate the
+ *     first time, so a rejection is routine rather than exceptional.
+ *   - Of 1044 intents, 46 took 1 round, 17 took 2, and 4 reached the ceiling
+ *     (2 stopped at 3, 2 at 4). 96.5% never needed a second round, but the tail
+ *     is real: the ceiling binds on live traffic, so it is not a slack setting
+ *     that can be trimmed.
+ *   - The derived floor is therefore 3 — one more than the deepest round anyone
+ *     has actually spent. Dropping below it would strand intents that are still
+ *     converging with no budget left.
+ *   - Raising it buys almost nothing: only 4 intents would ever reach 4, and
+ *     letting them run longer trades a real convergence risk (a spec that has
+ *     missed three reviews usually misses the fourth for a reason the reviewer
+ *     would report again) for 4 extra rounds across the whole history. The tail
+ *     is thin enough that the cap is a safety valve, not a budget.
+ *
+ * So the cap stays at 3: the measured tail sets the floor, and the convergence
+ * risk sets the ceiling. Neither side of the range argues for a change.
  */
 export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
 

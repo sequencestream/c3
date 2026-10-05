@@ -32,7 +32,7 @@ const {
   setSpecApproved,
   setSpecPath,
 } = await import('./store.js')
-const { readSpecFingerprint, runSubmitSpecReview, specFingerprint } =
+const { buildSpecReviewAgentPrompt, readSpecFingerprint, runSubmitSpecReview, specFingerprint } =
   await import('./spec-review.js')
 const { submitSpecReviewSchema } = await import('./spec-review.js')
 
@@ -404,6 +404,54 @@ describe('the rework cap is a shared constant, not a local literal', () => {
   it('is a positive, finite bound', () => {
     expect(MAX_SPEC_REVIEW_REWORK_ROUNDS).toBeGreaterThan(0)
     expect(Number.isFinite(MAX_SPEC_REVIEW_REWORK_ROUNDS)).toBe(true)
+  })
+})
+
+describe('the reviewer judges duplication, and cannot judge taste', () => {
+  const prompt = buildSpecReviewAgentPrompt('en')
+
+  it('carries the necessary-and-non-duplicative criterion', () => {
+    expect(prompt).toContain('Necessary and non-duplicative')
+    expect(prompt).toContain('every normative fact is stated once')
+  })
+
+  it('names both concrete duplication defects', () => {
+    expect(prompt).toContain('the same normative fact is restated in full')
+    expect(prompt).toContain(
+      'a list or a navigation aid that the source can rebuild, and that changes no decision',
+    )
+  })
+
+  it('bars a pass from being withheld over tone, sentence form or length', () => {
+    expect(prompt).toContain('must NOT withhold a pass over tone, sentence form, or length')
+    // There is no conciseness score a reviewer could reach for instead.
+    expect(prompt).toContain('no conciseness criterion to score')
+  })
+
+  it('judges completeness by the decisions present, never by volume', () => {
+    expect(prompt).toContain('decisions a developer must NOT have to invent')
+    expect(prompt).toContain('never by how much text the document has')
+    // The old self-certifying phrase is gone.
+    expect(prompt).not.toContain('Complete for its size')
+  })
+
+  it('still bars withholding a pass over wording or preferred organisation', () => {
+    expect(prompt).toContain('Do not withhold a pass over wording')
+    expect(prompt).toContain('organised differently')
+  })
+
+  it('quotes the live cap, so the reviewer and the queue agree on the budget', () => {
+    expect(prompt).toContain(`Rework rounds are capped at ${MAX_SPEC_REVIEW_REWORK_ROUNDS}`)
+  })
+
+  it('localises the reason field', () => {
+    expect(buildSpecReviewAgentPrompt('zh')).toContain('Write the reason in Chinese')
+  })
+})
+
+describe('the rework cap floor is held by the measured tail', () => {
+  it('stays at or above 3, the deepest round the ledger has ever spent', () => {
+    expect(MAX_SPEC_REVIEW_REWORK_ROUNDS).toBeGreaterThanOrEqual(3)
   })
 })
 

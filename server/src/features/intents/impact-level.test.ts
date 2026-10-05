@@ -37,6 +37,7 @@ import {
   setSpecApproved,
   updateStatus,
   upsertIntents,
+  SCHEMA_VERSION,
 } from './store.js'
 import { setIntentImpactLevel } from './index.js'
 import { runCommSave } from './save-comm.js'
@@ -160,7 +161,9 @@ describe('impact level — column + historic rows', () => {
     const list = listIntents(proj)
     expect(list).toHaveLength(1)
     expect(list[0].impactLevel).toBeNull()
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(26)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(
+      SCHEMA_VERSION,
+    )
   })
 
   it('narrows an uninterpretable persisted value to ungraded, not to a middle grade', () => {

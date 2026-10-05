@@ -8,7 +8,7 @@ import { describe, expect, it, afterEach, beforeEach } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { analyzeSpec } from './spec-analyzer.js'
+import { analyzeSpec, type SpecWarning } from './spec-analyzer.js'
 import {
   listSpecBaselines,
   listSpecWarningRates,
@@ -19,14 +19,17 @@ import {
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetStoreForTests } from './store.js'
 
-function warning(ruleId = 'no-duplicate-fact', detection = 'duplicate_normative_fact') {
+function warning(
+  ruleId = 'no-duplicate-fact',
+  detection: SpecWarning['detection'] = 'duplicate_normative_fact',
+): SpecWarning {
   return {
     ruleId,
     detection,
     severity: 'warn',
     location: { section: '边界', line: 12 },
     message: 'state it once',
-  } as const
+  }
 }
 
 let dir: string
@@ -111,7 +114,8 @@ describe('listSpecWarningRates aggregates per rule', () => {
 
 describe('a real analyzer run round-trips through the table', () => {
   it('stores what the analyzer actually found', () => {
-    const doc = '# 规格\n\n## 方案\n\n返工轮次达到上限后队列必须停止重启作者会话并转人工处理。\n\n## 边界\n\n返工轮次达到上限后队列必须停止重启作者会话并转人工处理。\n'
+    const doc =
+      '# 规格\n\n## 方案\n\n返工轮次达到上限后队列必须停止重启作者会话并转人工处理。\n\n## 边界\n\n返工轮次达到上限后队列必须停止重启作者会话并转人工处理。\n'
     const found = analyzeSpec(doc)
     expect(found.length).toBeGreaterThan(0)
     recordSpecWarnings(found.map((w) => ({ intentId: 'i9', fingerprint: 'fp9', warning: w })))

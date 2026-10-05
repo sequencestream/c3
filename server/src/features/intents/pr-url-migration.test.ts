@@ -20,7 +20,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
-import { getIntent, resetStoreForTests } from './store.js'
+import { getIntent, resetStoreForTests, SCHEMA_VERSION } from './store.js'
 
 const proj = '/abs/workspace-prurl'
 let dir: string
@@ -96,7 +96,7 @@ describe('intents v13 → v14 pr_url migration', () => {
       repo: null,
       baseBranch: 'main',
     })
-    expect(userVersion(raw)).toBe(26)
+    expect(userVersion(raw)).toBe(SCHEMA_VERSION)
   })
 
   it('is idempotent — re-init does not duplicate the column or throw', () => {
@@ -109,6 +109,6 @@ describe('intents v13 → v14 pr_url migration', () => {
     expect(() => getIntent('hist-1')).not.toThrow() // second init is a no-op
 
     expect(cols(raw, 'intents').filter((c) => c === 'pr_url')).toHaveLength(1)
-    expect(userVersion(raw)).toBe(26)
+    expect(userVersion(raw)).toBe(SCHEMA_VERSION)
   })
 })

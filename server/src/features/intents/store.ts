@@ -63,7 +63,12 @@ import { readSpecFingerprint } from './spec-review.js'
 import { ensureSpecApprovalTodo } from '../im/l2-contract-sync.js'
 import { maybePublishSpecAwaitingApproval } from '../im/broadcast-hooks.js'
 
-const SCHEMA_VERSION = 27
+/**
+ * The intents schema version. Exported so migration tests can assert "lands at
+ * the current terminal version" without pinning a literal that every new table
+ * would break — the literal WAS the bug, not the version.
+ */
+export const SCHEMA_VERSION = 27
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128

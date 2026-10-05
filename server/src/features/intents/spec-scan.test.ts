@@ -10,13 +10,17 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { addWorkspace, pathToName, resetStateCacheForTests, resolveWorkspaceRoot } from '../../state.js'
+import {
+  addWorkspace,
+  pathToName,
+  resetStateCacheForTests,
+  resolveWorkspaceRoot,
+} from '../../state.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import { resetStoreForTests as resetSessionMetadata } from '../sessions/session-metadata-store.js'
 import { removeRuntimesForWorkspace } from '../../runs.js'
 import { initTestGitRepo } from '../../../test/git-repo.js'
 import { insertIntents, resetStoreForTests, setSpecPath } from './store.js'
-import { markSpecAuthored } from './store.js'
 import {
   launchSpecReviewSession,
   launchSpecSession,
@@ -61,8 +65,10 @@ function seedAuthoredSpec(): string {
   ])
   const file = join(dir, `${intent.id}.md`)
   writeFileSync(file, DEFECTIVE_SPEC, 'utf8')
+  // Only `specPath` is what the launch paths read; promoting the doc to `pending`
+  // would drag the approval-todo sync (another domain's tables) into this test
+  // without changing what the scan hook does.
   setSpecPath(intent.id, file)
-  markSpecAuthored(intent.id)
   return intent.id
 }
 
@@ -125,14 +131,33 @@ describe('the review session launch scans and records', () => {
     expect(listSpecWarnings(id).length).toBeGreaterThan(0)
   })
 
-  it('still launches when the warning write throws', async () => {
+  it('still launches the review when the warning write throws', async () => {
+    const id = seedAuthoredSpec()
+    // Make the store's write path fail the way a damaged table would.
+    vi.spyOn(metrics, 'recordSpecWarnings').mockImplementation(() => {
+      throw new Error('metrics table is on fire')
+    })
+    const deps = mockDeps()
+
+    // The whole point of the sidechannel: a broken metrics write must not take
+    // the review session with it. The launch succeeds and the run still fires.
+    const r = await launchSpecReviewSession(proj, id, deps)
+    expect(r.success).toBe(true)
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the authoring session alive when the warning write throws', async () => {
     const id = seedAuthoredSpec()
     vi.spyOn(metrics, 'recordSpecWarnings').mockImplementation(() => {
       throw new Error('metrics table is on fire')
     })
     const deps = mockDeps()
-    // The scan must swallow the failure; the review must start regardless.
-    expect(() => scanSpecForWarnings(proj, join(dir, `${id}.md`), id)).not.toThrow()
+    const r = await launchSpecSession(proj, id, deps, undefined, 'test', {
+      reworkReason: 'reviewer findings',
+      reworkRound: 1,
+    })
+    expect(r.success).toBe(true)
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
   })
 })
 

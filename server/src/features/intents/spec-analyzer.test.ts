@@ -41,7 +41,8 @@ describe('every warning is warn, and says which rule and where', () => {
   })
 
   it('only ever reports rule ids that exist in the ruleset', () => {
-    const doc = '# 规格\n\n## 方案\n\n必须保持状态机不变量不被绕过。\n\n## 边界\n\n状态机不变量不被绕过。\n'
+    const doc =
+      '# 规格\n\n## 方案\n\n必须保持状态机不变量不被绕过。\n\n## 边界\n\n状态机不变量不被绕过。\n'
     const known = new Set(SPEC_RULES.map((r) => r.id))
     for (const warning of analyzeSpec(doc)) {
       expect(known.has(warning.ruleId)).toBe(true)
@@ -53,7 +54,8 @@ describe('the analyzer never counts length', () => {
   it('emits no length-shaped warning, however long the line is', () => {
     // One enormous sentence. Under a length rule this would fire; under a shape
     // discipline it must not, because no threshold exists to be over.
-    const huge = '必须保持状态机不变量不被绕过并且在任何异常路径下都不得被绕过，同时还要保证并发写入的可见性。'
+    const huge =
+      '必须保持状态机不变量不被绕过并且在任何异常路径下都不得被绕过，同时还要保证并发写入的可见性。'
     const doc = `# 规格\n\n## 方案\n\n${huge.repeat(12)}\n`
     expect(kinds(analyzeSpec(doc))).not.toContain('repeated_connective')
     const longLine = `# 规格\n\n## 方案\n\n${'词'.repeat(4000)}\n`
@@ -194,7 +196,9 @@ describe('repeated_connective', () => {
 
 describe('passive_voice', () => {
   it('fires on a 被 passive that hides the actor', () => {
-    expect(kinds(analyzeSpec('# 规格\n\n## 方案\n\n状态机被配置覆盖。\n'))).toContain('passive_voice')
+    expect(kinds(analyzeSpec('# 规格\n\n## 方案\n\n状态机被配置覆盖。\n'))).toContain(
+      'passive_voice',
+    )
   })
 
   it('stays quiet on an active sentence that merely mentions 由', () => {
@@ -206,6 +210,10 @@ describe('passive_voice', () => {
 
 describe('the analysable surface is derived from the ruleset, not restated', () => {
   it('reports exactly the rules that carry a detection', () => {
-    expect(ANALYZABLE_RULE_IDS.sort()).toEqual(specRulesWithDetection().map((r) => r.id).sort())
+    expect([...ANALYZABLE_RULE_IDS].sort()).toEqual(
+      specRulesWithDetection()
+        .map((r) => r.id)
+        .sort(),
+    )
   })
 })

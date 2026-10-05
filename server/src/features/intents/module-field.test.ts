@@ -29,6 +29,7 @@ import {
   isStoreAvailable,
   listIntents,
   resetStoreForTests,
+  SCHEMA_VERSION,
 } from './store.js'
 
 const proj = '/abs/module-proj'
@@ -85,7 +86,7 @@ describe('module field — fresh-schema create (scenario 1)', () => {
     expect(moduleCol!.dflt_value).toBe("''")
     // Fresh db is already at the current schema version.
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(26)
+    expect(version?.user_version).toBe(SCHEMA_VERSION)
   })
 })
 
@@ -141,7 +142,9 @@ describe('module field — pre-v2 migration extensions (scenario 2)', () => {
     expect(list.every((r) => r.module === '')).toBe(true)
 
     const raw = getDb()!
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(26)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(
+      SCHEMA_VERSION,
+    )
   })
 
   it('a row inserted AFTER migration coexists with legacy rows and carries its module', () => {

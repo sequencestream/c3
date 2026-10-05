@@ -20,6 +20,7 @@ import {
   isHiddenSession,
   listIntents,
   resetStoreForTests,
+  SCHEMA_VERSION,
 } from './store.js'
 
 const proj = '/abs/intent-mig'
@@ -150,7 +151,7 @@ function expectTerminalSchema(raw: Db): void {
   const dc = cols(raw, 'intent_deps')
   expect(dc.has('dep_type')).toBe(true)
   expect(dc.has('created_at')).toBe(true)
-  expect(userVersion(raw)).toBe(26)
+  expect(userVersion(raw)).toBe(SCHEMA_VERSION)
 }
 
 describe('v5 → v6 rename: fresh db starts at the intents terminal state', () => {

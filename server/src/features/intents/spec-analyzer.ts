@@ -49,9 +49,13 @@ const FENCE = /^\s*(?:```|~~~)/
 const TABLE_ROW = /^\s*\|.*\|\s*$/
 const HTML_COMMENT = /^\s*<!--/
 // `\b` is defined over [A-Za-z0-9_], so it can never fire right after a CJK
-// character (nor after the whitespace before one): only the Latin keywords get
-// a word boundary, the Chinese ones match on the character alone.
-const GWT_LINE = /^\s*(?:-|\*|\d+\.)?\s*(?:(?:given|when|then)\b|(?:假设|当|则))\s*[:：]?/i
+// character (nor after the whitespace before one): the Latin keywords get a
+// word boundary, the Chinese ones get an explicit lookahead instead. Without
+// that boundary the bare characters swallow ordinary prose — 「当前」 is the
+// commonest word in a Chinese spec and starts with 「当」, so 「当前…」 would be
+// stripped as a test scenario and every counting check would go blind to it.
+const GWT_LINE =
+  /^\s*(?:-|\*|\d+\.)?\s*(?:(?:given|when|then)\b|(?:假设|当|则)(?=\s|[:：]|$))\s*[:：]?/i
 
 /**
  * Build the line view plus the stripped subset the counting checks read.
@@ -289,7 +293,6 @@ const CONNECTIVES = [
   '并且',
   '而且',
   '然而',
-  '因此',
   'therefore',
   'moreover',
   'furthermore',

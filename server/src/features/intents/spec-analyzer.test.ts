@@ -114,6 +114,28 @@ describe('stripping: code, tables, comments and Given/When/Then are not the auth
     expect(kinds(analyzeSpec(doc))).not.toContain('duplicate_normative_fact')
   })
 
+  it('keeps a line starting with 「当前」 in the prose the checks read', () => {
+    // 「当前」 opens with 「当」, the Chinese Given/When/Then keyword. Matching the
+    // bare character would strip the commonest word in a Chinese spec.
+    const fact = '当前状态机必须覆盖所有异常路径并且不得被任何入口绕过。'
+    const doc = `# 规格\n\n## 方案\n\n${fact}\n\n## 边界\n\n${fact}\n`
+    expect(kinds(analyzeSpec(doc))).toContain('duplicate_normative_fact')
+  })
+
+  it('keeps a line starting with 「则」 in the prose the checks read', () => {
+    const fact = '则必须先处理冲突再落库否则结论不成立并且不得覆盖旧结论。'
+    const doc = `# 规格\n\n## 方案\n\n${fact}\n\n## 边界\n\n${fact}\n`
+    expect(kinds(analyzeSpec(doc))).toContain('duplicate_normative_fact')
+  })
+
+  it('still strips a Chinese Given/When/Then step that opens with 「当」 and no space', () => {
+    // 「当:」 and 「当 」 both keep their boundary; the strip does not need the
+    // keyword to be the whole line.
+    const doc =
+      '# 规格\n\n## 场景\n\n- 当: 状态机由配置覆盖\n\n## 另一场景\n\n- 当：状态机由配置覆盖\n'
+    expect(kinds(analyzeSpec(doc))).not.toContain('passive_voice')
+  })
+
   it('does not read anything out of Chinese Given/When/Then steps', () => {
     const doc =
       '# 规格\n\n## 场景\n\n- 假设 系统已就绪\n- 当 状态机由配置覆盖\n- 则 结论成立\n\n## 另一场景\n\n- 假设 系统重启\n- 当 状态机由配置覆盖\n- 则 结论成立\n'

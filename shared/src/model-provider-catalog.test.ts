@@ -7,6 +7,10 @@
  * passes the same base-URL check the console applies. The endpoints themselves are
  * release-maintenance facts, not properties a test can assert. Vendor identity and the model
  * catalogs are covered by `model-vendor-catalog.test.ts`.
+ *
+ * The merge is guarded against the two halves it folds in: the shipped directory (what the
+ * release knows) and a runtime list (what an upstream answered). They must be
+ * interchangeable, so a fetched list is not a second, subtly different code path.
  */
 import { describe, expect, it } from 'vitest'
 import { MODEL_VENDORS, modelVendorModels } from './model-vendor-catalog.js'
@@ -15,6 +19,7 @@ import {
   checkProviderBaseUrl,
   effectiveProviderModels,
   findProviderTemplate,
+  mergeProviderModels,
   modelVendorDefaultUrls,
   modelVendorForTemplate,
 } from './model-provider-catalog.js'
@@ -120,6 +125,38 @@ describe('按 vendor 取默认端点', () => {
       anthropic: 'https://api.deepseek.com/anthropic',
     })
     expect(modelVendorDefaultUrls('deepseek').openai).toBe('https://api.deepseek.com')
+  })
+})
+
+describe('mergeProviderModels(上游清单 × 自填条目)', () => {
+  it('自填条目在同名上游条目上优先生效,并留在上游的位置', () => {
+    const upstream = [{ id: 'a' }, { id: 'b', contextWindow: 1000 }, { id: 'c' }]
+    const merged = mergeProviderModels(upstream, [{ id: 'b', contextWindow: 4096 }])
+    expect(merged).toEqual([{ id: 'a' }, { id: 'b', contextWindow: 4096 }, { id: 'c' }])
+  })
+
+  it('上游清单就是抓取结果时,合并语义与内置目录那一半完全一致', () => {
+    const fetched = [{ id: 'gpt-9' }, { id: 'claude-opus-5' }]
+    expect(mergeProviderModels(fetched, [{ id: 'house' }]).map((m) => m.id)).toEqual([
+      'gpt-9',
+      'claude-opus-5',
+      'house',
+    ])
+    expect(mergeProviderModels([], [{ id: 'house' }])).toEqual([{ id: 'house' }])
+  })
+
+  it('空 id 与纯空白 id 被丢弃,其余条目去首尾空白', () => {
+    expect(mergeProviderModels([{ id: '  spaced  ' }], [{ id: '' }, { id: '   ' }])).toEqual([
+      { id: 'spaced' },
+    ])
+  })
+
+  it('不改动传进来的上游数组', () => {
+    const upstream = [{ id: 'a' }]
+    const merged = mergeProviderModels(upstream, [{ id: 'a', contextWindow: 8 }])
+    merged[0].contextWindow = 1
+    // 上游数组里的那个对象没被改写:同名条目是「复制后覆盖」,不是就地改。
+    expect(upstream[0]).toEqual({ id: 'a' })
   })
 })
 

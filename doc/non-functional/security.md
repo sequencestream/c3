@@ -23,7 +23,7 @@
 - **SEC-11**: 只读浏览限定在已登记根内，不把客户端路径当作信任根（[files](../domains/core/files.md)）。
 - **SEC-13**: 智能体 `apiKey` 在存储边界加密落库，仅达混淆级；见下文。与 SEC-6 的边界：SEC-6 管厂商 CLI 凭据，SEC-13 管配置里的上游密钥。
 - **SEC-14**: 对未拉起 agent 的公开入口以长期钥匙为凭据，每次调用重新授权，写调用可归因审计；卡口与并列内部面见 [external-mcp](../domains/core/external-mcp.md) [请求与授权链](../domains/core/external-mcp.md#请求与授权链)。
-- **SEC-15**: 模型提供方连通性探测是服务端出网面：已存钥只配已存地址，草稿钥只配草稿地址（[AC-R31](../domains/settings/agent-config.md)）；出网路由见 [system-setting](../domains/settings/system-setting.md#服务端自身出网)。
+- **SEC-15**: 模型提供方的探测与上游模型清单抓取都是服务端出网面：已存钥只配已存地址，草稿钥只配草稿地址（[AC-R31](../domains/settings/agent-config.md)）；清单抓取只发往该提供方自己配置的地址、不跟随重定向，失败不清空旧清单（[AC-R37](../domains/settings/agent-config.md)）。出网路由见 [system-setting](../domains/settings/system-setting.md#服务端自身出网)。
 
 ## 分发信任
 
@@ -47,3 +47,4 @@
 - 浏览请求把客户端路径当作信任根（SEC-11）。
 - 违反 [请求与授权链](../domains/core/external-mcp.md#请求与授权链)（SEC-14）。
 - 连通性探测把已存钥随草稿地址发往操作者指定的主机（SEC-15）。
+- 上游模型清单抓取把账户钥发往该提供方配置地址以外的主机，或随重定向外泄（SEC-15）。

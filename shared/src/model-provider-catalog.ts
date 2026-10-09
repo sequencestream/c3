@@ -13,12 +13,19 @@
  *
  * That is why this lives in `shared/` as a plain constant rather than in the wire contract
  * or a database table — an endpoint that moves, or a model that ships, is a documentation
- * fix, not a migration. Nothing here is fetched at runtime: suggestions are deterministic,
- * available offline, and cost no credentials.
+ * fix, not a migration.
  *
- * Suggestions are ADVISORY. Never validation, never a runtime fallback, never an allowlist —
- * any model id can be typed by hand and saved unchanged, which is also the escape hatch for
- * a catalog that has fallen behind an upstream release.
+ * This directory is the SHIPPED half of what a provider offers, not the whole of it. A
+ * provider can also learn its ids from its own endpoint at runtime (the server dials it with
+ * the stored key and caches the answer per provider); the shipped list is the last resort for
+ * when that cannot be reached, and the offline starting point before anything has been
+ * fetched. The merge of the two — the operator's own entries overriding whichever upstream
+ * list they collide with — is {@link mergeProviderModels}, shared by both halves so a fetched
+ * list and the shipped one are folded in identically.
+ *
+ * Suggestions are ADVISORY. Never validation, never an allowlist — any model id can be typed
+ * by hand and saved unchanged, which is also the escape hatch for a catalog that has fallen
+ * behind an upstream release.
  *
  * MAINTENANCE: every URL here is transcribed from the vendor's public documentation and must
  * be re-verified against a live account before a release — a wrong endpoint costs the user a
@@ -319,23 +326,28 @@ export function modelVendorDefaultUrls(vendor: unknown): Partial<Record<Protocol
 }
 
 /**
- * One provider's effective model suggestions: its Model Vendor's shipped models followed by its
- * own entries, de-duplicated by trimmed id. A persisted entry OVERRIDES the shipped one it
- * collides with — keeping the operator's capability metadata — but stays in the shipped
- * entry's position, so the list order depends only on the vendor and the provider's own
- * order, never on which of the two supplied a given id.
+ * Merge an UPSTREAM model list with one provider's own entries, de-duplicated by trimmed
+ * id. An own entry OVERRIDES the upstream one it collides with — keeping the operator's
+ * capability metadata — but stays in the upstream entry's position, so the list order
+ * depends only on the upstream list and the provider's own order, never on which of the
+ * two supplied a given id.
  *
  * Blank ids are dropped (the console creates an empty row before it is typed into). Entries
- * are copies: nothing a caller does can mutate the shipped constant.
+ * are copies: nothing a caller does can mutate the upstream list it was handed.
  *
- * ADVISORY ONLY — this list never validates, restricts, or defaults an agent's model.
+ * The upstream half is a PARAMETER because those ids are no longer one fact: the shipped
+ * directory is the offline starting point, while the runtime can learn what an upstream
+ * really serves (its list endpoint, cached per provider). Both halves merge the same way,
+ * so a runtime list and the shipped one are interchangeable here — and the front end can
+ * merge the server's upstream answer with the entries the operator is still editing.
  */
-export function effectiveProviderModels(
-  provider: Pick<ModelProvider, 'vendor' | 'models'>,
+export function mergeProviderModels(
+  upstream: readonly ModelProviderModel[],
+  own: readonly ModelProviderModel[] | undefined,
 ): ModelProviderModel[] {
   const out: ModelProviderModel[] = []
   const at = new Map<string, number>()
-  for (const model of [...modelVendorModels(provider.vendor), ...(provider.models ?? [])]) {
+  for (const model of [...upstream, ...(own ?? [])]) {
     const id = model.id.trim()
     if (!id) continue
     const seen = at.get(id)
@@ -347,6 +359,25 @@ export function effectiveProviderModels(
     }
   }
   return out
+}
+
+/**
+ * One provider's effective model suggestions: its Model Vendor's shipped models followed by its
+ * own entries, merged by {@link mergeProviderModels}.
+ *
+ * ADVISORY ONLY — this list never validates, restricts, or defaults an agent's model.
+ *
+ * @deprecated The console no longer resolves a provider's candidates from this synchronous
+ * function: it asks the server for the provider's UPSTREAM list (fetched from the provider's
+ * own endpoint, cached, shipped directory as the last resort) and folds its own entries in
+ * through the same merge. Reachable from the front end only through that one entry, so this
+ * reads the shipped directory and nothing else. Still the offline meaning of the list, and
+ * still used for the shipped half inside the runtime resolution.
+ */
+export function effectiveProviderModels(
+  provider: Pick<ModelProvider, 'vendor' | 'models'>,
+): ModelProviderModel[] {
+  return mergeProviderModels(modelVendorModels(provider.vendor), provider.models)
 }
 
 /**

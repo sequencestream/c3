@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
@@ -9,7 +9,24 @@ import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/
 import { useAuth } from '@/composables/useAuth'
 import { applyLocale } from '@/i18n'
 import { VENDOR_COLOR } from '@/lib/vendor'
-import { effectiveProviderModels, modelVendorModels } from '@ccc/shared'
+import {
+  applyProviderModelsResult,
+  bindProviderModelsSender,
+  resetProviderModelsForTests,
+  useProviderModelCatalog,
+} from '@/composables/useProviderModels'
+
+/**
+ * 候选的期望值取自同一个入口(catalog):没有服务端答案时它回落随版本内置的厂商目录,
+ * 也就是组件在单测里渲染出来的那一份。
+ */
+function catalog(): ReturnType<typeof useProviderModelCatalog> {
+  return useProviderModelCatalog()
+}
+
+beforeEach(() => {
+  resetProviderModelsForTests()
+})
 
 /** Read a shipped locale catalog — the copy assertions live here, not on rendered
  *  text, so translating a string never turns a component test red (i18n-spec §4.1). */
@@ -2994,7 +3011,9 @@ describe('SettingsPanel.vue — agent 模型候选来自 provider 的有效清�
     await w.findAll('[data-testid="agent-provider"]')[1].setValue('p-kimi')
     const listed = suggestions(w)
     expect(listed).toEqual(
-      effectiveProviderModels(withProviders.modelProviders![1]).map((m) => m.id),
+      catalog()
+        .effective(withProviders.modelProviders![1])
+        .map((m) => m.id),
     )
     expect(listed).toContain('house-model')
     expect(listed).toContain('kimi-k3')
@@ -3037,6 +3056,37 @@ describe('SettingsPanel.vue — agent 模型候选来自 provider 的有效清�
     expect(listed).toContain('claude-opus-5')
     expect(listed).toContain('kimi-k3')
     expect(listed).toContain('house-model')
+  })
+
+  it('服务端答出的运行时上游清单替换内置目录,自填条目仍在候选里', async () => {
+    const sent: Array<{ type: string; providerId?: string }> = []
+    bindProviderModelsSender((msg) => sent.push(msg as { type: string; providerId?: string }))
+
+    const w = open()
+    // 面板一打开就把候选池里的 provider 都问了一遍(本文件其它用例挂载过的面板也还活着,
+    // 共用同一个发送器,所以只看这两条)。
+    const asked = sent.filter((m) => m.providerId === 'p-anthropic' || m.providerId === 'p-kimi')
+    expect(asked).toEqual([
+      { type: 'fetch_provider_models', providerId: 'p-anthropic' },
+      { type: 'fetch_provider_models', providerId: 'p-kimi' },
+    ])
+
+    applyProviderModelsResult({
+      type: 'provider_models_result',
+      providerId: 'p-kimi',
+      models: [{ id: 'kimi-k4' }],
+      fromCache: true,
+      stale: false,
+    })
+    await nextTick()
+
+    const listed = suggestions(w)
+    expect(listed).toContain('kimi-k4')
+    expect(listed).toContain('house-model')
+    // 上游答过之后就不再拿内置目录充数。
+    expect(listed).not.toContain('kimi-k3')
+    // 别的 provider 不受影响。
+    expect(listed).toContain('claude-opus-5')
   })
 
   it('内置模型也参与 model-first 反查:只有一家提供它时顺手选上那条 provider', async () => {
@@ -3098,7 +3148,11 @@ describe('SettingsPanel.vue — 接不了 provider 的 vendor 从 Model Vendor �
 
   it('候选正是 Cursor 厂商的内置清单,provider 的模型一条都不掺', async () => {
     const listed = cursorSuggestions(await openCursor())
-    expect(listed).toEqual(modelVendorModels('cursor').map((m) => m.id))
+    expect(listed).toEqual(
+      catalog()
+        .shipped('cursor')
+        .map((m) => m.id),
+    )
     expect(listed).toContain('composer-2.5')
     expect(listed).not.toContain('house-model')
   })

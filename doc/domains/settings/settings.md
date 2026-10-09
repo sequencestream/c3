@@ -7,7 +7,7 @@
 ## Domains
 
 - [agent-config](agent-config.md) — active
-  - 职责: 智能体档案、具名上游、默认与专用路由、按会话绑定
+  - 职责: 智能体档案、具名上游与其模型清单、默认与专用路由、按会话绑定
   - API: WebSocket `/ws`
 - [system-setting](system-setting.md) — active
   - 职责: 管理员全局配置:显示与时区、CLI 版本、代理、鉴权、监听、诊断、会话清理

@@ -1,9 +1,15 @@
 /**
- * Model-provider reachability probe: draft URLs must never carry stored keys.
+ * Model-provider probe and runtime model list: draft URLs must never carry stored keys, and
+ * the list handler must answer from what the server resolved for the SAVED provider.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ModelProvider, ServerToClient, SystemSettings } from '@ccc/shared/protocol'
+import { resetDbForTests } from '../../kernel/infra/db.js'
 import type { Conn } from '../../transport/handler-registry.js'
+import { resetProviderModelCacheForTests, writeProviderModelCache } from './provider-model-cache.js'
 
 const h = vi.hoisted(() => ({
   providers: [] as ModelProvider[],
@@ -30,7 +36,7 @@ vi.mock('../auth/authz.js', () => ({
   requireAdmin: () => true,
 }))
 
-import { probeModelProviderHandler } from './model-providers.js'
+import { fetchProviderModelsHandler, probeModelProviderHandler } from './model-providers.js'
 
 function conn(): { conn: Conn; sent: ServerToClient[] } {
   const sent: ServerToClient[] = []
@@ -121,5 +127,63 @@ describe('probeModelProviderHandler', () => {
 
     expect(capturedHeaders?.authorization).toBe('Bearer stored-secret-key')
     expect(capturedHeaders?.['x-api-key']).toBe('stored-secret-key')
+  })
+})
+
+describe('fetchProviderModelsHandler(运行时上游清单)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'c3-provider-models-handler-'))
+    process.env.C3_DB_PATH = join(dir, 'c3.db')
+    resetDbForTests()
+    resetProviderModelCacheForTests()
+  })
+
+  afterEach(() => {
+    resetDbForTests()
+    resetProviderModelCacheForTests()
+    delete process.env.C3_DB_PATH
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('缓存命中的一条 provider 直接回缓存里的清单,并如实标注 fromCache/stale', async () => {
+    writeProviderModelCache({
+      providerId: 'prov-1',
+      models: [{ id: 'cached-1' }, { id: 'cached-2' }],
+      now: Date.now(),
+      result: 'ok',
+    })
+    const { conn: c, sent } = conn()
+    await fetchProviderModelsHandler({} as never, c, {
+      type: 'fetch_provider_models',
+      providerId: 'prov-1',
+    })
+    expect(sent).toEqual([
+      {
+        type: 'provider_models_result',
+        providerId: 'prov-1',
+        models: [{ id: 'cached-1' }, { id: 'cached-2' }],
+        fromCache: true,
+        stale: false,
+      },
+    ])
+  })
+
+  it('服务端还不认识的 provider 回空清单:界面按厂商目录兜底,而不是当作白名单', async () => {
+    const { conn: c, sent } = conn()
+    await fetchProviderModelsHandler({} as never, c, {
+      type: 'fetch_provider_models',
+      providerId: 'unsaved-draft',
+    })
+    expect(sent).toEqual([
+      {
+        type: 'provider_models_result',
+        providerId: 'unsaved-draft',
+        models: [],
+        fromCache: false,
+        stale: false,
+      },
+    ])
   })
 })

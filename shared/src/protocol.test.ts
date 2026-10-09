@@ -711,3 +711,42 @@ describe('model_provider_speed_test — the speed-test wire contract', () => {
     expect(SPEED_TEST_HISTORY_PAGE_SIZE).toBe(20)
   })
 })
+
+describe('provider model list (运行时上游清单)', () => {
+  it('names the provider and nothing else — no URL, dialect or key', () => {
+    const request: ClientToServer = { type: 'fetch_provider_models', providerId: 'p1' }
+    expect(JSON.parse(JSON.stringify(request))).toEqual(request)
+    expect(Object.keys(request).sort()).toEqual(['providerId', 'type'])
+  })
+
+  it('answers with the upstream half and how fresh it is', () => {
+    const frames: ServerToClient[] = [
+      {
+        type: 'provider_models_result',
+        providerId: 'p1',
+        models: [{ id: 'gpt-9' }, { id: 'gpt-9-mini', contextWindow: 128_000 }],
+        fromCache: true,
+        stale: false,
+      },
+      // Nothing resolved at all: the console shows the shipped directory for the
+      // vendor rather than an empty candidate list.
+      {
+        type: 'provider_models_result',
+        providerId: 'p2',
+        models: [],
+        fromCache: false,
+        stale: true,
+      },
+    ]
+    expect(JSON.parse(JSON.stringify(frames))).toEqual(frames)
+    for (const frame of frames) {
+      expect(Object.keys(frame).sort()).toEqual([
+        'fromCache',
+        'models',
+        'providerId',
+        'stale',
+        'type',
+      ])
+    }
+  })
+})

@@ -7,7 +7,7 @@
  * `@ccc/shared/protocol` surface.
  */
 
-import type { ProtocolType } from './model-provider.js'
+import type { ModelProviderModel, ProtocolType } from './model-provider.js'
 import type {
   ExternalMcpToolDescriptor,
   McpApiKeyMeta,
@@ -157,6 +157,52 @@ export type ServerModelProviderProbeResult = {
   error?: string
   /** Round-trip time in milliseconds when a request was actually made. */
   latencyMs?: number
+}
+
+/**
+ * Ask for a provider's UPSTREAM model list — the ids its own endpoint serves, resolved by the
+ * server as: freshly fetched → the per-provider cache → the shipped directory as the last
+ * resort. Never merged with the provider's own entries here: those live in the settings
+ * document the console already holds (possibly with unsaved edits), so the console folds
+ * them in itself, in the same order and with the same override rule either way.
+ *
+ * Why the server has to answer: the stored key must not travel to the browser to dial an
+ * HTTPS upstream that refuses cross-origin calls, and the answer is a shared, cached fact
+ * rather than something each console tab re-derives. The payload names only the provider —
+ * the URL, the dialect and the credential all come from the SAVED provider, so a client can
+ * never aim an account key at a host of its choosing.
+ *
+ * Admin-only, like the probe: a cache miss dials upstream with the stored key. Reading the
+ * list is not a configuration mutation, but it does use the deployment's credential.
+ */
+export type ClientFetchProviderModels = {
+  type: 'fetch_provider_models'
+  /** The provider whose upstream list is wanted; its id is echoed back for matching. */
+  providerId: string
+}
+
+/**
+ * One provider's upstream model list, with how fresh it is. `models` is the upstream half
+ * alone (see {@link ClientFetchProviderModels}); an empty list means nothing could be
+ * resolved, and the console then shows the shipped directory for that vendor rather than
+ * nothing.
+ *
+ * The two flags are what let the console stay honest about a list it did not just verify:
+ * `fromCache` says the answer came from the per-provider cache rather than from a request
+ * made for it, and `stale` says the data is older than the TTL (or is the shipped fallback)
+ * — the server has started a refresh in the background, and the read is deliberately NOT
+ * waiting for it. A refresh that fails leaves the old list in place and only starts a new
+ * attempt after a short back-off, so a console that reads repeatedly does not hammer a dead
+ * endpoint.
+ */
+export type ServerProviderModelsResult = {
+  type: 'provider_models_result'
+  providerId: string
+  models: ModelProviderModel[]
+  /** true = served from the cache; false = fetched for this read, or the shipped fallback. */
+  fromCache: boolean
+  /** true = older than the TTL / shipped fallback, with a background refresh started. */
+  stale: boolean
 }
 
 /**

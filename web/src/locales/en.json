@@ -899,10 +899,12 @@
         "remove": {
           "tooltip": "Remove this model"
         },
-        "hint": "Suggestions for an agent’s model field: the models c3 ships for this vendor plus your own entries. Advisory only — any model id can still be typed by hand, and none of these is a runtime default.",
+        "hint": "Suggestions for an agent’s model field: the models this provider’s upstream really serves (fetched from it by the server and cached, falling back to the vendor list shipped with c3) plus your own entries. Advisory only — any model id can still be typed by hand, and none of these is a runtime default.",
         "shipped": {
-          "title": "Shipped with c3",
-          "empty": "No models ship for this vendor. Add your own below, or type any model id on the agent."
+          "title": "Upstream models",
+          "empty": "This provider has no upstream models and no shipped directory to fall back to. Add your own below, or type any model id on the agent.",
+          "refresh": "Re-fetch the upstream model list",
+          "stale": "This list may be out of date and a refresh is running; click to ask again now"
         },
         "custom": {
           "title": "Your models"

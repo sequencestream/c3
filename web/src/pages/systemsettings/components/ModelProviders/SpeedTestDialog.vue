@@ -22,7 +22,8 @@ import {
   SPEED_TEST_MIN_REQUESTS,
   SPEED_TEST_PROMPT,
 } from '@ccc/shared/protocol'
-import { checkProviderBaseUrl, effectiveProviderModels } from '@ccc/shared'
+import { checkProviderBaseUrl } from '@ccc/shared'
+import { useProviderModels } from '@/composables/useProviderModels'
 import { useTypedI18n } from '@/i18n'
 import {
   pendingSaveRun,
@@ -59,8 +60,8 @@ const protocols = computed<ProtocolType[]>(() => {
   return (['openai', 'anthropic'] as ProtocolType[]).filter((slot) => p.urls[slot]?.trim())
 })
 
-/** 厂商内置 + 自有条目合并后的目录;仅作手输控件的预设候选。 */
-const models = computed(() => (props.provider ? effectiveProviderModels(props.provider) : []))
+/** 上游清单(抓取 → 缓存 → 内置目录兜底)+ 自有条目合并后的目录;仅作手输控件的预设候选。 */
+const { models } = useProviderModels(() => props.provider)
 
 const protocol = ref<ProtocolType>('openai')
 const model = ref('')

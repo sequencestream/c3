@@ -188,8 +188,8 @@ export type ClientFetchProviderModels = {
  * nothing.
  *
  * The two flags are what let the console stay honest about a list it did not just verify:
- * `fromCache` says the answer came from the per-provider cache rather than from a request
- * made for it, and `stale` says the data is older than the TTL (or is the shipped fallback)
+ * `fromCache` says the answer came from the per-provider cache rather than from the shipped
+ * directory, and `stale` says the data is older than the TTL (or is the shipped fallback)
  * — the server has started a refresh in the background, and the read is deliberately NOT
  * waiting for it. A refresh that fails leaves the old list in place and only starts a new
  * attempt after a short back-off, so a console that reads repeatedly does not hammer a dead
@@ -199,7 +199,10 @@ export type ServerProviderModelsResult = {
   type: 'provider_models_result'
   providerId: string
   models: ModelProviderModel[]
-  /** true = served from the cache; false = fetched for this read, or the shipped fallback. */
+  /**
+   * true = the per-provider cache answered; false = nothing was ever cached for it, so the
+   * shipped directory did. Never "just fetched" — a read does not wait for the network.
+   */
   fromCache: boolean
   /** true = older than the TTL / shipped fallback, with a background refresh started. */
   stale: boolean

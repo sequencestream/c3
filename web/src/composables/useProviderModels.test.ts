@@ -4,14 +4,20 @@
  * What is guarded here: the shipped directory answers until (and when nothing else can) the
  * server does; the server's answer REPLACES the upstream half while the provider's own
  * entries still win where they collide; and one provider is asked for once — not on every
- * render, and not twice for two components looking at the same provider.
+ * render, and not twice for two components looking at the same provider. A fresh non-empty
+ * answer is what "asked for once" means: an empty or expired one is asked again (the first
+ * is a provider whose key was just filled in, the second is a background refresh to collect).
+ * Nothing is asked at all while this connection is not the administrator, and an in-flight
+ * read has a way to end.
  */
-import { beforeEach, describe, expect, it } from 'vitest'
-import { effectScope, nextTick } from 'vue'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { effectScope, nextTick, type EffectScope } from 'vue'
 import type { ClientToServer, ModelProvider } from '@ccc/shared/protocol'
+import { useAuth } from '@/composables/useAuth'
 import {
   applyProviderModelsResult,
   bindProviderModelsSender,
+  dropPendingProviderModels,
   resetProviderModelsForTests,
   useProviderModelCatalog,
   useProviderModels,
@@ -48,13 +54,28 @@ function answer(over: Partial<ProviderModelsResult> = {}): ProviderModelsResult 
   }
 }
 
-/** Mount-like scope: the composable registers an effect, so it needs one. */
+/**
+ * Mount-like scope: the composable registers an effect, so it needs one. Kept around to be
+ * STOPPED after each test — a live scope from an earlier test would re-run on the next
+ * binding of the sender and ask on behalf of a provider this test never mentioned.
+ */
+const scopes: EffectScope[] = []
 function mount(providerRef: ModelProvider | null): ProviderModelsHandle {
-  return effectScope().run(() => useProviderModels(() => providerRef))!
+  const scope = effectScope()
+  scopes.push(scope)
+  return scope.run(() => useProviderModels(() => providerRef))!
 }
+
+const { setIsAdmin } = useAuth()
 
 beforeEach(() => {
   resetProviderModelsForTests()
+})
+
+// 管理员判定是模块级共享状态:用例改了它,必须还原,否则污染同文件后面的用例。
+afterEach(() => {
+  for (const scope of scopes.splice(0)) scope.stop()
+  setIsAdmin(true)
 })
 
 describe('useProviderModels(单条 provider 的有效清单)', () => {
@@ -114,6 +135,80 @@ describe('useProviderModels(单条 provider 的有效清单)', () => {
     resetProviderModelsForTests()
     mount(provider())
     expect(sent).toHaveLength(0)
+  })
+})
+
+describe('非管理员一个消息都不发', () => {
+  it('挂载与显式重问都不发 —— 发了也只会被服务端拒答', () => {
+    const sent = bind()
+    setIsAdmin(false)
+    const handle = mount(provider())
+    handle.refresh()
+    expect(sent).toHaveLength(0)
+    expect(handle.loading.value).toBe(false)
+  })
+
+  it('本连接被认成管理员后,还挂着的面板会自己补问一轮', async () => {
+    const sent = bind()
+    setIsAdmin(false)
+    mount(provider())
+    expect(sent).toHaveLength(0)
+
+    setIsAdmin(true)
+    await nextTick()
+    expect(sent).toEqual([{ type: 'fetch_provider_models', providerId: 'p1' }])
+  })
+})
+
+describe('什么时候该重问', () => {
+  it('过期答案在下一次索取时重问一次 —— 后台刷新的结果才读得到', () => {
+    const sent = bind()
+    const catalog = useProviderModelCatalog()
+    catalog.ensure([provider()])
+    expect(sent).toHaveLength(1)
+    applyProviderModelsResult(answer({ models: [{ id: 'a' }], fromCache: true, stale: true }))
+
+    catalog.ensure([provider()])
+    expect(sent).toHaveLength(2)
+  })
+
+  it('空答案在下一次索取时重问一次 —— 刚补好 key 的 provider 不必等刷新页面', () => {
+    const sent = bind()
+    const catalog = useProviderModelCatalog()
+    catalog.ensure([provider()])
+    applyProviderModelsResult(answer({ models: [], fromCache: false, stale: false }))
+
+    catalog.ensure([provider()])
+    expect(sent).toHaveLength(2)
+  })
+
+  it('空答案落地不会把索取它的 effect 拽进死循环', async () => {
+    const sent = bind()
+    mount(provider())
+    applyProviderModelsResult(answer({ models: [], fromCache: false, stale: false }))
+    await nextTick()
+    await nextTick()
+    expect(sent).toHaveLength(1)
+  })
+})
+
+describe('在飞状态的生命周期', () => {
+  it('无人应答时能显式解掉,↻ 不会永久禁用', () => {
+    bind()
+    const handle = mount(provider())
+    expect(handle.loading.value).toBe(true)
+
+    dropPendingProviderModels()
+    expect(handle.loading.value).toBe(false)
+  })
+
+  it('换连接(重新绑定发送器)清掉在飞状态 —— 上一根 socket 不会再有回包', () => {
+    bind()
+    const handle = mount(provider())
+    expect(handle.loading.value).toBe(true)
+
+    bind()
+    expect(handle.loading.value).toBe(false)
   })
 })
 

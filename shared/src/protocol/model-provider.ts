@@ -136,10 +136,11 @@ export interface ModelProvider {
    */
   wireApi?: 'responses' | 'chat'
   /**
-   * This provider's OWN model entries — additions to, and overrides of, the models
-   * `vendor` ships. `effectiveProviderModels` merges the two into the suggestions the
-   * agent form offers. NOT a runtime default and NOT an allowlist; an agent's own
-   * `config.model` is always the selected model, listed here or not.
+   * This provider's OWN model entries — additions to, and overrides of, the upstream list of
+   * the endpoint this provider points at. Whatever surfaces models (the agent form's
+   * suggestions, the provider panel's directory) show these entries merged over that upstream
+   * half, the same-name entry winning. NOT a runtime default and NOT an allowlist; an agent's
+   * own `config.model` is always the selected model, listed here or not.
    */
   models?: ModelProviderModel[]
   /**

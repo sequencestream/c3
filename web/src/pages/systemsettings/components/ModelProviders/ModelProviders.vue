@@ -551,7 +551,7 @@ function confirmRemove(): void {
           <button
             class="icon-btn"
             data-testid="provider-models-refresh"
-            :disabled="catalog.loading(p.id)"
+            :disabled="!isAdmin || catalog.loading(p.id)"
             :title="
               catalog.stale(p.id)
                 ? t('settings.providers.models.shipped.stale')

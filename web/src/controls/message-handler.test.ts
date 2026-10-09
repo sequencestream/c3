@@ -9,7 +9,13 @@ import {
   type ServerToClient,
 } from '@ccc/shared/protocol'
 import type { SessionInfo } from '@ccc/shared/protocol'
+import type { ModelProvider } from '@ccc/shared/protocol'
 import { installMessageHandler } from './message-handler'
+import {
+  bindProviderModelsSender,
+  resetProviderModelsForTests,
+  useProviderModelCatalog,
+} from '@/composables/useProviderModels'
 import type { ChatMsg } from '@/lib/chat-types'
 import type { AppCtx } from './types'
 import {
@@ -720,6 +726,31 @@ describe('agent configuration errors', () => {
     expect(result.dispatchSpecLaunch).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'failed' }),
     )
+  })
+})
+
+describe('admin-only refusals', () => {
+  it('releases an in-flight provider-model read so the re-read control cannot spin forever', () => {
+    // A read is asked for over the socket, and `fetch_provider_models` is admin-only: a
+    // refusal answers with an error frame and NEVER with a result, so the in-flight mark
+    // has to be dropped here or `loading` stays true for the rest of the session.
+    const result = makeCtx()
+    resetProviderModelsForTests()
+    bindProviderModelsSender(() => {})
+    const catalog = useProviderModelCatalog()
+    const provider: ModelProvider = {
+      id: 'p1',
+      displayName: 'Kimi',
+      vendor: 'moonshot',
+      apiKey: 'sk-k',
+      urls: {},
+    }
+    catalog.ensure([provider])
+    expect(catalog.loading('p1')).toBe(true)
+
+    result.ctx.handleMessage(error('auth.adminOnly'))
+
+    expect(catalog.loading('p1')).toBe(false)
   })
 })
 

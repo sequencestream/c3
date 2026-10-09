@@ -7,6 +7,9 @@ import {
   type ResearchMessage,
   type GitActionFailureGuidance,
   type ServerToClient,
+  type VendorHostStatus,
+  type VendorId,
+  type VendorRuntimeStatus,
 } from '@ccc/shared/protocol'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import type { ModelProvider } from '@ccc/shared/protocol'
@@ -1920,87 +1923,35 @@ describe('automation workspace-gate snapshot (workspace_setting routing)', () =>
   })
 })
 
-// 冷启动引导:首个 settings 快照没有真实 agent 时自动打开系统设置。
-// 默认带一个「claude 已在宿主 PATH 上」的 hostStatus,让「已配置 agent」的用例
-// 落到「有 CLI 可用 → 不跳 Runtime」的基线;要测「双缺失跳 Runtime」用
-// runtimeSettingsMsg 显式给出缺失状态。
-function settingsMsg(agentIds: string[]): ServerToClient {
-  return {
-    type: 'settings',
-    settings: { agents: agentIds.map((id) => ({ id, name: id })) },
-    hostStatus: [
-      {
-        vendor: 'claude',
-        present: true,
-        binary: 'claude',
-        path: '/usr/local/bin/claude',
-        installHint: '',
-      },
-    ],
-    bindingStats: {},
-    sessionCapabilities: {},
-  } as unknown as ServerToClient
+// 冷启动引导:首个 settings 快照上判定一次,智能体门与运行时门都只对管理员成立。
+// 默认的真实档案挂 claude 厂商、且 claude 在宿主 PATH 上可用 —— 即「已配置且可跑」
+// 的不跳转基线;要测「一条能跑的都没有 → Runtime Tab」把缺失状态显式写出来。
+const COLD_START_CLAUDE_HOST: VendorHostStatus = {
+  vendor: 'claude',
+  present: true,
+  binary: 'claude',
+  path: '/usr/local/bin/claude',
+  installHint: '',
 }
 
-describe('auto-open settings when no agent is configured', () => {
-  it('opens on a first snapshot with an empty agent list', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(settingsMsg([]))
-    expect(r.settingsOpen.value).toBe(true)
-  })
-
-  it('opens on a first snapshot holding only the system fallback agent', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
-    expect(r.settingsOpen.value).toBe(true)
-  })
-
-  it('stays closed when any non-system agent is present, whatever the ordering', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID, 'agent-1']))
-    expect(r.settingsOpen.value).toBe(false)
-
-    const r2 = makeCtx()
-    r2.ctx.handleMessage(settingsMsg(['agent-1', SYSTEM_AGENT_ID]))
-    expect(r2.settingsOpen.value).toBe(false)
-  })
-
-  it('does not re-open after the user closes the dialog, even on repeated unconfigured pushes', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(settingsMsg([]))
-    expect(r.settingsOpen.value).toBe(true)
-    // 用户关闭弹窗;随后的重连 / 刷新式重复推送不得再次弹出。
-    r.settingsOpen.value = false
-    r.ctx.handleMessage(settingsMsg([]))
-    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
-    expect(r.settingsOpen.value).toBe(false)
-  })
-
-  it('never opens when the first snapshot was configured, even if a later one is not', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
-    r.ctx.handleMessage(settingsMsg([]))
-    expect(r.settingsOpen.value).toBe(false)
-  })
-})
-
-// 冷启动引导:agent 已配置、但 claude + codex 两个 npm 托管 CLI 都缺失时,打开
-// 系统设置并定位到 Runtime Tab。判定只读服务端 runtime 状态,不额外探测。
-function runtimeSettingsMsg(
-  agentIds: string[],
-  vendorRuntime:
-    | Partial<
-        Record<
-          import('@ccc/shared/protocol').VendorId,
-          import('@ccc/shared/protocol').VendorRuntimeStatus
-        >
-      >
-    | undefined,
-  hostStatus: import('@ccc/shared/protocol').VendorHostStatus[] = [],
+function coldStartSettingsMsg(
+  agents: Array<string | { id: string; vendor: VendorId }>,
+  vendorRuntime?: Partial<Record<VendorId, VendorRuntimeStatus>>,
+  hostStatus: VendorHostStatus[] = [COLD_START_CLAUDE_HOST],
 ): ServerToClient {
   return {
     type: 'settings',
-    settings: { agents: agentIds.map((id) => ({ id, name: id })) },
+    settings: {
+      agents: agents.map((agent) =>
+        typeof agent === 'string'
+          ? {
+              id: agent,
+              name: agent,
+              ...(agent === SYSTEM_AGENT_ID ? {} : { vendor: 'claude' as VendorId }),
+            }
+          : { id: agent.id, name: agent.id, vendor: agent.vendor },
+      ),
+    },
     vendorRuntime,
     hostStatus,
     bindingStats: {},
@@ -2008,23 +1959,49 @@ function runtimeSettingsMsg(
   } as unknown as ServerToClient
 }
 
-function missingVendor(
-  vendor: 'claude' | 'codex',
-): import('@ccc/shared/protocol').VendorRuntimeStatus {
+function missingVendor(vendor: VendorId): VendorRuntimeStatus {
   return { vendor, available: false, runtime: 'host-cli', reason: 'host-cli-missing' }
 }
 
-function presentVendor(
-  vendor: 'claude' | 'codex',
-): import('@ccc/shared/protocol').VendorRuntimeStatus {
+function presentVendor(vendor: VendorId): VendorRuntimeStatus {
   return { vendor, available: true, runtime: 'host-cli', runtimeId: vendor, origin: 'host-path' }
 }
 
-describe('auto-open settings to Runtime when both managed CLIs are missing', () => {
-  it('jumps to the Runtime Tab when configured and both claude + codex are missing', () => {
-    const r = makeCtx()
+describe('冷启动智能体/运行时引导:仅管理员,且只在需要时开', () => {
+  it('管理员 + 空档案 → 打开系统设置,落在 Agent Tab(不设 runtime 目标)', () => {
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
+    r.ctx.handleMessage(coldStartSettingsMsg([]))
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.settingsTarget.value).toBeNull()
+  })
+
+  it('管理员 + 仅剩合成兜底档案 → 仍按未配置处理,落在 Agent Tab', () => {
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
+    r.ctx.handleMessage(coldStartSettingsMsg([SYSTEM_AGENT_ID]))
+    expect(r.settingsOpen.value).toBe(true)
+    expect(r.settingsTarget.value).toBeNull()
+  })
+
+  it('管理员 + 有真实档案且可跑 → 不弹(档案顺序无关)', () => {
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
+    r.ctx.handleMessage(coldStartSettingsMsg([SYSTEM_AGENT_ID, 'agent-1']))
+    expect(r.settingsOpen.value).toBe(false)
+    expect(r.settingsTarget.value).toBeNull()
+
+    const r2 = makeColdStartCtx()
+    r2.ctx.handleMessage(readyMsg([], true))
+    r2.ctx.handleMessage(coldStartSettingsMsg(['agent-1', SYSTEM_AGENT_ID]))
+    expect(r2.settingsOpen.value).toBe(false)
+  })
+
+  it('管理员 + 已配置但 claude、codex 双缺 → 定位 Runtime Tab', () => {
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
     r.ctx.handleMessage(
-      runtimeSettingsMsg(['agent-1'], {
+      coldStartSettingsMsg(['agent-1'], {
         claude: missingVendor('claude'),
         codex: missingVendor('codex'),
       }),
@@ -2033,78 +2010,153 @@ describe('auto-open settings to Runtime when both managed CLIs are missing', () 
     expect(r.settingsTarget.value).toEqual({ tab: 'runtime' })
   })
 
-  it('does not jump when claude is present even though codex is missing', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(
-      runtimeSettingsMsg(['agent-1'], {
+  it('管理员 + 有一条真实档案的厂商可用 → 不弹(另一厂商缺失不算)', () => {
+    const claudeOnly = makeColdStartCtx()
+    claudeOnly.ctx.handleMessage(readyMsg([], true))
+    claudeOnly.ctx.handleMessage(
+      coldStartSettingsMsg(['agent-1'], {
         claude: presentVendor('claude'),
         codex: missingVendor('codex'),
       }),
     )
-    expect(r.settingsOpen.value).toBe(false)
-    expect(r.settingsTarget.value).toBeNull()
-  })
+    expect(claudeOnly.settingsOpen.value).toBe(false)
+    expect(claudeOnly.settingsTarget.value).toBeNull()
 
-  it('does not jump when codex is present even though claude is missing', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(
-      runtimeSettingsMsg(['agent-1'], {
+    // 同一份缺失快照:档案挂的厂商可用即不跳,挂的厂商不可用才跳。
+    const codexAgentAvailable = makeColdStartCtx()
+    codexAgentAvailable.ctx.handleMessage(readyMsg([], true))
+    codexAgentAvailable.ctx.handleMessage(
+      coldStartSettingsMsg([{ id: 'codex-agent', vendor: 'codex' }], {
         claude: missingVendor('claude'),
         codex: presentVendor('codex'),
       }),
     )
-    expect(r.settingsOpen.value).toBe(false)
-    expect(r.settingsTarget.value).toBeNull()
+    expect(codexAgentAvailable.settingsOpen.value).toBe(false)
+    expect(codexAgentAvailable.settingsTarget.value).toBeNull()
+
+    const codexAgentUnavailable = makeColdStartCtx()
+    codexAgentUnavailable.ctx.handleMessage(readyMsg([], true))
+    codexAgentUnavailable.ctx.handleMessage(
+      coldStartSettingsMsg([{ id: 'codex-agent', vendor: 'codex' }], {
+        claude: presentVendor('claude'),
+        codex: missingVendor('codex'),
+      }),
+    )
+    expect(codexAgentUnavailable.settingsOpen.value).toBe(true)
+    expect(codexAgentUnavailable.settingsTarget.value).toEqual({ tab: 'runtime' })
   })
 
-  it('does not jump when either CLI is resolvable on the host PATH (hostStatus fallback)', () => {
-    const r = makeCtx()
+  it('管理员 + 真实档案落在不可下载厂商、该厂商可跑 → 不弹', () => {
+    // 回归:判据只问「已配置的档案里有没有一条能跑的」,不再问「可下载厂商齐不齐」,
+    // 所以唯一档案挂在 cursor 上也照样不跳。
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
     r.ctx.handleMessage(
-      runtimeSettingsMsg(['agent-1'], undefined, [
+      coldStartSettingsMsg(
+        [{ id: 'cursor-agent', vendor: 'cursor' }],
         {
-          vendor: 'claude',
-          present: true,
-          binary: 'claude',
-          path: '/usr/local/bin/claude',
-          installHint: '',
+          claude: missingVendor('claude'),
+          codex: missingVendor('codex'),
+          cursor: presentVendor('cursor'),
         },
-      ]),
+        [],
+      ),
     )
     expect(r.settingsOpen.value).toBe(false)
     expect(r.settingsTarget.value).toBeNull()
   })
 
-  it('does not re-open after the user closes the dialog on a repeated missing snapshot', () => {
-    const r = makeCtx()
-    const missing = {
-      claude: missingVendor('claude'),
-      codex: missingVendor('codex'),
-    }
-    r.ctx.handleMessage(runtimeSettingsMsg(['agent-1'], missing))
+  it('管理员 + 真实档案的厂商都不可跑(可下载厂商反而可用)→ 定位 Runtime Tab', () => {
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
+    r.ctx.handleMessage(
+      coldStartSettingsMsg(
+        [{ id: 'cursor-agent', vendor: 'cursor' }],
+        {
+          claude: presentVendor('claude'),
+          codex: presentVendor('codex'),
+          cursor: missingVendor('cursor'),
+        },
+        [],
+      ),
+    )
     expect(r.settingsOpen.value).toBe(true)
-
-    // 用户关闭弹窗;随后的重连 / 刷新式重复推送不得再次弹出。
-    r.settingsOpen.value = false
-    r.ctx.handleMessage(runtimeSettingsMsg(['agent-1'], missing))
-    expect(r.settingsOpen.value).toBe(false)
+    expect(r.settingsTarget.value).toEqual({ tab: 'runtime' })
   })
 
-  it('no-agent still lands on the Agent Tab and never sets a runtime target', () => {
-    const r = makeCtx()
-    r.ctx.handleMessage(
-      runtimeSettingsMsg([], {
+  it('管理员 + vendorRuntime 缺失时按宿主 PATH 回落判定', () => {
+    const onPath = makeColdStartCtx()
+    onPath.ctx.handleMessage(readyMsg([], true))
+    onPath.ctx.handleMessage(coldStartSettingsMsg(['agent-1'], undefined, [COLD_START_CLAUDE_HOST]))
+    expect(onPath.settingsOpen.value).toBe(false)
+
+    const nowhere = makeColdStartCtx()
+    nowhere.ctx.handleMessage(readyMsg([], true))
+    nowhere.ctx.handleMessage(coldStartSettingsMsg(['agent-1'], undefined, []))
+    expect(nowhere.settingsOpen.value).toBe(true)
+    expect(nowhere.settingsTarget.value).toEqual({ tab: 'runtime' })
+  })
+
+  it('除重:只弹一次,关闭后重复推送不重开,整页刷新(新连接)才重判', () => {
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(readyMsg([], true))
+    r.ctx.handleMessage(coldStartSettingsMsg([]))
+    expect(r.settingsOpen.value).toBe(true)
+    // 用户关闭弹窗;随后的重连 / 刷新式重复推送不得再次弹出。
+    r.settingsOpen.value = false
+    r.ctx.handleMessage(coldStartSettingsMsg([]))
+    r.ctx.handleMessage(coldStartSettingsMsg([SYSTEM_AGENT_ID]))
+    expect(r.settingsOpen.value).toBe(false)
+
+    // 首帧即已配置、之后才变空:判定早已消费,不补弹。
+    const configured = makeColdStartCtx()
+    configured.ctx.handleMessage(readyMsg([], true))
+    configured.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
+    configured.ctx.handleMessage(coldStartSettingsMsg([]))
+    expect(configured.settingsOpen.value).toBe(false)
+
+    // 整页刷新 = 新连接 + 新一次判定:同一份空档案快照重新判为需要引导。
+    const reloaded = makeColdStartCtx()
+    reloaded.ctx.handleMessage(readyMsg([], true))
+    reloaded.ctx.handleMessage(coldStartSettingsMsg([]))
+    expect(reloaded.settingsOpen.value).toBe(true)
+  })
+
+  it('非管理员:未配置 / 仅兜底 / 双 CLI 缺失 / 可用,任一情形都不弹', () => {
+    const unconfigured = makeColdStartCtx()
+    unconfigured.ctx.handleMessage(readyMsg([], false))
+    unconfigured.ctx.handleMessage(coldStartSettingsMsg([]))
+    expect(unconfigured.settingsOpen.value).toBe(false)
+    expect(unconfigured.settingsTarget.value).toBeNull()
+
+    const fallbackOnly = makeColdStartCtx()
+    fallbackOnly.ctx.handleMessage(readyMsg([], false))
+    fallbackOnly.ctx.handleMessage(coldStartSettingsMsg([SYSTEM_AGENT_ID]))
+    expect(fallbackOnly.settingsOpen.value).toBe(false)
+    expect(fallbackOnly.settingsTarget.value).toBeNull()
+
+    const bothMissing = makeColdStartCtx()
+    bothMissing.ctx.handleMessage(readyMsg([], false))
+    bothMissing.ctx.handleMessage(
+      coldStartSettingsMsg(['agent-1'], {
         claude: missingVendor('claude'),
         codex: missingVendor('codex'),
       }),
     )
-    expect(r.settingsOpen.value).toBe(true)
-    expect(r.settingsTarget.value).toBeNull()
+    expect(bothMissing.settingsOpen.value).toBe(false)
+    expect(bothMissing.settingsTarget.value).toBeNull()
+
+    const available = makeColdStartCtx()
+    available.ctx.handleMessage(readyMsg([], false))
+    available.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
+    expect(available.settingsOpen.value).toBe(false)
+    expect(available.settingsTarget.value).toBeNull()
   })
 })
 
 // 工作区冷启动引导:握手恒为 ready(权威工作区快照)→ settings(agent 是否配置好),
 // 两个输入到齐判定一次。这个 ctx 只需覆盖 ready / settings / workspaces 三条分支。
-function makeWorkspaceOnboardingCtx() {
+function makeColdStartCtx() {
   const addWorkspaceOpen = ref(false)
   const settingsOpen = ref(false)
   const settingsTarget = ref<import('@/lib/action-descriptor').SystemSettingsTarget | null>(null)
@@ -2207,59 +2259,59 @@ function workspacesMsg(names: string[]): ServerToClient {
 
 describe('auto-open add-workspace when the registry is empty', () => {
   it('空工作区 + 已配置 agent → 自动打开新增工作区,且不打开系统设置', () => {
-    const r = makeWorkspaceOnboardingCtx()
+    const r = makeColdStartCtx()
     r.ctx.handleMessage(readyMsg([]))
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(true)
     expect(r.settingsOpen.value).toBe(false)
   })
 
   it('测试内颠倒注入顺序(settings 先于 ready)时,在 ready 落地后判定', () => {
-    const r = makeWorkspaceOnboardingCtx()
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(false)
     r.ctx.handleMessage(readyMsg([]))
     expect(r.addWorkspaceOpen.value).toBe(true)
   })
 
   it('绝不等 workspaces 广播:没有 ready 时,settings + 空 workspaces 广播也不弹', () => {
-    const r = makeWorkspaceOnboardingCtx()
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    const r = makeColdStartCtx()
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     r.ctx.handleMessage(workspacesMsg([]))
     expect(r.addWorkspaceOpen.value).toBe(false)
   })
 
   it('已有工作区 → 不弹;同会话重连与后续 settings 同样不弹', () => {
-    const r = makeWorkspaceOnboardingCtx()
+    const r = makeColdStartCtx()
     r.ctx.handleMessage(readyMsg(['proj-a']))
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(false)
     // 重连快照仍非空,判定也早已消费。
     r.ctx.handleMessage(readyMsg(['proj-a']))
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(false)
   })
 
   it('agent 未配置 → 只留 agent 引导;本会话内配好 agent 也不补弹新增工作区', () => {
-    const r = makeWorkspaceOnboardingCtx()
+    const r = makeColdStartCtx()
     r.ctx.handleMessage(readyMsg([]))
-    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
+    r.ctx.handleMessage(coldStartSettingsMsg([SYSTEM_AGENT_ID]))
     expect(r.settingsOpen.value).toBe(true)
     expect(r.addWorkspaceOpen.value).toBe(false)
     // 用户在设置里加了 agent 并关闭设置:不排队、不叠加。
     r.settingsOpen.value = false
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(false)
   })
 
   it('用户关闭后:重放 settings、工作区增删广播、重连 ready 都不再自动弹出', () => {
-    const r = makeWorkspaceOnboardingCtx()
+    const r = makeColdStartCtx()
     r.ctx.handleMessage(readyMsg([]))
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(true)
 
     r.addWorkspaceOpen.value = false
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     r.ctx.handleMessage(workspacesMsg(['proj-a']))
     r.ctx.handleMessage(workspacesMsg([]))
     r.ctx.handleMessage(readyMsg([]))
@@ -2267,17 +2319,17 @@ describe('auto-open add-workspace when the registry is empty', () => {
   })
 
   it('非管理员 → 不弹(增删工作区受管理员门控)', () => {
-    const r = makeWorkspaceOnboardingCtx()
+    const r = makeColdStartCtx()
     r.ctx.handleMessage(readyMsg([], false))
-    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(coldStartSettingsMsg(['agent-1']))
     expect(r.addWorkspaceOpen.value).toBe(false)
   })
 
   it('双 CLI 缺失时 Runtime 跳转优先,「新增工作区」模态让位、不叠加', () => {
-    const r = makeWorkspaceOnboardingCtx()
+    const r = makeColdStartCtx()
     r.ctx.handleMessage(readyMsg([]))
     r.ctx.handleMessage(
-      runtimeSettingsMsg(['agent-1'], {
+      coldStartSettingsMsg(['agent-1'], {
         claude: missingVendor('claude'),
         codex: missingVendor('codex'),
       }),
@@ -2303,7 +2355,7 @@ describe('sessions page setting navigation normalization', () => {
     const r = makeCtx()
     r.activeTab.value = 'intents'
     r.ctx.handleMessage({
-      ...settingsMsg(['agent-1']),
+      ...coldStartSettingsMsg(['agent-1']),
       settings: { showSessionsPage: true, agents: [] },
     } as unknown as ServerToClient)
     expect(r.switchToConsoleTab).toHaveBeenCalledOnce()
@@ -2314,7 +2366,7 @@ describe('sessions page setting navigation normalization', () => {
     localStorage.setItem('c3.viewMode', 'console')
     const r = makeCtx()
     r.ctx.handleMessage({
-      ...settingsMsg(['agent-1']),
+      ...coldStartSettingsMsg(['agent-1']),
       settings: { showSessionsPage: false, agents: [] },
     } as unknown as ServerToClient)
     expect(r.onSelectTab).toHaveBeenCalledWith('intents')
@@ -3288,7 +3340,7 @@ describe('external MCP access rosters', () => {
 
 describe('identity change clears every per-identity roster', () => {
   it('drops the key roster, any revealed plaintext and the access roster on `ready`', () => {
-    const { ctx } = makeWorkspaceOnboardingCtx()
+    const { ctx } = makeColdStartCtx()
     const r = ctx as unknown as {
       myMcpApiKeys: { value: import('@ccc/shared/protocol').McpApiKeyMeta[] }
       myMcpApiKeyCreated: {
@@ -3334,7 +3386,7 @@ function makeDirectoryPickerCtx(requestId: string | null) {
     error: null as import('@ccc/shared/ui-codes').UiError | null,
     selection: null as { path: string } | null,
   })
-  const ctx = makeWorkspaceOnboardingCtx().ctx
+  const ctx = makeColdStartCtx().ctx
   ctx.workspaceDirectoryPicker = workspaceDirectoryPicker
   return { ctx, workspaceDirectoryPicker }
 }

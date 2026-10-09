@@ -17,7 +17,7 @@ export interface ColdStartState {
   agentsConfigured: boolean | null
   onboardingEvaluated: boolean
   firstSettingsEvaluated: boolean
-  /** 两个 npm 托管的 CLI 都缺失——本次会话已跳 Runtime,不再叠加「新增工作区」模态。 */
+  /** 已配置的档案里没有一条的厂商能跑——本次会话已跳 Runtime,不再叠加「新增工作区」模态。 */
   runtimeMissing: boolean
 }
 

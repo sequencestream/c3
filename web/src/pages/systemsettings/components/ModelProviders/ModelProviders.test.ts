@@ -6,12 +6,40 @@
  * 连接字段与用户自己的模型条目一概不动;
  * 以及按厂商补默认端点只补空槽,任何已填的 URL 都不被它改写。
  */
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { useAuth } from '@/composables/useAuth'
 import type { AgentConfig, ModelProvider, SpeedTestActiveRun } from '@ccc/shared/protocol'
-import { modelVendorDefaultUrls, modelVendorModels } from '@ccc/shared'
+import { modelVendorDefaultUrls } from '@ccc/shared'
 import ModelProviders from './ModelProviders.vue'
 import { emptySpeedTestState } from '@/lib/model-provider-speed-test'
+import {
+  applyProviderModelsResult,
+  bindProviderModelsSender,
+  resetProviderModelsForTests,
+  useProviderModelCatalog,
+} from '@/composables/useProviderModels'
+
+/**
+ * 渲染出来的上游清单等于这份目录 —— 即组件真的走了 useProviderModels 这一个入口
+ * (没有答案时它回落随版本内置的厂商目录)。
+ */
+function upstream(providerRow: ModelProvider): string[] {
+  return useProviderModelCatalog()
+    .upstream(providerRow)
+    .map((m) => m.id)
+}
+
+const { setIsAdmin } = useAuth()
+
+beforeEach(() => {
+  resetProviderModelsForTests()
+})
+
+// 管理员判定是模块级共享状态:用例改了它,必须还原。
+afterEach(() => {
+  setIsAdmin(true)
+})
 
 function provider(over: Partial<ModelProvider> = {}): ModelProvider {
   return {
@@ -393,7 +421,7 @@ describe('Model Vendor', () => {
       render({ providers: [provider({ vendor: 'moonshot', models: [{ id: 'house-model' }] })] }),
     )
     const shipped = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
-    expect(shipped).toEqual(modelVendorModels('moonshot').map((m) => m.id))
+    expect(shipped).toEqual(upstream(provider({ vendor: 'moonshot' })))
     expect(shipped).not.toContain('house-model')
     const custom = w
       .findAll('[data-testid="provider-model-name"]')
@@ -428,7 +456,7 @@ describe('Model Vendor', () => {
       paused: true,
     })
     const shipped = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
-    expect(shipped).toEqual(modelVendorModels('doubao').map((m) => m.id))
+    expect(shipped).toEqual(upstream(provider({ vendor: 'doubao' })))
   })
 
   it('非管理员看得到身份与两份清单,但一个都改不了', async () => {
@@ -636,6 +664,85 @@ describe('测速入口', () => {
     expect(start().attributes('disabled')).toBeDefined()
     expect(w.find('[data-testid="speed-test-blocker"]').text()).toBe(
       'The selected protocol is unavailable. Refresh the configuration and choose again.',
+    )
+  })
+})
+
+describe('ModelProviders.vue — 上游清单来自运行时解析', () => {
+  /** 展开第一条 provider —— 编辑面板里的字段都在展开后才渲染。 */
+  async function expand(w: ReturnType<typeof render>) {
+    await w.find('[data-testid="provider-row"] .icon-btn').trigger('click')
+    return w
+  }
+
+  it('服务端答案替换内置目录;自有条目仍在下面那一区、不进只读区', async () => {
+    const row = provider({ vendor: 'moonshot', models: [{ id: 'house-model' }] })
+    const w = await expand(render({ providers: [row] }))
+    expect(w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())).toContain(
+      'kimi-k3',
+    )
+
+    applyProviderModelsResult({
+      type: 'provider_models_result',
+      providerId: row.id,
+      models: [{ id: 'kimi-k4' }, { id: 'house-model' }],
+      fromCache: true,
+      stale: false,
+    })
+    await w.vm.$nextTick()
+
+    const badges = w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())
+    // 上游刚上的新模型在列;上游那一半不含自有条目 —— 自有条目只在下方的可编辑区。
+    expect(badges).toEqual(['kimi-k4', 'house-model'])
+    expect(
+      w
+        .findAll('[data-testid="provider-model-name"]')
+        .map((n) => (n.element as HTMLInputElement).value),
+    ).toEqual(['house-model'])
+  })
+
+  it('「重新抓取」走同一个入口发一次请求,并把清单答案再问一遍', async () => {
+    const sent: Array<{ type: string; providerId?: string }> = []
+    bindProviderModelsSender((msg) => sent.push(msg as { type: string; providerId?: string }))
+    const row = provider({ vendor: 'moonshot' })
+    const w = await expand(render({ providers: [row] }))
+    // 面板挂载时就问过一次。
+    expect(sent).toEqual([{ type: 'fetch_provider_models', providerId: row.id }])
+    expect(w.find('[data-testid="provider-models-refresh"]').attributes('disabled')).toBeDefined()
+
+    applyProviderModelsResult({
+      type: 'provider_models_result',
+      providerId: row.id,
+      models: [{ id: 'kimi-k4' }],
+      fromCache: false,
+      stale: false,
+    })
+    await w.vm.$nextTick()
+    const button = w.find('[data-testid="provider-models-refresh"]')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toEqual({ type: 'fetch_provider_models', providerId: row.id })
+  })
+
+  it('非管理员:这条请求根本不发,「重新抓取」按钮也是禁用态而不是点了没反应', async () => {
+    // 服务端对这条消息过 requireAdmin:非管理员发出去只会换来一条用户没触发的报错,以及一个
+    // 等不到回包、永远转不完的 ↻(面板挂载就会自动索取一轮)。
+    //
+    // 门设在入口而不是组件里:判定来自服务端(`ready`),控制台把同一个值既传成这里的 isAdmin
+    // prop,也留在 useAuth 的单例里 —— 嵌套的测速弹窗拿不到 prop,却同样会索取清单。
+    setIsAdmin(false)
+    const sent: Array<{ type: string; providerId?: string }> = []
+    bindProviderModelsSender((msg) => sent.push(msg as { type: string; providerId?: string }))
+    const row = provider({ vendor: 'moonshot' })
+    const w = await expand(render({ providers: [row], isAdmin: false }))
+
+    expect(sent).toEqual([])
+    expect(w.find('[data-testid="provider-models-refresh"]').attributes('disabled')).toBeDefined()
+    // 不问不等于没候选:内置目录照旧把清单列出来。
+    expect(w.findAll('[data-testid="provider-shipped-model"]').map((n) => n.text())).toContain(
+      'kimi-k3',
     )
   })
 })

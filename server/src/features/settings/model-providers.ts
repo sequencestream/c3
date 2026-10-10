@@ -1,5 +1,5 @@
 /**
- * Model-provider maintenance handlers: the connection probe.
+ * Model-provider maintenance handlers: the connection probe, and the runtime model list.
  *
  * Provider CRUD is deliberately absent — a provider is a field of `SystemSettings`,
  * so creating, editing and deleting one already travels through `save_settings`
@@ -7,12 +7,16 @@
  * two write paths with two normalizations. What needs its own handler is what the
  * console CANNOT do from a settings document: dial an endpoint from the server
  * (the browser cannot, and the stored key must not travel to it).
+ *
+ * Both handlers dial only addresses the operator configured, with the credential that
+ * belongs to that provider, and both refuse redirects — the shared trust boundary.
  */
 import type { ModelProvider, ProtocolType } from '@ccc/shared/protocol'
 import { checkProviderBaseUrl } from '@ccc/shared'
 import { loadSettings } from '../../kernel/config/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
+import { resolveProviderModels } from './provider-model-cache.js'
 
 /** How long a probe waits before calling the endpoint unreachable. */
 const PROBE_TIMEOUT_MS = 6000
@@ -139,4 +143,46 @@ export const probeModelProviderHandler: Handler<'probe_model_provider'> = async 
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * Answer with one provider's UPSTREAM model list — what its own endpoint serves, resolved as
+ * fetched → cached → shipped directory.
+ *
+ * Read-only, and deliberately narrow: it takes a provider ID and nothing else, so the URL,
+ * the dialect and the key are all read from the SAVED provider. A client cannot point this at
+ * a host of its choosing, and an unsaved draft is not a target — it answers empty, and the
+ * console shows the shipped directory plus its own entries for a provider the server does not
+ * know yet.
+ *
+ * The reply may be older than the TTL: the read never waits for the network, and the refresh
+ * it starts is a background one (see `provider-model-cache.ts`). Admin-only because a cache
+ * miss spends the deployment's stored credential upstream.
+ */
+export const fetchProviderModelsHandler: Handler<'fetch_provider_models'> = async (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!requireAdmin(conn)) return
+  const settings = loadSettings()
+  const provider = settings.modelProviders?.find((p) => p.id === msg.providerId)
+  if (!provider) {
+    conn.send({
+      type: 'provider_models_result',
+      providerId: msg.providerId,
+      models: [],
+      fromCache: false,
+      stale: false,
+    })
+    return
+  }
+  const resolved = resolveProviderModels(provider)
+  conn.send({
+    type: 'provider_models_result',
+    providerId: msg.providerId,
+    models: resolved.models,
+    fromCache: resolved.fromCache,
+    stale: resolved.stale,
+  })
 }

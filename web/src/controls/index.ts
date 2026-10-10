@@ -11,6 +11,7 @@ import {
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
+import { bindProviderModelsSender } from '@/composables/useProviderModels'
 import { createState } from './state'
 import { installPersistence } from './persistence'
 import { installMessageHandler } from './message-handler'
@@ -160,6 +161,8 @@ export function useAppController(): AppCtx {
 
     // Let the auth store fire `login` / `logout` over this connection.
     auth.bindSender(client.send)
+    // And let the provider-model store ask for a provider's runtime model list.
+    bindProviderModelsSender(client.send)
 
     // While on the console tab, re-fetch the current workspace's session list.
     // This is list pagination only — badges come from activity snapshot/delta.

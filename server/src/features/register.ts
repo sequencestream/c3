@@ -24,7 +24,10 @@ import {
 } from './settings/index.js'
 import { autoConfigureAgentsHandler } from './settings/auto-configure-agents.js'
 import { syncVendorCliHandler } from './settings/sync-vendor-cli.js'
-import { probeModelProviderHandler } from './settings/model-providers.js'
+import {
+  fetchProviderModelsHandler,
+  probeModelProviderHandler,
+} from './settings/model-providers.js'
 import { modelProviderSpeedTestHandler } from './settings/speed-test/index.js'
 import {
   applySelfUpdateHandler,
@@ -211,6 +214,7 @@ export const handlerMap: HandlerMap = {
   auto_configure_agents: autoConfigureAgentsHandler,
   sync_vendor_cli: syncVendorCliHandler,
   probe_model_provider: probeModelProviderHandler,
+  fetch_provider_models: fetchProviderModelsHandler,
   model_provider_speed_test: modelProviderSpeedTestHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,

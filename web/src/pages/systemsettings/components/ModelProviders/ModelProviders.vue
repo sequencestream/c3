@@ -7,18 +7,21 @@
  * 从而得到 baseUrl。把连接从 agent 里提出来之后,轮换 key 或迁移端点只改这一处。
  *
  * Model Vendor(上游厂商)是这条 provider 的身份声明,与 template(创建来源、之后再不读)
- * 是两件事:它被持续读取,决定这条 provider 给出哪些随版本内置的模型建议,并且可以单独改——
- * 自建端点也能认领一个已知厂商,而不必被重置连接字段。内置模型只读,与用户自己的模型条目分区
- * 展示;两者合并后才是 agent 表单看到的候选,而候选永远只是建议,不校验、不兜底、不做白名单。
+ * 是两件事:它被持续读取,既是这条 provider 给出哪些模型建议的最后兜底,也可以单独改——
+ * 自建端点也能认领一个已知厂商,而不必被重置连接字段。上游清单(服务端按方言抓取、落库缓存,
+ * 抓不到时回落写死的厂商目录)只读,与用户自己的模型条目分区展示;两者合并后才是 agent 表单
+ * 看到的候选,而候选永远只是建议,不校验、不做白名单。清单过期时后台自会刷新,用户也可以点
+ * 「重新抓取」立刻重问一次。
  *
  * 本组件直接改 props.providers 里的对象(与 agent 列表同一种写法):它们是父级草稿的一部分,
- * 保存与脏检测都由父面板统一负责,这里不发任何消息、也不落库。连通性探测是例外——不是
- * 「编辑一份配置」,而是要服务端替我们去拨号,所以上抛给父级发消息。
+ * 保存与脏检测都由父面板统一负责,这里不落库。不落库是因为两件事都不是「编辑一份配置」,而是
+ * 要服务端替我们去拨号:连通性探测上抛给父级发消息,运行时上游清单走 useProviderModels 这一个
+ * 入口(它自己持有共享缓存与发送器,故本组件不必再上抛一次)。
  *
  * 删除被引用的 provider 默认阻断:确认框先说明有几个 agent 会退回 CLI 登录态,用户仍可强制
  * 删除(逃生口)。悬挂引用在服务端是 fail-soft 的,所以这里挡的是「误删」,不是「不一致」。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import type {
   AgentConfig,
   ModelProvider,
@@ -32,7 +35,6 @@ import {
   checkProviderBaseUrl,
   modelVendorDefaultUrls,
   modelVendorLabel,
-  modelVendorModels,
   normalizeModelVendor,
 } from '@ccc/shared'
 import type { ModelVendorGroup } from '@ccc/shared'
@@ -41,6 +43,7 @@ import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import type { ProviderProbeState } from '@/lib/model-provider'
 import { providerProbeKey } from '@/lib/model-provider'
+import { useProviderModelCatalog } from '@/composables/useProviderModels'
 import type { SpeedTestIntent, SpeedTestUiState } from '@/lib/model-provider-speed-test'
 import SpeedTestDialog from './SpeedTestDialog.vue'
 import SpeedTestCompare from './SpeedTestCompare.vue'
@@ -254,9 +257,21 @@ function setVendor(p: ModelProvider, value: string): void {
 
 // ---- 模型目录 ----
 
-/** 该厂商随版本内置的模型:只读,用户改不了,也删不掉。 */
-function shippedModels(p: ModelProvider): readonly ModelProviderModel[] {
-  return modelVendorModels(p.vendor)
+/**
+ * 上游清单(读到就替换):服务端按方言抓取 provider 自己的模型清单接口、落库缓存,读不到时
+ * 回落随版本内置的厂商目录。这里是只读的那一半 —— 用户改不了也删不掉;自有条目在下面单独一区
+ * 编辑,两者合并后才是 agent 表单看到的候选。
+ */
+const catalog = useProviderModelCatalog()
+watchEffect(() => catalog.ensure(props.providers))
+
+function upstreamModels(p: ModelProvider): readonly ModelProviderModel[] {
+  return catalog.upstream(p)
+}
+
+/** 用户点「重新抓取」:丢掉这份答案重问一次(过期缓存的后台刷新结果也就此立刻可见)。 */
+function refetch(p: ModelProvider): void {
+  catalog.refresh(p.id)
 }
 
 function addModel(p: ModelProvider): void {
@@ -531,9 +546,24 @@ function confirmRemove(): void {
         <h4 class="provider-section">{{ t('settings.providers.models.title') }}</h4>
         <p class="settings-hint">{{ t('settings.providers.models.hint') }}</p>
 
-        <h5 class="provider-subsection">{{ t('settings.providers.models.shipped.title') }}</h5>
+        <h5 class="provider-subsection">
+          {{ t('settings.providers.models.shipped.title') }}
+          <button
+            class="icon-btn"
+            data-testid="provider-models-refresh"
+            :disabled="!isAdmin || catalog.loading(p.id)"
+            :title="
+              catalog.stale(p.id)
+                ? t('settings.providers.models.shipped.stale')
+                : t('settings.providers.models.shipped.refresh')
+            "
+            @click="refetch(p)"
+          >
+            ↻
+          </button>
+        </h5>
         <p
-          v-if="shippedModels(p).length === 0"
+          v-if="upstreamModels(p).length === 0"
           class="settings-hint"
           data-testid="provider-shipped-empty"
         >
@@ -541,7 +571,7 @@ function confirmRemove(): void {
         </p>
         <div v-else class="provider-shipped">
           <span
-            v-for="m in shippedModels(p)"
+            v-for="m in upstreamModels(p)"
             :key="m.id"
             class="provider-badge"
             data-testid="provider-shipped-model"

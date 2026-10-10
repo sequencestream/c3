@@ -8,7 +8,7 @@
  * (账号列表/管理员)总是同步,脏 Tab 的其余字段草稿受保护。保存后面板保持打开。
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
-import { computed, nextTick, ref, toRaw, watch } from 'vue'
+import { computed, nextTick, ref, toRaw, watch, watchEffect } from 'vue'
 import {
   GROUP_AGENT_PREFIX,
   SYSTEM_AGENT_ID,
@@ -16,7 +16,7 @@ import {
   hasProviderConfig,
   providerSupportsVendor,
 } from '@ccc/shared/protocol'
-import { effectiveProviderModels, modelVendorLabel, modelVendorModels } from '@ccc/shared'
+import { modelVendorLabel } from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,
@@ -33,6 +33,7 @@ import type {
   WorkspaceScopeMode,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { useProviderModelCatalog } from '@/composables/useProviderModels'
 import { VENDOR_COLOR, VENDOR_LABEL, vendorRowTint } from '@/lib/vendor'
 import {
   vendorCliDegradationKey,
@@ -778,14 +779,22 @@ function setAgentProvider(a: AgentConfig, value: string): void {
 }
 
 /**
- * model 输入框的候选:选了 provider 就是它的**有效模型清单**(该 Provider Vendor 随版本内置的
- * 模型 + 这条 provider 自己的条目,同名以后者为准),否则是所有能服务该 vendor 的 provider 的
- * 清单合起来 —— 后者就是「先想好用哪个模型,再反查谁提供它」的入口。
+ * 模型候选的统一入口(见 composables/useProviderModels):每个候选项的有效清单 = 上游清单
+ * (服务端抓取/缓存,抓不到时回落随版本内置的厂商目录)+ provider 自己的条目,同名以后者为准。
+ * 面板打开时把草稿里所有 provider 的清单都要一遍,下面几个函数只从这份缓存里读。
+ */
+const modelCatalog = useProviderModelCatalog()
+watchEffect(() => modelCatalog.ensure(providers.value))
+
+/**
+ * model 输入框的候选:选了 provider 就是它的**有效模型清单**(上游清单 + 这条 provider 自己的
+ * 条目,同名以后者为准),否则是所有能服务该 vendor 的 provider 的清单合起来 —— 后者就是
+ * 「先想好用哪个模型,再反查谁提供它」的入口。
  *
  * 接不了 provider 的 vendor(Cursor)是另一条路:它的模型只可能来自它自己,候选就取同名
  * Model Vendor 随版本内置的清单。走 hasProviderConfig 而不是写死 `=== 'cursor'`,是为了让
- * 下一个同类 vendor 自动落到这条分支;它的 vendor id 若不在厂商目录里,modelVendorModels 归一
- * 为 custom 得到空清单 —— 没有候选,而不是把一堆它根本连不上的 provider 的模型列出来。
+ * 下一个同类 vendor 自动落到这条分支;它的 vendor id 若不在厂商目录里,清单归一为 custom 得到
+ * 空候选 —— 没有候选,而不是把一堆它根本连不上的 provider 的模型列出来。
  *
  * 纯建议:输入框仍是自由文本,清单里没有的 id 照样存得下去;换 provider 只换候选,不动已填的值。
  */
@@ -793,13 +802,13 @@ function modelSuggestions(a: AgentConfig): { value: string; label: string }[] {
   const out: { value: string; label: string }[] = []
   if (!hasProviderConfig(a)) {
     const vendorLabel = modelVendorLabel(a.vendor)
-    for (const m of modelVendorModels(a.vendor)) {
+    for (const m of modelCatalog.shipped(a.vendor)) {
       out.push({ value: m.id, label: `${m.id} — ${vendorLabel}` })
     }
     return out
   }
   for (const p of suggestionPool(a)) {
-    for (const m of effectiveProviderModels(p)) {
+    for (const m of modelCatalog.effective(p)) {
       out.push({ value: m.id, label: `${m.id} — ${p.displayName}` })
     }
   }
@@ -823,7 +832,7 @@ function onModelPicked(a: AgentConfig): void {
   const model = a.config.model.trim()
   if (!model) return
   const owners = providersFor(a.vendor).filter((p) =>
-    effectiveProviderModels(p).some((m) => m.id === model),
+    modelCatalog.effective(p).some((m) => m.id === model),
   )
   if (owners.length === 1) setAgentProvider(a, owners[0].id)
 }

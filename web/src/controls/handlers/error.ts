@@ -6,6 +6,7 @@ import { translateUiError } from '@/i18n/errors'
 import { normalizeGuidance } from '@/lib/git-failure-guidance'
 import { isCreatePrFailureCode } from '@/lib/create-pr-failure'
 import { gateEscapeFor } from '@/lib/gate-escape'
+import { dropPendingProviderModels } from '@/composables/useProviderModels'
 
 export function buildErrorHandlers(
   ctx: AppCtx,
@@ -371,6 +372,12 @@ export function buildErrorHandlers(
         ctx.workspaceMemoriesLoading.value = false
         ctx.workspaceMemoriesError.value = msg.error
       }
+      // An admin-only refusal is a whole request turned away, so whatever it was there is no
+      // reply coming. The provider-model reads are the automatic ones (the settings panel asks
+      // for every provider it lists): releasing them is what keeps the "re-read" control from
+      // spinning for the rest of the session. Not a `return` — a refusal the operator asked for
+      // still gets reported below.
+      if (msg.error.code === 'auth.adminOnly') dropPendingProviderModels()
       add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
     },
   }

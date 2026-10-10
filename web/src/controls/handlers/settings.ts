@@ -8,6 +8,7 @@ import { normalizePersonalized, writeLocalPersonalized } from '@/lib/personalize
 import { applyTheme } from '@/lib/theme'
 import { applyFontScale } from '@/lib/font-scale'
 import { providerProbeKey } from '@/lib/model-provider'
+import { applyProviderModelsResult } from '@/composables/useProviderModels'
 import { deriveVendorAvailability } from '@/lib/vendor-runtime'
 import { VIEW_MODE_KEY } from '../state/types'
 
@@ -18,6 +19,7 @@ export function buildSettingsHandlers(
   HandlerMap,
   | 'settings'
   | 'model_provider_probe_result'
+  | 'provider_models_result'
   | 'model_provider_speed_test_result'
   | 'auto_configure_agents_result'
   | 'vendor_cli_sync_result'
@@ -262,6 +264,11 @@ export function buildSettingsHandlers(
           ...(msg.latencyMs !== undefined ? { latencyMs: msg.latencyMs } : {}),
         },
       }
+    },
+    provider_models_result: (_ctx, msg) => {
+      // 运行时上游清单的答案,按 providerId 覆盖写入共享缓存(与探测同一种「瞬时结论」,
+      // 但语义不同:这是可缓存的清单,答完就留在缓存里给所有组件用)。
+      applyProviderModelsResult(msg)
     },
     model_provider_speed_test_result: (_ctx, msg) => {
       // 一次只观察一个 provider 的执行:accepted/progress/finished 更新运行态,

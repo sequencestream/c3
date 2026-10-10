@@ -80,6 +80,7 @@ export type ClientToServer =
   | SettingsMsg.ClientAutoConfigureAgents
   | SettingsMsg.ClientSyncVendorCli
   | SettingsMsg.ClientProbeModelProvider
+  | SettingsMsg.ClientFetchProviderModels
   | SpeedTestMsg.ClientModelProviderSpeedTest
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
@@ -235,6 +236,7 @@ export type ServerToClient =
   | SettingsMsg.ServerAutoConfigureAgentsResult
   | SettingsMsg.ServerVendorCliSyncResult
   | SettingsMsg.ServerModelProviderProbeResult
+  | SettingsMsg.ServerProviderModelsResult
   | SpeedTestMsg.ServerModelProviderSpeedTestResult
   | SettingsMsg.ServerPersonalizedSettings
   | SettingsMsg.ServerMcpApiKeys

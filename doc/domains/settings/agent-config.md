@@ -1,7 +1,7 @@
 # Domain: agent-config
 
 - **Group:** settings
-- **One-line:** 智能体档案、具名上游、默认与专用路由、按会话绑定。
+- **One-line:** 智能体档案、具名上游与其模型清单、默认与专用路由、按会话绑定。
 - **Owner:** maintainer
 - **Status:** active
 - **Depends on:** [system-setting](system-setting.md)(CLI 版本与宿主是否可跑);[workspace-setting](workspace-setting.md)(工作区覆盖);[auth](../core/auth.md)(改全局配置过管理员门)。
@@ -17,7 +17,7 @@ agent-config 管理会话据以启动的**智能体**:厂商无关的档案,加�
 
 运行时消费见 [agent-session](../core/agent-session.md),不复制其规则。权限模式与讨论轮次属 [workspace-setting](workspace-setting.md)。宿主 CLI 版本属 [system-setting](system-setting.md)。
 
-**范围:** 档案与顺序、具名上游、连接解析与探测/测速、分组与回退、运行时门控、一键自动配置、默认与专用路由、每会话绑定。
+**范围:** 档案与顺序、具名上游与其上游模型清单、连接解析与探测/测速、分组与回退、运行时门控、一键自动配置、默认与专用路由、每会话绑定。
 **边界:** 不驱动运行循环;不持有 CLI 版本;不持有工作区权限模式与讨论上限;不持有权限状态;不渲染 UI。
 
 ## Business rules
@@ -37,10 +37,11 @@ agent-config 管理会话据以启动的**智能体**:厂商无关的档案,加�
 
 ### 具名上游
 
-凭证与端点从档案抽到可复用的提供方;多档案共用一条。内置模型候选离线、不联网发现,是建议不是白名单。
+凭证与端点从档案抽到可复用的提供方;多档案共用一条。可选模型候选由该提供方的上游清单解析而来——按协议方言向上游自己的清单接口抓取、落库缓存,抓不到时回落随版本发布的厂商目录;提供方自己的条目在同名处优先生效。候选始终是建议,不是白名单,也不作运行时兜底。
 
 - **AC-R5** — 模型是独立覆盖,空则不覆盖。档案自身不携带连接。
 - **AC-R32** — 端点模板只补空槽,已填保留。不是白名单,也不作运行时兜底。
+- **AC-R37** — 上游清单的解析顺序固定为:抓取成功即替换上游那一半并落库 → 缓存(默认有效期一天) → 随版本发布的厂商目录(仅在从未抓到过时)。抓取失败不清空缓存、旧清单继续可用,并在短退避窗口内不再打上游;过期刷新是后台的,读清单不等待上游,故列表最多落后一个有效期。只发往该提供方自己配置的地址,与探测同一信任边界;过管理员门,非管理员的控制台根本不会索取清单,看到的仍是随版本目录;没有可用地址或没有账户钥时不抓取。清单只提供模型 id,能力元数据仍由用户声明。
 
 ### 连接与探测
 
@@ -87,7 +88,7 @@ agent-config 管理会话据以启动的**智能体**:厂商无关的档案,加�
 
 ## Domain events
 
-消费 `get_settings`、`save_settings`、`auto_configure_agents`、`probe_model_provider`、`model_provider_speed_test`。发出 `settings`、`auto_configure_agents_result`、`model_provider_speed_test_result`。形状见[共享协议](../../shared/api-conventions/websocket-protocol.md)。工作区覆盖的读写属 workspace-setting。
+消费 `get_settings`、`save_settings`、`auto_configure_agents`、`probe_model_provider`、`fetch_provider_models`、`model_provider_speed_test`。发出 `settings`、`auto_configure_agents_result`、`provider_models_result`、`model_provider_speed_test_result`。形状见[共享协议](../../shared/api-conventions/websocket-protocol.md)。工作区覆盖的读写属 workspace-setting。
 
 ## 数据模型
 
@@ -112,7 +113,7 @@ agent-config 管理会话据以启动的**智能体**:厂商无关的档案,加�
 
 - 账户级钥覆盖本提供方全部协议地址。
 - 协议槽按 Agent 所属厂商的支持顺序取第一个有地址的。cursor 当前不绑提供方。
-- `vendor` 声明线那头是谁家的模型,与 Agent 的启动厂商不是一回事。内置模型清单离线、不联网发现,与自有条目合并后只是建议,不是白名单。
+- `vendor` 声明线那头是谁家的模型,与 Agent 的启动厂商不是一回事。上游清单按该声明解析(抓取 → 缓存 → 同名厂商目录兜底),与自有条目合并后只是建议,不是白名单。
 - 创建所用端点模板只作溯源;运行时不读。空槽可按模板补齐,已填保留。
 
 ### 会话绑定
@@ -144,7 +145,7 @@ agent-config 管理会话据以启动的**智能体**:厂商无关的档案,加�
 
 **sandbox.** 是否开宿主钥匙串问连接解析是否为空;悬挂引用的 fail-soft 回落不打开钥匙串。
 
-**auth.** 写系统配置、自动配置、探测与测速过管理员门。
+**auth.** 写系统配置、自动配置、探测、测速与上游清单抓取过管理员门。
 
 **relay.** 经提供方的上游走 vendor 中立 relay,真钥留在本进程。组内回退见 [ADR-0029](../../architecture/adr/0029-vendor-neutral-relay-and-agent-group-failover.md) 与 [relay 架构](../../architecture/relay-architecture.md)。
 

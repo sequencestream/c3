@@ -161,10 +161,6 @@
             "label": "Waiting for the chooser…"
           }
         },
-        "manualPath": {
-          "label": "Enter the path manually"
-        },
-        "pathEmpty": "No directory chosen yet",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",

@@ -161,10 +161,6 @@
             "label": "等待选择目录…"
           }
         },
-        "manualPath": {
-          "label": "手动输入路径"
-        },
-        "pathEmpty": "尚未选择目录",
         "nameLabel": "工作区名称",
         "namePlaceholder": "1–64 个字符",
         "placeholder": "/工作区/绝对路径",

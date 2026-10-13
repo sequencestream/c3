@@ -513,6 +513,15 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
     expect(w.emitted('select-workspace-directory')).toHaveLength(1)
   })
 
+  it('无需打开目录选择器即可手动输入路径添加工作区', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
+    await w.find('[data-testid="input-field"]').setValue('/home/manual/proj')
+    await w.find('[data-testid="input-accept"]').trigger('click')
+    expect(w.emitted('add-workspace')).toEqual([
+      [{ workspaceName: 'proj', path: '/home/manual/proj' }],
+    ])
+  })
+
   it('确认 → emit 一次不变的 add-workspace 载荷并关闭(名称随 basename 预填)', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
     await w.setProps({ workspaceDirectoryPicker: pickerWith({ path: '/home/proj-c' }) })
@@ -538,7 +547,7 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
     )
   })
 
-  it('调起失败 → 弹框给出本地化说明,并可临时切回手动输入完成添加', async () => {
+  it('调起失败 → 弹框给出本地化说明,并可直接输入完成添加', async () => {
     const w = mount(AppHeader, { props: { ...baseProps, addWorkspaceOpen: true } })
     await w.setProps({
       workspaceDirectoryPicker: {
@@ -551,7 +560,6 @@ describe('AppHeader.vue — 受控的新增工作区弹框', () => {
     expect(w.find('[data-testid="picker-error"]').text()).toContain(
       translateUiError({ code: 'workspace.directoryPickerFailed' }),
     )
-    await w.find('[data-testid="use-manual-path"]').trigger('click')
     await w.find('[data-testid="input-field"]').setValue('  /home/manual  ')
     await w.find('[data-testid="input-accept"]').trigger('click')
     expect(w.emitted('add-workspace')).toEqual([

@@ -162,10 +162,6 @@
             "label": "ディレクトリの選択を待機中…"
           }
         },
-        "manualPath": {
-          "label": "パスを手動で入力"
-        },
-        "pathEmpty": "ディレクトリが未選択です",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",

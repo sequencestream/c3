@@ -13,7 +13,7 @@
 
 session-registry 是工作台的档案柜：把项目目录登记为**工作区**，把各厂商会话列成统一**目录**，记住每会话权限模式与最近访问，并在选择时从厂商原生存储回放历史。
 
-工作区身份是不可变的名称（[术语](../../glossary.md)）；磁盘路径只表示位置，不回传为身份。新路径在服务端本机用目录对话框选择，没有图形界面时由用户填写。会话目录按业务种类分页，最新优先；「规范」一列同时展示规格撰写与评审。转录只存在于厂商原生存储，c3 不双写。连接上的已查看会话是视图，不是运行所有权（[ADR 0006](../../architecture/adr/0006-decouple-runs-from-connections.md)）。
+工作区身份是不可变的名称（[术语](../../glossary.md)）；磁盘路径只表示位置，不回传为身份。新路径可由用户填写，或在服务端本机用目录对话框选择。会话目录按业务种类分页，最新优先；「规范」一列同时展示规格撰写与评审。转录只存在于厂商原生存储，c3 不双写。连接上的已查看会话是视图，不是运行所有权（[ADR 0006](../../architecture/adr/0006-decouple-runs-from-connections.md)）。
 
 **范围:** 工作区登记与排序、会话增删改选、每会话模式、最后活跃提示、选择时的历史回放。
 **边界:** 不驱动运行（[agent-session](agent-session.md)），不渲染 UI（[web-console](web-console.md)），不持有权限决策。
@@ -93,7 +93,7 @@ stateDiagram-v2
 
 **agent-session.** 播种工作目录、每会话模式与 resume id。pending 绑定时把真实 id 交回 runtime；选择会话时从原生存储取基线，再叠 runtime 缓冲。运行是否存活、状态如何广播，由 agent-session 拥有（[ADR 0006](../../architecture/adr/0006-decouple-runs-from-connections.md)）。
 
-**web-console.** 消费 `workspaces` / `sessions` / `session_selected`，发送登记与选择。控件如何排布由控制台拥有。目录点选发出 `select_workspace_directory`；选择发生在服务端所在机器，没有图形界面则改由用户填写路径。
+**web-console.** 消费 `workspaces` / `sessions` / `session_selected`，发送登记与选择。控件如何排布由控制台拥有。目录点选发出 `select_workspace_directory`；选择发生在服务端所在机器，用户也可填写路径。
 
 **files.** 只读浏览以已登记工作区名解析根路径。本域提供名称到路径的映射，不解释相对路径。
 

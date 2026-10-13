@@ -162,10 +162,6 @@
             "label": "디렉터리 선택을 기다리는 중…"
           }
         },
-        "manualPath": {
-          "label": "경로를 직접 입력"
-        },
-        "pathEmpty": "아직 선택된 디렉터리가 없습니다",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",

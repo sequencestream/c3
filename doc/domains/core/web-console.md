@@ -54,7 +54,7 @@ Web 控制台是人对工作台的窗口：看活动流、提交或排队 prompt
 
 - **WC-R6**: 浏览器连接状态 `connecting` / `open` / `closed` 始终可见，并作为运行日志入口（WC-R31）。
 - **WC-R8**: 当前工作区是本机导航状态，与正在查看的会话所属工作区解耦。切换工作区刷新目录，不自动改正在看的会话、不打断其流。新增与移除工作区仅管理员；查看与切换对已认证用户开放。
-- **WC-R8a**: 新工作区路径由服务端主机选择（[session-registry](session-registry.md)）；控制台默认不手填。点选失败才露出一次性手填。取消是正常结果。
+- **WC-R8a**: 新工作区路径可手动输入，也可在服务端主机选择目录（[session-registry](session-registry.md)）。点选取消是正常结果；登记时由服务端验证目录。
 - **WC-R10**: pending 会话保持当前，直到 `session_started` 换成真实 id。
 - **WC-R21**: 新建会话可指定智能体，或省略以继承默认（[agent-config](../settings/agent-config.md)）。宿主 CLI 不可用的厂商不能被选来新建。
 - **WC-R29**: 查看 `spec_review` 时聊天列只读：无输入、无队列、无停止/继续、无权限作答。服务端续跑门禁见[意图管理](intent-management.md)。标签内联运行中状态点与其余会话标签同构。

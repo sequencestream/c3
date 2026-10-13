@@ -162,10 +162,6 @@
             "label": "Ожидание выбора каталога…"
           }
         },
-        "manualPath": {
-          "label": "Ввести путь вручную"
-        },
-        "pathEmpty": "Каталог ещё не выбран",
         "nameLabel": "Workspace name",
         "namePlaceholder": "1–64 characters",
         "placeholder": "/path/to/workspace",

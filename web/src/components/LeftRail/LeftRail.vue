@@ -16,6 +16,7 @@ const logsHref = logsUrl(window.location)
 const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 
 const props = defineProps<{
+  globalPage?: 'sessions' | 'automations' | null
   status: 'connecting' | 'open' | 'closed'
   viewMode: 'workspace' | 'workcenter'
   systemSettingsOpen?: boolean
@@ -28,6 +29,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'open-global': [page: 'sessions' | 'automations']
   'enter-workspace': []
   'select-workcenter-page': [page: WorkcenterPage]
   'open-personalized-setting': []
@@ -92,10 +94,35 @@ function confirmRestart(): void {
   <nav v-if="!isMobile" class="left-rail" :aria-label="t('nav.rail.ariaLabel')">
     <div class="rail-primary">
       <button
+        v-for="page in ['sessions', 'automations'] as const"
+        :key="page"
+        type="button"
+        class="rail-btn"
+        :class="{ active: globalPage === page && !systemSettingsOpen && !personalizedSettingOpen }"
+        :title="t(page === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')"
+        :aria-label="
+          t(page === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')
+        "
+        :data-testid="`rail-${page}`"
+        @click="emit('open-global', page)"
+      >
+        <svg v-if="page === 'sessions'" class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h16v12H9l-5 4V4Z" />
+          <path d="M8 8h8M8 12h5" />
+        </svg>
+        <svg v-else class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z" />
+        </svg>
+      </button>
+      <button
         type="button"
         class="rail-btn"
         :class="{
-          active: viewMode === 'workspace' && !systemSettingsOpen && !personalizedSettingOpen,
+          active:
+            !globalPage &&
+            viewMode === 'workspace' &&
+            !systemSettingsOpen &&
+            !personalizedSettingOpen,
         }"
         :title="t('nav.viewMode.workspace')"
         :aria-label="t('nav.viewMode.workspace')"

@@ -54,6 +54,7 @@ writeFileSync(join(SEED_PROJECT, 'README.md'), '# c3 e2e seed\n')
 // Each test: name, script file, and whether a non-(0/5) exit fails the suite.
 const TESTS = [
   { name: 'sessions page setting (hidden / visible)', file: 'e2e-sessions-page-setting-test.mjs' },
+  { name: 'global sessions and automations', file: 'e2e-global-browser-test.mjs' },
   {
     name: 'self-update (dev runtime refusal / no restart)',
     file: 'e2e-self-update-test.mjs',

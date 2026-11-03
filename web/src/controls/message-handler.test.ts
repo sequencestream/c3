@@ -1764,6 +1764,53 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.selectSession).not.toHaveBeenCalled()
   })
 
+  it('global sessions ignore stale selection replies until the clicked row matches', () => {
+    const r = makeDeepLinkCtx()
+    r.ctx.globalPage = ref('sessions')
+    r.ctx.globalSessionSelection = ref(null)
+    const reply = {
+      type: 'session_selected',
+      workspaceName: 'ws1',
+      sessionId: 'clicked',
+      title: 'Clicked',
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: 'claude',
+    } as ServerToClient
+    r.ctx.handleMessage(reply)
+    expect(r.activeSession.value).toBeNull()
+    r.ctx.globalSessionSelection.value = {
+      workspaceName: 'ws1',
+      row: { ...s('clicked', 1), sessionKind: 'spec', ownerKind: 'intent', ownerId: 'owner' },
+    }
+    r.ctx.handleMessage(reply)
+    expect(r.activeSession.value).toBe('clicked')
+    expect(r.activeSessionRealKind.value).toBe('spec')
+  })
+
+  it('routes matching global pages separately and ignores previous requests', () => {
+    const r = makeDeepLinkCtx()
+    r.ctx.globalSessionRequestId = ref('current')
+    r.ctx.globalSessionPages = ref({})
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceName: 'ws1',
+      globalRequestId: 'old',
+      sessions: [s('stale', 1)],
+    })
+    expect(r.ctx.globalSessionPages.value).toEqual({})
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceName: 'ws1',
+      globalRequestId: 'current',
+      sessions: [s('fresh', 2)],
+      page: { kind: 'first', hasMore: true },
+    })
+    expect(r.ctx.globalSessionPages.value.ws1.sessions[0].sessionId).toBe('fresh')
+    expect(r.ctx.sessionsByWorkspace.value).toEqual({})
+  })
+
   it('session_selected fulfills a session deep link', () => {
     const r = makeDeepLinkCtx()
     r.pendingDeepLink.value = { kind: 'session', workspaceName: 'ws1', id: 'sess-target' }

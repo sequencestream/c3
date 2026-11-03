@@ -24,6 +24,7 @@ import {
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
+import { useGlobalBrowser } from './controls/global-browser'
 import { FILES_CHAT_WIDTH_DEFAULT } from './controls/state'
 import type { SpeedTestIntent } from './lib/model-provider-speed-test'
 import { usePersistentToggle } from './composables/usePersistentToggle'
@@ -108,6 +109,17 @@ import { canOfferLinkExistingPr } from './lib/create-pr-failure'
 import { scopedSeedRefs } from './pages/automations/components/AutomationForm/resolveAutomationDefaultAgent'
 
 const { t } = useTypedI18n()
+
+const appController = useAppController()
+const globalBrowser = useGlobalBrowser(appController)
+const {
+  page: globalPage,
+  sessions: globalSessions,
+  automations: globalAutomations,
+  loading: globalLoading,
+  failed: globalFailed,
+  hasMore: globalHasMore,
+} = globalBrowser
 
 const {
   // ---- auth / connection / top bar ----
@@ -527,7 +539,7 @@ const {
   createPrProgress,
   // ---- create-intent progress overlay ----
   createIntentProgress,
-} = useAppController()
+} = appController
 
 /** 当前工作区 id 解析出的 `WorkspaceInfo`,只供工作区设置页页头展示「正在改哪个
  *  工作区」(名称 + 绝对路径)。列表未到达或 id 无匹配(切换中)时为 null,
@@ -786,6 +798,7 @@ function onSpeedTest(intent: SpeedTestIntent): void {
 
 /** 系统竖条的工作台入口：三个页面各自独立，切换时统一进入工作台视图。 */
 function openWorkcenterPage(page: 'notifications' | 'dashboard' | 'robots'): void {
+  globalBrowser.leave()
   setViewMode('workcenter')
   setWorkcenterPage(page)
 }
@@ -793,8 +806,16 @@ function openWorkcenterPage(page: 'notifications' | 'dashboard' | 'robots'): voi
 /** 竖条在工作台视图下的回落入口:回到工作区视图。桌面顶栏的旧切换按钮已移除,
  *  工作台里若没有这一条,用户就再也回不去工作区。 */
 function enterWorkspaceView(): void {
+  globalBrowser.leave()
   setViewMode('workspace')
 }
+
+const automationGlobalTitle = computed(() => {
+  const cfg = selectedAutomation.value?.config
+  return cfg && typeof cfg === 'object' && 'name' in cfg && typeof cfg.name === 'string'
+    ? cfg.name
+    : (selectedAutomation.value?.cronExpression ?? '')
+})
 
 function onFilesChatWidth(px: number): void {
   const ws = filesProject.value
@@ -815,6 +836,7 @@ function onFilesChatWidth(px: number): void {
     <div class="app-shell">
       <!-- 系统菜单常驻最左侧；工作台三个页面与底部工具均使用独立图标。 -->
       <LeftRail
+        :global-page="globalPage"
         :status="status"
         :workcenter-pending-count="workcenterPendingCount"
         :view-mode="viewMode"
@@ -824,6 +846,7 @@ function onFilesChatWidth(px: number): void {
         :show-logout="authStatus === 'authenticated'"
         :update-status="updateStatus"
         :self-update="selfUpdate"
+        @open-global="globalBrowser.open"
         @select-workcenter-page="openWorkcenterPage"
         @enter-workspace="enterWorkspaceView"
         @open-settings="openSettings"
@@ -835,7 +858,7 @@ function onFilesChatWidth(px: number): void {
 
       <!-- Workspace 列表紧邻系统菜单右侧，桌面端始终展示，只允许展开或收缩。 -->
       <WorkspaceListRail
-        v-if="viewMode === 'workspace' && !settingsOpen && !personalizedSettingOpen"
+        v-if="!globalPage && viewMode === 'workspace' && !settingsOpen && !personalizedSettingOpen"
         id="ws-list-rail"
         :workspaces="workspaces"
         :current-workspace-name="currentWorkspace"
@@ -849,6 +872,7 @@ function onFilesChatWidth(px: number): void {
 
       <div class="app-main">
         <AppHeader
+          v-if="!globalPage"
           v-model:add-workspace-open="addWorkspaceOpen"
           :workspace-directory-picker="workspaceDirectoryPicker"
           :workspaces="workspaces"
@@ -879,17 +903,55 @@ function onFilesChatWidth(px: number): void {
           @logout="auth.logout"
         />
 
+        <header v-if="globalPage" class="global-context">
+          <strong>{{
+            t(globalPage === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')
+          }}</strong>
+          <span>{{
+            globalPage === 'sessions'
+              ? activeSession
+                ? activeTitle
+                : t('globalBrowser.select')
+              : selectedAutomation
+                ? automationGlobalTitle
+                : t('globalBrowser.select')
+          }}</span>
+          <span v-if="globalPage === 'sessions' && activeSession" class="global-workspace">{{
+            activeWorkspace
+          }}</span>
+          <span
+            v-if="globalPage === 'automations' && selectedAutomation"
+            class="global-workspace"
+            >{{ automationsProject }}</span
+          >
+        </header>
+        <nav class="global-mobile-nav">
+          <button type="button" @click="enterWorkspaceView">
+            {{ t('nav.viewMode.workspace') }}
+          </button>
+          <button type="button" @click="globalBrowser.open('sessions')">
+            {{ t('globalBrowser.sessions') }}
+          </button>
+          <button type="button" @click="globalBrowser.open('automations')">
+            {{ t('globalBrowser.automations') }}
+          </button>
+        </nav>
         <div class="body">
           <template v-if="viewMode === 'workspace'">
             <Works
               v-if="activeTab === 'console'"
               ref="composer"
               :current-workspace="currentWorkspace"
+              :global-sessions="globalPage === 'sessions' ? globalSessions : undefined"
+              :global-loading="globalLoading"
+              :global-failed="globalFailed"
               :sessions="currentSessions"
               :active-session-kind="activeSessionKind"
               :session-counts="sessionCounts"
               :show-tool-sessions="serverSettings?.showToolSessions === true"
-              :sessions-has-more="currentSessionPaging.hasMore"
+              :sessions-has-more="
+                globalPage === 'sessions' ? globalHasMore : currentSessionPaging.hasMore
+              "
               :sessions-exhausted="currentSessionPaging.exhausted"
               :session-status="sessionStatus"
               :active-workspace="activeWorkspace"
@@ -918,12 +980,24 @@ function onFilesChatWidth(px: number): void {
               :queue="currentQueue"
               :available-commands="availableCommands"
               @create-session="openNewSession"
-              @refresh-sessions="() => refreshSessions(currentWorkspace)"
+              @refresh-sessions="
+                () =>
+                  globalPage === 'sessions'
+                    ? globalBrowser.requestSessions()
+                    : refreshSessions(currentWorkspace)
+              "
               @select-session-kind="selectSessionKind"
-              @load-more-sessions="() => loadMoreSessions(currentWorkspace)"
+              @load-more-sessions="
+                () =>
+                  globalPage === 'sessions'
+                    ? globalBrowser.requestSessions(true)
+                    : loadMoreSessions(currentWorkspace)
+              "
               @select-session="
                 (path: string, session: SessionInfo) =>
-                  selectSession(path, session.sessionId, session)
+                  globalPage === 'sessions'
+                    ? globalBrowser.selectSession({ ...session, workspaceName: path })
+                    : selectSession(path, session.sessionId, session)
               "
               @jump-session-source="jumpSessionSource"
               @delete-session="deleteSession"
@@ -1169,8 +1243,11 @@ function onFilesChatWidth(px: number): void {
             />
 
             <Automations
-              v-else-if="activeTab === 'automations' && automationsProject"
-              :automations="currentAutomations"
+              v-else-if="
+                activeTab === 'automations' && (automationsProject || globalPage === 'automations')
+              "
+              :global="globalPage === 'automations'"
+              :automations="globalPage === 'automations' ? globalAutomations : currentAutomations"
               :active-id="selectedAutomationId"
               :automation="selectedAutomation"
               :logs="selectedAutomationLogs"
@@ -1189,7 +1266,12 @@ function onFilesChatWidth(px: number): void {
               :vendor-availability="vendorAvailability"
               :agents="serverSettings?.agents ?? []"
               :seed-agent-refs="automationsSeedAgentRefs"
-              @select="onSelectAutomation"
+              @refresh="globalBrowser.open('automations')"
+              @select="
+                globalPage === 'automations'
+                  ? globalBrowser.selectAutomation($event)
+                  : onSelectAutomation($event)
+              "
               @open-form="openAutomationForm"
               @delete-automation="deleteAutomation"
               @toggle-enabled="onToggleAutomationEnabled"
@@ -1551,5 +1633,42 @@ function onFilesChatWidth(px: number): void {
   color: #fff;
   font-size: 13px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+</style>
+
+<style scoped>
+.global-context {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+  min-height: 56px;
+}
+.global-context span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-workspace {
+  color: var(--c-text-muted);
+  margin-left: auto;
+}
+.global-mobile-nav {
+  display: none;
+}
+@media (max-width: 767px) {
+  .global-mobile-nav {
+    display: flex;
+    gap: var(--sp-2);
+    padding: var(--sp-2);
+  }
+  .global-mobile-nav button {
+    color: var(--c-text);
+    background: var(--c-panel);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    padding: var(--sp-2);
+  }
 }
 </style>

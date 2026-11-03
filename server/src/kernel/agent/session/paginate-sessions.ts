@@ -15,6 +15,7 @@ import type {
 } from '@ccc/shared/protocol'
 
 export interface SessionListQuery {
+  globalRequestId?: string
   /** Load-more: return the page strictly older than this keyset cursor. */
   before?: SessionListCursor
   /** Refresh: return the displayed range — every row `lastModified >= since`. */
@@ -73,4 +74,29 @@ export function paginateSessions(
     kind: query.before ? 'older' : 'first',
     hasMore: all.length > start + limit,
   }
+}
+
+/** Apply the same keyset boundary in every workspace before merging global pages. */
+export function paginateGlobalSessions(
+  all: SessionInfo[],
+  workspaceName: string,
+  query: SessionListQuery,
+): PaginatedSessions {
+  const cursor = query.before
+  const ordered = [...all].sort(
+    (a, b) =>
+      b.lastModified - a.lastModified ||
+      (a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0),
+  )
+  const candidates = cursor
+    ? ordered.filter(
+        (row) =>
+          row.lastModified < cursor.lastModified ||
+          (row.lastModified === cursor.lastModified &&
+            (row.sessionId < cursor.sessionId ||
+              (row.sessionId === cursor.sessionId &&
+                workspaceName > (cursor.workspaceName ?? '')))),
+      )
+    : ordered
+  return paginateSessions(candidates, { limit: query.limit })
 }

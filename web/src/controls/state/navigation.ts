@@ -112,6 +112,10 @@ import {
 } from './types'
 
 export function buildNavigationSlice() {
+  const globalPage = ref<'sessions' | 'automations' | null>(null)
+  const globalSessionSelection = ref<{ workspaceName: string; row: SessionInfo } | null>(null)
+  const globalSessionRequestId = ref<string | null>(null)
+  const globalSessionPages = ref<Record<string, { sessions: SessionInfo[]; hasMore: boolean }>>({})
   // ---- View mode (workspace / workcenter) ----
   const viewMode = ref<'workspace' | 'workcenter'>('workspace')
   // 切到 workcenter 前记住的标签页,切回 workspace 时恢复。
@@ -186,6 +190,10 @@ export function buildNavigationSlice() {
   }
 
   return {
+    globalPage,
+    globalSessionSelection,
+    globalSessionRequestId,
+    globalSessionPages,
     viewMode,
     savedTab,
     serverSettings,

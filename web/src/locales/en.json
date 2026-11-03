@@ -4711,5 +4711,16 @@
         "message": "Its threads and audit records are deleted with it. This cannot be undone."
       }
     }
+  },
+  "globalBrowser": {
+    "sessions": "Sessions",
+    "automations": "Automations",
+    "refresh": "Refresh",
+    "more": "Load 10 more",
+    "running": "Running",
+    "loading": "Loading…",
+    "failed": "Could not load the list. Refresh to retry.",
+    "empty": "No items yet",
+    "select": "Select an item to view its details"
   }
 }

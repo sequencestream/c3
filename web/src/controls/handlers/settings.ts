@@ -197,7 +197,7 @@ export function buildSettingsHandlers(
         }
       } else if (!(firstSettingsReply && pendingDeepLink.value?.kind === 'session')) {
         if (ctx.savedTab.value === 'console') ctx.savedTab.value = 'intents'
-        if (activeTab.value === 'console') ctx.onSelectTab('intents')
+        if (activeTab.value === 'console' && !ctx.globalPage?.value) ctx.onSelectTab('intents')
         try {
           if (localStorage.getItem(SHARED.VIEW_MODE_KEY) === 'console') {
             localStorage.setItem(SHARED.VIEW_MODE_KEY, 'intents')

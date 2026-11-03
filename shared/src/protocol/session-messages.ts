@@ -82,6 +82,8 @@ export type ClientSetSessionAgent = {
  */
 export type ClientListSessions = {
   type: 'list_sessions'
+  /** Correlates an all-kind page for the global browser; isolated from workspace caches. */
+  globalRequestId?: string
   workspaceName: string
   sessionKind?: SessionKind
   before?: SessionListCursor
@@ -198,6 +200,7 @@ export type ServerSessionStatus = { type: 'session_status'; statuses: SessionRun
  */
 export type ServerSessions = {
   type: 'sessions'
+  globalRequestId?: string
   workspaceName: string
   sessionKind?: SessionKind
   sessions: SessionInfo[]

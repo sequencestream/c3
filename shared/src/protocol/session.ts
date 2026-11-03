@@ -99,6 +99,8 @@ export interface SessionInfo {
  * server locates this exact row in its sorted list and pages from there.
  */
 export interface SessionListCursor {
+  /** Tie-breaker for cross-workspace browsing. */
+  workspaceName?: string
   lastModified: number
   sessionId: string
 }

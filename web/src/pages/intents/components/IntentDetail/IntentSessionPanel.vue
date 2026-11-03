@@ -52,7 +52,6 @@ defineProps<{
   sideEffectPending?: boolean
   queue: PendingItem[]
   availableCommands: import('@ccc/shared/protocol').SlashCommandInfo[]
-  voiceLang: string
   mode?: ModeToken
   codexPolicy?: CodexPolicy | null
   modeOptions?: { value: ModeToken; label: string }[]
@@ -132,7 +131,6 @@ defineExpose({
     :side-effect-pending="sideEffectPending"
     :queue="firstIntentTurn ? [] : queue"
     :available-commands="availableCommands"
-    :voice-lang="voiceLang"
     @set-mode="(m: ModeToken) => emit('set-mode', m)"
     @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
     @set-session-agent="(id: string) => emit('set-session-agent', id)"

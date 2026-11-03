@@ -115,7 +115,6 @@ const props = defineProps<{
   sideEffectPending?: boolean
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
-  voiceLang: string
   vendor?: VendorId | null
   agentSwitch?: SessionAgentSwitch | null
 }>()
@@ -440,7 +439,6 @@ function confirmStop(): void {
               :side-effect-pending="sideEffectPending"
               :queue="queue"
               :available-commands="availableCommands"
-              :voice-lang="voiceLang"
               @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
               @submit-ask="
                 (m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)

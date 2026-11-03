@@ -214,17 +214,19 @@ describe('first-login seeding from the browser fallback', () => {
 describe('coexistence with the system settings write path', () => {
   it('survives a whole-object save_settings', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
-    saveSettings(baseSystemSettings({ voiceLang: 'en-US' }))
+    saveSettings(baseSystemSettings({ baseUrl: 'https://first.example.com' }))
     expect(loadPersonalizedFor('alice')).toEqual(rec('zh'))
     expect(readStoredPersonalized()).toEqual({ alice: rec('zh') })
-    expect(loadSettings().voiceLang).toBe('en-US')
+    expect(loadSettings().baseUrl).toBe('https://first.example.com')
   })
 
   it('preserves the system settings when a personalized save runs', () => {
-    saveSettings(baseSystemSettings({ voiceLang: 'en-US', timezone: 'Asia/Shanghai' }))
+    saveSettings(
+      baseSystemSettings({ baseUrl: 'https://first.example.com', timezone: 'Asia/Shanghai' }),
+    )
     savePersonalizedFor('alice', { uiLang: 'zh' })
     resetSettingsCacheForTests()
-    expect(loadSettings().voiceLang).toBe('en-US')
+    expect(loadSettings().baseUrl).toBe('https://first.example.com')
     expect(loadSettings().timezone).toBe('Asia/Shanghai')
   })
 
@@ -295,7 +297,7 @@ describe('theme persistence', () => {
 
   it('survives a whole-object save_settings like every other personalized field', () => {
     savePersonalizedFor('alice', { uiLang: 'zh', theme: 'light' })
-    saveSettings(baseSystemSettings({ voiceLang: 'en-US' }))
+    saveSettings(baseSystemSettings({ baseUrl: 'https://first.example.com' }))
     resetSettingsCacheForTests()
     expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'light'))
   })

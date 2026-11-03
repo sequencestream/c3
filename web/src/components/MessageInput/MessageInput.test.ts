@@ -53,7 +53,6 @@ function mountInput(over: Partial<Record<string, unknown>> = {}) {
       teamActive: false,
       hasActiveSession: true,
       availableCommands: [],
-      voiceLang: 'en-US',
       ...over,
     },
   })
@@ -188,9 +187,7 @@ describe('MessageInput.vue — 停止控件已上移到状态栏', () => {
   })
 })
 
-describe('MessageInput.vue — 按钮内嵌布局(左下附件/语音, 右下发送)', () => {
-  // 语音(mic)按钮受 v-if="voiceSupported" 控制，happy-dom 无 SpeechRecognition
-  // 故不渲染；这里只断言其归属的左下分组结构与 attach/send 的内嵌位置。
+describe('MessageInput.vue — 按钮内嵌布局(左下附件, 右下发送)', () => {
   it('动作按钮都内嵌在 .composer-field 字段容器内', () => {
     const w = mountInput()
     const field = w.find('.composer-field')

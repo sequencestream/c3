@@ -28,7 +28,6 @@ function mountPanel(over: Partial<Record<string, unknown>> = {}) {
       activity: { phase: 'idle' as const },
       queue: [],
       availableCommands: [],
-      voiceLang: 'en-US',
       ...over,
     },
     global: {
@@ -67,7 +66,6 @@ function mountPanelWithRealChat(over: Partial<Record<string, unknown>> = {}) {
       sideEffectPending: true,
       queue: [{ id: 1, text: 'queued', images: [] }],
       availableCommands: [],
-      voiceLang: 'en-US',
       ...over,
     },
   })
@@ -102,7 +100,6 @@ function mountFirstTurnRealChat(over: Partial<Record<string, unknown>> = {}) {
       sideEffectPending: true,
       queue: [{ id: 1, text: 'stale queued', images: [] }],
       availableCommands: [],
-      voiceLang: 'en-US',
       vendor: 'claude',
       agentSwitch: {
         current: { id: 'a', displayName: 'A' },

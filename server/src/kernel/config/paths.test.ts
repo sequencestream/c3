@@ -80,9 +80,9 @@ describe('--db override', () => {
 
   it('writes system settings to the override database and nowhere else', () => {
     const file = useDb(dirA)
-    saveSettings(baseSettings({ voiceLang: 'en-US' }))
+    saveSettings(baseSettings({ baseUrl: 'https://first.example.com' }))
     expect(existsSync(file)).toBe(true)
-    expect(loadSettings().voiceLang).toBe('en-US')
+    expect(loadSettings().baseUrl).toBe('https://first.example.com')
     expect(existsSync(join(process.env.HOME!, '.c3', 'c3.db'))).toBe(false)
     expect(existsSync(join(process.env.HOME!, '.c3', 'settings.json'))).toBe(false)
   })
@@ -97,25 +97,25 @@ describe('--db override', () => {
 
   it('drops every cache on relocation so no store serves the previous database', () => {
     useDb(dirA)
-    saveSettings(baseSettings({ voiceLang: 'en-US' }))
+    saveSettings(baseSettings({ baseUrl: 'https://first.example.com' }))
     savePersonalizedFor('alice', { uiLang: 'zh' })
     expect(getAgentLang()).toBe('zh')
 
     // Relocate to a pristine dir: everything must read as "nothing configured", not
     // as the values cached from the first database — an empty database normalizes to
-    // the built-in defaults (`zh-CN` here), never to the previous instance's values.
+    // the built-in defaults (no base URL here), never to the previous instance's values.
     useDb(dirB)
-    expect(loadSettings().voiceLang).toBe('zh-CN')
+    expect(loadSettings().baseUrl).toBeUndefined()
     expect(loadPersonalizedFor('alice')).toBe(null)
     expect(getAgentLang()).toBe('en')
 
     // A value written to the second database is what later reads see.
-    saveSettings(baseSettings({ voiceLang: 'zh-TW' }))
-    expect(loadSettings().voiceLang).toBe('zh-TW')
+    saveSettings(baseSettings({ baseUrl: 'https://second.example.com' }))
+    expect(loadSettings().baseUrl).toBe('https://second.example.com')
 
     // And the first database is untouched by writes against the second.
     useDb(dirA)
-    expect(loadSettings().voiceLang).toBe('en-US')
+    expect(loadSettings().baseUrl).toBe('https://first.example.com')
     expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'zh', theme: 'dark', fontScale: 100 })
   })
 

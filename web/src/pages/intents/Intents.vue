@@ -99,7 +99,6 @@ const props = defineProps<{
   sideEffectPending?: boolean
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
-  voiceLang: string
   /** 活动会话的权限模式 token / codex 双策略 / 可选项,透传到两处聊天列的标题栏。 */
   mode?: ModeToken
   codexPolicy?: CodexPolicy | null
@@ -474,7 +473,6 @@ defineExpose({
         :side-effect-pending="sideEffectPending"
         :queue="queue"
         :available-commands="availableCommands"
-        :voice-lang="voiceLang"
         :mode="mode"
         :codex-policy="codexPolicy"
         :mode-options="modeOptions"
@@ -588,7 +586,6 @@ defineExpose({
         :side-effect-pending="sideEffectPending"
         :queue="queue"
         :available-commands="availableCommands"
-        :voice-lang="voiceLang"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"

@@ -83,7 +83,6 @@ function mountDiscussions(
       activity: { kind: 'idle' } as unknown as RunActivity,
       queue: [],
       availableCommands: [],
-      voiceLang: 'zh-CN',
     },
     global: {
       stubs: {

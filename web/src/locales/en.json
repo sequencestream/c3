@@ -549,24 +549,6 @@
       },
       "hint": "The per-turn character budget participants see in their prompt guidance. Participants are asked to keep replies within this limit, but over-long replies are accepted verbatim (no hard truncation). Minimum {min} (lower values are clamped up on save)."
     },
-    "voiceLang": {
-      "title": {
-        "label": "Voice input language"
-      },
-      "hint": "The language the browser's speech recognition listens for when you use the microphone in the message box. Voice input is provided by the browser (Chrome/Edge) and may require a network connection.",
-      "zhCN": {
-        "label": "Chinese (Mandarin)"
-      },
-      "enUS": {
-        "label": "English (US)"
-      },
-      "zhTW": {
-        "label": "Chinese (Traditional)"
-      },
-      "zhHK": {
-        "label": "Cantonese"
-      }
-    },
     "timezone": {
       "title": {
         "label": "Time zone"
@@ -2059,17 +2041,7 @@
         "noSession": "Select or create a session to start",
         "team": "Team running — type a message to send to the team lead (anytime)",
         "running": "Turn in progress — your message will be queued and merged into the next turn",
-        "listening": "Listening… click the mic again or press Esc to stop",
         "ready": "Type a prompt — Enter×2 or ⌘/Ctrl+Enter to send, / for commands"
-      },
-      "voice": {
-        "tooltip": "Voice input",
-        "start": {
-          "ariaLabel": "Start voice input"
-        },
-        "stop": {
-          "ariaLabel": "Stop voice input"
-        }
       },
       "sendHint": {
         "running": "Turn in progress — your message will be queued",

@@ -577,8 +577,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // Capture them once for the project-level migration; they no longer survive in
   // the normalized settings object (see `projectConfigs`).
   captureLegacyProjectSeed(raw)
-  const voiceLang =
-    typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
   // A legacy top-level `uiLang` on disk is read as an unknown field: the display
   // language is a personalized preference (see config/personalized.ts), so it is
   // absent from the returned object and disappears from disk on the next save. It is
@@ -628,7 +626,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     reviewAgentId,
     fixAgentId,
     workAgentId,
-    voiceLang,
     timezone,
     ...(baseUrlRaw ? { baseUrl: baseUrlRaw } : {}),
     showToolSessions,

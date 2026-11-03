@@ -138,7 +138,6 @@ function mountWorks(options: { activeSession?: string | null } = {}) {
       activity: { phase: 'idle' },
       queue: [],
       availableCommands: [],
-      voiceLang: 'en-US',
     },
     global: {
       stubs: {

@@ -131,6 +131,7 @@ export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) =>
   // Pass the cursor (before/since/limit) through so the reply is one page,
   // not the whole list (SR-R14).
   await conn.sendSessions(abs, {
+    globalRequestId: msg.globalRequestId,
     before: msg.before,
     since: msg.since,
     limit: msg.limit,

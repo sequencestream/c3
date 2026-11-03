@@ -24,8 +24,14 @@ import type { KernelContext } from '../kernel/types.js'
 import type { ActivityPush } from './activity-push.js'
 import { getActiveSessionId, pathToName } from '../state.js'
 import { listWorkspaceSessions } from '../sessions.js'
-import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
-import { paginateSessions } from '../kernel/agent/session/paginate-sessions.js'
+import {
+  listGlobalWorkspaceSessions,
+  listSessionsVia,
+} from '../kernel/agent/session/list-sessions.js'
+import {
+  paginateGlobalSessions,
+  paginateSessions,
+} from '../kernel/agent/session/paginate-sessions.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listStatuses, removeViewer } from '../runs.js'
 import { loadSettings } from '../kernel/config/index.js'
@@ -120,16 +126,21 @@ export function createWsHandler(deps: {
           // New default: list across vendors via the accessor union (ADR-0013).
           // The env flag rolls back to the legacy claude-only path (the native id
           // stays on the wire either way — see list-sessions.ts).
-          const all = USE_SESSION_ACCESSOR
-            ? await listSessionsVia(sessionAccessor, workspacePath, query?.sessionKind)
-            : query?.sessionKind && query.sessionKind !== 'work'
-              ? []
-              : await listWorkspaceSessions(workspacePath)
+          const all = query?.globalRequestId
+            ? await listGlobalWorkspaceSessions(sessionAccessor, workspacePath)
+            : USE_SESSION_ACCESSOR
+              ? await listSessionsVia(sessionAccessor, workspacePath, query?.sessionKind)
+              : query?.sessionKind && query.sessionKind !== 'work'
+                ? []
+                : await listWorkspaceSessions(workspacePath)
           // Cursor-paginate the full list (SR-R14): the `page` descriptor tells
           // the client how to merge this batch into its window.
-          const { sessions, kind, hasMore } = paginateSessions(all, query)
+          const { sessions, kind, hasMore } = query?.globalRequestId
+            ? paginateGlobalSessions(all, pathToName(workspacePath)!, query)
+            : paginateSessions(all, query)
           send(sock, {
             type: 'sessions',
+            globalRequestId: query?.globalRequestId,
             workspaceName: pathToName(workspacePath)!,
             sessionKind: query?.sessionKind ?? 'work',
             sessions,

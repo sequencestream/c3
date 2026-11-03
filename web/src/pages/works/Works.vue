@@ -7,6 +7,9 @@
  * composer ref 经 defineExpose 转发,供 App.vue 的待发队列「编辑」回填草稿。
  */
 import { computed, ref, watch } from 'vue'
+import GlobalBrowserList from '@/components/GlobalBrowserList/GlobalBrowserList.vue'
+import type { GlobalSessionRow, GlobalWorkspacePage } from '@/controls/global-browser'
+import { useTypedI18n } from '@/i18n'
 import WorkSessionList from './components/WorkSessionList/WorkSessionList.vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
@@ -29,6 +32,9 @@ import type { SessionPageKind } from '../../controls/state'
 import type { SessionSourceLabel } from '../../lib/session-jump'
 
 const props = defineProps<{
+  globalSessions?: GlobalSessionRow[]
+  globalLoading?: boolean
+  globalPaging?: Record<string, GlobalWorkspacePage>
   // left: session list
   currentWorkspace: string | null
   sessions: SessionInfo[]
@@ -83,11 +89,29 @@ const props = defineProps<{
   availableCommands: SlashCommandInfo[]
 }>()
 
+const { t } = useTypedI18n()
+const globalRows = computed(() =>
+  (props.globalSessions ?? []).map((row) => ({
+    id: row.sessionId,
+    title: row.title,
+    workspaceName: row.workspaceName,
+    running: ['running', 'team', 'reconnecting', 'awaiting_permission'].includes(
+      props.sessionStatus[row.sessionId] ?? '',
+    ),
+  })),
+)
+function selectGlobal(id: string, workspaceName: string): void {
+  const row = props.globalSessions?.find(
+    (item) => item.sessionId === id && item.workspaceName === workspaceName,
+  )
+  if (row) selectSession(workspaceName, row)
+}
+
 const emit = defineEmits<{
   'create-session': [path: string]
   'refresh-sessions': []
   'select-session-kind': [kind: SessionPageKind]
-  'load-more-sessions': []
+  'load-more-sessions': [workspaceName?: string]
   'select-session': [path: string, session: SessionInfo]
   'jump-session-source': [path: string, session: SessionInfo]
   'delete-session': [path: string, sessionId: string]
@@ -166,7 +190,20 @@ defineExpose({
     @back="handleMobileBack"
   >
     <template #sessions>
+      <GlobalBrowserList
+        v-if="globalSessions"
+        :title="t('globalBrowser.sessions')"
+        :rows="globalRows"
+        :active-id="activeSession"
+        :active-workspace="activeWorkspace"
+        :loading="globalLoading"
+        :paging="globalPaging"
+        @select="selectGlobal"
+        @refresh="emit('refresh-sessions')"
+        @more="(workspaceName: string) => emit('load-more-sessions', workspaceName)"
+      />
       <WorkSessionList
+        v-else
         :current-workspace="currentWorkspace"
         :sessions="sessions"
         :active-session-kind="activeSessionKind"
@@ -198,7 +235,11 @@ defineExpose({
     </template>
 
     <template #chat>
+      <div v-if="globalSessions && !hasActiveSession" class="global-session-empty">
+        {{ t('globalBrowser.select') }}
+      </div>
       <ChatColumn
+        v-else
         ref="composer"
         :active-title="activeTitle"
         :vendor="vendor"
@@ -245,3 +286,14 @@ defineExpose({
     </template>
   </MobileStack>
 </template>
+
+<style scoped>
+.global-session-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-muted);
+  padding: var(--sp-4);
+}
+</style>

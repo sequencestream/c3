@@ -156,3 +156,11 @@ describe('LeftRail.vue — 响应式边界', () => {
     expect(mountRail({}, 768).find('.left-rail').exists()).toBe(true)
   })
 })
+
+it('exposes global sessions and automations independently from workspace navigation', async () => {
+  const wrapper = mountRail({ globalPage: 'sessions' })
+  expect(wrapper.get('[data-testid="rail-sessions"]').classes()).toContain('active')
+  expect(wrapper.get('[data-testid="rail-workspace"]').classes()).not.toContain('active')
+  await wrapper.get('[data-testid="rail-automations"]').trigger('click')
+  expect(wrapper.emitted('open-global')).toEqual([['automations']])
+})

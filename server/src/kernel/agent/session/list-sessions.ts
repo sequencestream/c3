@@ -351,3 +351,28 @@ async function syncRunningTitles(
     console.error('[c3] sync running session titles failed:', err)
   }
 }
+
+/** All visible business categories share one stable chronological order. */
+export async function listGlobalWorkspaceSessions(
+  accessor: SessionAccessor,
+  workspacePath: string,
+): Promise<SessionInfo[]> {
+  const kinds: SessionKind[] = [
+    'work',
+    'intent',
+    'spec',
+    'discussion',
+    'automation',
+    'tool',
+    'consensus',
+    'robot',
+  ]
+  const pages = await Promise.all(
+    kinds.map((kind) => listSessionsVia(accessor, workspacePath, kind)),
+  )
+  return [...new Map(pages.flat().map((row) => [row.sessionId, row])).values()].sort(
+    (a, b) =>
+      b.lastModified - a.lastModified ||
+      (a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0),
+  )
+}

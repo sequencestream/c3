@@ -33,7 +33,10 @@ import { resetSettingsCacheForTests, saveSettings } from './kernel/config/index.
 import { listWorkspaceSessions } from './sessions.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
-import { listSessionsVia } from './kernel/agent/session/list-sessions.js'
+import {
+  listGlobalWorkspaceSessions,
+  listSessionsVia,
+} from './kernel/agent/session/list-sessions.js'
 import type { SessionStore, SessionSummary } from './kernel/agent/adapters/types.js'
 
 const proj = '/abs/list-proj'
@@ -340,4 +343,30 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
     const out = await listSessionsVia(accessor, '/ws')
     expect(out.map((s) => s.sessionId)).toEqual(['c-1'])
   })
+})
+
+it('global browsing includes mixed business categories once in stable activity order', async () => {
+  for (const [sessionId, sessionKind, lastModified] of [
+    ['work-global', 'work', 200],
+    ['spec-global', 'spec', 300],
+    ['review-global', 'spec_review', 300],
+    ['auto-global', 'automation', 100],
+  ] as const) {
+    upsertBoundRow({
+      sessionId,
+      sessionKind,
+      lastModified,
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'test',
+      title: sessionId,
+    })
+  }
+  const rows = await listGlobalWorkspaceSessions(new SessionAccessor([]), proj)
+  expect(rows.map((row) => row.sessionId)).toEqual([
+    'spec-global',
+    'review-global',
+    'work-global',
+    'auto-global',
+  ])
 })

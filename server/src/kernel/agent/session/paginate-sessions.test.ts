@@ -6,7 +6,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { SessionInfo } from '@ccc/shared/protocol'
-import { DEFAULT_SESSION_PAGE_SIZE, paginateSessions } from './paginate-sessions.js'
+import {
+  DEFAULT_SESSION_PAGE_SIZE,
+  paginateGlobalSessions,
+  paginateSessions,
+} from './paginate-sessions.js'
 
 function s(id: string, lastModified: number): SessionInfo {
   return {
@@ -86,5 +90,24 @@ describe('paginateSessions — window refresh (since)', () => {
     const page = paginateSessions(withZero, { since: 0 })
     expect(page.sessions).toHaveLength(5)
     expect(page.hasMore).toBe(false)
+  })
+})
+
+describe('global keyset pagination', () => {
+  it('retains equal-time rows when the cursor belongs to another workspace or was deleted', () => {
+    const cursor = { lastModified: 200, sessionId: 'm', workspaceName: 'alpha' }
+    const rows = [s('z', 200), s('a', 200), s('b', 100)]
+    expect(
+      paginateGlobalSessions(rows, 'beta', { before: cursor, limit: 10 }).sessions.map(
+        (row) => row.sessionId,
+      ),
+    ).toEqual(['a', 'b'])
+  })
+  it('uses workspace as the final tie breaker for duplicate native ids', () => {
+    const cursor = { lastModified: 200, sessionId: 'm', workspaceName: 'alpha' }
+    expect(paginateGlobalSessions([s('m', 200)], 'alpha', { before: cursor }).sessions).toEqual([])
+    expect(paginateGlobalSessions([s('m', 200)], 'beta', { before: cursor }).sessions).toHaveLength(
+      1,
+    )
   })
 })

@@ -167,7 +167,11 @@ export function useAppController(): AppCtx {
     // While on the console tab, re-fetch the current workspace's session list.
     // This is list pagination only — badges come from activity snapshot/delta.
     const sessionsTimer = setInterval(() => {
-      if (ctx.activeTab.value === 'console' && ctx.currentWorkspace.value) {
+      if (
+        !ctx.globalPage.value &&
+        ctx.activeTab.value === 'console' &&
+        ctx.currentWorkspace.value
+      ) {
         ctx.refreshSessions(ctx.currentWorkspace.value)
       }
     }, CONSOLE_SESSION_LIST_INTERVAL_MS)

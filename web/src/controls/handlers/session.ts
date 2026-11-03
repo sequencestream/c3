@@ -358,6 +358,15 @@ export function buildSessionHandlers(
       }
     },
     sessions: (_ctx, msg) => {
+      if (msg.globalRequestId) {
+        if (msg.globalRequestId === ctx.globalSessionRequestIds.value[msg.workspaceName]) {
+          ctx.globalSessionPages.value = {
+            ...ctx.globalSessionPages.value,
+            [msg.workspaceName]: { sessions: msg.sessions, hasMore: msg.page?.hasMore ?? false },
+          }
+        }
+        return
+      }
       const path = msg.workspaceName
       const sessionKind = (msg.sessionKind ?? 'work') as SessionPageKind
       const cacheKey = sessionCacheKey(path, sessionKind)
@@ -454,6 +463,15 @@ export function buildSessionHandlers(
       writeActivityStore(result.store)
     },
     session_selected: (_ctx, msg) => {
+      if (ctx.globalPage?.value === 'sessions') {
+        const selection = ctx.globalSessionSelection.value
+        if (
+          !selection ||
+          selection.workspaceName !== msg.workspaceName ||
+          selection.row.sessionId !== msg.sessionId
+        )
+          return
+      }
       if (specLaunch.value) {
         ctx.dispatchSpecLaunch({
           kind: 'ready',
@@ -463,7 +481,10 @@ export function buildSessionHandlers(
       }
       activeWorkspace.value = msg.workspaceName
       activeSession.value = msg.sessionId
-      activeTitle.value = msg.title
+      activeTitle.value =
+        ctx.globalPage?.value === 'sessions'
+          ? ctx.globalSessionSelection.value?.row.title || msg.title
+          : msg.title
       // The resolved agent vendor for the title dot (absent on comm sessions).
       activeVendor.value = msg.vendor ?? null
       // The same-vendor agent switcher data (absent ⇒ no switcher).
@@ -476,7 +497,10 @@ export function buildSessionHandlers(
       // work-session `linkedIntentId` compat field. Refreshed/cleared on every
       // (re)select so a plain session never inherits the previous source.
       {
-        const row = findSessionRow(msg.sessionId)
+        const row =
+          (ctx.globalPage?.value === 'sessions'
+            ? ctx.globalSessionSelection.value?.row
+            : undefined) ?? findSessionRow(msg.sessionId)
         const realKind = row?.sessionKind ?? msg.sessionKind ?? null
         activeSessionSource.value = resolveSessionSourceAction({
           sessionKind: realKind,

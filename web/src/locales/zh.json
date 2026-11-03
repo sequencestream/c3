@@ -4711,5 +4711,16 @@
         "message": "它的会话线程与审计记录会一并删除,此操作不可撤销。"
       }
     }
+  },
+  "globalBrowser": {
+    "sessions": "会话",
+    "automations": "自动化",
+    "refresh": "刷新",
+    "more": "再加载 5 条",
+    "running": "进行中",
+    "loading": "加载中…",
+    "failed": "列表加载失败，请刷新重试。",
+    "empty": "暂无记录",
+    "select": "选择一条记录查看详情"
   }
 }

@@ -7,6 +7,8 @@
  * transcript)与弹窗开关状态由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。
  */
 import { computed, ref } from 'vue'
+import GlobalBrowserList from '@/components/GlobalBrowserList/GlobalBrowserList.vue'
+import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import AutomationList from './components/AutomationList/AutomationList.vue'
 import AutomationDetailPanel from './components/AutomationDetailPanel/AutomationDetailPanel.vue'
@@ -26,6 +28,7 @@ import type {
 } from '@ccc/shared/protocol'
 
 const props = defineProps<{
+  global?: boolean
   automations: Automation[]
   activeId: string | null
   automation: Automation | null
@@ -58,7 +61,24 @@ const props = defineProps<{
   seedAgentRefs: string[]
 }>()
 
+const { t } = useTypedI18n()
+const globalRows = computed(() =>
+  props.automations.map((row) => ({
+    id: row.id,
+    title:
+      row.config &&
+      typeof row.config === 'object' &&
+      'name' in row.config &&
+      typeof row.config.name === 'string'
+        ? row.config.name
+        : row.cronExpression || row.type,
+    workspaceName: row.workspaceName,
+    running: !!row.runningSessionId,
+  })),
+)
+
 const emit = defineEmits<{
+  refresh: []
   select: [id: string]
   'open-form': [target: Automation | null]
   'new-from-template': [templateId: string]
@@ -103,7 +123,16 @@ function onImportConfirm(inputs: CreateAutomationInput[]): void {
     @back="(targetKey: string) => emit('mobile-back', targetKey)"
   >
     <template #automations>
+      <GlobalBrowserList
+        v-if="global"
+        :title="t('globalBrowser.automations')"
+        :rows="globalRows"
+        :active-id="activeId"
+        @select="(id: string) => emit('select', id)"
+        @refresh="emit('refresh')"
+      />
       <AutomationList
+        v-else
         :automations="automations"
         :active-id="activeId"
         :automation-enabled="automationEnabled"

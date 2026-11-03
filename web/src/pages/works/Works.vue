@@ -8,7 +8,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import GlobalBrowserList from '@/components/GlobalBrowserList/GlobalBrowserList.vue'
-import type { GlobalSessionRow } from '@/controls/global-browser'
+import type { GlobalSessionRow, GlobalWorkspacePage } from '@/controls/global-browser'
 import { useTypedI18n } from '@/i18n'
 import WorkSessionList from './components/WorkSessionList/WorkSessionList.vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
@@ -34,7 +34,7 @@ import type { SessionSourceLabel } from '../../lib/session-jump'
 const props = defineProps<{
   globalSessions?: GlobalSessionRow[]
   globalLoading?: boolean
-  globalFailed?: boolean
+  globalPaging?: Record<string, GlobalWorkspacePage>
   // left: session list
   currentWorkspace: string | null
   sessions: SessionInfo[]
@@ -111,7 +111,7 @@ const emit = defineEmits<{
   'create-session': [path: string]
   'refresh-sessions': []
   'select-session-kind': [kind: SessionPageKind]
-  'load-more-sessions': []
+  'load-more-sessions': [workspaceName?: string]
   'select-session': [path: string, session: SessionInfo]
   'jump-session-source': [path: string, session: SessionInfo]
   'delete-session': [path: string, sessionId: string]
@@ -197,11 +197,10 @@ defineExpose({
         :active-id="activeSession"
         :active-workspace="activeWorkspace"
         :loading="globalLoading"
-        :failed="globalFailed"
-        :has-more="sessionsHasMore"
+        :paging="globalPaging"
         @select="selectGlobal"
         @refresh="emit('refresh-sessions')"
-        @more="emit('load-more-sessions')"
+        @more="(workspaceName: string) => emit('load-more-sessions', workspaceName)"
       />
       <WorkSessionList
         v-else

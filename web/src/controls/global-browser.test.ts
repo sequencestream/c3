@@ -4,7 +4,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Automation, SessionInfo } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
-import { sortGlobalSessions, useGlobalBrowser } from './global-browser'
+import { useGlobalBrowser } from './global-browser'
 
 function session(id: number): SessionInfo {
   return {
@@ -22,7 +22,7 @@ function setup() {
     globalPage: ref(null),
     globalSessionSelection: ref(null),
     globalSessionPages: ref({}),
-    globalSessionRequestId: ref(null),
+    globalSessionRequestIds: ref({}),
     workspaces: ref([{ name: 'alpha' }, { name: 'beta' }]),
     automations: ref({}),
     viewMode: ref('workspace'),
@@ -60,64 +60,74 @@ function setup() {
 afterEach(() => vi.useRealTimers())
 
 describe('global browser', () => {
-  it('merges 20 recent sessions then appends 10, retaining equal timestamp rows across projects', async () => {
+  it('loads five per workspace independently and appends only to the requested group', async () => {
     const { ctx, browser, wrapper } = setup()
     browser.open('sessions')
     expect(ctx.selectSession).not.toHaveBeenCalled()
     expect(ctx.flags.pendingConsoleBind).toBe(false)
     expect(ctx.send).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceName: 'alpha', limit: 20 }),
-    )
-    ctx.globalSessionPages.value = {
-      alpha: { sessions: Array.from({ length: 20 }, (_, i) => session(40 - i * 2)), hasMore: true },
-    }
-    await nextTick()
-    expect(browser.sessions.value).toHaveLength(0)
-    ctx.globalSessionPages.value = {
-      ...ctx.globalSessionPages.value,
-      beta: { sessions: Array.from({ length: 20 }, (_, i) => session(39 - i * 2)), hasMore: false },
-    }
-    await nextTick()
-    expect(browser.sessions.value).toHaveLength(20)
-    expect(browser.sessions.value.at(-1)?.sessionId).toBe('s021')
-    browser.requestSessions(true)
-    expect(ctx.send).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        limit: 10,
-        before: { lastModified: 100, sessionId: 's021', workspaceName: 'beta' },
-      }),
+      expect.objectContaining({ workspaceName: 'alpha', limit: 5 }),
     )
     ctx.globalSessionPages.value = {
       alpha: {
-        sessions: Array.from({ length: 10 }, (_, i) => session(20 - i * 2)),
-        hasMore: false,
+        sessions: [session(10), session(9), session(8), session(7), session(6)],
+        hasMore: true,
       },
-      beta: { sessions: Array.from({ length: 10 }, (_, i) => session(19 - i * 2)), hasMore: false },
     }
     await nextTick()
-    expect(browser.sessions.value).toHaveLength(30)
-    expect(browser.sessions.value.at(-1)?.sessionId).toBe('s011')
-    expect(browser.hasMore.value).toBe(true)
-    browser.selectSession(browser.sessions.value[1])
+    expect(browser.sessions.value).toHaveLength(5)
+    expect(browser.paging.value.alpha.loading).toBe(false)
+    expect(browser.paging.value.beta.loading).toBe(true)
+    ctx.globalSessionPages.value = {
+      ...ctx.globalSessionPages.value,
+      beta: { sessions: [session(20)], hasMore: false },
+    }
+    await nextTick()
+    const previousCalls = vi.mocked(ctx.send).mock.calls.length
+    browser.requestSessions(true, 'alpha')
+    browser.requestSessions(true, 'alpha')
+    expect(vi.mocked(ctx.send).mock.calls.length).toBe(previousCalls + 1)
+    expect(ctx.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        workspaceName: 'alpha',
+        limit: 5,
+        before: { lastModified: 100, sessionId: 's006', workspaceName: 'alpha' },
+      }),
+    )
+    ctx.globalSessionPages.value = {
+      ...ctx.globalSessionPages.value,
+      alpha: {
+        sessions: [session(5), session(4), session(3), session(2), session(1)],
+        hasMore: false,
+      },
+    }
+    await nextTick()
+    expect(browser.sessions.value.filter((row) => row.workspaceName === 'alpha')).toHaveLength(10)
+    expect(browser.sessions.value.filter((row) => row.workspaceName === 'beta')).toHaveLength(1)
+    expect(browser.paging.value.alpha.hasMore).toBe(false)
+    browser.selectSession(browser.sessions.value[0])
     expect(ctx.selectSession).toHaveBeenCalledWith(
       'beta',
-      's039',
+      's020',
       expect.objectContaining({ workspaceName: 'beta' }),
     )
     wrapper.unmount()
   })
 
-  it('times out missing workspace replies and allows a fresh request', async () => {
+  it('times out and retries one group without resetting successful groups', async () => {
     vi.useFakeTimers()
     const { ctx, browser, wrapper } = setup()
     browser.open('sessions')
-    const old = ctx.globalSessionRequestId.value
+    const old = ctx.globalSessionRequestIds.value.beta
+    ctx.globalSessionPages.value = { alpha: { sessions: [session(1)], hasMore: false } }
+    await nextTick()
     await vi.advanceTimersByTimeAsync(15000)
-    expect(browser.failed.value).toBe(true)
-    expect(browser.loading.value).toBe(false)
-    expect(ctx.globalSessionRequestId.value).toBeNull()
-    browser.requestSessions()
-    expect(ctx.globalSessionRequestId.value).not.toBe(old)
+    expect(browser.paging.value.beta.failed).toBe(true)
+    expect(browser.paging.value.alpha.failed).toBe(false)
+    expect(ctx.globalSessionRequestIds.value.beta).toBeUndefined()
+    browser.requestSessions(true, 'beta')
+    expect(ctx.globalSessionRequestIds.value.beta).not.toBe(old)
+    expect(browser.sessions.value).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -137,14 +147,5 @@ describe('global browser', () => {
     await nextTick()
     expect(browser.automations.value).toEqual([])
     wrapper.unmount()
-  })
-
-  it('breaks duplicate native ids by workspace consistently', () => {
-    expect(
-      sortGlobalSessions([
-        { ...session(1), workspaceName: 'beta' },
-        { ...session(1), workspaceName: 'alpha' },
-      ]).map((row) => row.workspaceName),
-    ).toEqual(['alpha', 'beta'])
   })
 })

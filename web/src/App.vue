@@ -117,8 +117,7 @@ const {
   sessions: globalSessions,
   automations: globalAutomations,
   loading: globalLoading,
-  failed: globalFailed,
-  hasMore: globalHasMore,
+  paging: globalPaging,
 } = globalBrowser
 
 const {
@@ -944,14 +943,12 @@ function onFilesChatWidth(px: number): void {
               :current-workspace="currentWorkspace"
               :global-sessions="globalPage === 'sessions' ? globalSessions : undefined"
               :global-loading="globalLoading"
-              :global-failed="globalFailed"
+              :global-paging="globalPaging"
               :sessions="currentSessions"
               :active-session-kind="activeSessionKind"
               :session-counts="sessionCounts"
               :show-tool-sessions="serverSettings?.showToolSessions === true"
-              :sessions-has-more="
-                globalPage === 'sessions' ? globalHasMore : currentSessionPaging.hasMore
-              "
+              :sessions-has-more="currentSessionPaging.hasMore"
               :sessions-exhausted="currentSessionPaging.exhausted"
               :session-status="sessionStatus"
               :active-workspace="activeWorkspace"
@@ -988,9 +985,9 @@ function onFilesChatWidth(px: number): void {
               "
               @select-session-kind="selectSessionKind"
               @load-more-sessions="
-                () =>
+                (workspaceName?: string) =>
                   globalPage === 'sessions'
-                    ? globalBrowser.requestSessions(true)
+                    ? globalBrowser.requestSessions(true, workspaceName)
                     : loadMoreSessions(currentWorkspace)
               "
               @select-session="

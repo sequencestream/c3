@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
+import type { GlobalWorkspacePage } from '@/controls/global-browser'
 
 export interface BrowserRow {
   id: string
@@ -7,65 +9,104 @@ export interface BrowserRow {
   title: string
   running: boolean
 }
-defineProps<{
+const props = defineProps<{
   title: string
   rows: BrowserRow[]
   activeId: string | null
   activeWorkspace?: string | null
   loading?: boolean
-  failed?: boolean
-  hasMore?: boolean
+  paging?: Record<string, GlobalWorkspacePage>
 }>()
-const emit = defineEmits<{ select: [id: string, workspaceName: string]; refresh: []; more: [] }>()
+const emit = defineEmits<{
+  select: [id: string, workspaceName: string]
+  refresh: []
+  more: [workspaceName: string]
+}>()
 const { t } = useTypedI18n()
+const limits = ref<Record<string, number>>({})
+const groups = computed(() => {
+  const names = [
+    ...new Set([...Object.keys(props.paging ?? {}), ...props.rows.map((row) => row.workspaceName)]),
+  ]
+  return names.map((workspaceName) => {
+    const rows = props.rows.filter((row) => row.workspaceName === workspaceName)
+    const page = props.paging?.[workspaceName]
+    const limit = limits.value[workspaceName] ?? 5
+    return {
+      workspaceName,
+      rows: props.paging ? rows : rows.slice(0, limit),
+      hasMore: page?.hasMore ?? rows.length > limit,
+      loading: page?.loading ?? false,
+      failed: page?.failed ?? false,
+    }
+  })
+})
+function loadMore(workspaceName: string): void {
+  if (props.paging) emit('more', workspaceName)
+  else limits.value[workspaceName] = (limits.value[workspaceName] ?? 5) + 5
+}
+function refresh(): void {
+  limits.value = {}
+  emit('refresh')
+}
 </script>
 
 <template>
   <aside class="global-list">
     <header>
       <h2>{{ title }}</h2>
-      <button type="button" :disabled="loading" @click="emit('refresh')">
+      <button type="button" :disabled="loading" @click="refresh">
         {{ t('globalBrowser.refresh') }}
       </button>
     </header>
-    <div class="global-rows" :aria-busy="loading">
-      <button
-        v-for="row in rows"
-        :key="`${row.workspaceName}:${row.id}`"
-        type="button"
-        class="global-row"
-        :class="{
-          selected:
-            activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName),
-        }"
-        :aria-pressed="
-          activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName)
-        "
-        @click="emit('select', row.id, row.workspaceName)"
+    <div class="global-rows">
+      <section
+        v-for="group in groups"
+        :key="group.workspaceName"
+        class="workspace-group"
+        :aria-label="group.workspaceName"
+        :aria-busy="group.loading"
       >
-        <span class="row-title"
-          ><span
-            v-if="row.running"
-            class="running-dot"
-            role="img"
-            :title="t('globalBrowser.running')"
-            :aria-label="t('globalBrowser.running')"
-          />{{ row.title }}</span
+        <h3 class="workspace-title">{{ group.workspaceName }}</h3>
+        <button
+          v-for="row in group.rows"
+          :key="row.id"
+          type="button"
+          class="global-row"
+          :class="{
+            selected:
+              activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName),
+          }"
+          :aria-pressed="
+            activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName)
+          "
+          @click="emit('select', row.id, row.workspaceName)"
         >
-        <span class="row-workspace">{{ row.workspaceName }}</span>
-      </button>
-      <p v-if="failed" role="alert">{{ t('globalBrowser.failed') }}</p>
-      <p v-else-if="loading" role="status">{{ t('globalBrowser.loading') }}</p>
-      <p v-else-if="!rows.length">{{ t('globalBrowser.empty') }}</p>
-      <button
-        v-if="hasMore"
-        class="load-more"
-        type="button"
-        :disabled="loading"
-        @click="emit('more')"
-      >
-        {{ t('globalBrowser.more') }}
-      </button>
+          <span class="row-title"
+            ><span
+              v-if="row.running"
+              class="running-dot"
+              role="img"
+              :title="t('globalBrowser.running')"
+              :aria-label="t('globalBrowser.running')"
+            /><span class="row-label" :title="row.title">{{ row.title }}</span></span
+          >
+        </button>
+        <p v-if="group.failed" role="alert">{{ t('globalBrowser.failed') }}</p>
+        <p v-else-if="group.loading" role="status">{{ t('globalBrowser.loading') }}</p>
+        <p v-else-if="!group.rows.length">{{ t('globalBrowser.empty') }}</p>
+        <button
+          v-if="group.hasMore || group.failed"
+          class="load-more"
+          type="button"
+          :disabled="group.loading"
+          :aria-label="`${group.workspaceName}: ${t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more')}`"
+          @click="loadMore(group.workspaceName)"
+        >
+          {{ t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more') }}
+        </button>
+      </section>
+      <p v-if="!groups.length">{{ t('globalBrowser.empty') }}</p>
     </div>
   </aside>
 </template>
@@ -134,11 +175,25 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row-workspace,
 p {
   color: var(--c-text-muted);
   font-size: var(--fs-caption);
   overflow-wrap: anywhere;
+}
+.workspace-group {
+  margin-bottom: var(--sp-4);
+}
+.workspace-title {
+  margin: 0;
+  padding: var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  overflow-wrap: anywhere;
+}
+.row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .running-dot {
   width: 7px;

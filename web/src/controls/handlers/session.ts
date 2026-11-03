@@ -359,7 +359,7 @@ export function buildSessionHandlers(
     },
     sessions: (_ctx, msg) => {
       if (msg.globalRequestId) {
-        if (msg.globalRequestId === ctx.globalSessionRequestId.value) {
+        if (msg.globalRequestId === ctx.globalSessionRequestIds.value[msg.workspaceName]) {
           ctx.globalSessionPages.value = {
             ...ctx.globalSessionPages.value,
             [msg.workspaceName]: { sessions: msg.sessions, hasMore: msg.page?.hasMore ?? false },

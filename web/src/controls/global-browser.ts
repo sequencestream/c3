@@ -6,94 +6,113 @@ export interface GlobalSessionRow extends SessionInfo {
   workspaceName: string
 }
 
-export function sortGlobalSessions(rows: GlobalSessionRow[]): GlobalSessionRow[] {
-  return [...rows].sort(
-    (a, b) =>
-      b.lastModified - a.lastModified ||
-      (a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0) ||
-      (a.workspaceName < b.workspaceName ? -1 : a.workspaceName > b.workspaceName ? 1 : 0),
-  )
+export interface GlobalWorkspacePage {
+  hasMore: boolean
+  loading: boolean
+  failed: boolean
 }
 
 export function useGlobalBrowser(ctx: AppCtx) {
   const page = ctx.globalPage
   const sessions = ref<GlobalSessionRow[]>([])
-  const hasMore = ref(false)
-  const loading = ref(false)
-  const failed = ref(false)
+  const paging = ref<Record<string, GlobalWorkspacePage>>({})
+  const loading = computed(() => Object.values(paging.value).some((group) => group.loading))
+  const timers = new Map<string, ReturnType<typeof setTimeout>>()
+  const pending = new Map<string, boolean>()
   let sequence = 0
-  let append = false
-  let pageSize = 20
-  let timer: ReturnType<typeof setTimeout> | undefined
   const automations = computed(() =>
     ctx.workspaces.value.flatMap((ws) => ctx.automations.value[ws.name] ?? []),
   )
 
-  function requestSessions(more = false): void {
-    if (loading.value || (more && !hasMore.value)) return
-    append = more
-    pageSize = more ? 10 : 20
-    failed.value = false
-    ctx.globalSessionPages.value = {}
-    ctx.globalSessionRequestId.value = `global-${++sequence}`
-    const workspaces = ctx.workspaces.value
-    if (!workspaces.length) {
+  function cancelRequests(): void {
+    for (const timer of timers.values()) clearTimeout(timer)
+    timers.clear()
+    pending.clear()
+    ctx.globalSessionRequestIds.value = {}
+  }
+
+  function requestSessions(more = false, workspaceName?: string): void {
+    if (more && !workspaceName) return
+    if (!workspaceName) {
+      cancelRequests()
       sessions.value = []
-      hasMore.value = false
-      return
+      paging.value = {}
+      ctx.globalSessionPages.value = {}
     }
-    loading.value = true
-    const oldest = more ? sessions.value.at(-1) : undefined
+    const workspaces = ctx.workspaces.value.filter(
+      (ws) => !workspaceName || ws.name === workspaceName,
+    )
     for (const ws of workspaces) {
+      const previous = paging.value[ws.name]
+      if (previous?.loading || (more && previous && !previous.hasMore && !previous.failed)) continue
+      const rows = sessions.value.filter((row) => row.workspaceName === ws.name)
+      const oldest = more ? rows.at(-1) : undefined
+      const requestId = `global-${++sequence}`
+      ctx.globalSessionRequestIds.value[ws.name] = requestId
+      const pages = { ...ctx.globalSessionPages.value }
+      delete pages[ws.name]
+      ctx.globalSessionPages.value = pages
+      pending.set(ws.name, more)
+      paging.value = {
+        ...paging.value,
+        [ws.name]: { hasMore: previous?.hasMore ?? true, loading: true, failed: false },
+      }
+      timers.set(
+        ws.name,
+        setTimeout(() => {
+          pending.delete(ws.name)
+          timers.delete(ws.name)
+          delete ctx.globalSessionRequestIds.value[ws.name]
+          paging.value = {
+            ...paging.value,
+            [ws.name]: { ...paging.value[ws.name], loading: false, failed: true },
+          }
+        }, 15000),
+      )
       ctx.send({
         type: 'list_sessions',
         workspaceName: ws.name,
-        globalRequestId: ctx.globalSessionRequestId.value,
-        limit: pageSize,
+        globalRequestId: requestId,
+        limit: 5,
         before: oldest
           ? {
               lastModified: oldest.lastModified,
               sessionId: oldest.sessionId,
-              workspaceName: oldest.workspaceName,
+              workspaceName: ws.name,
             }
           : undefined,
       })
     }
-    timer = setTimeout(() => {
-      loading.value = false
-      failed.value = true
-      ctx.globalSessionRequestId.value = null
-    }, 15000)
   }
 
   watch(ctx.globalSessionPages, (pages) => {
-    if (!loading.value || ctx.workspaces.value.some((ws) => !pages[ws.name])) return
-    clearTimeout(timer)
-    const rows = sortGlobalSessions(
-      ctx.workspaces.value.flatMap((ws) =>
-        pages[ws.name].sessions.map((row) => ({ ...row, workspaceName: ws.name })),
-      ),
-    )
-    hasMore.value = rows.length > pageSize || Object.values(pages).some((p) => p.hasMore)
-    const next = rows.slice(0, pageSize)
-    sessions.value = append
-      ? [
-          ...sessions.value,
-          ...next.filter(
-            (row) =>
-              !sessions.value.some(
-                (old) => old.sessionId === row.sessionId && old.workspaceName === row.workspaceName,
-              ),
-          ),
-        ]
-      : next
-    loading.value = false
+    for (const [workspaceName, append] of pending) {
+      const result = pages[workspaceName]
+      if (!result) continue
+      clearTimeout(timers.get(workspaceName))
+      timers.delete(workspaceName)
+      pending.delete(workspaceName)
+      delete ctx.globalSessionRequestIds.value[workspaceName]
+      const previous = append
+        ? sessions.value.filter((row) => row.workspaceName === workspaceName)
+        : []
+      const next = result.sessions
+        .filter((row) => !previous.some((old) => old.sessionId === row.sessionId))
+        .map((row) => ({ ...row, workspaceName }))
+      sessions.value = [
+        ...sessions.value.filter((row) => row.workspaceName !== workspaceName),
+        ...previous,
+        ...next,
+      ]
+      paging.value = {
+        ...paging.value,
+        [workspaceName]: { hasMore: result.hasMore, loading: false, failed: false },
+      }
+    }
   })
 
   function open(kind: 'sessions' | 'automations'): void {
-    clearTimeout(timer)
-    loading.value = false
-    ctx.globalSessionRequestId.value = null
+    cancelRequests()
     ctx.closeSettings()
     ctx.personalizedSettingOpen.value = false
     ctx.workspaceSettingOpen.value = false
@@ -158,8 +177,6 @@ export function useGlobalBrowser(ctx: AppCtx) {
         ctx.automationFormOpen.value = false
       }
       if (page.value === 'sessions') {
-        clearTimeout(timer)
-        loading.value = false
         requestSessions()
       }
       if (page.value === 'automations')
@@ -169,29 +186,24 @@ export function useGlobalBrowser(ctx: AppCtx) {
   )
   watch(ctx.status, (status) => {
     if (status === 'open' && page.value === 'sessions') {
-      clearTimeout(timer)
-      loading.value = false
       requestSessions()
     }
   })
   function leave(): void {
     if (!page.value) return
     page.value = null
-    clearTimeout(timer)
-    loading.value = false
-    ctx.globalSessionRequestId.value = null
+    cancelRequests()
     ctx.clearViewedSession()
     ctx.onSelectTab('intents')
   }
-  onUnmounted(() => clearTimeout(timer))
+  onUnmounted(cancelRequests)
   return {
     page,
     leave,
     sessions,
     automations,
     loading,
-    failed,
-    hasMore,
+    paging,
     open,
     requestSessions,
     selectSession,

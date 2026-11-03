@@ -1791,7 +1791,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
   it('routes matching global pages separately and ignores previous requests', () => {
     const r = makeDeepLinkCtx()
-    r.ctx.globalSessionRequestId = ref('current')
+    r.ctx.globalSessionRequestIds = ref({ ws1: 'current' })
     r.ctx.globalSessionPages = ref({})
     r.ctx.handleMessage({
       type: 'sessions',

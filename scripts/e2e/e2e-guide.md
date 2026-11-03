@@ -752,4 +752,4 @@ the model receives it.
 
 ## Global sessions and automations
 
-`node scripts/e2e/e2e-global-browser-test.mjs ws://localhost:13000/ws` verifies mixed-kind cross-workspace session pagination (20/10/10/5 with equal timestamps) and automation detail ownership. It checks the isolated database guard before inserting fixtures, creates two temporary workspaces, and removes them on completion. No agent is started; test automations are paused.
+`node scripts/e2e/e2e-global-browser-test.mjs ws://localhost:13000/ws` verifies mixed-kind session pagination independently per workspace (batches of 5 with equal timestamps) and automation detail ownership. It checks the isolated database guard before inserting fixtures, creates two temporary workspaces, and removes them on completion. No agent is started; test automations are paused.

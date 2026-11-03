@@ -75,60 +75,52 @@ try {
     )
   }
   const seen = []
-  let before
-  let limit = 20
-  for (let page = 0; page < 4; page++) {
-    const replies = await Promise.all(
-      names.map((workspaceName) => {
-        const globalRequestId = `global-e2e-${page}-${workspaceName}`
-        return request(
-          { type: 'list_sessions', workspaceName, globalRequestId, before, limit },
-          (m) => m.type === 'sessions' && m.globalRequestId === globalRequestId,
-        )
-      }),
-    )
-    const rows = replies
-      .flatMap((reply) =>
-        reply.sessions.map((row) => ({ ...row, workspaceName: reply.workspaceName })),
+  for (const workspaceName of names) {
+    let before
+    for (let page = 0; page < 5; page++) {
+      const globalRequestId = `global-e2e-${page}-${workspaceName}`
+      const reply = await request(
+        { type: 'list_sessions', workspaceName, globalRequestId, before, limit: 5 },
+        (m) => m.type === 'sessions' && m.globalRequestId === globalRequestId,
       )
-      .sort((a, b) => b.lastModified - a.lastModified || (a.sessionId < b.sessionId ? 1 : -1))
-      .slice(0, limit)
-    assert.equal(rows.length, page === 0 ? 20 : page === 3 ? 5 : 10)
-    seen.push(...rows.map((row) => row.sessionId))
-    const last = rows.at(-1)
-    before = {
-      lastModified: last.lastModified,
-      sessionId: last.sessionId,
-      workspaceName: last.workspaceName,
+      assert.equal(reply.sessions.length, page < 4 ? 5 : workspaceName === names[0] ? 2 : 3)
+      assert.equal(reply.page.hasMore, page < 4)
+      seen.push(...reply.sessions.map((row) => row.sessionId))
+      const last = reply.sessions.at(-1)
+      before = { lastModified: last.lastModified, sessionId: last.sessionId, workspaceName }
     }
-    limit = 10
   }
   assert.equal(new Set(seen).size, 45)
   for (const workspaceName of names) {
-    const input = {
-      type: 'command',
-      config: { command: 'echo global-browser-test' },
-      workspaceName,
-      vendor: 'claude',
-      cronExpression: '0 0 1 1 *',
-      mode: 'default',
-      initialStatus: 'paused',
-      initialName: `Global automation ${workspaceName}`,
+    for (let index = 0; index < 7; index++) {
+      const input = {
+        type: 'command',
+        config: { command: 'echo global-browser-test' },
+        workspaceName,
+        vendor: 'claude',
+        cronExpression: '0 0 1 1 *',
+        mode: 'default',
+        initialStatus: 'paused',
+        initialName: `Automation ${index + 1} · ${workspaceName}`,
+      }
+      const list = await request(
+        { type: 'create_automation', workspaceName, input },
+        (m) =>
+          m.type === 'automations' &&
+          m.workspaceName === workspaceName &&
+          m.items.length === index + 1,
+      )
+      const automation = list.items[0]
+      const detail = await request(
+        { type: 'get_automation_detail', automationId: automation.id },
+        (m) => m.type === 'automation_detail' && m.automation.id === automation.id,
+      )
+      assert.equal(detail.automation.workspaceName, workspaceName)
+      assert.equal(detail.automation.status, 'paused')
     }
-    const list = await request(
-      { type: 'create_automation', workspaceName, input },
-      (m) => m.type === 'automations' && m.workspaceName === workspaceName && m.items.length > 0,
-    )
-    const automation = list.items[0]
-    const detail = await request(
-      { type: 'get_automation_detail', automationId: automation.id },
-      (m) => m.type === 'automation_detail' && m.automation.id === automation.id,
-    )
-    assert.equal(detail.automation.workspaceName, workspaceName)
-    assert.equal(detail.automation.status, 'paused')
   }
   console.log(
-    'RESULT: PASS — mixed-kind global pagination 20/10/10/5; equal timestamps; automation details retain workspace ownership',
+    'RESULT: PASS — independent workspace pagination in batches of 5; equal timestamps; automation details retain workspace ownership',
   )
 } finally {
   if (!process.env.C3_KEEP_GLOBAL_FIXTURES) {

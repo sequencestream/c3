@@ -4716,7 +4716,7 @@
     "sessions": "Sessions",
     "automations": "Automations",
     "refresh": "Refresh",
-    "more": "Load 10 more",
+    "more": "Load 5 more",
     "running": "Running",
     "loading": "Loading…",
     "failed": "Could not load the list. Refresh to retry.",

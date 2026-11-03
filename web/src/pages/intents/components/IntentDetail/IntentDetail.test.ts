@@ -113,7 +113,6 @@ function mountDetail(
       activity: { phase: 'idle' as const },
       queue: [],
       availableCommands: [],
-      voiceLang: 'en-US',
       intentSpecContent: opts.intentSpecContent ?? null,
       intentSpecLoading: opts.intentSpecLoading ?? false,
       specSessionRunning: opts.specSessionRunning ?? false,

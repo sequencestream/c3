@@ -1360,25 +1360,6 @@ describe('agent-output language tracking', () => {
     expect(getAgentLang()).toBe('en')
   })
 
-  it('is independent from voiceLang (decoupled)', () => {
-    reportUiLang('zh')
-    saveSettings({
-      agents: [],
-      defaultAgentId: SYSTEM_AGENT_ID,
-      toolAgentId: '',
-      intentAgentId: '',
-      specAgentId: '',
-      specReviewAgentId: '',
-      automationAgentId: '',
-      reviewAgentId: '',
-      fixAgentId: '',
-      workAgentId: '',
-      voiceLang: 'en-US',
-    } as SystemSettings)
-    expect(getAgentLang()).toBe('zh')
-    expect(loadSettings().voiceLang).toBe('en-US')
-  })
-
   it('is not fed by a legacy system-wide uiLang left on disk', () => {
     saveSettings({
       agents: [],

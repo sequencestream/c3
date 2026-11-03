@@ -11,7 +11,6 @@
  */
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import type { PromptImage, SlashCommandInfo } from '@ccc/shared/protocol'
-import { useSpeechRecognition } from '../../composables/useSpeechRecognition'
 import { composerAction, mergeIntoDraft } from '../../lib/pending-queue'
 import { fromWire, readImageFiles, toWire, type SelectedImage } from '../../lib/prompt-image'
 import { autoGrowHeight } from '../../lib/textarea'
@@ -30,7 +29,6 @@ const props = defineProps<{
   teamActive: boolean
   hasActiveSession: boolean
   availableCommands: SlashCommandInfo[]
-  voiceLang: string
 }>()
 
 // The input is never disabled for an active session. For an ordinary in-flight
@@ -155,33 +153,10 @@ function resizeInput(): void {
   el.style.height = `${height}px`
   el.style.overflowY = overflowY
 }
-// One source of truth for every text mutation — typing (v-model), voice append,
+// One source of truth for every text mutation — typing (v-model),
 // prefill from the send queue, slash-command apply, and the post-send clear all
 // flow through `input`, so a single watch keeps the height in sync after render.
 watch(input, () => nextTick(resizeInput))
-
-// 语音输入：聆听开始时记录 baseText（已有内容），识别结果追加其后。
-let voiceBase = ''
-const {
-  supported: voiceSupported,
-  state: voiceState,
-  errorMessage: voiceError,
-  start: voiceStart,
-  stop: voiceStop,
-} = useSpeechRecognition((final, interim) => {
-  input.value = voiceBase + final + interim
-})
-
-function toggleMic() {
-  if (!voiceSupported || !props.hasActiveSession) return
-  if (voiceState.value === 'listening') {
-    voiceStop()
-    return
-  }
-  voiceBase = input.value ? input.value.replace(/\s*$/, '') + ' ' : ''
-  voiceStart(props.voiceLang)
-  nextTick(() => inputEl.value?.focus())
-}
 
 // 连续两次裸 Enter（间隔内）直接发送；记录上一次裸 Enter 的事件时间戳。
 const DOUBLE_ENTER_MS = 400
@@ -262,7 +237,6 @@ function submit() {
   const t = input.value.trim()
   // Send when there is text OR at least one attached image (image-only is allowed).
   if ((!t && images.value.length === 0) || !props.hasActiveSession) return
-  if (voiceState.value === 'listening') voiceStop()
   const wire = toWire(images.value)
   // Ordinary in-flight turn → enqueue (server would reject user_prompt); else
   // submit immediately (idle, or a team session feeding its live lead).
@@ -284,12 +258,6 @@ function prefill(text: string, queuedImages: PromptImage[] = []) {
 defineExpose({ prefill })
 
 function onKey(e: KeyboardEvent) {
-  // 聆听中按 Esc 先停止语音识别（不触发其他逻辑）。
-  if (e.key === 'Escape' && voiceState.value === 'listening') {
-    e.preventDefault()
-    voiceStop()
-    return
-  }
   // While the slash menu is open it owns navigation/selection keys so they
   // don't fall through to the ⌘/Ctrl+Enter submit path.
   if (slashOpen.value) {
@@ -401,9 +369,7 @@ function onKey(e: KeyboardEvent) {
               ? t('session.input.placeholder.team')
               : ordinaryRunning
                 ? t('session.input.placeholder.running')
-                : voiceState === 'listening'
-                  ? t('session.input.placeholder.listening')
-                  : t('session.input.placeholder.ready')
+                : t('session.input.placeholder.ready')
         "
         :disabled="inputDisabled"
         @keydown="onKey"
@@ -422,28 +388,6 @@ function onKey(e: KeyboardEvent) {
               <path
                 d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V6a3 3 0 0 1 6 0v9a1.5 1.5 0 0 1-3 0V7h-1.5v8a3 3 0 0 0 6 0V6a4.5 4.5 0 0 0-9 0v9.5a6 6 0 0 0 12 0v-9z"
               />
-            </svg>
-          </button>
-          <button
-            v-if="voiceSupported"
-            class="mic-btn"
-            :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
-            :disabled="!hasActiveSession"
-            :title="voiceState === 'error' ? voiceError : t('session.input.voice.tooltip')"
-            :aria-label="
-              voiceState === 'listening'
-                ? t('session.input.voice.stop.ariaLabel')
-                : t('session.input.voice.start.ariaLabel')
-            "
-            :aria-pressed="voiceState === 'listening'"
-            @click="toggleMic"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <rect x="2" y="8" width="2.4" height="8" rx="1.2" />
-              <rect x="6.4" y="5" width="2.4" height="14" rx="1.2" />
-              <rect x="10.8" y="2" width="2.4" height="20" rx="1.2" />
-              <rect x="15.2" y="5" width="2.4" height="14" rx="1.2" />
-              <rect x="19.6" y="8" width="2.4" height="8" rx="1.2" />
             </svg>
           </button>
         </div>

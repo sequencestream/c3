@@ -81,7 +81,6 @@ const props = defineProps<{
   sideEffectPending: boolean
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
-  voiceLang: string
 }>()
 
 const emit = defineEmits<{
@@ -319,7 +318,6 @@ defineExpose({
         :side-effect-pending="sideEffectPending"
         :queue="queue"
         :available-commands="availableCommands"
-        :voice-lang="voiceLang"
         @set-mode="(m: ModeToken) => emit('set-mode', m)"
         @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(id: string) => emit('set-session-agent', id)"

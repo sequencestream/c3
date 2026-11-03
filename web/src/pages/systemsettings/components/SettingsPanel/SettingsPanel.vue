@@ -65,14 +65,6 @@ const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 // 会话清理的默认保留天数，与服务端 DEFAULT_SESSION_RETENTION_DAYS 保持一致。
 const DEFAULT_SESSION_RETENTION_DAYS = 30
 
-// 浏览器语音输入的可选识别语言（BCP-47）。与 UI 语言（UI_LANGS）彻底解耦。
-const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
-  { value: 'zh-CN', label: t('settings.voiceLang.zhCN.label') },
-  { value: 'en-US', label: t('settings.voiceLang.enUS.label') },
-  { value: 'zh-TW', label: t('settings.voiceLang.zhTW.label') },
-  { value: 'zh-HK', label: t('settings.voiceLang.zhHK.label') },
-])
-
 const props = withDefaults(
   defineProps<{
     open: boolean
@@ -170,7 +162,7 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   ],
   runtime: ['vendorCliVersions', 'proxy', 'sessionCleanup'],
   security: ['auth'],
-  general: ['voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
+  general: ['timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
 }
 function tabLabel(tab: SettingsTab): string {
   return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
@@ -344,7 +336,6 @@ function emptySettings(): SystemSettings {
     fixAgentId: '',
     // '' ⇒ ordinary work sessions follow the default agent (workspace-first chain).
     workAgentId: '',
-    voiceLang: 'zh-CN',
     timezone: BROWSER_TZ,
     baseUrl: '',
     showToolSessions: false,
@@ -507,7 +498,6 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     fixAgentId: settings.fixAgentId ?? '',
     // '' ⇒ ordinary work sessions follow the default agent.
     workAgentId: settings.workAgentId ?? '',
-    voiceLang: settings.voiceLang ?? 'zh-CN',
     timezone: settings.timezone ?? BROWSER_TZ,
     baseUrl: settings.baseUrl ?? '',
     showToolSessions: settings.showToolSessions ?? false,
@@ -1460,7 +1450,6 @@ function buildTabPayload(
       break
     }
     case 'general': {
-      payload.voiceLang = src.voiceLang
       payload.timezone = src.timezone
       payload.baseUrl = src.baseUrl
       payload.showToolSessions = src.showToolSessions
@@ -2687,14 +2676,6 @@ function selectAdmin(username: string) {
         role="tabpanel"
         data-testid="settings-tab-general"
       >
-        <section class="settings-section">
-          <p class="settings-section-title">{{ t('settings.voiceLang.title.label') }}</p>
-          <p class="settings-hint">{{ t('settings.voiceLang.hint') }}</p>
-          <select v-model="draft.voiceLang" class="mode-select" data-testid="settings-voice-lang">
-            <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
-          </select>
-        </section>
-
         <section class="settings-section">
           <p class="settings-section-title">{{ t('settings.timezone.title.label') }}</p>
           <p class="settings-hint">{{ t('settings.timezone.hint') }}</p>

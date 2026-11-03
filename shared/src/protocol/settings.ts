@@ -14,8 +14,7 @@ import type { SessionCleanupConfig, WorkspaceSetting } from './workspace.js'
 
 /**
  * The UI display language for the web console. A short language code (no region
- * subtag). Independent from {@link SystemSettings.voiceLang} (browser speech
- * recognition): the two never read or default off each other. Unset ⇒ `en`.
+ * subtag). Unset ⇒ `en`.
  * Only `en`/`zh` ship translations today; `ja`/`ko`/`ru` are reserved for the
  * i18n rollout and fall back to `en` messages until translated.
  *
@@ -421,8 +420,6 @@ export interface SystemSettings {
    * their own frozen binding.
    */
   workAgentId: string
-  /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
-  voiceLang?: string
   /**
    * System-wide IANA time zone (e.g. `Asia/Shanghai`, `America/New_York`) used
    * to interpret every automation's cron fields when computing `next_run_at`. The

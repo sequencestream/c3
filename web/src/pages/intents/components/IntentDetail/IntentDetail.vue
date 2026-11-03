@@ -106,7 +106,6 @@ const props = defineProps<{
   sideEffectPending?: boolean
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
-  voiceLang: string
   // ── 权限模式(标题栏)──
   /** 活动会话的权限模式 token / codex 双策略,与会话页共用同一份控制层状态。 */
   mode?: ModeToken
@@ -687,7 +686,6 @@ function submitChat(text: string, images: PromptImage[]): void {
         :side-effect-pending="sideEffectPending"
         :queue="queue"
         :available-commands="availableCommands"
-        :voice-lang="voiceLang"
         :mode="mode"
         :codex-policy="codexPolicy"
         :mode-options="modeOptions"

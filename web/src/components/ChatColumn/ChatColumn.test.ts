@@ -46,7 +46,6 @@ function mountColumn(over: Partial<Record<string, unknown>> = {}) {
       sideEffectPending: true,
       queue: [{ id: 1, text: 'queued', images: [] }],
       availableCommands: [],
-      voiceLang: 'en-US',
       ...over,
     },
   })

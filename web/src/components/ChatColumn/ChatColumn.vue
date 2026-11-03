@@ -109,7 +109,6 @@ const props = withDefaults(
     sideEffectPending?: boolean
     queue: PendingItem[]
     availableCommands: SlashCommandInfo[]
-    voiceLang: string
   }>(),
   {
     showMode: false,
@@ -248,7 +247,6 @@ defineExpose({
       :team-active="teamActive"
       :has-active-session="hasActiveSession"
       :available-commands="availableCommands"
-      :voice-lang="voiceLang"
       @submit="
         (text: string, imgs: PromptImage[]) => emitUnlessReadonly(() => emit('submit', text, imgs))
       "

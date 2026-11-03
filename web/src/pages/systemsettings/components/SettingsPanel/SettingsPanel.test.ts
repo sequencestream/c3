@@ -71,7 +71,6 @@ const baseSettings: SystemSettings = {
   fixAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },
-  voiceLang: 'zh-CN',
   showToolSessions: false,
   showSessionsPage: false,
   devSkill: '',
@@ -719,12 +718,12 @@ describe('SettingsPanel.vue — display language moved out of system settings', 
 
   it('keeps the other General fields loading and saving', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const voice = w.find<HTMLSelectElement>('[data-testid="settings-voice-lang"]')
-    expect(voice.element.value).toBe('zh-CN')
-    await voice.setValue('en-US')
+    const timezone = w.find<HTMLSelectElement>('[data-testid="settings-timezone"]')
+    expect(timezone.element.value).toBeTruthy()
+    await timezone.setValue('Asia/Tokyo')
     await w.find(SAVE.general).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].voiceLang).toBe('en-US')
+    expect(emitted[0][0].timezone).toBe('Asia/Tokyo')
     expect(emitted[0][0].timezone).toBeTruthy()
   })
 })
@@ -1828,7 +1827,6 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
       'settings-proxy': 'settings-tab-runtime',
       'settings-session-cleanup': 'settings-tab-runtime',
       'settings-auth': 'settings-tab-security',
-      'settings-voice-lang': 'settings-tab-general',
       'settings-timezone': 'settings-tab-general',
       'settings-base-url': 'settings-tab-general',
     }

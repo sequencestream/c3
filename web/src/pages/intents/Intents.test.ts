@@ -112,7 +112,6 @@ function mountIntents(
       activity: { phase: 'idle' },
       queue: [],
       availableCommands: [],
-      voiceLang: 'en-US',
     },
     global: {
       stubs: {

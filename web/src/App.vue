@@ -196,6 +196,7 @@ const {
   refreshStatus,
   onEditQueued,
   onDeleteQueued,
+  onSendQueued,
   onSubmit,
   onEnqueue,
   stopRun,
@@ -1009,6 +1010,7 @@ function onFilesChatWidth(px: number): void {
               @refresh="refreshStatus"
               @edit-queued="onEditQueued"
               @delete-queued="onDeleteQueued"
+              @send-queued="onSendQueued"
               @submit="onSubmit"
               @enqueue="onEnqueue"
               @stop="stopRun"
@@ -1131,6 +1133,7 @@ function onFilesChatWidth(px: number): void {
               @refresh="refreshStatus"
               @edit-queued="onEditQueued"
               @delete-queued="onDeleteQueued"
+              @send-queued="onSendQueued"
               @submit="onSubmit"
               @enqueue="onEnqueue"
               @stop="stopRun"
@@ -1232,6 +1235,7 @@ function onFilesChatWidth(px: number): void {
               @refresh="refreshStatus"
               @edit-queued="onEditQueued"
               @delete-queued="onDeleteQueued"
+              @send-queued="onSendQueued"
               @session-submit="onSubmit"
               @session-enqueue="onEnqueue"
               @stop="stopRun"
@@ -1346,6 +1350,7 @@ function onFilesChatWidth(px: number): void {
               @refresh="refreshStatus"
               @edit-queued="onEditQueued"
               @delete-queued="onDeleteQueued"
+              @send-queued="onSendQueued"
               @submit="onSubmit"
               @enqueue="onEnqueue"
               @stop="stopRun"

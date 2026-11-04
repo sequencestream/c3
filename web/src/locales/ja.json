@@ -2066,6 +2066,10 @@
       "ariaLabel": "保留中のキュー",
       "head": "キュー待ち · 次のターンにマージされます({count})",
       "imageCount": "🖼️ {count}",
+      "send": {
+        "tooltip": "現在の実行を停止してこのメッセージを今すぐ送信",
+        "ariaLabel": "今すぐ送信"
+      },
       "edit": {
         "tooltip": "編集: 入力ボックスに戻して再編集します",
         "ariaLabel": "編集"

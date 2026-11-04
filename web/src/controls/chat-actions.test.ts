@@ -5,7 +5,8 @@
  * 的危险标志。没有新协议消息,也没有独立的重试状态。
  */
 import { describe, it, expect, vi } from 'vitest'
-import { ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import type { PendingItem } from '@/lib/pending-queue'
 import type { ClientToServer } from '@ccc/shared/protocol'
 import { installChatActions } from './chat-actions'
 import type { AppCtx } from './types'
@@ -18,6 +19,7 @@ function makeCtx(opts: { client?: boolean; activeSession?: string | null } = {})
   const sessionStatus = ref<Record<string, 'running' | 'idle'>>({})
   const activity = ref<import('@/lib/chat-types').RunActivity>({ phase: 'error', message: 'boom' })
   const clearSideEffectPending = vi.fn()
+  const currentQueue = ref<PendingItem[]>([])
   const ctx = {
     send,
     client: opts.client === false ? null : {},
@@ -27,11 +29,13 @@ function makeCtx(opts: { client?: boolean; activeSession?: string | null } = {})
     activity,
     mode: ref('default'),
     codexPolicy: ref(null),
-    running: ref(false),
+    running: computed(() => sessionStatus.value[activeSession.value ?? ''] === 'running'),
     activeIsTeam: ref(false),
-    currentQueue: ref([]),
+    currentQueue,
     composer: ref(null),
-    setQueue: vi.fn(),
+    setQueue: vi.fn((_sid: string, items: PendingItem[]) => {
+      currentQueue.value = items
+    }),
     counters: { nextId: 1, nextQueueId: 1 },
     clearSideEffectPending,
     activeWorkspace: ref('/ws'),
@@ -74,5 +78,54 @@ describe('chat-actions — onContinue(危险态「继续」/ 崩溃态一键重�
     const { ctx, send } = makeCtx({ activeSession: null })
     ctx.onContinue()
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('chat-actions — queued message immediate send', () => {
+  it('stops first, waits for idle, sends only the chosen message with images, then drains the rest next turn', async () => {
+    const { ctx, send, sessionStatus } = makeCtx()
+    sessionStatus.value[SID] = 'running'
+    const images = [{ mediaType: 'image/png' as const, data: 'image-data' }]
+    ctx.onEnqueue('first')
+    ctx.onEnqueue('urgent', images)
+    ctx.onEnqueue('last')
+    const id = ctx.currentQueue.value[1].id
+    ctx.onSendQueued(id)
+    ctx.onSendQueued(id)
+    await nextTick()
+    expect(send.mock.calls.map(([msg]) => msg)).toEqual([{ type: 'stop_run' }])
+    expect(ctx.currentQueue.value).toHaveLength(3)
+
+    sessionStatus.value[SID] = 'idle'
+    await nextTick()
+    expect(send.mock.calls.map(([msg]) => msg)).toEqual([
+      { type: 'stop_run' },
+      { type: 'user_prompt', text: 'urgent', images },
+    ])
+    expect(ctx.currentQueue.value.map((item) => item.text)).toEqual(['first', 'last'])
+    expect(sessionStatus.value[SID]).toBe('running')
+
+    sessionStatus.value[SID] = 'idle'
+    await nextTick()
+    expect(send).toHaveBeenLastCalledWith({ type: 'user_prompt', text: 'first\n\nlast' })
+    expect(ctx.currentQueue.value).toEqual([])
+  })
+
+  it('sends immediately without stopping when already idle', () => {
+    const { ctx, send } = makeCtx()
+    ctx.onEnqueue('next')
+    ctx.onSendQueued(ctx.currentQueue.value[0].id)
+    expect(send.mock.calls.map(([msg]) => msg)).toEqual([{ type: 'user_prompt', text: 'next' }])
+  })
+
+  it('keeps the queue untouched when disconnected or the item was removed', () => {
+    const { ctx, send } = makeCtx({ client: false })
+    ctx.onEnqueue('keep')
+    ctx.onSendQueued(ctx.currentQueue.value[0].id)
+    expect(ctx.currentQueue.value).toEqual([{ id: 1, text: 'keep' }])
+    expect(send).not.toHaveBeenCalled()
+    const connected = makeCtx()
+    connected.ctx.onSendQueued(99)
+    expect(connected.send).not.toHaveBeenCalled()
   })
 })

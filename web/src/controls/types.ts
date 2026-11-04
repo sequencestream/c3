@@ -416,6 +416,7 @@ export interface AppMethods {
   submitAsk(m: PermissionMsg, answers: Record<string, string>): void
   listCommands(): void
   onEnqueue(text: string, images?: PromptImage[]): void
+  onSendQueued(id: number): void
   onDeleteQueued(id: number): void
   onEditQueued(item: PendingItem): void
   flushIfReady(): void

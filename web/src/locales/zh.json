@@ -2065,6 +2065,10 @@
       "ariaLabel": "待处理队列",
       "head": "已排队 · 合并到下一回合({count})",
       "imageCount": "🖼️ {count}",
+      "send": {
+        "tooltip": "停止当前执行并立即发送此消息",
+        "ariaLabel": "立即发送"
+      },
       "edit": {
         "tooltip": "编辑:拉回输入框重新编辑",
         "ariaLabel": "编辑"

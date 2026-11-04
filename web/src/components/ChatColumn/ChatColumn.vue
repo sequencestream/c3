@@ -146,6 +146,7 @@ const emit = defineEmits<{
   refresh: []
   'edit-queued': [item: PendingItem]
   'delete-queued': [id: number]
+  'send-queued': [id: number]
   submit: [text: string, images: PromptImage[]]
   enqueue: [text: string, images: PromptImage[]]
   stop: []
@@ -237,8 +238,10 @@ defineExpose({
     <PendingQueue
       v-if="sessionBound && !readonly"
       :items="queue"
+      :disabled="connection !== 'open'"
       @edit="(item: PendingItem) => emit('edit-queued', item)"
       @delete="(id: number) => emit('delete-queued', id)"
+      @send="(id: number) => emitUnlessReadonly(() => emit('send-queued', id))"
     />
     <MessageInput
       v-if="showInput && !readonly"

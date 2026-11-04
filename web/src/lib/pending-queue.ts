@@ -3,7 +3,7 @@
  *
  * 普通(非团队)会话运行中,服务端会拒绝 user_prompt(单回合),所以运行中发送的
  * 消息先进入按 sessionId 归集的客户端内存队列;当前查看的会话回到就绪且队列非空时,
- * 把队列按顺序合并为一条 prompt 经现有 user_prompt 路径发出。此处只承载与队列相关的
+ * 默认把队列按顺序合并为一条 prompt;标记为立即发送的条目优先单独续接。此处只承载与队列相关的
  * 纯函数,便于在 Node 环境下单测(web 测试不含 DOM)。
  */
 
@@ -11,6 +11,8 @@ import type { PromptImage } from '@ccc/shared/protocol'
 
 export interface PendingItem {
   id: number
+  /** 用户请求停止当前运行后,优先单独发送此条。 */
+  immediate?: boolean
   text: string
   /** 入队时随这条消息附带的图片(运行中点击发送时一并缓存);flush 时合并发送。 */
   images?: PromptImage[]

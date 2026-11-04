@@ -3,8 +3,8 @@
  * PendingQueue.vue — SessionStatusBar 下方、MessageInput 上方的待发送队列。
  *
  * 普通会话运行中发送的消息进入此队列(客户端内存,按 sessionId 归集),尚未入上下文,
- * 故每条带 修改(✎)/ 删除(🗑):修改回填输入框、删除移除该条。当前查看的会话回到
- * 就绪且队列非空时,由 App 合并为一条 prompt flush 出去并清空。
+ * 每条可修改、删除,或停止当前运行后优先单独发送。普通待发条目在当前查看的
+ * 会话就绪时合并发送;立即发送会保留其他条目,留待下一回合。
  */
 import type { PendingItem } from '../../lib/pending-queue'
 import { useTypedI18n } from '@/i18n'
@@ -13,11 +13,13 @@ const { t } = useTypedI18n()
 
 defineProps<{
   items: PendingItem[]
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
   edit: [item: PendingItem]
   delete: [id: number]
+  send: [id: number]
 }>()
 </script>
 
@@ -44,6 +46,15 @@ const emit = defineEmits<{
         @click="emit('delete', item.id)"
       >
         🗑
+      </button>
+      <button
+        class="pending-act pending-send"
+        :disabled="disabled || items.some((queued) => queued.immediate)"
+        :title="t('session.queue.send.tooltip')"
+        :aria-label="t('session.queue.send.ariaLabel')"
+        @click="emit('send', item.id)"
+      >
+        ↑
       </button>
     </div>
   </div>

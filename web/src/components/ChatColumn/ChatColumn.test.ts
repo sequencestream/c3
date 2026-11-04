@@ -181,3 +181,22 @@ describe('ChatColumn.vue — sessionBound 会话绑定门控', () => {
     expect(w.findComponent(SessionStatusBar).exists()).toBe(false)
   })
 })
+
+describe('ChatColumn.vue — immediate queued send', () => {
+  it('routes the rightmost arrow to the selected queued message', async () => {
+    const w = mountColumn()
+    await w.find('.pending-send').trigger('click')
+    expect(w.emitted('send-queued')).toEqual([[1]])
+    expect(w.findAll('.pending-item button').at(-1)?.classes()).toContain('pending-send')
+  })
+
+  it('disables immediate send while disconnected or stopping', () => {
+    for (const over of [
+      { connection: 'closed' },
+      { queue: [{ id: 1, text: 'queued', immediate: true }] },
+    ]) {
+      const w = mountColumn(over)
+      expect(w.find('.pending-send').attributes('disabled')).toBeDefined()
+    }
+  })
+})

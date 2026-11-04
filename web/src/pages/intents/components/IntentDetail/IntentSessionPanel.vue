@@ -66,6 +66,7 @@ const emit = defineEmits<{
   refresh: []
   'edit-queued': [item: PendingItem]
   'delete-queued': [id: number]
+  'send-queued': [id: number]
   submit: [text: string, images: PromptImage[]]
   enqueue: [text: string, images: PromptImage[]]
   stop: []
@@ -139,6 +140,7 @@ defineExpose({
     @refresh="emit('refresh')"
     @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
     @delete-queued="(id: number) => emit('delete-queued', id)"
+    @send-queued="(id: number) => emit('send-queued', id)"
     @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
     @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
     @stop="emit('stop')"

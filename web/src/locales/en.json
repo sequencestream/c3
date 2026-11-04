@@ -2065,6 +2065,10 @@
       "ariaLabel": "Pending queue",
       "head": "Queued · merged into the next turn ({count})",
       "imageCount": "🖼️ {count}",
+      "send": {
+        "tooltip": "Stop the current run and send this message now",
+        "ariaLabel": "Send now"
+      },
       "edit": {
         "tooltip": "Edit: pull back into the input box to re-edit",
         "ariaLabel": "Edit"

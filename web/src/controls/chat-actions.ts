@@ -51,14 +51,29 @@ export function installChatActions(ctx: AppCtx): void {
     composer.value?.prefill(item.text, item.images)
   }
 
-  // Flush the viewed session's queue once it is idle: merge into one prompt, send.
+  ctx.onSendQueued = (id: number): void => {
+    const sid = activeSession.value
+    if (!ctx.client || !sid || !hasActiveSession.value) return
+    if (!currentQueue.value.some((item) => item.id === id)) return
+    if (currentQueue.value.some((item) => item.immediate)) return
+    setQueue(
+      sid,
+      currentQueue.value.map((item) => (item.id === id ? { ...item, immediate: true } : item)),
+    )
+    if (running.value || activeIsTeam.value) ctx.stopRun()
+    else ctx.flushIfReady()
+  }
+
+  // Wait for confirmed idle before submitting a new turn to the same session.
   ctx.flushIfReady = (): void => {
     const sid = activeSession.value
-    if (!sid) return
+    if (!ctx.client || !sid || !hasActiveSession.value) return
     if (!shouldFlush(running.value, activeIsTeam.value, currentQueue.value.length)) return
-    const merged = mergeQueue(currentQueue.value)
-    const mergedImages = mergeImages(currentQueue.value)
-    setQueue(sid, [])
+    const immediate = currentQueue.value.find((item) => item.immediate)
+    const items = immediate ? [immediate] : currentQueue.value
+    const merged = mergeQueue(items)
+    const mergedImages = mergeImages(items)
+    setQueue(sid, immediate ? removeItem(currentQueue.value, immediate.id) : [])
     ctx.onSubmit(merged, mergedImages)
   }
 

@@ -2066,6 +2066,10 @@
       "ariaLabel": "대기 중인 대기열",
       "head": "대기 중 · 다음 턴에 병합됨 ({count})",
       "imageCount": "🖼️ {count}",
+      "send": {
+        "tooltip": "현재 실행을 중지하고 이 메시지를 즉시 전송",
+        "ariaLabel": "즉시 전송"
+      },
       "edit": {
         "tooltip": "편집: 입력란으로 다시 가져와 수정",
         "ariaLabel": "편집"

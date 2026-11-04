@@ -149,6 +149,7 @@ const emit = defineEmits<{
   refresh: []
   'edit-queued': [item: PendingItem]
   'delete-queued': [id: number]
+  'send-queued': [id: number]
   'session-submit': [text: string, images: PromptImage[]]
   'session-enqueue': [text: string, images: PromptImage[]]
   stop: []
@@ -446,6 +447,7 @@ function confirmStop(): void {
               @refresh="emit('refresh')"
               @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
               @delete-queued="(id: number) => emit('delete-queued', id)"
+              @send-queued="(id: number) => emit('send-queued', id)"
               @submit="(text: string, imgs: PromptImage[]) => emit('session-submit', text, imgs)"
               @enqueue="(text: string, imgs: PromptImage[]) => emit('session-enqueue', text, imgs)"
               @stop="emit('stop')"

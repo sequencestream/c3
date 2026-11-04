@@ -223,6 +223,7 @@ export function buildSessionHandlers(
     markActivityApplied(Date.now())
   }
 
+  let initialReady = true
   return {
     ready: (_ctx, msg) => {
       // Refresh admin authorization for this connection (ADR-0023 authz) — drives
@@ -334,18 +335,8 @@ export function buildSessionHandlers(
       // per-vendor host-CLI status ready before the user clicks "+".
       send({ type: 'get_settings' })
 
-      if (!deepLinkConsumed) {
-        // Restore the intent / discussion / automations view if a hard refresh left us in it.
-        ctx.maybeRestoreIntents(msg.workspaces)
-        ctx.maybeRestoreDiscussions(msg.workspaces)
-        ctx.maybeRestoreAutomations(msg.workspaces)
-        ctx.maybeRestoreFiles(msg.workspaces)
-        // No persisted restorable page: enter the safe default through the
-        // normal action so project selection, requests, and persistence align.
-        if (activeTab.value === 'intents' && !ctx.intentsProject.value && currentWorkspace.value) {
-          ctx.openIntents(currentWorkspace.value)
-        }
-      }
+      if (!deepLinkConsumed && initialReady) ctx.openGlobalBrowser('sessions')
+      initialReady = false
     },
     session_status: (_ctx, msg) => {
       // 运行集合真的变了(有会话开始/结束执行)才回一次权威计数,顶部三个条目角标

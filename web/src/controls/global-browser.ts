@@ -22,6 +22,20 @@ export function useGlobalBrowser(ctx: AppCtx) {
   const pending = new Map<string, boolean>()
   const liveDuringRequest = new Map<string, SessionInfo[]>()
   let sequence = 0
+  // Source-jump rows are outside the paginated window and never define its cursor.
+  const inserted = new Map<string, GlobalSessionRow>()
+  const cursors = new Map<string, SessionInfo>()
+  const rowKey = (workspace: string, id: string): string => `${workspace}\0${id}`
+  function ensureInsertedRows(): void {
+    for (const row of inserted.values()) {
+      if (
+        !sessions.value.some(
+          (s) => s.workspaceName === row.workspaceName && s.sessionId === row.sessionId,
+        )
+      )
+        sessions.value.push(row)
+    }
+  }
   const automations = computed(() =>
     ctx.workspaces.value.flatMap((ws) => ctx.automations.value[ws.name] ?? []),
   )
@@ -40,6 +54,7 @@ export function useGlobalBrowser(ctx: AppCtx) {
     if (!workspaceName) {
       cancelRequests()
       sessions.value = []
+      cursors.clear()
       paging.value = {}
       ctx.globalSessionPages.value = {}
     }
@@ -49,8 +64,7 @@ export function useGlobalBrowser(ctx: AppCtx) {
     for (const ws of workspaces) {
       const previous = paging.value[ws.name]
       if (previous?.loading || (more && previous && !previous.hasMore && !previous.failed)) continue
-      const rows = sessions.value.filter((row) => row.workspaceName === ws.name)
-      const oldest = more ? rows.at(-1) : undefined
+      const oldest = more ? cursors.get(ws.name) : undefined
       const requestId = `global-${++sequence}`
       ctx.globalSessionRequestIds.value[ws.name] = requestId
       const pages = { ...ctx.globalSessionPages.value }
@@ -98,8 +112,16 @@ export function useGlobalBrowser(ctx: AppCtx) {
       timers.delete(workspaceName)
       pending.delete(workspaceName)
       delete ctx.globalSessionRequestIds.value[workspaceName]
+      const last = result.sessions.at(-1)
+      if (last) cursors.set(workspaceName, last)
+      for (const row of result.sessions) inserted.delete(rowKey(workspaceName, row.sessionId))
       const previous = append
-        ? sessions.value.filter((row) => row.workspaceName === workspaceName)
+        ? sessions.value.filter(
+            (row) =>
+              row.workspaceName === workspaceName &&
+              !inserted.has(rowKey(workspaceName, row.sessionId)) &&
+              !result.sessions.some((incoming) => incoming.sessionId === row.sessionId),
+          )
         : []
       const next = result.sessions
         .filter((row) => !previous.some((old) => old.sessionId === row.sessionId))
@@ -109,6 +131,7 @@ export function useGlobalBrowser(ctx: AppCtx) {
         ...previous,
         ...next,
       ]
+      ensureInsertedRows()
       paging.value = {
         ...paging.value,
         [workspaceName]: { hasMore: result.hasMore, loading: false, failed: false },
@@ -142,7 +165,10 @@ export function useGlobalBrowser(ctx: AppCtx) {
         ...update.sessions,
       ])
     }
-    const previous = sessions.value.filter((row) => row.workspaceName === workspaceName)
+    const previous = sessions.value.filter(
+      (row) =>
+        row.workspaceName === workspaceName && !inserted.has(rowKey(workspaceName, row.sessionId)),
+    )
     const merged = new Map(
       previous
         .filter((row) => row.sessionId !== update.replaceSessionId)
@@ -170,6 +196,7 @@ export function useGlobalBrowser(ctx: AppCtx) {
       ...sessions.value.filter((row) => row.workspaceName !== workspaceName),
       ...visible,
     ]
+    ensureInsertedRows()
     const previousPage = paging.value[workspaceName]
     paging.value = {
       ...paging.value,
@@ -185,6 +212,8 @@ export function useGlobalBrowser(ctx: AppCtx) {
 
   function open(kind: 'sessions' | 'automations'): void {
     cancelRequests()
+    inserted.clear()
+    cursors.clear()
     ctx.closeSettings()
     ctx.personalizedSettingOpen.value = false
     ctx.workspaceSettingOpen.value = false
@@ -216,6 +245,33 @@ export function useGlobalBrowser(ctx: AppCtx) {
     ctx.selectSession(row.workspaceName, row.sessionId, row)
   }
 
+  ctx.openGlobalBrowser = open
+  ctx.openGlobalSession = (input): void => {
+    if (!ctx.workspaces.value.some((ws) => ws.name === input.workspaceName)) return
+    if (page.value !== 'sessions') open('sessions')
+    if (!input.sessionId) return
+    let row = sessions.value.find(
+      (s) => s.workspaceName === input.workspaceName && s.sessionId === input.sessionId,
+    )
+    if (!row) {
+      row = {
+        workspaceName: input.workspaceName,
+        sessionId: input.sessionId,
+        title: input.title?.trim() || input.sessionId,
+        lastModified: input.updatedAt ?? 0,
+        mode: 'default',
+        vendor: 'claude',
+        isToolSession: input.sessionKind === 'tool',
+        sessionKind: (input.sessionKind ?? 'work') as SessionInfo['sessionKind'],
+        ownerKind: input.intentId ? 'intent' : null,
+        ownerId: input.intentId ?? null,
+      }
+      inserted.set(rowKey(input.workspaceName, input.sessionId), row)
+      ensureInsertedRows()
+    }
+    selectSession(row)
+  }
+
   function selectAutomation(id: string): void {
     const row = automations.value.find((item: Automation) => item.id === id)
     if (!row) return
@@ -239,6 +295,9 @@ export function useGlobalBrowser(ctx: AppCtx) {
         .join('\0'),
     () => {
       const names = new Set(ctx.workspaces.value.map((ws) => ws.name))
+      for (const [key, row] of inserted) {
+        if (!names.has(row.workspaceName)) inserted.delete(key)
+      }
       sessions.value = sessions.value.filter((row) => names.has(row.workspaceName))
       if (ctx.activeWorkspace.value && !names.has(ctx.activeWorkspace.value))
         ctx.clearViewedSession()

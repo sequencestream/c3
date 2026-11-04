@@ -115,12 +115,15 @@ export interface AppMethods {
    * no row the loaded lists are searched for one.
    */
   selectSession(path: string, sessionId: string, row?: SessionInfo): void
+  openGlobalBrowser(kind: 'sessions' | 'automations'): void
+  openGlobalSession(input: Parameters<AppCtx['openWorkcenterSession']>[0]): void
   openWorkcenterSession(input: {
     workspaceName: string
     sessionKind: string | null | undefined
     sessionId: string | null
     title?: string | null
     updatedAt?: number | null
+    intentId?: string | null
   }): void
   jumpSessionSource(path: string, session: SessionInfo): void
   jumpActiveSessionSource(): void

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type { GlobalWorkspacePage } from '@/controls/global-browser'
 
@@ -97,6 +97,14 @@ onBeforeUnmount(stopDrag)
 
 const limits = ref<Record<string, number>>({})
 const collapsedWorkspaces = ref(new Set<string>())
+
+watch(
+  () => [props.activeWorkspace, props.activeId],
+  () => {
+    if (props.activeWorkspace && props.activeId)
+      collapsedWorkspaces.value.delete(props.activeWorkspace)
+  },
+)
 
 function toggleWorkspace(workspaceName: string): void {
   if (collapsedWorkspaces.value.has(workspaceName)) collapsedWorkspaces.value.delete(workspaceName)

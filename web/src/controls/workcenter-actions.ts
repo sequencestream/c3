@@ -79,20 +79,12 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     }
   }
 
-  // Jump from a WorkCenter event to its source. Routing is decided by `intentId`
-  // alone: any event whose session resolved an owning intent (including
-  // intent-level events, which have no real session) lands on that intent's
-  // detail page, with `sessionKind` only choosing the sub-tab through the shared
-  // session-jump mapping. Events with no owning intent (discussion, automation,
-  // standalone sessions) keep landing in the unified session page, where
-  // `sessionKind` only chooses the left-list kind.
-  // `event.workspaceName` is an opaque id (the store maps the path through
-  // `pathToId`), so it is interchangeable with `currentWorkspace`.
+  // Intent-level events have no real session; all real sessions open globally.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const workspace = event.workspaceName || currentWorkspace.value
     if (!workspace || !ctx.client) return
     ctx.setViewMode('workspace')
-    if (event.intentId) {
+    if (event.intentId && (event.intentLevel || !event.sessionId)) {
       // spec → 编写规范, intent → 意图会话, work/tool → detail default tab.
       const target = resolveSessionJumpTarget({
         sessionKind: event.sessionKind,
@@ -111,6 +103,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
       sessionId: event.sessionId,
       title: event.intentTitle || event.title,
       updatedAt: event.updatedAt,
+      ...(event.intentId ? { intentId: event.intentId } : {}),
     })
   }
 }

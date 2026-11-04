@@ -1438,6 +1438,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       openIntents,
       openDiscussions,
       openDiscussion,
+      openGlobalBrowser: vi.fn(),
       maybeRestoreIntents,
       maybeRestoreDiscussions,
       maybeRestoreAutomations,
@@ -1628,6 +1629,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       openIntents,
       openDiscussions,
       openDiscussion,
+      openGlobalBrowser: vi.fn(),
       maybeRestoreIntents,
       maybeRestoreDiscussions,
       maybeRestoreAutomations,
@@ -1761,9 +1763,9 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
     expect(r.showToast).toHaveBeenCalledWith('deepLink.notFound')
     expect(r.pendingDeepLink.value).toBeNull()
-    // Falls through to normal restore
-    expect(r.maybeRestoreIntents).toHaveBeenCalled()
-    expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
+    // Falls back to the global session page
+    expect(r.ctx.openGlobalBrowser).toHaveBeenCalledWith('sessions')
+    expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
     expect(r.selectSession).not.toHaveBeenCalled()
   })
 
@@ -1930,7 +1932,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.deepLinkFulfilled.value.has('disc-target')).toBe(true)
   })
 
-  it('no pending deep link → normal restore path', () => {
+  it('no pending deep link → global sessions by default', () => {
     const r = makeDeepLinkCtx()
 
     r.ctx.handleMessage({
@@ -1943,11 +1945,11 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       statuses: [],
     } as unknown as ServerToClient)
 
-    expect(r.maybeRestoreIntents).toHaveBeenCalled()
-    expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
-    expect(r.maybeRestoreAutomations).toHaveBeenCalled()
-    expect(r.maybeRestoreFiles).toHaveBeenCalled()
-    expect(r.openIntents).toHaveBeenCalledWith('ws1')
+    expect(r.ctx.openGlobalBrowser).toHaveBeenCalledWith('sessions')
+    expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
+    expect(r.maybeRestoreAutomations).not.toHaveBeenCalled()
+    expect(r.maybeRestoreFiles).not.toHaveBeenCalled()
+    expect(r.openIntents).not.toHaveBeenCalled()
     expect(r.selectSession).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()
   })
@@ -2307,6 +2309,7 @@ function makeColdStartCtx() {
     readStoredWorkspace: vi.fn(() => null),
     persistCurrentWorkspace: vi.fn(),
     ensureSessions: vi.fn(),
+    openGlobalBrowser: vi.fn(),
     maybeRestoreIntents: vi.fn(),
     maybeRestoreDiscussions: vi.fn(),
     maybeRestoreAutomations: vi.fn(),

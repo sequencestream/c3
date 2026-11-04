@@ -164,7 +164,10 @@ export function buildAuthHandlers(
       // Login minted a token but this socket is still unauthenticated — force a
       // fresh handshake so `buildUrl()` carries the `?token=` and the server
       // admits us + emits `ready` (with the workspaces snapshot).
-      if (msg.result.ok) ctx.reconnect()
+      if (msg.result.ok) {
+        ctx.openGlobalBrowser('sessions')
+        ctx.reconnect()
+      }
     },
     admin_password_result: (_ctx, msg) => {
       if (msg.result.ok) {

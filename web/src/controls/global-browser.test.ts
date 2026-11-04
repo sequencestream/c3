@@ -179,6 +179,86 @@ describe('global browser', () => {
     wrapper.unmount()
   })
 
+  it('opens a notification session before the first page arrives and keeps it last without changing the cursor', async () => {
+    const { ctx, browser, wrapper } = setup()
+    ctx.openGlobalSession({
+      workspaceName: 'alpha',
+      sessionKind: 'work',
+      sessionId: 'old',
+      title: 'Old session',
+      updatedAt: 1,
+    })
+    expect(browser.page.value).toBe('sessions')
+    expect(ctx.selectSession).toHaveBeenCalledWith(
+      'alpha',
+      'old',
+      expect.objectContaining({ title: 'Old session' }),
+    )
+    const first = [session(10), session(9), session(8), session(7), session(6)]
+    ctx.globalSessionPages.value = { alpha: { sessions: first, hasMore: true } }
+    await nextTick()
+    expect(
+      browser.sessions.value.filter((r) => r.workspaceName === 'alpha').map((r) => r.sessionId),
+    ).toEqual([...first.map((r) => r.sessionId), 'old'])
+    browser.requestSessions(true, 'alpha')
+    expect(ctx.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        before: { workspaceName: 'alpha', sessionId: 's006', lastModified: 100 },
+      }),
+    )
+    ctx.globalSessionPages.value = { alpha: { sessions: [session(5)], hasMore: true } }
+    await nextTick()
+    expect(browser.sessions.value.at(-1)?.sessionId).toBe('old')
+    ctx.globalSessionLivePage.value = {
+      workspaceName: 'alpha',
+      sessions: [{ ...session(11), lastModified: 200 }],
+    }
+    expect(browser.sessions.value.at(-1)?.sessionId).toBe('old')
+    browser.requestSessions()
+    ctx.globalSessionPages.value = { alpha: { sessions: first, hasMore: true } }
+    await nextTick()
+    expect(browser.sessions.value.at(-1)?.sessionId).toBe('old')
+    wrapper.unmount()
+  })
+
+  it('selects an already loaded target once and replaces an inserted row when pagination reaches it', async () => {
+    const { ctx, browser, wrapper } = setup()
+    browser.open('sessions')
+    ctx.globalSessionPages.value = { alpha: { sessions: [session(10)], hasMore: true } }
+    await nextTick()
+    ctx.openGlobalSession({ workspaceName: 'alpha', sessionKind: 'work', sessionId: 's010' })
+    expect(browser.sessions.value).toHaveLength(1)
+    ctx.openGlobalSession({
+      workspaceName: 'alpha',
+      sessionKind: 'spec_review',
+      sessionId: 's001',
+      intentId: 'intent-1',
+    })
+    expect(ctx.selectSession).toHaveBeenLastCalledWith(
+      'alpha',
+      's001',
+      expect.objectContaining({
+        ownerKind: 'intent',
+        ownerId: 'intent-1',
+        sessionKind: 'spec_review',
+      }),
+    )
+    browser.requestSessions(true, 'alpha')
+    ctx.globalSessionPages.value = { alpha: { sessions: [session(1)], hasMore: false } }
+    await nextTick()
+    expect(browser.sessions.value.filter((r) => r.sessionId === 's001')).toHaveLength(1)
+    expect(browser.sessions.value.at(-1)?.title).toBe('Session 1')
+    wrapper.unmount()
+  })
+
+  it('ignores notification targets outside accessible workspaces', () => {
+    const { ctx, browser, wrapper } = setup()
+    ctx.openGlobalSession({ workspaceName: 'secret', sessionKind: 'work', sessionId: 'hidden' })
+    expect(browser.page.value).toBeNull()
+    expect(ctx.selectSession).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('times out and retries one group without resetting successful groups', async () => {
     vi.useFakeTimers()
     const { ctx, browser, wrapper } = setup()

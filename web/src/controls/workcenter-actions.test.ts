@@ -149,21 +149,15 @@ describe('jumpToSource', () => {
     })
   })
 
-  it.each([
-    ['intent', 'sess-1', 'intentSession'],
-    ['spec', 'spec-1', 'specSession'],
-    ['work', 'work-1', null],
-    ['tool', 'tool-1', null],
-  ])(
-    '%s + intentId → intent detail page with sub-tab %s (never openWorkcenterSession)',
-    (sessionKind, sessionId, subTab) => {
-      const { ctx, openIntents, requestedIntentId, requestedIntentSubTab, openWorkcenterSession } =
-        makeCtx()
-      ctx.jumpToSource(event({ sessionKind, sessionId, intentId: 'intent-1' }))
-      expect(openIntents).toHaveBeenCalledWith(WS)
-      expect(requestedIntentId.value).toBe('intent-1')
-      expect(requestedIntentSubTab.value).toBe(subTab)
-      expect(openWorkcenterSession).not.toHaveBeenCalled()
+  it.each(['intent', 'spec', 'work', 'tool'])(
+    '%s with an owning intent and a real session opens the global session page',
+    (sessionKind) => {
+      const { ctx, openIntents, openWorkcenterSession } = makeCtx()
+      ctx.jumpToSource(event({ sessionKind, sessionId: 'real-session', intentId: 'intent-1' }))
+      expect(openWorkcenterSession).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'real-session' }),
+      )
+      expect(openIntents).not.toHaveBeenCalled()
     },
   )
 
@@ -184,23 +178,12 @@ describe('jumpToSource', () => {
     expect(openWorkcenterSession).not.toHaveBeenCalled()
   })
 
-  it('routing is decided by intentId alone: intentLevel=false with intentId still goes to the intent page', () => {
-    const { ctx, openIntents, requestedIntentId, openWorkcenterSession } = makeCtx()
+  it('intent event without a real session opens its intent detail', () => {
+    const { ctx, openIntents } = makeCtx()
     ctx.jumpToSource(
-      event({ sessionKind: 'work', sessionId: 'work-1', intentId: 'intent-1', intentLevel: false }),
+      event({ sessionKind: 'intent', sessionId: null, intentId: 'i-2', workspaceName: '' }),
     )
     expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('intent-1')
-    expect(openWorkcenterSession).not.toHaveBeenCalled()
-  })
-
-  it('intentId + no workspaceName → intent page in the fallback workspace', () => {
-    const { ctx, openIntents, requestedIntentId } = makeCtx()
-    ctx.jumpToSource(
-      event({ sessionKind: 'spec', sessionId: 'spec-1', intentId: 'i-2', workspaceName: '' }),
-    )
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('i-2')
   })
 
   it('intentLevel without intentId → falls through to openWorkcenterSession', () => {

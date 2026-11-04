@@ -135,9 +135,21 @@ function refresh(): void {
             type="button"
             :disabled="group.loading"
             :aria-label="`${group.workspaceName}: ${t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more')}`"
+            :title="t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more')"
             @click="loadMore(group.workspaceName)"
           >
-            {{ t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more') }}
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path v-if="group.failed" d="M20 7v5h-5M20 12a8 8 0 1 0-2 5" />
+              <path v-else d="m6 9 6 6 6-6" />
+            </svg>
           </button>
         </div>
       </section>
@@ -186,13 +198,11 @@ button:disabled {
 }
 .global-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
   width: 100%;
   text-align: left;
   border-color: transparent;
-  margin-bottom: var(--sp-1);
-  padding: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
 }
 .global-row:hover,
 .global-row.selected {
@@ -216,7 +226,7 @@ p {
   overflow-wrap: anywhere;
 }
 .workspace-group {
-  margin-bottom: var(--sp-4);
+  margin-bottom: var(--sp-2);
 }
 .workspace-title {
   margin: 0;
@@ -229,7 +239,7 @@ p {
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
   border-color: transparent;
   color: inherit;
   font: inherit;
@@ -266,7 +276,27 @@ p {
   background: var(--c-success-text);
 }
 .load-more {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 auto;
+  padding: 4px;
+  border-color: transparent;
+  color: var(--c-text-muted);
+}
+.load-more:hover:not(:disabled) {
+  background: var(--c-card);
+  color: var(--c-text);
+}
+.load-more:focus-visible {
+  outline: 2px solid var(--c-primary-text);
+  outline-offset: 2px;
+}
+.load-more svg {
+  width: 18px;
+  height: 18px;
 }
 @media (max-width: 767px) {
   .global-list {

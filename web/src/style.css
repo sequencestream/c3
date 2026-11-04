@@ -333,7 +333,7 @@ header h1 {
 /* 会话标题行:聊天列(.content)顶部 —— 左侧会话标题 + 右侧权限模式下拉 */
 .session-title-bar {
   flex-shrink: 0;
-  height: 36px;
+  height: 44px;
   padding: 0 var(--sp-4);
   display: flex;
   align-items: center;

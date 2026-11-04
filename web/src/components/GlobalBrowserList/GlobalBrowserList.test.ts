@@ -12,6 +12,30 @@ const rows = ['alpha', 'beta'].flatMap((workspaceName) =>
 )
 
 describe('global grouped list', () => {
+  it('toggles workspace folders independently and preserves loaded rows and selection', async () => {
+    const wrapper = mount(GlobalBrowserList, {
+      props: { title: 'Sessions', rows, activeId: 'alpha-0', activeWorkspace: 'alpha' },
+    })
+    const groups = wrapper.findAll('.workspace-group')
+    const toggle = groups[0].get('.workspace-toggle')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(groups[0].find('.workspace-folder.open').exists()).toBe(true)
+    const openPath = groups[0].get('.workspace-folder').html()
+    await groups[0].get('.load-more').trigger('click')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(groups[0].find('.workspace-folder.open').exists()).toBe(false)
+    expect(groups[0].get('.workspace-folder').html()).not.toBe(openPath)
+    expect(groups[0].find('.workspace-children').exists()).toBe(false)
+    expect(groups[1].findAll('.global-row')).toHaveLength(5)
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.emitted('more')).toBeUndefined()
+    await toggle.trigger('click')
+    expect(groups[0].findAll('.workspace-children .global-row')).toHaveLength(10)
+    expect(groups[0].get('.global-row.selected').text()).toBe('Task 0')
+    expect(groups[0].find('.workspace-folder.open').exists()).toBe(true)
+  })
+
   it('shows five automations per workspace and expands each group independently', async () => {
     const wrapper = mount(GlobalBrowserList, {
       props: { title: 'Automations', rows, activeId: null },

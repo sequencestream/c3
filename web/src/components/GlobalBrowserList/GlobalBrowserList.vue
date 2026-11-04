@@ -24,6 +24,12 @@ const emit = defineEmits<{
 }>()
 const { t } = useTypedI18n()
 const limits = ref<Record<string, number>>({})
+const collapsedWorkspaces = ref(new Set<string>())
+
+function toggleWorkspace(workspaceName: string): void {
+  if (collapsedWorkspaces.value.has(workspaceName)) collapsedWorkspaces.value.delete(workspaceName)
+  else collapsedWorkspaces.value.add(workspaceName)
+}
 const groups = computed(() => {
   const names = [
     ...new Set([...Object.keys(props.paging ?? {}), ...props.rows.map((row) => row.workspaceName)]),
@@ -67,44 +73,73 @@ function refresh(): void {
         :aria-label="group.workspaceName"
         :aria-busy="group.loading"
       >
-        <h3 class="workspace-title">{{ group.workspaceName }}</h3>
-        <button
-          v-for="row in group.rows"
-          :key="row.id"
-          type="button"
-          class="global-row"
-          :class="{
-            selected:
-              activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName),
-          }"
-          :aria-pressed="
-            activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName)
-          "
-          @click="emit('select', row.id, row.workspaceName)"
-        >
-          <span class="row-title"
-            ><span
-              v-if="row.running"
-              class="running-dot"
-              role="img"
-              :title="t('globalBrowser.running')"
-              :aria-label="t('globalBrowser.running')"
-            /><span class="row-label" :title="row.title">{{ row.title }}</span></span
+        <h3 class="workspace-title">
+          <button
+            type="button"
+            class="workspace-toggle"
+            :aria-expanded="!collapsedWorkspaces.has(group.workspaceName)"
+            @click="toggleWorkspace(group.workspaceName)"
           >
-        </button>
-        <p v-if="group.failed" role="alert">{{ t('globalBrowser.failed') }}</p>
-        <p v-else-if="group.loading" role="status">{{ t('globalBrowser.loading') }}</p>
-        <p v-else-if="!group.rows.length">{{ t('globalBrowser.empty') }}</p>
-        <button
-          v-if="group.hasMore || group.failed"
-          class="load-more"
-          type="button"
-          :disabled="group.loading"
-          :aria-label="`${group.workspaceName}: ${t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more')}`"
-          @click="loadMore(group.workspaceName)"
-        >
-          {{ t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more') }}
-        </button>
+            <svg
+              class="workspace-folder"
+              :class="{ open: !collapsedWorkspaces.has(group.workspaceName) }"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 19V5a1 1 0 0 1 1-1h5l2 3h8a1 1 0 0 1 1 1v3" />
+              <path
+                v-if="!collapsedWorkspaces.has(group.workspaceName)"
+                d="M3 19l3-8h16l-3 8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"
+              />
+              <path v-else d="M20 11v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1" />
+            </svg>
+            <span>{{ group.workspaceName }}</span>
+          </button>
+        </h3>
+        <div v-if="!collapsedWorkspaces.has(group.workspaceName)" class="workspace-children">
+          <button
+            v-for="row in group.rows"
+            :key="row.id"
+            type="button"
+            class="global-row"
+            :class="{
+              selected:
+                activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName),
+            }"
+            :aria-pressed="
+              activeId === row.id && (!activeWorkspace || activeWorkspace === row.workspaceName)
+            "
+            @click="emit('select', row.id, row.workspaceName)"
+          >
+            <span class="row-title"
+              ><span
+                v-if="row.running"
+                class="running-dot"
+                role="img"
+                :title="t('globalBrowser.running')"
+                :aria-label="t('globalBrowser.running')"
+              /><span class="row-label" :title="row.title">{{ row.title }}</span></span
+            >
+          </button>
+          <p v-if="group.failed" role="alert">{{ t('globalBrowser.failed') }}</p>
+          <p v-else-if="group.loading" role="status">{{ t('globalBrowser.loading') }}</p>
+          <p v-else-if="!group.rows.length">{{ t('globalBrowser.empty') }}</p>
+          <button
+            v-if="group.hasMore || group.failed"
+            class="load-more"
+            type="button"
+            :disabled="group.loading"
+            :aria-label="`${group.workspaceName}: ${t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more')}`"
+            @click="loadMore(group.workspaceName)"
+          >
+            {{ t(group.failed ? 'globalBrowser.refresh' : 'globalBrowser.more') }}
+          </button>
+        </div>
       </section>
       <p v-if="!groups.length">{{ t('globalBrowser.empty') }}</p>
     </div>
@@ -185,10 +220,38 @@ p {
 }
 .workspace-title {
   margin: 0;
-  padding: var(--sp-3);
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
   overflow-wrap: anywhere;
+}
+.workspace-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-3);
+  border-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.workspace-toggle:hover {
+  background: var(--c-card);
+}
+.workspace-toggle:focus-visible {
+  outline: 2px solid var(--c-primary-text);
+  outline-offset: -2px;
+}
+.workspace-folder {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.workspace-folder.open {
+  color: var(--c-primary-text);
+}
+.workspace-children {
+  margin-inline-start: calc(18px + var(--sp-2));
 }
 .row-label {
   overflow: hidden;

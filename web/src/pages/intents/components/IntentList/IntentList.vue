@@ -52,6 +52,7 @@ const props = defineProps<{
   /** collapsedOverride: hideHeader 模式下由外部控制折叠态。 */
   collapsedOverride?: boolean
   sddEnabled?: boolean
+  specReviewRequired?: boolean
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
 }>()
@@ -256,6 +257,7 @@ function datePrefix(r: Intent): string {
 function automateToneClass(r: Intent): string {
   return `auto-tone-${workflowIconState(r, {
     sddEnabled: props.sddEnabled,
+    specReviewRequired: props.specReviewRequired,
     automation: props.automation,
     gitBranchMode: props.workspaceGitBranchMode,
     mainBranch: props.workspaceMainBranch,

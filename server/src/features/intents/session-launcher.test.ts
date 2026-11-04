@@ -37,6 +37,7 @@ import {
   setLastWorkSession,
   setSpecApproved,
   setSpecPath,
+  markSpecAuthored,
   setSpecReviewSessionId,
   setSpecSessionId,
   updateIntentDeps,
@@ -167,7 +168,11 @@ describe('launchWorkSession', () => {
   })
 
   it('rejects when SDD is enabled and spec is not approved', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const [intent] = insertIntents(proj, [
       { title: 'No approval', shortEnTitle: 'no-approve', content: '', priority: 'P1' },
     ])
@@ -176,7 +181,11 @@ describe('launchWorkSession', () => {
   })
 
   it('rejects a high-impact (L1) intent even when SDD is switched off', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: false,
+    })
     const [intent] = insertIntents(proj, [
       { title: 'High impact', shortEnTitle: 'hi', content: '', priority: 'P1', impactLevel: 'L1' },
     ])
@@ -185,7 +194,11 @@ describe('launchWorkSession', () => {
   })
 
   it('allows a fast-mode intent to start a manual turn without an approved spec', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const [intent] = insertIntents(proj, [
       {
         title: 'Fast dev',
@@ -204,7 +217,11 @@ describe('launchWorkSession', () => {
   it('a fast-mode launch carries an EMPTY systemInstruction (no SDD work contract)', async () => {
     // The SDD work-session instruct is a spec-driven contract; a `fast` intent skips
     // the spec gate by design, so the system channel must stay empty end to end.
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const [intent] = insertIntents(proj, [
       {
         title: 'Fast no instruct',
@@ -231,6 +248,7 @@ describe('launchWorkSession', () => {
     saveWorkspaceSetting(proj, {
       gitBranchMode: 'worktree',
       defaultMainBranch: 'main',
+      specReviewRequired: true,
       sddEnabled: true,
     })
     const [dep, target] = insertIntents(proj, [
@@ -254,6 +272,7 @@ describe('launchWorkSession', () => {
     saveWorkspaceSetting(proj, {
       gitBranchMode: 'worktree',
       defaultMainBranch: 'main',
+      specReviewRequired: true,
       sddEnabled: false,
     })
     const [dep, target] = insertIntents(proj, [
@@ -268,7 +287,11 @@ describe('launchWorkSession', () => {
   })
 
   it('accepts a todo intent and fires launchRun', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: false,
+    })
     const [intent] = insertIntents(proj, [
       { title: 'Valid dev', shortEnTitle: 'valid-dev', content: 'do it', priority: 'P2' },
     ])
@@ -294,7 +317,11 @@ describe('launchWorkSession', () => {
 
 describe('launchWorkSession — attach / resume / fresh', () => {
   beforeEach(() => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: false,
+    })
   })
 
   /** An `in_progress` intent bound to a live runtime for `sessionId`. */
@@ -445,7 +472,11 @@ describe('launchWorkSession — attach / resume / fresh', () => {
     })
 
     it('restarts a no-spec in-progress intent even when SDD is on', async () => {
-      saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+      saveWorkspaceSetting(proj, {
+        gitBranchMode: 'current-branch',
+        specReviewRequired: true,
+        sddEnabled: true,
+      })
       const id = restartTarget('in_progress', 'sess-no-spec-restart')
       const deps = mockDeps()
       const r = asSuccess(
@@ -527,6 +558,7 @@ describe('launchWorkSession — RM-A12 under worktree isolation', () => {
     saveWorkspaceSetting(proj, {
       gitBranchMode: 'worktree',
       defaultMainBranch: '',
+      specReviewRequired: true,
       sddEnabled: false,
     })
   })
@@ -601,7 +633,11 @@ describe('launchWorkSession — RM-A12 under worktree isolation', () => {
   })
 
   it('the OTHER hard gates are untouched: SDD still requires an approved spec', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     inProgressWithSession('Blocker', 'sess-blocker')
     markRunning('sess-blocker')
     const [target] = insertIntents(proj, [
@@ -660,7 +696,11 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
   }
 
   it('refuses to resume after revoke_spec_approval, and fires no turn', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const id = idleInProgress('Revoked', 'sess-revoked')
     setSpecApproved(id, true, 'human')
     expect(revokeSpecApproval(id)).toBe(true)
@@ -677,9 +717,17 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
     // (`raw`, no spec path, no spec session). There is no document whose
     // approval could be asked for, so an EXISTING work session is continued
     // rather than refused over an approval of nothing.
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: false,
+    })
     const id = idleInProgress('Pre SDD', 'sess-pre-sdd')
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
 
     const deps = mockDeps()
     const r = asSuccess(await launchWorkSession(proj, id, deps))
@@ -689,7 +737,11 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
   })
 
   it('still refuses a no-spec continuation once a spec session has been started', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const id = idleInProgress('Spec started', 'sess-spec-started')
     setSpecSessionId(id, 'spec-session-1')
 
@@ -700,7 +752,11 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
   })
 
   it('still refuses a no-spec continuation for a high-impact intent', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: false,
+    })
     const [intent] = insertIntents(proj, [
       {
         title: 'Hi no spec',
@@ -724,6 +780,7 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
     saveWorkspaceSetting(proj, {
       gitBranchMode: 'worktree',
       defaultMainBranch: 'main',
+      specReviewRequired: true,
       sddEnabled: false,
     })
     const [dep] = insertIntents(proj, [
@@ -743,7 +800,11 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
   })
 
   it('still resumes an approved intent on the SAME id with exactly one turn', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const id = idleInProgress('Approved', 'sess-approved')
     setSpecApproved(id, true, 'human')
 
@@ -755,7 +816,11 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
   })
 
   it('attach is untouched: a running turn still attaches after a revoke', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const id = idleInProgress('Running revoked', 'sess-running-revoked')
     setSpecApproved(id, true, 'human')
     revokeSpecApproval(id)
@@ -769,7 +834,11 @@ describe('launchWorkSession — resume runs the same admission gates as fresh', 
   })
 
   it('the manual entry and the MCP entry are refused alike on a revoked spec', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'current-branch',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const id = idleInProgress('Shared gate', 'sess-shared-gate')
     setSpecApproved(id, true, 'human')
     revokeSpecApproval(id)
@@ -1027,6 +1096,7 @@ describe('launchWorkSession — worktree failure guidance', () => {
     saveWorkspaceSetting(proj, {
       gitBranchMode: 'worktree',
       defaultMainBranch: '',
+      specReviewRequired: true,
       sddEnabled: false,
     })
   })
@@ -1110,7 +1180,11 @@ describe('launchWorkSession — worktree failure guidance', () => {
   })
 
   it('sends no guidance for the admission gates ahead of the Git stage', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      specReviewRequired: true,
+      sddEnabled: true,
+    })
     const intent = seedTodo('Unapproved')
     setSpecPath(intent.id, join(dir, 'spec.md'))
 
@@ -1118,5 +1192,28 @@ describe('launchWorkSession — worktree failure guidance', () => {
 
     expect(r.code).toBe('intent.specNotApproved')
     expect(r.guidance).toBeUndefined()
+  })
+})
+
+describe('work admission without spec review', () => {
+  it('starts from a recorded spec with no approval and keeps the approval record empty', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const [r] = insertIntents(proj, [
+      {
+        title: 'Recorded spec',
+        shortEnTitle: 'recorded',
+        content: '',
+        priority: 'P1',
+        impactLevel: 'L1',
+      },
+    ])
+    setSpecPath(r.id, 'spec.md')
+    markSpecAuthored(r.id)
+    const deps = mockDeps()
+    const result = asSuccess(await launchWorkSession(proj, r.id, deps))
+    expect(result.sessionId).toContain(PENDING_SESSION_PREFIX)
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+    expect(getIntent(r.id)?.specApproveUser).toBeNull()
+    expect(getIntent(r.id)?.specStatus).toBe('pending')
   })
 })

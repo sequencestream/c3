@@ -235,6 +235,7 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
     'consensus',
     'sddEnabled',
     'specMachineApprovalEnabled',
+    'specReviewRequired',
     'fastSpecMaxFiles',
     'fastSpecMaxLines',
   ],
@@ -367,6 +368,7 @@ function buildSeed(
     // Machine spec approval is an explicit opt-in: absent reads as OFF, so an
     // existing workspace never gains it by upgrading.
     specMachineApprovalEnabled: config?.specMachineApprovalEnabled === true,
+    specReviewRequired: config?.specReviewRequired === true,
     // Fast-spec thresholds default to the server normalization (3 files / 50
     // lines); an absent value renders as the effective default.
     fastSpecMaxFiles: config?.fastSpecMaxFiles ?? DEFAULT_FAST_SPEC_MAX_FILES,
@@ -887,6 +889,7 @@ function buildTabPayload(
       payload.consensus = deepCopy(src.consensus)
       payload.sddEnabled = src.sddEnabled
       payload.specMachineApprovalEnabled = src.specMachineApprovalEnabled
+      payload.specReviewRequired = src.specReviewRequired
       payload.fastSpecMaxFiles = src.fastSpecMaxFiles
       payload.fastSpecMaxLines = src.fastSpecMaxLines
       break
@@ -1537,10 +1540,18 @@ const parkRecoveryRateText = computed(() => {
           <p v-if="draft.sddEnabled" class="project-config-hint">
             {{ t('workspaceSetting.sdd.specRoot.hint') }}
           </p>
-          <!-- Machine approval: shown only under SDD, default OFF. Turning it on
-               lets a passing review clear the human approval checkpoint; the
-               approval stays revocable and is recorded under a machine identity. -->
           <label v-if="draft.sddEnabled" class="project-config-toggle">
+            <input
+              v-model="draft.specReviewRequired"
+              type="checkbox"
+              data-testid="spec-review-required"
+            />
+            {{ t('workspaceSetting.sdd.reviewRequired.toggle.label') }}
+          </label>
+          <p v-if="draft.sddEnabled" class="project-config-hint">
+            {{ t('workspaceSetting.sdd.reviewRequired.hint') }}
+          </p>
+          <label v-if="draft.sddEnabled && draft.specReviewRequired" class="project-config-toggle">
             <input
               v-model="draft.specMachineApprovalEnabled"
               type="checkbox"
@@ -1548,7 +1559,7 @@ const parkRecoveryRateText = computed(() => {
             />
             {{ t('workspaceSetting.sdd.machineApproval.toggle.label') }}
           </label>
-          <p v-if="draft.sddEnabled" class="project-config-hint">
+          <p v-if="draft.sddEnabled && draft.specReviewRequired" class="project-config-hint">
             {{ t('workspaceSetting.sdd.machineApproval.hint') }}
           </p>
           <!-- Fast-spec thresholds: the upper bounds deciding whether a

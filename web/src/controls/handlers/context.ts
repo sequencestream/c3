@@ -89,6 +89,7 @@ export interface MessageHandlerLocals {
   skillApprovalRequest: AppCtx['skillApprovalRequest']
   intents: AppCtx['intents']
   intentsSdd: AppCtx['intentsSdd']
+  intentsSpecReviewRequired: AppCtx['intentsSpecReviewRequired']
   intentSessions: AppCtx['intentSessions']
   intentSessionRunStates: AppCtx['intentSessionRunStates']
   intentSpecContent: AppCtx['intentSpecContent']
@@ -255,6 +256,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     skillApprovalRequest,
     intents,
     intentsSdd,
+    intentsSpecReviewRequired,
     intentSessions,
     intentSessionRunStates,
     intentSpecContent,
@@ -495,6 +497,7 @@ export function createMessageHandlerLocals(ctx: AppCtx): MessageHandlerLocals {
     skillApprovalRequest,
     intents,
     intentsSdd,
+    intentsSpecReviewRequired,
     intentSessions,
     intentSessionRunStates,
     intentSpecContent,

@@ -29,6 +29,7 @@ const props = defineProps<{
   /** 当前选中的意图 id,透传给 IntentList 做行高亮。 */
   selectedIntentId?: string | null
   sddEnabled?: boolean
+  specReviewRequired?: boolean
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
   createIntentPending?: boolean
@@ -269,6 +270,7 @@ function setFilterFromMenu(value: string): void {
         :intents="intents"
         :automation="automation"
         :sdd-enabled="sddEnabled"
+        :spec-review-required="specReviewRequired"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
         :selected-id="selectedIntentId"

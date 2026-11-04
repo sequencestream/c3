@@ -561,6 +561,7 @@ export type ServerIntents = {
   workspaceName: string
   items: Intent[]
   sddEnabled: boolean
+  specReviewRequired?: boolean
 }
 
 /** Exact result for `create_intent`; the regular `intents` snapshot follows. */

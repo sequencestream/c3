@@ -55,7 +55,7 @@ import {
   type Db,
   type SqlParam,
 } from '../../kernel/infra/db.js'
-import { getSddEnabled } from '../../kernel/config/index.js'
+import { getSddEnabled, getSpecReviewRequired } from '../../kernel/config/index.js'
 import { resolveWorkspaceBaseBranch } from './base-branch.js'
 import { parsePrIdentity } from './pr-identity.js'
 import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
@@ -2519,7 +2519,7 @@ export function markSpecAuthored(id: string): SpecAuthoredOutcome {
     const row = getIntent(id)
     if (row?.specPath) {
       const ws = resolveWorkspaceRoot(row.workspaceName)
-      if (ws) {
+      if (ws && getSpecReviewRequired(ws)) {
         const fp = readSpecFingerprint(ws, row.specPath)
         if (fp) {
           maybePublishSpecAwaitingApproval(id, fp)

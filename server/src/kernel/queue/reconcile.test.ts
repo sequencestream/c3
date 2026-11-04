@@ -81,6 +81,7 @@ function input(over: Partial<QueueReconcileInput> = {}): QueueReconcileInput {
     deliveries: [],
     sddEnabled: false,
     machineApprovalEnabled: false,
+    specReviewRequired: true,
     automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],
@@ -1849,6 +1850,7 @@ describe('reconcileQueue — impact level wiring', () => {
       input({
         sddEnabled: false,
         machineApprovalEnabled: false,
+        specReviewRequired: true,
         intents: [
           intent({
             id: 'A',
@@ -1960,6 +1962,7 @@ describe('reconcileQueue — impact level wiring', () => {
       input({
         sddEnabled: true,
         machineApprovalEnabled: false,
+        specReviewRequired: true,
         intents: [
           intent({ id: 'A', impactLevel: 'L4', effectiveSpecMode: 'fast', specStatus: 'raw' }),
         ],
@@ -1967,5 +1970,71 @@ describe('reconcileQueue — impact level wiring', () => {
     )
     expect(launched(out)).toBe('A')
     expect(out.actions.some((a) => a.kind.startsWith('launch_spec'))).toBe(false)
+  })
+})
+
+describe('reconcileQueue — review disabled', () => {
+  const ready = () =>
+    intent({ id: 'A', specStatus: 'pending', specPath: 'spec.md', specFingerprint: 'fp' })
+  const run = (r: QueueIntentFact, rest: Partial<QueueReconcileInput> = {}) =>
+    reconcileQueue(
+      input({
+        sddEnabled: true,
+        specReviewRequired: false,
+        intents: [r],
+        ...rest,
+      }),
+    )
+  it.each([null, 'L1', 'L2', 'L3'] as const)(
+    'starts authored specs without review or approval (%s)',
+    (impactLevel) => {
+      const out = run({ ...ready(), impactLevel }, { machineApprovalEnabled: true })
+      expect(launched(out)).toBe('A')
+      expect(
+        out.actions.some(
+          (a) => a.kind === 'launch_spec_review' || a.kind === 'machine_approve_spec',
+        ),
+      ).toBe(false)
+    },
+  )
+  it('still authors raw specs and never reviews them', () => {
+    const out = run({ ...ready(), specStatus: 'raw' })
+    expect(out.actions).toContainEqual(
+      expect.objectContaining({ kind: 'launch_spec', rework: false }),
+    )
+    expect(launched(out)).toBeNull()
+  })
+  it('waits for readable content and running authors', () => {
+    expect(launched(run({ ...ready(), specFingerprint: null }))).toBeNull()
+    expect(
+      launched(
+        run(
+          { ...ready(), specSessionId: 'author' },
+          {
+            specRuns: [{ sessionId: 'author', alive: true }],
+          },
+        ),
+      ),
+    ).toBeNull()
+  })
+  it('ignores previous review rejection and human approval revocation', () => {
+    const out = run({
+      ...ready(),
+      specReviewVerdict: 'changes_requested',
+      specReviewReworkRounds: 10,
+      specReviewMachineApprovalBlocked: true,
+    })
+    expect(launched(out)).toBe('A')
+  })
+  it('releases a review-exhausted park when review is disabled', () => {
+    const out = run(ready(), {
+      meta: { A: meta('A', { parked: true, parkReason: 'spec_rework_exhausted' }) },
+    })
+    expect(out.actions).toContainEqual({ kind: 'unpark', intentId: 'A' })
+  })
+  it('requiring review again blocks an unapproved spec', () => {
+    const out = run(ready(), { specReviewRequired: true })
+    expect(launched(out)).toBeNull()
+    expect(out.actions).toContainEqual(expect.objectContaining({ kind: 'launch_spec_review' }))
   })
 })

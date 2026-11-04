@@ -80,6 +80,7 @@ function input(over: Partial<QueueReconcileInput> = {}): QueueReconcileInput {
     deliveries: [],
     sddEnabled: true,
     machineApprovalEnabled: false,
+    specReviewRequired: true,
     automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],

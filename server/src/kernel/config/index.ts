@@ -847,6 +847,7 @@ export function normalizeWorkspaceSetting(
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
     ...(specMachineApprovalEnabled ? { specMachineApprovalEnabled } : {}),
+    ...(rec.specReviewRequired === true ? { specReviewRequired: true } : {}),
     ...(defaultAgentId ? { defaultAgentId } : {}),
     ...roleAgentIds,
     ...(workAgentId ? { workAgentId } : {}),
@@ -1737,13 +1738,12 @@ export function getFastSpecMaxLines(workspacePath: string): number {
   return normalizeFastSpecMaxLines(loadWorkspaceSetting(workspacePath).fastSpecMaxLines)
 }
 
-/**
- * Whether this workspace has explicitly opted in to MACHINE spec approval
- * (default `false`). Only a literal `true` opens the path: an absent, malformed
- * or legacy value reads as off, so upgrading never changes a workspace's approval
- * behaviour behind the user's back. A failed config read likewise yields `false` —
- * the fail-closed direction for a gate whose whole point is human oversight.
- */
+/** Whether authored specs require review before development (default false). */
+export function getSpecReviewRequired(workspacePath: string): boolean {
+  return loadWorkspaceSetting(workspacePath).specReviewRequired === true
+}
+
+/** Machine approval opt-in; only used while spec review is required. */
 export function getSpecMachineApprovalEnabled(workspacePath: string): boolean {
   return loadWorkspaceSetting(workspacePath).specMachineApprovalEnabled === true
 }

@@ -1,32 +1,8 @@
 /**
- * The impact-level → spec-gate policy, as ONE set of pure, side-effect-free
- * judgements.
- *
- * `impactLevel` says how far a change reaches; the spec gate says how hard the
- * change is checked before development starts. Wiring the two together means the
- * widest blast radius is always checked hardest — and never slips past on a
- * workspace default or an automation opt-in:
- *
- * - L1/L2 (high impact): the effective spec mode is FORCED to `sdd`, the spec
- *   must be approved BY A HUMAN before any development turn starts, and the
- *   machine may never approve it — regardless of the workspace SDD switch or the
- *   explicit `fast` override.
- * - L3 / ungraded: keep the existing rule — an explicit mode wins, a `null`
- *   inherits the workspace (`sdd` on, `fast` off). No impact-level override.
- * - L4/L5 (low impact): a `null` mode defaults to `fast` (spec deferred), an
- *   explicit `sdd`/`fast` still wins. The machine-approval opt-in is NOT relaxed
- *   by the grade.
- *
- * Machine eligibility is not "approve now": it only says the grade does not veto
- * a machine approval. The queue still requires a pending spec, a valid `pass`
- * conclusion, a matching fingerprint, and no human veto before it emits one.
- *
- * This lives in `@ccc/shared` next to {@link evaluateDependencyGate} because it
- * has THREE readers that must agree — the queue reconcile kernel (which is a pure
- * function and must not import the features layer), the manual admission gate,
- * and the UI's action/mode projection. One table, one file, no per-reader copy.
- *
- * Data in, verdict out: no I/O, no clock, no store access.
+ * Shared spec policy for queue scheduling, manual admission and UI actions.
+ * High impact forces spec-first; low impact defaults to fast. Review is a
+ * separate workspace opt-in: without it an authored spec is sufficient; with
+ * it approval is required, and high impact requires a human approver.
  */
 import type { IntentImpactLevel, IntentSpecMode, SpecStatus } from './protocol.js'
 import { MACHINE_SPEC_APPROVER } from './protocol.js'
@@ -81,23 +57,16 @@ export interface SpecGateFacts {
   effectiveSpecMode: IntentSpecMode
   sddEnabled: boolean
   specStatus: SpecStatus
+  /** Default false: authored specs may proceed without review or approval. */
+  specReviewRequired?: boolean
   specApproveUser: string | null
 }
 
-/**
- * Whether the spec gate still BLOCKS development (`true`) or admits it (`false`).
- *
- * - `fast` never blocks — the spec is reverse-authored after the turn.
- * - High impact blocks until the spec is `approved` AND approved by a human: a
- *   machine approval is not enough, and this holds even when the workspace has
- *   SDD switched off (a high-impact change cannot dodge the checkpoint by
- *   turning the workspace default off).
- * - Otherwise an `sdd` intent blocks while `sddEnabled` and the spec is not yet
- *   `approved`; an explicit `sdd` in a workspace with SDD off does NOT start a
- *   spec stage (that workspace keeps its spec-less behaviour).
- */
+/** Whether spec authoring or required approval still blocks development. */
 export function specGateBlocks(facts: SpecGateFacts): boolean {
   if (facts.effectiveSpecMode === 'fast') return false
+  if (!isHighImpactLevel(facts.impactLevel) && !facts.sddEnabled) return false
+  if (facts.specReviewRequired !== true) return facts.specStatus === 'raw'
   if (isHighImpactLevel(facts.impactLevel)) {
     return !(facts.specStatus === 'approved' && isHumanSpecApprover(facts.specApproveUser))
   }

@@ -18,7 +18,7 @@
 import type { WorkflowStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
 import { resolve } from 'node:path'
 import { pathToName } from '../state.js'
-import { getSddEnabled } from '../kernel/config/index.js'
+import { getSddEnabled, getSpecReviewRequired } from '../kernel/config/index.js'
 import type { Broadcaster } from '../transport/index.js'
 import type { SessionAccessor } from '../kernel/agent/session/accessor.js'
 import { listSessionsVia } from '../kernel/agent/session/list-sessions.js'
@@ -145,6 +145,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
       workspaceName: pathToName(proj)!,
       items,
       sddEnabled: getSddEnabled(proj),
+      specReviewRequired: getSpecReviewRequired(proj),
     })
   }
 

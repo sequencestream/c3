@@ -392,36 +392,37 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         wakeAt: null,
       }
     }
-    // The spec gate reads the STATUS (and, for high impact, the approver
-    // identity): `raw` (still being authored) and `pending` (authored,
-    // unapproved) both fail it, and the spec phase below says which of the two an
-    // intent is actually in. A high-impact intent must be approved BY A HUMAN —
-    // a machine approval is not enough — and this holds even under a switched-off
-    // workspace, so a L1/L2 change cannot dodge the checkpoint by turning SDD off.
-    //
-    // The ONE relaxation is per-intent `fast` mode, mirroring the manual
-    // admission gate verbatim: a fast intent does not write its spec up front, so
-    // waiting for an approved one would wedge it here forever and the queue would
-    // disagree with the button on the same facts. It is only the spec gate that
-    // opens — delivery writability, delivery ambiguity, dependencies, concurrency,
-    // backoff and park all still apply below, and the spec phase never picks a
-    // fast intent up (it only sees `blocked_spec_not_approved` ones), so
-    // automation never authors a spec for it either.
+    // Use the shared admission policy. Without review, wait for authoring to
+    // settle and for the recorded spec to be readable before starting work.
     if (
       specGateBlocks({
         impactLevel: intent.impactLevel,
         effectiveSpecMode: intent.effectiveSpecMode,
         sddEnabled,
+        specReviewRequired: input.specReviewRequired,
         specStatus: intent.specStatus,
         specApproveUser: intent.specApproveUser,
-      })
+      }) ||
+      (input.specReviewRequired !== true &&
+        intent.effectiveSpecMode === 'sdd' &&
+        (sddEnabled || isHighImpactLevel(intent.impactLevel)) &&
+        (intent.specPath === null ||
+          intent.specFingerprint === null ||
+          input.specInFlight.includes(intent.id) ||
+          input.specRuns.some(
+            (r) =>
+              r.alive &&
+              (r.sessionId === intent.specSessionId || r.sessionId === intent.specReviewSessionId),
+          )))
     ) {
       return {
         eligible: false,
         reason: 'blocked_spec_not_approved',
         detail: isHighImpactLevel(intent.impactLevel)
           ? '高影响改动需人工批准的 spec'
-          : 'SDD 已开启但 spec 未批准',
+          : input.specReviewRequired === true
+            ? 'SDD 已开启但 spec 未批准'
+            : '等待 spec 撰写完成',
         wakeAt: null,
       }
     }
@@ -524,17 +525,30 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   // a scheduling fact THIS pass acts on. It yields exactly one `unpark` action
   // and one `action='unpark'` decision, and is not evaluated further — the next
   // pass re-runs every gate from scratch. A dependency still outstanding keeps
-  // `blocked_parked`; a park a human owns (permission wait, spec-rework cap,
-  // human ruling) is never auto-recovered, whatever the dependencies say.
+  // `blocked_parked`. Disabling spec review also releases a rework-cap park;
+  // unrelated human-owned parks remain untouched.
   const autoUnparked = new Set<string>()
   for (const intent of candidates) {
     const m = metaOf(intent.id)
-    if (!m.parked || m.parkReason === null || !AUTO_RECOVERABLE_PARK_REASONS.has(m.parkReason)) {
+    const reviewDisabled =
+      input.specReviewRequired !== true && m.parkReason === 'spec_rework_exhausted'
+    if (
+      !m.parked ||
+      m.parkReason === null ||
+      (!reviewDisabled && !AUTO_RECOVERABLE_PARK_REASONS.has(m.parkReason))
+    ) {
       continue
     }
-    if (!depsSatisfied(intent)) continue
+    if (!reviewDisabled && !depsSatisfied(intent)) continue
     actions.push({ kind: 'unpark', intentId: intent.id })
-    pushDecision(intent, 'unpark', 'auto_unpark', '失败阶梯类 park 的依赖已全部满足,自动解除 park')
+    pushDecision(
+      intent,
+      'unpark',
+      'auto_unpark',
+      reviewDisabled
+        ? '工作区无需规格审核,解除规格返工挂起'
+        : '失败阶梯类 park 的依赖已全部满足,自动解除 park',
+    )
     autoUnparked.add(intent.id)
   }
 
@@ -596,6 +610,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         alive: (id: string | null) => !!id && specAlive.get(id) === true,
         inFlight: specInFlight.has(intent.id),
         machineApprovalEnabled: input.machineApprovalEnabled,
+        specReviewRequired: input.specReviewRequired === true,
       })
       if (verdict.needsSlot && slotTaken) {
         specVerdictOf.set(intent.id, {
@@ -1146,6 +1161,7 @@ function evaluateSpecPhase(
     alive: (sessionId: string | null) => boolean
     inFlight: boolean
     machineApprovalEnabled: boolean
+    specReviewRequired: boolean
   },
 ): SpecVerdict {
   const wait = (
@@ -1223,6 +1239,8 @@ function evaluateSpecPhase(
   if (intent.specFingerprint === null) {
     return block('spec_unreadable', 'spec 文件当前不可读,本轮不做审核')
   }
+
+  if (!ctx.specReviewRequired) return wait('spec_authoring', 'spec 已记录,等待下一轮调度开发')
 
   const conclusionValid =
     intent.specReviewVerdict !== null && intent.specReviewFingerprint === intent.specFingerprint

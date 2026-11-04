@@ -245,7 +245,7 @@ export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_
   })
 }
 
-export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_ctx, conn, msg) => {
+export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (ctx, conn, msg) => {
   // Workspace configuration is admin-only too (ADR-0023 authz; full coverage).
   if (!requireAdmin(conn)) return
   const proj = resolveWorkspaceRoot(msg.workspaceName)
@@ -281,6 +281,7 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
   // directory value the client may have sent in `msg.config` is dropped by
   // `normalizeWorkspaceSetting` (no such field), so the save cannot change it.
   const config = saveWorkspaceSetting(proj, msg.config)
+  ctx.broadcastIntents(proj)
   conn.send({
     type: 'workspace_setting',
     workspaceName: pathToName(proj)!,

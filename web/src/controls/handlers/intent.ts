@@ -82,6 +82,7 @@ export function buildIntentHandlers(
     skillApprovalRequest,
     intents,
     intentsSdd,
+    intentsSpecReviewRequired,
     intentSessions,
     intentSessionRunStates,
     intentSpecContent,
@@ -175,6 +176,10 @@ export function buildIntentHandlers(
   return {
     intents: (_ctx, msg) => {
       intents.value = { ...intents.value, [msg.workspaceName]: msg.items }
+      intentsSpecReviewRequired.value = {
+        ...intentsSpecReviewRequired.value,
+        [msg.workspaceName]: msg.specReviewRequired === true,
+      }
       intentsSdd.value = { ...intentsSdd.value, [msg.workspaceName]: msg.sddEnabled }
       // Success terminal for the startup overlay: the target intent flipping to
       // `in_progress` (via the resident `run:bound` subscription) means the dev

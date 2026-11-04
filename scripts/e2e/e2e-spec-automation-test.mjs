@@ -11,8 +11,7 @@
  *
  *   1. opt-in OFF  → author → review → the intent STOPS at "awaiting approval".
  *                    `spec_approved` must never become true, whatever the
- *                    reviewer concluded. This is the default every existing
- *                    workspace migrates to, so it is the load-bearing assertion.
+ *                    reviewer concluded. Review is explicitly required for this scenario.
  *   2. opt-in ON   → the same passing conclusion is approved by the queue with no
  *                    human click, recorded under the reserved machine identity
  *                    (never a login subject), and the intent leaves the gate.
@@ -155,12 +154,11 @@ ws.addEventListener('message', (evt) => {
         return
       }
       phase = 'configure-sdd'
-      // SDD on, machine approval explicitly OFF — the default every migrated
-      // workspace lands on, and phase 1's precondition.
+      // Require review with machine approval OFF for phase 1.
       send({
         type: 'save_workspace_setting',
         workspaceName,
-        config: { sddEnabled: true, specMachineApprovalEnabled: false },
+        config: { sddEnabled: true, specReviewRequired: true, specMachineApprovalEnabled: false },
       })
       break
     }
@@ -299,7 +297,12 @@ async function runAssertions() {
   send({
     type: 'save_workspace_setting',
     workspaceName,
-    config: { ...workspaceConfig, sddEnabled: true, specMachineApprovalEnabled: true },
+    config: {
+      ...workspaceConfig,
+      sddEnabled: true,
+      specReviewRequired: true,
+      specMachineApprovalEnabled: true,
+    },
   })
   console.log('[e2e] machine approval opted in; waiting for the queue to approve…')
   await waitFor(() => target()?.specApproved === true, 'the queue approved the spec itself', 60)

@@ -55,6 +55,7 @@ const props = defineProps<{
   requestedIntentId?: string | null
   /** 当前 workspace SDD 总开关,透传给 IntentDetail 的四态主按钮。 */
   sddEnabled?: boolean
+  specReviewRequired?: boolean
   intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
   workspaceMainBranch?: string | null
@@ -424,6 +425,7 @@ defineExpose({
         :intents="intents"
         :automation="automation"
         :sdd-enabled="sddEnabled"
+        :spec-review-required="specReviewRequired"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
         :create-intent-pending="createIntentPending"
@@ -449,6 +451,7 @@ defineExpose({
         :intent-action-error-seq="intentActionErrorSeq"
         :intent-pr-sync="intentPrSync"
         :sdd-enabled="sddEnabled"
+        :spec-review-required="specReviewRequired"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
         :deliveries="deliveries"

@@ -60,6 +60,7 @@ import {
   getGitBranchMode,
   getSddEnabled,
   getSpecMachineApprovalEnabled,
+  getSpecReviewRequired,
 } from '../../kernel/config/index.js'
 import {
   errText,
@@ -155,6 +156,7 @@ export function pickNext(workspacePath: string): Intent | null {
     defaultMainBranch: getDefaultMainBranch(workspacePath) ?? null,
     deliveries: deliveryGateFacts(workspacePath),
     sddEnabled,
+    specReviewRequired: getSpecReviewRequired(workspacePath),
     // A probe answers "which intent would be DEVELOPED next", so it deliberately
     // reports the world as if no spec phase were running: it reads no spec
     // liveness and never lets the machine-approval path colour the answer.
@@ -328,6 +330,7 @@ class QueueController {
       defaultMainBranch: getDefaultMainBranch(this.workspacePath) ?? null,
       deliveries: deliveryGateFacts(this.workspacePath),
       sddEnabled,
+      specReviewRequired: getSpecReviewRequired(this.workspacePath),
       // Read fresh every pass: turning the opt-in off must take effect on the very
       // next tick, without restarting the queue.
       machineApprovalEnabled: getSpecMachineApprovalEnabled(this.workspacePath),

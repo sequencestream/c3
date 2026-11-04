@@ -227,6 +227,7 @@ describe('两条路径结论一致', () => {
       deliveries: [],
       sddEnabled: false,
       machineApprovalEnabled: false,
+      specReviewRequired: true,
       automationConcurrency: 1,
       specRuns: [],
       specInFlight: [],

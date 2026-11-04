@@ -22,6 +22,7 @@ function derive(
     },
     sddEnabled,
     branchMode,
+    true,
   )
 }
 

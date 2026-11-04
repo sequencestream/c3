@@ -73,6 +73,7 @@ function mountDetail(
     intents?: Intent[]
     intentActionErrorSeq?: number
     sddEnabled?: boolean
+    specReviewRequired?: boolean
     workspaceMainBranch?: string | null
     workspaceGitBranchMode?: 'worktree' | 'current-branch'
     intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
@@ -95,6 +96,7 @@ function mountDetail(
       intents: opts.intents ?? (current ? [current] : []),
       intentActionErrorSeq: opts.intentActionErrorSeq ?? 0,
       sddEnabled: opts.sddEnabled ?? false,
+      specReviewRequired: opts.specReviewRequired ?? true,
       workspaceMainBranch: opts.workspaceMainBranch ?? null,
       workspaceGitBranchMode: opts.workspaceGitBranchMode,
       intentPrSync: opts.intentPrSync,
@@ -2305,5 +2307,15 @@ describe('IntentDetail.vue — restart work session', () => {
     expect(w.emitted('restart-work-session')).toEqual([['i1', 'PICK UP FROM HERE']])
     // The dialog closes on confirm.
     expect(w.find('[data-testid="reset-overlay"]').exists()).toBe(false)
+  })
+})
+
+describe('IntentDetail — review disabled', () => {
+  it('offers Start Work for a recorded spec without requiring approval', () => {
+    const w = mountDetail(
+      intent({ id: 'i1', specPath: 'spec.md', specStatus: 'pending', impactLevel: 'L1' }),
+      { sddEnabled: true, specReviewRequired: false },
+    )
+    expect(w.find('.req-btn.primary').attributes('data-action')).toBe('startDev')
   })
 })

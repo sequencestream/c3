@@ -26,6 +26,7 @@ import {
   getDevSkill,
   getGitBranchMode,
   getSddEnabled,
+  getSpecReviewRequired,
 } from '../../kernel/config/index.js'
 import { setSessionAgent } from '../../kernel/agent-config/index.js'
 import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
@@ -255,25 +256,9 @@ function checkWorkAdmission(
   deps: SessionLaunchDeps,
   gate: { deliveryId: string | null; force?: boolean; actor?: string | null },
 ): SessionLaunchResult | null {
-  // SDD quality gate — server-side, forced. The authoritative condition is the
-  // spec STATUS (and, for high impact, the approver identity): the compatibility
-  // boolean is never consulted here, so it can never become a second way in when
-  // the two disagree. A high-impact (L1/L2) intent must be approved BY A HUMAN,
-  // and this holds even when the workspace has SDD switched off — the grade
-  // cannot be dodged by turning the workspace default off.
-  //
-  // The ONE relaxation is per-intent `fast` mode: a fast intent may start a
-  // MANUAL work turn without an approved spec — the spec is reverse-authored
-  // from the turn's diff after it settles. Everything else below stays closed,
-  // and the automation queue still requires `approved` regardless of mode.
-  //
-  // A second, narrower relaxation covers an intent that NEVER STARTED a spec and
-  // already has a work session: there is no document whose approval could be
-  // asked for, and a continuation (restart / resume) must not be refused over an
-  // approval of nothing. It is deliberately limited to a bound work session and a
-  // never-touched spec, so a fresh intent is still routed through spec authoring,
-  // and a revoked approval (`pending`) still blocks. High impact is never exempt
-  // — a missing spec is exactly what that grade's forced checkpoint stops.
+  // Spec-first requires an authored document. Review and approval are a
+  // separate workspace opt-in, shared with queue scheduling and UI actions.
+  // A spec-less continuation stays exempt except for high-impact work.
   const specNeverStarted = intent.specStatus === 'raw' && !intent.specPath && !intent.specSessionId
   const exemptSpecLessContinuation =
     specNeverStarted && !!intent.lastWorkSessionId && !isHighImpactLevel(intent.impactLevel)
@@ -283,6 +268,7 @@ function checkWorkAdmission(
       impactLevel: intent.impactLevel,
       effectiveSpecMode: intent.effectiveSpecMode,
       sddEnabled: getSddEnabled(workspacePath),
+      specReviewRequired: getSpecReviewRequired(workspacePath),
       specStatus: intent.specStatus,
       specApproveUser: intent.specApproveUser,
     })

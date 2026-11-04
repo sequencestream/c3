@@ -3716,7 +3716,7 @@
       "title": {
         "label": "Spec-driven development"
       },
-      "hint": "When enabled, development tasks in this workspace go through a spec quality gate with human approval checkpoints before coding starts.",
+      "hint": "When enabled, spec-first intents record a spec before development. Review and approval are optional below.",
       "toggle": {
         "label": "Enable spec-driven development"
       },
@@ -3748,6 +3748,12 @@
           },
           "hint": "Upper bound on changed lines (additions + deletions) a fast-mode intent may produce in one manual turn. A binary change always counts as over."
         }
+      },
+      "reviewRequired": {
+        "toggle": {
+          "label": "Require spec review"
+        },
+        "hint": "Off by default. Development starts automatically once the spec is recorded. Enable to require review and approval."
       }
     },
     "automation": {

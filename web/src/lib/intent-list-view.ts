@@ -13,7 +13,7 @@ import type {
   IntentRunStatus,
   IntentStatus,
 } from '@ccc/shared/protocol'
-import { activeIntentPrs, deriveIntentPrAggregate } from '@ccc/shared'
+import { activeIntentPrs, deriveIntentPrAggregate, specGateBlocks } from '@ccc/shared'
 import { DATE_FORMATS, type DateStyleName } from './datetime-formats'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
@@ -199,6 +199,7 @@ export type WorkflowIconState = 'idle' | 'eligible' | 'running' | 'done'
 
 export interface WorkflowIconStateOptions {
   sddEnabled?: boolean
+  specReviewRequired?: boolean
   automation?: WorkflowStatus | null
   gitBranchMode?: 'worktree' | 'current-branch'
   mainBranch?: string | null
@@ -219,8 +220,14 @@ export function workflowIconState(
   const eligible =
     intent.automate &&
     (intent.status === 'todo' || intent.status === 'in_progress') &&
-    // SDD 下的准入条件是 spec 状态本身(approved),不看兼容布尔,与服务端闸门同源。
-    (!opts.sddEnabled || intent.specStatus === 'approved') &&
+    !specGateBlocks({
+      impactLevel: intent.impactLevel,
+      effectiveSpecMode: intent.effectiveSpecMode,
+      sddEnabled: opts.sddEnabled === true,
+      specReviewRequired: opts.specReviewRequired,
+      specStatus: intent.specStatus,
+      specApproveUser: intent.specApproveUser,
+    }) &&
     !hasDependencyBlockingSpecSession(intent, opts.intents, opts.gitBranchMode, opts.mainBranch)
   return eligible ? 'eligible' : 'idle'
 }

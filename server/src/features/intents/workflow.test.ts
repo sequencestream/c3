@@ -98,6 +98,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMode: vi.fn(),
   getGitBranchMode: vi.fn(),
   getSddEnabled: vi.fn(() => false),
+  getSpecReviewRequired: vi.fn(() => true),
   getSpecMachineApprovalEnabled: vi.fn(() => false),
   getAutomationConcurrency: vi.fn(() => 2),
 }))

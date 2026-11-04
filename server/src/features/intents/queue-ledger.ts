@@ -11,8 +11,14 @@
  * touches an intent's status or decides anything. It only reads the world and
  * records verdicts.
  */
+import { getSpecReviewRequired } from '../../kernel/config/index.js'
 import type { Intent } from '@ccc/shared/protocol'
-import { activeIntentPrs, deriveIntentPrAggregate, specGateBlocks } from '@ccc/shared'
+import {
+  activeIntentPrs,
+  deriveIntentPrAggregate,
+  isHighImpactLevel,
+  specGateBlocks,
+} from '@ccc/shared'
 import type {
   QueueIntentFact,
   QueueRelayRunFact,
@@ -64,6 +70,7 @@ export function toFact(
     impactLevel: r.impactLevel,
     effectiveSpecMode: r.effectiveSpecMode,
     sddEnabled,
+    specReviewRequired: getSpecReviewRequired(workspacePath),
     specStatus: r.specStatus,
     specApproveUser: r.specApproveUser,
   })
@@ -104,10 +111,12 @@ export function toFact(
     specPath: r.specPath,
     specSessionId: r.specSessionId,
     specReviewSessionId: r.specReviewSessionId,
-    // Only intents the spec gate holds back pay the per-intent file read: `fast`
-    // and spec-less-workspace intents never enter the spec phase and never need
-    // their content probed.
-    specFingerprint: gateBlocked ? readSpecFingerprint(workspacePath, r.specPath) : null,
+    // Spec-first work needs readable content even when review is disabled.
+    specFingerprint:
+      gateBlocked ||
+      (r.effectiveSpecMode === 'sdd' && (sddEnabled || isHighImpactLevel(r.impactLevel)))
+        ? readSpecFingerprint(workspacePath, r.specPath)
+        : null,
     specReviewVerdict: r.specReviewVerdict,
     specReviewFingerprint: r.specReviewFingerprint,
     specReviewReworkRounds: r.specReviewReworkRounds,

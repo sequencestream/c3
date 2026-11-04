@@ -21,6 +21,7 @@ vi.mock('./store.js', () => ({
 
 vi.mock('../../kernel/config/index.js', () => ({
   getSpecMachineApprovalEnabled: vi.fn(() => true),
+  getSpecReviewRequired: vi.fn(() => true),
 }))
 
 // The spec family's own agent resolver: a refused launch must name the spec agent,
@@ -59,7 +60,7 @@ import { launchSpecReviewSession, launchSpecSession } from './session-launcher.j
 import { readSpecFingerprint } from './spec-review.js'
 import { applySpecApproval } from './spec.js'
 import { recordFailure, recordSuccess } from './queue-outcome-actions.js'
-import { getSpecMachineApprovalEnabled } from '../../kernel/config/index.js'
+import { getSpecMachineApprovalEnabled, getSpecReviewRequired } from '../../kernel/config/index.js'
 
 const WS = '/test/spec-ws'
 
@@ -119,6 +120,7 @@ function makeCtx(): { ctx: QueueActionContext; hooks: WorkflowHooks; requestPass
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(getSpecReviewRequired).mockReturnValue(true)
   vi.mocked(getSpecMachineApprovalEnabled).mockReturnValue(true)
 })
 
@@ -431,4 +433,17 @@ describe('executeMachineApproveSpec — a conditional write, not a trusted one',
     expect(recordFailure).not.toHaveBeenCalled()
     expect(requestPass).toHaveBeenCalledTimes(1)
   })
+})
+
+it('does not execute a stale review action after review is switched off', async () => {
+  vi.mocked(getSpecReviewRequired).mockReturnValue(false)
+  const { ctx, requestPass } = makeCtx()
+  await runSpecPhase(
+    ctx,
+    { kind: 'launch_spec_review', intentId: 'A', origin: 'queue-kernel', fingerprint: 'fp' },
+    makeIntent({ id: 'A' }),
+  )
+  expect(launchSpecReviewSession).not.toHaveBeenCalled()
+  expect(requestPass).toHaveBeenCalled()
+  expect(recordFailure).not.toHaveBeenCalled()
 })

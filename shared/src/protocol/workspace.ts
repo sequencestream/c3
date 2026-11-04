@@ -213,15 +213,13 @@ export interface WorkspaceSetting {
    */
   sddEnabled?: boolean
   /**
-   * Explicit, persisted **opt-in** for machine spec approval (2026-07-31). When
-   * `true` AND {@link sddEnabled} is on, a `pass` review conclusion lets the queue
-   * approve the spec itself, writing {@link MACHINE_SPEC_APPROVER} as the approver.
-   * Absent / non-boolean ⇒ `false` — only an explicit `true` opens this path, so a
-   * migrated workspace never changes behaviour silently and a `pass` conclusion
-   * still stops at the human approval checkpoint. Turning it back off never
-   * revokes an already-approved spec and never affects human approval.
+   * Explicit opt-in for machine approval of passing reviews. Effective only
+   * when specReviewRequired is true; high impact still requires a human.
+   * Turning it off never revokes an existing approval. Default false.
    */
   specMachineApprovalEnabled?: boolean
+  /** Require review and approval after spec authoring. Absent ⇒ false. */
+  specReviewRequired?: boolean
   /**
    * Upper bound on the number of distinct changed files a `fast`-mode intent may
    * produce in one manual turn and still be treated as a small change. Strictly

@@ -216,6 +216,10 @@ export function buildWorkspaceHandlers(
       }
     },
     workspace_setting: (_ctx, msg) => {
+      ctx.intentsSpecReviewRequired.value = {
+        ...ctx.intentsSpecReviewRequired.value,
+        [msg.workspaceName]: msg.config.specReviewRequired === true,
+      }
       currentWorkspaceSetting.value = msg.config
       detectedMainBranch.value = msg.detectedMainBranch ?? null
       resolvedSpecRoot.value = msg.resolvedSpecRoot ?? null

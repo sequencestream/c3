@@ -56,6 +56,7 @@ function makeCtx() {
   const createIntentDialogOpen = ref(false)
   const awaitingIntentSessionBindId = ref<string | null>(null)
   const intents = ref<Record<string, unknown[]>>({})
+  const intentsSpecReviewRequired = ref<Record<string, boolean>>({})
   const intentsSdd = ref<Record<string, boolean>>({})
   const dispatchDevLaunch = vi.fn()
   const consumePendingWorkSessionSelect = vi.fn()
@@ -257,6 +258,7 @@ function makeCtx() {
     awaitingIntentSessionBindId,
     intents,
     intentsSdd,
+    intentsSpecReviewRequired,
     dispatchDevLaunch,
     consumePendingWorkSessionSelect,
     intentsProject,
@@ -350,6 +352,7 @@ function makeCtx() {
     awaitingIntentSessionBindId,
     intents,
     intentsSdd,
+    intentsSpecReviewRequired,
     dispatchDevLaunch,
     consumePendingWorkSessionSelect,
     intentsProject,

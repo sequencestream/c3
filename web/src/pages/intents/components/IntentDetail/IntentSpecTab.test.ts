@@ -85,6 +85,7 @@ function mountSpec(
   return mount(IntentSpecTab, {
     props: {
       intent: current,
+      specReviewRequired: true,
       intentSpecContent: opts.intentSpecContent ?? '# spec source',
       intentSpecLoading: opts.intentSpecLoading ?? false,
       specSessionRunning: opts.specSessionRunning ?? false,

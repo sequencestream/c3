@@ -23,7 +23,7 @@ import type { Intent } from '@ccc/shared/protocol'
 import { MACHINE_SPEC_APPROVER } from '@ccc/shared/protocol'
 import { machineApprovalEligible, type GenericEvent } from '@ccc/shared'
 import type { QueueAction } from '../../kernel/queue/index.js'
-import { getSpecMachineApprovalEnabled } from '../../kernel/config/index.js'
+import { getSpecMachineApprovalEnabled, getSpecReviewRequired } from '../../kernel/config/index.js'
 import {
   UNKNOWN_AGENT_IDENTITY,
   agentLogIdentity,
@@ -83,6 +83,13 @@ export async function runSpecPhase(
   action: Extract<QueueAction, { kind: 'launch_spec' | 'launch_spec_review' }>,
   req: Intent,
 ): Promise<void> {
+  if (
+    (action.kind === 'launch_spec_review' || action.rework) &&
+    !getSpecReviewRequired(ctx.workspacePath)
+  ) {
+    ctx.requestPass()
+    return
+  }
   const deps = {
     launchRun: ctx.hooks.launchSpecRun,
     broadcastIntents: ctx.hooks.broadcastIntents,
@@ -141,7 +148,10 @@ export function executeMachineApproveSpec(
   // upgraded to L1/L2, since the snapshot revokes eligibility here. The store
   // guard below re-reads the grade again inside the transaction, so this is belt-
   // and-braces, not the last word.
-  if (!machineApprovalEligible(req.impactLevel, getSpecMachineApprovalEnabled(ctx.workspacePath))) {
+  if (
+    !getSpecReviewRequired(ctx.workspacePath) ||
+    !machineApprovalEligible(req.impactLevel, getSpecMachineApprovalEnabled(ctx.workspacePath))
+  ) {
     console.log(`[c3:queue]「${req.title}」机器批准资格已不满足,本轮不批准`)
     ctx.requestPass()
     return

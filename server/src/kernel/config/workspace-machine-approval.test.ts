@@ -92,3 +92,18 @@ describe('machine spec-approval persistence (saveWorkspaceSetting → loadWorksp
     expect('specMachineApprovalEnabled' in (storedEntry() ?? {})).toBe(false)
   })
 })
+
+describe('spec review requirement persistence', () => {
+  it('defaults off, accepts only true and survives a cold reload', () => {
+    for (const raw of [undefined, false, 'true', 1, null]) {
+      saveWorkspaceSetting(TEST_PROJ, { specReviewRequired: raw } as WorkspaceSetting)
+      expect(loadWorkspaceSetting(TEST_PROJ).specReviewRequired).toBeUndefined()
+    }
+    saveWorkspaceSetting(TEST_PROJ, { specReviewRequired: true })
+    resetSettingsCacheForTests()
+    expect(loadWorkspaceSetting(TEST_PROJ).specReviewRequired).toBe(true)
+    expect(storedEntry()?.specReviewRequired).toBe(true)
+    saveWorkspaceSetting(TEST_PROJ, { specReviewRequired: false })
+    expect(loadWorkspaceSetting(TEST_PROJ).specReviewRequired).toBeUndefined()
+  })
+})

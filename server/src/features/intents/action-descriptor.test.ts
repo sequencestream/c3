@@ -29,6 +29,7 @@ const branchMode = vi.fn<(workspacePath: string) => 'worktree' | 'current-branch
 const mainBranch = vi.fn<(workspacePath: string) => string | undefined>()
 vi.mock('../../kernel/config/index.js', () => ({
   getSddEnabled: (workspacePath: string) => sddOn(workspacePath),
+  getSpecReviewRequired: () => true,
   getGitBranchMode: (workspacePath: string) => branchMode(workspacePath),
   getDefaultMainBranch: (workspacePath: string) => mainBranch(workspacePath),
 }))

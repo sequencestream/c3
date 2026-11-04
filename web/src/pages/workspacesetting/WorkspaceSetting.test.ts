@@ -663,17 +663,19 @@ describe('WorkspaceSetting.vue — machine spec approval opt-in', () => {
   const BOX = '[data-testid="spec-machine-approval-enabled"]'
 
   it('defaults the toggle to unchecked when the field is absent (opt-in)', () => {
-    const w = mountWs(cfg({ sddEnabled: true }))
+    const w = mountWs(cfg({ sddEnabled: true, specReviewRequired: true }))
     expect((w.find(BOX).element as HTMLInputElement).checked).toBe(false)
   })
 
   it('seeds the toggle checked from a persisted true', () => {
-    const w = mountWs(cfg({ sddEnabled: true, specMachineApprovalEnabled: true }))
+    const w = mountWs(
+      cfg({ sddEnabled: true, specReviewRequired: true, specMachineApprovalEnabled: true }),
+    )
     expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
   })
 
   it('carries an explicit true into the collab save payload after checking', async () => {
-    const w = mountWs(cfg({ sddEnabled: true }))
+    const w = mountWs(cfg({ sddEnabled: true, specReviewRequired: true }))
     await w.find(BOX).setValue(true)
     await w.find(SAVE.collab).trigger('click')
     const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
@@ -681,12 +683,16 @@ describe('WorkspaceSetting.vue — machine spec approval opt-in', () => {
   })
 
   it('stays checked after the server echoes the normalized true back', async () => {
-    const w = mountWs(cfg({ sddEnabled: true }))
+    const w = mountWs(cfg({ sddEnabled: true, specReviewRequired: true }))
     await w.find(BOX).setValue(true)
     await w.find(SAVE.collab).trigger('click')
     // Server echo: the normalized config now carries the opt-in true.
     await w.setProps({
-      workspaceSetting: cfg({ sddEnabled: true, specMachineApprovalEnabled: true }),
+      workspaceSetting: cfg({
+        sddEnabled: true,
+        specReviewRequired: true,
+        specMachineApprovalEnabled: true,
+      }),
     })
     expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
   })
@@ -695,22 +701,32 @@ describe('WorkspaceSetting.vue — machine spec approval opt-in', () => {
     // The load reply carries detectedMainBranch; the save reply does NOT (known
     // asymmetry). The branch-probe prop flipping to null must not disturb the
     // machine-approval checkbox the user just saved on.
-    const w = mountWs(cfg({ sddEnabled: true }), { detectedMainBranch: 'main' })
+    const w = mountWs(cfg({ sddEnabled: true, specReviewRequired: true }), {
+      detectedMainBranch: 'main',
+    })
     await w.find(BOX).setValue(true)
     await w.find(SAVE.collab).trigger('click')
     await w.setProps({
-      workspaceSetting: cfg({ sddEnabled: true, specMachineApprovalEnabled: true }),
+      workspaceSetting: cfg({
+        sddEnabled: true,
+        specReviewRequired: true,
+        specMachineApprovalEnabled: true,
+      }),
       detectedMainBranch: null,
     })
     expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
   })
 
   it('reopening the panel re-seeds the toggle from the persisted true', async () => {
-    const w = mountWs(cfg({ sddEnabled: true }))
+    const w = mountWs(cfg({ sddEnabled: true, specReviewRequired: true }))
     await w.find(BOX).setValue(true)
     await w.find(SAVE.collab).trigger('click')
     await w.setProps({
-      workspaceSetting: cfg({ sddEnabled: true, specMachineApprovalEnabled: true }),
+      workspaceSetting: cfg({
+        sddEnabled: true,
+        specReviewRequired: true,
+        specMachineApprovalEnabled: true,
+      }),
     })
     // Close and reopen: the whole draft is re-seeded from the server snapshot.
     await w.setProps({ open: false })
@@ -1441,5 +1457,22 @@ describe('WorkspaceSetting.vue — automation tab', () => {
     // Non-automation fields keep their committed values untouched (no draft leakage).
     expect(payload.maxRoundsPerStage).toBe(14)
     expect(payload.devSkill).toBe('/my-skill')
+  })
+})
+
+describe('WorkspaceSetting.vue — optional spec review', () => {
+  it('defaults off and shows machine approval only while review is required', async () => {
+    const w = mountWs(cfg({ sddEnabled: true, specMachineApprovalEnabled: true }))
+    const review = w.find('[data-testid="spec-review-required"]')
+    expect((review.element as HTMLInputElement).checked).toBe(false)
+    expect(w.find('[data-testid="spec-machine-approval-enabled"]').exists()).toBe(false)
+    await review.setValue(true)
+    expect(w.find('[data-testid="spec-machine-approval-enabled"]').exists()).toBe(true)
+    await w.find(SAVE.collab).trigger('click')
+    expect((w.emitted('save') as [WorkspaceSettingType][])[0][0].specReviewRequired).toBe(true)
+    await review.setValue(false)
+    expect(w.find('[data-testid="spec-machine-approval-enabled"]').exists()).toBe(false)
+    await w.find(SAVE.collab).trigger('click')
+    expect((w.emitted('save') as [WorkspaceSettingType][])[1][0].specReviewRequired).toBe(false)
   })
 })

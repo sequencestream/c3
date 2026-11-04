@@ -22,6 +22,7 @@ const props = defineProps<{
   intentSpecContent: string | null
   intentSpecLoading: boolean
   specSessionRunning?: boolean
+  specReviewRequired?: boolean
   intentActionErrorSeq?: number
   // 操作区可见性/禁用态由容器输入(四态主按钮 + 10 秒防误审门 + Spec 依赖门)。
   showApprove: boolean
@@ -65,6 +66,7 @@ const approvedByMachine = computed<boolean>(
 // 此时给出一条明确的重新人工确认路径提示,而不是让「开始工作」去撞服务端闸门。
 const machineApprovalNeedsHumanConfirm = computed<boolean>(
   () =>
+    props.specReviewRequired === true &&
     props.intent.specStatus === 'approved' &&
     approvedByMachine.value &&
     isHighImpactLevel(props.intent.impactLevel),

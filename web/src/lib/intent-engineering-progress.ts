@@ -68,6 +68,7 @@ export function deriveIntentEngineeringProgress(
   intent: EngineeringProgressInput,
   sddEnabled: boolean,
   workspaceGitBranchMode?: 'worktree' | 'current-branch',
+  specReviewRequired = false,
 ): EngineeringProgressItem[] {
   const progress: EngineeringProgressItem[] = [
     {
@@ -87,7 +88,9 @@ export function deriveIntentEngineeringProgress(
     progress.push({
       stage: 'spec',
       state:
-        intent.specStatus === 'approved' && hasSpecPath
+        (intent.specStatus === 'approved' ||
+          (!specReviewRequired && intent.specStatus === 'pending')) &&
+        hasSpecPath
           ? 'completed'
           : hasSpecEvidence
             ? 'in_progress'

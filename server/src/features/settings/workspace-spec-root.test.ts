@@ -11,7 +11,7 @@
  * `features/intents/spec.test.ts`. With no auth configured the admin gate is
  * inert, so `save` passes `requireAdmin`.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,7 +75,7 @@ function fakeConn(): { conn: Conn; sent: ServerToClient[] } {
   return { conn, sent }
 }
 
-const ctx = {} as unknown as KernelContext
+const ctx = { broadcastIntents: vi.fn() } as unknown as KernelContext
 
 describe('workspace setting — fixed centralized spec root (REQ-3)', () => {
   it('AC-3.3: load reply carries resolvedSpecRoot = getSpecsBase(proj)', () => {

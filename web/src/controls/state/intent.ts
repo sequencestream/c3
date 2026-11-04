@@ -126,6 +126,10 @@ export function buildIntentSlice(
   // Per-workspace SDD master switch, rebroadcast with every intent list. Drives
   // the SDD-aware intent action button (Write Spec / Approve Spec / Start Work)
   // without a separate workspace-setting fetch.
+  const intentsSpecReviewRequired = ref<Record<string, boolean>>({})
+  const currentIntentsSpecReviewRequired = computed(() =>
+    intentsProject.value ? intentsSpecReviewRequired.value[intentsProject.value] === true : false,
+  )
   const intentsSdd = ref<Record<string, boolean>>({})
   const currentIntentsSdd = computed<boolean>(() =>
     intentsProject.value ? (intentsSdd.value[intentsProject.value] ?? false) : false,
@@ -357,6 +361,8 @@ export function buildIntentSlice(
 
   return {
     intentsSdd,
+    intentsSpecReviewRequired,
+    currentIntentsSpecReviewRequired,
     currentIntentsSdd,
     automation,
     currentWorkflow,

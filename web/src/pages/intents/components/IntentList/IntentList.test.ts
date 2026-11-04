@@ -97,6 +97,7 @@ function mountList(
       automation: null,
       selectedId,
       sddEnabled: opts.sddEnabled,
+      specReviewRequired: true,
     },
   })
 }

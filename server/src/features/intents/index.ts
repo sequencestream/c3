@@ -40,6 +40,7 @@ import {
   getDefaultMode,
   getGitBranchMode,
   getSddEnabled,
+  getSpecReviewRequired,
   getSessionAgentId,
 } from '../../kernel/config/index.js'
 import {
@@ -394,6 +395,7 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
     workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj, msg.status)),
     sddEnabled: getSddEnabled(proj),
+    specReviewRequired: getSpecReviewRequired(proj),
   })
 }
 
@@ -675,6 +677,7 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
     workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
+    specReviewRequired: getSpecReviewRequired(proj),
   })
   conn.send({ type: 'workflow_status', status: getWorkflowStatus(proj) })
 
@@ -945,6 +948,7 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
     workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
+    specReviewRequired: getSpecReviewRequired(proj),
   })
   conn.send({ type: 'workflow_status', status: getWorkflowStatus(proj) })
 }
@@ -1018,6 +1022,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
+    specReviewRequired: getSpecReviewRequired(proj),
   })
   // Link the pending refine session to this intent so the resident `run:bound`
   // subscription backfills `intent_session_id` onto the intent on first bind,
@@ -1110,6 +1115,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
     workspaceName: pathToName(proj)!,
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
+    specReviewRequired: getSpecReviewRequired(proj),
   })
   // Link the pending refine session to this intent so the resident `run:bound`
   // subscription replaces `intent_session_id` with the real comm session id on

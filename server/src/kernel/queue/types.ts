@@ -604,6 +604,7 @@ export interface QueueReconcileInput {
   /** Every delivery of the workspace, for the delivery gates and their reasons. */
   deliveries: readonly DeliveryGateFact[]
   sddEnabled: boolean
+  specReviewRequired?: boolean
   /**
    * The workspace's explicit machine-approval opt-in. `false` by default and for
    * every migrated workspace: with it off, a `pass` conclusion still stops at the

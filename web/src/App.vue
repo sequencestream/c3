@@ -216,6 +216,7 @@ const {
   requestedWorkcenterEventId,
   currentIntents,
   currentIntentsSdd,
+  currentIntentsSpecReviewRequired,
   currentWorkflow,
   intentActionErrorSeq,
   intentActionError,
@@ -1034,6 +1035,7 @@ function onFilesChatWidth(px: number): void {
               :project="intentsProject"
               :intents="currentIntents"
               :sdd-enabled="currentIntentsSdd"
+              :spec-review-required="currentIntentsSpecReviewRequired"
               :requested-intent-id="requestedIntentId"
               :requested-intent-sub-tab="requestedIntentSubTab"
               :awaiting-intent-session-bind-id="awaitingIntentSessionBindId"

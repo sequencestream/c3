@@ -77,6 +77,7 @@ const props = defineProps<{
   intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Work)。 */
   sddEnabled?: boolean
+  specReviewRequired?: boolean
   /** 当前 workspace 配置的主分支;intent 分支与其相同时不显示 Create PR。 */
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
@@ -267,26 +268,16 @@ function startDev(): void {
   emit('start-dev', r.id, hasUnfinishedDeps)
 }
 
-// ── 主操作按钮四态机(只对 todo 意图渲染) ──────────────────────────────────
-// 投影只看 specStatus:raw(无 spec,或只有服务端播种的占位)一律停在「编写 Spec」——
-// 此时点它继续/恢复撰写会话,而不是把一份还没写出来的文档推给人审批;pending 才是「批准 Spec」;
-// approved 才是「开始工作」。不再用 specPath + specApproved 组合推断。
-//
-// 每意图 fast 模式(「是否需要规范」选 fast)是唯一的例外:fast 不先写规范,规范由工作回合
-// 落定后反向生成,所以 raw 态不给「编写规范」入口,直接落到「开始工作」——服务端的准入门同样
-// 对 fast 放行未批准的规范。反向规范生成后的 pending 态仍给「批准 Spec」,那正是 fast 的闭环。
+// 主按钮与服务端准入共用规格策略:先完成撰写,仅要求审核时等待批准。
 const mainAction = computed<MainAction>(() => {
   const r = props.intent
   if (!r) return 'startDev'
-  // 与服务端准入同一条判定(shared 单一纯函数):fast 放行、SDD 开需 approved、高影响(L1/L2)
-  // 需「人工」批准——所以机器批准或被升级为高影响的意图即使 specStatus 已是 approved,也仍被
-  // 闸门拦下,主按钮回到「批准 Spec」(点击只切到 spec 标签,由撤销 → 人工批准闭环),而不是
-  // 给出一个服务端必然拒绝的「开始工作」。
   const isFast = r.effectiveSpecMode === 'fast'
   const blocked = specGateBlocks({
     impactLevel: r.impactLevel,
     effectiveSpecMode: r.effectiveSpecMode,
     sddEnabled: props.sddEnabled === true,
+    specReviewRequired: props.specReviewRequired,
     specStatus: r.specStatus,
     specApproveUser: r.specApproveUser,
   })
@@ -296,7 +287,8 @@ const mainAction = computed<MainAction>(() => {
   }
   // spec 闸门放行:唯一例外是 fast 的反向规格进入 pending 后,主按钮仍指向「批准 Spec」
   // (服务端不以前置批准阻塞 fast,但让用户能批准这份反向生成的规格)。
-  if (isFast && r.specStatus === 'pending') return 'approveSpec'
+  if (props.specReviewRequired === true && isFast && r.specStatus === 'pending')
+    return 'approveSpec'
   return 'startDev'
 })
 const mainActionLabel = computed<string>(() => {
@@ -587,6 +579,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         <IntentEngineeringProgress
           :intent="intent"
           :sdd-enabled="sddEnabled === true"
+          :spec-review-required="specReviewRequired"
           :workspace-git-branch-mode="workspaceGitBranchMode"
         />
       </header>
@@ -642,7 +635,8 @@ function submitChat(text: string, images: PromptImage[]): void {
         :intent-spec-loading="intentSpecLoading"
         :spec-session-running="specSessionRunning"
         :intent-action-error-seq="intentActionErrorSeq"
-        :show-approve="showSpecApprove"
+        :spec-review-required="specReviewRequired"
+        :show-approve="specReviewRequired === true && showSpecApprove"
         :show-modify="showSpecModify"
         :modify-disabled="specDependencyBlocked"
         @approve-spec="(id: string) => emit('approve-spec', id)"

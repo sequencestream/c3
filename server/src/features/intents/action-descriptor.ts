@@ -14,7 +14,12 @@
 import type { ActionDescriptor, Intent } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 import { ASK_TOOL_NAME } from '../../kernel/agent/adapters/cursor/ask.js'
-import { getDefaultMainBranch, getGitBranchMode, getSddEnabled } from '../../kernel/config/index.js'
+import {
+  getDefaultMainBranch,
+  getGitBranchMode,
+  getSddEnabled,
+  getSpecReviewRequired,
+} from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { findLatestTodoEventForSessionIds } from '../user-involve/store.js'
 import { findBlockingDependency } from './dependency-gate.js'
@@ -117,7 +122,8 @@ function deriveSpecReworkExhaustedActionDescriptor(
   // is the hand-over point — the same boundary the queue parks on.
   if (intent.specReviewReworkRounds <= MAX_SPEC_REVIEW_REWORK_ROUNDS) return null
   const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
-  if (!workspacePath || !getSddEnabled(workspacePath)) return null
+  if (!workspacePath || !getSddEnabled(workspacePath) || !getSpecReviewRequired(workspacePath))
+    return null
   if (readSpecFingerprint(workspacePath, intent.specPath) !== intent.specReviewFingerprint) {
     return null
   }
@@ -143,7 +149,8 @@ function deriveSpecApprovalActionDescriptor(
   if (intent.status !== 'todo') return null
   if (intent.specStatus !== 'pending') return null
   const workspacePath = resolveWorkspaceRoot(intent.workspaceName)
-  if (!workspacePath || !getSddEnabled(workspacePath)) return null
+  if (!workspacePath || !getSddEnabled(workspacePath) || !getSpecReviewRequired(workspacePath))
+    return null
   return {
     labelCode: 'spec_awaiting_approval',
     target: { type: 'intent-spec', intentId: intent.id },

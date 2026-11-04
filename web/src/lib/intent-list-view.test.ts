@@ -347,7 +347,9 @@ describe('workflowIconState', () => {
   it('SDD on with an unapproved spec is idle', () => {
     const item = makeIntent({ id: 'unapproved', specPath: '/spec.md', specApproved: false })
 
-    expect(workflowIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
+    expect(
+      workflowIconState(item, { sddEnabled: true, specReviewRequired: true, intents: [item] }),
+    ).toBe('idle')
   })
 
   it('SDD on with an approved queued intent is eligible', () => {
@@ -370,7 +372,9 @@ describe('workflowIconState', () => {
       specApproved: true,
     })
 
-    expect(workflowIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
+    expect(
+      workflowIconState(item, { sddEnabled: true, specReviewRequired: true, intents: [item] }),
+    ).toBe('idle')
   })
 
   it('dependency-blocked queued intents are idle in worktree mode', () => {

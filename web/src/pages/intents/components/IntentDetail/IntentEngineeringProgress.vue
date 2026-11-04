@@ -21,6 +21,7 @@ const { t } = useTypedI18n()
 const props = defineProps<{
   intent: EngineeringProgressInput
   sddEnabled: boolean
+  specReviewRequired?: boolean
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
 }>()
 
@@ -29,6 +30,7 @@ const progress = computed(() =>
     props.intent,
     props.sddEnabled === true,
     props.workspaceGitBranchMode,
+    props.specReviewRequired,
   ),
 )
 

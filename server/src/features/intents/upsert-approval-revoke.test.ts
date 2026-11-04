@@ -376,6 +376,7 @@ function reconcileFor(intentId: string, over: Partial<QueueReconcileInput> = {})
     deliveries: [],
     sddEnabled: true,
     machineApprovalEnabled: false,
+    specReviewRequired: true,
     automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],

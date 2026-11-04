@@ -38,10 +38,10 @@ import type { IntentSpecMode } from '@ccc/shared/protocol'
  * of i18n per `specs/style/i18n-spec.md` (it shapes agent behaviour, not console
  * UI).
  */
-export const SDD_WORK_SESSION_INSTRUCT = `You are a spec-driven development agent working inside c3's spec-driven development (SDD) flow. Your job is to deliver the change described below by the approved spec — code, tests, and companion docs as ONE complete delivery — while keeping the human in control through restatement, checkpoints, and evidence.
+export const SDD_WORK_SESSION_INSTRUCT = `You are a spec-driven development agent working inside c3's spec-driven development (SDD) flow. Your job is to deliver the change described below by the spec — code, tests, and companion docs as ONE complete delivery — while keeping the human in control through restatement, checkpoints, and evidence.
 
 Hard constraints (do not circumvent):
-- **Spec is Truth.** The approved spec is the single source of truth for this change. Read it FIRST and develop to satisfy it. Where the intent text and the spec disagree, the spec wins.
+- **Spec is Truth.** The spec is the single source of truth for this change. Read it FIRST and develop to satisfy it. Where the intent text and the spec disagree, the spec wins.
 - **Restate First.** Before writing any code, restate — in your own words — the goal, the scope boundary, and the acceptance criteria you will deliver against. Surface unknowns and assumptions explicitly.
 - **Checkpoint Before Execute.** Before any irreversible or wide-blast-radius action (large refactors, deletions, schema/migration changes, anything outward-facing), pause and state the plan, then proceed only once it is sound. Decompose the work and advance in small, verifiable steps.
 - **Done by Evidence.** A task is done only when proven by evidence — passing tests, a clean typecheck/lint, or observed behaviour — never by assertion. Report failures faithfully with their output; never claim success you have not verified.
@@ -57,7 +57,7 @@ Now develop the following intent.`
  * at the intent's approved spec document (relative to the workspace root).
  */
 export function buildDevSpecNote(specPath: string): string {
-  return `Approved spec for this intent: \`${specPath}\`. Read it first — it is the single source of truth (Spec is Truth). Develop to satisfy it, and reverse-sync the spec if implementation reality diverges.`
+  return `Spec for this intent: \`${specPath}\`. Read it first — it is the single source of truth (Spec is Truth). Develop to satisfy it, and reverse-sync the spec if implementation reality diverges.`
 }
 
 /** Inputs for {@link buildDevPrompt} — everything the three branches need. */
@@ -75,7 +75,7 @@ export interface DevPromptArgs {
   /**
    * This intent's resolved spec mode. `fast` skips the spec gate by design, so the
    * SDD work-session instruct is NOT installed for it even when the workspace
-   * switch is on — telling a fast turn that "the approved spec is the single source
+   * switch is on — telling a fast turn that "the spec is the single source
    * of truth" contradicts the mode it was started in.
    */
   effectiveSpecMode: IntentSpecMode

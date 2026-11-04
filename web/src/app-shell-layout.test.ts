@@ -69,10 +69,11 @@ describe('应用外壳 — 左侧竖条确实排在最左侧', () => {
     expect(cssRule('.body')).toContain('flex: 1')
   })
 
-  it('工作区列表只在工作区场景显示，系统与个人设置会隐藏它', () => {
-    const tpl = appTemplate()
-    expect(tpl).toContain(
-      'v-if="viewMode === \'workspace\' && !settingsOpen && !personalizedSettingOpen"',
+  it('工作区列表只在工作区场景显示，全局页面与设置会隐藏它', () => {
+    const workspaceRail = appTemplate().match(/<WorkspaceListRail\b[^>]*>/)?.[0]
+    expect(workspaceRail).toBeDefined()
+    expect(workspaceRail).toContain(
+      'v-if="!globalPage && viewMode === \'workspace\' && !settingsOpen && !personalizedSettingOpen"',
     )
   })
 })

@@ -29,7 +29,7 @@ import {
   resetStoreForTests as resetSessionsStoreForTests,
   upsertBoundRow,
 } from './features/works/work-session-store.js'
-import { resetSettingsCacheForTests, saveSettings } from './kernel/config/index.js'
+import { resetSettingsCacheForTests, saveSettings, loadSettings } from './kernel/config/index.js'
 import { listWorkspaceSessions } from './sessions.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
@@ -345,12 +345,18 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
   })
 })
 
-it('global browsing includes mixed business categories once in stable activity order', async () => {
+it('global browsing includes mixed business categories once and excludes tools even when enabled', async () => {
+  saveSettings({ ...loadSettings(), showToolSessions: true })
   for (const [sessionId, sessionKind, lastModified] of [
     ['work-global', 'work', 200],
     ['spec-global', 'spec', 300],
     ['review-global', 'spec_review', 300],
     ['auto-global', 'automation', 100],
+    ['tool-global', 'tool', 900],
+    ['intent-global', 'intent', 90],
+    ['discussion-global', 'discussion', 80],
+    ['consensus-global', 'consensus', 70],
+    ['robot-global', 'robot', 60],
   ] as const) {
     upsertBoundRow({
       sessionId,
@@ -368,5 +374,9 @@ it('global browsing includes mixed business categories once in stable activity o
     'review-global',
     'work-global',
     'auto-global',
+    'intent-global',
+    'discussion-global',
+    'consensus-global',
+    'robot-global',
   ])
 })

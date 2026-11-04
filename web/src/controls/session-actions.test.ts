@@ -858,3 +858,22 @@ describe('jump-to-source — spec_review', () => {
     expect(bag.openSpecSession).not.toHaveBeenCalled()
   })
 })
+
+describe('new session from global browsing', () => {
+  it('creates work in the chosen workspace and keeps the global page active', () => {
+    const { ctx, send } = makeCtx({ activeKind: 'automation' })
+    ctx.globalPage = ref('sessions')
+    ctx.globalSessionCreatingWorkspace = ref(null)
+    ctx.newSessionWorkspace = ref('beta')
+    ctx.newSessionOpen = ref(false)
+    // The actions capture these refs at installation.
+    installSessionActions(ctx)
+    ctx.openNewSession('beta')
+    expect(ctx.newSessionOpen.value).toBe(true)
+    ctx.confirmNewSession(null)
+    expect(ctx.globalPage.value).toBe('sessions')
+    expect(ctx.activeSessionKind.value).toBe('work')
+    expect(ctx.globalSessionCreatingWorkspace.value).toBe('beta')
+    expect(send).toHaveBeenLastCalledWith({ type: 'create_session', workspaceName: 'beta' })
+  })
+})

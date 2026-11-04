@@ -1792,6 +1792,49 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.activeSessionRealKind.value).toBe('spec')
   })
 
+  it('accepts a pending work session only for the workspace requested from the global page', () => {
+    const r = makeDeepLinkCtx()
+    r.ctx.globalPage = ref('sessions')
+    r.ctx.globalSessionSelection = ref(null)
+    r.ctx.globalSessionCreatingWorkspace = ref('ws1')
+    r.ctx.globalSessionLivePage = ref(null)
+    const reply = {
+      type: 'session_selected',
+      workspaceName: 'ws1',
+      sessionId: 'pending:new',
+      title: 'New session',
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: 'claude',
+    } as ServerToClient
+    r.ctx.handleMessage({ ...reply, workspaceName: 'other' } as ServerToClient)
+    expect(r.activeSession.value).toBeNull()
+    r.ctx.handleMessage(reply)
+    expect(r.activeSession.value).toBe('pending:new')
+    expect(r.activeSessionRealKind.value).toBe('work')
+    expect(r.ctx.globalPage.value).toBe('sessions')
+    expect(r.ctx.globalSessionCreatingWorkspace.value).toBeNull()
+    expect(r.ctx.globalSessionLivePage.value?.sessions[0].sessionId).toBe('pending:new')
+  })
+
+  it('forwards live session pushes to the global browser without requiring a workspace cache', () => {
+    const r = makeDeepLinkCtx()
+    r.ctx.globalPage = ref('sessions')
+    r.ctx.globalSessionLivePage = ref(null)
+    r.ctx.consumePendingWorkSessionSelect = vi.fn()
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceName: 'ws1',
+      sessions: [s('new-session', 200)],
+      page: { kind: 'live', hasMore: false },
+    })
+    expect(r.ctx.globalSessionLivePage.value).toEqual({
+      workspaceName: 'ws1',
+      sessions: [s('new-session', 200)],
+    })
+  })
+
   it('routes matching global pages separately and ignores previous requests', () => {
     const r = makeDeepLinkCtx()
     r.ctx.globalSessionRequestIds = ref({ ws1: 'current' })

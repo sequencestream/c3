@@ -1,6 +1,7 @@
 import type { HandlerMap } from '../handler-registry'
 import type { MessageHandlerLocals } from './context'
 import type { AppCtx } from '../types'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { SessionInfo, WorkspaceActivitySummary } from '@ccc/shared/protocol'
 import * as SHARED from './shared'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
@@ -367,6 +368,12 @@ export function buildSessionHandlers(
         }
         return
       }
+      if (ctx.globalPage?.value === 'sessions' && msg.page?.kind === 'live') {
+        ctx.globalSessionLivePage.value = {
+          workspaceName: msg.workspaceName,
+          sessions: msg.sessions,
+        }
+      }
       const path = msg.workspaceName
       const sessionKind = (msg.sessionKind ?? 'work') as SessionPageKind
       const cacheKey = sessionCacheKey(path, sessionKind)
@@ -464,6 +471,23 @@ export function buildSessionHandlers(
     },
     session_selected: (_ctx, msg) => {
       if (ctx.globalPage?.value === 'sessions') {
+        if (
+          ctx.globalSessionCreatingWorkspace?.value === msg.workspaceName &&
+          msg.sessionId.startsWith(PENDING_SESSION_PREFIX)
+        ) {
+          const row: SessionInfo = {
+            sessionId: msg.sessionId,
+            title: msg.title,
+            lastModified: Date.now(),
+            vendor: msg.vendor ?? 'claude',
+            mode: msg.mode,
+            isToolSession: false,
+            sessionKind: 'work',
+          }
+          ctx.globalSessionCreatingWorkspace.value = null
+          ctx.globalSessionSelection.value = { workspaceName: msg.workspaceName, row }
+          ctx.globalSessionLivePage.value = { workspaceName: msg.workspaceName, sessions: [row] }
+        }
         const selection = ctx.globalSessionSelection.value
         if (
           !selection ||
@@ -560,6 +584,16 @@ export function buildSessionHandlers(
       if (activeSession.value === msg.clientId) {
         activeAgentSwitch.value = msg.agentSwitch ?? null
         activeSession.value = msg.sessionId
+        const selection = ctx.globalSessionSelection?.value
+        if (selection?.row.sessionId === msg.clientId) {
+          const row = { ...selection.row, sessionId: msg.sessionId }
+          ctx.globalSessionSelection.value = { ...selection, row }
+          ctx.globalSessionLivePage.value = {
+            workspaceName: selection.workspaceName,
+            sessions: [row],
+            replaceSessionId: msg.clientId,
+          }
+        }
         // Complete the pending -> real re-key for the console pointer too.
         // Any synthetic/cached pending row is obsolete once the server binds
         // the real id and must not survive later pagination merges.

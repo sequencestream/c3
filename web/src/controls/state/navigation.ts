@@ -113,8 +113,14 @@ import {
 
 export function buildNavigationSlice() {
   const globalPage = ref<'sessions' | 'automations' | null>(null)
+  const globalSessionCreatingWorkspace = ref<string | null>(null)
   const globalSessionSelection = ref<{ workspaceName: string; row: SessionInfo } | null>(null)
   const globalSessionRequestIds = ref<Record<string, string>>({})
+  const globalSessionLivePage = ref<{
+    workspaceName: string
+    sessions: SessionInfo[]
+    replaceSessionId?: string
+  } | null>(null)
   const globalSessionPages = ref<Record<string, { sessions: SessionInfo[]; hasMore: boolean }>>({})
   // ---- View mode (workspace / workcenter) ----
   const viewMode = ref<'workspace' | 'workcenter'>('workspace')
@@ -192,8 +198,10 @@ export function buildNavigationSlice() {
   return {
     globalPage,
     globalSessionSelection,
+    globalSessionCreatingWorkspace,
     globalSessionRequestIds,
     globalSessionPages,
+    globalSessionLivePage,
     viewMode,
     savedTab,
     serverSettings,

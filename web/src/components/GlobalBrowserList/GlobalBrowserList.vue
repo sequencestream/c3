@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type { GlobalWorkspacePage } from '@/controls/global-browser'
 
@@ -8,6 +8,7 @@ export interface BrowserRow {
   workspaceName: string
   title: string
   running: boolean
+  lastModified?: number
 }
 const props = defineProps<{
   title: string
@@ -16,13 +17,84 @@ const props = defineProps<{
   activeWorkspace?: string | null
   loading?: boolean
   paging?: Record<string, GlobalWorkspacePage>
+  canCreateSession?: boolean
 }>()
 const emit = defineEmits<{
   select: [id: string, workspaceName: string]
   refresh: []
+  'create-session': [workspaceName: string]
   more: [workspaceName: string]
 }>()
 const { t } = useTypedI18n()
+// Ratios use the list/detail space, excluding the separator and navigation.
+const MIN_LIST_PERCENT = 15
+const MAX_LIST_PERCENT = 60
+const SPLITTER_WIDTH = 6
+const listPercent = ref(30)
+const listElement = ref<HTMLElement | null>(null)
+const dragging = ref(false)
+const listWidth = computed(
+  () => `calc(${listPercent.value}% - ${(SPLITTER_WIDTH * listPercent.value) / 100}px)`,
+)
+
+function setListPercent(value: number): void {
+  listPercent.value = Math.min(MAX_LIST_PERCENT, Math.max(MIN_LIST_PERCENT, value))
+}
+
+let dragPointerId: number | null = null
+let dragStartX = 0
+let dragStartPercent = 30
+
+function onDragMove(event: PointerEvent): void {
+  if (event.pointerId !== dragPointerId) return
+  let container = listElement.value?.parentElement
+  while (container && getComputedStyle(container).display === 'contents') {
+    container = container.parentElement
+  }
+  const availableWidth = (container?.getBoundingClientRect().width ?? 0) - SPLITTER_WIDTH
+  if (availableWidth <= 0) return
+  setListPercent(dragStartPercent + ((event.clientX - dragStartX) / availableWidth) * 100)
+}
+
+function stopDrag(): void {
+  dragging.value = false
+  dragPointerId = null
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragEnd)
+  window.removeEventListener('pointercancel', onDragEnd)
+  window.removeEventListener('blur', stopDrag)
+}
+
+function onDragEnd(event: PointerEvent): void {
+  if (event.pointerId === dragPointerId) stopDrag()
+}
+
+function startDrag(event: PointerEvent): void {
+  if (event.button !== 0 || dragPointerId !== null) return
+  event.preventDefault()
+  dragPointerId = event.pointerId
+  dragStartX = event.clientX
+  dragStartPercent = listPercent.value
+  dragging.value = true
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragEnd)
+  window.addEventListener('pointercancel', onDragEnd)
+  window.addEventListener('blur', stopDrag)
+}
+
+function onSplitterKey(event: KeyboardEvent): void {
+  let value = listPercent.value
+  if (event.key === 'ArrowLeft') value -= 2
+  else if (event.key === 'ArrowRight') value += 2
+  else if (event.key === 'Home') value = MIN_LIST_PERCENT
+  else if (event.key === 'End') value = MAX_LIST_PERCENT
+  else return
+  event.preventDefault()
+  setListPercent(value)
+}
+
+onBeforeUnmount(stopDrag)
+
 const limits = ref<Record<string, number>>({})
 const collapsedWorkspaces = ref(new Set<string>())
 
@@ -34,18 +106,21 @@ const groups = computed(() => {
   const names = [
     ...new Set([...Object.keys(props.paging ?? {}), ...props.rows.map((row) => row.workspaceName)]),
   ]
-  return names.map((workspaceName) => {
-    const rows = props.rows.filter((row) => row.workspaceName === workspaceName)
-    const page = props.paging?.[workspaceName]
-    const limit = limits.value[workspaceName] ?? 5
-    return {
-      workspaceName,
-      rows: props.paging ? rows : rows.slice(0, limit),
-      hasMore: page?.hasMore ?? rows.length > limit,
-      loading: page?.loading ?? false,
-      failed: page?.failed ?? false,
-    }
-  })
+  return names
+    .map((workspaceName) => {
+      const rows = props.rows.filter((row) => row.workspaceName === workspaceName)
+      const page = props.paging?.[workspaceName]
+      const limit = limits.value[workspaceName] ?? 5
+      return {
+        workspaceName,
+        latestSessionTime: Math.max(0, ...rows.map((row) => row.lastModified ?? 0)),
+        rows: props.paging ? rows : rows.slice(0, limit),
+        hasMore: page?.hasMore ?? rows.length > limit,
+        loading: page?.loading ?? false,
+        failed: page?.failed ?? false,
+      }
+    })
+    .sort((a, b) => b.latestSessionTime - a.latestSessionTime)
 })
 function loadMore(workspaceName: string): void {
   if (props.paging) emit('more', workspaceName)
@@ -58,7 +133,7 @@ function refresh(): void {
 </script>
 
 <template>
-  <aside class="global-list">
+  <aside ref="listElement" class="global-list" :style="{ width: listWidth }">
     <header>
       <h2>{{ title }}</h2>
       <button type="button" :disabled="loading" @click="refresh">
@@ -99,6 +174,16 @@ function refresh(): void {
               <path v-else d="M20 11v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1" />
             </svg>
             <span>{{ group.workspaceName }}</span>
+          </button>
+          <button
+            v-if="canCreateSession"
+            type="button"
+            class="workspace-new-session"
+            :title="t('session.list.new.tooltip')"
+            :aria-label="`${group.workspaceName}: ${t('session.list.new.tooltip')}`"
+            @click="emit('create-session', group.workspaceName)"
+          >
+            ＋
           </button>
         </h3>
         <div v-if="!collapsedWorkspaces.has(group.workspaceName)" class="workspace-children">
@@ -156,17 +241,42 @@ function refresh(): void {
       <p v-if="!groups.length">{{ t('globalBrowser.empty') }}</p>
     </div>
   </aside>
+  <div
+    class="global-list-splitter"
+    :class="{ dragging }"
+    role="separator"
+    tabindex="0"
+    aria-orientation="vertical"
+    :aria-label="title"
+    :aria-valuemin="MIN_LIST_PERCENT"
+    :aria-valuemax="MAX_LIST_PERCENT"
+    :aria-valuenow="listPercent"
+    @pointerdown="startDrag"
+    @keydown="onSplitterKey"
+  />
 </template>
 
 <style scoped>
 .global-list {
-  width: 300px;
-  min-width: 240px;
+  flex: 0 0 auto;
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--c-panel);
   border-right: 1px solid var(--c-border);
+}
+.global-list-splitter {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: var(--c-border);
+}
+.global-list-splitter:hover,
+.global-list-splitter.dragging,
+.global-list-splitter:focus-visible {
+  background: var(--c-primary-text);
 }
 header {
   display: flex;
@@ -229,6 +339,8 @@ p {
   margin-bottom: var(--sp-2);
 }
 .workspace-title {
+  display: flex;
+  align-items: center;
   margin: 0;
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
@@ -238,12 +350,21 @@ p {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--sp-1) var(--sp-2);
   border-color: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
+}
+.workspace-new-session {
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border-color: transparent;
+}
+.workspace-new-session:hover {
+  background: var(--c-card);
 }
 .workspace-toggle:hover {
   background: var(--c-card);
@@ -299,8 +420,11 @@ p {
   height: 18px;
 }
 @media (max-width: 767px) {
+  .global-list-splitter {
+    display: none;
+  }
   .global-list {
-    width: 100%;
+    width: 100% !important;
     min-width: 0;
   }
 }

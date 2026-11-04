@@ -95,6 +95,7 @@ const globalRows = computed(() =>
     id: row.sessionId,
     title: row.title,
     workspaceName: row.workspaceName,
+    lastModified: row.lastModified,
     running: ['running', 'team', 'reconnecting', 'awaiting_permission'].includes(
       props.sessionStatus[row.sessionId] ?? '',
     ),
@@ -199,6 +200,8 @@ defineExpose({
         :active-workspace="activeWorkspace"
         :loading="globalLoading"
         :paging="globalPaging"
+        can-create-session
+        @create-session="(workspaceName: string) => emit('create-session', workspaceName)"
         @select="selectGlobal"
         @refresh="emit('refresh-sessions')"
         @more="(workspaceName: string) => emit('load-more-sessions', workspaceName)"

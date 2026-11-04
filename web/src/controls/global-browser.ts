@@ -1,4 +1,5 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { Automation, SessionInfo } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 
@@ -19,6 +20,7 @@ export function useGlobalBrowser(ctx: AppCtx) {
   const loading = computed(() => Object.values(paging.value).some((group) => group.loading))
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const pending = new Map<string, boolean>()
+  const liveDuringRequest = new Map<string, SessionInfo[]>()
   let sequence = 0
   const automations = computed(() =>
     ctx.workspaces.value.flatMap((ws) => ctx.automations.value[ws.name] ?? []),
@@ -28,7 +30,9 @@ export function useGlobalBrowser(ctx: AppCtx) {
     for (const timer of timers.values()) clearTimeout(timer)
     timers.clear()
     pending.clear()
+    liveDuringRequest.clear()
     ctx.globalSessionRequestIds.value = {}
+    ctx.globalSessionCreatingWorkspace.value = null
   }
 
   function requestSessions(more = false, workspaceName?: string): void {
@@ -61,6 +65,7 @@ export function useGlobalBrowser(ctx: AppCtx) {
         ws.name,
         setTimeout(() => {
           pending.delete(ws.name)
+          liveDuringRequest.delete(ws.name)
           timers.delete(ws.name)
           delete ctx.globalSessionRequestIds.value[ws.name]
           paging.value = {
@@ -108,8 +113,75 @@ export function useGlobalBrowser(ctx: AppCtx) {
         ...paging.value,
         [workspaceName]: { hasMore: result.hasMore, loading: false, failed: false },
       }
+      const live = liveDuringRequest.get(workspaceName)
+      liveDuringRequest.delete(workspaceName)
+      if (live) applyLivePage({ workspaceName, sessions: live })
+      const selection = ctx.globalSessionSelection.value
+      if (
+        selection?.workspaceName === workspaceName &&
+        selection.row.sessionId.startsWith(PENDING_SESSION_PREFIX)
+      ) {
+        applyLivePage({ workspaceName, sessions: [selection.row] })
+      }
     }
   })
+
+  function applyLivePage(update: typeof ctx.globalSessionLivePage.value): void {
+    if (
+      page.value !== 'sessions' ||
+      !update ||
+      !ctx.workspaces.value.some((workspace) => workspace.name === update.workspaceName)
+    )
+      return
+    const { workspaceName } = update
+    if (pending.has(workspaceName)) {
+      liveDuringRequest.set(workspaceName, [
+        ...(liveDuringRequest.get(workspaceName) ?? []).filter(
+          (row) => row.sessionId !== update.replaceSessionId,
+        ),
+        ...update.sessions,
+      ])
+    }
+    const previous = sessions.value.filter((row) => row.workspaceName === workspaceName)
+    const merged = new Map(
+      previous
+        .filter((row) => row.sessionId !== update.replaceSessionId)
+        .map((row) => [row.sessionId, row]),
+    )
+    for (const row of update.sessions) {
+      if (row.isToolSession || row.sessionKind === 'tool') continue
+      const old = merged.get(row.sessionId)
+      if (!old || row.lastModified >= old.lastModified) {
+        merged.set(row.sessionId, { ...row, workspaceName })
+      }
+    }
+    const compare = (a: SessionInfo, b: SessionInfo): number =>
+      b.lastModified - a.lastModified ||
+      (a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0)
+    const rows = [...merged.values()].sort(compare)
+    const oldest = previous.at(-1)
+    const visible = oldest
+      ? rows.filter(
+          (row) =>
+            compare(row, oldest) <= 0 || previous.some((old) => old.sessionId === row.sessionId),
+        )
+      : rows.slice(0, 5)
+    sessions.value = [
+      ...sessions.value.filter((row) => row.workspaceName !== workspaceName),
+      ...visible,
+    ]
+    const previousPage = paging.value[workspaceName]
+    paging.value = {
+      ...paging.value,
+      [workspaceName]: {
+        hasMore: previousPage?.hasMore === true || rows.length > visible.length,
+        loading: previousPage?.loading ?? false,
+        failed: previousPage?.failed ?? false,
+      },
+    }
+  }
+
+  watch(ctx.globalSessionLivePage, applyLivePage, { flush: 'sync' })
 
   function open(kind: 'sessions' | 'automations'): void {
     cancelRequests()

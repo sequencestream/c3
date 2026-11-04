@@ -363,14 +363,20 @@ export async function listGlobalWorkspaceSessions(
     'spec',
     'discussion',
     'automation',
-    'tool',
     'consensus',
     'robot',
   ]
   const pages = await Promise.all(
     kinds.map((kind) => listSessionsVia(accessor, workspacePath, kind)),
   )
-  return [...new Map(pages.flat().map((row) => [row.sessionId, row])).values()].sort(
+  return [
+    ...new Map(
+      pages
+        .flat()
+        .filter((row) => !row.isToolSession && row.sessionKind !== 'tool')
+        .map((row) => [row.sessionId, row]),
+    ).values(),
+  ].sort(
     (a, b) =>
       b.lastModified - a.lastModified ||
       (a.sessionId < b.sessionId ? 1 : a.sessionId > b.sessionId ? -1 : 0),

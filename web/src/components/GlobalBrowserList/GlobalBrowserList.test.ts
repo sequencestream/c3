@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import GlobalBrowserList from './GlobalBrowserList.vue'
 
 const rows = ['alpha', 'beta'].flatMap((workspaceName) =>
@@ -12,6 +13,106 @@ const rows = ['alpha', 'beta'].flatMap((workspaceName) =>
 )
 
 describe('global grouped list', () => {
+  it('creates a work session in the named workspace without toggling its folder', async () => {
+    const wrapper = mount(GlobalBrowserList, {
+      props: { title: 'Sessions', rows, activeId: null, canCreateSession: true },
+    })
+    const groups = wrapper.findAll('.workspace-group')
+    await groups[1].get('.workspace-toggle').trigger('click')
+    await groups[1].get('.workspace-new-session').trigger('click')
+    expect(wrapper.emitted('create-session')).toEqual([['beta']])
+    expect(groups[1].get('.workspace-toggle').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.emitted('select')).toBeUndefined()
+    await wrapper.setProps({ canCreateSession: false })
+    expect(wrapper.find('.workspace-new-session').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('orders workspaces by their newest session and reorders without losing folder state', async () => {
+    const wrapper = mount(GlobalBrowserList, {
+      props: {
+        title: 'Sessions',
+        rows: [
+          { ...rows[0], lastModified: 100 },
+          { ...rows[1], lastModified: 300 },
+          { ...rows[12], lastModified: 200 },
+        ],
+        activeId: 'beta-0',
+        paging: {
+          empty: { hasMore: false, loading: false, failed: false },
+          beta: { hasMore: false, loading: false, failed: false },
+          alpha: { hasMore: true, loading: false, failed: false },
+        },
+      },
+    })
+    const names = (): string[] => wrapper.findAll('.workspace-group h3').map((node) => node.text())
+    expect(names()).toEqual(['alpha', 'beta', 'empty'])
+    await wrapper.findAll('.workspace-toggle')[0].trigger('click')
+    await wrapper.setProps({ rows: [...wrapper.props('rows'), { ...rows[13], lastModified: 400 }] })
+    expect(names()).toEqual(['beta', 'alpha', 'empty'])
+    const groups = wrapper.findAll('.workspace-group')
+    expect(groups[0].get('.global-row.selected').text()).toBe('Task 0')
+    expect(groups[1].get('.workspace-toggle').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.emitted('select')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps both panes within percentage limits when dragging at different container sizes', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    let width = 1006
+    const wrapper = mount(GlobalBrowserList, {
+      attachTo: host,
+      props: { title: 'Sessions', rows, activeId: null },
+    })
+    vi.spyOn(
+      wrapper.get('.global-list').element.parentElement!,
+      'getBoundingClientRect',
+    ).mockImplementation(() => ({ width }) as DOMRect)
+    const splitter = wrapper.get('[role="separator"]')
+    const move = async (clientX: number): Promise<void> => {
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX, pointerId: 1 }))
+      await nextTick()
+    }
+    await splitter.trigger('pointerdown', { clientX: 300, pointerId: 1, button: 0 })
+    await move(-2000)
+    expect(splitter.attributes('aria-valuenow')).toBe('15')
+    await move(2000)
+    expect(splitter.attributes('aria-valuenow')).toBe('60')
+    await move(400)
+    expect(splitter.attributes('aria-valuenow')).toBe('40')
+    width = 506
+    await move(400)
+    expect(splitter.attributes('aria-valuenow')).toBe('50')
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
+    await move(-2000)
+    expect(splitter.attributes('aria-valuenow')).toBe('50')
+    expect(wrapper.get('.global-list').attributes('style')).toContain('50%')
+    wrapper.unmount()
+    host.remove()
+  })
+
+  it('constrains keyboard resizing and removes drag listeners when unmounted', async () => {
+    const wrapper = mount(GlobalBrowserList, {
+      props: { title: 'Automations', rows, activeId: null },
+    })
+    const splitter = wrapper.get('[role="separator"]')
+    expect(splitter.attributes('aria-valuenow')).toBe('30')
+    await splitter.trigger('keydown', { key: 'Home' })
+    await splitter.trigger('keydown', { key: 'ArrowLeft' })
+    expect(splitter.attributes('aria-valuenow')).toBe('15')
+    await splitter.trigger('keydown', { key: 'ArrowRight' })
+    expect(splitter.attributes('aria-valuenow')).toBe('17')
+    await splitter.trigger('keydown', { key: 'End' })
+    await splitter.trigger('keydown', { key: 'ArrowRight' })
+    expect(splitter.attributes('aria-valuenow')).toBe('60')
+    await splitter.trigger('pointerdown', { clientX: 300, pointerId: 1, button: 0 })
+    const removeListener = vi.spyOn(window, 'removeEventListener')
+    wrapper.unmount()
+    expect(removeListener).toHaveBeenCalledWith('pointermove', expect.any(Function))
+    removeListener.mockRestore()
+  })
+
   it('toggles workspace folders independently and preserves loaded rows and selection', async () => {
     const wrapper = mount(GlobalBrowserList, {
       props: { title: 'Sessions', rows, activeId: 'alpha-0', activeWorkspace: 'alpha' },

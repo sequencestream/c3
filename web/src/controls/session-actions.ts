@@ -298,6 +298,10 @@ export function installSessionActions(ctx: AppCtx): void {
     newSessionOpen.value = false
     if (!path) return
     ctx.enterConsole()
+    if (ctx.globalPage?.value === 'sessions') {
+      ctx.globalSessionCreatingWorkspace.value = path
+      ctx.activeSessionKind.value = 'work'
+    }
     send({
       type: 'create_session',
       workspaceName: path,

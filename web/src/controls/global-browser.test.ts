@@ -21,7 +21,9 @@ function setup() {
   const ctx = {
     globalPage: ref(null),
     globalSessionSelection: ref(null),
+    globalSessionCreatingWorkspace: ref(null),
     globalSessionPages: ref({}),
+    globalSessionLivePage: ref(null),
     globalSessionRequestIds: ref({}),
     workspaces: ref([{ name: 'alpha' }, { name: 'beta' }]),
     automations: ref({}),
@@ -60,6 +62,69 @@ function setup() {
 afterEach(() => vi.useRealTimers())
 
 describe('global browser', () => {
+  it('upserts live sessions into global groups while preserving their loaded window', async () => {
+    const { ctx, browser, wrapper } = setup()
+    browser.open('sessions')
+    ctx.globalSessionPages.value = {
+      alpha: { sessions: [session(1)], hasMore: false },
+      beta: { sessions: [session(2)], hasMore: true },
+    }
+    await nextTick()
+    ctx.globalSessionLivePage.value = {
+      workspaceName: 'beta',
+      sessions: Array.from({ length: 7 }, (_, i) => ({ ...session(i + 2), lastModified: 200 + i })),
+    }
+    await nextTick()
+    const beta = browser.sessions.value.filter((row) => row.workspaceName === 'beta')
+    expect(beta).toHaveLength(7)
+    expect(beta.map((row) => row.lastModified)).toEqual([206, 205, 204, 203, 202, 201, 200])
+    expect(browser.paging.value.beta.hasMore).toBe(true)
+    expect(browser.sessions.value.find((row) => row.workspaceName === 'alpha')?.sessionId).toBe(
+      's001',
+    )
+    ctx.globalSessionLivePage.value = { workspaceName: 'secret', sessions: [session(9)] }
+    await nextTick()
+    expect(browser.sessions.value.some((row) => row.workspaceName === 'secret')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('replaces a newly created pending session with its bound identity', async () => {
+    const { ctx, browser, wrapper } = setup()
+    browser.open('sessions')
+    ctx.globalSessionPages.value = { alpha: { sessions: [session(1)], hasMore: false } }
+    await nextTick()
+    const pending = { ...session(2), sessionId: 'pending:new', lastModified: 200 }
+    ctx.globalSessionLivePage.value = { workspaceName: 'alpha', sessions: [pending] }
+    ctx.globalSessionLivePage.value = {
+      workspaceName: 'alpha',
+      sessions: [{ ...pending, sessionId: 'bound' }],
+      replaceSessionId: 'pending:new',
+    }
+    expect(browser.sessions.value.map((row) => row.sessionId)).toEqual(['bound', 's001'])
+    wrapper.unmount()
+  })
+
+  it('keeps a new session when its live push arrives before an older initial page', async () => {
+    const { ctx, browser, wrapper } = setup()
+    browser.open('sessions')
+    ctx.globalSessionLivePage.value = {
+      workspaceName: 'beta',
+      sessions: [{ ...session(20), lastModified: 500 }],
+    }
+    ctx.globalSessionLivePage.value = {
+      workspaceName: 'alpha',
+      sessions: [{ ...session(30), lastModified: 600 }],
+    }
+    ctx.globalSessionPages.value = {
+      beta: { sessions: [session(2)], hasMore: false },
+      alpha: { sessions: [session(1)], hasMore: false },
+    }
+    await nextTick()
+    expect(browser.sessions.value.map((row) => row.sessionId)).toContain('s020')
+    expect(browser.sessions.value.map((row) => row.sessionId)).toContain('s030')
+    wrapper.unmount()
+  })
+
   it('loads five per workspace independently and appends only to the requested group', async () => {
     const { ctx, browser, wrapper } = setup()
     browser.open('sessions')

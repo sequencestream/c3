@@ -832,6 +832,7 @@ export function normalizeWorkspaceSetting(
   }
   return {
     forge,
+    sessionRetentionDays: normalizeWorkspaceSessionRetentionDays(rec.sessionRetentionDays),
     defaultMode,
     consensus,
     devSkill,
@@ -852,6 +853,12 @@ export function normalizeWorkspaceSetting(
     ...roleAgentIds,
     ...(workAgentId ? { workAgentId } : {}),
   }
+}
+
+/** Normalize workspace retention to whole days, with a 15-day default. */
+export function normalizeWorkspaceSessionRetentionDays(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 15
+  return Math.max(1, Math.floor(raw))
 }
 
 /** Runtime contract for the workspace forge selector. */

@@ -3653,6 +3653,9 @@
       },
       "defaultAgent": {
         "label": "默认 Agent"
+      },
+      "sessions": {
+        "label": "会话"
       }
     },
     "defaultMode": {
@@ -4026,6 +4029,12 @@
         "inheritNamed": "继承（当前：{agent}）",
         "stale": "当前选择的工作智能体已被删除,请重新选择,或改回继承。"
       }
+    },
+    "sessions": {
+      "retentionDays": {
+        "label": "会话保存天数"
+      },
+      "hint": "默认保存 15 天，最少 1 天。每天批量删除本工作区超过保留期的 c3 会话及历史内容，按最后活动时间计算，跳过运行中的会话。删除后无法恢复或继续会话；不清理 Cursor IDE 会话。"
     }
   },
   "codex": {

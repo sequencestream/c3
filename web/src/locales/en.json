@@ -3653,6 +3653,9 @@
       },
       "defaultAgent": {
         "label": "Default Agent"
+      },
+      "sessions": {
+        "label": "Sessions"
       }
     },
     "defaultMode": {
@@ -4026,6 +4029,12 @@
         "inheritNamed": "Inherit (currently: {agent})",
         "stale": "The work agent you picked has been deleted. Choose another one, or go back to inheriting."
       }
+    },
+    "sessions": {
+      "retentionDays": {
+        "label": "Session retention (days)"
+      },
+      "hint": "Default 15 days; minimum 1. Each day, inactive c3 sessions and their history in this workspace are permanently deleted after this period, measured from their last activity. Running sessions are skipped. Deleted sessions cannot be resumed. Cursor IDE sessions are excluded."
     }
   },
   "files": {

@@ -153,6 +153,8 @@ export type GitBranchMode = (typeof GIT_BRANCH_MODES)[number]
  * normalized defaults.
  */
 export interface WorkspaceSetting {
+  /** Days to keep inactive c3 sessions in this workspace. Default 15; minimum 1. */
+  sessionRetentionDays?: number
   /**
    * Hosting forge used when creating a pull or merge request for this workspace.
    * `auto` (the normalized default) detects the forge from the repository origin;

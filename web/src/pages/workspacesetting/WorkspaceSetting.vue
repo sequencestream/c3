@@ -210,6 +210,7 @@ type WsTab =
   | 'collab'
   | 'skillRepos'
   | 'automation'
+  | 'sessions'
   | 'observability'
   | 'externalMcp'
   | 'memories'
@@ -220,6 +221,7 @@ const TABS: WsTab[] = [
   'collab',
   'skillRepos',
   'automation',
+  'sessions',
   'observability',
   'externalMcp',
   'memories',
@@ -241,6 +243,7 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   ],
   skillRepos: ['skillRepos'],
   automation: ['automationEnabled', 'automationConcurrency'],
+  sessions: ['sessionRetentionDays'],
   observability: [],
   externalMcp: [],
   memories: [],
@@ -375,6 +378,7 @@ function buildSeed(
     fastSpecMaxLines: config?.fastSpecMaxLines ?? DEFAULT_FAST_SPEC_MAX_LINES,
     // Automation gate defaults open and the dev cap defaults to 2 — mirroring the
     // server's normalization so an absent value renders as the effective default.
+    sessionRetentionDays: config?.sessionRetentionDays ?? 15,
     automationEnabled: config?.automationEnabled ?? true,
     automationConcurrency: config?.automationConcurrency ?? DEFAULT_AUTOMATION_CONCURRENCY,
     // Absent ⇒ '' ⇒ "inherit the system default". Rendered as the leading option, and
@@ -896,6 +900,12 @@ function buildTabPayload(
     }
     case 'skillRepos': {
       payload.skillRepos = deepCopy(src.skillRepos ?? [])
+      break
+    }
+    case 'sessions': {
+      const days = src.sessionRetentionDays
+      payload.sessionRetentionDays =
+        typeof days === 'number' && Number.isFinite(days) ? Math.max(1, Math.floor(days)) : 15
       break
     }
     case 'automation': {
@@ -1754,6 +1764,34 @@ const parkRecoveryRateText = computed(() => {
         </section>
       </div>
 
+      <div
+        v-show="activeTab === 'sessions'"
+        class="project-config-tab-panel"
+        role="tabpanel"
+        data-testid="project-config-tab-sessions"
+      >
+        <section class="project-config-section">
+          <p class="project-config-section-title">
+            {{ t('workspaceSetting.sessions.retentionDays.label') }}
+          </p>
+          <p class="project-config-hint">{{ t('workspaceSetting.sessions.hint') }}</p>
+          <div class="project-config-row">
+            <label class="project-config-row-label" for="workspace-session-retention">{{
+              t('workspaceSetting.sessions.retentionDays.label')
+            }}</label>
+            <input
+              id="workspace-session-retention"
+              v-model.number="draft.sessionRetentionDays"
+              class="project-config-field project-config-number"
+              type="number"
+              min="1"
+              step="1"
+              data-testid="session-retention-days"
+            />
+          </div>
+        </section>
+      </div>
+
       <!-- ============ Local observation tab (read-only) ============
            Measurements, not settings: no input, no Save, no draft. The panel owns
            only a retry for a failed read. -->
@@ -1922,6 +1960,17 @@ const parkRecoveryRateText = computed(() => {
           >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
         >
         <button data-testid="project-config-save-skillRepos" @click="saveTab('skillRepos')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'sessions'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.sessions"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-sessions"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-sessions" @click="saveTab('sessions')">
           {{ t('common.action.save.label') }}
         </button>
       </div>

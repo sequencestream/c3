@@ -192,9 +192,9 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     const w = mountWs(null)
     // 默认 Agent + 7 个角色覆盖 + 3 vendor row-labels + devSkill + rounds + speechChars
     // + gitBranchMode + defaultMainBranch + default-visible SDD spec root
-    // + fast-spec 两个阈值 + automation cap + 工作 Agent = 21
+    // + fast-spec 两个阈值 + automation cap + 工作 Agent + 会话保存天数 = 22
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(21)
+    expect(labels).toHaveLength(22)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -901,20 +901,21 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly nine tabs in order: 默认 Agent / 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 访问 / 记忆', () => {
+  it('renders ten tabs including session retention', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
       .map((s) => s.text())
     const tabButtons = w.findAll('[data-testid^="project-config-tab-btn-"]')
-    expect(tabButtons).toHaveLength(9)
-    expect(labels.slice(0, 9)).toEqual([
+    expect(tabButtons).toHaveLength(10)
+    expect(labels.slice(0, 10)).toEqual([
       'Default Agent',
       'Default mode',
       'Git & Sandbox',
       'Collaboration',
       'Skill repos',
       'Automation',
+      'Sessions',
       'Local observation',
       'Access',
       'Memories',
@@ -1474,5 +1475,31 @@ describe('WorkspaceSetting.vue — optional spec review', () => {
     expect(w.find('[data-testid="spec-machine-approval-enabled"]').exists()).toBe(false)
     await w.find(SAVE.collab).trigger('click')
     expect((w.emitted('save') as [WorkspaceSettingType][])[1][0].specReviewRequired).toBe(false)
+  })
+})
+
+describe('WorkspaceSetting.vue — session retention', () => {
+  it('defaults to 15 days and offers a minimum of one day', () => {
+    const w = mountWs(null)
+    const input = w.get('[data-testid="session-retention-days"]')
+    expect((input.element as HTMLInputElement).value).toBe('15')
+    expect(input.attributes('min')).toBe('1')
+  })
+
+  it('saves whole days independently from other tab drafts', async () => {
+    const w = mountWs(cfg({ sessionRetentionDays: 30, automationConcurrency: 2 }))
+    await w.get('[data-testid="session-retention-days"]').setValue(7.9)
+    await w.get('[data-testid="automation-concurrency"]').setValue(5)
+    await w.get('[data-testid="project-config-save-sessions"]').trigger('click')
+    const saved = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(saved.sessionRetentionDays).toBe(7)
+    expect(saved.automationConcurrency).toBe(2)
+  })
+
+  it('preserves retention when saving another tab', async () => {
+    const w = mountWs(cfg({ sessionRetentionDays: 30 }))
+    await w.get('[data-testid="session-retention-days"]').setValue(5)
+    await w.get(SAVE.automation).trigger('click')
+    expect((w.emitted('save') as [WorkspaceSettingType][])[0][0].sessionRetentionDays).toBe(30)
   })
 })

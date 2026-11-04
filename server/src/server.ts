@@ -131,6 +131,10 @@ import {
   stopSessionJanitor,
 } from './features/session-cleanup/session-janitor.js'
 import { startMemoryJanitor, stopMemoryJanitor } from './features/memory/janitor.js'
+import {
+  startWorkspaceSessionJanitor,
+  stopWorkspaceSessionJanitor,
+} from './features/session-cleanup/workspace-session-janitor.js'
 import { runMemorySearch, runMemoryWrite, type MemoryScope } from './features/memory/tool-defs.js'
 import { runAppendWorknote, runListWorknotes } from './features/intents/worknote-tool-defs.js'
 import { EventBus } from './kernel/events/event-bus.js'
@@ -1106,6 +1110,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
     stopUpdateCheckScheduler()
     stopSessionJanitor()
+    stopWorkspaceSessionJanitor()
     stopMemoryJanitor()
     stopQueueTickLoop()
     // Chat robots first: their links feed inbound work into everything below.
@@ -1168,6 +1173,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // session transcripts older than the retention window from every reachable
   // vendor session store. Fail-soft, daily cadence.
   startSessionJanitor()
+  startWorkspaceSessionJanitor()
 
   // Start the memory janitor: repair duplicate memory titles and erase inactive
   // memory rows past their recovery window. Rule-based, no agent, fail-soft,

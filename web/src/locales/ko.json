@@ -3654,6 +3654,9 @@
       },
       "defaultAgent": {
         "label": "기본 Agent"
+      },
+      "sessions": {
+        "label": "세션"
       }
     },
     "defaultMode": {
@@ -4027,6 +4030,12 @@
         "inheritNamed": "상속 (현재: {agent})",
         "stale": "선택한 워크 Agent가 삭제되었습니다. 다시 선택하거나 상속으로 되돌리세요."
       }
+    },
+    "sessions": {
+      "retentionDays": {
+        "label": "세션 보관 일수"
+      },
+      "hint": "기본 15일, 최소 1일입니다. 마지막 활동 후 보관 기간이 지난 이 워크스페이스의 c3 세션과 기록을 매일 일괄 영구 삭제합니다. 실행 중인 세션은 건너뜁니다. 삭제한 세션은 복구하거나 재개할 수 없습니다. Cursor IDE 세션은 제외됩니다."
     }
   },
   "codex": {

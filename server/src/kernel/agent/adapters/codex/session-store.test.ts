@@ -20,6 +20,8 @@ import { CodexSessionStore } from './session-store.js'
 import { SessionAccessor } from '../../session/accessor.js'
 
 let tmpHome: string
+/** Preserved across tests so a developer `CODEX_HOME` does not shadow `os.homedir()/.codex`. */
+let savedCodexHome: string | undefined
 
 /** The mandatory first line of a codex session JSONL. */
 function metaLine(sessionId: string, cwd: string): string {
@@ -83,6 +85,8 @@ function writeSession(sessionId: string, cwd: string, lines: string[]): void {
 }
 
 beforeEach(() => {
+  savedCodexHome = process.env.CODEX_HOME
+  delete process.env.CODEX_HOME
   tmpHome = mkdtempSync(path.join(os.tmpdir(), 'c3-codex-sess-'))
   vi.spyOn(os, 'homedir').mockReturnValue(tmpHome)
 })
@@ -90,6 +94,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   rmSync(tmpHome, { recursive: true, force: true })
+  if (savedCodexHome !== undefined) process.env.CODEX_HOME = savedCodexHome
+  else delete process.env.CODEX_HOME
 })
 
 describe('CodexSessionStore.list — title derivation', () => {

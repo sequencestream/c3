@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { emptyWorkspaceActivitySummary, type WorkspaceActivitySummary } from '@ccc/shared/protocol'
-import { applyActivityDelta, applyActivitySnapshot, projectActivityBadges } from './activity-apply'
+import {
+  applyActivityDelta,
+  applyActivitySnapshot,
+  globalRunningNonToolSessionCount,
+  projectActivityBadges,
+} from './activity-apply'
 
 function summary(running: number): WorkspaceActivitySummary {
   return {
@@ -95,5 +100,43 @@ describe('projectActivityBadges', () => {
     expect(projected.ownerRunningCounts.intent).toBe(1)
     expect(projected.sessionCounts.work).toBe(1)
     expect(projected.sessionCounts.intent).toBe(1)
+  })
+})
+
+describe('globalRunningNonToolSessionCount', () => {
+  it('sums non-idle sessions minus tool kind across workspaces', () => {
+    const store = applyActivitySnapshot({
+      revision: 1,
+      workspaces: {
+        'ws-a': {
+          ...emptyWorkspaceActivitySummary(),
+          runningSessions: 4,
+          runningSessionsByKind: { work: 2, tool: 2 },
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+        },
+        'ws-b': {
+          ...emptyWorkspaceActivitySummary(),
+          runningSessions: 3,
+          runningSessionsByKind: { intent: 3 },
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+        },
+      },
+    })
+    expect(globalRunningNonToolSessionCount(store)).toBe(5)
+  })
+
+  it('never subtracts below zero when tool count exceeds total', () => {
+    const store = applyActivitySnapshot({
+      revision: 1,
+      workspaces: {
+        odd: {
+          ...emptyWorkspaceActivitySummary(),
+          runningSessions: 1,
+          runningSessionsByKind: { tool: 5 },
+          activeOwners: { intents: 0, discussions: 0, automations: 0 },
+        },
+      },
+    })
+    expect(globalRunningNonToolSessionCount(store)).toBe(0)
   })
 })

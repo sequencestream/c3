@@ -16,7 +16,12 @@ import {
   sessionCacheKey,
   type SessionPageKind,
 } from '../state/types'
-import { applyActivityDelta, applyActivitySnapshot, projectActivityBadges } from '../activity-apply'
+import {
+  applyActivityDelta,
+  applyActivitySnapshot,
+  globalRunningNonToolSessionCount as sumGlobalRunningNonToolSessions,
+  projectActivityBadges,
+} from '../activity-apply'
 import { markActivityApplied } from '../activity-refresh'
 import { transcriptToChat } from '../transcript'
 
@@ -218,6 +223,7 @@ export function buildSessionHandlers(
     sessionCounts.value = projected.sessionCounts
     ownerRunningCounts.value = projected.ownerRunningCounts
     workspaceRunningSessionCounts.value = projected.workspaceRunningSessionCounts
+    ctx.globalRunningNonToolSessionCount.value = sumGlobalRunningNonToolSessions(store)
     if (ctx.workcenterTodoCounts) ctx.workcenterTodoCounts.value = projected.workcenterTodoCounts
     deliveriesNeedsAction.value = projected.deliveriesNeedsAction
     markActivityApplied(Date.now())
@@ -276,6 +282,7 @@ export function buildSessionHandlers(
       ctx.applyStatuses(msg.statuses)
       activityRevision.value = 0
       workspaceActivity.value = {}
+      ctx.globalRunningNonToolSessionCount.value = 0
       markActivityApplied(0)
 
       // ---- Deep-link consumption (takes priority over localStorage restore) ----

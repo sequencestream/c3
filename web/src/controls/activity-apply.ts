@@ -15,6 +15,20 @@ export type ActivityStore = {
   workspaces: Record<string, WorkspaceActivitySummary>
 }
 
+/**
+ * Cross-workspace count of sessions in a non-idle run state, excluding **tool**
+ * sessions. Mirrors badge semantics: each session id counts once; `tool` kind is
+ * subtracted from the workspace `runningSessions` total (which includes tool rows).
+ */
+export function globalRunningNonToolSessionCount(store: ActivityStore): number {
+  let sum = 0
+  for (const summary of Object.values(store.workspaces)) {
+    const toolRunning = summary.runningSessionsByKind.tool ?? 0
+    sum += Math.max(0, summary.runningSessions - toolRunning)
+  }
+  return sum
+}
+
 export type ActivityApplyStatus = 'applied' | 'stale' | 'gap'
 
 export function applyActivitySnapshot(msg: {

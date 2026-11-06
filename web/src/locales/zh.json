@@ -4733,6 +4733,8 @@
   },
   "globalBrowser": {
     "sessions": "会话",
+    "sessionsBadgeAriaLabel": "会话：全部工作区共有 {count} 个非工具型运行中会话",
+    "sessionsTooltipRunning": "会话 — 全部工作区共有 {count} 个非工具型运行中会话",
     "automations": "自动化",
     "refresh": "刷新",
     "more": "再加载 5 条",

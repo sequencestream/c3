@@ -169,6 +169,8 @@ export function buildSessionSlice(deps: StateDeps) {
   // 每工作区的「运行中会话数」(服务端权威,跨所有 kind 求和,不分桶)。与 sessionCounts
   // 同一帧送达,按 workspace 名聚合,驱动工作区竖条角标。只在回包属于当前工作区时写入。
   const workspaceRunningSessionCounts = ref<Record<string, number>>({})
+  // 全部 Workspace 内、非工具型且处于运行态的会话总数(活动摘要派生)。驱动最左侧全局「会话」入口角标。
+  const globalRunningNonToolSessionCount = ref(0)
   // 全工作区活动摘要(服务端角标投影)。revision 为 0 表示尚未收到 snapshot。
   const activityRevision = ref(0)
   const workspaceActivity = ref<Record<string, WorkspaceActivitySummary>>({})
@@ -386,6 +388,7 @@ export function buildSessionSlice(deps: StateDeps) {
     sessionCounts,
     ownerRunningCounts,
     workspaceRunningSessionCounts,
+    globalRunningNonToolSessionCount,
     activityRevision,
     workspaceActivity,
     sessionPagingByWorkspace,

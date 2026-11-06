@@ -2,6 +2,7 @@ import type { HandlerMap } from '../handler-registry'
 import type { MessageHandlerLocals } from './context'
 import type { AppCtx } from '../types'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
+import { globalRunningNonToolSessionCount as sumGlobalRunningNonToolSessions } from '../activity-apply'
 
 export function buildWorkspaceHandlers(
   ctx: AppCtx,
@@ -193,6 +194,10 @@ export function buildWorkspaceHandlers(
         }
         if (pruned) activity.value = nextActivity
       }
+      ctx.globalRunningNonToolSessionCount.value = sumGlobalRunningNonToolSessions({
+        revision: ctx.activityRevision.value,
+        workspaces: ctx.workspaceActivity.value,
+      })
       // If the current workspace was removed, fall back to the most-recent one.
       const resolved = resolveCurrentWorkspace(currentWorkspace.value, msg.workspaces)
       if (resolved !== currentWorkspace.value) {

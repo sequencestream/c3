@@ -1,29 +1,26 @@
 /**
- * Claude Agent SDK 0.3.283 → 0.3.289 compatibility boundaries (upgrade 留痕).
+ * Claude Agent SDK 0.3.289 → 0.3.318 compatibility boundaries (upgrade 留痕).
  *
- * Drives the REAL `runClaude` / `runTaskTool` / `askOneShot` with the SDK `query`
- * mocked (the same seam pattern as `claude-sdk-0283-compat.test.ts`) to pin what
- * this upgrade window changed for c3 — and, more importantly, what it did NOT:
+ * Drives the REAL `runClaude` / `runTaskTool` / `askOneShot` / `askAgentOnce` with the
+ * SDK `query` mocked (same seam as prior compat tests) to pin what this window changed
+ * for c3 — and what it did NOT:
  *
- *  - **`SDKMessage` top-level union is byte-identical** (39 arms, no add/remove/
- *    rename). The one new control-protocol arm (`get_task_output`) and the new
- *    `system/informational.tag` field ride `unknown` narrowing: no wire frame,
- *    no turn close.
- *  - **`permissionMode` omission semantics were written down upstream** (omit ⇒
- *    read `settings.permissions.defaultMode`, else `'auto'`). c3 must never rely
- *    on that: every query construction point sets it explicitly (including the
- *    driver's `toPermissionMode` grid, asserted total over every cell).
- *  - **`alwaysLoad` was refined** (a server's `alwaysLoad: true` is now defeated
- *    per-tool by `_meta['anthropic/alwaysLoad']: false`). c3 sends
- *    `alwaysLoad: true` for every loopback MCP server AND its own MCP route emits
- *    no such `_meta`, so c3 tools stay resident ahead of tool search.
- *  - **New warning `CLAUDE_SDK_MCP_TOOL_SCHEMA_UNCONVERTIBLE`.** c3 never builds
- *    an in-process SDK MCP server (its tools go over loopback HTTP), so the code
- *    cannot fire — and the filter stays narrow (only `CAN_USE_TOOL_SHADOWED`).
- *  - **Hooks stay robot-only.** The standard / intent / spec gates carry no
- *    `hooks` key; the robot gate with a frozen root carries exactly `PreToolUse`.
+ *  - **`SDKMessage` adds `system` / `subtype: 'session_writes_lost'`** (0.3.317). It may
+ *    arrive after the terminal `result` on non-team paths where c3 closes streaming
+ *    input; must not emit wire frames, duplicate `turn_end`, or throw.
+ *  - **`permissionMode` omission semantics shifted again** (0.3.302 for third-party
+ *    providers). Every `query` construction site sets `permissionMode` explicitly
+ *    (including `agent-once`, slash-command listing, automation naming) — asserted here
+ *    alongside the driver's `toPermissionMode` grid.
+ *  - **`subagent_type: "fork"` default** (0.3.302): team detection stays on top-level
+ *    `TeamCreate` / `SendMessage` / background `Agent` only — task tools with fork
+ *    metadata stay non-team.
+ *  - **Hooks gain optional `onFailure`** (0.3.317): robot `PreToolUse` keeps the prior
+ *    shape; c3 does not pass `onFailure`.
+ *  - **`alwaysLoad` / MCP warning / hook placement** — unchanged assertions vs 0.3.289.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentConfig } from '@ccc/shared/protocol'
 import type { ServerToClient } from '@ccc/shared/protocol'
 
 const sdk = vi.hoisted(() => ({
@@ -41,15 +38,38 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
       },
       interrupt: () => Promise.resolve(),
       setPermissionMode: () => Promise.resolve(),
+      /** Used by `listCommands` (control channel only; no model turn). */
+      supportedCommands: async () => [],
     }
   },
+}))
+
+/** `askAgentOnce` wires advisor sessions without loading project settings — keep that. */
+vi.mock('./kernel/agent-config/index.js', () => ({
+  launchForAgent: () => ({ envOverrides: undefined, model: undefined, relayCandidates: undefined }),
+  bindClaudeRelay: () => null,
+  unbindRelay: () => {},
+}))
+
+vi.mock('./kernel/run/internal-run.js', () => ({
+  beginInternalRun: () => ({
+    bind: () => {},
+    settle: () => {},
+    fail: () => {},
+  }),
+}))
+
+vi.mock('./sessions.js', () => ({
+  addToolSession: () => {},
 }))
 
 import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { runClaude, runTaskTool, askOneShot } from './kernel/agent/index.js'
+import { askAgentOnce } from './agent-once.js'
+import { listCommands } from './commands.js'
+import { runClaude, runTaskTool, askOneShot, isTeamTool } from './kernel/agent/index.js'
 import { toPermissionMode } from './kernel/agent/adapters/claude/permission-map.js'
 import {
   isSuppressedClaudeWarning,
@@ -64,10 +84,18 @@ import {
 /** The SDK warning code 0.3.289 adds; c3 must let it through (a real misconfig). */
 const UNCONVERTIBLE_WARNING_CODE = 'CLAUDE_SDK_MCP_TOOL_SCHEMA_UNCONVERTIBLE'
 
+const minimalClaudeAgent: AgentConfig = {
+  id: 'compat-advisor',
+  vendor: 'claude',
+  configMode: 'system',
+  displayName: 'Compat',
+  config: { baseUrl: '', apiKey: '', model: '' },
+}
+
 const init = (extra: Record<string, unknown> = {}) => ({
   type: 'system',
   subtype: 'init',
-  session_id: 'sid-0289',
+  session_id: 'sid-0318',
   ...extra,
 })
 const assistantText = (text: string) => ({
@@ -99,20 +127,34 @@ beforeEach(() => {
   sdk.options = []
 })
 
-describe('SDK 0.3.289 new frames — ignored, the turn still completes on result', () => {
+describe('SDK 0.3.317 session_writes_lost — after result on non-team path', () => {
+  it('does not emit wire frames, duplicate turn_end, or throw when input closes after result', async () => {
+    sdk.streams.push([
+      init(),
+      assistantText('ok'),
+      result({ subtype: 'success' }),
+      { type: 'system', subtype: 'session_writes_lost', message: 'buffers lost' },
+    ])
+    const events = await runTurn()
+
+    expect(events.filter((e) => e.type === 'assistant_text')).toHaveLength(1)
+    expect(events.filter((e) => e.type === 'turn_end')).toHaveLength(1)
+    expect(events[events.length - 1]).toMatchObject({ type: 'turn_end', reason: 'complete' })
+    expect(JSON.stringify(events).includes('session_writes_lost')).toBe(false)
+  })
+})
+
+describe('SDK 0.3.289 + 0.3.318 frames — ignored unless mapped', () => {
   it('a get_task_output control_request and informational.tag produce no wire frame and do not close the turn', async () => {
     sdk.streams.push([
       init(),
-      // The one new SDKControlRequestInner arm (SDK↔CLI internal protocol).
       {
         type: 'control_request',
         request_id: 'req-1',
         request: { subtype: 'get_task_output', task_id: 't-1' },
       },
-      // 0.3.289 adds an optional `tag` to informational frames.
       { type: 'system', subtype: 'informational', tag: 'notice', message: 'a notice' },
       assistantText('ok'),
-      // 0.3.289 adds optional first-token queue telemetry to a successful result.
       result({
         subtype: 'success',
         first_text_post_queue_wait_ms: 12,
@@ -140,7 +182,7 @@ describe('SDK 0.3.289 new frames — ignored, the turn still completes on result
   it('an entirely unknown top-level frame type is ignored without closing the turn', async () => {
     sdk.streams.push([
       init(),
-      { type: 'brand_new_0_3_289_frame', payload: { whatever: true } },
+      { type: 'brand_new_frame', payload: { whatever: true } },
       assistantText('still here'),
       result(),
     ])
@@ -148,11 +190,11 @@ describe('SDK 0.3.289 new frames — ignored, the turn still completes on result
 
     expect(events.filter((e) => e.type === 'assistant_text')).toHaveLength(1)
     expect(events.filter((e) => e.type === 'turn_end')).toHaveLength(1)
-    expect(JSON.stringify(events).includes('brand_new_0_3_289_frame')).toBe(false)
+    expect(JSON.stringify(events).includes('brand_new_frame')).toBe(false)
   })
 })
 
-describe('permissionMode is explicit at every query construction point', () => {
+describe('permissionMode is explicit at every query construction point (0.3.302+)', () => {
   it('runClaude forwards the caller-chosen mode verbatim (bypassPermissions never relies on the SDK default)', async () => {
     sdk.streams.push([init(), assistantText('a'), result()])
     await runTurn({ permissionMode: 'bypassPermissions' })
@@ -189,6 +231,49 @@ describe('permissionMode is explicit at every query construction point', () => {
     expect(sdk.options[0].permissionMode).toBe('default')
   })
 
+  it('askAgentOnce passes permissionMode: default explicitly', async () => {
+    sdk.streams.push([init(), assistantText('advisor'), result()])
+    await askAgentOnce(minimalClaudeAgent, 'vote', '/tmp', new AbortController().signal)
+    expect(sdk.options[0].permissionMode).toBe('default')
+  })
+
+  it('listCommands passes permissionMode: default explicitly', async () => {
+    await listCommands('/tmp')
+    expect(sdk.options[0].permissionMode).toBe('default')
+  })
+
+  it('runClaude / runTaskTool / askOneShot keep settingSources user+project where configured', async () => {
+    sdk.streams.push([init(), assistantText('a'), result()])
+    await runTurn()
+    expect(sdk.options[0].settingSources).toEqual(['user', 'project'])
+
+    sdk.options = []
+    sdk.streams.push([init(), toolResult('tu-1', 'x'), result()])
+    await runTaskTool({
+      toolName: 'TaskList',
+      input: {},
+      cwd: '/tmp',
+      signal: new AbortController().signal,
+    })
+    expect(sdk.options[0].settingSources).toEqual(['user', 'project'])
+
+    sdk.options = []
+    sdk.streams.push([init(), assistantText('v'), result()])
+    await askOneShot({
+      prompt: 'j',
+      cwd: '/tmp',
+      signal: new AbortController().signal,
+      agentId: 'a',
+    })
+    expect(sdk.options[0].settingSources).toEqual(['user', 'project'])
+  })
+
+  it('askAgentOnce intentionally does not use settingSources (light advisor path)', async () => {
+    sdk.streams.push([init(), assistantText('x'), result()])
+    await askAgentOnce(minimalClaudeAgent, 'p', '/tmp', new AbortController().signal)
+    expect(sdk.options[0]).not.toHaveProperty('settingSources')
+  })
+
   it('the driver grid (toPermissionMode) resolves every cell to a concrete mode', () => {
     const actionModes = ['plan', 'build'] as const
     const toolGates = ['always-ask', 'on-sensitive', 'trusted-prefix', 'never-ask'] as const
@@ -201,7 +286,13 @@ describe('permissionMode is explicit at every query construction point', () => {
   })
 })
 
-describe('hooks only on the robot gate', () => {
+describe('0.3.302 fork default — task / team tool surface', () => {
+  it('does not treat TaskCreate with subagent_type fork as a team-liveness tool', () => {
+    expect(isTeamTool('TaskCreate', { subagent_type: 'fork', subject: 's' })).toBe(false)
+  })
+})
+
+describe('0.3.317 hooks.onFailure — robot PreToolUse unchanged shape', () => {
   it('the standard gate carries no hooks key', async () => {
     sdk.streams.push([init(), assistantText('ok'), result()])
     await runTurn()
@@ -218,24 +309,40 @@ describe('hooks only on the robot gate', () => {
     expect(sdk.options[1]).not.toHaveProperty('hooks')
   })
 
-  it('the robot gate with a frozen root carries exactly PreToolUse', async () => {
+  it('the robot gate carries PreToolUse only; query options do not set onFailure', async () => {
     sdk.streams.push([init(), assistantText('ok'), result()])
     await runTurn({ gate: 'robot', robotRoot: '/tmp/robot-root' })
 
     const hooks = sdk.options[0].hooks as Record<string, unknown>
     expect(hooks).toEqual(expect.objectContaining({ PreToolUse: expect.any(Array) }))
     expect(Object.keys(hooks)).toEqual(['PreToolUse'])
+    expect(sdk.options[0]).not.toHaveProperty('onFailure')
   })
 })
 
-describe('SDK warning filter stays narrow in 0.3.289', () => {
+describe('0.3.295 MCP tool_use_result size — loopback task path still parses', () => {
+  it('runTaskTool tolerates a large tool_result payload', async () => {
+    const big = 'x'.repeat(120_000)
+    sdk.streams.push([init(), toolResult('tu-1', big), result()])
+    const out = await runTaskTool({
+      toolName: 'TaskList',
+      input: {},
+      cwd: '/tmp',
+      signal: new AbortController().signal,
+    })
+    expect(out.isError).toBe(false)
+    expect(out.content.length).toBeGreaterThan(100_000)
+  })
+})
+
+describe('SDK warning filter stays narrow (0.3.289 code)', () => {
   it('drops only CLAUDE_SDK_CAN_USE_TOOL_SHADOWED (options-object and positional forms)', () => {
     expect(SHADOWED_WARNING_CODE).toBe('CLAUDE_SDK_CAN_USE_TOOL_SHADOWED')
     expect(isSuppressedClaudeWarning({ code: SHADOWED_WARNING_CODE })).toBe(true)
     expect(isSuppressedClaudeWarning('SomeType', SHADOWED_WARNING_CODE)).toBe(true)
   })
 
-  it('lets the new CLAUDE_SDK_MCP_TOOL_SCHEMA_UNCONVERTIBLE code through', () => {
+  it('lets the CLAUDE_SDK_MCP_TOOL_SCHEMA_UNCONVERTIBLE code through', () => {
     expect(isSuppressedClaudeWarning({ code: UNCONVERTIBLE_WARNING_CODE })).toBe(false)
     expect(isSuppressedClaudeWarning('SomeType', UNCONVERTIBLE_WARNING_CODE)).toBe(false)
   })
@@ -274,7 +381,7 @@ describe('alwaysLoad stays effective for c3 loopback MCP tools', () => {
       view: () => ({ content: [{ type: 'text', text: 'VIEWED' }] }),
       save: () => ({ content: [{ type: 'text', text: 'SAVED' }] }),
     }
-    const intentMcp = createIntentMcp('http://127.0.0.1', tools, () => 'tok-0289')
+    const intentMcp = createIntentMcp('http://127.0.0.1', tools, () => 'tok-0318')
 
     beforeAll(async () => {
       const app = new Hono()
@@ -298,7 +405,7 @@ describe('alwaysLoad stays effective for c3 loopback MCP tools', () => {
       })
       const client = new Client({ name: 'test', version: '1.0.0' })
       const transport = new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${port}${INTENT_MCP_PATH}?token=tok-0289`),
+        new URL(`http://127.0.0.1:${port}${INTENT_MCP_PATH}?token=tok-0318`),
       )
       await client.connect(transport)
       try {

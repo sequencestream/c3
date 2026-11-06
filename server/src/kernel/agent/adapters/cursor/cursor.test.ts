@@ -196,13 +196,20 @@ describe('CursorDriver', () => {
   })
 
   it('starts without any api key, falling back to the keychain login', async () => {
-    const { cli, calls } = fakeCli([resultFrame()])
-    const driver = new CursorDriver(() => ({}), cli)
+    const savedKey = process.env.CURSOR_API_KEY
+    delete process.env.CURSOR_API_KEY
+    try {
+      const { cli, calls } = fakeCli([resultFrame()])
+      const driver = new CursorDriver(() => ({}), cli)
 
-    const run = await driver.start(startOpts({ envOverrides: {} }))
+      const run = await driver.start(startOpts({ envOverrides: {} }))
 
-    await expect(run.sessionId()).resolves.toBe(MINTED_ID)
-    expect(calls.runs[0]?.env.CURSOR_API_KEY).toBeUndefined()
+      await expect(run.sessionId()).resolves.toBe(MINTED_ID)
+      expect(calls.runs[0]?.env.CURSOR_API_KEY).toBeUndefined()
+    } finally {
+      if (savedKey !== undefined) process.env.CURSOR_API_KEY = savedKey
+      else delete process.env.CURSOR_API_KEY
+    }
   })
 
   it('drops images loudly instead of failing the turn', async () => {

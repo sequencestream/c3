@@ -45,6 +45,7 @@ export async function listCommands(cwd: string): Promise<SlashCommandInfo[]> {
       // Same inheritance as a real run so the listed set matches what would
       // actually execute (ADR 0005): user + project commands/skills.
       settingSources: ['user', 'project'],
+      permissionMode: 'default',
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
     },
   })

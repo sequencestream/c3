@@ -112,6 +112,7 @@ const defaultInvokeLlm: InvokeLlm = async (prompt, context) => {
       prompt,
       options: {
         ...(context?.workspacePath ? { cwd: context.workspacePath } : {}),
+        settingSources: ['user', 'project'],
         disallowedTools: ['Bash', 'Edit', 'Write', 'Read', 'Task', 'WebFetch', 'WebSearch'],
         permissionMode: 'default',
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),

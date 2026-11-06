@@ -8,7 +8,15 @@ const addToolSessionMock = vi.hoisted(() => vi.fn())
 vi.mock('../../sessions.js', () => ({ addToolSession: addToolSessionMock }))
 
 const queryMock = vi.fn(
-  (opts: { options?: { cwd?: string; model?: string; env?: Record<string, string> } }) => {
+  (opts: {
+    options?: {
+      cwd?: string
+      model?: string
+      env?: Record<string, string>
+      permissionMode?: string
+      settingSources?: readonly string[]
+    }
+  }) => {
     void opts
     return (async function* () {
       yield { type: 'system', session_id: 'automation-name-session' }
@@ -136,6 +144,8 @@ describe('generateAutomationName', () => {
     const opts = queryMock.mock.calls[0][0].options
     expect(opts?.cwd).toBe('/ws')
     expect(opts?.model).toBe('tool-model')
+    expect(opts?.permissionMode).toBe('default')
+    expect(opts?.settingSources).toEqual(['user', 'project'])
     expect(opts?.env).toMatchObject({ TOOL: '1' })
     expect(addToolSessionMock).toHaveBeenCalledWith(
       'automation-name-session',

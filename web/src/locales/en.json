@@ -4733,6 +4733,8 @@
   },
   "globalBrowser": {
     "sessions": "Sessions",
+    "sessionsBadgeAriaLabel": "Sessions: {count} non-tool sessions running across workspaces",
+    "sessionsTooltipRunning": "Sessions — {count} non-tool sessions running across workspaces",
     "automations": "Automations",
     "refresh": "Refresh",
     "more": "Load 5 more",

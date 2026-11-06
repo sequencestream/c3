@@ -137,6 +137,7 @@ describe('activity_snapshot / activity_delta — 全工作区权威角标', () =
     } as ServerToClient)
     expect(state.workspaceRunningSessionCounts.value['ws-a']).toBe(3)
     expect(state.workspaceRunningSessionCounts.value['ws-b']).toBe(1)
+    expect(state.globalRunningNonToolSessionCount.value).toBe(4)
     expect(state.ownerRunningCounts.value.intent).toBe(2)
     expect(state.workcenterPendingCount.value).toBe(4)
     expect(state.HEADER_TABS.value.find((tab) => tab.key === 'deliveries')?.badgeCount).toBe(1)

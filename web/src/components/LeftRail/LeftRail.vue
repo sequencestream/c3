@@ -17,6 +17,8 @@ const RELEASES_URL = 'https://github.com/sequencestream/c3/releases/latest'
 
 const props = defineProps<{
   globalPage?: 'sessions' | 'automations' | null
+  /** 全部工作区内、非工具型且处于运行态的会话总数；0 时不展示角标 */
+  globalRunningNonToolSessionCount?: number
   status: 'connecting' | 'open' | 'closed'
   viewMode: 'workspace' | 'workcenter'
   systemSettingsOpen?: boolean
@@ -40,6 +42,7 @@ const emit = defineEmits<{
 }>()
 
 const pendingCount = computed(() => props.workcenterPendingCount ?? 0)
+const globalSessionsBadgeCount = computed(() => props.globalRunningNonToolSessionCount ?? 0)
 const downloadPercent = computed(() => {
   const update = props.selfUpdate
   if (!update || update.totalBytes <= 0) return 0
@@ -99,9 +102,15 @@ function confirmRestart(): void {
         type="button"
         class="rail-btn"
         :class="{ active: globalPage === page && !systemSettingsOpen && !personalizedSettingOpen }"
-        :title="t(page === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')"
+        :title="
+          page === 'sessions' && globalSessionsBadgeCount > 0
+            ? t('globalBrowser.sessionsTooltipRunning', { count: globalSessionsBadgeCount })
+            : t(page === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')
+        "
         :aria-label="
-          t(page === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')
+          page === 'sessions' && globalSessionsBadgeCount > 0
+            ? t('globalBrowser.sessionsBadgeAriaLabel', { count: globalSessionsBadgeCount })
+            : t(page === 'sessions' ? 'globalBrowser.sessions' : 'globalBrowser.automations')
         "
         :data-testid="`rail-${page}`"
         @click="emit('open-global', page)"
@@ -113,6 +122,13 @@ function confirmRestart(): void {
         <svg v-else class="rail-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="m13 2-9 12h7l-1 8 10-13h-8l1-7Z" />
         </svg>
+        <span
+          v-if="page === 'sessions' && globalSessionsBadgeCount > 0"
+          class="rail-badge"
+          :aria-hidden="true"
+          data-testid="rail-global-sessions-badge"
+          >{{ globalSessionsBadgeCount }}</span
+        >
       </button>
       <button
         type="button"

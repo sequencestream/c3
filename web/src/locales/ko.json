@@ -4734,6 +4734,8 @@
   },
   "globalBrowser": {
     "sessions": "세션",
+    "sessionsBadgeAriaLabel": "세션: 모든 작업 공간에서 도구가 아닌 실행 중 세션 {count}개",
+    "sessionsTooltipRunning": "세션 — 모든 작업 공간에서 도구가 아닌 실행 중 세션 {count}개",
     "automations": "자동화",
     "refresh": "새로고침",
     "more": "5개 더 불러오기",

@@ -10,6 +10,7 @@ import {
   type VendorHostStatus,
   type VendorId,
   type VendorRuntimeStatus,
+  type WorkspaceActivitySummary,
 } from '@ccc/shared/protocol'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import type { ModelProvider } from '@ccc/shared/protocol'
@@ -215,6 +216,9 @@ function makeCtx() {
   const closeIntentGateEscape = vi.fn(() => {
     intentGateEscape.value = null
   })
+  const activityRevision = ref(0)
+  const workspaceActivity = ref<Record<string, WorkspaceActivitySummary>>({})
+  const globalRunningNonToolSessionCount = ref(0)
   const ctx = {
     settingsOpen,
     settingsTarget,
@@ -323,6 +327,9 @@ function makeCtx() {
     pendingDeepLink,
     deepLinkFulfilled,
     deepLinkTimers,
+    activityRevision,
+    workspaceActivity,
+    globalRunningNonToolSessionCount,
     updateStatus,
     selfUpdate,
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
@@ -998,6 +1005,9 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const sessionCounts = ref<Record<string, number>>({})
     const activeTab = ref<string>('console')
     const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
+    const activityRevision = ref(0)
+    const workspaceActivity = ref<Record<string, WorkspaceActivitySummary>>({})
+    const globalRunningNonToolSessionCount = ref(0)
     const send = vi.fn()
     const ctx = {
       toast: ref<string | null>(null),
@@ -1045,6 +1055,9 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       pendingDeepLink: ref<import('@/lib/deep-link').DeepLinkTarget | null>(null),
       deepLinkFulfilled: ref<Set<string>>(new Set()),
       deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
+      activityRevision,
+      workspaceActivity,
+      globalRunningNonToolSessionCount,
       send,
       bindConsoleSession,
       clearViewedSession,
@@ -1428,6 +1441,9 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     >({})
     const activeSessionKind = ref<import('./state').SessionPageKind>('work')
     const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
+    const activityRevision = ref(0)
+    const workspaceActivity = ref<Record<string, WorkspaceActivitySummary>>({})
+    const globalRunningNonToolSessionCount = ref(0)
 
     const ctx = {
       t: (key: string) => key,
@@ -1447,6 +1463,9 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       pendingDeepLink,
       deepLinkFulfilled,
       deepLinkTimers,
+      activityRevision,
+      workspaceActivity,
+      globalRunningNonToolSessionCount,
       currentWorkspace,
       activeTab,
       sessionStatus,
@@ -2303,6 +2322,9 @@ function makeColdStartCtx() {
     deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
     sessionStatus: ref({}),
     workspaceRunningSessionCounts: ref<Record<string, number>>({}),
+    activityRevision: ref(0),
+    workspaceActivity: ref<Record<string, WorkspaceActivitySummary>>({}),
+    globalRunningNonToolSessionCount: ref(0),
     activeSession: ref<string | null>(null),
     teamSessions: ref(new Set<string>()),
     flushIfReady: vi.fn(),
@@ -2491,6 +2513,9 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
     })
     const ownerRunningCounts = ref({ intent: 0, discussion: 0, automation: 0 })
     const workspaceRunningSessionCounts = ref<Record<string, number>>({})
+    const activityRevision = ref(0)
+    const workspaceActivity = ref<Record<string, WorkspaceActivitySummary>>({})
+    const globalRunningNonToolSessionCount = ref(0)
     const sessionStatus = ref<Record<string, import('@ccc/shared/protocol').SessionStatus>>({})
     const send = vi.fn()
     const ctx = {
@@ -2502,6 +2527,9 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
       sessionCounts,
       ownerRunningCounts,
       workspaceRunningSessionCounts,
+      activityRevision,
+      workspaceActivity,
+      globalRunningNonToolSessionCount,
       sessionStatus,
       activeSession: ref<string | null>(null),
       teamSessions: ref<Set<string>>(new Set()),

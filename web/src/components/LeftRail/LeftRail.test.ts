@@ -66,6 +66,13 @@ describe('LeftRail.vue — 系统页面导航', () => {
     await wrapper.setProps({ workcenterPendingCount: 0 })
     expect(wrapper.find('[data-testid="rail-notifications-badge"]').exists()).toBe(false)
   })
+
+  it('全局会话入口角标汇总非零运行中(非工具)会话数,零 时隐藏', async () => {
+    const wrapper = mountRail({ globalRunningNonToolSessionCount: 5 })
+    expect(wrapper.find('[data-testid="rail-global-sessions-badge"]').text()).toBe('5')
+    await wrapper.setProps({ globalRunningNonToolSessionCount: 0 })
+    expect(wrapper.find('[data-testid="rail-global-sessions-badge"]').exists()).toBe(false)
+  })
 })
 
 describe('LeftRail.vue — 底部工具', () => {

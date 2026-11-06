@@ -4734,6 +4734,8 @@
   },
   "globalBrowser": {
     "sessions": "セッション",
+    "sessionsBadgeAriaLabel": "セッション: 全ワークスペースで非ツールの実行中セッションが {count} 件",
+    "sessionsTooltipRunning": "セッション — 全ワークスペースで非ツールの実行中セッションが {count} 件",
     "automations": "自動化",
     "refresh": "更新",
     "more": "さらに5件読み込む",

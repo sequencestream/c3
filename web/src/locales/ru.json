@@ -4734,6 +4734,8 @@
   },
   "globalBrowser": {
     "sessions": "Сеансы",
+    "sessionsBadgeAriaLabel": "Сеансы: {count} нетуловых активных сеансов во всех рабочих областях",
+    "sessionsTooltipRunning": "Сеансы — {count} нетуловых активных сеансов во всех рабочих областях",
     "automations": "Автоматизации",
     "refresh": "Обновить",
     "more": "Загрузить ещё 5",

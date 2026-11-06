@@ -136,6 +136,7 @@ const {
   viewMode,
   workcenterPendingCount,
   workspaceRunningSessionCounts,
+  globalRunningNonToolSessionCount,
   onSelectTab,
   setViewMode,
   openSettings,
@@ -838,6 +839,7 @@ function onFilesChatWidth(px: number): void {
       <!-- 系统菜单常驻最左侧；工作台三个页面与底部工具均使用独立图标。 -->
       <LeftRail
         :global-page="globalPage"
+        :global-running-non-tool-session-count="globalRunningNonToolSessionCount"
         :status="status"
         :workcenter-pending-count="workcenterPendingCount"
         :view-mode="viewMode"

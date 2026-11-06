@@ -140,10 +140,14 @@ export const MODEL_VENDORS = [
     group: 'model',
     models: [
       { id: 'gpt-6-astra' },
+      { id: 'gpt-6.1-sol' },
+      { id: 'gpt-6.1-terra' },
+      { id: 'gpt-6-sol' },
+      { id: 'gpt-6-luna' },
       { id: 'gpt-5.6-sol' },
       { id: 'gpt-5.6-terra' },
       { id: 'gpt-5.6-luna' },
-      { id: 'gpt-5.5' },
+      { id: 'gpt-reserve' },
     ],
   },
   {

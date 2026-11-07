@@ -49,6 +49,7 @@ export const VENDOR_PROTOCOL_TYPES = {
   claude: ['anthropic'],
   codex: ['openai'],
   cursor: ['openai', 'anthropic'],
+  dsh: ['openai'],
 } as const satisfies Record<VendorId, readonly [ProtocolType, ...ProtocolType[]]>
 
 /**

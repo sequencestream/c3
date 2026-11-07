@@ -270,6 +270,23 @@ export interface CursorAgentConfig {
 }
 
 /**
+ * DeepSeek Harness (DSH) agent launch overrides passed to the SDK `initialize`
+ * handshake (`provider` / `model`). Credentials ride `DEEPSEEK_API_KEY` in the
+ * child environment (agent value or server env).
+ */
+export interface DshAgentConfig {
+  /** Harness provider route (e.g. `deepseek-official`). */
+  provider: string
+  /** Model name on that route (e.g. `deepseek-v4-flash`). */
+  model: string
+  /**
+   * API key for the harness provider. Empty ⇒ `DEEPSEEK_API_KEY` in the server
+   * environment.
+   */
+  apiKey: string
+}
+
+/**
  * One agent profile under the system-config module: a vendor-agnostic public
  * shell ({@link AgentConfigBase}) plus a `vendor`-discriminated `config`
  * sub-object. A session launches the agent's vendor CLI using its agent (or the
@@ -288,6 +305,7 @@ export type AgentConfig = AgentConfigBase &
     | { vendor: 'claude'; config: ClaudeAgentConfig }
     | { vendor: 'codex'; config: CodexAgentConfig }
     | { vendor: 'cursor'; config: CursorAgentConfig }
+    | { vendor: 'dsh'; config: DshAgentConfig }
   )
 
 /**
@@ -306,7 +324,7 @@ export function hasProviderConfig(
   (
     { vendor: 'claude'; config: ClaudeAgentConfig } | { vendor: 'codex'; config: CodexAgentConfig }
   ) {
-  return agent.vendor !== 'cursor'
+  return agent.vendor !== 'cursor' && agent.vendor !== 'dsh'
 }
 
 /**

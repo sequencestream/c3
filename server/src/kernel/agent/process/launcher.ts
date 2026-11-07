@@ -86,6 +86,16 @@ export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
     installHint:
       'cursor-agent ships through its own installer (`curl https://cursor.com/install -fsS | bash`) and versions itself by release date, so c3 neither downloads nor pins it. Point $CURSOR_PATH at the binary, or keep `cursor-agent` on PATH.',
   },
+  dsh: {
+    vendor: 'dsh',
+    binary: 'dsh',
+    pathEnv: 'DSH_PATH',
+    packageName: '@deepseek-ai/dsh',
+    preferredDistTag: '0.2.2-rc.1',
+    compatibleRange: '0.2.2-rc.1',
+    installHint:
+      'Install DeepSeek Harness CLI `@deepseek-ai/dsh@0.2.2-rc.1` (npm i -g @deepseek-ai/dsh) or let c3 install it under ~/.c3/vendor/dsh. Requires Node.js >= 24.9.0. Override with $DSH_PATH.',
+  },
 }
 
 /** Whether c3 launches this vendor as a host CLI. */

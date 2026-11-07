@@ -14,6 +14,7 @@
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type { VendorId, VendorRuntimeOrigin, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import { isManagedVendor, probeAll, type VendorCliSource } from './process/launcher.js'
+import { nodeMeetsDshEngine } from './adapters/dsh/node-engine.js'
 
 /**
  * How a resolution source reads as provenance. Sources that mean "nothing
@@ -37,7 +38,14 @@ export function vendorRuntimeStatuses(): Record<VendorId, VendorRuntimeStatus> {
   const out = {} as Record<VendorId, VendorRuntimeStatus>
   for (const vendor of VENDOR_IDS) {
     const probe = isManagedVendor(vendor) ? probes.get(vendor) : undefined
-    const available = probe ? probe.path !== null : false
+    let available = probe ? probe.path !== null : false
+    let unavailableReason: 'host-cli-missing' | 'node-engine-incompatible' | undefined = available
+      ? undefined
+      : 'host-cli-missing'
+    if (available && vendor === 'dsh' && !nodeMeetsDshEngine(process.version)) {
+      available = false
+      unavailableReason = 'node-engine-incompatible'
+    }
     const origin = probe ? ORIGIN_BY_SOURCE[probe.source] : undefined
     out[vendor] = {
       vendor,
@@ -49,7 +57,7 @@ export function vendorRuntimeStatuses(): Record<VendorId, VendorRuntimeStatus> {
       // launch.
       ...(available && origin ? { origin } : {}),
       ...(available && probe?.path ? { location: probe.path } : {}),
-      ...(available ? {} : { reason: 'host-cli-missing' as const }),
+      ...(available ? {} : { reason: unavailableReason ?? 'host-cli-missing' }),
     }
   }
   return out

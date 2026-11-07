@@ -237,12 +237,26 @@ describe('protocol wire format', () => {
           runtimeId: 'cursor-agent',
           origin: 'host-path',
         },
+        dsh: {
+          vendor: 'dsh',
+          available: false,
+          runtime: 'host-cli',
+          runtimeId: 'dsh',
+          reason: 'host-cli-missing',
+        },
       },
       bindingStats: { bound: 3, pending: 1 },
       sessionCapabilities: {
         claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
         codex: { list: 'full', read: 'full', resume: 'full', rename: 'none', delete: 'none' },
         cursor: {
+          list: 'partial',
+          read: 'partial',
+          resume: 'full',
+          rename: 'none',
+          delete: 'none',
+        },
+        dsh: {
           list: 'partial',
           read: 'partial',
           resume: 'full',

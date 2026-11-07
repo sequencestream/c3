@@ -61,6 +61,7 @@ export function deriveVendorAvailability(
  */
 export const VENDOR_UNAVAILABLE_REASON_KEY = {
   'host-cli-missing': 'common.vendor.unavailable.hostCliMissing',
+  'node-engine-incompatible': 'common.vendor.unavailable.nodeEngineIncompatible',
 } as const satisfies Record<VendorUnavailableReason, LocaleKey>
 
 /** 取不可用原因的 i18n key;可用(或无原因码)时返回 null,调用方不渲染说明。 */

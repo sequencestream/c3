@@ -48,7 +48,8 @@
     },
     "vendor": {
       "unavailable": {
-        "hostCliMissing": "CLI поставщика не найден на этом хосте"
+        "hostCliMissing": "CLI поставщика не найден на этом хосте",
+        "nodeEngineIncompatible": "Версия Node.js ниже требования DeepSeek Harness (>= 24.9.0)"
       },
       "origin": {
         "installed": "установлено с пакетом",
@@ -3673,6 +3674,9 @@
         },
         "cursor": {
           "label": "Cursor"
+        },
+        "dsh": {
+          "label": "DSH"
         }
       }
     },

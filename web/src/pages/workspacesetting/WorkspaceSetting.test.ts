@@ -77,6 +77,18 @@ const MOCK_VENDOR_MODES: Record<VendorId, VendorModeCatalog> = {
       },
     ],
   },
+  dsh: {
+    vendor: 'dsh',
+    defaultToken: 'default',
+    modes: [
+      {
+        token: 'default',
+        labelCode: 'nav.mode.default.label',
+        actionMode: 'build',
+        toolGate: 'on-sensitive',
+      },
+    ],
+  },
 }
 
 /** The per-tab Save button after the Tab grouping refactor. Every tab panel is
@@ -99,7 +111,7 @@ function panelHidden(w: ReturnType<typeof mount>, testid: string): boolean {
 /** Convenience: per-vendor config with the given claude token. */
 function cfg(overrides?: Partial<WorkspaceSettingType>): WorkspaceSettingType {
   return {
-    defaultMode: { claude: 'plan', codex: 'auto', cursor: 'agent' },
+    defaultMode: { claude: 'plan', codex: 'auto', cursor: 'agent', dsh: 'default' },
     devSkill: '/my-skill',
     maxRoundsPerStage: 14,
     maxSpeechChars: 400,

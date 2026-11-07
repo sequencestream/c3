@@ -23,7 +23,12 @@ export type PermissionMode = 'default' | 'auto' | 'plan' | 'acceptEdits' | 'bypa
  * vendor added to the union but forgotten here is a compile error rather than a
  * silently short list (this array is what the coverage contract test walks).
  */
-export const VENDOR_IDS = ['claude', 'codex', 'cursor'] as const satisfies readonly VendorId[]
+export const VENDOR_IDS = [
+  'claude',
+  'codex',
+  'cursor',
+  'dsh',
+] as const satisfies readonly VendorId[]
 
 // ---- Canonical agent message model (vendor-neutral) ----
 //
@@ -37,7 +42,7 @@ export const VENDOR_IDS = ['claude', 'codex', 'cursor'] as const satisfies reado
 // adapter before they ever travel on the wire.
 
 /** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
-export type VendorId = 'claude' | 'codex' | 'cursor'
+export type VendorId = 'claude' | 'codex' | 'cursor' | 'dsh'
 
 /**
  * Type guard for {@link VendorId} — the one place that decides whether an
@@ -303,8 +308,9 @@ export type VendorRuntimeKind = 'host-cli'
  * The console localizes it into actionable guidance; an internal exception text
  * must never become the UI contract.
  *  - `host-cli-missing` — no runnable vendor CLI resolved from any allowed source.
+ *  - `node-engine-incompatible` — the host Node.js version cannot run the vendor CLI.
  */
-export type VendorUnavailableReason = 'host-cli-missing'
+export type VendorUnavailableReason = 'host-cli-missing' | 'node-engine-incompatible'
 
 /**
  * Which source a resolved runtime came from — the provenance a diagnostics row

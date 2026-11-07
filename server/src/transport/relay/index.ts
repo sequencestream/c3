@@ -107,6 +107,10 @@ export function createRelay(
         return `${base}${RELAY_ANTHROPIC_PATH}`
       case 'cursor':
         throw new Error('cursor does not support relay: it authenticates through its own CLI login')
+      case 'dsh':
+        throw new Error(
+          'dsh does not support relay: credentials ride the harness child environment',
+        )
     }
   }
 

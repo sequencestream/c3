@@ -443,6 +443,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   }
 
+  let dshAdapter: VendorAdapter | null = null
+  if (resolveVendorCli('dsh')) {
+    try {
+      dshAdapter = resolveVendorAdapter('dsh') ?? null
+      console.log('[c3] dsh ready (SDK JSON-RPC subprocess)')
+    } catch (e) {
+      console.warn(`[c3] dsh unavailable: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   // Cross-vendor session listing (ADR-0013): the read-only union the new
   // `list_sessions` path lists through. Sources are built explicitly (not via
   // `resolveAvailableAdapters`) so we take only each vendor's `SessionStore` and
@@ -759,6 +769,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           return codexAdapter ?? null
         case 'cursor':
           return cursorAdapter ?? null
+        case 'dsh':
+          return dshAdapter ?? null
         case 'claude':
           // Claude runs on its own SDK loop, not the driver path.
           return null
@@ -808,6 +820,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   discussionAdapters.set('claude', resolveVendorAdapter('claude')!)
   if (codexAdapter) discussionAdapters.set('codex', codexAdapter)
   if (cursorAdapter) discussionAdapters.set('cursor', cursorAdapter)
+  if (dshAdapter) discussionAdapters.set('dsh', dshAdapter)
   const discussionRuns = createDiscussionRuns({
     broadcasts,
     eventBus,

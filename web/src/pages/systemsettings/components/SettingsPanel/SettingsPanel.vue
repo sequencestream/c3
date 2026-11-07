@@ -719,6 +719,7 @@ const VENDOR_LABELS: Record<VendorId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   cursor: 'Cursor',
+  dsh: 'DeepSeek Harness',
 }
 
 // ---- Provider 引用(agent 连接来源:具名 provider,或 vendor CLI 自带登录)----
@@ -791,8 +792,9 @@ watchEffect(() => modelCatalog.ensure(providers.value))
 function modelSuggestions(a: AgentConfig): { value: string; label: string }[] {
   const out: { value: string; label: string }[] = []
   if (!hasProviderConfig(a)) {
-    const vendorLabel = modelVendorLabel(a.vendor)
-    for (const m of modelCatalog.shipped(a.vendor)) {
+    const catalogVendor = a.vendor === 'dsh' ? 'deepseek' : a.vendor
+    const vendorLabel = modelVendorLabel(catalogVendor)
+    for (const m of modelCatalog.shipped(catalogVendor)) {
       out.push({ value: m.id, label: `${m.id} — ${vendorLabel}` })
     }
     return out
@@ -874,6 +876,13 @@ function makeAgent(
       // provider (c3 has no relay speaking its protocol), so it is always `system`
       // and carries no base URL.
       return { ...base, vendor, configMode: 'system', config: { apiKey: '', model: '' } }
+    case 'dsh':
+      return {
+        ...base,
+        vendor,
+        configMode: 'system',
+        config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', apiKey: '' },
+      }
   }
 }
 
@@ -984,7 +993,7 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
 // cursor 的 key 走自己的路:它的 CLI 认 key 或 `cursor-agent login` 任一种,所以这一栏
 // 必须可达且可编辑(留空即用登录态)。其它 vendor 的连接在 provider 上,agent 行不展示 key。
 function showApiKey(a: AgentConfig): boolean {
-  return a.vendor === 'cursor'
+  return a.vendor === 'cursor' || a.vendor === 'dsh'
 }
 
 // Cursor is the one vendor whose key is optional: left empty, the run uses the

@@ -53,6 +53,7 @@ import type { VendorId, VendorModeCatalog } from './types.js'
 import { claudeModeCatalog } from './claude/modes.js'
 import { codexModeCatalog } from './codex/modes.js'
 import { cursorModeCatalog } from './cursor/modes.js'
+import { dshModeCatalog } from './dsh/modes.js'
 
 /**
  * Every vendor's {@link VendorModeCatalog}, keyed by {@link VendorId}. The
@@ -66,4 +67,5 @@ export const MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
   claude: claudeModeCatalog,
   codex: codexModeCatalog,
   cursor: cursorModeCatalog,
+  dsh: dshModeCatalog,
 }

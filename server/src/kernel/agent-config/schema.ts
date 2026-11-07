@@ -119,6 +119,19 @@ const cursorAgentSchema = baseShellSchema.extend({
   config: cursorConfigSchema,
 })
 
+export const dshConfigSchema = z
+  .object({
+    provider: z.string().default('deepseek-official'),
+    model: z.string().default('deepseek-v4-flash'),
+    apiKey: z.string().default(''),
+  })
+  .strict()
+
+const dshAgentSchema = baseShellSchema.extend({
+  vendor: z.literal('dsh'),
+  config: dshConfigSchema,
+})
+
 /**
  * Per-vendor agent-arm schema registry — the **extension point**. A new vendor
  * registers its arm here (and in {@link agentConfigSchema} below). Partial over
@@ -130,6 +143,7 @@ export const VENDOR_AGENT_SCHEMAS = {
   claude: claudeAgentSchema,
   codex: codexAgentSchema,
   cursor: cursorAgentSchema,
+  dsh: dshAgentSchema,
 } satisfies Partial<Record<VendorId, z.ZodTypeAny>>
 
 /**
@@ -142,6 +156,7 @@ export const agentConfigSchema = z.discriminatedUnion('vendor', [
   claudeAgentSchema,
   codexAgentSchema,
   cursorAgentSchema,
+  dshAgentSchema,
 ])
 
 /**

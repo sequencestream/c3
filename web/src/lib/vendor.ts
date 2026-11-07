@@ -11,6 +11,7 @@ export const VENDOR_LABEL: Record<VendorId, string> = {
   claude: 'Claude',
   codex: 'Codex',
   cursor: 'Cursor',
+  dsh: 'DSH',
 }
 
 /**
@@ -23,6 +24,7 @@ export const VENDOR_COLOR: Record<VendorId, string> = {
   claude: '#d97757',
   codex: '#a855f7',
   cursor: '#3b82f6',
+  dsh: '#1d4ed8',
 }
 
 /** Share of {@link VENDOR_COLOR} in the settings agent-row background tint. */

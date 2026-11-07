@@ -55,6 +55,9 @@ export async function loadHistoryForVendor(
       // transcripts into that same host config dir (getSandboxClaudeConfigDir), so
       // no scope branch is needed — a sandboxed claude session is host-readable.
       return loadHistory(workspacePath, sessionId)
+    case 'dsh':
+      // DSH durable replay from disk is partial; live runs own the transcript fact source.
+      return []
   }
 }
 

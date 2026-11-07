@@ -11,12 +11,14 @@ import type { AdapterCapabilities } from './types.js'
 import { claudeCapabilities } from './claude/capabilities.js'
 import { codexCapabilities } from './codex/capabilities.js'
 import { cursorCapabilities } from './cursor/capabilities.js'
+import { dshCapabilities } from './dsh/capabilities.js'
 
 /** Every vendor's capability ledger, keyed by {@link VendorId}. */
 export const VENDOR_CAPABILITIES: Record<VendorId, AdapterCapabilities> = {
   claude: claudeCapabilities,
   codex: codexCapabilities,
   cursor: cursorCapabilities,
+  dsh: dshCapabilities,
 }
 
 /**

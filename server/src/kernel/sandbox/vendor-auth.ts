@@ -30,7 +30,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { VendorId } from '@ccc/shared/protocol'
-import { hostCodexHome, hostCursorHome } from '../config/workspace-path.js'
+import { hostCodexHome, hostCursorHome, hostDshHome } from '../config/workspace-path.js'
 import { SandboxLaunchError } from './errors.js'
 import type { ResolvedMount, ResolvedSandboxPaths } from './types.js'
 
@@ -250,6 +250,19 @@ const codexProfile: SandboxAuthResolver = ({ paths, systemAuth }) => {
  * link's target. They are mounted only when present, because mounting a missing
  * path aborts the run and neither path exists when the CLI came from elsewhere.
  */
+const dshProfile: SandboxAuthResolver = ({ paths }) => {
+  const workspace = paths.workspaceRoot ?? paths.executionRoot
+  const dataRoot = hostDshHome(workspace)
+  return {
+    entryCommand: 'dsh',
+    allowKeychain: false,
+    literalEnv: [{ name: 'DSH_HOME', value: dataRoot }],
+    forwardEnv: ['DEEPSEEK_API_KEY'],
+    mounts: [{ path: dataRoot, readonly: false }],
+    preRunDirs: [dataRoot],
+  }
+}
+
 const cursorProfile: SandboxAuthResolver = ({ systemAuth, host }) => {
   const dataRoot = hostCursorHome()
   const installRoot = join(host.homeDir, '.local', 'share', 'cursor-agent')
@@ -283,6 +296,7 @@ export const VENDOR_AUTH_PROFILES: Readonly<Partial<Record<VendorId, SandboxAuth
   claude: claudeProfile,
   codex: codexProfile,
   cursor: cursorProfile,
+  dsh: dshProfile,
 }
 
 /**

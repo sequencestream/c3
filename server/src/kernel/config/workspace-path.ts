@@ -109,6 +109,14 @@ export function hostCursorHome(): string {
 }
 
 /**
+ * Isolated DSH harness home for one workspace — sessions and profile state for
+ * SDK runs launched from c3 (distinct from the operator's interactive `~/.dsh`).
+ */
+export function hostDshHome(workspacePath: string): string {
+  return join(c3HomeDir(), 'vendor', 'dsh', projectDirName(workspacePath))
+}
+
+/**
  * Vendor-neutral resolution of the transcript store directory for a session,
  * given its frozen {@link StoreScope} (ADR-0015). This is the single seam the
  * read/resume path consults so it never hard-codes a host path:
@@ -139,5 +147,7 @@ export function resolveVendorStoreDir(
       return getSandboxClaudeConfigDir(workspacePath)
     case 'cursor':
       return hostCursorHome()
+    case 'dsh':
+      return hostDshHome(workspacePath)
   }
 }

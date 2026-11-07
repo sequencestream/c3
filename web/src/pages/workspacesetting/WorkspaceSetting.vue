@@ -265,9 +265,12 @@ function freshDefaultMode(
     // Fallback defaults must cover every vendor the loop can reach; a vendor
     // absent here would start a session with an undefined mode.
     out[v] = (vendorModes?.[v]?.defaultToken ??
-      ({ claude: 'default', codex: 'auto', cursor: 'agent' } as Record<VendorId, ModeToken>)[
-        v
-      ]) as ModeToken
+      (
+        { claude: 'default', codex: 'auto', cursor: 'agent', dsh: 'default' } as Record<
+          VendorId,
+          ModeToken
+        >
+      )[v]) as ModeToken
   }
   return out as Record<VendorId, ModeToken>
 }
@@ -511,7 +514,13 @@ function gitSandboxCmp(
 
 // Always-non-null defaultMode ref for the template (WorkspaceSetting.defaultMode is optional).
 const draftDefaultMode = computed(
-  () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto', cursor: 'agent' },
+  () =>
+    draft.value.defaultMode ?? {
+      claude: 'default',
+      codex: 'auto',
+      cursor: 'agent',
+      dsh: 'default',
+    },
 )
 
 // Codex dual-policy — the live object embedded in draft.defaultMode.codex (seeded

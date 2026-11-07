@@ -85,6 +85,12 @@ export function systemAgentFor(
       // Cursor carries no base URL — it cannot be pointed at another provider —
       // and an empty key defers to `CURSOR_API_KEY` / the CLI's own login.
       return { ...shell, vendor, config: { apiKey: '', model: '' } }
+    case 'dsh':
+      return {
+        ...shell,
+        vendor,
+        config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', apiKey: '' },
+      }
   }
 }
 

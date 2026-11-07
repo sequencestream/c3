@@ -231,3 +231,21 @@ CLI 只读工作区 MCP 配置,配置根与工作根不能分开。因此一轮�
 Cursor agent 与其他真实 agent 走同一套选择、绑定与冻结规则:同厂商可换 agent,跨厂商拒绝。讨论参与者可以是 Cursor,研究会话的组织者仍只允许 Claude。自动化同样把 Cursor 当普通 vendor,不另开通道;CLI 缺失时在分派期结清,不改 automation 的 vendor,也不跨厂商回退。
 
 会话数据根在沙箱内外同解,否则刚跑完的会话在列表里会消失。
+
+## DSH 能力边界（实验性）
+
+DSH（DeepSeek Harness）与 Claude / Codex / Cursor 落在同一套 driver / 审批桥 / 会话存储上([ADR 0011](../../architecture/adr/0011-vendor-neutral-agent-abstraction.md))。宿主为 `dsh --profile sdk` 子进程,stdio 换行分隔 JSON-RPC;运行前提、版本锁定与实测记录见 [deepseek-harness-c3-feasibility](../../architecture/deepseek-harness-c3-feasibility.md) 与 Issue #506。
+
+### 相对 Claude / Codex
+
+- **托管分发。** c3 可钉选 `@deepseek-ai/dsh@0.2.2-rc.1` 并与 `dsh` 可执行解析联用;此外要求 **Node ≥ 24.9**,不满足时以 `node-engine-incompatible` 明示,不单报 CLI 缺失。
+- **每轮子进程 + JSON-RPC。** 中止无线上 cancel,`stop_run` 收敛为关闭客户端/终结子进程(整轮),不能向存活进程硬塞下一 turn。
+- **逐工具审批。** 初始化启用 `approvalRequests`,`approval/request` 经审批桥接到 permission-gateway;允许、拒绝与中止时令待定请求为 `cancelled`。
+- **不能做 team lead。** 无流式推入,AS-R21 排除;上游 subagent/team 事件不进转录映射。
+- **无进程内 MCP。** c3 工具经统一回环 HTTP MCP,不为 DSH 另开通道。
+- **会话生命周期。** `resume` 为完整能力;`list` / `read` 为部分——以 DSH 持久化目录下已知会话为准,不等同于 IDE 侧全量历史。`rename` / `delete` 为无。
+- **DeepSeek API key。** 经 agent 配置注入运行环境;不是「仅模型 relay」路径。
+
+### 消费面
+
+DSH agent 与其他真实 agent 走同一套选择、绑定与冻结规则。讨论参与者可包含 DSH,team 组织仍仅 Claude。自动化不把 DSH 当作跨厂商回退目标。

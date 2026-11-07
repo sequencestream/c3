@@ -93,6 +93,7 @@ import { DEFAULT_UI_LANG, getAgentLang, resetPersonalizedCache } from './persona
 import { resetMcpApiKeyCache } from './mcp-api-keys.js'
 import { isKnownToken } from '../agent/adapters/mode-catalog.js'
 import { claudeModeCatalog } from '../agent/adapters/claude/modes.js'
+import { dshModeCatalog } from '../agent/adapters/dsh/modes.js'
 import { codexModeCatalog } from '../agent/adapters/codex/modes.js'
 import { cursorModeCatalog } from '../agent/adapters/cursor/modes.js'
 import type { VendorModeCatalog } from '../agent/adapters/types.js'
@@ -109,6 +110,7 @@ const DEFAULT_MODE_MAP: Record<VendorId, ModeToken> = {
   claude: 'default',
   codex: 'auto',
   cursor: 'agent',
+  dsh: 'default',
 }
 
 /** Leaf catalogs only — avoid importing the adapters barrel (circular with config). */
@@ -116,6 +118,7 @@ const DEFAULT_MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
   claude: claudeModeCatalog,
   codex: codexModeCatalog,
   cursor: cursorModeCatalog,
+  dsh: dshModeCatalog,
 }
 
 /**

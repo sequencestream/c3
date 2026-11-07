@@ -12,6 +12,7 @@ import type { CapabilityState, VendorAdapter } from './types.js'
 // import type { ToolManifestEntry } from '@ccc/shared/protocol'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
+import { createDshAdapter } from './dsh/index.js'
 
 /** The eight boolean live-run capability flags — the complete, closed set. */
 const BOOLEAN_CAPABILITY_KEYS = [
@@ -101,6 +102,10 @@ describe('neutral adapter contract', () => {
 
   it('Codex adapter satisfies the same required surface (no per-tool approval)', () => {
     assertNeutralAdapterShape(createCodexAdapter())
+  })
+
+  it('DSH adapter satisfies the required surface', () => {
+    assertNeutralAdapterShape(createDshAdapter())
   })
 
   it('distinguishes the boolean flags from the structured sessions sub-ledger', () => {

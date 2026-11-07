@@ -18,6 +18,8 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.318",
     "@ccc/shared": "workspace:*",
+    "@deepseek-ai/dsh-sdk-client": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.2-rc.1",
     "@hono/node-server": "^1.13.7",
     "@hono/node-ws": "^1.0.4",
     "@larksuiteoapi/node-sdk": "^1.73.0",

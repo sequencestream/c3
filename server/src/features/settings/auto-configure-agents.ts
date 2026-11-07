@@ -38,6 +38,7 @@ const VENDOR_SEED_NAME: Record<VendorId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   cursor: 'Cursor',
+  dsh: 'DeepSeek Harness',
 }
 
 /**

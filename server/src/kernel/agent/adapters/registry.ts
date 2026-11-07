@@ -8,6 +8,7 @@ import type { ModeToken, NeutralMode, VendorId, VendorAdapter } from './types.js
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter, codexPolicyToGrid, resolveCodexGhTokenEnv } from './codex/index.js'
 import { createCursorAdapter } from './cursor/index.js'
+import { createDshAdapter } from './dsh/index.js'
 import { HOST_BINARIES, resolveExecutable, type VendorProbe } from '../process/launcher.js'
 import { tokenToGrid } from './mode-catalog.js'
 import { MODE_CATALOGS } from './index.js'
@@ -32,6 +33,7 @@ export const VENDOR_FACTORIES: Partial<Record<VendorId, VendorFactory>> = {
   claude: () => createClaudeAdapter(),
   codex: (deps) => createCodexAdapter(undefined, undefined, deps.relay),
   cursor: () => createCursorAdapter(),
+  dsh: () => createDshAdapter(),
 }
 
 /**

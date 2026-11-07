@@ -592,12 +592,28 @@ export async function runViaDriver(
     const key = agent.vendor === 'cursor' ? agent.config.apiKey?.trim() : undefined
     return key ? { CURSOR_API_KEY: key } : undefined
   })()
+  const dshLaunchCtx = ((): Record<string, unknown> | undefined => {
+    if (adapter.vendor !== 'dsh') return undefined
+    const agent = resolveAgent(agentId)
+    if (agent.vendor !== 'dsh') return undefined
+    return {
+      dshProvider: agent.config.provider,
+      ...(agent.config.apiKey?.trim() ? { dshApiKey: agent.config.apiKey.trim() } : {}),
+    }
+  })()
+  const dshKeyEnv = ((): Record<string, string> | undefined => {
+    if (adapter.vendor !== 'dsh') return undefined
+    const agent = resolveAgent(agentId)
+    const key = agent.vendor === 'dsh' ? agent.config.apiKey?.trim() : undefined
+    return key ? { DEEPSEEK_API_KEY: key } : undefined
+  })()
   const driverEnvOverrides =
-    crossModeCodexHome || cursorKeyEnv
+    crossModeCodexHome || cursorKeyEnv || dshKeyEnv
       ? {
           ...(ghBridgedEnv ?? {}),
           ...(crossModeCodexHome ? { CODEX_HOME: crossModeCodexHome } : {}),
           ...(cursorKeyEnv ?? {}),
+          ...(dshKeyEnv ?? {}),
         }
       : ghBridgedEnv
 
@@ -703,6 +719,7 @@ export async function runViaDriver(
           ...(rt.codexPolicy?.explicitFullAccess === true ? { explicitFullAccess: true } : {}),
         }
       : {}),
+    ...(dshLaunchCtx ? { vendorContext: dshLaunchCtx } : {}),
     ...(model ? { model } : {}),
     ...(relayCandidates ? { relayCandidates } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),

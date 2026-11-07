@@ -333,6 +333,13 @@ const RULES: Record<VendorId, Record<string, RiskRule>> = {
     write: CURSOR_WRITE_RULE,
     delete: CURSOR_DELETE_RULE,
   },
+  // DSH tools are plugin-defined; only shell-style names we recognize are classified.
+  dsh: {
+    shell: SHELL_RULE,
+    bash: SHELL_RULE,
+    write: CURSOR_WRITE_RULE,
+    edit: CURSOR_EDIT_RULE,
+  },
 }
 
 /**

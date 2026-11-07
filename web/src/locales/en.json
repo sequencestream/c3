@@ -48,7 +48,7 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "vendor CLI not found on this host",
-        "nodeEngineIncompatible": "Node.js version is below DeepSeek Harness requirement (>= 24.9.0)"
+        "nodeEngineIncompatible": "Node.js was not found or is below the DeepSeek Harness requirement (>= 24.9.0)"
       },
       "origin": {
         "installed": "installed",

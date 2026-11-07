@@ -82,6 +82,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH
   delete process.env.CURSOR_PATH
+  delete process.env.DSH_PATH
 })
 
 afterEach(() => {
@@ -90,6 +91,7 @@ afterEach(() => {
   delete process.env.CLAUDE_PATH
   delete process.env.CODEX_PATH
   delete process.env.CURSOR_PATH
+  delete process.env.DSH_PATH
   resetProbeCache()
   rmSync(dir, { recursive: true, force: true })
 })
@@ -176,6 +178,18 @@ describe('vendor executable resolution', () => {
     expect(result.source).toBe('host-path-fallback')
     expect(result.managedError).toContain('managed claude 9.9.9 unusable')
   })
+
+  it('accepts a host dsh that prints a bare pre-release version', () => {
+    const hostDir = join(dir, 'host')
+    fakeBin(join(hostDir, 'dsh'), '0.2.2-rc.1')
+    process.env.PATH = `${hostDir}:/bin`
+
+    const result = resolveExecutable('dsh')
+
+    expect(result.source).toBe('host-path-fallback')
+    expect(result.version).toBe('0.2.2-rc.1')
+    expect(result.path).toBe(join(hostDir, 'dsh'))
+  })
 })
 
 describe('npm package selection', () => {
@@ -199,6 +213,41 @@ describe('npm package selection', () => {
       sourceTag: 'darwin-arm64',
     })
   })
+
+  it('selects the exact dsh pre-release even when latest is a newer stable version', () => {
+    expect(
+      selectNpmVersion('dsh', {
+        'dist-tags': { latest: '0.3.0' },
+        versions: {
+          '0.2.2-rc.1': { version: '0.2.2-rc.1', dist: { tarball: 't', integrity: 'i' } },
+          '0.3.0': { version: '0.3.0', dist: { tarball: 't', integrity: 'i' } },
+        },
+      }),
+    ).toEqual({ version: '0.2.2-rc.1', sourceTag: 'exact' })
+  })
+
+  it('rejects a dsh packument that does not publish the pinned pre-release', () => {
+    expect(() =>
+      selectNpmVersion('dsh', {
+        'dist-tags': { latest: '0.3.0' },
+        versions: {
+          '0.3.0': { version: '0.3.0', dist: { tarball: 't', integrity: 'i' } },
+        },
+      }),
+    ).toThrow(/no dsh npm version satisfies 0\.2\.2-rc\.1/)
+  })
+
+  it('keeps Claude on the newest stable release when latest is a pre-release', () => {
+    expect(
+      selectNpmVersion('claude', {
+        'dist-tags': { latest: '1.4.0-rc.1' },
+        versions: {
+          '1.2.0': { version: '1.2.0', dist: { tarball: 't', integrity: 'i' } },
+          '1.4.0-rc.1': { version: '1.4.0-rc.1', dist: { tarball: 't', integrity: 'i' } },
+        },
+      }),
+    ).toEqual({ version: '1.2.0', sourceTag: 'compatible-highest' })
+  })
 })
 
 describe('version parsing and range checks', () => {
@@ -210,6 +259,9 @@ describe('version parsing and range checks', () => {
     expect(parseVendorVersion('codex', 'codex 0.142.3')).toBe('0.142.3')
     expect(parseVendorVersion('codex', 'codex-cli 0.142.4')).toBe('0.142.4')
     expect(parseVendorVersion('codex', 'random 0.142.3')).toBeNull()
+    expect(parseVendorVersion('dsh', '0.2.2-rc.1')).toBe('0.2.2-rc.1')
+    expect(parseVendorVersion('dsh', 'dsh 0.2.2-rc.1')).toBe('0.2.2-rc.1')
+    expect(parseVendorVersion('dsh', 'v0.2.2-rc.1')).toBe('0.2.2-rc.1')
   })
 
   it('checks simple compatible ranges', () => {
@@ -293,12 +345,55 @@ describe('syncManagedVendorCli failure recovery', () => {
     })
 
     await vi.waitFor(() => expect(installPackage).toHaveBeenCalledOnce())
+    expect(installPackage).toHaveBeenCalledWith(expect.any(String), process.platform, {
+      omitPeerDependencies: true,
+    })
     let timerFired = false
     setTimeout(() => (timerFired = true), 0)
     await vi.waitFor(() => expect(timerFired).toBe(true))
 
     finishInstall()
     await expect(sync).resolves.toMatchObject({ source: 'managed', version: '1.2.5' })
+  })
+
+  it('installs dsh peer dependencies that the boot package imports', async () => {
+    const tarball = Buffer.from('dsh tarball')
+    const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+    const packument = {
+      'dist-tags': { latest: '0.2.2-rc.1' },
+      versions: {
+        '0.2.2-rc.1': {
+          version: '0.2.2-rc.1',
+          dist: { tarball: 'https://registry.example/dsh.tgz', integrity },
+        },
+      },
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => packument })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+      })
+    const installPackage = vi.fn(async () => {})
+
+    const result = await syncManagedVendorCli('dsh', {
+      fetch: fetchMock as unknown as typeof fetch,
+      installPackage,
+      unpack: (_archive, dest) => {
+        const pkg = join(dest, 'package')
+        mkdirSync(pkg, { recursive: true })
+        writeFileSync(join(pkg, 'package.json'), '{"bin":{"dsh":"lib/bin.js"}}', 'utf-8')
+        fakeBin(join(pkg, 'lib', 'bin.js'), '0.2.2-rc.1')
+      },
+    })
+
+    expect(installPackage).toHaveBeenCalledWith(expect.any(String), process.platform, {
+      omitPeerDependencies: false,
+    })
+    expect(result.source).toBe('managed')
+    expect(result.version).toBe('0.2.2-rc.1')
   })
 
   it('stages a native executable and its sibling files on Windows', async () => {
@@ -497,7 +592,11 @@ describe('refreshManagedVendorClisInBackground', () => {
     })
     writeManifest({
       version: 1,
-      vendors: { claude: entry('claude'), codex: entry('codex') },
+      vendors: {
+        claude: entry('claude'),
+        codex: entry('codex'),
+        dsh: entry('dsh'),
+      },
     })
   }
 
@@ -558,7 +657,7 @@ describe('refreshManagedVendorClisInBackground', () => {
       now: () => now,
     })
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(managedVendorSpecs().length)
     await vi.waitFor(() => {
       expect(manifestEntry('claude').source).toBe('install-failed')
     })
@@ -623,7 +722,7 @@ describe('unmanaged host CLI resolution', () => {
   })
 
   it('keeps an unmanaged vendor out of the npm distribution set', () => {
-    expect(managedVendorSpecs().map((s) => s.vendor)).toEqual(['claude', 'codex'])
+    expect(managedVendorSpecs().map((s) => s.vendor)).toEqual(['claude', 'codex', 'dsh'])
     // Reaching the npm version selector for it is a wiring bug, not a soft miss.
     expect(() => selectNpmVersion('cursor', { 'dist-tags': {}, versions: {} })).toThrow(
       /not distributed by c3/,

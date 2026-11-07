@@ -250,19 +250,6 @@ const codexProfile: SandboxAuthResolver = ({ paths, systemAuth }) => {
  * link's target. They are mounted only when present, because mounting a missing
  * path aborts the run and neither path exists when the CLI came from elsewhere.
  */
-const dshProfile: SandboxAuthResolver = ({ paths }) => {
-  const workspace = paths.workspaceRoot ?? paths.executionRoot
-  const dataRoot = hostDshHome(workspace)
-  return {
-    entryCommand: 'dsh',
-    allowKeychain: false,
-    literalEnv: [{ name: 'DSH_HOME', value: dataRoot }],
-    forwardEnv: ['DEEPSEEK_API_KEY'],
-    mounts: [{ path: dataRoot, readonly: false }],
-    preRunDirs: [dataRoot],
-  }
-}
-
 const cursorProfile: SandboxAuthResolver = ({ systemAuth, host }) => {
   const dataRoot = hostCursorHome()
   const installRoot = join(host.homeDir, '.local', 'share', 'cursor-agent')
@@ -277,6 +264,31 @@ const cursorProfile: SandboxAuthResolver = ({ systemAuth, host }) => {
       ...(host.exists(installRoot) ? [{ path: installRoot, readonly: true }] : []),
       ...(host.exists(linkDir) ? [{ path: linkDir, readonly: true }] : []),
     ],
+    preRunDirs: [dataRoot],
+  }
+}
+
+// ─── DSH ─────────────────────────────────────────────────────────────────────
+
+/**
+ * DSH.
+ *
+ * The harness keeps every session, profile and credential file under `DSH_HOME`,
+ * so the variable alone relocates its whole state. c3 points it at the same
+ * per-workspace directory a host-side run uses and mounts that directory rw on
+ * both scopes: a sandboxed turn then lands where the session list and resume
+ * path read, and no second layout appears. The DeepSeek key travels by name
+ * (`DEEPSEEK_API_KEY`); there is no keychain grant to make.
+ */
+const dshProfile: SandboxAuthResolver = ({ paths }) => {
+  const workspace = paths.workspaceRoot ?? paths.executionRoot
+  const dataRoot = hostDshHome(workspace)
+  return {
+    entryCommand: 'dsh',
+    allowKeychain: false,
+    literalEnv: [{ name: 'DSH_HOME', value: dataRoot }],
+    forwardEnv: ['DEEPSEEK_API_KEY'],
+    mounts: [{ path: dataRoot, readonly: false }],
     preRunDirs: [dataRoot],
   }
 }

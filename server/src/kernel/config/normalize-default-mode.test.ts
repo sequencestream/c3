@@ -47,6 +47,7 @@ describe('normalizeDefaultMode (via normalizeWorkspaceSetting)', () => {
       claude: 'default',
       codex: 'auto',
       cursor: 'agent',
+      dsh: 'default',
     })
   })
 
@@ -65,6 +66,7 @@ describe('normalizeDefaultMode (via normalizeWorkspaceSetting)', () => {
       claude: 'default',
       codex: 'auto',
       cursor: 'agent',
+      dsh: 'default',
     })
   })
 
@@ -74,6 +76,7 @@ describe('normalizeDefaultMode (via normalizeWorkspaceSetting)', () => {
       claude: 'auto',
       codex: 'auto',
       cursor: 'agent',
+      dsh: 'default',
     })
   })
 
@@ -83,6 +86,7 @@ describe('normalizeDefaultMode (via normalizeWorkspaceSetting)', () => {
       claude: 'plan',
       codex: 'auto',
       cursor: 'plan',
+      dsh: 'plan',
     })
   })
 
@@ -125,6 +129,7 @@ describe('normalizeDefaultMode (via normalizeWorkspaceSetting)', () => {
       claude: 'plan',
       codex: 'full-access',
       cursor: 'agent',
+      dsh: 'default',
     })
   })
 })

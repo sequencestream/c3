@@ -1,8 +1,14 @@
 /**
- * DSH {@link SessionStore} — reads persisted session headers under the workspace
- * DSH_HOME when the on-disk index is present; otherwise returns an empty list.
+ * DSH {@link SessionStore} — enumerates the sessions its JSONL persistence
+ * backend wrote under the workspace DSH_HOME.
+ *
+ * The backend roots at `$DSH_HOME/sessions` and lays each session out as
+ * `<project key>/<escaped session id>/`; the header line inside carries no
+ * title (titles are a logged projection), so the id stands in for one. Read
+ * back as canonical messages is not implemented: DSH's generations are
+ * compressed, and live runs own the transcript fact source.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   CanonicalMessage,
@@ -12,47 +18,37 @@ import type {
 } from '../types.js'
 import { hostDshHome } from '../../../config/workspace-path.js'
 
-function sessionIndexRoot(dshHome: string): string {
-  return join(dshHome, 'var', 'persisted-sessions')
+/** Root the JSONL backend is configured with (`dshHomePath('sessions')`). */
+function sessionRoot(dshHome: string): string {
+  return join(dshHome, 'sessions')
 }
 
-function tryReadTitle(dir: string, sessionId: string): string {
+/** Inverse of DSH's `~XXXX` path-segment escape. */
+function decodeSegment(raw: string): string {
+  return raw.replace(/~([0-9A-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+}
+
+/** Immediate subdirectory names of `dir`; an unreadable dir lists as empty. */
+function subdirectories(dir: string): string[] {
   try {
-    const raw = readFileSync(join(dir, 'header.json'), 'utf-8')
-    const parsed: unknown = JSON.parse(raw)
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      typeof (parsed as { title?: unknown }).title === 'string'
-    ) {
-      const title = (parsed as { title: string }).title.trim()
-      if (title) return title
-    }
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
   } catch {
-    /* empty */
+    return []
   }
-  return sessionId
 }
 
 export class DshSessionStore implements SessionStore {
   async list(opts: SessionListOptions): Promise<SessionSummary[]> {
-    const root = sessionIndexRoot(hostDshHome(opts.cwd))
+    const root = sessionRoot(hostDshHome(opts.cwd))
     if (!existsSync(root)) return []
     const out: SessionSummary[] = []
-    let entries: string[]
-    try {
-      entries = readdirSync(root)
-    } catch {
-      return []
-    }
-    for (const sessionId of entries) {
-      const dir = join(root, sessionId)
-      try {
-        if (!statSync(dir).isDirectory()) continue
-      } catch {
-        continue
+    for (const project of subdirectories(root)) {
+      for (const segment of subdirectories(join(root, project))) {
+        const sessionId = decodeSegment(segment)
+        out.push({ sessionId, title: sessionId })
       }
-      out.push({ sessionId, title: tryReadTitle(dir, sessionId) })
     }
     return out
   }

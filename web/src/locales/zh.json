@@ -48,7 +48,7 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "本机未找到该 vendor 的 CLI",
-        "nodeEngineIncompatible": "当前 Node.js 版本低于 DeepSeek Harness 要求（需 >= 24.9.0）"
+        "nodeEngineIncompatible": "未找到 Node.js，或版本低于 DeepSeek Harness 要求（需 >= 24.9.0）"
       },
       "origin": {
         "installed": "随包安装",

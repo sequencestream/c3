@@ -49,6 +49,32 @@ function flattenToText(value: unknown, depth = 0): string {
   return ''
 }
 
+/**
+ * Call id that pairs a `tool/result` with its `tool/call`. The result event
+ * does not repeat `callId` on the event data; the id lives on the tool message.
+ */
+function toolResultCallId(data: Record<string, unknown>): string | undefined {
+  const direct = str(data.callId) ?? str(data.id)
+  if (direct) return direct
+  if (!isRecord(data.message)) return undefined
+  const fromMessage = str(data.message.toolCallId)
+  if (fromMessage) return fromMessage
+  return isRecord(data.message.source) ? str(data.message.source.callId) : undefined
+}
+
+/**
+ * Human-readable failure for an errored/aborted `turn/end`. A failed turn
+ * carries the provider failure at `reason.error.message`; an aborted one
+ * carries the cancel cause at `reason.reason`; the bare `kind` is the last
+ * resort so the run never surfaces an empty reason.
+ */
+function endMessage(reason: Record<string, unknown>): string | undefined {
+  const failure = isRecord(reason.error) ? str(reason.error.message) : undefined
+  if (failure) return failure
+  if (typeof reason.reason === 'string' && reason.reason.length > 0) return reason.reason
+  return str(reason.kind)
+}
+
 function toolResultContent(message: unknown): { content: string; isError: boolean } {
   if (!isRecord(message)) return { content: '', isError: false }
   const isError = message.isError === true
@@ -64,7 +90,13 @@ function toolResultContent(message: unknown): { content: string; isError: boolea
   return { content: flattenToText(message), isError }
 }
 
-function assistantBlocks(message: unknown): CanonicalBlock[] {
+/**
+ * Canonical blocks for one assembled assistant message. Every text block gets
+ * its own id: the wire emitter treats an id as one text span and only forwards
+ * the growth beyond what it already sent for that span, so an id shared across
+ * messages would drop or truncate every message after the first.
+ */
+function assistantBlocks(message: unknown, idPrefix: string): CanonicalBlock[] {
   if (!isRecord(message)) return []
   const content = message.content
   if (!Array.isArray(content)) return []
@@ -72,7 +104,7 @@ function assistantBlocks(message: unknown): CanonicalBlock[] {
   for (const part of content) {
     if (!isRecord(part)) continue
     if (part.type === 'text' && typeof part.text === 'string') {
-      blocks.push({ type: 'text', text: part.text })
+      blocks.push({ type: 'text', text: part.text, id: `${idPrefix}-${blocks.length}` })
       continue
     }
     if (part.type === 'tool_use' || part.type === 'tool-call') {
@@ -90,9 +122,27 @@ export class DshStreamTranslator {
   private sessionId = ''
   private readonly tools = new Map<string, { name: string; input: unknown }>()
   private readonly now = () => Date.now()
+  /** Fallback uniqueness for events that carry no `seq` (tests, truncated wires). */
+  private anonymousEvents = 0
 
   setSessionId(id: string): void {
     this.sessionId = id
+  }
+
+  /**
+   * Tool arguments recorded for one call id, or undefined when no `tool/call`
+   * has been translated yet. The approval channel reads this because DSH's
+   * `approval/request` carries the tool *name* only, never its input.
+   */
+  toolInput(callId: string): unknown {
+    return this.tools.get(callId)?.input
+  }
+
+  /** Per-event prefix that keeps block ids unique across a run's messages. */
+  private blockPrefix(envelope: Record<string, unknown>): string {
+    if (typeof envelope.seq === 'number') return `dsh-${envelope.seq}`
+    this.anonymousEvents += 1
+    return `dsh-anon-${this.anonymousEvents}`
   }
 
   private wrap(blocks: CanonicalBlock[]): CanonicalMessage {
@@ -112,7 +162,7 @@ export class DshStreamTranslator {
 
     if (type === 'assistant/message') {
       const message = data.message ?? data
-      const blocks = assistantBlocks(message)
+      const blocks = assistantBlocks(message, this.blockPrefix(envelope))
       if (blocks.length === 0) return { messages: [] }
       return { messages: [this.wrap(blocks)] }
     }
@@ -129,7 +179,7 @@ export class DshStreamTranslator {
     }
 
     if (type === 'tool/result') {
-      const callId = str(data.callId) ?? str(data.id)
+      const callId = toolResultCallId(data)
       const prior = callId ? this.tools.get(callId) : undefined
       const { content, isError } = toolResultContent(data.message)
       const result: CanonicalToolResult = { content, isError }
@@ -151,15 +201,12 @@ export class DshStreamTranslator {
 
     if (type === 'turn/end') {
       const reason = isRecord(data.reason) ? data.reason : data
-      const kind = str(isRecord(reason) ? reason.kind : undefined)
+      const kind = str(reason.kind)
       const isError = kind === 'error' || kind === 'aborted'
-      const errorMessage =
-        isError && isRecord(reason) && typeof reason.reason === 'string'
-          ? reason.reason
-          : isError
-            ? kind
-            : undefined
-      return { messages: [], ended: { isError, errorMessage } }
+      return {
+        messages: [],
+        ended: { isError, errorMessage: isError ? endMessage(reason) : undefined },
+      }
     }
 
     return { messages: [] }

@@ -47,6 +47,12 @@ export interface VendorBinarySpec {
   readonly packageName?: string
   readonly preferredDistTag?: string
   readonly compatibleRange?: string
+  /**
+   * When false, `npm install` keeps peerDependencies. Unset omits them: Claude
+   * and Codex only need their optional native binaries. DSH's boot package
+   * imports peers at runtime, so those must be installed.
+   */
+  readonly omitPeerDependencies?: boolean
 }
 
 /**
@@ -64,6 +70,7 @@ export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
     packageName: '@anthropic-ai/claude-code',
     preferredDistTag: 'latest',
     compatibleRange: '>=0.0.0 <999.0.0',
+    omitPeerDependencies: true,
     installHint:
       'c3 installs Claude Code under ~/.c3/vendor/claude by default. Override with $CLAUDE_PATH, or keep a host `claude` on PATH as a degraded fallback.',
   },
@@ -74,6 +81,7 @@ export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
     packageName: '@openai/codex',
     preferredDistTag: `${process.platform}-${process.arch}`,
     compatibleRange: '>=0.0.0 <999.0.0',
+    omitPeerDependencies: true,
     installHint:
       'c3 installs Codex under ~/.c3/vendor/codex by default. Override with $CODEX_PATH, or keep a host `codex` on PATH as a degraded fallback.',
   },
@@ -93,6 +101,7 @@ export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
     packageName: '@deepseek-ai/dsh',
     preferredDistTag: '0.2.2-rc.1',
     compatibleRange: '0.2.2-rc.1',
+    omitPeerDependencies: false,
     installHint:
       'Install DeepSeek Harness CLI `@deepseek-ai/dsh@0.2.2-rc.1` (npm i -g @deepseek-ai/dsh) or let c3 install it under ~/.c3/vendor/dsh. Requires Node.js >= 24.9.0. Override with $DSH_PATH.',
   },
@@ -225,7 +234,11 @@ export interface VendorInstallerDeps {
   fetch?: typeof fetch
   runVersion?: (path: string, vendor: VendorId) => string
   unpack?: (archivePath: string, destDir: string) => void
-  installPackage?: (packageDir: string, platform: NodeJS.Platform) => Promise<void>
+  installPackage?: (
+    packageDir: string,
+    platform: NodeJS.Platform,
+    options?: { omitPeerDependencies?: boolean },
+  ) => Promise<void>
   rename?: (from: string, to: string) => void
   wait?: (milliseconds: number) => Promise<void>
   now?: () => Date
@@ -325,6 +338,12 @@ export function parseVendorVersion(vendor: VendorId, output: string): string | n
     // ever gets displayed: nothing compares or range-checks it, because cursor is
     // not npm-managed.
     cursor: [/\b(\d{4}\.\d{2}\.\d{2}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)\b/],
+    // dsh prints a bare semver and the pinned package is itself a pre-release
+    // (`0.2.2-rc.1`). Keep the suffix; a name prefix is optional.
+    dsh: [
+      /\bdsh\b[^\d]*v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i,
+      /^v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s*$/,
+    ],
   }
   for (const pattern of patterns[vendor] ?? []) {
     const m = pattern.exec(text)
@@ -670,12 +689,22 @@ function isPreRelease(v: string): boolean {
   return m !== null
 }
 
+/** One concrete version (`0.2.2-rc.1` or `=1.2.3`), not a comparator span. */
+function exactRangeVersion(range: string): string | null {
+  const clauses = range.trim().split(/\s+/).filter(Boolean)
+  if (clauses.length !== 1) return null
+  const m = /^=?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/.exec(clauses[0])
+  return m?.[1] ?? null
+}
+
 /**
- * Select the download target — always the newest compatible npm version along
- * the dist-tag candidate chain. This is decoupled from the runtime *effective*
- * version selection (`vendorCliVersions`): sync always tracks the latest
- * compatible release so historical versions can coexist and be chosen as the
- * active version without freezing the download target.
+ * Select the download target. An exact compatible range is that version when
+ * the packument publishes it, including a pre-release pin such as `0.2.2-rc.1`.
+ * Otherwise the newest compatible stable release along the dist-tag chain;
+ * pre-releases stay off that chain so vendors with an open range do not track
+ * them. Decoupled from the runtime effective version (`vendorCliVersions`):
+ * sync tracks the download target so historical versions can coexist and be
+ * chosen without freezing it.
  */
 export function selectNpmVersion(
   vendor: VendorId,
@@ -684,6 +713,10 @@ export function selectNpmVersion(
   arch = process.arch,
 ): { version: string; sourceTag: string } {
   const spec = requireNpmManaged(vendor)
+  const exact = exactRangeVersion(spec.compatibleRange)
+  if (exact && versionRecord(packument, exact)) {
+    return { version: exact, sourceTag: 'exact' }
+  }
   const tags = packument['dist-tags'] ?? {}
   const candidates =
     vendor === 'codex'
@@ -762,7 +795,11 @@ function stageWindowsNativeBinary(packageDir: string, binDir: string, binary: st
   }
 }
 
-function installNpmPackage(packageDir: string, platform: NodeJS.Platform): Promise<void> {
+function installNpmPackage(
+  packageDir: string,
+  platform: NodeJS.Platform,
+  options?: { omitPeerDependencies?: boolean },
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'npm',
@@ -772,7 +809,9 @@ function installNpmPackage(packageDir: string, platform: NodeJS.Platform): Promi
         '--no-audit',
         '--no-fund',
         '--omit=dev',
-        '--omit=peer',
+        // DSH imports peerDependencies at startup. Claude and Codex do not, and
+        // omitting peers keeps those installs to the optional native binary.
+        ...(options?.omitPeerDependencies === false ? [] : ['--omit=peer']),
         '--no-package-lock',
         '--loglevel=error',
       ],
@@ -976,9 +1015,12 @@ export async function syncManagedVendorCli(
     // binary through platform-scoped optionalDependencies (e.g. codex-darwin-arm64)
     // or a postinstall hook — the bare tarball doesn't include it, so we need a
     // full `npm install --omit=dev` to materialise the binary before probing.
+    // Peer install follows the spec: DSH's boot package imports them.
     console.log(`[c3] vendor npm-install: ${vendor} v${selected.version} ...`)
     const packageDir = join(publishTmp, 'package')
-    await (deps.installPackage ?? installNpmPackage)(packageDir, platform)
+    await (deps.installPackage ?? installNpmPackage)(packageDir, platform, {
+      omitPeerDependencies: spec.omitPeerDependencies !== false,
+    })
     if (platform === 'win32') {
       stageWindowsNativeBinary(packageDir, dirname(destBin), spec.binary)
     } else {

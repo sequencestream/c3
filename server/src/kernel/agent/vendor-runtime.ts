@@ -14,7 +14,7 @@
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type { VendorId, VendorRuntimeOrigin, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import { isManagedVendor, probeAll, type VendorCliSource } from './process/launcher.js'
-import { nodeMeetsDshEngine } from './adapters/dsh/node-engine.js'
+import { nodeMeetsDshEngine, pathNodeVersion } from './adapters/dsh/node-engine.js'
 
 /**
  * How a resolution source reads as provenance. Sources that mean "nothing
@@ -42,9 +42,14 @@ export function vendorRuntimeStatuses(): Record<VendorId, VendorRuntimeStatus> {
     let unavailableReason: 'host-cli-missing' | 'node-engine-incompatible' | undefined = available
       ? undefined
       : 'host-cli-missing'
-    if (available && vendor === 'dsh' && !nodeMeetsDshEngine(process.version)) {
-      available = false
-      unavailableReason = 'node-engine-incompatible'
+    // dsh's shebang is `#!/usr/bin/env node`. Compare that PATH node, not
+    // `process.version`: a compiled c3 reports Bun's compatibility version.
+    if (available && vendor === 'dsh') {
+      const nodeVersion = pathNodeVersion()
+      if (!nodeVersion || !nodeMeetsDshEngine(nodeVersion)) {
+        available = false
+        unavailableReason = 'node-engine-incompatible'
+      }
     }
     const origin = probe ? ORIGIN_BY_SOURCE[probe.source] : undefined
     out[vendor] = {

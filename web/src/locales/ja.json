@@ -49,7 +49,7 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "このホストにベンダー CLI が見つかりません",
-        "nodeEngineIncompatible": "Node.js のバージョンが DeepSeek Harness の要件（>= 24.9.0）を満たしていません"
+        "nodeEngineIncompatible": "Node.js が見つからないか、DeepSeek Harness の要件（>= 24.9.0）を満たしていません"
       },
       "origin": {
         "installed": "同梱インストール",

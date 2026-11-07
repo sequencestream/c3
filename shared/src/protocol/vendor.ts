@@ -308,7 +308,7 @@ export type VendorRuntimeKind = 'host-cli'
  * The console localizes it into actionable guidance; an internal exception text
  * must never become the UI contract.
  *  - `host-cli-missing` — no runnable vendor CLI resolved from any allowed source.
- *  - `node-engine-incompatible` — the host Node.js version cannot run the vendor CLI.
+ *  - `node-engine-incompatible` — the Node.js on PATH that would run the vendor CLI is missing or below its engine requirement.
  */
 export type VendorUnavailableReason = 'host-cli-missing' | 'node-engine-incompatible'
 

@@ -89,7 +89,7 @@ export function systemAgentFor(
       return {
         ...shell,
         vendor,
-        config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', apiKey: '' },
+        config: { provider: 'deepseek-official', model: 'deepseek-flash', apiKey: '' },
       }
   }
 }

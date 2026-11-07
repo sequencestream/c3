@@ -710,16 +710,19 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Vendors -------------------------------------------------------------
 
-  it('渲染 vendor 下拉选择器,三个品牌均可见;运行时可用时不额外标注原因', async () => {
+  it('渲染 vendor 下拉选择器,四个品牌均可见;不可执行的 DSH 标注原因', async () => {
     const w = await mountLlmForm()
     const select = w.find('[data-testid="automation-vendor"]')
     expect(select.exists()).toBe(true)
     const opts = select.findAll('option')
-    expect(opts).toHaveLength(3)
+    expect(opts).toHaveLength(4)
     expect(opts[0].text()).toBe('Claude')
     expect(opts[1].text()).toBe('Codex')
     // cursor 有 dispatcher 执行路径,运行时可用时与其他 vendor 同等呈现。
     expect(opts[2].text()).toBe('Cursor')
+    // DSH 没有 automation 执行路径:既有的 DSH 记录仍可见,但新记录不能选它。
+    expect(opts[3].text()).toContain('DSH')
+    expect(opts[3].attributes('disabled')).toBeDefined()
   })
 
   it('三个 vendor 都有执行路径:运行时可用时选项均不 disabled', () => {

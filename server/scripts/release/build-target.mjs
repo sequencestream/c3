@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process'
 import { resolve, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeVersionInfo, versionDefines } from '../../../scripts/release/version-info.mjs'
+import { patchBundledPackageJsonRequires } from './bundle-patches.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const serverDir = resolve(here, '..', '..') // server/
@@ -176,7 +177,9 @@ export async function buildTarget({ target, outfile, embedPath, version, commit,
   }
 
   mkdirSync(stageDir, { recursive: true })
-  await Bun.write(stagePath, bundleResult.outputs[0])
+  let stageSource = await bundleResult.outputs[0].text()
+  stageSource = patchBundledPackageJsonRequires(stageSource)
+  await Bun.write(stagePath, stageSource)
 
   // ── Phase 2: Compile the bundle to a native binary.
   //    Spawn the bun CLI on the stage file — nesting Bun.build({compile}) on a

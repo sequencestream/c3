@@ -137,14 +137,15 @@ function mountWs(config: WorkspaceSettingType | null, extra?: Record<string, unk
 describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a mode select for each vendor in correct order', () => {
     const w = mountWs(null)
-    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 cursor
+    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 cursor + 1 dsh
     // + 1 git-branch-mode select + 1 workspace default-agent select
-    // + 7 workspace role-agent selects + 1 work-agent select = 14
+    // + 7 workspace role-agent selects + 1 work-agent select = 15
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(14)
-    // Claude and Cursor each have a single mode select; Codex uses dual-policy selects.
+    expect(selects).toHaveLength(15)
+    // Claude, Cursor and DSH each have a single mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-cursor"]').length).toBe(1)
+    expect(w.findAll('[data-testid="default-mode-dsh"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-sandbox"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-approval"]').length).toBe(1)
   })
@@ -202,11 +203,11 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
 
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
-    // 默认 Agent + 7 个角色覆盖 + 3 vendor row-labels + devSkill + rounds + speechChars
+    // 默认 Agent + 7 个角色覆盖 + 4 vendor row-labels + devSkill + rounds + speechChars
     // + gitBranchMode + defaultMainBranch + default-visible SDD spec root
-    // + fast-spec 两个阈值 + automation cap + 工作 Agent + 会话保存天数 = 22
+    // + fast-spec 两个阈值 + automation cap + 工作 Agent + 会话保存天数 = 23
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(22)
+    expect(labels).toHaveLength(23)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -224,6 +225,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
         explicitFullAccess: false,
       },
       cursor: 'agent',
+      dsh: 'default',
     })
   })
 

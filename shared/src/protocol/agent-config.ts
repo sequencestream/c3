@@ -277,7 +277,7 @@ export interface CursorAgentConfig {
 export interface DshAgentConfig {
   /** Harness provider route (e.g. `deepseek-official`). */
   provider: string
-  /** Model name on that route (e.g. `deepseek-v4-flash`). */
+  /** Model name on that route (e.g. `deepseek-flash`). */
   model: string
   /**
    * API key for the harness provider. Empty ⇒ `DEEPSEEK_API_KEY` in the server

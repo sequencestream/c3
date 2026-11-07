@@ -1,9 +1,10 @@
 import { HarnessClient } from '@deepseek-ai/dsh-sdk-client'
 import type { AgentDriver, AgentRun, CanonicalMessage, DriverStartOptions } from '../types.js'
 import { resolveExecutable } from '../../process/launcher.js'
-import { dshCapabilities } from './capabilities.js'
+import { dshCapabilities, DSH_MIN_NODE } from './capabilities.js'
 import { DshApprovalBridge } from './approval.js'
-import { resolveDshLaunch } from './launch.js'
+import { dshSdkProcess, resolveDshLaunch, type DshSdkProcess } from './launch.js'
+import { nodeMeetsDshEngine, pathNodeVersion } from './node-engine.js'
 import { DshStreamTranslator } from './translate.js'
 
 class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
@@ -61,6 +62,34 @@ export interface DshDriverDeps {
   readonly resolveBinary?: (vendor: 'dsh') => string | null
 }
 
+/**
+ * SDK client whose child is {@link dshSdkProcess}, not `process.execPath`.
+ * The second constructor argument is the client's process override; the
+ * published type omits it because the SDK assumes it is running under Node.
+ */
+export function openHarnessClient(input: {
+  binary: string
+  cwd?: string
+  env: NodeJS.ProcessEnv
+  dshHome: string
+}): HarnessClient {
+  const runtime: DshSdkProcess = dshSdkProcess(input)
+  const Client = HarnessClient as unknown as new (
+    options?: ConstructorParameters<typeof HarnessClient>[0],
+    runtime?: DshSdkProcess,
+  ) => HarnessClient
+  return new Client(
+    {
+      dshBin: input.binary,
+      profile: 'sdk',
+      dshHome: input.dshHome,
+      ...(input.cwd ? { processCwd: input.cwd } : {}),
+      env: input.env,
+    },
+    runtime,
+  )
+}
+
 export class DshDriver implements AgentDriver {
   readonly vendor = 'dsh' as const
   readonly capabilities = dshCapabilities
@@ -91,12 +120,24 @@ export class DshDriver implements AgentDriver {
       )
     }
 
-    const client = new HarnessClient({
-      dshBin: binary,
-      profile: 'sdk',
-      dshHome: launch.dshHome,
-      processCwd: opts.cwd,
+    // The CLI is a `#!/usr/bin/env node` script, so the interpreter on PATH is
+    // what will run it. Report that here instead of letting the child die with a
+    // bare ENOENT or an engine error — this is the same gate the runtime status
+    // reports, kept at the launch boundary so the two cannot disagree.
+    const nodeVersion = pathNodeVersion()
+    const required = `${DSH_MIN_NODE.major}.${DSH_MIN_NODE.minor}`
+    if (!nodeVersion) {
+      throw new Error(`DSH requires Node.js >= ${required} on PATH; node was not found`)
+    }
+    if (!nodeMeetsDshEngine(nodeVersion)) {
+      throw new Error(`DSH requires Node.js >= ${required}; found ${nodeVersion} on PATH`)
+    }
+
+    const client = openHarnessClient({
+      binary,
+      cwd: opts.cwd,
       env,
+      dshHome: launch.dshHome,
     })
 
     let sessionResolve!: (id: string) => void
@@ -145,7 +186,11 @@ async function pump(
         throw new Error(`Unsupported DSH host request: ${method}`)
       }
       const toolName = typeof params.toolName === 'string' ? params.toolName : 'unknown'
-      const input = params
+      // DSH's approval payload names the tool but never carries its arguments,
+      // so read them back from the `tool/call` this request belongs to. The
+      // permission panel and the risk normalizer must judge the real input.
+      const callId = typeof params.callId === 'string' ? params.callId : undefined
+      const input = (callId ? translator.toolInput(callId) : undefined) ?? {}
       const outcome = await approval.resolveApproval(toolName, input, controller.signal)
       return { outcome }
     })
@@ -183,7 +228,16 @@ async function pump(
         const event = (notification.params as { event?: unknown }).event
         const tr = translator.translateSessionEvent(event)
         for (const m of tr.messages) queue.push(m)
-        if (tr.ended) break
+        if (tr.ended) {
+          // A failed or aborted turn must fail the run: settling as success
+          // would report a partial reply as a completed one. An abort raised by
+          // c3 itself falls through to the 'Run aborted' branch below.
+          if (tr.ended.isError && !controller.signal.aborted) {
+            queue.fail(new Error(tr.ended.errorMessage || 'DSH run failed'))
+            return
+          }
+          break
+        }
       }
     }
 

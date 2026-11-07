@@ -8,6 +8,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { TARGETS, defaultOutfile } from '../../server/scripts/release/build-target.mjs'
+import { patchBundledPackageJsonRequires } from '../../server/scripts/release/bundle-patches.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -83,6 +84,24 @@ describe('release-build orchestrator', () => {
   it('--dry-run executes nothing', () => {
     const { stdout } = dryRun()
     expect(stdout).toMatch(/nothing executed/)
+  })
+})
+
+describe('bundle-patches', () => {
+  it('inlines ../package.json createRequire reads for bun compile', () => {
+    const src = 'var { version: v } = createRequire2(import.meta.url)("../package.json");'
+    const out = patchBundledPackageJsonRequires(src, () => ({ version: '1.2.3' }))
+    expect(out).toBe('var { version: v } = {"version":"1.2.3"};')
+    expect(out).not.toContain('createRequire2')
+  })
+
+  it('defaults to the SDK client pin rather than an unresolvable peer', () => {
+    // The peer (@deepseek-ai/dsh-llm) is not resolvable from server/package.json;
+    // the manifest must still carry its real version, never a silent 0.0.0.
+    const src = 'var { version: v } = createRequire2(import.meta.url)("../package.json");'
+    const out = patchBundledPackageJsonRequires(src)
+    expect(out).toMatch(/"version":"\d+\.\d+\.\d+/)
+    expect(out).not.toContain('"version":"0.0.0"')
   })
 })
 

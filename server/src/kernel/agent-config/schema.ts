@@ -122,7 +122,7 @@ const cursorAgentSchema = baseShellSchema.extend({
 export const dshConfigSchema = z
   .object({
     provider: z.string().default('deepseek-official'),
-    model: z.string().default('deepseek-v4-flash'),
+    model: z.string().default('deepseek-flash'),
     apiKey: z.string().default(''),
   })
   .strict()

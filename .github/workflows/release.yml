@@ -207,7 +207,8 @@ jobs:
   build-publish-macos-arm64:
     name: 'build+publish macos-arm64'
     needs: [pregate, setup]
-    runs-on: macos-14
+    # Pinned arm64 image. macos-14 retired 2026-11-02 (macos-14-arm64-us-default).
+    runs-on: macos-15
     environment: default
     timeout-minutes: 40
     env:
@@ -371,7 +372,8 @@ jobs:
   build-desktop-macos-arm64:
     name: 'build desktop macos-arm64 (ad-hoc, Developer ID when configured)'
     needs: [pregate, setup]
-    runs-on: macos-14
+    # Pinned arm64 image. macos-14 retired 2026-11-02 (macos-14-arm64-us-default).
+    runs-on: macos-15
     environment: default
     timeout-minutes: 60
     env:

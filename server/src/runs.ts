@@ -40,6 +40,7 @@ import {
   resolveActivityOwner,
   resolveActivityWorkspaceName,
 } from './kernel/activity/index.js'
+import { DEFAULT_SESSION_TITLE } from './kernel/agent/session/placeholder-titles.js'
 
 export type Viewer = (event: ServerToClient) => void
 
@@ -537,7 +538,8 @@ export function setOnRunEnd(cb: ((input: OnRunEndInput) => void) | null): void {
 
 /**
  * Best-effort title for a real session: the first user-prompt text from the
- * runtime's baseline. Returns `'New session'` when no baseline entry exists yet.
+ * runtime's baseline. Returns the default placeholder when no baseline entry
+ * exists yet.
  */
 function firstUserTitle(baseline: TranscriptItem[]): string {
   for (const item of baseline) {
@@ -546,7 +548,7 @@ function firstUserTitle(baseline: TranscriptItem[]): string {
       if (t) return t
     }
   }
-  return 'New session'
+  return DEFAULT_SESSION_TITLE
 }
 
 export function addViewer(id: string, viewer: Viewer): void {

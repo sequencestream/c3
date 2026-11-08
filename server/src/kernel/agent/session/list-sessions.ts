@@ -18,8 +18,13 @@
  * **Rebuild path.** When the projection is empty for a workspace (a
  * fresh install or a deleted table), the read path transparently
  * rebuilds from the accessor + `sessionAgents` facts and then re-reads
- * (F-10). The rebuild is one synchronous accessor list; the cost is
+ * (F-10). The rebuild is one native list per vendor; the cost is
  * paid once.
+ *
+ * **Title backfill.** A vendor can finish naming a session after the
+ * projection row was bound (a DSH summary lands after the turn), so
+ * placeholder titles are resolved from the owning vendor's store before
+ * the reply. Only placeholders are written; a user rename is untouched.
  *
  * **Lazy validation.** At the end of the handler, a fire-and-forget
  * `validateLazy` re-checks rows older than `LAZY_VALIDATE_MS` against
@@ -43,9 +48,9 @@ import { getSessionAgentId, getShowToolSessions } from '../../config/index.js'
 import { getDefaultAgentId } from '../../agent-config/index.js'
 import { getSessionMode } from '../../../state.js'
 import { listWorkspaceSessions } from '../../../sessions.js'
-import { isRunning } from '../../../runs.js'
 import { MODE_CATALOGS, isKnownToken } from '../adapters/index.js'
-import { DshSessionStore } from '../adapters/dsh/session-store.js'
+import { accessorNativeList } from './native-list.js'
+import { isPlaceholderTitle } from './placeholder-titles.js'
 // eslint-disable-next-line no-restricted-imports
 import {
   listForWorkspace,
@@ -53,7 +58,6 @@ import {
   updateRealRowTitle,
   upsertBoundRow,
   validateLazy,
-  type NativeListFn,
   type SessionMetadataRow,
 } from '../../../features/sessions/session-metadata-store.js'
 
@@ -72,31 +76,6 @@ export function sessionKindsForCategory(sessionKind: SessionKind): readonly Sess
 
 /** All known vendor tags. The rebuild tries each; absent sources no-op. */
 const KNOWN_VENDORS: readonly VendorId[] = ['claude', 'codex', 'dsh']
-
-function num(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
-}
-
-/**
- * The session's last-modified sort key, normalized per vendor (used by the
- * OFF path / rebuild path; the projection's `last_modified` is already ms).
- *  - claude carries `lastModified` (ms) directly (via `listWorkspaceSessions`);
- *  - future vendors may carry `time = { created, updated? }`, where the
- *    most-recent of `updated`/`created` is the sort key.
- * Falls back to 0 when a vendor surfaces neither (sorts last).
- */
-function lastModifiedOf(extra: Record<string, unknown>): number {
-  const direct = num(extra.lastModified)
-  if (direct !== undefined) return direct
-  const time = extra.time as { created?: unknown; updated?: unknown } | undefined
-  if (time) {
-    const updated = num(time.updated)
-    if (updated !== undefined) return updated
-    const created = num(time.created)
-    if (created !== undefined) return created
-  }
-  return 0
-}
 
 /**
  * Map a `SessionMetadataRow` to a wire `SessionInfo`. Looks up `mode` from
@@ -127,40 +106,6 @@ function rowToSessionInfo(row: SessionMetadataRow): SessionInfo {
     ownerKind: row.ownerKind,
     ownerId: row.ownerId,
     bound: row.bound,
-  }
-}
-
-/**
- * Build a `NativeListFn` from the accessor's per-vendor normalization. The
- * accessor lists everything; we filter per-vendor here so the rebuild /
- * lazy validation call the right store without the accessor having to
- * expose its sources.
- */
-function accessorNativeList(accessor: SessionAccessor): NativeListFn {
-  return async (vendor, workspacePath) => {
-    // Codex was previously skipped here (no listing API); the 2026-06-08
-    // `CodexSessionStore.list()` implementation reads `~/.codex/sessions/`
-    // JSONL files directly, so enumeration now works.
-    try {
-      const summaries = await accessor.list({ cwd: workspacePath })
-      return {
-        sessions: summaries
-          .filter((s) => s.vendor === vendor)
-          .map((s) => {
-            const extra = s.vendorExtra ?? {}
-            const vsid =
-              typeof extra.vendorSessionId === 'string' ? extra.vendorSessionId : s.c3SessionId
-            return {
-              vendorSessionId: vsid,
-              title: s.title,
-              lastModified: lastModifiedOf(extra),
-            }
-          }),
-      }
-    } catch (err) {
-      console.error(`[c3] list: native list failed for ${vendor}:`, err)
-      return null
-    }
   }
 }
 
@@ -217,10 +162,11 @@ export async function listSessionsVia(
     rows = listForWorkspace(workspacePath, sessionKind)
   }
 
-  // DSH rows are born as "New session". The vendor name is on disk after the
-  // turn, including for sessions that are no longer running, so resolve it
-  // before this reply leaves — the running-only sync below does not cover them.
-  await backfillDshPlaceholderTitles(workspacePath, rows)
+  // A vendor can write its accepted display name after the row was bound — a
+  // DSH summary lands after the turn — so placeholders are resolved from the
+  // native stores before this reply leaves. Only placeholder titles are
+  // rewritten, so a user rename is never touched.
+  await backfillPlaceholderTitles(accessor, workspacePath, rows)
 
   // Apply the filter parity (hidden set + tool-session filter) and stamp
   // the `mode` / `state` fields. Sort newest-first; nulls (Codex
@@ -246,10 +192,6 @@ export async function listSessionsVia(
   // Fire-and-forget lazy validation (F-8). The wire reply is not blocked;
   // the validation rewrites stale rows in place.
   void runLazyValidation(workspacePath, accessor)
-  // Fire-and-forget title sync: running sessions whose projection title is
-  // still a default placeholder get their real SDK-derived title written back
-  // to the projection table. The wire reply is not blocked (F-8).
-  void syncRunningTitles(workspacePath, accessor, out)
   return out
 }
 
@@ -291,105 +233,42 @@ async function runLazyValidation(workspacePath: string, accessor: SessionAccesso
   }
 }
 
-/** Default placeholder titles that the projection table uses before the SDK
- * derives a real title (from the first prompt or auto-summary). Sessions with
- * these titles are candidates for the background title sync. */
-const DEFAULT_PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
-
 /**
- * Replace DSH placeholder titles from the on-disk projection cache before the
- * list is returned. Only placeholders are written, so a renamed row is left
- * alone. A miss or a still-placeholder native title changes nothing.
+ * Resolve placeholder titles from the vendor-native stores before the list is
+ * returned. The projection learns a title at bind / run end, but a vendor can
+ * finish writing its accepted name after that (a DSH summary lands after the
+ * turn), so a row would otherwise sit on the placeholder until the daily lazy
+ * pass.
+ *
+ * Only placeholders are written (a user rename is never touched), only the
+ * vendors that still have a placeholder are listed, and a vendor that cannot be
+ * read leaves its rows alone rather than clearing them.
  */
-async function backfillDshPlaceholderTitles(
+async function backfillPlaceholderTitles(
+  accessor: SessionAccessor,
   workspacePath: string,
   rows: SessionMetadataRow[],
 ): Promise<void> {
-  const pending = rows.filter(
-    (row) =>
-      row.vendor === 'dsh' &&
-      typeof row.vendorSessionId === 'string' &&
-      row.vendorSessionId !== '' &&
-      DEFAULT_PLACEHOLDER_TITLES.has(row.title),
-  )
-  if (pending.length === 0) return
-  let summaries: { sessionId: string; title: string }[]
-  try {
-    summaries = await new DshSessionStore().list({ cwd: workspacePath })
-  } catch (err) {
-    console.error('[c3] dsh title backfill failed:', err)
-    return
-  }
-  const byId = new Map(summaries.map((s) => [s.sessionId, s.title]))
-  for (const row of pending) {
+  const pending = new Map<VendorId, SessionMetadataRow[]>()
+  for (const row of rows) {
     const sessionId = row.vendorSessionId
-    if (!sessionId) continue
-    const title = byId.get(sessionId)
-    if (!title || DEFAULT_PLACEHOLDER_TITLES.has(title)) continue
-    updateRealRowTitle(sessionId, 'dsh', title)
-    row.title = title
+    if (!sessionId || !isPlaceholderTitle(row.title)) continue
+    const group = pending.get(row.vendor) ?? []
+    group.push(row)
+    pending.set(row.vendor, group)
   }
-}
-
-/**
- * Fire-and-forget background sync (F-8). For running sessions whose projection
- * title is still a default placeholder ("New session" or "Untitled session"),
- * query the native SDK list via the accessor and, when a real title exists,
- * write it back to the projection table via `updateRealRowTitle`.
- *
- * This bridges the gap between the projection table (updated only at bind time
- * and on explicit `rename_session`) and the SDK's auto-derived title (which
- * populates after the first interaction). The next list refresh reads the
- * updated projection and shows the correct title.
- *
- * Constraints:
- *  - Only running sessions are checked (no runtime → no title to sync).
- *  - Only default placeholder titles are overwritten (user-renamed sessions
- *    are untouched).
- *  - An empty or absent native title is never written back (don't replace a
- *    placeholder with nothing).
- *  - Errors are caught and logged, never propagated.
- *  - The wire reply is not blocked (the caller fires this with `void`).
- */
-async function syncRunningTitles(
-  workspacePath: string,
-  accessor: SessionAccessor,
-  sessions: SessionInfo[],
-): Promise<void> {
-  try {
-    const summaries = await accessor.list({ cwd: workspacePath })
-    if (!summaries.length) return
-
-    // Build a map keyed by the wire sessionId (vendor-native id when present,
-    // falling back to the c3 digest for unbound sessions).
-    const nativeTitles = new Map<string, string>()
-    for (const s of summaries) {
-      const vsid = s.vendorExtra?.vendorSessionId
-      const key = typeof vsid === 'string' && vsid ? vsid : s.c3SessionId
-      // Only store non-empty titles (empty would overwrite a placeholder with
-      // nothing, which is worse than keeping the placeholder).
-      if (s.title) nativeTitles.set(key, s.title)
+  for (const [vendor, group] of pending) {
+    const summaries = await accessor.listVendor(vendor, { cwd: workspacePath })
+    if (!summaries) continue
+    const titles = new Map(summaries.map((s) => [s.sessionId, s.title]))
+    for (const row of group) {
+      const sessionId = row.vendorSessionId
+      if (!sessionId) continue
+      const title = titles.get(sessionId)
+      if (!title || isPlaceholderTitle(title)) continue
+      updateRealRowTitle(sessionId, vendor, title)
+      row.title = title
     }
-
-    for (const s of sessions) {
-      // Condition 1: the session must have a live runtime (the SDK's
-      // auto-title only appears after the first interaction, which implies a
-      // running session).
-      if (!isRunning(s.sessionId)) continue
-      // Condition 2: the projection title must still be a default placeholder
-      // (otherwise the user or a previous sync has already set a real title).
-      if (!DEFAULT_PLACEHOLDER_TITLES.has(s.title)) continue
-
-      const nativeTitle = nativeTitles.get(s.sessionId)
-      // Condition 3: the native title must exist, be non-empty, and be a real
-      // title (not another placeholder) — otherwise there's nothing useful to
-      // write back.
-      if (!nativeTitle || DEFAULT_PLACEHOLDER_TITLES.has(nativeTitle)) continue
-
-      updateRealRowTitle(s.sessionId, s.vendor, nativeTitle)
-    }
-  } catch (err) {
-    console.error('[c3] sync running session titles failed:', err)
   }
 }
 

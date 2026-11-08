@@ -72,6 +72,10 @@ import { findDiscussionByResearchSessionId } from '../discussions/store.js'
 import { runningAutomationIdsForWorkspace } from '../automations/store.js'
 import { badgeProjection } from '../../kernel/activity/index.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
+import {
+  DEFAULT_SESSION_TITLE,
+  PLACEHOLDER_TITLES,
+} from '../../kernel/agent/session/placeholder-titles.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -91,9 +95,6 @@ export function isReadOnlySessionKind(kind: SessionKind): boolean {
 export function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
   return resolveSessionAgentSwitch(sessionId, availableVendorSet()) ?? undefined
 }
-
-/** Projection-stored titles that are placeholders, not a real derived title. */
-const PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
 
 /**
  * The title-bar title for a just-selected real session, read projection-first so
@@ -275,7 +276,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     type: 'session_selected',
     workspaceName: pathToName(abs)!,
     sessionId: pendingId,
-    title: 'New session',
+    title: DEFAULT_SESSION_TITLE,
     mode: defaultMode,
     codexPolicy: codexPolicy,
     history: [],

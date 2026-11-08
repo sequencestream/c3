@@ -109,3 +109,46 @@ describe('SessionAccessor', () => {
     expect(await acc.read(orphan, cwd)).toEqual([])
   })
 })
+
+describe('SessionAccessor.listVendor', () => {
+  const sources = (): VendorSessionSource[] => [
+    { vendor: 'claude', sessions: fakeStore([{ sessionId: 'c-1', title: 'Claude one' }]) },
+    { vendor: 'codex', sessions: fakeStore([{ sessionId: 'x-1', title: 'Codex one' }]) },
+  ]
+
+  it('lists only the requested vendor and leaves the others untouched', async () => {
+    const srcs = sources()
+    const acc = new SessionAccessor(srcs)
+
+    const out = await acc.listVendor('claude', cwd)
+
+    expect(out).toEqual([{ sessionId: 'c-1', title: 'Claude one' }])
+    expect(srcs[0].sessions.list).toHaveBeenCalledTimes(1)
+    expect(srcs[0].sessions.list).toHaveBeenCalledWith(cwd)
+    expect(srcs[1].sessions.list).not.toHaveBeenCalled()
+  })
+
+  it('returns null for a vendor with no registered source, without listing anyone', async () => {
+    const srcs = sources()
+    const acc = new SessionAccessor(srcs)
+
+    expect(await acc.listVendor('dsh', cwd)).toBeNull()
+    expect(srcs[0].sessions.list).not.toHaveBeenCalled()
+    expect(srcs[1].sessions.list).not.toHaveBeenCalled()
+  })
+
+  it('returns null — not [] — when the store cannot be read', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const failing: SessionStore = {
+      list: vi.fn(async () => {
+        throw new Error('store unavailable')
+      }),
+      read: vi.fn(async () => []),
+    }
+    const acc = new SessionAccessor([{ vendor: 'claude', sessions: failing }])
+
+    expect(await acc.listVendor('claude', cwd)).toBeNull()
+    expect(error).toHaveBeenCalled()
+    error.mockRestore()
+  })
+})

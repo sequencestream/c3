@@ -26,8 +26,17 @@
 import type { SessionKind, VendorId } from '@ccc/shared/protocol'
 import type { Automation } from '@ccc/shared/protocol'
 import { mintC3SessionId, type C3SessionId } from '../../kernel/agent/session/accessor.js'
+import {
+  DEFAULT_SESSION_TITLE,
+  PLACEHOLDER_TITLES,
+} from '../../kernel/agent/session/placeholder-titles.js'
 import { getDb, isDbAvailable, tableExists, type Db } from '../../kernel/infra/db.js'
 import { resolveWorkspaceRoot, workspaceNameFor } from '../../state.js'
+
+/** The placeholder set as a SQL `IN` list, single-sourced with {@link PLACEHOLDER_TITLES}. */
+const PLACEHOLDER_SQL = [...PLACEHOLDER_TITLES]
+  .map((title) => `'${title.replace(/'/g, "''")}'`)
+  .join(', ')
 
 // ---- Schema ----
 
@@ -63,10 +72,6 @@ const COLUMNS = [
   'owner_id',
   'bound',
 ] as const
-
-/** Default title for a freshly-bound row (no native title source at bind time). */
-const DEFAULT_TITLE = 'New session'
-const PLACEHOLDER_TITLES = new Set([DEFAULT_TITLE, 'Untitled session'])
 
 /** Schema v1: create the table + two indexes. Migrations key off `table_info`. */
 const SCHEMA = `
@@ -398,7 +403,7 @@ export function upsertPendingRow(input: {
     input.vendor,
     null,
     input.agentId,
-    input.title ?? DEFAULT_TITLE,
+    input.title ?? DEFAULT_SESSION_TITLE,
     null,
     'born',
     t,
@@ -472,7 +477,9 @@ export function upsertForBind(input: {
       input.pendingId,
     )
     const title =
-      pending?.title && !PLACEHOLDER_TITLES.has(pending.title) ? pending.title : DEFAULT_TITLE
+      pending?.title && !PLACEHOLDER_TITLES.has(pending.title)
+        ? pending.title
+        : DEFAULT_SESSION_TITLE
     d.run('DELETE FROM session_metadata WHERE c3_id=? AND bound=?', input.pendingId, 0)
     d.run(
       `INSERT OR IGNORE INTO session_metadata
@@ -656,8 +663,8 @@ export function touchOnRunEnd(input: {
   d.run(
     `UPDATE session_metadata
        SET title=CASE
-             WHEN ? IN ('New session', 'Untitled session')
-              AND title NOT IN ('New session', 'Untitled session')
+             WHEN ? IN (${PLACEHOLDER_SQL})
+              AND title NOT IN (${PLACEHOLDER_SQL})
              THEN title
              ELSE ?
            END,

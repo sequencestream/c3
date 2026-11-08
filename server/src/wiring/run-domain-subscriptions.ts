@@ -135,6 +135,7 @@ import { agentSwitchFor } from '../features/works/index.js'
 import { findDiscussionByResearchSessionId } from '../features/discussions/store.js'
 import { settleResearchSessionRun } from './discussion-runs.js'
 import { resolveSessionVendor } from '../kernel/agent-config/index.js'
+import { DEFAULT_SESSION_TITLE } from '../kernel/agent/session/placeholder-titles.js'
 import {
   commitAndPush,
   createForgePr,
@@ -315,7 +316,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
           workspacePath: rt.workspacePath,
           vendor,
           agentId: getSessionAgentId(realId) ?? '',
-          title: intent?.title ?? 'New session',
+          title: intent?.title ?? DEFAULT_SESSION_TITLE,
           sessionKind: 'spec',
           ownerKind: 'intent',
           ownerId: intentId,
@@ -355,7 +356,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
           workspacePath: rt.workspacePath,
           vendor,
           agentId: getSessionAgentId(realId) ?? '',
-          title: intent?.title ?? 'New session',
+          title: intent?.title ?? DEFAULT_SESSION_TITLE,
           sessionKind: 'spec_review',
           ownerKind: 'intent',
           ownerId: intentId,

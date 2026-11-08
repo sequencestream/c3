@@ -20,14 +20,10 @@ import type {
   SessionSummary,
 } from '../types.js'
 import { hostDshHome } from '../../../config/workspace-path.js'
+import { DEFAULT_SESSION_TITLE, isPlaceholderTitle } from '../../session/placeholder-titles.js'
 
 /** Sidebar title cap, matching the other vendors' first-prompt titles. */
 const DISPLAY_TITLE_LIMIT = 120
-
-/** Projection placeholder. A session with no usable name stays on this. */
-const PLACEHOLDER_TITLE = 'New session'
-
-const PLACEHOLDER_TITLES = new Set([PLACEHOLDER_TITLE, 'Untitled session'])
 
 /** Root the JSONL backend is configured with (`dshHomePath('sessions')`). */
 function sessionRoot(dshHome: string): string {
@@ -108,11 +104,11 @@ function isLeadingSlice(message: string, title: string): boolean {
 export function dshSessionTitle(cache: unknown): string {
   const rows = projectionRows(cache)
   const acceptedRaw = cellString(rows?.title)
-  const accepted = acceptedRaw && !PLACEHOLDER_TITLES.has(acceptedRaw) ? acceptedRaw : null
+  const accepted = acceptedRaw && !isPlaceholderTitle(acceptedRaw) ? acceptedRaw : null
   const first = firstUserText(rows?.titleInput)
   if (accepted && !(first && isLeadingSlice(first, accepted))) return clampTitle(accepted)
   if (first) return clampTitle(first)
-  return PLACEHOLDER_TITLE
+  return DEFAULT_SESSION_TITLE
 }
 
 function finiteMs(value: unknown): number | null {

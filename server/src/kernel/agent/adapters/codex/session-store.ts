@@ -20,6 +20,7 @@ import type {
 } from '../types.js'
 import type { CanonicalRole, StoreScope } from '@ccc/shared/protocol'
 import { relayCodexHome, hostCodexHome } from '../../../config/workspace-path.js'
+import { DEFAULT_SESSION_TITLE } from '../../session/placeholder-titles.js'
 
 /**
  * The ordered CODEX_HOME roots to scan when reading/listing a codex session for a
@@ -43,7 +44,7 @@ export class CodexSessionStore implements SessionStore {
    *
    * Only sessions whose `cwd` matches `opts.cwd` are returned. If no user prompt
    * is found (e.g. a freshly-created session before its first turn), the title
-   * defaults to `'New session'`.
+   * defaults to the shared placeholder.
    *
    * Performance: the scan walks recent date directories (last N days) and reads
    * only the first few kilobytes of each file to extract the session_meta and
@@ -227,7 +228,7 @@ export class CodexSessionStore implements SessionStore {
         }
       }
     }
-    return 'New session'
+    return DEFAULT_SESSION_TITLE
   }
 
   async read(sessionId: string, opts: SessionListOptions): Promise<CanonicalMessage[]> {

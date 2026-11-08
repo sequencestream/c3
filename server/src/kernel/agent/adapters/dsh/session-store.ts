@@ -8,8 +8,10 @@
  * (`storages/session_projcache/sessions/<id>.json`). That name is a generated
  * summary when DSH has one, otherwise a shortened slice of the first user
  * message. Listing prefers the summary, and falls back to the first user
- * message when the stored name is only that slice. Read-back as canonical
- * messages is not implemented: live runs own the transcript fact source.
+ * message when the stored name is only that slice. Read-back replays the
+ * current-format log into canonical messages: the human's own prompts,
+ * assistant text, and each tool call paired with its result. Injected context
+ * and model-only replacements stay out of that transcript.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +21,7 @@ import type {
   SessionStore,
   SessionSummary,
 } from '../types.js'
+import { decodeDshSessionLog, replayDshSessionLog, selectDshGeneration } from './session-log.js'
 import { hostDshHome } from '../../../config/workspace-path.js'
 import { DEFAULT_SESSION_TITLE, isPlaceholderTitle } from '../../session/placeholder-titles.js'
 
@@ -186,7 +189,36 @@ export class DshSessionStore implements SessionStore {
     return out
   }
 
-  async read(_sessionId: string, _opts: SessionListOptions): Promise<CanonicalMessage[]> {
-    return []
+  async read(sessionId: string, opts: SessionListOptions): Promise<CanonicalMessage[]> {
+    try {
+      const dir = findSessionDir(hostDshHome(opts.cwd), sessionId)
+      if (!dir) return []
+      const names = readdirSync(dir)
+      const selected = selectDshGeneration(names)
+      if (!selected) return []
+      const raw = readFileSync(join(dir, selected.name))
+      const text = decodeDshSessionLog(raw, selected.compressed)
+      return replayDshSessionLog(text, sessionId)
+    } catch (err) {
+      // A log this reader cannot decode must not fail the session open.
+      console.warn(
+        `[c3] dsh history unavailable for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return []
+    }
   }
+}
+
+/** Directory of `sessionId` under any project key, or null when it was never materialized. */
+function findSessionDir(dshHome: string, sessionId: string): string | null {
+  if (!sessionId) return null
+  const root = sessionRoot(dshHome)
+  if (!existsSync(root)) return null
+  for (const project of subdirectories(root)) {
+    const projectDir = join(root, project)
+    for (const segment of subdirectories(projectDir)) {
+      if (decodeSegment(segment) === sessionId) return join(projectDir, segment)
+    }
+  }
+  return null
 }

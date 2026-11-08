@@ -10,11 +10,13 @@ import type { CanonicalMessage, TranscriptItem, VendorId } from '@ccc/shared/pro
 // eslint-disable-next-line no-restricted-imports -- justified exception (ADR-0011 layering): this feature reads a vendor's SessionStore so an already-persisted transcript can be replayed, which is a registry-style read of the vendor's storage ROOT, not a policy/sandbox decision. There is no neutral entry that can answer where vendor X keeps its transcripts without the feature owning a vendor table. Mirrors the dispatcher's annotated Claude-SDK exemption.
 import { CodexSessionStore, codexStoreRoots } from '../../kernel/agent/adapters/codex/index.js'
 import { CursorSessionStore } from '../../kernel/agent/adapters/cursor/session-store.js'
+import { DshSessionStore } from '../../kernel/agent/adapters/dsh/session-store.js'
 import { resolveSessionStoreScope } from '../../kernel/agent-config/index.js'
 import { loadHistory } from '../../sessions.js'
 
 const codexHistoryStore = new CodexSessionStore()
 const cursorHistoryStore = new CursorSessionStore()
+const dshHistoryStore = new DshSessionStore()
 
 /** Read a session's persisted transcript from its vendor's native session store. */
 export async function loadHistoryForVendor(
@@ -56,8 +58,9 @@ export async function loadHistoryForVendor(
       // no scope branch is needed — a sandboxed claude session is host-readable.
       return loadHistory(workspacePath, sessionId)
     case 'dsh':
-      // DSH durable replay from disk is partial; live runs own the transcript fact source.
-      return []
+      // Same per-workspace home a live run writes. A sandboxed turn is mounted
+      // onto that directory, so one read covers both scopes.
+      return canonicalToTranscript(await dshHistoryStore.read(sessionId, { cwd: workspacePath }))
   }
 }
 

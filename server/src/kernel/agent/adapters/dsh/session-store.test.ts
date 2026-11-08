@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { decodeDshSessionLog } from './session-log.js'
 import { DshSessionStore, dshSessionTitle } from './session-store.js'
 import { hostDshHome } from '../../../config/workspace-path.js'
 import type { SessionListOptions } from '../types.js'
@@ -147,6 +149,127 @@ describe('dshSessionTitle', () => {
   })
 })
 
+describe('DshSessionStore.read', () => {
+  it('replays the human prompt, assistant text, and paired tool results', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    writeLog(dshHome, 'sess-1', CURRENT_LOG, false)
+
+    const out = await new DshSessionStore().read('sess-1', opts(workspace))
+
+    expect(out.map((message) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'assistant',
+      'assistant',
+      'assistant',
+    ])
+    expect(out[0].blocks).toMatchObject([{ type: 'text', text: 'hello' }])
+    expect(out[1].blocks).toMatchObject([{ type: 'text', text: 'hi' }])
+    expect(out[2].blocks[0]).toMatchObject({
+      type: 'tool_use',
+      id: 'dsh-4',
+      name: 'read',
+      input: { path: 'a.ts' },
+      result: { content: 'file body', isError: false },
+    })
+    expect(out[3].blocks[0]).toMatchObject({
+      type: 'tool_use',
+      id: 'dsh-6',
+      name: 'read',
+      input: { path: 'b.ts' },
+      result: { content: 'second', isError: true },
+    })
+    expect(out[4].blocks).toMatchObject([{ type: 'text', text: 'done' }])
+    const visible = out.flatMap((message) =>
+      message.blocks.flatMap((block) => {
+        if (block.type === 'text') return [block.text]
+        if (block.type === 'tool_use') return [block.name]
+        return []
+      }),
+    )
+    expect(visible).not.toContain('catalog')
+    expect(visible).not.toContain('think')
+    expect(visible).not.toContain('replaced')
+  })
+
+  it('decodes every compressed frame, including when one decompress stops at the first', () => {
+    const header = '{"type":"session","version":4,"id":"s"}\n'
+    const body =
+      '{"type":"user/message","seq":1,"time":1,"surfaceOp":"append","data":{"role":"user","source":{"kind":"user"},"content":[{"type":"text","text":"weather"}]}}\n'
+    const file = Buffer.concat([
+      zstdCompressSync(Buffer.from(header)),
+      zstdCompressSync(Buffer.from(body)),
+    ])
+    let calls = 0
+    const text = decodeDshSessionLog(file, true, (frame) => {
+      calls += 1
+      return zstdDecompressSync(frame)
+    })
+    expect(calls).toBe(2)
+    expect(text).toContain('weather')
+  })
+
+  it('reads a zstd log and keeps complete frames when the tail is torn', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    const sessionId = 'sess-zstd'
+    const dir = join(dshHome, 'sessions', '-work-project', sessionId)
+    mkdirSync(dir, { recursive: true })
+    const frame = zstdCompressSync(Buffer.from(CURRENT_LOG))
+    writeFileSync(
+      join(dir, 'session.v4.jsonl.zstd'),
+      Buffer.concat([frame, Buffer.from([1, 2, 3])]),
+    )
+
+    const out = await new DshSessionStore().read(sessionId, opts(workspace))
+
+    expect(out[0].blocks).toMatchObject([{ type: 'text', text: 'hello' }])
+    expect(out).toHaveLength(5)
+  })
+
+  it('prefers the highest generation over an older log', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    const sessionId = 'sess-gen'
+    const dir = join(dshHome, 'sessions', '-work-project', sessionId)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.v1.jsonl'), olderLog('from v1'))
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from(CURRENT_LOG)))
+
+    const out = await new DshSessionStore().read(sessionId, opts(workspace))
+
+    expect(out[0].blocks).toMatchObject([{ type: 'text', text: 'hello' }])
+  })
+
+  it('returns nothing for a pre-current log, a missing session, or a corrupt file', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    writeLog(dshHome, 'old', olderLog('stale'), false)
+    const broken = join(dshHome, 'sessions', '-work-project', 'broken')
+    mkdirSync(broken, { recursive: true })
+    writeFileSync(join(broken, 'session.v4.jsonl.zstd'), Buffer.from('not a frame'))
+    const store = new DshSessionStore()
+
+    await expect(store.read('old', opts(workspace))).resolves.toEqual([])
+    await expect(store.read('missing', opts(workspace))).resolves.toEqual([])
+    await expect(store.read('broken', opts(workspace))).resolves.toEqual([])
+  })
+
+  it('finds a session whose id was path-escaped', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    const dir = join(dshHome, 'sessions', '-work-project', 'a~002Fb')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.v4.jsonl'), CURRENT_LOG)
+
+    const out = await new DshSessionStore().read('a/b', opts(workspace))
+
+    expect(out[0].sessionId).toBe('a/b')
+    expect(out[0].blocks).toMatchObject([{ type: 'text', text: 'hello' }])
+  })
+})
+
 function cache(input: { title?: string; first?: string }): unknown {
   return {
     record: {
@@ -180,4 +303,35 @@ function writeProjection(
 
 function quote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+/** Current-format log: injected context, a replacement, reasoning, and two steps that reuse `call_00`. */
+const CURRENT_LOG = [
+  '{"type":"session","version":4,"id":"s1","createdAt":1,"isSeeded":false,"delegationDepth":0}',
+  '{"type":"user/message","seq":1,"time":10,"surfaceOp":"append","data":{"role":"user","id":"u0","source":{"kind":"skill-catalog"},"content":[{"type":"text","text":"catalog"}]}}',
+  '{"type":"user/message","seq":2,"time":11,"surfaceOp":"append","data":{"role":"user","id":"u1","source":{"kind":"user"},"content":[{"type":"text","text":"hello"}]}}',
+  '{"type":"assistant/message","seq":3,"time":12,"surfaceOp":"append","data":{"turn":1,"step":1,"stream":[],"message":{"role":"assistant","content":[{"type":"reasoning","text":"think"},{"type":"text","text":"hi"},{"type":"tool-call","id":"call_00","name":"read","arguments":"{\\"path\\":\\"a.ts\\"}"}]}}}',
+  '{"type":"tool/call","seq":4,"time":13,"data":{"turn":1,"step":1,"callId":"call_00","name":"read","arguments":"{\\"path\\":\\"a.ts\\"}"}}',
+  '{"type":"tool/result","seq":5,"time":14,"surfaceOp":"append","data":{"turn":1,"step":1,"message":{"role":"tool","toolCallId":"call_00","isError":false,"content":[{"type":"text","text":"file body"}]}}}',
+  '{"type":"tool/call","seq":6,"time":15,"data":{"turn":1,"step":2,"callId":"call_00","name":"read","arguments":"{\\"path\\":\\"b.ts\\"}"}}',
+  '{"type":"tool/result","seq":7,"time":16,"surfaceOp":"append","data":{"turn":1,"step":2,"message":{"role":"tool","toolCallId":"call_00","isError":true,"content":[{"type":"text","text":"second"}]}}}',
+  '{"type":"assistant/message","seq":8,"time":17,"surfaceOp":"append","data":{"message":{"content":[{"type":"text","text":"done"}]}}}',
+  '{"type":"user/message","seq":9,"time":18,"surfaceOp":{"op":"replace","startSeq":2,"endSeq":2},"data":{"role":"user","id":"u2","source":{"kind":"user"},"content":[{"type":"text","text":"replaced"}]}}',
+  '',
+].join('\n')
+
+function olderLog(text: string): string {
+  return [
+    '{"type":"session","version":3,"id":"s1","createdAt":1}',
+    `{"type":"user/message","seq":1,"time":1,"surfaceOp":"append","data":{"role":"user","source":{"kind":"user"},"content":[{"type":"text","text":"${text}"}]}}`,
+    '',
+  ].join('\n')
+}
+
+function writeLog(dshHome: string, sessionId: string, body: string, compressed: boolean): void {
+  const dir = join(dshHome, 'sessions', '-work-project', sessionId)
+  mkdirSync(dir, { recursive: true })
+  const name = compressed ? 'session.v4.jsonl.zstd' : 'session.v4.jsonl'
+  const payload = compressed ? zstdCompressSync(Buffer.from(body)) : body
+  writeFileSync(join(dir, name), payload)
 }

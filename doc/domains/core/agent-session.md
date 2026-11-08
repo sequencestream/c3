@@ -243,7 +243,7 @@ DSH（DeepSeek Harness）与 Claude / Codex / Cursor 落在同一套 driver / �
 - **逐工具审批。** 初始化启用 `approvalRequests`,`approval/request` 经审批桥接到 permission-gateway;允许、拒绝与中止时令待定请求为 `cancelled`。
 - **不能做 team lead。** 无流式推入,AS-R21 排除;上游 subagent/team 事件不进转录映射。
 - **无进程内 MCP。** c3 工具经统一回环 HTTP MCP,不为 DSH 另开通道。
-- **会话生命周期。** `resume` 为完整能力;`list` / `read` 为部分——以 DSH 持久化目录下已知会话为准,不等同于 IDE 侧全量历史。`rename` / `delete` 为无。
+- **会话生命周期。** `resume` 为完整能力;`list` / `read` 为部分——以 DSH 持久化目录下已知会话为准,不等同于 IDE 侧全量历史。列表标题优先用厂商已接受的总结名;没有总结名时用第一条用户消息。`rename` / `delete` 为无。
 - **DeepSeek API key。** 经 agent 配置注入运行环境;不是「仅模型 relay」路径。
 
 ### 消费面

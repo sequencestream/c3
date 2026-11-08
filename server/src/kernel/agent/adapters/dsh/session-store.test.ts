@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DshSessionStore } from './session-store.js'
+import { DshSessionStore, dshSessionTitle } from './session-store.js'
 import { hostDshHome } from '../../../config/workspace-path.js'
 import type { SessionListOptions } from '../types.js'
 
@@ -43,7 +43,8 @@ describe('DshSessionStore', () => {
     const out = await new DshSessionStore().list(opts(workspace))
 
     expect(out.map((s) => s.sessionId).sort()).toEqual(['1e6a-4c8f', '2b7c-90de'])
-    expect(out[0].title).toBe(out[0].sessionId)
+    expect(out[0].title).toBe('New session')
+    expect(typeof out[0].vendorExtra?.lastModified).toBe('number')
   })
 
   it('decodes the path-segment escape DSH applies to session ids', async () => {
@@ -53,7 +54,8 @@ describe('DshSessionStore', () => {
 
     const out = await new DshSessionStore().list(opts(workspace))
 
-    expect(out).toEqual([{ sessionId: 'a/b', title: 'a/b' }])
+    expect(out.map((s) => s.sessionId)).toEqual(['a/b'])
+    expect(out[0].title).toBe('New session')
   })
 
   it('treats a workspace with no sessions root as empty', async () => {
@@ -75,4 +77,107 @@ describe('DshSessionStore', () => {
 
     expect(out.map((s) => s.sessionId)).toEqual(['kept'])
   })
+
+  it('reads a generated title from the projection cache', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    const sessionId = '1e6a-4c8f'
+    mkdirSync(join(dshHome, 'sessions', '-work-project', sessionId), { recursive: true })
+    writeProjection(dshHome, sessionId, {
+      title: 'Refactor the parser',
+      first: 'please refactor the parser and add tests',
+      lastMessageTime: 999,
+    })
+
+    const out = await new DshSessionStore().list(opts(workspace))
+
+    expect(out).toEqual([
+      {
+        sessionId,
+        title: 'Refactor the parser',
+        vendorExtra: { lastModified: 999, cwd: workspace },
+      },
+    ])
+  })
+
+  it('uses the first user message when the stored title is only a slice of it', async () => {
+    const workspace = '/work/project'
+    const dshHome = tempDshHome(workspace)
+    const sessionId = '2b7c-90de'
+    mkdirSync(join(dshHome, 'sessions', '-work-project', sessionId), { recursive: true })
+    writeProjection(dshHome, sessionId, {
+      title: '帮我分析下最近的一些修改，',
+      first: '帮我分析下最近的一些修改，是不是存在bug？',
+    })
+
+    const out = await new DshSessionStore().list(opts(workspace))
+
+    expect(out[0].title).toBe('帮我分析下最近的一些修改，是不是存在bug？')
+  })
 })
+
+describe('dshSessionTitle', () => {
+  it('prefers a summary that is not a leading slice of the first message', () => {
+    expect(
+      dshSessionTitle(
+        cache({
+          title: 'Fix the login bug',
+          first: 'the login page throws when the token expires',
+        }),
+      ),
+    ).toBe('Fix the login bug')
+  })
+
+  it('falls back to the first user message when no accepted title exists', () => {
+    expect(dshSessionTitle(cache({ first: 'hello there' }))).toBe('hello there')
+  })
+
+  it('ignores a placeholder accepted title', () => {
+    expect(dshSessionTitle(cache({ title: 'New session', first: 'hello' }))).toBe('hello')
+  })
+
+  it('clamps a long first message', () => {
+    const first = 'a'.repeat(200)
+    expect(dshSessionTitle(cache({ first }))).toBe('a'.repeat(120))
+  })
+
+  it('stays on the placeholder when the cache has no name', () => {
+    expect(dshSessionTitle(null)).toBe('New session')
+    expect(dshSessionTitle({ record: { rows: {} } })).toBe('New session')
+  })
+})
+
+function cache(input: { title?: string; first?: string }): unknown {
+  return {
+    record: {
+      rows: {
+        ...(input.title !== undefined ? { title: { val: input.title } } : {}),
+        ...(input.first !== undefined
+          ? { titleInput: { val: { first: { text: input.first } } } }
+          : {}),
+      },
+    },
+  }
+}
+
+function writeProjection(
+  dshHome: string,
+  sessionId: string,
+  input: { title?: string; first?: string; lastMessageTime?: number },
+): void {
+  const dir = join(dshHome, 'storages', 'session_projcache', 'sessions')
+  mkdirSync(dir, { recursive: true })
+  const rows: string[] = []
+  if (input.title !== undefined) rows.push(`"title":{"val":${quote(input.title)}}`)
+  if (input.first !== undefined) {
+    rows.push(`"titleInput":{"val":{"first":{"text":${quote(input.first)}}}}`)
+  }
+  if (input.lastMessageTime !== undefined) {
+    rows.push(`"timeContext":{"val":{"lastMessageTime":${input.lastMessageTime}}}`)
+  }
+  writeFileSync(join(dir, `${sessionId}.json`), `{"record":{"rows":{${rows.join(',')}}}}`)
+}
+
+function quote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}

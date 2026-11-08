@@ -45,6 +45,7 @@ import { getSessionMode } from '../../../state.js'
 import { listWorkspaceSessions } from '../../../sessions.js'
 import { isRunning } from '../../../runs.js'
 import { MODE_CATALOGS, isKnownToken } from '../adapters/index.js'
+import { DshSessionStore } from '../adapters/dsh/session-store.js'
 // eslint-disable-next-line no-restricted-imports
 import {
   listForWorkspace,
@@ -70,7 +71,7 @@ export function sessionKindsForCategory(sessionKind: SessionKind): readonly Sess
 }
 
 /** All known vendor tags. The rebuild tries each; absent sources no-op. */
-const KNOWN_VENDORS: readonly VendorId[] = ['claude', 'codex']
+const KNOWN_VENDORS: readonly VendorId[] = ['claude', 'codex', 'dsh']
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined
@@ -216,6 +217,11 @@ export async function listSessionsVia(
     rows = listForWorkspace(workspacePath, sessionKind)
   }
 
+  // DSH rows are born as "New session". The vendor name is on disk after the
+  // turn, including for sessions that are no longer running, so resolve it
+  // before this reply leaves — the running-only sync below does not cover them.
+  await backfillDshPlaceholderTitles(workspacePath, rows)
+
   // Apply the filter parity (hidden set + tool-session filter) and stamp
   // the `mode` / `state` fields. Sort newest-first; nulls (Codex
   // bind-time) sort last. Intent/spec comm sessions are hidden only from
@@ -289,6 +295,41 @@ async function runLazyValidation(workspacePath: string, accessor: SessionAccesso
  * derives a real title (from the first prompt or auto-summary). Sessions with
  * these titles are candidates for the background title sync. */
 const DEFAULT_PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
+
+/**
+ * Replace DSH placeholder titles from the on-disk projection cache before the
+ * list is returned. Only placeholders are written, so a renamed row is left
+ * alone. A miss or a still-placeholder native title changes nothing.
+ */
+async function backfillDshPlaceholderTitles(
+  workspacePath: string,
+  rows: SessionMetadataRow[],
+): Promise<void> {
+  const pending = rows.filter(
+    (row) =>
+      row.vendor === 'dsh' &&
+      typeof row.vendorSessionId === 'string' &&
+      row.vendorSessionId !== '' &&
+      DEFAULT_PLACEHOLDER_TITLES.has(row.title),
+  )
+  if (pending.length === 0) return
+  let summaries: { sessionId: string; title: string }[]
+  try {
+    summaries = await new DshSessionStore().list({ cwd: workspacePath })
+  } catch (err) {
+    console.error('[c3] dsh title backfill failed:', err)
+    return
+  }
+  const byId = new Map(summaries.map((s) => [s.sessionId, s.title]))
+  for (const row of pending) {
+    const sessionId = row.vendorSessionId
+    if (!sessionId) continue
+    const title = byId.get(sessionId)
+    if (!title || DEFAULT_PLACEHOLDER_TITLES.has(title)) continue
+    updateRealRowTitle(sessionId, 'dsh', title)
+    row.title = title
+  }
+}
 
 /**
  * Fire-and-forget background sync (F-8). For running sessions whose projection

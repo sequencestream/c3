@@ -179,6 +179,7 @@ import { setSkillApprovalSend } from './kernel/skill-loader/approval.js'
 import { getSkillRepos } from './kernel/config/index.js'
 import { dbPath } from './kernel/infra/db.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
+import { DshSessionStore } from './kernel/agent/adapters/dsh/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
 import {
   createBroadcasts,
@@ -460,6 +461,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // projection table, a separate concern). claude is always present.
   const sessionSources: VendorSessionSource[] = [
     { vendor: 'claude', sessions: new ClaudeSessionStore() },
+    // The projection cache is readable without the CLI, so a missing binary
+    // still leaves existing sessions titleable. Listing DSH here is what keeps
+    // lazy validation from treating a live row as gone.
+    { vendor: 'dsh', sessions: dshAdapter?.sessions ?? new DshSessionStore() },
   ]
   const sessionAccessor = new SessionAccessor(sessionSources)
 

@@ -181,6 +181,8 @@ import { dbPath } from './kernel/infra/db.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { DshSessionStore } from './kernel/agent/adapters/dsh/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
+import { accessorNativeList } from './kernel/agent/session/native-list.js'
+import { isPlaceholderTitle } from './kernel/agent/session/placeholder-titles.js'
 import {
   createBroadcasts,
   createDiscussionRuns,
@@ -301,17 +303,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     void (async () => {
       let title = input.title
       try {
-        const summaries = await titleAccessor.list({ cwd: input.workspacePath })
-        const hit = summaries.find((s) => {
-          if (s.vendor !== vendor) return false
-          const vsid = s.vendorExtra?.vendorSessionId
-          return typeof vsid === 'string' && vsid === input.realId
-        })
+        const summaries = await titleAccessor.listVendor(vendor, { cwd: input.workspacePath })
+        const hit = summaries?.find((s) => s.sessionId === input.realId)
         // Only accept a real native title (not a default placeholder like
         // "New session") — the fallback from `firstUserTitle(baseline)` may
         // have a more meaningful value, especially for Codex sessions whose
         // JSONL file now correctly reports the user prompt.
-        if (hit?.title && hit.title !== 'New session' && hit.title !== 'Untitled session') {
+        if (hit?.title && !isPlaceholderTitle(hit.title)) {
           title = hit.title
         }
       } catch (err) {
@@ -351,29 +349,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     try {
       const workspaces = listWorkspaces().map((w) => resolveWorkspaceRoot(w.name)!)
       void janitor({
-        nativeList: async (vendor, ws) => {
-          // Use the SessionAccessor to query native stores. The accessor
-          // is built at composition time; the janitor runs periodically.
-          // For now, skip vendors that the accessor doesn't have sources
-          // for (the accessor is the same object wired into the WS
-          // handler).
-          const sources = sessionAccessor?.list({ cwd: ws })
-          if (!sources) return null
-          const summaries = await sources
-          return {
-            sessions: summaries
-              .filter((s) => s.vendor === vendor)
-              .map((s) => {
-                const extra = s.vendorExtra ?? {}
-                const vsid = typeof extra.vendorSessionId === 'string' ? extra.vendorSessionId : ''
-                const lastMod =
-                  typeof extra.lastModified === 'number' && Number.isFinite(extra.lastModified)
-                    ? extra.lastModified
-                    : null
-                return { vendorSessionId: vsid, title: s.title, lastModified: lastMod }
-              }),
-          }
-        },
+        // The accessor is the same object wired into the WS handler; the
+        // janitor runs periodically, long after the composition root finishes.
+        nativeList: accessorNativeList(sessionAccessor),
         workspaces,
       })
     } catch (err) {

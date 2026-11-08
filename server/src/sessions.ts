@@ -15,6 +15,7 @@ import { resolve } from 'node:path'
 import type { SessionInfo, TranscriptItem, VendorId } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
 import { getSessionMode } from './state.js'
+import { UNTITLED_SESSION_TITLE } from './kernel/agent/session/placeholder-titles.js'
 import { normalizeTranscriptText, stringifyToolResult } from './format.js'
 import {
   listHiddenSessions,
@@ -89,7 +90,9 @@ function titleOf(s: {
   firstPrompt?: string
   sessionId: string
 }): string {
-  return s.customTitle?.trim() || s.summary?.trim() || s.firstPrompt?.trim() || 'Untitled session'
+  return (
+    s.customTitle?.trim() || s.summary?.trim() || s.firstPrompt?.trim() || UNTITLED_SESSION_TITLE
+  )
 }
 
 /**
@@ -128,9 +131,9 @@ export async function sessionTitle(dir: string, sessionId: string): Promise<stri
   try {
     const sessions = await listSessions({ dir })
     const found = sessions.find((s) => s.sessionId === sessionId)
-    return found ? titleOf(found) : 'Untitled session'
+    return found ? titleOf(found) : UNTITLED_SESSION_TITLE
   } catch {
-    return 'Untitled session'
+    return UNTITLED_SESSION_TITLE
   }
 }
 

@@ -380,3 +380,86 @@ it('global browsing includes mixed business categories once and excludes tools e
     'robot-global',
   ])
 })
+
+describe('listSessionsVia — placeholder title backfill', () => {
+  function bindPlaceholderDshRow(): void {
+    upsertBoundRow({
+      sessionId: 'dsh-1',
+      workspacePath: proj,
+      vendor: 'dsh',
+      agentId: 'dsh-agent',
+      title: 'New session',
+      lastModified: 800,
+      sessionKind: 'work',
+    })
+  }
+
+  it('resolves the placeholder from the owning vendor only and returns the real title', async () => {
+    bindPlaceholderDshRow()
+    const claudeSrc: VendorSessionSource = {
+      vendor: 'claude',
+      sessions: fakeStore([
+        {
+          sessionId: 'c-1',
+          title: 'Claude one',
+          vendorExtra: { vendorSessionId: 'c-1', lastModified: 100 },
+        },
+      ]),
+    }
+    const dshSrc: VendorSessionSource = {
+      vendor: 'dsh',
+      sessions: fakeStore([
+        {
+          sessionId: 'dsh-1',
+          title: 'Refactor the parser',
+          vendorExtra: { vendorSessionId: 'dsh-1', lastModified: 900 },
+        },
+      ]),
+    }
+    const accessor = new SessionAccessor([claudeSrc, dshSrc])
+
+    const out = await listSessionsVia(accessor, proj)
+
+    expect(out.find((s) => s.sessionId === 'dsh-1')?.title).toBe('Refactor the parser')
+    // One listing for the vendor that still had a placeholder; claude had none.
+    expect(dshSrc.sessions.list).toHaveBeenCalledTimes(1)
+    expect(claudeSrc.sessions.list).not.toHaveBeenCalled()
+  })
+
+  it('keeps the placeholder when the native title is still a placeholder', async () => {
+    bindPlaceholderDshRow()
+    const dshSrc: VendorSessionSource = {
+      vendor: 'dsh',
+      sessions: fakeStore([
+        {
+          sessionId: 'dsh-1',
+          title: 'New session',
+          vendorExtra: { vendorSessionId: 'dsh-1', lastModified: 900 },
+        },
+      ]),
+    }
+
+    const out = await listSessionsVia(new SessionAccessor([dshSrc]), proj)
+
+    expect(out.find((s) => s.sessionId === 'dsh-1')?.title).toBe('New session')
+  })
+
+  it('keeps the row untouched when the vendor cannot be read', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    bindPlaceholderDshRow()
+    const dshSrc: VendorSessionSource = {
+      vendor: 'dsh',
+      sessions: {
+        list: vi.fn(async () => {
+          throw new Error('dsh store down')
+        }),
+        read: vi.fn(async () => []),
+      },
+    }
+
+    const out = await listSessionsVia(new SessionAccessor([dshSrc]), proj)
+
+    expect(out.find((s) => s.sessionId === 'dsh-1')?.title).toBe('New session')
+    error.mockRestore()
+  })
+})

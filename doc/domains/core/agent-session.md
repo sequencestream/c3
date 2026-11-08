@@ -241,9 +241,9 @@ DSH（DeepSeek Harness）与 Claude / Codex / Cursor 落在同一套 driver / �
 - **托管分发。** c3 可钉选 `@deepseek-ai/dsh@0.2.2-rc.1` 并与 `dsh` 可执行解析联用;此外要求 **Node ≥ 24.9**,不满足时以 `node-engine-incompatible` 明示,不单报 CLI 缺失。
 - **每轮子进程 + JSON-RPC。** 中止无线上 cancel,`stop_run` 收敛为关闭客户端/终结子进程(整轮),不能向存活进程硬塞下一 turn。
 - **逐工具审批。** 初始化启用 `approvalRequests`,`approval/request` 经审批桥接到 permission-gateway;允许、拒绝与中止时令待定请求为 `cancelled`。
-- **不能做 team lead。** 无流式推入,AS-R21 排除;上游 subagent/team 事件不进转录映射。
+- **不能做 team lead。** 无流式推入,不能担任团队组织者;上游 subagent/team 事件不进转录映射。
 - **无进程内 MCP。** c3 工具经统一回环 HTTP MCP,不为 DSH 另开通道。
-- **会话生命周期。** `resume` 为完整能力;`list` / `read` 为部分——以 DSH 持久化目录下已知会话为准,不等同于 IDE 侧全量历史。列表标题优先用厂商已接受的总结名;没有总结名时用第一条用户消息。`rename` / `delete` 为无。
+- **会话生命周期。** `resume` 为完整能力。`list` / `read` 为部分:只覆盖 c3 为该工作区准备的持久化目录,不含操作者自己的交互式家目录。`read` 回放其中已落盘的用户消息、助手正文,以及成对的工具调用与结果;运行时注入的上下文不进入回放。列表标题优先用厂商已接受的总结名;没有总结名时用第一条用户消息。`rename` / `delete` 为无。
 - **DeepSeek API key。** 经 agent 配置注入运行环境;不是「仅模型 relay」路径。
 
 ### 消费面

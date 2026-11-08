@@ -18,12 +18,14 @@ const props = defineProps<{
   loading?: boolean
   paging?: Record<string, GlobalWorkspacePage>
   canCreateSession?: boolean
+  isAdmin?: boolean
 }>()
 const emit = defineEmits<{
   select: [id: string, workspaceName: string]
   refresh: []
   'create-session': [workspaceName: string]
   more: [workspaceName: string]
+  'request-add-workspace': []
 }>()
 const { t } = useTypedI18n()
 // Ratios use the list/detail space, excluding the separator and navigation.
@@ -248,6 +250,17 @@ function refresh(): void {
       </section>
       <p v-if="!groups.length">{{ t('globalBrowser.empty') }}</p>
     </div>
+    <button
+      v-if="isAdmin"
+      type="button"
+      class="global-add-workspace"
+      :title="t('nav.workspace.add.tooltip')"
+      :aria-label="t('nav.workspace.add.tooltip')"
+      data-testid="global-add-workspace"
+      @click="emit('request-add-workspace')"
+    >
+      {{ t('nav.workspace.add.tooltip') }}
+    </button>
   </aside>
   <div
     class="global-list-splitter"
@@ -313,6 +326,24 @@ button:disabled {
   overflow-y: auto;
   flex: 1;
   padding: var(--sp-2);
+}
+.global-add-workspace {
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--c-border);
+  border-radius: 0;
+  color: var(--c-primary-text);
+  font-size: var(--fs-body);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.global-add-workspace:hover {
+  background: var(--c-hover-strong);
 }
 .global-row {
   display: flex;

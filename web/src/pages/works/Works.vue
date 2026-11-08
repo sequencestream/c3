@@ -35,6 +35,7 @@ const props = defineProps<{
   globalSessions?: GlobalSessionRow[]
   globalLoading?: boolean
   globalPaging?: Record<string, GlobalWorkspacePage>
+  isAdmin?: boolean
   // left: session list
   currentWorkspace: string | null
   sessions: SessionInfo[]
@@ -134,6 +135,7 @@ const emit = defineEmits<{
   continue: []
   'list-commands': []
   'mobile-back': [targetKey: string]
+  'request-add-workspace': []
 }>()
 
 const mobilePanes = [
@@ -201,10 +203,12 @@ defineExpose({
         :loading="globalLoading"
         :paging="globalPaging"
         can-create-session
+        :is-admin="isAdmin"
         @create-session="(workspaceName: string) => emit('create-session', workspaceName)"
         @select="selectGlobal"
         @refresh="emit('refresh-sessions')"
         @more="(workspaceName: string) => emit('load-more-sessions', workspaceName)"
+        @request-add-workspace="emit('request-add-workspace')"
       />
       <WorkSessionList
         v-else

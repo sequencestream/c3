@@ -5,6 +5,7 @@
 // refs/computeds stay the SAME reactive objects, so the template below is
 // unchanged. See controls/index.ts for the decomposition map.
 import AppHeader from './components/AppHeader/AppHeader.vue'
+import AddWorkspaceDialog from './components/AddWorkspaceDialog/AddWorkspaceDialog.vue'
 import LeftRail from './components/LeftRail/LeftRail.vue'
 import WorkspaceListRail from './components/WorkspaceListRail/WorkspaceListRail.vue'
 import Login from './pages/login/Login.vue'
@@ -23,6 +24,7 @@ import {
 } from 'vue'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
+import { translateUiError } from './i18n/errors'
 import { useAppController } from './controls'
 import { useGlobalBrowser } from './controls/global-browser'
 import { FILES_CHAT_WIDTH_DEFAULT } from './controls/state'
@@ -543,6 +545,16 @@ const {
   createIntentProgress,
 } = appController
 
+const workspaceDirectoryError = computed(() => {
+  const error = workspaceDirectoryPicker.value?.error
+  return error ? translateUiError(error) : null
+})
+
+function onGlobalAddWorkspaceConfirm(payload: { workspaceName: string; path: string }): void {
+  addWorkspace(payload)
+  addWorkspaceOpen.value = false
+}
+
 /** 当前工作区 id 解析出的 `WorkspaceInfo`,只供工作区设置页页头展示「正在改哪个
  *  工作区」(名称 + 绝对路径)。列表未到达或 id 无匹配(切换中)时为 null,
  *  设置页据此整块不渲染。身份仍是 id,path 只是展示数据。 */
@@ -948,6 +960,7 @@ function onFilesChatWidth(px: number): void {
               :global-sessions="globalPage === 'sessions' ? globalSessions : undefined"
               :global-loading="globalLoading"
               :global-paging="globalPaging"
+              :is-admin="auth.isAdmin.value"
               :sessions="currentSessions"
               :active-session-kind="activeSessionKind"
               :session-counts="sessionCounts"
@@ -1020,6 +1033,7 @@ function onFilesChatWidth(px: number): void {
               @continue="onContinue"
               @list-commands="listCommands"
               @mobile-back="clearViewedSession"
+              @request-add-workspace="addWorkspaceOpen = true"
             />
 
             <Queue
@@ -1541,6 +1555,18 @@ function onFilesChatWidth(px: number): void {
       </div>
     </div>
   </template>
+
+  <!-- 全局会话/自动化视图不渲染 AppHeader,新增工作区弹框在此单实例持有。 -->
+  <AddWorkspaceDialog
+    v-if="globalPage"
+    :open="addWorkspaceOpen === true"
+    :picker-pending="workspaceDirectoryPicker?.pending === true"
+    :picker-error="workspaceDirectoryError"
+    :picker-selection="workspaceDirectoryPicker?.selection ?? null"
+    @confirm="onGlobalAddWorkspaceConfirm"
+    @cancel="addWorkspaceOpen = false"
+    @select-directory="selectWorkspaceDirectory"
+  />
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 

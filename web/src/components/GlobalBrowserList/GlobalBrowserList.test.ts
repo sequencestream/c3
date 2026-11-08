@@ -156,6 +156,17 @@ describe('global grouped list', () => {
     expect(groups[1].get('.running-dot').attributes('aria-label')).toBeTruthy()
   })
 
+  it('emits request-add-workspace for admins only', async () => {
+    const wrapper = mount(GlobalBrowserList, {
+      props: { title: 'Sessions', rows, activeId: null, isAdmin: true },
+    })
+    await wrapper.get('[data-testid="global-add-workspace"]').trigger('click')
+    expect(wrapper.emitted('request-add-workspace')).toEqual([[]])
+    await wrapper.setProps({ isAdmin: false })
+    expect(wrapper.find('[data-testid="global-add-workspace"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('requests only the selected session group and keeps other groups usable while loading', async () => {
     const wrapper = mount(GlobalBrowserList, {
       props: {

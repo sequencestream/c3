@@ -19,7 +19,10 @@ function makeCtx(opts: { client?: boolean; activeSession?: string | null } = {})
   const sessionStatus = ref<Record<string, 'running' | 'idle'>>({})
   const activity = ref<import('@/lib/chat-types').RunActivity>({ phase: 'error', message: 'boom' })
   const clearSideEffectPending = vi.fn()
-  const currentQueue = ref<PendingItem[]>([])
+  const pendingQueues = ref<Record<string, PendingItem[]>>({})
+  const currentQueue = computed(() =>
+    activeSession.value ? (pendingQueues.value[activeSession.value] ?? []) : [],
+  )
   const ctx = {
     send,
     client: opts.client === false ? null : {},
@@ -31,10 +34,11 @@ function makeCtx(opts: { client?: boolean; activeSession?: string | null } = {})
     codexPolicy: ref(null),
     running: computed(() => sessionStatus.value[activeSession.value ?? ''] === 'running'),
     activeIsTeam: ref(false),
+    pendingQueues,
     currentQueue,
     composer: ref(null),
-    setQueue: vi.fn((_sid: string, items: PendingItem[]) => {
-      currentQueue.value = items
+    setQueue: vi.fn((sid: string, items: PendingItem[]) => {
+      pendingQueues.value = { ...pendingQueues.value, [sid]: items }
     }),
     counters: { nextId: 1, nextQueueId: 1 },
     clearSideEffectPending,
@@ -116,6 +120,50 @@ describe('chat-actions — queued message immediate send', () => {
     ctx.onEnqueue('next')
     ctx.onSendQueued(ctx.currentQueue.value[0].id)
     expect(send.mock.calls.map(([msg]) => msg)).toEqual([{ type: 'user_prompt', text: 'next' }])
+  })
+
+  it('puts a rejected follow-up back and retries it once the session is idle', async () => {
+    const { ctx, send, sessionStatus } = makeCtx()
+    sessionStatus.value[SID] = 'running'
+    ctx.onEnqueue('urgent')
+    ctx.onEnqueue('later')
+    ctx.onSendQueued(ctx.currentQueue.value[0].id)
+    await nextTick()
+    sessionStatus.value[SID] = 'idle'
+    await nextTick()
+    expect(send.mock.calls.map(([msg]) => msg)).toEqual([
+      { type: 'stop_run' },
+      { type: 'user_prompt', text: 'urgent' },
+    ])
+    expect(ctx.currentQueue.value.map((item) => item.text)).toEqual(['later'])
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      expect(ctx.restoreRejectedPrompt('session.turnRunning')).toBe(true)
+      expect(ctx.currentQueue.value.map((item) => item.text)).toEqual(['urgent', 'later'])
+      expect(ctx.currentQueue.value[0]?.immediate).toBe(true)
+      // Idle again during the backoff must not send a second time.
+      sessionStatus.value[SID] = 'idle'
+      await nextTick()
+      expect(send.mock.calls.filter(([msg]) => msg.type === 'user_prompt')).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(send.mock.calls.at(-1)?.[0]).toEqual({ type: 'user_prompt', text: 'urgent' })
+      expect(ctx.currentQueue.value.map((item) => item.text)).toEqual(['later'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps an accepted follow-up from being restored by a later rejection', () => {
+    const { ctx, sessionStatus } = makeCtx()
+    sessionStatus.value[SID] = 'idle'
+    ctx.onEnqueue('sent')
+    ctx.onSendQueued(ctx.currentQueue.value[0].id)
+    ctx.notePromptDelivered()
+    expect(ctx.restoreRejectedPrompt('session.turnRunning')).toBe(false)
+    expect(ctx.currentQueue.value).toEqual([])
+    expect(ctx.restoreRejectedPrompt('session.notSelected')).toBe(false)
   })
 
   it('keeps the queue untouched when disconnected or the item was removed', () => {

@@ -1347,11 +1347,16 @@ export class CodexDriver implements AgentDriver {
         cleanupModelCatalogFile(modelCatalog) // remove the per-run model catalog (host or sandbox).
       }
     }
-    void pump()
+    // `abort()` closes the message queue immediately so the caller can leave the
+    // stream, but the child and its writer lock are released only when `pump`
+    // finishes. Callers must await `settled` before starting another turn on
+    // this thread.
+    const settled = pump()
 
     return {
       sessionId: () => sidPromise,
       messages: () => queue,
+      settled,
       abort: () => {
         controller.abort()
         queue.close()

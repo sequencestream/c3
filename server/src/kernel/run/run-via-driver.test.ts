@@ -700,6 +700,52 @@ describe('runViaDriver — gh token bridge', () => {
   })
 })
 
+describe('runViaDriver — vendor exit before the next turn', () => {
+  it('keeps the session occupied until the child has settled after the stream closes', async () => {
+    const sid = 'settle-before-idle'
+    const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
+    const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+    let release!: () => void
+    let occupiedWhenSettled = false
+    const settled = new Promise<void>((resolve) => {
+      release = () => {
+        occupiedWhenSettled = rt.run != null && rt.status === 'running'
+        resolve()
+      }
+    })
+    const adapter = {
+      vendor: 'cursor',
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: () =>
+          Promise.resolve({
+            sessionId: () => Promise.resolve(sid),
+            abort: () => {},
+            settled,
+            // eslint-disable-next-line require-yield
+            messages: async function* () {
+              return
+            },
+          }),
+      },
+    } as unknown as VendorAdapter
+
+    const job = runViaDriver(rt, 'hi', adapter, eventBus)
+    // The stream ends immediately. A later macrotask still sees the session
+    // occupied only because teardown is parked on `settled`.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(rt.run).not.toBeNull()
+    expect(rt.status).toBe('running')
+    release()
+    expect(occupiedWhenSettled).toBe(true)
+    await job
+    expect(rt.run).toBeNull()
+    expect(rt.status).toBe('idle')
+    expect(rt.buffer.at(-1)).toEqual({ type: 'turn_end', reason: 'complete' })
+    removeRuntime(sid)
+  })
+})
+
 describe('runViaDriver — Cursor AskQuestion bridging', () => {
   // A cursor adapter whose driver yields ONE pending AskQuestion on the initial
   // turn, then — when resumed with the answers — a plain text reply. The resume

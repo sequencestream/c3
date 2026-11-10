@@ -24,11 +24,28 @@ export function installChatActions(ctx: AppCtx): void {
     running,
     activeIsTeam,
     currentQueue,
+    pendingQueues,
     composer,
     setQueue,
     counters,
     clearSideEffectPending,
   } = ctx
+
+  // A follow-up that the server rejected because the previous turn had not let
+  // go yet. Held so it can be put back instead of disappearing.
+  let heldFlush: { sessionId: string; items: PendingItem[] } | null = null
+  let retryNotBefore = 0
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+  const REJECTED_PROMPT_RETRY_MS = 1000
+
+  function clearRetry(): void {
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+    }
+    retryNotBefore = 0
+  }
 
   // ---- Pending send queue ----
   ctx.onEnqueue = (text: string, images?: PromptImage[]): void => {
@@ -69,12 +86,39 @@ export function installChatActions(ctx: AppCtx): void {
     const sid = activeSession.value
     if (!ctx.client || !sid || !hasActiveSession.value) return
     if (!shouldFlush(running.value, activeIsTeam.value, currentQueue.value.length)) return
+    if (Date.now() < retryNotBefore) return
     const immediate = currentQueue.value.find((item) => item.immediate)
-    const items = immediate ? [immediate] : currentQueue.value
+    const items = immediate ? [immediate] : [...currentQueue.value]
     const merged = mergeQueue(items)
     const mergedImages = mergeImages(items)
+    heldFlush = { sessionId: sid, items }
     setQueue(sid, immediate ? removeItem(currentQueue.value, immediate.id) : [])
     ctx.onSubmit(merged, mergedImages)
+  }
+
+  // The server echoed the prompt, so the held copy must not be sent again.
+  ctx.notePromptDelivered = (): void => {
+    heldFlush = null
+    clearRetry()
+  }
+
+  // `session.turnRunning` means the stop had not finished letting go. Put the
+  // prompt back and try once more after a short gap, once the session is idle.
+  ctx.restoreRejectedPrompt = (code: string): boolean => {
+    if (code !== 'session.turnRunning' || !heldFlush) return false
+    const { sessionId, items } = heldFlush
+    heldFlush = null
+    const ids = new Set(items.map((item) => item.id))
+    const existing = pendingQueues.value[sessionId] ?? []
+    setQueue(sessionId, [...items, ...existing.filter((item) => !ids.has(item.id))])
+    retryNotBefore = Date.now() + REJECTED_PROMPT_RETRY_MS
+    if (retryTimer !== undefined) clearTimeout(retryTimer)
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      retryNotBefore = 0
+      ctx.flushIfReady()
+    }, REJECTED_PROMPT_RETRY_MS)
+    return true
   }
 
   // Trigger on a running→idle transition or when switching to an already-idle

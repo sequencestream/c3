@@ -105,7 +105,9 @@ export class ClaudeDriver implements AgentDriver {
     if (opts.signal.aborted) controller.abort()
     else opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
 
-    void runClaude({
+    // `turn_end` closes the message queue before this promise settles, so a
+    // follower must await `settled` (process teardown) and not the stream.
+    const settled = runClaude({
       prompt: opts.prompt,
       // The neutral system channel maps to Claude's preset system append — the
       // same shape `runClaude` uses for a work run's SDD contract, so it rides
@@ -142,6 +144,7 @@ export class ClaudeDriver implements AgentDriver {
     return {
       sessionId: () => sessionId,
       messages: () => queue,
+      settled,
       abort: () => controller.abort(),
       // streamingPush (capabilities.streamingPush): buffer until the handle lands.
       pushInput: (text: string) => {

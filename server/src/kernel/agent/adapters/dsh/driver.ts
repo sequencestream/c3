@@ -153,9 +153,13 @@ export class DshDriver implements AgentDriver {
       queue,
       controller,
       this.deps.approval,
-    ).finally(() => {
+    ).finally(async () => {
       queue.close()
-      void client.close().catch(() => undefined)
+      try {
+        await client.close()
+      } catch {
+        // The next turn only needs the client to stop owning the session.
+      }
     })
 
     sessionResolve(launch.sessionId)

@@ -653,6 +653,7 @@ export function buildSessionHandlers(
       availableCommands.value = msg.commands
     },
     user_text: (_ctx, msg) => {
+      ctx.notePromptDelivered?.()
       add({ kind: 'user', text: msg.text })
       activity.value = { phase: 'thinking' }
     },

@@ -423,6 +423,13 @@ export interface AppMethods {
   onDeleteQueued(id: number): void
   onEditQueued(item: PendingItem): void
   flushIfReady(): void
+  /** Drop a held queue flush once the server has echoed its prompt. */
+  notePromptDelivered(): void
+  /**
+   * Put a flushed prompt back when the server rejected it as still in a turn.
+   * Returns whether this error was absorbed by the queue.
+   */
+  restoreRejectedPrompt(code: string): boolean
 
   // settings / skills / view mode
   openSettings(): void

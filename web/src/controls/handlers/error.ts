@@ -378,6 +378,10 @@ export function buildErrorHandlers(
       // spinning for the rest of the session. Not a `return` — a refusal the operator asked for
       // still gets reported below.
       if (msg.error.code === 'auth.adminOnly') dropPendingProviderModels()
+      // A queued follow-up sent the moment a stop looked done. The turn was
+      // still letting go, so the prompt goes back on the queue instead of
+      // vanishing as a chat error.
+      if (ctx.restoreRejectedPrompt?.(msg.error.code)) return
       add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
     },
   }

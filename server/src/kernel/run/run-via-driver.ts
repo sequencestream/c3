@@ -72,6 +72,34 @@ import {
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 
 /**
+ * How long a finished turn may keep the session after its message stream closes.
+ * Vendors close that stream on stop before the child has exited (Cursor abort,
+ * Codex writer lock). The next resume must wait for {@link AgentRun.settled}.
+ * The cap only covers a child that never exits; Codex's own stop escalates from
+ * SIGTERM to SIGKILL inside a few seconds, so a live teardown finishes first.
+ */
+const VENDOR_EXIT_WAIT_MS = 10_000
+
+async function waitForVendorExit(settled: Promise<void> | undefined): Promise<void> {
+  if (!settled) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const completed = settled.then(
+    () => undefined,
+    () => undefined,
+  )
+  try {
+    await Promise.race([
+      completed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, VENDOR_EXIT_WAIT_MS)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+/**
  * The intent comm-agent launch profile (read-only gate + disallowed-tools lock
  * + comm system prompt + `save_intents` MCP tool), resolved once before the
  * vendor fork in `launchRun`. Only present for `rt.sessionKind === 'intent'` runtimes.
@@ -489,6 +517,9 @@ export async function runViaDriver(
   // 'complete'; the catch flips it to 'error'; a user stop (aborted) wins in the
   // finally block. Drives event-triggered automations' reason filter (2026-06-08).
   let settledReason: RunEndReason = 'complete'
+  // The subprocess whose exit the next turn must wait for. AskQuestion replaces
+  // it when it resumes the same chat in a new child.
+  let activeRun: AgentRun | undefined
 
   // Wire the driver's approval bridge to c3's browser approval registry: a tool
   // prompt registers a WorkCenter event (onPermissionRequest), becomes a
@@ -773,6 +804,7 @@ export async function runViaDriver(
    */
   const bridgedAskIds = new Set<string>()
   const consumeAskAwareStream = async (run: AgentRun): Promise<void> => {
+    activeRun = run
     const emitter = new WireEmitter((m) => emit(runId, m))
     for await (const msg of run.messages()) {
       if (cycleAbort.signal.aborted) break
@@ -868,6 +900,7 @@ export async function runViaDriver(
 
   try {
     const run = await adapter.driver.start(driverStartFor(userTurn))
+    activeRun = run
 
     // Bind pending→real once the native session id resolves.
     // session.create, so this is immediate). Mirrors launchRun's bind so the
@@ -936,6 +969,12 @@ export async function runViaDriver(
   } finally {
     disposeApproval()
     disposeDriverMcp() // evict the per-run c3 HTTP MCP token binding.
+    // The message stream can end on abort while the child still holds the chat
+    // (writer lock, MCP file, live process). Idle is what lets the client send
+    // the next prompt, so it waits until that child is actually gone. `rt.run`
+    // stays set across the wait: a prompt that arrives early is rejected and
+    // the client puts it back, instead of starting a resume that cannot run.
+    await waitForVendorExit(activeRun?.settled)
     if (rt.run) rt.run = null
     // The driver path is non-Claude. Agent-teams are Claude-locked
     // (2026-06-06-006): no non-Claude vendor has `streamingPush`, so this path never

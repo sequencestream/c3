@@ -114,6 +114,26 @@ function orderRows(msgs: ChatMsg[]): { msg: ChatMsg; indent: boolean }[] {
 }
 
 /**
+ * One-line text for the collapsed batch header. Tool-use previews its input;
+ * tool-result previews its content. Permission and consensus are decision
+ * cards, not tool-message content, so they contribute nothing (`null`).
+ */
+function toolMessagePreview(m: ChatMsg): string | null {
+  if (m.kind === 'tool-use') return oneLine(fmt(m.input))
+  if (m.kind === 'tool-result') return oneLine(m.content)
+  return null
+}
+
+/** Preview of the latest tool-use or tool-result in the batch; '' when there is none. */
+function latestToolPreview(msgs: ChatMsg[]): string {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const text = toolMessagePreview(msgs[i])
+    if (text !== null) return text
+  }
+  return ''
+}
+
+/**
  * Group the flat message list into render blocks: text messages pass through;
  * runs of tool messages between text become one collapsible batch. User-interaction
  * tools (AskUserQuestion, ExitPlanMode) are excluded from batches and rendered as
@@ -135,16 +155,12 @@ const blocks = computed<Block[]>(() => {
       for (const m of msgs)
         if (m.kind === 'permission') counts.set(m.toolName, (counts.get(m.toolName) ?? 0) + 1)
     const summary = [...counts].map(([name, n]) => `${name}.${n}`).join('  ')
-    // Collapsed-header hint: a single-line preview of the first tool-use's input,
-    // so the batch shows *what* it's doing, not just the per-tool counts. '' when
-    // the batch carries no executed tool-use (e.g. permission-only) — then the
-    // header degrades to the bare summary (no preview appended).
-    let preview = ''
-    for (const m of msgs)
-      if (m.kind === 'tool-use') {
-        preview = oneLine(fmt(m.input))
-        break
-      }
+    // Collapsed-header hint: a single-line preview of the latest tool message,
+    // so the batch shows what just happened, not just the per-tool counts.
+    // A new tool-use or tool-result replaces it. '' when the batch carries no
+    // executed tool message (e.g. permission-only) — then the header degrades
+    // to the bare summary (no preview appended).
+    const preview = latestToolPreview(msgs)
     // Only a genuinely actionable (live, pending) permission forces the batch
     // open. Historical permissions replayed from the buffer stay collapsed.
     const hasPending = msgs.some(
@@ -327,11 +343,12 @@ function toggle(id: number): void {
           <span class="caret">{{ isBatchOpen(b) ? '▾' : '▸' }}</span>
           <!--
             Collapsed header: `Name.count` summary, then a one-line preview of the
-            first tool-use's input. The preview shows only while collapsed (open
-            bodies already render each input in full); the leading space is baked
-            into the interpolation so Vue's whitespace condense can't drop it. The
-            whole line shares `.batch-summary`'s nowrap + ellipsis, so overflow
-            truncates with `…` without breaking the header layout.
+            latest tool message (tool-use input, or tool-result content). The
+            preview shows only while collapsed (open bodies already render each
+            message in full); the leading space is baked into the interpolation
+            so Vue's whitespace condense can't drop it. The whole line shares
+            `.batch-summary`'s nowrap + ellipsis, so overflow truncates with `…`
+            without breaking the header layout.
           -->
           <span class="batch-summary"
             >{{ b.summary || t('session.chat.toolsFallback')

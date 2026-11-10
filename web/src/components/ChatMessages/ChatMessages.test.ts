@@ -21,6 +21,9 @@ function speakerMsg(text: string, speaker?: SpeakerView): ChatMsg {
 function permission(toolName: string, requestId: string): ChatMsg {
   return { id: id(), kind: 'permission', requestId, toolName, input: {}, decision: null }
 }
+function toolResult(content: string, toolUseId?: string): ChatMsg {
+  return { id: id(), kind: 'tool-result', toolUseId, content, isError: false }
+}
 
 function mountChat(messages: ChatMsg[], actionablePermissionId: string | null = null) {
   return mount(ChatMessages, {
@@ -57,7 +60,7 @@ function installScrollBox(
   }
 }
 
-describe('ChatMessages.vue — 折叠批次头追加首个工具请求预览', () => {
+describe('ChatMessages.vue — 折叠批次头展示最新一条工具消息', () => {
   it('单工具 batch:摘要后展示该 tool-use 的单行预览', () => {
     const w = mountChat([toolUse('Write', { file_path: '/a/b.ts', content: 'x' })])
     const head = w.find('.batch-summary')
@@ -69,7 +72,7 @@ describe('ChatMessages.vue — 折叠批次头追加首个工具请求预览', (
     expect(preview.text()).toContain('/a/b.ts')
   })
 
-  it('多工具 batch:预览取第一个 tool-use,而非其后的工具', () => {
+  it('多工具 batch:预览取最后一条 tool-use,而非更早的工具', () => {
     const w = mountChat([
       toolUse('Read', { file_path: '/first.ts' }),
       toolUse('Write', { file_path: '/second.ts' }),
@@ -78,8 +81,38 @@ describe('ChatMessages.vue — 折叠批次头追加首个工具请求预览', (
     expect(head.text()).toContain('Read.1')
     expect(head.text()).toContain('Write.1')
     const preview = w.find('.batch-preview')
-    expect(preview.text()).toContain('/first.ts')
-    expect(preview.text()).not.toContain('/second.ts')
+    expect(preview.text()).toContain('/second.ts')
+    expect(preview.text()).not.toContain('/first.ts')
+  })
+
+  it('最后一条是 tool-result 时展示结果内容,而不是更早的 tool-use 输入', () => {
+    const w = mountChat([
+      toolUse('Read', { file_path: '/first.ts' }),
+      toolResult('file contents here'),
+    ])
+    const preview = w.find('.batch-preview')
+    expect(preview.text()).toContain('file contents here')
+    expect(preview.text()).not.toContain('/first.ts')
+  })
+
+  it('新消息到达后,折叠头预览换成最新一条的内容', async () => {
+    const first = toolUse('Read', { file_path: '/first.ts' })
+    const w = mountChat([first])
+    expect(w.find('.batch-preview').text()).toContain('/first.ts')
+
+    const second = toolUse('Write', { file_path: '/second.ts' })
+    await w.setProps({ messages: [first, second] })
+    expect(w.find('.batch-preview').text()).toContain('/second.ts')
+    expect(w.find('.batch-preview').text()).not.toContain('/first.ts')
+
+    await w.setProps({ messages: [first, second, toolResult('wrote ok')] })
+    expect(w.find('.batch-preview').text()).toContain('wrote ok')
+    expect(w.find('.batch-preview').text()).not.toContain('/second.ts')
+  })
+
+  it('权限提示不占预览,仍展示它前面最后一条工具消息', () => {
+    const w = mountChat([toolUse('Read', { file_path: '/kept.ts' }), permission('Bash', 'req-old')])
+    expect(w.find('.batch-preview').text()).toContain('/kept.ts')
   })
 
   it('预览与摘要同处一个 .batch-summary,共享 CSS ellipsis(不换行截断)', () => {

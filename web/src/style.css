@@ -1643,8 +1643,8 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 折叠态:摘要后追加首个 tool-use 的单行请求预览(muted),与摘要同处一行,
-   共享 .batch-summary 的 nowrap + ellipsis,超长自动以 … 截断。 */
+/* 折叠态:摘要后追加最新一条工具消息的单行预览(muted),与摘要同处一行,
+   共享 .batch-summary 的 nowrap + ellipsis,超长自动以 … 截断。新消息到达后预览换成该条内容。 */
 .batch-preview {
   /* 比工具名/数字(muted)更暗的灰,弱化为次要信息并与之区分 */
   color: var(--c-text-disabled);

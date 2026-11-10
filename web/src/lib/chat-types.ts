@@ -94,7 +94,7 @@ export type TextMsg = Extract<ChatMsg, { kind: 'user' | 'assistant' | 'system' }
  * text output; or a *standalone* block for a single user-interaction tool message
  * that renders outside any batch (e.g. AskUserQuestion / ExitPlanMode).
  * A batch is collapsed by default and shows a `Name.count` summary plus a
- * one-line preview of the first tool-use's input (collapsed header only).
+ * one-line preview of the latest tool message (collapsed header only).
  * A standalone block starts expanded and can be collapsed after the interaction
  * is resolved.
  */
@@ -108,7 +108,7 @@ export type Block =
       /** Render order: each tool-result moved directly under its tool-use, flagged for indent. */
       rows: { msg: ChatMsg; indent: boolean }[]
       summary: string
-      /** One-line `oneLine(fmt(input))` of the batch's first tool-use; '' when the batch has none. */
+      /** One-line preview of the batch's latest tool-use input or tool-result content; '' when the batch has neither. */
       preview: string
       hasPending: boolean
     }
